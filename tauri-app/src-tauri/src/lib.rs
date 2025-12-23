@@ -1,10 +1,13 @@
 mod audio;
 mod commands;
 mod config;
+mod pipeline;
 mod session;
 mod transcription;
 mod vad;
 
+use commands::PipelineState;
+use std::sync::{Arc, Mutex};
 use tauri::Manager;
 use tracing::info;
 use tracing_subscriber::EnvFilter;
@@ -23,9 +26,13 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_clipboard_manager::init())
         .setup(|app| {
-            // Initialize session manager
-            let session_manager = session::SessionManager::new();
-            app.manage(std::sync::Mutex::new(session_manager));
+            // Initialize session manager (wrapped in Arc for sharing)
+            let session_manager = Arc::new(Mutex::new(session::SessionManager::new()));
+            app.manage(session_manager);
+
+            // Initialize pipeline state
+            let pipeline_state = Mutex::new(PipelineState::default());
+            app.manage(pipeline_state);
 
             info!("App setup complete");
             Ok(())
