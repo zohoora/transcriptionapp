@@ -246,4 +246,199 @@ mod tests {
         let result = session.start_stopping();
         assert!(result.is_err());
     }
+
+    #[test]
+    fn test_cannot_prepare_from_recording() {
+        let mut session = SessionManager::new();
+        session.start_preparing().unwrap();
+        session.start_recording("whisper");
+
+        let result = session.start_preparing();
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_cannot_prepare_from_preparing() {
+        let mut session = SessionManager::new();
+        session.start_preparing().unwrap();
+
+        let result = session.start_preparing();
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_cannot_stop_from_stopping() {
+        let mut session = SessionManager::new();
+        session.start_preparing().unwrap();
+        session.start_recording("whisper");
+        session.start_stopping().unwrap();
+
+        let result = session.start_stopping();
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_error_state() {
+        let mut session = SessionManager::new();
+        session.set_error(SessionError::ModelNotFound("test.bin".to_string()));
+
+        assert_eq!(session.state(), &SessionState::Error);
+
+        let status = session.status();
+        assert!(status.error_message.is_some());
+        assert!(status.error_message.unwrap().contains("test.bin"));
+    }
+
+    #[test]
+    fn test_add_segment() {
+        let mut session = SessionManager::new();
+        session.start_preparing().unwrap();
+        session.start_recording("whisper");
+
+        let segment = Segment::new(0, 1000, "Hello".to_string());
+        session.add_segment(segment);
+
+        assert_eq!(session.segments().len(), 1);
+        assert_eq!(session.segments()[0].text, "Hello");
+    }
+
+    #[test]
+    fn test_transcript_update() {
+        let mut session = SessionManager::new();
+        session.start_preparing().unwrap();
+        session.start_recording("whisper");
+
+        session.add_segment(Segment::new(0, 1000, "Hello".to_string()));
+        session.add_segment(Segment::new(1000, 2000, "World".to_string()));
+
+        let update = session.transcript_update();
+        assert_eq!(update.segment_count, 2);
+        assert!(update.finalized_text.contains("Hello"));
+        assert!(update.finalized_text.contains("World"));
+    }
+
+    #[test]
+    fn test_status_provider() {
+        let mut session = SessionManager::new();
+
+        // Before recording
+        let status = session.status();
+        assert!(status.provider.is_none());
+
+        session.start_preparing().unwrap();
+        session.start_recording("whisper");
+
+        let status = session.status();
+        assert_eq!(status.provider, Some("whisper".to_string()));
+    }
+
+    #[test]
+    fn test_is_recording() {
+        let mut session = SessionManager::new();
+        assert!(!session.is_recording());
+
+        session.start_preparing().unwrap();
+        assert!(!session.is_recording());
+
+        session.start_recording("whisper");
+        assert!(session.is_recording());
+
+        session.start_stopping().unwrap();
+        assert!(!session.is_recording());
+    }
+
+    #[test]
+    fn test_pending_count_affects_processing_behind() {
+        let mut session = SessionManager::new();
+        session.start_preparing().unwrap();
+        session.start_recording("whisper");
+
+        // Low pending count
+        session.set_pending_count(2);
+        let status = session.status();
+        assert!(!status.is_processing_behind);
+
+        // High pending count
+        session.set_pending_count(5);
+        let status = session.status();
+        assert!(status.is_processing_behind);
+    }
+
+    #[test]
+    fn test_stop_flag() {
+        let mut session = SessionManager::new();
+        session.start_preparing().unwrap();
+        session.start_recording("whisper");
+
+        let stop_flag = session.stop_flag();
+        assert!(!stop_flag.load(Ordering::Relaxed));
+
+        session.start_stopping().unwrap();
+        assert!(stop_flag.load(Ordering::SeqCst));
+    }
+
+    #[test]
+    fn test_reset_clears_segments() {
+        let mut session = SessionManager::new();
+        session.start_preparing().unwrap();
+        session.start_recording("whisper");
+        session.add_segment(Segment::new(0, 1000, "Hello".to_string()));
+
+        session.reset();
+
+        assert_eq!(session.segments().len(), 0);
+    }
+
+    #[test]
+    fn test_reset_clears_error() {
+        let mut session = SessionManager::new();
+        session.set_error(SessionError::AudioDeviceError("test".to_string()));
+
+        session.reset();
+
+        let status = session.status();
+        assert!(status.error_message.is_none());
+    }
+
+    #[test]
+    fn test_default_implementation() {
+        let session = SessionManager::default();
+        assert_eq!(session.state(), &SessionState::Idle);
+    }
+
+    #[test]
+    fn test_session_error_display() {
+        let e1 = SessionError::ModelNotFound("model.bin".to_string());
+        assert!(e1.to_string().contains("model.bin"));
+
+        let e2 = SessionError::AudioDeviceError("no mic".to_string());
+        assert!(e2.to_string().contains("no mic"));
+
+        let e3 = SessionError::TranscriptionError("failed".to_string());
+        assert!(e3.to_string().contains("failed"));
+
+        let e4 = SessionError::InvalidTransition("bad".to_string());
+        assert!(e4.to_string().contains("bad"));
+    }
+
+    #[test]
+    fn test_elapsed_time_zero_when_idle() {
+        let session = SessionManager::new();
+        let status = session.status();
+        assert_eq!(status.elapsed_ms, 0);
+    }
+
+    #[test]
+    fn test_start_preparing_clears_previous_data() {
+        let mut session = SessionManager::new();
+        session.start_preparing().unwrap();
+        session.start_recording("whisper");
+        session.add_segment(Segment::new(0, 1000, "Old".to_string()));
+        session.complete();
+        session.reset();
+
+        // Start a new session
+        session.start_preparing().unwrap();
+        assert_eq!(session.segments().len(), 0);
+    }
 }

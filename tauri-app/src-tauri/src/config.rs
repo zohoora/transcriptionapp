@@ -15,6 +15,28 @@ pub struct Settings {
     pub max_utterance_ms: u32,
 }
 
+impl Default for Settings {
+    fn default() -> Self {
+        Self {
+            whisper_model: "small".to_string(),
+            language: "en".to_string(),
+            input_device_id: None,
+            output_format: "paragraphs".to_string(),
+            vad_threshold: 0.5,
+            silence_to_flush_ms: 500,
+            max_utterance_ms: 25000,
+        }
+    }
+}
+
+/// Model availability status for the frontend
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ModelStatus {
+    pub available: bool,
+    pub path: Option<String>,
+    pub error: Option<String>,
+}
+
 /// Internal configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
@@ -159,5 +181,140 @@ mod tests {
 
         assert_eq!(config.whisper_model, config2.whisper_model);
         assert_eq!(config.language, config2.language);
+    }
+
+    #[test]
+    fn test_default_values() {
+        let config = Config::default();
+        assert_eq!(config.output_format, "paragraphs");
+        assert_eq!(config.vad_threshold, 0.5);
+        assert_eq!(config.vad_pre_roll_ms, 300);
+        assert_eq!(config.silence_to_flush_ms, 500);
+        assert_eq!(config.max_utterance_ms, 25000);
+        assert!(config.model_path.is_none());
+        assert!(config.input_device_id.is_none());
+    }
+
+    #[test]
+    fn test_get_model_path_default() {
+        let config = Config::default();
+        let path = config.get_model_path().unwrap();
+
+        // Should end with ggml-small.bin
+        assert!(path.to_string_lossy().ends_with("ggml-small.bin"));
+    }
+
+    #[test]
+    fn test_get_model_path_custom() {
+        let mut config = Config::default();
+        config.model_path = Some(PathBuf::from("/custom/path/model.bin"));
+
+        let path = config.get_model_path().unwrap();
+        assert_eq!(path, PathBuf::from("/custom/path/model.bin"));
+    }
+
+    #[test]
+    fn test_get_model_path_different_models() {
+        let mut config = Config::default();
+
+        config.whisper_model = "tiny".to_string();
+        let path = config.get_model_path().unwrap();
+        assert!(path.to_string_lossy().ends_with("ggml-tiny.bin"));
+
+        config.whisper_model = "medium".to_string();
+        let path = config.get_model_path().unwrap();
+        assert!(path.to_string_lossy().ends_with("ggml-medium.bin"));
+
+        config.whisper_model = "large".to_string();
+        let path = config.get_model_path().unwrap();
+        assert!(path.to_string_lossy().ends_with("ggml-large.bin"));
+    }
+
+    #[test]
+    fn test_settings_all_fields() {
+        let settings = Settings {
+            whisper_model: "medium".to_string(),
+            language: "fr".to_string(),
+            input_device_id: Some("mic-1".to_string()),
+            output_format: "sentences".to_string(),
+            vad_threshold: 0.6,
+            silence_to_flush_ms: 600,
+            max_utterance_ms: 30000,
+        };
+
+        let mut config = Config::default();
+        config.update_from_settings(&settings);
+
+        assert_eq!(config.whisper_model, "medium");
+        assert_eq!(config.language, "fr");
+        assert_eq!(config.input_device_id, Some("mic-1".to_string()));
+        assert_eq!(config.output_format, "sentences");
+        assert_eq!(config.vad_threshold, 0.6);
+        assert_eq!(config.silence_to_flush_ms, 600);
+        assert_eq!(config.max_utterance_ms, 30000);
+    }
+
+    #[test]
+    fn test_to_settings_preserves_values() {
+        let mut config = Config::default();
+        config.whisper_model = "large".to_string();
+        config.language = "de".to_string();
+        config.vad_threshold = 0.7;
+
+        let settings = config.to_settings();
+
+        assert_eq!(settings.whisper_model, "large");
+        assert_eq!(settings.language, "de");
+        assert_eq!(settings.vad_threshold, 0.7);
+    }
+
+    #[test]
+    fn test_config_dir() {
+        let result = Config::config_dir();
+        assert!(result.is_ok());
+        let path = result.unwrap();
+        assert!(path.to_string_lossy().contains(".transcriptionapp"));
+    }
+
+    #[test]
+    fn test_models_dir() {
+        let result = Config::models_dir();
+        assert!(result.is_ok());
+        let path = result.unwrap();
+        assert!(path.to_string_lossy().contains("models"));
+    }
+
+    #[test]
+    fn test_config_path() {
+        let result = Config::config_path();
+        assert!(result.is_ok());
+        let path = result.unwrap();
+        assert!(path.to_string_lossy().ends_with("config.json"));
+    }
+
+    #[test]
+    fn test_update_from_settings_none_device() {
+        let settings = Settings {
+            whisper_model: "small".to_string(),
+            language: "en".to_string(),
+            input_device_id: None,
+            output_format: "paragraphs".to_string(),
+            vad_threshold: 0.5,
+            silence_to_flush_ms: 500,
+            max_utterance_ms: 25000,
+        };
+
+        let mut config = Config::default();
+        config.input_device_id = Some("old-device".to_string());
+        config.update_from_settings(&settings);
+
+        assert!(config.input_device_id.is_none());
+    }
+
+    #[test]
+    fn test_load_or_default_returns_default() {
+        // When no config file exists, should return default
+        let config = Config::load_or_default();
+        assert_eq!(config.schema_version, 1);
     }
 }

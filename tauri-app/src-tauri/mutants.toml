@@ -1,0 +1,28 @@
+# cargo-mutants configuration
+#
+# Mutation testing for Rust code. Validates test quality by introducing
+# small changes and checking if tests catch them.
+#
+# Install: cargo install cargo-mutants
+# Run: cargo mutants
+# Run specific module: cargo mutants -f src/vad.rs
+
+# Exclude files that are hard to test or have external dependencies
+exclude_globs = [
+    "src/main.rs",           # Entry point
+    "src/commands.rs",       # Tauri commands need app context
+    "src/pipeline.rs",       # Thread-based, hard to unit test
+]
+
+# Timeout for each mutant (some tests are slow)
+timeout_multiplier = 3.0
+
+# Number of parallel jobs
+jobs = 4
+
+# Minimum test timeout
+minimum_test_timeout = "60s"
+
+# Continue testing after first failure (get full report)
+# Set to false for faster CI feedback
+iterate = true

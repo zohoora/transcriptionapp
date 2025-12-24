@@ -275,6 +275,68 @@ impl Default for VadGatedPipeline {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use proptest::prelude::*;
+
+    // Property-based tests
+    proptest! {
+        #[test]
+        fn prop_vad_config_samples_proportional_to_ms(
+            pre_roll_ms in 0u32..10000,
+            min_speech_ms in 0u32..10000,
+            silence_ms in 0u32..10000,
+            max_utterance_ms in 0u32..100000,
+        ) {
+            let config = VadConfig::from_ms(0.5, pre_roll_ms, min_speech_ms, silence_ms, max_utterance_ms);
+
+            // Samples should be 16x the milliseconds (16kHz = 16 samples per ms)
+            prop_assert_eq!(config.pre_roll_samples, pre_roll_ms as usize * 16);
+            prop_assert_eq!(config.min_speech_samples, min_speech_ms as usize * 16);
+            prop_assert_eq!(config.silence_to_flush_samples, silence_ms as usize * 16);
+            prop_assert_eq!(config.max_utterance_samples, max_utterance_ms as usize * 16);
+        }
+
+        #[test]
+        fn prop_vad_threshold_preserved(threshold in 0.0f32..1.0) {
+            let config = VadConfig::from_ms(threshold, 100, 100, 100, 1000);
+            prop_assert!((config.vad_threshold - threshold).abs() < f32::EPSILON);
+        }
+
+        #[test]
+        fn prop_audio_clock_advances_correctly(advances in proptest::collection::vec(1usize..10000, 1..100)) {
+            let mut pipeline = VadGatedPipeline::new();
+            let mut expected_total: u64 = 0;
+
+            for advance in advances {
+                pipeline.advance_audio_clock(advance);
+                expected_total += advance as u64;
+            }
+
+            // audio_clock_ms = audio_clock_samples / 16
+            prop_assert_eq!(pipeline.audio_clock_ms(), expected_total / 16);
+        }
+
+        #[test]
+        fn prop_pipeline_never_panics_on_clock_advance(samples in 0usize..1_000_000) {
+            let mut pipeline = VadGatedPipeline::new();
+            pipeline.advance_audio_clock(samples);
+            // Should never panic
+            let _ = pipeline.audio_clock_ms();
+            let _ = pipeline.is_speech_active();
+            let _ = pipeline.pending_count();
+        }
+
+        #[test]
+        fn prop_chunk_start_never_exceeds_clock(
+            clock_advance in 0usize..100000,
+            chunk_size in 1usize..10000
+        ) {
+            let mut pipeline = VadGatedPipeline::new();
+            pipeline.advance_audio_clock(clock_advance);
+
+            let chunk_start = pipeline.chunk_start_samples(chunk_size);
+            prop_assert!(chunk_start <= clock_advance as u64);
+        }
+    }
 
     #[test]
     fn test_vad_config_from_ms() {
@@ -305,5 +367,130 @@ mod tests {
         let mut pipeline = VadGatedPipeline::new();
         pipeline.force_flush();
         assert!(!pipeline.has_pending_utterances());
+    }
+
+    #[test]
+    fn test_vad_config_default() {
+        let config = VadConfig::default();
+        assert_eq!(config.vad_threshold, 0.5);
+        assert_eq!(config.pre_roll_samples, 4800);
+        assert_eq!(config.min_speech_samples, 4000);
+        assert_eq!(config.silence_to_flush_samples, 8000);
+        assert_eq!(config.max_utterance_samples, 400000);
+    }
+
+    #[test]
+    fn test_vad_config_from_ms_different_values() {
+        let config = VadConfig::from_ms(0.7, 100, 100, 200, 10000);
+        assert_eq!(config.vad_threshold, 0.7);
+        assert_eq!(config.pre_roll_samples, 1600);   // 100ms * 16
+        assert_eq!(config.min_speech_samples, 1600); // 100ms * 16
+        assert_eq!(config.silence_to_flush_samples, 3200); // 200ms * 16
+        assert_eq!(config.max_utterance_samples, 160000); // 10000ms * 16
+    }
+
+    #[test]
+    fn test_pipeline_with_config() {
+        let config = VadConfig::from_ms(0.3, 200, 150, 400, 20000);
+        let pipeline = VadGatedPipeline::with_config(config);
+        assert_eq!(pipeline.audio_clock_ms(), 0);
+        assert!(!pipeline.is_speech_active());
+    }
+
+    #[test]
+    fn test_pipeline_default() {
+        let pipeline = VadGatedPipeline::default();
+        assert_eq!(pipeline.audio_clock_ms(), 0);
+        assert!(!pipeline.is_speech_active());
+    }
+
+    #[test]
+    fn test_pending_count_initial() {
+        let pipeline = VadGatedPipeline::new();
+        assert_eq!(pipeline.pending_count(), 0);
+    }
+
+    #[test]
+    fn test_pop_utterance_empty() {
+        let mut pipeline = VadGatedPipeline::new();
+        assert!(pipeline.pop_utterance().is_none());
+    }
+
+    #[test]
+    fn test_audio_clock_ms_calculation() {
+        let mut pipeline = VadGatedPipeline::new();
+
+        // 16 samples = 1ms at 16kHz
+        pipeline.advance_audio_clock(16);
+        assert_eq!(pipeline.audio_clock_ms(), 1);
+
+        pipeline.advance_audio_clock(160);
+        assert_eq!(pipeline.audio_clock_ms(), 11);
+
+        pipeline.advance_audio_clock(16000);
+        assert_eq!(pipeline.audio_clock_ms(), 1011);
+    }
+
+    #[test]
+    fn test_chunk_start_samples_calculation() {
+        let mut pipeline = VadGatedPipeline::new();
+        pipeline.advance_audio_clock(1000);
+
+        // After advancing by 1000 samples, chunk start for 512 samples
+        // would be 1000 - 512 = 488
+        let chunk_start = pipeline.chunk_start_samples(512);
+        assert_eq!(chunk_start, 488);
+    }
+
+    #[test]
+    fn test_chunk_start_samples_saturating() {
+        let pipeline = VadGatedPipeline::new();
+        // Clock is at 0, asking for start of 512 sample chunk
+        // Should saturate to 0
+        let chunk_start = pipeline.chunk_start_samples(512);
+        assert_eq!(chunk_start, 0);
+    }
+
+    #[test]
+    fn test_is_speech_active_initial() {
+        let pipeline = VadGatedPipeline::new();
+        assert!(!pipeline.is_speech_active());
+    }
+
+    #[test]
+    fn test_has_pending_utterances_initial() {
+        let pipeline = VadGatedPipeline::new();
+        assert!(!pipeline.has_pending_utterances());
+    }
+
+    #[test]
+    fn test_vad_config_zero_values() {
+        let config = VadConfig::from_ms(0.0, 0, 0, 0, 0);
+        assert_eq!(config.vad_threshold, 0.0);
+        assert_eq!(config.pre_roll_samples, 0);
+        assert_eq!(config.min_speech_samples, 0);
+        assert_eq!(config.silence_to_flush_samples, 0);
+        assert_eq!(config.max_utterance_samples, 0);
+    }
+
+    #[test]
+    fn test_vad_config_large_values() {
+        let config = VadConfig::from_ms(1.0, 10000, 5000, 3000, 60000);
+        assert_eq!(config.vad_threshold, 1.0);
+        assert_eq!(config.pre_roll_samples, 160000);
+        assert_eq!(config.min_speech_samples, 80000);
+        assert_eq!(config.silence_to_flush_samples, 48000);
+        assert_eq!(config.max_utterance_samples, 960000);
+    }
+
+    #[test]
+    fn test_multiple_audio_clock_advances() {
+        let mut pipeline = VadGatedPipeline::new();
+
+        for _ in 0..10 {
+            pipeline.advance_audio_clock(1600); // 100ms each
+        }
+
+        assert_eq!(pipeline.audio_clock_ms(), 1000); // 10 * 100ms
     }
 }

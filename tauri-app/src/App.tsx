@@ -238,6 +238,7 @@ function App() {
               value={selectedDevice}
               onChange={(e) => setSelectedDevice(e.target.value)}
               className="device-select"
+              aria-label="Select audio input device"
             >
               <option value="default">Default Device</option>
               {devices.map((d) => (

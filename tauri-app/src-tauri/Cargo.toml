@@ -56,9 +56,19 @@ chrono = { version = "0.4", features = ["serde"] }
 # Directory paths
 dirs = "5"
 
+[dev-dependencies]
+# Property-based testing
+proptest = "1.5"
+# Benchmarking
+criterion = { version = "0.5", features = ["html_reports"] }
+
 [features]
 # This feature is used for production builds or when a dev server is not specified
 custom-protocol = ["tauri/custom-protocol"]
+
+[[bench]]
+name = "audio_benchmarks"
+harness = false
 
 [profile.release]
 lto = true

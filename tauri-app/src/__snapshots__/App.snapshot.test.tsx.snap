@@ -1,0 +1,486 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`App Snapshots > renders completed state correctly 1`] = `
+<div
+  class="app"
+>
+  <header
+    class="header"
+  >
+    <div
+      class="header-left"
+    >
+      <span
+        class="provider-badge"
+      >
+        Whisper
+      </span>
+    </div>
+    <div
+      class="header-right"
+    />
+  </header>
+  <main
+    class="transcript-area"
+  >
+    <div
+      class="transcript-text"
+    >
+      <p>
+        Final transcript text here.
+      </p>
+    </div>
+  </main>
+  <footer
+    class="controls"
+  >
+    <div
+      class="controls-left"
+    />
+    <div
+      class="controls-center"
+    >
+      <button
+        class="btn btn-secondary"
+      >
+        New Recording
+      </button>
+    </div>
+    <div
+      class="controls-right"
+    >
+      <button
+        class="btn btn-copy "
+      >
+        Copy
+      </button>
+    </div>
+  </footer>
+</div>
+`;
+
+exports[`App Snapshots > renders error state correctly 1`] = `
+<div
+  class="app"
+>
+  <header
+    class="header"
+  >
+    <div
+      class="header-left"
+    >
+      <span
+        class="provider-badge"
+      >
+        Ready
+      </span>
+    </div>
+    <div
+      class="header-right"
+    />
+  </header>
+  <div
+    class="error-banner"
+  >
+    <strong>
+      Error:
+    </strong>
+     
+    Microphone access denied
+  </div>
+  <main
+    class="transcript-area"
+  >
+    <div
+      class="transcript-placeholder"
+    />
+  </main>
+  <footer
+    class="controls"
+  >
+    <div
+      class="controls-left"
+    />
+    <div
+      class="controls-center"
+    />
+    <div
+      class="controls-right"
+    />
+  </footer>
+</div>
+`;
+
+exports[`App Snapshots > renders idle state correctly 1`] = `
+<div
+  class="app"
+>
+  <header
+    class="header"
+  >
+    <div
+      class="header-left"
+    >
+      <span
+        class="provider-badge"
+      >
+        Ready
+      </span>
+    </div>
+    <div
+      class="header-right"
+    />
+  </header>
+  <main
+    class="transcript-area"
+  >
+    <div
+      class="transcript-placeholder"
+    >
+      Click Start to begin recording
+    </div>
+  </main>
+  <footer
+    class="controls"
+  >
+    <div
+      class="controls-left"
+    >
+      <select
+        aria-label="Select audio input device"
+        class="device-select"
+      >
+        <option
+          value="default"
+        >
+          Default Device
+        </option>
+        <option
+          value="device-1"
+        >
+          Built-in Microphone
+           
+          (default)
+        </option>
+        <option
+          value="device-2"
+        >
+          External USB Microphone
+           
+        </option>
+      </select>
+    </div>
+    <div
+      class="controls-center"
+    >
+      <button
+        class="btn btn-primary"
+      >
+        Start
+      </button>
+    </div>
+    <div
+      class="controls-right"
+    />
+  </footer>
+</div>
+`;
+
+exports[`App Snapshots > renders model unavailable warning correctly 1`] = `
+<div
+  class="app"
+>
+  <header
+    class="header"
+  >
+    <div
+      class="header-left"
+    >
+      <span
+        class="provider-badge"
+      >
+        Ready
+      </span>
+    </div>
+    <div
+      class="header-right"
+    />
+  </header>
+  <div
+    class="warning-banner"
+  >
+    <strong>
+      Model not found:
+    </strong>
+     
+    Model file not found
+    <br />
+    <small>
+      Expected at: 
+      /Users/test/.cache/transcription-app/models/ggml-small.bin
+    </small>
+  </div>
+  <main
+    class="transcript-area"
+  >
+    <div
+      class="transcript-placeholder"
+    >
+      Click Start to begin recording
+    </div>
+  </main>
+  <footer
+    class="controls"
+  >
+    <div
+      class="controls-left"
+    >
+      <select
+        aria-label="Select audio input device"
+        class="device-select"
+      >
+        <option
+          value="default"
+        >
+          Default Device
+        </option>
+        <option
+          value="device-1"
+        >
+          Built-in Microphone
+           
+          (default)
+        </option>
+        <option
+          value="device-2"
+        >
+          External USB Microphone
+           
+        </option>
+      </select>
+    </div>
+    <div
+      class="controls-center"
+    />
+    <div
+      class="controls-right"
+    />
+  </footer>
+</div>
+`;
+
+exports[`App Snapshots > renders processing behind indicator correctly 1`] = `
+<div
+  class="app"
+>
+  <header
+    class="header"
+  >
+    <div
+      class="header-left"
+    >
+      <span
+        class="provider-badge"
+      >
+        Whisper
+      </span>
+      <span
+        class="status-indicator behind"
+      >
+        <span
+          class="dot"
+        />
+        Recording
+      </span>
+    </div>
+    <div
+      class="header-right"
+    >
+      <span
+        class="elapsed-time"
+      >
+        01:00
+      </span>
+      <span
+        class="processing-badge"
+      >
+        Processing...
+      </span>
+    </div>
+  </header>
+  <main
+    class="transcript-area"
+  >
+    <div
+      class="transcript-placeholder"
+    >
+      Listening...
+    </div>
+  </main>
+  <footer
+    class="controls"
+  >
+    <div
+      class="controls-left"
+    />
+    <div
+      class="controls-center"
+    >
+      <button
+        class="btn btn-stop"
+      >
+        Stop
+      </button>
+    </div>
+    <div
+      class="controls-right"
+    />
+  </footer>
+</div>
+`;
+
+exports[`App Snapshots > renders recording state correctly 1`] = `
+<div
+  class="app"
+>
+  <header
+    class="header"
+  >
+    <div
+      class="header-left"
+    >
+      <span
+        class="provider-badge"
+      >
+        Whisper
+      </span>
+      <span
+        class="status-indicator "
+      >
+        <span
+          class="dot"
+        />
+        Recording
+      </span>
+    </div>
+    <div
+      class="header-right"
+    >
+      <span
+        class="elapsed-time"
+      >
+        00:05
+      </span>
+    </div>
+  </header>
+  <main
+    class="transcript-area"
+  >
+    <div
+      class="transcript-placeholder"
+    >
+      Listening...
+    </div>
+  </main>
+  <footer
+    class="controls"
+  >
+    <div
+      class="controls-left"
+    />
+    <div
+      class="controls-center"
+    >
+      <button
+        class="btn btn-stop"
+      >
+        Stop
+      </button>
+    </div>
+    <div
+      class="controls-right"
+    />
+  </footer>
+</div>
+`;
+
+exports[`App Snapshots > renders with transcript correctly 1`] = `
+<div
+  class="app"
+>
+  <header
+    class="header"
+  >
+    <div
+      class="header-left"
+    >
+      <span
+        class="provider-badge"
+      >
+        Whisper
+      </span>
+      <span
+        class="status-indicator "
+      >
+        <span
+          class="dot"
+        />
+        Recording
+      </span>
+    </div>
+    <div
+      class="header-right"
+    >
+      <span
+        class="elapsed-time"
+      >
+        00:10
+      </span>
+    </div>
+  </header>
+  <main
+    class="transcript-area"
+  >
+    <div
+      class="transcript-text"
+    >
+      <p>
+        Hello, this is a test transcription.
+      </p>
+      <p>
+        This is the second paragraph.
+      </p>
+      <p
+        class="draft-text"
+      >
+        Still speaking...
+      </p>
+    </div>
+  </main>
+  <footer
+    class="controls"
+  >
+    <div
+      class="controls-left"
+    />
+    <div
+      class="controls-center"
+    >
+      <button
+        class="btn btn-stop"
+      >
+        Stop
+      </button>
+    </div>
+    <div
+      class="controls-right"
+    >
+      <button
+        class="btn btn-copy "
+      >
+        Copy
+      </button>
+    </div>
+  </footer>
+</div>
+`;

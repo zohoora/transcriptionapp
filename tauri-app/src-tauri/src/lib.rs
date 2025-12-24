@@ -1,10 +1,43 @@
-mod audio;
+//! # Transcription App Library
+//!
+//! This crate provides the core functionality for the Transcription App,
+//! a real-time speech-to-text application built with Tauri.
+//!
+//! ## Architecture
+//!
+//! The application is organized into several modules:
+//!
+//! - [`audio`] - Audio capture and resampling from input devices
+//! - [`config`] - Configuration management and settings persistence
+//! - [`session`] - Recording session state machine and transcript management
+//! - [`transcription`] - Transcription types (segments, utterances)
+//! - [`vad`] - Voice Activity Detection and audio gating
+//!
+//! ## Usage
+//!
+//! This library is primarily used by the Tauri application via IPC commands.
+//! The main entry point is the [`run`] function which starts the application.
+//!
+//! ## Example
+//!
+//! ```no_run
+//! // Start the Tauri application
+//! transcription_app_lib::run();
+//! ```
+
+pub mod audio;
 mod commands;
-mod config;
+pub mod config;
 mod pipeline;
-mod session;
-mod transcription;
-mod vad;
+#[cfg(test)]
+mod command_tests;
+#[cfg(test)]
+mod pipeline_tests;
+#[cfg(test)]
+mod stress_tests;
+pub mod session;
+pub mod transcription;
+pub mod vad;
 
 use commands::PipelineState;
 use std::sync::{Arc, Mutex};
