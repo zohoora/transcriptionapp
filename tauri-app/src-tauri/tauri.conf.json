@@ -34,7 +34,6 @@
       "infoPlist": "./Info.plist"
     }
   },
-  "plugins": {
-    "clipboard-manager": {}
-  }
+  "plugins": {}
+
 }

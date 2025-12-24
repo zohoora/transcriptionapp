@@ -74,8 +74,8 @@ function App() {
         const deviceList = await invoke<Device[]>('list_input_devices');
         setDevices(deviceList);
 
-        const status = await invoke<ModelStatus>('check_model_status');
-        setModelStatus(status);
+        const modelResult = await invoke<ModelStatus>('check_model_status');
+        setModelStatus(modelResult);
       } catch (e) {
         console.error('Failed to initialize:', e);
       }
