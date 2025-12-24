@@ -18,7 +18,10 @@
     "visual:test": "playwright test --config=tests/visual/playwright.config.ts",
     "visual:update": "playwright test --config=tests/visual/playwright.config.ts --update-snapshots",
     "visual:report": "playwright show-report tests/visual/playwright-report",
-    "mutation:test": "stryker run"
+    "mutation:test": "stryker run",
+    "soak:test": "./tests/soak/soak_test.sh",
+    "soak:quick": "cd src-tauri && SOAK_DURATION_SECS=60 cargo test --release soak_test_extended -- --ignored --nocapture",
+    "soak:1h": "cd src-tauri && SOAK_DURATION_SECS=3600 cargo test --release soak_test_extended -- --ignored --nocapture"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.0.0",

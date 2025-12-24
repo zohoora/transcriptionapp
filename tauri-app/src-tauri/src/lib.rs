@@ -34,6 +34,8 @@ mod command_tests;
 #[cfg(test)]
 mod pipeline_tests;
 #[cfg(test)]
+mod soak_tests;
+#[cfg(test)]
 mod stress_tests;
 pub mod session;
 pub mod transcription;

@@ -114,6 +114,30 @@ cargo install tauri-driver
 pnpm e2e
 ```
 
+### Soak Tests (Long-running stability)
+
+```bash
+# Quick soak test (1 minute)
+pnpm soak:quick
+
+# 1-hour soak test
+pnpm soak:1h
+
+# Interactive soak test script
+pnpm soak:test
+
+# Run specific soak test directly
+cd src-tauri
+SOAK_DURATION_SECS=3600 cargo test --release soak_test_extended_vad_pipeline -- --ignored --nocapture
+```
+
+Available soak tests:
+- `soak_test_extended_vad_pipeline` - VAD pipeline under sustained load
+- `soak_test_extended_session_management` - Session lifecycle stress
+- `soak_test_extended_resampling` - Audio resampling throughput
+- `soak_test_concurrent_operations` - Multi-threaded operations
+- `soak_test_memory_stress` - Memory allocation/deallocation
+
 ## Test Categories
 
 | Category | Framework | Coverage |
@@ -128,6 +152,7 @@ pnpm e2e
 | Pipeline Integration | cargo test | 10 tests |
 | Visual Regression | Playwright | 15+ tests |
 | E2E Tests | WebDriverIO | 20+ tests |
+| Soak Tests | cargo test | 5 tests |
 
 ## Architecture
 
