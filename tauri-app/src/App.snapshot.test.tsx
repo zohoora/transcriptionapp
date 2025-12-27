@@ -7,11 +7,28 @@ import {
   mockDevices,
   mockModelStatusAvailable,
   mockModelStatusUnavailable,
+  mockSettings,
   createListenMock,
 } from './test/mocks';
 
 const mockInvoke = vi.mocked(invoke);
 const mockListen = vi.mocked(listen);
+
+// Helper to create standard mock implementation
+function createStandardMock(overrides: Record<string, unknown> = {}) {
+  return (command: string) => {
+    const responses: Record<string, unknown> = {
+      list_input_devices: mockDevices,
+      check_model_status: mockModelStatusAvailable,
+      get_settings: mockSettings,
+      ...overrides,
+    };
+    if (command in responses) {
+      return Promise.resolve(responses[command]);
+    }
+    return Promise.reject(new Error(`Unknown command: ${command}`));
+  };
+}
 
 describe('App Snapshots', () => {
   let listenHelper: ReturnType<typeof createListenMock>;
@@ -23,11 +40,7 @@ describe('App Snapshots', () => {
   });
 
   it('renders idle state correctly', async () => {
-    mockInvoke.mockImplementation((command: string) => {
-      if (command === 'list_input_devices') return Promise.resolve(mockDevices);
-      if (command === 'check_model_status') return Promise.resolve(mockModelStatusAvailable);
-      return Promise.reject(new Error('Unknown command'));
-    });
+    mockInvoke.mockImplementation(createStandardMock());
 
     const { container, findByText } = render(<App />);
 
@@ -38,11 +51,9 @@ describe('App Snapshots', () => {
   });
 
   it('renders model unavailable warning correctly', async () => {
-    mockInvoke.mockImplementation((command: string) => {
-      if (command === 'list_input_devices') return Promise.resolve(mockDevices);
-      if (command === 'check_model_status') return Promise.resolve(mockModelStatusUnavailable);
-      return Promise.reject(new Error('Unknown command'));
-    });
+    mockInvoke.mockImplementation(createStandardMock({
+      check_model_status: mockModelStatusUnavailable,
+    }));
 
     const { container, findByText } = render(<App />);
 
@@ -52,11 +63,7 @@ describe('App Snapshots', () => {
   });
 
   it('renders recording state correctly', async () => {
-    mockInvoke.mockImplementation((command: string) => {
-      if (command === 'list_input_devices') return Promise.resolve(mockDevices);
-      if (command === 'check_model_status') return Promise.resolve(mockModelStatusAvailable);
-      return Promise.reject(new Error('Unknown command'));
-    });
+    mockInvoke.mockImplementation(createStandardMock());
 
     const { container, findByText } = render(<App />);
 
@@ -76,11 +83,7 @@ describe('App Snapshots', () => {
   });
 
   it('renders with transcript correctly', async () => {
-    mockInvoke.mockImplementation((command: string) => {
-      if (command === 'list_input_devices') return Promise.resolve(mockDevices);
-      if (command === 'check_model_status') return Promise.resolve(mockModelStatusAvailable);
-      return Promise.reject(new Error('Unknown command'));
-    });
+    mockInvoke.mockImplementation(createStandardMock());
 
     const { container, findByText } = render(<App />);
 
@@ -106,11 +109,7 @@ describe('App Snapshots', () => {
   });
 
   it('renders completed state correctly', async () => {
-    mockInvoke.mockImplementation((command: string) => {
-      if (command === 'list_input_devices') return Promise.resolve(mockDevices);
-      if (command === 'check_model_status') return Promise.resolve(mockModelStatusAvailable);
-      return Promise.reject(new Error('Unknown command'));
-    });
+    mockInvoke.mockImplementation(createStandardMock());
 
     const { container, findByText } = render(<App />);
 
@@ -129,17 +128,13 @@ describe('App Snapshots', () => {
       segment_count: 1,
     });
 
-    await findByText('New Recording');
+    await findByText('New Session');
 
     expect(container.firstChild).toMatchSnapshot();
   });
 
   it('renders error state correctly', async () => {
-    mockInvoke.mockImplementation((command: string) => {
-      if (command === 'list_input_devices') return Promise.resolve(mockDevices);
-      if (command === 'check_model_status') return Promise.resolve(mockModelStatusAvailable);
-      return Promise.reject(new Error('Unknown command'));
-    });
+    mockInvoke.mockImplementation(createStandardMock());
 
     const { container, findByText } = render(<App />);
 
@@ -153,30 +148,31 @@ describe('App Snapshots', () => {
       error_message: 'Microphone access denied',
     });
 
-    await findByText(/Error:/);
+    await findByText('Microphone access denied');
 
     expect(container.firstChild).toMatchSnapshot();
   });
 
-  it('renders processing behind indicator correctly', async () => {
-    mockInvoke.mockImplementation((command: string) => {
-      if (command === 'list_input_devices') return Promise.resolve(mockDevices);
-      if (command === 'check_model_status') return Promise.resolve(mockModelStatusAvailable);
-      return Promise.reject(new Error('Unknown command'));
-    });
+  it('renders stopping state correctly', async () => {
+    mockInvoke.mockImplementation(createStandardMock());
 
     const { container, findByText } = render(<App />);
 
     await findByText('Start');
 
     listenHelper.emit('session_status', {
-      state: 'recording',
+      state: 'stopping',
       provider: 'whisper',
       elapsed_ms: 60000,
-      is_processing_behind: true,
+      is_processing_behind: false,
     });
 
-    await findByText('Processing...');
+    // Wait for the button to show '...' (stopping state)
+    await findByText('...');
+
+    // Button should have stopping class
+    const recordButton = container.querySelector('.record-button');
+    expect(recordButton).toHaveClass('stopping');
 
     expect(container.firstChild).toMatchSnapshot();
   });

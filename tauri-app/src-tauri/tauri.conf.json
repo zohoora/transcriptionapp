@@ -12,11 +12,11 @@
   "app": {
     "windows": [
       {
-        "title": "Transcription App",
-        "width": 800,
-        "height": 600,
-        "minWidth": 600,
-        "minHeight": 400,
+        "title": "Scribe",
+        "width": 320,
+        "height": 700,
+        "minWidth": 300,
+        "minHeight": 500,
         "resizable": true,
         "fullscreen": false
       }

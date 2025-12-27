@@ -171,7 +171,8 @@ impl WhisperProvider {
         for i in 0..num_segments {
             if let Ok(segment_text) = state.full_get_segment_text(i) {
                 let trimmed = segment_text.trim();
-                if !trimmed.is_empty() {
+                // Skip empty text and Whisper special tokens like [BLANK_AUDIO]
+                if !trimmed.is_empty() && !trimmed.starts_with('[') {
                     text_parts.push(trimmed.to_string());
                 }
             }

@@ -2,7 +2,7 @@
 
 exports[`App Snapshots > renders completed state correctly 1`] = `
 <div
-  class="app"
+  class="sidebar"
 >
   <header
     class="header"
@@ -11,57 +11,111 @@ exports[`App Snapshots > renders completed state correctly 1`] = `
       class="header-left"
     >
       <span
-        class="provider-badge"
+        class="status-dot "
+      />
+      <span
+        class="app-title"
       >
-        Whisper
+        Scribe
       </span>
     </div>
-    <div
-      class="header-right"
-    />
-  </header>
-  <main
-    class="transcript-area"
-  >
-    <div
-      class="transcript-text"
+    <button
+      aria-label="Settings"
+      class="settings-btn "
     >
-      <p>
-        Final transcript text here.
-      </p>
-    </div>
-  </main>
-  <footer
-    class="controls"
-  >
-    <div
-      class="controls-left"
-    />
-    <div
-      class="controls-center"
-    >
-      <button
-        class="btn btn-secondary"
+      <svg
+        fill="none"
+        height="18"
+        stroke="currentColor"
+        stroke-width="2"
+        viewBox="0 0 24 24"
+        width="18"
       >
-        New Recording
-      </button>
-    </div>
-    <div
-      class="controls-right"
+        <circle
+          cx="12"
+          cy="12"
+          r="3"
+        />
+        <path
+          d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"
+        />
+      </svg>
+    </button>
+  </header>
+  <section
+    class="record-section"
+  >
+    <button
+      class="record-button idle"
     >
+      <span
+        class="icon"
+      />
+      <span
+        class="label"
+      >
+        Start
+      </span>
+    </button>
+    <div
+      class="timer "
+    >
+      00:30
+    </div>
+  </section>
+  <section
+    class="transcript-section"
+  >
+    <div
+      class="transcript-header"
+    >
+      <div
+        class="transcript-header-left"
+      >
+        <span
+          class="chevron "
+        >
+          ▼
+        </span>
+        <span
+          class="transcript-title"
+        >
+          Transcript
+        </span>
+      </div>
       <button
-        class="btn btn-copy "
+        class="copy-btn "
       >
         Copy
       </button>
     </div>
-  </footer>
+    <div
+      class="transcript-content "
+    >
+      <div
+        class="transcript-text"
+      >
+        <p>
+          Final transcript text here.
+        </p>
+      </div>
+    </div>
+  </section>
+  <div
+    class="action-bar"
+  >
+    <button
+      class="btn btn-primary"
+    >
+      New Session
+    </button>
+  </div>
 </div>
 `;
 
 exports[`App Snapshots > renders error state correctly 1`] = `
 <div
-  class="app"
+  class="sidebar"
 >
   <header
     class="header"
@@ -70,50 +124,104 @@ exports[`App Snapshots > renders error state correctly 1`] = `
       class="header-left"
     >
       <span
-        class="provider-badge"
+        class="status-dot "
+      />
+      <span
+        class="app-title"
       >
-        Ready
+        Scribe
       </span>
     </div>
-    <div
-      class="header-right"
-    />
+    <button
+      aria-label="Settings"
+      class="settings-btn "
+    >
+      <svg
+        fill="none"
+        height="18"
+        stroke="currentColor"
+        stroke-width="2"
+        viewBox="0 0 24 24"
+        width="18"
+      >
+        <circle
+          cx="12"
+          cy="12"
+          r="3"
+        />
+        <path
+          d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"
+        />
+      </svg>
+    </button>
   </header>
   <div
     class="error-banner"
   >
-    <strong>
-      Error:
-    </strong>
-     
     Microphone access denied
   </div>
-  <main
-    class="transcript-area"
+  <section
+    class="record-section"
+  >
+    <button
+      class="record-button idle"
+    >
+      <span
+        class="icon"
+      />
+      <span
+        class="label"
+      >
+        Start
+      </span>
+    </button>
+    <div
+      class="timer "
+    >
+      00:00
+    </div>
+  </section>
+  <section
+    class="transcript-section"
   >
     <div
-      class="transcript-placeholder"
-    />
-  </main>
-  <footer
-    class="controls"
-  >
+      class="transcript-header"
+    >
+      <div
+        class="transcript-header-left"
+      >
+        <span
+          class="chevron "
+        >
+          ▼
+        </span>
+        <span
+          class="transcript-title"
+        >
+          Transcript
+        </span>
+      </div>
+      <button
+        class="copy-btn "
+        disabled=""
+      >
+        Copy
+      </button>
+    </div>
     <div
-      class="controls-left"
-    />
-    <div
-      class="controls-center"
-    />
-    <div
-      class="controls-right"
-    />
-  </footer>
+      class="transcript-content "
+    >
+      <div
+        class="transcript-placeholder"
+      />
+    </div>
+  </section>
 </div>
 `;
 
 exports[`App Snapshots > renders idle state correctly 1`] = `
 <div
-  class="app"
+  class="sidebar"
 >
   <header
     class="header"
@@ -122,73 +230,101 @@ exports[`App Snapshots > renders idle state correctly 1`] = `
       class="header-left"
     >
       <span
-        class="provider-badge"
+        class="status-dot idle"
+      />
+      <span
+        class="app-title"
       >
-        Ready
+        Scribe
       </span>
     </div>
-    <div
-      class="header-right"
-    />
-  </header>
-  <main
-    class="transcript-area"
-  >
-    <div
-      class="transcript-placeholder"
+    <button
+      aria-label="Settings"
+      class="settings-btn "
     >
-      Click Start to begin recording
-    </div>
-  </main>
-  <footer
-    class="controls"
-  >
-    <div
-      class="controls-left"
-    >
-      <select
-        aria-label="Select audio input device"
-        class="device-select"
+      <svg
+        fill="none"
+        height="18"
+        stroke="currentColor"
+        stroke-width="2"
+        viewBox="0 0 24 24"
+        width="18"
       >
-        <option
-          value="default"
-        >
-          Default Device
-        </option>
-        <option
-          value="device-1"
-        >
-          Built-in Microphone
-           
-          (default)
-        </option>
-        <option
-          value="device-2"
-        >
-          External USB Microphone
-           
-        </option>
-      </select>
-    </div>
-    <div
-      class="controls-center"
+        <circle
+          cx="12"
+          cy="12"
+          r="3"
+        />
+        <path
+          d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"
+        />
+      </svg>
+    </button>
+  </header>
+  <section
+    class="record-section"
+  >
+    <button
+      class="record-button idle"
     >
-      <button
-        class="btn btn-primary"
+      <span
+        class="icon"
+      />
+      <span
+        class="label"
       >
         Start
+      </span>
+    </button>
+    <div
+      class="timer "
+    >
+      00:00
+    </div>
+  </section>
+  <section
+    class="transcript-section"
+  >
+    <div
+      class="transcript-header"
+    >
+      <div
+        class="transcript-header-left"
+      >
+        <span
+          class="chevron "
+        >
+          ▼
+        </span>
+        <span
+          class="transcript-title"
+        >
+          Transcript
+        </span>
+      </div>
+      <button
+        class="copy-btn "
+        disabled=""
+      >
+        Copy
       </button>
     </div>
     <div
-      class="controls-right"
-    />
-  </footer>
+      class="transcript-content "
+    >
+      <div
+        class="transcript-placeholder"
+      >
+        Tap Start to begin
+      </div>
+    </div>
+  </section>
 </div>
 `;
 
 exports[`App Snapshots > renders model unavailable warning correctly 1`] = `
 <div
-  class="app"
+  class="sidebar"
 >
   <header
     class="header"
@@ -197,151 +333,107 @@ exports[`App Snapshots > renders model unavailable warning correctly 1`] = `
       class="header-left"
     >
       <span
-        class="provider-badge"
+        class="status-dot idle"
+      />
+      <span
+        class="app-title"
       >
-        Ready
+        Scribe
       </span>
     </div>
-    <div
-      class="header-right"
-    />
+    <button
+      aria-label="Settings"
+      class="settings-btn "
+    >
+      <svg
+        fill="none"
+        height="18"
+        stroke="currentColor"
+        stroke-width="2"
+        viewBox="0 0 24 24"
+        width="18"
+      >
+        <circle
+          cx="12"
+          cy="12"
+          r="3"
+        />
+        <path
+          d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"
+        />
+      </svg>
+    </button>
   </header>
   <div
     class="warning-banner"
   >
-    <strong>
-      Model not found:
-    </strong>
-     
-    Model file not found
-    <br />
-    <small>
-      Expected at: 
-      /Users/test/.cache/transcription-app/models/ggml-small.bin
-    </small>
+    Model not found. Check settings.
   </div>
-  <main
-    class="transcript-area"
+  <section
+    class="record-section"
   >
-    <div
-      class="transcript-placeholder"
-    >
-      Click Start to begin recording
-    </div>
-  </main>
-  <footer
-    class="controls"
-  >
-    <div
-      class="controls-left"
-    >
-      <select
-        aria-label="Select audio input device"
-        class="device-select"
-      >
-        <option
-          value="default"
-        >
-          Default Device
-        </option>
-        <option
-          value="device-1"
-        >
-          Built-in Microphone
-           
-          (default)
-        </option>
-        <option
-          value="device-2"
-        >
-          External USB Microphone
-           
-        </option>
-      </select>
-    </div>
-    <div
-      class="controls-center"
-    />
-    <div
-      class="controls-right"
-    />
-  </footer>
-</div>
-`;
-
-exports[`App Snapshots > renders processing behind indicator correctly 1`] = `
-<div
-  class="app"
->
-  <header
-    class="header"
-  >
-    <div
-      class="header-left"
+    <button
+      class="record-button idle"
+      disabled=""
     >
       <span
-        class="provider-badge"
+        class="icon"
+      />
+      <span
+        class="label"
       >
-        Whisper
+        Start
       </span>
-      <span
-        class="status-indicator behind"
+    </button>
+    <div
+      class="timer "
+    >
+      00:00
+    </div>
+  </section>
+  <section
+    class="transcript-section"
+  >
+    <div
+      class="transcript-header"
+    >
+      <div
+        class="transcript-header-left"
       >
         <span
-          class="dot"
-        />
-        Recording
-      </span>
-    </div>
-    <div
-      class="header-right"
-    >
-      <span
-        class="elapsed-time"
-      >
-        01:00
-      </span>
-      <span
-        class="processing-badge"
-      >
-        Processing...
-      </span>
-    </div>
-  </header>
-  <main
-    class="transcript-area"
-  >
-    <div
-      class="transcript-placeholder"
-    >
-      Listening...
-    </div>
-  </main>
-  <footer
-    class="controls"
-  >
-    <div
-      class="controls-left"
-    />
-    <div
-      class="controls-center"
-    >
+          class="chevron "
+        >
+          ▼
+        </span>
+        <span
+          class="transcript-title"
+        >
+          Transcript
+        </span>
+      </div>
       <button
-        class="btn btn-stop"
+        class="copy-btn "
+        disabled=""
       >
-        Stop
+        Copy
       </button>
     </div>
     <div
-      class="controls-right"
-    />
-  </footer>
+      class="transcript-content "
+    >
+      <div
+        class="transcript-placeholder"
+      >
+        Tap Start to begin
+      </div>
+    </div>
+  </section>
 </div>
 `;
 
 exports[`App Snapshots > renders recording state correctly 1`] = `
 <div
-  class="app"
+  class="sidebar"
 >
   <header
     class="header"
@@ -350,63 +442,205 @@ exports[`App Snapshots > renders recording state correctly 1`] = `
       class="header-left"
     >
       <span
-        class="provider-badge"
-      >
-        Whisper
-      </span>
+        class="status-dot recording"
+      />
       <span
-        class="status-indicator "
+        class="app-title"
       >
-        <span
-          class="dot"
+        Scribe
+      </span>
+    </div>
+    <button
+      aria-label="Settings"
+      class="settings-btn "
+    >
+      <svg
+        fill="none"
+        height="18"
+        stroke="currentColor"
+        stroke-width="2"
+        viewBox="0 0 24 24"
+        width="18"
+      >
+        <circle
+          cx="12"
+          cy="12"
+          r="3"
         />
-        Recording
-      </span>
-    </div>
-    <div
-      class="header-right"
+        <path
+          d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"
+        />
+      </svg>
+    </button>
+  </header>
+  <section
+    class="record-section"
+  >
+    <button
+      class="record-button recording"
     >
       <span
-        class="elapsed-time"
-      >
-        00:05
-      </span>
-    </div>
-  </header>
-  <main
-    class="transcript-area"
-  >
-    <div
-      class="transcript-placeholder"
-    >
-      Listening...
-    </div>
-  </main>
-  <footer
-    class="controls"
-  >
-    <div
-      class="controls-left"
-    />
-    <div
-      class="controls-center"
-    >
-      <button
-        class="btn btn-stop"
+        class="icon"
+      />
+      <span
+        class="label"
       >
         Stop
+      </span>
+    </button>
+    <div
+      class="timer active"
+    >
+      00:05
+    </div>
+  </section>
+  <section
+    class="transcript-section"
+  >
+    <div
+      class="transcript-header"
+    >
+      <div
+        class="transcript-header-left"
+      >
+        <span
+          class="chevron "
+        >
+          ▼
+        </span>
+        <span
+          class="transcript-title"
+        >
+          Transcript
+        </span>
+      </div>
+      <button
+        class="copy-btn "
+        disabled=""
+      >
+        Copy
       </button>
     </div>
     <div
-      class="controls-right"
-    />
-  </footer>
+      class="transcript-content "
+    >
+      <div
+        class="transcript-placeholder"
+      >
+        Listening...
+      </div>
+    </div>
+  </section>
+</div>
+`;
+
+exports[`App Snapshots > renders stopping state correctly 1`] = `
+<div
+  class="sidebar"
+>
+  <header
+    class="header"
+  >
+    <div
+      class="header-left"
+    >
+      <span
+        class="status-dot stopping"
+      />
+      <span
+        class="app-title"
+      >
+        Scribe
+      </span>
+    </div>
+    <button
+      aria-label="Settings"
+      class="settings-btn "
+    >
+      <svg
+        fill="none"
+        height="18"
+        stroke="currentColor"
+        stroke-width="2"
+        viewBox="0 0 24 24"
+        width="18"
+      >
+        <circle
+          cx="12"
+          cy="12"
+          r="3"
+        />
+        <path
+          d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"
+        />
+      </svg>
+    </button>
+  </header>
+  <section
+    class="record-section"
+  >
+    <button
+      class="record-button stopping"
+      disabled=""
+    >
+      <span
+        class="icon"
+      />
+      <span
+        class="label"
+      >
+        ...
+      </span>
+    </button>
+    <div
+      class="timer active"
+    >
+      01:00
+    </div>
+  </section>
+  <section
+    class="transcript-section"
+  >
+    <div
+      class="transcript-header"
+    >
+      <div
+        class="transcript-header-left"
+      >
+        <span
+          class="chevron "
+        >
+          ▼
+        </span>
+        <span
+          class="transcript-title"
+        >
+          Transcript
+        </span>
+      </div>
+      <button
+        class="copy-btn "
+        disabled=""
+      >
+        Copy
+      </button>
+    </div>
+    <div
+      class="transcript-content "
+    >
+      <div
+        class="transcript-placeholder"
+      >
+        Processing...
+      </div>
+    </div>
+  </section>
 </div>
 `;
 
 exports[`App Snapshots > renders with transcript correctly 1`] = `
 <div
-  class="app"
+  class="sidebar"
 >
   <header
     class="header"
@@ -415,72 +649,103 @@ exports[`App Snapshots > renders with transcript correctly 1`] = `
       class="header-left"
     >
       <span
-        class="provider-badge"
-      >
-        Whisper
-      </span>
+        class="status-dot recording"
+      />
       <span
-        class="status-indicator "
+        class="app-title"
       >
-        <span
-          class="dot"
+        Scribe
+      </span>
+    </div>
+    <button
+      aria-label="Settings"
+      class="settings-btn "
+    >
+      <svg
+        fill="none"
+        height="18"
+        stroke="currentColor"
+        stroke-width="2"
+        viewBox="0 0 24 24"
+        width="18"
+      >
+        <circle
+          cx="12"
+          cy="12"
+          r="3"
         />
-        Recording
-      </span>
-    </div>
-    <div
-      class="header-right"
+        <path
+          d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"
+        />
+      </svg>
+    </button>
+  </header>
+  <section
+    class="record-section"
+  >
+    <button
+      class="record-button recording"
     >
       <span
-        class="elapsed-time"
-      >
-        00:10
-      </span>
-    </div>
-  </header>
-  <main
-    class="transcript-area"
-  >
-    <div
-      class="transcript-text"
-    >
-      <p>
-        Hello, this is a test transcription.
-      </p>
-      <p>
-        This is the second paragraph.
-      </p>
-      <p
-        class="draft-text"
-      >
-        Still speaking...
-      </p>
-    </div>
-  </main>
-  <footer
-    class="controls"
-  >
-    <div
-      class="controls-left"
-    />
-    <div
-      class="controls-center"
-    >
-      <button
-        class="btn btn-stop"
+        class="icon"
+      />
+      <span
+        class="label"
       >
         Stop
-      </button>
-    </div>
+      </span>
+    </button>
     <div
-      class="controls-right"
+      class="timer active"
     >
+      00:10
+    </div>
+  </section>
+  <section
+    class="transcript-section"
+  >
+    <div
+      class="transcript-header"
+    >
+      <div
+        class="transcript-header-left"
+      >
+        <span
+          class="chevron "
+        >
+          ▼
+        </span>
+        <span
+          class="transcript-title"
+        >
+          Transcript
+        </span>
+      </div>
       <button
-        class="btn btn-copy "
+        class="copy-btn "
       >
         Copy
       </button>
     </div>
-  </footer>
+    <div
+      class="transcript-content "
+    >
+      <div
+        class="transcript-text"
+      >
+        <p>
+          Hello, this is a test transcription.
+        </p>
+        <p>
+          This is the second paragraph.
+        </p>
+        <p
+          class="draft-text"
+        >
+          Still speaking...
+        </p>
+      </div>
+    </div>
+  </section>
 </div>
 `;

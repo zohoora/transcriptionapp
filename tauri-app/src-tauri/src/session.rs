@@ -94,7 +94,14 @@ impl SessionManager {
         let finalized_text = self
             .segments
             .iter()
-            .map(|s| s.text.as_str())
+            .map(|s| {
+                // Format with speaker label if available
+                if let Some(ref speaker) = s.speaker_id {
+                    format!("[{}]: {}", speaker, s.text)
+                } else {
+                    s.text.clone()
+                }
+            })
             .collect::<Vec<_>>()
             .join("\n\n");
 

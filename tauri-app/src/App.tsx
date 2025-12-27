@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { listen, UnlistenFn } from '@tauri-apps/api/event';
 import { writeText } from '@tauri-apps/plugin-clipboard-manager';
@@ -38,6 +38,42 @@ interface ModelStatus {
   error: string | null;
 }
 
+interface Settings {
+  whisper_model: string;
+  language: string;
+  input_device_id: string | null;
+  output_format: string;
+  vad_threshold: number;
+  silence_to_flush_ms: number;
+  max_utterance_ms: number;
+  diarization_enabled: boolean;
+  max_speakers: number;
+}
+
+const WHISPER_MODELS = [
+  { value: 'tiny', label: 'Tiny (fastest)' },
+  { value: 'base', label: 'Base' },
+  { value: 'small', label: 'Small (recommended)' },
+  { value: 'medium', label: 'Medium' },
+  { value: 'large', label: 'Large (best)' },
+];
+
+const LANGUAGES = [
+  { value: 'en', label: 'English' },
+  { value: 'fa', label: 'Persian' },
+  { value: 'ar', label: 'Arabic' },
+  { value: 'es', label: 'Spanish' },
+  { value: 'fr', label: 'French' },
+  { value: 'de', label: 'German' },
+  { value: 'zh', label: 'Chinese' },
+  { value: 'ja', label: 'Japanese' },
+  { value: 'ko', label: 'Korean' },
+  { value: 'ru', label: 'Russian' },
+  { value: 'pt', label: 'Portuguese' },
+  { value: 'it', label: 'Italian' },
+  { value: 'auto', label: 'Auto-detect' },
+];
+
 function formatTime(ms: number): string {
   const totalSeconds = Math.floor(ms / 1000);
   const hours = Math.floor(totalSeconds / 3600);
@@ -66,8 +102,27 @@ function App() {
   const [selectedDevice, setSelectedDevice] = useState<string>('default');
   const [modelStatus, setModelStatus] = useState<ModelStatus | null>(null);
   const [copySuccess, setCopySuccess] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
+  const [transcriptExpanded, setTranscriptExpanded] = useState(true);
+  const [settings, setSettings] = useState<Settings | null>(null);
+  const [pendingSettings, setPendingSettings] = useState<{
+    model: string;
+    language: string;
+    device: string;
+    diarization_enabled: boolean;
+    max_speakers: number;
+  } | null>(null);
 
-  // Load devices and model status on mount
+  const transcriptRef = useRef<HTMLDivElement>(null);
+
+  // Auto-scroll transcript during recording
+  useEffect(() => {
+    if (status.state === 'recording' && transcriptRef.current) {
+      transcriptRef.current.scrollTop = transcriptRef.current.scrollHeight;
+    }
+  }, [transcript.finalized_text, status.state]);
+
+  // Load devices, model status, and settings on mount
   useEffect(() => {
     async function init() {
       try {
@@ -76,6 +131,19 @@ function App() {
 
         const modelResult = await invoke<ModelStatus>('check_model_status');
         setModelStatus(modelResult);
+
+        const settingsResult = await invoke<Settings>('get_settings');
+        setSettings(settingsResult);
+        setPendingSettings({
+          model: settingsResult.whisper_model,
+          language: settingsResult.language,
+          device: settingsResult.input_device_id || 'default',
+          diarization_enabled: settingsResult.diarization_enabled,
+          max_speakers: settingsResult.max_speakers,
+        });
+        if (settingsResult.input_device_id) {
+          setSelectedDevice(settingsResult.input_device_id);
+        }
       } catch (e) {
         console.error('Failed to initialize:', e);
       }
@@ -94,6 +162,7 @@ function App() {
       });
 
       unlistenTranscript = await listen<TranscriptUpdate>('transcript_update', (event) => {
+        console.log('Transcript update:', event.payload);
         setTranscript(event.payload);
       });
     }
@@ -145,6 +214,32 @@ function App() {
     }
   }, []);
 
+  const handleSaveSettings = useCallback(async () => {
+    if (!settings || !pendingSettings) return;
+
+    try {
+      const updatedSettings: Settings = {
+        ...settings,
+        whisper_model: pendingSettings.model,
+        language: pendingSettings.language,
+        input_device_id: pendingSettings.device === 'default' ? null : pendingSettings.device,
+        diarization_enabled: pendingSettings.diarization_enabled,
+        max_speakers: pendingSettings.max_speakers,
+      };
+      const result = await invoke<Settings>('set_settings', { settings: updatedSettings });
+      setSettings(result);
+      setSelectedDevice(pendingSettings.device);
+
+      // Refresh model status in case model changed
+      const modelResult = await invoke<ModelStatus>('check_model_status');
+      setModelStatus(modelResult);
+
+      setShowSettings(false);
+    } catch (e) {
+      console.error('Failed to save settings:', e);
+    }
+  }, [settings, pendingSettings]);
+
   const isRecording = status.state === 'recording';
   const isStopping = status.state === 'stopping';
   const isCompleted = status.state === 'completed';
@@ -153,137 +248,250 @@ function App() {
   const hasError = status.state === 'error';
 
   const canStart = isIdle && modelStatus?.available;
-  const canStop = isRecording;
   const canCopy = (isCompleted || isRecording) && transcript.finalized_text.length > 0;
 
+  // Determine button state
+  const getButtonState = () => {
+    if (isRecording) return 'recording';
+    if (isStopping) return 'stopping';
+    if (isPreparing) return 'preparing';
+    return 'idle';
+  };
+
+  const getStatusDotClass = () => {
+    if (isRecording) return 'recording';
+    if (isStopping) return 'stopping';
+    if (isPreparing) return 'preparing';
+    if (isIdle) return 'idle';
+    return '';
+  };
+
+  const handleRecordClick = () => {
+    if (isRecording) {
+      handleStop();
+    } else if (canStart) {
+      handleStart();
+    }
+  };
+
   return (
-    <div className="app">
+    <div className="sidebar">
       {/* Header */}
       <header className="header">
         <div className="header-left">
-          <span className="provider-badge">
-            {status.provider === 'whisper' ? 'Whisper' : 'Ready'}
-          </span>
-          {isRecording && (
-            <span className={`status-indicator ${status.is_processing_behind ? 'behind' : ''}`}>
-              <span className="dot" />
-              Recording
-            </span>
-          )}
-          {isStopping && (
-            <span className="status-indicator stopping">
-              <span className="dot" />
-              Finishing...
-            </span>
-          )}
-          {isPreparing && (
-            <span className="status-indicator preparing">
-              <span className="dot" />
-              Preparing...
-            </span>
-          )}
+          <span className={`status-dot ${getStatusDotClass()}`} />
+          <span className="app-title">Scribe</span>
         </div>
-        <div className="header-right">
-          {(isRecording || isStopping) && (
-            <span className="elapsed-time">{formatTime(status.elapsed_ms)}</span>
-          )}
-          {status.is_processing_behind && (
-            <span className="processing-badge">Processing...</span>
-          )}
-        </div>
+        <button
+          className={`settings-btn ${showSettings ? 'active' : ''}`}
+          onClick={() => setShowSettings(!showSettings)}
+          aria-label="Settings"
+        >
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <circle cx="12" cy="12" r="3" />
+            <path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42" />
+          </svg>
+        </button>
       </header>
 
       {/* Model warning */}
       {!modelStatus?.available && (
         <div className="warning-banner">
-          <strong>Model not found:</strong> {modelStatus?.error || 'Please download a Whisper model'}
-          <br />
-          <small>Expected at: {modelStatus?.path}</small>
+          Model not found. Check settings.
         </div>
       )}
 
       {/* Error message */}
       {hasError && status.error_message && (
         <div className="error-banner">
-          <strong>Error:</strong> {status.error_message}
+          {status.error_message}
         </div>
       )}
 
-      {/* Transcript area */}
-      <main className="transcript-area">
-        {transcript.finalized_text ? (
-          <div className="transcript-text">
-            {transcript.finalized_text.split('\n\n').map((paragraph, i) => (
-              <p key={i}>{paragraph}</p>
-            ))}
-            {transcript.draft_text && (
-              <p className="draft-text">{transcript.draft_text}</p>
-            )}
-          </div>
-        ) : (
-          <div className="transcript-placeholder">
-            {isIdle && 'Click Start to begin recording'}
-            {isPreparing && 'Initializing...'}
-            {isRecording && 'Listening...'}
-            {isStopping && 'Processing final audio...'}
-          </div>
-        )}
-      </main>
+      {/* Record Section */}
+      <section className="record-section">
+        <button
+          className={`record-button ${getButtonState()}`}
+          onClick={handleRecordClick}
+          disabled={isPreparing || isStopping || !modelStatus?.available}
+        >
+          <span className="icon" />
+          <span className="label">
+            {isRecording ? 'Stop' : isPreparing ? '...' : isStopping ? '...' : 'Start'}
+          </span>
+        </button>
+        <div className={`timer ${isRecording || isStopping ? 'active' : ''}`}>
+          {formatTime(status.elapsed_ms)}
+        </div>
+      </section>
 
-      {/* Controls */}
-      <footer className="controls">
-        <div className="controls-left">
-          {isIdle && (
-            <select
-              value={selectedDevice}
-              onChange={(e) => setSelectedDevice(e.target.value)}
-              className="device-select"
-              aria-label="Select audio input device"
-            >
-              <option value="default">Default Device</option>
-              {devices.map((d) => (
-                <option key={d.id} value={d.id}>
-                  {d.name} {d.is_default ? '(default)' : ''}
-                </option>
+      {/* Transcript Section */}
+      <section className="transcript-section">
+        <div
+          className="transcript-header"
+          onClick={() => setTranscriptExpanded(!transcriptExpanded)}
+        >
+          <div className="transcript-header-left">
+            <span className={`chevron ${transcriptExpanded ? '' : 'collapsed'}`}>
+              &#9660;
+            </span>
+            <span className="transcript-title">Transcript</span>
+          </div>
+          <button
+            className={`copy-btn ${copySuccess ? 'success' : ''}`}
+            onClick={(e) => {
+              e.stopPropagation();
+              handleCopy();
+            }}
+            disabled={!canCopy}
+          >
+            {copySuccess ? 'Copied!' : 'Copy'}
+          </button>
+        </div>
+        <div
+          ref={transcriptRef}
+          className={`transcript-content ${transcriptExpanded ? '' : 'collapsed'}`}
+        >
+          {transcript.finalized_text ? (
+            <div className="transcript-text">
+              {transcript.finalized_text.split('\n\n').map((paragraph, i) => (
+                <p key={i}>{paragraph}</p>
               ))}
-            </select>
+              {transcript.draft_text && (
+                <p className="draft-text">{transcript.draft_text}</p>
+              )}
+            </div>
+          ) : (
+            <div className="transcript-placeholder">
+              {isIdle && 'Tap Start to begin'}
+              {isPreparing && 'Initializing...'}
+              {isRecording && 'Listening...'}
+              {isStopping && 'Processing...'}
+              {isCompleted && 'No transcript'}
+            </div>
           )}
         </div>
+      </section>
 
-        <div className="controls-center">
-          {canStart && (
-            <button className="btn btn-primary" onClick={handleStart}>
-              Start
-            </button>
-          )}
-          {canStop && (
-            <button className="btn btn-stop" onClick={handleStop}>
-              Stop
-            </button>
-          )}
-          {(isPreparing || isStopping) && (
-            <button className="btn btn-disabled" disabled>
-              {isPreparing ? 'Preparing...' : 'Stopping...'}
-            </button>
-          )}
-          {isCompleted && (
-            <button className="btn btn-secondary" onClick={handleReset}>
-              New Recording
-            </button>
-          )}
+      {/* Action Bar - only show when completed */}
+      {isCompleted && (
+        <div className="action-bar">
+          <button className="btn btn-primary" onClick={handleReset}>
+            New Session
+          </button>
         </div>
+      )}
 
-        <div className="controls-right">
-          {canCopy && (
-            <button
-              className={`btn btn-copy ${copySuccess ? 'success' : ''}`}
-              onClick={handleCopy}
-            >
-              {copySuccess ? 'Copied!' : 'Copy'}
-            </button>
-          )}
-        </div>
-      </footer>
+      {/* Settings Drawer */}
+      {showSettings && (
+        <>
+          <div className="settings-overlay" onClick={() => setShowSettings(false)} />
+          <div className="settings-drawer">
+            <div className="settings-drawer-header">
+              <span className="settings-drawer-title">Settings</span>
+              <button className="close-btn" onClick={() => setShowSettings(false)}>
+                &times;
+              </button>
+            </div>
+            <div className="settings-drawer-content">
+              {pendingSettings && (
+                <>
+                  <div className="settings-group">
+                    <label className="settings-label" htmlFor="model-select">Model</label>
+                    <select
+                      id="model-select"
+                      className="settings-select"
+                      value={pendingSettings.model}
+                      onChange={(e) => setPendingSettings({ ...pendingSettings, model: e.target.value })}
+                    >
+                      {WHISPER_MODELS.map((m) => (
+                        <option key={m.value} value={m.value}>
+                          {m.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="settings-group">
+                    <label className="settings-label" htmlFor="language-select">Language</label>
+                    <select
+                      id="language-select"
+                      className="settings-select"
+                      value={pendingSettings.language}
+                      onChange={(e) => setPendingSettings({ ...pendingSettings, language: e.target.value })}
+                    >
+                      {LANGUAGES.map((l) => (
+                        <option key={l.value} value={l.value}>
+                          {l.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="settings-group">
+                    <label className="settings-label" htmlFor="microphone-select">Microphone</label>
+                    <select
+                      id="microphone-select"
+                      className="settings-select"
+                      value={pendingSettings.device}
+                      onChange={(e) => setPendingSettings({ ...pendingSettings, device: e.target.value })}
+                    >
+                      <option value="default">Default</option>
+                      {devices.map((d) => (
+                        <option key={d.id} value={d.id}>
+                          {d.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="settings-group">
+                    <div className="settings-toggle">
+                      <span className="settings-label" style={{ marginBottom: 0 }}>Speaker Detection</span>
+                      <label className="toggle-switch">
+                        <input
+                          type="checkbox"
+                          checked={pendingSettings.diarization_enabled}
+                          onChange={(e) =>
+                            setPendingSettings({ ...pendingSettings, diarization_enabled: e.target.checked })
+                          }
+                          aria-label="Enable speaker detection"
+                        />
+                        <span className="toggle-slider"></span>
+                      </label>
+                    </div>
+                  </div>
+
+                  {pendingSettings.diarization_enabled && (
+                    <div className="settings-group">
+                      <label className="settings-label" htmlFor="max-speakers-slider">Max Speakers</label>
+                      <div className="settings-slider">
+                        <input
+                          id="max-speakers-slider"
+                          type="range"
+                          min="2"
+                          max="10"
+                          value={pendingSettings.max_speakers}
+                          onChange={(e) =>
+                            setPendingSettings({ ...pendingSettings, max_speakers: parseInt(e.target.value) })
+                          }
+                        />
+                        <span className="slider-value">{pendingSettings.max_speakers}</span>
+                      </div>
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+            <div className="settings-drawer-footer">
+              <p className="settings-note">Changes apply on next recording</p>
+              <button className="btn-save" onClick={handleSaveSettings}>
+                Save Settings
+              </button>
+            </div>
+          </div>
+        </>
+      )}
     </div>
   );
 }

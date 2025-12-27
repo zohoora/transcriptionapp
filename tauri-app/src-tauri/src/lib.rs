@@ -12,6 +12,7 @@
 //! - [`session`] - Recording session state machine and transcript management
 //! - [`transcription`] - Transcription types (segments, utterances)
 //! - [`vad`] - Voice Activity Detection and audio gating
+//! - [`diarization`] - Speaker diarization using ONNX embeddings
 //!
 //! ## Usage
 //!
@@ -28,6 +29,7 @@
 pub mod audio;
 mod commands;
 pub mod config;
+pub mod diarization;
 mod pipeline;
 #[cfg(test)]
 mod command_tests;
@@ -43,7 +45,7 @@ pub mod vad;
 
 use commands::PipelineState;
 use std::sync::{Arc, Mutex};
-use tauri::Manager;
+use tauri::{Manager, WindowEvent};
 use tracing::info;
 use tracing_subscriber::EnvFilter;
 
@@ -81,6 +83,24 @@ pub fn run() {
             commands::reset_session,
             commands::check_model_status,
         ])
+        .on_window_event(|window, event| {
+            if let WindowEvent::CloseRequested { .. } = event {
+                // Stop any running pipeline before exit
+                if let Some(pipeline_state) = window.app_handle().try_state::<Mutex<PipelineState>>() {
+                    if let Ok(mut ps) = pipeline_state.lock() {
+                        if let Some(handle) = ps.handle.take() {
+                            info!("Stopping pipeline on window close");
+                            handle.stop();
+                            // Don't join here - just let it stop
+                        }
+                    }
+                }
+                // Force immediate termination to avoid ONNX Runtime mutex issues
+                // Using _exit bypasses all cleanup that causes the crash
+                info!("Clean exit");
+                unsafe { libc::_exit(0) };
+            }
+        })
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

@@ -10,9 +10,11 @@ A real-time speech-to-text transcription application built with Tauri, React, an
 
 - Real-time audio transcription using Whisper
 - Voice Activity Detection (VAD) for smart audio segmentation
+- Speaker diarization with configurable max speakers
+- Compact sidebar UI designed for clinical ambient scribe use
 - Support for multiple audio input devices
 - Copy transcript to clipboard
-- Paragraph-formatted output
+- Paragraph-formatted output with speaker labels
 
 ## Requirements
 
@@ -39,8 +41,9 @@ pnpm tauri build
 ```
 tauri-app/
 ├── src/                    # React frontend
-│   ├── App.tsx            # Main application component
+│   ├── App.tsx            # Main sidebar component
 │   ├── ErrorBoundary.tsx  # Error handling component
+│   ├── styles.css         # Light mode sidebar styles
 │   └── test/              # Test mocks and utilities
 ├── src-tauri/             # Rust backend
 │   ├── src/
@@ -48,7 +51,11 @@ tauri-app/
 │   │   ├── config.rs      # Settings management
 │   │   ├── session.rs     # Recording session state
 │   │   ├── transcription.rs # Segment/utterance types
-│   │   └── vad.rs         # Voice Activity Detection
+│   │   ├── vad.rs         # Voice Activity Detection
+│   │   └── diarization/   # Speaker diarization module
+│   │       ├── mod.rs     # Embedding extraction
+│   │       ├── clustering.rs # Online speaker clustering
+│   │       └── config.rs  # Diarization settings
 │   ├── benches/           # Performance benchmarks
 │   └── fuzz/              # Fuzz testing targets
 ├── e2e/                   # End-to-end tests (WebDriver)
@@ -142,10 +149,10 @@ Available soak tests:
 
 | Category | Framework | Coverage |
 |----------|-----------|----------|
-| Unit Tests (Frontend) | Vitest | 94 tests |
-| Unit Tests (Rust) | cargo test | 119 tests |
+| Unit Tests (Frontend) | Vitest | 119 tests |
+| Unit Tests (Rust) | cargo test | 160 tests |
 | Snapshot Tests | Vitest | 7 snapshots |
-| Accessibility Tests | axe-core | 9 tests |
+| Accessibility Tests | vitest-axe | 12 tests |
 | Contract Tests | Vitest | 24 tests |
 | Property-based Tests | proptest | 17 tests |
 | Stress Tests | cargo test | 11 tests |

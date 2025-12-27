@@ -71,6 +71,30 @@ export const mockTranscript: TranscriptUpdate = {
   segment_count: 1,
 };
 
+export interface Settings {
+  whisper_model: string;
+  language: string;
+  input_device_id: string | null;
+  output_format: string;
+  vad_threshold: number;
+  silence_to_flush_ms: number;
+  max_utterance_ms: number;
+  diarization_enabled: boolean;
+  max_speakers: number;
+}
+
+export const mockSettings: Settings = {
+  whisper_model: 'small',
+  language: 'en',
+  input_device_id: null,
+  output_format: 'text',
+  vad_threshold: 0.5,
+  silence_to_flush_ms: 1000,
+  max_utterance_ms: 30000,
+  diarization_enabled: true,
+  max_speakers: 4,
+};
+
 // Helper to create invoke mock that responds to different commands
 export function createInvokeMock(responses: Record<string, unknown>) {
   return vi.fn((command: string, _args?: unknown) => {

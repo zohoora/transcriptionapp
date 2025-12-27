@@ -35,6 +35,8 @@ mod tests {
             vad_threshold: 0.6,
             silence_to_flush_ms: 600,
             max_utterance_ms: 30000,
+            diarization_enabled: true,
+            max_speakers: 5,
         };
 
         // Serialize to JSON

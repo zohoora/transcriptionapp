@@ -121,6 +121,12 @@ pub async fn start_session(
     };
 
     // Create pipeline config
+    let diarization_model_path = if config.diarization_enabled {
+        config.get_diarization_model_path().ok()
+    } else {
+        None
+    };
+
     let pipeline_config = PipelineConfig {
         device_id: if device_id.as_deref() == Some("default") {
             None
@@ -133,6 +139,10 @@ pub async fn start_session(
         silence_to_flush_ms: config.silence_to_flush_ms,
         max_utterance_ms: config.max_utterance_ms,
         n_threads: 4,
+        diarization_enabled: config.diarization_enabled,
+        diarization_model_path,
+        speaker_similarity_threshold: config.speaker_similarity_threshold,
+        max_speakers: config.max_speakers,
     };
 
     // Create message channel

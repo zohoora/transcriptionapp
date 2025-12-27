@@ -14,6 +14,9 @@ use crate::audio::{calculate_ring_buffer_capacity, get_device, select_input_conf
 use crate::transcription::{Segment, WhisperProvider};
 use crate::vad::{VadConfig, VadGatedPipeline};
 
+#[cfg(feature = "diarization")]
+use crate::diarization::{DiarizationConfig, DiarizationProvider};
+
 /// VAD chunk size at 16kHz
 const VAD_CHUNK_SIZE: usize = 512;
 
@@ -44,6 +47,11 @@ pub struct PipelineConfig {
     pub silence_to_flush_ms: u32,
     pub max_utterance_ms: u32,
     pub n_threads: i32,
+    // Diarization settings
+    pub diarization_enabled: bool,
+    pub diarization_model_path: Option<PathBuf>,
+    pub speaker_similarity_threshold: f32,
+    pub max_speakers: usize,
 }
 
 impl Default for PipelineConfig {
@@ -56,6 +64,10 @@ impl Default for PipelineConfig {
             silence_to_flush_ms: 500,
             max_utterance_ms: 25000,
             n_threads: 4,
+            diarization_enabled: false,
+            diarization_model_path: None,
+            speaker_similarity_threshold: 0.75,
+            max_speakers: 10,
         }
     }
 }
@@ -193,6 +205,43 @@ fn run_pipeline_thread_inner(
     // Create VAD pipeline
     let mut pipeline = VadGatedPipeline::with_config(vad_config);
 
+    // Create diarization provider if enabled
+    #[cfg(feature = "diarization")]
+    let mut diarization: Option<DiarizationProvider> = if config.diarization_enabled {
+        if let Some(ref model_path) = config.diarization_model_path {
+            if model_path.exists() {
+                let diar_config = DiarizationConfig {
+                    model_path: model_path.clone(),
+                    similarity_threshold: config.speaker_similarity_threshold,
+                    max_speakers: config.max_speakers,
+                    n_threads: 2,
+                    ..Default::default()
+                };
+                match DiarizationProvider::new(diar_config) {
+                    Ok(provider) => {
+                        info!("Diarization enabled with model: {:?}", model_path);
+                        Some(provider)
+                    }
+                    Err(e) => {
+                        warn!("Failed to initialize diarization: {}, continuing without", e);
+                        None
+                    }
+                }
+            } else {
+                warn!("Diarization model not found at {:?}, continuing without", model_path);
+                None
+            }
+        } else {
+            warn!("Diarization enabled but no model path specified");
+            None
+        }
+    } else {
+        None
+    };
+
+    #[cfg(not(feature = "diarization"))]
+    let diarization: Option<()> = None;
+
     // Staging buffer for VAD chunks
     let mut staging_buffer: Vec<f32> = Vec::with_capacity(VAD_CHUNK_SIZE * 2);
 
@@ -221,6 +270,27 @@ fn run_pipeline_thread_inner(
 
             // Transcribe any remaining utterances
             while let Some(utterance) = pipeline.pop_utterance() {
+                // Identify speaker if diarization is enabled
+                #[cfg(feature = "diarization")]
+                let speaker_id: Option<String> = if let Some(ref mut diar) = diarization {
+                    match diar.identify_speaker_from_audio(
+                        &utterance.audio,
+                        utterance.start_ms,
+                        utterance.end_ms,
+                    ) {
+                        Ok(id) => Some(id),
+                        Err(e) => {
+                            debug!("Diarization failed for utterance: {}", e);
+                            None
+                        }
+                    }
+                } else {
+                    None
+                };
+
+                #[cfg(not(feature = "diarization"))]
+                let speaker_id: Option<String> = None;
+
                 let context_ref = if context.is_empty() {
                     None
                 } else {
@@ -228,7 +298,8 @@ fn run_pipeline_thread_inner(
                 };
 
                 match whisper.transcribe(&utterance, context_ref) {
-                    Ok(segment) => {
+                    Ok(mut segment) => {
+                        segment.speaker_id = speaker_id;
                         if !segment.text.is_empty() {
                             context.push(' ');
                             context.push_str(&segment.text);
@@ -294,6 +365,32 @@ fn run_pipeline_thread_inner(
                 utterance.start_ms, utterance.end_ms
             );
 
+            // Identify speaker if diarization is enabled
+            #[cfg(feature = "diarization")]
+            let speaker_id: Option<String> = if let Some(ref mut diar) = diarization {
+                info!("Running diarization on utterance with {} samples", utterance.audio.len());
+                match diar.identify_speaker_from_audio(
+                    &utterance.audio,
+                    utterance.start_ms,
+                    utterance.end_ms,
+                ) {
+                    Ok(id) => {
+                        info!("Diarization result: {}", id);
+                        Some(id)
+                    }
+                    Err(e) => {
+                        warn!("Diarization failed for utterance: {}", e);
+                        None
+                    }
+                }
+            } else {
+                info!("Diarization not enabled or not initialized");
+                None
+            };
+
+            #[cfg(not(feature = "diarization"))]
+            let speaker_id: Option<String> = None;
+
             let context_ref = if context.is_empty() {
                 None
             } else {
@@ -301,7 +398,10 @@ fn run_pipeline_thread_inner(
             };
 
             match whisper.transcribe(&utterance, context_ref) {
-                Ok(segment) => {
+                Ok(mut segment) => {
+                    // Set speaker ID from diarization
+                    segment.speaker_id = speaker_id;
+
                     if !segment.text.is_empty() {
                         // Update context
                         context.push(' ');
@@ -344,6 +444,16 @@ fn run_pipeline_thread_inner(
             last_status_time = std::time::Instant::now();
         }
     }
+
+    // Explicitly drop heavy resources in the correct order
+    // to avoid ONNX Runtime mutex issues during shutdown
+    #[cfg(feature = "diarization")]
+    drop(diarization);
+
+    drop(whisper);
+
+    // Small delay to let ONNX/Whisper C++ destructors complete
+    std::thread::sleep(Duration::from_millis(50));
 
     info!("Audio processor stopped");
     Ok(())

@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, waitFor } from '@testing-library/react';
+import { render } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { axe } from 'vitest-axe';
 import { toHaveNoViolations } from 'vitest-axe/matchers';
 import App from './App';
@@ -9,6 +10,7 @@ import {
   mockDevices,
   mockModelStatusAvailable,
   mockModelStatusUnavailable,
+  mockSettings,
   createListenMock,
 } from './test/mocks';
 
@@ -16,6 +18,23 @@ expect.extend({ toHaveNoViolations });
 
 const mockInvoke = vi.mocked(invoke);
 const mockListen = vi.mocked(listen);
+
+// Helper to create standard mock implementation
+function createStandardMock(overrides: Record<string, unknown> = {}) {
+  return (command: string) => {
+    const responses: Record<string, unknown> = {
+      list_input_devices: mockDevices,
+      check_model_status: mockModelStatusAvailable,
+      get_settings: mockSettings,
+      set_settings: mockSettings,
+      ...overrides,
+    };
+    if (command in responses) {
+      return Promise.resolve(responses[command]);
+    }
+    return Promise.reject(new Error(`Unknown command: ${command}`));
+  };
+}
 
 describe('Accessibility Tests', () => {
   let listenHelper: ReturnType<typeof createListenMock>;
@@ -27,11 +46,7 @@ describe('Accessibility Tests', () => {
   });
 
   it('idle state has no accessibility violations', async () => {
-    mockInvoke.mockImplementation((command: string) => {
-      if (command === 'list_input_devices') return Promise.resolve(mockDevices);
-      if (command === 'check_model_status') return Promise.resolve(mockModelStatusAvailable);
-      return Promise.reject(new Error('Unknown command'));
-    });
+    mockInvoke.mockImplementation(createStandardMock());
 
     const { container, findByText } = render(<App />);
     await findByText('Start');
@@ -41,11 +56,7 @@ describe('Accessibility Tests', () => {
   });
 
   it('recording state has no accessibility violations', async () => {
-    mockInvoke.mockImplementation((command: string) => {
-      if (command === 'list_input_devices') return Promise.resolve(mockDevices);
-      if (command === 'check_model_status') return Promise.resolve(mockModelStatusAvailable);
-      return Promise.reject(new Error('Unknown command'));
-    });
+    mockInvoke.mockImplementation(createStandardMock());
 
     const { container, findByText } = render(<App />);
     await findByText('Start');
@@ -64,11 +75,7 @@ describe('Accessibility Tests', () => {
   });
 
   it('transcript display has no accessibility violations', async () => {
-    mockInvoke.mockImplementation((command: string) => {
-      if (command === 'list_input_devices') return Promise.resolve(mockDevices);
-      if (command === 'check_model_status') return Promise.resolve(mockModelStatusAvailable);
-      return Promise.reject(new Error('Unknown command'));
-    });
+    mockInvoke.mockImplementation(createStandardMock());
 
     const { container, findByText } = render(<App />);
     await findByText('Start');
@@ -93,11 +100,7 @@ describe('Accessibility Tests', () => {
   });
 
   it('error state has no accessibility violations', async () => {
-    mockInvoke.mockImplementation((command: string) => {
-      if (command === 'list_input_devices') return Promise.resolve(mockDevices);
-      if (command === 'check_model_status') return Promise.resolve(mockModelStatusAvailable);
-      return Promise.reject(new Error('Unknown command'));
-    });
+    mockInvoke.mockImplementation(createStandardMock());
 
     const { container, findByText } = render(<App />);
     await findByText('Start');
@@ -110,18 +113,16 @@ describe('Accessibility Tests', () => {
       error_message: 'Microphone access denied',
     });
 
-    await findByText(/Error:/);
+    await findByText('Microphone access denied');
 
     const results = await axe(container);
     expect(results).toHaveNoViolations();
   });
 
   it('model unavailable warning has no accessibility violations', async () => {
-    mockInvoke.mockImplementation((command: string) => {
-      if (command === 'list_input_devices') return Promise.resolve(mockDevices);
-      if (command === 'check_model_status') return Promise.resolve(mockModelStatusUnavailable);
-      return Promise.reject(new Error('Unknown command'));
-    });
+    mockInvoke.mockImplementation(createStandardMock({
+      check_model_status: mockModelStatusUnavailable,
+    }));
 
     const { container, findByText } = render(<App />);
     await findByText(/Model not found/);
@@ -131,11 +132,7 @@ describe('Accessibility Tests', () => {
   });
 
   it('completed state has no accessibility violations', async () => {
-    mockInvoke.mockImplementation((command: string) => {
-      if (command === 'list_input_devices') return Promise.resolve(mockDevices);
-      if (command === 'check_model_status') return Promise.resolve(mockModelStatusAvailable);
-      return Promise.reject(new Error('Unknown command'));
-    });
+    mockInvoke.mockImplementation(createStandardMock());
 
     const { container, findByText } = render(<App />);
     await findByText('Start');
@@ -153,7 +150,24 @@ describe('Accessibility Tests', () => {
       segment_count: 1,
     });
 
-    await findByText('New Recording');
+    await findByText('New Session');
+
+    const results = await axe(container);
+    expect(results).toHaveNoViolations();
+  });
+
+  it('settings drawer has no accessibility violations', async () => {
+    const user = userEvent.setup();
+    mockInvoke.mockImplementation(createStandardMock());
+
+    const { container, findByText, findByRole } = render(<App />);
+    await findByText('Start');
+
+    // Open settings drawer
+    const settingsBtn = await findByRole('button', { name: /settings/i });
+    await user.click(settingsBtn);
+
+    await findByText('Settings');
 
     const results = await axe(container);
     expect(results).toHaveNoViolations();
@@ -162,11 +176,7 @@ describe('Accessibility Tests', () => {
   // Test specific interactive elements
   describe('Interactive Elements', () => {
     it('buttons are accessible', async () => {
-      mockInvoke.mockImplementation((command: string) => {
-        if (command === 'list_input_devices') return Promise.resolve(mockDevices);
-        if (command === 'check_model_status') return Promise.resolve(mockModelStatusAvailable);
-        return Promise.reject(new Error('Unknown command'));
-      });
+      mockInvoke.mockImplementation(createStandardMock());
 
       const { findByText, findByRole } = render(<App />);
       await findByText('Start');
@@ -176,25 +186,36 @@ describe('Accessibility Tests', () => {
       expect(startButton).not.toBeDisabled();
     });
 
-    it('device select is accessible', async () => {
-      mockInvoke.mockImplementation((command: string) => {
-        if (command === 'list_input_devices') return Promise.resolve(mockDevices);
-        if (command === 'check_model_status') return Promise.resolve(mockModelStatusAvailable);
-        return Promise.reject(new Error('Unknown command'));
-      });
+    it('settings button is accessible', async () => {
+      mockInvoke.mockImplementation(createStandardMock());
 
-      const { findByRole } = render(<App />);
+      const { findByText, findByRole } = render(<App />);
+      await findByText('Start');
 
-      const select = await findByRole('combobox');
-      expect(select).toBeInTheDocument();
+      const settingsBtn = await findByRole('button', { name: /settings/i });
+      expect(settingsBtn).toBeInTheDocument();
+    });
+
+    it('device select in settings is accessible', async () => {
+      const user = userEvent.setup();
+      mockInvoke.mockImplementation(createStandardMock());
+
+      const { findByText, findByRole } = render(<App />);
+      await findByText('Start');
+
+      // Open settings drawer
+      const settingsBtn = await findByRole('button', { name: /settings/i });
+      await user.click(settingsBtn);
+
+      await findByText('Microphone');
+
+      // Find all comboboxes in settings
+      const selects = document.querySelectorAll('.settings-select');
+      expect(selects.length).toBeGreaterThan(0);
     });
 
     it('copy button has accessible name when visible', async () => {
-      mockInvoke.mockImplementation((command: string) => {
-        if (command === 'list_input_devices') return Promise.resolve(mockDevices);
-        if (command === 'check_model_status') return Promise.resolve(mockModelStatusAvailable);
-        return Promise.reject(new Error('Unknown command'));
-      });
+      mockInvoke.mockImplementation(createStandardMock());
 
       const { findByText, findByRole } = render(<App />);
       await findByText('Start');
@@ -216,6 +237,17 @@ describe('Accessibility Tests', () => {
 
       const copyButton = await findByRole('button', { name: /copy/i });
       expect(copyButton).toBeInTheDocument();
+    });
+
+    it('transcript header is clickable for collapse/expand', async () => {
+      mockInvoke.mockImplementation(createStandardMock());
+
+      const { findByText } = render(<App />);
+      await findByText('Start');
+
+      const transcriptHeader = await findByText('Transcript');
+      expect(transcriptHeader).toBeInTheDocument();
+      expect(transcriptHeader.closest('.transcript-header')).toBeTruthy();
     });
   });
 });

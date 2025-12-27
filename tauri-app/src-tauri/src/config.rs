@@ -13,6 +13,9 @@ pub struct Settings {
     pub vad_threshold: f32,
     pub silence_to_flush_ms: u32,
     pub max_utterance_ms: u32,
+    // Diarization settings
+    pub diarization_enabled: bool,
+    pub max_speakers: usize,
 }
 
 impl Default for Settings {
@@ -25,6 +28,8 @@ impl Default for Settings {
             vad_threshold: 0.5,
             silence_to_flush_ms: 500,
             max_utterance_ms: 25000,
+            diarization_enabled: false,
+            max_speakers: 10,
         }
     }
 }
@@ -50,6 +55,23 @@ pub struct Config {
     pub silence_to_flush_ms: u32,
     pub max_utterance_ms: u32,
     pub model_path: Option<PathBuf>,
+    // Diarization settings
+    #[serde(default)]
+    pub diarization_enabled: bool,
+    #[serde(default = "default_max_speakers")]
+    pub max_speakers: usize,
+    #[serde(default = "default_similarity_threshold")]
+    pub speaker_similarity_threshold: f32,
+    #[serde(default)]
+    pub diarization_model_path: Option<PathBuf>,
+}
+
+fn default_max_speakers() -> usize {
+    10
+}
+
+fn default_similarity_threshold() -> f32 {
+    0.75
 }
 
 impl Default for Config {
@@ -65,6 +87,10 @@ impl Default for Config {
             silence_to_flush_ms: 500,
             max_utterance_ms: 25000,
             model_path: None,
+            diarization_enabled: false,
+            max_speakers: 10,
+            speaker_similarity_threshold: 0.75,
+            diarization_model_path: None,
         }
     }
 }
@@ -134,6 +160,16 @@ impl Config {
         }
     }
 
+    /// Get the diarization model file path
+    pub fn get_diarization_model_path(&self) -> Result<PathBuf> {
+        if let Some(ref path) = self.diarization_model_path {
+            Ok(path.clone())
+        } else {
+            let models_dir = Self::models_dir()?;
+            Ok(models_dir.join("voxceleb_ECAPA512_LM.onnx"))
+        }
+    }
+
     /// Convert to frontend Settings
     pub fn to_settings(&self) -> Settings {
         Settings {
@@ -144,6 +180,8 @@ impl Config {
             vad_threshold: self.vad_threshold,
             silence_to_flush_ms: self.silence_to_flush_ms,
             max_utterance_ms: self.max_utterance_ms,
+            diarization_enabled: self.diarization_enabled,
+            max_speakers: self.max_speakers,
         }
     }
 
@@ -156,6 +194,8 @@ impl Config {
         self.vad_threshold = settings.vad_threshold;
         self.silence_to_flush_ms = settings.silence_to_flush_ms;
         self.max_utterance_ms = settings.max_utterance_ms;
+        self.diarization_enabled = settings.diarization_enabled;
+        self.max_speakers = settings.max_speakers;
     }
 }
 
@@ -240,6 +280,8 @@ mod tests {
             vad_threshold: 0.6,
             silence_to_flush_ms: 600,
             max_utterance_ms: 30000,
+            diarization_enabled: true,
+            max_speakers: 5,
         };
 
         let mut config = Config::default();
@@ -252,6 +294,8 @@ mod tests {
         assert_eq!(config.vad_threshold, 0.6);
         assert_eq!(config.silence_to_flush_ms, 600);
         assert_eq!(config.max_utterance_ms, 30000);
+        assert!(config.diarization_enabled);
+        assert_eq!(config.max_speakers, 5);
     }
 
     #[test]
@@ -302,6 +346,8 @@ mod tests {
             vad_threshold: 0.5,
             silence_to_flush_ms: 500,
             max_utterance_ms: 25000,
+            diarization_enabled: false,
+            max_speakers: 10,
         };
 
         let mut config = Config::default();
@@ -309,6 +355,22 @@ mod tests {
         config.update_from_settings(&settings);
 
         assert!(config.input_device_id.is_none());
+    }
+
+    #[test]
+    fn test_diarization_defaults() {
+        let config = Config::default();
+        assert!(!config.diarization_enabled);
+        assert_eq!(config.max_speakers, 10);
+        assert_eq!(config.speaker_similarity_threshold, 0.75);
+        assert!(config.diarization_model_path.is_none());
+    }
+
+    #[test]
+    fn test_get_diarization_model_path() {
+        let config = Config::default();
+        let path = config.get_diarization_model_path().unwrap();
+        assert!(path.to_string_lossy().ends_with("voxceleb_ECAPA512_LM.onnx"));
     }
 
     #[test]

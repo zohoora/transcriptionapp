@@ -262,6 +262,7 @@ proptest! {
 | `config` | Settings persistence and management |
 | `commands` | Tauri IPC command handlers |
 | `pipeline` | Audio processing pipeline coordination |
+| `diarization` | Speaker embedding extraction and clustering |
 
 ## Questions?
 

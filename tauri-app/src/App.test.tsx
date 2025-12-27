@@ -13,6 +13,7 @@ import {
   mockRecordingStatus,
   mockCompletedStatus,
   mockTranscript,
+  mockSettings,
   createListenMock,
 } from './test/mocks';
 
@@ -20,6 +21,26 @@ import {
 const mockInvoke = vi.mocked(invoke);
 const mockListen = vi.mocked(listen);
 const mockWriteText = vi.mocked(writeText);
+
+// Helper to create standard mock implementation
+function createStandardMock(overrides: Record<string, unknown> = {}) {
+  return (command: string) => {
+    const responses: Record<string, unknown> = {
+      list_input_devices: mockDevices,
+      check_model_status: mockModelStatusAvailable,
+      get_settings: mockSettings,
+      start_session: undefined,
+      stop_session: undefined,
+      reset_session: undefined,
+      set_settings: mockSettings,
+      ...overrides,
+    };
+    if (command in responses) {
+      return Promise.resolve(responses[command]);
+    }
+    return Promise.reject(new Error(`Unknown command: ${command}`));
+  };
+}
 
 describe('App', () => {
   let listenHelper: ReturnType<typeof createListenMock>;
@@ -35,108 +56,132 @@ describe('App', () => {
   });
 
   describe('initialization', () => {
-    it('loads devices and model status on mount', async () => {
-      mockInvoke.mockImplementation((command: string) => {
-        if (command === 'list_input_devices') return Promise.resolve(mockDevices);
-        if (command === 'check_model_status') return Promise.resolve(mockModelStatusAvailable);
-        return Promise.reject(new Error('Unknown command'));
-      });
+    it('loads devices, model status, and settings on mount', async () => {
+      mockInvoke.mockImplementation(createStandardMock());
 
       render(<App />);
 
       await waitFor(() => {
         expect(mockInvoke).toHaveBeenCalledWith('list_input_devices');
         expect(mockInvoke).toHaveBeenCalledWith('check_model_status');
+        expect(mockInvoke).toHaveBeenCalledWith('get_settings');
       });
     });
 
-    it('shows ready state with available model', async () => {
-      mockInvoke.mockImplementation((command: string) => {
-        if (command === 'list_input_devices') return Promise.resolve(mockDevices);
-        if (command === 'check_model_status') return Promise.resolve(mockModelStatusAvailable);
-        return Promise.reject(new Error('Unknown command'));
-      });
+    it('shows Start button with available model', async () => {
+      mockInvoke.mockImplementation(createStandardMock());
 
       render(<App />);
 
       await waitFor(() => {
-        expect(screen.getByText('Ready')).toBeInTheDocument();
         expect(screen.getByText('Start')).toBeInTheDocument();
       });
     });
 
     it('shows warning when model is not available', async () => {
-      mockInvoke.mockImplementation((command: string) => {
-        if (command === 'list_input_devices') return Promise.resolve(mockDevices);
-        if (command === 'check_model_status') return Promise.resolve(mockModelStatusUnavailable);
-        return Promise.reject(new Error('Unknown command'));
-      });
+      mockInvoke.mockImplementation(createStandardMock({
+        check_model_status: mockModelStatusUnavailable,
+      }));
 
       render(<App />);
 
       await waitFor(() => {
-        expect(screen.getByText(/Model not found:/)).toBeInTheDocument();
-        expect(screen.getByText(/Model file not found/)).toBeInTheDocument();
+        expect(screen.getByText('Model not found. Check settings.')).toBeInTheDocument();
       });
     });
 
-    it('disables Start button when model is not available', async () => {
-      mockInvoke.mockImplementation((command: string) => {
-        if (command === 'list_input_devices') return Promise.resolve(mockDevices);
-        if (command === 'check_model_status') return Promise.resolve(mockModelStatusUnavailable);
-        return Promise.reject(new Error('Unknown command'));
-      });
+    it('disables record button when model is not available', async () => {
+      mockInvoke.mockImplementation(createStandardMock({
+        check_model_status: mockModelStatusUnavailable,
+      }));
 
       render(<App />);
 
       await waitFor(() => {
-        expect(screen.queryByText('Start')).not.toBeInTheDocument();
+        const recordButton = screen.getByRole('button', { name: /start/i });
+        expect(recordButton).toBeDisabled();
       });
     });
   });
 
-  describe('device selection', () => {
-    it('shows default device option and device list', async () => {
-      mockInvoke.mockImplementation((command: string) => {
-        if (command === 'list_input_devices') return Promise.resolve(mockDevices);
-        if (command === 'check_model_status') return Promise.resolve(mockModelStatusAvailable);
-        return Promise.reject(new Error('Unknown command'));
-      });
+  describe('settings drawer', () => {
+    it('opens settings drawer when gear button is clicked', async () => {
+      const user = userEvent.setup();
+      mockInvoke.mockImplementation(createStandardMock());
 
       render(<App />);
 
       await waitFor(() => {
-        const select = screen.getByRole('combobox');
-        expect(select).toBeInTheDocument();
-        expect(screen.getByText('Default Device')).toBeInTheDocument();
+        expect(screen.getByText('Start')).toBeInTheDocument();
+      });
+
+      const settingsBtn = screen.getByRole('button', { name: /settings/i });
+      await user.click(settingsBtn);
+
+      await waitFor(() => {
+        expect(screen.getByText('Settings')).toBeInTheDocument();
+        expect(screen.getByText('Model')).toBeInTheDocument();
+        expect(screen.getByText('Language')).toBeInTheDocument();
+        expect(screen.getByText('Microphone')).toBeInTheDocument();
       });
     });
 
-    it('displays all available devices in the dropdown', async () => {
-      mockInvoke.mockImplementation((command: string) => {
-        if (command === 'list_input_devices') return Promise.resolve(mockDevices);
-        if (command === 'check_model_status') return Promise.resolve(mockModelStatusAvailable);
-        return Promise.reject(new Error('Unknown command'));
-      });
+    it('closes settings drawer when close button is clicked', async () => {
+      const user = userEvent.setup();
+      mockInvoke.mockImplementation(createStandardMock());
 
       render(<App />);
 
       await waitFor(() => {
-        expect(screen.getByText('Built-in Microphone (default)')).toBeInTheDocument();
-        expect(screen.getByText('External USB Microphone')).toBeInTheDocument();
+        expect(screen.getByText('Start')).toBeInTheDocument();
       });
+
+      // Open settings
+      const settingsBtn = screen.getByRole('button', { name: /settings/i });
+      await user.click(settingsBtn);
+
+      await waitFor(() => {
+        expect(screen.getByText('Settings')).toBeInTheDocument();
+      });
+
+      // Close settings
+      const closeBtn = screen.getByRole('button', { name: '×' });
+      await user.click(closeBtn);
+
+      await waitFor(() => {
+        expect(screen.queryByText('Save Settings')).not.toBeInTheDocument();
+      });
+    });
+
+    it('saves settings when Save Settings is clicked', async () => {
+      const user = userEvent.setup();
+      mockInvoke.mockImplementation(createStandardMock());
+
+      render(<App />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Start')).toBeInTheDocument();
+      });
+
+      // Open settings
+      const settingsBtn = screen.getByRole('button', { name: /settings/i });
+      await user.click(settingsBtn);
+
+      await waitFor(() => {
+        expect(screen.getByText('Save Settings')).toBeInTheDocument();
+      });
+
+      // Save settings
+      await user.click(screen.getByText('Save Settings'));
+
+      expect(mockInvoke).toHaveBeenCalledWith('set_settings', expect.any(Object));
     });
   });
 
   describe('session control', () => {
-    it('starts session when Start button is clicked', async () => {
+    it('starts session when record button is clicked', async () => {
       const user = userEvent.setup();
-      mockInvoke.mockImplementation((command: string) => {
-        if (command === 'list_input_devices') return Promise.resolve(mockDevices);
-        if (command === 'check_model_status') return Promise.resolve(mockModelStatusAvailable);
-        if (command === 'start_session') return Promise.resolve(undefined);
-        return Promise.reject(new Error('Unknown command'));
-      });
+      mockInvoke.mockImplementation(createStandardMock());
 
       render(<App />);
 
@@ -149,34 +194,8 @@ describe('App', () => {
       expect(mockInvoke).toHaveBeenCalledWith('start_session', { deviceId: 'default' });
     });
 
-    it('uses selected device when starting session', async () => {
-      const user = userEvent.setup();
-      mockInvoke.mockImplementation((command: string) => {
-        if (command === 'list_input_devices') return Promise.resolve(mockDevices);
-        if (command === 'check_model_status') return Promise.resolve(mockModelStatusAvailable);
-        if (command === 'start_session') return Promise.resolve(undefined);
-        return Promise.reject(new Error('Unknown command'));
-      });
-
-      render(<App />);
-
-      await waitFor(() => {
-        expect(screen.getByRole('combobox')).toBeInTheDocument();
-      });
-
-      const select = screen.getByRole('combobox');
-      await user.selectOptions(select, 'device-2');
-      await user.click(screen.getByText('Start'));
-
-      expect(mockInvoke).toHaveBeenCalledWith('start_session', { deviceId: 'device-2' });
-    });
-
     it('shows Stop button during recording', async () => {
-      mockInvoke.mockImplementation((command: string) => {
-        if (command === 'list_input_devices') return Promise.resolve(mockDevices);
-        if (command === 'check_model_status') return Promise.resolve(mockModelStatusAvailable);
-        return Promise.reject(new Error('Unknown command'));
-      });
+      mockInvoke.mockImplementation(createStandardMock());
 
       render(<App />);
 
@@ -197,12 +216,7 @@ describe('App', () => {
 
     it('calls stop_session when Stop button is clicked', async () => {
       const user = userEvent.setup();
-      mockInvoke.mockImplementation((command: string) => {
-        if (command === 'list_input_devices') return Promise.resolve(mockDevices);
-        if (command === 'check_model_status') return Promise.resolve(mockModelStatusAvailable);
-        if (command === 'stop_session') return Promise.resolve(undefined);
-        return Promise.reject(new Error('Unknown command'));
-      });
+      mockInvoke.mockImplementation(createStandardMock());
 
       render(<App />);
 
@@ -223,12 +237,8 @@ describe('App', () => {
       expect(mockInvoke).toHaveBeenCalledWith('stop_session');
     });
 
-    it('shows New Recording button after completion', async () => {
-      mockInvoke.mockImplementation((command: string) => {
-        if (command === 'list_input_devices') return Promise.resolve(mockDevices);
-        if (command === 'check_model_status') return Promise.resolve(mockModelStatusAvailable);
-        return Promise.reject(new Error('Unknown command'));
-      });
+    it('shows New Session button after completion', async () => {
+      mockInvoke.mockImplementation(createStandardMock());
 
       render(<App />);
 
@@ -241,18 +251,13 @@ describe('App', () => {
       });
 
       await waitFor(() => {
-        expect(screen.getByText('New Recording')).toBeInTheDocument();
+        expect(screen.getByText('New Session')).toBeInTheDocument();
       });
     });
 
-    it('resets session when New Recording button is clicked', async () => {
+    it('resets session when New Session button is clicked', async () => {
       const user = userEvent.setup();
-      mockInvoke.mockImplementation((command: string) => {
-        if (command === 'list_input_devices') return Promise.resolve(mockDevices);
-        if (command === 'check_model_status') return Promise.resolve(mockModelStatusAvailable);
-        if (command === 'reset_session') return Promise.resolve(undefined);
-        return Promise.reject(new Error('Unknown command'));
-      });
+      mockInvoke.mockImplementation(createStandardMock());
 
       render(<App />);
 
@@ -265,10 +270,10 @@ describe('App', () => {
       });
 
       await waitFor(() => {
-        expect(screen.getByText('New Recording')).toBeInTheDocument();
+        expect(screen.getByText('New Session')).toBeInTheDocument();
       });
 
-      await user.click(screen.getByText('New Recording'));
+      await user.click(screen.getByText('New Session'));
 
       expect(mockInvoke).toHaveBeenCalledWith('reset_session');
     });
@@ -276,25 +281,17 @@ describe('App', () => {
 
   describe('transcript display', () => {
     it('shows placeholder when idle and no transcript', async () => {
-      mockInvoke.mockImplementation((command: string) => {
-        if (command === 'list_input_devices') return Promise.resolve(mockDevices);
-        if (command === 'check_model_status') return Promise.resolve(mockModelStatusAvailable);
-        return Promise.reject(new Error('Unknown command'));
-      });
+      mockInvoke.mockImplementation(createStandardMock());
 
       render(<App />);
 
       await waitFor(() => {
-        expect(screen.getByText('Click Start to begin recording')).toBeInTheDocument();
+        expect(screen.getByText('Tap Start to begin')).toBeInTheDocument();
       });
     });
 
-    it('shows "Listening..." when recording', async () => {
-      mockInvoke.mockImplementation((command: string) => {
-        if (command === 'list_input_devices') return Promise.resolve(mockDevices);
-        if (command === 'check_model_status') return Promise.resolve(mockModelStatusAvailable);
-        return Promise.reject(new Error('Unknown command'));
-      });
+    it('shows "Listening..." when recording with no transcript', async () => {
+      mockInvoke.mockImplementation(createStandardMock());
 
       render(<App />);
 
@@ -312,11 +309,7 @@ describe('App', () => {
     });
 
     it('displays transcript when received', async () => {
-      mockInvoke.mockImplementation((command: string) => {
-        if (command === 'list_input_devices') return Promise.resolve(mockDevices);
-        if (command === 'check_model_status') return Promise.resolve(mockModelStatusAvailable);
-        return Promise.reject(new Error('Unknown command'));
-      });
+      mockInvoke.mockImplementation(createStandardMock());
 
       render(<App />);
 
@@ -335,11 +328,7 @@ describe('App', () => {
     });
 
     it('displays draft text when available', async () => {
-      mockInvoke.mockImplementation((command: string) => {
-        if (command === 'list_input_devices') return Promise.resolve(mockDevices);
-        if (command === 'check_model_status') return Promise.resolve(mockModelStatusAvailable);
-        return Promise.reject(new Error('Unknown command'));
-      });
+      mockInvoke.mockImplementation(createStandardMock());
 
       render(<App />);
 
@@ -361,15 +350,9 @@ describe('App', () => {
         expect(screen.getByText('Still processing...')).toBeInTheDocument();
       });
     });
-  });
 
-  describe('copy functionality', () => {
-    it('shows Copy button when transcript is available during recording', async () => {
-      mockInvoke.mockImplementation((command: string) => {
-        if (command === 'list_input_devices') return Promise.resolve(mockDevices);
-        if (command === 'check_model_status') return Promise.resolve(mockModelStatusAvailable);
-        return Promise.reject(new Error('Unknown command'));
-      });
+    it('shows "No transcript" when completed with empty transcript', async () => {
+      mockInvoke.mockImplementation(createStandardMock());
 
       render(<App />);
 
@@ -378,22 +361,72 @@ describe('App', () => {
       });
 
       act(() => {
-        listenHelper.emit('session_status', mockRecordingStatus);
-        listenHelper.emit('transcript_update', mockTranscript);
+        listenHelper.emit('session_status', mockCompletedStatus);
       });
+
+      await waitFor(() => {
+        expect(screen.getByText('No transcript')).toBeInTheDocument();
+      });
+    });
+  });
+
+  describe('transcript collapsing', () => {
+    it('can collapse and expand transcript section', async () => {
+      const user = userEvent.setup();
+      mockInvoke.mockImplementation(createStandardMock());
+
+      render(<App />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Transcript')).toBeInTheDocument();
+      });
+
+      // Should show placeholder initially
+      expect(screen.getByText('Tap Start to begin')).toBeInTheDocument();
+
+      // Click to collapse
+      await user.click(screen.getByText('Transcript'));
+
+      // Placeholder should be hidden (collapsed)
+      await waitFor(() => {
+        const content = document.querySelector('.transcript-content');
+        expect(content).toHaveClass('collapsed');
+      });
+
+      // Click to expand again
+      await user.click(screen.getByText('Transcript'));
+
+      await waitFor(() => {
+        const content = document.querySelector('.transcript-content');
+        expect(content).not.toHaveClass('collapsed');
+      });
+    });
+  });
+
+  describe('copy functionality', () => {
+    it('shows Copy button in transcript header', async () => {
+      mockInvoke.mockImplementation(createStandardMock());
+
+      render(<App />);
 
       await waitFor(() => {
         expect(screen.getByText('Copy')).toBeInTheDocument();
       });
     });
 
-    it('copies transcript to clipboard when Copy is clicked', async () => {
-      const user = userEvent.setup();
-      mockInvoke.mockImplementation((command: string) => {
-        if (command === 'list_input_devices') return Promise.resolve(mockDevices);
-        if (command === 'check_model_status') return Promise.resolve(mockModelStatusAvailable);
-        return Promise.reject(new Error('Unknown command'));
+    it('disables Copy button when no transcript', async () => {
+      mockInvoke.mockImplementation(createStandardMock());
+
+      render(<App />);
+
+      await waitFor(() => {
+        const copyBtn = screen.getByText('Copy');
+        expect(copyBtn).toBeDisabled();
       });
+    });
+
+    it('enables Copy button when transcript is available', async () => {
+      mockInvoke.mockImplementation(createStandardMock());
 
       render(<App />);
 
@@ -407,7 +440,28 @@ describe('App', () => {
       });
 
       await waitFor(() => {
-        expect(screen.getByText('Copy')).toBeInTheDocument();
+        const copyBtn = screen.getByText('Copy');
+        expect(copyBtn).not.toBeDisabled();
+      });
+    });
+
+    it('copies transcript to clipboard when Copy is clicked', async () => {
+      const user = userEvent.setup();
+      mockInvoke.mockImplementation(createStandardMock());
+
+      render(<App />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Start')).toBeInTheDocument();
+      });
+
+      act(() => {
+        listenHelper.emit('session_status', mockRecordingStatus);
+        listenHelper.emit('transcript_update', mockTranscript);
+      });
+
+      await waitFor(() => {
+        expect(screen.getByText('Copy')).not.toBeDisabled();
       });
 
       await user.click(screen.getByText('Copy'));
@@ -417,11 +471,7 @@ describe('App', () => {
 
     it('shows "Copied!" feedback after successful copy', async () => {
       const user = userEvent.setup();
-      mockInvoke.mockImplementation((command: string) => {
-        if (command === 'list_input_devices') return Promise.resolve(mockDevices);
-        if (command === 'check_model_status') return Promise.resolve(mockModelStatusAvailable);
-        return Promise.reject(new Error('Unknown command'));
-      });
+      mockInvoke.mockImplementation(createStandardMock());
       mockWriteText.mockResolvedValue();
 
       render(<App />);
@@ -436,7 +486,7 @@ describe('App', () => {
       });
 
       await waitFor(() => {
-        expect(screen.getByText('Copy')).toBeInTheDocument();
+        expect(screen.getByText('Copy')).not.toBeDisabled();
       });
 
       await user.click(screen.getByText('Copy'));
@@ -448,12 +498,8 @@ describe('App', () => {
   });
 
   describe('status indicators', () => {
-    it('shows recording indicator during recording', async () => {
-      mockInvoke.mockImplementation((command: string) => {
-        if (command === 'list_input_devices') return Promise.resolve(mockDevices);
-        if (command === 'check_model_status') return Promise.resolve(mockModelStatusAvailable);
-        return Promise.reject(new Error('Unknown command'));
-      });
+    it('shows status dot with recording class during recording', async () => {
+      mockInvoke.mockImplementation(createStandardMock());
 
       render(<App />);
 
@@ -466,17 +512,13 @@ describe('App', () => {
       });
 
       await waitFor(() => {
-        expect(screen.getByText('Recording')).toBeInTheDocument();
-        expect(screen.getByText('Whisper')).toBeInTheDocument();
+        const statusDot = document.querySelector('.status-dot');
+        expect(statusDot).toHaveClass('recording');
       });
     });
 
     it('shows elapsed time during recording', async () => {
-      mockInvoke.mockImplementation((command: string) => {
-        if (command === 'list_input_devices') return Promise.resolve(mockDevices);
-        if (command === 'check_model_status') return Promise.resolve(mockModelStatusAvailable);
-        return Promise.reject(new Error('Unknown command'));
-      });
+      mockInvoke.mockImplementation(createStandardMock());
 
       render(<App />);
 
@@ -493,12 +535,8 @@ describe('App', () => {
       });
     });
 
-    it('shows processing indicator when behind', async () => {
-      mockInvoke.mockImplementation((command: string) => {
-        if (command === 'list_input_devices') return Promise.resolve(mockDevices);
-        if (command === 'check_model_status') return Promise.resolve(mockModelStatusAvailable);
-        return Promise.reject(new Error('Unknown command'));
-      });
+    it('shows active timer class during recording', async () => {
+      mockInvoke.mockImplementation(createStandardMock());
 
       render(<App />);
 
@@ -507,20 +545,17 @@ describe('App', () => {
       });
 
       act(() => {
-        listenHelper.emit('session_status', { ...mockRecordingStatus, is_processing_behind: true });
+        listenHelper.emit('session_status', mockRecordingStatus);
       });
 
       await waitFor(() => {
-        expect(screen.getByText('Processing...')).toBeInTheDocument();
+        const timer = document.querySelector('.timer');
+        expect(timer).toHaveClass('active');
       });
     });
 
-    it('shows preparing indicator when preparing', async () => {
-      mockInvoke.mockImplementation((command: string) => {
-        if (command === 'list_input_devices') return Promise.resolve(mockDevices);
-        if (command === 'check_model_status') return Promise.resolve(mockModelStatusAvailable);
-        return Promise.reject(new Error('Unknown command'));
-      });
+    it('shows preparing status dot when preparing', async () => {
+      mockInvoke.mockImplementation(createStandardMock());
 
       render(<App />);
 
@@ -538,18 +573,13 @@ describe('App', () => {
       });
 
       await waitFor(() => {
-        // "Preparing..." appears in both status indicator and button
-        const preparingElements = screen.getAllByText('Preparing...');
-        expect(preparingElements.length).toBeGreaterThanOrEqual(1);
+        const statusDot = document.querySelector('.status-dot');
+        expect(statusDot).toHaveClass('preparing');
       });
     });
 
-    it('shows stopping indicator when stopping', async () => {
-      mockInvoke.mockImplementation((command: string) => {
-        if (command === 'list_input_devices') return Promise.resolve(mockDevices);
-        if (command === 'check_model_status') return Promise.resolve(mockModelStatusAvailable);
-        return Promise.reject(new Error('Unknown command'));
-      });
+    it('shows stopping status dot when stopping', async () => {
+      mockInvoke.mockImplementation(createStandardMock());
 
       render(<App />);
 
@@ -567,18 +597,15 @@ describe('App', () => {
       });
 
       await waitFor(() => {
-        expect(screen.getByText('Finishing...')).toBeInTheDocument();
+        const statusDot = document.querySelector('.status-dot');
+        expect(statusDot).toHaveClass('stopping');
       });
     });
   });
 
   describe('error handling', () => {
     it('displays error message when session has error', async () => {
-      mockInvoke.mockImplementation((command: string) => {
-        if (command === 'list_input_devices') return Promise.resolve(mockDevices);
-        if (command === 'check_model_status') return Promise.resolve(mockModelStatusAvailable);
-        return Promise.reject(new Error('Unknown command'));
-      });
+      mockInvoke.mockImplementation(createStandardMock());
 
       render(<App />);
 
@@ -597,8 +624,32 @@ describe('App', () => {
       });
 
       await waitFor(() => {
-        expect(screen.getByText(/Error:/)).toBeInTheDocument();
-        expect(screen.getByText(/Failed to access microphone/)).toBeInTheDocument();
+        expect(screen.getByText('Failed to access microphone')).toBeInTheDocument();
+      });
+    });
+
+    it('shows error banner with error-banner class', async () => {
+      mockInvoke.mockImplementation(createStandardMock());
+
+      render(<App />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Start')).toBeInTheDocument();
+      });
+
+      act(() => {
+        listenHelper.emit('session_status', {
+          state: 'error',
+          provider: null,
+          elapsed_ms: 0,
+          is_processing_behind: false,
+          error_message: 'Test error',
+        });
+      });
+
+      await waitFor(() => {
+        const errorBanner = document.querySelector('.error-banner');
+        expect(errorBanner).toBeInTheDocument();
       });
     });
 
@@ -606,15 +657,28 @@ describe('App', () => {
       mockInvoke.mockImplementation((command: string) => {
         if (command === 'list_input_devices') return Promise.reject(new Error('No devices'));
         if (command === 'check_model_status') return Promise.resolve(mockModelStatusAvailable);
+        if (command === 'get_settings') return Promise.resolve(mockSettings);
         return Promise.reject(new Error('Unknown command'));
       });
 
       // Should not throw
       render(<App />);
 
-      // App should still render
+      // App should still render with Start button
       await waitFor(() => {
-        expect(screen.getByText('Ready')).toBeInTheDocument();
+        expect(screen.getByText('Start')).toBeInTheDocument();
+      });
+    });
+  });
+
+  describe('app title', () => {
+    it('displays Scribe as app title', async () => {
+      mockInvoke.mockImplementation(createStandardMock());
+
+      render(<App />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Scribe')).toBeInTheDocument();
       });
     });
   });
@@ -623,13 +687,16 @@ describe('App', () => {
 describe('formatTime', () => {
   // Test the formatTime function by checking rendered output
   it('formats seconds correctly', async () => {
+    const mockInvoke = vi.mocked(invoke);
     mockInvoke.mockImplementation((command: string) => {
       if (command === 'list_input_devices') return Promise.resolve([]);
       if (command === 'check_model_status') return Promise.resolve(mockModelStatusAvailable);
+      if (command === 'get_settings') return Promise.resolve(mockSettings);
       return Promise.reject(new Error('Unknown command'));
     });
 
     const listenHelper = createListenMock();
+    const mockListen = vi.mocked(listen);
     mockListen.mockImplementation(listenHelper.listen as typeof listen);
 
     render(<App />);
