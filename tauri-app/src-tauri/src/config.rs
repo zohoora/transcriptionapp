@@ -493,7 +493,11 @@ mod tests {
     fn test_get_diarization_model_path() {
         let config = Config::default();
         let path = config.get_diarization_model_path().unwrap();
-        assert!(path.to_string_lossy().ends_with("voxceleb_ECAPA512_LM.onnx"));
+        // New default is speaker_embedding.onnx, but also accepts legacy voxceleb_ECAPA512_LM.onnx
+        assert!(
+            path.to_string_lossy().ends_with("speaker_embedding.onnx")
+                || path.to_string_lossy().ends_with("voxceleb_ECAPA512_LM.onnx")
+        );
     }
 
     #[test]

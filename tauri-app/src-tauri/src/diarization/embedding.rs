@@ -1,6 +1,6 @@
-//! ONNX-based speaker embedding extraction using ECAPA-TDNN.
+//! ONNX-based speaker embedding extraction using WeSpeaker.
 //!
-//! Extracts 192-dimensional speaker embeddings from mel spectrograms.
+//! Extracts 256-dimensional speaker embeddings from mel spectrograms.
 
 use super::DiarizationError;
 use std::path::Path;
@@ -11,8 +11,8 @@ use ort::{
     value::Value,
 };
 
-/// Speaker embedding dimension for ECAPA-TDNN (model outputs 192-dim embeddings)
-pub const EMBEDDING_DIM: usize = 192;
+/// Speaker embedding dimension for WeSpeaker ResNet34 (model outputs 256-dim embeddings)
+pub const EMBEDDING_DIM: usize = 256;
 
 /// ONNX-based speaker embedding extractor
 #[cfg(feature = "diarization")]
@@ -56,7 +56,7 @@ impl EmbeddingExtractor {
     /// * `mel_spec` - Mel spectrogram as [frames][mel_bands]
     ///
     /// # Returns
-    /// 192-dimensional speaker embedding vector
+    /// 256-dimensional speaker embedding vector
     pub fn extract(&mut self, mel_spec: &[Vec<f32>]) -> Result<Vec<f32>, DiarizationError> {
         if mel_spec.is_empty() {
             return Err(DiarizationError::InvalidAudio(
@@ -84,7 +84,7 @@ impl EmbeddingExtractor {
             .map_err(|e| DiarizationError::InferenceError(e.to_string()))?;
 
         // Extract embedding from output
-        // ECAPA-TDNN output shape is [batch, embedding_dim] = [1, 192]
+        // WeSpeaker output shape is [batch, embedding_dim] = [1, 256]
         let output = outputs
             .iter()
             .next()
@@ -139,7 +139,7 @@ mod tests {
 
     #[test]
     fn test_embedding_dim_constant() {
-        assert_eq!(EMBEDDING_DIM, 192);
+        assert_eq!(EMBEDDING_DIM, 256);
     }
 
     #[cfg(feature = "diarization")]

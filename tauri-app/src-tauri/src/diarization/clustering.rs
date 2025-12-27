@@ -238,7 +238,7 @@ mod tests {
         let config = create_test_config();
         let mut clusterer = SpeakerClusterer::new(config);
 
-        let embedding = create_normalized_embedding(0, 192);
+        let embedding = create_normalized_embedding(0, 256);
         let speaker = clusterer.assign(&embedding, 0);
 
         assert_eq!(speaker, "Speaker 1");
@@ -251,11 +251,11 @@ mod tests {
         let mut clusterer = SpeakerClusterer::new(config);
 
         // Create first embedding
-        let embedding1 = create_normalized_embedding(0, 192);
+        let embedding1 = create_normalized_embedding(0, 256);
         let speaker1 = clusterer.assign(&embedding1, 0);
 
         // Create very similar embedding
-        let embedding2 = create_normalized_embedding(0, 192);
+        let embedding2 = create_normalized_embedding(0, 256);
         let speaker2 = clusterer.assign(&embedding2, 1000);
 
         // Should be assigned to same speaker
@@ -269,8 +269,8 @@ mod tests {
         let mut clusterer = SpeakerClusterer::new(config);
 
         // Create orthogonal embeddings (completely different)
-        let embedding1 = create_orthogonal_embedding(0, 192);
-        let embedding2 = create_orthogonal_embedding(100, 192);
+        let embedding1 = create_orthogonal_embedding(0, 256);
+        let embedding2 = create_orthogonal_embedding(100, 256);
 
         let speaker1 = clusterer.assign(&embedding1, 0);
         let speaker2 = clusterer.assign(&embedding2, 1000);
@@ -288,7 +288,7 @@ mod tests {
 
         // Create 5 completely different embeddings
         for i in 0..5 {
-            let embedding = create_orthogonal_embedding(i * 30, 192);
+            let embedding = create_orthogonal_embedding(i * 30, 256);
             clusterer.assign(&embedding, i as u64 * 1000);
         }
 
@@ -306,7 +306,7 @@ mod tests {
 
         // Add some speakers
         for i in 0..3 {
-            let embedding = create_orthogonal_embedding(i * 50, 192);
+            let embedding = create_orthogonal_embedding(i * 50, 256);
             clusterer.assign(&embedding, i as u64 * 1000);
         }
 
@@ -318,7 +318,7 @@ mod tests {
         assert_eq!(clusterer.speaker_count(), 0);
 
         // New speaker should be "Speaker 1" again
-        let embedding = create_normalized_embedding(0, 192);
+        let embedding = create_normalized_embedding(0, 256);
         let speaker = clusterer.assign(&embedding, 0);
         assert_eq!(speaker, "Speaker 1");
     }
@@ -328,7 +328,7 @@ mod tests {
         let config = create_test_config();
         let mut clusterer = SpeakerClusterer::new(config);
 
-        let embedding = create_normalized_embedding(0, 192);
+        let embedding = create_normalized_embedding(0, 256);
         clusterer.assign(&embedding, 100);
         clusterer.assign(&embedding, 200);
         clusterer.assign(&embedding, 300);
@@ -348,7 +348,7 @@ mod tests {
 
         // Create 3 different speakers
         for i in 0..3 {
-            let embedding = create_orthogonal_embedding(i * 50, 192);
+            let embedding = create_orthogonal_embedding(i * 50, 256);
             clusterer.assign(&embedding, i as u64 * 1000);
         }
 
