@@ -1,5 +1,6 @@
 use crate::audio;
 use crate::config::{Config, Settings};
+use crate::models::{self, ModelInfo, WhisperModel};
 use crate::pipeline::{start_pipeline, PipelineConfig, PipelineHandle, PipelineMessage};
 use crate::session::{SessionError, SessionManager};
 use serde::{Deserialize, Serialize};
@@ -390,6 +391,95 @@ fn check_model_status_internal() -> ModelStatus {
             path: None,
             error: Some(e.to_string()),
         },
+    }
+}
+
+/// Get information about all required models
+#[tauri::command]
+pub fn get_model_info() -> Vec<ModelInfo> {
+    let config = Config::load_or_default();
+    models::get_model_info(&config.whisper_model)
+}
+
+/// Download a Whisper model
+#[tauri::command]
+pub async fn download_whisper_model(model_name: String) -> Result<String, String> {
+    info!("Downloading Whisper model: {}", model_name);
+
+    let model = WhisperModel::from_name(&model_name)
+        .ok_or_else(|| format!("Invalid model name: {}", model_name))?;
+
+    // Run download in blocking task to not block async runtime
+    let result = tokio::task::spawn_blocking(move || {
+        models::ensure_whisper_model(model)
+    })
+    .await
+    .map_err(|e| format!("Task failed: {}", e))?;
+
+    match result {
+        Ok(path) => {
+            info!("Whisper model downloaded to: {:?}", path);
+            Ok(path.to_string_lossy().to_string())
+        }
+        Err(e) => {
+            error!("Failed to download Whisper model: {}", e);
+            Err(e.to_string())
+        }
+    }
+}
+
+/// Download the speaker embedding model for diarization
+#[tauri::command]
+pub async fn download_speaker_model() -> Result<String, String> {
+    info!("Downloading speaker embedding model");
+
+    // Run download in blocking task to not block async runtime
+    let result = tokio::task::spawn_blocking(|| {
+        models::ensure_speaker_model()
+    })
+    .await
+    .map_err(|e| format!("Task failed: {}", e))?;
+
+    match result {
+        Ok(path) => {
+            info!("Speaker model downloaded to: {:?}", path);
+            Ok(path.to_string_lossy().to_string())
+        }
+        Err(e) => {
+            error!("Failed to download speaker model: {}", e);
+            Err(e.to_string())
+        }
+    }
+}
+
+/// Ensure all required models are downloaded
+#[tauri::command]
+pub async fn ensure_models() -> Result<(), String> {
+    let config = Config::load_or_default();
+    let whisper_model = config.whisper_model.clone();
+    let need_diarization = config.diarization_enabled;
+
+    info!(
+        "Ensuring models are available: whisper={}, diarization={}",
+        whisper_model, need_diarization
+    );
+
+    // Run download in blocking task to not block async runtime
+    let result = tokio::task::spawn_blocking(move || {
+        models::ensure_all_models(&whisper_model, need_diarization)
+    })
+    .await
+    .map_err(|e| format!("Task failed: {}", e))?;
+
+    match result {
+        Ok(()) => {
+            info!("All required models are available");
+            Ok(())
+        }
+        Err(e) => {
+            error!("Failed to ensure models: {}", e);
+            Err(e.to_string())
+        }
     }
 }
 

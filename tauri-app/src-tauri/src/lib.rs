@@ -30,6 +30,7 @@ pub mod audio;
 mod commands;
 pub mod config;
 pub mod diarization;
+pub mod models;
 mod pipeline;
 #[cfg(test)]
 mod command_tests;
@@ -86,6 +87,10 @@ pub fn run() {
             commands::stop_session,
             commands::reset_session,
             commands::check_model_status,
+            commands::get_model_info,
+            commands::download_whisper_model,
+            commands::download_speaker_model,
+            commands::ensure_models,
         ])
         .on_window_event(|window, event| {
             if let WindowEvent::CloseRequested { .. } = event {

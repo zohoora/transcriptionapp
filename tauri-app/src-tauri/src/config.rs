@@ -269,13 +269,28 @@ impl Config {
     }
 
     /// Get the diarization model file path
+    /// Checks for both new name (speaker_embedding.onnx) and legacy name (voxceleb_ECAPA512_LM.onnx)
     pub fn get_diarization_model_path(&self) -> Result<PathBuf> {
         if let Some(ref path) = self.diarization_model_path {
-            Ok(path.clone())
-        } else {
-            let models_dir = Self::models_dir()?;
-            Ok(models_dir.join("voxceleb_ECAPA512_LM.onnx"))
+            return Ok(path.clone());
         }
+
+        let models_dir = Self::models_dir()?;
+
+        // Check new name first
+        let new_path = models_dir.join("speaker_embedding.onnx");
+        if new_path.exists() {
+            return Ok(new_path);
+        }
+
+        // Check legacy name
+        let legacy_path = models_dir.join("voxceleb_ECAPA512_LM.onnx");
+        if legacy_path.exists() {
+            return Ok(legacy_path);
+        }
+
+        // Return new path for download
+        Ok(new_path)
     }
 
     /// Convert to frontend Settings
