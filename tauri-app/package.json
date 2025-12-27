@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
-    "tauri": "ORT_DYLIB_PATH=/Users/arash/postulate/backend/venv/lib/python3.13/site-packages/onnxruntime/capi/libonnxruntime.1.23.2.dylib tauri",
+    "tauri": "tauri",
     "lint": "eslint src --ext .ts,.tsx",
     "typecheck": "tsc --noEmit",
     "test": "vitest",

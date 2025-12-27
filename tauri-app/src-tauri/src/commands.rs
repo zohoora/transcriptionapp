@@ -27,16 +27,32 @@ pub struct ModelStatus {
 /// State for the running pipeline
 pub struct PipelineState {
     pub handle: Option<PipelineHandle>,
+    /// Generation counter to detect stale pipeline messages after reset
+    pub generation: u64,
 }
 
 impl Default for PipelineState {
     fn default() -> Self {
-        Self { handle: None }
+        Self {
+            handle: None,
+            generation: 0,
+        }
+    }
+}
+
+impl PipelineState {
+    /// Increment generation and return the new value
+    pub fn next_generation(&mut self) -> u64 {
+        self.generation = self.generation.wrapping_add(1);
+        self.generation
     }
 }
 
 /// Shared session manager type for use in async contexts
 pub type SharedSessionManager = Arc<Mutex<SessionManager>>;
+
+/// Shared pipeline state type for use in async contexts
+pub type SharedPipelineState = Arc<Mutex<PipelineState>>;
 
 /// List available input devices
 #[tauri::command]
@@ -67,6 +83,13 @@ pub fn get_settings() -> Result<Settings, String> {
 /// Update settings
 #[tauri::command]
 pub fn set_settings(settings: Settings) -> Result<Settings, String> {
+    // Validate settings before saving
+    let validation_errors = settings.validate();
+    if !validation_errors.is_empty() {
+        let error_messages: Vec<String> = validation_errors.iter().map(|e| e.to_string()).collect();
+        return Err(format!("Invalid settings: {}", error_messages.join("; ")));
+    }
+
     let mut config = Config::load_or_default();
     config.update_from_settings(&settings);
     config.save().map_err(|e| e.to_string())?;
@@ -78,13 +101,14 @@ pub fn set_settings(settings: Settings) -> Result<Settings, String> {
 pub async fn start_session(
     app: AppHandle,
     session_state: State<'_, SharedSessionManager>,
-    pipeline_state: State<'_, Mutex<PipelineState>>,
+    pipeline_state: State<'_, SharedPipelineState>,
     device_id: Option<String>,
 ) -> Result<(), String> {
     info!("Starting session with device: {:?}", device_id);
 
-    // Clone the Arc for use in async context
+    // Clone the Arcs for use in async context
     let session_arc = session_state.inner().clone();
+    let pipeline_arc = pipeline_state.inner().clone();
 
     // Transition to preparing
     {
@@ -161,11 +185,12 @@ pub async fn start_session(
         }
     };
 
-    // Store the pipeline handle
-    {
-        let mut ps = pipeline_state.lock().map_err(|e| e.to_string())?;
+    // Store the pipeline handle and get generation for this pipeline instance
+    let expected_generation = {
+        let mut ps = pipeline_arc.lock().map_err(|e| e.to_string())?;
         ps.handle = Some(handle);
-    }
+        ps.next_generation()
+    };
 
     // Transition to recording
     {
@@ -178,11 +203,24 @@ pub async fn start_session(
     // Spawn task to handle pipeline messages
     let app_clone = app.clone();
     let session_clone = session_arc.clone();
+    let pipeline_clone = pipeline_arc.clone();
 
     tokio::spawn(async move {
         while let Some(msg) = rx.recv().await {
+            // Check if this pipeline instance is still current
+            // If generation has changed (due to reset), discard messages
+            let current_generation = match pipeline_clone.lock() {
+                Ok(ps) => ps.generation,
+                Err(_) => break, // Poisoned lock, exit
+            };
+            if current_generation != expected_generation {
+                info!("Discarding stale pipeline message (generation {} != {})", expected_generation, current_generation);
+                continue;
+            }
+
             match msg {
                 PipelineMessage::Segment(segment) => {
+                    info!("Received segment: '{}' ({}ms - {}ms)", segment.text, segment.start_ms, segment.end_ms);
                     let mut session = match session_clone.lock() {
                         Ok(s) => s,
                         Err(_) => continue,
@@ -193,6 +231,7 @@ pub async fn start_session(
                     // Emit transcript update
                     if let Ok(session) = session_clone.lock() {
                         let transcript = session.transcript_update();
+                        info!("Emitting transcript_update: {} chars", transcript.finalized_text.len());
                         let _ = app_clone.emit("transcript_update", transcript);
                     }
                 }
@@ -232,12 +271,13 @@ pub async fn start_session(
 pub async fn stop_session(
     app: AppHandle,
     session_state: State<'_, SharedSessionManager>,
-    pipeline_state: State<'_, Mutex<PipelineState>>,
+    pipeline_state: State<'_, SharedPipelineState>,
 ) -> Result<(), String> {
     info!("Stopping session");
 
-    // Clone the Arc for use in async context
+    // Clone the Arcs for use in async context
     let session_arc = session_state.inner().clone();
+    let pipeline_arc = pipeline_state.inner().clone();
 
     // Transition to stopping
     {
@@ -249,7 +289,7 @@ pub async fn stop_session(
 
     // Stop the pipeline
     let handle = {
-        let mut ps = pipeline_state.lock().map_err(|e| e.to_string())?;
+        let mut ps = pipeline_arc.lock().map_err(|e| e.to_string())?;
         ps.handle.take()
     };
 
@@ -290,15 +330,21 @@ pub async fn stop_session(
 pub fn reset_session(
     app: AppHandle,
     session_state: State<'_, SharedSessionManager>,
-    pipeline_state: State<'_, Mutex<PipelineState>>,
+    pipeline_state: State<'_, SharedPipelineState>,
 ) -> Result<(), String> {
     info!("Resetting session");
 
-    // Stop any running pipeline
+    // Stop any running pipeline and increment generation
+    // The generation increment ensures any in-flight pipeline messages are discarded
     {
         let mut ps = pipeline_state.lock().map_err(|e| e.to_string())?;
+        // Increment generation first so receiver task will discard any pending messages
+        ps.next_generation();
         if let Some(h) = ps.handle.take() {
             h.stop();
+            // Note: We don't join here because it would block the main thread.
+            // The receiver task will exit when it sees the Stopped message or
+            // when it notices the generation has changed.
         }
     }
 

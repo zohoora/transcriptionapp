@@ -114,6 +114,32 @@ function App() {
   } | null>(null);
 
   const transcriptRef = useRef<HTMLDivElement>(null);
+  const [localElapsedMs, setLocalElapsedMs] = useState(0);
+  const recordingStartRef = useRef<number | null>(null);
+
+  // Local timer that runs during recording/preparing
+  useEffect(() => {
+    if (status.state === 'preparing' || status.state === 'recording') {
+      // Start local timer when recording begins
+      if (recordingStartRef.current === null) {
+        recordingStartRef.current = Date.now();
+      }
+      
+      const interval = setInterval(() => {
+        if (recordingStartRef.current) {
+          setLocalElapsedMs(Date.now() - recordingStartRef.current);
+        }
+      }, 100);
+      
+      return () => clearInterval(interval);
+    } else {
+      // Reset when not recording
+      recordingStartRef.current = null;
+      if (status.state === 'idle') {
+        setLocalElapsedMs(0);
+      }
+    }
+  }, [status.state]);
 
   // Auto-scroll transcript during recording
   useEffect(() => {
@@ -158,11 +184,12 @@ function App() {
 
     async function setupListeners() {
       unlistenStatus = await listen<SessionStatus>('session_status', (event) => {
+        console.log('Session status update:', event.payload);
         setStatus(event.payload);
       });
 
       unlistenTranscript = await listen<TranscriptUpdate>('transcript_update', (event) => {
-        console.log('Transcript update:', event.payload);
+        console.log('Transcript update received:', event.payload);
         setTranscript(event.payload);
       });
     }
@@ -286,6 +313,8 @@ function App() {
           className={`settings-btn ${showSettings ? 'active' : ''}`}
           onClick={() => setShowSettings(!showSettings)}
           aria-label="Settings"
+          disabled={isRecording || isStopping}
+          title={isRecording || isStopping ? 'Settings disabled during recording' : 'Settings'}
         >
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
             <circle cx="12" cy="12" r="3" />
@@ -320,8 +349,8 @@ function App() {
             {isRecording ? 'Stop' : isPreparing ? '...' : isStopping ? '...' : 'Start'}
           </span>
         </button>
-        <div className={`timer ${isRecording || isStopping ? 'active' : ''}`}>
-          {formatTime(status.elapsed_ms)}
+        <div className={`timer ${isRecording || isStopping || isPreparing ? 'active' : ''}`}>
+          {formatTime(localElapsedMs)}
         </div>
       </section>
 

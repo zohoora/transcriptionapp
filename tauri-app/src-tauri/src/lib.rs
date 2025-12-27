@@ -45,9 +45,13 @@ pub mod vad;
 
 use commands::PipelineState;
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 use tauri::{Manager, WindowEvent};
-use tracing::info;
+use tracing::{info, warn};
 use tracing_subscriber::EnvFilter;
+
+/// Timeout for graceful pipeline shutdown on window close
+const SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(3);
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -67,8 +71,8 @@ pub fn run() {
             let session_manager = Arc::new(Mutex::new(session::SessionManager::new()));
             app.manage(session_manager);
 
-            // Initialize pipeline state
-            let pipeline_state = Mutex::new(PipelineState::default());
+            // Initialize pipeline state (wrapped in Arc for sharing with async tasks)
+            let pipeline_state = Arc::new(Mutex::new(PipelineState::default()));
             app.manage(pipeline_state);
 
             info!("App setup complete");
@@ -85,20 +89,51 @@ pub fn run() {
         ])
         .on_window_event(|window, event| {
             if let WindowEvent::CloseRequested { .. } = event {
-                // Stop any running pipeline before exit
-                if let Some(pipeline_state) = window.app_handle().try_state::<Mutex<PipelineState>>() {
+                // Try graceful shutdown of the pipeline
+                let mut graceful_success = true;
+
+                if let Some(pipeline_state) = window.app_handle().try_state::<Arc<Mutex<PipelineState>>>() {
                     if let Ok(mut ps) = pipeline_state.lock() {
                         if let Some(handle) = ps.handle.take() {
                             info!("Stopping pipeline on window close");
                             handle.stop();
-                            // Don't join here - just let it stop
+
+                            // Spawn a thread to join the pipeline and wait with timeout
+                            let join_thread = std::thread::spawn(move || {
+                                handle.join();
+                            });
+
+                            // Wait for join to complete with timeout
+                            let start = std::time::Instant::now();
+                            loop {
+                                if join_thread.is_finished() {
+                                    info!("Pipeline shutdown completed gracefully");
+                                    break;
+                                }
+                                if start.elapsed() >= SHUTDOWN_TIMEOUT {
+                                    warn!("Pipeline shutdown timed out after {:?}", SHUTDOWN_TIMEOUT);
+                                    graceful_success = false;
+                                    break;
+                                }
+                                std::thread::sleep(Duration::from_millis(50));
+                            }
                         }
                     }
                 }
-                // Force immediate termination to avoid ONNX Runtime mutex issues
-                // Using _exit bypasses all cleanup that causes the crash
-                info!("Clean exit");
-                unsafe { libc::_exit(0) };
+
+                if graceful_success {
+                    // Allow normal exit - Rust destructors will run
+                    info!("Graceful exit");
+                    // Note: We still use _exit(0) for now because ONNX Runtime
+                    // can crash during normal destructor cleanup. Once the ONNX
+                    // shutdown issue is fixed upstream, this can be removed.
+                    // TODO: Remove forced exit once ort crate fixes shutdown
+                    unsafe { libc::_exit(0) };
+                } else {
+                    // Timeout expired - force immediate termination
+                    warn!("Forcing immediate exit due to shutdown timeout");
+                    unsafe { libc::_exit(0) };
+                }
             }
         })
         .run(tauri::generate_context!())

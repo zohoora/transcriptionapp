@@ -34,6 +34,114 @@ impl Default for Settings {
     }
 }
 
+/// Validation error for settings
+#[derive(Debug, Clone)]
+pub struct SettingsValidationError {
+    pub field: String,
+    pub message: String,
+}
+
+impl std::fmt::Display for SettingsValidationError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}: {}", self.field, self.message)
+    }
+}
+
+impl Settings {
+    /// Valid whisper model names
+    const VALID_MODELS: &'static [&'static str] = &["tiny", "base", "small", "medium", "large"];
+
+    /// Valid output formats
+    const VALID_OUTPUT_FORMATS: &'static [&'static str] = &["paragraphs", "single_paragraph"];
+
+    /// Validate settings and return errors if any
+    pub fn validate(&self) -> Vec<SettingsValidationError> {
+        let mut errors = Vec::new();
+
+        // Validate whisper model
+        if !Self::VALID_MODELS.contains(&self.whisper_model.as_str()) {
+            errors.push(SettingsValidationError {
+                field: "whisper_model".to_string(),
+                message: format!(
+                    "Invalid model '{}'. Must be one of: {}",
+                    self.whisper_model,
+                    Self::VALID_MODELS.join(", ")
+                ),
+            });
+        }
+
+        // Validate VAD threshold (0.0 - 1.0)
+        if !(0.0..=1.0).contains(&self.vad_threshold) {
+            errors.push(SettingsValidationError {
+                field: "vad_threshold".to_string(),
+                message: format!(
+                    "VAD threshold {} is out of range. Must be between 0.0 and 1.0",
+                    self.vad_threshold
+                ),
+            });
+        }
+
+        // Validate silence_to_flush_ms (reasonable range: 100-5000ms)
+        if self.silence_to_flush_ms < 100 || self.silence_to_flush_ms > 5000 {
+            errors.push(SettingsValidationError {
+                field: "silence_to_flush_ms".to_string(),
+                message: format!(
+                    "Silence duration {}ms is out of range. Must be between 100 and 5000ms",
+                    self.silence_to_flush_ms
+                ),
+            });
+        }
+
+        // Validate max_utterance_ms (must be < 30s for Whisper, and > silence_to_flush)
+        if self.max_utterance_ms > 29000 {
+            errors.push(SettingsValidationError {
+                field: "max_utterance_ms".to_string(),
+                message: format!(
+                    "Max utterance {}ms exceeds Whisper's 30s limit. Must be <= 29000ms",
+                    self.max_utterance_ms
+                ),
+            });
+        }
+        if self.max_utterance_ms < self.silence_to_flush_ms {
+            errors.push(SettingsValidationError {
+                field: "max_utterance_ms".to_string(),
+                message: format!(
+                    "Max utterance {}ms must be greater than silence duration {}ms",
+                    self.max_utterance_ms, self.silence_to_flush_ms
+                ),
+            });
+        }
+
+        // Validate max_speakers (reasonable range: 1-20)
+        if self.max_speakers < 1 || self.max_speakers > 20 {
+            errors.push(SettingsValidationError {
+                field: "max_speakers".to_string(),
+                message: format!(
+                    "Max speakers {} is out of range. Must be between 1 and 20",
+                    self.max_speakers
+                ),
+            });
+        }
+
+        // Validate output format
+        if !Self::VALID_OUTPUT_FORMATS.contains(&self.output_format.as_str()) {
+            // Just warn, don't fail - allow flexibility
+            debug!(
+                "Unusual output format '{}'. Expected one of: {}",
+                self.output_format,
+                Self::VALID_OUTPUT_FORMATS.join(", ")
+            );
+        }
+
+        errors
+    }
+
+    /// Check if settings are valid
+    pub fn is_valid(&self) -> bool {
+        self.validate().is_empty()
+    }
+}
+
 /// Model availability status for the frontend
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ModelStatus {

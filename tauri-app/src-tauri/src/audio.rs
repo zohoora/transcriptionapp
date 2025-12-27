@@ -136,6 +136,12 @@ pub fn get_device(device_id: Option<&str>) -> Result<CpalDevice> {
     }
 }
 
+/// Selected audio configuration with both stream config and sample format
+pub struct SelectedConfig {
+    pub config: StreamConfig,
+    pub sample_format: SampleFormat,
+}
+
 /// Selects the best input configuration for a device.
 ///
 /// Prefers mono configurations to minimize processing overhead.
@@ -148,32 +154,40 @@ pub fn get_device(device_id: Option<&str>) -> Result<CpalDevice> {
 /// # Errors
 ///
 /// Returns an error if no supported configuration can be found.
-pub fn select_input_config(device: &CpalDevice) -> Result<StreamConfig> {
+pub fn select_input_config(device: &CpalDevice) -> Result<SelectedConfig> {
     // First try to find a mono config
     if let Ok(supported) = device.supported_input_configs() {
         for config_range in supported {
             if config_range.channels() == 1 {
-                let config = config_range.with_max_sample_rate();
+                let supported_config = config_range.with_max_sample_rate();
                 debug!(
-                    "Selected mono config: {} Hz, {} channels",
-                    config.sample_rate().0,
-                    config.channels()
+                    "Selected mono config: {} Hz, {} channels, format {:?}",
+                    supported_config.sample_rate().0,
+                    supported_config.channels(),
+                    supported_config.sample_format()
                 );
-                return Ok(config.into());
+                return Ok(SelectedConfig {
+                    config: supported_config.clone().into(),
+                    sample_format: supported_config.sample_format(),
+                });
             }
         }
     }
 
     // Fall back to default (will downmix in callback)
-    let config = device
+    let supported_config = device
         .default_input_config()
         .context("No default input config")?;
     debug!(
-        "Using default config (will downmix): {} Hz, {} channels",
-        config.sample_rate().0,
-        config.channels()
+        "Using default config (will downmix): {} Hz, {} channels, format {:?}",
+        supported_config.sample_rate().0,
+        supported_config.channels(),
+        supported_config.sample_format()
     );
-    Ok(config.into())
+    Ok(SelectedConfig {
+        config: supported_config.clone().into(),
+        sample_format: supported_config.sample_format(),
+    })
 }
 
 /// Calculates the ring buffer capacity for a given sample rate.
@@ -215,6 +229,7 @@ impl AudioCapture {
     ///
     /// * `device` - The audio input device to capture from.
     /// * `config` - Stream configuration (sample rate, channels).
+    /// * `sample_format` - The sample format to use (must match the selected config).
     /// * `producer` - Ring buffer producer to write samples to.
     ///
     /// # Errors
@@ -223,13 +238,9 @@ impl AudioCapture {
     pub fn new(
         device: &CpalDevice,
         config: &StreamConfig,
+        sample_format: SampleFormat,
         mut producer: HeapProd<f32>,
     ) -> Result<Self> {
-        let sample_format = device
-            .default_input_config()
-            .context("No default input config")?
-            .sample_format();
-
         let channels = config.channels as usize;
         let sample_rate = config.sample_rate.0;
         let overflow_counter = Arc::new(AtomicU64::new(0));

@@ -127,12 +127,12 @@ async fn main() -> Result<()> {
     let device_name = device.name().unwrap_or_else(|_| "Unknown".to_string());
     info!("Using audio device: {}", device_name);
 
-    // Get input configuration
-    let stream_config = select_input_config(&device)?;
-    let sample_rate = stream_config.sample_rate.0;
+    // Get input configuration (includes both StreamConfig and SampleFormat)
+    let selected = select_input_config(&device)?;
+    let sample_rate = selected.config.sample_rate.0;
     info!(
-        "Audio config: {} Hz, {} channels",
-        sample_rate, stream_config.channels
+        "Audio config: {} Hz, {} channels, format {:?}",
+        sample_rate, selected.config.channels, selected.sample_format
     );
 
     // Create ring buffer
@@ -142,7 +142,7 @@ async fn main() -> Result<()> {
     debug!("Ring buffer capacity: {} samples ({} seconds)", capacity, capacity / sample_rate as usize);
 
     // Create audio capture
-    let capture = AudioCapture::new(&device, &stream_config, producer)?;
+    let capture = AudioCapture::new(&device, &selected.config, selected.sample_format, producer)?;
 
     // Create processor config
     let vad_config = VadConfig::from_ms(

@@ -61,33 +61,47 @@ pub fn get_device(device_id: Option<&str>) -> Result<Device> {
     }
 }
 
+/// Selected audio configuration with both stream config and sample format
+pub struct SelectedConfig {
+    pub config: StreamConfig,
+    pub sample_format: SampleFormat,
+}
+
 /// Select the best input configuration for a device
-pub fn select_input_config(device: &Device) -> Result<StreamConfig> {
+pub fn select_input_config(device: &Device) -> Result<SelectedConfig> {
     // First try to find a mono config
     if let Ok(supported) = device.supported_input_configs() {
         for config_range in supported {
             if config_range.channels() == 1 {
-                let config = config_range.with_max_sample_rate();
+                let supported_config = config_range.with_max_sample_rate();
                 debug!(
-                    "Selected mono config: {} Hz, {} channels",
-                    config.sample_rate().0,
-                    config.channels()
+                    "Selected mono config: {} Hz, {} channels, format {:?}",
+                    supported_config.sample_rate().0,
+                    supported_config.channels(),
+                    supported_config.sample_format()
                 );
-                return Ok(config.into());
+                return Ok(SelectedConfig {
+                    config: supported_config.clone().into(),
+                    sample_format: supported_config.sample_format(),
+                });
             }
         }
     }
 
     // Fall back to default (will downmix in callback)
-    let config = device
+    let supported_config = device
         .default_input_config()
         .context("No default input config")?;
     debug!(
-        "Using default config (will downmix): {} Hz, {} channels",
-        config.sample_rate().0,
-        config.channels()
+        "Using default config (will downmix): {} Hz, {} channels, format {:?}",
+        supported_config.sample_rate().0,
+        supported_config.channels(),
+        supported_config.sample_format()
     );
-    Ok(config.into())
+    Ok(SelectedConfig {
+        config: supported_config.clone().into(),
+        sample_format: supported_config.sample_format(),
+    })
 }
 
 /// Calculate ring buffer capacity for given sample rate
@@ -110,13 +124,9 @@ impl AudioCapture {
     pub fn new(
         device: &Device,
         config: &StreamConfig,
+        sample_format: SampleFormat,
         mut producer: HeapProd<f32>,
     ) -> Result<Self> {
-        let sample_format = device
-            .default_input_config()
-            .context("No default input config")?
-            .sample_format();
-
         let channels = config.channels as usize;
         let sample_rate = config.sample_rate.0;
         let overflow_counter = Arc::new(AtomicU64::new(0));

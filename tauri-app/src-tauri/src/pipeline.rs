@@ -73,14 +73,13 @@ impl Default for PipelineConfig {
 }
 
 /// Handle to control a running pipeline
+///
+/// This type is `Send` but not `Sync`. It should always be stored behind a `Mutex`
+/// when shared across threads (which Tauri's state management handles automatically).
 pub struct PipelineHandle {
     stop_flag: Arc<AtomicBool>,
     processor_handle: Option<std::thread::JoinHandle<()>>,
 }
-
-// Implement Send and Sync - safe because we only store the stop flag and JoinHandle
-unsafe impl Send for PipelineHandle {}
-unsafe impl Sync for PipelineHandle {}
 
 impl PipelineHandle {
     /// Request the pipeline to stop
@@ -157,12 +156,12 @@ fn run_pipeline_thread_inner(
     let device_name = device.name().unwrap_or_else(|_| "Unknown".to_string());
     info!("Using audio device: {}", device_name);
 
-    // Get input configuration
-    let stream_config = select_input_config(&device)?;
-    let sample_rate = stream_config.sample_rate.0;
+    // Get input configuration (includes both StreamConfig and SampleFormat)
+    let selected = select_input_config(&device)?;
+    let sample_rate = selected.config.sample_rate.0;
     info!(
-        "Audio config: {} Hz, {} channels",
-        sample_rate, stream_config.channels
+        "Audio config: {} Hz, {} channels, format {:?}",
+        sample_rate, selected.config.channels, selected.sample_format
     );
 
     // Create ring buffer
@@ -172,7 +171,7 @@ fn run_pipeline_thread_inner(
     debug!("Ring buffer capacity: {} samples", capacity);
 
     // Create audio capture (on this thread)
-    let capture = AudioCapture::new(&device, &stream_config, producer)?;
+    let capture = AudioCapture::new(&device, &selected.config, selected.sample_format, producer)?;
 
     // Start capturing
     capture.start()?;
@@ -403,6 +402,8 @@ fn run_pipeline_thread_inner(
                     segment.speaker_id = speaker_id;
 
                     if !segment.text.is_empty() {
+                        info!("Sending segment: '{}' ({}ms - {}ms)", segment.text, segment.start_ms, segment.end_ms);
+                        
                         // Update context
                         context.push(' ');
                         context.push_str(&segment.text);
@@ -426,6 +427,8 @@ fn run_pipeline_thread_inner(
                             let _ = capture.stop();
                             return Ok(());
                         }
+                    } else {
+                        info!("Skipping empty segment");
                     }
                 }
                 Err(e) => {
