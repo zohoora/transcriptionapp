@@ -179,7 +179,7 @@ fn default_max_speakers() -> usize {
 }
 
 fn default_similarity_threshold() -> f32 {
-    0.60
+    0.85
 }
 
 impl Default for Config {
@@ -197,7 +197,7 @@ impl Default for Config {
             model_path: None,
             diarization_enabled: false,
             max_speakers: 10,
-            speaker_similarity_threshold: 0.60,
+            speaker_similarity_threshold: 0.85,
             diarization_model_path: None,
         }
     }
@@ -485,7 +485,7 @@ mod tests {
         let config = Config::default();
         assert!(!config.diarization_enabled);
         assert_eq!(config.max_speakers, 10);
-        assert_eq!(config.speaker_similarity_threshold, 0.60);
+        assert_eq!(config.speaker_similarity_threshold, 0.85);
         assert!(config.diarization_model_path.is_none());
     }
 

@@ -67,7 +67,7 @@ impl Default for PipelineConfig {
             n_threads: 4,
             diarization_enabled: false,
             diarization_model_path: None,
-            speaker_similarity_threshold: 0.60,
+            speaker_similarity_threshold: 0.85,
             max_speakers: 10,
         }
     }
