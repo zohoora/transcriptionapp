@@ -85,8 +85,8 @@ impl DiarizationProvider {
     /// * `utterance` - Audio utterance with samples and timestamps
     ///
     /// # Returns
-    /// Speaker ID string (e.g., "Speaker 1") or "Unknown" for edge cases
-    pub fn identify_speaker(&mut self, utterance: &Utterance) -> Result<String, DiarizationError> {
+    /// Tuple of (Speaker ID, confidence 0.0-1.0) or ("Unknown", 0.0) for edge cases
+    pub fn identify_speaker(&mut self, utterance: &Utterance) -> Result<(String, f32), DiarizationError> {
         // Check minimum audio length
         if utterance.audio.len() < self.config.min_audio_samples {
             tracing::debug!(
@@ -94,7 +94,7 @@ impl DiarizationProvider {
                 utterance.audio.len(),
                 self.config.min_audio_samples
             );
-            return Ok("Unknown".to_string());
+            return Ok(("Unknown".to_string(), 0.0));
         }
 
         // Compute mel spectrogram
@@ -107,23 +107,24 @@ impl DiarizationProvider {
                 "Low energy audio ({}), skipping diarization",
                 energy
             );
-            return Ok("Unknown".to_string());
+            return Ok(("Unknown".to_string(), 0.0));
         }
 
         // Extract embedding
         let embedding = self.extractor.extract(&mel_spec)?;
 
         // Assign to speaker cluster
-        let speaker_id = self.clusterer.assign(&embedding, utterance.start_ms);
+        let (speaker_id, confidence) = self.clusterer.assign(&embedding, utterance.start_ms);
 
         tracing::debug!(
-            "Utterance {}ms-{}ms assigned to {}",
+            "Utterance {}ms-{}ms assigned to {} (confidence: {:.1}%)",
             utterance.start_ms,
             utterance.end_ms,
-            speaker_id
+            speaker_id,
+            confidence * 100.0
         );
 
-        Ok(speaker_id)
+        Ok((speaker_id, confidence))
     }
 
     /// Identify speaker from raw audio samples
@@ -134,7 +135,7 @@ impl DiarizationProvider {
         audio: &[f32],
         start_ms: u64,
         end_ms: u64,
-    ) -> Result<String, DiarizationError> {
+    ) -> Result<(String, f32), DiarizationError> {
         let utterance = Utterance::new(audio, start_ms, end_ms);
         self.identify_speaker(&utterance)
     }

@@ -95,8 +95,8 @@ impl SpeakerClusterer {
     /// * `timestamp_ms` - Current timestamp in milliseconds
     ///
     /// # Returns
-    /// Speaker ID string (e.g., "Speaker 1")
-    pub fn assign(&mut self, embedding: &[f32], timestamp_ms: u64) -> String {
+    /// Tuple of (Speaker ID string, confidence score 0.0-1.0)
+    pub fn assign(&mut self, embedding: &[f32], timestamp_ms: u64) -> (String, f32) {
         // L2 normalize the embedding
         let mut normalized = embedding.to_vec();
         l2_normalize(&mut normalized);
@@ -109,22 +109,34 @@ impl SpeakerClusterer {
             .map(|(idx, c)| (idx, c.similarity(&normalized)))
             .max_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
 
+        // Log all similarities for debugging
+        if let Some((best_idx, best_sim)) = best_match {
+            tracing::info!(
+                "Best match: {} with similarity {:.3} (threshold: {:.3})",
+                self.centroids.get(best_idx).map(|c| c.id.as_str()).unwrap_or("?"),
+                best_sim,
+                self.config.similarity_threshold
+            );
+        } else {
+            tracing::info!("No existing speakers to compare against");
+        }
+
         match best_match {
             Some((idx, sim)) if sim >= self.config.similarity_threshold => {
                 // Good match found - update existing centroid
                 let centroid = &mut self.centroids[idx];
                 centroid.update(&normalized, timestamp_ms, self.config.centroid_ema_alpha);
-                centroid.id.clone()
+                (centroid.id.clone(), sim)
             }
-            Some((idx, _)) if self.centroids.len() >= self.config.max_speakers => {
+            Some((idx, sim)) if self.centroids.len() >= self.config.max_speakers => {
                 // At max speakers - force merge into closest centroid
                 let centroid = &mut self.centroids[idx];
                 centroid.update(&normalized, timestamp_ms, self.config.centroid_ema_alpha);
-                centroid.id.clone()
+                (centroid.id.clone(), sim)
             }
             _ => {
-                // No good match - create new speaker
-                self.create_speaker(normalized, timestamp_ms)
+                // No good match - create new speaker (confidence = 1.0 for new speaker)
+                (self.create_speaker(normalized, timestamp_ms), 1.0)
             }
         }
     }
@@ -178,8 +190,8 @@ mod tests {
 
     fn create_test_config() -> ClusterConfig {
         ClusterConfig {
-            similarity_threshold: 0.75,
-            min_similarity: 0.5,
+            similarity_threshold: 0.3,
+            min_similarity: 0.2,
             max_speakers: 5,
             centroid_ema_alpha: 0.3,
             min_embeddings_stable: 3,
@@ -239,9 +251,10 @@ mod tests {
         let mut clusterer = SpeakerClusterer::new(config);
 
         let embedding = create_normalized_embedding(0, 256);
-        let speaker = clusterer.assign(&embedding, 0);
+        let (speaker, confidence) = clusterer.assign(&embedding, 0);
 
         assert_eq!(speaker, "Speaker 1");
+        assert_eq!(confidence, 1.0); // New speaker has 100% confidence
         assert_eq!(clusterer.speaker_count(), 1);
     }
 
@@ -252,14 +265,15 @@ mod tests {
 
         // Create first embedding
         let embedding1 = create_normalized_embedding(0, 256);
-        let speaker1 = clusterer.assign(&embedding1, 0);
+        let (speaker1, _) = clusterer.assign(&embedding1, 0);
 
         // Create very similar embedding
         let embedding2 = create_normalized_embedding(0, 256);
-        let speaker2 = clusterer.assign(&embedding2, 1000);
+        let (speaker2, confidence2) = clusterer.assign(&embedding2, 1000);
 
-        // Should be assigned to same speaker
+        // Should be assigned to same speaker with high confidence
         assert_eq!(speaker1, speaker2);
+        assert!(confidence2 >= 0.75, "Expected high confidence for identical embedding");
         assert_eq!(clusterer.speaker_count(), 1);
     }
 
@@ -272,11 +286,13 @@ mod tests {
         let embedding1 = create_orthogonal_embedding(0, 256);
         let embedding2 = create_orthogonal_embedding(100, 256);
 
-        let speaker1 = clusterer.assign(&embedding1, 0);
-        let speaker2 = clusterer.assign(&embedding2, 1000);
+        let (speaker1, confidence1) = clusterer.assign(&embedding1, 0);
+        let (speaker2, confidence2) = clusterer.assign(&embedding2, 1000);
 
-        // Should be different speakers
+        // Should be different speakers, both new (100% confidence)
         assert_ne!(speaker1, speaker2);
+        assert_eq!(confidence1, 1.0);
+        assert_eq!(confidence2, 1.0);
         assert_eq!(clusterer.speaker_count(), 2);
     }
 
@@ -307,7 +323,7 @@ mod tests {
         // Add some speakers
         for i in 0..3 {
             let embedding = create_orthogonal_embedding(i * 50, 256);
-            clusterer.assign(&embedding, i as u64 * 1000);
+            let _ = clusterer.assign(&embedding, i as u64 * 1000);
         }
 
         assert!(clusterer.speaker_count() > 0);
@@ -319,7 +335,7 @@ mod tests {
 
         // New speaker should be "Speaker 1" again
         let embedding = create_normalized_embedding(0, 256);
-        let speaker = clusterer.assign(&embedding, 0);
+        let (speaker, _) = clusterer.assign(&embedding, 0);
         assert_eq!(speaker, "Speaker 1");
     }
 

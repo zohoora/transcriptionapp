@@ -34,7 +34,7 @@ impl Default for DiarizationConfig {
     fn default() -> Self {
         Self {
             model_path: PathBuf::new(),
-            similarity_threshold: 0.75,
+            similarity_threshold: 0.3,
             min_similarity: 0.5,
             max_speakers: 10,
             n_threads: 2,
@@ -78,7 +78,7 @@ pub struct ClusterConfig {
 impl Default for ClusterConfig {
     fn default() -> Self {
         Self {
-            similarity_threshold: 0.75,
+            similarity_threshold: 0.3,
             min_similarity: 0.5,
             max_speakers: 10,
             centroid_ema_alpha: 0.3,
@@ -149,7 +149,7 @@ mod tests {
     #[test]
     fn test_default_diarization_config() {
         let config = DiarizationConfig::default();
-        assert_eq!(config.similarity_threshold, 0.75);
+        assert_eq!(config.similarity_threshold, 0.3);
         assert_eq!(config.max_speakers, 10);
         assert_eq!(config.min_audio_samples, 8000);
     }

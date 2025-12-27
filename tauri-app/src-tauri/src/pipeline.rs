@@ -67,7 +67,7 @@ impl Default for PipelineConfig {
             n_threads: 4,
             diarization_enabled: false,
             diarization_model_path: None,
-            speaker_similarity_threshold: 0.85,
+            speaker_similarity_threshold: 0.5,
             max_speakers: 10,
         }
     }
@@ -218,6 +218,8 @@ fn run_pipeline_thread_inner(
                     n_threads: 2,
                     ..Default::default()
                 };
+                info!("Diarization config: similarity_threshold={}, max_speakers={}",
+                      diar_config.similarity_threshold, diar_config.max_speakers);
                 match DiarizationProvider::new(diar_config) {
                     Ok(provider) => {
                         info!("Diarization enabled with model: {:?}", model_path);
@@ -271,37 +273,36 @@ fn run_pipeline_thread_inner(
 
             // Transcribe any remaining utterances
             while let Some(utterance) = pipeline.pop_utterance() {
-                // Identify speaker if diarization is enabled
-                #[cfg(feature = "diarization")]
-                let speaker_id: Option<String> = if let Some(ref mut diar) = diarization {
-                    match diar.identify_speaker_from_audio(
-                        &utterance.audio,
-                        utterance.start_ms,
-                        utterance.end_ms,
-                    ) {
-                        Ok(id) => Some(id),
-                        Err(e) => {
-                            debug!("Diarization failed for utterance: {}", e);
-                            None
-                        }
-                    }
-                } else {
-                    None
-                };
-
-                #[cfg(not(feature = "diarization"))]
-                let speaker_id: Option<String> = None;
-
                 let context_ref = if context.is_empty() {
                     None
                 } else {
                     Some(context.as_str())
                 };
 
+                // Transcribe first to check if we have actual speech
                 match whisper.transcribe(&utterance, context_ref) {
                     Ok(mut segment) => {
-                        segment.speaker_id = speaker_id;
                         if !segment.text.is_empty() {
+                            // Only run diarization if we have actual text
+                            #[cfg(feature = "diarization")]
+                            {
+                                if let Some(ref mut diar) = diarization {
+                                    match diar.identify_speaker_from_audio(
+                                        &utterance.audio,
+                                        utterance.start_ms,
+                                        utterance.end_ms,
+                                    ) {
+                                        Ok((id, conf)) => {
+                                            segment.speaker_id = Some(id);
+                                            segment.speaker_confidence = Some(conf);
+                                        }
+                                        Err(e) => {
+                                            debug!("Diarization failed for utterance: {}", e);
+                                        }
+                                    }
+                                }
+                            }
+
                             context.push(' ');
                             context.push_str(&segment.text);
                             if tx.blocking_send(PipelineMessage::Segment(segment)).is_err() {
@@ -366,46 +367,40 @@ fn run_pipeline_thread_inner(
                 utterance.start_ms, utterance.end_ms
             );
 
-            // Identify speaker if diarization is enabled
-            #[cfg(feature = "diarization")]
-            let speaker_id: Option<String> = if let Some(ref mut diar) = diarization {
-                info!("Running diarization on utterance with {} samples", utterance.audio.len());
-                match diar.identify_speaker_from_audio(
-                    &utterance.audio,
-                    utterance.start_ms,
-                    utterance.end_ms,
-                ) {
-                    Ok(id) => {
-                        info!("Diarization result: {}", id);
-                        Some(id)
-                    }
-                    Err(e) => {
-                        warn!("Diarization failed for utterance: {}", e);
-                        None
-                    }
-                }
-            } else {
-                info!("Diarization not enabled or not initialized");
-                None
-            };
-
-            #[cfg(not(feature = "diarization"))]
-            let speaker_id: Option<String> = None;
-
             let context_ref = if context.is_empty() {
                 None
             } else {
                 Some(context.as_str())
             };
 
+            // Transcribe first to check if we have actual speech
             match whisper.transcribe(&utterance, context_ref) {
                 Ok(mut segment) => {
-                    // Set speaker ID from diarization
-                    segment.speaker_id = speaker_id;
-
                     if !segment.text.is_empty() {
+                        // Only run diarization if we have actual text
+                        #[cfg(feature = "diarization")]
+                        {
+                            if let Some(ref mut diar) = diarization {
+                                info!("Running diarization on utterance with {} samples", utterance.audio.len());
+                                match diar.identify_speaker_from_audio(
+                                    &utterance.audio,
+                                    utterance.start_ms,
+                                    utterance.end_ms,
+                                ) {
+                                    Ok((id, conf)) => {
+                                        info!("Diarization result: {} ({:.0}% confidence)", id, conf * 100.0);
+                                        segment.speaker_id = Some(id);
+                                        segment.speaker_confidence = Some(conf);
+                                    }
+                                    Err(e) => {
+                                        warn!("Diarization failed for utterance: {}", e);
+                                    }
+                                }
+                            }
+                        }
+
                         info!("Sending segment: '{}' ({}ms - {}ms)", segment.text, segment.start_ms, segment.end_ms);
-                        
+
                         // Update context
                         context.push(' ');
                         context.push_str(&segment.text);

@@ -13,6 +13,8 @@ pub struct Segment {
     pub end_ms: u64,
     pub text: String,
     pub speaker_id: Option<String>,
+    /// Speaker identification confidence (0.0-1.0)
+    pub speaker_confidence: Option<f32>,
     pub avg_log_prob: Option<f32>,
     pub no_speech_prob: Option<f32>,
 }
@@ -25,6 +27,7 @@ impl Segment {
             end_ms,
             text,
             speaker_id: None,
+            speaker_confidence: None,
             avg_log_prob: None,
             no_speech_prob: None,
         }

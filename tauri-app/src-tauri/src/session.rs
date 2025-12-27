@@ -95,9 +95,13 @@ impl SessionManager {
             .segments
             .iter()
             .map(|s| {
-                // Format with speaker label if available
+                // Format with speaker label and confidence if available
                 if let Some(ref speaker) = s.speaker_id {
-                    format!("[{}]: {}", speaker, s.text)
+                    if let Some(confidence) = s.speaker_confidence {
+                        format!("[{} ({:.0}%)]: {}", speaker, confidence * 100.0, s.text)
+                    } else {
+                        format!("[{}]: {}", speaker, s.text)
+                    }
                 } else {
                     s.text.clone()
                 }
