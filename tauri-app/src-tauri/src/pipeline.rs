@@ -22,6 +22,7 @@ const VAD_CHUNK_SIZE: usize = 512;
 
 /// Message from the transcription pipeline to the session controller
 #[derive(Debug)]
+#[allow(dead_code)] // Fields used for debugging and future UI features
 pub enum PipelineMessage {
     /// New segment transcribed
     Segment(Segment),
@@ -96,6 +97,7 @@ impl PipelineHandle {
     }
 
     /// Check if the pipeline is still running
+    #[allow(dead_code)] // Useful for future monitoring features
     pub fn is_running(&self) -> bool {
         !self.stop_flag.load(Ordering::Relaxed)
     }
