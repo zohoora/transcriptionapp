@@ -18,9 +18,9 @@ const WHISPER_BASE_URL: &str =
     "https://huggingface.co/ggerganov/whisper.cpp/resolve/main";
 
 /// URL for the speaker embedding ONNX model
-/// Using a pre-trained speaker verification model
+/// Using WeSpeaker ResNet34 model from ONNX Community (~26MB)
 const SPEAKER_MODEL_URL: &str =
-    "https://huggingface.co/pyannote/wespeaker-voxceleb-resnet34-LM/resolve/main/speaker-embedding.onnx";
+    "https://huggingface.co/onnx-community/wespeaker-voxceleb-resnet34-LM/resolve/main/onnx/model.onnx";
 
 /// Errors that can occur during model operations
 #[derive(Debug, Error)]
@@ -340,5 +340,33 @@ mod tests {
     fn test_whisper_model_filenames() {
         assert_eq!(WhisperModel::Tiny.filename(), "ggml-tiny.bin");
         assert_eq!(WhisperModel::Large.filename(), "ggml-large.bin");
+    }
+
+    /// Test downloading the tiny Whisper model
+    /// This test is ignored by default as it downloads ~75MB
+    #[test]
+    #[ignore]
+    fn test_download_whisper_tiny() {
+        let result = ensure_whisper_model(WhisperModel::Tiny);
+        assert!(result.is_ok(), "Failed to download: {:?}", result.err());
+        let path = result.unwrap();
+        assert!(path.exists(), "Downloaded file does not exist");
+        // Tiny model should be at least 70MB
+        let metadata = std::fs::metadata(&path).unwrap();
+        assert!(metadata.len() > 70_000_000, "File too small: {} bytes", metadata.len());
+    }
+
+    /// Test downloading the speaker embedding model
+    /// This test is ignored by default as it downloads ~26MB
+    #[test]
+    #[ignore]
+    fn test_download_speaker_model() {
+        let result = ensure_speaker_model();
+        assert!(result.is_ok(), "Failed to download: {:?}", result.err());
+        let path = result.unwrap();
+        assert!(path.exists(), "Downloaded file does not exist");
+        // Speaker model should be at least 20MB
+        let metadata = std::fs::metadata(&path).unwrap();
+        assert!(metadata.len() > 20_000_000, "File too small: {} bytes", metadata.len());
     }
 }
