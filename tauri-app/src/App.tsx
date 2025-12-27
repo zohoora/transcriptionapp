@@ -50,6 +50,33 @@ interface Settings {
   max_speakers: number;
 }
 
+// Checklist types
+type CheckCategory = 'audio' | 'model' | 'permission' | 'configuration' | 'network';
+type CheckStatus = 'pass' | 'fail' | 'warning' | 'pending' | 'skipped';
+
+interface CheckAction {
+  download_model?: { model_name: string };
+  open_settings?: { settings_type: string };
+  retry?: boolean;
+  none?: boolean;
+}
+
+interface CheckResult {
+  id: string;
+  name: string;
+  category: CheckCategory;
+  status: CheckStatus;
+  message: string | null;
+  action: CheckAction | null;
+}
+
+interface ChecklistResult {
+  checks: CheckResult[];
+  all_passed: boolean;
+  can_start: boolean;
+  summary: string;
+}
+
 const WHISPER_MODELS = [
   { value: 'tiny', label: 'Tiny (fastest)' },
   { value: 'base', label: 'Base' },
@@ -113,6 +140,12 @@ function App() {
     max_speakers: number;
   } | null>(null);
 
+  // Checklist state
+  const [checklistResult, setChecklistResult] = useState<ChecklistResult | null>(null);
+  const [checklistRunning, setChecklistRunning] = useState(true);
+  const [checklistDismissed, setChecklistDismissed] = useState(false);
+  const [downloadingModel, setDownloadingModel] = useState<string | null>(null);
+
   const transcriptRef = useRef<HTMLDivElement>(null);
   const [localElapsedMs, setLocalElapsedMs] = useState(0);
   const recordingStartRef = useRef<number | null>(null);
@@ -148,10 +181,63 @@ function App() {
     }
   }, [transcript.finalized_text, status.state]);
 
-  // Load devices, model status, and settings on mount
+  // Run checklist function
+  const runChecklist = useCallback(async () => {
+    setChecklistRunning(true);
+    setChecklistDismissed(false); // Reset dismissed when re-running
+    try {
+      const result = await invoke<ChecklistResult>('run_checklist');
+      setChecklistResult(result);
+    } catch (e) {
+      console.error('Failed to run checklist:', e);
+      setChecklistResult({
+        checks: [],
+        all_passed: false,
+        can_start: false,
+        summary: 'Failed to run checklist',
+      });
+    } finally {
+      setChecklistRunning(false);
+    }
+  }, []);
+
+  // Handle model download
+  const handleDownloadModel = useCallback(async (modelName: string) => {
+    setDownloadingModel(modelName);
+    try {
+      let command = '';
+      if (modelName === 'speaker_embedding') {
+        command = 'download_speaker_model';
+      } else if (modelName === 'gtcrn_simple') {
+        command = 'download_enhancement_model';
+      } else if (modelName === 'wav2small') {
+        command = 'download_emotion_model';
+      } else {
+        // Whisper model
+        command = 'download_whisper_model';
+      }
+      await invoke(command);
+      // Re-run checklist after download
+      await runChecklist();
+      // Also refresh model status
+      const modelResult = await invoke<ModelStatus>('check_model_status');
+      setModelStatus(modelResult);
+    } catch (e) {
+      console.error('Failed to download model:', e);
+    } finally {
+      setDownloadingModel(null);
+    }
+  }, [runChecklist]);
+
+  // Load devices, model status, settings, and run checklist on mount
   useEffect(() => {
     async function init() {
       try {
+        // Run checklist first
+        const checklistResultData = await invoke<ChecklistResult>('run_checklist');
+        setChecklistResult(checklistResultData);
+        setChecklistRunning(false);
+
         const deviceList = await invoke<Device[]>('list_input_devices');
         setDevices(deviceList);
 
@@ -172,6 +258,7 @@ function App() {
         }
       } catch (e) {
         console.error('Failed to initialize:', e);
+        setChecklistRunning(false);
       }
     }
     init();
@@ -274,8 +361,37 @@ function App() {
   const isIdle = status.state === 'idle';
   const hasError = status.state === 'error';
 
-  const canStart = isIdle && modelStatus?.available;
+  // Show checklist if:
+  // - Still running checks
+  // - Has failures (can_start=false) - must be shown until fixed
+  // - Has results but not yet dismissed by user (for pass/warning states)
+  const showChecklist = checklistRunning ||
+    (checklistResult && !checklistResult.can_start) ||
+    (checklistResult && !checklistDismissed);
+
+  const canStart = isIdle && modelStatus?.available && checklistResult?.can_start;
   const canCopy = (isCompleted || isRecording) && transcript.finalized_text.length > 0;
+
+  // Get status icon for checklist items
+  const getCheckIcon = (checkStatus: CheckStatus) => {
+    switch (checkStatus) {
+      case 'pass': return '✓';
+      case 'fail': return '✗';
+      case 'warning': return '⚠';
+      case 'pending': return '○';
+      case 'skipped': return '−';
+    }
+  };
+
+  const getCheckClass = (checkStatus: CheckStatus) => {
+    switch (checkStatus) {
+      case 'pass': return 'check-pass';
+      case 'fail': return 'check-fail';
+      case 'warning': return 'check-warning';
+      case 'pending': return 'check-pending';
+      case 'skipped': return 'check-skipped';
+    }
+  };
 
   // Determine button state
   const getButtonState = () => {
@@ -323,87 +439,160 @@ function App() {
         </button>
       </header>
 
+      {/* Pre-launch Checklist */}
+      {showChecklist && (
+        <div className="checklist-overlay">
+          <div className="checklist-container">
+            <h2 className="checklist-title">Pre-Launch Checklist</h2>
+            {checklistRunning ? (
+              <div className="checklist-loading">
+                <div className="spinner" />
+                <span>Running checks...</span>
+              </div>
+            ) : (
+              <>
+                <div className="checklist-items">
+                  {checklistResult?.checks.map((check) => (
+                    <div key={check.id} className={`checklist-item ${getCheckClass(check.status)}`}>
+                      <span className="check-icon">{getCheckIcon(check.status)}</span>
+                      <div className="check-content">
+                        <span className="check-name">{check.name}</span>
+                        {check.message && (
+                          <span className="check-message">{check.message}</span>
+                        )}
+                      </div>
+                      {check.status === 'fail' && check.action?.download_model && (
+                        <button
+                          className="download-btn"
+                          onClick={() => handleDownloadModel(check.action!.download_model!.model_name)}
+                          disabled={downloadingModel !== null}
+                        >
+                          {downloadingModel === check.action.download_model.model_name ? 'Downloading...' : 'Download'}
+                        </button>
+                      )}
+                      {check.status === 'warning' && check.action?.download_model && (
+                        <button
+                          className="download-btn secondary"
+                          onClick={() => handleDownloadModel(check.action!.download_model!.model_name)}
+                          disabled={downloadingModel !== null}
+                        >
+                          {downloadingModel === check.action.download_model.model_name ? 'Downloading...' : 'Download'}
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+                <div className="checklist-summary">
+                  <span className={checklistResult?.can_start ? 'summary-pass' : 'summary-fail'}>
+                    {checklistResult?.summary}
+                  </span>
+                </div>
+                {checklistResult?.can_start && (
+                  <button
+                    className="btn btn-primary checklist-continue"
+                    onClick={() => setChecklistDismissed(true)}
+                  >
+                    Continue
+                  </button>
+                )}
+                <button
+                  className="btn-retry"
+                  onClick={runChecklist}
+                  disabled={checklistRunning || downloadingModel !== null}
+                >
+                  Re-run Checks
+                </button>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Model warning */}
-      {!modelStatus?.available && (
+      {!showChecklist && !modelStatus?.available && (
         <div className="warning-banner">
           Model not found. Check settings.
         </div>
       )}
 
       {/* Error message */}
-      {hasError && status.error_message && (
+      {!showChecklist && hasError && status.error_message && (
         <div className="error-banner">
           {status.error_message}
         </div>
       )}
 
       {/* Record Section */}
-      <section className="record-section">
-        <button
-          className={`record-button ${getButtonState()}`}
-          onClick={handleRecordClick}
-          disabled={isPreparing || isStopping || !modelStatus?.available}
-        >
-          <span className="icon" />
-          <span className="label">
-            {isRecording ? 'Stop' : isPreparing ? '...' : isStopping ? '...' : 'Start'}
-          </span>
-        </button>
-        <div className={`timer ${isRecording || isStopping || isPreparing ? 'active' : ''}`}>
-          {formatTime(localElapsedMs)}
-        </div>
-      </section>
+      {!showChecklist && (
+        <section className="record-section">
+          <button
+            className={`record-button ${getButtonState()}`}
+            onClick={handleRecordClick}
+            disabled={isPreparing || isStopping || !modelStatus?.available}
+          >
+            <span className="icon" />
+            <span className="label">
+              {isRecording ? 'Stop' : isPreparing ? '...' : isStopping ? '...' : 'Start'}
+            </span>
+          </button>
+          <div className={`timer ${isRecording || isStopping || isPreparing ? 'active' : ''}`}>
+            {formatTime(localElapsedMs)}
+          </div>
+        </section>
+      )}
 
       {/* Transcript Section */}
-      <section className="transcript-section">
-        <div
-          className="transcript-header"
-          onClick={() => setTranscriptExpanded(!transcriptExpanded)}
-        >
-          <div className="transcript-header-left">
-            <span className={`chevron ${transcriptExpanded ? '' : 'collapsed'}`}>
-              &#9660;
-            </span>
-            <span className="transcript-title">Transcript</span>
-          </div>
-          <button
-            className={`copy-btn ${copySuccess ? 'success' : ''}`}
-            onClick={(e) => {
-              e.stopPropagation();
-              handleCopy();
-            }}
-            disabled={!canCopy}
+      {!showChecklist && (
+        <section className="transcript-section">
+          <div
+            className="transcript-header"
+            onClick={() => setTranscriptExpanded(!transcriptExpanded)}
           >
-            {copySuccess ? 'Copied!' : 'Copy'}
-          </button>
-        </div>
-        <div
-          ref={transcriptRef}
-          className={`transcript-content ${transcriptExpanded ? '' : 'collapsed'}`}
-        >
-          {transcript.finalized_text ? (
-            <div className="transcript-text">
-              {transcript.finalized_text.split('\n\n').map((paragraph, i) => (
-                <p key={i}>{paragraph}</p>
-              ))}
-              {transcript.draft_text && (
-                <p className="draft-text">{transcript.draft_text}</p>
-              )}
+            <div className="transcript-header-left">
+              <span className={`chevron ${transcriptExpanded ? '' : 'collapsed'}`}>
+                &#9660;
+              </span>
+              <span className="transcript-title">Transcript</span>
             </div>
-          ) : (
-            <div className="transcript-placeholder">
-              {isIdle && 'Tap Start to begin'}
-              {isPreparing && 'Initializing...'}
-              {isRecording && 'Listening...'}
-              {isStopping && 'Processing...'}
-              {isCompleted && 'No transcript'}
-            </div>
-          )}
-        </div>
-      </section>
+            <button
+              className={`copy-btn ${copySuccess ? 'success' : ''}`}
+              onClick={(e) => {
+                e.stopPropagation();
+                handleCopy();
+              }}
+              disabled={!canCopy}
+            >
+              {copySuccess ? 'Copied!' : 'Copy'}
+            </button>
+          </div>
+          <div
+            ref={transcriptRef}
+            className={`transcript-content ${transcriptExpanded ? '' : 'collapsed'}`}
+          >
+            {transcript.finalized_text ? (
+              <div className="transcript-text">
+                {transcript.finalized_text.split('\n\n').map((paragraph, i) => (
+                  <p key={i}>{paragraph}</p>
+                ))}
+                {transcript.draft_text && (
+                  <p className="draft-text">{transcript.draft_text}</p>
+                )}
+              </div>
+            ) : (
+              <div className="transcript-placeholder">
+                {isIdle && 'Tap Start to begin'}
+                {isPreparing && 'Initializing...'}
+                {isRecording && 'Listening...'}
+                {isStopping && 'Processing...'}
+                {isCompleted && 'No transcript'}
+              </div>
+            )}
+          </div>
+        </section>
+      )}
 
       {/* Action Bar - only show when completed */}
-      {isCompleted && (
+      {!showChecklist && isCompleted && (
         <div className="action-bar">
           <button className="btn btn-primary" onClick={handleReset}>
             New Session

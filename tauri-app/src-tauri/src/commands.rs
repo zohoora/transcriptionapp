@@ -1,4 +1,5 @@
 use crate::audio;
+use crate::checklist::{self, ChecklistResult};
 use crate::config::{Config, Settings};
 use crate::models::{self, ModelInfo, WhisperModel};
 use crate::pipeline::{start_pipeline, PipelineConfig, PipelineHandle, PipelineMessage};
@@ -152,6 +153,18 @@ pub async fn start_session(
         None
     };
 
+    let enhancement_model_path = if config.enhancement_enabled {
+        config.get_enhancement_model_path().ok()
+    } else {
+        None
+    };
+
+    let emotion_model_path = if config.emotion_enabled {
+        config.get_emotion_model_path().ok()
+    } else {
+        None
+    };
+
     let pipeline_config = PipelineConfig {
         device_id: if device_id.as_deref() == Some("default") {
             None
@@ -168,6 +181,10 @@ pub async fn start_session(
         diarization_model_path,
         speaker_similarity_threshold: config.speaker_similarity_threshold,
         max_speakers: config.max_speakers,
+        enhancement_enabled: config.enhancement_enabled,
+        enhancement_model_path,
+        emotion_enabled: config.emotion_enabled,
+        emotion_model_path,
     };
 
     // Create message channel
@@ -478,6 +495,65 @@ pub async fn ensure_models() -> Result<(), String> {
         }
         Err(e) => {
             error!("Failed to ensure models: {}", e);
+            Err(e.to_string())
+        }
+    }
+}
+
+/// Run the launch sequence checklist
+///
+/// This verifies all requirements before starting a recording session:
+/// - Audio input devices available
+/// - Required models downloaded
+/// - Configuration valid
+#[tauri::command]
+pub fn run_checklist() -> ChecklistResult {
+    info!("Running launch sequence checklist");
+    let config = Config::load_or_default();
+    checklist::run_all_checks(&config)
+}
+
+/// Download the speech enhancement model
+#[tauri::command]
+pub async fn download_enhancement_model() -> Result<String, String> {
+    info!("Downloading speech enhancement model");
+
+    let result = tokio::task::spawn_blocking(|| {
+        models::ensure_enhancement_model()
+    })
+    .await
+    .map_err(|e| format!("Task failed: {}", e))?;
+
+    match result {
+        Ok(path) => {
+            info!("Enhancement model downloaded to: {:?}", path);
+            Ok(path.to_string_lossy().to_string())
+        }
+        Err(e) => {
+            error!("Failed to download enhancement model: {}", e);
+            Err(e.to_string())
+        }
+    }
+}
+
+/// Download the emotion detection model
+#[tauri::command]
+pub async fn download_emotion_model() -> Result<String, String> {
+    info!("Downloading emotion detection model");
+
+    let result = tokio::task::spawn_blocking(|| {
+        models::ensure_emotion_model()
+    })
+    .await
+    .map_err(|e| format!("Task failed: {}", e))?;
+
+    match result {
+        Ok(path) => {
+            info!("Emotion model downloaded to: {:?}", path);
+            Ok(path.to_string_lossy().to_string())
+        }
+        Err(e) => {
+            error!("Failed to download emotion model: {}", e);
             Err(e.to_string())
         }
     }

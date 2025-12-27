@@ -27,23 +27,37 @@ Rust Backend
 ├── pipeline.rs      # Processing pipeline coordination
 ├── config.rs        # Settings persistence
 ├── transcription.rs # Segment/utterance types
-└── diarization/     # Speaker detection
-    ├── mod.rs       # Embedding extraction (ONNX)
-    ├── clustering.rs # Online speaker clustering
-    └── config.rs    # Clustering parameters
+├── models.rs        # Model download management
+├── diarization/     # Speaker detection
+│   ├── mod.rs       # Embedding extraction (ONNX)
+│   ├── clustering.rs # Online speaker clustering
+│   └── config.rs    # Clustering parameters
+├── enhancement/     # Speech enhancement (GTCRN)
+│   ├── mod.rs       # Module exports
+│   └── provider.rs  # ONNX-based denoising
+└── emotion/         # Emotion detection (wav2small)
+    ├── mod.rs       # Module exports
+    └── provider.rs  # ONNX-based ADV detection
 ```
 
 ## Key IPC Commands
 
 | Command | Purpose |
 |---------|---------|
+| `run_checklist` | Run pre-flight checks before recording |
 | `start_session` | Begin recording with device ID |
 | `stop_session` | Stop recording, finalize transcript |
 | `reset_session` | Clear transcript, return to idle |
 | `list_input_devices` | Get available microphones |
 | `check_model_status` | Verify Whisper model availability |
+| `get_model_info` | Get info about all models |
 | `get_settings` | Retrieve current settings |
 | `set_settings` | Update settings |
+| `download_whisper_model` | Download Whisper model |
+| `download_speaker_model` | Download speaker diarization model |
+| `download_enhancement_model` | Download GTCRN enhancement model |
+| `download_emotion_model` | Download wav2small emotion model |
+| `ensure_models` | Download all required models |
 
 ## Key Events (Backend → Frontend)
 
@@ -92,8 +106,26 @@ Note: Some diarization tests require ONNX Runtime. Set `ORT_DYLIB_PATH` environm
 - Added `diarization/` module for speaker detection
 - Uses ONNX model for speaker embeddings
 - Online clustering with EMA centroid updates
-- Configurable similarity threshold (0.75 default)
+- Configurable similarity threshold (0.5 default)
 - Max speakers limit (2-10, user configurable)
+
+### Speech Enhancement (GTCRN)
+- Ultra-lightweight denoising (~523KB model)
+- ~2ms latency, 48K parameters
+- Enabled by default for cleaner transcriptions
+- Model auto-downloads from sherpa-onnx releases
+
+### Emotion Detection (wav2small)
+- Dimensional emotion: Arousal, Dominance, Valence (ADV)
+- ~120KB model, ~9ms latency, 72K parameters
+- Labels: excited/happy, angry/frustrated, calm/content, sad/tired
+- Emotion stored in transcript segments
+
+### Launch Sequence Checklist
+- Pre-flight verification system in `checklist.rs`
+- Checks: audio devices, models, configuration
+- Status types: Pass, Fail, Warning, Skipped
+- Extensible for future features (see module docs)
 
 ### Test Updates
 - All frontend tests updated for new sidebar UI (119 tests)
@@ -118,8 +150,12 @@ interface Settings {
 
 ## File Locations
 
-- **Whisper models**: `~/.cache/whisper/` or configured path
-- **Settings**: Tauri app data directory (platform-specific)
+- **All models**: `~/.transcriptionapp/models/`
+  - Whisper: `ggml-{tiny,base,small,medium,large}.bin`
+  - Speaker: `speaker_embedding.onnx` (~26MB)
+  - Enhancement: `gtcrn_simple.onnx` (~523KB)
+  - Emotion: `wav2small.onnx` (~120KB)
+- **Settings**: `~/.transcriptionapp/config.json`
 - **Logs**: Console (tracing crate)
 
 ## Common Issues
@@ -127,6 +163,34 @@ interface Settings {
 1. **"Model not found"**: Ensure Whisper model file exists at configured path
 2. **ONNX tests failing**: Set `ORT_DYLIB_PATH` to ONNX Runtime library
 3. **Audio device errors**: Check microphone permissions (macOS: System Settings → Privacy)
+
+## Adding New Features
+
+When adding a new feature that requires models or external resources:
+
+1. **Add to Config** (`config.rs`):
+   - Add `feature_enabled: bool` field
+   - Add `feature_model_path: Option<PathBuf>` if needed
+   - Add `get_feature_model_path()` helper
+
+2. **Add Model Download** (`models.rs`):
+   - Add `FEATURE_MODEL_URL` constant
+   - Add `ensure_feature_model()` function
+   - Add `is_feature_model_available()` function
+   - Update `get_model_info()` to include the model
+
+3. **Add to Checklist** (`checklist.rs`):
+   - Add check in `run_model_checks()` or create new category
+   - Return appropriate `CheckStatus` based on config
+
+4. **Add Tauri Command** (`commands.rs`):
+   - Add `download_feature_model()` command
+   - Register in `lib.rs` invoke_handler
+
+5. **Add to Pipeline** (`pipeline.rs`):
+   - Add feature-gated provider initialization
+   - Integrate into processing loop
+   - Add to drop order at end
 
 ## ADRs
 

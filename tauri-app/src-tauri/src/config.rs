@@ -172,6 +172,16 @@ pub struct Config {
     pub speaker_similarity_threshold: f32,
     #[serde(default)]
     pub diarization_model_path: Option<PathBuf>,
+    // Enhancement settings
+    #[serde(default = "default_enhancement_enabled")]
+    pub enhancement_enabled: bool,
+    #[serde(default)]
+    pub enhancement_model_path: Option<PathBuf>,
+    // Emotion detection settings
+    #[serde(default = "default_emotion_enabled")]
+    pub emotion_enabled: bool,
+    #[serde(default)]
+    pub emotion_model_path: Option<PathBuf>,
 }
 
 fn default_max_speakers() -> usize {
@@ -180,6 +190,14 @@ fn default_max_speakers() -> usize {
 
 fn default_similarity_threshold() -> f32 {
     0.5
+}
+
+fn default_enhancement_enabled() -> bool {
+    true // Enable by default for cleaner transcriptions
+}
+
+fn default_emotion_enabled() -> bool {
+    false // Disabled by default until wav2small ONNX is available
 }
 
 impl Default for Config {
@@ -199,6 +217,10 @@ impl Default for Config {
             max_speakers: 10,
             speaker_similarity_threshold: 0.5,
             diarization_model_path: None,
+            enhancement_enabled: default_enhancement_enabled(),
+            enhancement_model_path: None,
+            emotion_enabled: default_emotion_enabled(),
+            emotion_model_path: None,
         }
     }
 }
@@ -291,6 +313,24 @@ impl Config {
 
         // Return new path for download
         Ok(new_path)
+    }
+
+    /// Get the enhancement model file path
+    pub fn get_enhancement_model_path(&self) -> Result<PathBuf> {
+        if let Some(ref path) = self.enhancement_model_path {
+            return Ok(path.clone());
+        }
+        let models_dir = Self::models_dir()?;
+        Ok(models_dir.join("gtcrn_simple.onnx"))
+    }
+
+    /// Get the emotion model file path
+    pub fn get_emotion_model_path(&self) -> Result<PathBuf> {
+        if let Some(ref path) = self.emotion_model_path {
+            return Ok(path.clone());
+        }
+        let models_dir = Self::models_dir()?;
+        Ok(models_dir.join("wav2small.onnx"))
     }
 
     /// Convert to frontend Settings

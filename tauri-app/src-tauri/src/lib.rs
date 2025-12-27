@@ -13,6 +13,8 @@
 //! - [`transcription`] - Transcription types (segments, utterances)
 //! - [`vad`] - Voice Activity Detection and audio gating
 //! - [`diarization`] - Speaker diarization using ONNX embeddings
+//! - [`enhancement`] - Speech enhancement/denoising using GTCRN
+//! - [`emotion`] - Speech emotion detection using wav2small
 //!
 //! ## Usage
 //!
@@ -27,9 +29,12 @@
 //! ```
 
 pub mod audio;
+pub mod checklist;
 mod commands;
 pub mod config;
 pub mod diarization;
+pub mod emotion;
+pub mod enhancement;
 pub mod models;
 mod pipeline;
 #[cfg(test)]
@@ -90,7 +95,10 @@ pub fn run() {
             commands::get_model_info,
             commands::download_whisper_model,
             commands::download_speaker_model,
+            commands::download_enhancement_model,
+            commands::download_emotion_model,
             commands::ensure_models,
+            commands::run_checklist,
         ])
         .on_window_event(|window, event| {
             if let WindowEvent::CloseRequested { .. } = event {

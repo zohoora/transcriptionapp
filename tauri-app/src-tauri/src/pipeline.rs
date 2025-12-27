@@ -17,6 +17,12 @@ use crate::vad::{VadConfig, VadGatedPipeline};
 #[cfg(feature = "diarization")]
 use crate::diarization::{DiarizationConfig, DiarizationProvider};
 
+#[cfg(feature = "enhancement")]
+use crate::enhancement::{EnhancementConfig, EnhancementProvider};
+
+#[cfg(feature = "emotion")]
+use crate::emotion::{EmotionConfig, EmotionProvider};
+
 /// VAD chunk size at 16kHz
 const VAD_CHUNK_SIZE: usize = 512;
 
@@ -53,6 +59,16 @@ pub struct PipelineConfig {
     pub diarization_model_path: Option<PathBuf>,
     pub speaker_similarity_threshold: f32,
     pub max_speakers: usize,
+    // Enhancement settings
+    #[allow(dead_code)]
+    pub enhancement_enabled: bool,
+    #[allow(dead_code)]
+    pub enhancement_model_path: Option<PathBuf>,
+    // Emotion detection settings
+    #[allow(dead_code)]
+    pub emotion_enabled: bool,
+    #[allow(dead_code)]
+    pub emotion_model_path: Option<PathBuf>,
 }
 
 impl Default for PipelineConfig {
@@ -69,6 +85,10 @@ impl Default for PipelineConfig {
             diarization_model_path: None,
             speaker_similarity_threshold: 0.5,
             max_speakers: 10,
+            enhancement_enabled: false,
+            enhancement_model_path: None,
+            emotion_enabled: false,
+            emotion_model_path: None,
         }
     }
 }
@@ -245,6 +265,75 @@ fn run_pipeline_thread_inner(
     #[cfg(not(feature = "diarization"))]
     let diarization: Option<()> = None;
 
+    // Create enhancement provider if enabled
+    #[cfg(feature = "enhancement")]
+    let mut enhancement: Option<EnhancementProvider> = if config.enhancement_enabled {
+        if let Some(ref model_path) = config.enhancement_model_path {
+            if model_path.exists() {
+                let enh_config = EnhancementConfig {
+                    model_path: model_path.clone(),
+                    n_threads: 1,
+                };
+                match EnhancementProvider::new(enh_config) {
+                    Ok(provider) => {
+                        info!("Speech enhancement enabled with model: {:?}", model_path);
+                        Some(provider)
+                    }
+                    Err(e) => {
+                        warn!("Failed to initialize enhancement: {}, continuing without", e);
+                        None
+                    }
+                }
+            } else {
+                warn!("Enhancement model not found at {:?}, continuing without", model_path);
+                None
+            }
+        } else {
+            warn!("Enhancement enabled but no model path specified");
+            None
+        }
+    } else {
+        None
+    };
+
+    #[cfg(not(feature = "enhancement"))]
+    let _enhancement: Option<()> = None;
+
+    // Create emotion detection provider if enabled
+    #[cfg(feature = "emotion")]
+    let mut emotion: Option<EmotionProvider> = if config.emotion_enabled {
+        if let Some(ref model_path) = config.emotion_model_path {
+            if model_path.exists() {
+                let emo_config = EmotionConfig {
+                    model_path: model_path.clone(),
+                    n_threads: 1,
+                    ..Default::default()
+                };
+                match EmotionProvider::new(emo_config) {
+                    Ok(provider) => {
+                        info!("Emotion detection enabled with model: {:?}", model_path);
+                        Some(provider)
+                    }
+                    Err(e) => {
+                        warn!("Failed to initialize emotion detection: {}, continuing without", e);
+                        None
+                    }
+                }
+            } else {
+                warn!("Emotion model not found at {:?}, continuing without", model_path);
+                None
+            }
+        } else {
+            warn!("Emotion detection enabled but no model path specified");
+            None
+        }
+    } else {
+        None
+    };
+
+    #[cfg(not(feature = "emotion"))]
+    let _emotion: Option<()> = None;
+
     // Staging buffer for VAD chunks
     let mut staging_buffer: Vec<f32> = Vec::with_capacity(VAD_CHUNK_SIZE * 2);
 
@@ -272,14 +361,31 @@ fn run_pipeline_thread_inner(
             pipeline.force_flush();
 
             // Transcribe any remaining utterances
-            while let Some(utterance) = pipeline.pop_utterance() {
+            while let Some(mut utterance) = pipeline.pop_utterance() {
+                // Apply speech enhancement if enabled
+                #[cfg(feature = "enhancement")]
+                let original_audio = if enhancement.is_some() {
+                    Some(utterance.audio.clone())
+                } else {
+                    None
+                };
+
+                #[cfg(feature = "enhancement")]
+                {
+                    if let Some(ref mut enh) = enhancement {
+                        if let Ok(enhanced) = enh.enhance(&utterance.audio) {
+                            utterance.audio = enhanced;
+                        }
+                    }
+                }
+
                 let context_ref = if context.is_empty() {
                     None
                 } else {
                     Some(context.as_str())
                 };
 
-                // Transcribe first to check if we have actual speech
+                // Transcribe (using enhanced audio if available)
                 match whisper.transcribe(&utterance, context_ref) {
                     Ok(mut segment) => {
                         if !segment.text.is_empty() {
@@ -287,8 +393,13 @@ fn run_pipeline_thread_inner(
                             #[cfg(feature = "diarization")]
                             {
                                 if let Some(ref mut diar) = diarization {
+                                    #[cfg(feature = "enhancement")]
+                                    let diar_audio = original_audio.as_ref().unwrap_or(&utterance.audio);
+                                    #[cfg(not(feature = "enhancement"))]
+                                    let diar_audio = &utterance.audio;
+
                                     match diar.identify_speaker_from_audio(
-                                        &utterance.audio,
+                                        diar_audio,
                                         utterance.start_ms,
                                         utterance.end_ms,
                                     ) {
@@ -299,6 +410,21 @@ fn run_pipeline_thread_inner(
                                         Err(e) => {
                                             debug!("Diarization failed for utterance: {}", e);
                                         }
+                                    }
+                                }
+                            }
+
+                            // Detect emotion if enabled
+                            #[cfg(feature = "emotion")]
+                            {
+                                if let Some(ref mut emo) = emotion {
+                                    #[cfg(feature = "enhancement")]
+                                    let emo_audio = original_audio.as_ref().unwrap_or(&utterance.audio);
+                                    #[cfg(not(feature = "enhancement"))]
+                                    let emo_audio = &utterance.audio;
+
+                                    if let Ok(result) = emo.detect(emo_audio) {
+                                        segment.emotion = Some(result);
                                     }
                                 }
                             }
@@ -361,11 +487,34 @@ fn run_pipeline_thread_inner(
         }
 
         // Transcribe any ready utterances
-        while let Some(utterance) = pipeline.pop_utterance() {
+        while let Some(mut utterance) = pipeline.pop_utterance() {
             debug!(
                 "Transcribing utterance: {}ms - {}ms",
                 utterance.start_ms, utterance.end_ms
             );
+
+            // Apply speech enhancement if enabled
+            #[cfg(feature = "enhancement")]
+            let original_audio = if enhancement.is_some() {
+                Some(utterance.audio.clone())
+            } else {
+                None
+            };
+
+            #[cfg(feature = "enhancement")]
+            {
+                if let Some(ref mut enh) = enhancement {
+                    match enh.enhance(&utterance.audio) {
+                        Ok(enhanced) => {
+                            debug!("Audio enhanced: {} samples", enhanced.len());
+                            utterance.audio = enhanced;
+                        }
+                        Err(e) => {
+                            debug!("Enhancement failed, using original audio: {}", e);
+                        }
+                    }
+                }
+            }
 
             let context_ref = if context.is_empty() {
                 None
@@ -373,17 +522,23 @@ fn run_pipeline_thread_inner(
                 Some(context.as_str())
             };
 
-            // Transcribe first to check if we have actual speech
+            // Transcribe (using enhanced audio if available)
             match whisper.transcribe(&utterance, context_ref) {
                 Ok(mut segment) => {
                     if !segment.text.is_empty() {
-                        // Only run diarization if we have actual text
+                        // Use original audio for diarization (speaker fingerprints)
                         #[cfg(feature = "diarization")]
                         {
                             if let Some(ref mut diar) = diarization {
-                                info!("Running diarization on utterance with {} samples", utterance.audio.len());
+                                // Use original audio if we enhanced, otherwise use utterance audio
+                                #[cfg(feature = "enhancement")]
+                                let diar_audio = original_audio.as_ref().unwrap_or(&utterance.audio);
+                                #[cfg(not(feature = "enhancement"))]
+                                let diar_audio = &utterance.audio;
+
+                                info!("Running diarization on utterance with {} samples", diar_audio.len());
                                 match diar.identify_speaker_from_audio(
-                                    &utterance.audio,
+                                    diar_audio,
                                     utterance.start_ms,
                                     utterance.end_ms,
                                 ) {
@@ -394,6 +549,34 @@ fn run_pipeline_thread_inner(
                                     }
                                     Err(e) => {
                                         warn!("Diarization failed for utterance: {}", e);
+                                    }
+                                }
+                            }
+                        }
+
+                        // Detect emotion if enabled
+                        #[cfg(feature = "emotion")]
+                        {
+                            if let Some(ref mut emo) = emotion {
+                                // Use original audio for emotion detection
+                                #[cfg(feature = "enhancement")]
+                                let emo_audio = original_audio.as_ref().unwrap_or(&utterance.audio);
+                                #[cfg(not(feature = "enhancement"))]
+                                let emo_audio = &utterance.audio;
+
+                                match emo.detect(emo_audio) {
+                                    Ok(result) => {
+                                        debug!(
+                                            "Emotion detected: {} (A:{:.2} D:{:.2} V:{:.2})",
+                                            result.label(),
+                                            result.arousal,
+                                            result.dominance,
+                                            result.valence
+                                        );
+                                        segment.emotion = Some(result);
+                                    }
+                                    Err(e) => {
+                                        debug!("Emotion detection failed: {}", e);
                                     }
                                 }
                             }
@@ -449,6 +632,12 @@ fn run_pipeline_thread_inner(
     // to avoid ONNX Runtime mutex issues during shutdown
     #[cfg(feature = "diarization")]
     drop(diarization);
+
+    #[cfg(feature = "enhancement")]
+    drop(enhancement);
+
+    #[cfg(feature = "emotion")]
+    drop(emotion);
 
     drop(whisper);
 

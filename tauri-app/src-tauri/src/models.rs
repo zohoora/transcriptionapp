@@ -22,6 +22,15 @@ const WHISPER_BASE_URL: &str =
 const SPEAKER_MODEL_URL: &str =
     "https://huggingface.co/onnx-community/wespeaker-voxceleb-resnet34-LM/resolve/main/onnx/model.onnx";
 
+/// URL for the GTCRN speech enhancement model (~523KB)
+const ENHANCEMENT_MODEL_URL: &str =
+    "https://github.com/k2-fsa/sherpa-onnx/releases/download/speech-enhancement-models/gtcrn_simple.onnx";
+
+/// URL for the emotion detection model (wav2small ~120KB when available)
+/// Note: This model needs to be exported from the wav2small repo
+const EMOTION_MODEL_URL: &str =
+    "https://huggingface.co/dkounadis/wav2small/resolve/main/wav2small.onnx";
+
 /// Errors that can occur during model operations
 #[derive(Debug, Error)]
 pub enum ModelError {
@@ -221,6 +230,72 @@ pub fn is_speaker_model_available() -> bool {
     }
 }
 
+/// Download the speech enhancement model if not already present
+pub fn ensure_enhancement_model() -> Result<PathBuf> {
+    let models_dir = Config::models_dir()?;
+    let model_path = models_dir.join("gtcrn_simple.onnx");
+
+    if model_path.exists() {
+        debug!("Enhancement model already exists: {:?}", model_path);
+        return Ok(model_path);
+    }
+
+    info!("Downloading speech enhancement model...");
+    download_file(ENHANCEMENT_MODEL_URL, &model_path)
+        .context("Failed to download speech enhancement model")?;
+
+    Ok(model_path)
+}
+
+/// Check if the enhancement model is available locally
+pub fn is_enhancement_model_available() -> bool {
+    if let Ok(models_dir) = Config::models_dir() {
+        let model_path = models_dir.join("gtcrn_simple.onnx");
+        model_path.exists()
+    } else {
+        false
+    }
+}
+
+/// Get the path to the enhancement model
+pub fn get_enhancement_model_path() -> Result<PathBuf> {
+    let models_dir = Config::models_dir()?;
+    Ok(models_dir.join("gtcrn_simple.onnx"))
+}
+
+/// Download the emotion detection model if not already present
+pub fn ensure_emotion_model() -> Result<PathBuf> {
+    let models_dir = Config::models_dir()?;
+    let model_path = models_dir.join("wav2small.onnx");
+
+    if model_path.exists() {
+        debug!("Emotion model already exists: {:?}", model_path);
+        return Ok(model_path);
+    }
+
+    info!("Downloading emotion detection model...");
+    download_file(EMOTION_MODEL_URL, &model_path)
+        .context("Failed to download emotion detection model")?;
+
+    Ok(model_path)
+}
+
+/// Check if the emotion model is available locally
+pub fn is_emotion_model_available() -> bool {
+    if let Ok(models_dir) = Config::models_dir() {
+        let model_path = models_dir.join("wav2small.onnx");
+        model_path.exists()
+    } else {
+        false
+    }
+}
+
+/// Get the path to the emotion model
+pub fn get_emotion_model_path() -> Result<PathBuf> {
+    let models_dir = Config::models_dir()?;
+    Ok(models_dir.join("wav2small.onnx"))
+}
+
 /// Get the path to the speaker model (checking both new and legacy names)
 pub fn get_speaker_model_path() -> Result<PathBuf> {
     let models_dir = Config::models_dir()?;
@@ -304,6 +379,38 @@ pub fn get_model_info(whisper_model: &str) -> Vec<ModelInfo> {
         path: speaker_path,
         size_bytes: Some(40_000_000), // ~40 MB estimate
         download_url: SPEAKER_MODEL_URL.to_string(),
+    });
+
+    // Enhancement model info
+    let enhancement_available = is_enhancement_model_available();
+    let enhancement_path = if enhancement_available {
+        get_enhancement_model_path().ok().map(|p| p.to_string_lossy().to_string())
+    } else {
+        None
+    };
+
+    models.push(ModelInfo {
+        name: "Speech Enhancement (GTCRN)".to_string(),
+        available: enhancement_available,
+        path: enhancement_path,
+        size_bytes: Some(523_638), // ~523 KB
+        download_url: ENHANCEMENT_MODEL_URL.to_string(),
+    });
+
+    // Emotion model info
+    let emotion_available = is_emotion_model_available();
+    let emotion_path = if emotion_available {
+        get_emotion_model_path().ok().map(|p| p.to_string_lossy().to_string())
+    } else {
+        None
+    };
+
+    models.push(ModelInfo {
+        name: "Emotion Detection (wav2small)".to_string(),
+        available: emotion_available,
+        path: emotion_path,
+        size_bytes: Some(120_000), // ~120 KB
+        download_url: EMOTION_MODEL_URL.to_string(),
     });
 
     models
