@@ -33,8 +33,9 @@ const EMOTION_MODEL_URL: &str =
 
 /// URL for the YAMNet audio classification model (~3MB)
 /// YAMNet detects 521 audio event classes including coughs, sneezes, throat clearing
+/// Note: Original HuggingFace URL requires auth, using public GitHub source
 const YAMNET_MODEL_URL: &str =
-    "https://huggingface.co/onnx-community/yamnet/resolve/main/onnx/model.onnx";
+    "https://raw.githubusercontent.com/Choise-ieee/yamnet_onnx_cpp_audio_speech_classification/main/yamnet_3s.onnx";
 
 /// Errors that can occur during model operations
 #[derive(Debug, Error)]
@@ -133,8 +134,12 @@ fn download_file(url: &str, dest_path: &Path) -> Result<(), ModelError> {
             .map_err(|e| ModelError::DirectoryError(e.to_string()))?;
     }
 
-    // Download using blocking reqwest
-    let response = reqwest::blocking::Client::new()
+    // Download using blocking reqwest with User-Agent header
+    // (some servers reject requests without User-Agent)
+    let response = reqwest::blocking::Client::builder()
+        .user_agent("transcription-app/0.1")
+        .build()
+        .map_err(|e| ModelError::NetworkError(e.to_string()))?
         .get(url)
         .send()
         .map_err(|e| ModelError::NetworkError(e.to_string()))?;

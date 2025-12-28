@@ -1,13 +1,13 @@
 //! Sliding window buffer for YAMNet
 //!
-//! YAMNet requires 1 second (16000 samples at 16kHz) of audio.
-//! We use a sliding window with 500ms hop for continuous detection.
+//! The yamnet_3s model requires 3 seconds (48000 samples at 16kHz) of audio.
+//! We use a sliding window with 1 second hop for continuous detection.
 
-/// Window size in samples (1 second at 16kHz)
-const WINDOW_SIZE: usize = 16000;
+/// Window size in samples (3 seconds at 16kHz for yamnet_3s model)
+const WINDOW_SIZE: usize = 48000;
 
-/// Hop size in samples (500ms at 16kHz)
-const HOP_SIZE: usize = 8000;
+/// Hop size in samples (1 second at 16kHz)
+const HOP_SIZE: usize = 16000;
 
 /// Sliding window buffer for continuous audio analysis
 pub struct SlidingWindow {
@@ -94,7 +94,7 @@ mod tests {
     #[test]
     fn test_first_window() {
         let mut window = SlidingWindow::new();
-        window.add_samples(&[0.5; 16000]);
+        window.add_samples(&[0.5; 48000]); // 3 seconds
 
         let result = window.next_window();
         assert!(result.is_some());
@@ -108,18 +108,18 @@ mod tests {
     fn test_multiple_windows() {
         let mut window = SlidingWindow::new();
 
-        // Add 2 seconds of audio
-        window.add_samples(&[0.5; 32000]);
+        // Add 6 seconds of audio (96000 samples)
+        window.add_samples(&[0.5; 96000]);
 
         // First window at offset 0
         let (_, offset1) = window.next_window().unwrap();
         assert_eq!(offset1, 0);
 
-        // Second window at offset HOP_SIZE (8000)
+        // Second window at offset HOP_SIZE (16000)
         let (_, offset2) = window.next_window().unwrap();
         assert_eq!(offset2, HOP_SIZE);
 
-        // Third window at offset 2*HOP_SIZE (16000)
+        // Third window at offset 2*HOP_SIZE (32000)
         let (_, offset3) = window.next_window().unwrap();
         assert_eq!(offset3, HOP_SIZE * 2);
     }
@@ -128,12 +128,12 @@ mod tests {
     fn test_incremental_add() {
         let mut window = SlidingWindow::new();
 
-        // Add in small chunks
-        for _ in 0..32 {
+        // Add in small chunks (96 * 500 = 48000 samples = 3 seconds)
+        for _ in 0..96 {
             window.add_samples(&[0.5; 500]);
         }
 
-        // Should have first window ready (16000 samples added)
+        // Should have first window ready (48000 samples added)
         let result = window.next_window();
         assert!(result.is_some());
     }
