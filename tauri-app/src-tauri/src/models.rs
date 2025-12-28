@@ -31,6 +31,11 @@ const ENHANCEMENT_MODEL_URL: &str =
 const EMOTION_MODEL_URL: &str =
     "https://huggingface.co/dkounadis/wav2small/resolve/main/wav2small.onnx";
 
+/// URL for the YAMNet audio classification model (~3MB)
+/// YAMNet detects 521 audio event classes including coughs, sneezes, throat clearing
+const YAMNET_MODEL_URL: &str =
+    "https://huggingface.co/onnx-community/yamnet/resolve/main/onnx/model.onnx";
+
 /// Errors that can occur during model operations
 #[derive(Debug, Error)]
 pub enum ModelError {
@@ -296,6 +301,39 @@ pub fn get_emotion_model_path() -> Result<PathBuf> {
     Ok(models_dir.join("wav2small.onnx"))
 }
 
+/// Download the YAMNet audio classification model if not already present
+pub fn ensure_yamnet_model() -> Result<PathBuf> {
+    let models_dir = Config::models_dir()?;
+    let model_path = models_dir.join("yamnet.onnx");
+
+    if model_path.exists() {
+        debug!("YAMNet model already exists: {:?}", model_path);
+        return Ok(model_path);
+    }
+
+    info!("Downloading YAMNet audio classification model...");
+    download_file(YAMNET_MODEL_URL, &model_path)
+        .context("Failed to download YAMNet model")?;
+
+    Ok(model_path)
+}
+
+/// Check if the YAMNet model is available locally
+pub fn is_yamnet_model_available() -> bool {
+    if let Ok(models_dir) = Config::models_dir() {
+        let model_path = models_dir.join("yamnet.onnx");
+        model_path.exists()
+    } else {
+        false
+    }
+}
+
+/// Get the path to the YAMNet model
+pub fn get_yamnet_model_path() -> Result<PathBuf> {
+    let models_dir = Config::models_dir()?;
+    Ok(models_dir.join("yamnet.onnx"))
+}
+
 /// Get the path to the speaker model (checking both new and legacy names)
 pub fn get_speaker_model_path() -> Result<PathBuf> {
     let models_dir = Config::models_dir()?;
@@ -411,6 +449,22 @@ pub fn get_model_info(whisper_model: &str) -> Vec<ModelInfo> {
         path: emotion_path,
         size_bytes: Some(120_000), // ~120 KB
         download_url: EMOTION_MODEL_URL.to_string(),
+    });
+
+    // YAMNet model info (for biomarker cough detection)
+    let yamnet_available = is_yamnet_model_available();
+    let yamnet_path = if yamnet_available {
+        get_yamnet_model_path().ok().map(|p| p.to_string_lossy().to_string())
+    } else {
+        None
+    };
+
+    models.push(ModelInfo {
+        name: "YAMNet (Cough Detection)".to_string(),
+        available: yamnet_available,
+        path: yamnet_path,
+        size_bytes: Some(3_000_000), // ~3 MB
+        download_url: YAMNET_MODEL_URL.to_string(),
     });
 
     models

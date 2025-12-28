@@ -165,6 +165,12 @@ pub async fn start_session(
         None
     };
 
+    let yamnet_model_path = if config.biomarkers_enabled {
+        config.get_yamnet_model_path().ok()
+    } else {
+        None
+    };
+
     let pipeline_config = PipelineConfig {
         device_id: if device_id.as_deref() == Some("default") {
             None
@@ -185,6 +191,8 @@ pub async fn start_session(
         enhancement_model_path,
         emotion_enabled: config.emotion_enabled,
         emotion_model_path,
+        biomarkers_enabled: config.biomarkers_enabled,
+        yamnet_model_path,
     };
 
     // Create message channel
@@ -554,6 +562,29 @@ pub async fn download_emotion_model() -> Result<String, String> {
         }
         Err(e) => {
             error!("Failed to download emotion model: {}", e);
+            Err(e.to_string())
+        }
+    }
+}
+
+/// Download the YAMNet audio classification model (for cough detection)
+#[tauri::command]
+pub async fn download_yamnet_model() -> Result<String, String> {
+    info!("Downloading YAMNet audio classification model");
+
+    let result = tokio::task::spawn_blocking(|| {
+        models::ensure_yamnet_model()
+    })
+    .await
+    .map_err(|e| format!("Task failed: {}", e))?;
+
+    match result {
+        Ok(path) => {
+            info!("YAMNet model downloaded to: {:?}", path);
+            Ok(path.to_string_lossy().to_string())
+        }
+        Err(e) => {
+            error!("Failed to download YAMNet model: {}", e);
             Err(e.to_string())
         }
     }

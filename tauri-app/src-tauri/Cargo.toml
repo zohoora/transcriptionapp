@@ -41,8 +41,14 @@ whisper-rs = "0.13"
 ort = { version = "2.0.0-rc.9", default-features = false, features = ["load-dynamic"], optional = true }
 realfft = { version = "3.3", optional = true }
 
-# FFT for speech enhancement
+# FFT for speech enhancement and CPP stability metric
 rustfft = { version = "6.2", optional = true }
+
+# Pitch detection for vitality metric
+pitch-detection = "0.3"
+
+# ndarray for ONNX tensor operations (used by YAMNet)
+ndarray = "0.16"
 
 # Async runtime
 tokio = { version = "1", features = ["rt-multi-thread", "sync", "macros"] }
@@ -83,7 +89,9 @@ diarization = ["ort", "realfft"]
 enhancement = ["ort", "rustfft"]
 # Speech emotion detection (wav2small)
 emotion = ["ort"]
-default = ["diarization", "enhancement", "emotion"]
+# Biomarker analysis (YAMNet cough detection, vitality, stability)
+biomarkers = ["ort", "rustfft"]
+default = ["diarization", "enhancement", "emotion", "biomarkers"]
 
 [[bench]]
 name = "audio_benchmarks"

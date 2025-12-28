@@ -29,6 +29,7 @@
 //! ```
 
 pub mod audio;
+pub mod biomarkers;
 pub mod checklist;
 mod commands;
 pub mod config;
@@ -97,6 +98,7 @@ pub fn run() {
             commands::download_speaker_model,
             commands::download_enhancement_model,
             commands::download_emotion_model,
+            commands::download_yamnet_model,
             commands::ensure_models,
             commands::run_checklist,
         ])

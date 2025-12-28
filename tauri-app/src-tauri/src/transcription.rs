@@ -5,6 +5,7 @@ use tracing::{debug, info, warn};
 use uuid::Uuid;
 use whisper_rs::{FullParams, SamplingStrategy, WhisperContext, WhisperContextParameters};
 
+use crate::biomarkers::VocalBiomarkers;
 use crate::emotion::EmotionResult;
 
 /// A transcribed segment of speech
@@ -19,6 +20,8 @@ pub struct Segment {
     pub speaker_confidence: Option<f32>,
     /// Detected emotion (arousal, dominance, valence)
     pub emotion: Option<EmotionResult>,
+    /// Vocal biomarkers (vitality, stability)
+    pub vocal_biomarkers: Option<VocalBiomarkers>,
     pub avg_log_prob: Option<f32>,
     pub no_speech_prob: Option<f32>,
 }
@@ -33,6 +36,7 @@ impl Segment {
             speaker_id: None,
             speaker_confidence: None,
             emotion: None,
+            vocal_biomarkers: None,
             avg_log_prob: None,
             no_speech_prob: None,
         }
@@ -46,6 +50,7 @@ impl Segment {
 /// Utterance ready for transcription
 #[derive(Debug, Clone)]
 pub struct Utterance {
+    pub id: Uuid,
     pub audio: Vec<f32>,
     pub start_ms: u64,
     pub end_ms: u64,
@@ -54,6 +59,7 @@ pub struct Utterance {
 impl Utterance {
     pub fn new(audio: Vec<f32>, start_ms: u64, end_ms: u64) -> Self {
         Self {
+            id: Uuid::new_v4(),
             audio,
             start_ms,
             end_ms,

@@ -23,6 +23,8 @@ use crate::enhancement::{EnhancementConfig, EnhancementProvider};
 #[cfg(feature = "emotion")]
 use crate::emotion::{EmotionConfig, EmotionProvider};
 
+use crate::biomarkers::{BiomarkerConfig, BiomarkerHandle, BiomarkerOutput, start_biomarker_thread};
+
 /// VAD chunk size at 16kHz
 const VAD_CHUNK_SIZE: usize = 512;
 
@@ -69,6 +71,9 @@ pub struct PipelineConfig {
     pub emotion_enabled: bool,
     #[allow(dead_code)]
     pub emotion_model_path: Option<PathBuf>,
+    // Biomarker analysis settings
+    pub biomarkers_enabled: bool,
+    pub yamnet_model_path: Option<PathBuf>,
 }
 
 impl Default for PipelineConfig {
@@ -89,6 +94,8 @@ impl Default for PipelineConfig {
             enhancement_model_path: None,
             emotion_enabled: false,
             emotion_model_path: None,
+            biomarkers_enabled: true,
+            yamnet_model_path: None,
         }
     }
 }
@@ -334,6 +341,29 @@ fn run_pipeline_thread_inner(
     #[cfg(not(feature = "emotion"))]
     let _emotion: Option<()> = None;
 
+    // Create biomarker thread if enabled
+    let biomarker_handle: Option<BiomarkerHandle> = if config.biomarkers_enabled {
+        let bio_config = BiomarkerConfig {
+            cough_detection_enabled: config.yamnet_model_path.as_ref().map(|p| p.exists()).unwrap_or(false),
+            yamnet_model_path: config.yamnet_model_path.clone(),
+            cough_threshold: 0.5,
+            vitality_enabled: true,
+            stability_enabled: true,
+            session_metrics_enabled: true,
+            n_threads: 1,
+        };
+
+        if bio_config.any_enabled() {
+            info!("Starting biomarker analysis thread");
+            Some(start_biomarker_thread(bio_config))
+        } else {
+            info!("Biomarkers enabled but no analyzers configured");
+            None
+        }
+    } else {
+        None
+    };
+
     // Staging buffer for VAD chunks
     let mut staging_buffer: Vec<f32> = Vec::with_capacity(VAD_CHUNK_SIZE * 2);
 
@@ -472,6 +502,12 @@ fn run_pipeline_thread_inner(
         // Resample to 16kHz
         let resampled = resampler.process(&input_buffer)?;
 
+        // CLONE POINT 1: Send resampled audio to biomarker thread (for YAMNet cough detection)
+        // YAMNet needs ALL audio, including silence, to detect coughs
+        if let Some(ref bio_handle) = biomarker_handle {
+            bio_handle.send_audio_chunk(resampled.clone(), pipeline.audio_clock_ms());
+        }
+
         // Accumulate into staging buffer
         staging_buffer.extend_from_slice(&resampled);
 
@@ -492,6 +528,17 @@ fn run_pipeline_thread_inner(
                 "Transcribing utterance: {}ms - {}ms",
                 utterance.start_ms, utterance.end_ms
             );
+
+            // CLONE POINT 2: Send original audio to biomarker thread (for vitality/stability)
+            // This must happen BEFORE enhancement to get unmodified voice characteristics
+            if let Some(ref bio_handle) = biomarker_handle {
+                bio_handle.send_utterance(
+                    utterance.id,
+                    utterance.audio.clone(),
+                    utterance.start_ms,
+                    utterance.end_ms,
+                );
+            }
 
             // Apply speech enhancement if enabled
             #[cfg(feature = "enhancement")]
@@ -582,6 +629,46 @@ fn run_pipeline_thread_inner(
                             }
                         }
 
+                        // Try to get biomarker results for this segment
+                        if let Some(ref bio_handle) = biomarker_handle {
+                            // Send segment info for session metrics
+                            bio_handle.send_segment_info(
+                                segment.speaker_id.clone(),
+                                segment.start_ms,
+                                segment.end_ms,
+                            );
+
+                            // Try to receive any available biomarker outputs (non-blocking)
+                            while let Some(output) = bio_handle.try_recv() {
+                                match output {
+                                    BiomarkerOutput::VocalBiomarkers(bio) => {
+                                        // Attach biomarkers to segment if they match
+                                        if bio.utterance_id == utterance.id {
+                                            debug!(
+                                                "Attaching biomarkers: vitality={:?} stability={:?}",
+                                                bio.vitality, bio.stability
+                                            );
+                                            segment.vocal_biomarkers = Some(bio);
+                                        }
+                                    }
+                                    BiomarkerOutput::CoughEvent(event) => {
+                                        debug!(
+                                            "Cough detected: {} at {}ms (conf: {:.2})",
+                                            event.label, event.timestamp_ms, event.confidence
+                                        );
+                                        // TODO: Emit cough event to frontend
+                                    }
+                                    BiomarkerOutput::SessionMetrics(metrics) => {
+                                        debug!(
+                                            "Session metrics: {} coughs, {} turns",
+                                            metrics.cough_count, metrics.turn_count
+                                        );
+                                        // TODO: Emit session metrics to frontend
+                                    }
+                                }
+                            }
+                        }
+
                         info!("Sending segment: '{}' ({}ms - {}ms)", segment.text, segment.start_ms, segment.end_ms);
 
                         // Update context
@@ -626,6 +713,14 @@ fn run_pipeline_thread_inner(
             });
             last_status_time = std::time::Instant::now();
         }
+    }
+
+    // Stop biomarker thread first (before dropping ONNX providers)
+    if let Some(bio_handle) = biomarker_handle {
+        info!("Stopping biomarker thread");
+        bio_handle.stop();
+        bio_handle.join();
+        info!("Biomarker thread stopped");
     }
 
     // Explicitly drop heavy resources in the correct order

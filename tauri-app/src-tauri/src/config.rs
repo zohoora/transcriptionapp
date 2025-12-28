@@ -182,6 +182,11 @@ pub struct Config {
     pub emotion_enabled: bool,
     #[serde(default)]
     pub emotion_model_path: Option<PathBuf>,
+    // Biomarker analysis settings
+    #[serde(default = "default_biomarkers_enabled")]
+    pub biomarkers_enabled: bool,
+    #[serde(default)]
+    pub yamnet_model_path: Option<PathBuf>,
 }
 
 fn default_max_speakers() -> usize {
@@ -198,6 +203,10 @@ fn default_enhancement_enabled() -> bool {
 
 fn default_emotion_enabled() -> bool {
     false // Disabled by default until wav2small ONNX is available
+}
+
+fn default_biomarkers_enabled() -> bool {
+    true // Biomarker analysis enabled by default
 }
 
 impl Default for Config {
@@ -221,6 +230,8 @@ impl Default for Config {
             enhancement_model_path: None,
             emotion_enabled: default_emotion_enabled(),
             emotion_model_path: None,
+            biomarkers_enabled: default_biomarkers_enabled(),
+            yamnet_model_path: None,
         }
     }
 }
@@ -331,6 +342,15 @@ impl Config {
         }
         let models_dir = Self::models_dir()?;
         Ok(models_dir.join("wav2small.onnx"))
+    }
+
+    /// Get the YAMNet model file path (for biomarker cough detection)
+    pub fn get_yamnet_model_path(&self) -> Result<PathBuf> {
+        if let Some(ref path) = self.yamnet_model_path {
+            return Ok(path.clone());
+        }
+        let models_dir = Self::models_dir()?;
+        Ok(models_dir.join("yamnet.onnx"))
     }
 
     /// Convert to frontend Settings

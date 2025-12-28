@@ -440,6 +440,58 @@ fn run_model_checks(config: &Config) -> Vec<CheckResult> {
     };
     checks.push(emotion_check);
 
+    // Biomarker analysis checks (optional based on config)
+    let biomarker_check = if config.biomarkers_enabled {
+        // Check YAMNet model for cough detection
+        match config.get_yamnet_model_path() {
+            Ok(path) => {
+                if path.exists() {
+                    CheckResult {
+                        id: "yamnet_model".to_string(),
+                        name: "YAMNet Model (Cough Detection)".to_string(),
+                        category: CheckCategory::Model,
+                        status: CheckStatus::Pass,
+                        message: Some("Model available - cough detection enabled".to_string()),
+                        action: None,
+                    }
+                } else {
+                    // YAMNet is optional even when biomarkers enabled
+                    // Vitality and stability work without it
+                    CheckResult {
+                        id: "yamnet_model".to_string(),
+                        name: "YAMNet Model (Cough Detection)".to_string(),
+                        category: CheckCategory::Model,
+                        status: CheckStatus::Warning,
+                        message: Some("Model not found - cough detection disabled, but vitality/stability metrics available".to_string()),
+                        action: Some(CheckAction::DownloadModel {
+                            model_name: "yamnet".to_string()
+                        }),
+                    }
+                }
+            }
+            Err(e) => CheckResult {
+                id: "yamnet_model".to_string(),
+                name: "YAMNet Model (Cough Detection)".to_string(),
+                category: CheckCategory::Model,
+                status: CheckStatus::Warning,
+                message: Some(format!("Error: {} - vitality/stability metrics still available", e)),
+                action: Some(CheckAction::DownloadModel {
+                    model_name: "yamnet".to_string()
+                }),
+            },
+        }
+    } else {
+        CheckResult {
+            id: "yamnet_model".to_string(),
+            name: "Biomarker Analysis".to_string(),
+            category: CheckCategory::Model,
+            status: CheckStatus::Skipped,
+            message: Some("Biomarker analysis disabled".to_string()),
+            action: None,
+        }
+    };
+    checks.push(biomarker_check);
+
     checks
 }
 

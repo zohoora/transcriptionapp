@@ -35,9 +35,18 @@ Rust Backend
 ├── enhancement/     # Speech enhancement (GTCRN)
 │   ├── mod.rs       # Module exports
 │   └── provider.rs  # ONNX-based denoising
-└── emotion/         # Emotion detection (wav2small)
-    ├── mod.rs       # Module exports
-    └── provider.rs  # ONNX-based ADV detection
+├── emotion/         # Emotion detection (wav2small)
+│   ├── mod.rs       # Module exports
+│   └── provider.rs  # ONNX-based ADV detection
+└── biomarkers/      # Vocal biomarker analysis
+    ├── mod.rs       # Types (CoughEvent, VocalBiomarkers, SessionMetrics)
+    ├── config.rs    # BiomarkerConfig
+    ├── thread.rs    # Sidecar processing thread
+    ├── yamnet/      # YAMNet cough detection (ONNX)
+    ├── voice_metrics/
+    │   ├── vitality.rs   # F0 pitch variability (mcleod)
+    │   └── stability.rs  # CPP via cepstral analysis (rustfft)
+    └── session_metrics/  # Turn-taking, talk time ratios
 ```
 
 ## Key IPC Commands
@@ -57,6 +66,7 @@ Rust Backend
 | `download_speaker_model` | Download speaker diarization model |
 | `download_enhancement_model` | Download GTCRN enhancement model |
 | `download_emotion_model` | Download wav2small emotion model |
+| `download_yamnet_model` | Download YAMNet cough detection model |
 | `ensure_models` | Download all required models |
 
 ## Key Events (Backend → Frontend)
@@ -121,6 +131,37 @@ Note: Some diarization tests require ONNX Runtime. Set `ORT_DYLIB_PATH` environm
 - Labels: excited/happy, angry/frustrated, calm/content, sad/tired
 - Emotion stored in transcript segments
 
+### Biomarker Analysis
+Real-time vocal biomarker extraction running in parallel with transcription:
+
+**Vitality (Prosody/Emotional Engagement)**
+- Measures pitch variability (F0 standard deviation)
+- Detects "flat affect" (Depression/PTSD indicator)
+- Uses `pitch-detection` crate (mcleod algorithm) - pure Rust, no ONNX
+
+**Stability (Neurological Control)**
+- Measures vocal fold regularity via CPP (Cepstral Peak Prominence)
+- Detects fatigue or tremors (Parkinson's indicator)
+- Uses `rustfft` for cepstral analysis - pure Rust, no ONNX
+- Note: CPP is more robust than jitter/shimmer in ambient noise
+
+**Cough Detection (YAMNet)**
+- 521-class audio event classification
+- Sliding window: 1s with 500ms hop
+- Detects coughs, sneezes, throat clearing
+- ~3MB ONNX model (optional - vitality/stability work without it)
+
+**Session Metrics**
+- Speaker talk time ratios
+- Turn count and average duration
+- Cough rate per minute
+
+**Architecture**
+- Sidecar thread runs in parallel with transcription
+- Clone Point 1: After resample → YAMNet (all audio)
+- Clone Point 2: At utterance → Vitality/Stability (original unenhanced audio)
+- Non-blocking: biomarker processing doesn't affect transcription latency
+
 ### Launch Sequence Checklist
 - Pre-flight verification system in `checklist.rs`
 - Checks: audio devices, models, configuration
@@ -155,6 +196,7 @@ interface Settings {
   - Speaker: `speaker_embedding.onnx` (~26MB)
   - Enhancement: `gtcrn_simple.onnx` (~523KB)
   - Emotion: `wav2small.onnx` (~120KB)
+  - YAMNet: `yamnet.onnx` (~3MB) - for cough detection
 - **Settings**: `~/.transcriptionapp/config.json`
 - **Logs**: Console (tracing crate)
 
