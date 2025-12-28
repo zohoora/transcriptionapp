@@ -14,6 +14,11 @@ import {
   mockCompletedStatus,
   mockTranscript,
   mockSettings,
+  mockAudioQualityGood,
+  mockAudioQualityQuiet,
+  mockAudioQualityClipped,
+  mockAudioQualityNoisy,
+  mockAudioQualityDropout,
   createListenMock,
 } from './test/mocks';
 
@@ -725,6 +730,350 @@ describe('formatTime', () => {
     });
     await waitFor(() => {
       expect(screen.getByText('01:01:05')).toBeInTheDocument();
+    });
+  });
+});
+
+describe('Audio Quality', () => {
+  let listenHelper: ReturnType<typeof createListenMock>;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    listenHelper = createListenMock();
+    mockListen.mockImplementation(listenHelper.listen as typeof listen);
+  });
+
+  afterEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('shows Audio Quality section during recording when audio quality data is received', async () => {
+    mockInvoke.mockImplementation((command: string) => {
+      if (command === 'list_input_devices') return Promise.resolve(mockDevices);
+      if (command === 'check_model_status') return Promise.resolve(mockModelStatusAvailable);
+      if (command === 'get_settings') return Promise.resolve(mockSettings);
+      if (command === 'run_checklist') return Promise.resolve({ checks: [], all_passed: true, can_start: true, summary: 'Ready' });
+      return Promise.reject(new Error('Unknown command'));
+    });
+
+    render(<App />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Start')).toBeInTheDocument();
+    });
+
+    // Start recording and send audio quality
+    act(() => {
+      listenHelper.emit('session_status', mockRecordingStatus);
+      listenHelper.emit('audio_quality', mockAudioQualityGood);
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText('Audio Quality')).toBeInTheDocument();
+    });
+  });
+
+  it('shows "Good" badge for good audio quality', async () => {
+    mockInvoke.mockImplementation((command: string) => {
+      if (command === 'list_input_devices') return Promise.resolve(mockDevices);
+      if (command === 'check_model_status') return Promise.resolve(mockModelStatusAvailable);
+      if (command === 'get_settings') return Promise.resolve(mockSettings);
+      if (command === 'run_checklist') return Promise.resolve({ checks: [], all_passed: true, can_start: true, summary: 'Ready' });
+      return Promise.reject(new Error('Unknown command'));
+    });
+
+    render(<App />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Start')).toBeInTheDocument();
+    });
+
+    act(() => {
+      listenHelper.emit('session_status', mockRecordingStatus);
+      listenHelper.emit('audio_quality', mockAudioQualityGood);
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText('Good')).toBeInTheDocument();
+    });
+  });
+
+  it('shows "Fair" badge for quiet audio', async () => {
+    mockInvoke.mockImplementation((command: string) => {
+      if (command === 'list_input_devices') return Promise.resolve(mockDevices);
+      if (command === 'check_model_status') return Promise.resolve(mockModelStatusAvailable);
+      if (command === 'get_settings') return Promise.resolve(mockSettings);
+      if (command === 'run_checklist') return Promise.resolve({ checks: [], all_passed: true, can_start: true, summary: 'Ready' });
+      return Promise.reject(new Error('Unknown command'));
+    });
+
+    render(<App />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Start')).toBeInTheDocument();
+    });
+
+    act(() => {
+      listenHelper.emit('session_status', mockRecordingStatus);
+      listenHelper.emit('audio_quality', mockAudioQualityQuiet);
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText('Fair')).toBeInTheDocument();
+    });
+  });
+
+  it('shows "Poor" badge for clipped audio', async () => {
+    mockInvoke.mockImplementation((command: string) => {
+      if (command === 'list_input_devices') return Promise.resolve(mockDevices);
+      if (command === 'check_model_status') return Promise.resolve(mockModelStatusAvailable);
+      if (command === 'get_settings') return Promise.resolve(mockSettings);
+      if (command === 'run_checklist') return Promise.resolve({ checks: [], all_passed: true, can_start: true, summary: 'Ready' });
+      return Promise.reject(new Error('Unknown command'));
+    });
+
+    render(<App />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Start')).toBeInTheDocument();
+    });
+
+    act(() => {
+      listenHelper.emit('session_status', mockRecordingStatus);
+      listenHelper.emit('audio_quality', mockAudioQualityClipped);
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText('Poor')).toBeInTheDocument();
+    });
+  });
+
+  it('shows suggestion to move microphone closer for quiet audio', async () => {
+    mockInvoke.mockImplementation((command: string) => {
+      if (command === 'list_input_devices') return Promise.resolve(mockDevices);
+      if (command === 'check_model_status') return Promise.resolve(mockModelStatusAvailable);
+      if (command === 'get_settings') return Promise.resolve(mockSettings);
+      if (command === 'run_checklist') return Promise.resolve({ checks: [], all_passed: true, can_start: true, summary: 'Ready' });
+      return Promise.reject(new Error('Unknown command'));
+    });
+
+    render(<App />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Start')).toBeInTheDocument();
+    });
+
+    act(() => {
+      listenHelper.emit('session_status', mockRecordingStatus);
+      listenHelper.emit('audio_quality', mockAudioQualityQuiet);
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText('Move microphone closer')).toBeInTheDocument();
+    });
+  });
+
+  it('shows suggestion to reduce background noise for low SNR', async () => {
+    mockInvoke.mockImplementation((command: string) => {
+      if (command === 'list_input_devices') return Promise.resolve(mockDevices);
+      if (command === 'check_model_status') return Promise.resolve(mockModelStatusAvailable);
+      if (command === 'get_settings') return Promise.resolve(mockSettings);
+      if (command === 'run_checklist') return Promise.resolve({ checks: [], all_passed: true, can_start: true, summary: 'Ready' });
+      return Promise.reject(new Error('Unknown command'));
+    });
+
+    render(<App />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Start')).toBeInTheDocument();
+    });
+
+    act(() => {
+      listenHelper.emit('session_status', mockRecordingStatus);
+      listenHelper.emit('audio_quality', mockAudioQualityNoisy);
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText('Reduce background noise')).toBeInTheDocument();
+    });
+  });
+
+  it('shows suggestion about audio gaps for dropouts', async () => {
+    mockInvoke.mockImplementation((command: string) => {
+      if (command === 'list_input_devices') return Promise.resolve(mockDevices);
+      if (command === 'check_model_status') return Promise.resolve(mockModelStatusAvailable);
+      if (command === 'get_settings') return Promise.resolve(mockSettings);
+      if (command === 'run_checklist') return Promise.resolve({ checks: [], all_passed: true, can_start: true, summary: 'Ready' });
+      return Promise.reject(new Error('Unknown command'));
+    });
+
+    render(<App />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Start')).toBeInTheDocument();
+    });
+
+    act(() => {
+      listenHelper.emit('session_status', mockRecordingStatus);
+      listenHelper.emit('audio_quality', mockAudioQualityDropout);
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText('Audio gaps detected - check connection')).toBeInTheDocument();
+    });
+  });
+
+  it('shows clips count when audio is clipped', async () => {
+    mockInvoke.mockImplementation((command: string) => {
+      if (command === 'list_input_devices') return Promise.resolve(mockDevices);
+      if (command === 'check_model_status') return Promise.resolve(mockModelStatusAvailable);
+      if (command === 'get_settings') return Promise.resolve(mockSettings);
+      if (command === 'run_checklist') return Promise.resolve({ checks: [], all_passed: true, can_start: true, summary: 'Ready' });
+      return Promise.reject(new Error('Unknown command'));
+    });
+
+    render(<App />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Start')).toBeInTheDocument();
+    });
+
+    act(() => {
+      listenHelper.emit('session_status', mockRecordingStatus);
+      listenHelper.emit('audio_quality', mockAudioQualityClipped);
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText('Clips')).toBeInTheDocument();
+      expect(screen.getByText('50')).toBeInTheDocument();
+    });
+  });
+
+  it('shows drops count when there are dropouts', async () => {
+    mockInvoke.mockImplementation((command: string) => {
+      if (command === 'list_input_devices') return Promise.resolve(mockDevices);
+      if (command === 'check_model_status') return Promise.resolve(mockModelStatusAvailable);
+      if (command === 'get_settings') return Promise.resolve(mockSettings);
+      if (command === 'run_checklist') return Promise.resolve({ checks: [], all_passed: true, can_start: true, summary: 'Ready' });
+      return Promise.reject(new Error('Unknown command'));
+    });
+
+    render(<App />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Start')).toBeInTheDocument();
+    });
+
+    act(() => {
+      listenHelper.emit('session_status', mockRecordingStatus);
+      listenHelper.emit('audio_quality', mockAudioQualityDropout);
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText('Drops')).toBeInTheDocument();
+      expect(screen.getByText('3')).toBeInTheDocument();
+    });
+  });
+
+  it('displays Level and SNR metrics', async () => {
+    mockInvoke.mockImplementation((command: string) => {
+      if (command === 'list_input_devices') return Promise.resolve(mockDevices);
+      if (command === 'check_model_status') return Promise.resolve(mockModelStatusAvailable);
+      if (command === 'get_settings') return Promise.resolve(mockSettings);
+      if (command === 'run_checklist') return Promise.resolve({ checks: [], all_passed: true, can_start: true, summary: 'Ready' });
+      return Promise.reject(new Error('Unknown command'));
+    });
+
+    render(<App />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Start')).toBeInTheDocument();
+    });
+
+    act(() => {
+      listenHelper.emit('session_status', mockRecordingStatus);
+      listenHelper.emit('audio_quality', mockAudioQualityGood);
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText('Level')).toBeInTheDocument();
+      expect(screen.getByText('SNR')).toBeInTheDocument();
+      expect(screen.getByText('-18 dB')).toBeInTheDocument();
+      expect(screen.getByText('25 dB')).toBeInTheDocument();
+    });
+  });
+
+  it('does not show suggestion for good audio quality', async () => {
+    mockInvoke.mockImplementation((command: string) => {
+      if (command === 'list_input_devices') return Promise.resolve(mockDevices);
+      if (command === 'check_model_status') return Promise.resolve(mockModelStatusAvailable);
+      if (command === 'get_settings') return Promise.resolve(mockSettings);
+      if (command === 'run_checklist') return Promise.resolve({ checks: [], all_passed: true, can_start: true, summary: 'Ready' });
+      return Promise.reject(new Error('Unknown command'));
+    });
+
+    render(<App />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Start')).toBeInTheDocument();
+    });
+
+    act(() => {
+      listenHelper.emit('session_status', mockRecordingStatus);
+      listenHelper.emit('audio_quality', mockAudioQualityGood);
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText('Audio Quality')).toBeInTheDocument();
+    });
+
+    // Should not show any suggestion
+    expect(screen.queryByText('Move microphone closer')).not.toBeInTheDocument();
+    expect(screen.queryByText('Reduce background noise')).not.toBeInTheDocument();
+    expect(screen.queryByText(/Audio gaps/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Speak softer/)).not.toBeInTheDocument();
+  });
+
+  it('can collapse and expand Audio Quality section', async () => {
+    const user = userEvent.setup();
+    mockInvoke.mockImplementation((command: string) => {
+      if (command === 'list_input_devices') return Promise.resolve(mockDevices);
+      if (command === 'check_model_status') return Promise.resolve(mockModelStatusAvailable);
+      if (command === 'get_settings') return Promise.resolve(mockSettings);
+      if (command === 'run_checklist') return Promise.resolve({ checks: [], all_passed: true, can_start: true, summary: 'Ready' });
+      return Promise.reject(new Error('Unknown command'));
+    });
+
+    render(<App />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Start')).toBeInTheDocument();
+    });
+
+    act(() => {
+      listenHelper.emit('session_status', mockRecordingStatus);
+      listenHelper.emit('audio_quality', mockAudioQualityGood);
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText('Audio Quality')).toBeInTheDocument();
+      expect(screen.getByText('Level')).toBeInTheDocument();
+    });
+
+    // Click to collapse
+    await user.click(screen.getByText('Audio Quality'));
+
+    // Level should be hidden
+    await waitFor(() => {
+      const content = document.querySelector('.audio-quality-content');
+      expect(content).toBeNull();
+    });
+
+    // Click to expand
+    await user.click(screen.getByText('Audio Quality'));
+
+    await waitFor(() => {
+      expect(screen.getByText('Level')).toBeInTheDocument();
     });
   });
 });

@@ -36,6 +36,7 @@
 //!       Segment <───────────────────────────┘
 //! ```
 
+pub mod audio_quality;
 pub mod config;
 pub mod thread;
 pub mod voice_metrics;
@@ -58,6 +59,12 @@ pub enum BiomarkerInput {
         samples: Vec<f32>,
         timestamp_ms: u64,
     },
+    /// Audio chunk with VAD state for quality analysis
+    AudioChunkWithVad {
+        samples: Vec<f32>,
+        timestamp_ms: u64,
+        is_speech: bool,
+    },
     /// Complete utterance for vitality/stability analysis
     Utterance {
         id: Uuid,
@@ -71,6 +78,8 @@ pub enum BiomarkerInput {
         start_ms: u64,
         end_ms: u64,
     },
+    /// Record a dropout event (buffer overflow)
+    Dropout,
     /// Shutdown signal
     Shutdown,
 }
@@ -84,6 +93,8 @@ pub enum BiomarkerOutput {
     VocalBiomarkers(VocalBiomarkers),
     /// Session metrics update
     SessionMetrics(SessionMetrics),
+    /// Audio quality snapshot
+    AudioQuality(AudioQualitySnapshot),
 }
 
 /// Cough detection event from YAMNet
@@ -125,6 +136,21 @@ impl Default for VocalBiomarkers {
     }
 }
 
+/// Per-speaker biomarker metrics
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct SpeakerBiomarkers {
+    /// Speaker identifier (e.g., "Speaker 1", "Speaker 2")
+    pub speaker_id: String,
+    /// Mean vitality (F0 std dev in Hz) for this speaker
+    pub vitality_mean: Option<f32>,
+    /// Mean stability (CPP in dB) for this speaker
+    pub stability_mean: Option<f32>,
+    /// Number of utterances analyzed
+    pub utterance_count: u32,
+    /// Total talk time in ms
+    pub talk_time_ms: u64,
+}
+
 /// Aggregated session-level metrics
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct SessionMetrics {
@@ -140,10 +166,139 @@ pub struct SessionMetrics {
     pub avg_turn_duration_ms: f32,
     /// Talk time ratio (patient / clinician, if 2 speakers)
     pub talk_time_ratio: Option<f32>,
-    /// Session mean vitality
+    /// Session mean vitality (all speakers combined)
     pub vitality_session_mean: Option<f32>,
-    /// Session mean stability
+    /// Session mean stability (all speakers combined)
     pub stability_session_mean: Option<f32>,
+    /// Per-speaker biomarker metrics
+    pub speaker_biomarkers: HashMap<String, SpeakerBiomarkers>,
+}
+
+/// Frontend-friendly biomarker update payload
+/// Sent via `biomarker_update` event to the frontend
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BiomarkerUpdate {
+    /// Total cough count in session
+    pub cough_count: u32,
+    /// Coughs per minute
+    pub cough_rate_per_min: f32,
+    /// Number of speaker turns
+    pub turn_count: u32,
+    /// Average turn duration (ms)
+    pub avg_turn_duration_ms: f32,
+    /// Talk time ratio (patient / clinician, if 2 speakers)
+    pub talk_time_ratio: Option<f32>,
+    /// Session mean vitality (F0 std dev in Hz) - all speakers combined
+    pub vitality_session_mean: Option<f32>,
+    /// Session mean stability (CPP in dB) - all speakers combined
+    pub stability_session_mean: Option<f32>,
+    /// Per-speaker biomarker metrics
+    pub speaker_metrics: Vec<SpeakerBiomarkers>,
+    /// Recent audio events (last 10)
+    pub recent_events: Vec<CoughEvent>,
+}
+
+impl BiomarkerUpdate {
+    /// Create a new BiomarkerUpdate from SessionMetrics and recent events
+    pub fn from_metrics(metrics: &SessionMetrics, recent_events: &[CoughEvent]) -> Self {
+        // Convert HashMap to Vec for frontend
+        let speaker_metrics: Vec<SpeakerBiomarkers> = metrics
+            .speaker_biomarkers
+            .values()
+            .cloned()
+            .collect();
+
+        Self {
+            cough_count: metrics.cough_count,
+            cough_rate_per_min: metrics.cough_rate_per_min,
+            turn_count: metrics.turn_count,
+            avg_turn_duration_ms: metrics.avg_turn_duration_ms,
+            talk_time_ratio: metrics.talk_time_ratio,
+            vitality_session_mean: metrics.vitality_session_mean,
+            stability_session_mean: metrics.stability_session_mean,
+            speaker_metrics,
+            recent_events: recent_events.to_vec(),
+        }
+    }
+}
+
+/// Audio quality snapshot - emitted periodically during recording
+/// Provides real-time metrics for predicting transcript reliability
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AudioQualitySnapshot {
+    /// Timestamp in milliseconds since session start
+    pub timestamp_ms: u64,
+
+    // Tier 1 - Level metrics
+    /// Peak level in dBFS (0 = max, -60 = very quiet)
+    pub peak_db: f32,
+    /// RMS level in dBFS (average loudness)
+    pub rms_db: f32,
+    /// Number of clipped samples this period
+    pub clipped_samples: u32,
+    /// Ratio of clipped samples (0.0-1.0)
+    pub clipped_ratio: f32,
+
+    // Tier 2 - SNR metrics
+    /// Estimated noise floor in dBFS
+    pub noise_floor_db: f32,
+    /// Signal-to-noise ratio in dB
+    pub snr_db: f32,
+    /// Fraction of time with no speech detected
+    pub silence_ratio: f32,
+
+    // Counters
+    /// Number of buffer dropout events since session start
+    pub dropout_count: u32,
+    /// Total clipped samples since session start
+    pub total_clipped: u32,
+    /// Total samples processed
+    pub total_samples: u64,
+}
+
+/// Audio quality flags - derived from snapshot with thresholds applied
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AudioQualityFlags {
+    /// Level is in acceptable range (-40 to -6 dBFS)
+    pub level_ok: bool,
+    /// Clipping is below threshold (< 0.1%)
+    pub clipping_ok: bool,
+    /// SNR is acceptable (> 10 dB)
+    pub snr_ok: bool,
+    /// No dropout events
+    pub dropout_ok: bool,
+    /// Overall quality score (0.0-1.0)
+    pub overall_quality: f32,
+}
+
+impl From<audio_quality::AudioQualitySnapshot> for AudioQualitySnapshot {
+    fn from(snap: audio_quality::AudioQualitySnapshot) -> Self {
+        Self {
+            timestamp_ms: snap.timestamp_ms,
+            peak_db: snap.peak_db,
+            rms_db: snap.rms_db,
+            clipped_samples: snap.clipped_samples,
+            clipped_ratio: snap.clipped_ratio,
+            noise_floor_db: snap.noise_floor_db,
+            snr_db: snap.snr_db,
+            silence_ratio: snap.silence_ratio,
+            dropout_count: snap.dropout_count,
+            total_clipped: snap.total_clipped,
+            total_samples: snap.total_samples,
+        }
+    }
+}
+
+impl From<audio_quality::AudioQualityFlags> for AudioQualityFlags {
+    fn from(flags: audio_quality::AudioQualityFlags) -> Self {
+        Self {
+            level_ok: flags.level_ok,
+            clipping_ok: flags.clipping_ok,
+            snr_ok: flags.snr_ok,
+            dropout_ok: flags.dropout_ok,
+            overall_quality: flags.overall_quality,
+        }
+    }
 }
 
 #[cfg(test)]

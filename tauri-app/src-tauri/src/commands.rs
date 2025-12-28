@@ -272,6 +272,14 @@ pub async fn start_session(
                         let _ = app_clone.emit("session_status", status);
                     }
                 }
+                PipelineMessage::Biomarker(update) => {
+                    // Emit biomarker update to frontend
+                    let _ = app_clone.emit("biomarker_update", update);
+                }
+                PipelineMessage::AudioQuality(snapshot) => {
+                    // Emit audio quality update to frontend
+                    let _ = app_clone.emit("audio_quality", snapshot);
+                }
                 PipelineMessage::Stopped => {
                     info!("Pipeline stopped message received");
                     break;

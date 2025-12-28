@@ -77,6 +77,49 @@ interface ChecklistResult {
   summary: string;
 }
 
+// Biomarker types
+interface CoughEvent {
+  timestamp_ms: number;
+  duration_ms: number;
+  confidence: number;
+  label: string;
+}
+
+interface SpeakerBiomarkers {
+  speaker_id: string;
+  vitality_mean: number | null;
+  stability_mean: number | null;
+  utterance_count: number;
+  talk_time_ms: number;
+}
+
+interface BiomarkerUpdate {
+  cough_count: number;
+  cough_rate_per_min: number;
+  turn_count: number;
+  avg_turn_duration_ms: number;
+  talk_time_ratio: number | null;
+  vitality_session_mean: number | null;
+  stability_session_mean: number | null;
+  speaker_metrics: SpeakerBiomarkers[];
+  recent_events: CoughEvent[];
+}
+
+// Audio quality types
+interface AudioQualitySnapshot {
+  timestamp_ms: number;
+  peak_db: number;
+  rms_db: number;
+  clipped_samples: number;
+  clipped_ratio: number;
+  noise_floor_db: number;
+  snr_db: number;
+  silence_ratio: number;
+  dropout_count: number;
+  total_clipped: number;
+  total_samples: number;
+}
+
 const WHISPER_MODELS = [
   { value: 'tiny', label: 'Tiny (fastest)' },
   { value: 'base', label: 'Base' },
@@ -113,6 +156,93 @@ function formatTime(ms: number): string {
   return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
 }
 
+// Biomarker interpretation helpers
+// Vitality: F0 std dev in Hz. Normal speech: 30-80 Hz, low vitality: <20 Hz
+function getVitalityPercent(value: number | null): number {
+  if (value === null) return 0;
+  return Math.min(100, (value / 60) * 100); // 60 Hz = 100%
+}
+
+function getVitalityClass(value: number | null): string {
+  if (value === null) return '';
+  if (value >= 30) return 'metric-good';
+  if (value >= 15) return 'metric-warning';
+  return 'metric-low';
+}
+
+// Stability: CPP in dB. Normal: 8-15 dB, concerning: <6 dB
+function getStabilityPercent(value: number | null): number {
+  if (value === null) return 0;
+  return Math.min(100, (value / 12) * 100); // 12 dB = 100%
+}
+
+function getStabilityClass(value: number | null): string {
+  if (value === null) return '';
+  if (value >= 8) return 'metric-good';
+  if (value >= 5) return 'metric-warning';
+  return 'metric-low';
+}
+
+// Audio quality interpretation helpers
+// Level: -40 to -6 dBFS is good range
+function getLevelPercent(value: number): number {
+  // Map -60 to 0 dBFS to 0-100%
+  return Math.min(100, Math.max(0, ((value + 60) / 60) * 100));
+}
+
+function getLevelClass(value: number): string {
+  if (value < -40) return 'metric-low';      // Too quiet
+  if (value > -6) return 'metric-warning';   // Too hot
+  return 'metric-good';
+}
+
+// SNR: >10 dB is good
+function getSnrPercent(value: number): number {
+  // Map 0-30 dB to 0-100%
+  return Math.min(100, Math.max(0, (value / 30) * 100));
+}
+
+function getSnrClass(value: number): string {
+  if (value >= 15) return 'metric-good';
+  if (value >= 10) return 'metric-warning';
+  return 'metric-low';
+}
+
+function getQualityStatus(quality: AudioQualitySnapshot): { label: string; class: string } {
+  const levelOk = quality.rms_db >= -40 && quality.rms_db <= -6;
+  const snrOk = quality.snr_db >= 10;
+  const clippingOk = quality.clipped_ratio < 0.001;
+  const dropoutOk = quality.dropout_count === 0;
+
+  if (levelOk && snrOk && clippingOk && dropoutOk) {
+    return { label: 'Good', class: 'quality-good' };
+  }
+  if (!clippingOk || !dropoutOk) {
+    return { label: 'Poor', class: 'quality-poor' };
+  }
+  return { label: 'Fair', class: 'quality-fair' };
+}
+
+function getQualitySuggestion(quality: AudioQualitySnapshot): string | null {
+  // Priority order: most actionable issues first
+  if (quality.clipped_ratio >= 0.001) {
+    return 'Speak softer or move mic further away';
+  }
+  if (quality.dropout_count > 0) {
+    return 'Audio gaps detected - check connection';
+  }
+  if (quality.rms_db < -40) {
+    return 'Move microphone closer';
+  }
+  if (quality.rms_db > -6) {
+    return 'Move microphone further away';
+  }
+  if (quality.snr_db < 10) {
+    return 'Reduce background noise';
+  }
+  return null; // All good, no suggestion needed
+}
+
 function App() {
   const [status, setStatus] = useState<SessionStatus>({
     state: 'idle',
@@ -145,6 +275,15 @@ function App() {
   const [checklistRunning, setChecklistRunning] = useState(true);
   const [checklistDismissed, setChecklistDismissed] = useState(false);
   const [downloadingModel, setDownloadingModel] = useState<string | null>(null);
+
+  // Biomarker state
+  const [biomarkers, setBiomarkers] = useState<BiomarkerUpdate | null>(null);
+  const [biomarkersExpanded, setBiomarkersExpanded] = useState(true);
+  const [showBiomarkers, setShowBiomarkers] = useState(true);
+
+  // Audio quality state
+  const [audioQuality, setAudioQuality] = useState<AudioQualitySnapshot | null>(null);
+  const [audioQualityExpanded, setAudioQualityExpanded] = useState(true);
 
   const transcriptRef = useRef<HTMLDivElement>(null);
   const [localElapsedMs, setLocalElapsedMs] = useState(0);
@@ -212,6 +351,8 @@ function App() {
         command = 'download_enhancement_model';
       } else if (modelName === 'wav2small') {
         command = 'download_emotion_model';
+      } else if (modelName === 'yamnet') {
+        command = 'download_yamnet_model';
       } else {
         // Whisper model
         command = 'download_whisper_model';
@@ -268,6 +409,8 @@ function App() {
   useEffect(() => {
     let unlistenStatus: UnlistenFn | undefined;
     let unlistenTranscript: UnlistenFn | undefined;
+    let unlistenBiomarkers: UnlistenFn | undefined;
+    let unlistenAudioQuality: UnlistenFn | undefined;
 
     async function setupListeners() {
       unlistenStatus = await listen<SessionStatus>('session_status', (event) => {
@@ -279,6 +422,15 @@ function App() {
         console.log('Transcript update received:', event.payload);
         setTranscript(event.payload);
       });
+
+      unlistenBiomarkers = await listen<BiomarkerUpdate>('biomarker_update', (event) => {
+        console.log('Biomarker update received:', event.payload);
+        setBiomarkers(event.payload);
+      });
+
+      unlistenAudioQuality = await listen<AudioQualitySnapshot>('audio_quality', (event) => {
+        setAudioQuality(event.payload);
+      });
     }
 
     setupListeners();
@@ -286,6 +438,8 @@ function App() {
     return () => {
       unlistenStatus?.();
       unlistenTranscript?.();
+      unlistenBiomarkers?.();
+      unlistenAudioQuality?.();
     };
   }, []);
 
@@ -323,6 +477,8 @@ function App() {
         draft_text: null,
         segment_count: 0,
       });
+      setBiomarkers(null);
+      setAudioQuality(null);
     } catch (e) {
       console.error('Failed to reset:', e);
     }
@@ -541,6 +697,195 @@ function App() {
         </section>
       )}
 
+      {/* Audio Quality Section */}
+      {!showChecklist && (isRecording || isCompleted) && audioQuality && (
+        <section className="audio-quality-section">
+          <div
+            className="audio-quality-header"
+            onClick={() => setAudioQualityExpanded(!audioQualityExpanded)}
+          >
+            <div className="audio-quality-header-left">
+              <span className={`chevron ${audioQualityExpanded ? '' : 'collapsed'}`}>
+                &#9660;
+              </span>
+              <span className="audio-quality-title">Audio Quality</span>
+            </div>
+            <span className={`quality-badge ${getQualityStatus(audioQuality).class}`}>
+              {getQualityStatus(audioQuality).label}
+            </span>
+          </div>
+
+          {audioQualityExpanded && (
+            <div className="audio-quality-content">
+              {getQualitySuggestion(audioQuality) && (
+                <div className="quality-suggestion">
+                  {getQualitySuggestion(audioQuality)}
+                </div>
+              )}
+              <div className="metric-row">
+                <span className="metric-label">Level</span>
+                <div className="metric-bar-container">
+                  <div
+                    className={`metric-bar ${getLevelClass(audioQuality.rms_db)}`}
+                    style={{ width: `${getLevelPercent(audioQuality.rms_db)}%` }}
+                  />
+                </div>
+                <span className="metric-value">
+                  {audioQuality.rms_db.toFixed(0)} dB
+                </span>
+              </div>
+              <div className="metric-row">
+                <span className="metric-label">SNR</span>
+                <div className="metric-bar-container">
+                  <div
+                    className={`metric-bar ${getSnrClass(audioQuality.snr_db)}`}
+                    style={{ width: `${getSnrPercent(audioQuality.snr_db)}%` }}
+                  />
+                </div>
+                <span className="metric-value">
+                  {audioQuality.snr_db.toFixed(0)} dB
+                </span>
+              </div>
+              {audioQuality.total_clipped > 0 && (
+                <div className="metric-row quality-warning">
+                  <span className="metric-label">Clips</span>
+                  <span className="metric-value-wide">{audioQuality.total_clipped}</span>
+                </div>
+              )}
+              {audioQuality.dropout_count > 0 && (
+                <div className="metric-row quality-warning">
+                  <span className="metric-label">Drops</span>
+                  <span className="metric-value-wide">{audioQuality.dropout_count}</span>
+                </div>
+              )}
+            </div>
+          )}
+        </section>
+      )}
+
+      {/* Biomarkers Section */}
+      {!showChecklist && showBiomarkers && (isRecording || isCompleted) && (
+        <section className="biomarkers-section">
+          <div
+            className="biomarkers-header"
+            onClick={() => setBiomarkersExpanded(!biomarkersExpanded)}
+          >
+            <div className="biomarkers-header-left">
+              <span className={`chevron ${biomarkersExpanded ? '' : 'collapsed'}`}>
+                &#9660;
+              </span>
+              <span className="biomarkers-title">Biomarkers</span>
+            </div>
+            {biomarkers && biomarkers.cough_count > 0 && (
+              <span className="cough-badge">{biomarkers.cough_count}</span>
+            )}
+          </div>
+
+          {biomarkersExpanded && (
+            <div className="biomarkers-content">
+              {biomarkers ? (
+                <>
+                  {/* Per-Speaker Biomarkers (when diarization enabled) */}
+                  {biomarkers.speaker_metrics.length > 0 ? (
+                    <div className="speaker-biomarkers">
+                      {biomarkers.speaker_metrics.map((speaker) => (
+                        <div key={speaker.speaker_id} className="speaker-metrics-group">
+                          <div className="speaker-label">{speaker.speaker_id}</div>
+                          <div className="metric-row">
+                            <span className="metric-label">Vitality</span>
+                            <div className="metric-bar-container">
+                              <div
+                                className={`metric-bar ${getVitalityClass(speaker.vitality_mean)}`}
+                                style={{ width: `${getVitalityPercent(speaker.vitality_mean)}%` }}
+                              />
+                            </div>
+                            <span className="metric-value">
+                              {speaker.vitality_mean?.toFixed(1) ?? '--'} Hz
+                            </span>
+                          </div>
+                          <div className="metric-row">
+                            <span className="metric-label">Stability</span>
+                            <div className="metric-bar-container">
+                              <div
+                                className={`metric-bar ${getStabilityClass(speaker.stability_mean)}`}
+                                style={{ width: `${getStabilityPercent(speaker.stability_mean)}%` }}
+                              />
+                            </div>
+                            <span className="metric-value">
+                              {speaker.stability_mean?.toFixed(1) ?? '--'} dB
+                            </span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <>
+                      {/* Combined Session Metrics (fallback when no per-speaker data) */}
+                      <div className="metric-row">
+                        <span className="metric-label">Vitality</span>
+                        <div className="metric-bar-container">
+                          <div
+                            className={`metric-bar ${getVitalityClass(biomarkers.vitality_session_mean)}`}
+                            style={{ width: `${getVitalityPercent(biomarkers.vitality_session_mean)}%` }}
+                          />
+                        </div>
+                        <span className="metric-value">
+                          {biomarkers.vitality_session_mean?.toFixed(1) ?? '--'} Hz
+                        </span>
+                      </div>
+                      <div className="metric-row">
+                        <span className="metric-label">Stability</span>
+                        <div className="metric-bar-container">
+                          <div
+                            className={`metric-bar ${getStabilityClass(biomarkers.stability_session_mean)}`}
+                            style={{ width: `${getStabilityPercent(biomarkers.stability_session_mean)}%` }}
+                          />
+                        </div>
+                        <span className="metric-value">
+                          {biomarkers.stability_session_mean?.toFixed(1) ?? '--'} dB
+                        </span>
+                      </div>
+                    </>
+                  )}
+
+                  {/* Cough Stats */}
+                  {biomarkers.cough_count > 0 && (
+                    <div className="metric-row cough-stats">
+                      <span className="metric-label">Coughs</span>
+                      <span className="metric-value-wide">
+                        {biomarkers.cough_count} ({biomarkers.cough_rate_per_min.toFixed(1)}/min)
+                      </span>
+                    </div>
+                  )}
+
+                  {/* Session Metrics (if diarization enabled with multiple speakers) */}
+                  {biomarkers.turn_count > 1 && (
+                    <div className="session-metrics">
+                      <div className="metric-row">
+                        <span className="metric-label">Turns</span>
+                        <span className="metric-value-wide">{biomarkers.turn_count}</span>
+                      </div>
+                      {biomarkers.talk_time_ratio !== null && (
+                        <div className="metric-row">
+                          <span className="metric-label">Balance</span>
+                          <span className="metric-value-wide">
+                            {(biomarkers.talk_time_ratio * 100).toFixed(0)}%
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </>
+              ) : (
+                <div className="biomarkers-placeholder">
+                  {isPreparing ? 'Initializing...' : 'Listening...'}
+                </div>
+              )}
+            </div>
+          )}
+        </section>
+      )}
+
       {/* Transcript Section */}
       {!showChecklist && (
         <section className="transcript-section">
@@ -698,6 +1043,21 @@ function App() {
                       </div>
                     </div>
                   )}
+
+                  <div className="settings-group">
+                    <div className="settings-toggle">
+                      <span className="settings-label" style={{ marginBottom: 0 }}>Show Biomarkers</span>
+                      <label className="toggle-switch">
+                        <input
+                          type="checkbox"
+                          checked={showBiomarkers}
+                          onChange={(e) => setShowBiomarkers(e.target.checked)}
+                          aria-label="Show biomarkers panel"
+                        />
+                        <span className="toggle-slider"></span>
+                      </label>
+                    </div>
+                  </div>
                 </>
               )}
             </div>

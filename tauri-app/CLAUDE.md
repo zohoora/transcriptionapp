@@ -39,9 +39,10 @@ Rust Backend
 │   ├── mod.rs       # Module exports
 │   └── provider.rs  # ONNX-based ADV detection
 └── biomarkers/      # Vocal biomarker analysis
-    ├── mod.rs       # Types (CoughEvent, VocalBiomarkers, SessionMetrics)
+    ├── mod.rs       # Types (CoughEvent, VocalBiomarkers, SessionMetrics, AudioQualitySnapshot)
     ├── config.rs    # BiomarkerConfig
     ├── thread.rs    # Sidecar processing thread
+    ├── audio_quality.rs  # Real-time audio quality metrics
     ├── yamnet/      # YAMNet cough detection (ONNX)
     ├── voice_metrics/
     │   ├── vitality.rs   # F0 pitch variability (mcleod)
@@ -75,6 +76,8 @@ Rust Backend
 |-------|---------|
 | `session_status` | `{ state, provider, elapsed_ms, is_processing_behind, error_message? }` |
 | `transcript_update` | `{ finalized_text, draft_text, segment_count }` |
+| `biomarker_update` | `{ cough_count, cough_rate_per_min, turn_count, vitality_session_mean, stability_session_mean, ... }` |
+| `audio_quality` | `{ timestamp_ms, peak_db, rms_db, snr_db, clipped_ratio, dropout_count, ... }` |
 
 ## Session States
 
@@ -161,6 +164,48 @@ Real-time vocal biomarker extraction running in parallel with transcription:
 - Clone Point 1: After resample → YAMNet (all audio)
 - Clone Point 2: At utterance → Vitality/Stability (original unenhanced audio)
 - Non-blocking: biomarker processing doesn't affect transcription latency
+- Real-time UI display via `biomarker_update` event (throttled to 2Hz)
+
+**UI Display**
+- Collapsible biomarkers section between Record and Transcript sections
+- Vitality/Stability shown as color-coded progress bars (green/yellow/red)
+- Cough count badge with rate per minute
+- Session metrics (turns, balance) when diarization enabled
+- Toggle in settings drawer to show/hide biomarkers panel
+
+### Audio Quality Metrics
+Real-time audio quality analysis to predict transcript reliability:
+
+**Tier 1 Metrics (Ultra-cheap, O(1) per sample)**
+- Peak level (dBFS) - detect clipping risk
+- RMS level (dBFS) - detect too quiet/loud
+- Clipping count - samples at ±0.98
+- Dropout counter - buffer overruns
+
+**Tier 2 Metrics (Cheap, O(N) per chunk)**
+- Noise floor estimate - ambient noise level
+- SNR estimate - signal-to-noise ratio (uses VAD)
+- Silence ratio - fraction of silence frames
+
+**Thresholds**
+| Metric | Good | Warning | Poor |
+|--------|------|---------|------|
+| RMS Level | -40 to -6 dB | < -40 or > -6 dB | - |
+| SNR | > 15 dB | 10-15 dB | < 10 dB |
+| Clipping | 0% | 0-0.1% | > 0.1% |
+
+**UI Display**
+- Collapsible "Audio Quality" section between Record and Biomarkers
+- Level and SNR shown as color-coded progress bars
+- Status badge: Good (green) / Fair (yellow) / Poor (red)
+- Contextual suggestions: "Move microphone closer", "Reduce background noise", etc.
+- Clips/Drops counts shown only when > 0
+
+**Architecture**
+- `AudioQualityAnalyzer` in `biomarkers/audio_quality.rs`
+- Integrated into biomarker thread (parallel processing)
+- VAD state passed from pipeline for SNR calculation
+- Snapshots emitted every 500ms via `audio_quality` event
 
 ### Launch Sequence Checklist
 - Pre-flight verification system in `checklist.rs`
@@ -169,9 +214,10 @@ Real-time vocal biomarker extraction running in parallel with transcription:
 - Extensible for future features (see module docs)
 
 ### Test Updates
-- All frontend tests updated for new sidebar UI (119 tests)
+- All frontend tests updated for new sidebar UI (119+ tests)
+- Audio quality tests: 16 Rust unit tests, 12 frontend tests
 - Fixed clustering.rs bug where max_speakers wasn't enforced
-- All Rust tests passing (160 tests)
+- All Rust tests passing (175+ tests)
 
 ## Settings Schema
 

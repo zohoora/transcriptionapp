@@ -95,6 +95,96 @@ export const mockSettings: Settings = {
   max_speakers: 4,
 };
 
+// Audio Quality types
+export interface AudioQualitySnapshot {
+  timestamp_ms: number;
+  peak_db: number;
+  rms_db: number;
+  clipped_samples: number;
+  clipped_ratio: number;
+  noise_floor_db: number;
+  snr_db: number;
+  silence_ratio: number;
+  dropout_count: number;
+  total_clipped: number;
+  total_samples: number;
+}
+
+// Good audio quality - no issues
+export const mockAudioQualityGood: AudioQualitySnapshot = {
+  timestamp_ms: 1000,
+  peak_db: -6,
+  rms_db: -18,
+  clipped_samples: 0,
+  clipped_ratio: 0,
+  noise_floor_db: -45,
+  snr_db: 25,
+  silence_ratio: 0.2,
+  dropout_count: 0,
+  total_clipped: 0,
+  total_samples: 16000,
+};
+
+// Too quiet audio
+export const mockAudioQualityQuiet: AudioQualitySnapshot = {
+  timestamp_ms: 1000,
+  peak_db: -35,
+  rms_db: -45,
+  clipped_samples: 0,
+  clipped_ratio: 0,
+  noise_floor_db: -50,
+  snr_db: 15,
+  silence_ratio: 0.5,
+  dropout_count: 0,
+  total_clipped: 0,
+  total_samples: 16000,
+};
+
+// Clipped audio
+export const mockAudioQualityClipped: AudioQualitySnapshot = {
+  timestamp_ms: 1000,
+  peak_db: 0,
+  rms_db: -6,
+  clipped_samples: 50,
+  clipped_ratio: 0.003,
+  noise_floor_db: -40,
+  snr_db: 20,
+  silence_ratio: 0.1,
+  dropout_count: 0,
+  total_clipped: 50,
+  total_samples: 16000,
+};
+
+// Low SNR (noisy) audio
+export const mockAudioQualityNoisy: AudioQualitySnapshot = {
+  timestamp_ms: 1000,
+  peak_db: -10,
+  rms_db: -20,
+  clipped_samples: 0,
+  clipped_ratio: 0,
+  noise_floor_db: -25,
+  snr_db: 5,
+  silence_ratio: 0.3,
+  dropout_count: 0,
+  total_clipped: 0,
+  total_samples: 16000,
+};
+
+// Audio with dropouts
+export const mockAudioQualityDropout: AudioQualitySnapshot = {
+  timestamp_ms: 1000,
+  peak_db: -10,
+  rms_db: -18,
+  clipped_samples: 0,
+  clipped_ratio: 0,
+  noise_floor_db: -40,
+  snr_db: 20,
+  silence_ratio: 0.2,
+  dropout_count: 3,
+  total_clipped: 0,
+  total_samples: 16000,
+};
+
 // Helper to create invoke mock that responds to different commands
 export function createInvokeMock(responses: Record<string, unknown>) {
   return vi.fn((command: string, _args?: unknown) => {

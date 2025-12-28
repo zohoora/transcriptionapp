@@ -109,8 +109,9 @@ impl VadGatedPipeline {
 
     /// Process a chunk of 16kHz audio through VAD
     ///
+    /// Returns whether speech was detected in this chunk.
     /// Note: Call advance_audio_clock BEFORE calling this method!
-    pub fn process_chunk(&mut self, audio: &[f32], vad: &mut VoiceActivityDetector) {
+    pub fn process_chunk(&mut self, audio: &[f32], vad: &mut VoiceActivityDetector) -> bool {
         let chunk_len = audio.len();
         let chunk_start = self.chunk_start_samples(chunk_len);
 
@@ -191,6 +192,8 @@ impl VadGatedPipeline {
         while self.pre_roll_buffer.len() > self.config.pre_roll_samples {
             self.pre_roll_buffer.pop_front();
         }
+
+        is_speech
     }
 
     /// Flush the current utterance to the transcription queue

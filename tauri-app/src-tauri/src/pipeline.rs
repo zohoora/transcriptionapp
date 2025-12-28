@@ -23,7 +23,8 @@ use crate::enhancement::{EnhancementConfig, EnhancementProvider};
 #[cfg(feature = "emotion")]
 use crate::emotion::{EmotionConfig, EmotionProvider};
 
-use crate::biomarkers::{BiomarkerConfig, BiomarkerHandle, BiomarkerOutput, start_biomarker_thread};
+use crate::biomarkers::{AudioQualitySnapshot, BiomarkerConfig, BiomarkerHandle, BiomarkerOutput, BiomarkerUpdate, CoughEvent, start_biomarker_thread};
+use std::collections::VecDeque;
 
 /// VAD chunk size at 16kHz
 const VAD_CHUNK_SIZE: usize = 512;
@@ -40,6 +41,10 @@ pub enum PipelineMessage {
         pending_count: usize,
         is_speech_active: bool,
     },
+    /// Biomarker update for frontend
+    Biomarker(BiomarkerUpdate),
+    /// Audio quality update for frontend
+    AudioQuality(AudioQualitySnapshot),
     /// Pipeline has stopped
     Stopped,
     /// Error occurred
@@ -346,7 +351,7 @@ fn run_pipeline_thread_inner(
         let bio_config = BiomarkerConfig {
             cough_detection_enabled: config.yamnet_model_path.as_ref().map(|p| p.exists()).unwrap_or(false),
             yamnet_model_path: config.yamnet_model_path.clone(),
-            cough_threshold: 0.5,
+            cough_threshold: 1.5, // yamnet_3s outputs logits - real coughs typically score 2.0-3.0+
             vitality_enabled: true,
             stability_enabled: true,
             session_metrics_enabled: true,
@@ -374,6 +379,12 @@ fn run_pipeline_thread_inner(
     // Status tracking
     let mut last_status_time = std::time::Instant::now();
     let status_interval = Duration::from_millis(500);
+
+    // Biomarker tracking for frontend events
+    let mut last_biomarker_emit = std::time::Instant::now();
+    let biomarker_emit_interval = Duration::from_millis(500); // 2Hz max
+    let mut recent_coughs: VecDeque<CoughEvent> = VecDeque::with_capacity(5);
+    let mut latest_session_metrics: Option<crate::biomarkers::SessionMetrics> = None;
 
     // Context for transcription
     let mut context = String::new();
@@ -518,8 +529,13 @@ fn run_pipeline_thread_inner(
             // Advance audio clock by chunk size (in 16kHz samples)
             pipeline.advance_audio_clock(VAD_CHUNK_SIZE);
 
-            // VAD + accumulation
-            pipeline.process_chunk(&chunk, &mut vad);
+            // VAD + accumulation (returns whether speech was detected)
+            let is_speech = pipeline.process_chunk(&chunk, &mut vad);
+
+            // Send audio with VAD state to biomarker thread for quality analysis
+            if let Some(ref bio_handle) = biomarker_handle {
+                bio_handle.send_audio_chunk_with_vad(chunk, pipeline.audio_clock_ms(), is_speech);
+            }
         }
 
         // Transcribe any ready utterances
@@ -656,15 +672,38 @@ fn run_pipeline_thread_inner(
                                             "Cough detected: {} at {}ms (conf: {:.2})",
                                             event.label, event.timestamp_ms, event.confidence
                                         );
-                                        // TODO: Emit cough event to frontend
+                                        // Buffer recent coughs (last 5)
+                                        recent_coughs.push_back(event);
+                                        if recent_coughs.len() > 5 {
+                                            recent_coughs.pop_front();
+                                        }
                                     }
                                     BiomarkerOutput::SessionMetrics(metrics) => {
                                         debug!(
                                             "Session metrics: {} coughs, {} turns",
                                             metrics.cough_count, metrics.turn_count
                                         );
-                                        // TODO: Emit session metrics to frontend
+                                        // Store latest metrics for throttled emission
+                                        latest_session_metrics = Some(metrics);
                                     }
+                                    BiomarkerOutput::AudioQuality(snapshot) => {
+                                        debug!(
+                                            "Audio quality: RMS={:.1}dB SNR={:.1}dB clips={}",
+                                            snapshot.rms_db, snapshot.snr_db, snapshot.clipped_samples
+                                        );
+                                        // Emit audio quality update to frontend
+                                        let _ = tx.blocking_send(PipelineMessage::AudioQuality(snapshot));
+                                    }
+                                }
+                            }
+
+                            // Emit biomarker update to frontend (throttled to 2Hz)
+                            if last_biomarker_emit.elapsed() >= biomarker_emit_interval {
+                                if let Some(ref metrics) = latest_session_metrics {
+                                    let coughs_vec: Vec<CoughEvent> = recent_coughs.iter().cloned().collect();
+                                    let update = BiomarkerUpdate::from_metrics(metrics, &coughs_vec);
+                                    let _ = tx.blocking_send(PipelineMessage::Biomarker(update));
+                                    last_biomarker_emit = std::time::Instant::now();
                                 }
                             }
                         }
