@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { axe } from 'vitest-axe';
 import { toHaveNoViolations } from 'vitest-axe/matchers';
@@ -27,6 +27,7 @@ function createStandardMock(overrides: Record<string, unknown> = {}) {
       check_model_status: mockModelStatusAvailable,
       get_settings: mockSettings,
       set_settings: mockSettings,
+      run_checklist: { checks: [], all_passed: true, can_start: true, summary: 'Ready' },
       ...overrides,
     };
     if (command in responses) {
@@ -34,6 +35,14 @@ function createStandardMock(overrides: Record<string, unknown> = {}) {
     }
     return Promise.reject(new Error(`Unknown command: ${command}`));
   };
+}
+
+// Helper to dismiss the checklist overlay by clicking Continue
+async function dismissChecklist() {
+  await waitFor(() => {
+    expect(screen.getByText('Continue')).toBeInTheDocument();
+  });
+  fireEvent.click(screen.getByText('Continue'));
 }
 
 describe('Accessibility Tests', () => {
@@ -49,6 +58,7 @@ describe('Accessibility Tests', () => {
     mockInvoke.mockImplementation(createStandardMock());
 
     const { container, findByText } = render(<App />);
+    await dismissChecklist();
     await findByText('Start');
 
     const results = await axe(container);
@@ -59,6 +69,7 @@ describe('Accessibility Tests', () => {
     mockInvoke.mockImplementation(createStandardMock());
 
     const { container, findByText } = render(<App />);
+    await dismissChecklist();
     await findByText('Start');
 
     listenHelper.emit('session_status', {
@@ -78,6 +89,7 @@ describe('Accessibility Tests', () => {
     mockInvoke.mockImplementation(createStandardMock());
 
     const { container, findByText } = render(<App />);
+    await dismissChecklist();
     await findByText('Start');
 
     listenHelper.emit('session_status', {
@@ -103,6 +115,7 @@ describe('Accessibility Tests', () => {
     mockInvoke.mockImplementation(createStandardMock());
 
     const { container, findByText } = render(<App />);
+    await dismissChecklist();
     await findByText('Start');
 
     listenHelper.emit('session_status', {
@@ -125,6 +138,7 @@ describe('Accessibility Tests', () => {
     }));
 
     const { container, findByText } = render(<App />);
+    await dismissChecklist();
     await findByText(/Model not found/);
 
     const results = await axe(container);
@@ -135,6 +149,7 @@ describe('Accessibility Tests', () => {
     mockInvoke.mockImplementation(createStandardMock());
 
     const { container, findByText } = render(<App />);
+    await dismissChecklist();
     await findByText('Start');
 
     listenHelper.emit('session_status', {
@@ -161,6 +176,7 @@ describe('Accessibility Tests', () => {
     mockInvoke.mockImplementation(createStandardMock());
 
     const { container, findByText, findByRole } = render(<App />);
+    await dismissChecklist();
     await findByText('Start');
 
     // Open settings drawer
@@ -179,6 +195,7 @@ describe('Accessibility Tests', () => {
       mockInvoke.mockImplementation(createStandardMock());
 
       const { findByText, findByRole } = render(<App />);
+      await dismissChecklist();
       await findByText('Start');
 
       const startButton = await findByRole('button', { name: /start/i });
@@ -190,6 +207,7 @@ describe('Accessibility Tests', () => {
       mockInvoke.mockImplementation(createStandardMock());
 
       const { findByText, findByRole } = render(<App />);
+      await dismissChecklist();
       await findByText('Start');
 
       const settingsBtn = await findByRole('button', { name: /settings/i });
@@ -201,6 +219,7 @@ describe('Accessibility Tests', () => {
       mockInvoke.mockImplementation(createStandardMock());
 
       const { findByText, findByRole } = render(<App />);
+      await dismissChecklist();
       await findByText('Start');
 
       // Open settings drawer
@@ -218,6 +237,7 @@ describe('Accessibility Tests', () => {
       mockInvoke.mockImplementation(createStandardMock());
 
       const { findByText, findByRole } = render(<App />);
+      await dismissChecklist();
       await findByText('Start');
 
       listenHelper.emit('session_status', {
@@ -243,6 +263,7 @@ describe('Accessibility Tests', () => {
       mockInvoke.mockImplementation(createStandardMock());
 
       const { findByText } = render(<App />);
+      await dismissChecklist();
       await findByText('Start');
 
       const transcriptHeader = await findByText('Transcript');

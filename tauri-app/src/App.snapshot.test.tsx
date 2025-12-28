@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import App from './App';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
@@ -21,6 +21,7 @@ function createStandardMock(overrides: Record<string, unknown> = {}) {
       list_input_devices: mockDevices,
       check_model_status: mockModelStatusAvailable,
       get_settings: mockSettings,
+      run_checklist: { checks: [], all_passed: true, can_start: true, summary: 'Ready' },
       ...overrides,
     };
     if (command in responses) {
@@ -28,6 +29,14 @@ function createStandardMock(overrides: Record<string, unknown> = {}) {
     }
     return Promise.reject(new Error(`Unknown command: ${command}`));
   };
+}
+
+// Helper to dismiss the checklist overlay by clicking Continue
+async function dismissChecklist() {
+  await waitFor(() => {
+    expect(screen.getByText('Continue')).toBeInTheDocument();
+  });
+  fireEvent.click(screen.getByText('Continue'));
 }
 
 describe('App Snapshots', () => {
@@ -43,6 +52,7 @@ describe('App Snapshots', () => {
     mockInvoke.mockImplementation(createStandardMock());
 
     const { container, findByText } = render(<App />);
+    await dismissChecklist();
 
     // Wait for initialization
     await findByText('Start');
@@ -56,6 +66,7 @@ describe('App Snapshots', () => {
     }));
 
     const { container, findByText } = render(<App />);
+    await dismissChecklist();
 
     await findByText(/Model not found/);
 
@@ -66,6 +77,7 @@ describe('App Snapshots', () => {
     mockInvoke.mockImplementation(createStandardMock());
 
     const { container, findByText } = render(<App />);
+    await dismissChecklist();
 
     await findByText('Start');
 
@@ -86,6 +98,7 @@ describe('App Snapshots', () => {
     mockInvoke.mockImplementation(createStandardMock());
 
     const { container, findByText } = render(<App />);
+    await dismissChecklist();
 
     await findByText('Start');
 
@@ -112,6 +125,7 @@ describe('App Snapshots', () => {
     mockInvoke.mockImplementation(createStandardMock());
 
     const { container, findByText } = render(<App />);
+    await dismissChecklist();
 
     await findByText('Start');
 
@@ -137,6 +151,7 @@ describe('App Snapshots', () => {
     mockInvoke.mockImplementation(createStandardMock());
 
     const { container, findByText } = render(<App />);
+    await dismissChecklist();
 
     await findByText('Start');
 
@@ -157,6 +172,7 @@ describe('App Snapshots', () => {
     mockInvoke.mockImplementation(createStandardMock());
 
     const { container, findByText } = render(<App />);
+    await dismissChecklist();
 
     await findByText('Start');
 

@@ -22,6 +22,7 @@ exports[`App Snapshots > renders completed state correctly 1`] = `
     <button
       aria-label="Settings"
       class="settings-btn "
+      title="Settings"
     >
       <svg
         fill="none"
@@ -60,7 +61,38 @@ exports[`App Snapshots > renders completed state correctly 1`] = `
     <div
       class="timer "
     >
-      00:30
+      00:00
+    </div>
+  </section>
+  <section
+    class="biomarkers-section"
+  >
+    <div
+      class="biomarkers-header"
+    >
+      <div
+        class="biomarkers-header-left"
+      >
+        <span
+          class="chevron "
+        >
+          ▼
+        </span>
+        <span
+          class="biomarkers-title"
+        >
+          Biomarkers
+        </span>
+      </div>
+    </div>
+    <div
+      class="biomarkers-content"
+    >
+      <div
+        class="biomarkers-placeholder"
+      >
+        Listening...
+      </div>
     </div>
   </section>
   <section
@@ -135,6 +167,7 @@ exports[`App Snapshots > renders error state correctly 1`] = `
     <button
       aria-label="Settings"
       class="settings-btn "
+      title="Settings"
     >
       <svg
         fill="none"
@@ -241,6 +274,7 @@ exports[`App Snapshots > renders idle state correctly 1`] = `
     <button
       aria-label="Settings"
       class="settings-btn "
+      title="Settings"
     >
       <svg
         fill="none"
@@ -344,6 +378,7 @@ exports[`App Snapshots > renders model unavailable warning correctly 1`] = `
     <button
       aria-label="Settings"
       class="settings-btn "
+      title="Settings"
     >
       <svg
         fill="none"
@@ -453,6 +488,8 @@ exports[`App Snapshots > renders recording state correctly 1`] = `
     <button
       aria-label="Settings"
       class="settings-btn "
+      disabled=""
+      title="Settings disabled during recording"
     >
       <svg
         fill="none"
@@ -491,7 +528,38 @@ exports[`App Snapshots > renders recording state correctly 1`] = `
     <div
       class="timer active"
     >
-      00:05
+      00:00
+    </div>
+  </section>
+  <section
+    class="biomarkers-section"
+  >
+    <div
+      class="biomarkers-header"
+    >
+      <div
+        class="biomarkers-header-left"
+      >
+        <span
+          class="chevron "
+        >
+          ▼
+        </span>
+        <span
+          class="biomarkers-title"
+        >
+          Biomarkers
+        </span>
+      </div>
+    </div>
+    <div
+      class="biomarkers-content"
+    >
+      <div
+        class="biomarkers-placeholder"
+      >
+        Listening...
+      </div>
     </div>
   </section>
   <section
@@ -556,6 +624,8 @@ exports[`App Snapshots > renders stopping state correctly 1`] = `
     <button
       aria-label="Settings"
       class="settings-btn "
+      disabled=""
+      title="Settings disabled during recording"
     >
       <svg
         fill="none"
@@ -595,7 +665,7 @@ exports[`App Snapshots > renders stopping state correctly 1`] = `
     <div
       class="timer active"
     >
-      01:00
+      00:00
     </div>
   </section>
   <section
@@ -660,6 +730,8 @@ exports[`App Snapshots > renders with transcript correctly 1`] = `
     <button
       aria-label="Settings"
       class="settings-btn "
+      disabled=""
+      title="Settings disabled during recording"
     >
       <svg
         fill="none"
@@ -698,7 +770,38 @@ exports[`App Snapshots > renders with transcript correctly 1`] = `
     <div
       class="timer active"
     >
-      00:10
+      00:00
+    </div>
+  </section>
+  <section
+    class="biomarkers-section"
+  >
+    <div
+      class="biomarkers-header"
+    >
+      <div
+        class="biomarkers-header-left"
+      >
+        <span
+          class="chevron "
+        >
+          ▼
+        </span>
+        <span
+          class="biomarkers-title"
+        >
+          Biomarkers
+        </span>
+      </div>
+    </div>
+    <div
+      class="biomarkers-content"
+    >
+      <div
+        class="biomarkers-placeholder"
+      >
+        Listening...
+      </div>
     </div>
   </section>
   <section
