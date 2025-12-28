@@ -506,11 +506,11 @@ fn run_pipeline_thread_inner(
                 if let Some(ref mut enh) = enhancement {
                     match enh.enhance(&utterance.audio) {
                         Ok(enhanced) => {
-                            debug!("Audio enhanced: {} samples", enhanced.len());
+                            info!("GTCRN enhanced audio: {} -> {} samples", utterance.audio.len(), enhanced.len());
                             utterance.audio = enhanced;
                         }
                         Err(e) => {
-                            debug!("Enhancement failed, using original audio: {}", e);
+                            warn!("Enhancement failed, using original audio: {}", e);
                         }
                     }
                 }

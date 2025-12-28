@@ -193,7 +193,7 @@ fn default_similarity_threshold() -> f32 {
 }
 
 fn default_enhancement_enabled() -> bool {
-    true // Enable by default for cleaner transcriptions
+    true // GTCRN streaming enhancement enabled by default
 }
 
 fn default_emotion_enabled() -> bool {

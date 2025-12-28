@@ -360,6 +360,164 @@ mod tests {
         println!("Threads: {}", num_threads);
     }
 
+    /// Extended soak test for speech enhancement (GTCRN)
+    ///
+    /// Tests that enhancement works correctly over extended periods without:
+    /// - Memory leaks from cache state
+    /// - Numerical instability from accumulated errors
+    /// - Performance degradation
+    #[cfg(feature = "enhancement")]
+    #[test]
+    #[ignore]
+    fn soak_test_enhancement_streaming() {
+        use crate::enhancement::{EnhancementConfig, EnhancementProvider};
+        use std::path::PathBuf;
+
+        // Check if ONNX Runtime and model are available
+        let ort_path = match std::env::var("ORT_DYLIB_PATH") {
+            Ok(p) if std::path::Path::new(&p).exists() => p,
+            _ => {
+                println!("Skipping enhancement soak test: ORT_DYLIB_PATH not set or file doesn't exist");
+                return;
+            }
+        };
+
+        let model_path: PathBuf = match dirs::home_dir() {
+            Some(home) => {
+                let path = home.join(".transcriptionapp/models/gtcrn_simple.onnx");
+                if path.exists() {
+                    path
+                } else {
+                    println!("Skipping enhancement soak test: model not found at {:?}", path);
+                    return;
+                }
+            }
+            None => {
+                println!("Skipping enhancement soak test: could not determine home directory");
+                return;
+            }
+        };
+
+        let duration = get_soak_duration();
+        println!("\n=== Enhancement Soak Test ===");
+        println!("Duration: {:?}", duration);
+        println!("ORT library: {}", ort_path);
+        println!("Model: {:?}", model_path);
+
+        let config = EnhancementConfig {
+            model_path,
+            n_threads: 1,
+        };
+
+        let mut provider = match EnhancementProvider::new(config) {
+            Ok(p) => p,
+            Err(e) => {
+                println!("Failed to create enhancement provider: {}", e);
+                return;
+            }
+        };
+
+        let start = Instant::now();
+        let mut total_samples: u64 = 0;
+        let mut total_utterances: u64 = 0;
+        let mut last_report = Instant::now();
+        let mut max_latency = Duration::ZERO;
+        let mut total_latency = Duration::ZERO;
+
+        // Test various utterance lengths
+        let utterance_lengths = [8000, 16000, 32000, 48000]; // 0.5s, 1s, 2s, 3s at 16kHz
+
+        while start.elapsed() < duration {
+            for &length in &utterance_lengths {
+                // Generate noisy speech-like audio
+                let audio: Vec<f32> = (0..length)
+                    .map(|i| {
+                        let t = i as f32 / 16000.0;
+                        let speech = (t * 200.0 * std::f32::consts::TAU).sin() * 0.4
+                            + (t * 400.0 * std::f32::consts::TAU).sin() * 0.3;
+                        let noise = (t * 12345.6).sin() * 0.1;
+                        (speech + noise).clamp(-1.0, 1.0)
+                    })
+                    .collect();
+
+                // Time the enhancement
+                let enhance_start = Instant::now();
+                let enhanced = match provider.enhance(&audio) {
+                    Ok(e) => e,
+                    Err(e) => {
+                        println!("Enhancement failed at utterance {}: {}", total_utterances, e);
+                        return;
+                    }
+                };
+                let latency = enhance_start.elapsed();
+
+                // Verify output
+                assert_eq!(
+                    enhanced.len(),
+                    audio.len(),
+                    "Output length mismatch at utterance {}",
+                    total_utterances
+                );
+
+                // Check output is in valid range
+                let max_val = enhanced.iter().map(|x| x.abs()).fold(0.0f32, f32::max);
+                assert!(
+                    max_val < 10.0,
+                    "Output exploded at utterance {}: max = {}",
+                    total_utterances,
+                    max_val
+                );
+
+                total_samples += length as u64;
+                total_utterances += 1;
+                max_latency = max_latency.max(latency);
+                total_latency += latency;
+
+                // Early exit if duration exceeded
+                if start.elapsed() >= duration {
+                    break;
+                }
+            }
+
+            // Progress report every 10 seconds
+            if last_report.elapsed() > Duration::from_secs(10) {
+                let elapsed = start.elapsed();
+                let progress = elapsed.as_secs_f64() / duration.as_secs_f64() * 100.0;
+                let audio_minutes = total_samples as f64 / 16000.0 / 60.0;
+                let avg_latency = if total_utterances > 0 {
+                    total_latency / total_utterances as u32
+                } else {
+                    Duration::ZERO
+                };
+
+                println!(
+                    "[{:.1}%] Utterances: {}, Audio: {:.1}min, Avg latency: {:?}, Max latency: {:?}",
+                    progress, total_utterances, audio_minutes, avg_latency, max_latency
+                );
+                last_report = Instant::now();
+            }
+        }
+
+        let total_elapsed = start.elapsed();
+        let audio_minutes = total_samples as f64 / 16000.0 / 60.0;
+        let avg_latency = if total_utterances > 0 {
+            total_latency / total_utterances as u32
+        } else {
+            Duration::ZERO
+        };
+
+        println!("\n=== Enhancement Soak Test Complete ===");
+        println!("Total runtime: {:?}", total_elapsed);
+        println!("Total utterances: {}", total_utterances);
+        println!("Total audio enhanced: {:.2} minutes", audio_minutes);
+        println!("Average latency: {:?}", avg_latency);
+        println!("Maximum latency: {:?}", max_latency);
+        println!(
+            "Throughput: {:.2}x real-time",
+            audio_minutes / total_elapsed.as_secs_f64() * 60.0
+        );
+    }
+
     /// Memory stress test - creates and destroys many objects
     #[test]
     #[ignore]
