@@ -91,6 +91,33 @@ interface SpeakerBiomarkers {
   stability_mean: number | null;
   utterance_count: number;
   talk_time_ms: number;
+  turn_count: number;
+  mean_turn_duration_ms: number;
+  median_turn_duration_ms: number;
+}
+
+// Conversation dynamics types
+interface SpeakerTurnStats {
+  speaker_id: string;
+  turn_count: number;
+  mean_turn_duration_ms: number;
+  median_turn_duration_ms: number;
+}
+
+interface SilenceStats {
+  total_silence_ms: number;
+  long_pause_count: number;
+  mean_pause_duration_ms: number;
+  silence_ratio: number;
+}
+
+interface ConversationDynamics {
+  speaker_turns: SpeakerTurnStats[];
+  silence: SilenceStats;
+  total_overlap_count: number;
+  total_interruption_count: number;
+  mean_response_latency_ms: number;
+  engagement_score: number | null;
 }
 
 interface BiomarkerUpdate {
@@ -103,6 +130,7 @@ interface BiomarkerUpdate {
   stability_session_mean: number | null;
   speaker_metrics: SpeakerBiomarkers[];
   recent_events: CoughEvent[];
+  conversation_dynamics: ConversationDynamics | null;
 }
 
 // Audio quality types
@@ -243,6 +271,32 @@ function getQualitySuggestion(quality: AudioQualitySnapshot): string | null {
   return null; // All good, no suggestion needed
 }
 
+// Conversation dynamics interpretation helpers
+// Response latency: <500ms = great, 500-1500ms = ok, >1500ms = slow
+function getResponseLatencyClass(value: number): string {
+  if (value < 500) return 'metric-good';
+  if (value < 1500) return 'metric-warning';
+  return 'metric-low';
+}
+
+// Engagement score: 0-100, higher is better
+function getEngagementPercent(value: number | null): number {
+  if (value === null) return 0;
+  return Math.min(100, Math.max(0, value));
+}
+
+function getEngagementClass(value: number | null): string {
+  if (value === null) return '';
+  if (value >= 70) return 'metric-good';
+  if (value >= 40) return 'metric-warning';
+  return 'metric-low';
+}
+
+function formatDuration(ms: number): string {
+  if (ms < 1000) return `${Math.round(ms)}ms`;
+  return `${(ms / 1000).toFixed(1)}s`;
+}
+
 function App() {
   const [status, setStatus] = useState<SessionStatus>({
     state: 'idle',
@@ -280,6 +334,9 @@ function App() {
   const [biomarkers, setBiomarkers] = useState<BiomarkerUpdate | null>(null);
   const [biomarkersExpanded, setBiomarkersExpanded] = useState(true);
   const [showBiomarkers, setShowBiomarkers] = useState(true);
+
+  // Conversation dynamics state
+  const [dynamicsExpanded, setDynamicsExpanded] = useState(true);
 
   // Audio quality state
   const [audioQuality, setAudioQuality] = useState<AudioQualitySnapshot | null>(null);
@@ -879,6 +936,77 @@ function App() {
               ) : (
                 <div className="biomarkers-placeholder">
                   {isPreparing ? 'Initializing...' : 'Listening...'}
+                </div>
+              )}
+            </div>
+          )}
+        </section>
+      )}
+
+      {/* Conversation Dynamics Section */}
+      {!showChecklist && showBiomarkers && (isRecording || isCompleted) && biomarkers?.conversation_dynamics && biomarkers.turn_count > 1 && (
+        <section className="dynamics-section">
+          <div
+            className="dynamics-header"
+            onClick={() => setDynamicsExpanded(!dynamicsExpanded)}
+          >
+            <div className="dynamics-header-left">
+              <span className={`chevron ${dynamicsExpanded ? '' : 'collapsed'}`}>
+                &#9660;
+              </span>
+              <span className="dynamics-title">Conversation</span>
+            </div>
+            {biomarkers.conversation_dynamics.engagement_score !== null && (
+              <span className={`engagement-badge ${getEngagementClass(biomarkers.conversation_dynamics.engagement_score)}`}>
+                {Math.round(biomarkers.conversation_dynamics.engagement_score)}
+              </span>
+            )}
+          </div>
+
+          {dynamicsExpanded && (
+            <div className="dynamics-content">
+              {/* Response Latency */}
+              <div className="metric-row">
+                <span className="metric-label">Response</span>
+                <span className={`metric-value-wide ${getResponseLatencyClass(biomarkers.conversation_dynamics.mean_response_latency_ms)}`}>
+                  {formatDuration(biomarkers.conversation_dynamics.mean_response_latency_ms)} avg
+                </span>
+              </div>
+
+              {/* Overlaps & Interruptions */}
+              {(biomarkers.conversation_dynamics.total_overlap_count > 0 || biomarkers.conversation_dynamics.total_interruption_count > 0) && (
+                <div className="metric-row">
+                  <span className="metric-label">Overlaps</span>
+                  <span className="metric-value-wide">
+                    {biomarkers.conversation_dynamics.total_overlap_count}
+                    {biomarkers.conversation_dynamics.total_interruption_count > 0 && (
+                      <span className="interruption-count"> ({biomarkers.conversation_dynamics.total_interruption_count} interr.)</span>
+                    )}
+                  </span>
+                </div>
+              )}
+
+              {/* Long Pauses */}
+              {biomarkers.conversation_dynamics.silence.long_pause_count > 0 && (
+                <div className="metric-row">
+                  <span className="metric-label">Long Pauses</span>
+                  <span className="metric-value-wide">{biomarkers.conversation_dynamics.silence.long_pause_count}</span>
+                </div>
+              )}
+
+              {/* Engagement Score with bar */}
+              {biomarkers.conversation_dynamics.engagement_score !== null && (
+                <div className="metric-row">
+                  <span className="metric-label">Engagement</span>
+                  <div className="metric-bar-container">
+                    <div
+                      className={`metric-bar ${getEngagementClass(biomarkers.conversation_dynamics.engagement_score)}`}
+                      style={{ width: `${getEngagementPercent(biomarkers.conversation_dynamics.engagement_score)}%` }}
+                    />
+                  </div>
+                  <span className="metric-value">
+                    {Math.round(biomarkers.conversation_dynamics.engagement_score)}
+                  </span>
                 </div>
               )}
             </div>

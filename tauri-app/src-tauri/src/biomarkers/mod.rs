@@ -149,6 +149,55 @@ pub struct SpeakerBiomarkers {
     pub utterance_count: u32,
     /// Total talk time in ms
     pub talk_time_ms: u64,
+    /// Number of turns for this speaker
+    pub turn_count: u32,
+    /// Mean turn duration in ms
+    pub mean_turn_duration_ms: f32,
+    /// Median turn duration in ms
+    pub median_turn_duration_ms: f32,
+}
+
+/// Per-speaker turn statistics for conversation dynamics
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct SpeakerTurnStats {
+    /// Speaker identifier
+    pub speaker_id: String,
+    /// Number of turns
+    pub turn_count: u32,
+    /// Mean turn duration in ms
+    pub mean_turn_duration_ms: f32,
+    /// Median turn duration in ms
+    pub median_turn_duration_ms: f32,
+}
+
+/// Silence/pause statistics
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct SilenceStats {
+    /// Total silence time in ms (gaps between speakers)
+    pub total_silence_ms: u64,
+    /// Number of long pauses (> 2 seconds)
+    pub long_pause_count: u32,
+    /// Mean pause duration in ms
+    pub mean_pause_duration_ms: f32,
+    /// Silence ratio (silence / session duration)
+    pub silence_ratio: f32,
+}
+
+/// Conversation dynamics summary
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct ConversationDynamics {
+    /// Per-speaker turn statistics
+    pub speaker_turns: Vec<SpeakerTurnStats>,
+    /// Silence/pause statistics
+    pub silence: SilenceStats,
+    /// Total overlap count (speaker B starts before speaker A ends)
+    pub total_overlap_count: u32,
+    /// Total interruption count (overlap > 500ms)
+    pub total_interruption_count: u32,
+    /// Mean response latency in ms (time from speaker A ending to speaker B starting)
+    pub mean_response_latency_ms: f32,
+    /// Engagement score (0-100, heuristic combining balance, response speed, turn frequency)
+    pub engagement_score: Option<f32>,
 }
 
 /// Aggregated session-level metrics
@@ -172,6 +221,8 @@ pub struct SessionMetrics {
     pub stability_session_mean: Option<f32>,
     /// Per-speaker biomarker metrics
     pub speaker_biomarkers: HashMap<String, SpeakerBiomarkers>,
+    /// Conversation dynamics (overlaps, interruptions, response latency, silence)
+    pub conversation_dynamics: Option<ConversationDynamics>,
 }
 
 /// Frontend-friendly biomarker update payload
@@ -196,6 +247,8 @@ pub struct BiomarkerUpdate {
     pub speaker_metrics: Vec<SpeakerBiomarkers>,
     /// Recent audio events (last 10)
     pub recent_events: Vec<CoughEvent>,
+    /// Conversation dynamics (overlaps, interruptions, response latency, silence)
+    pub conversation_dynamics: Option<ConversationDynamics>,
 }
 
 impl BiomarkerUpdate {
@@ -218,6 +271,7 @@ impl BiomarkerUpdate {
             stability_session_mean: metrics.stability_session_mean,
             speaker_metrics,
             recent_events: recent_events.to_vec(),
+            conversation_dynamics: metrics.conversation_dynamics.clone(),
         }
     }
 }

@@ -388,6 +388,9 @@ fn run_biomarker_thread(
                                 stability_mean,
                                 utterance_count: acc.vitality_values.len().max(acc.stability_values.len()) as u32,
                                 talk_time_ms: acc.talk_time_ms,
+                                turn_count: 0,  // Will be populated from session metrics
+                                mean_turn_duration_ms: 0.0,
+                                median_turn_duration_ms: 0.0,
                             },
                         );
                     }
@@ -454,6 +457,9 @@ fn run_biomarker_thread(
                     stability_mean,
                     utterance_count: acc.vitality_values.len().max(acc.stability_values.len()) as u32,
                     talk_time_ms: acc.talk_time_ms,
+                    turn_count: 0,  // Will be populated from session metrics
+                    mean_turn_duration_ms: 0.0,
+                    median_turn_duration_ms: 0.0,
                 },
             );
         }

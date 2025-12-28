@@ -159,6 +159,15 @@ Real-time vocal biomarker extraction running in parallel with transcription:
 - Turn count and average duration
 - Cough rate per minute
 
+**Conversation Dynamics**
+Real-time analysis of conversation flow between speakers:
+- **Overlap detection**: When speaker B starts before speaker A ends
+- **Interruption count**: Significant overlap (>500ms)
+- **Response latency**: Mean time from speaker A ending to speaker B starting
+- **Silence statistics**: Long pause count (>2s), total silence time, silence ratio
+- **Engagement score**: 0-100 heuristic combining balance, response speed, turn frequency
+- Per-speaker turn statistics (count, mean/median duration)
+
 **Architecture**
 - Sidecar thread runs in parallel with transcription
 - Clone Point 1: After resample → YAMNet (all audio)
@@ -171,6 +180,11 @@ Real-time vocal biomarker extraction running in parallel with transcription:
 - Vitality/Stability shown as color-coded progress bars (green/yellow/red)
 - Cough count badge with rate per minute
 - Session metrics (turns, balance) when diarization enabled
+- Collapsible conversation dynamics section (shown when 2+ speakers detected)
+  - Response latency with color-coded status (green <500ms, yellow <1500ms, red ≥1500ms)
+  - Overlap/interruption counts
+  - Long pause count
+  - Engagement score progress bar (0-100)
 - Toggle in settings drawer to show/hide biomarkers panel
 
 ### Audio Quality Metrics
@@ -218,6 +232,15 @@ Real-time audio quality analysis to predict transcript reliability:
 - Audio quality tests: 16 Rust unit tests, 12 frontend tests
 - Fixed clustering.rs bug where max_speakers wasn't enforced
 - All Rust tests passing (175+ tests)
+
+### Conversation Dynamics (Dec 2024)
+- Real-time analysis of conversation flow between speakers
+- Overlap/interruption detection from segment timing
+- Response latency tracking (mean time between speaker transitions)
+- Silence statistics (long pauses >2s, silence ratio)
+- Engagement score (0-100 heuristic)
+- Collapsible UI section between Biomarkers and Transcript
+- 17 new Rust unit tests for SessionAggregator
 
 ## Settings Schema
 

@@ -1096,3 +1096,86 @@ body {
   margin-bottom: 4px;
   text-align: center;
 }
+
+/* Conversation Dynamics Section */
+.dynamics-section {
+  border-top: 1px solid var(--border-color);
+  background: var(--bg-secondary);
+}
+
+.dynamics-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 16px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.dynamics-header:hover {
+  background: var(--bg-hover);
+}
+
+.dynamics-header-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.dynamics-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.engagement-badge {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 10px;
+  min-width: 24px;
+  text-align: center;
+}
+
+.engagement-badge.metric-good {
+  background: rgba(34, 197, 94, 0.15);
+  color: var(--accent-idle);
+}
+
+.engagement-badge.metric-warning {
+  background: rgba(234, 179, 8, 0.15);
+  color: var(--accent-stopping);
+}
+
+.engagement-badge.metric-low {
+  background: rgba(220, 38, 38, 0.15);
+  color: var(--accent-recording);
+}
+
+.dynamics-content {
+  padding: 8px 16px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* Response latency color classes for metric-value-wide */
+.metric-value-wide.metric-good {
+  color: var(--accent-idle);
+}
+
+.metric-value-wide.metric-warning {
+  color: var(--accent-stopping);
+}
+
+.metric-value-wide.metric-low {
+  color: var(--accent-recording);
+}
+
+/* Interruption count styling */
+.interruption-count {
+  font-size: 10px;
+  color: var(--text-muted);
+}
