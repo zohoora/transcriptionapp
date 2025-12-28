@@ -238,7 +238,7 @@ impl YamnetProvider {
             .map_err(|e| anyhow::anyhow!("Failed to extract tensor: {}", e))?;
 
         // tensor is (Shape, &[f32]) - extract the data slice
-        let predictions: Vec<f32> = tensor.1.iter().copied().collect();
+        let predictions: Vec<f32> = tensor.1.to_vec();
 
         // Log top 3 predictions above 1.0 for debugging
         let mut scored: Vec<(usize, f32)> = predictions
@@ -247,7 +247,7 @@ impl YamnetProvider {
             .filter(|(_, &s)| s > 1.0)
             .map(|(i, &s)| (i, s))
             .collect();
-        scored.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
+        scored.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
         if !scored.is_empty() {
             let top: Vec<String> = scored
                 .iter()

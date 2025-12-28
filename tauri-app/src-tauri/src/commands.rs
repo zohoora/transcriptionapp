@@ -27,20 +27,13 @@ pub struct ModelStatus {
 }
 
 /// State for the running pipeline
+#[derive(Default)]
 pub struct PipelineState {
     pub handle: Option<PipelineHandle>,
     /// Generation counter to detect stale pipeline messages after reset
     pub generation: u64,
 }
 
-impl Default for PipelineState {
-    fn default() -> Self {
-        Self {
-            handle: None,
-            generation: 0,
-        }
-    }
-}
 
 impl PipelineState {
     /// Increment generation and return the new value

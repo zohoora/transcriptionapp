@@ -139,10 +139,17 @@ pub fn run() {
                 if graceful_success {
                     // Allow normal exit - Rust destructors will run
                     info!("Graceful exit");
-                    // Note: We still use _exit(0) for now because ONNX Runtime
-                    // can crash during normal destructor cleanup. Once the ONNX
-                    // shutdown issue is fixed upstream, this can be removed.
-                    // TODO: Remove forced exit once ort crate fixes shutdown
+                    // WORKAROUND: Forced exit to avoid ONNX Runtime crash during cleanup
+                    //
+                    // The ONNX Runtime library can crash during normal destructor
+                    // cleanup when sessions are dropped. This appears to be a thread
+                    // safety issue in the ort crate's shutdown handling.
+                    //
+                    // Tracking: https://github.com/pykeio/ort/issues
+                    // Related: ort crate version 2.0.0-rc.9
+                    //
+                    // Once the ort crate fixes graceful shutdown, this workaround
+                    // can be removed and normal exit() used instead.
                     unsafe { libc::_exit(0) };
                 } else {
                     // Timeout expired - force immediate termination

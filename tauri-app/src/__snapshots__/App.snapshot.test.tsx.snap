@@ -68,7 +68,10 @@ exports[`App Snapshots > renders completed state correctly 1`] = `
     class="biomarkers-section"
   >
     <div
+      aria-expanded="true"
       class="biomarkers-header"
+      role="button"
+      tabindex="0"
     >
       <div
         class="biomarkers-header-left"
@@ -102,9 +105,13 @@ exports[`App Snapshots > renders completed state correctly 1`] = `
       class="transcript-header"
     >
       <div
+        aria-expanded="true"
         class="transcript-header-left"
+        role="button"
+        tabindex="0"
       >
         <span
+          aria-hidden="true"
           class="chevron "
         >
           ▼
@@ -221,9 +228,13 @@ exports[`App Snapshots > renders error state correctly 1`] = `
       class="transcript-header"
     >
       <div
+        aria-expanded="true"
         class="transcript-header-left"
+        role="button"
+        tabindex="0"
       >
         <span
+          aria-hidden="true"
           class="chevron "
         >
           ▼
@@ -323,9 +334,13 @@ exports[`App Snapshots > renders idle state correctly 1`] = `
       class="transcript-header"
     >
       <div
+        aria-expanded="true"
         class="transcript-header-left"
+        role="button"
+        tabindex="0"
       >
         <span
+          aria-hidden="true"
           class="chevron "
         >
           ▼
@@ -433,9 +448,13 @@ exports[`App Snapshots > renders model unavailable warning correctly 1`] = `
       class="transcript-header"
     >
       <div
+        aria-expanded="true"
         class="transcript-header-left"
+        role="button"
+        tabindex="0"
       >
         <span
+          aria-hidden="true"
           class="chevron "
         >
           ▼
@@ -535,7 +554,10 @@ exports[`App Snapshots > renders recording state correctly 1`] = `
     class="biomarkers-section"
   >
     <div
+      aria-expanded="true"
       class="biomarkers-header"
+      role="button"
+      tabindex="0"
     >
       <div
         class="biomarkers-header-left"
@@ -569,9 +591,13 @@ exports[`App Snapshots > renders recording state correctly 1`] = `
       class="transcript-header"
     >
       <div
+        aria-expanded="true"
         class="transcript-header-left"
+        role="button"
+        tabindex="0"
       >
         <span
+          aria-hidden="true"
           class="chevron "
         >
           ▼
@@ -675,9 +701,13 @@ exports[`App Snapshots > renders stopping state correctly 1`] = `
       class="transcript-header"
     >
       <div
+        aria-expanded="true"
         class="transcript-header-left"
+        role="button"
+        tabindex="0"
       >
         <span
+          aria-hidden="true"
           class="chevron "
         >
           ▼
@@ -777,7 +807,10 @@ exports[`App Snapshots > renders with transcript correctly 1`] = `
     class="biomarkers-section"
   >
     <div
+      aria-expanded="true"
       class="biomarkers-header"
+      role="button"
+      tabindex="0"
     >
       <div
         class="biomarkers-header-left"
@@ -811,9 +844,13 @@ exports[`App Snapshots > renders with transcript correctly 1`] = `
       class="transcript-header"
     >
       <div
+        aria-expanded="true"
         class="transcript-header-left"
+        role="button"
+        tabindex="0"
       >
         <span
+          aria-hidden="true"
           class="chevron "
         >
           ▼

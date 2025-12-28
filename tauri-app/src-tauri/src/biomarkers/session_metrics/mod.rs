@@ -23,7 +23,6 @@ const LONG_PAUSE_THRESHOLD_MS: u64 = 2000;
 #[derive(Debug, Clone)]
 struct StoredSegment {
     speaker_id: String,
-    start_ms: u64,
     end_ms: u64,
 }
 
@@ -119,7 +118,7 @@ impl SessionAggregator {
         // Track turn duration per speaker
         self.speaker_turn_durations
             .entry(speaker.clone())
-            .or_insert_with(Vec::new)
+            .or_default()
             .push(duration);
 
         self.total_turn_duration_ms += duration;
@@ -155,7 +154,6 @@ impl SessionAggregator {
         // Store segment in history (bounded)
         let segment = StoredSegment {
             speaker_id: speaker,
-            start_ms,
             end_ms,
         };
 
@@ -307,7 +305,7 @@ impl SessionAggregator {
         sorted.sort_unstable();
 
         let len = sorted.len();
-        if len % 2 == 0 {
+        if len.is_multiple_of(2) {
             // Even number of elements: average of two middle values
             let mid = len / 2;
             (sorted[mid - 1] + sorted[mid]) as f32 / 2.0
@@ -366,7 +364,7 @@ impl SessionAggregator {
             0.0
         };
 
-        let turn_score = if turns_per_minute >= 6.0 && turns_per_minute <= 12.0 {
+        let turn_score = if (6.0..=12.0).contains(&turns_per_minute) {
             30.0
         } else if turns_per_minute < 6.0 {
             // Below 6: linear scale from 0 to 30

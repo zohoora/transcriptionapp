@@ -61,11 +61,11 @@ const FREQ_BINS: usize = FFT_SIZE / 2 + 1; // 257
 
 /// Cache tensor sizes for GTCRN streaming
 #[cfg(feature = "enhancement")]
-const CONV_CACHE_SIZE: usize = 2 * 1 * 16 * 16 * 33;  // [2, 1, 16, 16, 33] = 16896
+const CONV_CACHE_SIZE: usize = 2 * 16 * 16 * 33;  // [2, 1, 16, 16, 33] = 16896
 #[cfg(feature = "enhancement")]
-const TRA_CACHE_SIZE: usize = 2 * 3 * 1 * 1 * 16;     // [2, 3, 1, 1, 16] = 96
+const TRA_CACHE_SIZE: usize = (2 * 3) * 16;     // [2, 3, 1, 1, 16] = 96
 #[cfg(feature = "enhancement")]
-const INTER_CACHE_SIZE: usize = 2 * 1 * 33 * 16;      // [2, 1, 33, 16] = 1056
+const INTER_CACHE_SIZE: usize = 2 * 33 * 16;      // [2, 1, 33, 16] = 1056
 
 /// Speech enhancement provider using GTCRN
 #[cfg(feature = "enhancement")]
@@ -311,22 +311,22 @@ impl EnhancementProvider {
             .ok_or_else(|| EnhancementError::InferenceError("Missing 'enh' output".to_string()))?;
         let enh_tensor = enh_output.try_extract_tensor::<f32>()
             .map_err(|e: ort::Error| EnhancementError::InferenceError(e.to_string()))?;
-        let enh_data: Vec<f32> = enh_tensor.1.iter().copied().collect();
+        let enh_data: Vec<f32> = enh_tensor.1.to_vec();
 
         // Update caches from outputs
         if let Some(conv_out) = outputs.get("new_conv_cache") {
             if let Ok(tensor) = conv_out.try_extract_tensor::<f32>() {
-                self.conv_cache = tensor.1.iter().copied().collect();
+                self.conv_cache = tensor.1.to_vec();
             }
         }
         if let Some(tra_out) = outputs.get("new_tra_cache") {
             if let Ok(tensor) = tra_out.try_extract_tensor::<f32>() {
-                self.tra_cache = tensor.1.iter().copied().collect();
+                self.tra_cache = tensor.1.to_vec();
             }
         }
         if let Some(inter_out) = outputs.get("new_inter_cache") {
             if let Ok(tensor) = inter_out.try_extract_tensor::<f32>() {
-                self.inter_cache = tensor.1.iter().copied().collect();
+                self.inter_cache = tensor.1.to_vec();
             }
         }
 

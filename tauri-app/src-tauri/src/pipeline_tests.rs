@@ -1,10 +1,18 @@
 // Integration tests for the audio pipeline
 // These tests use synthetic audio to verify the VAD pipeline behavior
+//
+// NOTE: These tests require ONNX Runtime to be available. Set ORT_DYLIB_PATH
+// environment variable to run them: cargo test --ignored
+//
+// Tests that use VoiceActivityDetector must run serially because
+// the VAD library uses global state (LazyLock) that can become poisoned
+// if a test panics.
 
 #[cfg(test)]
 mod tests {
     use crate::transcription::Utterance;
     use crate::vad::{VadConfig, VadGatedPipeline};
+    use serial_test::serial;
     use voice_activity_detector::VoiceActivityDetector;
 
     const VAD_CHUNK_SIZE: usize = 512;
@@ -54,6 +62,8 @@ mod tests {
     }
 
     #[test]
+    #[serial]
+    #[ignore = "Requires ONNX Runtime - run with cargo test --ignored"]
     fn test_pipeline_processes_silence_without_utterance() {
         let config = VadConfig::from_ms(0.5, 300, 250, 500, 25000);
         let mut pipeline = VadGatedPipeline::with_config(config);
@@ -74,6 +84,8 @@ mod tests {
     }
 
     #[test]
+    #[serial]
+    #[ignore = "Requires ONNX Runtime - run with cargo test --ignored"]
     fn test_pipeline_audio_clock_tracks_time() {
         let config = VadConfig::default();
         let mut pipeline = VadGatedPipeline::with_config(config);
@@ -148,6 +160,8 @@ mod tests {
     }
 
     #[test]
+    #[serial]
+    #[ignore = "Requires ONNX Runtime - run with cargo test --ignored"]
     fn test_pipeline_multiple_sessions() {
         let config = VadConfig::default();
         let mut vad = create_vad();
@@ -182,6 +196,8 @@ mod tests {
     }
 
     #[test]
+    #[serial]
+    #[ignore = "Requires ONNX Runtime - run with cargo test --ignored"]
     fn test_continuous_audio_processing() {
         let config = VadConfig::from_ms(0.5, 300, 250, 500, 25000);
         let mut pipeline = VadGatedPipeline::with_config(config);
@@ -203,6 +219,8 @@ mod tests {
     }
 
     #[test]
+    #[serial]
+    #[ignore = "Requires ONNX Runtime - run with cargo test --ignored"]
     fn test_vad_with_noise() {
         let config = VadConfig::from_ms(0.5, 300, 250, 500, 25000);
         let mut pipeline = VadGatedPipeline::with_config(config);

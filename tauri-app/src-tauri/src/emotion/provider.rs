@@ -177,7 +177,7 @@ impl EmotionProvider {
             .try_extract_tensor::<f32>()
             .map_err(|e: ort::Error| EmotionError::InferenceError(e.to_string()))?;
 
-        let values: Vec<f32> = output_tensor.1.iter().copied().collect();
+        let values: Vec<f32> = output_tensor.1.to_vec();
 
         if values.len() >= 3 {
             let result = EmotionResult::new(

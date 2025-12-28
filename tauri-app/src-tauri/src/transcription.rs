@@ -124,7 +124,7 @@ impl WhisperProvider {
         }
 
         // Warn if unusual size
-        if size_mb < 50 || size_mb > 3000 {
+        if !(50..=3000).contains(&size_mb) {
             warn!("Model size {}MB is unusual for a Whisper model", size_mb);
         }
 

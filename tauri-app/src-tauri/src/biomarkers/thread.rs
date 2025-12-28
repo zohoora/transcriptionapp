@@ -323,7 +323,7 @@ fn run_biomarker_thread(
                                 // Get or create speaker accumulator
                                 let acc = speaker_accumulators
                                     .entry(speaker.clone())
-                                    .or_insert_with(SpeakerAccumulator::default);
+                                    .or_default();
 
                                 // Add biomarkers to speaker
                                 if let Some(v) = pending.vitality {
@@ -348,7 +348,7 @@ fn run_biomarker_thread(
                         // Update talk time for speaker
                         let acc = speaker_accumulators
                             .entry(speaker.clone())
-                            .or_insert_with(SpeakerAccumulator::default);
+                            .or_default();
                         acc.talk_time_ms += end_ms.saturating_sub(start_ms);
                     }
 

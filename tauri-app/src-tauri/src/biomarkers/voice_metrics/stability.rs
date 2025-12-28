@@ -61,7 +61,7 @@ pub fn calculate_stability(samples: &[f32], sample_rate: usize) -> Option<f32> {
     let mut spectrum: Vec<Complex<f32>> = windowed
         .iter()
         .map(|&s| Complex::new(s, 0.0))
-        .chain(std::iter::repeat(Complex::new(0.0, 0.0)).take(n - samples.len()))
+        .chain(std::iter::repeat_n(Complex::new(0.0, 0.0), n - samples.len()))
         .collect();
 
     // Forward FFT
@@ -99,8 +99,8 @@ pub fn calculate_stability(samples: &[f32], sample_rate: usize) -> Option<f32> {
     let mut peak_value = 0.0f32;
     let mut sum = 0.0f32;
 
-    for i in min_idx..max_idx {
-        let value = cepstrum[i].re.abs();
+    for c in cepstrum.iter().take(max_idx).skip(min_idx) {
+        let value = c.re.abs();
         if value > peak_value {
             peak_value = value;
         }
@@ -118,7 +118,7 @@ pub fn calculate_stability(samples: &[f32], sample_rate: usize) -> Option<f32> {
     let cpp = 20.0 * (peak_value / avg_energy).log10();
 
     // Sanity check - CPP should be positive and reasonable
-    if cpp.is_nan() || cpp < 0.0 || cpp > 50.0 {
+    if cpp.is_nan() || !(0.0..=50.0).contains(&cpp) {
         return None;
     }
 

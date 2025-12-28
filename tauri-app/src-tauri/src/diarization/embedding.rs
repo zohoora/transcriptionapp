@@ -95,7 +95,7 @@ impl EmbeddingExtractor {
             .try_extract_tensor::<f32>()
             .map_err(|e| DiarizationError::InferenceError(e.to_string()))?;
 
-        let embedding: Vec<f32> = embedding_data.1.iter().copied().collect();
+        let embedding: Vec<f32> = embedding_data.1.to_vec();
 
         if embedding.len() != EMBEDDING_DIM {
             tracing::warn!(

@@ -471,17 +471,14 @@ function App() {
 
     async function setupListeners() {
       unlistenStatus = await listen<SessionStatus>('session_status', (event) => {
-        console.log('Session status update:', event.payload);
         setStatus(event.payload);
       });
 
       unlistenTranscript = await listen<TranscriptUpdate>('transcript_update', (event) => {
-        console.log('Transcript update received:', event.payload);
         setTranscript(event.payload);
       });
 
       unlistenBiomarkers = await listen<BiomarkerUpdate>('biomarker_update', (event) => {
-        console.log('Biomarker update received:', event.payload);
         setBiomarkers(event.payload);
       });
 
@@ -760,6 +757,10 @@ function App() {
           <div
             className="audio-quality-header"
             onClick={() => setAudioQualityExpanded(!audioQualityExpanded)}
+            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setAudioQualityExpanded(!audioQualityExpanded); }}}
+            role="button"
+            tabIndex={0}
+            aria-expanded={audioQualityExpanded}
           >
             <div className="audio-quality-header-left">
               <span className={`chevron ${audioQualityExpanded ? '' : 'collapsed'}`}>
@@ -826,6 +827,10 @@ function App() {
           <div
             className="biomarkers-header"
             onClick={() => setBiomarkersExpanded(!biomarkersExpanded)}
+            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setBiomarkersExpanded(!biomarkersExpanded); }}}
+            role="button"
+            tabIndex={0}
+            aria-expanded={biomarkersExpanded}
           >
             <div className="biomarkers-header-left">
               <span className={`chevron ${biomarkersExpanded ? '' : 'collapsed'}`}>
@@ -949,6 +954,10 @@ function App() {
           <div
             className="dynamics-header"
             onClick={() => setDynamicsExpanded(!dynamicsExpanded)}
+            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setDynamicsExpanded(!dynamicsExpanded); }}}
+            role="button"
+            tabIndex={0}
+            aria-expanded={dynamicsExpanded}
           >
             <div className="dynamics-header-left">
               <span className={`chevron ${dynamicsExpanded ? '' : 'collapsed'}`}>
@@ -1017,22 +1026,23 @@ function App() {
       {/* Transcript Section */}
       {!showChecklist && (
         <section className="transcript-section">
-          <div
-            className="transcript-header"
-            onClick={() => setTranscriptExpanded(!transcriptExpanded)}
-          >
-            <div className="transcript-header-left">
-              <span className={`chevron ${transcriptExpanded ? '' : 'collapsed'}`}>
+          <div className="transcript-header">
+            <div
+              className="transcript-header-left"
+              onClick={() => setTranscriptExpanded(!transcriptExpanded)}
+              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setTranscriptExpanded(!transcriptExpanded); }}}
+              role="button"
+              tabIndex={0}
+              aria-expanded={transcriptExpanded}
+            >
+              <span className={`chevron ${transcriptExpanded ? '' : 'collapsed'}`} aria-hidden="true">
                 &#9660;
               </span>
               <span className="transcript-title">Transcript</span>
             </div>
             <button
               className={`copy-btn ${copySuccess ? 'success' : ''}`}
-              onClick={(e) => {
-                e.stopPropagation();
-                handleCopy();
-              }}
+              onClick={handleCopy}
               disabled={!canCopy}
             >
               {copySuccess ? 'Copied!' : 'Copy'}

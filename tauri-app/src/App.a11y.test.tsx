@@ -268,7 +268,8 @@ describe('Accessibility Tests', () => {
 
       const transcriptHeader = await findByText('Transcript');
       expect(transcriptHeader).toBeInTheDocument();
-      expect(transcriptHeader.closest('.transcript-header')).toBeTruthy();
+      // The clickable area is now transcript-header-left which contains the title
+      expect(transcriptHeader.closest('.transcript-header-left')).toBeTruthy();
     });
   });
 });

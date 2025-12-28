@@ -177,7 +177,7 @@ impl AudioQualityAnalyzer {
         };
 
         // Level is OK if RMS is in -40 to -6 dBFS range
-        let level_ok = rms_db >= -40.0 && rms_db <= -6.0;
+        let level_ok = (-40.0..=-6.0).contains(&rms_db);
 
         // Clipping is OK if < 0.1% clipped
         let clipping_ok = clipped_ratio < 0.001;
