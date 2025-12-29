@@ -46,6 +46,8 @@ export interface Settings {
   max_utterance_ms: number;
   diarization_enabled: boolean;
   max_speakers: number;
+  ollama_server_url: string;
+  ollama_model: string;
 }
 
 // Checklist types
@@ -144,6 +146,22 @@ export interface AudioQualitySnapshot {
   dropout_count: number;
   total_clipped: number;
   total_samples: number;
+}
+
+// Ollama / SOAP Note types
+export interface OllamaStatus {
+  connected: boolean;
+  available_models: string[];
+  error: string | null;
+}
+
+export interface SoapNote {
+  subjective: string;
+  objective: string;
+  assessment: string;
+  plan: string;
+  generated_at: string;
+  model_used: string;
 }
 
 // Constants for biomarker interpretation

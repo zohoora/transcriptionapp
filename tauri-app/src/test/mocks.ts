@@ -81,6 +81,8 @@ export interface Settings {
   max_utterance_ms: number;
   diarization_enabled: boolean;
   max_speakers: number;
+  ollama_server_url: string;
+  ollama_model: string;
 }
 
 export const mockSettings: Settings = {
@@ -93,6 +95,45 @@ export const mockSettings: Settings = {
   max_utterance_ms: 30000,
   diarization_enabled: true,
   max_speakers: 4,
+  ollama_server_url: 'http://localhost:11434',
+  ollama_model: 'qwen3:4b',
+};
+
+// Ollama types
+export interface OllamaStatus {
+  connected: boolean;
+  available_models: string[];
+  error: string | null;
+}
+
+export interface SoapNote {
+  subjective: string;
+  objective: string;
+  assessment: string;
+  plan: string;
+  generated_at: string;
+  model_used: string;
+}
+
+export const mockOllamaStatusConnected: OllamaStatus = {
+  connected: true,
+  available_models: ['qwen3:4b', 'llama3:8b', 'mistral:7b'],
+  error: null,
+};
+
+export const mockOllamaStatusDisconnected: OllamaStatus = {
+  connected: false,
+  available_models: [],
+  error: 'Connection refused',
+};
+
+export const mockSoapNote: SoapNote = {
+  subjective: 'Patient reports persistent cough for 3 days, accompanied by mild fever and fatigue.',
+  objective: 'Temperature 38.2C, respiratory rate normal, lungs clear on auscultation.',
+  assessment: 'Likely viral upper respiratory infection.',
+  plan: 'Rest and hydration, OTC fever reducer as needed, follow up if symptoms worsen or persist beyond 7 days.',
+  generated_at: '2025-01-15T14:32:00Z',
+  model_used: 'qwen3:4b',
 };
 
 // Audio Quality types

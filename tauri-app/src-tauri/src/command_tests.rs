@@ -37,6 +37,8 @@ mod tests {
             max_utterance_ms: 30000,
             diarization_enabled: true,
             max_speakers: 5,
+            ollama_server_url: "http://localhost:11434".to_string(),
+            ollama_model: "qwen3:4b".to_string(),
         };
 
         // Serialize to JSON

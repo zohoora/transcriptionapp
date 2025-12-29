@@ -37,6 +37,7 @@ pub mod diarization;
 pub mod emotion;
 pub mod enhancement;
 pub mod models;
+pub mod ollama;
 mod pipeline;
 #[cfg(test)]
 mod command_tests;
@@ -101,6 +102,9 @@ pub fn run() {
             commands::download_yamnet_model,
             commands::ensure_models,
             commands::run_checklist,
+            commands::check_ollama_status,
+            commands::list_ollama_models,
+            commands::generate_soap_note,
         ])
         .on_window_event(|window, event| {
             if let WindowEvent::CloseRequested { .. } = event {

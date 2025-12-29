@@ -1,7 +1,8 @@
 use crate::audio;
 use crate::checklist::{self, ChecklistResult};
-use crate::config::{Config, Settings};
+use crate::config::{Config, ModelStatus, Settings};
 use crate::models::{self, ModelInfo, WhisperModel};
+use crate::ollama::{OllamaClient, OllamaStatus, SoapNote};
 use crate::pipeline::{start_pipeline, PipelineConfig, PipelineHandle, PipelineMessage};
 use crate::session::{SessionError, SessionManager};
 use serde::{Deserialize, Serialize};
@@ -16,14 +17,6 @@ pub struct Device {
     pub id: String,
     pub name: String,
     pub is_default: bool,
-}
-
-/// Model status for the frontend
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ModelStatus {
-    pub available: bool,
-    pub path: Option<String>,
-    pub error: Option<String>,
 }
 
 /// State for the running pipeline
@@ -611,4 +604,50 @@ fn emit_transcript_arc(
         session.transcript_update()
     };
     app.emit("transcript_update", transcript).map_err(|e| e.to_string())
+}
+
+// ============================================================================
+// Ollama / SOAP Note Commands
+// ============================================================================
+
+/// Check Ollama server status and list available models
+#[tauri::command]
+pub async fn check_ollama_status() -> OllamaStatus {
+    let config = Config::load_or_default();
+    let client = match OllamaClient::new(&config.ollama_server_url) {
+        Ok(c) => c,
+        Err(e) => {
+            return OllamaStatus {
+                connected: false,
+                available_models: vec![],
+                error: Some(e),
+            }
+        }
+    };
+    client.check_status().await
+}
+
+/// List available models from Ollama server
+#[tauri::command]
+pub async fn list_ollama_models() -> Result<Vec<String>, String> {
+    let config = Config::load_or_default();
+    let client = OllamaClient::new(&config.ollama_server_url)?;
+    client.list_models().await
+}
+
+/// Generate a SOAP note from the given transcript
+#[tauri::command]
+pub async fn generate_soap_note(transcript: String) -> Result<SoapNote, String> {
+    info!("Generating SOAP note for transcript of {} chars", transcript.len());
+
+    if transcript.trim().is_empty() {
+        return Err("Cannot generate SOAP note from empty transcript".to_string());
+    }
+
+    let config = Config::load_or_default();
+    let client = OllamaClient::new(&config.ollama_server_url)?;
+
+    client
+        .generate_soap_note(&config.ollama_model, &transcript)
+        .await
 }

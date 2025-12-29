@@ -53,8 +53,8 @@ ndarray = "0.16"
 # Async runtime
 tokio = { version = "1", features = ["rt-multi-thread", "sync", "macros"] }
 
-# HTTP client for model downloads
-reqwest = { version = "0.12", features = ["blocking", "stream"] }
+# HTTP client for model downloads and Ollama API
+reqwest = { version = "0.12", features = ["blocking", "stream", "json"] }
 futures-util = "0.3"
 
 # Error handling

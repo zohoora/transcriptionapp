@@ -38,6 +38,7 @@ Rust Backend
 ├── emotion/         # Emotion detection (wav2small)
 │   ├── mod.rs       # Module exports
 │   └── provider.rs  # ONNX-based ADV detection
+├── ollama.rs        # Ollama LLM client for SOAP note generation
 └── biomarkers/      # Vocal biomarker analysis
     ├── mod.rs       # Types (CoughEvent, VocalBiomarkers, SessionMetrics, AudioQualitySnapshot)
     ├── config.rs    # BiomarkerConfig
@@ -69,6 +70,9 @@ Rust Backend
 | `download_emotion_model` | Download wav2small emotion model |
 | `download_yamnet_model` | Download YAMNet cough detection model |
 | `ensure_models` | Download all required models |
+| `check_ollama_status` | Check Ollama server connection and list models |
+| `list_ollama_models` | Get available models from Ollama |
+| `generate_soap_note` | Generate SOAP note from transcript via Ollama |
 
 ## Key Events (Backend → Frontend)
 
@@ -105,6 +109,38 @@ cargo bench            # Benchmarks
 ```
 
 Note: Some diarization tests require ONNX Runtime. Set `ORT_DYLIB_PATH` environment variable if tests fail with "onnxruntime library not found".
+
+## SOAP Note Generation (Dec 2024)
+
+Integration with Ollama LLM for generating structured SOAP (Subjective, Objective, Assessment, Plan) notes from clinical transcripts.
+
+**Features**
+- Configurable Ollama server URL and model selection
+- Default model: qwen3:4b
+- "Generate SOAP Note" button appears when session is completed
+- Collapsible SOAP section with copy functionality
+- Connection status indicator in settings
+
+**Architecture**
+- `ollama.rs`: Async HTTP client using reqwest for Ollama API
+- API endpoints used:
+  - `GET /api/tags` - List available models
+  - `POST /api/generate` - Generate SOAP note (stream: false)
+- Structured prompt with explicit section markers for reliable parsing
+- Handles Qwen's `/think` block output
+
+**Configuration**
+- `ollama_server_url`: Ollama server address (default: `http://localhost:11434`)
+- `ollama_model`: Model to use (default: `qwen3:4b`)
+- Settings persisted in `~/.transcriptionapp/config.json`
+
+**UI Flow**
+1. Complete a recording session with transcript
+2. SOAP Note section appears below transcript
+3. Click "Generate SOAP Note" (requires Ollama connection)
+4. Loading spinner during generation (~10-30s depending on model)
+5. Structured display of S/O/A/P sections
+6. Copy button to copy entire note
 
 ## Recent Changes (Dec 2024)
 
@@ -255,6 +291,8 @@ interface Settings {
   max_utterance_ms: number;
   diarization_enabled: boolean;
   max_speakers: number;       // 2-10
+  ollama_server_url: string;  // e.g., 'http://localhost:11434'
+  ollama_model: string;       // e.g., 'qwen3:4b'
 }
 ```
 

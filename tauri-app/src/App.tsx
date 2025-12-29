@@ -2,151 +2,24 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { listen, UnlistenFn } from '@tauri-apps/api/event';
 import { writeText } from '@tauri-apps/plugin-clipboard-manager';
-
-// Session state types
-type SessionState =
-  | 'idle'
-  | 'preparing'
-  | 'recording'
-  | 'stopping'
-  | 'completed'
-  | 'error';
-
-interface SessionStatus {
-  state: SessionState;
-  provider: 'whisper' | 'apple' | null;
-  elapsed_ms: number;
-  is_processing_behind: boolean;
-  error_message?: string;
-}
-
-interface TranscriptUpdate {
-  finalized_text: string;
-  draft_text: string | null;
-  segment_count: number;
-}
-
-interface Device {
-  id: string;
-  name: string;
-  is_default: boolean;
-}
-
-interface ModelStatus {
-  available: boolean;
-  path: string | null;
-  error: string | null;
-}
-
-interface Settings {
-  whisper_model: string;
-  language: string;
-  input_device_id: string | null;
-  output_format: string;
-  vad_threshold: number;
-  silence_to_flush_ms: number;
-  max_utterance_ms: number;
-  diarization_enabled: boolean;
-  max_speakers: number;
-}
-
-// Checklist types
-type CheckCategory = 'audio' | 'model' | 'permission' | 'configuration' | 'network';
-type CheckStatus = 'pass' | 'fail' | 'warning' | 'pending' | 'skipped';
-
-interface CheckAction {
-  download_model?: { model_name: string };
-  open_settings?: { settings_type: string };
-  retry?: boolean;
-  none?: boolean;
-}
-
-interface CheckResult {
-  id: string;
-  name: string;
-  category: CheckCategory;
-  status: CheckStatus;
-  message: string | null;
-  action: CheckAction | null;
-}
-
-interface ChecklistResult {
-  checks: CheckResult[];
-  all_passed: boolean;
-  can_start: boolean;
-  summary: string;
-}
-
-// Biomarker types
-interface CoughEvent {
-  timestamp_ms: number;
-  duration_ms: number;
-  confidence: number;
-  label: string;
-}
-
-interface SpeakerBiomarkers {
-  speaker_id: string;
-  vitality_mean: number | null;
-  stability_mean: number | null;
-  utterance_count: number;
-  talk_time_ms: number;
-  turn_count: number;
-  mean_turn_duration_ms: number;
-  median_turn_duration_ms: number;
-}
-
-// Conversation dynamics types
-interface SpeakerTurnStats {
-  speaker_id: string;
-  turn_count: number;
-  mean_turn_duration_ms: number;
-  median_turn_duration_ms: number;
-}
-
-interface SilenceStats {
-  total_silence_ms: number;
-  long_pause_count: number;
-  mean_pause_duration_ms: number;
-  silence_ratio: number;
-}
-
-interface ConversationDynamics {
-  speaker_turns: SpeakerTurnStats[];
-  silence: SilenceStats;
-  total_overlap_count: number;
-  total_interruption_count: number;
-  mean_response_latency_ms: number;
-  engagement_score: number | null;
-}
-
-interface BiomarkerUpdate {
-  cough_count: number;
-  cough_rate_per_min: number;
-  turn_count: number;
-  avg_turn_duration_ms: number;
-  talk_time_ratio: number | null;
-  vitality_session_mean: number | null;
-  stability_session_mean: number | null;
-  speaker_metrics: SpeakerBiomarkers[];
-  recent_events: CoughEvent[];
-  conversation_dynamics: ConversationDynamics | null;
-}
-
-// Audio quality types
-interface AudioQualitySnapshot {
-  timestamp_ms: number;
-  peak_db: number;
-  rms_db: number;
-  clipped_samples: number;
-  clipped_ratio: number;
-  noise_floor_db: number;
-  snr_db: number;
-  silence_ratio: number;
-  dropout_count: number;
-  total_clipped: number;
-  total_samples: number;
-}
+import type {
+  SessionState,
+  SessionStatus,
+  TranscriptUpdate,
+  Device,
+  ModelStatus,
+  Settings,
+  OllamaStatus,
+  SoapNote,
+  CheckResult,
+  ChecklistResult,
+  BiomarkerUpdate,
+  AudioQualitySnapshot,
+} from './types';
+import {
+  BIOMARKER_THRESHOLDS,
+  AUDIO_QUALITY_THRESHOLDS,
+} from './types';
 
 const WHISPER_MODELS = [
   { value: 'tiny', label: 'Tiny (fastest)' },
@@ -322,6 +195,8 @@ function App() {
     device: string;
     diarization_enabled: boolean;
     max_speakers: number;
+    ollama_server_url: string;
+    ollama_model: string;
   } | null>(null);
 
   // Checklist state
@@ -341,6 +216,14 @@ function App() {
   // Audio quality state
   const [audioQuality, setAudioQuality] = useState<AudioQualitySnapshot | null>(null);
   const [audioQualityExpanded, setAudioQualityExpanded] = useState(true);
+
+  // SOAP note state
+  const [soapNote, setSoapNote] = useState<SoapNote | null>(null);
+  const [isGeneratingSoap, setIsGeneratingSoap] = useState(false);
+  const [soapError, setSoapError] = useState<string | null>(null);
+  const [soapExpanded, setSoapExpanded] = useState(true);
+  const [ollamaStatus, setOllamaStatus] = useState<OllamaStatus | null>(null);
+  const [ollamaModels, setOllamaModels] = useState<string[]>([]);
 
   const transcriptRef = useRef<HTMLDivElement>(null);
   const [localElapsedMs, setLocalElapsedMs] = useState(0);
@@ -450,9 +333,22 @@ function App() {
           device: settingsResult.input_device_id || 'default',
           diarization_enabled: settingsResult.diarization_enabled,
           max_speakers: settingsResult.max_speakers,
+          ollama_server_url: settingsResult.ollama_server_url,
+          ollama_model: settingsResult.ollama_model,
         });
         if (settingsResult.input_device_id) {
           setSelectedDevice(settingsResult.input_device_id);
+        }
+
+        // Check Ollama status
+        try {
+          const ollamaStatusResult = await invoke<OllamaStatus>('check_ollama_status');
+          setOllamaStatus(ollamaStatusResult);
+          if (ollamaStatusResult.connected) {
+            setOllamaModels(ollamaStatusResult.available_models);
+          }
+        } catch {
+          // Ollama not available - that's okay
         }
       } catch (e) {
         console.error('Failed to initialize:', e);
@@ -533,6 +429,8 @@ function App() {
       });
       setBiomarkers(null);
       setAudioQuality(null);
+      setSoapNote(null);
+      setSoapError(null);
     } catch (e) {
       console.error('Failed to reset:', e);
     }
@@ -549,6 +447,8 @@ function App() {
         input_device_id: pendingSettings.device === 'default' ? null : pendingSettings.device,
         diarization_enabled: pendingSettings.diarization_enabled,
         max_speakers: pendingSettings.max_speakers,
+        ollama_server_url: pendingSettings.ollama_server_url,
+        ollama_model: pendingSettings.ollama_model,
       };
       const result = await invoke<Settings>('set_settings', { settings: updatedSettings });
       setSettings(result);
@@ -563,6 +463,49 @@ function App() {
       console.error('Failed to save settings:', e);
     }
   }, [settings, pendingSettings]);
+
+  // Test Ollama connection
+  const handleTestOllama = useCallback(async () => {
+    if (!pendingSettings) return;
+    try {
+      // Temporarily save settings to test with new URL
+      const testSettings: Settings = {
+        ...settings!,
+        ollama_server_url: pendingSettings.ollama_server_url,
+        ollama_model: pendingSettings.ollama_model,
+      };
+      await invoke('set_settings', { settings: testSettings });
+
+      const statusResult = await invoke<OllamaStatus>('check_ollama_status');
+      setOllamaStatus(statusResult);
+      if (statusResult.connected) {
+        setOllamaModels(statusResult.available_models);
+      }
+    } catch (e) {
+      console.error('Failed to test Ollama:', e);
+      setOllamaStatus({ connected: false, available_models: [], error: String(e) });
+    }
+  }, [settings, pendingSettings]);
+
+  // Generate SOAP note
+  const handleGenerateSoap = useCallback(async () => {
+    if (!transcript.finalized_text.trim()) return;
+
+    setIsGeneratingSoap(true);
+    setSoapError(null);
+
+    try {
+      const result = await invoke<SoapNote>('generate_soap_note', {
+        transcript: transcript.finalized_text,
+      });
+      setSoapNote(result);
+    } catch (e) {
+      console.error('Failed to generate SOAP note:', e);
+      setSoapError(String(e));
+    } finally {
+      setIsGeneratingSoap(false);
+    }
+  }, [transcript.finalized_text]);
 
   const isRecording = status.state === 'recording';
   const isStopping = status.state === 'stopping';
@@ -1074,6 +1017,93 @@ function App() {
         </section>
       )}
 
+      {/* SOAP Note Section - only show when completed with transcript */}
+      {!showChecklist && isCompleted && transcript.finalized_text.trim() && (
+        <section className="soap-section">
+          <div
+            className="soap-header"
+            onClick={() => setSoapExpanded(!soapExpanded)}
+            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setSoapExpanded(!soapExpanded); }}}
+            role="button"
+            tabIndex={0}
+            aria-expanded={soapExpanded}
+          >
+            <div className="soap-header-left">
+              <span className={`chevron ${soapExpanded ? '' : 'collapsed'}`}>
+                &#9660;
+              </span>
+              <span className="soap-title">SOAP Note</span>
+            </div>
+            {soapNote && (
+              <button
+                className="copy-btn"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  const fullNote = `SUBJECTIVE:\n${soapNote.subjective}\n\nOBJECTIVE:\n${soapNote.objective}\n\nASSESSMENT:\n${soapNote.assessment}\n\nPLAN:\n${soapNote.plan}`;
+                  writeText(fullNote);
+                }}
+              >
+                Copy
+              </button>
+            )}
+          </div>
+
+          {soapExpanded && (
+            <div className="soap-content">
+              {!soapNote && !isGeneratingSoap && !soapError && (
+                <button
+                  className="btn btn-generate"
+                  onClick={handleGenerateSoap}
+                  disabled={!ollamaStatus?.connected}
+                >
+                  {ollamaStatus?.connected ? 'Generate SOAP Note' : 'Ollama not connected'}
+                </button>
+              )}
+
+              {isGeneratingSoap && (
+                <div className="soap-loading">
+                  <div className="spinner" />
+                  <span>Generating SOAP note...</span>
+                </div>
+              )}
+
+              {soapError && (
+                <div className="soap-error">
+                  <span>{soapError}</span>
+                  <button className="btn-retry-small" onClick={handleGenerateSoap}>
+                    Retry
+                  </button>
+                </div>
+              )}
+
+              {soapNote && (
+                <div className="soap-note-content">
+                  <div className="soap-section-item">
+                    <div className="soap-section-label">SUBJECTIVE</div>
+                    <div className="soap-section-text">{soapNote.subjective}</div>
+                  </div>
+                  <div className="soap-section-item">
+                    <div className="soap-section-label">OBJECTIVE</div>
+                    <div className="soap-section-text">{soapNote.objective}</div>
+                  </div>
+                  <div className="soap-section-item">
+                    <div className="soap-section-label">ASSESSMENT</div>
+                    <div className="soap-section-text">{soapNote.assessment}</div>
+                  </div>
+                  <div className="soap-section-item">
+                    <div className="soap-section-label">PLAN</div>
+                    <div className="soap-section-text">{soapNote.plan}</div>
+                  </div>
+                  <div className="soap-footer">
+                    Generated {new Date(soapNote.generated_at).toLocaleString()} ({soapNote.model_used})
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </section>
+      )}
+
       {/* Action Bar - only show when completed */}
       {!showChecklist && isCompleted && (
         <div className="action-bar">
@@ -1195,6 +1225,53 @@ function App() {
                         <span className="toggle-slider"></span>
                       </label>
                     </div>
+                  </div>
+
+                  {/* Ollama / SOAP Note Settings */}
+                  <div className="settings-divider" />
+                  <div className="settings-section-title">SOAP Note Generation</div>
+
+                  <div className="settings-group">
+                    <label className="settings-label" htmlFor="ollama-url">Ollama Server</label>
+                    <input
+                      id="ollama-url"
+                      type="text"
+                      className="settings-input"
+                      value={pendingSettings.ollama_server_url}
+                      onChange={(e) => setPendingSettings({ ...pendingSettings, ollama_server_url: e.target.value })}
+                      placeholder="http://localhost:11434"
+                    />
+                  </div>
+
+                  <div className="settings-group">
+                    <label className="settings-label" htmlFor="ollama-model">Model</label>
+                    <select
+                      id="ollama-model"
+                      className="settings-select"
+                      value={pendingSettings.ollama_model}
+                      onChange={(e) => setPendingSettings({ ...pendingSettings, ollama_model: e.target.value })}
+                    >
+                      <option value={pendingSettings.ollama_model}>{pendingSettings.ollama_model}</option>
+                      {ollamaModels
+                        .filter((m) => m !== pendingSettings.ollama_model)
+                        .map((m) => (
+                          <option key={m} value={m}>{m}</option>
+                        ))}
+                    </select>
+                  </div>
+
+                  <div className="settings-group ollama-status-group">
+                    <div className="ollama-status">
+                      <span className={`status-indicator ${ollamaStatus?.connected ? 'connected' : 'disconnected'}`} />
+                      <span className="status-text">
+                        {ollamaStatus?.connected
+                          ? `Connected (${ollamaModels.length} models)`
+                          : ollamaStatus?.error || 'Not connected'}
+                      </span>
+                    </div>
+                    <button className="btn-test" onClick={handleTestOllama}>
+                      Test
+                    </button>
                   </div>
                 </>
               )}

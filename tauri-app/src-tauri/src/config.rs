@@ -16,6 +16,19 @@ pub struct Settings {
     // Diarization settings
     pub diarization_enabled: bool,
     pub max_speakers: usize,
+    // Ollama settings for SOAP note generation
+    #[serde(default = "default_ollama_url")]
+    pub ollama_server_url: String,
+    #[serde(default = "default_ollama_model")]
+    pub ollama_model: String,
+}
+
+fn default_ollama_url() -> String {
+    "http://localhost:11434".to_string()
+}
+
+fn default_ollama_model() -> String {
+    "qwen3:4b".to_string()
 }
 
 impl Default for Settings {
@@ -30,6 +43,8 @@ impl Default for Settings {
             max_utterance_ms: 25000,
             diarization_enabled: false,
             max_speakers: 10,
+            ollama_server_url: default_ollama_url(),
+            ollama_model: default_ollama_model(),
         }
     }
 }
@@ -187,6 +202,11 @@ pub struct Config {
     pub biomarkers_enabled: bool,
     #[serde(default)]
     pub yamnet_model_path: Option<PathBuf>,
+    // Ollama settings for SOAP note generation
+    #[serde(default = "default_ollama_url")]
+    pub ollama_server_url: String,
+    #[serde(default = "default_ollama_model")]
+    pub ollama_model: String,
 }
 
 fn default_max_speakers() -> usize {
@@ -232,6 +252,8 @@ impl Default for Config {
             emotion_model_path: None,
             biomarkers_enabled: default_biomarkers_enabled(),
             yamnet_model_path: None,
+            ollama_server_url: default_ollama_url(),
+            ollama_model: default_ollama_model(),
         }
     }
 }
@@ -365,6 +387,8 @@ impl Config {
             max_utterance_ms: self.max_utterance_ms,
             diarization_enabled: self.diarization_enabled,
             max_speakers: self.max_speakers,
+            ollama_server_url: self.ollama_server_url.clone(),
+            ollama_model: self.ollama_model.clone(),
         }
     }
 
@@ -379,6 +403,8 @@ impl Config {
         self.max_utterance_ms = settings.max_utterance_ms;
         self.diarization_enabled = settings.diarization_enabled;
         self.max_speakers = settings.max_speakers;
+        self.ollama_server_url = settings.ollama_server_url.clone();
+        self.ollama_model = settings.ollama_model.clone();
     }
 }
 
@@ -465,6 +491,8 @@ mod tests {
             max_utterance_ms: 30000,
             diarization_enabled: true,
             max_speakers: 5,
+            ollama_server_url: "http://192.168.1.100:11434".to_string(),
+            ollama_model: "llama3:8b".to_string(),
         };
 
         let mut config = Config::default();
@@ -479,6 +507,8 @@ mod tests {
         assert_eq!(config.max_utterance_ms, 30000);
         assert!(config.diarization_enabled);
         assert_eq!(config.max_speakers, 5);
+        assert_eq!(config.ollama_server_url, "http://192.168.1.100:11434");
+        assert_eq!(config.ollama_model, "llama3:8b");
     }
 
     #[test]
@@ -531,6 +561,8 @@ mod tests {
             max_utterance_ms: 25000,
             diarization_enabled: false,
             max_speakers: 10,
+            ollama_server_url: default_ollama_url(),
+            ollama_model: default_ollama_model(),
         };
 
         let mut config = Config::default();
@@ -538,6 +570,17 @@ mod tests {
         config.update_from_settings(&settings);
 
         assert!(config.input_device_id.is_none());
+    }
+
+    #[test]
+    fn test_ollama_defaults() {
+        let config = Config::default();
+        assert_eq!(config.ollama_server_url, "http://localhost:11434");
+        assert_eq!(config.ollama_model, "qwen3:4b");
+
+        let settings = Settings::default();
+        assert_eq!(settings.ollama_server_url, "http://localhost:11434");
+        assert_eq!(settings.ollama_model, "qwen3:4b");
     }
 
     #[test]

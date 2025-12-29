@@ -1179,3 +1179,220 @@ body {
   font-size: 10px;
   color: var(--text-muted);
 }
+
+/* ============================================
+   SOAP Note Section
+   ============================================ */
+
+.soap-section {
+  border-top: 1px solid var(--border-color);
+  background: var(--bg-secondary);
+}
+
+.soap-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 16px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.soap-header:hover {
+  background: var(--bg-hover);
+}
+
+.soap-header-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.soap-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.soap-content {
+  padding: 8px 16px 12px;
+}
+
+.btn-generate {
+  width: 100%;
+  padding: 10px 16px;
+  font-size: 13px;
+  font-weight: 500;
+  background: var(--accent-blue);
+  color: white;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.btn-generate:hover:not(:disabled) {
+  background: #2563eb;
+}
+
+.btn-generate:disabled {
+  background: var(--text-muted);
+  cursor: not-allowed;
+}
+
+.soap-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 16px;
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+
+.soap-error {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 12px;
+  background: rgba(220, 38, 38, 0.1);
+  border-radius: 6px;
+  color: var(--accent-recording);
+  font-size: 12px;
+  text-align: center;
+}
+
+.btn-retry-small {
+  padding: 4px 12px;
+  font-size: 11px;
+  background: var(--accent-recording);
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.soap-note-content {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.soap-section-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.soap-section-label {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--accent-blue);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.soap-section-text {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-primary);
+  white-space: pre-wrap;
+}
+
+.soap-footer {
+  font-size: 10px;
+  color: var(--text-muted);
+  text-align: right;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border-color);
+}
+
+/* ============================================
+   Ollama Settings
+   ============================================ */
+
+.settings-divider {
+  height: 1px;
+  background: var(--border-color);
+  margin: 12px 0;
+}
+
+.settings-section-title {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 12px;
+}
+
+.settings-input {
+  width: 100%;
+  padding: 8px 12px;
+  font-size: 13px;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  outline: none;
+  transition: border-color 0.15s ease;
+}
+
+.settings-input:focus {
+  border-color: var(--accent-blue);
+}
+
+.settings-input::placeholder {
+  color: var(--text-muted);
+}
+
+.ollama-status-group {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.ollama-status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.status-indicator {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.status-indicator.connected {
+  background: var(--accent-idle);
+}
+
+.status-indicator.disconnected {
+  background: var(--text-muted);
+}
+
+.status-text {
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+.btn-test {
+  padding: 4px 12px;
+  font-size: 11px;
+  font-weight: 500;
+  background: var(--bg-hover);
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.btn-test:hover {
+  background: var(--border-color);
+}
