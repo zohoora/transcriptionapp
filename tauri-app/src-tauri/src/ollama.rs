@@ -60,6 +60,7 @@ pub struct SoapNote {
 }
 
 /// Ollama API client
+#[derive(Debug)]
 pub struct OllamaClient {
     client: reqwest::Client,
     base_url: String,

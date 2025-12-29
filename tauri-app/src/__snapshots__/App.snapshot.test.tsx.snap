@@ -140,6 +140,41 @@ exports[`App Snapshots > renders completed state correctly 1`] = `
       </div>
     </div>
   </section>
+  <section
+    class="soap-section"
+  >
+    <div
+      aria-expanded="true"
+      class="soap-header"
+      role="button"
+      tabindex="0"
+    >
+      <div
+        class="soap-header-left"
+      >
+        <span
+          class="chevron "
+        >
+          ▼
+        </span>
+        <span
+          class="soap-title"
+        >
+          SOAP Note
+        </span>
+      </div>
+    </div>
+    <div
+      class="soap-content"
+    >
+      <button
+        class="btn btn-generate"
+        disabled=""
+      >
+        Ollama not connected
+      </button>
+    </div>
+  </section>
   <div
     class="action-bar"
   >

@@ -3,7 +3,6 @@ import { invoke } from '@tauri-apps/api/core';
 import { listen, UnlistenFn } from '@tauri-apps/api/event';
 import { writeText } from '@tauri-apps/plugin-clipboard-manager';
 import type {
-  SessionState,
   SessionStatus,
   TranscriptUpdate,
   Device,
@@ -11,14 +10,10 @@ import type {
   Settings,
   OllamaStatus,
   SoapNote,
-  CheckResult,
+  CheckStatus,
   ChecklistResult,
   BiomarkerUpdate,
   AudioQualitySnapshot,
-} from './types';
-import {
-  BIOMARKER_THRESHOLDS,
-  AUDIO_QUALITY_THRESHOLDS,
 } from './types';
 
 const WHISPER_MODELS = [

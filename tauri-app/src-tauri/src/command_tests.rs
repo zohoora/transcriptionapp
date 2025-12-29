@@ -5,8 +5,7 @@
 
 #[cfg(test)]
 mod tests {
-    use crate::audio::Device;
-    use crate::config::{ModelStatus, Settings};
+    use crate::config::Settings;
     use crate::session::{SessionError, SessionManager, SessionState};
     use crate::transcription::Segment;
 
