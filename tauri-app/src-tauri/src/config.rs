@@ -24,7 +24,7 @@ pub struct Settings {
     // Medplum EMR settings
     #[serde(default = "default_medplum_url")]
     pub medplum_server_url: String,
-    #[serde(default)]
+    #[serde(default = "default_medplum_client_id")]
     pub medplum_client_id: String,
     #[serde(default = "default_medplum_auto_sync")]
     pub medplum_auto_sync: bool,
@@ -40,6 +40,10 @@ fn default_ollama_model() -> String {
 
 fn default_medplum_url() -> String {
     "http://localhost:8103".to_string()
+}
+
+fn default_medplum_client_id() -> String {
+    "18abd78d-96be-4901-9351-59b597de6407".to_string()
 }
 
 fn default_medplum_auto_sync() -> bool {
@@ -61,7 +65,7 @@ impl Default for Settings {
             ollama_server_url: default_ollama_url(),
             ollama_model: default_ollama_model(),
             medplum_server_url: default_medplum_url(),
-            medplum_client_id: String::new(),
+            medplum_client_id: default_medplum_client_id(),
             medplum_auto_sync: default_medplum_auto_sync(),
         }
     }
@@ -228,7 +232,7 @@ pub struct Config {
     // Medplum EMR settings
     #[serde(default = "default_medplum_url")]
     pub medplum_server_url: String,
-    #[serde(default)]
+    #[serde(default = "default_medplum_client_id")]
     pub medplum_client_id: String,
     #[serde(default = "default_medplum_auto_sync")]
     pub medplum_auto_sync: bool,
@@ -280,7 +284,7 @@ impl Default for Config {
             ollama_server_url: default_ollama_url(),
             ollama_model: default_ollama_model(),
             medplum_server_url: default_medplum_url(),
-            medplum_client_id: String::new(),
+            medplum_client_id: default_medplum_client_id(),
             medplum_auto_sync: default_medplum_auto_sync(),
         }
     }
@@ -630,12 +634,12 @@ mod tests {
     fn test_medplum_defaults() {
         let config = Config::default();
         assert_eq!(config.medplum_server_url, "http://localhost:8103");
-        assert_eq!(config.medplum_client_id, "");
+        assert_eq!(config.medplum_client_id, "18abd78d-96be-4901-9351-59b597de6407");
         assert!(config.medplum_auto_sync);
 
         let settings = Settings::default();
         assert_eq!(settings.medplum_server_url, "http://localhost:8103");
-        assert_eq!(settings.medplum_client_id, "");
+        assert_eq!(settings.medplum_client_id, "18abd78d-96be-4901-9351-59b597de6407");
         assert!(settings.medplum_auto_sync);
     }
 
