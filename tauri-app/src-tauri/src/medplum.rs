@@ -1148,4 +1148,51 @@ mod tests {
         assert!(!status.audio_synced);
         assert!(status.last_sync_time.is_none());
     }
+
+    /// Integration test to verify Medplum server connection
+    /// Run with: cargo test test_medplum_server_connection -- --ignored
+    #[tokio::test]
+    #[ignore]
+    async fn test_medplum_server_connection() {
+        let client = MedplumClient::new(
+            "http://localhost:8103",
+            "18abd78d-96be-4901-9351-59b597de6407",
+        )
+        .expect("Failed to create client");
+
+        // Test generating auth URL
+        let auth_url = client.start_auth_flow().await.expect("Failed to start auth flow");
+        assert!(auth_url.url.contains("oauth2/authorize"));
+        assert!(auth_url.url.contains("18abd78d-96be-4901-9351-59b597de6407"));
+        // URL-encoded: fabricscribe%3A%2F%2Foauth%2Fcallback
+        assert!(auth_url.url.contains("fabricscribe"));
+        assert!(auth_url.url.contains("oauth") && auth_url.url.contains("callback"));
+        println!("Auth URL: {}", auth_url.url);
+
+        // Test that we can reach the server's well-known endpoint
+        let response = reqwest::get("http://localhost:8103/.well-known/openid-configuration")
+            .await
+            .expect("Failed to reach Medplum server");
+        assert!(response.status().is_success());
+
+        let config: serde_json::Value = response.json().await.expect("Invalid JSON");
+        assert_eq!(config["issuer"], "http://localhost:8103/");
+        println!("Medplum server is reachable and configured correctly");
+    }
+
+    /// Integration test to verify FHIR metadata endpoint
+    /// Run with: cargo test test_medplum_fhir_metadata -- --ignored
+    #[tokio::test]
+    #[ignore]
+    async fn test_medplum_fhir_metadata() {
+        let response = reqwest::get("http://localhost:8103/fhir/R4/metadata")
+            .await
+            .expect("Failed to reach FHIR metadata");
+        assert!(response.status().is_success());
+
+        let metadata: serde_json::Value = response.json().await.expect("Invalid JSON");
+        assert_eq!(metadata["resourceType"], "CapabilityStatement");
+        assert_eq!(metadata["fhirVersion"], "4.0.1");
+        println!("FHIR R4 endpoint is available");
+    }
 }
