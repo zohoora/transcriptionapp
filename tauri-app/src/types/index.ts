@@ -48,6 +48,10 @@ export interface Settings {
   max_speakers: number;
   ollama_server_url: string;
   ollama_model: string;
+  // Medplum EMR settings
+  medplum_server_url: string;
+  medplum_client_id: string;
+  medplum_auto_sync: boolean;
 }
 
 // Checklist types
@@ -200,3 +204,68 @@ export const AUDIO_QUALITY_THRESHOLDS = {
   // Clipping ratio
   CLIPPING_OK: 0.001,     // 0.1% - below this is acceptable
 } as const;
+
+// ============================================================================
+// Medplum EMR Types
+// ============================================================================
+
+export interface AuthState {
+  is_authenticated: boolean;
+  access_token: string | null;
+  refresh_token: string | null;
+  token_expiry: number | null;
+  practitioner_id: string | null;
+  practitioner_name: string | null;
+}
+
+export interface AuthUrl {
+  url: string;
+  state: string;
+}
+
+export interface Patient {
+  id: string;
+  name: string;
+  mrn: string | null;
+  birthDate: string | null;
+}
+
+export interface Encounter {
+  id: string;
+  patientId: string;
+  patientName: string;
+  status: 'in-progress' | 'finished' | 'cancelled';
+  startTime: string;
+  endTime: string | null;
+}
+
+export interface EncounterSummary {
+  id: string;
+  fhirId: string;
+  patientName: string;
+  date: string;
+  durationMinutes: number | null;
+  hasSoapNote: boolean;
+  hasAudio: boolean;
+}
+
+export interface EncounterDetails extends EncounterSummary {
+  transcript: string | null;
+  soapNote: string | null;
+  audioUrl: string | null;
+  sessionInfo: string | null;
+}
+
+export interface SyncStatus {
+  encounterSynced: boolean;
+  transcriptSynced: boolean;
+  soapNoteSynced: boolean;
+  audioSynced: boolean;
+  lastSyncTime: string | null;
+}
+
+export interface SyncResult {
+  success: boolean;
+  status: SyncStatus;
+  error: string | null;
+}

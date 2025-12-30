@@ -19,6 +19,8 @@ tauri-build = { version = "2", features = [] }
 tauri = { version = "2", features = [] }
 libc = "0.2"
 tauri-plugin-clipboard-manager = "2"
+tauri-plugin-deep-link = "2"
+tauri-plugin-shell = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 
@@ -56,6 +58,13 @@ tokio = { version = "1", features = ["rt-multi-thread", "sync", "macros"] }
 # HTTP client for model downloads and Ollama API
 reqwest = { version = "0.12", features = ["blocking", "stream", "json"] }
 futures-util = "0.3"
+
+# Medplum OAuth PKCE support
+base64 = "0.22"
+sha2 = "0.10"
+rand = "0.8"
+url = "2.5"
+urlencoding = "2.1"
 
 # Error handling
 anyhow = "1"

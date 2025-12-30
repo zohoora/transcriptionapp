@@ -20,7 +20,7 @@
 //! ## Example
 //!
 //! ```no_run
-//! use transcription_app::audio::{list_input_devices, AudioCapture, AudioResampler};
+//! use transcription_app_lib::audio::{list_input_devices, AudioCapture, AudioResampler};
 //!
 //! // List available devices
 //! let devices = list_input_devices().unwrap();

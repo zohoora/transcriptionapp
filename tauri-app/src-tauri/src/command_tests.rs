@@ -38,6 +38,9 @@ mod tests {
             max_speakers: 5,
             ollama_server_url: "http://localhost:11434".to_string(),
             ollama_model: "qwen3:4b".to_string(),
+            medplum_server_url: "http://localhost:8103".to_string(),
+            medplum_client_id: "test-client-id".to_string(),
+            medplum_auto_sync: true,
         };
 
         // Serialize to JSON

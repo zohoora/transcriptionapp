@@ -1,6 +1,10 @@
 use crate::audio;
 use crate::checklist::{self, ChecklistResult};
 use crate::config::{Config, ModelStatus, Settings};
+use crate::medplum::{
+    AuthState, AuthUrl, Encounter, EncounterDetails, EncounterSummary, MedplumClient,
+    Patient, SyncResult, SyncStatus,
+};
 use crate::models::{self, ModelInfo, WhisperModel};
 use crate::ollama::{OllamaClient, OllamaStatus, SoapNote};
 use crate::pipeline::{start_pipeline, PipelineConfig, PipelineHandle, PipelineMessage};
@@ -8,7 +12,7 @@ use crate::session::{SessionError, SessionManager};
 use serde::{Deserialize, Serialize};
 use std::sync::{Arc, Mutex};
 use tauri::{AppHandle, Emitter, State};
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, RwLock};
 use tracing::{error, info};
 
 /// Device information for the frontend
@@ -41,6 +45,14 @@ pub type SharedSessionManager = Arc<Mutex<SessionManager>>;
 
 /// Shared pipeline state type for use in async contexts
 pub type SharedPipelineState = Arc<Mutex<PipelineState>>;
+
+/// Shared Medplum client for EMR integration
+pub type SharedMedplumClient = Arc<RwLock<Option<MedplumClient>>>;
+
+/// Create a shared Medplum client from config
+pub fn create_medplum_client() -> SharedMedplumClient {
+    Arc::new(RwLock::new(None))
+}
 
 /// List available input devices
 #[tauri::command]
@@ -650,4 +662,310 @@ pub async fn generate_soap_note(transcript: String) -> Result<SoapNote, String> 
     client
         .generate_soap_note(&config.ollama_model, &transcript)
         .await
+}
+
+// ============================================================================
+// Medplum EMR Commands
+// ============================================================================
+
+/// Get or create the Medplum client, initializing if needed
+async fn get_or_create_medplum_client(
+    medplum_state: &SharedMedplumClient,
+) -> Result<(), String> {
+    let mut client_guard = medplum_state.write().await;
+    if client_guard.is_none() {
+        let config = Config::load_or_default();
+        if config.medplum_client_id.is_empty() {
+            return Err("Medplum client ID not configured. Please set it in settings.".to_string());
+        }
+        let client = MedplumClient::new(&config.medplum_server_url, &config.medplum_client_id)
+            .map_err(|e| e.to_string())?;
+        *client_guard = Some(client);
+    }
+    Ok(())
+}
+
+/// Get the current Medplum authentication state
+#[tauri::command]
+pub async fn medplum_get_auth_state(
+    medplum_state: State<'_, SharedMedplumClient>,
+) -> Result<AuthState, String> {
+    let client_guard = medplum_state.read().await;
+    if let Some(ref client) = *client_guard {
+        Ok(client.get_auth_state().await)
+    } else {
+        Ok(AuthState::default())
+    }
+}
+
+/// Start the Medplum OAuth authorization flow
+/// Returns the authorization URL to open in a browser
+#[tauri::command]
+pub async fn medplum_start_auth(
+    medplum_state: State<'_, SharedMedplumClient>,
+) -> Result<AuthUrl, String> {
+    info!("Starting Medplum OAuth flow");
+
+    get_or_create_medplum_client(medplum_state.inner()).await?;
+
+    let client_guard = medplum_state.read().await;
+    let client = client_guard
+        .as_ref()
+        .ok_or_else(|| "Medplum client not initialized".to_string())?;
+
+    client.start_auth_flow().await.map_err(|e| e.to_string())
+}
+
+/// Handle OAuth callback with authorization code
+#[tauri::command]
+pub async fn medplum_handle_callback(
+    medplum_state: State<'_, SharedMedplumClient>,
+    code: String,
+    state: String,
+) -> Result<AuthState, String> {
+    info!("Handling Medplum OAuth callback");
+
+    let client_guard = medplum_state.read().await;
+    let client = client_guard
+        .as_ref()
+        .ok_or_else(|| "Medplum client not initialized".to_string())?;
+
+    client
+        .exchange_code(&code, &state)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Logout from Medplum
+#[tauri::command]
+pub async fn medplum_logout(
+    medplum_state: State<'_, SharedMedplumClient>,
+) -> Result<(), String> {
+    info!("Logging out from Medplum");
+
+    let client_guard = medplum_state.read().await;
+    if let Some(ref client) = *client_guard {
+        client.logout().await;
+    }
+    Ok(())
+}
+
+/// Refresh the Medplum access token
+#[tauri::command]
+pub async fn medplum_refresh_token(
+    medplum_state: State<'_, SharedMedplumClient>,
+) -> Result<AuthState, String> {
+    info!("Refreshing Medplum access token");
+
+    let client_guard = medplum_state.read().await;
+    let client = client_guard
+        .as_ref()
+        .ok_or_else(|| "Medplum client not initialized".to_string())?;
+
+    client.refresh_token().await.map_err(|e| e.to_string())
+}
+
+/// Search for patients by name or MRN
+#[tauri::command]
+pub async fn medplum_search_patients(
+    medplum_state: State<'_, SharedMedplumClient>,
+    query: String,
+) -> Result<Vec<Patient>, String> {
+    info!("Searching for patients: {}", query);
+
+    let client_guard = medplum_state.read().await;
+    let client = client_guard
+        .as_ref()
+        .ok_or_else(|| "Medplum client not initialized".to_string())?;
+
+    client.search_patients(&query).await.map_err(|e| e.to_string())
+}
+
+/// Create a new encounter for a patient
+#[tauri::command]
+pub async fn medplum_create_encounter(
+    medplum_state: State<'_, SharedMedplumClient>,
+    patient_id: String,
+) -> Result<Encounter, String> {
+    info!("Creating encounter for patient: {}", patient_id);
+
+    let client_guard = medplum_state.read().await;
+    let client = client_guard
+        .as_ref()
+        .ok_or_else(|| "Medplum client not initialized".to_string())?;
+
+    client.create_encounter(&patient_id).await.map_err(|e| e.to_string())
+}
+
+/// Complete an encounter with transcript, SOAP note, and optional audio
+#[tauri::command]
+pub async fn medplum_complete_encounter(
+    medplum_state: State<'_, SharedMedplumClient>,
+    encounter_id: String,
+    encounter_fhir_id: String,
+    patient_id: String,
+    transcript: String,
+    soap_note: Option<String>,
+    audio_data: Option<Vec<u8>>,
+) -> Result<SyncResult, String> {
+    info!("Completing encounter: {}", encounter_id);
+
+    let client_guard = medplum_state.read().await;
+    let client = client_guard
+        .as_ref()
+        .ok_or_else(|| "Medplum client not initialized".to_string())?;
+
+    let mut sync_status = SyncStatus::default();
+    let mut errors = Vec::new();
+
+    // Upload transcript
+    match client
+        .upload_transcript(&encounter_id, &encounter_fhir_id, &patient_id, &transcript)
+        .await
+    {
+        Ok(_) => sync_status.transcript_synced = true,
+        Err(e) => errors.push(format!("Transcript: {}", e)),
+    }
+
+    // Upload SOAP note if provided
+    if let Some(ref soap) = soap_note {
+        match client
+            .upload_soap_note(&encounter_id, &encounter_fhir_id, &patient_id, soap)
+            .await
+        {
+            Ok(_) => sync_status.soap_note_synced = true,
+            Err(e) => errors.push(format!("SOAP note: {}", e)),
+        }
+    } else {
+        sync_status.soap_note_synced = true; // Not required
+    }
+
+    // Upload audio if provided
+    if let Some(ref audio) = audio_data {
+        match client
+            .upload_audio(
+                &encounter_id,
+                &encounter_fhir_id,
+                &patient_id,
+                audio,
+                "audio/webm",
+                None,
+            )
+            .await
+        {
+            Ok(_) => sync_status.audio_synced = true,
+            Err(e) => errors.push(format!("Audio: {}", e)),
+        }
+    } else {
+        sync_status.audio_synced = true; // Not required
+    }
+
+    // Complete the encounter
+    match client.complete_encounter(&encounter_fhir_id).await {
+        Ok(_) => sync_status.encounter_synced = true,
+        Err(e) => errors.push(format!("Encounter: {}", e)),
+    }
+
+    sync_status.last_sync_time = Some(chrono::Utc::now().to_rfc3339());
+
+    let success = errors.is_empty();
+    let error = if errors.is_empty() {
+        None
+    } else {
+        Some(errors.join("; "))
+    };
+
+    Ok(SyncResult {
+        success,
+        status: sync_status,
+        error,
+    })
+}
+
+/// Get encounter history for the current practitioner
+#[tauri::command]
+pub async fn medplum_get_encounter_history(
+    medplum_state: State<'_, SharedMedplumClient>,
+    start_date: Option<String>,
+    end_date: Option<String>,
+) -> Result<Vec<EncounterSummary>, String> {
+    info!("Getting encounter history");
+
+    let client_guard = medplum_state.read().await;
+    let client = client_guard
+        .as_ref()
+        .ok_or_else(|| "Medplum client not initialized".to_string())?;
+
+    client
+        .get_encounter_history(start_date.as_deref(), end_date.as_deref())
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Get detailed encounter data including documents
+#[tauri::command]
+pub async fn medplum_get_encounter_details(
+    medplum_state: State<'_, SharedMedplumClient>,
+    encounter_id: String,
+) -> Result<EncounterDetails, String> {
+    info!("Getting encounter details: {}", encounter_id);
+
+    let client_guard = medplum_state.read().await;
+    let client = client_guard
+        .as_ref()
+        .ok_or_else(|| "Medplum client not initialized".to_string())?;
+
+    client
+        .get_encounter_details(&encounter_id)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Manual sync of an encounter
+#[tauri::command]
+pub async fn medplum_sync_encounter(
+    medplum_state: State<'_, SharedMedplumClient>,
+    encounter_id: String,
+    encounter_fhir_id: String,
+    patient_id: String,
+    transcript: String,
+    soap_note: Option<String>,
+    audio_data: Option<Vec<u8>>,
+) -> Result<SyncResult, String> {
+    info!("Manual sync for encounter: {}", encounter_id);
+
+    // Reuse the complete_encounter logic
+    medplum_complete_encounter(
+        medplum_state,
+        encounter_id,
+        encounter_fhir_id,
+        patient_id,
+        transcript,
+        soap_note,
+        audio_data,
+    )
+    .await
+}
+
+/// Check if Medplum is configured and accessible
+#[tauri::command]
+pub async fn medplum_check_connection(
+    medplum_state: State<'_, SharedMedplumClient>,
+) -> Result<bool, String> {
+    let config = Config::load_or_default();
+    if config.medplum_client_id.is_empty() {
+        return Ok(false);
+    }
+
+    // Try to create client if not exists
+    if let Err(_) = get_or_create_medplum_client(medplum_state.inner()).await {
+        return Ok(false);
+    }
+
+    let client_guard = medplum_state.read().await;
+    if let Some(ref client) = *client_guard {
+        Ok(client.is_authenticated().await)
+    } else {
+        Ok(false)
+    }
 }

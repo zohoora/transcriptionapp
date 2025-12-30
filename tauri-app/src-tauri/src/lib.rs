@@ -15,6 +15,7 @@
 //! - [`diarization`] - Speaker diarization using ONNX embeddings
 //! - [`enhancement`] - Speech enhancement/denoising using GTCRN
 //! - [`emotion`] - Speech emotion detection using wav2small
+//! - [`medplum`] - Medplum EMR integration for encounter management
 //!
 //! ## Usage
 //!
@@ -36,6 +37,7 @@ pub mod config;
 pub mod diarization;
 pub mod emotion;
 pub mod enhancement;
+pub mod medplum;
 pub mod models;
 pub mod ollama;
 mod pipeline;
@@ -74,6 +76,8 @@ pub fn run() {
 
     tauri::Builder::default()
         .plugin(tauri_plugin_clipboard_manager::init())
+        .plugin(tauri_plugin_deep_link::init())
+        .plugin(tauri_plugin_shell::init())
         .setup(|app| {
             // Initialize session manager (wrapped in Arc for sharing)
             let session_manager = Arc::new(Mutex::new(session::SessionManager::new()));
@@ -82,6 +86,10 @@ pub fn run() {
             // Initialize pipeline state (wrapped in Arc for sharing with async tasks)
             let pipeline_state = Arc::new(Mutex::new(PipelineState::default()));
             app.manage(pipeline_state);
+
+            // Initialize Medplum client state (lazy initialization)
+            let medplum_client = commands::create_medplum_client();
+            app.manage(medplum_client);
 
             info!("App setup complete");
             Ok(())
@@ -105,6 +113,19 @@ pub fn run() {
             commands::check_ollama_status,
             commands::list_ollama_models,
             commands::generate_soap_note,
+            // Medplum EMR commands
+            commands::medplum_get_auth_state,
+            commands::medplum_start_auth,
+            commands::medplum_handle_callback,
+            commands::medplum_logout,
+            commands::medplum_refresh_token,
+            commands::medplum_search_patients,
+            commands::medplum_create_encounter,
+            commands::medplum_complete_encounter,
+            commands::medplum_get_encounter_history,
+            commands::medplum_get_encounter_details,
+            commands::medplum_sync_encounter,
+            commands::medplum_check_connection,
         ])
         .on_window_event(|window, event| {
             if let WindowEvent::CloseRequested { .. } = event {
