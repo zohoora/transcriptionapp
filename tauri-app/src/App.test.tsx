@@ -48,12 +48,13 @@ function createStandardMock(overrides: Record<string, unknown> = {}) {
   };
 }
 
-// Helper to dismiss the checklist overlay by clicking Continue
-async function dismissChecklist() {
+// Helper to wait for the app to finish loading (checklist running completes)
+async function waitForAppReady() {
   await waitFor(() => {
-    expect(screen.getByText('Continue')).toBeInTheDocument();
-  });
-  fireEvent.click(screen.getByText('Continue'));
+    // In the new mode-based UI, when checks pass and app is ready,
+    // the START button should be available in ReadyMode
+    expect(screen.getByText('START')).toBeInTheDocument();
+  }, { timeout: 3000 });
 }
 
 describe('App', () => {
@@ -86,10 +87,10 @@ describe('App', () => {
       mockInvoke.mockImplementation(createStandardMock());
 
       render(<App />);
-      await dismissChecklist();
+      await waitForAppReady();
 
       await waitFor(() => {
-        expect(screen.getByText('Start')).toBeInTheDocument();
+        expect(screen.getByText('START')).toBeInTheDocument();
       });
     });
 
@@ -99,10 +100,10 @@ describe('App', () => {
       }));
 
       render(<App />);
-      await dismissChecklist();
+      await waitForAppReady();
 
       await waitFor(() => {
-        expect(screen.getByText('Model not found. Check settings.')).toBeInTheDocument();
+        expect(screen.getByText('Model not found')).toBeInTheDocument();
       });
     });
 
@@ -112,7 +113,7 @@ describe('App', () => {
       }));
 
       render(<App />);
-      await dismissChecklist();
+      await waitForAppReady();
 
       await waitFor(() => {
         const recordButton = screen.getByRole('button', { name: /start/i });
@@ -127,10 +128,10 @@ describe('App', () => {
       mockInvoke.mockImplementation(createStandardMock());
 
       render(<App />);
-      await dismissChecklist();
+      await waitForAppReady();
 
       await waitFor(() => {
-        expect(screen.getByText('Start')).toBeInTheDocument();
+        expect(screen.getByText('START')).toBeInTheDocument();
       });
 
       const settingsBtn = screen.getByRole('button', { name: /settings/i });
@@ -150,10 +151,10 @@ describe('App', () => {
       mockInvoke.mockImplementation(createStandardMock());
 
       render(<App />);
-      await dismissChecklist();
+      await waitForAppReady();
 
       await waitFor(() => {
-        expect(screen.getByText('Start')).toBeInTheDocument();
+        expect(screen.getByText('START')).toBeInTheDocument();
       });
 
       // Open settings
@@ -178,10 +179,10 @@ describe('App', () => {
       mockInvoke.mockImplementation(createStandardMock());
 
       render(<App />);
-      await dismissChecklist();
+      await waitForAppReady();
 
       await waitFor(() => {
-        expect(screen.getByText('Start')).toBeInTheDocument();
+        expect(screen.getByText('START')).toBeInTheDocument();
       });
 
       // Open settings
@@ -205,25 +206,26 @@ describe('App', () => {
       mockInvoke.mockImplementation(createStandardMock());
 
       render(<App />);
-      await dismissChecklist();
+      await waitForAppReady();
 
       await waitFor(() => {
-        expect(screen.getByText('Start')).toBeInTheDocument();
+        expect(screen.getByText('START')).toBeInTheDocument();
       });
 
-      await user.click(screen.getByText('Start'));
+      await user.click(screen.getByText('START'));
 
-      expect(mockInvoke).toHaveBeenCalledWith('start_session', { deviceId: 'default' });
+      // Note: deviceId 'default' is converted to null before calling the backend
+      expect(mockInvoke).toHaveBeenCalledWith('start_session', { deviceId: null });
     });
 
     it('shows Stop button during recording', async () => {
       mockInvoke.mockImplementation(createStandardMock());
 
       render(<App />);
-      await dismissChecklist();
+      await waitForAppReady();
 
       await waitFor(() => {
-        expect(screen.getByText('Start')).toBeInTheDocument();
+        expect(screen.getByText('START')).toBeInTheDocument();
       });
 
       // Emit recording status
@@ -232,8 +234,8 @@ describe('App', () => {
       });
 
       await waitFor(() => {
-        expect(screen.getByText('Stop')).toBeInTheDocument();
-        expect(screen.queryByText('Start')).not.toBeInTheDocument();
+        expect(screen.getByText('STOP')).toBeInTheDocument();
+        expect(screen.queryByText('START')).not.toBeInTheDocument();
       });
     });
 
@@ -242,10 +244,10 @@ describe('App', () => {
       mockInvoke.mockImplementation(createStandardMock());
 
       render(<App />);
-      await dismissChecklist();
+      await waitForAppReady();
 
       await waitFor(() => {
-        expect(screen.getByText('Start')).toBeInTheDocument();
+        expect(screen.getByText('START')).toBeInTheDocument();
       });
 
       act(() => {
@@ -253,10 +255,10 @@ describe('App', () => {
       });
 
       await waitFor(() => {
-        expect(screen.getByText('Stop')).toBeInTheDocument();
+        expect(screen.getByText('STOP')).toBeInTheDocument();
       });
 
-      await user.click(screen.getByText('Stop'));
+      await user.click(screen.getByText('STOP'));
 
       expect(mockInvoke).toHaveBeenCalledWith('stop_session');
     });
@@ -265,10 +267,10 @@ describe('App', () => {
       mockInvoke.mockImplementation(createStandardMock());
 
       render(<App />);
-      await dismissChecklist();
+      await waitForAppReady();
 
       await waitFor(() => {
-        expect(screen.getByText('Start')).toBeInTheDocument();
+        expect(screen.getByText('START')).toBeInTheDocument();
       });
 
       act(() => {
@@ -285,10 +287,10 @@ describe('App', () => {
       mockInvoke.mockImplementation(createStandardMock());
 
       render(<App />);
-      await dismissChecklist();
+      await waitForAppReady();
 
       await waitFor(() => {
-        expect(screen.getByText('Start')).toBeInTheDocument();
+        expect(screen.getByText('START')).toBeInTheDocument();
       });
 
       act(() => {
@@ -306,50 +308,58 @@ describe('App', () => {
   });
 
   describe('transcript display', () => {
-    it('shows placeholder when idle and no transcript', async () => {
+    it('shows "Ready to record" status when idle', async () => {
       mockInvoke.mockImplementation(createStandardMock());
 
       render(<App />);
-      await dismissChecklist();
+      await waitForAppReady();
 
       await waitFor(() => {
-        expect(screen.getByText('Tap Start to begin')).toBeInTheDocument();
+        expect(screen.getByText('Ready to record')).toBeInTheDocument();
       });
     });
 
-    it('shows "Listening..." when recording with no transcript', async () => {
+    it('shows "Listening..." when transcript preview is shown during recording with no transcript', async () => {
+      const user = userEvent.setup();
       mockInvoke.mockImplementation(createStandardMock());
 
       render(<App />);
-      await dismissChecklist();
+      await waitForAppReady();
 
       await waitFor(() => {
-        expect(screen.getByText('Start')).toBeInTheDocument();
+        expect(screen.getByText('START')).toBeInTheDocument();
       });
 
       act(() => {
         listenHelper.emit('session_status', mockRecordingStatus);
       });
 
+      // Click "Show Transcript" to reveal the preview
       await waitFor(() => {
-        // Look for Listening... in the transcript placeholder specifically
-        const placeholder = document.querySelector('.transcript-placeholder');
+        expect(screen.getByText('Show Transcript')).toBeInTheDocument();
+      });
+      await user.click(screen.getByText('Show Transcript'));
+
+      await waitFor(() => {
+        // Look for Listening... in the transcript preview placeholder
+        const placeholder = document.querySelector('.transcript-preview-placeholder');
         expect(placeholder).toHaveTextContent('Listening...');
       });
     });
 
-    it('displays transcript when received', async () => {
+    it('displays transcript in review mode when completed', async () => {
       mockInvoke.mockImplementation(createStandardMock());
 
       render(<App />);
-      await dismissChecklist();
+      await waitForAppReady();
 
       await waitFor(() => {
-        expect(screen.getByText('Start')).toBeInTheDocument();
+        expect(screen.getByText('START')).toBeInTheDocument();
       });
 
+      // Complete recording with transcript to enter review mode
       act(() => {
-        listenHelper.emit('session_status', mockRecordingStatus);
+        listenHelper.emit('session_status', mockCompletedStatus);
         listenHelper.emit('transcript_update', mockTranscript);
       });
 
@@ -358,14 +368,15 @@ describe('App', () => {
       });
     });
 
-    it('displays draft text when available', async () => {
+    it('displays draft text when transcript preview is shown during recording', async () => {
+      const user = userEvent.setup();
       mockInvoke.mockImplementation(createStandardMock());
 
       render(<App />);
-      await dismissChecklist();
+      await waitForAppReady();
 
       await waitFor(() => {
-        expect(screen.getByText('Start')).toBeInTheDocument();
+        expect(screen.getByText('START')).toBeInTheDocument();
       });
 
       act(() => {
@@ -377,20 +388,26 @@ describe('App', () => {
         });
       });
 
+      // Click "Show Transcript" to reveal the preview
+      await waitFor(() => {
+        expect(screen.getByText('Show Transcript')).toBeInTheDocument();
+      });
+      await user.click(screen.getByText('Show Transcript'));
+
       await waitFor(() => {
         expect(screen.getByText('Hello, this is a test.')).toBeInTheDocument();
         expect(screen.getByText('Still processing...')).toBeInTheDocument();
       });
     });
 
-    it('shows "No transcript" when completed with empty transcript', async () => {
+    it('shows "No transcript recorded" when completed with empty transcript', async () => {
       mockInvoke.mockImplementation(createStandardMock());
 
       render(<App />);
-      await dismissChecklist();
+      await waitForAppReady();
 
       await waitFor(() => {
-        expect(screen.getByText('Start')).toBeInTheDocument();
+        expect(screen.getByText('START')).toBeInTheDocument();
       });
 
       act(() => {
@@ -398,81 +415,77 @@ describe('App', () => {
       });
 
       await waitFor(() => {
-        expect(screen.getByText('No transcript')).toBeInTheDocument();
+        expect(screen.getByText('No transcript recorded')).toBeInTheDocument();
       });
     });
   });
 
   describe('transcript collapsing', () => {
-    it('can collapse and expand transcript section', async () => {
+    it('can collapse and expand transcript section in review mode', async () => {
       const user = userEvent.setup();
       mockInvoke.mockImplementation(createStandardMock());
 
       render(<App />);
-      await dismissChecklist();
+      await waitForAppReady();
+
+      // Go to review mode with a transcript
+      act(() => {
+        listenHelper.emit('session_status', mockCompletedStatus);
+        listenHelper.emit('transcript_update', mockTranscript);
+      });
 
       await waitFor(() => {
         expect(screen.getByText('Transcript')).toBeInTheDocument();
       });
 
-      // Should show placeholder initially
-      expect(screen.getByText('Tap Start to begin')).toBeInTheDocument();
+      // Should show transcript content initially (expanded by default)
+      expect(screen.getByText('Hello, this is a test transcription.')).toBeInTheDocument();
 
       // Click to collapse
       await user.click(screen.getByText('Transcript'));
 
-      // Placeholder should be hidden (collapsed)
+      // Transcript text should be hidden (collapsed)
       await waitFor(() => {
-        const content = document.querySelector('.transcript-content');
-        expect(content).toHaveClass('collapsed');
+        const content = document.querySelector('.review-transcript-content');
+        expect(content).toBeNull();
       });
 
       // Click to expand again
       await user.click(screen.getByText('Transcript'));
 
       await waitFor(() => {
-        const content = document.querySelector('.transcript-content');
-        expect(content).not.toHaveClass('collapsed');
+        expect(screen.getByText('Hello, this is a test transcription.')).toBeInTheDocument();
       });
     });
   });
 
   describe('copy functionality', () => {
-    it('shows Copy button in transcript header', async () => {
+    it('shows Copy button in review mode with transcript', async () => {
       mockInvoke.mockImplementation(createStandardMock());
 
       render(<App />);
-      await dismissChecklist();
+      await waitForAppReady();
+
+      // Go to review mode with a transcript
+      act(() => {
+        listenHelper.emit('session_status', mockCompletedStatus);
+        listenHelper.emit('transcript_update', mockTranscript);
+      });
 
       await waitFor(() => {
         expect(screen.getByText('Copy')).toBeInTheDocument();
       });
     });
 
-    it('disables Copy button when no transcript', async () => {
+    it('Copy button is enabled when transcript is available in review mode', async () => {
       mockInvoke.mockImplementation(createStandardMock());
 
       render(<App />);
-      await dismissChecklist();
+      await waitForAppReady();
 
-      await waitFor(() => {
-        const copyBtn = screen.getByText('Copy');
-        expect(copyBtn).toBeDisabled();
-      });
-    });
-
-    it('enables Copy button when transcript is available', async () => {
-      mockInvoke.mockImplementation(createStandardMock());
-
-      render(<App />);
-      await dismissChecklist();
-
-      await waitFor(() => {
-        expect(screen.getByText('Start')).toBeInTheDocument();
-      });
-
+      // Go to review mode with a transcript
       act(() => {
-        listenHelper.emit('session_status', mockRecordingStatus);
+        listenHelper.emit('session_status', mockCompletedStatus);
         listenHelper.emit('transcript_update', mockTranscript);
       });
 
@@ -487,14 +500,11 @@ describe('App', () => {
       mockInvoke.mockImplementation(createStandardMock());
 
       render(<App />);
-      await dismissChecklist();
+      await waitForAppReady();
 
-      await waitFor(() => {
-        expect(screen.getByText('Start')).toBeInTheDocument();
-      });
-
+      // Go to review mode with a transcript
       act(() => {
-        listenHelper.emit('session_status', mockRecordingStatus);
+        listenHelper.emit('session_status', mockCompletedStatus);
         listenHelper.emit('transcript_update', mockTranscript);
       });
 
@@ -513,14 +523,11 @@ describe('App', () => {
       mockWriteText.mockResolvedValue();
 
       render(<App />);
-      await dismissChecklist();
+      await waitForAppReady();
 
-      await waitFor(() => {
-        expect(screen.getByText('Start')).toBeInTheDocument();
-      });
-
+      // Go to review mode with a transcript
       act(() => {
-        listenHelper.emit('session_status', mockRecordingStatus);
+        listenHelper.emit('session_status', mockCompletedStatus);
         listenHelper.emit('transcript_update', mockTranscript);
       });
 
@@ -541,10 +548,10 @@ describe('App', () => {
       mockInvoke.mockImplementation(createStandardMock());
 
       render(<App />);
-      await dismissChecklist();
+      await waitForAppReady();
 
       await waitFor(() => {
-        expect(screen.getByText('Start')).toBeInTheDocument();
+        expect(screen.getByText('START')).toBeInTheDocument();
       });
 
       act(() => {
@@ -561,10 +568,10 @@ describe('App', () => {
       mockInvoke.mockImplementation(createStandardMock());
 
       render(<App />);
-      await dismissChecklist();
+      await waitForAppReady();
 
       await waitFor(() => {
-        expect(screen.getByText('Start')).toBeInTheDocument();
+        expect(screen.getByText('START')).toBeInTheDocument();
       });
 
       act(() => {
@@ -572,21 +579,21 @@ describe('App', () => {
       });
 
       await waitFor(() => {
-        const timer = document.querySelector('.timer');
+        const timer = document.querySelector('.timer-large');
         expect(timer).toBeInTheDocument();
-        // Timer uses local Date.now(), so we just check it shows a valid format
-        expect(timer?.textContent).toMatch(/^\d{2}:\d{2}(:\d{2})?$/);
+        // Timer uses local Date.now(), so we just check it shows a valid format (m:ss or mm:ss or h:mm:ss)
+        expect(timer?.textContent).toMatch(/^\d{1,2}:\d{2}(:\d{2})?$/);
       });
     });
 
-    it('shows active timer class during recording', async () => {
+    it('shows timer in recording mode', async () => {
       mockInvoke.mockImplementation(createStandardMock());
 
       render(<App />);
-      await dismissChecklist();
+      await waitForAppReady();
 
       await waitFor(() => {
-        expect(screen.getByText('Start')).toBeInTheDocument();
+        expect(screen.getByText('START')).toBeInTheDocument();
       });
 
       act(() => {
@@ -594,8 +601,10 @@ describe('App', () => {
       });
 
       await waitFor(() => {
-        const timer = document.querySelector('.timer');
-        expect(timer).toHaveClass('active');
+        const timer = document.querySelector('.timer-large');
+        expect(timer).toBeInTheDocument();
+        // Recording mode should be active
+        expect(document.querySelector('.recording-mode')).toBeInTheDocument();
       });
     });
 
@@ -603,10 +612,10 @@ describe('App', () => {
       mockInvoke.mockImplementation(createStandardMock());
 
       render(<App />);
-      await dismissChecklist();
+      await waitForAppReady();
 
       await waitFor(() => {
-        expect(screen.getByText('Start')).toBeInTheDocument();
+        expect(screen.getByText('START')).toBeInTheDocument();
       });
 
       act(() => {
@@ -628,10 +637,10 @@ describe('App', () => {
       mockInvoke.mockImplementation(createStandardMock());
 
       render(<App />);
-      await dismissChecklist();
+      await waitForAppReady();
 
       await waitFor(() => {
-        expect(screen.getByText('Start')).toBeInTheDocument();
+        expect(screen.getByText('START')).toBeInTheDocument();
       });
 
       act(() => {
@@ -655,10 +664,10 @@ describe('App', () => {
       mockInvoke.mockImplementation(createStandardMock());
 
       render(<App />);
-      await dismissChecklist();
+      await waitForAppReady();
 
       await waitFor(() => {
-        expect(screen.getByText('Start')).toBeInTheDocument();
+        expect(screen.getByText('START')).toBeInTheDocument();
       });
 
       act(() => {
@@ -676,14 +685,14 @@ describe('App', () => {
       });
     });
 
-    it('shows error banner with error-banner class', async () => {
+    it('shows error message in status area when error occurs', async () => {
       mockInvoke.mockImplementation(createStandardMock());
 
       render(<App />);
-      await dismissChecklist();
+      await waitForAppReady();
 
       await waitFor(() => {
-        expect(screen.getByText('Start')).toBeInTheDocument();
+        expect(screen.getByText('START')).toBeInTheDocument();
       });
 
       act(() => {
@@ -697,8 +706,8 @@ describe('App', () => {
       });
 
       await waitFor(() => {
-        const errorBanner = document.querySelector('.error-banner');
-        expect(errorBanner).toBeInTheDocument();
+        // Error message should be displayed in the UI
+        expect(screen.getByText('Test error')).toBeInTheDocument();
       });
     });
 
@@ -713,11 +722,11 @@ describe('App', () => {
 
       // Should not throw
       render(<App />);
-      await dismissChecklist();
+      await waitForAppReady();
 
       // App should still render with Start button
       await waitFor(() => {
-        expect(screen.getByText('Start')).toBeInTheDocument();
+        expect(screen.getByText('START')).toBeInTheDocument();
       });
     });
   });
@@ -752,10 +761,10 @@ describe('formatTime', () => {
     mockListen.mockImplementation(listenHelper.listen as typeof listen);
 
     render(<App />);
-    await dismissChecklist();
+    await waitForAppReady();
 
     await waitFor(() => {
-      expect(screen.getByText('Start')).toBeInTheDocument();
+      expect(screen.getByText('START')).toBeInTheDocument();
     });
 
     // Start recording - timer uses local Date.now() so we just check it shows a valid format
@@ -764,10 +773,10 @@ describe('formatTime', () => {
     });
 
     await waitFor(() => {
-      const timer = document.querySelector('.timer');
+      const timer = document.querySelector('.timer-large');
       expect(timer).toBeInTheDocument();
-      // Timer should have mm:ss format initially
-      expect(timer?.textContent).toMatch(/^\d{2}:\d{2}(:\d{2})?$/);
+      // Timer should have m:ss or mm:ss format initially
+      expect(timer?.textContent).toMatch(/^\d{1,2}:\d{2}(:\d{2})?$/);
     });
   });
 });
@@ -785,7 +794,7 @@ describe('Audio Quality', () => {
     vi.clearAllMocks();
   });
 
-  it('shows Audio Quality section during recording when audio quality data is received', async () => {
+  it('shows status bars during recording', async () => {
     mockInvoke.mockImplementation((command: string) => {
       if (command === 'list_input_devices') return Promise.resolve(mockDevices);
       if (command === 'check_model_status') return Promise.resolve(mockModelStatusAvailable);
@@ -795,24 +804,21 @@ describe('Audio Quality', () => {
     });
 
     render(<App />);
-    await dismissChecklist();
+    await waitForAppReady();
 
-    await waitFor(() => {
-      expect(screen.getByText('Start')).toBeInTheDocument();
-    });
-
-    // Start recording and send audio quality
+    // Start recording
     act(() => {
       listenHelper.emit('session_status', mockRecordingStatus);
       listenHelper.emit('audio_quality', mockAudioQualityGood);
     });
 
     await waitFor(() => {
-      expect(screen.getByText('Audio Quality')).toBeInTheDocument();
+      const statusBars = document.querySelector('.status-bars');
+      expect(statusBars).toBeInTheDocument();
     });
   });
 
-  it('shows "Good" badge for good audio quality', async () => {
+  it('shows "good" status bars for good audio quality', async () => {
     mockInvoke.mockImplementation((command: string) => {
       if (command === 'list_input_devices') return Promise.resolve(mockDevices);
       if (command === 'check_model_status') return Promise.resolve(mockModelStatusAvailable);
@@ -822,11 +828,7 @@ describe('Audio Quality', () => {
     });
 
     render(<App />);
-    await dismissChecklist();
-
-    await waitFor(() => {
-      expect(screen.getByText('Start')).toBeInTheDocument();
-    });
+    await waitForAppReady();
 
     act(() => {
       listenHelper.emit('session_status', mockRecordingStatus);
@@ -834,11 +836,12 @@ describe('Audio Quality', () => {
     });
 
     await waitFor(() => {
-      expect(screen.getByText('Good')).toBeInTheDocument();
+      const statusBars = document.querySelector('.status-bars');
+      expect(statusBars).toHaveClass('good');
     });
   });
 
-  it('shows "Fair" badge for quiet audio', async () => {
+  it('shows "fair" status bars for quiet audio', async () => {
     mockInvoke.mockImplementation((command: string) => {
       if (command === 'list_input_devices') return Promise.resolve(mockDevices);
       if (command === 'check_model_status') return Promise.resolve(mockModelStatusAvailable);
@@ -848,11 +851,7 @@ describe('Audio Quality', () => {
     });
 
     render(<App />);
-    await dismissChecklist();
-
-    await waitFor(() => {
-      expect(screen.getByText('Start')).toBeInTheDocument();
-    });
+    await waitForAppReady();
 
     act(() => {
       listenHelper.emit('session_status', mockRecordingStatus);
@@ -860,11 +859,12 @@ describe('Audio Quality', () => {
     });
 
     await waitFor(() => {
-      expect(screen.getByText('Fair')).toBeInTheDocument();
+      const statusBars = document.querySelector('.status-bars');
+      expect(statusBars).toHaveClass('fair');
     });
   });
 
-  it('shows "Poor" badge for clipped audio', async () => {
+  it('shows "poor" status bars for clipped audio', async () => {
     mockInvoke.mockImplementation((command: string) => {
       if (command === 'list_input_devices') return Promise.resolve(mockDevices);
       if (command === 'check_model_status') return Promise.resolve(mockModelStatusAvailable);
@@ -874,11 +874,7 @@ describe('Audio Quality', () => {
     });
 
     render(<App />);
-    await dismissChecklist();
-
-    await waitFor(() => {
-      expect(screen.getByText('Start')).toBeInTheDocument();
-    });
+    await waitForAppReady();
 
     act(() => {
       listenHelper.emit('session_status', mockRecordingStatus);
@@ -886,204 +882,12 @@ describe('Audio Quality', () => {
     });
 
     await waitFor(() => {
-      expect(screen.getByText('Poor')).toBeInTheDocument();
+      const statusBars = document.querySelector('.status-bars');
+      expect(statusBars).toHaveClass('poor');
     });
   });
 
-  it('shows suggestion to move microphone closer for quiet audio', async () => {
-    mockInvoke.mockImplementation((command: string) => {
-      if (command === 'list_input_devices') return Promise.resolve(mockDevices);
-      if (command === 'check_model_status') return Promise.resolve(mockModelStatusAvailable);
-      if (command === 'get_settings') return Promise.resolve(mockSettings);
-      if (command === 'run_checklist') return Promise.resolve({ checks: [], all_passed: true, can_start: true, summary: 'Ready' });
-      return Promise.reject(new Error('Unknown command'));
-    });
-
-    render(<App />);
-    await dismissChecklist();
-
-    await waitFor(() => {
-      expect(screen.getByText('Start')).toBeInTheDocument();
-    });
-
-    act(() => {
-      listenHelper.emit('session_status', mockRecordingStatus);
-      listenHelper.emit('audio_quality', mockAudioQualityQuiet);
-    });
-
-    await waitFor(() => {
-      expect(screen.getByText('Move microphone closer')).toBeInTheDocument();
-    });
-  });
-
-  it('shows suggestion to reduce background noise for low SNR', async () => {
-    mockInvoke.mockImplementation((command: string) => {
-      if (command === 'list_input_devices') return Promise.resolve(mockDevices);
-      if (command === 'check_model_status') return Promise.resolve(mockModelStatusAvailable);
-      if (command === 'get_settings') return Promise.resolve(mockSettings);
-      if (command === 'run_checklist') return Promise.resolve({ checks: [], all_passed: true, can_start: true, summary: 'Ready' });
-      return Promise.reject(new Error('Unknown command'));
-    });
-
-    render(<App />);
-    await dismissChecklist();
-
-    await waitFor(() => {
-      expect(screen.getByText('Start')).toBeInTheDocument();
-    });
-
-    act(() => {
-      listenHelper.emit('session_status', mockRecordingStatus);
-      listenHelper.emit('audio_quality', mockAudioQualityNoisy);
-    });
-
-    await waitFor(() => {
-      expect(screen.getByText('Reduce background noise')).toBeInTheDocument();
-    });
-  });
-
-  it('shows suggestion about audio gaps for dropouts', async () => {
-    mockInvoke.mockImplementation((command: string) => {
-      if (command === 'list_input_devices') return Promise.resolve(mockDevices);
-      if (command === 'check_model_status') return Promise.resolve(mockModelStatusAvailable);
-      if (command === 'get_settings') return Promise.resolve(mockSettings);
-      if (command === 'run_checklist') return Promise.resolve({ checks: [], all_passed: true, can_start: true, summary: 'Ready' });
-      return Promise.reject(new Error('Unknown command'));
-    });
-
-    render(<App />);
-    await dismissChecklist();
-
-    await waitFor(() => {
-      expect(screen.getByText('Start')).toBeInTheDocument();
-    });
-
-    act(() => {
-      listenHelper.emit('session_status', mockRecordingStatus);
-      listenHelper.emit('audio_quality', mockAudioQualityDropout);
-    });
-
-    await waitFor(() => {
-      expect(screen.getByText('Audio gaps detected - check connection')).toBeInTheDocument();
-    });
-  });
-
-  it('shows clips count when audio is clipped', async () => {
-    mockInvoke.mockImplementation((command: string) => {
-      if (command === 'list_input_devices') return Promise.resolve(mockDevices);
-      if (command === 'check_model_status') return Promise.resolve(mockModelStatusAvailable);
-      if (command === 'get_settings') return Promise.resolve(mockSettings);
-      if (command === 'run_checklist') return Promise.resolve({ checks: [], all_passed: true, can_start: true, summary: 'Ready' });
-      return Promise.reject(new Error('Unknown command'));
-    });
-
-    render(<App />);
-    await dismissChecklist();
-
-    await waitFor(() => {
-      expect(screen.getByText('Start')).toBeInTheDocument();
-    });
-
-    act(() => {
-      listenHelper.emit('session_status', mockRecordingStatus);
-      listenHelper.emit('audio_quality', mockAudioQualityClipped);
-    });
-
-    await waitFor(() => {
-      expect(screen.getByText('Clips')).toBeInTheDocument();
-      expect(screen.getByText('50')).toBeInTheDocument();
-    });
-  });
-
-  it('shows drops count when there are dropouts', async () => {
-    mockInvoke.mockImplementation((command: string) => {
-      if (command === 'list_input_devices') return Promise.resolve(mockDevices);
-      if (command === 'check_model_status') return Promise.resolve(mockModelStatusAvailable);
-      if (command === 'get_settings') return Promise.resolve(mockSettings);
-      if (command === 'run_checklist') return Promise.resolve({ checks: [], all_passed: true, can_start: true, summary: 'Ready' });
-      return Promise.reject(new Error('Unknown command'));
-    });
-
-    render(<App />);
-    await dismissChecklist();
-
-    await waitFor(() => {
-      expect(screen.getByText('Start')).toBeInTheDocument();
-    });
-
-    act(() => {
-      listenHelper.emit('session_status', mockRecordingStatus);
-      listenHelper.emit('audio_quality', mockAudioQualityDropout);
-    });
-
-    await waitFor(() => {
-      expect(screen.getByText('Drops')).toBeInTheDocument();
-      expect(screen.getByText('3')).toBeInTheDocument();
-    });
-  });
-
-  it('displays Level and SNR metrics', async () => {
-    mockInvoke.mockImplementation((command: string) => {
-      if (command === 'list_input_devices') return Promise.resolve(mockDevices);
-      if (command === 'check_model_status') return Promise.resolve(mockModelStatusAvailable);
-      if (command === 'get_settings') return Promise.resolve(mockSettings);
-      if (command === 'run_checklist') return Promise.resolve({ checks: [], all_passed: true, can_start: true, summary: 'Ready' });
-      return Promise.reject(new Error('Unknown command'));
-    });
-
-    render(<App />);
-    await dismissChecklist();
-
-    await waitFor(() => {
-      expect(screen.getByText('Start')).toBeInTheDocument();
-    });
-
-    act(() => {
-      listenHelper.emit('session_status', mockRecordingStatus);
-      listenHelper.emit('audio_quality', mockAudioQualityGood);
-    });
-
-    await waitFor(() => {
-      expect(screen.getByText('Level')).toBeInTheDocument();
-      expect(screen.getByText('SNR')).toBeInTheDocument();
-      expect(screen.getByText('-18 dB')).toBeInTheDocument();
-      expect(screen.getByText('25 dB')).toBeInTheDocument();
-    });
-  });
-
-  it('does not show suggestion for good audio quality', async () => {
-    mockInvoke.mockImplementation((command: string) => {
-      if (command === 'list_input_devices') return Promise.resolve(mockDevices);
-      if (command === 'check_model_status') return Promise.resolve(mockModelStatusAvailable);
-      if (command === 'get_settings') return Promise.resolve(mockSettings);
-      if (command === 'run_checklist') return Promise.resolve({ checks: [], all_passed: true, can_start: true, summary: 'Ready' });
-      return Promise.reject(new Error('Unknown command'));
-    });
-
-    render(<App />);
-    await dismissChecklist();
-
-    await waitFor(() => {
-      expect(screen.getByText('Start')).toBeInTheDocument();
-    });
-
-    act(() => {
-      listenHelper.emit('session_status', mockRecordingStatus);
-      listenHelper.emit('audio_quality', mockAudioQualityGood);
-    });
-
-    await waitFor(() => {
-      expect(screen.getByText('Audio Quality')).toBeInTheDocument();
-    });
-
-    // Should not show any suggestion
-    expect(screen.queryByText('Move microphone closer')).not.toBeInTheDocument();
-    expect(screen.queryByText('Reduce background noise')).not.toBeInTheDocument();
-    expect(screen.queryByText(/Audio gaps/)).not.toBeInTheDocument();
-    expect(screen.queryByText(/Speak softer/)).not.toBeInTheDocument();
-  });
-
-  it('can collapse and expand Audio Quality section', async () => {
+  it('shows details popover when status bars are clicked', async () => {
     const user = userEvent.setup();
     mockInvoke.mockImplementation((command: string) => {
       if (command === 'list_input_devices') return Promise.resolve(mockDevices);
@@ -1094,11 +898,7 @@ describe('Audio Quality', () => {
     });
 
     render(<App />);
-    await dismissChecklist();
-
-    await waitFor(() => {
-      expect(screen.getByText('Start')).toBeInTheDocument();
-    });
+    await waitForAppReady();
 
     act(() => {
       listenHelper.emit('session_status', mockRecordingStatus);
@@ -1106,24 +906,122 @@ describe('Audio Quality', () => {
     });
 
     await waitFor(() => {
-      expect(screen.getByText('Audio Quality')).toBeInTheDocument();
-      expect(screen.getByText('Level')).toBeInTheDocument();
+      expect(document.querySelector('.status-bars')).toBeInTheDocument();
     });
 
-    // Click to collapse
-    await user.click(screen.getByText('Audio Quality'));
+    // Click status bars to open popover
+    const statusBars = document.querySelector('.status-bars') as HTMLElement;
+    await user.click(statusBars);
 
-    // Level should be hidden
     await waitFor(() => {
-      const content = document.querySelector('.audio-quality-content');
-      expect(content).toBeNull();
+      expect(document.querySelector('.recording-details-popover')).toBeInTheDocument();
+      expect(screen.getByText('Level')).toBeInTheDocument();
+      expect(screen.getByText('SNR')).toBeInTheDocument();
+    });
+  });
+
+  it('shows clips count in popover when audio is clipped', async () => {
+    const user = userEvent.setup();
+    mockInvoke.mockImplementation((command: string) => {
+      if (command === 'list_input_devices') return Promise.resolve(mockDevices);
+      if (command === 'check_model_status') return Promise.resolve(mockModelStatusAvailable);
+      if (command === 'get_settings') return Promise.resolve(mockSettings);
+      if (command === 'run_checklist') return Promise.resolve({ checks: [], all_passed: true, can_start: true, summary: 'Ready' });
+      return Promise.reject(new Error('Unknown command'));
     });
 
-    // Click to expand
-    await user.click(screen.getByText('Audio Quality'));
+    render(<App />);
+    await waitForAppReady();
+
+    act(() => {
+      listenHelper.emit('session_status', mockRecordingStatus);
+      listenHelper.emit('audio_quality', mockAudioQualityClipped);
+    });
+
+    await waitFor(() => {
+      expect(document.querySelector('.status-bars')).toBeInTheDocument();
+    });
+
+    // Click status bars to open popover
+    const statusBars = document.querySelector('.status-bars') as HTMLElement;
+    await user.click(statusBars);
+
+    await waitFor(() => {
+      expect(screen.getByText('Clips')).toBeInTheDocument();
+      expect(screen.getByText('50')).toBeInTheDocument();
+    });
+  });
+
+  it('displays Level and SNR metrics in popover', async () => {
+    const user = userEvent.setup();
+    mockInvoke.mockImplementation((command: string) => {
+      if (command === 'list_input_devices') return Promise.resolve(mockDevices);
+      if (command === 'check_model_status') return Promise.resolve(mockModelStatusAvailable);
+      if (command === 'get_settings') return Promise.resolve(mockSettings);
+      if (command === 'run_checklist') return Promise.resolve({ checks: [], all_passed: true, can_start: true, summary: 'Ready' });
+      return Promise.reject(new Error('Unknown command'));
+    });
+
+    render(<App />);
+    await waitForAppReady();
+
+    act(() => {
+      listenHelper.emit('session_status', mockRecordingStatus);
+      listenHelper.emit('audio_quality', mockAudioQualityGood);
+    });
+
+    await waitFor(() => {
+      expect(document.querySelector('.status-bars')).toBeInTheDocument();
+    });
+
+    // Click status bars to open popover
+    const statusBars = document.querySelector('.status-bars') as HTMLElement;
+    await user.click(statusBars);
 
     await waitFor(() => {
       expect(screen.getByText('Level')).toBeInTheDocument();
+      expect(screen.getByText('SNR')).toBeInTheDocument();
+      expect(screen.getByText('-18 dB')).toBeInTheDocument();
+      expect(screen.getByText('25 dB')).toBeInTheDocument();
+    });
+  });
+
+  it('can toggle details popover', async () => {
+    const user = userEvent.setup();
+    mockInvoke.mockImplementation((command: string) => {
+      if (command === 'list_input_devices') return Promise.resolve(mockDevices);
+      if (command === 'check_model_status') return Promise.resolve(mockModelStatusAvailable);
+      if (command === 'get_settings') return Promise.resolve(mockSettings);
+      if (command === 'run_checklist') return Promise.resolve({ checks: [], all_passed: true, can_start: true, summary: 'Ready' });
+      return Promise.reject(new Error('Unknown command'));
+    });
+
+    render(<App />);
+    await waitForAppReady();
+
+    act(() => {
+      listenHelper.emit('session_status', mockRecordingStatus);
+      listenHelper.emit('audio_quality', mockAudioQualityGood);
+    });
+
+    await waitFor(() => {
+      expect(document.querySelector('.status-bars')).toBeInTheDocument();
+    });
+
+    const statusBars = document.querySelector('.status-bars') as HTMLElement;
+
+    // Click to open popover
+    await user.click(statusBars);
+
+    await waitFor(() => {
+      expect(document.querySelector('.recording-details-popover')).toBeInTheDocument();
+    });
+
+    // Click again to close popover
+    await user.click(statusBars);
+
+    await waitFor(() => {
+      expect(document.querySelector('.recording-details-popover')).not.toBeInTheDocument();
     });
   });
 });

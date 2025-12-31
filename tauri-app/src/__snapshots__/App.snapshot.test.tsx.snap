@@ -2,7 +2,7 @@
 
 exports[`App Snapshots > renders completed state correctly 1`] = `
 <div
-  class="sidebar"
+  class="sidebar mode-review"
 >
   <header
     class="header"
@@ -88,153 +88,132 @@ exports[`App Snapshots > renders completed state correctly 1`] = `
       </button>
     </div>
   </header>
-  <section
-    class="record-section"
-  >
-    <button
-      class="record-button idle"
-    >
-      <span
-        class="icon"
-      />
-      <span
-        class="label"
-      >
-        Start
-      </span>
-    </button>
-    <div
-      class="timer "
-    >
-      00:00
-    </div>
-  </section>
-  <section
-    class="biomarkers-section"
-  >
-    <div
-      aria-expanded="true"
-      class="biomarkers-header"
-      role="button"
-      tabindex="0"
-    >
-      <div
-        class="biomarkers-header-left"
-      >
-        <span
-          class="chevron "
-        >
-          ▼
-        </span>
-        <span
-          class="biomarkers-title"
-        >
-          Biomarkers
-        </span>
-      </div>
-    </div>
-    <div
-      class="biomarkers-content"
-    >
-      <div
-        class="biomarkers-placeholder"
-      >
-        Listening...
-      </div>
-    </div>
-  </section>
-  <section
-    class="transcript-section"
-  >
-    <div
-      class="transcript-header"
-    >
-      <div
-        aria-expanded="true"
-        class="transcript-header-left"
-        role="button"
-        tabindex="0"
-      >
-        <span
-          aria-hidden="true"
-          class="chevron "
-        >
-          ▼
-        </span>
-        <span
-          class="transcript-title"
-        >
-          Transcript
-        </span>
-      </div>
-      <button
-        class="copy-btn "
-      >
-        Copy
-      </button>
-    </div>
-    <div
-      class="transcript-content "
-    >
-      <div
-        class="transcript-text"
-      >
-        <p>
-          Final transcript text here.
-        </p>
-      </div>
-    </div>
-  </section>
-  <section
-    class="soap-section"
-  >
-    <div
-      aria-expanded="true"
-      class="soap-header"
-      role="button"
-      tabindex="0"
-    >
-      <div
-        class="soap-header-left"
-      >
-        <span
-          class="chevron "
-        >
-          ▼
-        </span>
-        <span
-          class="soap-title"
-        >
-          SOAP Note
-        </span>
-      </div>
-    </div>
-    <div
-      class="soap-content"
-    >
-      <button
-        class="btn btn-generate"
-        disabled=""
-      >
-        Ollama not connected
-      </button>
-    </div>
-  </section>
   <div
-    class="action-bar"
+    class="review-mode"
   >
-    <button
-      class="btn btn-primary"
+    <div
+      class="session-summary"
     >
-      New Session
-    </button>
+      <span
+        class="summary-check"
+      >
+        ✓
+      </span>
+      <span
+        class="summary-label"
+      >
+        Complete
+      </span>
+      <span
+        class="summary-duration"
+      >
+        0:30
+      </span>
+      <span
+        class="summary-quality quality-unknown"
+      >
+        Unknown
+      </span>
+    </div>
+    <section
+      class="review-transcript-section"
+    >
+      <div
+        class="review-section-header"
+      >
+        <button
+          aria-expanded="true"
+          aria-label="Collapse Transcript section"
+          class="review-section-header-left"
+        >
+          <span
+            class="chevron "
+          >
+            ▼
+          </span>
+          <span
+            class="review-section-title"
+          >
+            Transcript
+          </span>
+        </button>
+        <div
+          class="review-section-actions"
+        >
+          <button
+            class="btn-small "
+          >
+            Edit
+          </button>
+          <button
+            class="btn-small copy-btn "
+          >
+            Copy
+          </button>
+        </div>
+      </div>
+      <div
+        class="review-transcript-content"
+      >
+        <div
+          class="transcript-display"
+        >
+          <p>
+            Final transcript text here.
+          </p>
+        </div>
+      </div>
+    </section>
+    <section
+      class="review-soap-section"
+    >
+      <div
+        class="review-section-header"
+      >
+        <button
+          aria-expanded="true"
+          aria-label="Collapse SOAP Note section"
+          class="review-section-header-left"
+        >
+          <span
+            class="chevron "
+          >
+            ▼
+          </span>
+          <span
+            class="review-section-title"
+          >
+            SOAP Note
+          </span>
+        </button>
+      </div>
+      <div
+        class="review-soap-content"
+      >
+        <button
+          class="btn-generate"
+          disabled=""
+        >
+          Ollama not connected
+        </button>
+      </div>
+    </section>
+    <div
+      class="action-bar"
+    >
+      <button
+        class="btn-primary"
+      >
+        New Session
+      </button>
+    </div>
   </div>
 </div>
 `;
 
 exports[`App Snapshots > renders error state correctly 1`] = `
 <div
-  class="sidebar"
+  class="sidebar mode-ready"
 >
   <header
     class="header"
@@ -321,229 +300,50 @@ exports[`App Snapshots > renders error state correctly 1`] = `
     </div>
   </header>
   <div
-    class="error-banner"
+    class="ready-mode"
   >
-    Microphone access denied
-  </div>
-  <section
-    class="record-section"
-  >
+    <div
+      class="mic-preview"
+    >
+      <div
+        class="mic-level-bar"
+      >
+        <div
+          class="mic-level-fill"
+          style="width: 0%;"
+        />
+      </div>
+    </div>
     <button
-      class="record-button idle"
+      aria-label="Start recording"
+      class="start-button-large disabled"
+      disabled=""
     >
       <span
-        class="icon"
+        class="start-icon"
       />
       <span
-        class="label"
+        class="start-label"
       >
-        Start
+        START
       </span>
     </button>
     <div
-      class="timer "
+      class="ready-status"
     >
-      00:00
-    </div>
-  </section>
-  <section
-    class="transcript-section"
-  >
-    <div
-      class="transcript-header"
-    >
-      <div
-        aria-expanded="true"
-        class="transcript-header-left"
-        role="button"
-        tabindex="0"
+      <span
+        class="status-error"
       >
-        <span
-          aria-hidden="true"
-          class="chevron "
-        >
-          ▼
-        </span>
-        <span
-          class="transcript-title"
-        >
-          Transcript
-        </span>
-      </div>
-      <button
-        class="copy-btn "
-        disabled=""
-      >
-        Copy
-      </button>
+        Microphone access denied
+      </span>
     </div>
-    <div
-      class="transcript-content "
-    >
-      <div
-        class="transcript-placeholder"
-      />
-    </div>
-  </section>
+  </div>
 </div>
 `;
 
 exports[`App Snapshots > renders idle state correctly 1`] = `
 <div
-  class="sidebar"
->
-  <header
-    class="header"
-  >
-    <div
-      class="header-left"
-    >
-      <span
-        class="status-dot idle"
-      />
-      <span
-        class="app-title"
-      >
-        Scribe
-      </span>
-    </div>
-    <div
-      class="header-buttons"
-    >
-      <button
-        aria-label="Session History"
-        class="history-btn"
-        title="Session History"
-      >
-        <svg
-          fill="none"
-          height="18"
-          stroke="currentColor"
-          stroke-width="2"
-          viewBox="0 0 24 24"
-          width="18"
-        >
-          <rect
-            height="18"
-            rx="2"
-            ry="2"
-            width="18"
-            x="3"
-            y="4"
-          />
-          <line
-            x1="16"
-            x2="16"
-            y1="2"
-            y2="6"
-          />
-          <line
-            x1="8"
-            x2="8"
-            y1="2"
-            y2="6"
-          />
-          <line
-            x1="3"
-            x2="21"
-            y1="10"
-            y2="10"
-          />
-        </svg>
-      </button>
-      <button
-        aria-label="Settings"
-        class="settings-btn "
-        title="Settings"
-      >
-        <svg
-          fill="none"
-          height="18"
-          stroke="currentColor"
-          stroke-width="2"
-          viewBox="0 0 24 24"
-          width="18"
-        >
-          <circle
-            cx="12"
-            cy="12"
-            r="3"
-          />
-          <path
-            d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"
-          />
-        </svg>
-      </button>
-    </div>
-  </header>
-  <section
-    class="record-section"
-  >
-    <button
-      class="record-button idle"
-    >
-      <span
-        class="icon"
-      />
-      <span
-        class="label"
-      >
-        Start
-      </span>
-    </button>
-    <div
-      class="timer "
-    >
-      00:00
-    </div>
-  </section>
-  <section
-    class="transcript-section"
-  >
-    <div
-      class="transcript-header"
-    >
-      <div
-        aria-expanded="true"
-        class="transcript-header-left"
-        role="button"
-        tabindex="0"
-      >
-        <span
-          aria-hidden="true"
-          class="chevron "
-        >
-          ▼
-        </span>
-        <span
-          class="transcript-title"
-        >
-          Transcript
-        </span>
-      </div>
-      <button
-        class="copy-btn "
-        disabled=""
-      >
-        Copy
-      </button>
-    </div>
-    <div
-      class="transcript-content "
-    >
-      <div
-        class="transcript-placeholder"
-      >
-        Tap Start to begin
-      </div>
-    </div>
-  </section>
-</div>
-`;
-
-exports[`App Snapshots > renders model unavailable warning correctly 1`] = `
-<div
-  class="sidebar"
+  class="sidebar mode-ready"
 >
   <header
     class="header"
@@ -630,79 +430,184 @@ exports[`App Snapshots > renders model unavailable warning correctly 1`] = `
     </div>
   </header>
   <div
-    class="warning-banner"
+    class="ready-mode"
   >
-    Model not found. Check settings.
-  </div>
-  <section
-    class="record-section"
-  >
+    <div
+      class="mic-preview"
+    >
+      <div
+        class="mic-level-bar"
+      >
+        <div
+          class="mic-level-fill"
+          style="width: 0%;"
+        />
+      </div>
+    </div>
     <button
-      class="record-button idle"
-      disabled=""
+      aria-label="Start recording"
+      class="start-button-large ready"
     >
       <span
-        class="icon"
+        class="start-icon"
       />
       <span
-        class="label"
+        class="start-label"
       >
-        Start
+        START
       </span>
     </button>
     <div
-      class="timer "
+      class="ready-status"
     >
-      00:00
+      <span
+        class="status-ready"
+      >
+        Ready to record
+        <span
+          class="model-info"
+        >
+          small
+        </span>
+      </span>
     </div>
-  </section>
-  <section
-    class="transcript-section"
+  </div>
+</div>
+`;
+
+exports[`App Snapshots > renders model unavailable warning correctly 1`] = `
+<div
+  class="sidebar mode-ready"
+>
+  <header
+    class="header"
   >
     <div
-      class="transcript-header"
+      class="header-left"
     >
-      <div
-        aria-expanded="true"
-        class="transcript-header-left"
-        role="button"
-        tabindex="0"
+      <span
+        class="status-dot idle"
+      />
+      <span
+        class="app-title"
       >
-        <span
-          aria-hidden="true"
-          class="chevron "
-        >
-          ▼
-        </span>
-        <span
-          class="transcript-title"
-        >
-          Transcript
-        </span>
-      </div>
-      <button
-        class="copy-btn "
-        disabled=""
-      >
-        Copy
-      </button>
+        Scribe
+      </span>
     </div>
     <div
-      class="transcript-content "
+      class="header-buttons"
+    >
+      <button
+        aria-label="Session History"
+        class="history-btn"
+        title="Session History"
+      >
+        <svg
+          fill="none"
+          height="18"
+          stroke="currentColor"
+          stroke-width="2"
+          viewBox="0 0 24 24"
+          width="18"
+        >
+          <rect
+            height="18"
+            rx="2"
+            ry="2"
+            width="18"
+            x="3"
+            y="4"
+          />
+          <line
+            x1="16"
+            x2="16"
+            y1="2"
+            y2="6"
+          />
+          <line
+            x1="8"
+            x2="8"
+            y1="2"
+            y2="6"
+          />
+          <line
+            x1="3"
+            x2="21"
+            y1="10"
+            y2="10"
+          />
+        </svg>
+      </button>
+      <button
+        aria-label="Settings"
+        class="settings-btn "
+        title="Settings"
+      >
+        <svg
+          fill="none"
+          height="18"
+          stroke="currentColor"
+          stroke-width="2"
+          viewBox="0 0 24 24"
+          width="18"
+        >
+          <circle
+            cx="12"
+            cy="12"
+            r="3"
+          />
+          <path
+            d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"
+          />
+        </svg>
+      </button>
+    </div>
+  </header>
+  <div
+    class="ready-mode"
+  >
+    <div
+      class="mic-preview"
     >
       <div
-        class="transcript-placeholder"
+        class="mic-level-bar"
       >
-        Tap Start to begin
+        <div
+          class="mic-level-fill"
+          style="width: 0%;"
+        />
       </div>
     </div>
-  </section>
+    <button
+      aria-label="Start recording"
+      class="start-button-large disabled"
+      disabled=""
+    >
+      <span
+        class="start-icon"
+      />
+      <span
+        class="start-label"
+      >
+        START
+      </span>
+    </button>
+    <div
+      class="ready-status"
+    >
+      <span
+        class="status-error"
+      >
+        Model not found
+      </span>
+    </div>
+  </div>
 </div>
 `;
 
 exports[`App Snapshots > renders recording state correctly 1`] = `
 <div
-  class="sidebar"
+  class="sidebar mode-recording"
 >
   <header
     class="header"
@@ -790,108 +695,68 @@ exports[`App Snapshots > renders recording state correctly 1`] = `
       </button>
     </div>
   </header>
-  <section
-    class="record-section"
+  <div
+    class="recording-mode"
   >
-    <button
-      class="record-button recording"
+    <div
+      class="recording-indicator"
     >
       <span
-        class="icon"
+        class="rec-dot"
       />
       <span
-        class="label"
+        class="rec-text"
       >
-        Stop
+        REC
       </span>
-    </button>
-    <div
-      class="timer active"
-    >
-      00:00
-    </div>
-  </section>
-  <section
-    class="biomarkers-section"
-  >
-    <div
-      aria-expanded="true"
-      class="biomarkers-header"
-      role="button"
-      tabindex="0"
-    >
       <div
-        class="biomarkers-header-left"
-      >
-        <span
-          class="chevron "
-        >
-          ▼
-        </span>
-        <span
-          class="biomarkers-title"
-        >
-          Biomarkers
-        </span>
-      </div>
-    </div>
-    <div
-      class="biomarkers-content"
-    >
-      <div
-        class="biomarkers-placeholder"
-      >
-        Listening...
-      </div>
-    </div>
-  </section>
-  <section
-    class="transcript-section"
-  >
-    <div
-      class="transcript-header"
-    >
-      <div
-        aria-expanded="true"
-        class="transcript-header-left"
-        role="button"
-        tabindex="0"
-      >
-        <span
-          aria-hidden="true"
-          class="chevron "
-        >
-          ▼
-        </span>
-        <span
-          class="transcript-title"
-        >
-          Transcript
-        </span>
-      </div>
+        class="spacer"
+      />
       <button
-        class="copy-btn "
-        disabled=""
+        aria-label="Audio quality status - tap for details"
+        class="status-bars good"
       >
-        Copy
+        <span
+          class="bar"
+        />
+        <span
+          class="bar"
+        />
+        <span
+          class="bar"
+        />
       </button>
     </div>
     <div
-      class="transcript-content "
+      class="timer-large"
     >
-      <div
-        class="transcript-placeholder"
-      >
-        Listening...
-      </div>
+      0:00
     </div>
-  </section>
+    <button
+      aria-label="Stop recording"
+      class="stop-button "
+    >
+      <span
+        class="stop-icon"
+      />
+      <span
+        class="stop-label"
+      >
+        STOP
+      </span>
+    </button>
+    <button
+      class="transcript-toggle "
+    >
+      Show Transcript
+    </button>
+  </div>
 </div>
 `;
 
 exports[`App Snapshots > renders stopping state correctly 1`] = `
 <div
-  class="sidebar"
+  class="sidebar mode-recording"
 >
   <header
     class="header"
@@ -979,75 +844,69 @@ exports[`App Snapshots > renders stopping state correctly 1`] = `
       </button>
     </div>
   </header>
-  <section
-    class="record-section"
+  <div
+    class="recording-mode"
   >
-    <button
-      class="record-button stopping"
-      disabled=""
+    <div
+      class="recording-indicator"
     >
       <span
-        class="icon"
+        class="rec-dot"
       />
       <span
-        class="label"
+        class="rec-text"
       >
-        ...
+        REC
       </span>
-    </button>
-    <div
-      class="timer active"
-    >
-      00:00
-    </div>
-  </section>
-  <section
-    class="transcript-section"
-  >
-    <div
-      class="transcript-header"
-    >
       <div
-        aria-expanded="true"
-        class="transcript-header-left"
-        role="button"
-        tabindex="0"
-      >
-        <span
-          aria-hidden="true"
-          class="chevron "
-        >
-          ▼
-        </span>
-        <span
-          class="transcript-title"
-        >
-          Transcript
-        </span>
-      </div>
+        class="spacer"
+      />
       <button
-        class="copy-btn "
-        disabled=""
+        aria-label="Audio quality status - tap for details"
+        class="status-bars good"
       >
-        Copy
+        <span
+          class="bar"
+        />
+        <span
+          class="bar"
+        />
+        <span
+          class="bar"
+        />
       </button>
     </div>
     <div
-      class="transcript-content "
+      class="timer-large"
     >
-      <div
-        class="transcript-placeholder"
-      >
-        Processing...
-      </div>
+      0:00
     </div>
-  </section>
+    <button
+      aria-label="Stopping..."
+      class="stop-button stopping"
+      disabled=""
+    >
+      <span
+        class="stop-icon"
+      />
+      <span
+        class="stop-label"
+      >
+        Stopping...
+      </span>
+    </button>
+    <button
+      class="transcript-toggle "
+    >
+      Show Transcript
+    </button>
+  </div>
 </div>
 `;
 
 exports[`App Snapshots > renders with transcript correctly 1`] = `
 <div
-  class="sidebar"
+  class="sidebar mode-recording"
 >
   <header
     class="header"
@@ -1135,110 +994,77 @@ exports[`App Snapshots > renders with transcript correctly 1`] = `
       </button>
     </div>
   </header>
-  <section
-    class="record-section"
+  <div
+    class="recording-mode"
   >
-    <button
-      class="record-button recording"
+    <div
+      class="recording-indicator"
     >
       <span
-        class="icon"
+        class="rec-dot"
       />
       <span
-        class="label"
+        class="rec-text"
       >
-        Stop
+        REC
       </span>
-    </button>
-    <div
-      class="timer active"
-    >
-      00:00
-    </div>
-  </section>
-  <section
-    class="biomarkers-section"
-  >
-    <div
-      aria-expanded="true"
-      class="biomarkers-header"
-      role="button"
-      tabindex="0"
-    >
       <div
-        class="biomarkers-header-left"
-      >
-        <span
-          class="chevron "
-        >
-          ▼
-        </span>
-        <span
-          class="biomarkers-title"
-        >
-          Biomarkers
-        </span>
-      </div>
-    </div>
-    <div
-      class="biomarkers-content"
-    >
-      <div
-        class="biomarkers-placeholder"
-      >
-        Listening...
-      </div>
-    </div>
-  </section>
-  <section
-    class="transcript-section"
-  >
-    <div
-      class="transcript-header"
-    >
-      <div
-        aria-expanded="true"
-        class="transcript-header-left"
-        role="button"
-        tabindex="0"
-      >
-        <span
-          aria-hidden="true"
-          class="chevron "
-        >
-          ▼
-        </span>
-        <span
-          class="transcript-title"
-        >
-          Transcript
-        </span>
-      </div>
+        class="spacer"
+      />
       <button
-        class="copy-btn "
+        aria-label="Audio quality status - tap for details"
+        class="status-bars good"
       >
-        Copy
+        <span
+          class="bar"
+        />
+        <span
+          class="bar"
+        />
+        <span
+          class="bar"
+        />
       </button>
     </div>
     <div
-      class="transcript-content "
+      class="timer-large"
+    >
+      0:00
+    </div>
+    <button
+      aria-label="Stop recording"
+      class="stop-button "
+    >
+      <span
+        class="stop-icon"
+      />
+      <span
+        class="stop-label"
+      >
+        STOP
+      </span>
+    </button>
+    <button
+      class="transcript-toggle active"
+    >
+      Hide Transcript
+    </button>
+    <div
+      class="transcript-preview"
     >
       <div
-        class="transcript-text"
+        class="transcript-preview-text"
       >
-        <p>
-          Hello, this is a test transcription.
-        </p>
-        <p>
-          This is the second paragraph.
-        </p>
-        <p
-          class="draft-text"
-        >
-          Still speaking...
-        </p>
+        Hello, this is a test transcription.
+
+This is the second paragraph.
+      </div>
+      <div
+        class="transcript-preview-draft"
+      >
+        Still speaking...
       </div>
     </div>
-  </section>
+  </div>
 </div>
 `;

@@ -187,13 +187,13 @@ export const mockAudioQualityQuiet: AudioQualitySnapshot = {
   total_samples: 16000,
 };
 
-// Clipped audio
+// Clipped audio (clipped_ratio >= 0.01 for 'poor' quality)
 export const mockAudioQualityClipped: AudioQualitySnapshot = {
   timestamp_ms: 1000,
   peak_db: 0,
   rms_db: -6,
   clipped_samples: 50,
-  clipped_ratio: 0.003,
+  clipped_ratio: 0.015,
   noise_floor_db: -40,
   snr_db: 20,
   silence_ratio: 0.1,

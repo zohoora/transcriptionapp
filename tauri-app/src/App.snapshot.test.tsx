@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import App from './App';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
@@ -31,12 +32,13 @@ function createStandardMock(overrides: Record<string, unknown> = {}) {
   };
 }
 
-// Helper to dismiss the checklist overlay by clicking Continue
-async function dismissChecklist() {
+// Helper to wait for the app to finish loading (checklist running completes)
+async function waitForAppReady() {
   await waitFor(() => {
-    expect(screen.getByText('Continue')).toBeInTheDocument();
-  });
-  fireEvent.click(screen.getByText('Continue'));
+    // In the new mode-based UI, when checks pass and app is ready,
+    // the START button should be available in ReadyMode
+    expect(screen.getByText('START')).toBeInTheDocument();
+  }, { timeout: 3000 });
 }
 
 describe('App Snapshots', () => {
@@ -51,11 +53,8 @@ describe('App Snapshots', () => {
   it('renders idle state correctly', async () => {
     mockInvoke.mockImplementation(createStandardMock());
 
-    const { container, findByText } = render(<App />);
-    await dismissChecklist();
-
-    // Wait for initialization
-    await findByText('Start');
+    const { container } = render(<App />);
+    await waitForAppReady();
 
     expect(container.firstChild).toMatchSnapshot();
   });
@@ -65,10 +64,10 @@ describe('App Snapshots', () => {
       check_model_status: mockModelStatusUnavailable,
     }));
 
-    const { container, findByText } = render(<App />);
-    await dismissChecklist();
-
-    await findByText(/Model not found/);
+    const { container } = render(<App />);
+    await waitFor(() => {
+      expect(screen.getByText(/Model not found/)).toBeInTheDocument();
+    }, { timeout: 3000 });
 
     expect(container.firstChild).toMatchSnapshot();
   });
@@ -77,9 +76,7 @@ describe('App Snapshots', () => {
     mockInvoke.mockImplementation(createStandardMock());
 
     const { container, findByText } = render(<App />);
-    await dismissChecklist();
-
-    await findByText('Start');
+    await waitForAppReady();
 
     // Emit recording status
     listenHelper.emit('session_status', {
@@ -89,18 +86,17 @@ describe('App Snapshots', () => {
       is_processing_behind: false,
     });
 
-    await findByText('Stop');
+    await findByText('STOP');
 
     expect(container.firstChild).toMatchSnapshot();
   });
 
   it('renders with transcript correctly', async () => {
+    const user = userEvent.setup();
     mockInvoke.mockImplementation(createStandardMock());
 
     const { container, findByText } = render(<App />);
-    await dismissChecklist();
-
-    await findByText('Start');
+    await waitForAppReady();
 
     // Emit recording status with transcript
     listenHelper.emit('session_status', {
@@ -116,7 +112,14 @@ describe('App Snapshots', () => {
       segment_count: 2,
     });
 
-    await findByText('Hello, this is a test transcription.');
+    // Click "Show Transcript" to reveal the preview (hidden by default in new UI)
+    await waitFor(() => {
+      expect(screen.getByText('Show Transcript')).toBeInTheDocument();
+    });
+    await user.click(screen.getByText('Show Transcript'));
+
+    // In recording mode, transcript is in a floating preview
+    await findByText(/Hello, this is a test transcription/);
 
     expect(container.firstChild).toMatchSnapshot();
   });
@@ -125,9 +128,7 @@ describe('App Snapshots', () => {
     mockInvoke.mockImplementation(createStandardMock());
 
     const { container, findByText } = render(<App />);
-    await dismissChecklist();
-
-    await findByText('Start');
+    await waitForAppReady();
 
     listenHelper.emit('session_status', {
       state: 'completed',
@@ -151,9 +152,7 @@ describe('App Snapshots', () => {
     mockInvoke.mockImplementation(createStandardMock());
 
     const { container, findByText } = render(<App />);
-    await dismissChecklist();
-
-    await findByText('Start');
+    await waitForAppReady();
 
     listenHelper.emit('session_status', {
       state: 'error',
@@ -172,9 +171,7 @@ describe('App Snapshots', () => {
     mockInvoke.mockImplementation(createStandardMock());
 
     const { container, findByText } = render(<App />);
-    await dismissChecklist();
-
-    await findByText('Start');
+    await waitForAppReady();
 
     listenHelper.emit('session_status', {
       state: 'stopping',
@@ -183,12 +180,12 @@ describe('App Snapshots', () => {
       is_processing_behind: false,
     });
 
-    // Wait for the button to show '...' (stopping state)
-    await findByText('...');
+    // In the new UI, stopping state shows "Stopping..." text
+    await findByText('Stopping...');
 
-    // Button should have stopping class
-    const recordButton = container.querySelector('.record-button');
-    expect(recordButton).toHaveClass('stopping');
+    // Button should be disabled during stopping
+    const stopButton = container.querySelector('.stop-button');
+    expect(stopButton).toBeDisabled();
 
     expect(container.firstChild).toMatchSnapshot();
   });

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { axe } from 'vitest-axe';
 import { toHaveNoViolations } from 'vitest-axe/matchers';
@@ -37,12 +37,13 @@ function createStandardMock(overrides: Record<string, unknown> = {}) {
   };
 }
 
-// Helper to dismiss the checklist overlay by clicking Continue
-async function dismissChecklist() {
+// Helper to wait for the app to finish loading (checklist running completes)
+async function waitForAppReady() {
   await waitFor(() => {
-    expect(screen.getByText('Continue')).toBeInTheDocument();
-  });
-  fireEvent.click(screen.getByText('Continue'));
+    // In the new mode-based UI, when checks pass and app is ready,
+    // the START button should be available in ReadyMode
+    expect(screen.getByText('START')).toBeInTheDocument();
+  }, { timeout: 3000 });
 }
 
 describe('Accessibility Tests', () => {
@@ -57,9 +58,8 @@ describe('Accessibility Tests', () => {
   it('idle state has no accessibility violations', async () => {
     mockInvoke.mockImplementation(createStandardMock());
 
-    const { container, findByText } = render(<App />);
-    await dismissChecklist();
-    await findByText('Start');
+    const { container } = render(<App />);
+    await waitForAppReady();
 
     const results = await axe(container);
     expect(results).toHaveNoViolations();
@@ -69,8 +69,7 @@ describe('Accessibility Tests', () => {
     mockInvoke.mockImplementation(createStandardMock());
 
     const { container, findByText } = render(<App />);
-    await dismissChecklist();
-    await findByText('Start');
+    await waitForAppReady();
 
     listenHelper.emit('session_status', {
       state: 'recording',
@@ -79,18 +78,18 @@ describe('Accessibility Tests', () => {
       is_processing_behind: false,
     });
 
-    await findByText('Stop');
+    await findByText('STOP');
 
     const results = await axe(container);
     expect(results).toHaveNoViolations();
   });
 
   it('transcript display has no accessibility violations', async () => {
+    const user = userEvent.setup();
     mockInvoke.mockImplementation(createStandardMock());
 
     const { container, findByText } = render(<App />);
-    await dismissChecklist();
-    await findByText('Start');
+    await waitForAppReady();
 
     listenHelper.emit('session_status', {
       state: 'recording',
@@ -105,6 +104,12 @@ describe('Accessibility Tests', () => {
       segment_count: 2,
     });
 
+    // Click "Show Transcript" to reveal the preview (hidden by default in new UI)
+    await waitFor(() => {
+      expect(screen.getByText('Show Transcript')).toBeInTheDocument();
+    });
+    await user.click(screen.getByText('Show Transcript'));
+
     await findByText(/This is a test transcript/);
 
     const results = await axe(container);
@@ -115,8 +120,7 @@ describe('Accessibility Tests', () => {
     mockInvoke.mockImplementation(createStandardMock());
 
     const { container, findByText } = render(<App />);
-    await dismissChecklist();
-    await findByText('Start');
+    await waitForAppReady();
 
     listenHelper.emit('session_status', {
       state: 'error',
@@ -138,8 +142,9 @@ describe('Accessibility Tests', () => {
     }));
 
     const { container, findByText } = render(<App />);
-    await dismissChecklist();
-    await findByText(/Model not found/);
+    await waitFor(() => {
+      expect(screen.getByText(/Model not found/)).toBeInTheDocument();
+    }, { timeout: 3000 });
 
     const results = await axe(container);
     expect(results).toHaveNoViolations();
@@ -149,8 +154,7 @@ describe('Accessibility Tests', () => {
     mockInvoke.mockImplementation(createStandardMock());
 
     const { container, findByText } = render(<App />);
-    await dismissChecklist();
-    await findByText('Start');
+    await waitForAppReady();
 
     listenHelper.emit('session_status', {
       state: 'completed',
@@ -176,8 +180,7 @@ describe('Accessibility Tests', () => {
     mockInvoke.mockImplementation(createStandardMock());
 
     const { container, findByText, findByRole } = render(<App />);
-    await dismissChecklist();
-    await findByText('Start');
+    await waitForAppReady();
 
     // Open settings drawer
     const settingsBtn = await findByRole('button', { name: /settings/i });
@@ -194,9 +197,8 @@ describe('Accessibility Tests', () => {
     it('buttons are accessible', async () => {
       mockInvoke.mockImplementation(createStandardMock());
 
-      const { findByText, findByRole } = render(<App />);
-      await dismissChecklist();
-      await findByText('Start');
+      const { findByRole } = render(<App />);
+      await waitForAppReady();
 
       const startButton = await findByRole('button', { name: /start/i });
       expect(startButton).toBeInTheDocument();
@@ -206,9 +208,8 @@ describe('Accessibility Tests', () => {
     it('settings button is accessible', async () => {
       mockInvoke.mockImplementation(createStandardMock());
 
-      const { findByText, findByRole } = render(<App />);
-      await dismissChecklist();
-      await findByText('Start');
+      const { findByRole } = render(<App />);
+      await waitForAppReady();
 
       const settingsBtn = await findByRole('button', { name: /settings/i });
       expect(settingsBtn).toBeInTheDocument();
@@ -219,8 +220,7 @@ describe('Accessibility Tests', () => {
       mockInvoke.mockImplementation(createStandardMock());
 
       const { findByText, findByRole } = render(<App />);
-      await dismissChecklist();
-      await findByText('Start');
+      await waitForAppReady();
 
       // Open settings drawer
       const settingsBtn = await findByRole('button', { name: /settings/i });
@@ -236,12 +236,20 @@ describe('Accessibility Tests', () => {
     it('copy button has accessible name when visible', async () => {
       mockInvoke.mockImplementation(createStandardMock());
 
-      const { findByText, findByRole } = render(<App />);
-      await dismissChecklist();
-      await findByText('Start');
+      const { findByText } = render(<App />);
+      await waitForAppReady();
 
+      // Trigger recording mode
       listenHelper.emit('session_status', {
         state: 'recording',
+        provider: 'whisper',
+        elapsed_ms: 5000,
+        is_processing_behind: false,
+      });
+
+      // Then complete the session to get to review mode where Copy button appears
+      listenHelper.emit('session_status', {
+        state: 'completed',
         provider: 'whisper',
         elapsed_ms: 5000,
         is_processing_behind: false,
@@ -255,21 +263,38 @@ describe('Accessibility Tests', () => {
 
       await findByText('Copy');
 
-      const copyButton = await findByRole('button', { name: /copy/i });
+      // The copy button has the .copy-btn class and contains the text "Copy"
+      const copyButton = document.querySelector('.copy-btn');
       expect(copyButton).toBeInTheDocument();
+      expect(copyButton).toHaveTextContent('Copy');
     });
 
-    it('transcript header is clickable for collapse/expand', async () => {
+    it('transcript section header is clickable for collapse/expand', async () => {
       mockInvoke.mockImplementation(createStandardMock());
 
       const { findByText } = render(<App />);
-      await dismissChecklist();
-      await findByText('Start');
+      await waitForAppReady();
+
+      // Trigger completed state to see transcript in review mode
+      listenHelper.emit('session_status', {
+        state: 'completed',
+        provider: 'whisper',
+        elapsed_ms: 5000,
+        is_processing_behind: false,
+      });
+
+      listenHelper.emit('transcript_update', {
+        finalized_text: 'Some transcript text',
+        draft_text: null,
+        segment_count: 1,
+      });
 
       const transcriptHeader = await findByText('Transcript');
       expect(transcriptHeader).toBeInTheDocument();
-      // The clickable area is now transcript-header-left which contains the title
-      expect(transcriptHeader.closest('.transcript-header-left')).toBeTruthy();
+      // The clickable area is now a button with review-section-header-left class
+      const headerButton = transcriptHeader.closest('button.review-section-header-left');
+      expect(headerButton).toBeTruthy();
+      expect(headerButton).toHaveAttribute('aria-expanded', 'true');
     });
   });
 });
