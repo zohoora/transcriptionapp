@@ -9,6 +9,7 @@
 
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { invoke } from '@tauri-apps/api/core';
+import { listen } from '@tauri-apps/api/event';
 import { open } from '@tauri-apps/plugin-shell';
 import { onOpenUrl } from '@tauri-apps/plugin-deep-link';
 import type { AuthState, AuthUrl } from '../types';
@@ -57,7 +58,9 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
   // Set up deep link listener for OAuth callback
   useEffect(() => {
-    const unlisten = onOpenUrl((urls) => {
+    // Listen for deep links from the plugin (when app is already running)
+    const unlistenPlugin = onOpenUrl((urls) => {
+      console.log('Deep link received via plugin:', urls);
       for (const url of urls) {
         if (url.startsWith('fabricscribe://oauth/callback')) {
           handleOAuthCallback(url);
@@ -66,8 +69,18 @@ export function AuthProvider({ children }: AuthProviderProps) {
       }
     });
 
+    // Also listen for deep links from single-instance callback (when second instance tries to launch)
+    const unlistenEvent = listen<string>('deep-link', (event) => {
+      console.log('Deep link received via event:', event.payload);
+      const url = event.payload;
+      if (url.startsWith('fabricscribe://oauth/callback')) {
+        handleOAuthCallback(url);
+      }
+    });
+
     return () => {
-      unlisten.then(fn => fn());
+      unlistenPlugin.then(fn => fn());
+      unlistenEvent.then(fn => fn());
     };
   }, []);
 
