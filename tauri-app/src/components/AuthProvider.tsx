@@ -11,7 +11,7 @@ import React, { createContext, useContext, useState, useEffect, useCallback } fr
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { open } from '@tauri-apps/plugin-shell';
-import { onOpenUrl } from '@tauri-apps/plugin-deep-link';
+import { onOpenUrl, getCurrent } from '@tauri-apps/plugin-deep-link';
 import type { AuthState, AuthUrl } from '../types';
 
 interface AuthContextType {
@@ -56,33 +56,49 @@ export function AuthProvider({ children }: AuthProviderProps) {
     checkAuthState();
   }, []);
 
+  // Handle OAuth callback from deep link URL
+  const processDeepLink = useCallback((url: string) => {
+    console.log('Processing deep link:', url);
+    if (url.startsWith('fabricscribe://oauth/callback')) {
+      handleOAuthCallback(url);
+    }
+  }, []);
+
+  // Check for deep links at startup (if app was launched via deep link)
+  useEffect(() => {
+    getCurrent().then((urls) => {
+      if (urls && urls.length > 0) {
+        console.log('Deep link at startup:', urls);
+        for (const url of urls) {
+          processDeepLink(url);
+        }
+      }
+    }).catch((err) => {
+      console.error('Failed to get current deep links:', err);
+    });
+  }, [processDeepLink]);
+
   // Set up deep link listener for OAuth callback
   useEffect(() => {
     // Listen for deep links from the plugin (when app is already running)
     const unlistenPlugin = onOpenUrl((urls) => {
       console.log('Deep link received via plugin:', urls);
       for (const url of urls) {
-        if (url.startsWith('fabricscribe://oauth/callback')) {
-          handleOAuthCallback(url);
-          break;
-        }
+        processDeepLink(url);
       }
     });
 
     // Also listen for deep links from single-instance callback (when second instance tries to launch)
     const unlistenEvent = listen<string>('deep-link', (event) => {
       console.log('Deep link received via event:', event.payload);
-      const url = event.payload;
-      if (url.startsWith('fabricscribe://oauth/callback')) {
-        handleOAuthCallback(url);
-      }
+      processDeepLink(event.payload);
     });
 
     return () => {
       unlistenPlugin.then(fn => fn());
       unlistenEvent.then(fn => fn());
     };
-  }, []);
+  }, [processDeepLink]);
 
   // Set up token refresh timer
   useEffect(() => {
