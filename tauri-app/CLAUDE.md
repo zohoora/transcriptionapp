@@ -93,6 +93,38 @@ Idle → Preparing → Recording → Stopping → Completed
   └─────────────── Reset ←─────────────────────┘
 ```
 
+## Running the App
+
+**IMPORTANT**: Use debug build, NOT `tauri dev`, for proper deep link and single-instance handling.
+
+```bash
+# Build debug app (RECOMMENDED)
+pnpm tauri build --debug
+
+# Run with ONNX Runtime (required for transcription, diarization, enhancement)
+ORT_DYLIB_PATH=$(./scripts/setup-ort.sh) \
+  "src-tauri/target/debug/bundle/macos/Transcription App.app/Contents/MacOS/transcription-app"
+
+# Or find ORT path manually:
+ORT_PATH=$(find ~/.transcriptionapp/ort-venv -name "libonnxruntime.*.dylib" | head -1)
+ORT_DYLIB_PATH="$ORT_PATH" \
+  "src-tauri/target/debug/bundle/macos/Transcription App.app/Contents/MacOS/transcription-app"
+```
+
+**Note**: Do NOT use `open` to launch the app - it won't inherit environment variables. Run the binary directly with `ORT_DYLIB_PATH` set.
+
+**Why not `tauri dev`?**
+- `tauri dev` runs the Vite dev server separately, which breaks deep link routing
+- The `tauri-plugin-single-instance` doesn't work correctly in dev mode
+- OAuth callbacks (e.g., `fabricscribe://oauth/callback`) open new app instances instead of routing to the existing one
+- The debug build bundles everything properly and registers URL schemes correctly
+
+**Deep Link / OAuth Flow**
+- App registers `fabricscribe://` URL scheme via `tauri-plugin-deep-link`
+- `tauri-plugin-single-instance` ensures only one app instance runs
+- When OAuth redirects to `fabricscribe://oauth/callback`, the callback routes to the existing instance
+- The frontend listens for `deep-link` events to handle the OAuth code exchange
+
 ## Test Commands
 
 ```bash
@@ -264,10 +296,11 @@ Real-time audio quality analysis to predict transcript reliability:
 - Extensible for future features (see module docs)
 
 ### Test Updates
-- All frontend tests updated for new sidebar UI (119+ tests)
+- All frontend tests updated for new sidebar UI (131 tests)
 - Audio quality tests: 16 Rust unit tests, 12 frontend tests
 - Fixed clustering.rs bug where max_speakers wasn't enforced
-- All Rust tests passing (175+ tests)
+- All Rust tests passing (243 tests)
+- Added mocks for AuthProvider/useAuth hook in test setup
 
 ### Conversation Dynamics (Dec 2024)
 - Real-time analysis of conversation flow between speakers
@@ -293,6 +326,9 @@ interface Settings {
   max_speakers: number;       // 2-10
   ollama_server_url: string;  // e.g., 'http://localhost:11434'
   ollama_model: string;       // e.g., 'qwen3:4b'
+  medplum_server_url: string; // e.g., 'http://localhost:8103'
+  medplum_client_id: string;  // OAuth client ID from Medplum
+  medplum_auto_sync: boolean; // Auto-sync encounters after recording
 }
 ```
 
@@ -305,6 +341,7 @@ interface Settings {
   - Emotion: `wav2small.onnx` (~120KB)
   - YAMNet: `yamnet.onnx` (~3MB) - for cough detection
 - **Settings**: `~/.transcriptionapp/config.json`
+- **Medplum Auth**: `~/.transcriptionapp/medplum_auth.json` - persisted OAuth tokens
 - **Logs**: Console (tracing crate)
 
 ## Common Issues
@@ -312,6 +349,9 @@ interface Settings {
 1. **"Model not found"**: Ensure Whisper model file exists at configured path
 2. **ONNX tests failing**: Set `ORT_DYLIB_PATH` to ONNX Runtime library
 3. **Audio device errors**: Check microphone permissions (macOS: System Settings → Privacy)
+4. **OAuth opens new app instance**: Use `pnpm tauri build --debug` instead of `tauri dev`. The single-instance plugin doesn't work in dev mode.
+5. **Medplum auth fails**: Verify `medplum_client_id` in `config.rs` matches your Medplum ClientApplication. Delete `~/.transcriptionapp/config.json` to reset to defaults.
+6. **Deep links not working**: Ensure app was built (not running via `tauri dev`). Check that `fabricscribe://` URL scheme is registered in Info.plist.
 
 ## Adding New Features
 
@@ -340,6 +380,47 @@ When adding a new feature that requires models or external resources:
    - Add feature-gated provider initialization
    - Integrate into processing loop
    - Add to drop order at end
+
+## Medplum EMR Integration (Dec 2024)
+
+Integration with Medplum FHIR server for storing encounters, transcripts, SOAP notes, and audio recordings.
+
+**Authentication**
+- OAuth 2.0 + PKCE flow via `fabricscribe://oauth/callback` deep link
+- Uses `prompt=none` to skip consent screen on subsequent logins (after first consent)
+- Session persistence: tokens saved to `~/.transcriptionapp/medplum_auth.json`
+- Auto-restore on app startup with automatic token refresh if expired
+- Auto-refresh before expiration during session
+- Configuration in `config.rs`: `medplum_server_url`, `medplum_client_id`
+
+**FHIR Resources Used**
+- `Encounter` - Recording session with start/end times, tagged with `urn:fabricscribe|scribe-session`
+- `DocumentReference` - Transcript and SOAP note documents
+- `Media` - Audio recording (WAV file stored as Binary)
+
+**Key Commands**
+| Command | Purpose |
+|---------|---------|
+| `medplum_try_restore_session` | Restore saved session, auto-refresh if expired |
+| `medplum_start_auth` | Initiate OAuth flow, returns auth URL |
+| `medplum_handle_callback` | Exchange code for tokens |
+| `medplum_get_auth_state` | Check if authenticated |
+| `medplum_logout` | Clear tokens and delete saved session |
+| `medplum_sync_encounter` | Upload transcript/SOAP/audio to Medplum |
+| `medplum_get_encounter_history` | List past encounters by date range |
+| `medplum_get_encounter_details` | Get full encounter with transcript/SOAP/audio |
+| `medplum_get_audio_data` | Fetch audio Binary for playback |
+
+**Session History Window**
+- Separate Tauri window opened via calendar icon in header
+- Calendar component for date selection
+- Lists encounters for selected date
+- Detail view shows transcript, SOAP note, audio player
+- Files: `history.html`, `src/history.tsx`, `src/components/HistoryWindow.tsx`, `src/components/Calendar.tsx`, `src/components/AudioPlayer.tsx`
+
+**Vite Multi-Page Build**
+- `vite.config.ts` configured with rollup input for both `index.html` and `history.html`
+- History window created via `WebviewWindow` API from `@tauri-apps/api/webviewWindow`
 
 ## ADRs
 

@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use thiserror::Error;
@@ -58,6 +59,7 @@ pub struct SessionManager {
     error: Option<SessionError>,
     stop_flag: Arc<AtomicBool>,
     pending_count: usize,
+    audio_file_path: Option<PathBuf>,
 }
 
 impl SessionManager {
@@ -70,7 +72,18 @@ impl SessionManager {
             error: None,
             stop_flag: Arc::new(AtomicBool::new(false)),
             pending_count: 0,
+            audio_file_path: None,
         }
+    }
+
+    /// Set the audio file path for recording
+    pub fn set_audio_file_path(&mut self, path: PathBuf) {
+        self.audio_file_path = Some(path);
+    }
+
+    /// Get the audio file path if recording was done
+    pub fn audio_file_path(&self) -> Option<&PathBuf> {
+        self.audio_file_path.as_ref()
     }
 
     /// Get current session status
@@ -179,6 +192,7 @@ impl SessionManager {
         self.error = None;
         self.stop_flag.store(false, Ordering::SeqCst);
         self.pending_count = 0;
+        self.audio_file_path = None;
     }
 
     /// Add a transcribed segment

@@ -10,6 +10,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::sync::Arc;
 use tokio::sync::RwLock;
+use tracing::info;
 
 /// Default Medplum server URL (local development)
 pub const DEFAULT_MEDPLUM_URL: &str = "http://localhost:8103";
@@ -89,6 +90,62 @@ impl AuthState {
             now >= (expiry - 300) // 5 minute buffer
         } else {
             true
+        }
+    }
+
+    /// Get the path to the auth state file
+    fn auth_file_path() -> Option<std::path::PathBuf> {
+        dirs::home_dir().map(|h| h.join(".transcriptionapp").join("medplum_auth.json"))
+    }
+
+    /// Save auth state to disk for persistence across app restarts
+    pub fn save_to_file(&self) -> Result<(), std::io::Error> {
+        if let Some(path) = Self::auth_file_path() {
+            if let Some(parent) = path.parent() {
+                std::fs::create_dir_all(parent)?;
+            }
+            let json = serde_json::to_string_pretty(self)
+                .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+            std::fs::write(&path, json)?;
+            tracing::debug!("Saved auth state to {:?}", path);
+        }
+        Ok(())
+    }
+
+    /// Load auth state from disk
+    pub fn load_from_file() -> Option<Self> {
+        let path = Self::auth_file_path()?;
+        if path.exists() {
+            match std::fs::read_to_string(&path) {
+                Ok(content) => {
+                    match serde_json::from_str::<AuthState>(&content) {
+                        Ok(state) => {
+                            tracing::info!("Loaded saved auth state for {:?}", state.practitioner_name);
+                            Some(state)
+                        }
+                        Err(e) => {
+                            tracing::warn!("Failed to parse saved auth state: {}", e);
+                            None
+                        }
+                    }
+                }
+                Err(e) => {
+                    tracing::warn!("Failed to read auth file: {}", e);
+                    None
+                }
+            }
+        } else {
+            None
+        }
+    }
+
+    /// Delete saved auth state file
+    pub fn delete_file() {
+        if let Some(path) = Self::auth_file_path() {
+            if path.exists() {
+                let _ = std::fs::remove_file(&path);
+                tracing::debug!("Deleted auth state file");
+            }
         }
     }
 }
@@ -250,11 +307,14 @@ impl MedplumClient {
             .build()
             .map_err(|e| MedplumError::AuthError(format!("Failed to create HTTP client: {}", e)))?;
 
+        // Try to load saved auth state from previous session
+        let initial_state = AuthState::load_from_file().unwrap_or_default();
+
         Ok(Self {
             http_client,
             base_url: cleaned_url.to_string(),
             client_id: client_id.to_string(),
-            auth_state: Arc::new(RwLock::new(AuthState::default())),
+            auth_state: Arc::new(RwLock::new(initial_state)),
             pending_pkce: Arc::new(RwLock::new(None)),
         })
     }
@@ -270,6 +330,49 @@ impl MedplumClient {
         state.is_authenticated && !state.is_token_expired()
     }
 
+    /// Try to restore a previous session by refreshing the token if needed
+    /// Returns the auth state (authenticated or not)
+    pub async fn try_restore_session(&self) -> AuthState {
+        let state = self.auth_state.read().await.clone();
+
+        // If not authenticated or no refresh token, return current state
+        if !state.is_authenticated || state.refresh_token.is_none() {
+            return state;
+        }
+
+        // If token is still valid, return current state
+        if !state.is_token_expired() {
+            tracing::info!("Session restored - token still valid");
+            return state;
+        }
+
+        // Token expired but we have refresh token - try to refresh
+        tracing::info!("Session token expired, attempting refresh...");
+        drop(state); // Release read lock before refresh
+
+        match self.refresh_token().await {
+            Ok(new_state) => {
+                tracing::info!("Session restored via token refresh");
+                new_state
+            }
+            Err(e) => {
+                tracing::warn!("Failed to refresh token: {}", e);
+                // Clear the invalid session
+                self.logout().await;
+                AuthState::default()
+            }
+        }
+    }
+
+    /// Check if the server is reachable (doesn't require authentication)
+    pub async fn check_server_connectivity(&self) -> bool {
+        let url = format!("{}/.well-known/openid-configuration", self.base_url);
+        match self.http_client.get(&url).send().await {
+            Ok(response) => response.status().is_success(),
+            Err(_) => false,
+        }
+    }
+
     // =====================
     // OAuth 2.0 Methods
     // =====================
@@ -281,8 +384,9 @@ impl MedplumClient {
         let state = pkce.state.clone();
 
         // Build authorization URL
+        // prompt=none skips consent screen on subsequent logins (after first consent)
         let auth_url = format!(
-            "{}/oauth2/authorize?response_type=code&client_id={}&redirect_uri={}&scope=openid%20profile&code_challenge={}&code_challenge_method=S256&state={}",
+            "{}/oauth2/authorize?response_type=code&client_id={}&redirect_uri={}&scope=openid%20profile&code_challenge={}&code_challenge_method=S256&state={}&prompt=none",
             self.base_url,
             urlencoding::encode(&self.client_id),
             urlencoding::encode(OAUTH_REDIRECT_URI),
@@ -353,6 +457,11 @@ impl MedplumClient {
 
         *self.auth_state.write().await = new_state.clone();
 
+        // Save auth state to disk for persistence
+        if let Err(e) = new_state.save_to_file() {
+            tracing::warn!("Failed to save auth state: {}", e);
+        }
+
         Ok(new_state)
     }
 
@@ -402,12 +511,19 @@ impl MedplumClient {
         }
         state.token_expiry = token_expiry;
 
+        // Save updated auth state to disk
+        if let Err(e) = state.save_to_file() {
+            tracing::warn!("Failed to save refreshed auth state: {}", e);
+        }
+
         Ok(state.clone())
     }
 
     /// Logout and clear tokens
     pub async fn logout(&self) {
         *self.auth_state.write().await = AuthState::default();
+        // Delete saved auth state file
+        AuthState::delete_file();
     }
 
     /// Get access token, refreshing if needed
@@ -498,6 +614,79 @@ impl MedplumClient {
         "Unknown Patient".to_string()
     }
 
+    /// Create a placeholder patient for storing scribe sessions
+    /// This creates a patient record that can be easily identified as app-created
+    pub async fn create_placeholder_patient(&self) -> Result<Patient, MedplumError> {
+        let token = self.get_valid_token().await?;
+        let state = self.auth_state.read().await;
+
+        let practitioner_id = state
+            .practitioner_id
+            .as_ref()
+            .ok_or_else(|| MedplumError::NotAuthenticated)?;
+
+        let practitioner_name = state
+            .practitioner_name
+            .clone()
+            .unwrap_or_else(|| "Unknown Practitioner".to_string());
+
+        // Generate unique identifier for this session
+        let session_uuid = uuid::Uuid::new_v4().to_string();
+        let timestamp = Utc::now().format("%Y-%m-%d %H:%M").to_string();
+
+        // Create a placeholder patient with identifiable metadata
+        let patient = serde_json::json!({
+            "resourceType": "Patient",
+            "identifier": [{
+                "system": "urn:fabricscribe:session",
+                "value": session_uuid
+            }],
+            "name": [{
+                "use": "official",
+                "family": "Session",
+                "given": ["Scribe"],
+                "text": format!("Scribe Session - {}", timestamp)
+            }],
+            "meta": {
+                "tag": [{
+                    "system": "urn:fabricscribe",
+                    "code": "placeholder-patient"
+                }, {
+                    "system": "urn:fabricscribe:practitioner",
+                    "code": practitioner_id.clone()
+                }]
+            },
+            "generalPractitioner": [{
+                "reference": format!("Practitioner/{}", practitioner_id)
+            }],
+            "active": true
+        });
+
+        let response = self
+            .http_client
+            .post(&format!("{}/fhir/R4/Patient", self.base_url))
+            .bearer_auth(&token)
+            .json(&patient)
+            .send()
+            .await?;
+
+        let created: serde_json::Value = self.handle_response(response).await?;
+
+        let patient_id = created["id"]
+            .as_str()
+            .ok_or_else(|| MedplumError::ValidationError("No patient ID in response".to_string()))?
+            .to_string();
+
+        info!("Created placeholder patient: {} for practitioner: {}", patient_id, practitioner_name);
+
+        Ok(Patient {
+            id: patient_id,
+            name: format!("Scribe Session - {}", timestamp),
+            mrn: Some(session_uuid),
+            birth_date: None,
+        })
+    }
+
     /// Create a new encounter for a patient
     pub async fn create_encounter(&self, patient_id: &str) -> Result<Encounter, MedplumError> {
         let token = self.get_valid_token().await?;
@@ -570,10 +759,14 @@ impl MedplumClient {
             .send()
             .await?;
 
-        let _created: serde_json::Value = self.handle_response(response).await?;
+        let created: serde_json::Value = self.handle_response(response).await?;
+
+        // Use the server-returned ID, not the pre-generated UUID
+        let fhir_id = created["id"].as_str().unwrap_or(&encounter_uuid).to_string();
+        tracing::info!("Created encounter with FHIR ID: {} (local UUID was: {})", fhir_id, encounter_uuid);
 
         Ok(Encounter {
-            id: encounter_uuid,
+            id: fhir_id,
             patient_id: patient_id.to_string(),
             patient_name,
             status: "in-progress".to_string(),
@@ -819,17 +1012,19 @@ impl MedplumClient {
             .as_ref()
             .ok_or_else(|| MedplumError::NotAuthenticated)?;
 
-        // Build query URL
+        // Build query URL - search all encounters, filter by practitioner and documents in code
+        // (Medplum has issues with complex combined searches)
         let mut url = format!(
-            "{}/fhir/R4/Encounter?participant=Practitioner/{}&_tag=urn:fabricscribe|scribe-session&_sort=-date&_count=100",
-            self.base_url, practitioner_id
+            "{}/fhir/R4/Encounter?_sort=-date&_count=100",
+            self.base_url
         );
 
         if let Some(start) = start_date {
             url.push_str(&format!("&date=ge{}", start));
         }
         if let Some(end) = end_date {
-            url.push_str(&format!("&date=le{}", end));
+            // Use next day for end date to include full day in query
+            url.push_str(&format!("&date=lt{}T23:59:59Z", end));
         }
 
         let response = self
@@ -842,9 +1037,26 @@ impl MedplumClient {
         let bundle: serde_json::Value = self.handle_response(response).await?;
 
         let mut encounters = Vec::new();
+        let practitioner_ref = format!("Practitioner/{}", practitioner_id);
+
         if let Some(entries) = bundle["entry"].as_array() {
             for entry in entries {
                 let resource = &entry["resource"];
+
+                // Filter by practitioner (since we removed participant from URL query)
+                let is_our_encounter = resource["participant"]
+                    .as_array()
+                    .map(|participants| {
+                        participants.iter().any(|p| {
+                            p["individual"]["reference"].as_str() == Some(&practitioner_ref)
+                        })
+                    })
+                    .unwrap_or(false);
+
+                if !is_our_encounter {
+                    continue;
+                }
+
                 let fhir_id = resource["id"].as_str().unwrap_or("").to_string();
                 let encounter_id = resource["identifier"]
                     .as_array()
@@ -919,23 +1131,18 @@ impl MedplumClient {
     pub async fn get_encounter_details(&self, encounter_id: &str) -> Result<EncounterDetails, MedplumError> {
         let token = self.get_valid_token().await?;
 
-        // Fetch encounter
+        // Fetch encounter directly by FHIR ID
         let encounter_response = self
             .http_client
             .get(&format!(
-                "{}/fhir/R4/Encounter?identifier=urn:fabricscribe:encounter|{}",
+                "{}/fhir/R4/Encounter/{}",
                 self.base_url, encounter_id
             ))
             .bearer_auth(&token)
             .send()
             .await?;
 
-        let encounter_bundle: serde_json::Value = self.handle_response(encounter_response).await?;
-        let encounter = encounter_bundle["entry"]
-            .as_array()
-            .and_then(|e| e.first())
-            .map(|e| &e["resource"])
-            .ok_or_else(|| MedplumError::NotFound(encounter_id.to_string()))?;
+        let encounter: serde_json::Value = self.handle_response(encounter_response).await?;
 
         let fhir_id = encounter["id"].as_str().unwrap_or("").to_string();
         let start_time = encounter["period"]["start"].as_str().unwrap_or("");
@@ -955,15 +1162,15 @@ impl MedplumClient {
         };
 
         let patient_name = self
-            .get_patient_name_from_encounter(&token, encounter)
+            .get_patient_name_from_encounter(&token, &encounter)
             .await
             .unwrap_or_else(|_| "Unknown".to_string());
 
-        // Fetch documents
+        // Fetch documents by encounter reference
         let docs_response = self
             .http_client
             .get(&format!(
-                "{}/fhir/R4/DocumentReference?identifier=urn:fabricscribe:encounter|{}",
+                "{}/fhir/R4/DocumentReference?encounter=Encounter/{}",
                 self.base_url, encounter_id
             ))
             .bearer_auth(&token)
@@ -1007,11 +1214,11 @@ impl MedplumClient {
             }
         }
 
-        // Fetch media for audio URL
+        // Fetch media for audio URL by encounter reference
         let media_response = self
             .http_client
             .get(&format!(
-                "{}/fhir/R4/Media?identifier=urn:fabricscribe:encounter|{}",
+                "{}/fhir/R4/Media?encounter=Encounter/{}",
                 self.base_url, encounter_id
             ))
             .bearer_auth(&token)
@@ -1040,6 +1247,42 @@ impl MedplumClient {
             audio_url,
             session_info,
         })
+    }
+
+    /// Fetch raw binary data (e.g., audio files) from Medplum
+    pub async fn get_audio_data(&self, binary_id: &str) -> Result<Vec<u8>, MedplumError> {
+        let token = self.get_valid_token().await?;
+
+        let response = self
+            .http_client
+            .get(&format!("{}/fhir/R4/Binary/{}", self.base_url, binary_id))
+            .bearer_auth(&token)
+            .header("Accept", "application/octet-stream")
+            .send()
+            .await?;
+
+        match response.status() {
+            status if status.is_success() => {
+                Ok(response.bytes().await?.to_vec())
+            }
+            reqwest::StatusCode::UNAUTHORIZED => {
+                Err(MedplumError::TokenExpired)
+            }
+            reqwest::StatusCode::FORBIDDEN => {
+                let body = response.text().await.unwrap_or_default();
+                Err(MedplumError::AccessDenied(body))
+            }
+            reqwest::StatusCode::NOT_FOUND => {
+                Err(MedplumError::NotFound(format!("Binary/{}", binary_id)))
+            }
+            _ => {
+                let body = response.text().await.unwrap_or_default();
+                Err(MedplumError::AuthError(format!(
+                    "Failed to fetch audio: {}",
+                    body
+                )))
+            }
+        }
     }
 
     /// Handle HTTP response and convert to appropriate error

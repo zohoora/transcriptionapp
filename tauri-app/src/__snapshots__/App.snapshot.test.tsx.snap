@@ -19,29 +19,74 @@ exports[`App Snapshots > renders completed state correctly 1`] = `
         Scribe
       </span>
     </div>
-    <button
-      aria-label="Settings"
-      class="settings-btn "
-      title="Settings"
+    <div
+      class="header-buttons"
     >
-      <svg
-        fill="none"
-        height="18"
-        stroke="currentColor"
-        stroke-width="2"
-        viewBox="0 0 24 24"
-        width="18"
+      <button
+        aria-label="Session History"
+        class="history-btn"
+        title="Session History"
       >
-        <circle
-          cx="12"
-          cy="12"
-          r="3"
-        />
-        <path
-          d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"
-        />
-      </svg>
-    </button>
+        <svg
+          fill="none"
+          height="18"
+          stroke="currentColor"
+          stroke-width="2"
+          viewBox="0 0 24 24"
+          width="18"
+        >
+          <rect
+            height="18"
+            rx="2"
+            ry="2"
+            width="18"
+            x="3"
+            y="4"
+          />
+          <line
+            x1="16"
+            x2="16"
+            y1="2"
+            y2="6"
+          />
+          <line
+            x1="8"
+            x2="8"
+            y1="2"
+            y2="6"
+          />
+          <line
+            x1="3"
+            x2="21"
+            y1="10"
+            y2="10"
+          />
+        </svg>
+      </button>
+      <button
+        aria-label="Settings"
+        class="settings-btn "
+        title="Settings"
+      >
+        <svg
+          fill="none"
+          height="18"
+          stroke="currentColor"
+          stroke-width="2"
+          viewBox="0 0 24 24"
+          width="18"
+        >
+          <circle
+            cx="12"
+            cy="12"
+            r="3"
+          />
+          <path
+            d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"
+          />
+        </svg>
+      </button>
+    </div>
   </header>
   <section
     class="record-section"
@@ -206,29 +251,74 @@ exports[`App Snapshots > renders error state correctly 1`] = `
         Scribe
       </span>
     </div>
-    <button
-      aria-label="Settings"
-      class="settings-btn "
-      title="Settings"
+    <div
+      class="header-buttons"
     >
-      <svg
-        fill="none"
-        height="18"
-        stroke="currentColor"
-        stroke-width="2"
-        viewBox="0 0 24 24"
-        width="18"
+      <button
+        aria-label="Session History"
+        class="history-btn"
+        title="Session History"
       >
-        <circle
-          cx="12"
-          cy="12"
-          r="3"
-        />
-        <path
-          d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"
-        />
-      </svg>
-    </button>
+        <svg
+          fill="none"
+          height="18"
+          stroke="currentColor"
+          stroke-width="2"
+          viewBox="0 0 24 24"
+          width="18"
+        >
+          <rect
+            height="18"
+            rx="2"
+            ry="2"
+            width="18"
+            x="3"
+            y="4"
+          />
+          <line
+            x1="16"
+            x2="16"
+            y1="2"
+            y2="6"
+          />
+          <line
+            x1="8"
+            x2="8"
+            y1="2"
+            y2="6"
+          />
+          <line
+            x1="3"
+            x2="21"
+            y1="10"
+            y2="10"
+          />
+        </svg>
+      </button>
+      <button
+        aria-label="Settings"
+        class="settings-btn "
+        title="Settings"
+      >
+        <svg
+          fill="none"
+          height="18"
+          stroke="currentColor"
+          stroke-width="2"
+          viewBox="0 0 24 24"
+          width="18"
+        >
+          <circle
+            cx="12"
+            cy="12"
+            r="3"
+          />
+          <path
+            d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"
+          />
+        </svg>
+      </button>
+    </div>
   </header>
   <div
     class="error-banner"
@@ -317,29 +407,74 @@ exports[`App Snapshots > renders idle state correctly 1`] = `
         Scribe
       </span>
     </div>
-    <button
-      aria-label="Settings"
-      class="settings-btn "
-      title="Settings"
+    <div
+      class="header-buttons"
     >
-      <svg
-        fill="none"
-        height="18"
-        stroke="currentColor"
-        stroke-width="2"
-        viewBox="0 0 24 24"
-        width="18"
+      <button
+        aria-label="Session History"
+        class="history-btn"
+        title="Session History"
       >
-        <circle
-          cx="12"
-          cy="12"
-          r="3"
-        />
-        <path
-          d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"
-        />
-      </svg>
-    </button>
+        <svg
+          fill="none"
+          height="18"
+          stroke="currentColor"
+          stroke-width="2"
+          viewBox="0 0 24 24"
+          width="18"
+        >
+          <rect
+            height="18"
+            rx="2"
+            ry="2"
+            width="18"
+            x="3"
+            y="4"
+          />
+          <line
+            x1="16"
+            x2="16"
+            y1="2"
+            y2="6"
+          />
+          <line
+            x1="8"
+            x2="8"
+            y1="2"
+            y2="6"
+          />
+          <line
+            x1="3"
+            x2="21"
+            y1="10"
+            y2="10"
+          />
+        </svg>
+      </button>
+      <button
+        aria-label="Settings"
+        class="settings-btn "
+        title="Settings"
+      >
+        <svg
+          fill="none"
+          height="18"
+          stroke="currentColor"
+          stroke-width="2"
+          viewBox="0 0 24 24"
+          width="18"
+        >
+          <circle
+            cx="12"
+            cy="12"
+            r="3"
+          />
+          <path
+            d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"
+          />
+        </svg>
+      </button>
+    </div>
   </header>
   <section
     class="record-section"
@@ -425,29 +560,74 @@ exports[`App Snapshots > renders model unavailable warning correctly 1`] = `
         Scribe
       </span>
     </div>
-    <button
-      aria-label="Settings"
-      class="settings-btn "
-      title="Settings"
+    <div
+      class="header-buttons"
     >
-      <svg
-        fill="none"
-        height="18"
-        stroke="currentColor"
-        stroke-width="2"
-        viewBox="0 0 24 24"
-        width="18"
+      <button
+        aria-label="Session History"
+        class="history-btn"
+        title="Session History"
       >
-        <circle
-          cx="12"
-          cy="12"
-          r="3"
-        />
-        <path
-          d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"
-        />
-      </svg>
-    </button>
+        <svg
+          fill="none"
+          height="18"
+          stroke="currentColor"
+          stroke-width="2"
+          viewBox="0 0 24 24"
+          width="18"
+        >
+          <rect
+            height="18"
+            rx="2"
+            ry="2"
+            width="18"
+            x="3"
+            y="4"
+          />
+          <line
+            x1="16"
+            x2="16"
+            y1="2"
+            y2="6"
+          />
+          <line
+            x1="8"
+            x2="8"
+            y1="2"
+            y2="6"
+          />
+          <line
+            x1="3"
+            x2="21"
+            y1="10"
+            y2="10"
+          />
+        </svg>
+      </button>
+      <button
+        aria-label="Settings"
+        class="settings-btn "
+        title="Settings"
+      >
+        <svg
+          fill="none"
+          height="18"
+          stroke="currentColor"
+          stroke-width="2"
+          viewBox="0 0 24 24"
+          width="18"
+        >
+          <circle
+            cx="12"
+            cy="12"
+            r="3"
+          />
+          <path
+            d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"
+          />
+        </svg>
+      </button>
+    </div>
   </header>
   <div
     class="warning-banner"
@@ -539,30 +719,76 @@ exports[`App Snapshots > renders recording state correctly 1`] = `
         Scribe
       </span>
     </div>
-    <button
-      aria-label="Settings"
-      class="settings-btn "
-      disabled=""
-      title="Settings disabled during recording"
+    <div
+      class="header-buttons"
     >
-      <svg
-        fill="none"
-        height="18"
-        stroke="currentColor"
-        stroke-width="2"
-        viewBox="0 0 24 24"
-        width="18"
+      <button
+        aria-label="Session History"
+        class="history-btn"
+        disabled=""
+        title="History disabled during recording"
       >
-        <circle
-          cx="12"
-          cy="12"
-          r="3"
-        />
-        <path
-          d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"
-        />
-      </svg>
-    </button>
+        <svg
+          fill="none"
+          height="18"
+          stroke="currentColor"
+          stroke-width="2"
+          viewBox="0 0 24 24"
+          width="18"
+        >
+          <rect
+            height="18"
+            rx="2"
+            ry="2"
+            width="18"
+            x="3"
+            y="4"
+          />
+          <line
+            x1="16"
+            x2="16"
+            y1="2"
+            y2="6"
+          />
+          <line
+            x1="8"
+            x2="8"
+            y1="2"
+            y2="6"
+          />
+          <line
+            x1="3"
+            x2="21"
+            y1="10"
+            y2="10"
+          />
+        </svg>
+      </button>
+      <button
+        aria-label="Settings"
+        class="settings-btn "
+        disabled=""
+        title="Settings disabled during recording"
+      >
+        <svg
+          fill="none"
+          height="18"
+          stroke="currentColor"
+          stroke-width="2"
+          viewBox="0 0 24 24"
+          width="18"
+        >
+          <circle
+            cx="12"
+            cy="12"
+            r="3"
+          />
+          <path
+            d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"
+          />
+        </svg>
+      </button>
+    </div>
   </header>
   <section
     class="record-section"
@@ -682,30 +908,76 @@ exports[`App Snapshots > renders stopping state correctly 1`] = `
         Scribe
       </span>
     </div>
-    <button
-      aria-label="Settings"
-      class="settings-btn "
-      disabled=""
-      title="Settings disabled during recording"
+    <div
+      class="header-buttons"
     >
-      <svg
-        fill="none"
-        height="18"
-        stroke="currentColor"
-        stroke-width="2"
-        viewBox="0 0 24 24"
-        width="18"
+      <button
+        aria-label="Session History"
+        class="history-btn"
+        disabled=""
+        title="History disabled during recording"
       >
-        <circle
-          cx="12"
-          cy="12"
-          r="3"
-        />
-        <path
-          d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"
-        />
-      </svg>
-    </button>
+        <svg
+          fill="none"
+          height="18"
+          stroke="currentColor"
+          stroke-width="2"
+          viewBox="0 0 24 24"
+          width="18"
+        >
+          <rect
+            height="18"
+            rx="2"
+            ry="2"
+            width="18"
+            x="3"
+            y="4"
+          />
+          <line
+            x1="16"
+            x2="16"
+            y1="2"
+            y2="6"
+          />
+          <line
+            x1="8"
+            x2="8"
+            y1="2"
+            y2="6"
+          />
+          <line
+            x1="3"
+            x2="21"
+            y1="10"
+            y2="10"
+          />
+        </svg>
+      </button>
+      <button
+        aria-label="Settings"
+        class="settings-btn "
+        disabled=""
+        title="Settings disabled during recording"
+      >
+        <svg
+          fill="none"
+          height="18"
+          stroke="currentColor"
+          stroke-width="2"
+          viewBox="0 0 24 24"
+          width="18"
+        >
+          <circle
+            cx="12"
+            cy="12"
+            r="3"
+          />
+          <path
+            d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"
+          />
+        </svg>
+      </button>
+    </div>
   </header>
   <section
     class="record-section"
@@ -792,30 +1064,76 @@ exports[`App Snapshots > renders with transcript correctly 1`] = `
         Scribe
       </span>
     </div>
-    <button
-      aria-label="Settings"
-      class="settings-btn "
-      disabled=""
-      title="Settings disabled during recording"
+    <div
+      class="header-buttons"
     >
-      <svg
-        fill="none"
-        height="18"
-        stroke="currentColor"
-        stroke-width="2"
-        viewBox="0 0 24 24"
-        width="18"
+      <button
+        aria-label="Session History"
+        class="history-btn"
+        disabled=""
+        title="History disabled during recording"
       >
-        <circle
-          cx="12"
-          cy="12"
-          r="3"
-        />
-        <path
-          d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"
-        />
-      </svg>
-    </button>
+        <svg
+          fill="none"
+          height="18"
+          stroke="currentColor"
+          stroke-width="2"
+          viewBox="0 0 24 24"
+          width="18"
+        >
+          <rect
+            height="18"
+            rx="2"
+            ry="2"
+            width="18"
+            x="3"
+            y="4"
+          />
+          <line
+            x1="16"
+            x2="16"
+            y1="2"
+            y2="6"
+          />
+          <line
+            x1="8"
+            x2="8"
+            y1="2"
+            y2="6"
+          />
+          <line
+            x1="3"
+            x2="21"
+            y1="10"
+            y2="10"
+          />
+        </svg>
+      </button>
+      <button
+        aria-label="Settings"
+        class="settings-btn "
+        disabled=""
+        title="Settings disabled during recording"
+      >
+        <svg
+          fill="none"
+          height="18"
+          stroke="currentColor"
+          stroke-width="2"
+          viewBox="0 0 24 24"
+          width="18"
+        >
+          <circle
+            cx="12"
+            cy="12"
+            r="3"
+          />
+          <path
+            d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"
+          />
+        </svg>
+      </button>
+    </div>
   </header>
   <section
     class="record-section"

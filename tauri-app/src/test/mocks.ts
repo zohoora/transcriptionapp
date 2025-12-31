@@ -83,6 +83,9 @@ export interface Settings {
   max_speakers: number;
   ollama_server_url: string;
   ollama_model: string;
+  medplum_server_url: string;
+  medplum_client_id: string;
+  medplum_auto_sync: boolean;
 }
 
 export const mockSettings: Settings = {
@@ -97,6 +100,9 @@ export const mockSettings: Settings = {
   max_speakers: 4,
   ollama_server_url: 'http://localhost:11434',
   ollama_model: 'qwen3:4b',
+  medplum_server_url: 'http://localhost:8103',
+  medplum_client_id: 'test-client-id',
+  medplum_auto_sync: false,
 };
 
 // Ollama types

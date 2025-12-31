@@ -9,8 +9,8 @@
 
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import { listen } from '@tauri-apps/api/event';
 import { open } from '@tauri-apps/plugin-shell';
+import { onOpenUrl } from '@tauri-apps/plugin-deep-link';
 import type { AuthState, AuthUrl } from '../types';
 
 interface AuthContextType {
@@ -57,10 +57,12 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
   // Set up deep link listener for OAuth callback
   useEffect(() => {
-    const unlisten = listen<string>('deep-link://new-url', async (event) => {
-      const url = event.payload;
-      if (url.startsWith('fabricscribe://oauth/callback')) {
-        await handleOAuthCallback(url);
+    const unlisten = onOpenUrl((urls) => {
+      for (const url of urls) {
+        if (url.startsWith('fabricscribe://oauth/callback')) {
+          handleOAuthCallback(url);
+          break;
+        }
       }
     });
 
@@ -96,11 +98,12 @@ export function AuthProvider({ children }: AuthProviderProps) {
   const checkAuthState = async () => {
     try {
       setIsLoading(true);
-      const state = await invoke<AuthState>('medplum_get_auth_state');
+      // Try to restore session from saved file (auto-refreshes if expired)
+      const state = await invoke<AuthState>('medplum_try_restore_session');
       setAuthState(state);
       setError(null);
     } catch (e) {
-      console.error('Failed to check auth state:', e);
+      console.error('Failed to restore auth state:', e);
       setAuthState(defaultAuthState);
     } finally {
       setIsLoading(false);

@@ -6,6 +6,10 @@
 import type { Options } from '@wdio/types';
 import { spawn, ChildProcess } from 'child_process';
 import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 let tauriDriver: ChildProcess | null = null;
 

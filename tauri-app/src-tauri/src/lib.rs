@@ -56,7 +56,7 @@ pub mod vad;
 use commands::PipelineState;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
-use tauri::{Manager, WindowEvent};
+use tauri::{Emitter, Manager, WindowEvent};
 use tracing::{info, warn};
 use tracing_subscriber::EnvFilter;
 
@@ -78,6 +78,21 @@ pub fn run() {
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_shell::init())
+        .plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| {
+            // When another instance tries to launch, focus the existing window
+            // and emit any deep link URL to the frontend
+            info!("Single instance callback triggered with args: {:?}", argv);
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.set_focus();
+            }
+            // Check if any argument is a deep link URL
+            for arg in argv {
+                if arg.starts_with("fabricscribe://") {
+                    info!("Deep link received via single instance: {}", arg);
+                    let _ = app.emit("deep-link", arg);
+                }
+            }
+        }))
         .setup(|app| {
             // Initialize session manager (wrapped in Arc for sharing)
             let session_manager = Arc::new(Mutex::new(session::SessionManager::new()));
@@ -101,6 +116,7 @@ pub fn run() {
             commands::start_session,
             commands::stop_session,
             commands::reset_session,
+            commands::get_audio_file_path,
             commands::check_model_status,
             commands::get_model_info,
             commands::download_whisper_model,
@@ -115,6 +131,7 @@ pub fn run() {
             commands::generate_soap_note,
             // Medplum EMR commands
             commands::medplum_get_auth_state,
+            commands::medplum_try_restore_session,
             commands::medplum_start_auth,
             commands::medplum_handle_callback,
             commands::medplum_logout,
@@ -124,7 +141,9 @@ pub fn run() {
             commands::medplum_complete_encounter,
             commands::medplum_get_encounter_history,
             commands::medplum_get_encounter_details,
+            commands::medplum_get_audio_data,
             commands::medplum_sync_encounter,
+            commands::medplum_quick_sync,
             commands::medplum_check_connection,
         ])
         .on_window_event(|window, event| {

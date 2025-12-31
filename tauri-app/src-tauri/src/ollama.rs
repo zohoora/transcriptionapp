@@ -18,6 +18,16 @@ struct OllamaGenerateRequest {
     model: String,
     prompt: String,
     stream: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    options: Option<OllamaOptions>,
+}
+
+/// Options for Ollama generation
+#[derive(Debug, Clone, Serialize)]
+struct OllamaOptions {
+    /// Disable thinking/reasoning mode for faster generation (Qwen, DeepSeek, etc.)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    num_ctx: Option<u32>,
 }
 
 /// Response from Ollama generate endpoint
@@ -156,6 +166,7 @@ impl OllamaClient {
             model: model.to_string(),
             prompt: prompt.to_string(),
             stream: false,
+            options: None,
         };
 
         let response = self
@@ -221,7 +232,7 @@ impl OllamaClient {
 /// Build the prompt for SOAP note generation
 fn build_soap_prompt(transcript: &str) -> String {
     format!(
-        r#"You are a medical scribe assistant. Based on the following clinical transcript, generate a SOAP note.
+        r#"/no_think You are a medical scribe assistant. Based on the following clinical transcript, generate a SOAP note.
 
 TRANSCRIPT:
 {}
@@ -261,15 +272,29 @@ fn parse_soap_response(response: &str, model: &str) -> Result<SoapNote, String> 
         .unwrap_or(response)
         .trim();
 
-    // Find each section
-    let subjective = extract_section(clean_response, "SUBJECTIVE:", &["OBJECTIVE:"]);
-    let objective = extract_section(clean_response, "OBJECTIVE:", &["ASSESSMENT:"]);
-    let assessment = extract_section(clean_response, "ASSESSMENT:", &["PLAN:"]);
-    let plan = extract_section(clean_response, "PLAN:", &[]);
+    // Strip markdown formatting (**, ##, etc.) to normalize the text
+    let normalized = clean_response
+        .replace("**", "")
+        .replace("##", "")
+        .replace("# ", "");
+
+    // Try multiple marker formats
+    let subjective = extract_section_flexible(&normalized, &["SUBJECTIVE:", "SUBJECTIVE", "S:"], &["OBJECTIVE:", "OBJECTIVE", "O:"]);
+    let objective = extract_section_flexible(&normalized, &["OBJECTIVE:", "OBJECTIVE", "O:"], &["ASSESSMENT:", "ASSESSMENT", "A:"]);
+    let assessment = extract_section_flexible(&normalized, &["ASSESSMENT:", "ASSESSMENT", "A:"], &["PLAN:", "PLAN", "P:"]);
+    let plan = extract_section_flexible(&normalized, &["PLAN:", "PLAN", "P:"], &[]);
 
     // Validate that we got at least some content
     if subjective.is_empty() && objective.is_empty() && assessment.is_empty() && plan.is_empty() {
-        return Err("Could not parse SOAP note sections from response".to_string());
+        // Log the response for debugging
+        tracing::warn!(
+            "Failed to parse SOAP note. Response preview: {}",
+            &normalized.chars().take(500).collect::<String>()
+        );
+        return Err(format!(
+            "Could not parse SOAP note sections from response. Response started with: {}...",
+            &normalized.chars().take(100).collect::<String>()
+        ));
     }
 
     Ok(SoapNote {
@@ -298,14 +323,27 @@ fn parse_soap_response(response: &str, model: &str) -> Result<SoapNote, String> 
     })
 }
 
-/// Extract a section from the response text
-fn extract_section(text: &str, start_marker: &str, end_markers: &[&str]) -> String {
-    // Case-insensitive search for start marker
+/// Extract a section from the response text, trying multiple start markers
+fn extract_section_flexible(text: &str, start_markers: &[&str], end_markers: &[&str]) -> String {
     let text_upper = text.to_uppercase();
-    let start_marker_upper = start_marker.to_uppercase();
 
-    let start_pos = match text_upper.find(&start_marker_upper) {
-        Some(pos) => pos + start_marker.len(),
+    // Try each start marker and find the best match
+    let mut best_start: Option<usize> = None;
+    let mut marker_len = 0;
+
+    for marker in start_markers {
+        let marker_upper = marker.to_uppercase();
+        if let Some(pos) = text_upper.find(&marker_upper) {
+            // Prefer earlier positions, or longer markers at same position
+            if best_start.is_none() || pos < best_start.unwrap() {
+                best_start = Some(pos);
+                marker_len = marker.len();
+            }
+        }
+    }
+
+    let start_pos = match best_start {
+        Some(pos) => pos + marker_len,
         None => return String::new(),
     };
 
@@ -343,16 +381,16 @@ Tension headache.
 PLAN:
 OTC pain relief. Follow up if symptoms persist."#;
 
-        let subjective = extract_section(response, "SUBJECTIVE:", &["OBJECTIVE:"]);
+        let subjective = extract_section_flexible(response, &["SUBJECTIVE:"], &["OBJECTIVE:"]);
         assert!(subjective.contains("headache for 3 days"));
 
-        let objective = extract_section(response, "OBJECTIVE:", &["ASSESSMENT:"]);
+        let objective = extract_section_flexible(response, &["OBJECTIVE:"], &["ASSESSMENT:"]);
         assert!(objective.contains("Vital signs stable"));
 
-        let assessment = extract_section(response, "ASSESSMENT:", &["PLAN:"]);
+        let assessment = extract_section_flexible(response, &["ASSESSMENT:"], &["PLAN:"]);
         assert!(assessment.contains("Tension headache"));
 
-        let plan = extract_section(response, "PLAN:", &[]);
+        let plan = extract_section_flexible(response, &["PLAN:"], &[]);
         assert!(plan.contains("OTC pain relief"));
     }
 
@@ -364,7 +402,7 @@ Lower case test.
 objective:
 More content."#;
 
-        let subjective = extract_section(response, "SUBJECTIVE:", &["OBJECTIVE:"]);
+        let subjective = extract_section_flexible(response, &["SUBJECTIVE:"], &["OBJECTIVE:"]);
         assert!(subjective.contains("Lower case test"));
     }
 

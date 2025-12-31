@@ -1,7 +1,10 @@
 use anyhow::Result;
 use cpal::traits::DeviceTrait;
+use hound::{WavSpec, WavWriter};
 use ringbuf::traits::{Consumer as ConsumerTrait, Observer, Split};
 use ringbuf::HeapRb;
+use std::fs::File;
+use std::io::BufWriter;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -79,6 +82,8 @@ pub struct PipelineConfig {
     // Biomarker analysis settings
     pub biomarkers_enabled: bool,
     pub yamnet_model_path: Option<PathBuf>,
+    // Audio recording settings
+    pub audio_output_path: Option<PathBuf>,
 }
 
 impl Default for PipelineConfig {
@@ -101,6 +106,7 @@ impl Default for PipelineConfig {
             emotion_model_path: None,
             biomarkers_enabled: true,
             yamnet_model_path: None,
+            audio_output_path: None,
         }
     }
 }
@@ -369,6 +375,28 @@ fn run_pipeline_thread_inner(
         None
     };
 
+    // Create WAV writer if audio recording is enabled
+    let mut wav_writer: Option<WavWriter<BufWriter<File>>> = if let Some(ref audio_path) = config.audio_output_path {
+        let spec = WavSpec {
+            channels: 1,
+            sample_rate: 16000,
+            bits_per_sample: 16,
+            sample_format: hound::SampleFormat::Int,
+        };
+        match WavWriter::create(audio_path, spec) {
+            Ok(writer) => {
+                info!("Recording audio to: {:?}", audio_path);
+                Some(writer)
+            }
+            Err(e) => {
+                warn!("Failed to create WAV file: {}, continuing without recording", e);
+                None
+            }
+        }
+    } else {
+        None
+    };
+
     // Staging buffer for VAD chunks
     let mut staging_buffer: Vec<f32> = Vec::with_capacity(VAD_CHUNK_SIZE * 2);
 
@@ -482,6 +510,15 @@ fn run_pipeline_thread_inner(
                     }
                 }
             }
+
+            // Finalize WAV file if recording
+            if let Some(writer) = wav_writer.take() {
+                match writer.finalize() {
+                    Ok(_) => info!("Audio recording saved successfully"),
+                    Err(e) => warn!("Failed to finalize WAV file: {}", e),
+                }
+            }
+
             break;
         }
 
@@ -512,6 +549,18 @@ fn run_pipeline_thread_inner(
 
         // Resample to 16kHz
         let resampled = resampler.process(&input_buffer)?;
+
+        // Write to WAV file if recording is enabled
+        if let Some(ref mut writer) = wav_writer {
+            for &sample in &resampled {
+                // Convert f32 [-1.0, 1.0] to i16
+                let sample_i16 = (sample * 32767.0).clamp(-32768.0, 32767.0) as i16;
+                if let Err(e) = writer.write_sample(sample_i16) {
+                    warn!("Failed to write audio sample: {}", e);
+                    break;
+                }
+            }
+        }
 
         // CLONE POINT 1: Send resampled audio to biomarker thread (for YAMNet cough detection)
         // YAMNet needs ALL audio, including silence, to detect coughs

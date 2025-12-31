@@ -12,6 +12,7 @@
   "app": {
     "windows": [
       {
+        "label": "main",
         "title": "Scribe",
         "width": 320,
         "height": 700,

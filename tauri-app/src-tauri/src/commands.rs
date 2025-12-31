@@ -9,7 +9,9 @@ use crate::models::{self, ModelInfo, WhisperModel};
 use crate::ollama::{OllamaClient, OllamaStatus, SoapNote};
 use crate::pipeline::{start_pipeline, PipelineConfig, PipelineHandle, PipelineMessage};
 use crate::session::{SessionError, SessionManager};
+use chrono::Utc;
 use serde::{Deserialize, Serialize};
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use tauri::{AppHandle, Emitter, State};
 use tokio::sync::{mpsc, RwLock};
@@ -169,6 +171,25 @@ pub async fn start_session(
         None
     };
 
+    // Generate audio file path for recording
+    let audio_output_path = {
+        let recordings_dir = config.get_recordings_dir();
+        if let Err(e) = std::fs::create_dir_all(&recordings_dir) {
+            info!("Could not create recordings directory: {}, audio won't be saved", e);
+            None
+        } else {
+            let timestamp = Utc::now().format("%Y%m%d_%H%M%S").to_string();
+            let audio_path = recordings_dir.join(format!("session_{}.wav", timestamp));
+            Some(audio_path)
+        }
+    };
+
+    // Store audio path in session
+    if let Some(ref path) = audio_output_path {
+        let mut session = session_arc.lock().map_err(|e| e.to_string())?;
+        session.set_audio_file_path(path.clone());
+    }
+
     let pipeline_config = PipelineConfig {
         device_id: if device_id.as_deref() == Some("default") {
             None
@@ -191,6 +212,7 @@ pub async fn start_session(
         emotion_model_path,
         biomarkers_enabled: config.biomarkers_enabled,
         yamnet_model_path,
+        audio_output_path,
     };
 
     // Create message channel
@@ -390,6 +412,15 @@ pub fn reset_session(
     emit_transcript_arc(&app, session_state.inner())?;
 
     Ok(())
+}
+
+/// Get the audio file path for the current session
+#[tauri::command]
+pub fn get_audio_file_path(
+    session_state: State<'_, SharedSessionManager>,
+) -> Result<Option<String>, String> {
+    let session = session_state.lock().map_err(|e| e.to_string())?;
+    Ok(session.audio_file_path().map(|p| p.to_string_lossy().to_string()))
 }
 
 /// Check if the Whisper model is available
@@ -698,6 +729,24 @@ pub async fn medplum_get_auth_state(
     }
 }
 
+/// Try to restore a previous Medplum session (auto-refresh if needed)
+/// Call this on app startup to check if user is already logged in
+#[tauri::command]
+pub async fn medplum_try_restore_session(
+    medplum_state: State<'_, SharedMedplumClient>,
+) -> Result<AuthState, String> {
+    info!("Attempting to restore Medplum session...");
+
+    get_or_create_medplum_client(medplum_state.inner()).await?;
+
+    let client_guard = medplum_state.read().await;
+    if let Some(ref client) = *client_guard {
+        Ok(client.try_restore_session().await)
+    } else {
+        Ok(AuthState::default())
+    }
+}
+
 /// Start the Medplum OAuth authorization flow
 /// Returns the authorization URL to open in a browser
 #[tauri::command]
@@ -921,6 +970,25 @@ pub async fn medplum_get_encounter_details(
         .map_err(|e| e.to_string())
 }
 
+/// Get raw audio data from Medplum Binary resource
+#[tauri::command]
+pub async fn medplum_get_audio_data(
+    medplum_state: State<'_, SharedMedplumClient>,
+    binary_id: String,
+) -> Result<Vec<u8>, String> {
+    info!("Fetching audio data: {}", binary_id);
+
+    let client_guard = medplum_state.read().await;
+    let client = client_guard
+        .as_ref()
+        .ok_or_else(|| "Medplum client not initialized".to_string())?;
+
+    client
+        .get_audio_data(&binary_id)
+        .await
+        .map_err(|e| e.to_string())
+}
+
 /// Manual sync of an encounter
 #[tauri::command]
 pub async fn medplum_sync_encounter(
@@ -947,13 +1015,135 @@ pub async fn medplum_sync_encounter(
     .await
 }
 
-/// Check if Medplum is configured and accessible
+/// Quick sync - creates placeholder patient, encounter, and uploads everything in one call
+#[tauri::command]
+pub async fn medplum_quick_sync(
+    medplum_state: State<'_, SharedMedplumClient>,
+    transcript: String,
+    soap_note: Option<String>,
+    audio_file_path: Option<String>,
+    session_duration_ms: u64,
+) -> Result<SyncResult, String> {
+    info!("Quick sync: creating placeholder patient and encounter");
+
+    let client_guard = medplum_state.read().await;
+    let client = client_guard
+        .as_ref()
+        .ok_or_else(|| "Medplum client not initialized".to_string())?;
+
+    // Step 1: Create placeholder patient
+    let patient = client
+        .create_placeholder_patient()
+        .await
+        .map_err(|e| format!("Failed to create placeholder patient: {}", e))?;
+
+    info!("Created placeholder patient: {}", patient.id);
+
+    // Step 2: Create encounter
+    let encounter = client
+        .create_encounter(&patient.id)
+        .await
+        .map_err(|e| format!("Failed to create encounter: {}", e))?;
+
+    info!("Created encounter: {}", encounter.id);
+
+    // Step 3: Upload transcript and SOAP note
+    let mut sync_status = SyncStatus::default();
+    let mut errors = Vec::new();
+
+    // Upload transcript
+    match client
+        .upload_transcript(&encounter.id, &encounter.id, &patient.id, &transcript)
+        .await
+    {
+        Ok(_) => {
+            sync_status.transcript_synced = true;
+            info!("Transcript uploaded successfully");
+        }
+        Err(e) => errors.push(format!("Transcript: {}", e)),
+    }
+
+    // Upload SOAP note if provided
+    if let Some(ref soap) = soap_note {
+        match client
+            .upload_soap_note(&encounter.id, &encounter.id, &patient.id, soap)
+            .await
+        {
+            Ok(_) => {
+                sync_status.soap_note_synced = true;
+                info!("SOAP note uploaded successfully");
+            }
+            Err(e) => errors.push(format!("SOAP note: {}", e)),
+        }
+    } else {
+        sync_status.soap_note_synced = true; // Not applicable
+    }
+
+    // Upload audio if provided
+    if let Some(ref audio_path) = audio_file_path {
+        let path = PathBuf::from(audio_path);
+        if path.exists() {
+            match std::fs::read(&path) {
+                Ok(audio_data) => {
+                    let duration_seconds = Some(session_duration_ms / 1000);
+                    match client
+                        .upload_audio(
+                            &encounter.id,
+                            &encounter.id,
+                            &patient.id,
+                            &audio_data,
+                            "audio/wav",
+                            duration_seconds,
+                        )
+                        .await
+                    {
+                        Ok(_) => {
+                            sync_status.audio_synced = true;
+                            info!("Audio uploaded successfully");
+                        }
+                        Err(e) => errors.push(format!("Audio: {}", e)),
+                    }
+                }
+                Err(e) => errors.push(format!("Audio read error: {}", e)),
+            }
+        } else {
+            info!("Audio file not found at {:?}, skipping audio upload", path);
+            sync_status.audio_synced = true; // Not available
+        }
+    } else {
+        sync_status.audio_synced = true; // Not applicable
+    }
+
+    // Mark encounter as synced
+    sync_status.encounter_synced = true;
+    sync_status.last_sync_time = Some(chrono::Utc::now().to_rfc3339());
+
+    let success = errors.is_empty();
+    let error = if errors.is_empty() {
+        None
+    } else {
+        Some(errors.join("; "))
+    };
+
+    info!(
+        "Quick sync complete. Success: {}, Transcript: {}, SOAP: {}",
+        success, sync_status.transcript_synced, sync_status.soap_note_synced
+    );
+
+    Ok(SyncResult {
+        success,
+        status: sync_status,
+        error,
+    })
+}
+
+/// Check if Medplum server is reachable (doesn't require authentication)
 #[tauri::command]
 pub async fn medplum_check_connection(
     medplum_state: State<'_, SharedMedplumClient>,
 ) -> Result<bool, String> {
     let config = Config::load_or_default();
-    if config.medplum_client_id.is_empty() {
+    if config.medplum_server_url.is_empty() {
         return Ok(false);
     }
 
@@ -964,7 +1154,8 @@ pub async fn medplum_check_connection(
 
     let client_guard = medplum_state.read().await;
     if let Some(ref client) = *client_guard {
-        Ok(client.is_authenticated().await)
+        // Check server connectivity (not authentication)
+        Ok(client.check_server_connectivity().await)
     } else {
         Ok(false)
     }

@@ -2,6 +2,8 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { listen, UnlistenFn } from '@tauri-apps/api/event';
 import { writeText } from '@tauri-apps/plugin-clipboard-manager';
+import { WebviewWindow } from '@tauri-apps/api/webviewWindow';
+import { useAuth } from './components/AuthProvider';
 import type {
   SessionStatus,
   TranscriptUpdate,
@@ -14,6 +16,8 @@ import type {
   ChecklistResult,
   BiomarkerUpdate,
   AudioQualitySnapshot,
+  Patient,
+  SyncResult,
 } from './types';
 
 const WHISPER_MODELS = [
@@ -166,6 +170,9 @@ function formatDuration(ms: number): string {
 }
 
 function App() {
+  // Medplum auth from context
+  const { authState, login: medplumLogin, logout: medplumLogout, isLoading: authLoading } = useAuth();
+
   const [status, setStatus] = useState<SessionStatus>({
     state: 'idle',
     provider: null,
@@ -192,7 +199,14 @@ function App() {
     max_speakers: number;
     ollama_server_url: string;
     ollama_model: string;
+    medplum_server_url: string;
+    medplum_client_id: string;
+    medplum_auto_sync: boolean;
   } | null>(null);
+
+  // Medplum state
+  const [medplumConnected, setMedplumConnected] = useState(false);
+  const [medplumError, setMedplumError] = useState<string | null>(null);
 
   // Checklist state
   const [checklistResult, setChecklistResult] = useState<ChecklistResult | null>(null);
@@ -219,6 +233,16 @@ function App() {
   const [soapExpanded, setSoapExpanded] = useState(true);
   const [ollamaStatus, setOllamaStatus] = useState<OllamaStatus | null>(null);
   const [ollamaModels, setOllamaModels] = useState<string[]>([]);
+
+  // Medplum sync state
+  const [showSyncModal, setShowSyncModal] = useState(false);
+  const [patientSearchQuery, setPatientSearchQuery] = useState('');
+  const [patientSearchResults, setPatientSearchResults] = useState<Patient[]>([]);
+  const [isSearchingPatients, setIsSearchingPatients] = useState(false);
+  const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [syncError, setSyncError] = useState<string | null>(null);
+  const [syncSuccess, setSyncSuccess] = useState(false);
 
   const transcriptRef = useRef<HTMLDivElement>(null);
   const [localElapsedMs, setLocalElapsedMs] = useState(0);
@@ -330,7 +354,18 @@ function App() {
           max_speakers: settingsResult.max_speakers,
           ollama_server_url: settingsResult.ollama_server_url,
           ollama_model: settingsResult.ollama_model,
+          medplum_server_url: settingsResult.medplum_server_url,
+          medplum_client_id: settingsResult.medplum_client_id,
+          medplum_auto_sync: settingsResult.medplum_auto_sync,
         });
+
+        // Check Medplum connection
+        try {
+          const medplumResult = await invoke<boolean>('medplum_check_connection');
+          setMedplumConnected(medplumResult);
+        } catch {
+          setMedplumConnected(false);
+        }
         if (settingsResult.input_device_id) {
           setSelectedDevice(settingsResult.input_device_id);
         }
@@ -444,6 +479,9 @@ function App() {
         max_speakers: pendingSettings.max_speakers,
         ollama_server_url: pendingSettings.ollama_server_url,
         ollama_model: pendingSettings.ollama_model,
+        medplum_server_url: pendingSettings.medplum_server_url,
+        medplum_client_id: pendingSettings.medplum_client_id,
+        medplum_auto_sync: pendingSettings.medplum_auto_sync,
       };
       const result = await invoke<Settings>('set_settings', { settings: updatedSettings });
       setSettings(result);
@@ -482,6 +520,32 @@ function App() {
     }
   }, [settings, pendingSettings]);
 
+  // Test Medplum connection
+  const handleTestMedplum = useCallback(async () => {
+    if (!pendingSettings) return;
+    setMedplumError(null);
+    try {
+      // Temporarily save settings to test with new URL
+      const testSettings: Settings = {
+        ...settings!,
+        medplum_server_url: pendingSettings.medplum_server_url,
+        medplum_client_id: pendingSettings.medplum_client_id,
+        medplum_auto_sync: pendingSettings.medplum_auto_sync,
+      };
+      await invoke('set_settings', { settings: testSettings });
+
+      const result = await invoke<boolean>('medplum_check_connection');
+      setMedplumConnected(result);
+      if (!result) {
+        setMedplumError('Could not connect to server');
+      }
+    } catch (e) {
+      console.error('Failed to test Medplum:', e);
+      setMedplumConnected(false);
+      setMedplumError(String(e));
+    }
+  }, [settings, pendingSettings]);
+
   // Generate SOAP note
   const handleGenerateSoap = useCallback(async () => {
     if (!transcript.finalized_text.trim()) return;
@@ -501,6 +565,90 @@ function App() {
       setIsGeneratingSoap(false);
     }
   }, [transcript.finalized_text]);
+
+  // Search patients in Medplum
+  const searchPatients = useCallback(async (query: string) => {
+    if (!query.trim() || !authState.is_authenticated) return;
+
+    setIsSearchingPatients(true);
+    try {
+      const results = await invoke<Patient[]>('medplum_search_patients', { query });
+      setPatientSearchResults(results);
+    } catch (e) {
+      console.error('Failed to search patients:', e);
+      setPatientSearchResults([]);
+    } finally {
+      setIsSearchingPatients(false);
+    }
+  }, [authState.is_authenticated]);
+
+  // Quick sync session to Medplum (auto-creates placeholder patient)
+  const syncToMedplum = useCallback(async () => {
+    if (!authState.is_authenticated) return;
+
+    setIsSyncing(true);
+    setSyncError(null);
+    setSyncSuccess(false);
+
+    try {
+      // Get audio file path if available
+      const audioFilePath = await invoke<string | null>('get_audio_file_path');
+
+      // Format SOAP note if available
+      const soapText = soapNote
+        ? `SUBJECTIVE:\n${soapNote.subjective}\n\nOBJECTIVE:\n${soapNote.objective}\n\nASSESSMENT:\n${soapNote.assessment}\n\nPLAN:\n${soapNote.plan}`
+        : null;
+
+      // Quick sync - creates placeholder patient and encounter automatically
+      const result = await invoke<SyncResult>('medplum_quick_sync', {
+        transcript: transcript.finalized_text,
+        soapNote: soapText,
+        audioFilePath: audioFilePath,
+        sessionDurationMs: status.elapsed_ms,
+      });
+
+      if (result.success) {
+        setSyncSuccess(true);
+        console.log('Sync successful:', result.status);
+      } else {
+        setSyncError(result.error || 'Sync failed');
+      }
+    } catch (e) {
+      console.error('Failed to sync to Medplum:', e);
+      setSyncError(String(e));
+    } finally {
+      setIsSyncing(false);
+    }
+  }, [authState.is_authenticated, transcript.finalized_text, soapNote, status.elapsed_ms]);
+
+  // Open the session history window
+  const openHistoryWindow = useCallback(async () => {
+    try {
+      // Check if window already exists
+      const existing = await WebviewWindow.getByLabel('history');
+      if (existing) {
+        await existing.setFocus();
+        return;
+      }
+
+      // Create new history window
+      const historyWindow = new WebviewWindow('history', {
+        url: 'history.html',
+        title: 'Session History',
+        width: 500,
+        height: 700,
+        minWidth: 400,
+        minHeight: 500,
+        resizable: true,
+      });
+
+      historyWindow.once('tauri://error', (e) => {
+        console.error('Failed to open history window:', e);
+      });
+    } catch (e) {
+      console.error('Error opening history window:', e);
+    }
+  }, []);
 
   const isRecording = status.state === 'recording';
   const isStopping = status.state === 'stopping';
@@ -573,18 +721,34 @@ function App() {
           <span className={`status-dot ${getStatusDotClass()}`} />
           <span className="app-title">Scribe</span>
         </div>
-        <button
-          className={`settings-btn ${showSettings ? 'active' : ''}`}
-          onClick={() => setShowSettings(!showSettings)}
-          aria-label="Settings"
-          disabled={isRecording || isStopping}
-          title={isRecording || isStopping ? 'Settings disabled during recording' : 'Settings'}
-        >
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <circle cx="12" cy="12" r="3" />
-            <path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42" />
-          </svg>
-        </button>
+        <div className="header-buttons">
+          <button
+            className="history-btn"
+            onClick={openHistoryWindow}
+            aria-label="Session History"
+            disabled={isRecording || isStopping}
+            title={isRecording || isStopping ? 'History disabled during recording' : 'Session History'}
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
+              <line x1="16" y1="2" x2="16" y2="6" />
+              <line x1="8" y1="2" x2="8" y2="6" />
+              <line x1="3" y1="10" x2="21" y2="10" />
+            </svg>
+          </button>
+          <button
+            className={`settings-btn ${showSettings ? 'active' : ''}`}
+            onClick={() => setShowSettings(!showSettings)}
+            aria-label="Settings"
+            disabled={isRecording || isStopping}
+            title={isRecording || isStopping ? 'Settings disabled during recording' : 'Settings'}
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <circle cx="12" cy="12" r="3" />
+              <path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42" />
+            </svg>
+          </button>
+        </div>
       </header>
 
       {/* Pre-launch Checklist */}
@@ -1099,13 +1263,132 @@ function App() {
         </section>
       )}
 
+      {/* Sync Banner - show when completed, auto-sync enabled, but not authenticated */}
+      {!showChecklist && isCompleted && pendingSettings?.medplum_auto_sync && !authState.is_authenticated && (
+        <div className="sync-login-banner">
+          <span className="sync-login-message">Sign in to sync this session to Medplum</span>
+          <div className="sync-login-actions">
+            <button
+              className="btn btn-signin-small"
+              onClick={medplumLogin}
+              disabled={authLoading || !medplumConnected}
+            >
+              {authLoading ? 'Signing in...' : 'Sign In'}
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Action Bar - only show when completed */}
       {!showChecklist && isCompleted && (
         <div className="action-bar">
+          {authState.is_authenticated && transcript.finalized_text.trim() && (
+            <button
+              className="btn btn-secondary"
+              onClick={syncToMedplum}
+              disabled={isSyncing || syncSuccess}
+            >
+              {isSyncing ? 'Syncing...' : syncSuccess ? '✓ Synced' : 'Sync to Medplum'}
+            </button>
+          )}
           <button className="btn btn-primary" onClick={handleReset}>
             New Session
           </button>
         </div>
+      )}
+
+      {/* Sync Error Toast */}
+      {syncError && (
+        <div className="sync-error-toast">
+          <span>{syncError}</span>
+          <button onClick={() => setSyncError(null)}>&times;</button>
+        </div>
+      )}
+
+      {/* Sync Modal */}
+      {showSyncModal && (
+        <>
+          <div className="settings-overlay" onClick={() => setShowSyncModal(false)} />
+          <div className="sync-modal">
+            <div className="sync-modal-header">
+              <span className="sync-modal-title">Sync to Medplum</span>
+              <button className="close-btn" onClick={() => setShowSyncModal(false)}>
+                &times;
+              </button>
+            </div>
+            <div className="sync-modal-content">
+              {/* Patient Search */}
+              <div className="patient-search">
+                <label className="settings-label">Search Patient</label>
+                <div className="patient-search-input">
+                  <input
+                    type="text"
+                    placeholder="Enter patient name or MRN..."
+                    value={patientSearchQuery}
+                    onChange={(e) => setPatientSearchQuery(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') searchPatients(patientSearchQuery);
+                    }}
+                  />
+                  <button
+                    className="btn btn-small"
+                    onClick={() => searchPatients(patientSearchQuery)}
+                    disabled={isSearchingPatients || !patientSearchQuery.trim()}
+                  >
+                    {isSearchingPatients ? '...' : 'Search'}
+                  </button>
+                </div>
+              </div>
+
+              {/* Patient Results */}
+              {patientSearchResults.length > 0 && (
+                <div className="patient-results">
+                  {patientSearchResults.map((patient) => (
+                    <div
+                      key={patient.id}
+                      className={`patient-item ${selectedPatient?.id === patient.id ? 'selected' : ''}`}
+                      onClick={() => setSelectedPatient(patient)}
+                    >
+                      <span className="patient-name">{patient.name}</span>
+                      {patient.mrn && <span className="patient-mrn">MRN: {patient.mrn}</span>}
+                      {patient.birthDate && <span className="patient-dob">DOB: {patient.birthDate}</span>}
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Selected Patient */}
+              {selectedPatient && (
+                <div className="selected-patient">
+                  <span className="selected-label">Selected:</span>
+                  <span className="selected-name">{selectedPatient.name}</span>
+                </div>
+              )}
+
+              {/* Sync Error */}
+              {syncError && (
+                <div className="sync-error">{syncError}</div>
+              )}
+
+              {/* Sync Button */}
+              <div className="sync-actions">
+                <button
+                  className="btn btn-secondary"
+                  onClick={() => setShowSyncModal(false)}
+                >
+                  Cancel
+                </button>
+                <button
+                  className="btn btn-primary"
+                  onClick={syncToMedplum}
+                  disabled={!selectedPatient || isSyncing}
+                >
+                  {isSyncing ? 'Syncing...' : 'Sync Encounter'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </>
       )}
 
       {/* Settings Drawer */}
@@ -1267,6 +1550,97 @@ function App() {
                     <button className="btn-test" onClick={handleTestOllama}>
                       Test
                     </button>
+                  </div>
+
+                  {/* Medplum EMR Settings */}
+                  <div className="settings-divider" />
+                  <div className="settings-section-title">Medplum EMR</div>
+
+                  <div className="settings-group">
+                    <label className="settings-label" htmlFor="medplum-url">Server URL</label>
+                    <input
+                      id="medplum-url"
+                      type="text"
+                      className="settings-input"
+                      value={pendingSettings.medplum_server_url}
+                      onChange={(e) => setPendingSettings({ ...pendingSettings, medplum_server_url: e.target.value })}
+                      placeholder="http://localhost:8103"
+                      disabled={authState.is_authenticated}
+                    />
+                  </div>
+
+                  <div className="settings-group">
+                    <label className="settings-label" htmlFor="medplum-client-id">Client ID</label>
+                    <input
+                      id="medplum-client-id"
+                      type="text"
+                      className="settings-input"
+                      value={pendingSettings.medplum_client_id}
+                      onChange={(e) => setPendingSettings({ ...pendingSettings, medplum_client_id: e.target.value })}
+                      placeholder="Enter client ID from Medplum"
+                      disabled={authState.is_authenticated}
+                    />
+                  </div>
+
+                  <div className="settings-group">
+                    <div className="settings-toggle">
+                      <span className="settings-label" style={{ marginBottom: 0 }}>Auto-sync encounters</span>
+                      <label className="toggle-switch">
+                        <input
+                          type="checkbox"
+                          checked={pendingSettings.medplum_auto_sync}
+                          onChange={(e) =>
+                            setPendingSettings({ ...pendingSettings, medplum_auto_sync: e.target.checked })
+                          }
+                          aria-label="Auto-sync encounters to Medplum"
+                        />
+                        <span className="toggle-slider"></span>
+                      </label>
+                    </div>
+                  </div>
+
+                  <div className="settings-group ollama-status-group">
+                    <div className="ollama-status">
+                      <span className={`status-indicator ${medplumConnected ? 'connected' : 'disconnected'}`} />
+                      <span className="status-text">
+                        {medplumConnected
+                          ? 'Connected'
+                          : medplumError || 'Not connected'}
+                      </span>
+                    </div>
+                    <button className="btn-test" onClick={handleTestMedplum}>
+                      Test
+                    </button>
+                  </div>
+
+                  {/* Medplum Authentication */}
+                  <div className="settings-group medplum-auth-group">
+                    {authState.is_authenticated ? (
+                      <div className="medplum-auth-status">
+                        <div className="auth-user-info">
+                          <span className="status-indicator connected" />
+                          <span className="auth-user-name">
+                            {authState.practitioner_name || 'Signed in'}
+                          </span>
+                        </div>
+                        <button
+                          className="btn-signout"
+                          onClick={medplumLogout}
+                          disabled={authLoading}
+                        >
+                          {authLoading ? 'Signing out...' : 'Sign Out'}
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        className="btn-signin"
+                        onClick={medplumLogin}
+                        disabled={authLoading || !medplumConnected}
+                        title={!medplumConnected ? 'Connect to server first' : ''}
+                      >
+                        {authLoading ? 'Signing in...' : 'Sign In with Medplum'}
+                      </button>
+                    )}
                   </div>
                 </>
               )}

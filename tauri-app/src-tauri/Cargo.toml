@@ -21,6 +21,7 @@ libc = "0.2"
 tauri-plugin-clipboard-manager = "2"
 tauri-plugin-deep-link = "2"
 tauri-plugin-shell = "2"
+tauri-plugin-single-instance = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 
@@ -48,6 +49,9 @@ rustfft = { version = "6.2", optional = true }
 
 # Pitch detection for vitality metric
 pitch-detection = "0.3"
+
+# WAV file writing for audio recording
+hound = "3.5"
 
 # ndarray for ONNX tensor operations (used by YAMNet)
 ndarray = "0.16"

@@ -43,7 +43,7 @@ fn default_medplum_url() -> String {
 }
 
 fn default_medplum_client_id() -> String {
-    "18abd78d-96be-4901-9351-59b597de6407".to_string()
+    "af1464aa-e00c-4940-a32e-18d878b7911c".to_string()
 }
 
 fn default_medplum_auto_sync() -> bool {
@@ -407,6 +407,13 @@ impl Config {
         Ok(models_dir.join("yamnet.onnx"))
     }
 
+    /// Get the recordings directory for storing audio files
+    pub fn get_recordings_dir(&self) -> PathBuf {
+        Self::config_dir()
+            .map(|d| d.join("recordings"))
+            .unwrap_or_else(|_| PathBuf::from("/tmp/transcriptionapp/recordings"))
+    }
+
     /// Convert to frontend Settings
     pub fn to_settings(&self) -> Settings {
         Settings {
@@ -634,12 +641,12 @@ mod tests {
     fn test_medplum_defaults() {
         let config = Config::default();
         assert_eq!(config.medplum_server_url, "http://localhost:8103");
-        assert_eq!(config.medplum_client_id, "18abd78d-96be-4901-9351-59b597de6407");
+        assert_eq!(config.medplum_client_id, "af1464aa-e00c-4940-a32e-18d878b7911c");
         assert!(config.medplum_auto_sync);
 
         let settings = Settings::default();
         assert_eq!(settings.medplum_server_url, "http://localhost:8103");
-        assert_eq!(settings.medplum_client_id, "18abd78d-96be-4901-9351-59b597de6407");
+        assert_eq!(settings.medplum_client_id, "af1464aa-e00c-4940-a32e-18d878b7911c");
         assert!(settings.medplum_auto_sync);
     }
 
