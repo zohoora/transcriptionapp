@@ -384,9 +384,8 @@ impl MedplumClient {
         let state = pkce.state.clone();
 
         // Build authorization URL
-        // prompt=none skips consent screen on subsequent logins (after first consent)
         let auth_url = format!(
-            "{}/oauth2/authorize?response_type=code&client_id={}&redirect_uri={}&scope=openid%20profile&code_challenge={}&code_challenge_method=S256&state={}&prompt=none",
+            "{}/oauth2/authorize?response_type=code&client_id={}&redirect_uri={}&scope=openid%20profile&code_challenge={}&code_challenge_method=S256&state={}",
             self.base_url,
             urlencoding::encode(&self.client_id),
             urlencoding::encode(OAUTH_REDIRECT_URI),
