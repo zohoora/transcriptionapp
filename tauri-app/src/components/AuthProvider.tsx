@@ -21,6 +21,7 @@ interface AuthContextType {
   login: () => Promise<void>;
   logout: () => Promise<void>;
   refreshAuth: () => Promise<void>;
+  cancelLogin: () => void;
 }
 
 const defaultAuthState: AuthState = {
@@ -219,6 +220,12 @@ export function AuthProvider({ children }: AuthProviderProps) {
     }
   }, []);
 
+  // Cancel an in-progress login (e.g., if user closes OAuth browser)
+  const cancelLogin = useCallback(() => {
+    setIsLoading(false);
+    setError(null);
+  }, []);
+
   const value: AuthContextType = {
     authState,
     isLoading,
@@ -226,6 +233,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
     login,
     logout,
     refreshAuth,
+    cancelLogin,
   };
 
   return (

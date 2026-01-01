@@ -62,6 +62,7 @@ interface SettingsDrawerProps {
   authLoading: boolean;
   onLogin: () => void;
   onLogout: () => void;
+  onCancelLogin: () => void;
 }
 
 /**
@@ -86,6 +87,7 @@ export const SettingsDrawer = memo(function SettingsDrawer({
   authLoading,
   onLogin,
   onLogout,
+  onCancelLogin,
 }: SettingsDrawerProps) {
   if (!isOpen) return null;
 
@@ -329,14 +331,24 @@ export const SettingsDrawer = memo(function SettingsDrawer({
                     </button>
                   </div>
                 ) : (
-                  <button
-                    className="btn-signin"
-                    onClick={onLogin}
-                    disabled={authLoading || !medplumConnected}
-                    title={!medplumConnected ? 'Connect to server first' : ''}
-                  >
-                    {authLoading ? 'Signing in...' : 'Sign In with Medplum'}
-                  </button>
+                  <div className="medplum-login-actions">
+                    <button
+                      className="btn-signin"
+                      onClick={onLogin}
+                      disabled={authLoading || !medplumConnected}
+                      title={!medplumConnected ? 'Connect to server first' : ''}
+                    >
+                      {authLoading ? 'Signing in...' : 'Sign In with Medplum'}
+                    </button>
+                    {authLoading && (
+                      <button
+                        className="btn-cancel-login"
+                        onClick={onCancelLogin}
+                      >
+                        Cancel
+                      </button>
+                    )}
+                  </div>
                 )}
               </div>
             </>

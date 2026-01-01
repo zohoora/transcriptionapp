@@ -2,7 +2,7 @@
  * LoginScreen - Medplum Authentication UI
  *
  * Displays a login button when user is not authenticated.
- * Shows loading state during OAuth flow.
+ * Shows loading state during OAuth flow with cancel option.
  */
 
 import { useAuth } from './AuthProvider';
@@ -12,7 +12,7 @@ interface LoginScreenProps {
 }
 
 export function LoginScreen({ onSkip }: LoginScreenProps) {
-  const { isLoading, error, login } = useAuth();
+  const { isLoading, error, login, cancelLogin } = useAuth();
 
   return (
     <div className="login-screen">
@@ -37,17 +37,26 @@ export function LoginScreen({ onSkip }: LoginScreenProps) {
           )}
         </button>
 
+        {/* Cancel button during OAuth flow */}
+        {isLoading && (
+          <button
+            className="cancel-login-button"
+            onClick={cancelLogin}
+          >
+            Cancel
+          </button>
+        )}
+
         {error && (
           <div className="login-error">
             {error}
           </div>
         )}
 
-        {onSkip && (
+        {onSkip && !isLoading && (
           <button
             className="skip-login-button"
             onClick={onSkip}
-            disabled={isLoading}
           >
             Continue without signing in
           </button>

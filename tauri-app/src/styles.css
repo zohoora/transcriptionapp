@@ -1471,6 +1471,29 @@ body {
   cursor: not-allowed;
 }
 
+/* Medplum login actions wrapper for cancel button */
+.medplum-login-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.btn-cancel-login {
+  width: 100%;
+  padding: 8px 16px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  background: transparent;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.btn-cancel-login:hover {
+  background: var(--bg-hover);
+}
+
 /* Sync Login Banner */
 .sync-login-banner {
   display: flex;
@@ -1514,6 +1537,21 @@ body {
 .btn-signin-small:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+.btn-cancel-small {
+  padding: 8px 12px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  background: transparent;
+  border: 1px solid var(--border-color);
+  border-radius: 5px;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.btn-cancel-small:hover {
+  background: var(--bg-hover);
 }
 
 /* =============================================================================
@@ -1607,6 +1645,23 @@ body {
 .skip-login-button:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+/* Cancel login button */
+.cancel-login-button {
+  padding: 8px 16px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  background: transparent;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background 0.15s ease;
+  margin-top: 8px;
+}
+
+.cancel-login-button:hover {
+  background: var(--bg-hover);
 }
 
 .login-footer {

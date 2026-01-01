@@ -39,6 +39,7 @@ interface ReviewModeProps {
   // Actions
   onNewSession: () => void;
   onLogin: () => void;
+  onCancelLogin: () => void;
   authLoading: boolean;
   autoSyncEnabled: boolean;
 }
@@ -93,6 +94,7 @@ export const ReviewMode = memo(function ReviewMode({
   onClearSyncError,
   onNewSession,
   onLogin,
+  onCancelLogin,
   authLoading,
   autoSyncEnabled,
 }: ReviewModeProps) {
@@ -350,13 +352,23 @@ export const ReviewMode = memo(function ReviewMode({
       {autoSyncEnabled && !authState.is_authenticated && (
         <div className="sync-login-banner">
           <span className="sync-login-message">Sign in to sync this session to Medplum</span>
-          <button
-            className="btn-signin-small"
-            onClick={onLogin}
-            disabled={authLoading}
-          >
-            {authLoading ? 'Signing in...' : 'Sign In'}
-          </button>
+          <div className="sync-login-actions">
+            <button
+              className="btn-signin-small"
+              onClick={onLogin}
+              disabled={authLoading}
+            >
+              {authLoading ? 'Signing in...' : 'Sign In'}
+            </button>
+            {authLoading && (
+              <button
+                className="btn-cancel-small"
+                onClick={onCancelLogin}
+              >
+                Cancel
+              </button>
+            )}
+          </div>
         </div>
       )}
 

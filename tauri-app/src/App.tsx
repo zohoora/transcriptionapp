@@ -31,7 +31,7 @@ type UIMode = 'ready' | 'recording' | 'review';
 
 function App() {
   // Medplum auth from context
-  const { authState, login: medplumLogin, logout: medplumLogout, isLoading: authLoading } = useAuth();
+  const { authState, login: medplumLogin, logout: medplumLogout, cancelLogin: medplumCancelLogin, isLoading: authLoading } = useAuth();
 
   // Session state
   const [status, setStatus] = useState<SessionStatus>({
@@ -546,6 +546,7 @@ function App() {
           onClearSyncError={() => setSyncError(null)}
           onNewSession={handleReset}
           onLogin={medplumLogin}
+          onCancelLogin={medplumCancelLogin}
           authLoading={authLoading}
           autoSyncEnabled={pendingSettings?.medplum_auto_sync || false}
         />
@@ -571,6 +572,7 @@ function App() {
         authLoading={authLoading}
         onLogin={medplumLogin}
         onLogout={medplumLogout}
+        onCancelLogin={medplumCancelLogin}
       />
     </div>
   );
