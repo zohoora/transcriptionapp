@@ -39,6 +39,7 @@ Rust Backend
 │   ├── mod.rs       # Module exports
 │   └── provider.rs  # ONNX-based ADV detection
 ├── ollama.rs        # Ollama LLM client for SOAP note generation
+├── activity_log.rs  # Structured activity logging (PHI-safe)
 └── biomarkers/      # Vocal biomarker analysis
     ├── mod.rs       # Types (CoughEvent, VocalBiomarkers, SessionMetrics, AudioQualitySnapshot)
     ├── config.rs    # BiomarkerConfig
@@ -158,8 +159,21 @@ Integration with Ollama LLM for generating structured SOAP (Subjective, Objectiv
 - API endpoints used:
   - `GET /api/tags` - List available models
   - `POST /api/generate` - Generate SOAP note (stream: false)
-- Structured prompt with explicit section markers for reliable parsing
-- Handles Qwen's `/think` block output
+- **JSON output format** for reliable parsing (not text markers)
+- Handles Qwen's `<think>` blocks and markdown code fences
+- Type-safe parsing with `serde_json`
+
+**Prompt Format**
+```
+/no_think You are a medical scribe assistant...
+Respond with ONLY valid JSON:
+{
+  "subjective": "...",
+  "objective": "...",
+  "assessment": "...",
+  "plan": "..."
+}
+```
 
 **Configuration**
 - `ollama_server_url`: Ollama server address (default: `http://localhost:11434`)
@@ -342,7 +356,7 @@ interface Settings {
   - YAMNet: `yamnet.onnx` (~3MB) - for cough detection
 - **Settings**: `~/.transcriptionapp/config.json`
 - **Medplum Auth**: `~/.transcriptionapp/medplum_auth.json` - persisted OAuth tokens
-- **Logs**: Console (tracing crate)
+- **Activity Logs**: `~/.transcriptionapp/logs/activity.log.*` - daily rotated JSON logs
 
 ## Common Issues
 
@@ -421,6 +435,76 @@ Integration with Medplum FHIR server for storing encounters, transcripts, SOAP n
 **Vite Multi-Page Build**
 - `vite.config.ts` configured with rollup input for both `index.html` and `history.html`
 - History window created via `WebviewWindow` API from `@tauri-apps/api/webviewWindow`
+
+## Timezone Handling
+
+**Principle: Store UTC, Display Local**
+
+All timestamps are stored in UTC and converted to local timezone for display.
+
+**Backend (Rust)**
+- All FHIR timestamps use `Utc::now().to_rfc3339()` (RFC3339 format with Z suffix)
+- Token expiry uses Unix timestamps (timezone-agnostic)
+- Activity logs use explicit UTC via `UtcTime::rfc_3339()`
+- Date range queries properly handle day boundaries with `chrono::NaiveDate`
+
+**Frontend (TypeScript)**
+- `src/utils.ts` provides centralized date utilities:
+  - `formatDateForApi(date)` - Date → YYYY-MM-DD in UTC (for API queries)
+  - `formatLocalTime(iso)` - ISO string → local time display (e.g., "2:30 PM")
+  - `formatLocalDateTime(iso)` - ISO string → local datetime display
+  - `formatLocalDate(iso)` - ISO string → local date display
+  - `isSameLocalDay(d1, d2)` - Compare dates in local timezone
+  - `isToday(date)` - Check if date is today in local timezone
+
+**Usage Pattern**
+```typescript
+// Sending to API - use UTC
+const dateStr = formatDateForApi(selectedDate);
+await invoke('get_encounters', { date: dateStr });
+
+// Displaying to user - use local
+<span>{formatLocalTime(encounter.startTime)}</span>
+```
+
+## Activity Logging
+
+Structured activity logging for auditing and debugging. PHI-safe by design.
+
+**What IS logged:**
+- Session IDs, encounter IDs, segment IDs
+- Timestamps and durations
+- Event types and outcomes (success/failure)
+- File sizes and counts
+- Model names and settings
+- Error messages (sanitized)
+
+**What is NOT logged:**
+- Transcript text
+- SOAP note content
+- Patient names or identifiers
+- Audio content
+- Any free-text clinical content
+
+**Architecture**
+- `activity_log.rs`: Dual-output logging (console + file)
+- Daily rotation via `tracing-appender`
+- JSON format for structured analysis
+- UTC timestamps with `UtcTime::rfc_3339()`
+
+**Log Events**
+| Event | Description |
+|-------|-------------|
+| `session_start` | Recording session started |
+| `session_stop` | Recording session stopped |
+| `transcription_segment` | Segment processed (word count only) |
+| `soap_generation` | SOAP note generated (no content) |
+| `medplum_auth` | Authentication action |
+| `encounter_sync` | Encounter synced to Medplum |
+| `document_upload` | Document uploaded (size only) |
+| `audio_upload` | Audio uploaded (size/duration only) |
+| `model_load` | Model loaded |
+| `error` | Error occurred (sanitized message) |
 
 ## ADRs
 
