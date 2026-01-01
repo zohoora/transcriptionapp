@@ -237,130 +237,108 @@ fn build_soap_prompt(transcript: &str) -> String {
 TRANSCRIPT:
 {}
 
-Generate a structured SOAP note with these sections:
-- Subjective: Patient's reported symptoms, history, and concerns
-- Objective: Observable findings, vital signs, examination results mentioned
-- Assessment: Clinical impression and potential diagnoses
-- Plan: Recommended treatments, tests, follow-ups
+Respond with ONLY valid JSON in this exact format:
+{{
+  "subjective": "Patient's reported symptoms, history, and concerns from the visit",
+  "objective": "Observable findings, vital signs, examination results mentioned",
+  "assessment": "Clinical impression and potential diagnoses",
+  "plan": "Recommended treatments, tests, follow-ups"
+}}
 
-Format your response exactly as:
-SUBJECTIVE:
-[content]
-
-OBJECTIVE:
-[content]
-
-ASSESSMENT:
-[content]
-
-PLAN:
-[content]
-
-Important: Only include information that is explicitly mentioned or can be directly inferred from the transcript. If a section has no relevant information, write "No information available in transcript.""#,
+Rules:
+- Only include information explicitly mentioned or directly inferable from the transcript
+- Use "No information available" if a section has no relevant content
+- Output ONLY the JSON object, no markdown, no explanation, no other text"#,
         transcript
     )
 }
 
+/// JSON structure for LLM response (without metadata fields)
+#[derive(Debug, Clone, Deserialize)]
+struct SoapNoteJson {
+    subjective: String,
+    objective: String,
+    assessment: String,
+    plan: String,
+}
+
 /// Parse the LLM response into a structured SOAP note
 fn parse_soap_response(response: &str, model: &str) -> Result<SoapNote, String> {
-    // Clean up the response - handle both /think and /no_think variants from Qwen
+    // Clean up the response
     let clean_response = response
         .trim()
-        // Remove thinking blocks if present
+        // Remove thinking blocks if present (Qwen models)
         .split("</think>")
         .last()
         .unwrap_or(response)
         .trim();
 
-    // Strip markdown formatting (**, ##, etc.) to normalize the text
-    let normalized = clean_response
-        .replace("**", "")
-        .replace("##", "")
-        .replace("# ", "");
+    // Extract JSON from markdown code blocks if present
+    let json_str = extract_json(clean_response);
 
-    // Try multiple marker formats
-    let subjective = extract_section_flexible(&normalized, &["SUBJECTIVE:", "SUBJECTIVE", "S:"], &["OBJECTIVE:", "OBJECTIVE", "O:"]);
-    let objective = extract_section_flexible(&normalized, &["OBJECTIVE:", "OBJECTIVE", "O:"], &["ASSESSMENT:", "ASSESSMENT", "A:"]);
-    let assessment = extract_section_flexible(&normalized, &["ASSESSMENT:", "ASSESSMENT", "A:"], &["PLAN:", "PLAN", "P:"]);
-    let plan = extract_section_flexible(&normalized, &["PLAN:", "PLAN", "P:"], &[]);
-
-    // Validate that we got at least some content
-    if subjective.is_empty() && objective.is_empty() && assessment.is_empty() && plan.is_empty() {
-        // Log the response for debugging
-        tracing::warn!(
-            "Failed to parse SOAP note. Response preview: {}",
-            &normalized.chars().take(500).collect::<String>()
-        );
-        return Err(format!(
-            "Could not parse SOAP note sections from response. Response started with: {}...",
-            &normalized.chars().take(100).collect::<String>()
-        ));
+    // Parse as JSON
+    match serde_json::from_str::<SoapNoteJson>(&json_str) {
+        Ok(parsed) => {
+            info!("Successfully parsed SOAP note JSON");
+            Ok(SoapNote {
+                subjective: if parsed.subjective.is_empty() {
+                    "No information available.".to_string()
+                } else {
+                    parsed.subjective
+                },
+                objective: if parsed.objective.is_empty() {
+                    "No information available.".to_string()
+                } else {
+                    parsed.objective
+                },
+                assessment: if parsed.assessment.is_empty() {
+                    "No information available.".to_string()
+                } else {
+                    parsed.assessment
+                },
+                plan: if parsed.plan.is_empty() {
+                    "No information available.".to_string()
+                } else {
+                    parsed.plan
+                },
+                generated_at: Utc::now().to_rfc3339(),
+                model_used: model.to_string(),
+            })
+        }
+        Err(e) => {
+            // Log the response for debugging
+            tracing::warn!(
+                "Failed to parse SOAP note JSON: {}. Response preview: {}",
+                e,
+                &json_str.chars().take(500).collect::<String>()
+            );
+            Err(format!(
+                "Could not parse SOAP note JSON: {}. Response started with: {}...",
+                e,
+                &json_str.chars().take(100).collect::<String>()
+            ))
+        }
     }
-
-    Ok(SoapNote {
-        subjective: if subjective.is_empty() {
-            "No information available.".to_string()
-        } else {
-            subjective
-        },
-        objective: if objective.is_empty() {
-            "No information available.".to_string()
-        } else {
-            objective
-        },
-        assessment: if assessment.is_empty() {
-            "No information available.".to_string()
-        } else {
-            assessment
-        },
-        plan: if plan.is_empty() {
-            "No information available.".to_string()
-        } else {
-            plan
-        },
-        generated_at: Utc::now().to_rfc3339(),
-        model_used: model.to_string(),
-    })
 }
 
-/// Extract a section from the response text, trying multiple start markers
-fn extract_section_flexible(text: &str, start_markers: &[&str], end_markers: &[&str]) -> String {
-    let text_upper = text.to_uppercase();
+/// Extract JSON from response, handling markdown code blocks
+fn extract_json(text: &str) -> String {
+    let trimmed = text.trim();
 
-    // Try each start marker and find the best match
-    let mut best_start: Option<usize> = None;
-    let mut marker_len = 0;
-
-    for marker in start_markers {
-        let marker_upper = marker.to_uppercase();
-        if let Some(pos) = text_upper.find(&marker_upper) {
-            // Prefer earlier positions, or longer markers at same position
-            if best_start.is_none() || pos < best_start.unwrap() {
-                best_start = Some(pos);
-                marker_len = marker.len();
+    // Check for markdown code blocks: ```json ... ``` or ``` ... ```
+    if trimmed.starts_with("```") {
+        // Find the end of the opening fence line
+        if let Some(start_idx) = trimmed.find('\n') {
+            let after_fence = &trimmed[start_idx + 1..];
+            // Find the closing fence
+            if let Some(end_idx) = after_fence.rfind("```") {
+                return after_fence[..end_idx].trim().to_string();
             }
         }
     }
 
-    let start_pos = match best_start {
-        Some(pos) => pos + marker_len,
-        None => return String::new(),
-    };
-
-    let remaining = &text[start_pos..];
-
-    // Find the earliest end marker
-    let mut end_pos = remaining.len();
-    for marker in end_markers {
-        let marker_upper = marker.to_uppercase();
-        if let Some(pos) = remaining.to_uppercase().find(&marker_upper) {
-            if pos < end_pos {
-                end_pos = pos;
-            }
-        }
-    }
-
-    remaining[..end_pos].trim().to_string()
+    // No code block, return as-is
+    trimmed.to_string()
 }
 
 #[cfg(test)]
@@ -368,64 +346,38 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_extract_section() {
-        let response = r#"SUBJECTIVE:
-Patient reports headache for 3 days.
-
-OBJECTIVE:
-Vital signs stable. Temperature 98.6F.
-
-ASSESSMENT:
-Tension headache.
-
-PLAN:
-OTC pain relief. Follow up if symptoms persist."#;
-
-        let subjective = extract_section_flexible(response, &["SUBJECTIVE:"], &["OBJECTIVE:"]);
-        assert!(subjective.contains("headache for 3 days"));
-
-        let objective = extract_section_flexible(response, &["OBJECTIVE:"], &["ASSESSMENT:"]);
-        assert!(objective.contains("Vital signs stable"));
-
-        let assessment = extract_section_flexible(response, &["ASSESSMENT:"], &["PLAN:"]);
-        assert!(assessment.contains("Tension headache"));
-
-        let plan = extract_section_flexible(response, &["PLAN:"], &[]);
-        assert!(plan.contains("OTC pain relief"));
-    }
-
-    #[test]
-    fn test_extract_section_case_insensitive() {
-        let response = r#"subjective:
-Lower case test.
-
-objective:
-More content."#;
-
-        let subjective = extract_section_flexible(response, &["SUBJECTIVE:"], &["OBJECTIVE:"]);
-        assert!(subjective.contains("Lower case test"));
-    }
-
-    #[test]
-    fn test_parse_soap_response() {
-        let response = r#"SUBJECTIVE:
-Patient complains of cough.
-
-OBJECTIVE:
-Lungs clear.
-
-ASSESSMENT:
-Viral URI.
-
-PLAN:
-Rest and fluids."#;
+    fn test_parse_soap_response_json() {
+        let response = r#"{
+            "subjective": "Patient complains of cough for 3 days.",
+            "objective": "Lungs clear on auscultation. No fever.",
+            "assessment": "Viral upper respiratory infection.",
+            "plan": "Rest, fluids, and OTC cough suppressant."
+        }"#;
 
         let soap = parse_soap_response(response, "qwen3:4b").unwrap();
         assert!(soap.subjective.contains("cough"));
         assert!(soap.objective.contains("Lungs clear"));
-        assert!(soap.assessment.contains("Viral URI"));
+        assert!(soap.assessment.contains("Viral"));
         assert!(soap.plan.contains("Rest"));
         assert_eq!(soap.model_used, "qwen3:4b");
+    }
+
+    #[test]
+    fn test_parse_soap_response_with_markdown_code_block() {
+        let response = r#"```json
+{
+    "subjective": "Patient reports headache.",
+    "objective": "Vital signs normal.",
+    "assessment": "Tension headache.",
+    "plan": "Ibuprofen as needed."
+}
+```"#;
+
+        let soap = parse_soap_response(response, "llama3:8b").unwrap();
+        assert!(soap.subjective.contains("headache"));
+        assert!(soap.objective.contains("Vital signs"));
+        assert!(soap.assessment.contains("Tension"));
+        assert!(soap.plan.contains("Ibuprofen"));
     }
 
     #[test]
@@ -434,17 +386,12 @@ Rest and fluids."#;
 Let me analyze this transcript...
 </think>
 
-SUBJECTIVE:
-Patient reports fever.
-
-OBJECTIVE:
-Temperature 101F.
-
-ASSESSMENT:
-Possible infection.
-
-PLAN:
-Monitor temperature."#;
+{
+    "subjective": "Patient reports fever and chills.",
+    "objective": "Temperature 101.5F.",
+    "assessment": "Possible viral infection.",
+    "plan": "Monitor temperature, hydrate."
+}"#;
 
         let soap = parse_soap_response(response, "qwen3:4b").unwrap();
         assert!(soap.subjective.contains("fever"));
@@ -452,20 +399,62 @@ Monitor temperature."#;
     }
 
     #[test]
-    fn test_parse_soap_response_empty() {
-        let response = "Some random text without SOAP sections";
+    fn test_parse_soap_response_empty_sections() {
+        let response = r#"{
+            "subjective": "",
+            "objective": "Blood pressure 120/80.",
+            "assessment": "",
+            "plan": "Continue current medications."
+        }"#;
+
+        let soap = parse_soap_response(response, "qwen3:4b").unwrap();
+        assert_eq!(soap.subjective, "No information available.");
+        assert!(soap.objective.contains("Blood pressure"));
+        assert_eq!(soap.assessment, "No information available.");
+        assert!(soap.plan.contains("Continue"));
+    }
+
+    #[test]
+    fn test_parse_soap_response_invalid_json() {
+        let response = "Some random text without JSON";
         let result = parse_soap_response(response, "qwen3:4b");
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_parse_soap_response_missing_fields() {
+        let response = r#"{ "subjective": "Patient has cough." }"#;
+        let result = parse_soap_response(response, "qwen3:4b");
+        assert!(result.is_err()); // Missing required fields
+    }
+
+    #[test]
+    fn test_extract_json_plain() {
+        let input = r#"{"key": "value"}"#;
+        assert_eq!(extract_json(input), r#"{"key": "value"}"#);
+    }
+
+    #[test]
+    fn test_extract_json_from_code_block() {
+        let input = "```json\n{\"key\": \"value\"}\n```";
+        assert_eq!(extract_json(input), r#"{"key": "value"}"#);
+    }
+
+    #[test]
+    fn test_extract_json_from_plain_code_block() {
+        let input = "```\n{\"key\": \"value\"}\n```";
+        assert_eq!(extract_json(input), r#"{"key": "value"}"#);
     }
 
     #[test]
     fn test_build_soap_prompt() {
         let prompt = build_soap_prompt("Doctor: How are you feeling?");
         assert!(prompt.contains("Doctor: How are you feeling?"));
-        assert!(prompt.contains("SUBJECTIVE"));
-        assert!(prompt.contains("OBJECTIVE"));
-        assert!(prompt.contains("ASSESSMENT"));
-        assert!(prompt.contains("PLAN"));
+        assert!(prompt.contains("subjective"));
+        assert!(prompt.contains("objective"));
+        assert!(prompt.contains("assessment"));
+        assert!(prompt.contains("plan"));
+        assert!(prompt.contains("JSON"));
     }
 
     #[test]

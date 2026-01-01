@@ -1,4 +1,5 @@
 import React, { useMemo } from 'react';
+import { isSameLocalDay, isToday } from '../utils';
 
 interface CalendarProps {
   selectedDate: Date;
@@ -12,21 +13,12 @@ const MONTHS = [
   'July', 'August', 'September', 'October', 'November', 'December'
 ];
 
+// formatDateKey uses local timezone for display/comparison with datesWithSessions
 function formatDateKey(date: Date): string {
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, '0');
   const day = String(date.getDate()).padStart(2, '0');
   return `${year}-${month}-${day}`;
-}
-
-function isSameDay(a: Date, b: Date): boolean {
-  return a.getFullYear() === b.getFullYear()
-    && a.getMonth() === b.getMonth()
-    && a.getDate() === b.getDate();
-}
-
-function isToday(date: Date): boolean {
-  return isSameDay(date, new Date());
 }
 
 const Calendar: React.FC<CalendarProps> = ({
@@ -108,7 +100,7 @@ const Calendar: React.FC<CalendarProps> = ({
 
         {days.map((date) => {
           const dateKey = formatDateKey(date);
-          const isSelected = isSameDay(date, selectedDate);
+          const isSelected = isSameLocalDay(date, selectedDate);
           const hasSession = sessionSet.has(dateKey);
           const isTodayDate = isToday(date);
 

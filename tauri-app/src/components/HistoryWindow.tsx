@@ -4,6 +4,7 @@ import { writeText } from '@tauri-apps/plugin-clipboard-manager';
 import { useAuth } from './AuthProvider';
 import Calendar from './Calendar';
 import AudioPlayer from './AudioPlayer';
+import { formatDateForApi, formatLocalTime } from '../utils';
 import type { EncounterSummary, EncounterDetails } from '../types';
 
 type View = 'list' | 'detail';
@@ -17,20 +18,9 @@ function formatDateForDisplay(date: Date): string {
   });
 }
 
-function formatDateForApi(date: Date): string {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const day = String(date.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
-}
-
+// Use formatLocalTime from utils for time display
 function formatTime(dateString: string): string {
-  const date = new Date(dateString);
-  return date.toLocaleTimeString('en-US', {
-    hour: 'numeric',
-    minute: '2-digit',
-    hour12: true,
-  });
+  return formatLocalTime(dateString);
 }
 
 const HistoryWindow: React.FC = () => {

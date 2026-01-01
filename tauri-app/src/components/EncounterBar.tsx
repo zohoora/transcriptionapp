@@ -10,6 +10,7 @@
 
 import React from 'react';
 import type { Encounter, SyncStatus } from '../types';
+import { formatLocalTime } from '../utils';
 
 interface EncounterBarProps {
   encounter: Encounter;
@@ -30,8 +31,7 @@ export function EncounterBar({
 }: EncounterBarProps) {
   const formatTime = (isoString: string): string => {
     try {
-      const date = new Date(isoString);
-      return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      return formatLocalTime(isoString);
     } catch {
       return '--:--';
     }

@@ -11,6 +11,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import type { EncounterSummary, EncounterDetails } from '../types';
+import { formatLocalDate } from '../utils';
 
 interface HistoryViewProps {
   onClose?: () => void;
@@ -71,12 +72,8 @@ export function HistoryView({ onClose, onSelectEncounter }: HistoryViewProps) {
 
   const formatDate = (isoString: string): string => {
     try {
-      const date = new Date(isoString);
-      return date.toLocaleDateString([], {
-        month: 'short',
-        day: 'numeric',
-        year: 'numeric',
-      });
+      // Use local timezone for display
+      return formatLocalDate(isoString);
     } catch {
       return '--';
     }

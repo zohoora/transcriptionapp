@@ -6,6 +6,7 @@ import type {
   SoapNote,
   AuthState,
 } from '../../types';
+import { formatLocalDateTime } from '../../utils';
 
 interface ReviewModeProps {
   // Session info
@@ -255,7 +256,7 @@ export const ReviewMode = memo(function ReviewMode({
                     <div className="soap-text">{soapNote.plan}</div>
                   </div>
                   <div className="soap-footer">
-                    Generated {new Date(soapNote.generated_at).toLocaleString()} ({soapNote.model_used})
+                    Generated {formatLocalDateTime(soapNote.generated_at)} ({soapNote.model_used})
                   </div>
                 </div>
               )}

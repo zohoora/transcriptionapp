@@ -4,7 +4,7 @@
 //! for integrating with a local Medplum server.
 
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, Duration, NaiveDate, Utc};
 use rand::Rng;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -1019,11 +1019,18 @@ impl MedplumClient {
         );
 
         if let Some(start) = start_date {
-            url.push_str(&format!("&date=ge{}", start));
+            // Start date is inclusive - query for >= start day midnight UTC
+            url.push_str(&format!("&date=ge{}T00:00:00Z", start));
         }
         if let Some(end) = end_date {
-            // Use next day for end date to include full day in query
-            url.push_str(&format!("&date=lt{}T23:59:59Z", end));
+            // End date is inclusive - query for < next day midnight UTC
+            if let Ok(date) = NaiveDate::parse_from_str(end, "%Y-%m-%d") {
+                let next_day = date + Duration::days(1);
+                url.push_str(&format!("&date=lt{}T00:00:00Z", next_day.format("%Y-%m-%d")));
+            } else {
+                // Fallback if parsing fails - use end of day
+                url.push_str(&format!("&date=le{}T23:59:59Z", end));
+            }
         }
 
         let response = self
