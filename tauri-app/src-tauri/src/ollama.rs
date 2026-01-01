@@ -67,6 +67,9 @@ pub struct SoapNote {
     pub plan: String,
     pub generated_at: String,
     pub model_used: String,
+    /// Raw response from the model (for debugging)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub raw_response: Option<String>,
 }
 
 /// Ollama API client
@@ -219,13 +222,56 @@ impl OllamaClient {
             transcript.len()
         );
 
+        // First attempt
         let prompt = build_soap_prompt(transcript);
         let response = self.generate(model, &prompt).await?;
 
-        let soap_note = parse_soap_response(&response, model)?;
-        info!("Successfully generated SOAP note");
+        match parse_soap_response(&response, model) {
+            Ok(mut soap_note) => {
+                soap_note.raw_response = Some(response);
+                info!("Successfully generated SOAP note on first attempt");
+                Ok(soap_note)
+            }
+            Err(first_error) => {
+                // Retry with more explicit prompt
+                info!("First SOAP generation attempt failed, retrying with stricter prompt...");
 
-        Ok(soap_note)
+                let retry_prompt = build_soap_retry_prompt(transcript, &response);
+                match self.generate(model, &retry_prompt).await {
+                    Ok(retry_response) => {
+                        match parse_soap_response(&retry_response, model) {
+                            Ok(mut soap_note) => {
+                                soap_note.raw_response = Some(retry_response);
+                                info!("Successfully generated SOAP note on retry");
+                                Ok(soap_note)
+                            }
+                            Err(retry_error) => {
+                                // Both attempts failed - return error with raw responses
+                                error!("SOAP generation failed after retry. First response: {}, Retry response: {}",
+                                    &response.chars().take(200).collect::<String>(),
+                                    &retry_response.chars().take(200).collect::<String>()
+                                );
+                                Err(format!(
+                                    "Failed to parse SOAP note after retry.\n\nFirst error: {}\n\nRetry error: {}\n\nRaw response: {}",
+                                    first_error,
+                                    retry_error,
+                                    retry_response
+                                ))
+                            }
+                        }
+                    }
+                    Err(gen_error) => {
+                        // Retry generation itself failed
+                        Err(format!(
+                            "SOAP generation failed: {}. Retry also failed: {}. Raw response from first attempt: {}",
+                            first_error,
+                            gen_error,
+                            response
+                        ))
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -253,6 +299,25 @@ Rules:
     )
 }
 
+/// Build a stricter retry prompt when the first attempt fails
+fn build_soap_retry_prompt(transcript: &str, _previous_response: &str) -> String {
+    format!(
+        r#"/no_think IMPORTANT: You MUST respond with ONLY a JSON object. No conversation, no questions, no explanations.
+
+Even if the transcript is short, unclear, or incomplete, you MUST still output valid JSON.
+
+TRANSCRIPT:
+{}
+
+OUTPUT FORMAT (respond with ONLY this JSON structure):
+{{"subjective":"...","objective":"...","assessment":"...","plan":"..."}}
+
+If any section lacks information, use "No information available" as the value.
+DO NOT ask questions. DO NOT explain. ONLY output the JSON object."#,
+        transcript
+    )
+}
+
 /// JSON structure for LLM response (without metadata fields)
 #[derive(Debug, Clone, Deserialize)]
 struct SoapNoteJson {
@@ -263,6 +328,7 @@ struct SoapNoteJson {
 }
 
 /// Parse the LLM response into a structured SOAP note
+/// Note: raw_response field is set to None here; caller should set it if needed
 fn parse_soap_response(response: &str, model: &str) -> Result<SoapNote, String> {
     // Clean up the response
     let clean_response = response
@@ -303,6 +369,7 @@ fn parse_soap_response(response: &str, model: &str) -> Result<SoapNote, String> 
                 },
                 generated_at: Utc::now().to_rfc3339(),
                 model_used: model.to_string(),
+                raw_response: None, // Set by caller if needed
             })
         }
         Err(e) => {

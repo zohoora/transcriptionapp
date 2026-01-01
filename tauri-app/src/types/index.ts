@@ -166,6 +166,8 @@ export interface SoapNote {
   plan: string;
   generated_at: string;
   model_used: string;
+  /** Raw response from the model (for debugging) */
+  raw_response?: string;
 }
 
 // Constants for biomarker interpretation
