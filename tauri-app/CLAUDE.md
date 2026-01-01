@@ -39,7 +39,9 @@ Rust Backend
 │   ├── mod.rs       # Module exports
 │   └── provider.rs  # ONNX-based ADV detection
 ├── ollama.rs        # Ollama LLM client for SOAP note generation
+├── medplum.rs       # Medplum FHIR client (OAuth, encounters, documents)
 ├── activity_log.rs  # Structured activity logging (PHI-safe)
+├── checklist.rs     # Pre-flight verification checks
 └── biomarkers/      # Vocal biomarker analysis
     ├── mod.rs       # Types (CoughEvent, VocalBiomarkers, SessionMetrics, AudioQualitySnapshot)
     ├── config.rs    # BiomarkerConfig
@@ -515,3 +517,55 @@ See `docs/adr/` for Architecture Decision Records:
 - 0004: Ring buffer audio pipeline
 - 0005: Session state machine
 - 0006: Speaker diarization (online clustering)
+- 0007: Biomarker analysis (vitality, stability, cough detection)
+- 0008: Medplum EMR integration (OAuth, FHIR resources)
+- 0009: Ollama SOAP note generation (JSON output)
+
+## Frontend Components
+
+The React frontend is organized into modes and reusable components:
+
+### Mode Components (`src/components/modes/`)
+| Component | Purpose |
+|-----------|---------|
+| `ReadyMode.tsx` | Pre-recording state (checklist, device selection, start button) |
+| `RecordingMode.tsx` | Active recording (timer, audio quality, biomarkers, transcript preview) |
+| `ReviewMode.tsx` | Post-recording (full transcript, SOAP generation, EMR sync) |
+
+### UI Components (`src/components/`)
+| Component | Purpose |
+|-----------|---------|
+| `Header.tsx` | App title bar, history button, settings toggle |
+| `SettingsDrawer.tsx` | Slide-out settings panel with all configuration options |
+| `AudioQualitySection.tsx` | Real-time audio level, SNR, clipping display |
+| `BiomarkersSection.tsx` | Vitality, stability, cough count display |
+| `ConversationDynamicsSection.tsx` | Turn-taking, overlap, response latency metrics |
+
+### EMR Components (`src/components/`)
+| Component | Purpose |
+|-----------|---------|
+| `AuthProvider.tsx` | React context for Medplum OAuth state |
+| `LoginScreen.tsx` | Medplum login button and status |
+| `PatientSearch.tsx` | FHIR patient search with autocomplete |
+| `EncounterBar.tsx` | Active encounter display with patient info |
+| `HistoryWindow.tsx` | Main content for separate history window |
+| `HistoryView.tsx` | Encounter list and detail view |
+| `Calendar.tsx` | Date picker for history filtering |
+| `AudioPlayer.tsx` | Playback controls for recorded audio |
+
+### Shared Types (`src/types/index.ts`)
+All TypeScript types that mirror Rust backend structures:
+- `SessionState`, `SessionStatus` - Recording state machine
+- `TranscriptUpdate` - Real-time transcript data
+- `BiomarkerUpdate`, `AudioQualitySnapshot` - Metrics events
+- `SoapNote`, `OllamaStatus` - LLM integration
+- `AuthState`, `Encounter`, `Patient`, `SyncResult` - Medplum types
+- `CheckResult`, `ChecklistResult` - Pre-flight checks
+
+### Utilities (`src/utils.ts`)
+Date/time formatting with timezone handling:
+- `formatTime(ms)` - Duration formatting (MM:SS or HH:MM:SS)
+- `formatDateForApi(date)` - YYYY-MM-DD in UTC
+- `formatLocalTime/Date/DateTime(iso)` - Local timezone display
+- `isSameLocalDay(d1, d2)`, `isToday(date)` - Date comparisons
+- `debounce(fn, delay)` - Debounce utility

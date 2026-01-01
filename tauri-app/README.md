@@ -1,27 +1,48 @@
 # Transcription App
 
-A real-time speech-to-text transcription application built with Tauri, React, and Rust.
-
-[![CI](https://github.com/your-org/transcription-app/actions/workflows/ci.yml/badge.svg)](https://github.com/your-org/transcription-app/actions/workflows/ci.yml)
-[![Frontend Coverage](https://img.shields.io/badge/frontend%20coverage-70%25-brightgreen)](./tests/visual/playwright-report)
-[![Rust Coverage](https://img.shields.io/badge/rust%20coverage-60%25-brightgreen)](./src-tauri/target/llvm-cov)
+A real-time speech-to-text transcription desktop application built with Tauri, React, and Rust. Designed as a clinical ambient scribe for physicians, running as a compact sidebar alongside EMR systems.
 
 ## Features
 
-- Real-time audio transcription using Whisper
-- Voice Activity Detection (VAD) for smart audio segmentation
-- Speaker diarization with configurable max speakers
-- Compact sidebar UI designed for clinical ambient scribe use
-- Support for multiple audio input devices
-- Copy transcript to clipboard
-- Paragraph-formatted output with speaker labels
+### Core Transcription
+- **Real-time Whisper transcription** - Local on-device inference using whisper-rs
+- **Voice Activity Detection (VAD)** - Silero VAD for smart audio segmentation
+- **Speaker diarization** - ONNX-based speaker embeddings with online clustering
+- **Speech enhancement** - GTCRN denoising for cleaner audio (~2ms latency)
+- **Multiple Whisper models** - tiny, base, small, medium, large
+
+### Clinical Features
+- **SOAP note generation** - AI-powered clinical notes via Ollama LLM
+- **Medplum EMR integration** - OAuth 2.0 + PKCE, FHIR resources
+- **Encounter history** - Browse past sessions with calendar view
+- **Audio recording** - WAV files synced to EMR
+
+### Biomarker Analysis
+- **Vitality (prosody)** - Pitch variability analysis for affect detection
+- **Stability (neurological)** - CPP measurement for vocal control
+- **Cough detection** - YAMNet-based audio event classification
+- **Conversation dynamics** - Turn-taking, overlap, response latency metrics
+
+### Audio Quality Monitoring
+- **Real-time levels** - Peak, RMS, SNR monitoring
+- **Clipping detection** - Warns when audio is too loud
+- **Noise floor analysis** - Ambient noise level tracking
+- **Actionable suggestions** - "Move microphone closer", etc.
+
+### UI/UX
+- **Compact sidebar** - 300px width, designed for dual-monitor clinical workflows
+- **Light mode** - Clinical-friendly color scheme
+- **Collapsible sections** - Transcript, biomarkers, SOAP notes
+- **Settings drawer** - Slide-out configuration panel
 
 ## Requirements
 
 - Node.js 20+
 - Rust 1.70+
 - pnpm 10+
-- Whisper model file (ggml-small.bin or similar)
+- ONNX Runtime (for speaker diarization, enhancement, emotion, YAMNet)
+- Ollama (optional, for SOAP note generation)
+- Medplum server (optional, for EMR integration)
 
 ## Quick Start
 
@@ -29,37 +50,95 @@ A real-time speech-to-text transcription application built with Tauri, React, an
 # Install dependencies
 pnpm install
 
-# Run in development mode
-pnpm tauri dev
+# Set up ONNX Runtime
+./scripts/setup-ort.sh
 
-# Build for production
-pnpm tauri build
+# Build the app (recommended over tauri dev)
+pnpm tauri build --debug
+
+# Run with ONNX Runtime
+ORT_DYLIB_PATH=$(./scripts/setup-ort.sh) \
+  "src-tauri/target/debug/bundle/macos/Transcription App.app/Contents/MacOS/transcription-app"
 ```
+
+**Note**: Use debug build instead of `tauri dev` for proper deep link and OAuth handling.
 
 ## Project Structure
 
 ```
 tauri-app/
-├── src/                    # React frontend
-│   ├── App.tsx            # Main sidebar component
-│   ├── ErrorBoundary.tsx  # Error handling component
-│   ├── styles.css         # Light mode sidebar styles
-│   └── test/              # Test mocks and utilities
-├── src-tauri/             # Rust backend
+├── src/                          # React frontend
+│   ├── App.tsx                   # Main sidebar component
+│   ├── components/
+│   │   ├── modes/                # UI modes (Ready, Recording, Review)
+│   │   │   ├── ReadyMode.tsx     # Pre-recording state
+│   │   │   ├── RecordingMode.tsx # Active recording
+│   │   │   └── ReviewMode.tsx    # Post-recording review
+│   │   ├── AudioQualitySection.tsx
+│   │   ├── BiomarkersSection.tsx
+│   │   ├── ConversationDynamicsSection.tsx
+│   │   ├── SettingsDrawer.tsx
+│   │   ├── Header.tsx
+│   │   ├── AuthProvider.tsx      # Medplum OAuth context
+│   │   ├── LoginScreen.tsx
+│   │   ├── PatientSearch.tsx
+│   │   ├── EncounterBar.tsx
+│   │   ├── HistoryView.tsx       # Encounter history
+│   │   ├── HistoryWindow.tsx     # Separate history window
+│   │   ├── Calendar.tsx
+│   │   └── AudioPlayer.tsx
+│   ├── types/index.ts            # Shared TypeScript types
+│   ├── utils.ts                  # Date/time utilities
+│   ├── ErrorBoundary.tsx
+│   └── test/                     # Test mocks and utilities
+├── src-tauri/                    # Rust backend
 │   ├── src/
-│   │   ├── audio.rs       # Audio capture and resampling
-│   │   ├── config.rs      # Settings management
-│   │   ├── session.rs     # Recording session state
-│   │   ├── transcription.rs # Segment/utterance types
-│   │   ├── vad.rs         # Voice Activity Detection
-│   │   └── diarization/   # Speaker diarization module
-│   │       ├── mod.rs     # Embedding extraction
-│   │       ├── clustering.rs # Online speaker clustering
-│   │       └── config.rs  # Diarization settings
-│   ├── benches/           # Performance benchmarks
-│   └── fuzz/              # Fuzz testing targets
-├── e2e/                   # End-to-end tests (WebDriver)
-└── tests/visual/          # Visual regression tests (Playwright)
+│   │   ├── lib.rs                # Tauri plugin registration
+│   │   ├── main.rs               # Entry point
+│   │   ├── commands.rs           # IPC command handlers
+│   │   ├── session.rs            # Recording state machine
+│   │   ├── pipeline.rs           # Audio processing pipeline
+│   │   ├── audio.rs              # Audio capture, resampling
+│   │   ├── vad.rs                # Voice Activity Detection
+│   │   ├── transcription.rs      # Segment/utterance types
+│   │   ├── config.rs             # Settings persistence
+│   │   ├── models.rs             # Model download management
+│   │   ├── checklist.rs          # Pre-flight checks
+│   │   ├── ollama.rs             # Ollama LLM client
+│   │   ├── medplum.rs            # Medplum FHIR client
+│   │   ├── activity_log.rs       # Structured logging
+│   │   ├── diarization/          # Speaker detection
+│   │   │   ├── mod.rs            # Module exports
+│   │   │   ├── provider.rs       # ONNX embedding extraction
+│   │   │   ├── embedding.rs      # Embedding utilities
+│   │   │   ├── clustering.rs     # Online speaker clustering
+│   │   │   ├── config.rs         # Diarization settings
+│   │   │   └── mel.rs            # Mel spectrogram
+│   │   ├── enhancement/          # Speech denoising
+│   │   │   ├── mod.rs
+│   │   │   └── provider.rs       # GTCRN ONNX model
+│   │   ├── emotion/              # Emotion detection
+│   │   │   ├── mod.rs
+│   │   │   └── provider.rs       # wav2small ONNX model
+│   │   └── biomarkers/           # Vocal biomarker analysis
+│   │       ├── mod.rs            # Types and exports
+│   │       ├── config.rs         # Biomarker settings
+│   │       ├── thread.rs         # Sidecar processing thread
+│   │       ├── audio_quality.rs  # Real-time quality metrics
+│   │       ├── yamnet/           # Cough detection
+│   │       ├── voice_metrics/    # Vitality, stability
+│   │       │   ├── vitality.rs   # F0 pitch analysis
+│   │       │   └── stability.rs  # CPP cepstral analysis
+│   │       └── session_metrics/  # Turn-taking stats
+│   ├── benches/                  # Performance benchmarks
+│   └── Cargo.toml
+├── docs/
+│   └── adr/                      # Architecture Decision Records
+├── e2e/                          # End-to-end tests (WebDriver)
+├── tests/visual/                 # Visual regression tests (Playwright)
+├── CLAUDE.md                     # AI coder context
+├── CONTRIBUTING.md               # Contribution guidelines
+└── README.md                     # This file
 ```
 
 ## Testing
@@ -67,21 +146,11 @@ tauri-app/
 ### Frontend Tests
 
 ```bash
-# Run all tests
-pnpm test
-
-# Run tests once (CI mode)
-pnpm test:run
-
-# Run with coverage
-pnpm test:coverage
-
-# Visual regression tests
-pnpm visual:test
-pnpm visual:update  # Update baselines
-
-# Mutation testing
-pnpm mutation:test
+pnpm test              # Watch mode
+pnpm test:run          # Run once
+pnpm test:coverage     # With coverage
+pnpm visual:test       # Visual regression (Playwright)
+pnpm mutation:test     # Mutation testing (Stryker)
 ```
 
 ### Rust Tests
@@ -89,68 +158,41 @@ pnpm mutation:test
 ```bash
 cd src-tauri
 
-# Run all tests
-cargo test
+# Unit tests (needs ORT_DYLIB_PATH for ONNX tests)
+ORT_DYLIB_PATH=$(../scripts/setup-ort.sh) cargo test
 
-# Run specific test module
-cargo test vad::tests
+# Stress tests
+cargo test --release stress_test
 
-# Run stress tests
-cargo test stress_test
-
-# Run benchmarks
+# Benchmarks
 cargo bench
 
-# Mutation testing (requires cargo-mutants)
-cargo mutants
-
-# Fuzz testing (requires nightly)
+# Fuzz testing (nightly)
 cargo +nightly fuzz run fuzz_vad_config
 ```
 
 ### E2E Tests
 
 ```bash
-# Build the app first
-pnpm tauri build
-
-# Install tauri-driver
+pnpm tauri build       # Build first
 cargo install tauri-driver
-
-# Run E2E tests
 pnpm e2e
 ```
 
-### Soak Tests (Long-running stability)
+### Soak Tests
 
 ```bash
-# Quick soak test (1 minute)
-pnpm soak:quick
-
-# 1-hour soak test
-pnpm soak:1h
-
-# Interactive soak test script
-pnpm soak:test
-
-# Run specific soak test directly
-cd src-tauri
-SOAK_DURATION_SECS=3600 cargo test --release soak_test_extended_vad_pipeline -- --ignored --nocapture
+pnpm soak:quick        # 1 minute
+pnpm soak:1h           # 1 hour
+pnpm soak:test         # Interactive
 ```
 
-Available soak tests:
-- `soak_test_extended_vad_pipeline` - VAD pipeline under sustained load
-- `soak_test_extended_session_management` - Session lifecycle stress
-- `soak_test_extended_resampling` - Audio resampling throughput
-- `soak_test_concurrent_operations` - Multi-threaded operations
-- `soak_test_memory_stress` - Memory allocation/deallocation
+## Test Coverage
 
-## Test Categories
-
-| Category | Framework | Coverage |
-|----------|-----------|----------|
-| Unit Tests (Frontend) | Vitest | 119 tests |
-| Unit Tests (Rust) | cargo test | 160 tests |
+| Category | Framework | Count |
+|----------|-----------|-------|
+| Unit Tests (Frontend) | Vitest | 150+ tests |
+| Unit Tests (Rust) | cargo test | 260+ tests |
 | Snapshot Tests | Vitest | 7 snapshots |
 | Accessibility Tests | vitest-axe | 12 tests |
 | Contract Tests | Vitest | 24 tests |
@@ -161,13 +203,51 @@ Available soak tests:
 | E2E Tests | WebDriverIO | 20+ tests |
 | Soak Tests | cargo test | 5 tests |
 
+## Configuration
+
+Settings are stored in `~/.transcriptionapp/config.json`:
+
+```json
+{
+  "whisper_model": "small",
+  "language": "en",
+  "input_device_id": null,
+  "diarization_enabled": true,
+  "max_speakers": 2,
+  "ollama_server_url": "http://localhost:11434",
+  "ollama_model": "qwen3:4b",
+  "medplum_server_url": "http://localhost:8103",
+  "medplum_client_id": "your-client-id",
+  "medplum_auto_sync": true
+}
+```
+
+## File Locations
+
+| File | Location |
+|------|----------|
+| All models | `~/.transcriptionapp/models/` |
+| Settings | `~/.transcriptionapp/config.json` |
+| Medplum auth | `~/.transcriptionapp/medplum_auth.json` |
+| Activity logs | `~/.transcriptionapp/logs/activity.log.*` |
+
 ## Architecture
 
 See [docs/adr/](./docs/adr/) for Architecture Decision Records.
 
-## Contributing
+## Documentation
 
-See [CONTRIBUTING.md](./CONTRIBUTING.md) for guidelines.
+- **[CLAUDE.md](./CLAUDE.md)** - Comprehensive context for AI coders
+- **[CONTRIBUTING.md](./CONTRIBUTING.md)** - Development guidelines
+- **[docs/adr/](./docs/adr/)** - Architecture decisions
+
+## Common Issues
+
+1. **Model not found**: Ensure Whisper model exists at `~/.transcriptionapp/models/`
+2. **ONNX tests failing**: Set `ORT_DYLIB_PATH` to ONNX Runtime library
+3. **Audio device errors**: Check microphone permissions (macOS: System Settings > Privacy)
+4. **OAuth opens new window**: Use `pnpm tauri build --debug` instead of `tauri dev`
+5. **Medplum auth fails**: Verify `medplum_client_id` matches your Medplum ClientApplication
 
 ## License
 

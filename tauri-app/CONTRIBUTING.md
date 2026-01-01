@@ -9,6 +9,7 @@ Thank you for your interest in contributing! This document provides guidelines a
 - [Testing](#testing)
 - [Pull Request Process](#pull-request-process)
 - [Architecture Overview](#architecture-overview)
+- [Key Modules](#key-modules)
 
 ## Development Setup
 
@@ -17,6 +18,7 @@ Thank you for your interest in contributing! This document provides guidelines a
 - Node.js 20+
 - Rust 1.70+ (install via [rustup](https://rustup.rs/))
 - pnpm 10+ (`npm install -g pnpm`)
+- ONNX Runtime (for diarization, enhancement, emotion, YAMNet)
 - Platform-specific dependencies:
   - **macOS**: Xcode Command Line Tools
   - **Ubuntu**: `sudo apt install libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libssl-dev libasound2-dev`
@@ -31,9 +33,21 @@ cd transcription-app/tauri-app
 # Install frontend dependencies
 pnpm install
 
-# Run in development mode
-pnpm tauri dev
+# Set up ONNX Runtime
+./scripts/setup-ort.sh
+
+# Build debug app (RECOMMENDED over tauri dev)
+pnpm tauri build --debug
+
+# Run with ONNX Runtime
+ORT_DYLIB_PATH=$(./scripts/setup-ort.sh) \
+  "src-tauri/target/debug/bundle/macos/Transcription App.app/Contents/MacOS/transcription-app"
 ```
+
+**Why not `tauri dev`?**
+- Deep link routing (`fabricscribe://oauth/callback`) breaks in dev mode
+- `tauri-plugin-single-instance` doesn't work correctly
+- OAuth callbacks open new app instances instead of routing to existing one
 
 ### IDE Setup
 
@@ -94,7 +108,7 @@ pub fn process(&mut self, samples: &[f32]) -> Vec<Utterance> {
 Follow [Conventional Commits](https://www.conventionalcommits.org/):
 
 ```
-feat: add support for multiple audio devices
+feat: add SOAP note generation via Ollama
 fix: prevent audio buffer overflow during long recordings
 docs: update README with testing instructions
 test: add property-based tests for VAD config
@@ -111,8 +125,9 @@ We maintain comprehensive test coverage. All PRs must pass tests.
 # Frontend tests
 pnpm test:run
 
-# Rust tests
-cd src-tauri && cargo test
+# Rust tests (with ONNX Runtime)
+cd src-tauri
+ORT_DYLIB_PATH=$(../scripts/setup-ort.sh) cargo test
 
 # All tests with coverage
 pnpm test:coverage
@@ -130,10 +145,12 @@ cd src-tauri && cargo llvm-cov
 | Contract tests | `src/contracts.test.ts` | `pnpm test:run` |
 | Property-based | Rust modules | `cargo test prop_` |
 | Stress tests | `src/stress_tests.rs` | `cargo test stress_` |
+| Pipeline tests | `src/pipeline_tests.rs` | `cargo test pipeline_` |
 | Visual regression | `tests/visual/` | `pnpm visual:test` |
 | E2E tests | `e2e/` | `pnpm e2e` |
 | Fuzz tests | `fuzz/` | `cargo +nightly fuzz run` |
 | Mutation tests | - | `pnpm mutation:test` / `cargo mutants` |
+| Soak tests | `src/soak_tests.rs` | `pnpm soak:test` |
 
 ### Writing Tests
 
@@ -214,59 +231,147 @@ proptest! {
 ## Architecture Overview
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│                    React Frontend                        │
-│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐     │
-│  │    App.tsx  │  │   Hooks     │  │  Components │     │
-│  └──────┬──────┘  └──────┬──────┘  └──────┬──────┘     │
-│         │                │                │             │
-│         └────────────────┼────────────────┘             │
-│                          │                              │
-│                    IPC (invoke/listen)                  │
-└──────────────────────────┼──────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────┐
+│                         React Frontend                           │
+│  ┌─────────────┐  ┌─────────────┐  ┌─────────────────────────┐  │
+│  │   App.tsx   │  │  Components │  │     AuthProvider        │  │
+│  │  (sidebar)  │  │   (modes)   │  │   (Medplum OAuth)       │  │
+│  └──────┬──────┘  └──────┬──────┘  └───────────┬─────────────┘  │
+│         │                │                     │                 │
+│         └────────────────┼─────────────────────┘                 │
+│                          │                                       │
+│                    IPC (invoke/listen)                           │
+└──────────────────────────┼───────────────────────────────────────┘
                            │
-┌──────────────────────────┼──────────────────────────────┐
-│                    Rust Backend                         │
-│                          │                              │
-│  ┌───────────────────────┼───────────────────────┐     │
-│  │              Commands (IPC handlers)           │     │
-│  └───────────────────────┬───────────────────────┘     │
-│                          │                              │
-│  ┌──────────┐  ┌─────────┴─────────┐  ┌──────────┐    │
-│  │  Audio   │  │  Session Manager  │  │  Config  │    │
-│  │ Capture  │  │   (State Machine) │  │          │    │
-│  └────┬─────┘  └─────────┬─────────┘  └──────────┘    │
-│       │                  │                             │
-│       ▼                  ▼                             │
-│  ┌─────────┐      ┌─────────────┐                     │
-│  │  Ring   │─────▶│   Pipeline  │                     │
-│  │ Buffer  │      │  (VAD+Whisper)                    │
-│  └─────────┘      └──────┬──────┘                     │
-│                          │                             │
-│                          ▼                             │
-│                   ┌─────────────┐                      │
-│                   │ Transcription│                     │
-│                   │   Results    │                     │
-│                   └─────────────┘                      │
-└─────────────────────────────────────────────────────────┘
+┌──────────────────────────┼───────────────────────────────────────┐
+│                      Rust Backend                                 │
+│                          │                                        │
+│  ┌───────────────────────┼───────────────────────┐               │
+│  │              Commands (IPC handlers)           │               │
+│  └───────────────────────┬───────────────────────┘               │
+│                          │                                        │
+│  ┌──────────┐  ┌─────────┴─────────┐  ┌──────────┐  ┌──────────┐│
+│  │  Audio   │  │  Session Manager  │  │  Config  │  │  Models  ││
+│  │ Capture  │  │   (State Machine) │  │          │  │ Download ││
+│  └────┬─────┘  └─────────┬─────────┘  └──────────┘  └──────────┘│
+│       │                  │                                        │
+│       ▼                  ▼                                        │
+│  ┌─────────┐      ┌─────────────────────────────────────────┐    │
+│  │  Ring   │─────▶│           Processing Pipeline            │    │
+│  │ Buffer  │      │  ┌─────┐  ┌─────────┐  ┌─────────────┐  │    │
+│  └─────────┘      │  │ VAD │─▶│ Whisper │─▶│ Diarization │  │    │
+│                   │  └─────┘  └─────────┘  └─────────────┘  │    │
+│                   │       │                                  │    │
+│                   │       ▼                                  │    │
+│                   │  ┌─────────────┐  ┌───────────────────┐ │    │
+│                   │  │ Enhancement │  │ Emotion Detection │ │    │
+│                   │  │  (GTCRN)    │  │   (wav2small)     │ │    │
+│                   │  └─────────────┘  └───────────────────┘ │    │
+│                   └─────────────────────────────────────────┘    │
+│                          │                                        │
+│       ┌──────────────────┼──────────────────┐                    │
+│       ▼                  ▼                  ▼                    │
+│  ┌─────────────┐  ┌─────────────┐  ┌─────────────────────────┐  │
+│  │ Biomarkers  │  │ Transcripts │  │     EMR Integration     │  │
+│  │  (sidecar)  │  │   Results   │  │  ┌─────────┐ ┌───────┐  │  │
+│  │ ┌─────────┐ │  └─────────────┘  │  │ Medplum │ │Ollama │  │  │
+│  │ │ Vitality│ │                   │  │  (FHIR) │ │(SOAP) │  │  │
+│  │ │Stability│ │                   │  └─────────┘ └───────┘  │  │
+│  │ │ YAMNet  │ │                   └─────────────────────────┘  │
+│  │ └─────────┘ │                                                 │
+│  └─────────────┘                                                 │
+└──────────────────────────────────────────────────────────────────┘
 ```
 
-### Key Modules
+## Key Modules
+
+### Backend (Rust)
 
 | Module | Purpose |
 |--------|---------|
-| `audio` | Device enumeration, audio capture, resampling |
-| `vad` | Voice Activity Detection, utterance detection |
-| `session` | Recording state machine, segment management |
-| `transcription` | Segment and utterance data types |
-| `config` | Settings persistence and management |
 | `commands` | Tauri IPC command handlers |
-| `pipeline` | Audio processing pipeline coordination |
-| `diarization` | Speaker embedding extraction and clustering |
+| `session` | Recording state machine (Idle→Preparing→Recording→Stopping→Completed) |
+| `pipeline` | Audio processing coordination (VAD, Whisper, diarization, enhancement) |
+| `audio` | Device enumeration, audio capture, resampling (rubato) |
+| `vad` | Voice Activity Detection (Silero VAD) |
+| `transcription` | Segment and utterance data types |
+| `config` | Settings persistence (JSON) |
+| `models` | Model download management |
+| `checklist` | Pre-flight verification system |
+| `diarization/` | Speaker embedding extraction (ONNX) and clustering |
+| `enhancement/` | Speech denoising (GTCRN ONNX model) |
+| `emotion/` | Emotion detection (wav2small ONNX model) |
+| `biomarkers/` | Vocal biomarker analysis (vitality, stability, cough) |
+| `ollama` | LLM client for SOAP note generation |
+| `medplum` | Medplum FHIR client (OAuth, encounters, documents) |
+| `activity_log` | Structured PHI-safe activity logging |
+
+### Frontend (React)
+
+| Component | Purpose |
+|-----------|---------|
+| `App.tsx` | Main sidebar layout, state management |
+| `modes/ReadyMode` | Pre-recording state (device selection, start button) |
+| `modes/RecordingMode` | Active recording (timer, transcript preview) |
+| `modes/ReviewMode` | Post-recording (full transcript, SOAP note, sync) |
+| `AudioQualitySection` | Real-time audio level/SNR display |
+| `BiomarkersSection` | Vitality, stability, cough metrics |
+| `ConversationDynamicsSection` | Turn-taking, overlap, response latency |
+| `SettingsDrawer` | Configuration panel |
+| `Header` | App title, history button, settings button |
+| `AuthProvider` | Medplum OAuth context |
+| `LoginScreen` | Medplum login UI |
+| `PatientSearch` | FHIR patient search |
+| `EncounterBar` | Active encounter display |
+| `HistoryWindow` | Separate window for encounter history |
+| `Calendar` | Date picker for history |
+| `AudioPlayer` | Playback of recorded audio |
+
+### Shared Types
+
+See `src/types/index.ts` for TypeScript types that mirror Rust backend types:
+- `SessionState`, `SessionStatus` - Recording state
+- `TranscriptUpdate` - Real-time transcript data
+- `BiomarkerUpdate`, `AudioQualitySnapshot` - Metrics
+- `SoapNote`, `OllamaStatus` - LLM integration
+- `AuthState`, `Encounter`, `Patient` - Medplum types
+
+## Adding New Features
+
+When adding a new feature that requires models or external resources:
+
+1. **Add to Config** (`config.rs`):
+   - Add `feature_enabled: bool` field
+   - Add `feature_model_path: Option<PathBuf>` if needed
+   - Add `get_feature_model_path()` helper
+
+2. **Add Model Download** (`models.rs`):
+   - Add `FEATURE_MODEL_URL` constant
+   - Add `ensure_feature_model()` function
+   - Add `is_feature_model_available()` function
+   - Update `get_model_info()` to include the model
+
+3. **Add to Checklist** (`checklist.rs`):
+   - Add check in `run_model_checks()` or create new category
+   - Return appropriate `CheckStatus` based on config
+
+4. **Add Tauri Command** (`commands.rs`):
+   - Add `download_feature_model()` command
+   - Register in `lib.rs` invoke_handler
+
+5. **Add to Pipeline** (`pipeline.rs`):
+   - Add feature-gated provider initialization
+   - Integrate into processing loop
+   - Add to drop order at end
+
+6. **Add Frontend Types** (`types/index.ts`):
+   - Add TypeScript interfaces matching Rust types
+   - Update relevant components
 
 ## Questions?
 
 - Open a [GitHub Discussion](https://github.com/your-org/transcription-app/discussions)
 - Check existing [Issues](https://github.com/your-org/transcription-app/issues)
+- See [CLAUDE.md](./CLAUDE.md) for AI coder context
 
 Thank you for contributing!
