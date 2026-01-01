@@ -757,7 +757,8 @@ fn run_pipeline_thread_inner(
                             }
                         }
 
-                        info!("Sending segment: '{}' ({}ms - {}ms)", segment.text, segment.start_ms, segment.end_ms);
+                        // Log segment metadata only - no transcript text (PHI)
+                        info!("Sending segment: {} words ({}ms - {}ms)", segment.text.split_whitespace().count(), segment.start_ms, segment.end_ms);
 
                         // Update context
                         context.push(' ');

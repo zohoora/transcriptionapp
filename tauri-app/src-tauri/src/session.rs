@@ -60,6 +60,8 @@ pub struct SessionManager {
     stop_flag: Arc<AtomicBool>,
     pending_count: usize,
     audio_file_path: Option<PathBuf>,
+    /// Unique session ID for log correlation (generated on start, reused for stop)
+    session_id: Option<String>,
 }
 
 impl SessionManager {
@@ -73,7 +75,13 @@ impl SessionManager {
             stop_flag: Arc::new(AtomicBool::new(false)),
             pending_count: 0,
             audio_file_path: None,
+            session_id: None,
         }
+    }
+
+    /// Get the current session ID (for log correlation)
+    pub fn session_id(&self) -> Option<&str> {
+        self.session_id.as_deref()
     }
 
     /// Set the audio file path for recording
@@ -143,6 +151,8 @@ impl SessionManager {
         self.error = None;
         self.segments.clear();
         self.stop_flag.store(false, Ordering::SeqCst);
+        // Generate a new session ID for log correlation
+        self.session_id = Some(uuid::Uuid::new_v4().to_string());
         Ok(())
     }
 
@@ -193,6 +203,7 @@ impl SessionManager {
         self.stop_flag.store(false, Ordering::SeqCst);
         self.pending_count = 0;
         self.audio_file_path = None;
+        self.session_id = None;
     }
 
     /// Add a transcribed segment

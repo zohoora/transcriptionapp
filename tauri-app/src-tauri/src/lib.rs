@@ -29,6 +29,7 @@
 //! transcription_app_lib::run();
 //! ```
 
+pub mod activity_log;
 pub mod audio;
 pub mod biomarkers;
 pub mod checklist;
@@ -58,20 +59,29 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tauri::{Emitter, Manager, WindowEvent};
 use tracing::{info, warn};
-use tracing_subscriber::EnvFilter;
+
+/// Application version
+const APP_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 /// Timeout for graceful pipeline shutdown on window close
 const SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(3);
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    // Initialize logging
-    tracing_subscriber::fmt()
-        .with_env_filter(
-            EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")),
-        )
-        .init();
+    // Initialize activity logging (file + console)
+    if let Err(e) = activity_log::init_logging() {
+        eprintln!("Failed to initialize logging: {}", e);
+        // Fall back to basic console logging
+        tracing_subscriber::fmt()
+            .with_env_filter(
+                tracing_subscriber::EnvFilter::try_from_default_env()
+                    .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info")),
+            )
+            .init();
+    }
 
+    // Log application start
+    activity_log::log_app_start(APP_VERSION);
     info!("Transcription App starting...");
 
     tauri::Builder::default()
@@ -88,6 +98,13 @@ pub fn run() {
             // Check if any argument is a deep link URL
             for arg in argv {
                 if arg.starts_with("fabricscribe://") {
+                    // Parse URL for logging (without sensitive params)
+                    let has_code = arg.contains("code=");
+                    let has_state = arg.contains("state=");
+                    let path = arg.split('?').next().unwrap_or("")
+                        .trim_start_matches("fabricscribe://");
+                    activity_log::log_deep_link("fabricscribe", path, has_code, has_state);
+
                     info!("Deep link received via single instance: {}", arg);
                     let _ = app.emit("deep-link", arg);
                 }
@@ -182,6 +199,7 @@ pub fn run() {
 
                 if graceful_success {
                     // Allow normal exit - Rust destructors will run
+                    activity_log::log_app_shutdown("graceful");
                     info!("Graceful exit");
                     // WORKAROUND: Forced exit to avoid ONNX Runtime crash during cleanup
                     //
@@ -197,6 +215,7 @@ pub fn run() {
                     unsafe { libc::_exit(0) };
                 } else {
                     // Timeout expired - force immediate termination
+                    activity_log::log_app_shutdown("forced_timeout");
                     warn!("Forcing immediate exit due to shutdown timeout");
                     unsafe { libc::_exit(0) };
                 }

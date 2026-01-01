@@ -166,7 +166,12 @@ function App() {
       } else {
         command = 'download_whisper_model';
       }
-      await invoke(command);
+      // Pass model name for Whisper downloads
+      if (command === 'download_whisper_model') {
+        await invoke(command, { modelName });
+      } else {
+        await invoke(command);
+      }
       await runChecklist();
       const modelResult = await invoke<ModelStatus>('check_model_status');
       setModelStatus(modelResult);

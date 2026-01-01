@@ -1,3 +1,4 @@
+use crate::activity_log;
 use crate::audio;
 use crate::checklist::{self, ChecklistResult};
 use crate::config::{Config, ModelStatus, Settings};
@@ -190,12 +191,16 @@ pub async fn start_session(
         session.set_audio_file_path(path.clone());
     }
 
+    // Prepare device ID for logging before moving into pipeline_config
+    let device_id_for_config = if device_id.as_deref() == Some("default") {
+        None
+    } else {
+        device_id
+    };
+    let device_name_for_log = device_id_for_config.clone();
+
     let pipeline_config = PipelineConfig {
-        device_id: if device_id.as_deref() == Some("default") {
-            None
-        } else {
-            device_id
-        },
+        device_id: device_id_for_config,
         model_path,
         language: config.language.clone(),
         vad_threshold: config.vad_threshold,
@@ -238,11 +243,20 @@ pub async fn start_session(
         ps.next_generation()
     };
 
-    // Transition to recording
-    {
+    // Transition to recording and get session ID for logging
+    let session_id = {
         let mut session = session_arc.lock().map_err(|e| e.to_string())?;
         session.start_recording("whisper");
-    }
+        // Use the session's ID (generated in start_preparing) for log correlation
+        session.session_id().unwrap_or("unknown").to_string()
+    };
+
+    // Log session start (no PHI - just IDs and metadata)
+    activity_log::log_session_start(
+        &session_id,
+        device_name_for_log.as_deref(),
+        &config.whisper_model,
+    );
 
     emit_status_arc(&app, &session_arc)?;
 
@@ -266,7 +280,8 @@ pub async fn start_session(
 
             match msg {
                 PipelineMessage::Segment(segment) => {
-                    info!("Received segment: '{}' ({}ms - {}ms)", segment.text, segment.start_ms, segment.end_ms);
+                    // Log segment metadata only - no transcript text (PHI)
+                    info!("Received segment: {} words ({}ms - {}ms)", segment.text.split_whitespace().count(), segment.start_ms, segment.end_ms);
                     let mut session = match session_clone.lock() {
                         Ok(s) => s,
                         Err(_) => continue,
@@ -333,6 +348,18 @@ pub async fn stop_session(
     let session_arc = session_state.inner().clone();
     let pipeline_arc = pipeline_state.inner().clone();
 
+    // Get session info for logging before stopping
+    let (session_id, elapsed_ms, segment_count) = {
+        let session = session_arc.lock().map_err(|e| e.to_string())?;
+        let status = session.status();
+        (
+            // Reuse the session's ID for log correlation (same ID as start)
+            session.session_id().unwrap_or("unknown").to_string(),
+            status.elapsed_ms,
+            session.segments().len(),
+        )
+    };
+
     // Transition to stopping
     {
         let mut session = session_arc.lock().map_err(|e| e.to_string())?;
@@ -347,12 +374,19 @@ pub async fn stop_session(
         ps.handle.take()
     };
 
+    // Get audio file size if available
+    let audio_file_size = {
+        let session = session_arc.lock().map_err(|e| e.to_string())?;
+        session.audio_file_path().and_then(|p| std::fs::metadata(p).ok()).map(|m| m.len())
+    };
+
     if let Some(h) = handle {
         h.stop();
 
         // Wait for pipeline to finish in a separate task
         let app_clone = app.clone();
         let session_clone = session_arc.clone();
+        let session_id_for_log = session_id.clone();
 
         tokio::task::spawn_blocking(move || {
             h.join();
@@ -362,8 +396,16 @@ pub async fn stop_session(
                 session.complete();
                 let status = session.status();
                 let transcript = session.transcript_update();
-                let _ = app_clone.emit("session_status", status);
+                let _ = app_clone.emit("session_status", status.clone());
                 let _ = app_clone.emit("transcript_update", transcript);
+
+                // Log session stop (no PHI - just metrics)
+                activity_log::log_session_stop(
+                    &session_id_for_log,
+                    status.elapsed_ms,
+                    session.segments().len(),
+                    session.audio_file_path().and_then(|p| std::fs::metadata(p).ok()).map(|m| m.len()),
+                );
             }
         });
     } else {
@@ -372,6 +414,10 @@ pub async fn stop_session(
             let mut session = session_arc.lock().map_err(|e| e.to_string())?;
             session.complete();
         }
+
+        // Log session stop
+        activity_log::log_session_stop(&session_id, elapsed_ms, segment_count, audio_file_size);
+
         emit_status_arc(&app, &session_arc)?;
         emit_transcript_arc(&app, &session_arc)?;
     }
@@ -387,6 +433,9 @@ pub fn reset_session(
     pipeline_state: State<'_, SharedPipelineState>,
 ) -> Result<(), String> {
     info!("Resetting session");
+
+    // Generate session ID for logging
+    let session_id = Some(uuid::Uuid::new_v4().to_string());
 
     // Stop any running pipeline and increment generation
     // The generation increment ensures any in-flight pipeline messages are discarded
@@ -407,6 +456,9 @@ pub fn reset_session(
         let mut session = session_state.lock().map_err(|e| e.to_string())?;
         session.reset();
     }
+
+    // Log session reset
+    activity_log::log_session_reset(session_id.as_deref());
 
     emit_status_arc(&app, session_state.inner())?;
     emit_transcript_arc(&app, session_state.inner())?;
@@ -555,7 +607,20 @@ pub async fn ensure_models() -> Result<(), String> {
 pub fn run_checklist() -> ChecklistResult {
     info!("Running launch sequence checklist");
     let config = Config::load_or_default();
-    checklist::run_all_checks(&config)
+    let result = checklist::run_all_checks(&config);
+
+    // Log checklist result (counts only, no content)
+    let (passed, failed, warnings) = result.checks.iter().fold((0, 0, 0), |(p, f, w), check| {
+        match check.status {
+            checklist::CheckStatus::Pass => (p + 1, f, w),
+            checklist::CheckStatus::Fail => (p, f + 1, w),
+            checklist::CheckStatus::Warning => (p, f, w + 1),
+            checklist::CheckStatus::Skipped | checklist::CheckStatus::Pending => (p, f, w),
+        }
+    });
+    activity_log::log_checklist_result(result.checks.len(), passed, failed, warnings);
+
+    result
 }
 
 /// Download the speech enhancement model
@@ -690,9 +755,39 @@ pub async fn generate_soap_note(transcript: String) -> Result<SoapNote, String> 
     let config = Config::load_or_default();
     let client = OllamaClient::new(&config.ollama_server_url)?;
 
-    client
+    // Count words for logging (not content)
+    let word_count = transcript.split_whitespace().count();
+    let start_time = std::time::Instant::now();
+
+    match client
         .generate_soap_note(&config.ollama_model, &transcript)
         .await
+    {
+        Ok(soap_note) => {
+            let generation_time_ms = start_time.elapsed().as_millis() as u64;
+            activity_log::log_soap_generation(
+                "", // session_id not available here
+                word_count,
+                generation_time_ms,
+                &config.ollama_model,
+                true,
+                None,
+            );
+            Ok(soap_note)
+        }
+        Err(e) => {
+            let generation_time_ms = start_time.elapsed().as_millis() as u64;
+            activity_log::log_soap_generation(
+                "",
+                word_count,
+                generation_time_ms,
+                &config.ollama_model,
+                false,
+                Some(&e),
+            );
+            Err(e)
+        }
+    }
 }
 
 // ============================================================================
@@ -741,8 +836,16 @@ pub async fn medplum_try_restore_session(
 
     let client_guard = medplum_state.read().await;
     if let Some(ref client) = *client_guard {
-        Ok(client.try_restore_session().await)
+        let auth_state = client.try_restore_session().await;
+        activity_log::log_medplum_auth(
+            "restore",
+            auth_state.practitioner_id.as_deref(),
+            auth_state.is_authenticated,
+            None,
+        );
+        Ok(auth_state)
     } else {
+        activity_log::log_medplum_auth("restore", None, false, Some("Client not initialized"));
         Ok(AuthState::default())
     }
 }
@@ -755,6 +858,8 @@ pub async fn medplum_start_auth(
 ) -> Result<AuthUrl, String> {
     info!("Starting Medplum OAuth flow");
 
+    activity_log::log_medplum_auth("login_start", None, true, None);
+
     get_or_create_medplum_client(medplum_state.inner()).await?;
 
     let client_guard = medplum_state.read().await;
@@ -762,7 +867,10 @@ pub async fn medplum_start_auth(
         .as_ref()
         .ok_or_else(|| "Medplum client not initialized".to_string())?;
 
-    client.start_auth_flow().await.map_err(|e| e.to_string())
+    client.start_auth_flow().await.map_err(|e| {
+        activity_log::log_medplum_auth("login_start", None, false, Some(&e.to_string()));
+        e.to_string()
+    })
 }
 
 /// Handle OAuth callback with authorization code
@@ -779,10 +887,21 @@ pub async fn medplum_handle_callback(
         .as_ref()
         .ok_or_else(|| "Medplum client not initialized".to_string())?;
 
-    client
-        .exchange_code(&code, &state)
-        .await
-        .map_err(|e| e.to_string())
+    match client.exchange_code(&code, &state).await {
+        Ok(auth_state) => {
+            activity_log::log_medplum_auth(
+                "login_complete",
+                auth_state.practitioner_id.as_deref(),
+                true,
+                None,
+            );
+            Ok(auth_state)
+        }
+        Err(e) => {
+            activity_log::log_medplum_auth("login_complete", None, false, Some(&e.to_string()));
+            Err(e.to_string())
+        }
+    }
 }
 
 /// Logout from Medplum
@@ -795,6 +914,7 @@ pub async fn medplum_logout(
     let client_guard = medplum_state.read().await;
     if let Some(ref client) = *client_guard {
         client.logout().await;
+        activity_log::log_medplum_auth("logout", None, true, None);
     }
     Ok(())
 }
@@ -811,7 +931,21 @@ pub async fn medplum_refresh_token(
         .as_ref()
         .ok_or_else(|| "Medplum client not initialized".to_string())?;
 
-    client.refresh_token().await.map_err(|e| e.to_string())
+    match client.refresh_token().await {
+        Ok(auth_state) => {
+            activity_log::log_medplum_auth(
+                "refresh",
+                auth_state.practitioner_id.as_deref(),
+                true,
+                None,
+            );
+            Ok(auth_state)
+        }
+        Err(e) => {
+            activity_log::log_medplum_auth("refresh", None, false, Some(&e.to_string()));
+            Err(e.to_string())
+        }
+    }
 }
 
 /// Search for patients by name or MRN
@@ -867,23 +1001,69 @@ pub async fn medplum_complete_encounter(
     let mut sync_status = SyncStatus::default();
     let mut errors = Vec::new();
 
-    // Upload transcript
+    // Upload transcript (log size, not content)
+    let transcript_size = transcript.len();
     match client
         .upload_transcript(&encounter_id, &encounter_fhir_id, &patient_id, &transcript)
         .await
     {
-        Ok(_) => sync_status.transcript_synced = true,
-        Err(e) => errors.push(format!("Transcript: {}", e)),
+        Ok(doc_id) => {
+            sync_status.transcript_synced = true;
+            activity_log::log_document_upload(
+                &encounter_id,
+                &encounter_fhir_id,
+                "transcript",
+                &doc_id,
+                transcript_size,
+                true,
+                None,
+            );
+        }
+        Err(e) => {
+            activity_log::log_document_upload(
+                &encounter_id,
+                &encounter_fhir_id,
+                "transcript",
+                "",
+                transcript_size,
+                false,
+                Some(&e.to_string()),
+            );
+            errors.push(format!("Transcript: {}", e));
+        }
     }
 
-    // Upload SOAP note if provided
+    // Upload SOAP note if provided (log size, not content)
     if let Some(ref soap) = soap_note {
+        let soap_size = soap.len();
         match client
             .upload_soap_note(&encounter_id, &encounter_fhir_id, &patient_id, soap)
             .await
         {
-            Ok(_) => sync_status.soap_note_synced = true,
-            Err(e) => errors.push(format!("SOAP note: {}", e)),
+            Ok(doc_id) => {
+                sync_status.soap_note_synced = true;
+                activity_log::log_document_upload(
+                    &encounter_id,
+                    &encounter_fhir_id,
+                    "soap_note",
+                    &doc_id,
+                    soap_size,
+                    true,
+                    None,
+                );
+            }
+            Err(e) => {
+                activity_log::log_document_upload(
+                    &encounter_id,
+                    &encounter_fhir_id,
+                    "soap_note",
+                    "",
+                    soap_size,
+                    false,
+                    Some(&e.to_string()),
+                );
+                errors.push(format!("SOAP note: {}", e));
+            }
         }
     } else {
         sync_status.soap_note_synced = true; // Not required
@@ -891,6 +1071,7 @@ pub async fn medplum_complete_encounter(
 
     // Upload audio if provided
     if let Some(ref audio) = audio_data {
+        let audio_size = audio.len();
         match client
             .upload_audio(
                 &encounter_id,
@@ -902,8 +1083,32 @@ pub async fn medplum_complete_encounter(
             )
             .await
         {
-            Ok(_) => sync_status.audio_synced = true,
-            Err(e) => errors.push(format!("Audio: {}", e)),
+            Ok(media_id) => {
+                sync_status.audio_synced = true;
+                activity_log::log_audio_upload(
+                    &encounter_id,
+                    &encounter_fhir_id,
+                    &media_id,
+                    "", // binary_id not returned
+                    audio_size,
+                    None,
+                    true,
+                    None,
+                );
+            }
+            Err(e) => {
+                activity_log::log_audio_upload(
+                    &encounter_id,
+                    &encounter_fhir_id,
+                    "",
+                    "",
+                    audio_size,
+                    None,
+                    false,
+                    Some(&e.to_string()),
+                );
+                errors.push(format!("Audio: {}", e));
+            }
         }
     } else {
         sync_status.audio_synced = true; // Not required
@@ -911,8 +1116,28 @@ pub async fn medplum_complete_encounter(
 
     // Complete the encounter
     match client.complete_encounter(&encounter_fhir_id).await {
-        Ok(_) => sync_status.encounter_synced = true,
-        Err(e) => errors.push(format!("Encounter: {}", e)),
+        Ok(_) => {
+            sync_status.encounter_synced = true;
+            activity_log::log_encounter_sync(
+                &encounter_id,
+                &encounter_id,
+                &encounter_fhir_id,
+                "complete",
+                true,
+                None,
+            );
+        }
+        Err(e) => {
+            activity_log::log_encounter_sync(
+                &encounter_id,
+                &encounter_id,
+                &encounter_fhir_id,
+                "complete",
+                false,
+                Some(&e.to_string()),
+            );
+            errors.push(format!("Encounter: {}", e));
+        }
     }
 
     sync_status.last_sync_time = Some(chrono::Utc::now().to_rfc3339());
@@ -1047,33 +1272,85 @@ pub async fn medplum_quick_sync(
 
     info!("Created encounter: {}", encounter.id);
 
+    // Log encounter creation
+    activity_log::log_encounter_sync(
+        &encounter.id,
+        &encounter.id,
+        &encounter.id,
+        "create",
+        true,
+        None,
+    );
+
     // Step 3: Upload transcript and SOAP note
     let mut sync_status = SyncStatus::default();
     let mut errors = Vec::new();
 
-    // Upload transcript
+    // Upload transcript (log size, not content)
+    let transcript_size = transcript.len();
     match client
         .upload_transcript(&encounter.id, &encounter.id, &patient.id, &transcript)
         .await
     {
-        Ok(_) => {
+        Ok(doc_id) => {
             sync_status.transcript_synced = true;
+            activity_log::log_document_upload(
+                &encounter.id,
+                &encounter.id,
+                "transcript",
+                &doc_id,
+                transcript_size,
+                true,
+                None,
+            );
             info!("Transcript uploaded successfully");
         }
-        Err(e) => errors.push(format!("Transcript: {}", e)),
+        Err(e) => {
+            activity_log::log_document_upload(
+                &encounter.id,
+                &encounter.id,
+                "transcript",
+                "",
+                transcript_size,
+                false,
+                Some(&e.to_string()),
+            );
+            errors.push(format!("Transcript: {}", e));
+        }
     }
 
-    // Upload SOAP note if provided
+    // Upload SOAP note if provided (log size, not content)
     if let Some(ref soap) = soap_note {
+        let soap_size = soap.len();
         match client
             .upload_soap_note(&encounter.id, &encounter.id, &patient.id, soap)
             .await
         {
-            Ok(_) => {
+            Ok(doc_id) => {
                 sync_status.soap_note_synced = true;
+                activity_log::log_document_upload(
+                    &encounter.id,
+                    &encounter.id,
+                    "soap_note",
+                    &doc_id,
+                    soap_size,
+                    true,
+                    None,
+                );
                 info!("SOAP note uploaded successfully");
             }
-            Err(e) => errors.push(format!("SOAP note: {}", e)),
+            Err(e) => {
+                activity_log::log_document_upload(
+                    &encounter.id,
+                    &encounter.id,
+                    "soap_note",
+                    "",
+                    soap_size,
+                    false,
+                    Some(&e.to_string()),
+                );
+                errors.push(format!("SOAP note: {}", e));
+            }
         }
     } else {
         sync_status.soap_note_synced = true; // Not applicable
@@ -1085,6 +1362,7 @@ pub async fn medplum_quick_sync(
         if path.exists() {
             match std::fs::read(&path) {
                 Ok(audio_data) => {
+                    let audio_size = audio_data.len();
                     let duration_seconds = Some(session_duration_ms / 1000);
                     match client
                         .upload_audio(
@@ -1097,11 +1375,33 @@ pub async fn medplum_quick_sync(
                         )
                         .await
                     {
-                        Ok(_) => {
+                        Ok(media_id) => {
                             sync_status.audio_synced = true;
+                            activity_log::log_audio_upload(
+                                &encounter.id,
+                                &encounter.id,
+                                &media_id,
+                                "",
+                                audio_size,
+                                duration_seconds,
+                                true,
+                                None,
+                            );
                             info!("Audio uploaded successfully");
                         }
-                        Err(e) => errors.push(format!("Audio: {}", e)),
+                        Err(e) => {
+                            activity_log::log_audio_upload(
+                                &encounter.id,
+                                &encounter.id,
+                                "",
+                                "",
+                                audio_size,
+                                duration_seconds,
+                                false,
+                                Some(&e.to_string()),
+                            );
+                            errors.push(format!("Audio: {}", e));
+                        }
                     }
                 }
                 Err(e) => errors.push(format!("Audio read error: {}", e)),
