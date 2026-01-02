@@ -188,7 +188,6 @@ function App() {
       try {
         const checklistResultData = await invoke<ChecklistResult>('run_checklist');
         setChecklistResult(checklistResultData);
-        setChecklistRunning(false);
 
         const deviceList = await invoke<Device[]>('list_input_devices');
         setDevices(deviceList);
@@ -235,6 +234,9 @@ function App() {
         }
       } catch (e) {
         console.error('Init error:', e);
+      } finally {
+        // Always clear checklist loading state, even on error
+        setChecklistRunning(false);
       }
     }
     init();

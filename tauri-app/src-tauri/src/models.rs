@@ -6,7 +6,7 @@
 
 use anyhow::{Context, Result};
 use std::fs::{self, File};
-use std::io::Write;
+use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use thiserror::Error;
 use tracing::{debug, info};
@@ -124,7 +124,11 @@ pub struct DownloadProgress {
     pub percent: f32,
 }
 
-/// Download a file from URL to the specified path
+/// Buffer size for streaming downloads (8KB)
+const DOWNLOAD_BUFFER_SIZE: usize = 8 * 1024;
+
+/// Download a file from URL to the specified path using streaming
+/// to avoid loading large files into memory
 fn download_file(url: &str, dest_path: &Path) -> Result<(), ModelError> {
     info!("Downloading from {} to {:?}", url, dest_path);
 
@@ -136,7 +140,7 @@ fn download_file(url: &str, dest_path: &Path) -> Result<(), ModelError> {
 
     // Download using blocking reqwest with User-Agent header
     // (some servers reject requests without User-Agent)
-    let response = reqwest::blocking::Client::builder()
+    let mut response = reqwest::blocking::Client::builder()
         .user_agent("transcription-app/0.1")
         .build()
         .map_err(|e| ModelError::NetworkError(e.to_string()))?
@@ -165,13 +169,39 @@ fn download_file(url: &str, dest_path: &Path) -> Result<(), ModelError> {
     let mut file = File::create(&temp_path)
         .map_err(|e| ModelError::WriteError(e.to_string()))?;
 
-    // Download with progress tracking
-    let bytes = response
-        .bytes()
-        .map_err(|e| ModelError::NetworkError(e.to_string()))?;
+    // Stream download in chunks to avoid OOM for large files
+    let mut buffer = vec![0u8; DOWNLOAD_BUFFER_SIZE];
+    let mut downloaded: u64 = 0;
+    let mut last_progress_log: u64 = 0;
 
-    file.write_all(&bytes)
-        .map_err(|e| ModelError::WriteError(e.to_string()))?;
+    loop {
+        let bytes_read = response.read(&mut buffer)
+            .map_err(|e| ModelError::NetworkError(e.to_string()))?;
+
+        if bytes_read == 0 {
+            break;
+        }
+
+        file.write_all(&buffer[..bytes_read])
+            .map_err(|e| ModelError::WriteError(e.to_string()))?;
+
+        downloaded += bytes_read as u64;
+
+        // Log progress every 50MB
+        if downloaded - last_progress_log >= 50_000_000 {
+            if let Some(total) = total_size {
+                let percent = (downloaded as f64 / total as f64) * 100.0;
+                info!("Download progress: {:.1}% ({:.1} MB / {:.1} MB)",
+                    percent,
+                    downloaded as f64 / 1_000_000.0,
+                    total as f64 / 1_000_000.0
+                );
+            } else {
+                info!("Downloaded: {:.1} MB", downloaded as f64 / 1_000_000.0);
+            }
+            last_progress_log = downloaded;
+        }
+    }
 
     file.flush()
         .map_err(|e| ModelError::WriteError(e.to_string()))?;
@@ -180,7 +210,7 @@ fn download_file(url: &str, dest_path: &Path) -> Result<(), ModelError> {
     fs::rename(&temp_path, dest_path)
         .map_err(|e| ModelError::WriteError(e.to_string()))?;
 
-    info!("Download complete: {:?}", dest_path);
+    info!("Download complete: {:?} ({:.1} MB)", dest_path, downloaded as f64 / 1_000_000.0);
     Ok(())
 }
 

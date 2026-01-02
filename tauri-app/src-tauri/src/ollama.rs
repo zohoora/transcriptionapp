@@ -198,16 +198,45 @@ impl OllamaClient {
     /// Maximum transcript size (100KB) to prevent memory issues
     const MAX_TRANSCRIPT_SIZE: usize = 100_000;
 
+    /// Minimum transcript length (50 chars) to ensure meaningful SOAP generation
+    const MIN_TRANSCRIPT_LENGTH: usize = 50;
+
+    /// Minimum word count for meaningful SOAP generation
+    const MIN_WORD_COUNT: usize = 10;
+
     /// Generate a SOAP note from a clinical transcript
     pub async fn generate_soap_note(
         &self,
         model: &str,
         transcript: &str,
     ) -> Result<SoapNote, String> {
-        // Validate transcript
-        if transcript.trim().is_empty() {
+        let trimmed = transcript.trim();
+
+        // Validate transcript is not empty
+        if trimmed.is_empty() {
             return Err("Transcript cannot be empty".to_string());
         }
+
+        // Validate minimum length
+        if trimmed.len() < Self::MIN_TRANSCRIPT_LENGTH {
+            return Err(format!(
+                "Transcript too short ({} characters). Minimum {} characters required for meaningful SOAP note generation.",
+                trimmed.len(),
+                Self::MIN_TRANSCRIPT_LENGTH
+            ));
+        }
+
+        // Validate minimum word count
+        let word_count = trimmed.split_whitespace().count();
+        if word_count < Self::MIN_WORD_COUNT {
+            return Err(format!(
+                "Transcript has too few words ({} words). Minimum {} words required for meaningful SOAP note generation.",
+                word_count,
+                Self::MIN_WORD_COUNT
+            ));
+        }
+
+        // Validate maximum size
         if transcript.len() > Self::MAX_TRANSCRIPT_SIZE {
             return Err(format!(
                 "Transcript too large ({} bytes). Maximum size is {} bytes",
@@ -549,5 +578,21 @@ Let me analyze this transcript...
         let result2 = OllamaClient::new("ftp://localhost:11434");
         assert!(result2.is_err());
         assert!(result2.unwrap_err().contains("http or https"));
+    }
+
+    #[test]
+    fn test_build_soap_retry_prompt() {
+        let prompt = build_soap_retry_prompt("Patient says hello", "Previous invalid response");
+        assert!(prompt.contains("Patient says hello"));
+        assert!(prompt.contains("MUST respond with ONLY a JSON object"));
+        assert!(prompt.contains("DO NOT ask questions"));
+    }
+
+    #[test]
+    fn test_transcript_validation_constants() {
+        // Ensure validation constants are reasonable
+        assert!(OllamaClient::MIN_TRANSCRIPT_LENGTH > 0);
+        assert!(OllamaClient::MIN_WORD_COUNT > 0);
+        assert!(OllamaClient::MAX_TRANSCRIPT_SIZE > OllamaClient::MIN_TRANSCRIPT_LENGTH);
     }
 }

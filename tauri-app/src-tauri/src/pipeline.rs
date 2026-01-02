@@ -427,6 +427,51 @@ fn run_pipeline_thread_inner(
             // Stop capture first
             let _ = capture.stop();
 
+            // DRAIN RING BUFFER: Process any remaining audio from the capture buffer
+            // This prevents losing tail audio when the user stops recording
+            let remaining = consumer.occupied_len();
+            if remaining > 0 {
+                debug!("Draining {} samples from ring buffer", remaining);
+                let mut drain_buffer = vec![0.0f32; remaining];
+                let drained = consumer.pop_slice(&mut drain_buffer);
+
+                if drained > 0 {
+                    // Process through resampler in chunks
+                    for chunk in drain_buffer[..drained].chunks(input_frames) {
+                        if chunk.len() == input_frames {
+                            if let Ok(resampled) = resampler.process(chunk) {
+                                // Write to WAV file
+                                if let Some(ref mut writer) = wav_writer {
+                                    for &sample in &resampled {
+                                        let sample_i16 = (sample * 32767.0).clamp(-32768.0, 32767.0) as i16;
+                                        let _ = writer.write_sample(sample_i16);
+                                    }
+                                }
+                                staging_buffer.extend_from_slice(&resampled);
+                            }
+                        }
+                    }
+                }
+            }
+
+            // DRAIN STAGING BUFFER: Process any partial VAD chunks
+            // Even if < VAD_CHUNK_SIZE, we need to send this audio through VAD
+            while staging_buffer.len() >= VAD_CHUNK_SIZE {
+                let chunk: Vec<f32> = staging_buffer.drain(..VAD_CHUNK_SIZE).collect();
+                pipeline.advance_audio_clock(VAD_CHUNK_SIZE);
+                pipeline.process_chunk(&chunk, &mut vad);
+            }
+
+            // Handle any remaining partial chunk by zero-padding
+            if !staging_buffer.is_empty() {
+                debug!("Processing {} remaining samples with zero-padding", staging_buffer.len());
+                let mut final_chunk = staging_buffer.drain(..).collect::<Vec<_>>();
+                let original_len = final_chunk.len();
+                final_chunk.resize(VAD_CHUNK_SIZE, 0.0); // Zero-pad to chunk size
+                pipeline.advance_audio_clock(original_len); // Only advance by actual audio
+                pipeline.process_chunk(&final_chunk, &mut vad);
+            }
+
             pipeline.force_flush();
 
             // Transcribe any remaining utterances

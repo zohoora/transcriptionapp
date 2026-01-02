@@ -101,6 +101,7 @@ export const ReviewMode = memo(function ReviewMode({
   const [transcriptExpanded, setTranscriptExpanded] = useState(true);
   const [soapExpanded, setSoapExpanded] = useState(true);
   const [insightsExpanded, setInsightsExpanded] = useState(false);
+  const [debugExpanded, setDebugExpanded] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [copySuccess, setCopySuccess] = useState(false);
 
@@ -260,6 +261,24 @@ export const ReviewMode = memo(function ReviewMode({
                   <div className="soap-footer">
                     Generated {formatLocalDateTime(soapNote.generated_at)} ({soapNote.model_used})
                   </div>
+
+                  {/* Debug: Raw model response (collapsible) */}
+                  {soapNote.raw_response && (
+                    <div className="soap-debug">
+                      <button
+                        className="soap-debug-toggle"
+                        onClick={() => setDebugExpanded(!debugExpanded)}
+                      >
+                        <span className={`chevron-small ${debugExpanded ? '' : 'collapsed'}`}>&#9660;</span>
+                        Raw Response
+                      </button>
+                      {debugExpanded && (
+                        <pre className="soap-debug-content">
+                          {soapNote.raw_response}
+                        </pre>
+                      )}
+                    </div>
+                  )}
                 </div>
               )}
             </div>
