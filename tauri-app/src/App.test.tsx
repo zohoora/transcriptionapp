@@ -1025,3 +1025,101 @@ describe('Audio Quality', () => {
     });
   });
 });
+
+describe('Download Model', () => {
+  it('passes modelName argument when downloading Whisper model', async () => {
+    const mockInvoke = vi.mocked(invoke);
+    const downloadPromise = Promise.resolve();
+
+    mockInvoke.mockImplementation((command: string, args?: Record<string, unknown>) => {
+      if (command === 'list_input_devices') return Promise.resolve(mockDevices);
+      if (command === 'check_model_status') return Promise.resolve(mockModelStatusUnavailable);
+      if (command === 'get_settings') return Promise.resolve(mockSettings);
+      if (command === 'run_checklist') {
+        return Promise.resolve({
+          checks: [{
+            id: 'whisper_model',
+            name: 'Whisper Model',
+            status: 'fail',
+            message: 'Model not found',
+            action: { download_model: { model_name: 'small' } }
+          }],
+          all_passed: false,
+          can_start: false,
+          summary: 'Model missing'
+        });
+      }
+      if (command === 'download_whisper_model') {
+        // Verify the modelName argument is passed
+        expect(args).toEqual({ modelName: 'small' });
+        return downloadPromise;
+      }
+      return Promise.reject(new Error('Unknown command'));
+    });
+
+    const user = userEvent.setup();
+    render(<App />);
+    await waitForAppReady();
+
+    // Find and click the download button for the Whisper model
+    await waitFor(() => {
+      const downloadBtn = screen.getByRole('button', { name: /get/i });
+      expect(downloadBtn).toBeInTheDocument();
+    });
+
+    const downloadBtn = screen.getByRole('button', { name: /get/i });
+    await user.click(downloadBtn);
+
+    // Verify download_whisper_model was called with the correct argument
+    await waitFor(() => {
+      expect(mockInvoke).toHaveBeenCalledWith('download_whisper_model', { modelName: 'small' });
+    });
+  });
+
+  it('does not pass modelName for non-Whisper models', async () => {
+    const mockInvoke = vi.mocked(invoke);
+
+    mockInvoke.mockImplementation((command: string, args?: Record<string, unknown>) => {
+      if (command === 'list_input_devices') return Promise.resolve(mockDevices);
+      if (command === 'check_model_status') return Promise.resolve(mockModelStatusAvailable);
+      if (command === 'get_settings') return Promise.resolve(mockSettings);
+      if (command === 'run_checklist') {
+        return Promise.resolve({
+          checks: [{
+            id: 'speaker_model',
+            name: 'Speaker Model',
+            status: 'fail',
+            message: 'Model not found',
+            action: { download_model: { model_name: 'speaker_embedding' } }
+          }],
+          all_passed: false,
+          can_start: false,
+          summary: 'Model missing'
+        });
+      }
+      if (command === 'download_speaker_model') {
+        // Should be called without arguments
+        expect(args).toBeUndefined();
+        return Promise.resolve();
+      }
+      return Promise.reject(new Error('Unknown command'));
+    });
+
+    const user = userEvent.setup();
+    render(<App />);
+    await waitForAppReady();
+
+    await waitFor(() => {
+      const downloadBtn = screen.getByRole('button', { name: /get/i });
+      expect(downloadBtn).toBeInTheDocument();
+    });
+
+    const downloadBtn = screen.getByRole('button', { name: /get/i });
+    await user.click(downloadBtn);
+
+    // Verify download_speaker_model was called without arguments
+    await waitFor(() => {
+      expect(mockInvoke).toHaveBeenCalledWith('download_speaker_model');
+    });
+  });
+});

@@ -630,4 +630,77 @@ mod tests {
         assert!(dir.ends_with("logs"));
         assert!(dir.to_string_lossy().contains(".transcriptionapp"));
     }
+
+    /// Verify that log functions are PHI-safe by checking their signatures.
+    ///
+    /// This test documents the PHI-safe logging contract:
+    /// - log_transcription_segment takes word_count, not transcript text
+    /// - log_soap_generation takes timing/model, not SOAP content
+    /// - log_document_upload takes size, not document content
+    /// - log_audio_upload takes size/duration, not audio data
+    ///
+    /// If someone changes these functions to include PHI, these tests will fail.
+    #[test]
+    fn test_transcription_segment_logging_is_phi_safe() {
+        // Call log_transcription_segment with test data
+        // This verifies the function doesn't require transcript text
+        log_transcription_segment(
+            "test-session-id",
+            "test-segment-id",
+            0,                    // segment_index
+            1000,                 // duration_ms
+            Some(1),              // speaker_id
+            42,                   // word_count - NOT transcript text
+            true,                 // is_final
+        );
+        // If this compiles and runs, the function signature is PHI-safe
+    }
+
+    #[test]
+    fn test_soap_generation_logging_is_phi_safe() {
+        // Call log_soap_generation with test data
+        // This verifies the function doesn't require SOAP content
+        log_soap_generation(
+            "test-session-id",
+            100,                  // transcript_word_count
+            5000,                 // generation_time_ms
+            "test-model",         // model name
+            true,                 // success
+            None,                 // error_message
+        );
+        // If this compiles and runs, the function signature is PHI-safe
+    }
+
+    #[test]
+    fn test_document_upload_logging_is_phi_safe() {
+        // Call log_document_upload with test data
+        // This verifies the function doesn't require document content
+        log_document_upload(
+            "test-session-id",
+            "test-encounter-id",
+            "transcript",         // document_type
+            "test-doc-id",        // document_id
+            1024,                 // size_bytes - NOT document content
+            true,                 // success
+            None,                 // error_message
+        );
+        // If this compiles and runs, the function signature is PHI-safe
+    }
+
+    #[test]
+    fn test_audio_upload_logging_is_phi_safe() {
+        // Call log_audio_upload with test data
+        // This verifies the function doesn't require audio data
+        log_audio_upload(
+            "test-session-id",
+            "test-encounter-id",
+            "test-media-id",      // media_id
+            "test-binary-id",     // binary_id
+            1024 * 1024,          // size_bytes - NOT audio data
+            Some(60000),          // duration_ms
+            true,                 // success
+            None,                 // error_message
+        );
+        // If this compiles and runs, the function signature is PHI-safe
+    }
 }

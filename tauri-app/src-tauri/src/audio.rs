@@ -324,9 +324,11 @@ impl AudioCapture {
                 overflow_counter.fetch_add(1, Ordering::Relaxed);
             }
         } else {
-            // Downmix: take first channel only
+            // Downmix: average all channels for proper stereo handling
             for chunk in data.chunks(channels) {
-                if producer.try_push(chunk[0]).is_err() {
+                let sum: f32 = chunk.iter().sum();
+                let avg = sum / channels as f32;
+                if producer.try_push(avg).is_err() {
                     overflow_counter.fetch_add(1, Ordering::Relaxed);
                     break;
                 }
@@ -342,8 +344,10 @@ impl AudioCapture {
         overflow_counter: &AtomicU64,
     ) {
         for chunk in data.chunks(channels) {
-            let sample = chunk[0] as f32 / 32768.0;
-            if producer.try_push(sample).is_err() {
+            // Average all channels for proper stereo handling
+            let sum: i32 = chunk.iter().map(|&s| s as i32).sum();
+            let avg = (sum / channels as i32) as f32 / 32768.0;
+            if producer.try_push(avg).is_err() {
                 overflow_counter.fetch_add(1, Ordering::Relaxed);
                 break;
             }
@@ -359,7 +363,10 @@ impl AudioCapture {
     ) {
         for chunk in data.chunks(channels) {
             // u8 is unsigned: 0-255, with 128 as center
-            let sample = (chunk[0] as f32 - 128.0) / 128.0;
+            // Average all channels for proper stereo handling
+            let sum: u32 = chunk.iter().map(|&s| s as u32).sum();
+            let avg = sum as f32 / channels as f32;
+            let sample = (avg - 128.0) / 128.0;
             if producer.try_push(sample).is_err() {
                 overflow_counter.fetch_add(1, Ordering::Relaxed);
                 break;
@@ -520,7 +527,7 @@ mod tests {
         }
 
         #[test]
-        fn prop_f32_mono_downmix_takes_first_channel(
+        fn prop_f32_stereo_downmix_averages_channels(
             samples in proptest::collection::vec(-1.0f32..1.0, 2..100)
         ) {
             // Simulate stereo input (must be even length)
@@ -533,15 +540,18 @@ mod tests {
             let channels = 2;
             let mut mono = Vec::new();
             for chunk in stereo.chunks(channels) {
-                mono.push(chunk[0]);
+                // New behavior: average channels
+                let avg = chunk.iter().sum::<f32>() / channels as f32;
+                mono.push(avg);
             }
 
             // Mono should have half the samples
             prop_assert_eq!(mono.len(), stereo.len() / 2);
 
-            // Each mono sample should be the first channel
+            // Each mono sample should be the average of both channels
             for (i, chunk) in stereo.chunks(channels).enumerate() {
-                prop_assert!((mono[i] - chunk[0]).abs() < f32::EPSILON);
+                let expected_avg = (chunk[0] + chunk[1]) / 2.0;
+                prop_assert!((mono[i] - expected_avg).abs() < f32::EPSILON);
             }
         }
     }

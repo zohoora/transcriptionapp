@@ -414,6 +414,9 @@ fn run_pipeline_thread_inner(
     let mut recent_coughs: VecDeque<CoughEvent> = VecDeque::with_capacity(5);
     let mut latest_session_metrics: Option<crate::biomarkers::SessionMetrics> = None;
 
+    // Track audio capture overflows (buffer overruns)
+    let mut last_overflow_count: u64 = 0;
+
     // Context for transcription
     let mut context = String::new();
 
@@ -590,6 +593,19 @@ fn run_pipeline_thread_inner(
         if read < input_frames {
             warn!("Incomplete read from ring buffer: {} < {}", read, input_frames);
             continue;
+        }
+
+        // Check for audio capture overflows (buffer overruns) and send to biomarker thread
+        let current_overflow = capture.overflow_count();
+        if current_overflow > last_overflow_count {
+            let new_overflows = current_overflow - last_overflow_count;
+            warn!("Audio buffer overflow detected: {} new overruns", new_overflows);
+            if let Some(ref bio_handle) = biomarker_handle {
+                for _ in 0..new_overflows {
+                    bio_handle.send_dropout();
+                }
+            }
+            last_overflow_count = current_overflow;
         }
 
         // Resample to 16kHz

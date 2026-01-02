@@ -238,4 +238,98 @@ mod tests {
         // (though this depends on VAD sensitivity)
         assert!(!pipeline.has_pending_utterances() || pipeline.pending_count() == 0);
     }
+
+    /// Regression test: Ensure tail audio is captured when stop is called mid-speech
+    ///
+    /// This test verifies that force_flush properly captures any remaining audio
+    /// in the speech buffer when the user stops recording mid-utterance.
+    #[test]
+    #[serial]
+    #[ignore = "Requires ONNX Runtime - run with cargo test --ignored"]
+    fn test_force_flush_captures_tail_audio() {
+        // Use shorter flush delay so we can test mid-speech more easily
+        let config = VadConfig::from_ms(0.3, 100, 100, 1000, 25000);
+        let mut pipeline = VadGatedPipeline::with_config(config);
+        let mut vad = create_vad();
+
+        // First, send some silence to establish baseline
+        let silence = generate_silence(VAD_CHUNK_SIZE);
+        for _ in 0..5 {
+            pipeline.advance_audio_clock(VAD_CHUNK_SIZE);
+            pipeline.process_chunk(&silence, &mut vad);
+        }
+
+        // Send speech signal (should trigger VAD and start accumulating)
+        let speech = generate_speech_signal(VAD_CHUNK_SIZE);
+        for _ in 0..20 {
+            pipeline.advance_audio_clock(VAD_CHUNK_SIZE);
+            let is_speech = pipeline.process_chunk(&speech, &mut vad);
+            // After a few chunks, VAD should detect speech
+            if is_speech {
+                break;
+            }
+        }
+
+        // Continue sending speech - this audio is being accumulated
+        for _ in 0..10 {
+            pipeline.advance_audio_clock(VAD_CHUNK_SIZE);
+            pipeline.process_chunk(&speech, &mut vad);
+        }
+
+        // At this point, speech is active and audio is being accumulated
+        // but not yet flushed (no silence to trigger flush)
+        assert!(
+            pipeline.is_speech_active(),
+            "Speech should be active before force_flush"
+        );
+
+        // Simulate stop by calling force_flush
+        pipeline.force_flush();
+
+        // The tail audio should now be available as an utterance
+        assert!(
+            pipeline.has_pending_utterances(),
+            "force_flush should produce an utterance from accumulated speech"
+        );
+
+        // Verify the utterance has audio content
+        if let Some(utterance) = pipeline.pop_utterance() {
+            assert!(
+                !utterance.audio.is_empty(),
+                "Utterance should contain audio samples"
+            );
+            assert!(
+                utterance.audio.len() >= VAD_CHUNK_SIZE,
+                "Utterance should have at least one chunk of audio"
+            );
+        }
+
+        // After popping, speech should no longer be active
+        assert!(
+            !pipeline.is_speech_active(),
+            "Speech should not be active after force_flush"
+        );
+    }
+
+    /// Regression test: Verify partial VAD chunks are handled on stop
+    ///
+    /// When the staging buffer has fewer samples than VAD_CHUNK_SIZE,
+    /// the pipeline should still process them (with zero-padding).
+    #[test]
+    fn test_partial_chunk_handling() {
+        let config = VadConfig::from_ms(0.5, 100, 50, 500, 25000);
+        let mut pipeline = VadGatedPipeline::with_config(config);
+
+        // Advance clock by a non-chunk-aligned amount
+        let partial_samples = VAD_CHUNK_SIZE / 2;
+        pipeline.advance_audio_clock(partial_samples);
+
+        // Clock should reflect the partial advance
+        let expected_ms = (partial_samples * 1000) / SAMPLE_RATE;
+        assert_eq!(pipeline.audio_clock_ms(), expected_ms as u64);
+
+        // Force flush on empty pipeline should be safe
+        pipeline.force_flush();
+        assert!(!pipeline.has_pending_utterances());
+    }
 }

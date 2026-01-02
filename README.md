@@ -13,10 +13,15 @@ A desktop transcription app that records from the microphone, transcribes offlin
 
 ## Features
 
-- **Fully Offline** - No network calls, no analytics, no telemetry
+- **Offline Transcription** - Core transcription runs entirely on-device using Whisper
 - **Real-time Transcription** - Updates within 1-4 seconds of each utterance
 - **VAD-Gated** - Voice Activity Detection prevents hallucinations during silence
+- **Speaker Diarization** - Identifies different speakers in conversation
+- **SOAP Note Generation** - Optional LLM integration via local Ollama server
+- **EMR Integration** - Optional sync to Medplum FHIR server
 - **Cross-Platform Ready** - macOS first, Windows architecturally supported
+
+> **Note on Network Features**: The core transcription pipeline is fully offline. Optional features (SOAP notes via Ollama, EMR sync via Medplum) require network access but are disabled by default. The app performs connection checks on startup but functions without them.
 
 ## Quick Start
 
@@ -46,8 +51,16 @@ cargo run -- --model ~/.transcriptionapp/models/ggml-small.bin
 ```bash
 cd tauri-app
 pnpm install
-pnpm tauri dev
+
+# Build debug app (required for OAuth deep links)
+pnpm tauri build --debug
+
+# Run with ONNX Runtime (required for transcription, diarization, enhancement)
+ORT_DYLIB_PATH=$(./scripts/setup-ort.sh) \
+  "src-tauri/target/debug/bundle/macos/Transcription App.app/Contents/MacOS/transcription-app"
 ```
+
+> **Note**: Use the debug build instead of `pnpm tauri dev` for proper deep link and single-instance handling.
 
 ## Documentation
 
@@ -79,7 +92,12 @@ pnpm tauri dev
 | Ring Buffer | ringbuf |
 | Resampling | rubato |
 | VAD | voice_activity_detector (Silero) |
-| Transcription | whisper-rs |
+| Transcription | whisper-rs (GGML) |
+| Speaker Diarization | ONNX Runtime + WeSpeaker |
+| Speech Enhancement | GTCRN (ONNX) |
+| Biomarkers | YAMNet (cough), pitch/CPP analysis |
+| SOAP Generation | Ollama (local LLM) |
+| EMR Integration | Medplum FHIR (OAuth 2.0) |
 
 ## License
 
