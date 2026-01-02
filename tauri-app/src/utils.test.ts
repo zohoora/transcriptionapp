@@ -12,6 +12,7 @@ import {
   isSameLocalDay,
   isToday,
   formatDuration,
+  formatErrorMessage,
 } from './utils';
 
 describe('formatTime', () => {
@@ -389,5 +390,64 @@ describe('formatDuration', () => {
   it('truncates partial minutes', () => {
     expect(formatDuration(90000)).toBe('1m'); // 1.5 minutes
     expect(formatDuration(150000)).toBe('2m'); // 2.5 minutes
+  });
+});
+
+// ============================================================================
+// Error Utilities Tests
+// ============================================================================
+
+describe('formatErrorMessage', () => {
+  it('extracts message from Error objects', () => {
+    const error = new Error('Something went wrong');
+    expect(formatErrorMessage(error)).toBe('Something went wrong');
+  });
+
+  it('handles Error objects with empty message', () => {
+    const error = new Error('');
+    expect(formatErrorMessage(error)).toBe('Error'); // Falls back to name
+  });
+
+  it('strips "Error: " prefix from strings', () => {
+    expect(formatErrorMessage('Error: Connection failed')).toBe('Connection failed');
+  });
+
+  it('returns string errors unchanged if no prefix', () => {
+    expect(formatErrorMessage('Connection failed')).toBe('Connection failed');
+  });
+
+  it('handles null', () => {
+    expect(formatErrorMessage(null)).toBe('Unknown error');
+  });
+
+  it('handles undefined', () => {
+    expect(formatErrorMessage(undefined)).toBe('Unknown error');
+  });
+
+  it('handles objects with message property', () => {
+    const error = { message: 'Network timeout', code: 'TIMEOUT' };
+    expect(formatErrorMessage(error)).toBe('Network timeout');
+  });
+
+  it('handles empty string', () => {
+    expect(formatErrorMessage('')).toBe('Unknown error');
+  });
+
+  it('strips prefix from stringified errors', () => {
+    // When String(error) returns "Error: message"
+    expect(formatErrorMessage('Error: Failed to connect')).toBe('Failed to connect');
+  });
+
+  it('handles numbers', () => {
+    expect(formatErrorMessage(404)).toBe('404');
+  });
+
+  it('handles complex Tauri-style errors', () => {
+    // Tauri errors often have this structure
+    const tauriError = {
+      message: 'Command not found: unknown_command',
+      name: 'TauriError',
+    };
+    expect(formatErrorMessage(tauriError)).toBe('Command not found: unknown_command');
   });
 });

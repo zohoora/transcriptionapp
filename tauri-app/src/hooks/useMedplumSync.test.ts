@@ -162,7 +162,7 @@ describe('useMedplumSync', () => {
     });
 
     expect(result.current.syncSuccess).toBe(false);
-    expect(result.current.syncError).toBe('Error: Network error');
+    expect(result.current.syncError).toBe('Network error');
   });
 
   it('sets isSyncing during sync', async () => {

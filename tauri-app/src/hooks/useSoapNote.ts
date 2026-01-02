@@ -1,6 +1,7 @@
 import { useState, useCallback } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import type { OllamaStatus, SoapNote } from '../types';
+import { formatErrorMessage } from '../utils';
 
 export interface UseSoapNoteResult {
   isGeneratingSoap: boolean;
@@ -31,7 +32,7 @@ export function useSoapNote(): UseSoapNoteResult {
       return result;
     } catch (e) {
       console.error('Failed to generate SOAP note:', e);
-      setSoapError(String(e));
+      setSoapError(formatErrorMessage(e));
       return null;
     } finally {
       setIsGeneratingSoap(false);

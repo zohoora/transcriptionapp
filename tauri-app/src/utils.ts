@@ -125,3 +125,51 @@ export function formatDuration(ms: number): string {
   }
   return `${minutes}m`;
 }
+
+// ============================================================================
+// Error Utilities
+// ============================================================================
+
+/**
+ * Extract a user-friendly error message from various error types.
+ * Handles: Error objects, Tauri errors, string errors, and unknown values.
+ */
+export function formatErrorMessage(error: unknown): string {
+  if (error === null || error === undefined) {
+    return 'Unknown error';
+  }
+
+  // Handle Error objects
+  if (error instanceof Error) {
+    // Strip "Error: " prefix if present
+    return error.message || error.name || 'Unknown error';
+  }
+
+  // Handle string errors
+  if (typeof error === 'string') {
+    // Strip common prefixes
+    if (error.startsWith('Error: ')) {
+      return error.slice(7);
+    }
+    return error || 'Unknown error';
+  }
+
+  // Handle objects with message property (like Tauri errors)
+  if (typeof error === 'object' && 'message' in error) {
+    const msg = (error as { message: unknown }).message;
+    if (typeof msg === 'string') {
+      return msg;
+    }
+  }
+
+  // Fallback to string conversion
+  try {
+    const str = String(error);
+    if (str.startsWith('Error: ')) {
+      return str.slice(7);
+    }
+    return str || 'Unknown error';
+  } catch {
+    return 'Unknown error';
+  }
+}

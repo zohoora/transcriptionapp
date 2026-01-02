@@ -85,7 +85,7 @@ describe('useSoapNote', () => {
     });
 
     expect(soapResult).toBeNull();
-    expect(result.current.soapError).toBe('Error: Ollama not available');
+    expect(result.current.soapError).toBe('Ollama not available');
     expect(result.current.isGeneratingSoap).toBe(false);
   });
 
@@ -143,7 +143,7 @@ describe('useSoapNote', () => {
     await act(async () => {
       await result.current.generateSoapNote('Test 1');
     });
-    expect(result.current.soapError).toBe('Error: First error');
+    expect(result.current.soapError).toBe('First error');
 
     // Second call succeeds and clears error
     await act(async () => {

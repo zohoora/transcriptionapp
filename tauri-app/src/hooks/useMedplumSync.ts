@@ -1,6 +1,7 @@
 import { useState, useCallback } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import type { AuthState, SoapNote, SyncResult } from '../types';
+import { formatErrorMessage } from '../utils';
 
 export interface UseMedplumSyncResult {
   medplumConnected: boolean;
@@ -64,7 +65,7 @@ export function useMedplumSync(): UseMedplumSyncResult {
         }
       } catch (e) {
         console.error('Failed to sync to Medplum:', e);
-        setSyncError(String(e));
+        setSyncError(formatErrorMessage(e));
       } finally {
         setIsSyncing(false);
       }
