@@ -13,6 +13,7 @@ import { listen } from '@tauri-apps/api/event';
 import { open } from '@tauri-apps/plugin-shell';
 import { onOpenUrl, getCurrent } from '@tauri-apps/plugin-deep-link';
 import type { AuthState, AuthUrl } from '../types';
+import { formatErrorMessage } from '../utils';
 
 interface AuthContextType {
   authState: AuthState;
@@ -163,7 +164,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
       const newState = await invoke<AuthState>('medplum_handle_callback', { code, state });
       setAuthState(newState);
     } catch (e) {
-      const errorMsg = e instanceof Error ? e.message : String(e);
+      const errorMsg = formatErrorMessage(e);
       setError(errorMsg);
       console.error('OAuth callback error:', e);
     } finally {
@@ -184,7 +185,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
       // The callback will be handled by the deep link listener
     } catch (e) {
-      const errorMsg = e instanceof Error ? e.message : String(e);
+      const errorMsg = formatErrorMessage(e);
       setError(errorMsg);
       console.error('Login error:', e);
       setIsLoading(false);
@@ -198,7 +199,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
       setAuthState(defaultAuthState);
       setError(null);
     } catch (e) {
-      const errorMsg = e instanceof Error ? e.message : String(e);
+      const errorMsg = formatErrorMessage(e);
       setError(errorMsg);
       console.error('Logout error:', e);
     } finally {
@@ -212,7 +213,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
       setAuthState(newState);
       setError(null);
     } catch (e) {
-      const errorMsg = e instanceof Error ? e.message : String(e);
+      const errorMsg = formatErrorMessage(e);
       console.error('Token refresh error:', e);
       // If refresh fails, clear auth state
       setAuthState(defaultAuthState);
