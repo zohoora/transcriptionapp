@@ -1094,19 +1094,39 @@ impl MedplumClient {
                     .await
                     .unwrap_or_else(|_| "Unknown".to_string());
 
-                // Check for documents (simplified - would need separate queries for full impl)
-                let has_soap_note = false; // TODO: Query DocumentReference
-                let has_audio = false; // TODO: Query Media
-
                 encounters.push(EncounterSummary {
                     id: encounter_id,
                     fhir_id,
                     patient_name,
                     date: start_time.to_string(),
                     duration_minutes,
-                    has_soap_note,
-                    has_audio,
+                    has_soap_note: false, // Updated below
+                    has_audio: false,     // Updated below
                 });
+            }
+        }
+
+        // Batch query for SOAP notes and audio for all encounters
+        if !encounters.is_empty() {
+            let encounter_fhir_ids: Vec<&str> =
+                encounters.iter().map(|e| e.fhir_id.as_str()).collect();
+
+            // Query SOAP notes (DocumentReference with category=soap-note)
+            let soap_encounter_ids = self
+                .get_encounters_with_soap_notes(&token, &encounter_fhir_ids)
+                .await
+                .unwrap_or_default();
+
+            // Query audio (Media resources)
+            let audio_encounter_ids = self
+                .get_encounters_with_audio(&token, &encounter_fhir_ids)
+                .await
+                .unwrap_or_default();
+
+            // Update encounter summaries with document indicators
+            for encounter in &mut encounters {
+                encounter.has_soap_note = soap_encounter_ids.contains(&encounter.fhir_id);
+                encounter.has_audio = audio_encounter_ids.contains(&encounter.fhir_id);
             }
         }
 
@@ -1131,6 +1151,101 @@ impl MedplumClient {
             return Ok(self.extract_patient_name(&patient));
         }
         Ok("Unknown".to_string())
+    }
+
+    /// Get encounter FHIR IDs that have SOAP notes
+    async fn get_encounters_with_soap_notes(
+        &self,
+        token: &str,
+        encounter_ids: &[&str],
+    ) -> Result<std::collections::HashSet<String>, MedplumError> {
+        use std::collections::HashSet;
+
+        let mut result = HashSet::new();
+        if encounter_ids.is_empty() {
+            return Ok(result);
+        }
+
+        // Query DocumentReference resources with soap-note category
+        // FHIR search: context:encounter references and category code
+        let url = format!(
+            "{}/fhir/R4/DocumentReference?category=soap-note&_count=200&_elements=context",
+            self.base_url
+        );
+
+        let response = self
+            .http_client
+            .get(&url)
+            .bearer_auth(token)
+            .send()
+            .await?;
+
+        let bundle: serde_json::Value = self.handle_response(response).await?;
+
+        if let Some(entries) = bundle["entry"].as_array() {
+            for entry in entries {
+                // Extract encounter reference from context.encounter
+                if let Some(encounters) = entry["resource"]["context"]["encounter"].as_array() {
+                    for enc in encounters {
+                        if let Some(reference) = enc["reference"].as_str() {
+                            // Reference format: "Encounter/{id}"
+                            if let Some(id) = reference.strip_prefix("Encounter/") {
+                                if encounter_ids.contains(&id) {
+                                    result.insert(id.to_string());
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        Ok(result)
+    }
+
+    /// Get encounter FHIR IDs that have audio recordings
+    async fn get_encounters_with_audio(
+        &self,
+        token: &str,
+        encounter_ids: &[&str],
+    ) -> Result<std::collections::HashSet<String>, MedplumError> {
+        use std::collections::HashSet;
+
+        let mut result = HashSet::new();
+        if encounter_ids.is_empty() {
+            return Ok(result);
+        }
+
+        // Query Media resources
+        let url = format!(
+            "{}/fhir/R4/Media?_count=200&_elements=encounter",
+            self.base_url
+        );
+
+        let response = self
+            .http_client
+            .get(&url)
+            .bearer_auth(token)
+            .send()
+            .await?;
+
+        let bundle: serde_json::Value = self.handle_response(response).await?;
+
+        if let Some(entries) = bundle["entry"].as_array() {
+            for entry in entries {
+                // Extract encounter reference
+                if let Some(reference) = entry["resource"]["encounter"]["reference"].as_str() {
+                    // Reference format: "Encounter/{id}"
+                    if let Some(id) = reference.strip_prefix("Encounter/") {
+                        if encounter_ids.contains(&id) {
+                            result.insert(id.to_string());
+                        }
+                    }
+                }
+            }
+        }
+
+        Ok(result)
     }
 
     /// Get detailed encounter data including documents

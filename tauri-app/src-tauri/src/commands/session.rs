@@ -1,0 +1,409 @@
+//! Session lifecycle commands (start, stop, reset)
+
+use super::{emit_status_arc, emit_transcript_arc, SharedPipelineState, SharedSessionManager};
+use crate::activity_log;
+use crate::config::Config;
+use crate::pipeline::{start_pipeline, PipelineConfig, PipelineMessage};
+use crate::session::SessionError;
+use chrono::Utc;
+use tauri::{AppHandle, Emitter, State};
+use tokio::sync::mpsc;
+use tracing::{error, info};
+
+/// Start a transcription session
+#[tauri::command]
+pub async fn start_session(
+    app: AppHandle,
+    session_state: State<'_, SharedSessionManager>,
+    pipeline_state: State<'_, SharedPipelineState>,
+    device_id: Option<String>,
+) -> Result<(), String> {
+    info!("Starting session with device: {:?}", device_id);
+
+    // Clone the Arcs for use in async context
+    let session_arc = session_state.inner().clone();
+    let pipeline_arc = pipeline_state.inner().clone();
+
+    // Transition to preparing
+    {
+        let mut session = session_arc.lock().map_err(|e| e.to_string())?;
+        session.start_preparing().map_err(|e| e.to_string())?;
+    }
+
+    // Emit initial status
+    emit_status_arc(&app, &session_arc)?;
+
+    // Check model availability
+    let config = Config::load_or_default();
+    let model_path = match config.get_model_path() {
+        Ok(path) => {
+            if !path.exists() {
+                let mut session = session_arc.lock().map_err(|e| e.to_string())?;
+                session.set_error(SessionError::ModelNotFound(format!(
+                    "Model not found at {:?}",
+                    path
+                )));
+                drop(session);
+                emit_status_arc(&app, &session_arc)?;
+                return Err("Model not found".to_string());
+            }
+            path
+        }
+        Err(e) => {
+            let mut session = session_arc.lock().map_err(|e| e.to_string())?;
+            session.set_error(SessionError::ModelNotFound(e.to_string()));
+            drop(session);
+            emit_status_arc(&app, &session_arc)?;
+            return Err(e.to_string());
+        }
+    };
+
+    // Create pipeline config
+    let diarization_model_path = if config.diarization_enabled {
+        config.get_diarization_model_path().ok()
+    } else {
+        None
+    };
+
+    let enhancement_model_path = if config.enhancement_enabled {
+        config.get_enhancement_model_path().ok()
+    } else {
+        None
+    };
+
+    let emotion_model_path = if config.emotion_enabled {
+        config.get_emotion_model_path().ok()
+    } else {
+        None
+    };
+
+    let yamnet_model_path = if config.biomarkers_enabled {
+        config.get_yamnet_model_path().ok()
+    } else {
+        None
+    };
+
+    // Generate audio file path for recording
+    let audio_output_path = {
+        let recordings_dir = config.get_recordings_dir();
+        if let Err(e) = std::fs::create_dir_all(&recordings_dir) {
+            info!(
+                "Could not create recordings directory: {}, audio won't be saved",
+                e
+            );
+            None
+        } else {
+            let timestamp = Utc::now().format("%Y%m%d_%H%M%S").to_string();
+            let audio_path = recordings_dir.join(format!("session_{}.wav", timestamp));
+            Some(audio_path)
+        }
+    };
+
+    // Store audio path in session
+    if let Some(ref path) = audio_output_path {
+        let mut session = session_arc.lock().map_err(|e| e.to_string())?;
+        session.set_audio_file_path(path.clone());
+    }
+
+    // Prepare device ID for logging before moving into pipeline_config
+    let device_id_for_config = if device_id.as_deref() == Some("default") {
+        None
+    } else {
+        device_id
+    };
+    let device_name_for_log = device_id_for_config.clone();
+
+    let pipeline_config = PipelineConfig {
+        device_id: device_id_for_config,
+        model_path,
+        language: config.language.clone(),
+        vad_threshold: config.vad_threshold,
+        silence_to_flush_ms: config.silence_to_flush_ms,
+        max_utterance_ms: config.max_utterance_ms,
+        n_threads: 4,
+        diarization_enabled: config.diarization_enabled,
+        diarization_model_path,
+        speaker_similarity_threshold: config.speaker_similarity_threshold,
+        max_speakers: config.max_speakers,
+        enhancement_enabled: config.enhancement_enabled,
+        enhancement_model_path,
+        emotion_enabled: config.emotion_enabled,
+        emotion_model_path,
+        biomarkers_enabled: config.biomarkers_enabled,
+        yamnet_model_path,
+        audio_output_path,
+    };
+
+    // Create message channel
+    let (tx, mut rx) = mpsc::channel::<PipelineMessage>(32);
+
+    // Start the pipeline
+    let handle = match start_pipeline(pipeline_config, tx) {
+        Ok(h) => h,
+        Err(e) => {
+            error!("Failed to start pipeline: {}", e);
+            let mut session = session_arc.lock().map_err(|e| e.to_string())?;
+            session.set_error(SessionError::AudioDeviceError(e.to_string()));
+            drop(session);
+            emit_status_arc(&app, &session_arc)?;
+            return Err(e.to_string());
+        }
+    };
+
+    // Store the pipeline handle and get generation for this pipeline instance
+    let expected_generation = {
+        let mut ps = pipeline_arc.lock().map_err(|e| e.to_string())?;
+        ps.handle = Some(handle);
+        ps.next_generation()
+    };
+
+    // Transition to recording and get session ID for logging
+    let session_id = {
+        let mut session = session_arc.lock().map_err(|e| e.to_string())?;
+        session.start_recording("whisper");
+        // Use the session's ID (generated in start_preparing) for log correlation
+        session.session_id().unwrap_or("unknown").to_string()
+    };
+
+    // Log session start (no PHI - just IDs and metadata)
+    activity_log::log_session_start(
+        &session_id,
+        device_name_for_log.as_deref(),
+        &config.whisper_model,
+    );
+
+    emit_status_arc(&app, &session_arc)?;
+
+    // Spawn task to handle pipeline messages
+    let app_clone = app.clone();
+    let session_clone = session_arc.clone();
+    let pipeline_clone = pipeline_arc.clone();
+
+    tokio::spawn(async move {
+        while let Some(msg) = rx.recv().await {
+            // Check if this pipeline instance is still current
+            // If generation has changed (due to reset), discard messages
+            let current_generation = match pipeline_clone.lock() {
+                Ok(ps) => ps.generation,
+                Err(_) => break, // Poisoned lock, exit
+            };
+            if current_generation != expected_generation {
+                info!(
+                    "Discarding stale pipeline message (generation {} != {})",
+                    expected_generation, current_generation
+                );
+                continue;
+            }
+
+            match msg {
+                PipelineMessage::Segment(segment) => {
+                    // Log segment metadata only - no transcript text (PHI)
+                    info!(
+                        "Received segment: {} words ({}ms - {}ms)",
+                        segment.text.split_whitespace().count(),
+                        segment.start_ms,
+                        segment.end_ms
+                    );
+                    let mut session = match session_clone.lock() {
+                        Ok(s) => s,
+                        Err(_) => continue,
+                    };
+                    session.add_segment(segment);
+                    drop(session);
+
+                    // Emit transcript update
+                    if let Ok(session) = session_clone.lock() {
+                        let transcript = session.transcript_update();
+                        info!(
+                            "Emitting transcript_update: {} chars",
+                            transcript.finalized_text.len()
+                        );
+                        let _ = app_clone.emit("transcript_update", transcript);
+                    }
+                }
+                PipelineMessage::Status {
+                    audio_clock_ms: _,
+                    pending_count,
+                    is_speech_active: _,
+                } => {
+                    if let Ok(mut session) = session_clone.lock() {
+                        session.set_pending_count(pending_count);
+                        let status = session.status();
+                        let _ = app_clone.emit("session_status", status);
+                    }
+                }
+                PipelineMessage::Biomarker(update) => {
+                    // Emit biomarker update to frontend
+                    let _ = app_clone.emit("biomarker_update", update);
+                }
+                PipelineMessage::AudioQuality(snapshot) => {
+                    // Emit audio quality update to frontend
+                    let _ = app_clone.emit("audio_quality", snapshot);
+                }
+                PipelineMessage::Stopped => {
+                    info!("Pipeline stopped message received");
+                    break;
+                }
+                PipelineMessage::Error(e) => {
+                    error!("Pipeline error: {}", e);
+                    if let Ok(mut session) = session_clone.lock() {
+                        session.set_error(SessionError::TranscriptionError(e));
+                        let status = session.status();
+                        let _ = app_clone.emit("session_status", status);
+                    }
+                    break;
+                }
+            }
+        }
+    });
+
+    Ok(())
+}
+
+/// Stop the current transcription session
+#[tauri::command]
+pub async fn stop_session(
+    app: AppHandle,
+    session_state: State<'_, SharedSessionManager>,
+    pipeline_state: State<'_, SharedPipelineState>,
+) -> Result<(), String> {
+    info!("Stopping session");
+
+    // Clone the Arcs for use in async context
+    let session_arc = session_state.inner().clone();
+    let pipeline_arc = pipeline_state.inner().clone();
+
+    // Get session info for logging before stopping
+    let (session_id, elapsed_ms, segment_count) = {
+        let session = session_arc.lock().map_err(|e| e.to_string())?;
+        let status = session.status();
+        (
+            // Reuse the session's ID for log correlation (same ID as start)
+            session.session_id().unwrap_or("unknown").to_string(),
+            status.elapsed_ms,
+            session.segments().len(),
+        )
+    };
+
+    // Transition to stopping
+    {
+        let mut session = session_arc.lock().map_err(|e| e.to_string())?;
+        session.start_stopping().map_err(|e| e.to_string())?;
+    }
+
+    emit_status_arc(&app, &session_arc)?;
+
+    // Stop the pipeline
+    let handle = {
+        let mut ps = pipeline_arc.lock().map_err(|e| e.to_string())?;
+        ps.handle.take()
+    };
+
+    // Get audio file size if available
+    let audio_file_size = {
+        let session = session_arc.lock().map_err(|e| e.to_string())?;
+        session
+            .audio_file_path()
+            .and_then(|p| std::fs::metadata(p).ok())
+            .map(|m| m.len())
+    };
+
+    if let Some(h) = handle {
+        h.stop();
+
+        // Wait for pipeline to finish in a separate task
+        let app_clone = app.clone();
+        let session_clone = session_arc.clone();
+        let session_id_for_log = session_id.clone();
+
+        tokio::task::spawn_blocking(move || {
+            h.join();
+
+            // Transition to completed
+            if let Ok(mut session) = session_clone.lock() {
+                session.complete();
+                let status = session.status();
+                let transcript = session.transcript_update();
+                let _ = app_clone.emit("session_status", status.clone());
+                let _ = app_clone.emit("transcript_update", transcript);
+
+                // Log session stop (no PHI - just metrics)
+                activity_log::log_session_stop(
+                    &session_id_for_log,
+                    status.elapsed_ms,
+                    session.segments().len(),
+                    session
+                        .audio_file_path()
+                        .and_then(|p| std::fs::metadata(p).ok())
+                        .map(|m| m.len()),
+                );
+            }
+        });
+    } else {
+        // No pipeline running, just complete
+        {
+            let mut session = session_arc.lock().map_err(|e| e.to_string())?;
+            session.complete();
+        }
+
+        // Log session stop
+        activity_log::log_session_stop(&session_id, elapsed_ms, segment_count, audio_file_size);
+
+        emit_status_arc(&app, &session_arc)?;
+        emit_transcript_arc(&app, &session_arc)?;
+    }
+
+    Ok(())
+}
+
+/// Reset the session to idle
+#[tauri::command]
+pub fn reset_session(
+    app: AppHandle,
+    session_state: State<'_, SharedSessionManager>,
+    pipeline_state: State<'_, SharedPipelineState>,
+) -> Result<(), String> {
+    info!("Resetting session");
+
+    // Generate session ID for logging
+    let session_id = Some(uuid::Uuid::new_v4().to_string());
+
+    // Stop any running pipeline and increment generation
+    // The generation increment ensures any in-flight pipeline messages are discarded
+    {
+        let mut ps = pipeline_state.lock().map_err(|e| e.to_string())?;
+        // Increment generation first so receiver task will discard any pending messages
+        ps.next_generation();
+        if let Some(h) = ps.handle.take() {
+            h.stop();
+            // Note: We don't join here because it would block the main thread.
+            // The receiver task will exit when it sees the Stopped message or
+            // when it notices the generation has changed.
+        }
+    }
+
+    // Reset session
+    {
+        let mut session = session_state.lock().map_err(|e| e.to_string())?;
+        session.reset();
+    }
+
+    // Log session reset
+    activity_log::log_session_reset(session_id.as_deref());
+
+    emit_status_arc(&app, session_state.inner())?;
+    emit_transcript_arc(&app, session_state.inner())?;
+
+    Ok(())
+}
+
+/// Get the audio file path for the current session
+#[tauri::command]
+pub fn get_audio_file_path(
+    session_state: State<'_, SharedSessionManager>,
+) -> Result<Option<String>, String> {
+    let session = session_state.lock().map_err(|e| e.to_string())?;
+    Ok(session
+        .audio_file_path()
+        .map(|p| p.to_string_lossy().to_string()))
+}
