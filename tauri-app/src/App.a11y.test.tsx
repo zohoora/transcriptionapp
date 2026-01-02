@@ -28,6 +28,10 @@ function createStandardMock(overrides: Record<string, unknown> = {}) {
       get_settings: mockSettings,
       set_settings: mockSettings,
       run_checklist: { checks: [], all_passed: true, can_start: true, summary: 'Ready' },
+      // Medplum/Ollama commands used on init
+      medplum_try_restore_session: undefined,
+      check_ollama_status: { connected: false, available_models: [], error: null },
+      medplum_check_connection: false,
       ...overrides,
     };
     if (command in responses) {

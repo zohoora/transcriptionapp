@@ -39,6 +39,10 @@ function createStandardMock(overrides: Record<string, unknown> = {}) {
       reset_session: undefined,
       set_settings: mockSettings,
       run_checklist: { checks: [], all_passed: true, can_start: true, summary: 'Ready' },
+      // Medplum/Ollama commands used on init
+      medplum_try_restore_session: undefined,
+      check_ollama_status: { connected: false, available_models: [], error: null },
+      medplum_check_connection: false,
       ...overrides,
     };
     if (command in responses) {
@@ -71,14 +75,14 @@ describe('App', () => {
   });
 
   describe('initialization', () => {
-    it('loads devices, model status, and settings on mount', async () => {
+    it('loads devices, settings, and runs checklist on mount', async () => {
       mockInvoke.mockImplementation(createStandardMock());
 
       render(<App />);
 
       await waitFor(() => {
         expect(mockInvoke).toHaveBeenCalledWith('list_input_devices');
-        expect(mockInvoke).toHaveBeenCalledWith('check_model_status');
+        expect(mockInvoke).toHaveBeenCalledWith('run_checklist');
         expect(mockInvoke).toHaveBeenCalledWith('get_settings');
       });
     });

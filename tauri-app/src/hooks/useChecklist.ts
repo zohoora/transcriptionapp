@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import type { ChecklistResult, ModelStatus } from '../types';
 
@@ -17,6 +17,7 @@ export function useChecklist(): UseChecklistResult {
   const [checklistRunning, setChecklistRunning] = useState(true);
   const [downloadingModel, setDownloadingModel] = useState<string | null>(null);
   const [modelStatus, setModelStatus] = useState<ModelStatus | null>(null);
+  const initialRunRef = useRef(false);
 
   // Run checklist function
   const runChecklist = useCallback(async () => {
@@ -36,6 +37,23 @@ export function useChecklist(): UseChecklistResult {
       setChecklistRunning(false);
     }
   }, []);
+
+  // Run checklist and check model status on mount (only once)
+  useEffect(() => {
+    if (initialRunRef.current) return;
+    initialRunRef.current = true;
+
+    async function init() {
+      await runChecklist();
+      try {
+        const status = await invoke<ModelStatus>('check_model_status');
+        setModelStatus(status);
+      } catch (e) {
+        console.error('Failed to check model status:', e);
+      }
+    }
+    init();
+  }, [runChecklist]);
 
   // Handle model download
   const handleDownloadModel = useCallback(
