@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { WebviewWindow } from '@tauri-apps/api/webviewWindow';
 import { useAuth } from './components/AuthProvider';
@@ -8,17 +8,16 @@ import {
   ReadyMode,
   RecordingMode,
   ReviewMode,
-  type PendingSettings,
 } from './components';
-import { useSessionState } from './hooks/useSessionState';
-import { useChecklist } from './hooks/useChecklist';
-import { useSoapNote } from './hooks/useSoapNote';
-import { useMedplumSync } from './hooks/useMedplumSync';
-import type {
-  Device,
-  Settings,
-  OllamaStatus,
-} from './types';
+import {
+  useSessionState,
+  useChecklist,
+  useSoapNote,
+  useMedplumSync,
+  useSettings,
+  useDevices,
+  useOllamaConnection,
+} from './hooks';
 
 // UI Mode type
 type UIMode = 'ready' | 'recording' | 'review';
@@ -27,7 +26,7 @@ function App() {
   // Medplum auth from context
   const { authState, login: medplumLogin, logout: medplumLogout, cancelLogin: medplumCancelLogin, isLoading: authLoading } = useAuth();
 
-  // Session state from hook
+  // Session state from hook (includes timer)
   const {
     status,
     transcript,
@@ -37,6 +36,7 @@ function App() {
     setEditedTranscript,
     soapNote,
     setSoapNote,
+    localElapsedMs,
     isIdle,
     isRecording,
     handleStart: sessionStart,
@@ -80,16 +80,23 @@ function App() {
     syncToMedplum,
   } = useMedplumSync();
 
-  // UI state (not in hooks)
-  const [devices, setDevices] = useState<Device[]>([]);
-  const [showSettings, setShowSettings] = useState(false);
-  const [settings, setSettings] = useState<Settings | null>(null);
-  const [pendingSettings, setPendingSettings] = useState<PendingSettings | null>(null);
-  const [showBiomarkers, setShowBiomarkers] = useState(true);
+  // Settings from hook
+  const {
+    settings,
+    pendingSettings,
+    setPendingSettings,
+    saveSettings,
+  } = useSettings();
 
-  // Timer state
-  const [localElapsedMs, setLocalElapsedMs] = useState(0);
-  const recordingStartRef = useRef<number | null>(null);
+  // Devices from hook
+  const { devices } = useDevices();
+
+  // Ollama connection from hook
+  const { status: ollamaConnectionStatus, checkConnection: checkOllamaConnection } = useOllamaConnection();
+
+  // UI state
+  const [showSettings, setShowSettings] = useState(false);
+  const [showBiomarkers, setShowBiomarkers] = useState(true);
 
   // Determine current UI mode based on session state
   const getUIMode = (): UIMode => {
@@ -109,102 +116,44 @@ function App() {
 
   const uiMode = getUIMode();
 
-  // Sync edited transcript with original when recording completes
+  // Sync Ollama status from connection hook to SOAP hook
   useEffect(() => {
-    if (status.state === 'completed' && transcript.finalized_text && !editedTranscript) {
-      setEditedTranscript(transcript.finalized_text);
-    }
-  }, [status.state, transcript.finalized_text, editedTranscript, setEditedTranscript]);
-
-  // Local timer that runs during recording/preparing
-  useEffect(() => {
-    if (status.state === 'preparing' || status.state === 'recording') {
-      if (recordingStartRef.current === null) {
-        recordingStartRef.current = Date.now();
-      }
-
-      const interval = setInterval(() => {
-        if (recordingStartRef.current) {
-          setLocalElapsedMs(Date.now() - recordingStartRef.current);
-        }
-      }, 100);
-
-      return () => clearInterval(interval);
-    } else {
-      recordingStartRef.current = null;
-      if (status.state === 'idle') {
-        setLocalElapsedMs(0);
+    if (ollamaConnectionStatus) {
+      setOllamaStatus(ollamaConnectionStatus);
+      if (ollamaConnectionStatus.connected) {
+        setOllamaModels(ollamaConnectionStatus.available_models);
       }
     }
-  }, [status.state]);
+  }, [ollamaConnectionStatus, setOllamaStatus, setOllamaModels]);
 
-  // Load devices, settings, and check connections on mount
+  // Check Medplum connection and restore session on mount
   useEffect(() => {
     let mounted = true;
 
-    async function init() {
+    async function initMedplum() {
       try {
-        const deviceList = await invoke<Device[]>('list_input_devices');
-        if (!mounted) return;
-        setDevices(deviceList);
-
-        const settingsResult = await invoke<Settings>('get_settings');
-        if (!mounted) return;
-        setSettings(settingsResult);
-        setPendingSettings({
-          model: settingsResult.whisper_model,
-          language: settingsResult.language,
-          device: settingsResult.input_device_id || 'default',
-          diarization_enabled: settingsResult.diarization_enabled,
-          max_speakers: settingsResult.max_speakers,
-          ollama_server_url: settingsResult.ollama_server_url,
-          ollama_model: settingsResult.ollama_model,
-          medplum_server_url: settingsResult.medplum_server_url,
-          medplum_client_id: settingsResult.medplum_client_id,
-          medplum_auto_sync: settingsResult.medplum_auto_sync,
-        });
-
         // Try restore session
         await invoke('medplum_try_restore_session');
         if (!mounted) return;
 
-        // Check Ollama status
-        try {
-          const ollamaResult = await invoke<OllamaStatus>('check_ollama_status');
-          if (mounted) {
-            setOllamaStatus(ollamaResult);
-            if (ollamaResult.connected) {
-              setOllamaModels(ollamaResult.available_models);
-            }
-          }
-        } catch (e) {
-          if (mounted) {
-            setOllamaStatus({ connected: false, available_models: [], error: String(e) });
-          }
-        }
-
         // Check Medplum connection
-        try {
-          const connected = await invoke<boolean>('medplum_check_connection');
-          if (mounted) {
-            setMedplumConnected(connected);
-          }
-        } catch (e) {
-          if (mounted) {
-            setMedplumConnected(false);
-            setMedplumError(String(e));
-          }
+        const connected = await invoke<boolean>('medplum_check_connection');
+        if (mounted) {
+          setMedplumConnected(connected);
         }
       } catch (e) {
-        console.error('Init error:', e);
+        if (mounted) {
+          setMedplumConnected(false);
+          setMedplumError(String(e));
+        }
       }
     }
-    init();
+    initMedplum();
 
     return () => {
       mounted = false;
     };
-  }, [setOllamaStatus, setOllamaModels, setMedplumConnected, setMedplumError]);
+  }, [setMedplumConnected, setMedplumError]);
 
   // Handle start recording with reset
   const handleStart = useCallback(async () => {
@@ -221,54 +170,37 @@ function App() {
 
   // Save settings
   const handleSaveSettings = useCallback(async () => {
-    if (!pendingSettings || !settings) return;
-    try {
-      const newSettings: Settings = {
-        ...settings,
-        whisper_model: pendingSettings.model,
-        language: pendingSettings.language,
-        input_device_id: pendingSettings.device === 'default' ? null : pendingSettings.device,
-        diarization_enabled: pendingSettings.diarization_enabled,
-        max_speakers: pendingSettings.max_speakers,
-        ollama_server_url: pendingSettings.ollama_server_url,
-        ollama_model: pendingSettings.ollama_model,
-        medplum_server_url: pendingSettings.medplum_server_url,
-        medplum_client_id: pendingSettings.medplum_client_id,
-        medplum_auto_sync: pendingSettings.medplum_auto_sync,
-      };
-      await invoke('set_settings', { settings: newSettings });
-      setSettings(newSettings);
+    const success = await saveSettings();
+    if (success) {
       setShowSettings(false);
-
-      // Refresh model status
-      const modelResult = await invoke<typeof modelStatus>('check_model_status');
-      setModelStatus(modelResult);
-    } catch (e) {
-      console.error('Failed to save settings:', e);
+      // Refresh model status after saving
+      try {
+        const modelResult = await invoke<typeof modelStatus>('check_model_status');
+        setModelStatus(modelResult);
+      } catch (e) {
+        console.error('Failed to refresh model status:', e);
+      }
     }
-  }, [pendingSettings, settings, setModelStatus]);
+  }, [saveSettings, setModelStatus]);
 
   // Test Ollama connection
   const handleTestOllama = useCallback(async () => {
-    if (!pendingSettings) return;
+    if (!pendingSettings || !settings) return;
     try {
-      const testSettings: Settings = {
-        ...settings!,
-        ollama_server_url: pendingSettings.ollama_server_url,
-        ollama_model: pendingSettings.ollama_model,
-      };
-      await invoke('set_settings', { settings: testSettings });
-
-      const statusResult = await invoke<OllamaStatus>('check_ollama_status');
-      setOllamaStatus(statusResult);
-      if (statusResult.connected) {
-        setOllamaModels(statusResult.available_models);
-      }
+      // Save settings first, then re-check connection
+      await invoke('set_settings', {
+        settings: {
+          ...settings,
+          ollama_server_url: pendingSettings.ollama_server_url,
+          ollama_model: pendingSettings.ollama_model,
+        },
+      });
+      await checkOllamaConnection();
     } catch (e) {
       console.error('Failed to test Ollama:', e);
       setOllamaStatus({ connected: false, available_models: [], error: String(e) });
     }
-  }, [settings, pendingSettings, setOllamaStatus, setOllamaModels]);
+  }, [settings, pendingSettings, checkOllamaConnection, setOllamaStatus]);
 
   // Test Medplum connection
   const handleTestMedplum = useCallback(async () => {
