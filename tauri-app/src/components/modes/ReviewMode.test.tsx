@@ -387,16 +387,7 @@ describe('ReviewMode', () => {
 
       expect(screen.getByText('Audio Quality')).toBeInTheDocument();
       expect(screen.getByText('Speakers')).toBeInTheDocument();
-      expect(screen.getByText('Coughs Detected')).toBeInTheDocument();
-    });
-
-    it('shows cough count and rate', () => {
-      render(<ReviewMode {...defaultProps} biomarkers={biomarkers} />);
-
-      fireEvent.click(screen.getByLabelText(/expand session insights/i));
-
-      expect(screen.getByText('3 coughs')).toBeInTheDocument();
-      expect(screen.getByText('1.5/min')).toBeInTheDocument();
+      // Note: Cough display was removed from UI (audio events are sent to LLM for SOAP generation instead)
     });
 
     it('shows conversation dynamics when available', () => {

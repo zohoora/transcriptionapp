@@ -2,7 +2,7 @@
 
 use crate::activity_log;
 use crate::config::Config;
-use crate::ollama::{OllamaClient, OllamaStatus, SoapNote};
+use crate::ollama::{AudioEvent, OllamaClient, OllamaStatus, SoapNote};
 use tracing::info;
 
 /// Check Ollama server status and list available models
@@ -31,11 +31,19 @@ pub async fn list_ollama_models() -> Result<Vec<String>, String> {
 }
 
 /// Generate a SOAP note from the given transcript
+///
+/// # Arguments
+/// * `transcript` - The clinical transcript text
+/// * `audio_events` - Optional audio events (coughs, laughs, etc.) detected during recording
 #[tauri::command]
-pub async fn generate_soap_note(transcript: String) -> Result<SoapNote, String> {
+pub async fn generate_soap_note(
+    transcript: String,
+    audio_events: Option<Vec<AudioEvent>>,
+) -> Result<SoapNote, String> {
     info!(
-        "Generating SOAP note for transcript of {} chars",
-        transcript.len()
+        "Generating SOAP note for transcript of {} chars, {} audio events",
+        transcript.len(),
+        audio_events.as_ref().map(|e| e.len()).unwrap_or(0)
     );
 
     if transcript.trim().is_empty() {
@@ -50,7 +58,11 @@ pub async fn generate_soap_note(transcript: String) -> Result<SoapNote, String> 
     let start_time = std::time::Instant::now();
 
     match client
-        .generate_soap_note(&config.ollama_model, &transcript)
+        .generate_soap_note(
+            &config.ollama_model,
+            &transcript,
+            audio_events.as_deref(),
+        )
         .await
     {
         Ok(soap_note) => {

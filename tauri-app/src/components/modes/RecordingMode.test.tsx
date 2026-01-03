@@ -192,30 +192,8 @@ describe('RecordingMode', () => {
       expect(screen.queryByText('Clips')).not.toBeInTheDocument();
     });
 
-    it('shows cough count from biomarkers', () => {
-      const biomarkers: BiomarkerUpdate = {
-        cough_count: 3,
-        cough_rate_per_min: 1.5,
-        turn_count: 5,
-        vitality_session_mean: null,
-        stability_session_mean: null,
-        latest_emotions: [],
-        speaker_metrics: [],
-        conversation_dynamics: null,
-      };
-      render(
-        <RecordingMode
-          {...defaultProps}
-          audioQuality={audioQuality}
-          biomarkers={biomarkers}
-        />
-      );
-
-      fireEvent.click(screen.getByLabelText(/audio quality status/i));
-
-      expect(screen.getByText('Coughs')).toBeInTheDocument();
-      expect(screen.getByText('3')).toBeInTheDocument();
-    });
+    // Note: Cough count display was removed from UI
+    // Audio events (including coughs) are now sent to LLM for SOAP note generation instead
 
     it('hides details popover when clicked again', () => {
       render(<RecordingMode {...defaultProps} audioQuality={audioQuality} />);

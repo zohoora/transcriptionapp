@@ -339,17 +339,6 @@ export const ReviewMode = memo(function ReviewMode({
                 </div>
               )}
 
-              {/* Coughs */}
-              {biomarkers.cough_count > 0 && (
-                <div className="insight-group">
-                  <div className="insight-label">Coughs Detected</div>
-                  <div className="insight-row">
-                    <span>{biomarkers.cough_count} coughs</span>
-                    <span>{biomarkers.cough_rate_per_min.toFixed(1)}/min</span>
-                  </div>
-                </div>
-              )}
-
               {/* Conversation Dynamics */}
               {biomarkers.conversation_dynamics && (
                 <div className="insight-group">

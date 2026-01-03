@@ -146,7 +146,7 @@ cargo bench            # Benchmarks
 
 Note: Some diarization tests require ONNX Runtime. Set `ORT_DYLIB_PATH` environment variable if tests fail with "onnxruntime library not found".
 
-## SOAP Note Generation (Dec 2024)
+## SOAP Note Generation (Dec 2024, Updated Jan 2025)
 
 Integration with Ollama LLM for generating structured SOAP (Subjective, Objective, Assessment, Plan) notes from clinical transcripts.
 
@@ -156,6 +156,7 @@ Integration with Ollama LLM for generating structured SOAP (Subjective, Objectiv
 - "Generate SOAP Note" button appears when session is completed
 - Collapsible SOAP section with copy functionality
 - Connection status indicator in settings
+- **Audio events included** (coughs, laughs, sneezes) with confidence scores
 
 **Architecture**
 - `ollama.rs`: Async HTTP client using reqwest for Ollama API
@@ -166,9 +167,24 @@ Integration with Ollama LLM for generating structured SOAP (Subjective, Objectiv
 - Handles Qwen's `<think>` blocks and markdown code fences
 - Type-safe parsing with `serde_json`
 
+**Audio Events in SOAP Generation (Jan 2025)**
+- YAMNet-detected audio events are passed to the LLM for clinical context
+- Events include: Cough, Laughter, Sneeze, Throat clearing, etc.
+- Each event includes timestamp and confidence score (converted to percentage)
+- Events are NOT displayed in UI (removed) but used for SOAP note generation
+- Helps LLM understand patient's condition (e.g., frequent coughing → respiratory issue)
+
 **Prompt Format**
 ```
 /no_think You are a medical scribe assistant...
+
+TRANSCRIPT:
+[transcript text]
+
+AUDIO EVENTS DETECTED:
+- Cough at 0:30 (confidence: 88%)
+- Laughter at 1:05 (confidence: 82%)
+
 Respond with ONLY valid JSON:
 {
   "subjective": "...",
@@ -176,6 +192,11 @@ Respond with ONLY valid JSON:
   "assessment": "...",
   "plan": "..."
 }
+
+Rules:
+- Only include information explicitly mentioned or directly inferable
+- Use "No information available" if a section has no relevant content
+- Consider audio events (coughs, laughs, etc.) when relevant to the clinical picture
 ```
 
 **Configuration**
@@ -190,6 +211,32 @@ Respond with ONLY valid JSON:
 4. Loading spinner during generation (~10-30s depending on model)
 5. Structured display of S/O/A/P sections
 6. Copy button to copy entire note
+
+**Data Flow for Audio Events**
+```
+YAMNet (biomarkers thread)
+    → CoughEvent[] (with label, timestamp, confidence)
+    → biomarker_update event to frontend
+    → Stored in biomarkers.recent_events
+    → Passed to generate_soap_note command
+    → Formatted in LLM prompt
+    → LLM considers events for clinical context
+```
+
+## Recent Changes (Jan 2025)
+
+### Audio Events in SOAP Generation
+- Audio events (coughs, laughs, sneezes, throat clearing) now sent to LLM
+- `AudioEvent` type added to `ollama.rs` with timestamp, duration, confidence, label
+- Confidence converted from logits to percentages using sigmoid mapping
+- Events formatted in LLM prompt with timestamps (e.g., "Cough at 0:30 (confidence: 88%)")
+- Removed cough/audio event display from UI (BiomarkersSection, RecordingMode, ReviewMode)
+- Frontend passes `biomarkers.recent_events` to `generate_soap_note` command
+
+### Multi-Window Support
+- History window now independent from main app window
+- Closing history window no longer closes the entire app
+- Fixed in `lib.rs` by checking `window.label() != "main"` before exit
 
 ## Recent Changes (Dec 2024)
 
@@ -352,14 +399,16 @@ Resampler (16kHz) → DC Removal → High-Pass Filter → AGC → VAD → Enhanc
 - Extensible for future features (see module docs)
 
 ### Test Updates
-- All frontend tests passing (336 tests)
-- All Rust tests passing (272 tests)
-- Mode component tests: 96 tests (ReadyMode 18, RecordingMode 18, ReviewMode 60)
-- Hook tests: 78 tests across 7 hook files
+- All frontend tests passing (335 tests)
+- All Rust tests passing (292 tests, including 21 ollama tests)
+- Mode component tests: 94 tests (ReadyMode 18, RecordingMode 17, ReviewMode 59)
+- Hook tests: 79 tests across 7 hook files (including useSoapNote audio events test)
 - Audio quality tests: 16 Rust unit tests, 12 frontend tests
 - Audio preprocessing tests: 15+ Rust unit tests (DC, high-pass, AGC)
+- SOAP generation tests: 21 Rust tests including 6 new audio event tests
 - Fixed clustering.rs bug where max_speakers wasn't enforced
 - Added mocks for AuthProvider/useAuth hook in test setup
+- Updated mode tests to remove cough display assertions (moved to LLM)
 
 ### Conversation Dynamics (Dec 2024)
 - Real-time analysis of conversation flow between speakers

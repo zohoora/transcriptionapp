@@ -58,6 +58,19 @@ pub struct OllamaStatus {
     pub error: Option<String>,
 }
 
+/// Audio event detected during recording (cough, laugh, sneeze, etc.)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AudioEvent {
+    /// Timestamp in milliseconds from start of recording
+    pub timestamp_ms: u64,
+    /// Duration of the event in milliseconds
+    pub duration_ms: u32,
+    /// Model confidence score (raw logit value, higher = more confident)
+    pub confidence: f32,
+    /// Event label (e.g., "Cough", "Laughter", "Sneeze", "Throat clearing")
+    pub label: String,
+}
+
 /// Generated SOAP note
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SoapNote {
@@ -211,10 +224,16 @@ impl OllamaClient {
     const MIN_WORD_COUNT: usize = 5;
 
     /// Generate a SOAP note from a clinical transcript
+    ///
+    /// # Arguments
+    /// * `model` - The Ollama model to use
+    /// * `transcript` - The clinical transcript text
+    /// * `audio_events` - Optional audio events (coughs, laughs, etc.) detected during recording
     pub async fn generate_soap_note(
         &self,
         model: &str,
         transcript: &str,
+        audio_events: Option<&[AudioEvent]>,
     ) -> Result<SoapNote, String> {
         let trimmed = transcript.trim();
 
@@ -252,13 +271,14 @@ impl OllamaClient {
         }
 
         info!(
-            "Generating SOAP note with model {} for transcript of {} chars",
+            "Generating SOAP note with model {} for transcript of {} chars, {} audio events",
             model,
-            transcript.len()
+            transcript.len(),
+            audio_events.map(|e| e.len()).unwrap_or(0)
         );
 
         // First attempt
-        let prompt = build_soap_prompt(transcript);
+        let prompt = build_soap_prompt(transcript, audio_events);
         let response = self.generate(model, &prompt).await?;
 
         match parse_soap_response(&response, model) {
@@ -271,7 +291,7 @@ impl OllamaClient {
                 // Retry with more explicit prompt
                 info!("First SOAP generation attempt failed, retrying with stricter prompt...");
 
-                let retry_prompt = build_soap_retry_prompt(transcript, &response);
+                let retry_prompt = build_soap_retry_prompt(transcript, audio_events, &response);
                 match self.generate(model, &retry_prompt).await {
                     Ok(retry_response) => {
                         match parse_soap_response(&retry_response, model) {
@@ -310,13 +330,49 @@ impl OllamaClient {
     }
 }
 
+/// Format audio events for inclusion in the prompt
+fn format_audio_events(events: &[AudioEvent]) -> String {
+    if events.is_empty() {
+        return String::new();
+    }
+
+    let mut output = String::from("\nAUDIO EVENTS DETECTED:\n");
+    for event in events {
+        // Format timestamp as MM:SS
+        let total_seconds = event.timestamp_ms / 1000;
+        let minutes = total_seconds / 60;
+        let seconds = total_seconds % 60;
+
+        // Format confidence as percentage-like (logit 1.5 → ~75%, 2.0 → ~88%, 3.0 → ~95%)
+        // Using sigmoid-like mapping: conf_pct = 100 / (1 + e^(-confidence))
+        let conf_pct = 100.0 / (1.0 + (-event.confidence).exp());
+
+        output.push_str(&format!(
+            "- {} at {}:{:02} (confidence: {:.0}%)\n",
+            event.label, minutes, seconds, conf_pct
+        ));
+    }
+    output
+}
+
 /// Build the prompt for SOAP note generation
-fn build_soap_prompt(transcript: &str) -> String {
+fn build_soap_prompt(transcript: &str, audio_events: Option<&[AudioEvent]>) -> String {
+    let audio_section = audio_events
+        .filter(|e| !e.is_empty())
+        .map(format_audio_events)
+        .unwrap_or_default();
+
+    let audio_instruction = if audio_section.is_empty() {
+        String::new()
+    } else {
+        String::from("\n- Consider audio events (coughs, laughs, etc.) when relevant to the clinical picture")
+    };
+
     format!(
         r#"/no_think You are a medical scribe assistant. Based on the following clinical transcript, generate a SOAP note.
 
 TRANSCRIPT:
-{}
+{}{}
 
 Respond with ONLY valid JSON in this exact format:
 {{
@@ -328,28 +384,37 @@ Respond with ONLY valid JSON in this exact format:
 
 Rules:
 - Only include information explicitly mentioned or directly inferable from the transcript
-- Use "No information available" if a section has no relevant content
+- Use "No information available" if a section has no relevant content{}
 - Output ONLY the JSON object, no markdown, no explanation, no other text"#,
-        transcript
+        transcript, audio_section, audio_instruction
     )
 }
 
 /// Build a stricter retry prompt when the first attempt fails
-fn build_soap_retry_prompt(transcript: &str, _previous_response: &str) -> String {
+fn build_soap_retry_prompt(
+    transcript: &str,
+    audio_events: Option<&[AudioEvent]>,
+    _previous_response: &str,
+) -> String {
+    let audio_section = audio_events
+        .filter(|e| !e.is_empty())
+        .map(format_audio_events)
+        .unwrap_or_default();
+
     format!(
         r#"/no_think IMPORTANT: You MUST respond with ONLY a JSON object. No conversation, no questions, no explanations.
 
 Even if the transcript is short, unclear, or incomplete, you MUST still output valid JSON.
 
 TRANSCRIPT:
-{}
+{}{}
 
 OUTPUT FORMAT (respond with ONLY this JSON structure):
 {{"subjective":"...","objective":"...","assessment":"...","plan":"..."}}
 
 If any section lacks information, use "No information available" as the value.
 DO NOT ask questions. DO NOT explain. ONLY output the JSON object."#,
-        transcript
+        transcript, audio_section
     )
 }
 
@@ -597,14 +662,157 @@ Let me analyze this transcript...
     }
 
     #[test]
-    fn test_build_soap_prompt() {
-        let prompt = build_soap_prompt("Doctor: How are you feeling?");
+    fn test_build_soap_prompt_without_audio_events() {
+        let prompt = build_soap_prompt("Doctor: How are you feeling?", None);
         assert!(prompt.contains("Doctor: How are you feeling?"));
         assert!(prompt.contains("subjective"));
         assert!(prompt.contains("objective"));
         assert!(prompt.contains("assessment"));
         assert!(prompt.contains("plan"));
         assert!(prompt.contains("JSON"));
+        assert!(!prompt.contains("AUDIO EVENTS"));
+    }
+
+    #[test]
+    fn test_build_soap_prompt_with_audio_events() {
+        let events = vec![
+            AudioEvent {
+                timestamp_ms: 30000, // 0:30
+                duration_ms: 500,
+                confidence: 2.0, // ~88%
+                label: "Cough".to_string(),
+            },
+            AudioEvent {
+                timestamp_ms: 65000, // 1:05
+                duration_ms: 800,
+                confidence: 1.5, // ~82%
+                label: "Laughter".to_string(),
+            },
+        ];
+        let prompt = build_soap_prompt("Doctor: How are you feeling?", Some(&events));
+        assert!(prompt.contains("Doctor: How are you feeling?"));
+        assert!(prompt.contains("AUDIO EVENTS DETECTED"));
+        assert!(prompt.contains("Cough at 0:30"));
+        assert!(prompt.contains("Laughter at 1:05"));
+        assert!(prompt.contains("Consider audio events"));
+    }
+
+    #[test]
+    fn test_format_audio_events() {
+        let events = vec![AudioEvent {
+            timestamp_ms: 125000, // 2:05
+            duration_ms: 300,
+            confidence: 3.0, // ~95%
+            label: "Sneeze".to_string(),
+        }];
+        let formatted = format_audio_events(&events);
+        assert!(formatted.contains("Sneeze at 2:05"));
+        assert!(formatted.contains("95%"));
+    }
+
+    #[test]
+    fn test_format_audio_events_empty() {
+        let events: Vec<AudioEvent> = vec![];
+        let formatted = format_audio_events(&events);
+        assert!(formatted.is_empty());
+    }
+
+    #[test]
+    fn test_format_audio_events_multiple() {
+        let events = vec![
+            AudioEvent {
+                timestamp_ms: 0,
+                duration_ms: 500,
+                confidence: 2.5,
+                label: "Cough".to_string(),
+            },
+            AudioEvent {
+                timestamp_ms: 60000, // 1:00
+                duration_ms: 300,
+                confidence: 1.5,
+                label: "Sneeze".to_string(),
+            },
+            AudioEvent {
+                timestamp_ms: 3661000, // 61:01 (over an hour)
+                duration_ms: 200,
+                confidence: 3.0,
+                label: "Laughter".to_string(),
+            },
+        ];
+        let formatted = format_audio_events(&events);
+        assert!(formatted.contains("Cough at 0:00"));
+        assert!(formatted.contains("Sneeze at 1:00"));
+        assert!(formatted.contains("Laughter at 61:01"));
+    }
+
+    #[test]
+    fn test_format_audio_events_confidence_conversion() {
+        // Test sigmoid-like confidence conversion
+        // logit 0 → 50%, logit 1.0 → 73%, logit 2.0 → 88%, logit 3.0 → 95%
+        let events = vec![
+            AudioEvent {
+                timestamp_ms: 0,
+                duration_ms: 100,
+                confidence: 0.0,
+                label: "Low".to_string(),
+            },
+            AudioEvent {
+                timestamp_ms: 1000,
+                duration_ms: 100,
+                confidence: 1.0,
+                label: "Medium".to_string(),
+            },
+            AudioEvent {
+                timestamp_ms: 2000,
+                duration_ms: 100,
+                confidence: 2.0,
+                label: "High".to_string(),
+            },
+        ];
+        let formatted = format_audio_events(&events);
+        assert!(formatted.contains("50%")); // logit 0
+        assert!(formatted.contains("73%")); // logit 1.0
+        assert!(formatted.contains("88%")); // logit 2.0
+    }
+
+    #[test]
+    fn test_format_audio_events_negative_confidence() {
+        // Negative confidence (unlikely but should handle gracefully)
+        let events = vec![AudioEvent {
+            timestamp_ms: 5000,
+            duration_ms: 100,
+            confidence: -1.0,
+            label: "Uncertain".to_string(),
+        }];
+        let formatted = format_audio_events(&events);
+        assert!(formatted.contains("Uncertain at 0:05"));
+        assert!(formatted.contains("27%")); // sigmoid(-1) ≈ 0.27
+    }
+
+    #[test]
+    fn test_build_soap_prompt_empty_audio_events_slice() {
+        // Empty slice should be treated the same as None
+        let events: Vec<AudioEvent> = vec![];
+        let prompt = build_soap_prompt("Test transcript", Some(&events));
+        assert!(!prompt.contains("AUDIO EVENTS"));
+        assert!(!prompt.contains("Consider audio events"));
+    }
+
+    #[test]
+    fn test_audio_event_serialization() {
+        // Verify AudioEvent can be serialized/deserialized (for IPC)
+        let event = AudioEvent {
+            timestamp_ms: 12345,
+            duration_ms: 500,
+            confidence: 2.5,
+            label: "Cough".to_string(),
+        };
+        let json = serde_json::to_string(&event).unwrap();
+        let parsed: AudioEvent = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed.timestamp_ms, 12345);
+        assert_eq!(parsed.duration_ms, 500);
+        assert!((parsed.confidence - 2.5).abs() < 0.001);
+        assert_eq!(parsed.label, "Cough");
     }
 
     #[test]
@@ -646,10 +854,25 @@ Let me analyze this transcript...
 
     #[test]
     fn test_build_soap_retry_prompt() {
-        let prompt = build_soap_retry_prompt("Patient says hello", "Previous invalid response");
+        let prompt = build_soap_retry_prompt("Patient says hello", None, "Previous invalid response");
         assert!(prompt.contains("Patient says hello"));
         assert!(prompt.contains("MUST respond with ONLY a JSON object"));
         assert!(prompt.contains("DO NOT ask questions"));
+        assert!(!prompt.contains("AUDIO EVENTS"));
+    }
+
+    #[test]
+    fn test_build_soap_retry_prompt_with_audio_events() {
+        let events = vec![AudioEvent {
+            timestamp_ms: 45000,
+            duration_ms: 400,
+            confidence: 1.8,
+            label: "Throat clearing".to_string(),
+        }];
+        let prompt = build_soap_retry_prompt("Patient says hello", Some(&events), "Previous response");
+        assert!(prompt.contains("Patient says hello"));
+        assert!(prompt.contains("AUDIO EVENTS DETECTED"));
+        assert!(prompt.contains("Throat clearing at 0:45"));
     }
 
     #[test]

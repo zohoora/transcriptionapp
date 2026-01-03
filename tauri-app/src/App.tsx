@@ -228,13 +228,13 @@ function App() {
     }
   }, [settings, pendingSettings, setMedplumConnected, setMedplumError]);
 
-  // Generate SOAP note
+  // Generate SOAP note (includes audio events like coughs, laughs for clinical context)
   const handleGenerateSoap = useCallback(async () => {
-    const result = await generateSoapNote(editedTranscript);
+    const result = await generateSoapNote(editedTranscript, biomarkers?.recent_events);
     if (result) {
       setSoapNote(result);
     }
-  }, [editedTranscript, generateSoapNote, setSoapNote]);
+  }, [editedTranscript, biomarkers?.recent_events, generateSoapNote, setSoapNote]);
 
   // Sync to Medplum
   const handleSyncToMedplum = useCallback(async () => {

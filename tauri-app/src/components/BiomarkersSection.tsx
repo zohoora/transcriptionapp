@@ -60,9 +60,6 @@ export default function BiomarkersSection({ biomarkers, expanded, onToggle, isPr
           </span>
           <span className="biomarkers-title">Biomarkers</span>
         </div>
-        {biomarkers && biomarkers.cough_count > 0 && (
-          <span className="cough-badge">{biomarkers.cough_count}</span>
-        )}
       </div>
 
       {expanded && (
@@ -130,16 +127,6 @@ export default function BiomarkersSection({ biomarkers, expanded, onToggle, isPr
                     </span>
                   </div>
                 </>
-              )}
-
-              {/* Cough Stats */}
-              {biomarkers.cough_count > 0 && (
-                <div className="metric-row cough-stats">
-                  <span className="metric-label">Coughs</span>
-                  <span className="metric-value-wide">
-                    {biomarkers.cough_count} ({biomarkers.cough_rate_per_min.toFixed(1)}/min)
-                  </span>
-                </div>
               )}
 
               {/* Session Metrics (if diarization enabled with multiple speakers) */}

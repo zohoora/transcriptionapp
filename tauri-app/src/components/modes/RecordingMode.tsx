@@ -55,7 +55,7 @@ const getQualityLevel = (quality: AudioQualitySnapshot | null): 'good' | 'fair' 
 export const RecordingMode = memo(function RecordingMode({
   elapsedMs,
   audioQuality,
-  biomarkers,
+  biomarkers: _biomarkers, // Kept for potential future use (audio events now sent to LLM)
   transcriptText,
   draftText,
   isStopping,
@@ -104,12 +104,6 @@ export const RecordingMode = memo(function RecordingMode({
             <div className="detail-row warning">
               <span className="detail-label">Clips</span>
               <span className="detail-value">{audioQuality.total_clipped}</span>
-            </div>
-          )}
-          {biomarkers && biomarkers.cough_count > 0 && (
-            <div className="detail-row">
-              <span className="detail-label">Coughs</span>
-              <span className="detail-value">{biomarkers.cough_count}</span>
             </div>
           )}
         </div>
