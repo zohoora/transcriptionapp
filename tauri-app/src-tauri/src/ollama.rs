@@ -95,6 +95,11 @@ impl OllamaClient {
             ));
         }
 
+        // Reject URLs with credentials (security risk)
+        if !parsed.username().is_empty() || parsed.password().is_some() {
+            return Err("Ollama URL must not contain credentials".to_string());
+        }
+
         let client = reqwest::Client::builder()
             .timeout(DEFAULT_TIMEOUT)
             .build()
@@ -202,7 +207,8 @@ impl OllamaClient {
     const MIN_TRANSCRIPT_LENGTH: usize = 50;
 
     /// Minimum word count for meaningful SOAP generation
-    const MIN_WORD_COUNT: usize = 10;
+    /// Set to 5 to allow short clinical notes like "Patient reports symptoms resolved."
+    const MIN_WORD_COUNT: usize = 5;
 
     /// Generate a SOAP note from a clinical transcript
     pub async fn generate_soap_note(
@@ -374,6 +380,20 @@ fn parse_soap_response(response: &str, model: &str) -> Result<SoapNote, String> 
     // Parse as JSON
     match serde_json::from_str::<SoapNoteJson>(&json_str) {
         Ok(parsed) => {
+            // Check if all fields are empty (LLM returned no useful content)
+            let has_subjective = !parsed.subjective.trim().is_empty();
+            let has_objective = !parsed.objective.trim().is_empty();
+            let has_assessment = !parsed.assessment.trim().is_empty();
+            let has_plan = !parsed.plan.trim().is_empty();
+
+            if !has_subjective && !has_objective && !has_assessment && !has_plan {
+                return Err(
+                    "SOAP note generation returned empty content for all sections. \
+                     The transcript may not contain enough clinical information."
+                        .to_string(),
+                );
+            }
+
             info!("Successfully parsed SOAP note JSON");
             Ok(SoapNote {
                 subjective: if parsed.subjective.is_empty() {
@@ -518,6 +538,40 @@ Let me analyze this transcript...
     }
 
     #[test]
+    fn test_parse_soap_response_all_empty_sections() {
+        // When all sections are empty, should return an error
+        let response = r#"{
+            "subjective": "",
+            "objective": "",
+            "assessment": "",
+            "plan": ""
+        }"#;
+
+        let result = parse_soap_response(response, "qwen3:4b");
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .contains("empty content for all sections"));
+    }
+
+    #[test]
+    fn test_parse_soap_response_whitespace_only_sections() {
+        // Whitespace-only sections should also be considered empty
+        let response = r#"{
+            "subjective": "   ",
+            "objective": "\t\n",
+            "assessment": "  ",
+            "plan": ""
+        }"#;
+
+        let result = parse_soap_response(response, "qwen3:4b");
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .contains("empty content for all sections"));
+    }
+
+    #[test]
     fn test_parse_soap_response_missing_fields() {
         let response = r#"{ "subjective": "Patient has cough." }"#;
         let result = parse_soap_response(response, "qwen3:4b");
@@ -578,6 +632,16 @@ Let me analyze this transcript...
         let result2 = OllamaClient::new("ftp://localhost:11434");
         assert!(result2.is_err());
         assert!(result2.unwrap_err().contains("http or https"));
+
+        // Test URL with credentials (security risk)
+        let result3 = OllamaClient::new("http://user:pass@localhost:11434");
+        assert!(result3.is_err());
+        assert!(result3.unwrap_err().contains("must not contain credentials"));
+
+        // Test URL with username only
+        let result4 = OllamaClient::new("http://admin@localhost:11434");
+        assert!(result4.is_err());
+        assert!(result4.unwrap_err().contains("must not contain credentials"));
     }
 
     #[test]

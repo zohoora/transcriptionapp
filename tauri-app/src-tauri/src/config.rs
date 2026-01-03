@@ -43,7 +43,9 @@ fn default_medplum_url() -> String {
 }
 
 fn default_medplum_client_id() -> String {
-    "af1464aa-e00c-4940-a32e-18d878b7911c".to_string()
+    // Empty by default - must be configured by user for their Medplum instance
+    // This prevents accidental use of a development client ID in production
+    String::new()
 }
 
 fn default_medplum_auto_sync() -> bool {
@@ -224,6 +226,13 @@ pub struct Config {
     pub biomarkers_enabled: bool,
     #[serde(default)]
     pub yamnet_model_path: Option<PathBuf>,
+    // Audio preprocessing settings
+    #[serde(default = "default_preprocessing_enabled")]
+    pub preprocessing_enabled: bool,
+    #[serde(default = "default_preprocessing_highpass_hz")]
+    pub preprocessing_highpass_hz: u32,
+    #[serde(default = "default_preprocessing_agc_target_rms")]
+    pub preprocessing_agc_target_rms: f32,
     // Ollama settings for SOAP note generation
     #[serde(default = "default_ollama_url")]
     pub ollama_server_url: String,
@@ -258,6 +267,18 @@ fn default_biomarkers_enabled() -> bool {
     true // Biomarker analysis enabled by default
 }
 
+fn default_preprocessing_enabled() -> bool {
+    true // Audio preprocessing (DC removal, high-pass, AGC) enabled by default
+}
+
+fn default_preprocessing_highpass_hz() -> u32 {
+    80 // 80Hz cutoff removes power hum and low-frequency rumble
+}
+
+fn default_preprocessing_agc_target_rms() -> f32 {
+    0.1 // ~-20 dBFS target level for consistent Whisper input
+}
+
 impl Default for Config {
     fn default() -> Self {
         Self {
@@ -281,6 +302,9 @@ impl Default for Config {
             emotion_model_path: None,
             biomarkers_enabled: default_biomarkers_enabled(),
             yamnet_model_path: None,
+            preprocessing_enabled: default_preprocessing_enabled(),
+            preprocessing_highpass_hz: default_preprocessing_highpass_hz(),
+            preprocessing_agc_target_rms: default_preprocessing_agc_target_rms(),
             ollama_server_url: default_ollama_url(),
             ollama_model: default_ollama_model(),
             medplum_server_url: default_medplum_url(),
@@ -641,12 +665,13 @@ mod tests {
     fn test_medplum_defaults() {
         let config = Config::default();
         assert_eq!(config.medplum_server_url, "http://localhost:8103");
-        assert_eq!(config.medplum_client_id, "af1464aa-e00c-4940-a32e-18d878b7911c");
+        // Client ID should be empty by default - must be configured by user
+        assert!(config.medplum_client_id.is_empty());
         assert!(config.medplum_auto_sync);
 
         let settings = Settings::default();
         assert_eq!(settings.medplum_server_url, "http://localhost:8103");
-        assert_eq!(settings.medplum_client_id, "af1464aa-e00c-4940-a32e-18d878b7911c");
+        assert!(settings.medplum_client_id.is_empty());
         assert!(settings.medplum_auto_sync);
     }
 
@@ -675,5 +700,13 @@ mod tests {
         // When no config file exists, should return default
         let config = Config::load_or_default();
         assert_eq!(config.schema_version, 1);
+    }
+
+    #[test]
+    fn test_preprocessing_defaults() {
+        let config = Config::default();
+        assert!(config.preprocessing_enabled);
+        assert_eq!(config.preprocessing_highpass_hz, 80);
+        assert!((config.preprocessing_agc_target_rms - 0.1).abs() < 0.001);
     }
 }

@@ -132,6 +132,9 @@ pub async fn start_session(
         biomarkers_enabled: config.biomarkers_enabled,
         yamnet_model_path,
         audio_output_path,
+        preprocessing_enabled: config.preprocessing_enabled,
+        preprocessing_highpass_hz: config.preprocessing_highpass_hz,
+        preprocessing_agc_target_rms: config.preprocessing_agc_target_rms,
     };
 
     // Create message channel

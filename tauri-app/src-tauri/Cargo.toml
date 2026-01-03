@@ -50,6 +50,10 @@ rustfft = { version = "6.2", optional = true }
 # Pitch detection for vitality metric
 pitch-detection = "0.3"
 
+# Audio preprocessing (AGC, high-pass filter)
+dagc = "0.1"
+biquad = "0.4"
+
 # WAV file writing for audio recording
 hound = "3.5"
 

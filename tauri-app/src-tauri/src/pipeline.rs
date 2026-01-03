@@ -14,6 +14,7 @@ use tracing::{debug, error, info, warn};
 use voice_activity_detector::VoiceActivityDetector;
 
 use crate::audio::{calculate_ring_buffer_capacity, get_device, select_input_config, AudioCapture, AudioResampler};
+use crate::preprocessing::AudioPreprocessor;
 use crate::transcription::{Segment, WhisperProvider};
 use crate::vad::{VadConfig, VadGatedPipeline};
 
@@ -84,6 +85,10 @@ pub struct PipelineConfig {
     pub yamnet_model_path: Option<PathBuf>,
     // Audio recording settings
     pub audio_output_path: Option<PathBuf>,
+    // Audio preprocessing settings
+    pub preprocessing_enabled: bool,
+    pub preprocessing_highpass_hz: u32,
+    pub preprocessing_agc_target_rms: f32,
 }
 
 impl Default for PipelineConfig {
@@ -107,6 +112,9 @@ impl Default for PipelineConfig {
             biomarkers_enabled: true,
             yamnet_model_path: None,
             audio_output_path: None,
+            preprocessing_enabled: true,
+            preprocessing_highpass_hz: 80,
+            preprocessing_agc_target_rms: 0.1,
         }
     }
 }
@@ -224,6 +232,30 @@ fn run_pipeline_thread_inner(
 
     // Create resampler
     let mut resampler = AudioResampler::new(sample_rate)?;
+
+    // Create audio preprocessor (DC removal, high-pass filter, AGC)
+    let mut preprocessor: Option<AudioPreprocessor> = if config.preprocessing_enabled {
+        match AudioPreprocessor::new(
+            16000, // Whisper sample rate
+            config.preprocessing_highpass_hz,
+            config.preprocessing_agc_target_rms,
+        ) {
+            Ok(pp) => {
+                info!(
+                    "Audio preprocessing enabled: {}Hz high-pass, {:.2} AGC target",
+                    config.preprocessing_highpass_hz, config.preprocessing_agc_target_rms
+                );
+                Some(pp)
+            }
+            Err(e) => {
+                warn!("Failed to initialize audio preprocessing: {}, continuing without", e);
+                None
+            }
+        }
+    } else {
+        info!("Audio preprocessing disabled");
+        None
+    };
 
     // Create VAD
     let mut vad = VoiceActivityDetector::builder()
@@ -442,7 +474,11 @@ fn run_pipeline_thread_inner(
                     // Process through resampler in chunks
                     for chunk in drain_buffer[..drained].chunks(input_frames) {
                         if chunk.len() == input_frames {
-                            if let Ok(resampled) = resampler.process(chunk) {
+                            if let Ok(mut resampled) = resampler.process(chunk) {
+                                // Apply audio preprocessing
+                                if let Some(ref mut pp) = preprocessor {
+                                    pp.process(&mut resampled);
+                                }
                                 // Write to WAV file
                                 if let Some(ref mut writer) = wav_writer {
                                     for &sample in &resampled {
@@ -609,7 +645,12 @@ fn run_pipeline_thread_inner(
         }
 
         // Resample to 16kHz
-        let resampled = resampler.process(&input_buffer)?;
+        let mut resampled = resampler.process(&input_buffer)?;
+
+        // Apply audio preprocessing (DC removal, high-pass filter, AGC)
+        if let Some(ref mut pp) = preprocessor {
+            pp.process(&mut resampled);
+        }
 
         // Write to WAV file if recording is enabled
         if let Some(ref mut writer) = wav_writer {

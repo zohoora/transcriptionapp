@@ -15,6 +15,7 @@
 //! - [`diarization`] - Speaker diarization using ONNX embeddings
 //! - [`enhancement`] - Speech enhancement/denoising using GTCRN
 //! - [`emotion`] - Speech emotion detection using wav2small
+//! - [`preprocessing`] - Audio preprocessing (DC removal, high-pass filter, AGC)
 //! - [`medplum`] - Medplum EMR integration for encounter management
 //!
 //! ## Usage
@@ -42,6 +43,7 @@ pub mod medplum;
 pub mod models;
 pub mod ollama;
 mod pipeline;
+pub mod preprocessing;
 #[cfg(test)]
 mod command_tests;
 #[cfg(test)]

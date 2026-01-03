@@ -86,26 +86,40 @@ export function useSessionState(): UseSessionStateResult {
 
   // Subscribe to events
   useEffect(() => {
-    const unlisteners: UnlistenFn[] = [];
+    let mounted = true;
+    const unlistenPromises: Promise<UnlistenFn>[] = [];
 
-    listen<SessionStatus>('session_status', (event) => {
-      setStatus(event.payload);
-    }).then((fn) => unlisteners.push(fn));
+    // Set up listeners and collect their unsubscribe promises
+    unlistenPromises.push(
+      listen<SessionStatus>('session_status', (event) => {
+        if (mounted) setStatus(event.payload);
+      })
+    );
 
-    listen<TranscriptUpdate>('transcript_update', (event) => {
-      setTranscript(event.payload);
-    }).then((fn) => unlisteners.push(fn));
+    unlistenPromises.push(
+      listen<TranscriptUpdate>('transcript_update', (event) => {
+        if (mounted) setTranscript(event.payload);
+      })
+    );
 
-    listen<BiomarkerUpdate>('biomarker_update', (event) => {
-      setBiomarkers(event.payload);
-    }).then((fn) => unlisteners.push(fn));
+    unlistenPromises.push(
+      listen<BiomarkerUpdate>('biomarker_update', (event) => {
+        if (mounted) setBiomarkers(event.payload);
+      })
+    );
 
-    listen<AudioQualitySnapshot>('audio_quality', (event) => {
-      setAudioQuality(event.payload);
-    }).then((fn) => unlisteners.push(fn));
+    unlistenPromises.push(
+      listen<AudioQualitySnapshot>('audio_quality', (event) => {
+        if (mounted) setAudioQuality(event.payload);
+      })
+    );
 
     return () => {
-      unlisteners.forEach((fn) => fn());
+      mounted = false;
+      // Await all promises and unsubscribe
+      Promise.all(unlistenPromises).then((unlisteners) => {
+        unlisteners.forEach((fn) => fn());
+      });
     };
   }, []);
 

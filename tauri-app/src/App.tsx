@@ -140,12 +140,16 @@ function App() {
 
   // Load devices, settings, and check connections on mount
   useEffect(() => {
+    let mounted = true;
+
     async function init() {
       try {
         const deviceList = await invoke<Device[]>('list_input_devices');
+        if (!mounted) return;
         setDevices(deviceList);
 
         const settingsResult = await invoke<Settings>('get_settings');
+        if (!mounted) return;
         setSettings(settingsResult);
         setPendingSettings({
           model: settingsResult.whisper_model,
@@ -162,31 +166,44 @@ function App() {
 
         // Try restore session
         await invoke('medplum_try_restore_session');
+        if (!mounted) return;
 
         // Check Ollama status
         try {
           const ollamaResult = await invoke<OllamaStatus>('check_ollama_status');
-          setOllamaStatus(ollamaResult);
-          if (ollamaResult.connected) {
-            setOllamaModels(ollamaResult.available_models);
+          if (mounted) {
+            setOllamaStatus(ollamaResult);
+            if (ollamaResult.connected) {
+              setOllamaModels(ollamaResult.available_models);
+            }
           }
         } catch (e) {
-          setOllamaStatus({ connected: false, available_models: [], error: String(e) });
+          if (mounted) {
+            setOllamaStatus({ connected: false, available_models: [], error: String(e) });
+          }
         }
 
         // Check Medplum connection
         try {
           const connected = await invoke<boolean>('medplum_check_connection');
-          setMedplumConnected(connected);
+          if (mounted) {
+            setMedplumConnected(connected);
+          }
         } catch (e) {
-          setMedplumConnected(false);
-          setMedplumError(String(e));
+          if (mounted) {
+            setMedplumConnected(false);
+            setMedplumError(String(e));
+          }
         }
       } catch (e) {
         console.error('Init error:', e);
       }
     }
     init();
+
+    return () => {
+      mounted = false;
+    };
   }, [setOllamaStatus, setOllamaModels, setMedplumConnected, setMedplumError]);
 
   // Handle start recording with reset

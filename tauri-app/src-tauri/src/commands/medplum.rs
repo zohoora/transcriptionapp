@@ -90,6 +90,9 @@ pub async fn medplum_start_auth(
     })
 }
 
+/// Maximum length for OAuth parameters (prevent DoS)
+const MAX_OAUTH_PARAM_LENGTH: usize = 2048;
+
 /// Handle OAuth callback with authorization code
 #[tauri::command]
 pub async fn medplum_handle_callback(
@@ -98,6 +101,20 @@ pub async fn medplum_handle_callback(
     state: String,
 ) -> Result<AuthState, String> {
     info!("Handling Medplum OAuth callback");
+
+    // Validate OAuth parameters
+    if code.is_empty() {
+        return Err("OAuth authorization code is required".to_string());
+    }
+    if state.is_empty() {
+        return Err("OAuth state parameter is required".to_string());
+    }
+    if code.len() > MAX_OAUTH_PARAM_LENGTH {
+        return Err("OAuth authorization code exceeds maximum length".to_string());
+    }
+    if state.len() > MAX_OAUTH_PARAM_LENGTH {
+        return Err("OAuth state parameter exceeds maximum length".to_string());
+    }
 
     let client_guard = medplum_state.read().await;
     let client = client_guard
