@@ -117,15 +117,15 @@ refactor: extract audio resampling into separate module
 
 ## Testing
 
-We maintain comprehensive test coverage. All PRs must pass tests.
+We maintain comprehensive test coverage (335 frontend tests, 281 Rust tests). All PRs must pass tests.
 
 ### Running Tests
 
 ```bash
-# Frontend tests
+# Frontend tests (335 tests)
 pnpm test:run
 
-# Rust tests (with ONNX Runtime)
+# Rust tests with ONNX Runtime (281 tests)
 cd src-tauri
 ORT_DYLIB_PATH=$(../scripts/setup-ort.sh) cargo test
 

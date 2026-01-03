@@ -310,8 +310,8 @@ Real-time analysis of conversation flow between speakers:
 **UI Display**
 - Collapsible biomarkers section between Record and Transcript sections
 - Vitality/Stability shown as color-coded progress bars (green/yellow/red)
-- Cough count badge with rate per minute
 - Session metrics (turns, balance) when diarization enabled
+- Note: Cough count removed from UI (audio events now sent to LLM for SOAP context)
 - Collapsible conversation dynamics section (shown when 2+ speakers detected)
   - Response latency with color-coded status (green <500ms, yellow <1500ms, red ≥1500ms)
   - Overlap/interruption counts
@@ -400,7 +400,7 @@ Resampler (16kHz) → DC Removal → High-Pass Filter → AGC → VAD → Enhanc
 
 ### Test Updates
 - All frontend tests passing (335 tests)
-- All Rust tests passing (292 tests, including 21 ollama tests)
+- All Rust tests passing (281 tests, including 21 ollama tests)
 - Mode component tests: 94 tests (ReadyMode 18, RecordingMode 17, ReviewMode 59)
 - Hook tests: 79 tests across 7 hook files (including useSoapNote audio events test)
 - Audio quality tests: 16 Rust unit tests, 12 frontend tests
@@ -637,7 +637,7 @@ The React frontend is organized into modes and reusable components:
 | `Header.tsx` | App title bar, history button, settings toggle |
 | `SettingsDrawer.tsx` | Slide-out settings panel with all configuration options |
 | `AudioQualitySection.tsx` | Real-time audio level, SNR, clipping display |
-| `BiomarkersSection.tsx` | Vitality, stability, cough count display |
+| `BiomarkersSection.tsx` | Vitality, stability, session metrics display |
 | `ConversationDynamicsSection.tsx` | Turn-taking, overlap, response latency metrics |
 
 ### EMR Components (`src/components/`)

@@ -1,9 +1,11 @@
 # Local Transcription App Specification v3.3 (Final)
 
-> **Purpose:** A desktop transcription app that records from the microphone, transcribes offline in near-real-time, and copies the final transcript to clipboard.  
-> **Target:** AI-assisted development with comprehensive automated testing.  
-> **Architecture:** Designed for future layering (SOAP notes, summaries, structured extraction).  
-> **Status:** Approved for Development
+> **HISTORICAL DOCUMENT**: This is the original POC specification from December 2024. The project has since been completed and expanded with additional features (SOAP notes, EMR integration, biomarkers, etc.). For current documentation, see [tauri-app/CLAUDE.md](../tauri-app/CLAUDE.md).
+
+> **Purpose:** A desktop transcription app that records from the microphone, transcribes offline in near-real-time, and copies the final transcript to clipboard.
+> **Target:** AI-assisted development with comprehensive automated testing.
+> **Architecture:** Designed for future layering (SOAP notes, summaries, structured extraction).
+> **Status:** ✅ COMPLETE - All milestones implemented
 
 ---
 
@@ -1004,7 +1006,7 @@ stop_wait = 5,000ms × 0.5 = 2.5 seconds
 
 ## 12. Milestones
 
-### M0: Headless CLI (Week 1) — START HERE
+### M0: Headless CLI (Week 1) — ✅ COMPLETE
 
 **Build the pipeline before touching UI.**
 
@@ -1014,44 +1016,49 @@ stop_wait = 5,000ms × 0.5 = 2.5 seconds
 ```
 
 Deliverables:
-- [ ] cpal capture with format handling (f32/i16/u8)
-- [ ] Resampling to 16kHz
-- [ ] Ring buffer (pre-resample, raw device rate)
-- [ ] VAD gating with correct timestamp tracking
-- [ ] Max utterance enforcement
-- [ ] whisper-rs inference
-- [ ] stdout output
-- [ ] Unit tests for all components
+- [x] cpal capture with format handling (f32/i16/u8)
+- [x] Resampling to 16kHz
+- [x] Ring buffer (pre-resample, raw device rate)
+- [x] VAD gating with correct timestamp tracking
+- [x] Max utterance enforcement
+- [x] whisper-rs inference
+- [x] stdout output
+- [x] Unit tests for all components
 
-**Success criterion:** CLI works reliably for 5-minute session with mixed speech/silence.
+### M1: Tauri Skeleton (Week 2) — ✅ COMPLETE
 
-### M1: Tauri Skeleton (Week 2)
+- [x] Tauri scaffold
+- [x] State machine with tests
+- [x] Settings persistence
+- [x] Basic UI layout
 
-- [ ] Tauri scaffold
-- [ ] State machine with tests
-- [ ] Settings persistence
-- [ ] Basic UI layout
+### M2: Integration (Week 2-3) — ✅ COMPLETE
 
-### M2: Integration (Week 2-3)
+- [x] Integrate CLI pipeline
+- [x] Event emission
+- [x] Live UI updates
+- [x] Device selection
 
-- [ ] Integrate CLI pipeline
-- [ ] Event emission
-- [ ] Live UI updates
-- [ ] Device selection
+### M3: Polish (Week 3-4) — ✅ COMPLETE
 
-### M3: Polish (Week 3-4)
+- [x] macOS permissions
+- [x] Copy with formatting
+- [x] Error handling
+- [x] Performance monitoring
+- [x] Documentation
 
-- [ ] macOS permissions
-- [ ] Copy with formatting
-- [ ] Error handling
-- [ ] Performance monitoring
-- [ ] Documentation
+### M4: Optional Enhancements — ✅ COMPLETE (Extended)
 
-### M4: Optional Enhancements
-
-- [ ] Crash recovery
-- [ ] Draft text display
-- [ ] "Import model..." UI
+- [x] Speaker diarization
+- [x] Speech enhancement (GTCRN)
+- [x] Emotion detection (wav2small)
+- [x] SOAP note generation (Ollama)
+- [x] Audio events in SOAP context
+- [x] Biomarker analysis (vitality, stability, cough detection)
+- [x] Medplum EMR integration
+- [x] Encounter history window
+- [x] Audio preprocessing (DC removal, high-pass, AGC)
+- [x] Conversation dynamics
 
 ### M5: Windows (Future)
 
