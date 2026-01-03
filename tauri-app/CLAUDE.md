@@ -38,6 +38,7 @@ Rust Backend
 ├── emotion/         # Emotion detection (wav2small)
 │   ├── mod.rs       # Module exports
 │   └── provider.rs  # ONNX-based ADV detection
+├── preprocessing.rs # Audio preprocessing (DC removal, high-pass, AGC)
 ├── ollama.rs        # Ollama LLM client for SOAP note generation
 ├── medplum.rs       # Medplum FHIR client (OAuth, encounters, documents)
 ├── activity_log.rs  # Structured activity logging (PHI-safe)
@@ -305,6 +306,45 @@ Real-time audio quality analysis to predict transcript reliability:
 - VAD state passed from pipeline for SNR calculation
 - Snapshots emitted every 500ms via `audio_quality` event
 
+### Audio Preprocessing (Jan 2025)
+Signal conditioning applied before VAD and transcription to improve ASR quality:
+
+**Pipeline Order**
+```
+Resampler (16kHz) → DC Removal → High-Pass Filter → AGC → VAD → Enhancement → Whisper
+```
+
+**DC Offset Removal**
+- Single-pole IIR filter removes microphone DC bias
+- Alpha: 0.995 (time constant ~200ms at 16kHz)
+- Prevents issues with downstream filters
+
+**High-Pass Filter (80Hz)**
+- 2nd-order Butterworth biquad filter
+- Removes: 50/60Hz power hum, HVAC rumble, desk vibrations
+- Uses `biquad` crate with DirectForm2Transposed
+
+**Automatic Gain Control (AGC)**
+- Normalizes audio level to consistent RMS (~-20dBFS)
+- Handles speakers at varying distances
+- Uses `dagc` crate (digital AGC)
+- Target RMS: 0.1 (configurable)
+
+**Why No Noise Reduction?**
+- Whisper is trained on noisy audio
+- Traditional denoising can hurt Whisper accuracy
+- We have optional GTCRN enhancement for cases that need it
+
+**Configuration**
+- `preprocessing_enabled`: Enable/disable (default: true)
+- `preprocessing_highpass_hz`: Filter cutoff (default: 80Hz)
+- `preprocessing_agc_target_rms`: AGC target (default: 0.1)
+
+**Performance**
+- Latency: <0.5ms total
+- CPU: Negligible (O(n) IIR filters)
+- Memory: ~1KB state
+
 ### Launch Sequence Checklist
 - Pre-flight verification system in `checklist.rs`
 - Checks: audio devices, models, configuration
@@ -312,10 +352,11 @@ Real-time audio quality analysis to predict transcript reliability:
 - Extensible for future features (see module docs)
 
 ### Test Updates
-- All frontend tests updated for new sidebar UI (131 tests)
+- All frontend tests passing (208 tests)
+- All Rust tests passing (272 tests)
 - Audio quality tests: 16 Rust unit tests, 12 frontend tests
+- Audio preprocessing tests: 15+ Rust unit tests (DC, high-pass, AGC)
 - Fixed clustering.rs bug where max_speakers wasn't enforced
-- All Rust tests passing (243 tests)
 - Added mocks for AuthProvider/useAuth hook in test setup
 
 ### Conversation Dynamics (Dec 2024)
@@ -340,6 +381,12 @@ interface Settings {
   max_utterance_ms: number;
   diarization_enabled: boolean;
   max_speakers: number;       // 2-10
+  enhancement_enabled: boolean;
+  emotion_enabled: boolean;
+  biomarkers_enabled: boolean;
+  preprocessing_enabled: boolean;      // Audio preprocessing (default: true)
+  preprocessing_highpass_hz: number;   // High-pass filter cutoff (default: 80)
+  preprocessing_agc_target_rms: number; // AGC target RMS (default: 0.1)
   ollama_server_url: string;  // e.g., 'http://localhost:11434'
   ollama_model: string;       // e.g., 'qwen3:4b'
   medplum_server_url: string; // e.g., 'http://localhost:8103'
@@ -520,6 +567,7 @@ See `docs/adr/` for Architecture Decision Records:
 - 0007: Biomarker analysis (vitality, stability, cough detection)
 - 0008: Medplum EMR integration (OAuth, FHIR resources)
 - 0009: Ollama SOAP note generation (JSON output)
+- 0010: Audio preprocessing (DC removal, high-pass, AGC)
 
 ## Frontend Components
 
