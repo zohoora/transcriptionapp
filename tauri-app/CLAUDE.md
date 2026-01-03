@@ -352,8 +352,9 @@ Resampler (16kHz) → DC Removal → High-Pass Filter → AGC → VAD → Enhanc
 - Extensible for future features (see module docs)
 
 ### Test Updates
-- All frontend tests passing (208 tests)
+- All frontend tests passing (240 tests)
 - All Rust tests passing (272 tests)
+- Hook tests: 78 tests across 7 hook files
 - Audio quality tests: 16 Rust unit tests, 12 frontend tests
 - Audio preprocessing tests: 15+ Rust unit tests (DC, high-pass, AGC)
 - Fixed clustering.rs bug where max_speakers wasn't enforced
@@ -617,3 +618,16 @@ Date/time formatting with timezone handling:
 - `formatLocalTime/Date/DateTime(iso)` - Local timezone display
 - `isSameLocalDay(d1, d2)`, `isToday(date)` - Date comparisons
 - `debounce(fn, delay)` - Debounce utility
+- `formatErrorMessage(e)` - Safe error message extraction
+
+### Hooks (`src/hooks/`)
+Reusable React hooks for state management:
+| Hook | Purpose |
+|------|---------|
+| `useSessionState` | Recording session state, transcript, biomarkers, audio quality |
+| `useChecklist` | Pre-flight checks, model status, download handling |
+| `useSoapNote` | SOAP note generation via Ollama |
+| `useMedplumSync` | Medplum EMR synchronization |
+| `useSettings` | Settings management with pending changes tracking |
+| `useDevices` | Audio input device listing and selection |
+| `useOllamaConnection` | Ollama server connection status and testing |
