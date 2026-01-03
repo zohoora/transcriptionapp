@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { invoke } from '@tauri-apps/api/core';
+import { getCurrentWindow } from '@tauri-apps/api/window';
 import { writeText } from '@tauri-apps/plugin-clipboard-manager';
 import { useAuth } from './AuthProvider';
 import Calendar from './Calendar';
@@ -92,11 +93,23 @@ const HistoryWindow: React.FC = () => {
     }
   };
 
+  const handleClose = async () => {
+    try {
+      const window = getCurrentWindow();
+      await window.close();
+    } catch (e) {
+      console.error('Failed to close window:', e);
+    }
+  };
+
   // Not authenticated
   if (!authLoading && !authState.is_authenticated) {
     return (
       <div className="history-window">
         <div className="history-header">
+          <button className="close-btn" onClick={handleClose} aria-label="Close">
+            &times;
+          </button>
           <h1>Session History</h1>
         </div>
         <div className="history-content auth-required">
@@ -114,6 +127,9 @@ const HistoryWindow: React.FC = () => {
     return (
       <div className="history-window">
         <div className="history-header">
+          <button className="close-btn" onClick={handleClose} aria-label="Close">
+            &times;
+          </button>
           <h1>Session History</h1>
         </div>
         <div className="history-content loading">
@@ -133,6 +149,9 @@ const HistoryWindow: React.FC = () => {
             &#8592; Back
           </button>
           <h1>Session Details</h1>
+          <button className="close-btn" onClick={handleClose} aria-label="Close">
+            &times;
+          </button>
         </div>
 
         <div className="history-content">
@@ -211,6 +230,9 @@ const HistoryWindow: React.FC = () => {
   return (
     <div className="history-window">
       <div className="history-header">
+        <button className="close-btn" onClick={handleClose} aria-label="Close">
+          &times;
+        </button>
         <h1>Session History</h1>
       </div>
 
