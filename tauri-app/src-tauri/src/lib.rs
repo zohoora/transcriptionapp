@@ -167,7 +167,14 @@ pub fn run() {
         ])
         .on_window_event(|window, event| {
             if let WindowEvent::CloseRequested { .. } = event {
-                // Try graceful shutdown of the pipeline
+                // Only exit the app when the main window is closed
+                // Other windows (like history) should just close normally
+                if window.label() != "main" {
+                    info!("Closing secondary window: {}", window.label());
+                    return;
+                }
+
+                // Main window close - try graceful shutdown of the pipeline
                 let mut graceful_success = true;
 
                 if let Some(pipeline_state) = window.app_handle().try_state::<Arc<Mutex<PipelineState>>>() {
