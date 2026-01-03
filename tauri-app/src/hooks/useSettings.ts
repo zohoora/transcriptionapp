@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import type { Settings, ModelStatus } from '../types';
+import type { Settings } from '../types';
 
 /**
  * Pending settings that the user is editing before saving.

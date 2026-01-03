@@ -18,6 +18,7 @@ import {
   useDevices,
   useOllamaConnection,
 } from './hooks';
+import type { Settings } from './types';
 
 // UI Mode type
 type UIMode = 'ready' | 'recording' | 'review';
