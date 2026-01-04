@@ -28,6 +28,25 @@ pub struct Settings {
     pub medplum_client_id: String,
     #[serde(default = "default_medplum_auto_sync")]
     pub medplum_auto_sync: bool,
+    // Whisper server settings (for remote transcription)
+    #[serde(default = "default_whisper_mode")]
+    pub whisper_mode: String,
+    #[serde(default = "default_whisper_server_url")]
+    pub whisper_server_url: String,
+    #[serde(default = "default_whisper_server_model")]
+    pub whisper_server_model: String,
+}
+
+fn default_whisper_mode() -> String {
+    "local".to_string()
+}
+
+fn default_whisper_server_url() -> String {
+    "http://192.168.50.149:8000".to_string()
+}
+
+fn default_whisper_server_model() -> String {
+    "large-v3-turbo".to_string()
 }
 
 fn default_ollama_url() -> String {
@@ -69,6 +88,9 @@ impl Default for Settings {
             medplum_server_url: default_medplum_url(),
             medplum_client_id: default_medplum_client_id(),
             medplum_auto_sync: default_medplum_auto_sync(),
+            whisper_mode: default_whisper_mode(),
+            whisper_server_url: default_whisper_server_url(),
+            whisper_server_model: default_whisper_server_model(),
         }
     }
 }
@@ -216,11 +238,6 @@ pub struct Config {
     pub enhancement_enabled: bool,
     #[serde(default)]
     pub enhancement_model_path: Option<PathBuf>,
-    // Emotion detection settings
-    #[serde(default = "default_emotion_enabled")]
-    pub emotion_enabled: bool,
-    #[serde(default)]
-    pub emotion_model_path: Option<PathBuf>,
     // Biomarker analysis settings
     #[serde(default = "default_biomarkers_enabled")]
     pub biomarkers_enabled: bool,
@@ -245,6 +262,13 @@ pub struct Config {
     pub medplum_client_id: String,
     #[serde(default = "default_medplum_auto_sync")]
     pub medplum_auto_sync: bool,
+    // Whisper server settings (for remote transcription)
+    #[serde(default = "default_whisper_mode")]
+    pub whisper_mode: String,
+    #[serde(default = "default_whisper_server_url")]
+    pub whisper_server_url: String,
+    #[serde(default = "default_whisper_server_model")]
+    pub whisper_server_model: String,
 }
 
 fn default_max_speakers() -> usize {
@@ -257,10 +281,6 @@ fn default_similarity_threshold() -> f32 {
 
 fn default_enhancement_enabled() -> bool {
     true // GTCRN streaming enhancement enabled by default
-}
-
-fn default_emotion_enabled() -> bool {
-    false // Disabled by default until wav2small ONNX is available
 }
 
 fn default_biomarkers_enabled() -> bool {
@@ -298,8 +318,6 @@ impl Default for Config {
             diarization_model_path: None,
             enhancement_enabled: default_enhancement_enabled(),
             enhancement_model_path: None,
-            emotion_enabled: default_emotion_enabled(),
-            emotion_model_path: None,
             biomarkers_enabled: default_biomarkers_enabled(),
             yamnet_model_path: None,
             preprocessing_enabled: default_preprocessing_enabled(),
@@ -310,6 +328,9 @@ impl Default for Config {
             medplum_server_url: default_medplum_url(),
             medplum_client_id: default_medplum_client_id(),
             medplum_auto_sync: default_medplum_auto_sync(),
+            whisper_mode: default_whisper_mode(),
+            whisper_server_url: default_whisper_server_url(),
+            whisper_server_model: default_whisper_server_model(),
         }
     }
 }
@@ -413,15 +434,6 @@ impl Config {
         Ok(models_dir.join("gtcrn_simple.onnx"))
     }
 
-    /// Get the emotion model file path
-    pub fn get_emotion_model_path(&self) -> Result<PathBuf> {
-        if let Some(ref path) = self.emotion_model_path {
-            return Ok(path.clone());
-        }
-        let models_dir = Self::models_dir()?;
-        Ok(models_dir.join("wav2small.onnx"))
-    }
-
     /// Get the YAMNet model file path (for biomarker cough detection)
     pub fn get_yamnet_model_path(&self) -> Result<PathBuf> {
         if let Some(ref path) = self.yamnet_model_path {
@@ -455,6 +467,9 @@ impl Config {
             medplum_server_url: self.medplum_server_url.clone(),
             medplum_client_id: self.medplum_client_id.clone(),
             medplum_auto_sync: self.medplum_auto_sync,
+            whisper_mode: self.whisper_mode.clone(),
+            whisper_server_url: self.whisper_server_url.clone(),
+            whisper_server_model: self.whisper_server_model.clone(),
         }
     }
 
@@ -474,6 +489,9 @@ impl Config {
         self.medplum_server_url = settings.medplum_server_url.clone();
         self.medplum_client_id = settings.medplum_client_id.clone();
         self.medplum_auto_sync = settings.medplum_auto_sync;
+        self.whisper_mode = settings.whisper_mode.clone();
+        self.whisper_server_url = settings.whisper_server_url.clone();
+        self.whisper_server_model = settings.whisper_server_model.clone();
     }
 }
 
@@ -565,6 +583,9 @@ mod tests {
             medplum_server_url: "http://192.168.1.100:8103".to_string(),
             medplum_client_id: "test-client".to_string(),
             medplum_auto_sync: false,
+            whisper_mode: "remote".to_string(),
+            whisper_server_url: "http://192.168.1.100:8000".to_string(),
+            whisper_server_model: "large-v3".to_string(),
         };
 
         let mut config = Config::default();
@@ -584,6 +605,9 @@ mod tests {
         assert_eq!(config.medplum_server_url, "http://192.168.1.100:8103");
         assert_eq!(config.medplum_client_id, "test-client");
         assert!(!config.medplum_auto_sync);
+        assert_eq!(config.whisper_mode, "remote");
+        assert_eq!(config.whisper_server_url, "http://192.168.1.100:8000");
+        assert_eq!(config.whisper_server_model, "large-v3");
     }
 
     #[test]
@@ -641,6 +665,9 @@ mod tests {
             medplum_server_url: default_medplum_url(),
             medplum_client_id: String::new(),
             medplum_auto_sync: true,
+            whisper_mode: default_whisper_mode(),
+            whisper_server_url: default_whisper_server_url(),
+            whisper_server_model: default_whisper_server_model(),
         };
 
         let mut config = Config::default();
@@ -708,5 +735,18 @@ mod tests {
         assert!(config.preprocessing_enabled);
         assert_eq!(config.preprocessing_highpass_hz, 80);
         assert!((config.preprocessing_agc_target_rms - 0.1).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_whisper_server_defaults() {
+        let config = Config::default();
+        assert_eq!(config.whisper_mode, "local");
+        assert_eq!(config.whisper_server_url, "http://192.168.50.149:8000");
+        assert_eq!(config.whisper_server_model, "large-v3-turbo");
+
+        let settings = Settings::default();
+        assert_eq!(settings.whisper_mode, "local");
+        assert_eq!(settings.whisper_server_url, "http://192.168.50.149:8000");
+        assert_eq!(settings.whisper_server_model, "large-v3-turbo");
     }
 }

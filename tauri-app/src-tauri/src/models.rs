@@ -26,11 +26,6 @@ const SPEAKER_MODEL_URL: &str =
 const ENHANCEMENT_MODEL_URL: &str =
     "https://github.com/k2-fsa/sherpa-onnx/releases/download/speech-enhancement-models/gtcrn_simple.onnx";
 
-/// URL for the emotion detection model (wav2small ~120KB when available)
-/// Note: This model needs to be exported from the wav2small repo
-const EMOTION_MODEL_URL: &str =
-    "https://huggingface.co/dkounadis/wav2small/resolve/main/wav2small.onnx";
-
 /// URL for the YAMNet audio classification model (~3MB)
 /// YAMNet detects 521 audio event classes including coughs, sneezes, throat clearing
 /// Note: Original HuggingFace URL requires auth, using public GitHub source
@@ -59,7 +54,81 @@ pub enum ModelError {
     NetworkError(String),
 }
 
-/// Available Whisper model sizes
+/// Metadata for a Whisper model variant
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct WhisperModelInfo {
+    /// Internal identifier (e.g., "large-v3-turbo-q5_0")
+    pub id: String,
+    /// Display name for UI
+    pub label: String,
+    /// Model category for grouping
+    pub category: String,
+    /// Filename on disk
+    pub filename: String,
+    /// Download URL
+    pub url: String,
+    /// Approximate file size in bytes
+    pub size_bytes: u64,
+    /// Description of the model's characteristics
+    pub description: String,
+    /// Whether this model is downloaded
+    #[serde(default)]
+    pub downloaded: bool,
+    /// Whether this is a recommended model
+    #[serde(default)]
+    pub recommended: bool,
+    /// Whether this is an English-only model
+    #[serde(default)]
+    pub english_only: bool,
+}
+
+/// Get the list of all available Whisper models
+/// Curated list for medical transcription: fast option + best quality options
+pub fn get_all_whisper_models() -> Vec<WhisperModelInfo> {
+    vec![
+        // Fast option for testing/low-resource
+        WhisperModelInfo {
+            id: "small.en".into(),
+            label: "Small (English)".into(),
+            category: "Standard".into(),
+            filename: "ggml-small.en.bin".into(),
+            url: format!("{}/ggml-small.en.bin", WHISPER_BASE_URL),
+            size_bytes: 466_000_000,
+            description: "Fast and accurate for English. Good for testing.".into(),
+            downloaded: false,
+            recommended: false,
+            english_only: true,
+        },
+        // Best quality - recommended for medical use
+        WhisperModelInfo {
+            id: "large-v3-turbo".into(),
+            label: "Large v3 Turbo".into(),
+            category: "Large".into(),
+            filename: "ggml-large-v3-turbo.bin".into(),
+            url: format!("{}/ggml-large-v3-turbo.bin", WHISPER_BASE_URL),
+            size_bytes: 1_620_000_000,
+            description: "Best for medical. Near large-v3 quality at 6x speed.".into(),
+            downloaded: false,
+            recommended: true,
+            english_only: false,
+        },
+        // Quantized option - smaller download, slightly less accurate
+        WhisperModelInfo {
+            id: "large-v3-turbo-q5_0".into(),
+            label: "Large v3 Turbo Q5".into(),
+            category: "Quantized".into(),
+            filename: "ggml-large-v3-turbo-q5_0.bin".into(),
+            url: format!("{}/ggml-large-v3-turbo-q5_0.bin", WHISPER_BASE_URL),
+            size_bytes: 574_000_000,
+            description: "65% smaller download. Slightly less accurate.".into(),
+            downloaded: false,
+            recommended: false,
+            english_only: false,
+        },
+    ]
+}
+
+/// Legacy enum for backward compatibility
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum WhisperModel {
     Tiny,
@@ -94,22 +163,22 @@ impl WhisperModel {
     /// Get approximate file size in bytes (for progress estimation)
     pub fn approximate_size(&self) -> u64 {
         match self {
-            WhisperModel::Tiny => 75_000_000,    // ~75 MB
-            WhisperModel::Base => 142_000_000,   // ~142 MB
-            WhisperModel::Small => 466_000_000,  // ~466 MB
-            WhisperModel::Medium => 1_500_000_000, // ~1.5 GB
-            WhisperModel::Large => 2_900_000_000,  // ~2.9 GB
+            WhisperModel::Tiny => 75_000_000,
+            WhisperModel::Base => 142_000_000,
+            WhisperModel::Small => 466_000_000,
+            WhisperModel::Medium => 1_500_000_000,
+            WhisperModel::Large => 2_900_000_000,
         }
     }
 
-    /// Parse model name from string
+    /// Parse model name from string (legacy support)
     pub fn from_name(name: &str) -> Option<Self> {
         match name.to_lowercase().as_str() {
             "tiny" => Some(WhisperModel::Tiny),
             "base" => Some(WhisperModel::Base),
             "small" => Some(WhisperModel::Small),
             "medium" => Some(WhisperModel::Medium),
-            "large" => Some(WhisperModel::Large),
+            "large" | "large-v1" | "large-v2" | "large-v3" | "large-v3-turbo" => Some(WhisperModel::Large),
             _ => None,
         }
     }
@@ -214,7 +283,7 @@ fn download_file(url: &str, dest_path: &Path) -> Result<(), ModelError> {
     Ok(())
 }
 
-/// Download a Whisper model if not already present
+/// Download a Whisper model if not already present (legacy)
 pub fn ensure_whisper_model(model: WhisperModel) -> Result<PathBuf> {
     let models_dir = Config::models_dir()?;
     let model_path = models_dir.join(model.filename());
@@ -229,6 +298,110 @@ pub fn ensure_whisper_model(model: WhisperModel) -> Result<PathBuf> {
         .context(format!("Failed to download Whisper {} model", model.name()))?;
 
     Ok(model_path)
+}
+
+/// Get all available whisper models with their download status
+pub fn get_whisper_models_with_status() -> Vec<WhisperModelInfo> {
+    let models_dir = Config::models_dir().ok();
+
+    get_all_whisper_models()
+        .into_iter()
+        .map(|mut model| {
+            if let Some(ref dir) = models_dir {
+                let path = dir.join(&model.filename);
+                model.downloaded = path.exists();
+            }
+            model
+        })
+        .collect()
+}
+
+/// Find a model by ID
+pub fn find_model_by_id(model_id: &str) -> Option<WhisperModelInfo> {
+    get_all_whisper_models()
+        .into_iter()
+        .find(|m| m.id == model_id)
+}
+
+/// Get the filename for a model ID
+pub fn get_model_filename(model_id: &str) -> Option<String> {
+    find_model_by_id(model_id).map(|m| m.filename)
+}
+
+/// Check if a specific whisper model (by ID) is downloaded
+pub fn is_whisper_model_downloaded(model_id: &str) -> bool {
+    if let Some(model) = find_model_by_id(model_id) {
+        if let Ok(models_dir) = Config::models_dir() {
+            let path = models_dir.join(&model.filename);
+            return path.exists();
+        }
+    }
+    false
+}
+
+/// Download a whisper model by ID
+pub fn download_whisper_model_by_id(model_id: &str) -> Result<PathBuf> {
+    let model = find_model_by_id(model_id)
+        .ok_or_else(|| anyhow::anyhow!("Unknown model: {}", model_id))?;
+
+    let models_dir = Config::models_dir()?;
+    let model_path = models_dir.join(&model.filename);
+
+    if model_path.exists() {
+        info!("Model {} already exists at {:?}", model_id, model_path);
+        return Ok(model_path);
+    }
+
+    info!("Downloading {} model ({:.1} MB)...", model.label, model.size_bytes as f64 / 1_000_000.0);
+    download_file(&model.url, &model_path)
+        .context(format!("Failed to download {} model", model.label))?;
+
+    Ok(model_path)
+}
+
+/// Test a whisper model by loading it
+pub fn test_whisper_model(model_id: &str) -> Result<bool> {
+    let model = find_model_by_id(model_id)
+        .ok_or_else(|| anyhow::anyhow!("Unknown model: {}", model_id))?;
+
+    let models_dir = Config::models_dir()?;
+    let model_path = models_dir.join(&model.filename);
+
+    if !model_path.exists() {
+        return Ok(false);
+    }
+
+    // Basic validation: check file size is reasonable
+    let metadata = fs::metadata(&model_path)
+        .context("Failed to read model file metadata")?;
+
+    // Model should be at least 50% of expected size
+    let min_size = model.size_bytes / 2;
+    if metadata.len() < min_size {
+        info!("Model {} file size {} is less than expected minimum {}",
+            model_id, metadata.len(), min_size);
+        return Ok(false);
+    }
+
+    // Check file starts with GGML magic bytes
+    let mut file = File::open(&model_path)
+        .context("Failed to open model file")?;
+    let mut magic = [0u8; 4];
+    file.read_exact(&mut magic)
+        .context("Failed to read model magic bytes")?;
+
+    // GGML magic bytes - can be big-endian or little-endian depending on version
+    let valid_magic = magic == [0x67, 0x67, 0x6d, 0x6c] // "ggml" (big-endian)
+        || magic == [0x67, 0x67, 0x6a, 0x74] // "ggjt" (older format)
+        || magic == [0x6c, 0x6d, 0x67, 0x67]; // "lmgg" (little-endian, newer whisper.cpp models)
+
+    if !valid_magic {
+        info!("Model {} has invalid magic bytes: {:?}", model_id, magic);
+        return Ok(false);
+    }
+
+    info!("Model {} validated successfully", model_id);
+    Ok(true)
 }
 
 /// Download the speaker diarization model if not already present
@@ -301,39 +474,6 @@ pub fn is_enhancement_model_available() -> bool {
 pub fn get_enhancement_model_path() -> Result<PathBuf> {
     let models_dir = Config::models_dir()?;
     Ok(models_dir.join("gtcrn_simple.onnx"))
-}
-
-/// Download the emotion detection model if not already present
-pub fn ensure_emotion_model() -> Result<PathBuf> {
-    let models_dir = Config::models_dir()?;
-    let model_path = models_dir.join("wav2small.onnx");
-
-    if model_path.exists() {
-        debug!("Emotion model already exists: {:?}", model_path);
-        return Ok(model_path);
-    }
-
-    info!("Downloading emotion detection model...");
-    download_file(EMOTION_MODEL_URL, &model_path)
-        .context("Failed to download emotion detection model")?;
-
-    Ok(model_path)
-}
-
-/// Check if the emotion model is available locally
-pub fn is_emotion_model_available() -> bool {
-    if let Ok(models_dir) = Config::models_dir() {
-        let model_path = models_dir.join("wav2small.onnx");
-        model_path.exists()
-    } else {
-        false
-    }
-}
-
-/// Get the path to the emotion model
-pub fn get_emotion_model_path() -> Result<PathBuf> {
-    let models_dir = Config::models_dir()?;
-    Ok(models_dir.join("wav2small.onnx"))
 }
 
 /// Download the YAMNet audio classification model if not already present
@@ -468,22 +608,6 @@ pub fn get_model_info(whisper_model: &str) -> Vec<ModelInfo> {
         path: enhancement_path,
         size_bytes: Some(523_638), // ~523 KB
         download_url: ENHANCEMENT_MODEL_URL.to_string(),
-    });
-
-    // Emotion model info
-    let emotion_available = is_emotion_model_available();
-    let emotion_path = if emotion_available {
-        get_emotion_model_path().ok().map(|p| p.to_string_lossy().to_string())
-    } else {
-        None
-    };
-
-    models.push(ModelInfo {
-        name: "Emotion Detection (wav2small)".to_string(),
-        available: emotion_available,
-        path: emotion_path,
-        size_bytes: Some(120_000), // ~120 KB
-        download_url: EMOTION_MODEL_URL.to_string(),
     });
 
     // YAMNet model info (for biomarker cough detection)

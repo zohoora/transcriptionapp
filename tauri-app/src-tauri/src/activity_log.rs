@@ -347,7 +347,7 @@ pub fn log_audio_upload(
 
 /// Log model loading
 pub fn log_model_load(
-    model_type: &str, // "whisper", "speaker", "enhancement", "emotion", "yamnet"
+    model_type: &str, // "whisper", "speaker", "enhancement", "yamnet"
     model_path: &str,
     load_time_ms: u64,
     success: bool,

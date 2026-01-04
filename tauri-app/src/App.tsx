@@ -17,8 +17,9 @@ import {
   useSettings,
   useDevices,
   useOllamaConnection,
+  useWhisperModels,
 } from './hooks';
-import type { Settings } from './types';
+import type { Settings, WhisperServerStatus } from './types';
 
 // UI Mode type
 type UIMode = 'ready' | 'recording' | 'review';
@@ -95,9 +96,21 @@ function App() {
   // Ollama connection from hook
   const { status: ollamaConnectionStatus, checkConnection: checkOllamaConnection } = useOllamaConnection();
 
+  // Whisper models from hook
+  const {
+    models: whisperModels,
+    modelsByCategory: whisperModelsByCategory,
+    downloadModel,
+    downloadProgress,
+  } = useWhisperModels();
+
   // UI state
   const [showSettings, setShowSettings] = useState(false);
-  const [showBiomarkers, setShowBiomarkers] = useState(true);
+  const [showBiomarkers, setShowBiomarkers] = useState(false);
+
+  // Whisper server state
+  const [whisperServerStatus, setWhisperServerStatus] = useState<WhisperServerStatus | null>(null);
+  const [whisperServerModels, setWhisperServerModels] = useState<string[]>([]);
 
   // Determine current UI mode based on session state
   const getUIMode = (): UIMode => {
@@ -227,6 +240,31 @@ function App() {
       setMedplumError(String(e));
     }
   }, [settings, pendingSettings, setMedplumConnected, setMedplumError]);
+
+  // Test Whisper server connection
+  const handleTestWhisperServer = useCallback(async () => {
+    if (!pendingSettings || !settings) return;
+    try {
+      // Save settings first with the whisper server URL
+      await invoke('set_settings', {
+        settings: {
+          ...settings,
+          whisper_server_url: pendingSettings.whisper_server_url,
+          whisper_server_model: pendingSettings.whisper_server_model,
+        },
+      });
+
+      // Check connection
+      const status = await invoke<WhisperServerStatus>('check_whisper_server_status');
+      setWhisperServerStatus(status);
+      if (status.connected) {
+        setWhisperServerModels(status.available_models);
+      }
+    } catch (e) {
+      console.error('Failed to test Whisper server:', e);
+      setWhisperServerStatus({ connected: false, available_models: [], error: String(e) });
+    }
+  }, [settings, pendingSettings]);
 
   // Generate SOAP note (includes audio events like coughs, laughs for clinical context)
   const handleGenerateSoap = useCallback(async () => {
@@ -361,8 +399,15 @@ function App() {
         onSettingsChange={setPendingSettings}
         onSave={handleSaveSettings}
         devices={devices}
+        whisperModels={whisperModels}
+        whisperModelsByCategory={whisperModelsByCategory}
+        onDownloadModel={downloadModel}
+        downloadProgress={downloadProgress}
         showBiomarkers={showBiomarkers}
         onShowBiomarkersChange={setShowBiomarkers}
+        whisperServerStatus={whisperServerStatus}
+        whisperServerModels={whisperServerModels}
+        onTestWhisperServer={handleTestWhisperServer}
         ollamaStatus={ollamaStatus}
         ollamaModels={ollamaModels}
         onTestOllama={handleTestOllama}

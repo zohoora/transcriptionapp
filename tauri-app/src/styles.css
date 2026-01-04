@@ -533,6 +533,41 @@ body {
   background-color: white;
 }
 
+/* Toggle buttons (Local/Remote style) */
+.settings-toggle-buttons {
+  display: flex;
+  gap: 0;
+  margin-top: 6px;
+  border-radius: 6px;
+  overflow: hidden;
+  border: 1px solid var(--border-color);
+}
+
+.settings-toggle-buttons .toggle-btn {
+  flex: 1;
+  padding: 8px 12px;
+  border: none;
+  background: var(--bg-card);
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.settings-toggle-buttons .toggle-btn:not(:last-child) {
+  border-right: 1px solid var(--border-color);
+}
+
+.settings-toggle-buttons .toggle-btn:hover:not(.active) {
+  background: var(--bg-hover);
+}
+
+.settings-toggle-buttons .toggle-btn.active {
+  background: var(--accent-blue);
+  color: white;
+}
+
 /* Slider in settings */
 .settings-slider {
   display: flex;
@@ -605,6 +640,75 @@ body {
 
 .btn-save:hover {
   background: #2563eb;
+}
+
+/* Model selection status */
+.model-status-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+  flex-wrap: wrap;
+}
+
+.model-status {
+  font-size: 12px;
+  padding: 4px 8px;
+  border-radius: 4px;
+}
+
+.model-status.downloaded {
+  color: #059669;
+  background: #d1fae5;
+}
+
+.model-status.downloading {
+  color: #2563eb;
+  background: #dbeafe;
+}
+
+.btn-download-model {
+  font-size: 12px;
+  padding: 6px 12px;
+  background: var(--accent-blue);
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.btn-download-model:hover:not(:disabled) {
+  background: #2563eb;
+}
+
+.btn-download-model:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.model-badge {
+  font-size: 10px;
+  padding: 2px 6px;
+  border-radius: 3px;
+  text-transform: uppercase;
+  font-weight: 600;
+}
+
+.model-badge.recommended {
+  color: #059669;
+  background: #d1fae5;
+}
+
+.model-badge.english-only {
+  color: #9333ea;
+  background: #f3e8ff;
+}
+
+.model-description {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-top: 6px;
+  line-height: 1.4;
 }
 
 /* Warning/Error banners */

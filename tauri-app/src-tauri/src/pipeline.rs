@@ -15,8 +15,9 @@ use voice_activity_detector::VoiceActivityDetector;
 
 use crate::audio::{calculate_ring_buffer_capacity, get_device, select_input_config, AudioCapture, AudioResampler};
 use crate::preprocessing::AudioPreprocessor;
-use crate::transcription::{Segment, WhisperProvider};
+use crate::transcription::{Segment, Utterance, WhisperProvider};
 use crate::vad::{VadConfig, VadGatedPipeline};
+use crate::whisper_server::WhisperServerClient;
 
 #[cfg(feature = "diarization")]
 use crate::diarization::{DiarizationConfig, DiarizationProvider};
@@ -24,14 +25,39 @@ use crate::diarization::{DiarizationConfig, DiarizationProvider};
 #[cfg(feature = "enhancement")]
 use crate::enhancement::{EnhancementConfig, EnhancementProvider};
 
-#[cfg(feature = "emotion")]
-use crate::emotion::{EmotionConfig, EmotionProvider};
-
 use crate::biomarkers::{AudioQualitySnapshot, BiomarkerConfig, BiomarkerHandle, BiomarkerOutput, BiomarkerUpdate, CoughEvent, start_biomarker_thread};
 use std::collections::VecDeque;
 
 /// VAD chunk size at 16kHz
 const VAD_CHUNK_SIZE: usize = 512;
+
+/// Transcription provider - either local Whisper or remote Whisper server
+enum TranscriptionProvider {
+    /// Local Whisper model via whisper-rs
+    Local(WhisperProvider),
+    /// Remote Whisper server (faster-whisper-server/Speaches)
+    Remote(WhisperServerClient),
+}
+
+impl TranscriptionProvider {
+    /// Transcribe an utterance and return a segment
+    fn transcribe(&self, utterance: &Utterance, context: Option<&str>, language: &str) -> Result<Segment, String> {
+        match self {
+            TranscriptionProvider::Local(whisper) => {
+                whisper.transcribe(utterance, context).map_err(|e| e.to_string())
+            }
+            TranscriptionProvider::Remote(client) => {
+                // Use blocking transcribe for remote server
+                let text = client.transcribe_blocking(&utterance.audio, language)?;
+                Ok(Segment::new(
+                    utterance.start_ms,
+                    utterance.end_ms,
+                    text,
+                ))
+            }
+        }
+    }
+}
 
 /// Message from the transcription pipeline to the session controller
 #[derive(Debug)]
@@ -75,11 +101,6 @@ pub struct PipelineConfig {
     pub enhancement_enabled: bool,
     #[allow(dead_code)]
     pub enhancement_model_path: Option<PathBuf>,
-    // Emotion detection settings
-    #[allow(dead_code)]
-    pub emotion_enabled: bool,
-    #[allow(dead_code)]
-    pub emotion_model_path: Option<PathBuf>,
     // Biomarker analysis settings
     pub biomarkers_enabled: bool,
     pub yamnet_model_path: Option<PathBuf>,
@@ -89,6 +110,10 @@ pub struct PipelineConfig {
     pub preprocessing_enabled: bool,
     pub preprocessing_highpass_hz: u32,
     pub preprocessing_agc_target_rms: f32,
+    // Whisper server settings (for remote transcription)
+    pub whisper_mode: String,
+    pub whisper_server_url: String,
+    pub whisper_server_model: String,
 }
 
 impl Default for PipelineConfig {
@@ -107,14 +132,15 @@ impl Default for PipelineConfig {
             max_speakers: 10,
             enhancement_enabled: false,
             enhancement_model_path: None,
-            emotion_enabled: false,
-            emotion_model_path: None,
             biomarkers_enabled: true,
             yamnet_model_path: None,
             audio_output_path: None,
             preprocessing_enabled: true,
             preprocessing_highpass_hz: 80,
             preprocessing_agc_target_rms: 0.1,
+            whisper_mode: "local".to_string(),
+            whisper_server_url: String::new(),
+            whisper_server_model: "large-v3-turbo".to_string(),
         }
     }
 }
@@ -225,10 +251,18 @@ fn run_pipeline_thread_inner(
     capture.start()?;
     info!("Audio capture started");
 
-    // Load Whisper model
-    info!("Loading Whisper model...");
-    let whisper = WhisperProvider::new(&config.model_path, &config.language, config.n_threads)?;
-    info!("Whisper model loaded");
+    // Create transcription provider (local or remote)
+    let provider: TranscriptionProvider = if config.whisper_mode == "remote" {
+        info!("Using remote Whisper server at {}", config.whisper_server_url);
+        let client = WhisperServerClient::new(&config.whisper_server_url, &config.whisper_server_model)
+            .map_err(|e| anyhow::anyhow!("Failed to create Whisper server client: {}", e))?;
+        TranscriptionProvider::Remote(client)
+    } else {
+        info!("Loading local Whisper model...");
+        let whisper = WhisperProvider::new(&config.model_path, &config.language, config.n_threads)?;
+        info!("Whisper model loaded");
+        TranscriptionProvider::Local(whisper)
+    };
 
     // Create resampler
     let mut resampler = AudioResampler::new(sample_rate)?;
@@ -348,41 +382,6 @@ fn run_pipeline_thread_inner(
 
     #[cfg(not(feature = "enhancement"))]
     let _enhancement: Option<()> = None;
-
-    // Create emotion detection provider if enabled
-    #[cfg(feature = "emotion")]
-    let mut emotion: Option<EmotionProvider> = if config.emotion_enabled {
-        if let Some(ref model_path) = config.emotion_model_path {
-            if model_path.exists() {
-                let emo_config = EmotionConfig {
-                    model_path: model_path.clone(),
-                    n_threads: 1,
-                    ..Default::default()
-                };
-                match EmotionProvider::new(emo_config) {
-                    Ok(provider) => {
-                        info!("Emotion detection enabled with model: {:?}", model_path);
-                        Some(provider)
-                    }
-                    Err(e) => {
-                        warn!("Failed to initialize emotion detection: {}, continuing without", e);
-                        None
-                    }
-                }
-            } else {
-                warn!("Emotion model not found at {:?}, continuing without", model_path);
-                None
-            }
-        } else {
-            warn!("Emotion detection enabled but no model path specified");
-            None
-        }
-    } else {
-        None
-    };
-
-    #[cfg(not(feature = "emotion"))]
-    let _emotion: Option<()> = None;
 
     // Create biomarker thread if enabled
     let biomarker_handle: Option<BiomarkerHandle> = if config.biomarkers_enabled {
@@ -539,7 +538,7 @@ fn run_pipeline_thread_inner(
                 };
 
                 // Transcribe (using enhanced audio if available)
-                match whisper.transcribe(&utterance, context_ref) {
+                match provider.transcribe(&utterance, context_ref, &config.language) {
                     Ok(mut segment) => {
                         if !segment.text.is_empty() {
                             // Only run diarization if we have actual text
@@ -563,21 +562,6 @@ fn run_pipeline_thread_inner(
                                         Err(e) => {
                                             debug!("Diarization failed for utterance: {}", e);
                                         }
-                                    }
-                                }
-                            }
-
-                            // Detect emotion if enabled
-                            #[cfg(feature = "emotion")]
-                            {
-                                if let Some(ref mut emo) = emotion {
-                                    #[cfg(feature = "enhancement")]
-                                    let emo_audio = original_audio.as_ref().unwrap_or(&utterance.audio);
-                                    #[cfg(not(feature = "enhancement"))]
-                                    let emo_audio = &utterance.audio;
-
-                                    if let Ok(result) = emo.detect(emo_audio) {
-                                        segment.emotion = Some(result);
                                     }
                                 }
                             }
@@ -737,7 +721,7 @@ fn run_pipeline_thread_inner(
             };
 
             // Transcribe (using enhanced audio if available)
-            match whisper.transcribe(&utterance, context_ref) {
+            match provider.transcribe(&utterance, context_ref, &config.language) {
                 Ok(mut segment) => {
                     if !segment.text.is_empty() {
                         // Use original audio for diarization (speaker fingerprints)
@@ -763,34 +747,6 @@ fn run_pipeline_thread_inner(
                                     }
                                     Err(e) => {
                                         warn!("Diarization failed for utterance: {}", e);
-                                    }
-                                }
-                            }
-                        }
-
-                        // Detect emotion if enabled
-                        #[cfg(feature = "emotion")]
-                        {
-                            if let Some(ref mut emo) = emotion {
-                                // Use original audio for emotion detection
-                                #[cfg(feature = "enhancement")]
-                                let emo_audio = original_audio.as_ref().unwrap_or(&utterance.audio);
-                                #[cfg(not(feature = "enhancement"))]
-                                let emo_audio = &utterance.audio;
-
-                                match emo.detect(emo_audio) {
-                                    Ok(result) => {
-                                        debug!(
-                                            "Emotion detected: {} (A:{:.2} D:{:.2} V:{:.2})",
-                                            result.label(),
-                                            result.arousal,
-                                            result.dominance,
-                                            result.valence
-                                        );
-                                        segment.emotion = Some(result);
-                                    }
-                                    Err(e) => {
-                                        debug!("Emotion detection failed: {}", e);
                                     }
                                 }
                             }
@@ -922,10 +878,7 @@ fn run_pipeline_thread_inner(
     #[cfg(feature = "enhancement")]
     drop(enhancement);
 
-    #[cfg(feature = "emotion")]
-    drop(emotion);
-
-    drop(whisper);
+    drop(provider);
 
     // Small delay to let ONNX/Whisper C++ destructors complete
     std::thread::sleep(Duration::from_millis(50));

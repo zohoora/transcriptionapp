@@ -35,12 +35,10 @@ Rust Backend
 ├── enhancement/     # Speech enhancement (GTCRN)
 │   ├── mod.rs       # Module exports
 │   └── provider.rs  # ONNX-based denoising
-├── emotion/         # Emotion detection (wav2small)
-│   ├── mod.rs       # Module exports
-│   └── provider.rs  # ONNX-based ADV detection
 ├── preprocessing.rs # Audio preprocessing (DC removal, high-pass, AGC)
 ├── ollama.rs        # Ollama LLM client for SOAP note generation
 ├── medplum.rs       # Medplum FHIR client (OAuth, encounters, documents)
+├── whisper_server.rs # Remote Whisper server client (faster-whisper)
 ├── activity_log.rs  # Structured activity logging (PHI-safe)
 ├── checklist.rs     # Pre-flight verification checks
 └── biomarkers/      # Vocal biomarker analysis
@@ -68,15 +66,20 @@ Rust Backend
 | `get_model_info` | Get info about all models |
 | `get_settings` | Retrieve current settings |
 | `set_settings` | Update settings |
-| `download_whisper_model` | Download Whisper model |
+| `download_whisper_model` | Download Whisper model (legacy) |
+| `get_whisper_models` | Get all Whisper models with download status |
+| `download_whisper_model_by_id` | Download a specific Whisper model |
+| `test_whisper_model` | Validate a downloaded model |
+| `is_model_downloaded` | Check if a model is downloaded |
 | `download_speaker_model` | Download speaker diarization model |
 | `download_enhancement_model` | Download GTCRN enhancement model |
-| `download_emotion_model` | Download wav2small emotion model |
 | `download_yamnet_model` | Download YAMNet cough detection model |
 | `ensure_models` | Download all required models |
 | `check_ollama_status` | Check Ollama server connection and list models |
 | `list_ollama_models` | Get available models from Ollama |
 | `generate_soap_note` | Generate SOAP note from transcript via Ollama |
+| `check_whisper_server_status` | Check remote Whisper server connection |
+| `list_whisper_server_models` | Get available models from Whisper server |
 
 ## Key Events (Backend → Frontend)
 
@@ -105,17 +108,21 @@ Idle → Preparing → Recording → Stopping → Completed
 # Build debug app (RECOMMENDED)
 pnpm tauri build --debug
 
-# Run with ONNX Runtime (required for transcription, diarization, enhancement)
-ORT_DYLIB_PATH=$(./scripts/setup-ort.sh) \
-  "src-tauri/target/debug/bundle/macos/Transcription App.app/Contents/MacOS/transcription-app"
+# Bundle ONNX Runtime into the app (one-time after build)
+./scripts/bundle-ort.sh "src-tauri/target/debug/bundle/macos/Transcription App.app"
 
-# Or find ORT path manually:
-ORT_PATH=$(find ~/.transcriptionapp/ort-venv -name "libonnxruntime.*.dylib" | head -1)
-ORT_DYLIB_PATH="$ORT_PATH" \
-  "src-tauri/target/debug/bundle/macos/Transcription App.app/Contents/MacOS/transcription-app"
+# Run the app (no ORT_DYLIB_PATH needed!)
+"src-tauri/target/debug/bundle/macos/Transcription App.app/Contents/MacOS/transcription-app"
+
+# Or use `open` for bundled apps:
+open "src-tauri/target/debug/bundle/macos/Transcription App.app"
 ```
 
-**Note**: Do NOT use `open` to launch the app - it won't inherit environment variables. Run the binary directly with `ORT_DYLIB_PATH` set.
+**Alternative**: Run with external ONNX Runtime (development only):
+```bash
+ORT_DYLIB_PATH=$(./scripts/setup-ort.sh) \
+  "src-tauri/target/debug/bundle/macos/Transcription App.app/Contents/MacOS/transcription-app"
+```
 
 **Why not `tauri dev`?**
 - `tauri dev` runs the Vite dev server separately, which breaks deep link routing
@@ -128,6 +135,34 @@ ORT_DYLIB_PATH="$ORT_PATH" \
 - `tauri-plugin-single-instance` ensures only one app instance runs
 - When OAuth redirects to `fabricscribe://oauth/callback`, the callback routes to the existing instance
 - The frontend listens for `deep-link` events to handle the OAuth code exchange
+
+## Building for Distribution
+
+For internal/trusted distribution to other Macs:
+
+```bash
+# One-command build with ONNX Runtime bundled:
+./scripts/build-distributable.sh
+
+# Or for release build:
+./scripts/build-distributable.sh --release
+```
+
+This creates a self-contained app bundle at:
+- Debug: `src-tauri/target/debug/bundle/macos/Transcription App.app`
+- Release: `src-tauri/target/release/bundle/macos/Transcription App.app`
+
+**What's bundled:**
+- The compiled Rust/Tauri app
+- Frontend assets
+- ONNX Runtime library (~26MB) in `Contents/Frameworks/`
+
+**Installing on another Mac:**
+1. Copy the `.app` bundle or use the `.dmg` installer
+2. First launch: Right-click → "Open" to bypass Gatekeeper (unsigned app)
+3. Subsequent launches work normally
+
+**Note**: Models (Whisper, speaker embedding, etc.) are NOT bundled - they download on first use to `~/.transcriptionapp/models/`. This keeps the app size reasonable (~50MB vs ~500MB+).
 
 ## Test Commands
 
@@ -241,6 +276,64 @@ YAMNet (biomarkers thread)
 - Closing history window no longer closes the entire app
 - Fixed in `lib.rs` by checking `window.label() != "main"` before exit
 
+### Enhanced Whisper Model Selection
+- Settings dropdown now shows all 17 available Whisper models grouped by category
+- Categories: Standard, Large, Quantized, Distil-Whisper
+- Each model shows download status (checkmark for downloaded, cloud icon for not downloaded)
+- Download button appears when selecting a non-downloaded model
+- Models auto-tested after download to verify integrity (GGML magic bytes check)
+- Models include:
+  - **Standard**: tiny, tiny.en, base, base.en, small, small.en, medium, medium.en
+  - **Large**: large-v2, large-v3, large-v3-turbo
+  - **Quantized**: large-v3-q5_0 (faster, lower quality), large-v3-turbo-q5_0
+  - **Distil-Whisper**: distil-large-v3, distil-large-v3.en (3.5x faster, English-focused)
+- Backend: `get_whisper_models`, `download_whisper_model_by_id`, `test_whisper_model` commands
+- Frontend: `useWhisperModels` hook, updated `SettingsDrawer`
+
+### Remote Whisper Server Support
+Option to run transcription on a remote server for devices with limited RAM/CPU.
+
+**Architecture**
+- `whisper_server.rs`: HTTP client for faster-whisper-server (OpenAI-compatible API)
+- `TranscriptionProvider` enum in `pipeline.rs`: Abstracts local vs remote transcription
+- WAV encoding: Converts f32 audio samples to WAV bytes for HTTP transmission
+- Blocking async wrapper pattern (similar to Ollama client)
+
+**Configuration**
+- `whisper_mode`: "local" (default) or "remote"
+- `whisper_server_url`: Server address (default: `http://192.168.50.149:8000`)
+- `whisper_server_model`: Model to use (default: `large-v3-turbo`)
+
+**API**
+Uses OpenAI-compatible `/v1/audio/transcriptions` endpoint:
+```bash
+POST /v1/audio/transcriptions
+Content-Type: multipart/form-data
+file=@audio.wav
+model=large-v3-turbo
+language=en
+```
+
+**Server Deployment**
+faster-whisper-server (Speaches) via Docker:
+```bash
+# GPU
+docker run -p 8000:8000 ghcr.io/speaches-ai/speaches:latest-cuda
+
+# CPU-only
+docker run -p 8000:8000 ghcr.io/speaches-ai/speaches:latest-cpu
+```
+
+**UI Settings**
+- Transcription Mode toggle: Local / Remote Server
+- Server URL input (shown when remote)
+- Server Model dropdown (populated from server)
+- Connection test button with status indicator
+
+**Checklist Behavior**
+- Local mode: Checks if Whisper model is downloaded locally
+- Remote mode: Skips local model check, shows server connection status
+
 ## Recent Changes (Dec 2024)
 
 ### UI Redesign
@@ -262,12 +355,6 @@ YAMNet (biomarkers thread)
 - ~2ms latency, 48K parameters
 - Enabled by default for cleaner transcriptions
 - Model auto-downloads from sherpa-onnx releases
-
-### Emotion Detection (wav2small)
-- Dimensional emotion: Arousal, Dominance, Valence (ADV)
-- ~120KB model, ~9ms latency, 72K parameters
-- Labels: excited/happy, angry/frustrated, calm/content, sad/tired
-- Emotion stored in transcript segments
 
 ### Biomarker Analysis
 Real-time vocal biomarker extraction running in parallel with transcription:
@@ -436,7 +523,6 @@ interface Settings {
   diarization_enabled: boolean;
   max_speakers: number;       // 2-10
   enhancement_enabled: boolean;
-  emotion_enabled: boolean;
   biomarkers_enabled: boolean;
   preprocessing_enabled: boolean;      // Audio preprocessing (default: true)
   preprocessing_highpass_hz: number;   // High-pass filter cutoff (default: 80)
@@ -446,6 +532,10 @@ interface Settings {
   medplum_server_url: string; // e.g., 'http://localhost:8103'
   medplum_client_id: string;  // OAuth client ID from Medplum
   medplum_auto_sync: boolean; // Auto-sync encounters after recording
+  // Whisper server (remote transcription)
+  whisper_mode: 'local' | 'remote'; // 'local' uses local model, 'remote' uses server
+  whisper_server_url: string; // e.g., 'http://192.168.50.149:8000'
+  whisper_server_model: string; // e.g., 'large-v3-turbo'
 }
 ```
 
@@ -455,7 +545,6 @@ interface Settings {
   - Whisper: `ggml-{tiny,base,small,medium,large}.bin`
   - Speaker: `speaker_embedding.onnx` (~26MB)
   - Enhancement: `gtcrn_simple.onnx` (~523KB)
-  - Emotion: `wav2small.onnx` (~120KB)
   - YAMNet: `yamnet.onnx` (~3MB) - for cough detection
 - **Settings**: `~/.transcriptionapp/config.json`
 - **Medplum Auth**: `~/.transcriptionapp/medplum_auth.json` - persisted OAuth tokens
@@ -684,3 +773,4 @@ Reusable React hooks for state management:
 | `useSettings` | Settings management with pending changes tracking |
 | `useDevices` | Audio input device listing and selection |
 | `useOllamaConnection` | Ollama server connection status and testing |
+| `useWhisperModels` | Whisper model listing, downloading, and testing |

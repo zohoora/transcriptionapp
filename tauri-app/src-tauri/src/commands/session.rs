@@ -71,12 +71,6 @@ pub async fn start_session(
         None
     };
 
-    let emotion_model_path = if config.emotion_enabled {
-        config.get_emotion_model_path().ok()
-    } else {
-        None
-    };
-
     let yamnet_model_path = if config.biomarkers_enabled {
         config.get_yamnet_model_path().ok()
     } else {
@@ -127,14 +121,15 @@ pub async fn start_session(
         max_speakers: config.max_speakers,
         enhancement_enabled: config.enhancement_enabled,
         enhancement_model_path,
-        emotion_enabled: config.emotion_enabled,
-        emotion_model_path,
         biomarkers_enabled: config.biomarkers_enabled,
         yamnet_model_path,
         audio_output_path,
         preprocessing_enabled: config.preprocessing_enabled,
         preprocessing_highpass_hz: config.preprocessing_highpass_hz,
         preprocessing_agc_target_rms: config.preprocessing_agc_target_rms,
+        whisper_mode: config.whisper_mode.clone(),
+        whisper_server_url: config.whisper_server_url.clone(),
+        whisper_server_model: config.whisper_server_model.clone(),
     };
 
     // Create message channel

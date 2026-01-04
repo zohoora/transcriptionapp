@@ -2,8 +2,8 @@
 
 use crate::checklist::{self, ChecklistResult};
 use crate::config::{Config, ModelStatus};
-use crate::models::{self, ModelInfo, WhisperModel};
-use crate::{activity_log};
+use crate::models::{self, ModelInfo, WhisperModel, WhisperModelInfo};
+use crate::activity_log;
 use tracing::{error, info};
 
 /// Check if the Whisper model is available
@@ -148,14 +148,56 @@ pub async fn download_enhancement_model() -> Result<String, String> {
     download_model_async("enhancement", models::ensure_enhancement_model).await
 }
 
-/// Download the emotion detection model
-#[tauri::command]
-pub async fn download_emotion_model() -> Result<String, String> {
-    download_model_async("emotion", models::ensure_emotion_model).await
-}
-
 /// Download the YAMNet audio classification model (for cough detection)
 #[tauri::command]
 pub async fn download_yamnet_model() -> Result<String, String> {
     download_model_async("YAMNet", models::ensure_yamnet_model).await
+}
+
+/// Get all available Whisper models with their download status
+#[tauri::command]
+pub fn get_whisper_models() -> Vec<WhisperModelInfo> {
+    models::get_whisper_models_with_status()
+}
+
+/// Download a specific Whisper model by ID
+#[tauri::command]
+pub async fn download_whisper_model_by_id(model_id: String) -> Result<String, String> {
+    let model_id_clone = model_id.clone();
+    info!("Starting download for model: {}", model_id);
+
+    let result = tokio::task::spawn_blocking(move || {
+        models::download_whisper_model_by_id(&model_id_clone)
+    })
+    .await
+    .map_err(|e| format!("Task failed: {}", e))?;
+
+    match result {
+        Ok(path) => {
+            info!("Model {} downloaded to: {:?}", model_id, path);
+            Ok(path.to_string_lossy().to_string())
+        }
+        Err(e) => {
+            error!("Failed to download model {}: {}", model_id, e);
+            Err(e.to_string())
+        }
+    }
+}
+
+/// Test a Whisper model to verify it's valid
+#[tauri::command]
+pub async fn test_whisper_model(model_id: String) -> Result<bool, String> {
+    let result = tokio::task::spawn_blocking(move || {
+        models::test_whisper_model(&model_id)
+    })
+    .await
+    .map_err(|e| format!("Task failed: {}", e))?;
+
+    result.map_err(|e| e.to_string())
+}
+
+/// Check if a specific Whisper model is downloaded
+#[tauri::command]
+pub fn is_model_downloaded(model_id: String) -> bool {
+    models::is_whisper_model_downloaded(&model_id)
 }

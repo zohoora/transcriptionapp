@@ -8,6 +8,7 @@ mod models;
 mod ollama;
 mod session;
 mod settings;
+mod whisper_server;
 
 // Re-export all commands for lib.rs registration
 pub use audio::*;
@@ -16,6 +17,7 @@ pub use models::*;
 pub use ollama::*;
 pub use session::*;
 pub use settings::*;
+pub use whisper_server::*;
 
 use crate::medplum::MedplumClient;
 use crate::pipeline::PipelineHandle;

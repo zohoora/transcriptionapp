@@ -18,3 +18,6 @@ export type { UseDevicesResult } from './useDevices';
 
 export { useOllamaConnection } from './useOllamaConnection';
 export type { UseOllamaConnectionResult } from './useOllamaConnection';
+
+export { useWhisperModels } from './useWhisperModels';
+export type { UseWhisperModelsResult, DownloadProgress } from './useWhisperModels';

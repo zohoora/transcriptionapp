@@ -328,7 +328,6 @@ describe('ReviewMode', () => {
       turn_count: 10,
       vitality_session_mean: 0.7,
       stability_session_mean: 0.8,
-      latest_emotions: [],
       speaker_metrics: [
         { speaker_id: 'SPEAKER_1', turn_count: 5, talk_time_ms: 60000 },
         { speaker_id: 'SPEAKER_2', turn_count: 5, talk_time_ms: 55000 },

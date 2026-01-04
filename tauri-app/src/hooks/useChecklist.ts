@@ -65,8 +65,6 @@ export function useChecklist(): UseChecklistResult {
           command = 'download_speaker_model';
         } else if (modelName === 'gtcrn_simple') {
           command = 'download_enhancement_model';
-        } else if (modelName === 'wav2small') {
-          command = 'download_emotion_model';
         } else if (modelName === 'yamnet') {
           command = 'download_yamnet_model';
         } else {

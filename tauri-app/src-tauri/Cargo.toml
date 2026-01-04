@@ -64,7 +64,7 @@ ndarray = "0.16"
 tokio = { version = "1", features = ["rt-multi-thread", "sync", "macros"] }
 
 # HTTP client for model downloads and Ollama API
-reqwest = { version = "0.12", features = ["blocking", "stream", "json"] }
+reqwest = { version = "0.12", features = ["blocking", "stream", "json", "multipart"] }
 futures-util = "0.3"
 
 # Medplum OAuth PKCE support
@@ -107,11 +107,9 @@ custom-protocol = ["tauri/custom-protocol"]
 diarization = ["ort", "realfft"]
 # Speech enhancement (GTCRN denoising)
 enhancement = ["ort", "rustfft"]
-# Speech emotion detection (wav2small)
-emotion = ["ort"]
 # Biomarker analysis (YAMNet cough detection, vitality, stability)
 biomarkers = ["ort", "rustfft"]
-default = ["diarization", "enhancement", "emotion", "biomarkers"]
+default = ["diarization", "enhancement", "biomarkers"]
 
 [[bench]]
 name = "audio_benchmarks"

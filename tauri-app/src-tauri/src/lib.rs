@@ -14,7 +14,6 @@
 //! - [`vad`] - Voice Activity Detection and audio gating
 //! - [`diarization`] - Speaker diarization using ONNX embeddings
 //! - [`enhancement`] - Speech enhancement/denoising using GTCRN
-//! - [`emotion`] - Speech emotion detection using wav2small
 //! - [`preprocessing`] - Audio preprocessing (DC removal, high-pass filter, AGC)
 //! - [`medplum`] - Medplum EMR integration for encounter management
 //!
@@ -37,7 +36,6 @@ pub mod checklist;
 mod commands;
 pub mod config;
 pub mod diarization;
-pub mod emotion;
 pub mod enhancement;
 pub mod medplum;
 pub mod models;
@@ -55,6 +53,7 @@ mod stress_tests;
 pub mod session;
 pub mod transcription;
 pub mod vad;
+pub mod whisper_server;
 
 use commands::PipelineState;
 use std::sync::{Arc, Mutex};
@@ -68,8 +67,71 @@ const APP_VERSION: &str = env!("CARGO_PKG_VERSION");
 /// Timeout for graceful pipeline shutdown on window close
 const SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(3);
 
+/// Set up ONNX Runtime path from bundled location if not already set
+/// This allows the app to work without requiring ORT_DYLIB_PATH to be set externally
+fn setup_bundled_ort() {
+    // If ORT_DYLIB_PATH is already set, use it
+    if std::env::var("ORT_DYLIB_PATH").is_ok() {
+        return;
+    }
+
+    // Try to find bundled ONNX Runtime in the app bundle
+    // On macOS: MyApp.app/Contents/Frameworks/libonnxruntime.*.dylib
+    if let Ok(exe_path) = std::env::current_exe() {
+        // Navigate from Contents/MacOS/app-binary to Contents/Frameworks/
+        if let Some(macos_dir) = exe_path.parent() {
+            if let Some(contents_dir) = macos_dir.parent() {
+                let frameworks_dir = contents_dir.join("Frameworks");
+
+                // Look for libonnxruntime.*.dylib
+                if frameworks_dir.exists() {
+                    if let Ok(entries) = std::fs::read_dir(&frameworks_dir) {
+                        for entry in entries.flatten() {
+                            let path = entry.path();
+                            if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+                                if name.starts_with("libonnxruntime.") && name.ends_with(".dylib") {
+                                    let path_str = path.to_string_lossy().to_string();
+                                    std::env::set_var("ORT_DYLIB_PATH", &path_str);
+                                    eprintln!("Using bundled ONNX Runtime: {}", path_str);
+                                    return;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Fallback: try the default venv location
+    let home = dirs::home_dir().unwrap_or_default();
+    let venv_path = home.join(".transcriptionapp/ort-venv");
+    if venv_path.exists() {
+        // Find the dylib in the venv
+        if let Ok(output) = std::process::Command::new("find")
+            .args([
+                venv_path.to_string_lossy().as_ref(),
+                "-name",
+                "libonnxruntime.*.dylib",
+            ])
+            .output()
+        {
+            if let Ok(path) = String::from_utf8(output.stdout) {
+                let path = path.trim();
+                if !path.is_empty() && std::path::Path::new(path).exists() {
+                    std::env::set_var("ORT_DYLIB_PATH", path);
+                    eprintln!("Using ORT from venv: {}", path);
+                }
+            }
+        }
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // Set up ONNX Runtime path before anything else
+    setup_bundled_ort();
+
     // Initialize activity logging (file + console)
     if let Err(e) = activity_log::init_logging() {
         eprintln!("Failed to initialize logging: {}", e);
@@ -141,10 +203,13 @@ pub fn run() {
             commands::download_whisper_model,
             commands::download_speaker_model,
             commands::download_enhancement_model,
-            commands::download_emotion_model,
             commands::download_yamnet_model,
             commands::ensure_models,
             commands::run_checklist,
+            commands::get_whisper_models,
+            commands::download_whisper_model_by_id,
+            commands::test_whisper_model,
+            commands::is_model_downloaded,
             commands::check_ollama_status,
             commands::list_ollama_models,
             commands::generate_soap_note,
@@ -164,6 +229,9 @@ pub fn run() {
             commands::medplum_sync_encounter,
             commands::medplum_quick_sync,
             commands::medplum_check_connection,
+            // Whisper server commands (remote transcription)
+            commands::check_whisper_server_status,
+            commands::list_whisper_server_models,
         ])
         .on_window_event(|window, event| {
             if let WindowEvent::CloseRequested { .. } = event {

@@ -290,6 +290,7 @@ impl MedplumClient {
     /// Create a new Medplum client
     pub fn new(base_url: &str, client_id: &str) -> Result<Self, MedplumError> {
         let cleaned_url = base_url.trim_end_matches('/');
+        info!("Creating MedplumClient with base_url: {}", cleaned_url);
 
         // Validate URL
         let parsed = url::Url::parse(cleaned_url)
@@ -392,6 +393,8 @@ impl MedplumClient {
             urlencoding::encode(&pkce.code_challenge),
             urlencoding::encode(&pkce.state)
         );
+
+        info!("Generated OAuth URL: {}", auth_url);
 
         // Store PKCE data for later use
         *self.pending_pkce.write().await = Some(pkce);

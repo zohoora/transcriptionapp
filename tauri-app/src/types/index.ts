@@ -36,6 +36,19 @@ export interface ModelStatus {
   error: string | null;
 }
 
+export interface WhisperModelInfo {
+  id: string;
+  label: string;
+  category: string;
+  filename: string;
+  url: string;
+  size_bytes: number;
+  description: string;
+  downloaded: boolean;
+  recommended: boolean;
+  english_only: boolean;
+}
+
 export interface Settings {
   whisper_model: string;
   language: string;
@@ -52,6 +65,10 @@ export interface Settings {
   medplum_server_url: string;
   medplum_client_id: string;
   medplum_auto_sync: boolean;
+  // Whisper server settings (for remote transcription)
+  whisper_mode: 'local' | 'remote';
+  whisper_server_url: string;
+  whisper_server_model: string;
 }
 
 // Checklist types
@@ -154,6 +171,13 @@ export interface AudioQualitySnapshot {
 
 // Ollama / SOAP Note types
 export interface OllamaStatus {
+  connected: boolean;
+  available_models: string[];
+  error: string | null;
+}
+
+// Whisper Server types (for remote transcription)
+export interface WhisperServerStatus {
   connected: boolean;
   available_models: string[];
   error: string | null;

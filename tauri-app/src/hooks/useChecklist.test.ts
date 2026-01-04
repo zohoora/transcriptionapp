@@ -126,18 +126,6 @@ describe('useChecklist', () => {
     expect(mockInvoke).toHaveBeenCalledWith('download_enhancement_model');
   });
 
-  it('downloads emotion model', async () => {
-    mockInvoke.mockResolvedValue('/path/to/wav2small.onnx');
-
-    const { result } = renderHook(() => useChecklist());
-
-    await act(async () => {
-      await result.current.handleDownloadModel('wav2small');
-    });
-
-    expect(mockInvoke).toHaveBeenCalledWith('download_emotion_model');
-  });
-
   it('downloads yamnet model', async () => {
     mockInvoke.mockResolvedValue('/path/to/yamnet.onnx');
 
