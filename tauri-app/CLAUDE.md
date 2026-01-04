@@ -176,7 +176,7 @@ Integration with Ollama LLM for generating structured SOAP (Subjective, Objectiv
 
 **Prompt Format**
 ```
-/no_think You are a medical scribe assistant...
+You are a medical scribe assistant. Based on the following clinical transcript, generate a SOAP note.
 
 TRANSCRIPT:
 [transcript text]
@@ -197,7 +197,10 @@ Rules:
 - Only include information explicitly mentioned or directly inferable
 - Use "No information available" if a section has no relevant content
 - Consider audio events (coughs, laughs, etc.) when relevant to the clinical picture
+- Output ONLY the JSON object, no markdown, no explanation
 ```
+
+Note: The prompt is model-agnostic (works with any Ollama model). The response parser handles Qwen's `<think>` blocks and markdown code fences gracefully.
 
 **Configuration**
 - `ollama_server_url`: Ollama server address (default: `http://localhost:11434`)

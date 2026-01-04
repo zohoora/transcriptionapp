@@ -369,7 +369,7 @@ fn build_soap_prompt(transcript: &str, audio_events: Option<&[AudioEvent]>) -> S
     };
 
     format!(
-        r#"/no_think You are a medical scribe assistant. Based on the following clinical transcript, generate a SOAP note.
+        r#"You are a medical scribe assistant. Based on the following clinical transcript, generate a SOAP note.
 
 TRANSCRIPT:
 {}{}
@@ -402,7 +402,7 @@ fn build_soap_retry_prompt(
         .unwrap_or_default();
 
     format!(
-        r#"/no_think IMPORTANT: You MUST respond with ONLY a JSON object. No conversation, no questions, no explanations.
+        r#"IMPORTANT: You MUST respond with ONLY a JSON object. No conversation, no questions, no explanations.
 
 Even if the transcript is short, unclear, or incomplete, you MUST still output valid JSON.
 
