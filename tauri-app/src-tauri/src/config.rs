@@ -31,11 +31,11 @@ pub struct Settings {
 }
 
 fn default_ollama_url() -> String {
-    "http://localhost:11434".to_string()
+    "http://192.168.50.149:11434".to_string()
 }
 
 fn default_ollama_model() -> String {
-    "qwen3:4b".to_string()
+    "gpt-oss:20b".to_string()
 }
 
 fn default_medplum_url() -> String {
@@ -653,12 +653,12 @@ mod tests {
     #[test]
     fn test_ollama_defaults() {
         let config = Config::default();
-        assert_eq!(config.ollama_server_url, "http://localhost:11434");
-        assert_eq!(config.ollama_model, "qwen3:4b");
+        assert_eq!(config.ollama_server_url, "http://192.168.50.149:11434");
+        assert_eq!(config.ollama_model, "gpt-oss:20b");
 
         let settings = Settings::default();
-        assert_eq!(settings.ollama_server_url, "http://localhost:11434");
-        assert_eq!(settings.ollama_model, "qwen3:4b");
+        assert_eq!(settings.ollama_server_url, "http://192.168.50.149:11434");
+        assert_eq!(settings.ollama_model, "gpt-oss:20b");
     }
 
     #[test]
