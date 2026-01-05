@@ -312,7 +312,16 @@ Content-Type: multipart/form-data
 file=@audio.wav
 model=large-v3-turbo
 language=en
+temperature=0.0              # Deterministic output
+no_speech_threshold=0.8      # Higher threshold to filter silence
+condition_on_previous_text=false  # Prevents repetitive phrases
 ```
+
+**Anti-hallucination Parameters**
+Remote Whisper transcription includes parameters to reduce hallucinations:
+- `temperature: 0.0` - Deterministic output, reduces random text
+- `no_speech_threshold: 0.8` - Higher than default (0.6) to better filter silence
+- `condition_on_previous_text: false` - Prevents repetitive phrases like "Thank you" or "before before"
 
 **Server Deployment**
 faster-whisper-server (Speaches) via Docker:

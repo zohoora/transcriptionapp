@@ -3216,6 +3216,7 @@ body {
   padding: 16px;
   gap: 24px;
   flex: 1;
+  position: relative;
 }
 
 /* Recording Indicator */
@@ -3469,6 +3470,25 @@ body {
 .summary-quality.quality-poor {
   background: rgba(220, 38, 38, 0.15);
   color: var(--accent-recording);
+}
+
+.summary-model {
+  font-size: 11px;
+  color: var(--text-secondary);
+  margin-left: auto;
+  opacity: 0.8;
+}
+
+/* Model Indicator (Recording Mode) */
+.model-indicator {
+  position: absolute;
+  bottom: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 11px;
+  color: var(--text-secondary);
+  opacity: 0.7;
+  white-space: nowrap;
 }
 
 /* Review Section Headers */

@@ -169,7 +169,11 @@ impl WhisperServerClient {
         let mut form = reqwest::multipart::Form::new()
             .part("file", file_part)
             .text("model", self.model.clone())
-            .text("response_format", "json");
+            .text("response_format", "json")
+            // Anti-hallucination parameters
+            .text("temperature", "0.0") // Deterministic output, reduces hallucination
+            .text("no_speech_threshold", "0.8") // Higher threshold to filter silence (default 0.6)
+            .text("condition_on_previous_text", "false"); // Prevents repetitive phrases
 
         // Add language if not auto-detect
         if language != "auto" && !language.is_empty() {

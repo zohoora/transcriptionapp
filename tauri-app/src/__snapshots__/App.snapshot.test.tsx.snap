@@ -114,6 +114,14 @@ exports[`App Snapshots > renders completed state correctly 1`] = `
       >
         Unknown
       </span>
+      <span
+        class="summary-model"
+        title="Transcription: Local"
+      >
+        💻
+         
+        small
+      </span>
     </div>
     <section
       class="review-transcript-section"
@@ -614,6 +622,13 @@ exports[`App Snapshots > renders recording state correctly 1`] = `
     >
       Show Transcript
     </button>
+    <div
+      class="model-indicator"
+    >
+      💻
+       
+      small
+    </div>
   </div>
 </div>
 `;
@@ -764,6 +779,13 @@ exports[`App Snapshots > renders stopping state correctly 1`] = `
     >
       Show Transcript
     </button>
+    <div
+      class="model-indicator"
+    >
+      💻
+       
+      small
+    </div>
   </div>
 </div>
 `;
@@ -928,6 +950,13 @@ This is the second paragraph.
       >
         Still speaking...
       </div>
+    </div>
+    <div
+      class="model-indicator"
+    >
+      💻
+       
+      small
     </div>
   </div>
 </div>

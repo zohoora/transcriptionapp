@@ -28,6 +28,10 @@ interface ReviewModeProps {
   // Biomarkers / Insights
   biomarkers: BiomarkerUpdate | null;
 
+  // Transcription mode info
+  whisperMode: 'local' | 'remote';
+  whisperModel: string;
+
   // Sync
   authState: AuthState;
   isSyncing: boolean;
@@ -86,6 +90,8 @@ export const ReviewMode = memo(function ReviewMode({
   ollamaConnected,
   onGenerateSoap,
   biomarkers,
+  whisperMode,
+  whisperModel,
   authState,
   isSyncing,
   syncSuccess,
@@ -130,6 +136,9 @@ export const ReviewMode = memo(function ReviewMode({
         <span className="summary-label">Complete</span>
         <span className="summary-duration">{formatDuration(elapsedMs)}</span>
         <span className={`summary-quality ${qualityBadge.className}`}>{qualityBadge.label}</span>
+        <span className="summary-model" title={`Transcription: ${whisperMode === 'remote' ? 'Remote' : 'Local'}`}>
+          {whisperMode === 'remote' ? '🌐' : '💻'} {whisperModel}
+        </span>
       </div>
 
       {/* Transcript Section */}

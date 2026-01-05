@@ -331,6 +331,10 @@ function App() {
           biomarkers={biomarkers}
           transcriptText={transcript.finalized_text}
           draftText={transcript.draft_text}
+          whisperMode={pendingSettings?.whisper_mode || 'local'}
+          whisperModel={pendingSettings?.whisper_mode === 'remote'
+            ? pendingSettings?.whisper_server_model || 'unknown'
+            : pendingSettings?.model || 'unknown'}
           isStopping={isStopping}
           onStop={handleStop}
         />
@@ -349,6 +353,10 @@ function App() {
           ollamaConnected={ollamaStatus?.connected || false}
           onGenerateSoap={handleGenerateSoap}
           biomarkers={biomarkers}
+          whisperMode={pendingSettings?.whisper_mode || 'local'}
+          whisperModel={pendingSettings?.whisper_mode === 'remote'
+            ? pendingSettings?.whisper_server_model || 'unknown'
+            : pendingSettings?.model || 'unknown'}
           authState={authState}
           isSyncing={isSyncing}
           syncSuccess={syncSuccess}

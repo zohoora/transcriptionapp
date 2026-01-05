@@ -15,6 +15,10 @@ interface RecordingModeProps {
   transcriptText: string;
   draftText: string | null;
 
+  // Transcription mode info
+  whisperMode: 'local' | 'remote';
+  whisperModel: string;
+
   // State
   isStopping: boolean;
 
@@ -58,6 +62,8 @@ export const RecordingMode = memo(function RecordingMode({
   biomarkers: _biomarkers, // Kept for potential future use (audio events now sent to LLM)
   transcriptText,
   draftText,
+  whisperMode,
+  whisperModel,
   isStopping,
   onStop,
 }: RecordingModeProps) {
@@ -148,6 +154,11 @@ export const RecordingMode = memo(function RecordingMode({
           )}
         </div>
       )}
+
+      {/* Model indicator */}
+      <div className="model-indicator">
+        {whisperMode === 'remote' ? '🌐' : '💻'} {whisperModel}
+      </div>
     </div>
   );
 });

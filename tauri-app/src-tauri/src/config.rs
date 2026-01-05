@@ -109,8 +109,17 @@ impl std::fmt::Display for SettingsValidationError {
 }
 
 impl Settings {
-    /// Valid whisper model names
-    const VALID_MODELS: &'static [&'static str] = &["tiny", "base", "small", "medium", "large"];
+    /// Valid whisper model names (for local mode)
+    const VALID_MODELS: &'static [&'static str] = &[
+        // Standard models
+        "tiny", "tiny.en", "base", "base.en", "small", "small.en", "medium", "medium.en",
+        // Large models
+        "large", "large-v2", "large-v3", "large-v3-turbo",
+        // Quantized models
+        "large-v3-q5_0", "large-v3-turbo-q5_0",
+        // Distil-Whisper models
+        "distil-large-v3", "distil-large-v3.en",
+    ];
 
     /// Valid output formats
     const VALID_OUTPUT_FORMATS: &'static [&'static str] = &["paragraphs", "single_paragraph"];
@@ -119,8 +128,8 @@ impl Settings {
     pub fn validate(&self) -> Vec<SettingsValidationError> {
         let mut errors = Vec::new();
 
-        // Validate whisper model
-        if !Self::VALID_MODELS.contains(&self.whisper_model.as_str()) {
+        // Validate whisper model (only for local mode - remote servers have their own models)
+        if self.whisper_mode != "remote" && !Self::VALID_MODELS.contains(&self.whisper_model.as_str()) {
             errors.push(SettingsValidationError {
                 field: "whisper_model".to_string(),
                 message: format!(
