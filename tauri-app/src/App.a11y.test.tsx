@@ -8,8 +8,6 @@ import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import {
   mockDevices,
-  mockModelStatusAvailable,
-  mockModelStatusUnavailable,
   mockSettings,
   createListenMock,
 } from './test/mocks';
@@ -24,10 +22,8 @@ function createStandardMock(overrides: Record<string, unknown> = {}) {
   return (command: string) => {
     const responses: Record<string, unknown> = {
       list_input_devices: mockDevices,
-      check_model_status: mockModelStatusAvailable,
       get_settings: mockSettings,
       set_settings: mockSettings,
-      run_checklist: { checks: [], all_passed: true, can_start: true, summary: 'Ready' },
       // Medplum/Ollama commands used on init
       medplum_try_restore_session: undefined,
       check_ollama_status: { connected: false, available_models: [], error: null },
@@ -135,20 +131,6 @@ describe('Accessibility Tests', () => {
     });
 
     await findByText('Microphone access denied');
-
-    const results = await axe(container);
-    expect(results).toHaveNoViolations();
-  });
-
-  it('model unavailable warning has no accessibility violations', async () => {
-    mockInvoke.mockImplementation(createStandardMock({
-      check_model_status: mockModelStatusUnavailable,
-    }));
-
-    const { container, findByText } = render(<App />);
-    await waitFor(() => {
-      expect(screen.getByText(/Model not found/)).toBeInTheDocument();
-    }, { timeout: 3000 });
 
     const results = await axe(container);
     expect(results).toHaveNoViolations();

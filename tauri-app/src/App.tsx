@@ -11,7 +11,6 @@ import {
 } from './components';
 import {
   useSessionState,
-  useChecklist,
   useSoapNote,
   useMedplumSync,
   useSettings,
@@ -45,17 +44,6 @@ function App() {
     handleStop,
     handleReset: sessionReset,
   } = useSessionState();
-
-  // Checklist state from hook
-  const {
-    checklistResult,
-    checklistRunning,
-    downloadingModel,
-    modelStatus,
-    setModelStatus,
-    runChecklist,
-    handleDownloadModel,
-  } = useChecklist();
 
   // SOAP note generation from hook
   const {
@@ -187,15 +175,8 @@ function App() {
     const success = await saveSettings();
     if (success) {
       setShowSettings(false);
-      // Refresh model status after saving
-      try {
-        const modelResult = await invoke<typeof modelStatus>('check_model_status');
-        setModelStatus(modelResult);
-      } catch (e) {
-        console.error('Failed to refresh model status:', e);
-      }
     }
-  }, [saveSettings, setModelStatus]);
+  }, [saveSettings]);
 
   // Test Ollama connection
   const handleTestOllama = useCallback(async () => {
@@ -313,7 +294,6 @@ function App() {
 
   // Derived state
   const isStopping = status.state === 'stopping';
-  const canStart = isIdle && modelStatus?.available && checklistResult?.can_start;
 
   // Get status dot class for header
   const getStatusDotClass = (): string => {
@@ -338,16 +318,8 @@ function App() {
       {/* Mode-based content */}
       {uiMode === 'ready' && (
         <ReadyMode
-          modelStatus={modelStatus}
-          modelName={pendingSettings?.model || 'small'}
-          checklistRunning={checklistRunning}
-          checklistResult={checklistResult}
-          onRunChecklist={runChecklist}
-          onDownloadModel={handleDownloadModel}
-          downloadingModel={downloadingModel}
           audioLevel={audioQuality ? Math.min(100, (audioQuality.rms_db + 60) / 0.6) : 0}
           errorMessage={status.state === 'error' ? status.error_message : null}
-          canStart={!!canStart}
           onStart={handleStart}
         />
       )}

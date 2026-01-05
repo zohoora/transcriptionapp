@@ -6,8 +6,6 @@ import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import {
   mockDevices,
-  mockModelStatusAvailable,
-  mockModelStatusUnavailable,
   mockSettings,
   createListenMock,
 } from './test/mocks';
@@ -20,9 +18,7 @@ function createStandardMock(overrides: Record<string, unknown> = {}) {
   return (command: string) => {
     const responses: Record<string, unknown> = {
       list_input_devices: mockDevices,
-      check_model_status: mockModelStatusAvailable,
       get_settings: mockSettings,
-      run_checklist: { checks: [], all_passed: true, can_start: true, summary: 'Ready' },
       // Medplum/Ollama commands used on init
       medplum_try_restore_session: undefined,
       check_ollama_status: { connected: false, available_models: [], error: null },
@@ -59,19 +55,6 @@ describe('App Snapshots', () => {
 
     const { container } = render(<App />);
     await waitForAppReady();
-
-    expect(container.firstChild).toMatchSnapshot();
-  });
-
-  it('renders model unavailable warning correctly', async () => {
-    mockInvoke.mockImplementation(createStandardMock({
-      check_model_status: mockModelStatusUnavailable,
-    }));
-
-    const { container } = render(<App />);
-    await waitFor(() => {
-      expect(screen.getByText(/Model not found/)).toBeInTheDocument();
-    }, { timeout: 3000 });
 
     expect(container.firstChild).toMatchSnapshot();
   });

@@ -7,8 +7,6 @@ import { listen } from '@tauri-apps/api/event';
 import { writeText } from '@tauri-apps/plugin-clipboard-manager';
 import {
   mockDevices,
-  mockModelStatusAvailable,
-  mockModelStatusUnavailable,
   mockIdleStatus,
   mockRecordingStatus,
   mockCompletedStatus,
@@ -32,13 +30,11 @@ function createStandardMock(overrides: Record<string, unknown> = {}) {
   return (command: string) => {
     const responses: Record<string, unknown> = {
       list_input_devices: mockDevices,
-      check_model_status: mockModelStatusAvailable,
       get_settings: mockSettings,
       start_session: undefined,
       stop_session: undefined,
       reset_session: undefined,
       set_settings: mockSettings,
-      run_checklist: { checks: [], all_passed: true, can_start: true, summary: 'Ready' },
       // Medplum/Ollama commands used on init
       medplum_try_restore_session: undefined,
       check_ollama_status: { connected: false, available_models: [], error: null },
@@ -75,19 +71,18 @@ describe('App', () => {
   });
 
   describe('initialization', () => {
-    it('loads devices, settings, and runs checklist on mount', async () => {
+    it('loads devices and settings on mount', async () => {
       mockInvoke.mockImplementation(createStandardMock());
 
       render(<App />);
 
       await waitFor(() => {
         expect(mockInvoke).toHaveBeenCalledWith('list_input_devices');
-        expect(mockInvoke).toHaveBeenCalledWith('run_checklist');
         expect(mockInvoke).toHaveBeenCalledWith('get_settings');
       });
     });
 
-    it('shows Start button with available model', async () => {
+    it('shows Start button', async () => {
       mockInvoke.mockImplementation(createStandardMock());
 
       render(<App />);
@@ -98,32 +93,6 @@ describe('App', () => {
       });
     });
 
-    it('shows warning when model is not available', async () => {
-      mockInvoke.mockImplementation(createStandardMock({
-        check_model_status: mockModelStatusUnavailable,
-      }));
-
-      render(<App />);
-      await waitForAppReady();
-
-      await waitFor(() => {
-        expect(screen.getByText('Model not found')).toBeInTheDocument();
-      });
-    });
-
-    it('disables record button when model is not available', async () => {
-      mockInvoke.mockImplementation(createStandardMock({
-        check_model_status: mockModelStatusUnavailable,
-      }));
-
-      render(<App />);
-      await waitForAppReady();
-
-      await waitFor(() => {
-        const recordButton = screen.getByRole('button', { name: /start/i });
-        expect(recordButton).toBeDisabled();
-      });
-    });
   });
 
   describe('settings drawer', () => {
@@ -718,9 +687,10 @@ describe('App', () => {
     it('handles initialization error gracefully', async () => {
       mockInvoke.mockImplementation((command: string) => {
         if (command === 'list_input_devices') return Promise.reject(new Error('No devices'));
-        if (command === 'check_model_status') return Promise.resolve(mockModelStatusAvailable);
         if (command === 'get_settings') return Promise.resolve(mockSettings);
-        if (command === 'run_checklist') return Promise.resolve({ checks: [], all_passed: true, can_start: true, summary: 'Ready' });
+        if (command === 'medplum_try_restore_session') return Promise.resolve(undefined);
+        if (command === 'check_ollama_status') return Promise.resolve({ connected: false, available_models: [], error: null });
+        if (command === 'medplum_check_connection') return Promise.resolve(false);
         return Promise.reject(new Error('Unknown command'));
       });
 
@@ -752,13 +722,7 @@ describe('formatTime', () => {
   // Test the timer display during recording
   it('shows timer during recording', async () => {
     const mockInvoke = vi.mocked(invoke);
-    mockInvoke.mockImplementation((command: string) => {
-      if (command === 'list_input_devices') return Promise.resolve(mockDevices);
-      if (command === 'check_model_status') return Promise.resolve(mockModelStatusAvailable);
-      if (command === 'get_settings') return Promise.resolve(mockSettings);
-      if (command === 'run_checklist') return Promise.resolve({ checks: [], all_passed: true, can_start: true, summary: 'Ready' });
-      return Promise.reject(new Error('Unknown command'));
-    });
+    mockInvoke.mockImplementation(createStandardMock());
 
     const listenHelper = createListenMock();
     const mockListen = vi.mocked(listen);
@@ -799,13 +763,7 @@ describe('Audio Quality', () => {
   });
 
   it('shows status bars during recording', async () => {
-    mockInvoke.mockImplementation((command: string) => {
-      if (command === 'list_input_devices') return Promise.resolve(mockDevices);
-      if (command === 'check_model_status') return Promise.resolve(mockModelStatusAvailable);
-      if (command === 'get_settings') return Promise.resolve(mockSettings);
-      if (command === 'run_checklist') return Promise.resolve({ checks: [], all_passed: true, can_start: true, summary: 'Ready' });
-      return Promise.reject(new Error('Unknown command'));
-    });
+    mockInvoke.mockImplementation(createStandardMock());
 
     render(<App />);
     await waitForAppReady();
@@ -823,13 +781,7 @@ describe('Audio Quality', () => {
   });
 
   it('shows "good" status bars for good audio quality', async () => {
-    mockInvoke.mockImplementation((command: string) => {
-      if (command === 'list_input_devices') return Promise.resolve(mockDevices);
-      if (command === 'check_model_status') return Promise.resolve(mockModelStatusAvailable);
-      if (command === 'get_settings') return Promise.resolve(mockSettings);
-      if (command === 'run_checklist') return Promise.resolve({ checks: [], all_passed: true, can_start: true, summary: 'Ready' });
-      return Promise.reject(new Error('Unknown command'));
-    });
+    mockInvoke.mockImplementation(createStandardMock());
 
     render(<App />);
     await waitForAppReady();
@@ -846,13 +798,7 @@ describe('Audio Quality', () => {
   });
 
   it('shows "fair" status bars for quiet audio', async () => {
-    mockInvoke.mockImplementation((command: string) => {
-      if (command === 'list_input_devices') return Promise.resolve(mockDevices);
-      if (command === 'check_model_status') return Promise.resolve(mockModelStatusAvailable);
-      if (command === 'get_settings') return Promise.resolve(mockSettings);
-      if (command === 'run_checklist') return Promise.resolve({ checks: [], all_passed: true, can_start: true, summary: 'Ready' });
-      return Promise.reject(new Error('Unknown command'));
-    });
+    mockInvoke.mockImplementation(createStandardMock());
 
     render(<App />);
     await waitForAppReady();
@@ -869,13 +815,7 @@ describe('Audio Quality', () => {
   });
 
   it('shows "poor" status bars for clipped audio', async () => {
-    mockInvoke.mockImplementation((command: string) => {
-      if (command === 'list_input_devices') return Promise.resolve(mockDevices);
-      if (command === 'check_model_status') return Promise.resolve(mockModelStatusAvailable);
-      if (command === 'get_settings') return Promise.resolve(mockSettings);
-      if (command === 'run_checklist') return Promise.resolve({ checks: [], all_passed: true, can_start: true, summary: 'Ready' });
-      return Promise.reject(new Error('Unknown command'));
-    });
+    mockInvoke.mockImplementation(createStandardMock());
 
     render(<App />);
     await waitForAppReady();
@@ -893,13 +833,7 @@ describe('Audio Quality', () => {
 
   it('shows details popover when status bars are clicked', async () => {
     const user = userEvent.setup();
-    mockInvoke.mockImplementation((command: string) => {
-      if (command === 'list_input_devices') return Promise.resolve(mockDevices);
-      if (command === 'check_model_status') return Promise.resolve(mockModelStatusAvailable);
-      if (command === 'get_settings') return Promise.resolve(mockSettings);
-      if (command === 'run_checklist') return Promise.resolve({ checks: [], all_passed: true, can_start: true, summary: 'Ready' });
-      return Promise.reject(new Error('Unknown command'));
-    });
+    mockInvoke.mockImplementation(createStandardMock());
 
     render(<App />);
     await waitForAppReady();
@@ -926,13 +860,7 @@ describe('Audio Quality', () => {
 
   it('shows clips count in popover when audio is clipped', async () => {
     const user = userEvent.setup();
-    mockInvoke.mockImplementation((command: string) => {
-      if (command === 'list_input_devices') return Promise.resolve(mockDevices);
-      if (command === 'check_model_status') return Promise.resolve(mockModelStatusAvailable);
-      if (command === 'get_settings') return Promise.resolve(mockSettings);
-      if (command === 'run_checklist') return Promise.resolve({ checks: [], all_passed: true, can_start: true, summary: 'Ready' });
-      return Promise.reject(new Error('Unknown command'));
-    });
+    mockInvoke.mockImplementation(createStandardMock());
 
     render(<App />);
     await waitForAppReady();
@@ -958,13 +886,7 @@ describe('Audio Quality', () => {
 
   it('displays Level and SNR metrics in popover', async () => {
     const user = userEvent.setup();
-    mockInvoke.mockImplementation((command: string) => {
-      if (command === 'list_input_devices') return Promise.resolve(mockDevices);
-      if (command === 'check_model_status') return Promise.resolve(mockModelStatusAvailable);
-      if (command === 'get_settings') return Promise.resolve(mockSettings);
-      if (command === 'run_checklist') return Promise.resolve({ checks: [], all_passed: true, can_start: true, summary: 'Ready' });
-      return Promise.reject(new Error('Unknown command'));
-    });
+    mockInvoke.mockImplementation(createStandardMock());
 
     render(<App />);
     await waitForAppReady();
@@ -992,13 +914,7 @@ describe('Audio Quality', () => {
 
   it('can toggle details popover', async () => {
     const user = userEvent.setup();
-    mockInvoke.mockImplementation((command: string) => {
-      if (command === 'list_input_devices') return Promise.resolve(mockDevices);
-      if (command === 'check_model_status') return Promise.resolve(mockModelStatusAvailable);
-      if (command === 'get_settings') return Promise.resolve(mockSettings);
-      if (command === 'run_checklist') return Promise.resolve({ checks: [], all_passed: true, can_start: true, summary: 'Ready' });
-      return Promise.reject(new Error('Unknown command'));
-    });
+    mockInvoke.mockImplementation(createStandardMock());
 
     render(<App />);
     await waitForAppReady();
@@ -1030,100 +946,4 @@ describe('Audio Quality', () => {
   });
 });
 
-describe('Download Model', () => {
-  it('passes modelName argument when downloading Whisper model', async () => {
-    const mockInvoke = vi.mocked(invoke);
-    const downloadPromise = Promise.resolve();
-
-    mockInvoke.mockImplementation((command: string, args?: Record<string, unknown>) => {
-      if (command === 'list_input_devices') return Promise.resolve(mockDevices);
-      if (command === 'check_model_status') return Promise.resolve(mockModelStatusUnavailable);
-      if (command === 'get_settings') return Promise.resolve(mockSettings);
-      if (command === 'run_checklist') {
-        return Promise.resolve({
-          checks: [{
-            id: 'whisper_model',
-            name: 'Whisper Model',
-            status: 'fail',
-            message: 'Model not found',
-            action: { download_model: { model_name: 'small' } }
-          }],
-          all_passed: false,
-          can_start: false,
-          summary: 'Model missing'
-        });
-      }
-      if (command === 'download_whisper_model') {
-        // Verify the modelName argument is passed
-        expect(args).toEqual({ modelName: 'small' });
-        return downloadPromise;
-      }
-      return Promise.reject(new Error('Unknown command'));
-    });
-
-    const user = userEvent.setup();
-    render(<App />);
-    await waitForAppReady();
-
-    // Find and click the download button for the Whisper model
-    await waitFor(() => {
-      const downloadBtn = screen.getByRole('button', { name: /get/i });
-      expect(downloadBtn).toBeInTheDocument();
-    });
-
-    const downloadBtn = screen.getByRole('button', { name: /get/i });
-    await user.click(downloadBtn);
-
-    // Verify download_whisper_model was called with the correct argument
-    await waitFor(() => {
-      expect(mockInvoke).toHaveBeenCalledWith('download_whisper_model', { modelName: 'small' });
-    });
-  });
-
-  it('does not pass modelName for non-Whisper models', async () => {
-    const mockInvoke = vi.mocked(invoke);
-
-    mockInvoke.mockImplementation((command: string, args?: Record<string, unknown>) => {
-      if (command === 'list_input_devices') return Promise.resolve(mockDevices);
-      if (command === 'check_model_status') return Promise.resolve(mockModelStatusAvailable);
-      if (command === 'get_settings') return Promise.resolve(mockSettings);
-      if (command === 'run_checklist') {
-        return Promise.resolve({
-          checks: [{
-            id: 'speaker_model',
-            name: 'Speaker Model',
-            status: 'fail',
-            message: 'Model not found',
-            action: { download_model: { model_name: 'speaker_embedding' } }
-          }],
-          all_passed: false,
-          can_start: false,
-          summary: 'Model missing'
-        });
-      }
-      if (command === 'download_speaker_model') {
-        // Should be called without arguments
-        expect(args).toBeUndefined();
-        return Promise.resolve();
-      }
-      return Promise.reject(new Error('Unknown command'));
-    });
-
-    const user = userEvent.setup();
-    render(<App />);
-    await waitForAppReady();
-
-    await waitFor(() => {
-      const downloadBtn = screen.getByRole('button', { name: /get/i });
-      expect(downloadBtn).toBeInTheDocument();
-    });
-
-    const downloadBtn = screen.getByRole('button', { name: /get/i });
-    await user.click(downloadBtn);
-
-    // Verify download_speaker_model was called without arguments
-    await waitFor(() => {
-      expect(mockInvoke).toHaveBeenCalledWith('download_speaker_model');
-    });
-  });
-});
+// Download Model tests removed - checklist functionality was simplified
