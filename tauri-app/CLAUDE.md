@@ -263,6 +263,31 @@ YAMNet (biomarkers thread)
 
 ## Recent Changes (Jan 2025)
 
+### Model Indicator UI (Jan 5, 2025)
+Shows which transcription mode and model is being used during and after recording:
+- **RecordingMode**: Model indicator at bottom of screen (e.g., "🌐 large-v3-turbo" for remote, "💻 large-v3" for local)
+- **ReviewMode**: Model shown in session summary bar next to quality badge
+- Props: `whisperMode` ('local' | 'remote') and `whisperModel` (string)
+- Styles: `.model-indicator` (recording), `.summary-model` (review)
+
+### Remote Whisper Fixes (Jan 5, 2025)
+Fixed issues preventing remote Whisper mode from working:
+
+1. **VALID_MODELS list outdated** (`config.rs`):
+   - Extended from 5 models to all 17 Whisper models
+   - Includes: Standard (8), Large (4), Quantized (2), Distil-Whisper (2)
+   - Validation now skipped when `whisper_mode == "remote"`
+
+2. **start_session checked local model in remote mode** (`commands/session.rs`):
+   - Fixed to skip local model path validation when `whisper_mode == "remote"`
+   - Remote mode uses placeholder path since model lives on server
+
+3. **Anti-hallucination parameters** (`whisper_server.rs`):
+   - Added `temperature: 0.0` - Deterministic output
+   - Added `no_speech_threshold: 0.8` - Higher threshold (default 0.6)
+   - Added `condition_on_previous_text: false` - Prevents repetitive phrases
+   - Fixes "Thank you" and "before before before" hallucinations during silence
+
 ### Audio Events in SOAP Generation
 - Audio events (coughs, laughs, sneezes, throat clearing) now sent to LLM
 - `AudioEvent` type added to `ollama.rs` with timestamp, duration, confidence, label
@@ -783,3 +808,59 @@ Reusable React hooks for state management:
 | `useDevices` | Audio input device listing and selection |
 | `useOllamaConnection` | Ollama server connection status and testing |
 | `useWhisperModels` | Whisper model listing, downloading, and testing |
+
+## Current Project Status (Jan 5, 2025)
+
+### What's Working
+- **Local transcription**: Full Whisper integration with 17 model options
+- **Remote transcription**: faster-whisper-server support with anti-hallucination params
+- **SOAP note generation**: Ollama LLM integration with audio event context
+- **Medplum EMR sync**: OAuth + FHIR encounters, documents, audio storage
+- **History window**: Browse past encounters with transcript/SOAP/audio playback
+- **Biomarkers**: Vitality, stability, conversation dynamics, audio quality metrics
+- **Speaker diarization**: Online clustering for multi-speaker detection
+
+### External Services Configuration
+The app connects to external services on the local network:
+
+| Service | Default URL | Purpose |
+|---------|-------------|---------|
+| Whisper Server | `http://192.168.50.149:8001` | Remote transcription (faster-whisper) |
+| Ollama | `http://localhost:11434` | SOAP note generation |
+| Medplum | `http://localhost:8103` | EMR/FHIR storage |
+
+### Known Issues / Areas for Improvement
+1. **Hallucination in silence**: Anti-hallucination params added but not fully tested
+   - If still occurring, try increasing `no_speech_threshold` to 0.9
+   - Or adjust local VAD threshold in settings
+
+2. **Whisper server port**: Currently hardcoded to 8001 in user's config
+   - Server was moved from 8000 to 8001 during testing
+   - Port is configurable in Settings → Transcription → Remote Server URL
+
+### Quick Start for New AI Coders
+```bash
+# 1. Build the app
+pnpm tauri build --debug
+
+# 2. Bundle ONNX Runtime
+./scripts/bundle-ort.sh "src-tauri/target/debug/bundle/macos/Transcription App.app"
+
+# 3. Run the app
+open "src-tauri/target/debug/bundle/macos/Transcription App.app"
+
+# Run tests
+pnpm test:run          # Frontend (Vitest)
+cd src-tauri && cargo test  # Rust
+```
+
+### Key Files for Common Tasks
+
+| Task | Files to Modify |
+|------|-----------------|
+| Add new setting | `config.rs`, `types/index.ts`, `useSettings.ts`, `SettingsDrawer.tsx` |
+| Modify transcription | `pipeline.rs`, `whisper_server.rs` (remote), `transcription.rs` (local) |
+| Change SOAP prompt | `ollama.rs` (SOAP_PROMPT constant) |
+| Add new biomarker | `biomarkers/mod.rs`, `BiomarkersSection.tsx` |
+| Modify UI modes | `components/modes/` (ReadyMode, RecordingMode, ReviewMode) |
+| Add Tauri command | `commands/*.rs`, register in `lib.rs` |
