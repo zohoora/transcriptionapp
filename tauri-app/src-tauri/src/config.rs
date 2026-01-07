@@ -58,7 +58,7 @@ fn default_ollama_model() -> String {
 }
 
 fn default_medplum_url() -> String {
-    "http://localhost:8103".to_string()
+    "http://172.16.100.45:8103".to_string()
 }
 
 fn default_medplum_client_id() -> String {
@@ -690,13 +690,13 @@ mod tests {
     #[test]
     fn test_medplum_defaults() {
         let config = Config::default();
-        assert_eq!(config.medplum_server_url, "http://localhost:8103");
+        assert_eq!(config.medplum_server_url, "http://172.16.100.45:8103");
         // Client ID should be empty by default - must be configured by user
         assert!(config.medplum_client_id.is_empty());
         assert!(config.medplum_auto_sync);
 
         let settings = Settings::default();
-        assert_eq!(settings.medplum_server_url, "http://localhost:8103");
+        assert_eq!(settings.medplum_server_url, "http://172.16.100.45:8103");
         assert!(settings.medplum_client_id.is_empty());
         assert!(settings.medplum_auto_sync);
     }

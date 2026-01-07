@@ -12,8 +12,8 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 use tracing::info;
 
-/// Default Medplum server URL (local development)
-pub const DEFAULT_MEDPLUM_URL: &str = "http://localhost:8103";
+/// Default Medplum server URL
+pub const DEFAULT_MEDPLUM_URL: &str = "http://172.16.100.45:8103";
 
 /// Custom URI scheme for OAuth callback
 pub const OAUTH_REDIRECT_URI: &str = "fabricscribe://oauth/callback";
