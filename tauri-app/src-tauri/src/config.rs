@@ -38,11 +38,11 @@ pub struct Settings {
 }
 
 fn default_whisper_mode() -> String {
-    "local".to_string()
+    "remote".to_string()  // Always use remote Whisper server
 }
 
 fn default_whisper_server_url() -> String {
-    "http://192.168.50.149:8000".to_string()
+    "http://172.16.100.45:8001".to_string()
 }
 
 fn default_whisper_server_model() -> String {
@@ -50,7 +50,7 @@ fn default_whisper_server_model() -> String {
 }
 
 fn default_ollama_url() -> String {
-    "http://192.168.50.149:11434".to_string()
+    "http://172.16.100.45:11434".to_string()
 }
 
 fn default_ollama_model() -> String {
@@ -128,17 +128,7 @@ impl Settings {
     pub fn validate(&self) -> Vec<SettingsValidationError> {
         let mut errors = Vec::new();
 
-        // Validate whisper model (only for local mode - remote servers have their own models)
-        if self.whisper_mode != "remote" && !Self::VALID_MODELS.contains(&self.whisper_model.as_str()) {
-            errors.push(SettingsValidationError {
-                field: "whisper_model".to_string(),
-                message: format!(
-                    "Invalid model '{}'. Must be one of: {}",
-                    self.whisper_model,
-                    Self::VALID_MODELS.join(", ")
-                ),
-            });
-        }
+        // Note: Local whisper model validation removed - app uses remote server only
 
         // Validate VAD threshold (0.0 - 1.0)
         if !(0.0..=1.0).contains(&self.vad_threshold) {
@@ -674,7 +664,7 @@ mod tests {
             medplum_server_url: default_medplum_url(),
             medplum_client_id: String::new(),
             medplum_auto_sync: true,
-            whisper_mode: default_whisper_mode(),
+            whisper_mode: "remote".to_string(),  // Always remote
             whisper_server_url: default_whisper_server_url(),
             whisper_server_model: default_whisper_server_model(),
         };
@@ -689,11 +679,11 @@ mod tests {
     #[test]
     fn test_ollama_defaults() {
         let config = Config::default();
-        assert_eq!(config.ollama_server_url, "http://192.168.50.149:11434");
+        assert_eq!(config.ollama_server_url, "http://172.16.100.45:11434");
         assert_eq!(config.ollama_model, "gpt-oss:20b");
 
         let settings = Settings::default();
-        assert_eq!(settings.ollama_server_url, "http://192.168.50.149:11434");
+        assert_eq!(settings.ollama_server_url, "http://172.16.100.45:11434");
         assert_eq!(settings.ollama_model, "gpt-oss:20b");
     }
 
@@ -749,13 +739,13 @@ mod tests {
     #[test]
     fn test_whisper_server_defaults() {
         let config = Config::default();
-        assert_eq!(config.whisper_mode, "local");
-        assert_eq!(config.whisper_server_url, "http://192.168.50.149:8000");
+        assert_eq!(config.whisper_mode, "remote");  // Always remote
+        assert_eq!(config.whisper_server_url, "http://172.16.100.45:8001");
         assert_eq!(config.whisper_server_model, "large-v3-turbo");
 
         let settings = Settings::default();
-        assert_eq!(settings.whisper_mode, "local");
-        assert_eq!(settings.whisper_server_url, "http://192.168.50.149:8000");
+        assert_eq!(settings.whisper_mode, "remote");  // Always remote
+        assert_eq!(settings.whisper_server_url, "http://172.16.100.45:8001");
         assert_eq!(settings.whisper_server_model, "large-v3-turbo");
     }
 }

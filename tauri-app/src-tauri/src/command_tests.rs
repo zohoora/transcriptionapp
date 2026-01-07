@@ -41,8 +41,8 @@ mod tests {
             medplum_server_url: "http://localhost:8103".to_string(),
             medplum_client_id: "test-client-id".to_string(),
             medplum_auto_sync: true,
-            whisper_mode: "local".to_string(),
-            whisper_server_url: "http://192.168.50.149:8000".to_string(),
+            whisper_mode: "remote".to_string(),
+            whisper_server_url: "http://172.16.100.45:8001".to_string(),
             whisper_server_model: "large-v3-turbo".to_string(),
         };
 

@@ -31,9 +31,11 @@ use std::collections::VecDeque;
 /// VAD chunk size at 16kHz
 const VAD_CHUNK_SIZE: usize = 512;
 
-/// Transcription provider - either local Whisper or remote Whisper server
+/// Transcription provider - remote Whisper server only
+/// Note: Local variant kept for potential future use but marked dead_code
 enum TranscriptionProvider {
-    /// Local Whisper model via whisper-rs
+    /// Local Whisper model via whisper-rs (not currently used)
+    #[allow(dead_code)]
     Local(WhisperProvider),
     /// Remote Whisper server (faster-whisper-server/Speaches)
     Remote(WhisperServerClient),
@@ -138,8 +140,8 @@ impl Default for PipelineConfig {
             preprocessing_enabled: true,
             preprocessing_highpass_hz: 80,
             preprocessing_agc_target_rms: 0.1,
-            whisper_mode: "local".to_string(),
-            whisper_server_url: String::new(),
+            whisper_mode: "remote".to_string(),  // Always use remote server
+            whisper_server_url: "http://172.16.100.45:8001".to_string(),
             whisper_server_model: "large-v3-turbo".to_string(),
         }
     }
@@ -251,18 +253,11 @@ fn run_pipeline_thread_inner(
     capture.start()?;
     info!("Audio capture started");
 
-    // Create transcription provider (local or remote)
-    let provider: TranscriptionProvider = if config.whisper_mode == "remote" {
-        info!("Using remote Whisper server at {}", config.whisper_server_url);
-        let client = WhisperServerClient::new(&config.whisper_server_url, &config.whisper_server_model)
-            .map_err(|e| anyhow::anyhow!("Failed to create Whisper server client: {}", e))?;
-        TranscriptionProvider::Remote(client)
-    } else {
-        info!("Loading local Whisper model...");
-        let whisper = WhisperProvider::new(&config.model_path, &config.language, config.n_threads)?;
-        info!("Whisper model loaded");
-        TranscriptionProvider::Local(whisper)
-    };
+    // Create transcription provider (always remote)
+    info!("Using remote Whisper server at {}", config.whisper_server_url);
+    let client = WhisperServerClient::new(&config.whisper_server_url, &config.whisper_server_model)
+        .map_err(|e| anyhow::anyhow!("Failed to create Whisper server client: {}", e))?;
+    let provider = TranscriptionProvider::Remote(client);
 
     // Create resampler
     let mut resampler = AudioResampler::new(sample_rate)?;

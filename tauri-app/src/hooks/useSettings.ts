@@ -17,8 +17,8 @@ export interface PendingSettings {
   medplum_server_url: string;
   medplum_client_id: string;
   medplum_auto_sync: boolean;
-  // Whisper server settings
-  whisper_mode: 'local' | 'remote';
+  // Whisper server settings (remote only - local mode removed)
+  whisper_mode: 'remote';  // Always 'remote'
   whisper_server_url: string;
   whisper_server_model: string;
 }
@@ -64,7 +64,7 @@ export function useSettings(): UseSettingsResult {
     medplum_server_url: s.medplum_server_url,
     medplum_client_id: s.medplum_client_id,
     medplum_auto_sync: s.medplum_auto_sync,
-    whisper_mode: s.whisper_mode,
+    whisper_mode: 'remote',  // Always remote - local mode removed
     whisper_server_url: s.whisper_server_url,
     whisper_server_model: s.whisper_server_model,
   }), []);
@@ -112,7 +112,7 @@ export function useSettings(): UseSettingsResult {
         medplum_server_url: pendingSettings.medplum_server_url,
         medplum_client_id: pendingSettings.medplum_client_id,
         medplum_auto_sync: pendingSettings.medplum_auto_sync,
-        whisper_mode: pendingSettings.whisper_mode,
+        whisper_mode: 'remote',  // Always remote - local mode removed
         whisper_server_url: pendingSettings.whisper_server_url,
         whisper_server_model: pendingSettings.whisper_server_model,
       };
@@ -130,6 +130,7 @@ export function useSettings(): UseSettingsResult {
   }, [settings, pendingSettings]);
 
   // Check if there are unsaved changes
+  // Note: whisper_mode removed from comparison - always 'remote'
   const hasUnsavedChanges = settings !== null && pendingSettings !== null && (
     settings.whisper_model !== pendingSettings.model ||
     settings.language !== pendingSettings.language ||
@@ -140,7 +141,6 @@ export function useSettings(): UseSettingsResult {
     settings.medplum_server_url !== pendingSettings.medplum_server_url ||
     settings.medplum_client_id !== pendingSettings.medplum_client_id ||
     settings.medplum_auto_sync !== pendingSettings.medplum_auto_sync ||
-    settings.whisper_mode !== pendingSettings.whisper_mode ||
     settings.whisper_server_url !== pendingSettings.whisper_server_url ||
     settings.whisper_server_model !== pendingSettings.whisper_server_model
   );

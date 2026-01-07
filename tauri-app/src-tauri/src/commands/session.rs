@@ -33,37 +33,9 @@ pub async fn start_session(
     // Emit initial status
     emit_status_arc(&app, &session_arc)?;
 
-    // Check model availability (only for local mode)
+    // Load config - always uses remote Whisper server, no local model needed
     let config = Config::load_or_default();
-    let model_path = if config.whisper_mode == "remote" {
-        // Remote mode doesn't need local model - use a placeholder path
-        // The pipeline will use the remote server instead
-        config.get_model_path().unwrap_or_default()
-    } else {
-        // Local mode - verify model exists
-        match config.get_model_path() {
-            Ok(path) => {
-                if !path.exists() {
-                    let mut session = session_arc.lock().map_err(|e| e.to_string())?;
-                    session.set_error(SessionError::ModelNotFound(format!(
-                        "Model not found at {:?}",
-                        path
-                    )));
-                    drop(session);
-                    emit_status_arc(&app, &session_arc)?;
-                    return Err("Model not found".to_string());
-                }
-                path
-            }
-            Err(e) => {
-                let mut session = session_arc.lock().map_err(|e| e.to_string())?;
-                session.set_error(SessionError::ModelNotFound(e.to_string()));
-                drop(session);
-                emit_status_arc(&app, &session_arc)?;
-                return Err(e.to_string());
-            }
-        }
-    };
+    let model_path = config.get_model_path().unwrap_or_default(); // Placeholder, not used
 
     // Create pipeline config
     let diarization_model_path = if config.diarization_enabled {

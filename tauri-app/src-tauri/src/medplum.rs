@@ -304,6 +304,7 @@ impl MedplumClient {
         }
 
         let http_client = reqwest::Client::builder()
+            .connect_timeout(std::time::Duration::from_secs(30))
             .timeout(REQUEST_TIMEOUT)
             .build()
             .map_err(|e| MedplumError::AuthError(format!("Failed to create HTTP client: {}", e)))?;

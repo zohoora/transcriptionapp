@@ -114,6 +114,7 @@ impl OllamaClient {
         }
 
         let client = reqwest::Client::builder()
+            .connect_timeout(Duration::from_secs(30))
             .timeout(DEFAULT_TIMEOUT)
             .build()
             .map_err(|e| format!("Failed to create HTTP client: {}", e))?;

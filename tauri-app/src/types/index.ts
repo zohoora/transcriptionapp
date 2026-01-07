@@ -65,8 +65,8 @@ export interface Settings {
   medplum_server_url: string;
   medplum_client_id: string;
   medplum_auto_sync: boolean;
-  // Whisper server settings (for remote transcription)
-  whisper_mode: 'local' | 'remote';
+  // Whisper server settings (remote transcription only - local mode removed)
+  whisper_mode: 'remote';  // Always 'remote' - local mode no longer supported
   whisper_server_url: string;
   whisper_server_model: string;
 }

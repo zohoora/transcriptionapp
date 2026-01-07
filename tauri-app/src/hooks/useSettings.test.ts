@@ -21,6 +21,10 @@ const mockSettings = {
   medplum_server_url: 'http://localhost:8103',
   medplum_client_id: 'test-client',
   medplum_auto_sync: false,
+  // Whisper server settings (remote only)
+  whisper_mode: 'remote' as const,
+  whisper_server_url: 'http://172.16.100.45:8001',
+  whisper_server_model: 'large-v3-turbo',
 };
 
 describe('useSettings', () => {
@@ -52,6 +56,10 @@ describe('useSettings', () => {
       medplum_server_url: 'http://localhost:8103',
       medplum_client_id: 'test-client',
       medplum_auto_sync: false,
+      // Whisper server settings (always remote)
+      whisper_mode: 'remote',
+      whisper_server_url: 'http://172.16.100.45:8001',
+      whisper_server_model: 'large-v3-turbo',
     });
   });
 

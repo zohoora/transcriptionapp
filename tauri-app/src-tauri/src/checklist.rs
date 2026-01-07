@@ -252,57 +252,14 @@ fn run_audio_checks(config: &Config) -> Vec<CheckResult> {
 fn run_model_checks(config: &Config) -> Vec<CheckResult> {
     let mut checks = Vec::new();
 
-    // Whisper model check - depends on whisper_mode
-    let whisper_check = if config.whisper_mode == "remote" {
-        // Remote mode - skip local model check, we'll check server at runtime
-        CheckResult {
-            id: "whisper_model".to_string(),
-            name: format!("Whisper Server ({})", config.whisper_server_model),
-            category: CheckCategory::Model,
-            status: CheckStatus::Pass,
-            message: Some(format!("Remote server at {}", config.whisper_server_url)),
-            action: None,
-        }
-    } else {
-        // Local mode - check if model exists
-        match config.get_model_path() {
-            Ok(path) => {
-                if path.exists() {
-                    let size_mb = std::fs::metadata(&path)
-                        .map(|m| m.len() / (1024 * 1024))
-                        .unwrap_or(0);
-                    CheckResult {
-                        id: "whisper_model".to_string(),
-                        name: format!("Whisper Model ({})", config.whisper_model),
-                        category: CheckCategory::Model,
-                        status: CheckStatus::Pass,
-                        message: Some(format!("{}MB at {:?}", size_mb, path)),
-                        action: None,
-                    }
-                } else {
-                    CheckResult {
-                        id: "whisper_model".to_string(),
-                        name: format!("Whisper Model ({})", config.whisper_model),
-                        category: CheckCategory::Model,
-                        status: CheckStatus::Fail,
-                        message: Some(format!("Model not found at {:?}", path)),
-                        action: Some(CheckAction::DownloadModel {
-                            model_name: config.whisper_model.clone()
-                        }),
-                    }
-                }
-            }
-            Err(e) => CheckResult {
-                id: "whisper_model".to_string(),
-                name: format!("Whisper Model ({})", config.whisper_model),
-                category: CheckCategory::Model,
-                status: CheckStatus::Fail,
-                message: Some(format!("Error: {}", e)),
-                action: Some(CheckAction::DownloadModel {
-                    model_name: config.whisper_model.clone()
-                }),
-            },
-        }
+    // Whisper model check - always remote server
+    let whisper_check = CheckResult {
+        id: "whisper_model".to_string(),
+        name: format!("Whisper Server ({})", config.whisper_server_model),
+        category: CheckCategory::Model,
+        status: CheckStatus::Pass,
+        message: Some(format!("Remote server at {}", config.whisper_server_url)),
+        action: None,
     };
     checks.push(whisper_check);
 

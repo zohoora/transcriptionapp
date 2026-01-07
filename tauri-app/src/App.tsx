@@ -16,7 +16,6 @@ import {
   useSettings,
   useDevices,
   useOllamaConnection,
-  useWhisperModels,
 } from './hooks';
 import type { Settings, WhisperServerStatus } from './types';
 
@@ -84,13 +83,7 @@ function App() {
   // Ollama connection from hook
   const { status: ollamaConnectionStatus, checkConnection: checkOllamaConnection } = useOllamaConnection();
 
-  // Whisper models from hook
-  const {
-    models: whisperModels,
-    modelsByCategory: whisperModelsByCategory,
-    downloadModel,
-    downloadProgress,
-  } = useWhisperModels();
+  // Note: Local Whisper models removed - using remote server only
 
   // UI state
   const [showSettings, setShowSettings] = useState(false);
@@ -379,10 +372,6 @@ function App() {
         onSettingsChange={setPendingSettings}
         onSave={handleSaveSettings}
         devices={devices}
-        whisperModels={whisperModels}
-        whisperModelsByCategory={whisperModelsByCategory}
-        onDownloadModel={downloadModel}
-        downloadProgress={downloadProgress}
         showBiomarkers={showBiomarkers}
         onShowBiomarkersChange={setShowBiomarkers}
         whisperServerStatus={whisperServerStatus}

@@ -1,16 +1,5 @@
 import { memo } from 'react';
-import type { Device, OllamaStatus, AuthState, WhisperModelInfo, WhisperServerStatus } from '../types';
-import type { DownloadProgress } from '../hooks/useWhisperModels';
-
-// Category display order
-const CATEGORY_ORDER = ['Standard', 'Large', 'Quantized', 'Distil-Whisper'];
-
-// Helper to format file size
-function formatBytes(bytes: number): string {
-  if (bytes < 1024) return bytes + ' B';
-  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(0) + ' KB';
-  return (bytes / (1024 * 1024)).toFixed(0) + ' MB';
-}
+import type { Device, OllamaStatus, AuthState, WhisperServerStatus } from '../types';
 
 // Supported languages
 const LANGUAGES = [
@@ -35,8 +24,8 @@ export interface PendingSettings {
   medplum_server_url: string;
   medplum_client_id: string;
   medplum_auto_sync: boolean;
-  // Whisper server settings
-  whisper_mode: 'local' | 'remote';
+  // Whisper server settings (remote only - local mode removed)
+  whisper_mode: 'remote';  // Always 'remote'
   whisper_server_url: string;
   whisper_server_model: string;
 }
@@ -48,12 +37,6 @@ interface SettingsDrawerProps {
   onSettingsChange: (settings: PendingSettings) => void;
   onSave: () => void;
   devices: Device[];
-
-  // Whisper models
-  whisperModels: WhisperModelInfo[];
-  whisperModelsByCategory: Record<string, WhisperModelInfo[]>;
-  onDownloadModel: (modelId: string) => Promise<boolean>;
-  downloadProgress: DownloadProgress | null;
 
   // Biomarkers toggle
   showBiomarkers: boolean;
@@ -92,10 +75,6 @@ export const SettingsDrawer = memo(function SettingsDrawer({
   onSettingsChange,
   onSave,
   devices,
-  whisperModels,
-  whisperModelsByCategory,
-  onDownloadModel,
-  downloadProgress,
   showBiomarkers,
   onShowBiomarkersChange,
   whisperServerStatus,
@@ -128,175 +107,65 @@ export const SettingsDrawer = memo(function SettingsDrawer({
         <div className="settings-drawer-content">
           {pendingSettings && (
             <>
+              {/* Whisper Server Settings (remote only mode) */}
               <div className="settings-group">
-                <label className="settings-label" htmlFor="model-select">Model</label>
+                <label className="settings-label" htmlFor="whisper-server-url">Whisper Server URL</label>
+                <input
+                  id="whisper-server-url"
+                  type="text"
+                  className="settings-input"
+                  value={pendingSettings.whisper_server_url}
+                  onChange={(e) => onSettingsChange({ ...pendingSettings, whisper_server_url: e.target.value })}
+                  placeholder="http://172.16.100.45:8001"
+                />
+              </div>
+
+              <div className="settings-group">
+                <label className="settings-label" htmlFor="whisper-server-model">Server Model</label>
                 <select
-                  id="model-select"
+                  id="whisper-server-model"
                   className="settings-select"
-                  value={pendingSettings.model}
-                  onChange={(e) => {
-                    const newModelId = e.target.value;
-                    const newModel = whisperModels.find((m) => m.id === newModelId);
-                    // Auto-set language based on model type
-                    const newLanguage = newModel?.english_only ? 'en' : 'auto';
-                    onSettingsChange({ ...pendingSettings, model: newModelId, language: newLanguage });
-                  }}
+                  value={pendingSettings.whisper_server_model}
+                  onChange={(e) => onSettingsChange({ ...pendingSettings, whisper_server_model: e.target.value })}
                 >
-                  {CATEGORY_ORDER.filter(cat => whisperModelsByCategory[cat]?.length > 0).map((category) => (
-                    <optgroup key={category} label={category}>
-                      {whisperModelsByCategory[category].map((m) => (
-                        <option key={m.id} value={m.id}>
-                          {m.label} ({formatBytes(m.size_bytes)}) {m.downloaded ? '' : ''}
-                        </option>
-                      ))}
-                    </optgroup>
+                  <option value={pendingSettings.whisper_server_model}>{pendingSettings.whisper_server_model}</option>
+                  {whisperServerModels
+                    .filter((m) => m !== pendingSettings.whisper_server_model)
+                    .map((m) => (
+                      <option key={m} value={m}>{m}</option>
+                    ))}
+                </select>
+              </div>
+
+              <div className="settings-group ollama-status-group">
+                <div className="ollama-status">
+                  <span className={`status-indicator ${whisperServerStatus?.connected ? 'connected' : 'disconnected'}`} />
+                  <span className="status-text">
+                    {whisperServerStatus?.connected
+                      ? `Connected (${whisperServerModels.length} models)`
+                      : whisperServerStatus?.error || 'Not connected'}
+                  </span>
+                </div>
+                <button className="btn-test" onClick={onTestWhisperServer}>
+                  Test
+                </button>
+              </div>
+
+              <div className="settings-group">
+                <label className="settings-label" htmlFor="language-select">Language</label>
+                <select
+                  id="language-select"
+                  className="settings-select"
+                  value={pendingSettings.language}
+                  onChange={(e) => onSettingsChange({ ...pendingSettings, language: e.target.value })}
+                >
+                  {LANGUAGES.map((l) => (
+                    <option key={l.value} value={l.value}>
+                      {l.label}
+                    </option>
                   ))}
                 </select>
-                {(() => {
-                  const selectedModel = whisperModels.find((m) => m.id === pendingSettings.model);
-                  const isDownloading = downloadProgress?.modelId === pendingSettings.model;
-
-                  if (!selectedModel) return null;
-
-                  return (
-                    <div className="model-status-row">
-                      {selectedModel.downloaded ? (
-                        <span className="model-status downloaded">Downloaded</span>
-                      ) : isDownloading ? (
-                        <span className="model-status downloading">
-                          {downloadProgress?.status === 'downloading' && 'Downloading...'}
-                          {downloadProgress?.status === 'testing' && 'Testing...'}
-                          {downloadProgress?.status === 'completed' && 'Complete!'}
-                          {downloadProgress?.status === 'failed' && `Failed: ${downloadProgress.error}`}
-                        </span>
-                      ) : (
-                        <button
-                          className="btn-download-model"
-                          onClick={() => onDownloadModel(pendingSettings.model)}
-                          disabled={!!downloadProgress}
-                        >
-                          Download ({formatBytes(selectedModel.size_bytes)})
-                        </button>
-                      )}
-                      {selectedModel.recommended && (
-                        <span className="model-badge recommended">Recommended</span>
-                      )}
-                      {selectedModel.english_only && (
-                        <span className="model-badge english-only">English only</span>
-                      )}
-                    </div>
-                  );
-                })()}
-                {(() => {
-                  const selectedModel = whisperModels.find((m) => m.id === pendingSettings.model);
-                  return selectedModel?.description && (
-                    <p className="model-description">{selectedModel.description}</p>
-                  );
-                })()}
               </div>
-
-              {/* Transcription Mode Toggle */}
-              <div className="settings-group">
-                <label className="settings-label">Transcription Mode</label>
-                <div className="settings-toggle-buttons">
-                  <button
-                    className={`toggle-btn ${pendingSettings.whisper_mode === 'local' ? 'active' : ''}`}
-                    onClick={() => onSettingsChange({ ...pendingSettings, whisper_mode: 'local' })}
-                  >
-                    Local
-                  </button>
-                  <button
-                    className={`toggle-btn ${pendingSettings.whisper_mode === 'remote' ? 'active' : ''}`}
-                    onClick={() => onSettingsChange({ ...pendingSettings, whisper_mode: 'remote' })}
-                  >
-                    Remote Server
-                  </button>
-                </div>
-                <p className="model-description">
-                  {pendingSettings.whisper_mode === 'local'
-                    ? 'Run Whisper locally on this device'
-                    : 'Use a remote Whisper server (faster-whisper)'}
-                </p>
-              </div>
-
-              {/* Remote Whisper Server Settings (shown only when remote mode) */}
-              {pendingSettings.whisper_mode === 'remote' && (
-                <>
-                  <div className="settings-group">
-                    <label className="settings-label" htmlFor="whisper-server-url">Whisper Server URL</label>
-                    <input
-                      id="whisper-server-url"
-                      type="text"
-                      className="settings-input"
-                      value={pendingSettings.whisper_server_url}
-                      onChange={(e) => onSettingsChange({ ...pendingSettings, whisper_server_url: e.target.value })}
-                      placeholder="http://192.168.50.149:8000"
-                    />
-                  </div>
-
-                  <div className="settings-group">
-                    <label className="settings-label" htmlFor="whisper-server-model">Server Model</label>
-                    <select
-                      id="whisper-server-model"
-                      className="settings-select"
-                      value={pendingSettings.whisper_server_model}
-                      onChange={(e) => onSettingsChange({ ...pendingSettings, whisper_server_model: e.target.value })}
-                    >
-                      <option value={pendingSettings.whisper_server_model}>{pendingSettings.whisper_server_model}</option>
-                      {whisperServerModels
-                        .filter((m) => m !== pendingSettings.whisper_server_model)
-                        .map((m) => (
-                          <option key={m} value={m}>{m}</option>
-                        ))}
-                    </select>
-                  </div>
-
-                  <div className="settings-group ollama-status-group">
-                    <div className="ollama-status">
-                      <span className={`status-indicator ${whisperServerStatus?.connected ? 'connected' : 'disconnected'}`} />
-                      <span className="status-text">
-                        {whisperServerStatus?.connected
-                          ? `Connected (${whisperServerModels.length} models)`
-                          : whisperServerStatus?.error || 'Not connected'}
-                      </span>
-                    </div>
-                    <button className="btn-test" onClick={onTestWhisperServer}>
-                      Test
-                    </button>
-                  </div>
-                </>
-              )}
-
-              {(() => {
-                const selectedModel = whisperModels.find((m) => m.id === pendingSettings.model);
-                const isEnglishOnly = selectedModel?.english_only ?? false;
-
-                return (
-                  <div className="settings-group">
-                    <label className="settings-label" htmlFor="language-select">Language</label>
-                    <select
-                      id="language-select"
-                      className="settings-select"
-                      value={pendingSettings.language}
-                      onChange={(e) => onSettingsChange({ ...pendingSettings, language: e.target.value })}
-                      disabled={isEnglishOnly}
-                    >
-                      {isEnglishOnly ? (
-                        <option value="en">English</option>
-                      ) : (
-                        LANGUAGES.map((l) => (
-                          <option key={l.value} value={l.value}>
-                            {l.label}
-                          </option>
-                        ))
-                      )}
-                    </select>
-                    {isEnglishOnly && (
-                      <p className="model-description">English-only model selected</p>
-                    )}
-                  </div>
-                );
-              })()}
 
               <div className="settings-group">
                 <label className="settings-label" htmlFor="microphone-select">Microphone</label>
