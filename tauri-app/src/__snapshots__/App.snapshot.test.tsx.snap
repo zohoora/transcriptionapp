@@ -198,6 +198,105 @@ exports[`App Snapshots > renders completed state correctly 1`] = `
       <div
         class="review-soap-content"
       >
+        <div
+          class="soap-options-container"
+        >
+          <button
+            class="soap-options-toggle"
+          >
+            <span
+              class="chevron-small "
+            >
+              ▼
+            </span>
+            Options
+            <span
+              class="soap-options-summary"
+            >
+              Standard
+               • 
+              Problem-Based
+            </span>
+          </button>
+          <div
+            class="soap-options"
+          >
+            <div
+              class="soap-option-group"
+            >
+              <label
+                class="soap-option-label"
+              >
+                Detail Level: 
+                Standard
+              </label>
+              <div
+                class="soap-detail-slider"
+              >
+                <input
+                  aria-label="SOAP note detail level"
+                  class="detail-slider"
+                  max="10"
+                  min="1"
+                  type="range"
+                  value="5"
+                />
+                <span
+                  class="detail-value"
+                >
+                  5
+                </span>
+              </div>
+              <span
+                class="soap-option-hint"
+              >
+                Default balanced detail
+              </span>
+            </div>
+            <div
+              class="soap-option-group"
+            >
+              <label
+                class="soap-option-label"
+              >
+                Format
+              </label>
+              <div
+                class="soap-format-toggle"
+              >
+                <button
+                  class="format-btn active"
+                >
+                  Problem-Based
+                </button>
+                <button
+                  class="format-btn "
+                >
+                  Comprehensive
+                </button>
+              </div>
+              <span
+                class="soap-option-hint"
+              >
+                Separate S/O/A/P sections per medical problem
+              </span>
+            </div>
+            <div
+              class="soap-option-group"
+            >
+              <button
+                class="custom-instructions-toggle"
+              >
+                <span
+                  class="chevron-small collapsed"
+                >
+                  ▼
+                </span>
+                Custom Instructions
+              </button>
+            </div>
+          </div>
+        </div>
         <button
           class="btn-generate"
           disabled=""

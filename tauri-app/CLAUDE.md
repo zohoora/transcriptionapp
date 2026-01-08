@@ -80,6 +80,8 @@ Rust Backend
 | `generate_soap_note` | Generate SOAP note from transcript via Ollama |
 | `check_whisper_server_status` | Check remote Whisper server connection |
 | `list_whisper_server_models` | Get available models from Whisper server |
+| `medplum_quick_sync` | Auto-sync transcript/audio to Medplum, returns encounter IDs |
+| `medplum_add_soap_to_encounter` | Add SOAP note to existing synced encounter |
 
 ## Key Events (Backend → Frontend)
 
@@ -262,6 +264,56 @@ YAMNet (biomarkers thread)
 ```
 
 ## Recent Changes (Jan 2025)
+
+### Auto-Sync to Medplum (Jan 7, 2025)
+Automatic synchronization of transcripts and audio to Medplum when recording completes.
+
+**Behavior**
+- When a session completes AND user is logged into Medplum AND `medplum_auto_sync` is enabled:
+  - Transcript + audio are automatically synced to Medplum
+  - Creates a new encounter with placeholder patient
+  - Stores encounter IDs for subsequent updates
+- When SOAP note is generated:
+  - If session was already synced, SOAP is automatically added to the existing encounter
+  - No manual sync button click required
+
+**New Backend Command**
+- `medplum_add_soap_to_encounter(encounter_fhir_id, soap_note)` - Adds SOAP DocumentReference to existing encounter
+
+**Updated Types**
+- `SyncResult` now includes `encounterId` and `encounterFhirId` for tracking
+- New `SyncedEncounter` type tracks synced encounter state:
+  ```typescript
+  interface SyncedEncounter {
+    encounterId: string;      // Local UUID
+    encounterFhirId: string;  // FHIR server ID
+    syncedAt: string;         // ISO timestamp
+    hasSoap: boolean;         // Whether SOAP was synced
+  }
+  ```
+
+**Updated Hook: `useMedplumSync`**
+- New state: `syncedEncounter` - tracks the synced encounter for updates
+- New state: `isAddingSoap` - true while adding SOAP to encounter
+- New function: `addSoapToEncounter(soapNote)` - adds SOAP to existing encounter
+
+**UI Changes**
+- Sync button shows progressive states:
+  - "Sync to Medplum" (not synced)
+  - "Syncing..." (initial sync in progress)
+  - "✓ Synced" (transcript synced, no SOAP)
+  - "Adding SOAP..." (adding SOAP to encounter)
+  - "✓ Synced with SOAP" (fully synced)
+- Button disabled after sync (no duplicate syncs)
+
+**Files Modified**
+- `src-tauri/src/medplum.rs` - Added fields to `SyncResult`
+- `src-tauri/src/commands/medplum.rs` - New command, updated return values
+- `src-tauri/src/lib.rs` - Registered new command
+- `src/types/index.ts` - New `SyncedEncounter` type
+- `src/hooks/useMedplumSync.ts` - Encounter tracking, SOAP update
+- `src/App.tsx` - Auto-sync effect, SOAP update integration
+- `src/components/modes/ReviewMode.tsx` - Updated sync button states
 
 ### Model Indicator UI (Jan 5, 2025)
 Shows which transcription mode and model is being used during and after recording:
@@ -522,15 +574,23 @@ Resampler (16kHz) → DC Removal → High-Pass Filter → AGC → VAD → Enhanc
 - Status types: Pass, Fail, Warning, Skipped
 - Extensible for future features (see module docs)
 
-### Test Updates
-- All frontend tests passing (335 tests)
+### Test Updates (Jan 8, 2025)
+- All frontend tests passing (416 tests across 20 test files)
 - All Rust tests passing (281 tests, including 21 ollama tests)
-- Mode component tests: 94 tests (ReadyMode 18, RecordingMode 17, ReviewMode 59)
-- Hook tests: 79 tests across 7 hook files (including useSoapNote audio events test)
+- Mode component tests: RecordingMode 23, ReviewMode 49
+- Hook tests: useWhisperModels 12, useOllamaConnection 10, useDevices 10, useSettings 12, useSoapNote 16, useChecklist 11, useMedplumSync 9
+- Component tests: SettingsDrawer 44, HistoryWindow 36, AuthProvider 8, Header 6, AudioQualitySection 12
+- App tests: snapshot 6, a11y 3
 - Audio quality tests: 16 Rust unit tests, 12 frontend tests
 - Audio preprocessing tests: 15+ Rust unit tests (DC, high-pass, AGC)
 - SOAP generation tests: 21 Rust tests including 6 new audio event tests
-- Fixed clustering.rs bug where max_speakers wasn't enforced
+
+**Test Fixes Applied:**
+- Fixed `vi.useFakeTimers()` isolation issues causing test timeouts
+- HistoryWindow: Removed timer-based assertions, added proper `beforeEach`/`afterEach` cleanup
+- AuthProvider: Simplified tests to avoid fake timer conflicts with async React operations
+- SettingsDrawer: Fixed duplicate element queries by differentiating Whisper/Ollama model counts
+- useWhisperModels: Switched from `mockResolvedValueOnce` to `mockImplementation` pattern
 - Added mocks for AuthProvider/useAuth hook in test setup
 - Updated mode tests to remove cough display assertions (moved to LLM)
 
@@ -593,6 +653,30 @@ interface Settings {
 5. **Medplum auth fails**: Verify `medplum_client_id` in `config.rs` matches your Medplum ClientApplication. Delete `~/.transcriptionapp/config.json` to reset to defaults.
 6. **Deep links not working**: Ensure app was built (not running via `tauri dev`). Check that `fabricscribe://` URL scheme is registered in Info.plist.
 
+### Testing Best Practices (Vitest)
+
+**Fake Timer Issues:**
+- `vi.useFakeTimers()` can cause test isolation problems - subsequent tests may timeout
+- Always add `vi.useRealTimers()` in both `beforeEach` and `afterEach` when using fake timers
+- Prefer avoiding fake timers when testing React async operations; they conflict with RTL's `waitFor`
+- If a test using fake timers times out, it may leave timers in fake mode for subsequent tests
+
+**Mock Patterns:**
+- Use `mockImplementation` with command-based routing instead of `mockResolvedValueOnce` chains:
+  ```typescript
+  mockInvoke.mockImplementation(async (cmd: string) => {
+    if (cmd === 'get_settings') return mockSettings;
+    if (cmd === 'save_settings') return true;
+    return undefined;
+  });
+  ```
+- Avoid `vi.restoreAllMocks()` in `afterEach` - it can interfere with RTL cleanup
+
+**Query Specificity:**
+- When multiple elements have the same text, use different test data to distinguish them
+- Or use `within()` to scope queries to specific sections
+- Or use more specific selectors like `getByRole` with `name` option
+
 ## Adding New Features
 
 When adding a new feature that requires models or external resources:
@@ -621,7 +705,7 @@ When adding a new feature that requires models or external resources:
    - Integrate into processing loop
    - Add to drop order at end
 
-## Medplum EMR Integration (Dec 2024)
+## Medplum EMR Integration (Dec 2024, Updated Jan 2025)
 
 Integration with Medplum FHIR server for storing encounters, transcripts, SOAP notes, and audio recordings.
 
@@ -632,6 +716,15 @@ Integration with Medplum FHIR server for storing encounters, transcripts, SOAP n
 - Auto-restore on app startup with automatic token refresh if expired
 - Auto-refresh before expiration during session
 - Configuration in `config.rs`: `medplum_server_url`, `medplum_client_id`
+
+**Auto-Sync (Jan 2025)**
+When `medplum_auto_sync` is enabled and user is authenticated:
+1. Session completes → auto-sync transcript + audio to Medplum
+2. Encounter created with placeholder patient
+3. Encounter IDs stored for subsequent updates
+4. SOAP generated → auto-added to existing encounter
+
+This ensures data is preserved even if user doesn't generate a SOAP note.
 
 **FHIR Resources Used**
 - `Encounter` - Recording session with start/end times, tagged with `urn:fabricscribe|scribe-session`
@@ -646,7 +739,9 @@ Integration with Medplum FHIR server for storing encounters, transcripts, SOAP n
 | `medplum_handle_callback` | Exchange code for tokens |
 | `medplum_get_auth_state` | Check if authenticated |
 | `medplum_logout` | Clear tokens and delete saved session |
-| `medplum_sync_encounter` | Upload transcript/SOAP/audio to Medplum |
+| `medplum_quick_sync` | Auto-sync transcript/audio, returns encounter IDs |
+| `medplum_add_soap_to_encounter` | Add SOAP to existing encounter |
+| `medplum_sync_encounter` | Manual sync (legacy) |
 | `medplum_get_encounter_history` | List past encounters by date range |
 | `medplum_get_encounter_details` | Get full encounter with transcript/SOAP/audio |
 | `medplum_get_audio_data` | Fetch audio Binary for playback |
@@ -784,7 +879,7 @@ All TypeScript types that mirror Rust backend structures:
 - `TranscriptUpdate` - Real-time transcript data
 - `BiomarkerUpdate`, `AudioQualitySnapshot` - Metrics events
 - `SoapNote`, `OllamaStatus` - LLM integration
-- `AuthState`, `Encounter`, `Patient`, `SyncResult` - Medplum types
+- `AuthState`, `Encounter`, `Patient`, `SyncResult`, `SyncedEncounter` - Medplum types
 - `CheckResult`, `ChecklistResult` - Pre-flight checks
 
 ### Utilities (`src/utils.ts`)
@@ -803,22 +898,31 @@ Reusable React hooks for state management:
 | `useSessionState` | Recording session state, transcript, biomarkers, audio quality |
 | `useChecklist` | Pre-flight checks, model status, download handling |
 | `useSoapNote` | SOAP note generation via Ollama |
-| `useMedplumSync` | Medplum EMR synchronization |
+| `useMedplumSync` | Medplum EMR sync with encounter tracking and SOAP updates |
 | `useSettings` | Settings management with pending changes tracking |
 | `useDevices` | Audio input device listing and selection |
 | `useOllamaConnection` | Ollama server connection status and testing |
 | `useWhisperModels` | Whisper model listing, downloading, and testing |
 
-## Current Project Status (Jan 5, 2025)
+**`useMedplumSync` Details:**
+- `syncToMedplum()` - Initial sync, stores encounter IDs in `syncedEncounter`
+- `addSoapToEncounter()` - Adds SOAP to existing encounter
+- `syncedEncounter` - Tracks synced encounter for updates
+- `isAddingSoap` - True while adding SOAP to encounter
+- `resetSyncState()` - Clears sync state for new session
+
+## Current Project Status (Jan 8, 2025)
 
 ### What's Working
 - **Local transcription**: Full Whisper integration with 17 model options
 - **Remote transcription**: faster-whisper-server support with anti-hallucination params
 - **SOAP note generation**: Ollama LLM integration with audio event context
 - **Medplum EMR sync**: OAuth + FHIR encounters, documents, audio storage
+- **Auto-sync**: Automatic sync on session complete, SOAP auto-added to existing encounter
 - **History window**: Browse past encounters with transcript/SOAP/audio playback
 - **Biomarkers**: Vitality, stability, conversation dynamics, audio quality metrics
 - **Speaker diarization**: Online clustering for multi-speaker detection
+- **Test coverage**: 416 frontend tests, 281 Rust tests all passing
 
 ### External Services Configuration
 The app connects to external services on the local network:
@@ -864,3 +968,4 @@ cd src-tauri && cargo test  # Rust
 | Add new biomarker | `biomarkers/mod.rs`, `BiomarkersSection.tsx` |
 | Modify UI modes | `components/modes/` (ReadyMode, RecordingMode, ReviewMode) |
 | Add Tauri command | `commands/*.rs`, register in `lib.rs` |
+| Modify Medplum sync | `commands/medplum.rs`, `useMedplumSync.ts`, `App.tsx` |
