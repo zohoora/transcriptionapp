@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { ReviewMode } from './ReviewMode';
-import type { AudioQualitySnapshot, BiomarkerUpdate, SoapNote, AuthState } from '../../types';
+import type { AudioQualitySnapshot, BiomarkerUpdate, SoapNote, AuthState, SoapOptions, MultiPatientSoapResult } from '../../types';
 import { writeText } from '@tauri-apps/plugin-clipboard-manager';
 
 // Mock the clipboard plugin
@@ -10,6 +10,18 @@ vi.mock('@tauri-apps/plugin-clipboard-manager', () => ({
 }));
 
 const mockWriteText = vi.mocked(writeText);
+
+// Helper to wrap a SoapNote in a MultiPatientSoapResult
+const createSoapResult = (soap: SoapNote): MultiPatientSoapResult => ({
+  notes: [{
+    patient_label: 'Patient 1',
+    speaker_id: 'Speaker 1',
+    soap,
+  }],
+  physician_speaker: 'Speaker 2',
+  generated_at: soap.generated_at,
+  model_used: soap.model_used,
+});
 
 describe('ReviewMode', () => {
   const defaultAuthState: AuthState = {
@@ -26,23 +38,36 @@ describe('ReviewMode', () => {
     expires_at: '2025-12-31T23:59:59Z',
   };
 
+  const defaultSoapOptions: SoapOptions = {
+    detail_level: 5,
+    format: 'problem_based',
+    custom_instructions: '',
+  };
+
   const defaultProps = {
     elapsedMs: 120000, // 2:00
     audioQuality: null,
     originalTranscript: 'Original transcript text.',
     editedTranscript: 'Original transcript text.',
     onTranscriptEdit: vi.fn(),
-    soapNote: null,
+    soapResult: null as MultiPatientSoapResult | null,
     isGeneratingSoap: false,
     soapError: null,
     ollamaConnected: true,
     onGenerateSoap: vi.fn(),
+    soapOptions: defaultSoapOptions,
+    onSoapDetailLevelChange: vi.fn(),
+    onSoapFormatChange: vi.fn(),
+    onSoapCustomInstructionsChange: vi.fn(),
     biomarkers: null,
+    whisperMode: 'remote' as const,
+    whisperModel: 'large-v3-turbo',
     authState: defaultAuthState,
     isSyncing: false,
     syncSuccess: false,
     syncError: null,
-    onSync: vi.fn(),
+    syncedEncounter: null,
+    isAddingSoap: false,
     onClearSyncError: vi.fn(),
     onNewSession: vi.fn(),
     onLogin: vi.fn(),
@@ -92,21 +117,36 @@ describe('ReviewMode', () => {
     });
   });
 
-  describe('transcript section', () => {
-    it('shows transcript content', () => {
+  describe('tabs', () => {
+    it('shows Transcript, SOAP, and Insights tabs', () => {
       render(<ReviewMode {...defaultProps} />);
 
-      expect(screen.getByText('Transcript')).toBeInTheDocument();
-      expect(screen.getByText('Original transcript text.')).toBeInTheDocument();
+      // Get tab buttons by their class
+      const tabButtons = screen.getAllByRole('button').filter(btn => btn.classList.contains('review-tab'));
+      expect(tabButtons).toHaveLength(3);
+      expect(tabButtons[0]).toHaveTextContent('Transcript');
+      expect(tabButtons[1]).toHaveTextContent('SOAP');
+      expect(tabButtons[2]).toHaveTextContent('Insights');
     });
 
-    it('shows "No transcript recorded" when empty', () => {
+    it('starts on SOAP tab by default', () => {
+      render(<ReviewMode {...defaultProps} />);
+
+      // SOAP tab should be active by default
+      expect(screen.getByText('Generate SOAP Note')).toBeInTheDocument();
+    });
+
+    it('disables SOAP tab when no transcript', () => {
       render(<ReviewMode {...defaultProps} editedTranscript="" originalTranscript="" />);
 
-      expect(screen.getByText('No transcript recorded')).toBeInTheDocument();
+      // Find the SOAP tab button by its class and content
+      const tabButtons = screen.getAllByRole('button').filter(
+        btn => btn.classList.contains('review-tab') && btn.textContent?.includes('SOAP')
+      );
+      expect(tabButtons[0]).toBeDisabled();
     });
 
-    it('shows edited badge when transcript is modified', () => {
+    it('shows edited badge on Transcript tab when modified', () => {
       render(
         <ReviewMode
           {...defaultProps}
@@ -118,38 +158,64 @@ describe('ReviewMode', () => {
       expect(screen.getByText('edited')).toBeInTheDocument();
     });
 
-    it('does not show edited badge when transcript is unchanged', () => {
-      render(<ReviewMode {...defaultProps} />);
+    it('shows checkmark on SOAP tab when note is generated', () => {
+      const soapNote: SoapNote = {
+        subjective: 'S',
+        objective: 'O',
+        assessment: 'A',
+        plan: 'P',
+        generated_at: '2024-12-15T10:30:00Z',
+        model_used: 'qwen3:4b',
+        raw_response: null,
+      };
+      render(<ReviewMode {...defaultProps} soapResult={createSoapResult(soapNote)} />);
 
-      expect(screen.queryByText('edited')).not.toBeInTheDocument();
+      // Navigate to see the checkmark badge - use class filter to get the tab button
+      const tabButtons = screen.getAllByRole('button').filter(
+        btn => btn.classList.contains('review-tab') && btn.textContent?.includes('SOAP')
+      );
+      expect(tabButtons[0]).toContainHTML('✓');
     });
+  });
 
-    it('collapses transcript section when header is clicked', () => {
+  describe('transcript tab', () => {
+    const navigateToTranscriptTab = () => {
+      const tabButtons = screen.getAllByRole('button').filter(
+        btn => btn.classList.contains('review-tab') && btn.textContent?.includes('Transcript')
+      );
+      if (tabButtons.length > 0) {
+        fireEvent.click(tabButtons[0]);
+      }
+    };
+
+    it('shows transcript content', () => {
       render(<ReviewMode {...defaultProps} />);
+      navigateToTranscriptTab();
 
       expect(screen.getByText('Original transcript text.')).toBeInTheDocument();
-
-      fireEvent.click(screen.getByLabelText(/collapse transcript/i));
-
-      expect(screen.queryByText('Original transcript text.')).not.toBeInTheDocument();
     });
 
-    it('expands transcript section when collapsed header is clicked', () => {
-      render(<ReviewMode {...defaultProps} />);
+    it('shows "No transcript recorded" when empty', () => {
+      render(<ReviewMode {...defaultProps} editedTranscript="" originalTranscript="" />);
+      navigateToTranscriptTab();
 
-      // Collapse first
-      fireEvent.click(screen.getByLabelText(/collapse transcript/i));
-      expect(screen.queryByText('Original transcript text.')).not.toBeInTheDocument();
-
-      // Expand
-      fireEvent.click(screen.getByLabelText(/expand transcript/i));
-      expect(screen.getByText('Original transcript text.')).toBeInTheDocument();
+      expect(screen.getByText('No transcript recorded')).toBeInTheDocument();
     });
   });
 
   describe('edit mode', () => {
+    const navigateToTranscriptTab = () => {
+      const tabButtons = screen.getAllByRole('button').filter(
+        btn => btn.classList.contains('review-tab') && btn.textContent?.includes('Transcript')
+      );
+      if (tabButtons.length > 0) {
+        fireEvent.click(tabButtons[0]);
+      }
+    };
+
     it('enters edit mode when Edit button is clicked', () => {
       render(<ReviewMode {...defaultProps} />);
+      navigateToTranscriptTab();
 
       fireEvent.click(screen.getByText('Edit'));
 
@@ -159,6 +225,7 @@ describe('ReviewMode', () => {
 
     it('shows textarea with current transcript in edit mode', () => {
       render(<ReviewMode {...defaultProps} />);
+      navigateToTranscriptTab();
 
       fireEvent.click(screen.getByText('Edit'));
 
@@ -169,6 +236,7 @@ describe('ReviewMode', () => {
     it('calls onTranscriptEdit when text is changed', () => {
       const onTranscriptEdit = vi.fn();
       render(<ReviewMode {...defaultProps} onTranscriptEdit={onTranscriptEdit} />);
+      navigateToTranscriptTab();
 
       fireEvent.click(screen.getByText('Edit'));
       fireEvent.change(screen.getByRole('textbox'), {
@@ -180,6 +248,7 @@ describe('ReviewMode', () => {
 
     it('exits edit mode when Done is clicked', () => {
       render(<ReviewMode {...defaultProps} />);
+      navigateToTranscriptTab();
 
       fireEvent.click(screen.getByText('Edit'));
       expect(screen.getByText('Done')).toBeInTheDocument();
@@ -190,8 +259,18 @@ describe('ReviewMode', () => {
   });
 
   describe('copy functionality', () => {
+    const navigateToTranscriptTab = () => {
+      const tabButtons = screen.getAllByRole('button').filter(
+        btn => btn.classList.contains('review-tab') && btn.textContent?.includes('Transcript')
+      );
+      if (tabButtons.length > 0) {
+        fireEvent.click(tabButtons[0]);
+      }
+    };
+
     it('copies transcript when Copy button is clicked', async () => {
       render(<ReviewMode {...defaultProps} />);
+      navigateToTranscriptTab();
 
       fireEvent.click(screen.getByText('Copy'));
 
@@ -202,6 +281,7 @@ describe('ReviewMode', () => {
 
     it('shows "Copied!" feedback after copy', async () => {
       render(<ReviewMode {...defaultProps} />);
+      navigateToTranscriptTab();
 
       fireEvent.click(screen.getByText('Copy'));
 
@@ -211,21 +291,27 @@ describe('ReviewMode', () => {
     });
   });
 
-  describe('SOAP note section', () => {
-    it('does not show SOAP section when transcript is empty', () => {
-      render(<ReviewMode {...defaultProps} editedTranscript="" />);
-
-      expect(screen.queryByText('SOAP Note')).not.toBeInTheDocument();
-    });
+  describe('SOAP tab', () => {
+    const navigateToSoapTab = () => {
+      // Find the SOAP tab button by its class (review-tab) and text content
+      const tabButtons = screen.getAllByRole('button').filter(
+        btn => btn.classList.contains('review-tab') && btn.textContent?.includes('SOAP')
+      );
+      if (tabButtons.length > 0) {
+        fireEvent.click(tabButtons[0]);
+      }
+    };
 
     it('shows Generate button when no SOAP note', () => {
       render(<ReviewMode {...defaultProps} />);
+      navigateToSoapTab();
 
       expect(screen.getByText('Generate SOAP Note')).toBeInTheDocument();
     });
 
     it('disables Generate button when Ollama not connected', () => {
       render(<ReviewMode {...defaultProps} ollamaConnected={false} />);
+      navigateToSoapTab();
 
       expect(screen.getByText('Ollama not connected')).toBeInTheDocument();
       expect(screen.getByRole('button', { name: /ollama not connected/i })).toBeDisabled();
@@ -234,6 +320,7 @@ describe('ReviewMode', () => {
     it('calls onGenerateSoap when Generate button is clicked', () => {
       const onGenerateSoap = vi.fn();
       render(<ReviewMode {...defaultProps} onGenerateSoap={onGenerateSoap} />);
+      navigateToSoapTab();
 
       fireEvent.click(screen.getByText('Generate SOAP Note'));
 
@@ -242,6 +329,7 @@ describe('ReviewMode', () => {
 
     it('shows loading state when generating SOAP', () => {
       render(<ReviewMode {...defaultProps} isGeneratingSoap={true} />);
+      navigateToSoapTab();
 
       expect(screen.getByText('Generating SOAP note...')).toBeInTheDocument();
       expect(document.querySelector('.spinner-small')).toBeInTheDocument();
@@ -249,6 +337,7 @@ describe('ReviewMode', () => {
 
     it('shows error with retry button when SOAP generation fails', () => {
       render(<ReviewMode {...defaultProps} soapError="LLM connection failed" />);
+      navigateToSoapTab();
 
       expect(screen.getByText('LLM connection failed')).toBeInTheDocument();
       expect(screen.getByText('Retry')).toBeInTheDocument();
@@ -264,19 +353,21 @@ describe('ReviewMode', () => {
         model_used: 'qwen3:4b',
         raw_response: null,
       };
-      render(<ReviewMode {...defaultProps} soapNote={soapNote} />);
+      render(<ReviewMode {...defaultProps} soapResult={createSoapResult(soapNote)} />);
+      navigateToSoapTab();
 
-      expect(screen.getByText('SUBJECTIVE')).toBeInTheDocument();
+      // In the new UI, SOAP labels are single letters: S, O, A, P
+      expect(screen.getByText('S')).toBeInTheDocument();
       expect(screen.getByText('Patient reports headache for 2 days.')).toBeInTheDocument();
-      expect(screen.getByText('OBJECTIVE')).toBeInTheDocument();
+      expect(screen.getByText('O')).toBeInTheDocument();
       expect(screen.getByText('BP 120/80, HR 72.')).toBeInTheDocument();
-      expect(screen.getByText('ASSESSMENT')).toBeInTheDocument();
+      expect(screen.getByText('A')).toBeInTheDocument();
       expect(screen.getByText('Tension headache.')).toBeInTheDocument();
-      expect(screen.getByText('PLAN')).toBeInTheDocument();
+      expect(screen.getByText('P')).toBeInTheDocument();
       expect(screen.getByText('Rest, OTC analgesics.')).toBeInTheDocument();
     });
 
-    it('shows model and timestamp for generated SOAP', () => {
+    it('shows model for generated SOAP', () => {
       const soapNote: SoapNote = {
         subjective: 'S',
         objective: 'O',
@@ -286,7 +377,8 @@ describe('ReviewMode', () => {
         model_used: 'qwen3:4b',
         raw_response: null,
       };
-      render(<ReviewMode {...defaultProps} soapNote={soapNote} />);
+      render(<ReviewMode {...defaultProps} soapResult={createSoapResult(soapNote)} />);
+      navigateToSoapTab();
 
       expect(screen.getByText(/qwen3:4b/)).toBeInTheDocument();
     });
@@ -301,15 +393,12 @@ describe('ReviewMode', () => {
         model_used: 'qwen3:4b',
         raw_response: null,
       };
-      render(<ReviewMode {...defaultProps} soapNote={soapNote} />);
+      render(<ReviewMode {...defaultProps} soapResult={createSoapResult(soapNote)} />);
+      navigateToSoapTab();
 
-      // Find the Copy button in SOAP section (second one, after transcript Copy)
-      const copyButtons = screen.getAllByText('Copy');
-      expect(copyButtons.length).toBe(2);
+      // Find Copy button in SOAP tab
+      fireEvent.click(screen.getByText('Copy'));
 
-      fireEvent.click(copyButtons[1]); // Second Copy button is for SOAP
-
-      // Just verify the clipboard was called - async may complete
       await waitFor(() => {
         expect(mockWriteText).toHaveBeenCalled();
       });
@@ -321,7 +410,7 @@ describe('ReviewMode', () => {
     });
   });
 
-  describe('session insights', () => {
+  describe('Insights tab', () => {
     const biomarkers: BiomarkerUpdate = {
       cough_count: 3,
       cough_rate_per_min: 1.5,
@@ -334,7 +423,7 @@ describe('ReviewMode', () => {
       ],
       conversation_dynamics: {
         overlap_count: 2,
-        interruption_count: 1,
+        total_interruption_count: 1,
         mean_response_latency_ms: 500,
         long_pause_count: 3,
         total_silence_ms: 10000,
@@ -344,25 +433,11 @@ describe('ReviewMode', () => {
       },
     };
 
-    it('shows insights section when biomarkers present', () => {
-      render(<ReviewMode {...defaultProps} biomarkers={biomarkers} />);
+    const navigateToInsightsTab = () => {
+      fireEvent.click(screen.getByRole('button', { name: /insights/i }));
+    };
 
-      expect(screen.getByText('Session Insights')).toBeInTheDocument();
-    });
-
-    it('does not show insights section when no biomarkers', () => {
-      render(<ReviewMode {...defaultProps} biomarkers={null} />);
-
-      expect(screen.queryByText('Session Insights')).not.toBeInTheDocument();
-    });
-
-    it('shows speaker count in summary', () => {
-      render(<ReviewMode {...defaultProps} biomarkers={biomarkers} />);
-
-      expect(screen.getByText('2 speakers')).toBeInTheDocument();
-    });
-
-    it('expands insights section when clicked', () => {
+    it('shows audio quality card when available', () => {
       const audioQuality: AudioQualitySnapshot = {
         timestamp_ms: 1000,
         peak_db: -3,
@@ -374,129 +449,57 @@ describe('ReviewMode', () => {
         silence_ratio: 0.1,
         noise_floor_db: -50,
       };
-      render(
-        <ReviewMode
-          {...defaultProps}
-          biomarkers={biomarkers}
-          audioQuality={audioQuality}
-        />
-      );
-
-      fireEvent.click(screen.getByLabelText(/expand session insights/i));
+      render(<ReviewMode {...defaultProps} audioQuality={audioQuality} biomarkers={biomarkers} />);
+      navigateToInsightsTab();
 
       expect(screen.getByText('Audio Quality')).toBeInTheDocument();
+      expect(screen.getByText('-20 dB')).toBeInTheDocument();
+      expect(screen.getByText('25 dB')).toBeInTheDocument();
+    });
+
+    it('shows speaker metrics when available', () => {
+      render(<ReviewMode {...defaultProps} biomarkers={biomarkers} />);
+      navigateToInsightsTab();
+
       expect(screen.getByText('Speakers')).toBeInTheDocument();
-      // Note: Cough display was removed from UI (audio events are sent to LLM for SOAP generation instead)
+      expect(screen.getByText('SPEAKER_1')).toBeInTheDocument();
+      expect(screen.getByText('SPEAKER_2')).toBeInTheDocument();
     });
 
     it('shows conversation dynamics when available', () => {
       render(<ReviewMode {...defaultProps} biomarkers={biomarkers} />);
-
-      fireEvent.click(screen.getByLabelText(/expand session insights/i));
+      navigateToInsightsTab();
 
       expect(screen.getByText('Conversation')).toBeInTheDocument();
-      expect(screen.getByText(/500ms/)).toBeInTheDocument();
+      expect(screen.getByText('500ms')).toBeInTheDocument();
+    });
+
+    it('shows vocal biomarkers when available', () => {
+      render(<ReviewMode {...defaultProps} biomarkers={biomarkers} />);
+      navigateToInsightsTab();
+
+      expect(screen.getByText('Vocal Biomarkers')).toBeInTheDocument();
+      expect(screen.getByText('Vitality')).toBeInTheDocument();
+      expect(screen.getByText('Stability')).toBeInTheDocument();
+    });
+
+    it('shows empty state when no insights available', () => {
+      render(<ReviewMode {...defaultProps} biomarkers={null} audioQuality={null} />);
+      navigateToInsightsTab();
+
+      expect(screen.getByText('No insights available')).toBeInTheDocument();
     });
   });
 
-  describe('sync to Medplum', () => {
-    it('shows sync button when authenticated and has transcript', () => {
-      render(<ReviewMode {...defaultProps} authState={authenticatedState} />);
-
-      expect(screen.getByText('Sync to Medplum')).toBeInTheDocument();
-    });
-
-    it('does not show sync button when not authenticated', () => {
-      render(<ReviewMode {...defaultProps} />);
-
-      expect(screen.queryByText('Sync to Medplum')).not.toBeInTheDocument();
-    });
-
-    it('does not show sync button when transcript is empty', () => {
-      render(
-        <ReviewMode
-          {...defaultProps}
-          authState={authenticatedState}
-          editedTranscript=""
-        />
-      );
-
-      expect(screen.queryByText('Sync to Medplum')).not.toBeInTheDocument();
-    });
-
-    it('calls onSync when sync button is clicked', () => {
-      const onSync = vi.fn();
-      render(
-        <ReviewMode {...defaultProps} authState={authenticatedState} onSync={onSync} />
-      );
-
-      fireEvent.click(screen.getByText('Sync to Medplum'));
-      expect(onSync).toHaveBeenCalledTimes(1);
-    });
-
-    it('shows syncing state', () => {
-      render(
-        <ReviewMode
-          {...defaultProps}
-          authState={authenticatedState}
-          isSyncing={true}
-        />
-      );
-
-      expect(screen.getByText('Syncing...')).toBeInTheDocument();
-      expect(screen.getByRole('button', { name: /syncing/i })).toBeDisabled();
-    });
-
-    it('shows synced state', () => {
-      render(
-        <ReviewMode
-          {...defaultProps}
-          authState={authenticatedState}
-          syncSuccess={true}
-        />
-      );
-
-      expect(screen.getByText(/synced/i)).toBeInTheDocument();
-      expect(screen.getByRole('button', { name: /synced/i })).toBeDisabled();
-    });
-
-    it('shows sync error toast', () => {
-      render(
-        <ReviewMode
-          {...defaultProps}
-          authState={authenticatedState}
-          syncError="Network error"
-        />
-      );
-
-      expect(screen.getByText('Network error')).toBeInTheDocument();
-    });
-
-    it('clears sync error when dismiss is clicked', () => {
-      const onClearSyncError = vi.fn();
-      render(
-        <ReviewMode
-          {...defaultProps}
-          authState={authenticatedState}
-          syncError="Network error"
-          onClearSyncError={onClearSyncError}
-        />
-      );
-
-      fireEvent.click(screen.getByText('×'));
-      expect(onClearSyncError).toHaveBeenCalledTimes(1);
-    });
-  });
-
-  describe('login banner', () => {
-    it('shows login banner when auto-sync enabled but not authenticated', () => {
+  describe('sync status bar', () => {
+    it('shows login prompt when auto-sync enabled but not authenticated', () => {
       render(<ReviewMode {...defaultProps} autoSyncEnabled={true} />);
 
       expect(screen.getByText(/sign in to sync/i)).toBeInTheDocument();
       expect(screen.getByText('Sign In')).toBeInTheDocument();
     });
 
-    it('does not show login banner when authenticated', () => {
+    it('does not show login prompt when authenticated', () => {
       render(
         <ReviewMode
           {...defaultProps}
@@ -508,10 +511,11 @@ describe('ReviewMode', () => {
       expect(screen.queryByText(/sign in to sync/i)).not.toBeInTheDocument();
     });
 
-    it('does not show login banner when auto-sync disabled', () => {
+    it('does not show anything when auto-sync disabled and not authenticated', () => {
       render(<ReviewMode {...defaultProps} autoSyncEnabled={false} />);
 
       expect(screen.queryByText(/sign in to sync/i)).not.toBeInTheDocument();
+      expect(screen.queryByText(/synced/i)).not.toBeInTheDocument();
     });
 
     it('calls onLogin when Sign In is clicked', () => {
@@ -543,6 +547,74 @@ describe('ReviewMode', () => {
       fireEvent.click(screen.getByText('Cancel'));
       expect(onCancelLogin).toHaveBeenCalledTimes(1);
     });
+
+    it('shows syncing state', () => {
+      render(
+        <ReviewMode
+          {...defaultProps}
+          authState={authenticatedState}
+          autoSyncEnabled={true}
+          isSyncing={true}
+        />
+      );
+
+      expect(screen.getByText(/syncing/i)).toBeInTheDocument();
+    });
+
+    it('shows synced state', () => {
+      render(
+        <ReviewMode
+          {...defaultProps}
+          authState={authenticatedState}
+          autoSyncEnabled={true}
+          syncedEncounter={{ encounterId: '123', encounterFhirId: '456', syncedAt: '2024-01-01T00:00:00Z', hasSoap: false }}
+        />
+      );
+
+      expect(screen.getByText(/synced to medplum/i)).toBeInTheDocument();
+    });
+
+    it('shows synced with SOAP state', () => {
+      render(
+        <ReviewMode
+          {...defaultProps}
+          authState={authenticatedState}
+          autoSyncEnabled={true}
+          syncedEncounter={{ encounterId: '123', encounterFhirId: '456', syncedAt: '2024-01-01T00:00:00Z', hasSoap: true }}
+        />
+      );
+
+      expect(screen.getByText(/synced with soap/i)).toBeInTheDocument();
+    });
+
+    it('shows sync error', () => {
+      render(
+        <ReviewMode
+          {...defaultProps}
+          authState={authenticatedState}
+          autoSyncEnabled={true}
+          syncError="Network error"
+        />
+      );
+
+      expect(screen.getByText('Network error')).toBeInTheDocument();
+    });
+
+    it('clears sync error when Dismiss is clicked', () => {
+      const onClearSyncError = vi.fn();
+      render(
+        <ReviewMode
+          {...defaultProps}
+          authState={authenticatedState}
+          autoSyncEnabled={true}
+          syncError="Network error"
+          onClearSyncError={onClearSyncError}
+        />
+      );
+
+      fireEvent.click(screen.getByText('Dismiss'));
+      expect(onClearSyncError).toHaveBeenCalledTimes(1);
+    });
   });
 
   describe('new session button', () => {
@@ -562,6 +634,15 @@ describe('ReviewMode', () => {
   });
 
   describe('debug raw response', () => {
+    const navigateToSoapTab = () => {
+      const tabButtons = screen.getAllByRole('button').filter(
+        btn => btn.classList.contains('review-tab') && btn.textContent?.includes('SOAP')
+      );
+      if (tabButtons.length > 0) {
+        fireEvent.click(tabButtons[0]);
+      }
+    };
+
     it('shows raw response toggle when raw_response present', () => {
       const soapNote: SoapNote = {
         subjective: 'S',
@@ -572,7 +653,8 @@ describe('ReviewMode', () => {
         model_used: 'qwen3:4b',
         raw_response: '{"subjective": "S", "objective": "O"}',
       };
-      render(<ReviewMode {...defaultProps} soapNote={soapNote} />);
+      render(<ReviewMode {...defaultProps} soapResult={createSoapResult(soapNote)} />);
+      navigateToSoapTab();
 
       expect(screen.getByText('Raw Response')).toBeInTheDocument();
     });
@@ -587,7 +669,8 @@ describe('ReviewMode', () => {
         model_used: 'qwen3:4b',
         raw_response: '{"debug": "data"}',
       };
-      render(<ReviewMode {...defaultProps} soapNote={soapNote} />);
+      render(<ReviewMode {...defaultProps} soapResult={createSoapResult(soapNote)} />);
+      navigateToSoapTab();
 
       fireEvent.click(screen.getByText('Raw Response'));
 
@@ -604,7 +687,8 @@ describe('ReviewMode', () => {
         model_used: 'qwen3:4b',
         raw_response: null,
       };
-      render(<ReviewMode {...defaultProps} soapNote={soapNote} />);
+      render(<ReviewMode {...defaultProps} soapResult={createSoapResult(soapNote)} />);
+      navigateToSoapTab();
 
       expect(screen.queryByText('Raw Response')).not.toBeInTheDocument();
     });

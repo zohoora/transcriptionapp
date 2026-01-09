@@ -2,10 +2,10 @@ import { memo, useState, useCallback } from 'react';
 import type { AudioQualitySnapshot, BiomarkerUpdate } from '../../types';
 
 interface RecordingModeProps {
-  // Timer
+  // Timer (kept for potential future use, not displayed)
   elapsedMs: number;
 
-  // Audio quality for status bars
+  // Audio quality for status indicator
   audioQuality: AudioQualitySnapshot | null;
 
   // Optional: biomarkers for tap-to-reveal
@@ -26,20 +26,7 @@ interface RecordingModeProps {
   onStop: () => void;
 }
 
-// Format elapsed time as HH:MM:SS
-const formatTime = (ms: number): string => {
-  const totalSeconds = Math.floor(ms / 1000);
-  const hours = Math.floor(totalSeconds / 3600);
-  const minutes = Math.floor((totalSeconds % 3600) / 60);
-  const seconds = totalSeconds % 60;
-
-  if (hours > 0) {
-    return `${hours}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
-  }
-  return `${minutes}:${seconds.toString().padStart(2, '0')}`;
-};
-
-// Get audio quality status (good/fair/poor) for status bars
+// Get audio quality status (good/fair/poor) for indicator
 const getQualityLevel = (quality: AudioQualitySnapshot | null): 'good' | 'fair' | 'poor' => {
   if (!quality) return 'good';
 
@@ -57,7 +44,7 @@ const getQualityLevel = (quality: AudioQualitySnapshot | null): 'good' | 'fair' 
  * Shows timer, stop button, and optional transcript preview.
  */
 export const RecordingMode = memo(function RecordingMode({
-  elapsedMs,
+  elapsedMs: _elapsedMs, // Kept for potential future use, not displayed
   audioQuality,
   biomarkers: _biomarkers, // Kept for potential future use (audio events now sent to LLM)
   transcriptText,
@@ -78,22 +65,27 @@ export const RecordingMode = memo(function RecordingMode({
 
   return (
     <div className="recording-mode">
-      {/* Recording indicator in header area */}
-      <div className="recording-indicator">
-        <span className="rec-dot" />
-        <span className="rec-text">REC</span>
-        <div className="spacer" />
-        {/* Status bars - tap to reveal details */}
-        <button
-          className={`status-bars ${qualityLevel}`}
-          onClick={handleDetailsClick}
-          aria-label="Audio quality status - tap for details"
-        >
-          <span className="bar" />
-          <span className="bar" />
-          <span className="bar" />
-        </button>
+      {/* Session in progress indicator */}
+      <div className="session-progress">
+        <div className="session-progress-indicator">
+          <span className="pulse-dot" />
+          <span className="pulse-dot" />
+          <span className="pulse-dot" />
+        </div>
+        <div className="session-progress-text">Session in progress...</div>
       </div>
+
+      {/* Audio quality indicator - subtle, tap for details */}
+      <button
+        className={`quality-indicator ${qualityLevel}`}
+        onClick={handleDetailsClick}
+        aria-label="Audio quality - tap for details"
+      >
+        <span className="quality-dot" />
+        <span className="quality-label">
+          {qualityLevel === 'good' ? 'Good audio' : qualityLevel === 'fair' ? 'Fair audio' : 'Poor audio'}
+        </span>
+      </button>
 
       {/* Details popover (tap to reveal) */}
       {showDetails && audioQuality && (
@@ -115,20 +107,15 @@ export const RecordingMode = memo(function RecordingMode({
         </div>
       )}
 
-      {/* Large Timer */}
-      <div className="timer-large">
-        {formatTime(elapsedMs)}
-      </div>
-
-      {/* Stop Button */}
+      {/* End Session Button */}
       <button
         className={`stop-button ${isStopping ? 'stopping' : ''}`}
         onClick={onStop}
         disabled={isStopping}
-        aria-label={isStopping ? 'Stopping...' : 'Stop recording'}
+        aria-label={isStopping ? 'Ending session...' : 'End session'}
       >
         <span className="stop-icon" />
-        <span className="stop-label">{isStopping ? 'Stopping...' : 'STOP'}</span>
+        <span className="stop-label">{isStopping ? 'Ending...' : 'End Session'}</span>
       </button>
 
       {/* Transcript Toggle */}

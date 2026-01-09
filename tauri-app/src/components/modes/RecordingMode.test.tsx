@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { RecordingMode } from './RecordingMode';
-import type { AudioQualitySnapshot, BiomarkerUpdate } from '../../types';
+import type { AudioQualitySnapshot } from '../../types';
 
 describe('RecordingMode', () => {
   const defaultProps = {
@@ -12,58 +12,51 @@ describe('RecordingMode', () => {
     draftText: null,
     isStopping: false,
     onStop: vi.fn(),
+    whisperMode: 'remote' as const,
+    whisperModel: 'large-v3-turbo',
   };
 
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
-  describe('timer display', () => {
-    it('formats time as M:SS for times under an hour', () => {
-      render(<RecordingMode {...defaultProps} elapsedMs={65000} />);
-      expect(screen.getByText('1:05')).toBeInTheDocument();
+  describe('session progress indicator', () => {
+    it('shows session in progress message', () => {
+      render(<RecordingMode {...defaultProps} />);
+      expect(screen.getByText('Session in progress...')).toBeInTheDocument();
     });
 
-    it('formats time as H:MM:SS for times over an hour', () => {
-      render(<RecordingMode {...defaultProps} elapsedMs={3725000} />); // 1:02:05
-      expect(screen.getByText('1:02:05')).toBeInTheDocument();
-    });
-
-    it('shows 0:00 for zero elapsed time', () => {
-      render(<RecordingMode {...defaultProps} elapsedMs={0} />);
-      expect(screen.getByText('0:00')).toBeInTheDocument();
-    });
-
-    it('handles large times correctly', () => {
-      render(<RecordingMode {...defaultProps} elapsedMs={36061000} />); // 10:01:01
-      expect(screen.getByText('10:01:01')).toBeInTheDocument();
+    it('shows pulse dot animation', () => {
+      render(<RecordingMode {...defaultProps} />);
+      const pulseDots = document.querySelectorAll('.pulse-dot');
+      expect(pulseDots.length).toBe(3);
     });
   });
 
-  describe('stop button', () => {
-    it('renders enabled stop button by default', () => {
+  describe('end session button', () => {
+    it('renders enabled end session button by default', () => {
       render(<RecordingMode {...defaultProps} />);
 
-      const button = screen.getByRole('button', { name: /stop recording/i });
+      const button = screen.getByRole('button', { name: /end session/i });
       expect(button).not.toBeDisabled();
       expect(button).not.toHaveClass('stopping');
-      expect(screen.getByText('STOP')).toBeInTheDocument();
+      expect(screen.getByText('End Session')).toBeInTheDocument();
     });
 
-    it('renders disabled stop button when stopping', () => {
+    it('renders disabled button when stopping', () => {
       render(<RecordingMode {...defaultProps} isStopping={true} />);
 
-      const button = screen.getByRole('button', { name: /stopping/i });
+      const button = screen.getByRole('button', { name: /ending session/i });
       expect(button).toBeDisabled();
       expect(button).toHaveClass('stopping');
-      expect(screen.getByText('Stopping...')).toBeInTheDocument();
+      expect(screen.getByText('Ending...')).toBeInTheDocument();
     });
 
-    it('calls onStop when stop button is clicked', () => {
+    it('calls onStop when end session button is clicked', () => {
       const onStop = vi.fn();
       render(<RecordingMode {...defaultProps} onStop={onStop} />);
 
-      fireEvent.click(screen.getByRole('button', { name: /stop recording/i }));
+      fireEvent.click(screen.getByRole('button', { name: /end session/i }));
       expect(onStop).toHaveBeenCalledTimes(1);
     });
 
@@ -71,22 +64,13 @@ describe('RecordingMode', () => {
       const onStop = vi.fn();
       render(<RecordingMode {...defaultProps} isStopping={true} onStop={onStop} />);
 
-      fireEvent.click(screen.getByRole('button', { name: /stopping/i }));
+      fireEvent.click(screen.getByRole('button', { name: /ending session/i }));
       expect(onStop).not.toHaveBeenCalled();
     });
   });
 
-  describe('recording indicator', () => {
-    it('shows REC indicator', () => {
-      render(<RecordingMode {...defaultProps} />);
-
-      expect(screen.getByText('REC')).toBeInTheDocument();
-      expect(document.querySelector('.rec-dot')).toBeInTheDocument();
-    });
-  });
-
-  describe('audio quality status bars', () => {
-    it('shows good status when audio quality is good', () => {
+  describe('audio quality indicator', () => {
+    it('shows good audio status when quality is good', () => {
       const audioQuality: AudioQualitySnapshot = {
         timestamp_ms: 1000,
         peak_db: -3,
@@ -100,11 +84,12 @@ describe('RecordingMode', () => {
       };
       render(<RecordingMode {...defaultProps} audioQuality={audioQuality} />);
 
-      const statusBars = document.querySelector('.status-bars');
-      expect(statusBars).toHaveClass('good');
+      const qualityIndicator = document.querySelector('.quality-indicator');
+      expect(qualityIndicator).toHaveClass('good');
+      expect(screen.getByText('Good audio')).toBeInTheDocument();
     });
 
-    it('shows fair status when audio quality is marginal', () => {
+    it('shows fair audio status when quality is marginal', () => {
       const audioQuality: AudioQualitySnapshot = {
         timestamp_ms: 1000,
         peak_db: -3,
@@ -118,11 +103,12 @@ describe('RecordingMode', () => {
       };
       render(<RecordingMode {...defaultProps} audioQuality={audioQuality} />);
 
-      const statusBars = document.querySelector('.status-bars');
-      expect(statusBars).toHaveClass('fair');
+      const qualityIndicator = document.querySelector('.quality-indicator');
+      expect(qualityIndicator).toHaveClass('fair');
+      expect(screen.getByText('Fair audio')).toBeInTheDocument();
     });
 
-    it('shows poor status when audio quality is bad', () => {
+    it('shows poor audio status when quality is bad', () => {
       const audioQuality: AudioQualitySnapshot = {
         timestamp_ms: 1000,
         peak_db: 0,
@@ -136,15 +122,17 @@ describe('RecordingMode', () => {
       };
       render(<RecordingMode {...defaultProps} audioQuality={audioQuality} />);
 
-      const statusBars = document.querySelector('.status-bars');
-      expect(statusBars).toHaveClass('poor');
+      const qualityIndicator = document.querySelector('.quality-indicator');
+      expect(qualityIndicator).toHaveClass('poor');
+      expect(screen.getByText('Poor audio')).toBeInTheDocument();
     });
 
     it('defaults to good when no audio quality data', () => {
       render(<RecordingMode {...defaultProps} audioQuality={null} />);
 
-      const statusBars = document.querySelector('.status-bars');
-      expect(statusBars).toHaveClass('good');
+      const qualityIndicator = document.querySelector('.quality-indicator');
+      expect(qualityIndicator).toHaveClass('good');
+      expect(screen.getByText('Good audio')).toBeInTheDocument();
     });
   });
 
@@ -161,12 +149,12 @@ describe('RecordingMode', () => {
       noise_floor_db: -50,
     };
 
-    it('shows details popover when status bars are clicked', () => {
+    it('shows details popover when quality indicator is clicked', () => {
       render(<RecordingMode {...defaultProps} audioQuality={audioQuality} />);
 
       expect(screen.queryByText('Level')).not.toBeInTheDocument();
 
-      fireEvent.click(screen.getByLabelText(/audio quality status/i));
+      fireEvent.click(screen.getByLabelText(/audio quality/i));
 
       expect(screen.getByText('Level')).toBeInTheDocument();
       expect(screen.getByText('-20 dB')).toBeInTheDocument();
@@ -177,7 +165,7 @@ describe('RecordingMode', () => {
     it('shows clipping count when present', () => {
       render(<RecordingMode {...defaultProps} audioQuality={audioQuality} />);
 
-      fireEvent.click(screen.getByLabelText(/audio quality status/i));
+      fireEvent.click(screen.getByLabelText(/audio quality/i));
 
       expect(screen.getByText('Clips')).toBeInTheDocument();
       expect(screen.getByText('5')).toBeInTheDocument();
@@ -187,21 +175,18 @@ describe('RecordingMode', () => {
       const noClips = { ...audioQuality, total_clipped: 0 };
       render(<RecordingMode {...defaultProps} audioQuality={noClips} />);
 
-      fireEvent.click(screen.getByLabelText(/audio quality status/i));
+      fireEvent.click(screen.getByLabelText(/audio quality/i));
 
       expect(screen.queryByText('Clips')).not.toBeInTheDocument();
     });
 
-    // Note: Cough count display was removed from UI
-    // Audio events (including coughs) are now sent to LLM for SOAP note generation instead
-
     it('hides details popover when clicked again', () => {
       render(<RecordingMode {...defaultProps} audioQuality={audioQuality} />);
 
-      fireEvent.click(screen.getByLabelText(/audio quality status/i));
+      fireEvent.click(screen.getByLabelText(/audio quality/i));
       expect(screen.getByText('Level')).toBeInTheDocument();
 
-      fireEvent.click(screen.getByLabelText(/audio quality status/i));
+      fireEvent.click(screen.getByLabelText(/audio quality/i));
       expect(screen.queryByText('Level')).not.toBeInTheDocument();
     });
   });
@@ -273,6 +258,20 @@ describe('RecordingMode', () => {
 
       fireEvent.click(toggle);
       expect(screen.getByText('Hide Transcript')).toHaveClass('active');
+    });
+  });
+
+  describe('model indicator', () => {
+    it('shows remote model indicator', () => {
+      render(<RecordingMode {...defaultProps} whisperMode="remote" whisperModel="large-v3-turbo" />);
+
+      expect(screen.getByText(/🌐 large-v3-turbo/)).toBeInTheDocument();
+    });
+
+    it('shows local model indicator', () => {
+      render(<RecordingMode {...defaultProps} whisperMode="local" whisperModel="small" />);
+
+      expect(screen.getByText(/💻 small/)).toBeInTheDocument();
     });
   });
 });

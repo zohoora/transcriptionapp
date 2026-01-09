@@ -24,10 +24,26 @@ function createStandardMock(overrides: Record<string, unknown> = {}) {
       list_input_devices: mockDevices,
       get_settings: mockSettings,
       set_settings: mockSettings,
+      // Checklist commands
+      run_checklist: {
+        checks: [
+          { name: 'Audio Device', status: 'pass', message: 'OK' },
+          { name: 'Model', status: 'pass', message: 'OK' },
+        ],
+        all_passed: true,
+        can_start: true,
+        summary: 'All checks passed',
+      },
+      check_model_status: { available: true, path: '/models/model.bin', error: null },
+      check_microphone_permission: { status: 'authorized', authorized: true, message: 'OK' },
       // Medplum/Ollama commands used on init
       medplum_try_restore_session: undefined,
       check_ollama_status: { connected: false, available_models: [], error: null },
       medplum_check_connection: false,
+      // Listening commands
+      start_listening: undefined,
+      stop_listening: undefined,
+      get_listening_status: { is_listening: false, speech_detected: false, speech_duration_ms: 0, analyzing: false },
       ...overrides,
     };
     if (command in responses) {
@@ -41,8 +57,8 @@ function createStandardMock(overrides: Record<string, unknown> = {}) {
 async function waitForAppReady() {
   await waitFor(() => {
     // In the new mode-based UI, when checks pass and app is ready,
-    // the START button should be available in ReadyMode
-    expect(screen.getByText('START')).toBeInTheDocument();
+    // the "Start New Session" button should be available in ReadyMode
+    expect(screen.getByText('Start New Session')).toBeInTheDocument();
   }, { timeout: 3000 });
 }
 
@@ -78,7 +94,7 @@ describe('Accessibility Tests', () => {
       is_processing_behind: false,
     });
 
-    await findByText('STOP');
+    await findByText('End Session');
 
     const results = await axe(container);
     expect(results).toHaveNoViolations();
@@ -220,9 +236,10 @@ describe('Accessibility Tests', () => {
     });
 
     it('copy button has accessible name when visible', async () => {
+      const user = userEvent.setup();
       mockInvoke.mockImplementation(createStandardMock());
 
-      const { findByText } = render(<App />);
+      render(<App />);
       await waitForAppReady();
 
       // Trigger recording mode
@@ -247,7 +264,19 @@ describe('Accessibility Tests', () => {
         segment_count: 1,
       });
 
-      await findByText('Copy');
+      // Navigate to Transcript tab (SOAP is default)
+      await waitFor(() => {
+        const tabs = screen.getAllByRole('button').filter(btn => btn.classList.contains('review-tab'));
+        expect(tabs.length).toBeGreaterThan(0);
+      });
+      const transcriptTab = screen.getAllByRole('button').filter(
+        btn => btn.classList.contains('review-tab') && btn.textContent?.includes('Transcript')
+      )[0];
+      await user.click(transcriptTab);
+
+      await waitFor(() => {
+        expect(screen.getByText('Copy')).toBeInTheDocument();
+      });
 
       // The copy button has the .copy-btn class and contains the text "Copy"
       const copyButton = document.querySelector('.copy-btn');
@@ -255,13 +284,14 @@ describe('Accessibility Tests', () => {
       expect(copyButton).toHaveTextContent('Copy');
     });
 
-    it('transcript section header is clickable for collapse/expand', async () => {
+    it('review mode has accessible tabs for navigation', async () => {
+      const user = userEvent.setup();
       mockInvoke.mockImplementation(createStandardMock());
 
-      const { findByText } = render(<App />);
+      const { findByRole } = render(<App />);
       await waitForAppReady();
 
-      // Trigger completed state to see transcript in review mode
+      // Trigger completed state to see review mode
       listenHelper.emit('session_status', {
         state: 'completed',
         provider: 'whisper',
@@ -275,12 +305,24 @@ describe('Accessibility Tests', () => {
         segment_count: 1,
       });
 
-      const transcriptHeader = await findByText('Transcript');
-      expect(transcriptHeader).toBeInTheDocument();
-      // The clickable area is now a button with review-section-header-left class
-      const headerButton = transcriptHeader.closest('button.review-section-header-left');
-      expect(headerButton).toBeTruthy();
-      expect(headerButton).toHaveAttribute('aria-expanded', 'true');
+      // Tabs should be accessible buttons
+      const transcriptTab = await findByRole('button', { name: /transcript/i });
+      expect(transcriptTab).toBeInTheDocument();
+      expect(transcriptTab).toHaveClass('review-tab');
+
+      const soapTab = await findByRole('button', { name: /soap/i });
+      expect(soapTab).toBeInTheDocument();
+
+      const insightsTab = await findByRole('button', { name: /insights/i });
+      expect(insightsTab).toBeInTheDocument();
+
+      // SOAP tab is default, click Transcript tab to see content
+      await user.click(transcriptTab);
+
+      // Content should be visible after clicking Transcript tab
+      await waitFor(() => {
+        expect(screen.getByText('Some transcript text')).toBeInTheDocument();
+      });
     });
   });
 });

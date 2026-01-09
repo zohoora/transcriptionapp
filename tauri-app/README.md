@@ -13,9 +13,13 @@ A real-time speech-to-text transcription desktop application built with Tauri, R
 
 ### Clinical Features
 - **SOAP note generation** - AI-powered clinical notes via Ollama LLM
+- **Multi-patient SOAP** - Supports up to 4 patients per visit with auto patient/physician detection
 - **Medplum EMR integration** - OAuth 2.0 + PKCE, FHIR resources
+- **Auto-sync to EMR** - Transcripts and audio automatically synced on session complete
+- **Multi-patient sync** - Creates separate encounters for each patient in multi-patient visits
 - **Encounter history** - Browse past sessions with calendar view
 - **Audio recording** - WAV files synced to EMR
+- **Auto-session detection** - Automatically starts recording when a greeting is detected
 
 ### Biomarker Analysis
 - **Vitality (prosody)** - Pitch variability analysis for affect detection
@@ -104,6 +108,7 @@ tauri-app/
 │   │   ├── config.rs             # Settings persistence
 │   │   ├── models.rs             # Model download management
 │   │   ├── checklist.rs          # Pre-flight checks
+│   │   ├── listening.rs          # Auto-session detection (VAD + greeting check)
 │   │   ├── ollama.rs             # Ollama LLM client
 │   │   ├── medplum.rs            # Medplum FHIR client
 │   │   ├── activity_log.rs       # Structured logging
@@ -191,8 +196,8 @@ pnpm soak:test         # Interactive
 
 | Category | Framework | Count |
 |----------|-----------|-------|
-| Unit Tests (Frontend) | Vitest | 335 tests |
-| Unit Tests (Rust) | cargo test | 281 tests |
+| Unit Tests (Frontend) | Vitest | 429 tests |
+| Unit Tests (Rust) | cargo test | 346 tests |
 | Snapshot Tests | Vitest | 7 snapshots |
 | Accessibility Tests | vitest-axe | 12 tests |
 | Contract Tests | Vitest | 24 tests |
@@ -218,7 +223,10 @@ Settings are stored in `~/.transcriptionapp/config.json`:
   "ollama_model": "qwen3:4b",
   "medplum_server_url": "http://localhost:8103",
   "medplum_client_id": "your-client-id",
-  "medplum_auto_sync": true
+  "medplum_auto_sync": true,
+  "auto_start_enabled": false,
+  "greeting_sensitivity": 0.7,
+  "min_speech_duration_ms": 2000
 }
 ```
 

@@ -1,4 +1,5 @@
 import { memo } from 'react';
+import type { ListeningStatus } from '../../types';
 
 interface ReadyModeProps {
   // Audio level for mic preview
@@ -6,23 +7,66 @@ interface ReadyModeProps {
 
   // Error state
   errorMessage?: string | null;
+  // Whether the error is specifically a permission error
+  isPermissionError?: boolean;
+
+  // Auto-detection state
+  autoStartEnabled?: boolean;
+  isListening?: boolean;
+  listeningStatus?: ListeningStatus | null;
 
   // Start action
   onStart: () => void;
+  // Open system settings (for permission errors)
+  onOpenSettings?: () => void;
+}
+
+/**
+ * Helper to get listening state label
+ */
+function getListeningLabel(status: ListeningStatus | null | undefined): string {
+  if (!status) return 'Listening...';
+  if (status.analyzing) return 'Analyzing...';
+  if (status.speech_detected) {
+    const seconds = Math.floor(status.speech_duration_ms / 1000);
+    return `Speech detected (${seconds}s)...`;
+  }
+  return 'Listening...';
 }
 
 /**
  * Ready mode UI - shown when idle and ready to start recording.
  * Features a large start button and mic level preview.
+ * When auto-start is enabled, shows listening indicator.
  */
 export const ReadyMode = memo(function ReadyMode({
   audioLevel = 0,
   errorMessage,
+  isPermissionError = false,
+  autoStartEnabled = false,
+  isListening = false,
+  listeningStatus,
   onStart,
+  onOpenSettings,
 }: ReadyModeProps) {
+  // Determine if we're in listening mode with visual feedback
+  const showListeningIndicator = autoStartEnabled && isListening;
+
   return (
     <div className="ready-mode">
-      {/* Mic Level Preview */}
+      {/* Listening Mode Indicator */}
+      {showListeningIndicator && (
+        <div className="listening-indicator">
+          <div
+            className={`listening-pulse ${listeningStatus?.analyzing ? 'analyzing' : ''} ${listeningStatus?.speech_detected ? 'speech' : ''}`}
+          />
+          <span className="listening-label">
+            {getListeningLabel(listeningStatus)}
+          </span>
+        </div>
+      )}
+
+      {/* Mic Level Preview - always shown */}
       <div className="mic-preview">
         <div className="mic-level-bar">
           <div
@@ -32,24 +76,34 @@ export const ReadyMode = memo(function ReadyMode({
         </div>
       </div>
 
-      {/* Large Start Button */}
+      {/* Start Button - smaller when listening */}
       <button
-        className="start-button-large ready"
+        className={`start-button-large ready ${showListeningIndicator ? 'start-button-small' : ''}`}
         onClick={onStart}
-        aria-label="Start recording"
+        aria-label="Start new session"
       >
-        <span className="start-icon" />
-        <span className="start-label">START</span>
+        <span className="start-label">
+          {showListeningIndicator ? 'Start Manually' : 'Start New Session'}
+        </span>
       </button>
 
-      {/* Status Text */}
-      <div className="ready-status">
-        {errorMessage ? (
-          <span className="status-error">{errorMessage}</span>
-        ) : (
-          <span className="status-ready">Ready to record</span>
-        )}
-      </div>
+      {/* Error Messages Only */}
+      {errorMessage && (
+        <div className="ready-status">
+          <div className="permission-error-container">
+            <span className="status-error">{errorMessage}</span>
+            {isPermissionError && onOpenSettings && (
+              <button
+                className="open-settings-btn"
+                onClick={onOpenSettings}
+                aria-label="Open microphone settings"
+              >
+                Open Settings
+              </button>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 });

@@ -1,11 +1,20 @@
 import { memo } from 'react';
 
+/** Sync status for the header indicator */
+export type SyncStatus = 'idle' | 'syncing' | 'success' | 'error';
+
 interface HeaderProps {
   statusDotClass: string;
   showSettings: boolean;
   disabled: boolean;
   onHistoryClick: () => void;
   onSettingsClick: () => void;
+  /** Current sync status */
+  syncStatus?: SyncStatus;
+  /** Error message if sync failed */
+  syncError?: string | null;
+  /** Callback to dismiss sync status */
+  onDismissSync?: () => void;
 }
 
 /**
@@ -18,6 +27,9 @@ export const Header = memo(function Header({
   disabled,
   onHistoryClick,
   onSettingsClick,
+  syncStatus = 'idle',
+  syncError,
+  onDismissSync,
 }: HeaderProps) {
   return (
     <header className="header">
@@ -25,6 +37,37 @@ export const Header = memo(function Header({
         <span className={`status-dot ${statusDotClass}`} />
         <span className="app-title">Scribe</span>
       </div>
+
+      {/* Sync Status Indicator */}
+      {syncStatus !== 'idle' && (
+        <div className={`sync-indicator sync-${syncStatus}`} title={syncError || undefined}>
+          {syncStatus === 'syncing' && (
+            <>
+              <span className="sync-spinner" />
+              <span className="sync-text">Syncing...</span>
+            </>
+          )}
+          {syncStatus === 'success' && (
+            <>
+              <span className="sync-icon">✓</span>
+              <span className="sync-text">Synced</span>
+              {onDismissSync && (
+                <button className="sync-dismiss" onClick={onDismissSync} aria-label="Dismiss">×</button>
+              )}
+            </>
+          )}
+          {syncStatus === 'error' && (
+            <>
+              <span className="sync-icon">!</span>
+              <span className="sync-text">Sync failed</span>
+              {onDismissSync && (
+                <button className="sync-dismiss" onClick={onDismissSync} aria-label="Dismiss">×</button>
+              )}
+            </>
+          )}
+        </div>
+      )}
+
       <div className="header-buttons">
         <button
           className="history-btn"

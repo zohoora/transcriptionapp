@@ -1,8 +1,10 @@
 export { default as AudioQualitySection } from './AudioQualitySection';
 export { default as BiomarkersSection } from './BiomarkersSection';
 export { default as ConversationDynamicsSection } from './ConversationDynamicsSection';
-export { Header } from './Header';
+export { default as ErrorBoundary } from './ErrorBoundary';
+export { Header, type SyncStatus } from './Header';
 export { SettingsDrawer, type PendingSettings } from './SettingsDrawer';
+export { SyncStatusBar } from './SyncStatusBar';
 
 // Mode components
 export { ReadyMode, RecordingMode, ReviewMode } from './modes';

@@ -123,23 +123,32 @@ describe('useSessionState', () => {
     expect(result.current.editedTranscript).toBe('new transcript text');
   });
 
-  it('updates soapNote via setter', () => {
+  it('updates soapResult via setter', () => {
     const { result } = renderHook(() => useSessionState());
 
-    const mockSoapNote = {
-      subjective: 'test',
-      objective: 'test',
-      assessment: 'test',
-      plan: 'test',
+    const mockSoapResult = {
+      notes: [{
+        patient_label: 'Patient 1',
+        speaker_id: 'Speaker 1',
+        soap: {
+          subjective: 'test',
+          objective: 'test',
+          assessment: 'test',
+          plan: 'test',
+          generated_at: '2025-01-01T00:00:00Z',
+          model_used: 'test-model',
+        },
+      }],
+      physician_speaker: 'Speaker 2',
       generated_at: '2025-01-01T00:00:00Z',
       model_used: 'test-model',
     };
 
     act(() => {
-      result.current.setSoapNote(mockSoapNote);
+      result.current.setSoapResult(mockSoapResult);
     });
 
-    expect(result.current.soapNote).toEqual(mockSoapNote);
+    expect(result.current.soapResult).toEqual(mockSoapResult);
   });
 
   it('derives isRecording correctly', async () => {

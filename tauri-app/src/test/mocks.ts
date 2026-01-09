@@ -83,9 +83,19 @@ export interface Settings {
   max_speakers: number;
   ollama_server_url: string;
   ollama_model: string;
+  ollama_keep_alive: number;
   medplum_server_url: string;
   medplum_client_id: string;
   medplum_auto_sync: boolean;
+  whisper_mode: 'remote';
+  whisper_server_url: string;
+  whisper_server_model: string;
+  soap_detail_level: number;
+  soap_format: string;
+  soap_custom_instructions: string;
+  auto_start_enabled: boolean;
+  greeting_sensitivity: number | null;
+  min_speech_duration_ms: number | null;
 }
 
 export const mockSettings: Settings = {
@@ -100,9 +110,19 @@ export const mockSettings: Settings = {
   max_speakers: 4,
   ollama_server_url: 'http://localhost:11434',
   ollama_model: 'qwen3:4b',
+  ollama_keep_alive: -1,
   medplum_server_url: 'http://localhost:8103',
   medplum_client_id: 'test-client-id',
   medplum_auto_sync: false,
+  whisper_mode: 'remote',
+  whisper_server_url: 'http://localhost:8001',
+  whisper_server_model: 'large-v3-turbo',
+  soap_detail_level: 2,
+  soap_format: 'standard',
+  soap_custom_instructions: '',
+  auto_start_enabled: false,
+  greeting_sensitivity: 0.7,
+  min_speech_duration_ms: 2000,
 };
 
 // Ollama types

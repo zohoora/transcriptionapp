@@ -2,6 +2,13 @@ import { useState, useCallback, useEffect, useRef } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import type { ChecklistResult, ModelStatus } from '../types';
 
+/** Microphone permission status from backend */
+export interface MicrophonePermissionStatus {
+  status: string;
+  authorized: boolean;
+  message: string;
+}
+
 export interface UseChecklistResult {
   checklistResult: ChecklistResult | null;
   checklistRunning: boolean;
@@ -10,6 +17,10 @@ export interface UseChecklistResult {
   runChecklist: () => Promise<void>;
   handleDownloadModel: (modelName: string) => Promise<void>;
   setModelStatus: (status: ModelStatus | null) => void;
+  /** Check microphone permission and optionally open settings if denied */
+  checkMicrophonePermission: () => Promise<MicrophonePermissionStatus>;
+  /** Open system settings to microphone privacy section */
+  openMicrophoneSettings: () => Promise<void>;
 }
 
 export function useChecklist(): UseChecklistResult {
@@ -88,6 +99,30 @@ export function useChecklist(): UseChecklistResult {
     [runChecklist]
   );
 
+  // Check microphone permission
+  const checkMicrophonePermission = useCallback(async (): Promise<MicrophonePermissionStatus> => {
+    try {
+      const result = await invoke<MicrophonePermissionStatus>('check_microphone_permission');
+      return result;
+    } catch (e) {
+      console.error('Failed to check microphone permission:', e);
+      return {
+        status: 'unknown',
+        authorized: false,
+        message: `Failed to check permission: ${e}`,
+      };
+    }
+  }, []);
+
+  // Open microphone settings
+  const openMicrophoneSettings = useCallback(async (): Promise<void> => {
+    try {
+      await invoke('open_microphone_settings');
+    } catch (e) {
+      console.error('Failed to open microphone settings:', e);
+    }
+  }, []);
+
   return {
     checklistResult,
     checklistRunning,
@@ -96,5 +131,7 @@ export function useChecklist(): UseChecklistResult {
     runChecklist,
     handleDownloadModel,
     setModelStatus,
+    checkMicrophonePermission,
+    openMicrophoneSettings,
   };
 }

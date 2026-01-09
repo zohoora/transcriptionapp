@@ -21,6 +21,7 @@ export interface PendingSettings {
   max_speakers: number;
   ollama_server_url: string;
   ollama_model: string;
+  ollama_keep_alive: number;
   medplum_server_url: string;
   medplum_client_id: string;
   medplum_auto_sync: boolean;
@@ -28,6 +29,8 @@ export interface PendingSettings {
   whisper_mode: 'remote';  // Always 'remote'
   whisper_server_url: string;
   whisper_server_model: string;
+  // Auto-session detection settings
+  auto_start_enabled: boolean;
 }
 
 interface SettingsDrawerProps {
@@ -216,6 +219,22 @@ export const SettingsDrawer = memo(function SettingsDrawer({
                 </div>
               </div>
 
+              <div className="settings-group">
+                <div className="settings-toggle">
+                  <span className="settings-label" style={{ marginBottom: 0 }}>Auto-start on Greeting</span>
+                  <label className="toggle-switch">
+                    <input
+                      type="checkbox"
+                      checked={pendingSettings.auto_start_enabled}
+                      onChange={(e) => onSettingsChange({ ...pendingSettings, auto_start_enabled: e.target.checked })}
+                      aria-label="Auto-start recording when greeting detected"
+                    />
+                    <span className="toggle-slider"></span>
+                  </label>
+                </div>
+                <span className="settings-hint">Start recording automatically when speech with a greeting is detected</span>
+              </div>
+
               {/* Ollama / SOAP Note Settings */}
               <div className="settings-divider" />
               <div className="settings-section-title">SOAP Note Generation</div>
@@ -246,6 +265,25 @@ export const SettingsDrawer = memo(function SettingsDrawer({
                     .map((m) => (
                       <option key={m} value={m}>{m}</option>
                     ))}
+                </select>
+              </div>
+
+              <div className="settings-group">
+                <label className="settings-label" htmlFor="ollama-keep-alive">
+                  Keep Model Loaded
+                  <span className="settings-hint">Faster responses but uses more RAM</span>
+                </label>
+                <select
+                  id="ollama-keep-alive"
+                  className="settings-select"
+                  value={pendingSettings.ollama_keep_alive}
+                  onChange={(e) => onSettingsChange({ ...pendingSettings, ollama_keep_alive: parseInt(e.target.value, 10) })}
+                >
+                  <option value={-1}>Forever (fastest)</option>
+                  <option value={300}>5 minutes</option>
+                  <option value={1800}>30 minutes</option>
+                  <option value={3600}>1 hour</option>
+                  <option value={0}>Unload immediately (saves RAM)</option>
                 </select>
               </div>
 

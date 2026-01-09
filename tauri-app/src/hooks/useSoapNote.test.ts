@@ -21,19 +21,33 @@ describe('useSoapNote', () => {
     expect(result.current.soapError).toBeNull();
     expect(result.current.ollamaStatus).toBeNull();
     expect(result.current.ollamaModels).toEqual([]);
+    expect(result.current.soapOptions).toEqual({
+      detail_level: 5,
+      format: 'problem_based',
+      custom_instructions: '',
+    });
   });
 
   it('generates SOAP note successfully', async () => {
-    const mockSoapNote = {
-      subjective: 'Patient reports symptoms',
-      objective: 'Vitals normal',
-      assessment: 'Common cold',
-      plan: 'Rest and fluids',
+    const mockSoapResult = {
+      notes: [{
+        patient_label: 'Patient 1',
+        speaker_id: 'Speaker 1',
+        soap: {
+          subjective: 'Patient reports symptoms',
+          objective: 'Vitals normal',
+          assessment: 'Common cold',
+          plan: 'Rest and fluids',
+          generated_at: '2025-01-01T00:00:00Z',
+          model_used: 'qwen3:4b',
+        },
+      }],
+      physician_speaker: 'Speaker 2',
       generated_at: '2025-01-01T00:00:00Z',
       model_used: 'qwen3:4b',
     };
 
-    mockInvoke.mockResolvedValue(mockSoapNote);
+    mockInvoke.mockResolvedValue(mockSoapResult);
 
     const { result } = renderHook(() => useSoapNote());
 
@@ -42,21 +56,35 @@ describe('useSoapNote', () => {
       soapResult = await result.current.generateSoapNote('Patient said they feel sick');
     });
 
-    expect(mockInvoke).toHaveBeenCalledWith('generate_soap_note', {
+    expect(mockInvoke).toHaveBeenCalledWith('generate_soap_note_auto_detect', {
       transcript: 'Patient said they feel sick',
       audioEvents: undefined, // Optional audio events parameter
+      options: {
+        detail_level: 5,
+        format: 'problem_based',
+        custom_instructions: '',
+      },
     });
-    expect(soapResult).toEqual(mockSoapNote);
+    expect(soapResult).toEqual(mockSoapResult);
     expect(result.current.soapError).toBeNull();
     expect(result.current.isGeneratingSoap).toBe(false);
   });
 
-  it('passes audio events to generate_soap_note', async () => {
-    const mockSoapNote = {
-      subjective: 'Patient reports cough',
-      objective: 'Observed coughing during visit',
-      assessment: 'Respiratory infection',
-      plan: 'Cough suppressant',
+  it('passes audio events to generate_soap_note_auto_detect', async () => {
+    const mockSoapResult = {
+      notes: [{
+        patient_label: 'Patient 1',
+        speaker_id: 'Speaker 1',
+        soap: {
+          subjective: 'Patient reports cough',
+          objective: 'Observed coughing during visit',
+          assessment: 'Respiratory infection',
+          plan: 'Cough suppressant',
+          generated_at: '2025-01-01T00:00:00Z',
+          model_used: 'qwen3:4b',
+        },
+      }],
+      physician_speaker: 'Speaker 2',
       generated_at: '2025-01-01T00:00:00Z',
       model_used: 'qwen3:4b',
     };
@@ -66,7 +94,7 @@ describe('useSoapNote', () => {
       { timestamp_ms: 45000, duration_ms: 300, confidence: 1.8, label: 'Throat clearing' },
     ];
 
-    mockInvoke.mockResolvedValue(mockSoapNote);
+    mockInvoke.mockResolvedValue(mockSoapResult);
 
     const { result } = renderHook(() => useSoapNote());
 
@@ -75,11 +103,70 @@ describe('useSoapNote', () => {
       soapResult = await result.current.generateSoapNote('Patient has a cough', audioEvents);
     });
 
-    expect(mockInvoke).toHaveBeenCalledWith('generate_soap_note', {
+    expect(mockInvoke).toHaveBeenCalledWith('generate_soap_note_auto_detect', {
       transcript: 'Patient has a cough',
       audioEvents: audioEvents,
+      options: {
+        detail_level: 5,
+        format: 'problem_based',
+        custom_instructions: '',
+      },
     });
-    expect(soapResult).toEqual(mockSoapNote);
+    expect(soapResult).toEqual(mockSoapResult);
+  });
+
+  it('initializes with default SOAP options', () => {
+    const { result } = renderHook(() => useSoapNote());
+
+    expect(result.current.soapOptions).toEqual({
+      detail_level: 5,
+      format: 'problem_based',
+      custom_instructions: '',
+    });
+  });
+
+  it('can update SOAP detail level', () => {
+    const { result } = renderHook(() => useSoapNote());
+
+    act(() => {
+      result.current.updateSoapDetailLevel(8);
+    });
+
+    expect(result.current.soapOptions.detail_level).toBe(8);
+  });
+
+  it('clamps detail level to valid range', () => {
+    const { result } = renderHook(() => useSoapNote());
+
+    act(() => {
+      result.current.updateSoapDetailLevel(15); // Above max
+    });
+    expect(result.current.soapOptions.detail_level).toBe(10);
+
+    act(() => {
+      result.current.updateSoapDetailLevel(0); // Below min
+    });
+    expect(result.current.soapOptions.detail_level).toBe(1);
+  });
+
+  it('can update SOAP format', () => {
+    const { result } = renderHook(() => useSoapNote());
+
+    act(() => {
+      result.current.updateSoapFormat('comprehensive');
+    });
+
+    expect(result.current.soapOptions.format).toBe('comprehensive');
+  });
+
+  it('can update custom instructions', () => {
+    const { result } = renderHook(() => useSoapNote());
+
+    act(() => {
+      result.current.updateSoapCustomInstructions('Include medication details');
+    });
+
+    expect(result.current.soapOptions.custom_instructions).toBe('Include medication details');
   });
 
   it('returns null for empty transcript', async () => {

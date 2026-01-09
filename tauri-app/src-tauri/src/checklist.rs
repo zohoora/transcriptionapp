@@ -32,6 +32,7 @@ use tracing::{info, warn};
 
 use crate::audio;
 use crate::config::Config;
+use crate::permissions::{self, MicrophoneAuthStatus};
 
 /// Categories for organizing checks
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -143,6 +144,9 @@ pub fn run_all_checks(config: &Config) -> ChecklistResult {
 
     let mut checks = Vec::new();
 
+    // Permission checks (FIRST - most critical for user experience)
+    checks.extend(run_permission_checks());
+
     // Audio checks
     checks.extend(run_audio_checks(config));
 
@@ -161,6 +165,65 @@ pub fn run_all_checks(config: &Config) -> ChecklistResult {
     }
 
     result
+}
+
+/// Run permission-related checks
+fn run_permission_checks() -> Vec<CheckResult> {
+    let mut checks = Vec::new();
+
+    // Microphone permission check
+    let mic_status = permissions::check_microphone_permission();
+    let mic_check = match mic_status {
+        MicrophoneAuthStatus::Authorized => CheckResult {
+            id: "microphone_permission".to_string(),
+            name: "Microphone Permission".to_string(),
+            category: CheckCategory::Permission,
+            status: CheckStatus::Pass,
+            message: Some("Microphone access granted".to_string()),
+            action: None,
+        },
+        MicrophoneAuthStatus::Denied => CheckResult {
+            id: "microphone_permission".to_string(),
+            name: "Microphone Permission".to_string(),
+            category: CheckCategory::Permission,
+            status: CheckStatus::Fail,
+            message: Some("Microphone access denied. Please grant permission in System Settings → Privacy & Security → Microphone".to_string()),
+            action: Some(CheckAction::OpenSettings {
+                settings_type: "privacy_microphone".to_string(),
+            }),
+        },
+        MicrophoneAuthStatus::NotDetermined => {
+            // Request permission - macOS will show the system dialog
+            permissions::request_microphone_permission();
+            CheckResult {
+                id: "microphone_permission".to_string(),
+                name: "Microphone Permission".to_string(),
+                category: CheckCategory::Permission,
+                status: CheckStatus::Fail,
+                message: Some("Microphone permission required. Please allow access when prompted, then try again".to_string()),
+                action: Some(CheckAction::Retry),
+            }
+        }
+        MicrophoneAuthStatus::Restricted => CheckResult {
+            id: "microphone_permission".to_string(),
+            name: "Microphone Permission".to_string(),
+            category: CheckCategory::Permission,
+            status: CheckStatus::Fail,
+            message: Some("Microphone access is restricted by system policy (e.g., parental controls)".to_string()),
+            action: None,
+        },
+        MicrophoneAuthStatus::Unknown => CheckResult {
+            id: "microphone_permission".to_string(),
+            name: "Microphone Permission".to_string(),
+            category: CheckCategory::Permission,
+            status: CheckStatus::Warning,
+            message: Some("Could not determine microphone permission status".to_string()),
+            action: None,
+        },
+    };
+    checks.push(mic_check);
+
+    checks
 }
 
 /// Run audio-related checks

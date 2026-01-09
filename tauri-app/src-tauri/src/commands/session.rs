@@ -1,5 +1,6 @@
 //! Session lifecycle commands (start, stop, reset)
 
+use super::listening::SharedListeningState;
 use super::{emit_status_arc, emit_transcript_arc, SharedPipelineState, SharedSessionManager};
 use crate::activity_log;
 use crate::config::Config;
@@ -16,6 +17,7 @@ pub async fn start_session(
     app: AppHandle,
     session_state: State<'_, SharedSessionManager>,
     pipeline_state: State<'_, SharedPipelineState>,
+    listening_state: State<'_, SharedListeningState>,
     device_id: Option<String>,
 ) -> Result<(), String> {
     info!("Starting session with device: {:?}", device_id);
@@ -23,6 +25,22 @@ pub async fn start_session(
     // Clone the Arcs for use in async context
     let session_arc = session_state.inner().clone();
     let pipeline_arc = pipeline_state.inner().clone();
+
+    // Check for and consume any initial audio buffer from listening mode
+    // This is used for optimistic recording - the buffer contains audio captured
+    // before the greeting check completed
+    let initial_audio_buffer = {
+        let mut listening = listening_state.lock().map_err(|e| e.to_string())?;
+        listening.initial_audio_buffer.take()
+    };
+
+    if let Some(ref buffer) = initial_audio_buffer {
+        info!(
+            "Consuming initial audio buffer: {} samples ({:.1}s)",
+            buffer.len(),
+            buffer.len() as f32 / 16000.0
+        );
+    }
 
     // Transition to preparing
     {
@@ -109,6 +127,7 @@ pub async fn start_session(
         whisper_mode: config.whisper_mode.clone(),
         whisper_server_url: config.whisper_server_url.clone(),
         whisper_server_model: config.whisper_server_model.clone(),
+        initial_audio_buffer,
     };
 
     // Create message channel

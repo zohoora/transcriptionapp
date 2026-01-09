@@ -37,9 +37,11 @@ mod commands;
 pub mod config;
 pub mod diarization;
 pub mod enhancement;
+pub mod listening;
 pub mod medplum;
 pub mod models;
 pub mod ollama;
+pub mod permissions;
 mod pipeline;
 pub mod preprocessing;
 #[cfg(test)]
@@ -187,6 +189,10 @@ pub fn run() {
             let medplum_client = commands::create_medplum_client();
             app.manage(medplum_client);
 
+            // Initialize listening state for auto-session detection (Arc-wrapped for callback sharing)
+            let listening_state: commands::SharedListeningState = Arc::new(Mutex::new(Default::default()));
+            app.manage(listening_state);
+
             info!("App setup complete");
             Ok(())
         })
@@ -212,7 +218,9 @@ pub fn run() {
             commands::is_model_downloaded,
             commands::check_ollama_status,
             commands::list_ollama_models,
+            commands::prewarm_ollama_model,
             commands::generate_soap_note,
+            commands::generate_soap_note_auto_detect,
             // Medplum EMR commands
             commands::medplum_get_auth_state,
             commands::medplum_try_restore_session,
@@ -228,10 +236,20 @@ pub fn run() {
             commands::medplum_get_audio_data,
             commands::medplum_sync_encounter,
             commands::medplum_quick_sync,
+            commands::medplum_add_soap_to_encounter,
+            commands::medplum_multi_patient_quick_sync,
             commands::medplum_check_connection,
             // Whisper server commands (remote transcription)
             commands::check_whisper_server_status,
             commands::list_whisper_server_models,
+            // Permission commands (microphone access)
+            commands::check_microphone_permission,
+            commands::request_microphone_permission,
+            commands::open_microphone_settings,
+            // Listening mode commands (auto-session detection)
+            commands::start_listening,
+            commands::stop_listening,
+            commands::get_listening_status,
         ])
         .on_window_event(|window, event| {
             if let WindowEvent::CloseRequested { .. } = event {

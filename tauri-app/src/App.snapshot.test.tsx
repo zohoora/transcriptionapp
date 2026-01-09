@@ -19,10 +19,26 @@ function createStandardMock(overrides: Record<string, unknown> = {}) {
     const responses: Record<string, unknown> = {
       list_input_devices: mockDevices,
       get_settings: mockSettings,
+      // Checklist commands
+      run_checklist: {
+        checks: [
+          { name: 'Audio Device', status: 'pass', message: 'OK' },
+          { name: 'Model', status: 'pass', message: 'OK' },
+        ],
+        all_passed: true,
+        can_start: true,
+        summary: 'All checks passed',
+      },
+      check_model_status: { available: true, path: '/models/model.bin', error: null },
+      check_microphone_permission: { status: 'authorized', authorized: true, message: 'OK' },
       // Medplum/Ollama commands used on init
       medplum_try_restore_session: undefined,
       check_ollama_status: { connected: false, available_models: [], error: null },
       medplum_check_connection: false,
+      // Listening commands
+      start_listening: undefined,
+      stop_listening: undefined,
+      get_listening_status: { is_listening: false, speech_detected: false, speech_duration_ms: 0, analyzing: false },
       ...overrides,
     };
     if (command in responses) {
@@ -36,8 +52,8 @@ function createStandardMock(overrides: Record<string, unknown> = {}) {
 async function waitForAppReady() {
   await waitFor(() => {
     // In the new mode-based UI, when checks pass and app is ready,
-    // the START button should be available in ReadyMode
-    expect(screen.getByText('START')).toBeInTheDocument();
+    // the "Start New Session" button should be available in ReadyMode
+    expect(screen.getByText('Start New Session')).toBeInTheDocument();
   }, { timeout: 3000 });
 }
 
@@ -73,7 +89,7 @@ describe('App Snapshots', () => {
       is_processing_behind: false,
     });
 
-    await findByText('STOP');
+    await findByText('End Session');
 
     expect(container.firstChild).toMatchSnapshot();
   });
@@ -167,8 +183,8 @@ describe('App Snapshots', () => {
       is_processing_behind: false,
     });
 
-    // In the new UI, stopping state shows "Stopping..." text
-    await findByText('Stopping...');
+    // In the new UI, stopping state shows "Ending..." text
+    await findByText('Ending...');
 
     // Button should be disabled during stopping
     const stopButton = container.querySelector('.stop-button');

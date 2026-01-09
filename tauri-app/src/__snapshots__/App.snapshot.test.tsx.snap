@@ -120,181 +120,100 @@ exports[`App Snapshots > renders completed state correctly 1`] = `
       >
         🌐
          
-        unknown
+        large-v3-turbo
       </span>
     </div>
-    <section
-      class="review-transcript-section"
+    <div
+      class="review-tabs"
+    >
+      <button
+        class="review-tab "
+      >
+        Transcript
+      </button>
+      <button
+        class="review-tab active"
+      >
+        SOAP
+      </button>
+      <button
+        class="review-tab "
+      >
+        Insights
+      </button>
+    </div>
+    <div
+      class="review-tab-content"
     >
       <div
-        class="review-section-header"
-      >
-        <button
-          aria-expanded="true"
-          aria-label="Collapse Transcript section"
-          class="review-section-header-left"
-        >
-          <span
-            class="chevron "
-          >
-            ▼
-          </span>
-          <span
-            class="review-section-title"
-          >
-            Transcript
-          </span>
-        </button>
-        <div
-          class="review-section-actions"
-        >
-          <button
-            class="btn-small "
-          >
-            Edit
-          </button>
-          <button
-            class="btn-small copy-btn "
-          >
-            Copy
-          </button>
-        </div>
-      </div>
-      <div
-        class="review-transcript-content"
+        class="tab-panel soap-panel"
       >
         <div
-          class="transcript-display"
+          class="soap-options"
         >
-          <p>
-            Final transcript text here.
-          </p>
-        </div>
-      </div>
-    </section>
-    <section
-      class="review-soap-section"
-    >
-      <div
-        class="review-section-header"
-      >
-        <button
-          aria-expanded="true"
-          aria-label="Collapse SOAP Note section"
-          class="review-section-header-left"
-        >
-          <span
-            class="chevron "
-          >
-            ▼
-          </span>
-          <span
-            class="review-section-title"
-          >
-            SOAP Note
-          </span>
-        </button>
-      </div>
-      <div
-        class="review-soap-content"
-      >
-        <div
-          class="soap-options-container"
-        >
-          <button
-            class="soap-options-toggle"
-          >
-            <span
-              class="chevron-small "
-            >
-              ▼
-            </span>
-            Options
-            <span
-              class="soap-options-summary"
-            >
-              Standard
-               • 
-              Problem-Based
-            </span>
-          </button>
           <div
-            class="soap-options"
+            class="soap-option-row"
           >
-            <div
-              class="soap-option-group"
+            <label
+              class="soap-option-label"
             >
-              <label
-                class="soap-option-label"
-              >
-                Detail Level: 
-                Standard
-              </label>
-              <div
-                class="soap-detail-slider"
-              >
-                <input
-                  aria-label="SOAP note detail level"
-                  class="detail-slider"
-                  max="10"
-                  min="1"
-                  type="range"
-                  value="5"
-                />
-                <span
-                  class="detail-value"
-                >
-                  5
-                </span>
-              </div>
+              Detail: 
+              Standard
+            </label>
+            <div
+              class="soap-detail-slider"
+            >
+              <input
+                aria-label="SOAP note detail level"
+                class="detail-slider"
+                max="10"
+                min="1"
+                type="range"
+                value="5"
+              />
               <span
-                class="soap-option-hint"
+                class="detail-value"
               >
-                Default balanced detail
+                5
               </span>
             </div>
-            <div
-              class="soap-option-group"
+          </div>
+          <div
+            class="soap-option-row"
+          >
+            <label
+              class="soap-option-label"
             >
-              <label
-                class="soap-option-label"
-              >
-                Format
-              </label>
-              <div
-                class="soap-format-toggle"
-              >
-                <button
-                  class="format-btn active"
-                >
-                  Problem-Based
-                </button>
-                <button
-                  class="format-btn "
-                >
-                  Comprehensive
-                </button>
-              </div>
-              <span
-                class="soap-option-hint"
-              >
-                Separate S/O/A/P sections per medical problem
-              </span>
-            </div>
+              Format
+            </label>
             <div
-              class="soap-option-group"
+              class="soap-format-toggle"
             >
               <button
-                class="custom-instructions-toggle"
+                class="format-btn active"
               >
-                <span
-                  class="chevron-small collapsed"
-                >
-                  ▼
-                </span>
-                Custom Instructions
+                Problem
+              </button>
+              <button
+                class="format-btn "
+              >
+                Comprehensive
               </button>
             </div>
+          </div>
+          <div
+            class="soap-option-row custom-instructions"
+          >
+            <button
+              class="custom-instructions-toggle"
+            >
+              <span
+                class="chevron-small collapsed"
+              >
+                ▼
+              </span>
+              Custom Instructions
+            </button>
           </div>
         </div>
         <button
@@ -304,7 +223,7 @@ exports[`App Snapshots > renders completed state correctly 1`] = `
           Ollama not connected
         </button>
       </div>
-    </section>
+    </div>
     <div
       class="action-bar"
     >
@@ -422,26 +341,27 @@ exports[`App Snapshots > renders error state correctly 1`] = `
       </div>
     </div>
     <button
-      aria-label="Start recording"
-      class="start-button-large ready"
+      aria-label="Start new session"
+      class="start-button-large ready "
     >
-      <span
-        class="start-icon"
-      />
       <span
         class="start-label"
       >
-        START
+        Start New Session
       </span>
     </button>
     <div
       class="ready-status"
     >
-      <span
-        class="status-error"
+      <div
+        class="permission-error-container"
       >
-        Microphone access denied
-      </span>
+        <span
+          class="status-error"
+        >
+          Microphone access denied
+        </span>
+      </div>
     </div>
   </div>
 </div>
@@ -551,27 +471,15 @@ exports[`App Snapshots > renders idle state correctly 1`] = `
       </div>
     </div>
     <button
-      aria-label="Start recording"
-      class="start-button-large ready"
+      aria-label="Start new session"
+      class="start-button-large ready "
     >
-      <span
-        class="start-icon"
-      />
       <span
         class="start-label"
       >
-        START
+        Start New Session
       </span>
     </button>
-    <div
-      class="ready-status"
-    >
-      <span
-        class="status-ready"
-      >
-        Ready to record
-      </span>
-    </div>
   </div>
 </div>
 `;
@@ -670,41 +578,42 @@ exports[`App Snapshots > renders recording state correctly 1`] = `
     class="recording-mode"
   >
     <div
-      class="recording-indicator"
+      class="session-progress"
     >
-      <span
-        class="rec-dot"
-      />
-      <span
-        class="rec-text"
-      >
-        REC
-      </span>
       <div
-        class="spacer"
-      />
-      <button
-        aria-label="Audio quality status - tap for details"
-        class="status-bars good"
+        class="session-progress-indicator"
       >
         <span
-          class="bar"
+          class="pulse-dot"
         />
         <span
-          class="bar"
+          class="pulse-dot"
         />
         <span
-          class="bar"
+          class="pulse-dot"
         />
-      </button>
-    </div>
-    <div
-      class="timer-large"
-    >
-      0:00
+      </div>
+      <div
+        class="session-progress-text"
+      >
+        Session in progress...
+      </div>
     </div>
     <button
-      aria-label="Stop recording"
+      aria-label="Audio quality - tap for details"
+      class="quality-indicator good"
+    >
+      <span
+        class="quality-dot"
+      />
+      <span
+        class="quality-label"
+      >
+        Good audio
+      </span>
+    </button>
+    <button
+      aria-label="End session"
       class="stop-button "
     >
       <span
@@ -713,7 +622,7 @@ exports[`App Snapshots > renders recording state correctly 1`] = `
       <span
         class="stop-label"
       >
-        STOP
+        End Session
       </span>
     </button>
     <button
@@ -726,7 +635,7 @@ exports[`App Snapshots > renders recording state correctly 1`] = `
     >
       🌐
        
-      unknown
+      large-v3-turbo
     </div>
   </div>
 </div>
@@ -826,41 +735,42 @@ exports[`App Snapshots > renders stopping state correctly 1`] = `
     class="recording-mode"
   >
     <div
-      class="recording-indicator"
+      class="session-progress"
     >
-      <span
-        class="rec-dot"
-      />
-      <span
-        class="rec-text"
-      >
-        REC
-      </span>
       <div
-        class="spacer"
-      />
-      <button
-        aria-label="Audio quality status - tap for details"
-        class="status-bars good"
+        class="session-progress-indicator"
       >
         <span
-          class="bar"
+          class="pulse-dot"
         />
         <span
-          class="bar"
+          class="pulse-dot"
         />
         <span
-          class="bar"
+          class="pulse-dot"
         />
-      </button>
-    </div>
-    <div
-      class="timer-large"
-    >
-      0:00
+      </div>
+      <div
+        class="session-progress-text"
+      >
+        Session in progress...
+      </div>
     </div>
     <button
-      aria-label="Stopping..."
+      aria-label="Audio quality - tap for details"
+      class="quality-indicator good"
+    >
+      <span
+        class="quality-dot"
+      />
+      <span
+        class="quality-label"
+      >
+        Good audio
+      </span>
+    </button>
+    <button
+      aria-label="Ending session..."
       class="stop-button stopping"
       disabled=""
     >
@@ -870,7 +780,7 @@ exports[`App Snapshots > renders stopping state correctly 1`] = `
       <span
         class="stop-label"
       >
-        Stopping...
+        Ending...
       </span>
     </button>
     <button
@@ -883,7 +793,7 @@ exports[`App Snapshots > renders stopping state correctly 1`] = `
     >
       🌐
        
-      unknown
+      large-v3-turbo
     </div>
   </div>
 </div>
@@ -983,41 +893,42 @@ exports[`App Snapshots > renders with transcript correctly 1`] = `
     class="recording-mode"
   >
     <div
-      class="recording-indicator"
+      class="session-progress"
     >
-      <span
-        class="rec-dot"
-      />
-      <span
-        class="rec-text"
-      >
-        REC
-      </span>
       <div
-        class="spacer"
-      />
-      <button
-        aria-label="Audio quality status - tap for details"
-        class="status-bars good"
+        class="session-progress-indicator"
       >
         <span
-          class="bar"
+          class="pulse-dot"
         />
         <span
-          class="bar"
+          class="pulse-dot"
         />
         <span
-          class="bar"
+          class="pulse-dot"
         />
-      </button>
-    </div>
-    <div
-      class="timer-large"
-    >
-      0:00
+      </div>
+      <div
+        class="session-progress-text"
+      >
+        Session in progress...
+      </div>
     </div>
     <button
-      aria-label="Stop recording"
+      aria-label="Audio quality - tap for details"
+      class="quality-indicator good"
+    >
+      <span
+        class="quality-dot"
+      />
+      <span
+        class="quality-label"
+      >
+        Good audio
+      </span>
+    </button>
+    <button
+      aria-label="End session"
       class="stop-button "
     >
       <span
@@ -1026,7 +937,7 @@ exports[`App Snapshots > renders with transcript correctly 1`] = `
       <span
         class="stop-label"
       >
-        STOP
+        End Session
       </span>
     </button>
     <button
@@ -1055,7 +966,7 @@ This is the second paragraph.
     >
       🌐
        
-      unknown
+      large-v3-turbo
     </div>
   </div>
 </div>

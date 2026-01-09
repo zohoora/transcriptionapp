@@ -1,7 +1,7 @@
 import { AudioQualitySnapshot, AUDIO_QUALITY_THRESHOLDS } from '../types';
 
 interface AudioQualitySectionProps {
-  audioQuality: AudioQualitySnapshot;
+  audioQuality: AudioQualitySnapshot | null;
   expanded: boolean;
   onToggle: () => void;
 }
@@ -76,6 +76,35 @@ export default function AudioQualitySection({ audioQuality, expanded, onToggle }
       onToggle();
     }
   };
+
+  // Handle null audioQuality - show waiting state
+  if (!audioQuality) {
+    return (
+      <section className="audio-quality-section">
+        <div
+          className="audio-quality-header"
+          onClick={onToggle}
+          onKeyDown={handleKeyDown}
+          role="button"
+          tabIndex={0}
+          aria-expanded={expanded}
+        >
+          <div className="audio-quality-header-left">
+            <span className={`chevron ${expanded ? '' : 'collapsed'}`} aria-hidden="true">
+              &#9660;
+            </span>
+            <span className="audio-quality-title">Audio Quality</span>
+          </div>
+          <span className="quality-badge quality-pending">Waiting...</span>
+        </div>
+        {expanded && (
+          <div className="audio-quality-content">
+            <div className="quality-suggestion">Waiting for audio data...</div>
+          </div>
+        )}
+      </section>
+    );
+  }
 
   return (
     <section className="audio-quality-section">

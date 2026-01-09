@@ -21,3 +21,6 @@ export type { UseOllamaConnectionResult } from './useOllamaConnection';
 
 export { useWhisperModels } from './useWhisperModels';
 export type { UseWhisperModelsResult, DownloadProgress } from './useWhisperModels';
+
+export { useAutoDetection } from './useAutoDetection';
+export type { UseAutoDetectionResult, UseAutoDetectionCallbacks } from './useAutoDetection';

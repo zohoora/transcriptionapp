@@ -38,12 +38,19 @@ mod tests {
             max_speakers: 5,
             ollama_server_url: "http://localhost:11434".to_string(),
             ollama_model: "qwen3:4b".to_string(),
+            ollama_keep_alive: -1,
             medplum_server_url: "http://localhost:8103".to_string(),
             medplum_client_id: "test-client-id".to_string(),
             medplum_auto_sync: true,
             whisper_mode: "remote".to_string(),
             whisper_server_url: "http://172.16.100.45:8001".to_string(),
             whisper_server_model: "large-v3-turbo".to_string(),
+            soap_detail_level: 5,
+            soap_format: "problem_based".to_string(),
+            soap_custom_instructions: String::new(),
+            auto_start_enabled: false,
+            greeting_sensitivity: Some(0.7),
+            min_speech_duration_ms: Some(2000),
         };
 
         // Serialize to JSON

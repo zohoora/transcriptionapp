@@ -100,9 +100,10 @@ impl AudioPreprocessor {
     /// Default high-pass cutoff frequency in Hz.
     pub const DEFAULT_HIGHPASS_HZ: u32 = 80;
 
-    /// Default AGC target RMS level (linear scale, approximately -20 dBFS).
-    /// 0.1 corresponds to about -20 dBFS.
-    pub const DEFAULT_AGC_TARGET_RMS: f32 = 0.1;
+    /// Default AGC target RMS level (linear scale, approximately -26 dBFS).
+    /// 0.05 corresponds to about -26 dBFS.
+    /// Lower than 0.1 to prevent over-amplification and clipping.
+    pub const DEFAULT_AGC_TARGET_RMS: f32 = 0.05;
 
     /// Default AGC distortion factor (controls adaptation speed).
     /// Lower values = slower, smoother adaptation. 0.001 is a good starting point.
@@ -193,6 +194,7 @@ impl AudioPreprocessor {
     /// 1. DC offset removal
     /// 2. High-pass filtering
     /// 3. Automatic gain control
+    /// 4. Hard limiter (prevent clipping)
     ///
     /// If preprocessing is disabled, this is a no-op.
     pub fn process(&mut self, samples: &mut [f32]) {
@@ -210,6 +212,12 @@ impl AudioPreprocessor {
 
         // Step 3: Apply AGC
         self.agc.process(samples);
+
+        // Step 4: Hard limiter to prevent clipping
+        // Clamp to [-0.95, 0.95] to leave headroom and prevent distortion
+        for sample in samples.iter_mut() {
+            *sample = sample.clamp(-0.95, 0.95);
+        }
     }
 
     /// Reset all filter states.

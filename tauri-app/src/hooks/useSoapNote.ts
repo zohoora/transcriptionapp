@@ -1,6 +1,41 @@
+/**
+ * useSoapNote Hook
+ *
+ * Manages SOAP note generation via Ollama LLM, including multi-patient support.
+ *
+ * ## Multi-Patient SOAP Generation
+ *
+ * The hook supports automatic detection of multiple patients (up to 4) in a single
+ * recording session. The LLM analyzes the transcript to:
+ *
+ * 1. Identify the physician (asks questions, examines, diagnoses)
+ * 2. Identify patients (describe symptoms, answer questions)
+ * 3. Generate separate SOAP notes for each patient
+ *
+ * No manual speaker mapping is required - the LLM determines roles from context.
+ *
+ * ## Usage
+ *
+ * ```typescript
+ * const { generateSoapNote, isGeneratingSoap, soapError } = useSoapNote();
+ *
+ * // Generate multi-patient SOAP notes
+ * const result = await generateSoapNote(transcript, audioEvents);
+ *
+ * // Result contains:
+ * // - notes: PatientSoapNote[] (1-4 patients)
+ * // - physician_speaker: string | null (e.g., "Speaker 2")
+ * // - generated_at: string
+ * // - model_used: string
+ * ```
+ *
+ * @see MultiPatientSoapResult for the return type structure
+ * @see ADR-0012 for architecture decisions
+ */
 import { useState, useCallback } from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import type { CoughEvent, OllamaStatus, SoapNote } from '../types';
+import type { CoughEvent, OllamaStatus, SoapNote, SoapOptions, SoapFormat, MultiPatientSoapResult } from '../types';
+import { DEFAULT_SOAP_OPTIONS } from '../types';
 import { formatErrorMessage } from '../utils';
 
 /** Audio event to pass to SOAP generation (matches Rust AudioEvent) */
@@ -16,10 +51,18 @@ export interface UseSoapNoteResult {
   soapError: string | null;
   ollamaStatus: OllamaStatus | null;
   ollamaModels: string[];
-  generateSoapNote: (transcript: string, audioEvents?: CoughEvent[]) => Promise<SoapNote | null>;
+  soapOptions: SoapOptions;
+  /** Generate multi-patient SOAP notes with auto-detection */
+  generateSoapNote: (transcript: string, audioEvents?: CoughEvent[], options?: SoapOptions) => Promise<MultiPatientSoapResult | null>;
+  /** Legacy: Generate single-patient SOAP note (for backward compatibility) */
+  generateSingleSoapNote: (transcript: string, audioEvents?: CoughEvent[], options?: SoapOptions) => Promise<SoapNote | null>;
   setOllamaStatus: (status: OllamaStatus | null) => void;
   setOllamaModels: (models: string[]) => void;
   setSoapError: (error: string | null) => void;
+  setSoapOptions: (options: SoapOptions) => void;
+  updateSoapDetailLevel: (level: number) => void;
+  updateSoapFormat: (format: SoapFormat) => void;
+  updateSoapCustomInstructions: (instructions: string) => void;
 }
 
 export function useSoapNote(): UseSoapNoteResult {
@@ -27,11 +70,66 @@ export function useSoapNote(): UseSoapNoteResult {
   const [soapError, setSoapError] = useState<string | null>(null);
   const [ollamaStatus, setOllamaStatus] = useState<OllamaStatus | null>(null);
   const [ollamaModels, setOllamaModels] = useState<string[]>([]);
+  const [soapOptions, setSoapOptions] = useState<SoapOptions>(DEFAULT_SOAP_OPTIONS);
 
-  // Generate SOAP note
+  // Update individual SOAP options
+  const updateSoapDetailLevel = useCallback((level: number) => {
+    setSoapOptions(prev => ({ ...prev, detail_level: Math.max(1, Math.min(10, level)) }));
+  }, []);
+
+  const updateSoapFormat = useCallback((format: SoapFormat) => {
+    setSoapOptions(prev => ({ ...prev, format }));
+  }, []);
+
+  const updateSoapCustomInstructions = useCallback((instructions: string) => {
+    setSoapOptions(prev => ({ ...prev, custom_instructions: instructions }));
+  }, []);
+
+  // Generate multi-patient SOAP notes with auto-detection
+  // The LLM identifies physician and patients from the transcript
   const generateSoapNote = useCallback(async (
     transcript: string,
-    audioEvents?: CoughEvent[]
+    audioEvents?: CoughEvent[],
+    options?: SoapOptions
+  ): Promise<MultiPatientSoapResult | null> => {
+    if (!transcript.trim()) return null;
+
+    setIsGeneratingSoap(true);
+    setSoapError(null);
+
+    try {
+      // Convert CoughEvent to AudioEvent format expected by backend
+      const events = audioEvents?.map(e => ({
+        timestamp_ms: e.timestamp_ms,
+        duration_ms: e.duration_ms,
+        confidence: e.confidence,
+        label: e.label,
+      }));
+
+      // Use provided options or current state
+      const finalOptions = options || soapOptions;
+
+      // Use auto-detect command which returns MultiPatientSoapResult
+      const result = await invoke<MultiPatientSoapResult>('generate_soap_note_auto_detect', {
+        transcript,
+        audioEvents: events,
+        options: finalOptions,
+      });
+      return result;
+    } catch (e) {
+      console.error('Failed to generate SOAP note:', e);
+      setSoapError(formatErrorMessage(e));
+      return null;
+    } finally {
+      setIsGeneratingSoap(false);
+    }
+  }, [soapOptions]);
+
+  // Legacy single-patient SOAP note generation (for backward compatibility)
+  const generateSingleSoapNote = useCallback(async (
+    transcript: string,
+    audioEvents?: CoughEvent[],
+    options?: SoapOptions
   ): Promise<SoapNote | null> => {
     if (!transcript.trim()) return null;
 
@@ -47,9 +145,13 @@ export function useSoapNote(): UseSoapNoteResult {
         label: e.label,
       }));
 
+      // Use provided options or current state
+      const finalOptions = options || soapOptions;
+
       const result = await invoke<SoapNote>('generate_soap_note', {
         transcript,
         audioEvents: events,
+        options: finalOptions,
       });
       return result;
     } catch (e) {
@@ -59,16 +161,22 @@ export function useSoapNote(): UseSoapNoteResult {
     } finally {
       setIsGeneratingSoap(false);
     }
-  }, []);
+  }, [soapOptions]);
 
   return {
     isGeneratingSoap,
     soapError,
     ollamaStatus,
     ollamaModels,
+    soapOptions,
     generateSoapNote,
+    generateSingleSoapNote,
     setOllamaStatus,
     setOllamaModels,
     setSoapError,
+    setSoapOptions,
+    updateSoapDetailLevel,
+    updateSoapFormat,
+    updateSoapCustomInstructions,
   };
 }

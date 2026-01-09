@@ -6,8 +6,10 @@ import { formatErrorMessage } from '../utils';
 export interface UseOllamaConnectionResult {
   status: OllamaStatus | null;
   isChecking: boolean;
+  isPrewarming: boolean;
   error: string | null;
   checkConnection: () => Promise<void>;
+  prewarmModel: () => Promise<void>;
   testConnection: (serverUrl: string, model: string, currentSettings: Settings) => Promise<boolean>;
 }
 
@@ -18,8 +20,10 @@ export interface UseOllamaConnectionResult {
 export function useOllamaConnection(): UseOllamaConnectionResult {
   const [status, setStatus] = useState<OllamaStatus | null>(null);
   const [isChecking, setIsChecking] = useState(false);
+  const [isPrewarming, setIsPrewarming] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const initialCheckRef = useRef(false);
+  const prewarmAttemptedRef = useRef(false);
 
   // Check connection status
   const checkConnection = useCallback(async () => {
@@ -41,12 +45,37 @@ export function useOllamaConnection(): UseOllamaConnectionResult {
     }
   }, []);
 
-  // Check on mount (only once)
+  // Pre-warm the Ollama model to reduce latency on first request
+  const prewarmModel = useCallback(async () => {
+    if (isPrewarming) return;
+    setIsPrewarming(true);
+    try {
+      console.log('Pre-warming Ollama model...');
+      await invoke('prewarm_ollama_model');
+      console.log('Ollama model pre-warmed successfully');
+    } catch (e) {
+      // Pre-warming is a best-effort operation, don't set error state
+      console.warn('Failed to pre-warm Ollama model:', e);
+    } finally {
+      setIsPrewarming(false);
+    }
+  }, [isPrewarming]);
+
+  // Check on mount (only once) and pre-warm if connected
   useEffect(() => {
     if (initialCheckRef.current) return;
     initialCheckRef.current = true;
     checkConnection();
   }, [checkConnection]);
+
+  // Auto pre-warm when connection is established
+  useEffect(() => {
+    if (status?.connected && !prewarmAttemptedRef.current) {
+      prewarmAttemptedRef.current = true;
+      // Run pre-warming in background
+      prewarmModel();
+    }
+  }, [status?.connected, prewarmModel]);
 
   // Test connection with specific settings (saves temporarily to test)
   const testConnection = useCallback(
@@ -88,8 +117,10 @@ export function useOllamaConnection(): UseOllamaConnectionResult {
   return {
     status,
     isChecking,
+    isPrewarming,
     error,
     checkConnection,
+    prewarmModel,
     testConnection,
   };
 }

@@ -36,6 +36,7 @@ Rust Backend
 │   ├── mod.rs       # Module exports
 │   └── provider.rs  # ONNX-based denoising
 ├── preprocessing.rs # Audio preprocessing (DC removal, high-pass, AGC)
+├── listening.rs     # Auto-session detection (VAD + Whisper + LLM greeting check)
 ├── ollama.rs        # Ollama LLM client for SOAP note generation
 ├── medplum.rs       # Medplum FHIR client (OAuth, encounters, documents)
 ├── whisper_server.rs # Remote Whisper server client (faster-whisper)
@@ -77,11 +78,16 @@ Rust Backend
 | `ensure_models` | Download all required models |
 | `check_ollama_status` | Check Ollama server connection and list models |
 | `list_ollama_models` | Get available models from Ollama |
-| `generate_soap_note` | Generate SOAP note from transcript via Ollama |
+| `generate_soap_note` | Generate SOAP note from transcript via Ollama (legacy) |
+| `generate_soap_note_auto_detect` | Generate multi-patient SOAP notes with auto physician/patient detection |
+| `medplum_multi_patient_quick_sync` | Sync multi-patient session to Medplum (creates N encounters) |
 | `check_whisper_server_status` | Check remote Whisper server connection |
 | `list_whisper_server_models` | Get available models from Whisper server |
 | `medplum_quick_sync` | Auto-sync transcript/audio to Medplum, returns encounter IDs |
 | `medplum_add_soap_to_encounter` | Add SOAP note to existing synced encounter |
+| `start_listening` | Start listening mode for auto-session detection |
+| `stop_listening` | Stop listening mode |
+| `get_listening_status` | Get current listening mode status |
 
 ## Key Events (Backend → Frontend)
 
@@ -91,6 +97,7 @@ Rust Backend
 | `transcript_update` | `{ finalized_text, draft_text, segment_count }` |
 | `biomarker_update` | `{ cough_count, cough_rate_per_min, turn_count, vitality_session_mean, stability_session_mean, ... }` |
 | `audio_quality` | `{ timestamp_ms, peak_db, rms_db, snr_db, clipped_ratio, dropout_count, ... }` |
+| `listening_event` | `{ type, duration_ms?, transcript?, confidence?, reason?, ... }` - Auto-session detection events |
 
 ## Session States
 
@@ -264,6 +271,179 @@ YAMNet (biomarkers thread)
 ```
 
 ## Recent Changes (Jan 2025)
+
+### Multi-Patient SOAP Note Generation (Jan 9, 2025)
+Support for multi-patient visits (up to 4 patients) where one recording session produces separate SOAP notes for each patient. The LLM automatically detects the number of patients and identifies the physician from the transcript.
+
+**Key Features**
+- **LLM auto-detection**: Identifies patients vs physician from conversation context
+- **No manual mapping**: No need to specify which speaker is the physician
+- **Dynamic patient count**: Returns 1-4 SOAP notes as needed
+- **Single LLM call**: Generates all patient SOAP notes at once for efficiency
+- **Backward compatible**: Single patient sessions work exactly as before
+
+**Data Structures**
+
+```typescript
+// Frontend types (src/types/index.ts)
+interface MultiPatientSoapResult {
+  notes: PatientSoapNote[];
+  physician_speaker: string | null;  // Which speaker was identified as physician
+  generated_at: string;
+  model_used: string;
+}
+
+interface PatientSoapNote {
+  patient_label: string;    // "Patient 1", "Patient 2", etc.
+  speaker_id: string;       // "Speaker 2", "Speaker 3", etc.
+  soap: SoapNote;           // Standard S/O/A/P structure
+}
+```
+
+```rust
+// Backend types (src-tauri/src/ollama.rs)
+pub struct MultiPatientSoapResult {
+    pub notes: Vec<PatientSoapNote>,
+    pub physician_speaker: Option<String>,
+    pub generated_at: String,
+    pub model_used: String,
+}
+
+pub struct PatientSoapNote {
+    pub patient_label: String,
+    pub speaker_id: String,
+    pub soap: SoapNote,
+}
+```
+
+**LLM Prompt Design**
+The multi-patient prompt instructs the LLM to:
+1. Analyze the conversation to identify who is the PHYSICIAN (asks questions, examines, diagnoses)
+2. Identify PATIENTS (describe symptoms, answer questions, receive instructions)
+3. NOT assume Speaker 1 is the physician - determine from context
+4. Generate one SOAP note per patient with ONLY that patient's information
+5. Return structured JSON with physician identification and patient array
+
+**UI Changes**
+- **Single Patient (1 note)**: Display unchanged - single S/O/A/P view
+- **Multi-Patient (2+ notes)**: Shows patient tabs with speaker ID
+  - Tabs: `[Patient 1 (Speaker 1)] [Patient 2 (Speaker 3)]`
+  - Each tab displays that patient's S/O/A/P
+  - Physician identified at top: "Physician: Speaker 2"
+  - Copy button copies active patient's SOAP
+
+**Medplum Sync for Multi-Patient**
+- `medplum_multi_patient_quick_sync` creates N placeholder patients and N encounters
+- Each patient's SOAP is uploaded to their respective encounter
+- Transcript uploaded to all encounters (shared)
+- Audio uploaded to first encounter
+
+**Backend Commands**
+| Command | Purpose |
+|---------|---------|
+| `generate_soap_note_auto_detect` | Generate SOAP for 1-4 patients with auto-detection |
+| `medplum_multi_patient_quick_sync` | Sync multi-patient session to Medplum |
+
+**Frontend Changes**
+- `useSoapNote.ts`: Returns `MultiPatientSoapResult`, added `patientCount`, `isMultiPatient`
+- `useMedplumSync.ts`: Added `syncMultiPatientToMedplum()` function
+- `useSessionState.ts`: Changed `soapNote` to `soapResult: MultiPatientSoapResult | null`
+- `ReviewMode.tsx`: Added patient tabs UI with `activePatient` state
+- `App.tsx`: Updated sync flow to handle multi-patient case
+
+**Files Modified**
+- `src-tauri/src/ollama.rs` - Multi-patient types, prompt builder, parser
+- `src-tauri/src/commands/ollama.rs` - New `generate_soap_note_auto_detect` command
+- `src-tauri/src/commands/medplum.rs` - New `medplum_multi_patient_quick_sync` command
+- `src-tauri/src/lib.rs` - Registered new commands
+- `src/types/index.ts` - TypeScript types for multi-patient
+- `src/hooks/useSoapNote.ts` - Updated for multi-patient result
+- `src/hooks/useMedplumSync.ts` - Added multi-patient sync
+- `src/hooks/useSessionState.ts` - Changed `soapNote` to `soapResult`
+- `src/components/modes/ReviewMode.tsx` - Patient tabs UI
+- `src/styles.css` - `.multi-patient-soap`, `.patient-tabs`, `.patient-tab` styles
+
+**Test Coverage**
+- All 429 frontend tests passing
+- All 346 Rust tests passing
+- Updated tests in: `ReviewMode.test.tsx`, `useSessionState.test.ts`, `useSoapNote.test.ts`
+
+### Auto-Session Detection with Optimistic Recording (Jan 9, 2025)
+Automatic session start when a greeting is detected via speech recognition + LLM evaluation.
+
+**How It Works**
+1. When `auto_start_enabled` is true, app enters "Listening Mode" when idle
+2. VAD monitors for sustained speech (2+ seconds by default)
+3. Audio is transcribed via remote Whisper
+4. LLM checks if transcript is a greeting (e.g., "Hello", "Good morning", "How are you feeling?")
+5. If greeting detected → session auto-starts
+
+**Optimistic Recording (Prevents Audio Loss)**
+The LLM greeting check takes ~35 seconds. To prevent losing the conversation start:
+1. Recording starts **immediately** when sustained speech is detected
+2. Greeting check runs **in parallel** in the background
+3. If greeting confirmed → recording continues seamlessly
+4. If greeting rejected → recording is discarded
+
+**Flow Diagram**
+```
+Idle (auto_start=true)
+    │
+    ▼
+┌─────────────┐   speech 2+ sec   ┌──────────────────┐
+│  Listening  │ ───────────────▶  │ StartRecording   │
+│  (VAD only) │                   │ (optimistic)     │
+└─────────────┘                   └──────────────────┘
+                                         │
+                          ┌──────────────┴──────────────┐
+                          │ Greeting check (~35s)       │
+                          │ Whisper + LLM               │
+                          └──────────────┬──────────────┘
+                                         │
+                          ┌──────────────┴──────────────┐
+                          │                             │
+                   GreetingConfirmed              GreetingRejected
+                          │                             │
+                          ▼                             ▼
+                  Recording continues          Recording discarded
+```
+
+**Event Types** (`listening_event`)
+- `started` - Listening mode started
+- `speech_detected` - Sustained speech detected
+- `analyzing` - Running Whisper + LLM check
+- `start_recording` - Optimistic recording started (before greeting check)
+- `greeting_confirmed` - Greeting check passed, recording continues
+- `greeting_rejected` - Not a greeting, recording discarded
+- `greeting_detected` - Legacy: greeting detected
+- `not_greeting` - Legacy: not a greeting
+- `error` - Error occurred
+- `stopped` - Listening mode stopped
+
+**Backend Architecture**
+- `listening.rs`: Audio monitoring, VAD, Whisper transcription, LLM greeting check
+- `commands/listening.rs`: Tauri commands and shared state with initial audio buffer
+- `ollama.rs`: `check_greeting()` method for LLM-based greeting detection
+- `pipeline.rs`: Accepts `initial_audio_buffer` to prepend captured audio
+
+**Frontend Architecture**
+- `useAutoDetection` hook: Manages listening mode state and callbacks
+- Callbacks: `onStartRecording`, `onGreetingConfirmed`, `onGreetingRejected`
+- `isPendingConfirmation` state: True while awaiting greeting check result
+
+**Configuration**
+- `auto_start_enabled`: Enable/disable auto-session detection (default: false)
+- `greeting_sensitivity`: LLM confidence threshold (default: 0.7)
+- `min_speech_duration_ms`: Minimum speech before checking (default: 2000ms)
+
+**Files Modified**
+- `src-tauri/src/listening.rs` - Added `StartRecording`, `GreetingConfirmed`, `GreetingRejected` events
+- `src-tauri/src/commands/listening.rs` - Added `initial_audio_buffer` to shared state
+- `src-tauri/src/commands/session.rs` - Consumes initial audio buffer on session start
+- `src-tauri/src/pipeline.rs` - Prepends initial audio buffer at pipeline startup
+- `src/types/index.ts` - New event types
+- `src/hooks/useAutoDetection.ts` - New callbacks interface, `isPendingConfirmation` state
+- `src/App.tsx` - Integrated optimistic recording callbacks
 
 ### Auto-Sync to Medplum (Jan 7, 2025)
 Automatic synchronization of transcripts and audio to Medplum when recording completes.
@@ -574,9 +754,9 @@ Resampler (16kHz) → DC Removal → High-Pass Filter → AGC → VAD → Enhanc
 - Status types: Pass, Fail, Warning, Skipped
 - Extensible for future features (see module docs)
 
-### Test Updates (Jan 8, 2025)
-- All frontend tests passing (416 tests across 20 test files)
-- All Rust tests passing (281 tests, including 21 ollama tests)
+### Test Updates (Jan 9, 2025)
+- All frontend tests passing (429 tests across 20+ test files)
+- All Rust tests passing (346 tests, including ollama and multi-patient tests)
 - Mode component tests: RecordingMode 23, ReviewMode 49
 - Hook tests: useWhisperModels 12, useOllamaConnection 10, useDevices 10, useSettings 12, useSoapNote 16, useChecklist 11, useMedplumSync 9
 - Component tests: SettingsDrawer 44, HistoryWindow 36, AuthProvider 8, Header 6, AudioQualitySection 12
@@ -630,6 +810,10 @@ interface Settings {
   whisper_mode: 'local' | 'remote'; // 'local' uses local model, 'remote' uses server
   whisper_server_url: string; // e.g., 'http://192.168.50.149:8000'
   whisper_server_model: string; // e.g., 'large-v3-turbo'
+  // Auto-session detection (listening mode)
+  auto_start_enabled: boolean;    // Enable automatic session start on greeting detection
+  greeting_sensitivity: number;   // LLM confidence threshold (0.0-1.0, default: 0.7)
+  min_speech_duration_ms: number; // Minimum speech duration to trigger check (default: 2000)
 }
 ```
 
@@ -840,6 +1024,8 @@ See `docs/adr/` for Architecture Decision Records:
 - 0008: Medplum EMR integration (OAuth, FHIR resources)
 - 0009: Ollama SOAP note generation (JSON output)
 - 0010: Audio preprocessing (DC removal, high-pass, AGC)
+- 0011: Auto-session detection (optimistic recording)
+- 0012: Multi-patient SOAP generation (LLM auto-detection)
 
 ## Frontend Components
 
@@ -878,8 +1064,8 @@ All TypeScript types that mirror Rust backend structures:
 - `SessionState`, `SessionStatus` - Recording state machine
 - `TranscriptUpdate` - Real-time transcript data
 - `BiomarkerUpdate`, `AudioQualitySnapshot` - Metrics events
-- `SoapNote`, `OllamaStatus` - LLM integration
-- `AuthState`, `Encounter`, `Patient`, `SyncResult`, `SyncedEncounter` - Medplum types
+- `SoapNote`, `MultiPatientSoapResult`, `PatientSoapNote`, `OllamaStatus` - LLM integration
+- `AuthState`, `Encounter`, `Patient`, `SyncResult`, `SyncedEncounter`, `MultiPatientSyncResult`, `PatientSyncInfo` - Medplum types
 - `CheckResult`, `ChecklistResult` - Pre-flight checks
 
 ### Utilities (`src/utils.ts`)
@@ -903,6 +1089,7 @@ Reusable React hooks for state management:
 | `useDevices` | Audio input device listing and selection |
 | `useOllamaConnection` | Ollama server connection status and testing |
 | `useWhisperModels` | Whisper model listing, downloading, and testing |
+| `useAutoDetection` | Auto-session detection via listening mode (VAD + greeting check) |
 
 **`useMedplumSync` Details:**
 - `syncToMedplum()` - Initial sync, stores encounter IDs in `syncedEncounter`
@@ -911,18 +1098,21 @@ Reusable React hooks for state management:
 - `isAddingSoap` - True while adding SOAP to encounter
 - `resetSyncState()` - Clears sync state for new session
 
-## Current Project Status (Jan 8, 2025)
+## Current Project Status (Jan 9, 2025)
 
 ### What's Working
 - **Local transcription**: Full Whisper integration with 17 model options
 - **Remote transcription**: faster-whisper-server support with anti-hallucination params
 - **SOAP note generation**: Ollama LLM integration with audio event context
+- **Multi-patient SOAP**: LLM auto-detects patients vs physician, generates separate notes
 - **Medplum EMR sync**: OAuth + FHIR encounters, documents, audio storage
+- **Multi-patient sync**: Creates N patients and N encounters for multi-patient visits
 - **Auto-sync**: Automatic sync on session complete, SOAP auto-added to existing encounter
+- **Auto-session detection**: Greeting detection via VAD + Whisper + LLM with optimistic recording
 - **History window**: Browse past encounters with transcript/SOAP/audio playback
 - **Biomarkers**: Vitality, stability, conversation dynamics, audio quality metrics
 - **Speaker diarization**: Online clustering for multi-speaker detection
-- **Test coverage**: 416 frontend tests, 281 Rust tests all passing
+- **Test coverage**: 429 frontend tests, 346 Rust tests all passing
 
 ### External Services Configuration
 The app connects to external services on the local network:
@@ -964,8 +1154,10 @@ cd src-tauri && cargo test  # Rust
 |------|-----------------|
 | Add new setting | `config.rs`, `types/index.ts`, `useSettings.ts`, `SettingsDrawer.tsx` |
 | Modify transcription | `pipeline.rs`, `whisper_server.rs` (remote), `transcription.rs` (local) |
-| Change SOAP prompt | `ollama.rs` (SOAP_PROMPT constant) |
+| Change SOAP prompt | `ollama.rs` (`build_multi_patient_soap_prompt()`) |
+| Modify multi-patient SOAP | `ollama.rs`, `useSoapNote.ts`, `ReviewMode.tsx`, `types/index.ts` |
 | Add new biomarker | `biomarkers/mod.rs`, `BiomarkersSection.tsx` |
 | Modify UI modes | `components/modes/` (ReadyMode, RecordingMode, ReviewMode) |
 | Add Tauri command | `commands/*.rs`, register in `lib.rs` |
 | Modify Medplum sync | `commands/medplum.rs`, `useMedplumSync.ts`, `App.tsx` |
+| Modify auto-detection | `listening.rs`, `commands/listening.rs`, `useAutoDetection.ts`, `App.tsx` |

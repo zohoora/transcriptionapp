@@ -61,6 +61,8 @@ export interface Settings {
   max_speakers: number;
   ollama_server_url: string;
   ollama_model: string;
+  /** How long to keep Ollama model loaded in memory (seconds). -1 = forever, 0 = unload immediately */
+  ollama_keep_alive: number;
   // Medplum EMR settings
   medplum_server_url: string;
   medplum_client_id: string;
@@ -69,6 +71,47 @@ export interface Settings {
   whisper_mode: 'remote';  // Always 'remote' - local mode no longer supported
   whisper_server_url: string;
   whisper_server_model: string;
+  // SOAP note generation preferences (persisted)
+  soap_detail_level: number;
+  soap_format: SoapFormat;
+  soap_custom_instructions: string;
+  // Auto-session detection settings
+  auto_start_enabled: boolean;
+  greeting_sensitivity: number | null;
+  min_speech_duration_ms: number | null;
+}
+
+// Listening mode types (auto-session detection)
+export interface ListeningStatus {
+  is_listening: boolean;
+  speech_detected: boolean;
+  speech_duration_ms: number;
+  analyzing: boolean;
+}
+
+// Rust uses #[serde(tag = "type", rename_all = "snake_case")]
+export type ListeningEventType =
+  | 'started'
+  | 'speech_detected'
+  | 'analyzing'
+  | 'start_recording'      // Optimistic recording start (before greeting check completes)
+  | 'greeting_confirmed'   // Greeting check passed, recording should continue
+  | 'greeting_rejected'    // Not a greeting, recording should be discarded
+  | 'greeting_detected'    // Legacy: greeting detected
+  | 'not_greeting'         // Legacy: not a greeting
+  | 'error'
+  | 'stopped';
+
+export interface ListeningEventPayload {
+  type: ListeningEventType;
+  // Optional fields depending on event type
+  duration_ms?: number;
+  initial_audio_duration_ms?: number;  // For start_recording event
+  transcript?: string;
+  confidence?: number;
+  detected_phrase?: string | null;
+  message?: string;
+  reason?: string;  // For greeting_rejected event
 }
 
 // Checklist types
@@ -194,6 +237,62 @@ export interface SoapNote {
   raw_response?: string;
 }
 
+/** Per-patient SOAP note with speaker identification */
+export interface PatientSoapNote {
+  /** Label for this patient (e.g., "Patient 1", "Patient 2") */
+  patient_label: string;
+  /** Which speaker this patient was identified as (e.g., "Speaker 1", "Speaker 3") */
+  speaker_id: string;
+  /** The SOAP note for this patient */
+  soap: SoapNote;
+}
+
+/** Multi-patient SOAP result from LLM auto-detection */
+export interface MultiPatientSoapResult {
+  /** Individual SOAP notes for each patient detected (1-4 patients) */
+  notes: PatientSoapNote[];
+  /** Which speaker was identified as the physician (e.g., "Speaker 2") */
+  physician_speaker: string | null;
+  /** When the result was generated */
+  generated_at: string;
+  /** Which LLM model was used */
+  model_used: string;
+}
+
+/** SOAP note format style */
+export type SoapFormat = 'problem_based' | 'comprehensive';
+
+/** Options for SOAP note generation */
+export interface SoapOptions {
+  /** Detail level (1-10, where 5 is standard) */
+  detail_level: number;
+  /** SOAP format style */
+  format: SoapFormat;
+  /** Custom instructions from the physician */
+  custom_instructions: string;
+}
+
+/** Default SOAP options */
+export const DEFAULT_SOAP_OPTIONS: SoapOptions = {
+  detail_level: 5,
+  format: 'problem_based',
+  custom_instructions: '',
+};
+
+/** Detail level labels for display */
+export const DETAIL_LEVEL_LABELS: Record<number, { name: string; description: string }> = {
+  1: { name: 'Ultra-Brief', description: '1-2 bullet points, only critical info' },
+  2: { name: 'Minimal', description: '2-3 bullet points, key symptoms only' },
+  3: { name: 'Brief', description: '3-4 bullets, primary complaint focus' },
+  4: { name: 'Short', description: 'Fewer bullets, combined items' },
+  5: { name: 'Standard', description: 'Default balanced detail' },
+  6: { name: 'Expanded', description: 'Additional descriptors, context' },
+  7: { name: 'Detailed', description: 'Timing, severity, quality, history' },
+  8: { name: 'Thorough', description: 'OPQRST, pertinent negatives, full differential' },
+  9: { name: 'Comprehensive', description: 'Extensive history, ROS, patient education' },
+  10: { name: 'Maximum', description: 'Every detail, nothing omitted' },
+};
+
 // Constants for biomarker interpretation
 export const BIOMARKER_THRESHOLDS = {
   // Vitality: F0 std dev in Hz. Normal speech: 30-80 Hz, low vitality: <20 Hz
@@ -293,5 +392,45 @@ export interface SyncStatus {
 export interface SyncResult {
   success: boolean;
   status: SyncStatus;
+  error: string | null;
+  /** Local encounter UUID for log correlation */
+  encounterId?: string;
+  /** FHIR server-assigned encounter ID for updates */
+  encounterFhirId?: string;
+}
+
+/** Tracks a synced encounter for subsequent updates */
+export interface SyncedEncounter {
+  /** Local encounter UUID */
+  encounterId: string;
+  /** FHIR server-assigned encounter ID */
+  encounterFhirId: string;
+  /** When the initial sync occurred */
+  syncedAt: string;
+  /** Whether SOAP note has been synced */
+  hasSoap: boolean;
+}
+
+/** Info about a synced patient in multi-patient sync */
+export interface PatientSyncInfo {
+  /** Label from SOAP result (e.g., "Patient 1") */
+  patientLabel: string;
+  /** Speaker ID from transcript (e.g., "Speaker 1") */
+  speakerId: string;
+  /** Created patient's FHIR ID */
+  patientFhirId: string;
+  /** Created encounter's FHIR ID */
+  encounterFhirId: string;
+  /** Whether SOAP note was synced */
+  hasSoap: boolean;
+}
+
+/** Result of multi-patient sync operation */
+export interface MultiPatientSyncResult {
+  /** Whether all syncs succeeded */
+  success: boolean;
+  /** Info about each synced patient/encounter */
+  patients: PatientSyncInfo[];
+  /** Error message if any patient sync failed */
   error: string | null;
 }

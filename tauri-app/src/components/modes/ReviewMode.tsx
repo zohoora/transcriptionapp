@@ -1,12 +1,21 @@
-import { memo, useState, useCallback } from 'react';
+import { memo, useState, useCallback, useEffect } from 'react';
 import { writeText } from '@tauri-apps/plugin-clipboard-manager';
+import { SyncStatusBar } from '../SyncStatusBar';
 import type {
   AudioQualitySnapshot,
   BiomarkerUpdate,
   SoapNote,
   AuthState,
+  SoapOptions,
+  SoapFormat,
+  SyncedEncounter,
+  MultiPatientSoapResult,
+  PatientSoapNote,
 } from '../../types';
+import { DETAIL_LEVEL_LABELS } from '../../types';
 import { formatLocalDateTime } from '../../utils';
+
+type ReviewTab = 'transcript' | 'soap' | 'insights';
 
 interface ReviewModeProps {
   // Session info
@@ -18,12 +27,18 @@ interface ReviewModeProps {
   editedTranscript: string;
   onTranscriptEdit: (text: string) => void;
 
-  // SOAP note
-  soapNote: SoapNote | null;
+  // SOAP note (multi-patient result)
+  soapResult: MultiPatientSoapResult | null;
   isGeneratingSoap: boolean;
   soapError: string | null;
   ollamaConnected: boolean;
   onGenerateSoap: () => void;
+
+  // SOAP options
+  soapOptions: SoapOptions;
+  onSoapDetailLevelChange: (level: number) => void;
+  onSoapFormatChange: (format: SoapFormat) => void;
+  onSoapCustomInstructionsChange: (instructions: string) => void;
 
   // Biomarkers / Insights
   biomarkers: BiomarkerUpdate | null;
@@ -37,7 +52,8 @@ interface ReviewModeProps {
   isSyncing: boolean;
   syncSuccess: boolean;
   syncError: string | null;
-  onSync: () => void;
+  syncedEncounter: SyncedEncounter | null;
+  isAddingSoap: boolean;
   onClearSyncError: () => void;
 
   // Actions
@@ -76,7 +92,7 @@ const getQualityBadge = (quality: AudioQualitySnapshot | null): { label: string;
 
 /**
  * Review mode UI - shown after recording is complete.
- * Features editable transcript, SOAP note generation, and insights panel.
+ * Tab-based layout: Transcript | SOAP | Insights
  */
 export const ReviewMode = memo(function ReviewMode({
   elapsedMs,
@@ -84,11 +100,15 @@ export const ReviewMode = memo(function ReviewMode({
   originalTranscript,
   editedTranscript,
   onTranscriptEdit,
-  soapNote,
+  soapResult,
   isGeneratingSoap,
   soapError,
   ollamaConnected,
   onGenerateSoap,
+  soapOptions,
+  onSoapDetailLevelChange,
+  onSoapFormatChange,
+  onSoapCustomInstructionsChange,
   biomarkers,
   whisperMode,
   whisperModel,
@@ -96,7 +116,8 @@ export const ReviewMode = memo(function ReviewMode({
   isSyncing,
   syncSuccess,
   syncError,
-  onSync,
+  syncedEncounter,
+  isAddingSoap,
   onClearSyncError,
   onNewSession,
   onLogin,
@@ -104,12 +125,24 @@ export const ReviewMode = memo(function ReviewMode({
   authLoading,
   autoSyncEnabled,
 }: ReviewModeProps) {
-  const [transcriptExpanded, setTranscriptExpanded] = useState(true);
-  const [soapExpanded, setSoapExpanded] = useState(true);
-  const [insightsExpanded, setInsightsExpanded] = useState(false);
-  const [debugExpanded, setDebugExpanded] = useState(false);
+  // Start on SOAP tab if generating or already have a note
+  const [activeTab, setActiveTab] = useState<ReviewTab>(() => {
+    if (isGeneratingSoap || soapResult) return 'soap';
+    return 'soap'; // Default to SOAP tab since we auto-generate
+  });
   const [isEditing, setIsEditing] = useState(false);
   const [copySuccess, setCopySuccess] = useState(false);
+  const [customInstructionsExpanded, setCustomInstructionsExpanded] = useState(false);
+  const [debugExpanded, setDebugExpanded] = useState(false);
+  // Active patient tab for multi-patient SOAP notes
+  const [activePatient, setActivePatient] = useState(0);
+
+  // Auto-switch to SOAP tab when generation starts
+  useEffect(() => {
+    if (isGeneratingSoap) {
+      setActiveTab('soap');
+    }
+  }, [isGeneratingSoap]);
 
   const qualityBadge = getQualityBadge(audioQuality);
   const hasTranscript = editedTranscript.trim().length > 0;
@@ -122,11 +155,15 @@ export const ReviewMode = memo(function ReviewMode({
     setTimeout(() => setCopySuccess(false), 2000);
   }, [editedTranscript]);
 
+  // Get active patient's SOAP note
+  const activeSoapNote = soapResult?.notes[activePatient]?.soap ?? null;
+  const isMultiPatient = (soapResult?.notes.length ?? 0) > 1;
+
   const handleCopySoap = useCallback(async () => {
-    if (!soapNote) return;
-    const fullNote = `SUBJECTIVE:\n${soapNote.subjective}\n\nOBJECTIVE:\n${soapNote.objective}\n\nASSESSMENT:\n${soapNote.assessment}\n\nPLAN:\n${soapNote.plan}`;
+    if (!activeSoapNote) return;
+    const fullNote = `SUBJECTIVE:\n${activeSoapNote.subjective}\n\nOBJECTIVE:\n${activeSoapNote.objective}\n\nASSESSMENT:\n${activeSoapNote.assessment}\n\nPLAN:\n${activeSoapNote.plan}`;
     await writeText(fullNote);
-  }, [soapNote]);
+  }, [activeSoapNote]);
 
   return (
     <div className="review-mode">
@@ -141,273 +178,387 @@ export const ReviewMode = memo(function ReviewMode({
         </span>
       </div>
 
-      {/* Transcript Section */}
-      <section className="review-transcript-section">
-        <div className="review-section-header">
-          <button
-            className="review-section-header-left"
-            onClick={() => setTranscriptExpanded(!transcriptExpanded)}
-            aria-expanded={transcriptExpanded}
-            aria-label={`${transcriptExpanded ? 'Collapse' : 'Expand'} Transcript section`}
-          >
-            <span className={`chevron ${transcriptExpanded ? '' : 'collapsed'}`}>&#9660;</span>
-            <span className="review-section-title">Transcript</span>
-            {isModified && <span className="modified-badge">edited</span>}
-          </button>
-          <div className="review-section-actions">
-            {transcriptExpanded && hasTranscript && (
-              <>
-                <button
-                  className={`btn-small ${isEditing ? 'active' : ''}`}
-                  onClick={() => setIsEditing(!isEditing)}
-                >
-                  {isEditing ? 'Done' : 'Edit'}
-                </button>
-                <button
-                  className={`btn-small copy-btn ${copySuccess ? 'success' : ''}`}
-                  onClick={handleCopyTranscript}
-                >
-                  {copySuccess ? 'Copied!' : 'Copy'}
-                </button>
-              </>
-            )}
-          </div>
-        </div>
+      {/* Tab Navigation */}
+      <div className="review-tabs">
+        <button
+          className={`review-tab ${activeTab === 'transcript' ? 'active' : ''}`}
+          onClick={() => setActiveTab('transcript')}
+        >
+          Transcript
+          {isModified && <span className="tab-badge">edited</span>}
+        </button>
+        <button
+          className={`review-tab ${activeTab === 'soap' ? 'active' : ''}`}
+          onClick={() => setActiveTab('soap')}
+          disabled={!hasTranscript}
+        >
+          SOAP
+          {soapResult && <span className="tab-badge done">✓</span>}
+        </button>
+        <button
+          className={`review-tab ${activeTab === 'insights' ? 'active' : ''}`}
+          onClick={() => setActiveTab('insights')}
+        >
+          Insights
+        </button>
+      </div>
 
-        {transcriptExpanded && (
-          <div className="review-transcript-content">
-            {hasTranscript ? (
-              isEditing ? (
-                <textarea
-                  className="transcript-editor"
-                  value={editedTranscript}
-                  onChange={(e) => onTranscriptEdit(e.target.value)}
-                  placeholder="Edit transcript..."
-                />
+      {/* Tab Content */}
+      <div className="review-tab-content">
+        {/* Transcript Tab */}
+        {activeTab === 'transcript' && (
+          <div className="tab-panel transcript-panel">
+            <div className="panel-header">
+              <div className="panel-actions">
+                {hasTranscript && (
+                  <>
+                    <button
+                      className={`btn-small ${isEditing ? 'active' : ''}`}
+                      onClick={() => setIsEditing(!isEditing)}
+                    >
+                      {isEditing ? 'Done' : 'Edit'}
+                    </button>
+                    <button
+                      className={`btn-small copy-btn ${copySuccess ? 'success' : ''}`}
+                      onClick={handleCopyTranscript}
+                    >
+                      {copySuccess ? 'Copied!' : 'Copy'}
+                    </button>
+                  </>
+                )}
+              </div>
+            </div>
+
+            <div className="panel-body">
+              {hasTranscript ? (
+                isEditing ? (
+                  <textarea
+                    className="transcript-editor"
+                    value={editedTranscript}
+                    onChange={(e) => onTranscriptEdit(e.target.value)}
+                    placeholder="Edit transcript..."
+                  />
+                ) : (
+                  <div className="transcript-display">
+                    {editedTranscript.split('\n\n').map((paragraph, i) => (
+                      <p key={i}>{paragraph}</p>
+                    ))}
+                  </div>
+                )
               ) : (
-                <div className="transcript-display">
-                  {editedTranscript.split('\n\n').map((paragraph, i) => (
-                    <p key={i}>{paragraph}</p>
-                  ))}
+                <div className="panel-empty">No transcript recorded</div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* SOAP Tab */}
+        {activeTab === 'soap' && (
+          <div className="tab-panel soap-panel">
+            {/* SOAP Options */}
+            {!isGeneratingSoap && (
+              <div className="soap-options">
+                {/* Detail Level Slider */}
+                <div className="soap-option-row">
+                  <label className="soap-option-label">
+                    Detail: {DETAIL_LEVEL_LABELS[soapOptions.detail_level]?.name || 'Standard'}
+                  </label>
+                  <div className="soap-detail-slider">
+                    <input
+                      type="range"
+                      min="1"
+                      max="10"
+                      value={soapOptions.detail_level}
+                      onChange={(e) => onSoapDetailLevelChange(parseInt(e.target.value))}
+                      className="detail-slider"
+                      aria-label="SOAP note detail level"
+                    />
+                    <span className="detail-value">{soapOptions.detail_level}</span>
+                  </div>
                 </div>
-              )
-            ) : (
-              <div className="transcript-empty">No transcript recorded</div>
+
+                {/* Format Toggle */}
+                <div className="soap-option-row">
+                  <label className="soap-option-label">Format</label>
+                  <div className="soap-format-toggle">
+                    <button
+                      className={`format-btn ${soapOptions.format === 'problem_based' ? 'active' : ''}`}
+                      onClick={() => onSoapFormatChange('problem_based')}
+                    >
+                      Problem
+                    </button>
+                    <button
+                      className={`format-btn ${soapOptions.format === 'comprehensive' ? 'active' : ''}`}
+                      onClick={() => onSoapFormatChange('comprehensive')}
+                    >
+                      Comprehensive
+                    </button>
+                  </div>
+                </div>
+
+                {/* Custom Instructions */}
+                <div className="soap-option-row custom-instructions">
+                  <button
+                    className="custom-instructions-toggle"
+                    onClick={() => setCustomInstructionsExpanded(!customInstructionsExpanded)}
+                  >
+                    <span className={`chevron-small ${customInstructionsExpanded ? '' : 'collapsed'}`}>&#9660;</span>
+                    Custom Instructions
+                    {soapOptions.custom_instructions.trim() && (
+                      <span className="custom-badge">Active</span>
+                    )}
+                  </button>
+                  {customInstructionsExpanded && (
+                    <textarea
+                      className="custom-instructions-input"
+                      value={soapOptions.custom_instructions}
+                      onChange={(e) => onSoapCustomInstructionsChange(e.target.value)}
+                      placeholder="Add specific instructions..."
+                      rows={3}
+                    />
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Generate Button */}
+            {!soapResult && !isGeneratingSoap && !soapError && (
+              <button
+                className="btn-generate"
+                onClick={onGenerateSoap}
+                disabled={!ollamaConnected}
+              >
+                {ollamaConnected ? 'Generate SOAP Note' : 'Ollama not connected'}
+              </button>
+            )}
+
+            {/* Loading State */}
+            {isGeneratingSoap && (
+              <div className="soap-loading">
+                <div className="spinner-small" />
+                <span>Generating SOAP note...</span>
+              </div>
+            )}
+
+            {/* Error State */}
+            {soapError && (
+              <div className="soap-error">
+                <span>{soapError}</span>
+                <button className="btn-retry-small" onClick={onGenerateSoap}>
+                  Retry
+                </button>
+              </div>
+            )}
+
+            {/* SOAP Display */}
+            {soapResult && activeSoapNote && (
+              <div className="soap-display">
+                <div className="soap-header">
+                  <span className="soap-timestamp">
+                    Generated {formatLocalDateTime(soapResult.generated_at)}
+                  </span>
+                  <div className="soap-actions">
+                    <button className="btn-small copy-btn" onClick={handleCopySoap}>
+                      Copy
+                    </button>
+                    <button
+                      className="btn-small"
+                      onClick={onGenerateSoap}
+                      disabled={isGeneratingSoap}
+                    >
+                      Regenerate
+                    </button>
+                  </div>
+                </div>
+
+                {/* Multi-patient info and tabs */}
+                {isMultiPatient && (
+                  <div className="multi-patient-soap">
+                    <div className="patient-info">
+                      <span className="physician-label">
+                        Physician: {soapResult.physician_speaker || 'Not identified'}
+                      </span>
+                      <span className="patient-count">
+                        {soapResult.notes.length} patients detected
+                      </span>
+                    </div>
+                    <div className="patient-tabs">
+                      {soapResult.notes.map((note, i) => (
+                        <button
+                          key={i}
+                          className={`patient-tab ${activePatient === i ? 'active' : ''}`}
+                          onClick={() => setActivePatient(i)}
+                        >
+                          {note.patient_label}
+                          <span className="speaker-id">({note.speaker_id})</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                <div className="soap-sections">
+                  <div className="soap-item">
+                    <div className="soap-label">S</div>
+                    <div className="soap-text">{activeSoapNote.subjective}</div>
+                  </div>
+                  <div className="soap-item">
+                    <div className="soap-label">O</div>
+                    <div className="soap-text">{activeSoapNote.objective}</div>
+                  </div>
+                  <div className="soap-item">
+                    <div className="soap-label">A</div>
+                    <div className="soap-text">{activeSoapNote.assessment}</div>
+                  </div>
+                  <div className="soap-item">
+                    <div className="soap-label">P</div>
+                    <div className="soap-text">{activeSoapNote.plan}</div>
+                  </div>
+                </div>
+
+                <div className="soap-meta">
+                  <span className="soap-model">Model: {soapResult.model_used}</span>
+                </div>
+
+                {/* Debug: Raw Response */}
+                {activeSoapNote.raw_response && (
+                  <div className="soap-debug">
+                    <button
+                      className="soap-debug-toggle"
+                      onClick={() => setDebugExpanded(!debugExpanded)}
+                    >
+                      <span className={`chevron-small ${debugExpanded ? '' : 'collapsed'}`}>&#9660;</span>
+                      Raw Response
+                    </button>
+                    {debugExpanded && (
+                      <pre className="soap-debug-content">{activeSoapNote.raw_response}</pre>
+                    )}
+                  </div>
+                )}
+              </div>
             )}
           </div>
         )}
-      </section>
 
-      {/* SOAP Note Section */}
-      {hasTranscript && (
-        <section className="review-soap-section">
-          <div className="review-section-header">
-            <button
-              className="review-section-header-left"
-              onClick={() => setSoapExpanded(!soapExpanded)}
-              aria-expanded={soapExpanded}
-              aria-label={`${soapExpanded ? 'Collapse' : 'Expand'} SOAP Note section`}
-            >
-              <span className={`chevron ${soapExpanded ? '' : 'collapsed'}`}>&#9660;</span>
-              <span className="review-section-title">SOAP Note</span>
-            </button>
-            {soapNote && soapExpanded && (
-              <button
-                className="btn-small copy-btn"
-                onClick={handleCopySoap}
-              >
-                Copy
-              </button>
-            )}
-          </div>
-
-          {soapExpanded && (
-            <div className="review-soap-content">
-              {!soapNote && !isGeneratingSoap && !soapError && (
-                <button
-                  className="btn-generate"
-                  onClick={onGenerateSoap}
-                  disabled={!ollamaConnected}
-                >
-                  {ollamaConnected ? 'Generate SOAP Note' : 'Ollama not connected'}
-                </button>
-              )}
-
-              {isGeneratingSoap && (
-                <div className="soap-loading">
-                  <div className="spinner-small" />
-                  <span>Generating SOAP note...</span>
-                </div>
-              )}
-
-              {soapError && (
-                <div className="soap-error">
-                  <span>{soapError}</span>
-                  <button className="btn-retry-small" onClick={onGenerateSoap}>
-                    Retry
-                  </button>
-                </div>
-              )}
-
-              {soapNote && (
-                <div className="soap-display">
-                  <div className="soap-item">
-                    <div className="soap-label">SUBJECTIVE</div>
-                    <div className="soap-text">{soapNote.subjective}</div>
+        {/* Insights Tab */}
+        {activeTab === 'insights' && (
+          <div className="tab-panel insights-panel">
+            {/* Audio Quality */}
+            {audioQuality && (
+              <div className="insight-card">
+                <div className="insight-card-header">Audio Quality</div>
+                <div className="insight-card-body">
+                  <div className="insight-metric">
+                    <span className="metric-label">Level</span>
+                    <span className="metric-value">{audioQuality.rms_db.toFixed(0)} dB</span>
                   </div>
-                  <div className="soap-item">
-                    <div className="soap-label">OBJECTIVE</div>
-                    <div className="soap-text">{soapNote.objective}</div>
+                  <div className="insight-metric">
+                    <span className="metric-label">SNR</span>
+                    <span className="metric-value">{audioQuality.snr_db.toFixed(0)} dB</span>
                   </div>
-                  <div className="soap-item">
-                    <div className="soap-label">ASSESSMENT</div>
-                    <div className="soap-text">{soapNote.assessment}</div>
-                  </div>
-                  <div className="soap-item">
-                    <div className="soap-label">PLAN</div>
-                    <div className="soap-text">{soapNote.plan}</div>
-                  </div>
-                  <div className="soap-footer">
-                    Generated {formatLocalDateTime(soapNote.generated_at)} ({soapNote.model_used})
-                  </div>
-
-                  {/* Debug: Raw model response (collapsible) */}
-                  {soapNote.raw_response && (
-                    <div className="soap-debug">
-                      <button
-                        className="soap-debug-toggle"
-                        onClick={() => setDebugExpanded(!debugExpanded)}
-                      >
-                        <span className={`chevron-small ${debugExpanded ? '' : 'collapsed'}`}>&#9660;</span>
-                        Raw Response
-                      </button>
-                      {debugExpanded && (
-                        <pre className="soap-debug-content">
-                          {soapNote.raw_response}
-                        </pre>
-                      )}
+                  {audioQuality.total_clipped > 0 && (
+                    <div className="insight-metric warning">
+                      <span className="metric-label">Clipped</span>
+                      <span className="metric-value">{audioQuality.total_clipped}</span>
                     </div>
                   )}
                 </div>
-              )}
-            </div>
-          )}
-        </section>
-      )}
+              </div>
+            )}
 
-      {/* Session Insights (collapsed by default) */}
-      {biomarkers && (
-        <section className="review-insights-section">
-          <div className="review-section-header">
-            <button
-              className="review-section-header-left"
-              onClick={() => setInsightsExpanded(!insightsExpanded)}
-              aria-expanded={insightsExpanded}
-              aria-label={`${insightsExpanded ? 'Collapse' : 'Expand'} Session Insights section`}
-            >
-              <span className={`chevron ${insightsExpanded ? '' : 'collapsed'}`}>&#9660;</span>
-              <span className="review-section-title">Session Insights</span>
-            </button>
-            <div className="insights-summary">
-              <span className={`summary-quality ${qualityBadge.className}`}>
-                {qualityBadge.label}
-              </span>
-              {biomarkers.turn_count > 1 && (
-                <span className="summary-speakers">{biomarkers.speaker_metrics.length || 2} speakers</span>
-              )}
-            </div>
-          </div>
-
-          {insightsExpanded && (
-            <div className="review-insights-content">
-              {/* Audio Quality */}
-              {audioQuality && (
-                <div className="insight-group">
-                  <div className="insight-label">Audio Quality</div>
-                  <div className="insight-row">
-                    <span>Level: {audioQuality.rms_db.toFixed(0)} dB</span>
-                    <span>SNR: {audioQuality.snr_db.toFixed(0)} dB</span>
-                  </div>
-                  {audioQuality.total_clipped > 0 && (
-                    <div className="insight-warning">Clipped samples: {audioQuality.total_clipped}</div>
-                  )}
-                </div>
-              )}
-
-              {/* Speaker Metrics */}
-              {biomarkers.speaker_metrics.length > 0 && (
-                <div className="insight-group">
-                  <div className="insight-label">Speakers</div>
+            {/* Speaker Metrics */}
+            {biomarkers && biomarkers.speaker_metrics.length > 0 && (
+              <div className="insight-card">
+                <div className="insight-card-header">Speakers</div>
+                <div className="insight-card-body">
                   {biomarkers.speaker_metrics.map((speaker) => (
-                    <div key={speaker.speaker_id} className="insight-row">
-                      <span>{speaker.speaker_id}</span>
-                      <span>{speaker.turn_count} turns</span>
-                      <span>{Math.round(speaker.talk_time_ms / 1000)}s</span>
+                    <div key={speaker.speaker_id} className="speaker-row">
+                      <span className="speaker-name">{speaker.speaker_id}</span>
+                      <span className="speaker-stat">{speaker.turn_count} turns</span>
+                      <span className="speaker-stat">{Math.round(speaker.talk_time_ms / 1000)}s</span>
                     </div>
                   ))}
                 </div>
-              )}
+              </div>
+            )}
 
-              {/* Conversation Dynamics */}
-              {biomarkers.conversation_dynamics && (
-                <div className="insight-group">
-                  <div className="insight-label">Conversation</div>
-                  <div className="insight-row">
-                    <span>Response: {Math.round(biomarkers.conversation_dynamics.mean_response_latency_ms)}ms</span>
-                    {biomarkers.conversation_dynamics.engagement_score !== null && (
-                      <span>Engagement: {Math.round(biomarkers.conversation_dynamics.engagement_score)}</span>
-                    )}
+            {/* Conversation Dynamics */}
+            {biomarkers?.conversation_dynamics && (
+              <div className="insight-card">
+                <div className="insight-card-header">Conversation</div>
+                <div className="insight-card-body">
+                  <div className="insight-metric">
+                    <span className="metric-label">Response Time</span>
+                    <span className="metric-value">
+                      {Math.round(biomarkers.conversation_dynamics.mean_response_latency_ms)}ms
+                    </span>
                   </div>
+                  {biomarkers.conversation_dynamics.engagement_score !== null && (
+                    <div className="insight-metric">
+                      <span className="metric-label">Engagement</span>
+                      <span className="metric-value">
+                        {Math.round(biomarkers.conversation_dynamics.engagement_score)}
+                      </span>
+                    </div>
+                  )}
+                  {biomarkers.conversation_dynamics.total_interruption_count > 0 && (
+                    <div className="insight-metric">
+                      <span className="metric-label">Interruptions</span>
+                      <span className="metric-value">
+                        {biomarkers.conversation_dynamics.total_interruption_count}
+                      </span>
+                    </div>
+                  )}
                 </div>
-              )}
-            </div>
-          )}
-        </section>
-      )}
+              </div>
+            )}
 
-      {/* Sync Login Banner (if auto-sync enabled but not authenticated) */}
-      {autoSyncEnabled && !authState.is_authenticated && (
-        <div className="sync-login-banner">
-          <span className="sync-login-message">Sign in to sync this session to Medplum</span>
-          <div className="sync-login-actions">
-            <button
-              className="btn-signin-small"
-              onClick={onLogin}
-              disabled={authLoading}
-            >
-              {authLoading ? 'Signing in...' : 'Sign In'}
-            </button>
-            {authLoading && (
-              <button
-                className="btn-cancel-small"
-                onClick={onCancelLogin}
-              >
-                Cancel
-              </button>
+            {/* Vocal Biomarkers */}
+            {biomarkers && (biomarkers.vitality_session_mean !== null || biomarkers.stability_session_mean !== null) && (
+              <div className="insight-card">
+                <div className="insight-card-header">Vocal Biomarkers</div>
+                <div className="insight-card-body">
+                  {biomarkers.vitality_session_mean !== null && (
+                    <div className="insight-metric">
+                      <span className="metric-label">Vitality</span>
+                      <span className="metric-value">{biomarkers.vitality_session_mean.toFixed(1)}</span>
+                    </div>
+                  )}
+                  {biomarkers.stability_session_mean !== null && (
+                    <div className="insight-metric">
+                      <span className="metric-label">Stability</span>
+                      <span className="metric-value">{biomarkers.stability_session_mean.toFixed(1)}</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Empty state */}
+            {!audioQuality && !biomarkers && (
+              <div className="panel-empty">No insights available</div>
             )}
           </div>
-        </div>
-      )}
+        )}
+      </div>
 
-      {/* Sync Error Toast */}
-      {syncError && (
-        <div className="sync-error-toast">
-          <span>{syncError}</span>
-          <button onClick={onClearSyncError}>&times;</button>
-        </div>
-      )}
+      {/* Sync Status Bar */}
+      <SyncStatusBar
+        authState={authState}
+        authLoading={authLoading}
+        onLogin={onLogin}
+        onCancelLogin={onCancelLogin}
+        isSyncing={isSyncing}
+        syncSuccess={syncSuccess}
+        syncError={syncError}
+        syncedEncounter={syncedEncounter}
+        isAddingSoap={isAddingSoap}
+        onClearSyncError={onClearSyncError}
+        autoSyncEnabled={autoSyncEnabled}
+      />
 
       {/* Action Bar */}
       <div className="action-bar">
-        {authState.is_authenticated && hasTranscript && (
-          <button
-            className="btn-secondary"
-            onClick={onSync}
-            disabled={isSyncing || syncSuccess}
-          >
-            {isSyncing ? 'Syncing...' : syncSuccess ? '\u2713 Synced' : 'Sync to Medplum'}
-          </button>
-        )}
         <button className="btn-primary" onClick={onNewSession}>
           New Session
         </button>

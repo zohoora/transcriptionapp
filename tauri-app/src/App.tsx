@@ -1,14 +1,16 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { WebviewWindow } from '@tauri-apps/api/webviewWindow';
 import { useAuth } from './components/AuthProvider';
 import {
+  ErrorBoundary,
   Header,
   SettingsDrawer,
   ReadyMode,
   RecordingMode,
   ReviewMode,
 } from './components';
+import type { SyncStatus } from './components';
 import {
   useSessionState,
   useSoapNote,
@@ -16,6 +18,8 @@ import {
   useSettings,
   useDevices,
   useOllamaConnection,
+  useChecklist,
+  useAutoDetection,
 } from './hooks';
 import type { Settings, WhisperServerStatus } from './types';
 
@@ -34,8 +38,8 @@ function App() {
     audioQuality,
     editedTranscript,
     setEditedTranscript,
-    soapNote,
-    setSoapNote,
+    soapResult,
+    setSoapResult,
     localElapsedMs,
     isIdle,
     isRecording,
@@ -52,7 +56,11 @@ function App() {
     setOllamaStatus,
     ollamaModels,
     setOllamaModels,
+    soapOptions,
     generateSoapNote,
+    updateSoapDetailLevel,
+    updateSoapFormat,
+    updateSoapCustomInstructions,
   } = useSoapNote();
 
   // Medplum sync from hook
@@ -65,8 +73,13 @@ function App() {
     syncError,
     setSyncError,
     syncSuccess,
+    syncedEncounter,
+    syncedPatients,
+    isAddingSoap,
     resetSyncState,
     syncToMedplum,
+    syncMultiPatientToMedplum,
+    addSoapToEncounter,
   } = useMedplumSync();
 
   // Settings from hook
@@ -82,6 +95,88 @@ function App() {
 
   // Ollama connection from hook
   const { status: ollamaConnectionStatus, checkConnection: checkOllamaConnection } = useOllamaConnection();
+
+  // Checklist from hook (for permission checks)
+  const { checkMicrophonePermission, openMicrophoneSettings } = useChecklist();
+
+  // Ref to track if an auto-started session is still pending greeting confirmation
+  const autoStartPendingRef = useRef(false);
+
+  // Auto-detection callbacks for optimistic recording flow
+  // 1. onStartRecording: Start recording immediately when speech detected
+  const handleAutoStartRecording = useCallback(async () => {
+    console.log('Auto-detection: Starting recording immediately (optimistic)');
+    autoStartPendingRef.current = true; // Mark as pending confirmation
+    const device = pendingSettings?.device === 'default' ? null : pendingSettings?.device ?? null;
+    resetSyncState();
+    await sessionStart(device);
+  }, [pendingSettings?.device, resetSyncState, sessionStart]);
+
+  // 2. onGreetingConfirmed: Greeting check passed - recording continues
+  const handleGreetingConfirmed = useCallback((transcript: string, confidence: number) => {
+    console.log(`Greeting confirmed: "${transcript}" (confidence: ${confidence.toFixed(2)})`);
+    autoStartPendingRef.current = false; // No longer pending - session is confirmed
+    // Recording is already in progress, just log confirmation
+  }, []);
+
+  // 3. onGreetingRejected: Not a greeting - abort recording only if session is still new
+  const handleGreetingRejected = useCallback(async (reason: string) => {
+    console.log(`Greeting rejected: ${reason}`);
+    // Only reset if we're still pending confirmation (session just started)
+    // If the session has been running for a while, the user may have started speaking
+    // and we shouldn't discard their recording
+    if (autoStartPendingRef.current) {
+      console.log('Session still pending confirmation - aborting recording');
+      autoStartPendingRef.current = false;
+      await sessionReset();
+    } else {
+      console.log('Session already confirmed or user-initiated - keeping recording');
+    }
+  }, [sessionReset]);
+
+  // Auto-detection from hook
+  const {
+    isListening,
+    isPendingConfirmation: _isPendingConfirmation, // Available for future UI indicators
+    listeningStatus,
+    error: listeningError,
+    startListening,
+    stopListening,
+  } = useAutoDetection(
+    pendingSettings?.auto_start_enabled ?? false,
+    {
+      onStartRecording: handleAutoStartRecording,
+      onGreetingConfirmed: handleGreetingConfirmed,
+      onGreetingRejected: handleGreetingRejected,
+    }
+  );
+
+  // Permission error state
+  const [permissionError, setPermissionError] = useState<string | null>(null);
+
+  // Sync indicator dismissed state (for hiding after user dismisses)
+  const [syncDismissed, setSyncDismissed] = useState(false);
+
+  // Derive sync status for header indicator
+  const getSyncStatus = (): SyncStatus => {
+    if (syncDismissed) return 'idle';
+    if (isSyncing || isAddingSoap) return 'syncing';
+    if (syncError) return 'error';
+    if (syncSuccess) return 'success';
+    return 'idle';
+  };
+
+  // Reset dismissed state when sync starts
+  useEffect(() => {
+    if (isSyncing || isAddingSoap) {
+      setSyncDismissed(false);
+    }
+  }, [isSyncing, isAddingSoap]);
+
+  // Handle dismiss sync indicator
+  const handleDismissSync = useCallback(() => {
+    setSyncDismissed(true);
+  }, []);
 
   // Note: Local Whisper models removed - using remote server only
 
@@ -150,15 +245,83 @@ function App() {
     };
   }, [setMedplumConnected, setMedplumError]);
 
-  // Handle start recording with reset
+  // Auto-sync to Medplum when session completes (if authenticated and auto-sync enabled)
+  useEffect(() => {
+    // Only auto-sync when:
+    // 1. Session just completed
+    // 2. User is authenticated
+    // 3. Auto-sync is enabled
+    // 4. Not already syncing or synced
+    // 5. There's a transcript to sync
+    if (
+      status.state === 'completed' &&
+      authState.is_authenticated &&
+      pendingSettings?.medplum_auto_sync &&
+      !syncSuccess &&
+      !isSyncing &&
+      !syncedEncounter &&
+      transcript.finalized_text
+    ) {
+      // Auto-sync without SOAP (SOAP will be added later if generated)
+      syncToMedplum({
+        authState,
+        transcript: transcript.finalized_text,
+        soapNote: null,
+        elapsedMs: status.elapsed_ms,
+      });
+    }
+  }, [
+    status.state,
+    status.elapsed_ms,
+    authState,
+    pendingSettings?.medplum_auto_sync,
+    syncSuccess,
+    isSyncing,
+    syncedEncounter,
+    transcript.finalized_text,
+    syncToMedplum,
+  ]);
+
+  // Start/stop listening mode based on UI state and settings
+  useEffect(() => {
+    const autoStartEnabled = pendingSettings?.auto_start_enabled ?? false;
+    const deviceId = pendingSettings?.device === 'default' ? null : pendingSettings?.device ?? null;
+
+    // Start listening when:
+    // 1. In ready mode (idle or error state)
+    // 2. Auto-start is enabled
+    // 3. Not already listening
+    if (uiMode === 'ready' && autoStartEnabled && !isListening) {
+      startListening(deviceId);
+    }
+
+    // Stop listening when:
+    // 1. Not in ready mode (recording started)
+    // 2. OR auto-start is disabled
+    if ((uiMode !== 'ready' || !autoStartEnabled) && isListening) {
+      stopListening();
+    }
+  }, [uiMode, pendingSettings?.auto_start_enabled, pendingSettings?.device, isListening, startListening, stopListening]);
+
+  // Handle start recording with permission check
   const handleStart = useCallback(async () => {
+    // Check microphone permission first
+    const permStatus = await checkMicrophonePermission();
+    if (!permStatus.authorized) {
+      setPermissionError(permStatus.message);
+      return;
+    }
+
+    setPermissionError(null);
+    autoStartPendingRef.current = false; // Manual start, not pending auto-confirmation
     const device = pendingSettings?.device === 'default' ? null : pendingSettings?.device ?? null;
     resetSyncState();
     await sessionStart(device);
-  }, [pendingSettings?.device, resetSyncState, sessionStart]);
+  }, [pendingSettings?.device, resetSyncState, sessionStart, checkMicrophonePermission]);
 
   // Handle reset/new session with cleanup
   const handleReset = useCallback(async () => {
+    autoStartPendingRef.current = false; // Clear pending state on reset
     resetSyncState();
     await sessionReset();
   }, [resetSyncState, sessionReset]);
@@ -241,22 +404,77 @@ function App() {
   }, [settings, pendingSettings]);
 
   // Generate SOAP note (includes audio events like coughs, laughs for clinical context)
+  // If already synced to Medplum, auto-add SOAP to the encounter
+  // For multi-patient sessions, use multi-patient sync
   const handleGenerateSoap = useCallback(async () => {
     const result = await generateSoapNote(editedTranscript, biomarkers?.recent_events);
     if (result) {
-      setSoapNote(result);
-    }
-  }, [editedTranscript, biomarkers?.recent_events, generateSoapNote, setSoapNote]);
+      setSoapResult(result);
 
-  // Sync to Medplum
-  const handleSyncToMedplum = useCallback(async () => {
-    await syncToMedplum({
-      authState,
-      transcript: editedTranscript,
-      soapNote,
-      elapsedMs: status.elapsed_ms,
-    });
-  }, [authState, editedTranscript, soapNote, status.elapsed_ms, syncToMedplum]);
+      // If authenticated and have SOAP notes, sync them
+      if (authState.is_authenticated && result.notes.length > 0) {
+        const isMultiPatient = result.notes.length > 1;
+
+        if (isMultiPatient) {
+          // Multi-patient: Use multi-patient sync (creates patients/encounters for each)
+          await syncMultiPatientToMedplum({
+            authState,
+            transcript: editedTranscript,
+            soapResult: result,
+            elapsedMs: status.elapsed_ms,
+          });
+        } else if (syncedEncounter && !syncedEncounter.hasSoap) {
+          // Single patient, already synced: Add SOAP to existing encounter
+          await addSoapToEncounter(result.notes[0].soap);
+        } else if (!syncedEncounter) {
+          // Single patient, not yet synced: Sync with SOAP
+          await syncToMedplum({
+            authState,
+            transcript: editedTranscript,
+            soapNote: result.notes[0].soap,
+            elapsedMs: status.elapsed_ms,
+          });
+        }
+      }
+    }
+  }, [
+    editedTranscript,
+    biomarkers?.recent_events,
+    generateSoapNote,
+    setSoapResult,
+    authState,
+    status.elapsed_ms,
+    syncedEncounter,
+    syncToMedplum,
+    syncMultiPatientToMedplum,
+    addSoapToEncounter,
+  ]);
+
+  // Auto-generate SOAP note when session completes (if Ollama is connected)
+  useEffect(() => {
+    // Only auto-generate when:
+    // 1. Session just completed
+    // 2. Ollama is connected
+    // 3. Not already generating or generated
+    // 4. There's a transcript
+    if (
+      status.state === 'completed' &&
+      ollamaStatus?.connected &&
+      !isGeneratingSoap &&
+      !soapResult &&
+      transcript.finalized_text
+    ) {
+      // Auto-generate SOAP note
+      handleGenerateSoap();
+    }
+  }, [
+    status.state,
+    ollamaStatus?.connected,
+    isGeneratingSoap,
+    soapResult,
+    transcript.finalized_text,
+    handleGenerateSoap,
+  ]);
 
   // Open history window
   const openHistoryWindow = useCallback(async () => {
@@ -306,63 +524,78 @@ function App() {
         disabled={isRecording || isStopping}
         onHistoryClick={openHistoryWindow}
         onSettingsClick={() => setShowSettings(!showSettings)}
+        syncStatus={getSyncStatus()}
+        syncError={syncError}
+        onDismissSync={handleDismissSync}
       />
 
-      {/* Mode-based content */}
-      {uiMode === 'ready' && (
-        <ReadyMode
-          audioLevel={audioQuality ? Math.min(100, (audioQuality.rms_db + 60) / 0.6) : 0}
-          errorMessage={status.state === 'error' ? status.error_message : null}
-          onStart={handleStart}
-        />
-      )}
+      {/* Mode-based content wrapped in ErrorBoundary */}
+      <ErrorBoundary>
+        {uiMode === 'ready' && (
+          <ReadyMode
+            audioLevel={audioQuality ? Math.min(100, (audioQuality.rms_db + 60) / 0.6) : 0}
+            errorMessage={permissionError || listeningError || (status.state === 'error' ? status.error_message : null)}
+            isPermissionError={!!permissionError}
+            autoStartEnabled={pendingSettings?.auto_start_enabled ?? false}
+            isListening={isListening}
+            listeningStatus={listeningStatus}
+            onStart={handleStart}
+            onOpenSettings={openMicrophoneSettings}
+          />
+        )}
 
-      {uiMode === 'recording' && (
-        <RecordingMode
-          elapsedMs={localElapsedMs}
-          audioQuality={audioQuality}
-          biomarkers={biomarkers}
-          transcriptText={transcript.finalized_text}
-          draftText={transcript.draft_text}
-          whisperMode={pendingSettings?.whisper_mode || 'local'}
-          whisperModel={pendingSettings?.whisper_mode === 'remote'
-            ? pendingSettings?.whisper_server_model || 'unknown'
-            : pendingSettings?.model || 'unknown'}
-          isStopping={isStopping}
-          onStop={handleStop}
-        />
-      )}
+        {uiMode === 'recording' && (
+          <RecordingMode
+            elapsedMs={localElapsedMs}
+            audioQuality={audioQuality}
+            biomarkers={biomarkers}
+            transcriptText={transcript.finalized_text}
+            draftText={transcript.draft_text}
+            whisperMode={pendingSettings?.whisper_mode || 'local'}
+            whisperModel={pendingSettings?.whisper_mode === 'remote'
+              ? pendingSettings?.whisper_server_model || 'unknown'
+              : pendingSettings?.model || 'unknown'}
+            isStopping={isStopping}
+            onStop={handleStop}
+          />
+        )}
 
-      {uiMode === 'review' && (
-        <ReviewMode
-          elapsedMs={status.elapsed_ms || localElapsedMs}
-          audioQuality={audioQuality}
-          originalTranscript={transcript.finalized_text}
-          editedTranscript={editedTranscript}
-          onTranscriptEdit={setEditedTranscript}
-          soapNote={soapNote}
-          isGeneratingSoap={isGeneratingSoap}
-          soapError={soapError}
-          ollamaConnected={ollamaStatus?.connected || false}
-          onGenerateSoap={handleGenerateSoap}
-          biomarkers={biomarkers}
-          whisperMode={pendingSettings?.whisper_mode || 'local'}
-          whisperModel={pendingSettings?.whisper_mode === 'remote'
-            ? pendingSettings?.whisper_server_model || 'unknown'
-            : pendingSettings?.model || 'unknown'}
-          authState={authState}
-          isSyncing={isSyncing}
-          syncSuccess={syncSuccess}
-          syncError={syncError}
-          onSync={handleSyncToMedplum}
-          onClearSyncError={() => setSyncError(null)}
-          onNewSession={handleReset}
-          onLogin={medplumLogin}
-          onCancelLogin={medplumCancelLogin}
-          authLoading={authLoading}
-          autoSyncEnabled={pendingSettings?.medplum_auto_sync || false}
-        />
-      )}
+        {uiMode === 'review' && (
+          <ReviewMode
+            elapsedMs={status.elapsed_ms || localElapsedMs}
+            audioQuality={audioQuality}
+            originalTranscript={transcript.finalized_text}
+            editedTranscript={editedTranscript}
+            onTranscriptEdit={setEditedTranscript}
+            soapResult={soapResult}
+            isGeneratingSoap={isGeneratingSoap}
+            soapError={soapError}
+            ollamaConnected={ollamaStatus?.connected || false}
+            onGenerateSoap={handleGenerateSoap}
+            soapOptions={soapOptions}
+            onSoapDetailLevelChange={updateSoapDetailLevel}
+            onSoapFormatChange={updateSoapFormat}
+            onSoapCustomInstructionsChange={updateSoapCustomInstructions}
+            biomarkers={biomarkers}
+            whisperMode={pendingSettings?.whisper_mode || 'local'}
+            whisperModel={pendingSettings?.whisper_mode === 'remote'
+              ? pendingSettings?.whisper_server_model || 'unknown'
+              : pendingSettings?.model || 'unknown'}
+            authState={authState}
+            isSyncing={isSyncing}
+            syncSuccess={syncSuccess}
+            syncError={syncError}
+            syncedEncounter={syncedEncounter}
+            isAddingSoap={isAddingSoap}
+            onClearSyncError={() => setSyncError(null)}
+            onNewSession={handleReset}
+            onLogin={medplumLogin}
+            onCancelLogin={medplumCancelLogin}
+            authLoading={authLoading}
+            autoSyncEnabled={pendingSettings?.medplum_auto_sync || false}
+          />
+        )}
+      </ErrorBoundary>
 
       {/* Settings Drawer */}
       <SettingsDrawer

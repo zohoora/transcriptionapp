@@ -35,10 +35,27 @@ function createStandardMock(overrides: Record<string, unknown> = {}) {
       stop_session: undefined,
       reset_session: undefined,
       set_settings: mockSettings,
+      // Checklist commands
+      run_checklist: {
+        checks: [
+          { name: 'Audio Device', status: 'pass', message: 'OK' },
+          { name: 'Model', status: 'pass', message: 'OK' },
+        ],
+        all_passed: true,
+        can_start: true,
+        summary: 'All checks passed',
+      },
+      check_model_status: { available: true, path: '/models/model.bin', error: null },
+      check_microphone_permission: { status: 'authorized', authorized: true, message: 'OK' },
+      open_microphone_settings: undefined,
       // Medplum/Ollama commands used on init
       medplum_try_restore_session: undefined,
       check_ollama_status: { connected: false, available_models: [], error: null },
       medplum_check_connection: false,
+      // Listening commands
+      start_listening: undefined,
+      stop_listening: undefined,
+      get_listening_status: { is_listening: false, speech_detected: false, speech_duration_ms: 0, analyzing: false },
       ...overrides,
     };
     if (command in responses) {
@@ -52,8 +69,8 @@ function createStandardMock(overrides: Record<string, unknown> = {}) {
 async function waitForAppReady() {
   await waitFor(() => {
     // In the new mode-based UI, when checks pass and app is ready,
-    // the START button should be available in ReadyMode
-    expect(screen.getByText('START')).toBeInTheDocument();
+    // the "Start New Session" button should be available in ReadyMode
+    expect(screen.getByText('Start New Session')).toBeInTheDocument();
   }, { timeout: 3000 });
 }
 
@@ -89,7 +106,7 @@ describe('App', () => {
       await waitForAppReady();
 
       await waitFor(() => {
-        expect(screen.getByText('START')).toBeInTheDocument();
+        expect(screen.getByText('Start New Session')).toBeInTheDocument();
       });
     });
 
@@ -104,7 +121,7 @@ describe('App', () => {
       await waitForAppReady();
 
       await waitFor(() => {
-        expect(screen.getByText('START')).toBeInTheDocument();
+        expect(screen.getByText('Start New Session')).toBeInTheDocument();
       });
 
       const settingsBtn = screen.getByRole('button', { name: /settings/i });
@@ -127,7 +144,7 @@ describe('App', () => {
       await waitForAppReady();
 
       await waitFor(() => {
-        expect(screen.getByText('START')).toBeInTheDocument();
+        expect(screen.getByText('Start New Session')).toBeInTheDocument();
       });
 
       // Open settings
@@ -155,7 +172,7 @@ describe('App', () => {
       await waitForAppReady();
 
       await waitFor(() => {
-        expect(screen.getByText('START')).toBeInTheDocument();
+        expect(screen.getByText('Start New Session')).toBeInTheDocument();
       });
 
       // Open settings
@@ -182,10 +199,10 @@ describe('App', () => {
       await waitForAppReady();
 
       await waitFor(() => {
-        expect(screen.getByText('START')).toBeInTheDocument();
+        expect(screen.getByText('Start New Session')).toBeInTheDocument();
       });
 
-      await user.click(screen.getByText('START'));
+      await user.click(screen.getByText('Start New Session'));
 
       // Note: deviceId 'default' is converted to null before calling the backend
       expect(mockInvoke).toHaveBeenCalledWith('start_session', { deviceId: null });
@@ -198,7 +215,7 @@ describe('App', () => {
       await waitForAppReady();
 
       await waitFor(() => {
-        expect(screen.getByText('START')).toBeInTheDocument();
+        expect(screen.getByText('Start New Session')).toBeInTheDocument();
       });
 
       // Emit recording status
@@ -207,8 +224,8 @@ describe('App', () => {
       });
 
       await waitFor(() => {
-        expect(screen.getByText('STOP')).toBeInTheDocument();
-        expect(screen.queryByText('START')).not.toBeInTheDocument();
+        expect(screen.getByText('End Session')).toBeInTheDocument();
+        expect(screen.queryByText('Start New Session')).not.toBeInTheDocument();
       });
     });
 
@@ -220,7 +237,7 @@ describe('App', () => {
       await waitForAppReady();
 
       await waitFor(() => {
-        expect(screen.getByText('START')).toBeInTheDocument();
+        expect(screen.getByText('Start New Session')).toBeInTheDocument();
       });
 
       act(() => {
@@ -228,10 +245,10 @@ describe('App', () => {
       });
 
       await waitFor(() => {
-        expect(screen.getByText('STOP')).toBeInTheDocument();
+        expect(screen.getByText('End Session')).toBeInTheDocument();
       });
 
-      await user.click(screen.getByText('STOP'));
+      await user.click(screen.getByText('End Session'));
 
       expect(mockInvoke).toHaveBeenCalledWith('stop_session');
     });
@@ -243,7 +260,7 @@ describe('App', () => {
       await waitForAppReady();
 
       await waitFor(() => {
-        expect(screen.getByText('START')).toBeInTheDocument();
+        expect(screen.getByText('Start New Session')).toBeInTheDocument();
       });
 
       act(() => {
@@ -263,7 +280,7 @@ describe('App', () => {
       await waitForAppReady();
 
       await waitFor(() => {
-        expect(screen.getByText('START')).toBeInTheDocument();
+        expect(screen.getByText('Start New Session')).toBeInTheDocument();
       });
 
       act(() => {
@@ -281,14 +298,14 @@ describe('App', () => {
   });
 
   describe('transcript display', () => {
-    it('shows "Ready to record" status when idle', async () => {
+    it('shows start button when idle', async () => {
       mockInvoke.mockImplementation(createStandardMock());
 
       render(<App />);
       await waitForAppReady();
 
       await waitFor(() => {
-        expect(screen.getByText('Ready to record')).toBeInTheDocument();
+        expect(screen.getByText('Start New Session')).toBeInTheDocument();
       });
     });
 
@@ -300,7 +317,7 @@ describe('App', () => {
       await waitForAppReady();
 
       await waitFor(() => {
-        expect(screen.getByText('START')).toBeInTheDocument();
+        expect(screen.getByText('Start New Session')).toBeInTheDocument();
       });
 
       act(() => {
@@ -321,13 +338,14 @@ describe('App', () => {
     });
 
     it('displays transcript in review mode when completed', async () => {
+      const user = userEvent.setup();
       mockInvoke.mockImplementation(createStandardMock());
 
       render(<App />);
       await waitForAppReady();
 
       await waitFor(() => {
-        expect(screen.getByText('START')).toBeInTheDocument();
+        expect(screen.getByText('Start New Session')).toBeInTheDocument();
       });
 
       // Complete recording with transcript to enter review mode
@@ -335,6 +353,16 @@ describe('App', () => {
         listenHelper.emit('session_status', mockCompletedStatus);
         listenHelper.emit('transcript_update', mockTranscript);
       });
+
+      // ReviewMode defaults to SOAP tab, navigate to Transcript tab
+      await waitFor(() => {
+        const tabs = screen.getAllByRole('button').filter(btn => btn.classList.contains('review-tab'));
+        expect(tabs.length).toBeGreaterThan(0);
+      });
+      const transcriptTab = screen.getAllByRole('button').filter(
+        btn => btn.classList.contains('review-tab') && btn.textContent?.includes('Transcript')
+      )[0];
+      await user.click(transcriptTab);
 
       await waitFor(() => {
         expect(screen.getByText('Hello, this is a test transcription.')).toBeInTheDocument();
@@ -349,7 +377,7 @@ describe('App', () => {
       await waitForAppReady();
 
       await waitFor(() => {
-        expect(screen.getByText('START')).toBeInTheDocument();
+        expect(screen.getByText('Start New Session')).toBeInTheDocument();
       });
 
       act(() => {
@@ -374,18 +402,29 @@ describe('App', () => {
     });
 
     it('shows "No transcript recorded" when completed with empty transcript', async () => {
+      const user = userEvent.setup();
       mockInvoke.mockImplementation(createStandardMock());
 
       render(<App />);
       await waitForAppReady();
 
       await waitFor(() => {
-        expect(screen.getByText('START')).toBeInTheDocument();
+        expect(screen.getByText('Start New Session')).toBeInTheDocument();
       });
 
       act(() => {
         listenHelper.emit('session_status', mockCompletedStatus);
       });
+
+      // ReviewMode defaults to SOAP tab, navigate to Transcript tab
+      await waitFor(() => {
+        const tabs = screen.getAllByRole('button').filter(btn => btn.classList.contains('review-tab'));
+        expect(tabs.length).toBeGreaterThan(0);
+      });
+      const transcriptTab = screen.getAllByRole('button').filter(
+        btn => btn.classList.contains('review-tab') && btn.textContent?.includes('Transcript')
+      )[0];
+      await user.click(transcriptTab);
 
       await waitFor(() => {
         expect(screen.getByText('No transcript recorded')).toBeInTheDocument();
@@ -393,8 +432,8 @@ describe('App', () => {
     });
   });
 
-  describe('transcript collapsing', () => {
-    it('can collapse and expand transcript section in review mode', async () => {
+  describe('review mode tabs', () => {
+    it('can switch between tabs in review mode', async () => {
       const user = userEvent.setup();
       mockInvoke.mockImplementation(createStandardMock());
 
@@ -407,33 +446,48 @@ describe('App', () => {
         listenHelper.emit('transcript_update', mockTranscript);
       });
 
+      // Should be in ReviewMode with tabs
       await waitFor(() => {
-        expect(screen.getByText('Transcript')).toBeInTheDocument();
+        const tabs = screen.getAllByRole('button').filter(btn => btn.classList.contains('review-tab'));
+        expect(tabs.length).toBe(3); // Transcript, SOAP, Insights
       });
 
-      // Should show transcript content initially (expanded by default)
-      expect(screen.getByText('Hello, this is a test transcription.')).toBeInTheDocument();
-
-      // Click to collapse
-      await user.click(screen.getByText('Transcript'));
-
-      // Transcript text should be hidden (collapsed)
-      await waitFor(() => {
-        const content = document.querySelector('.review-transcript-content');
-        expect(content).toBeNull();
-      });
-
-      // Click to expand again
-      await user.click(screen.getByText('Transcript'));
+      // SOAP tab is default, switch to Transcript tab
+      const transcriptTab = screen.getAllByRole('button').filter(
+        btn => btn.classList.contains('review-tab') && btn.textContent?.includes('Transcript')
+      )[0];
+      await user.click(transcriptTab);
 
       await waitFor(() => {
         expect(screen.getByText('Hello, this is a test transcription.')).toBeInTheDocument();
+      });
+
+      // Switch to Insights tab
+      const insightsTab = screen.getAllByRole('button').filter(
+        btn => btn.classList.contains('review-tab') && btn.textContent?.includes('Insights')
+      )[0];
+      await user.click(insightsTab);
+
+      await waitFor(() => {
+        expect(screen.getByText('No insights available')).toBeInTheDocument();
       });
     });
   });
 
   describe('copy functionality', () => {
+    const navigateToTranscriptTab = async (user: ReturnType<typeof userEvent.setup>) => {
+      await waitFor(() => {
+        const tabs = screen.getAllByRole('button').filter(btn => btn.classList.contains('review-tab'));
+        expect(tabs.length).toBeGreaterThan(0);
+      });
+      const transcriptTab = screen.getAllByRole('button').filter(
+        btn => btn.classList.contains('review-tab') && btn.textContent?.includes('Transcript')
+      )[0];
+      await user.click(transcriptTab);
+    };
+
     it('shows Copy button in review mode with transcript', async () => {
+      const user = userEvent.setup();
       mockInvoke.mockImplementation(createStandardMock());
 
       render(<App />);
@@ -444,6 +498,8 @@ describe('App', () => {
         listenHelper.emit('session_status', mockCompletedStatus);
         listenHelper.emit('transcript_update', mockTranscript);
       });
+
+      await navigateToTranscriptTab(user);
 
       await waitFor(() => {
         expect(screen.getByText('Copy')).toBeInTheDocument();
@@ -451,6 +507,7 @@ describe('App', () => {
     });
 
     it('Copy button is enabled when transcript is available in review mode', async () => {
+      const user = userEvent.setup();
       mockInvoke.mockImplementation(createStandardMock());
 
       render(<App />);
@@ -461,6 +518,8 @@ describe('App', () => {
         listenHelper.emit('session_status', mockCompletedStatus);
         listenHelper.emit('transcript_update', mockTranscript);
       });
+
+      await navigateToTranscriptTab(user);
 
       await waitFor(() => {
         const copyBtn = screen.getByText('Copy');
@@ -480,6 +539,8 @@ describe('App', () => {
         listenHelper.emit('session_status', mockCompletedStatus);
         listenHelper.emit('transcript_update', mockTranscript);
       });
+
+      await navigateToTranscriptTab(user);
 
       await waitFor(() => {
         expect(screen.getByText('Copy')).not.toBeDisabled();
@@ -504,6 +565,8 @@ describe('App', () => {
         listenHelper.emit('transcript_update', mockTranscript);
       });
 
+      await navigateToTranscriptTab(user);
+
       await waitFor(() => {
         expect(screen.getByText('Copy')).not.toBeDisabled();
       });
@@ -524,7 +587,7 @@ describe('App', () => {
       await waitForAppReady();
 
       await waitFor(() => {
-        expect(screen.getByText('START')).toBeInTheDocument();
+        expect(screen.getByText('Start New Session')).toBeInTheDocument();
       });
 
       act(() => {
@@ -537,14 +600,14 @@ describe('App', () => {
       });
     });
 
-    it('shows elapsed time during recording', async () => {
+    it('shows session progress indicator during recording', async () => {
       mockInvoke.mockImplementation(createStandardMock());
 
       render(<App />);
       await waitForAppReady();
 
       await waitFor(() => {
-        expect(screen.getByText('START')).toBeInTheDocument();
+        expect(screen.getByText('Start New Session')).toBeInTheDocument();
       });
 
       act(() => {
@@ -552,21 +615,21 @@ describe('App', () => {
       });
 
       await waitFor(() => {
-        const timer = document.querySelector('.timer-large');
-        expect(timer).toBeInTheDocument();
-        // Timer uses local Date.now(), so we just check it shows a valid format (m:ss or mm:ss or h:mm:ss)
-        expect(timer?.textContent).toMatch(/^\d{1,2}:\d{2}(:\d{2})?$/);
+        // Recording mode shows "Session in progress..." instead of timer
+        expect(screen.getByText('Session in progress...')).toBeInTheDocument();
+        // Recording mode should be active
+        expect(document.querySelector('.recording-mode')).toBeInTheDocument();
       });
     });
 
-    it('shows timer in recording mode', async () => {
+    it('shows recording mode UI during recording', async () => {
       mockInvoke.mockImplementation(createStandardMock());
 
       render(<App />);
       await waitForAppReady();
 
       await waitFor(() => {
-        expect(screen.getByText('START')).toBeInTheDocument();
+        expect(screen.getByText('Start New Session')).toBeInTheDocument();
       });
 
       act(() => {
@@ -574,10 +637,10 @@ describe('App', () => {
       });
 
       await waitFor(() => {
-        const timer = document.querySelector('.timer-large');
-        expect(timer).toBeInTheDocument();
         // Recording mode should be active
         expect(document.querySelector('.recording-mode')).toBeInTheDocument();
+        // End Session button should be visible
+        expect(screen.getByText('End Session')).toBeInTheDocument();
       });
     });
 
@@ -588,7 +651,7 @@ describe('App', () => {
       await waitForAppReady();
 
       await waitFor(() => {
-        expect(screen.getByText('START')).toBeInTheDocument();
+        expect(screen.getByText('Start New Session')).toBeInTheDocument();
       });
 
       act(() => {
@@ -613,7 +676,7 @@ describe('App', () => {
       await waitForAppReady();
 
       await waitFor(() => {
-        expect(screen.getByText('START')).toBeInTheDocument();
+        expect(screen.getByText('Start New Session')).toBeInTheDocument();
       });
 
       act(() => {
@@ -640,7 +703,7 @@ describe('App', () => {
       await waitForAppReady();
 
       await waitFor(() => {
-        expect(screen.getByText('START')).toBeInTheDocument();
+        expect(screen.getByText('Start New Session')).toBeInTheDocument();
       });
 
       act(() => {
@@ -665,7 +728,7 @@ describe('App', () => {
       await waitForAppReady();
 
       await waitFor(() => {
-        expect(screen.getByText('START')).toBeInTheDocument();
+        expect(screen.getByText('Start New Session')).toBeInTheDocument();
       });
 
       act(() => {
@@ -700,7 +763,7 @@ describe('App', () => {
 
       // App should still render with Start button
       await waitFor(() => {
-        expect(screen.getByText('START')).toBeInTheDocument();
+        expect(screen.getByText('Start New Session')).toBeInTheDocument();
       });
     });
   });
@@ -718,9 +781,9 @@ describe('App', () => {
   });
 });
 
-describe('formatTime', () => {
-  // Test the timer display during recording
-  it('shows timer during recording', async () => {
+describe('Recording Mode UI', () => {
+  // Test the recording mode display
+  it('shows recording mode during recording', async () => {
     const mockInvoke = vi.mocked(invoke);
     mockInvoke.mockImplementation(createStandardMock());
 
@@ -732,19 +795,19 @@ describe('formatTime', () => {
     await waitForAppReady();
 
     await waitFor(() => {
-      expect(screen.getByText('START')).toBeInTheDocument();
+      expect(screen.getByText('Start New Session')).toBeInTheDocument();
     });
 
-    // Start recording - timer uses local Date.now() so we just check it shows a valid format
+    // Start recording
     act(() => {
       listenHelper.emit('session_status', mockRecordingStatus);
     });
 
     await waitFor(() => {
-      const timer = document.querySelector('.timer-large');
-      expect(timer).toBeInTheDocument();
-      // Timer should have m:ss or mm:ss format initially
-      expect(timer?.textContent).toMatch(/^\d{1,2}:\d{2}(:\d{2})?$/);
+      // Recording mode shows session progress indicator
+      expect(screen.getByText('Session in progress...')).toBeInTheDocument();
+      // Recording mode should be active
+      expect(document.querySelector('.recording-mode')).toBeInTheDocument();
     });
   });
 });
@@ -762,7 +825,7 @@ describe('Audio Quality', () => {
     vi.clearAllMocks();
   });
 
-  it('shows status bars during recording', async () => {
+  it('shows quality indicator during recording', async () => {
     mockInvoke.mockImplementation(createStandardMock());
 
     render(<App />);
@@ -775,12 +838,12 @@ describe('Audio Quality', () => {
     });
 
     await waitFor(() => {
-      const statusBars = document.querySelector('.status-bars');
-      expect(statusBars).toBeInTheDocument();
+      const qualityIndicator = document.querySelector('.quality-indicator');
+      expect(qualityIndicator).toBeInTheDocument();
     });
   });
 
-  it('shows "good" status bars for good audio quality', async () => {
+  it('shows "good" quality indicator for good audio quality', async () => {
     mockInvoke.mockImplementation(createStandardMock());
 
     render(<App />);
@@ -792,12 +855,13 @@ describe('Audio Quality', () => {
     });
 
     await waitFor(() => {
-      const statusBars = document.querySelector('.status-bars');
-      expect(statusBars).toHaveClass('good');
+      const qualityIndicator = document.querySelector('.quality-indicator');
+      expect(qualityIndicator).toHaveClass('good');
+      expect(screen.getByText('Good audio')).toBeInTheDocument();
     });
   });
 
-  it('shows "fair" status bars for quiet audio', async () => {
+  it('shows "fair" quality indicator for quiet audio', async () => {
     mockInvoke.mockImplementation(createStandardMock());
 
     render(<App />);
@@ -809,12 +873,13 @@ describe('Audio Quality', () => {
     });
 
     await waitFor(() => {
-      const statusBars = document.querySelector('.status-bars');
-      expect(statusBars).toHaveClass('fair');
+      const qualityIndicator = document.querySelector('.quality-indicator');
+      expect(qualityIndicator).toHaveClass('fair');
+      expect(screen.getByText('Fair audio')).toBeInTheDocument();
     });
   });
 
-  it('shows "poor" status bars for clipped audio', async () => {
+  it('shows "poor" quality indicator for clipped audio', async () => {
     mockInvoke.mockImplementation(createStandardMock());
 
     render(<App />);
@@ -826,12 +891,13 @@ describe('Audio Quality', () => {
     });
 
     await waitFor(() => {
-      const statusBars = document.querySelector('.status-bars');
-      expect(statusBars).toHaveClass('poor');
+      const qualityIndicator = document.querySelector('.quality-indicator');
+      expect(qualityIndicator).toHaveClass('poor');
+      expect(screen.getByText('Poor audio')).toBeInTheDocument();
     });
   });
 
-  it('shows details popover when status bars are clicked', async () => {
+  it('shows details popover when quality indicator is clicked', async () => {
     const user = userEvent.setup();
     mockInvoke.mockImplementation(createStandardMock());
 
@@ -844,12 +910,12 @@ describe('Audio Quality', () => {
     });
 
     await waitFor(() => {
-      expect(document.querySelector('.status-bars')).toBeInTheDocument();
+      expect(document.querySelector('.quality-indicator')).toBeInTheDocument();
     });
 
-    // Click status bars to open popover
-    const statusBars = document.querySelector('.status-bars') as HTMLElement;
-    await user.click(statusBars);
+    // Click quality indicator to open popover
+    const qualityIndicator = document.querySelector('.quality-indicator') as HTMLElement;
+    await user.click(qualityIndicator);
 
     await waitFor(() => {
       expect(document.querySelector('.recording-details-popover')).toBeInTheDocument();
@@ -871,12 +937,12 @@ describe('Audio Quality', () => {
     });
 
     await waitFor(() => {
-      expect(document.querySelector('.status-bars')).toBeInTheDocument();
+      expect(document.querySelector('.quality-indicator')).toBeInTheDocument();
     });
 
-    // Click status bars to open popover
-    const statusBars = document.querySelector('.status-bars') as HTMLElement;
-    await user.click(statusBars);
+    // Click quality indicator to open popover
+    const qualityIndicator = document.querySelector('.quality-indicator') as HTMLElement;
+    await user.click(qualityIndicator);
 
     await waitFor(() => {
       expect(screen.getByText('Clips')).toBeInTheDocument();
@@ -897,12 +963,12 @@ describe('Audio Quality', () => {
     });
 
     await waitFor(() => {
-      expect(document.querySelector('.status-bars')).toBeInTheDocument();
+      expect(document.querySelector('.quality-indicator')).toBeInTheDocument();
     });
 
-    // Click status bars to open popover
-    const statusBars = document.querySelector('.status-bars') as HTMLElement;
-    await user.click(statusBars);
+    // Click quality indicator to open popover
+    const qualityIndicator = document.querySelector('.quality-indicator') as HTMLElement;
+    await user.click(qualityIndicator);
 
     await waitFor(() => {
       expect(screen.getByText('Level')).toBeInTheDocument();
@@ -925,20 +991,20 @@ describe('Audio Quality', () => {
     });
 
     await waitFor(() => {
-      expect(document.querySelector('.status-bars')).toBeInTheDocument();
+      expect(document.querySelector('.quality-indicator')).toBeInTheDocument();
     });
 
-    const statusBars = document.querySelector('.status-bars') as HTMLElement;
+    const qualityIndicator = document.querySelector('.quality-indicator') as HTMLElement;
 
     // Click to open popover
-    await user.click(statusBars);
+    await user.click(qualityIndicator);
 
     await waitFor(() => {
       expect(document.querySelector('.recording-details-popover')).toBeInTheDocument();
     });
 
     // Click again to close popover
-    await user.click(statusBars);
+    await user.click(qualityIndicator);
 
     await waitFor(() => {
       expect(document.querySelector('.recording-details-popover')).not.toBeInTheDocument();

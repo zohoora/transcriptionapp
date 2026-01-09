@@ -116,6 +116,10 @@ pub struct PipelineConfig {
     pub whisper_mode: String,
     pub whisper_server_url: String,
     pub whisper_server_model: String,
+    // Initial audio buffer from listening mode (optimistic recording)
+    // This buffer contains audio captured before the greeting check completed
+    // and should be prepended to the recording at startup
+    pub initial_audio_buffer: Option<Vec<f32>>,
 }
 
 impl Default for PipelineConfig {
@@ -143,6 +147,7 @@ impl Default for PipelineConfig {
             whisper_mode: "remote".to_string(),  // Always use remote server
             whisper_server_url: "http://172.16.100.45:8001".to_string(),
             whisper_server_model: "large-v3-turbo".to_string(),
+            initial_audio_buffer: None,
         }
     }
 }
@@ -287,11 +292,13 @@ fn run_pipeline_thread_inner(
     };
 
     // Create VAD
+    info!("Creating VAD...");
     let mut vad = VoiceActivityDetector::builder()
         .sample_rate(16000)
         .chunk_size(VAD_CHUNK_SIZE)
         .build()
         .map_err(|e| anyhow::anyhow!("Failed to create VAD: {:?}", e))?;
+    info!("VAD created successfully");
 
     // Create VAD config
     let vad_config = VadConfig::from_ms(
@@ -306,10 +313,12 @@ fn run_pipeline_thread_inner(
     let mut pipeline = VadGatedPipeline::with_config(vad_config);
 
     // Create diarization provider if enabled
+    info!("Initializing diarization...");
     #[cfg(feature = "diarization")]
     let mut diarization: Option<DiarizationProvider> = if config.diarization_enabled {
         if let Some(ref model_path) = config.diarization_model_path {
             if model_path.exists() {
+                info!("Loading diarization model from {:?}...", model_path);
                 let diar_config = DiarizationConfig {
                     model_path: model_path.clone(),
                     similarity_threshold: config.speaker_similarity_threshold,
@@ -391,8 +400,10 @@ fn run_pipeline_thread_inner(
         };
 
         if bio_config.any_enabled() {
-            info!("Starting biomarker analysis thread");
-            Some(start_biomarker_thread(bio_config))
+            info!("Starting biomarker analysis thread...");
+            let handle = start_biomarker_thread(bio_config);
+            info!("Biomarker thread started successfully");
+            Some(handle)
         } else {
             info!("Biomarkers enabled but no analyzers configured");
             None
@@ -425,6 +436,47 @@ fn run_pipeline_thread_inner(
 
     // Staging buffer for VAD chunks
     let mut staging_buffer: Vec<f32> = Vec::with_capacity(VAD_CHUNK_SIZE * 2);
+
+    // Process initial audio buffer from listening mode (optimistic recording)
+    // This is audio captured before the greeting check completed
+    if let Some(ref initial_audio) = config.initial_audio_buffer {
+        let buffer_duration_ms = initial_audio.len() as f32 / 16.0; // 16kHz = 16 samples/ms
+        info!(
+            "Processing initial audio buffer: {} samples ({:.1}ms)",
+            initial_audio.len(),
+            buffer_duration_ms
+        );
+
+        // The initial audio is already at 16kHz mono from listening mode
+        // Apply preprocessing and write to WAV/biomarkers
+        let mut processed_audio = initial_audio.clone();
+
+        // Apply audio preprocessing (DC removal, high-pass filter, AGC)
+        if let Some(ref mut pp) = preprocessor {
+            pp.process(&mut processed_audio);
+        }
+
+        // Write to WAV file if recording is enabled
+        if let Some(ref mut writer) = wav_writer {
+            for &sample in &processed_audio {
+                let sample_i16 = (sample * 32767.0).clamp(-32768.0, 32767.0) as i16;
+                if let Err(e) = writer.write_sample(sample_i16) {
+                    warn!("Failed to write initial audio sample: {}", e);
+                    break;
+                }
+            }
+        }
+
+        // Send to biomarker thread
+        if let Some(ref bio_handle) = biomarker_handle {
+            bio_handle.send_audio_chunk(processed_audio.clone(), 0); // Start at timestamp 0
+        }
+
+        // Add to staging buffer for VAD processing
+        staging_buffer.extend_from_slice(&processed_audio);
+
+        info!("Initial audio buffer processed and added to pipeline");
+    }
 
     // Input buffer for resampler
     let input_frames = resampler.input_frames_next();

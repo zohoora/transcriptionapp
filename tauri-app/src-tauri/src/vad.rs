@@ -115,14 +115,28 @@ impl VadGatedPipeline {
         let chunk_len = audio.len();
         let chunk_start = self.chunk_start_samples(chunk_len);
 
+        // Calculate audio RMS for debugging
+        let rms = if !audio.is_empty() {
+            let sum_sq: f32 = audio.iter().map(|x| x * x).sum();
+            (sum_sq / audio.len() as f32).sqrt()
+        } else {
+            0.0
+        };
+        let rms_db = if rms > 0.0 { 20.0 * rms.log10() } else { -100.0 };
+
         // Run VAD prediction
         let speech_prob = vad.predict(audio.iter().copied());
         let is_speech = speech_prob > self.config.vad_threshold;
 
-        trace!(
-            "VAD chunk at {}ms: speech={}, buffer_len={}",
+        // Log at DEBUG level so we can see actual values
+        debug!(
+            "VAD chunk at {}ms: prob={:.3}, threshold={:.2}, speech={}, rms={:.4} ({:.1}dB), buffer_len={}",
             chunk_start / 16,
+            speech_prob,
+            self.config.vad_threshold,
             is_speech,
+            rms,
+            rms_db,
             self.speech_buffer.len()
         );
 

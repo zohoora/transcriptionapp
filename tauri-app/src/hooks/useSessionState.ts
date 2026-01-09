@@ -6,7 +6,7 @@ import type {
   TranscriptUpdate,
   BiomarkerUpdate,
   AudioQualitySnapshot,
-  SoapNote,
+  MultiPatientSoapResult,
 } from '../types';
 
 export interface UseSessionStateResult {
@@ -17,8 +17,8 @@ export interface UseSessionStateResult {
   setEditedTranscript: (text: string) => void;
   biomarkers: BiomarkerUpdate | null;
   audioQuality: AudioQualitySnapshot | null;
-  soapNote: SoapNote | null;
-  setSoapNote: (note: SoapNote | null) => void;
+  soapResult: MultiPatientSoapResult | null;
+  setSoapResult: (result: MultiPatientSoapResult | null) => void;
   localElapsedMs: number;
 
   // Actions
@@ -49,7 +49,7 @@ export function useSessionState(): UseSessionStateResult {
   const [editedTranscript, setEditedTranscript] = useState('');
   const [biomarkers, setBiomarkers] = useState<BiomarkerUpdate | null>(null);
   const [audioQuality, setAudioQuality] = useState<AudioQualitySnapshot | null>(null);
-  const [soapNote, setSoapNote] = useState<SoapNote | null>(null);
+  const [soapResult, setSoapResult] = useState<MultiPatientSoapResult | null>(null);
 
   // Timer state
   const [localElapsedMs, setLocalElapsedMs] = useState(0);
@@ -130,7 +130,7 @@ export function useSessionState(): UseSessionStateResult {
     setEditedTranscript('');
     setBiomarkers(null);
     setAudioQuality(null);
-    setSoapNote(null);
+    setSoapResult(null);
 
     await invoke('start_session', { deviceId });
   }, []);
@@ -147,7 +147,7 @@ export function useSessionState(): UseSessionStateResult {
     setEditedTranscript('');
     setBiomarkers(null);
     setAudioQuality(null);
-    setSoapNote(null);
+    setSoapResult(null);
   }, []);
 
   // Derived state
@@ -163,8 +163,8 @@ export function useSessionState(): UseSessionStateResult {
     setEditedTranscript,
     biomarkers,
     audioQuality,
-    soapNote,
-    setSoapNote,
+    soapResult,
+    setSoapResult,
     localElapsedMs,
     handleStart,
     handleStop,

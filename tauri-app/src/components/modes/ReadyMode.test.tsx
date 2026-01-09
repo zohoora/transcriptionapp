@@ -17,7 +17,7 @@ describe('ReadyMode', () => {
     it('renders enabled start button', () => {
       render(<ReadyMode {...defaultProps} />);
 
-      const button = screen.getByRole('button', { name: /start recording/i });
+      const button = screen.getByRole('button', { name: /start new session/i });
       expect(button).not.toBeDisabled();
       expect(button).toHaveClass('ready');
     });
@@ -26,23 +26,28 @@ describe('ReadyMode', () => {
       const onStart = vi.fn();
       render(<ReadyMode {...defaultProps} onStart={onStart} />);
 
-      fireEvent.click(screen.getByRole('button', { name: /start recording/i }));
+      fireEvent.click(screen.getByRole('button', { name: /start new session/i }));
       expect(onStart).toHaveBeenCalledTimes(1);
+    });
+
+    it('shows "Start Manually" when listening mode is active', () => {
+      render(
+        <ReadyMode
+          {...defaultProps}
+          autoStartEnabled={true}
+          isListening={true}
+        />
+      );
+
+      expect(screen.getByText(/start manually/i)).toBeInTheDocument();
     });
   });
 
-  describe('status text', () => {
-    it('shows "Ready to record" by default', () => {
-      render(<ReadyMode {...defaultProps} />);
-
-      expect(screen.getByText(/ready to record/i)).toBeInTheDocument();
-    });
-
+  describe('error messages', () => {
     it('shows error message when present', () => {
       render(<ReadyMode {...defaultProps} errorMessage="Audio device not found" />);
 
       expect(screen.getByText('Audio device not found')).toBeInTheDocument();
-      expect(screen.queryByText(/ready to record/i)).not.toBeInTheDocument();
     });
   });
 
@@ -70,6 +75,74 @@ describe('ReadyMode', () => {
 
       const fill = document.querySelector('.mic-level-fill');
       expect(fill).toHaveStyle({ width: '0%' });
+    });
+  });
+
+  describe('listening mode indicator', () => {
+    it('shows listening indicator when auto-start enabled and listening', () => {
+      render(
+        <ReadyMode
+          {...defaultProps}
+          autoStartEnabled={true}
+          isListening={true}
+          listeningStatus={{
+            is_listening: true,
+            speech_detected: false,
+            speech_duration_ms: 0,
+            analyzing: false,
+          }}
+        />
+      );
+
+      expect(screen.getByText(/listening/i)).toBeInTheDocument();
+    });
+
+    it('shows "Speech detected" when speech is detected', () => {
+      render(
+        <ReadyMode
+          {...defaultProps}
+          autoStartEnabled={true}
+          isListening={true}
+          listeningStatus={{
+            is_listening: true,
+            speech_detected: true,
+            speech_duration_ms: 3000,
+            analyzing: false,
+          }}
+        />
+      );
+
+      expect(screen.getByText(/speech detected/i)).toBeInTheDocument();
+    });
+
+    it('shows "Analyzing..." when analyzing speech', () => {
+      render(
+        <ReadyMode
+          {...defaultProps}
+          autoStartEnabled={true}
+          isListening={true}
+          listeningStatus={{
+            is_listening: true,
+            speech_detected: true,
+            speech_duration_ms: 3000,
+            analyzing: true,
+          }}
+        />
+      );
+
+      expect(screen.getByText(/analyzing/i)).toBeInTheDocument();
+    });
+
+    it('does not show listening indicator when auto-start is disabled', () => {
+      render(
+        <ReadyMode
+          {...defaultProps}
+          autoStartEnabled={false}
+          isListening={false}
+        />
+      );
+
+      expect(screen.queryByText(/listening/i)).not.toBeInTheDocument();
     });
   });
 });

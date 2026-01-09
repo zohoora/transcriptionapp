@@ -3,18 +3,22 @@
 //! This module re-exports all command handlers for registration in lib.rs.
 
 mod audio;
+mod listening;
 mod medplum;
 mod models;
 mod ollama;
+mod permissions;
 mod session;
 mod settings;
 mod whisper_server;
 
 // Re-export all commands for lib.rs registration
 pub use audio::*;
+pub use listening::*;
 pub use medplum::*;
 pub use models::*;
 pub use ollama::*;
+pub use permissions::*;
 pub use session::*;
 pub use settings::*;
 pub use whisper_server::*;

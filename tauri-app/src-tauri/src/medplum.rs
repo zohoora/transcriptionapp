@@ -274,6 +274,12 @@ pub struct SyncResult {
     pub success: bool,
     pub status: SyncStatus,
     pub error: Option<String>,
+    /// The local encounter UUID (for log correlation)
+    #[serde(rename = "encounterId")]
+    pub encounter_id: Option<String>,
+    /// The FHIR server-assigned encounter ID (for updates)
+    #[serde(rename = "encounterFhirId")]
+    pub encounter_fhir_id: Option<String>,
 }
 
 /// Medplum client for API interactions

@@ -10,10 +10,19 @@
 use serde::{Deserialize, Serialize};
 use std::io::{Cursor, Write};
 use std::time::Duration;
-use tracing::{debug, error, info};
+use tracing::{debug, error, info, warn};
 
 /// Default timeout for transcription requests (2 minutes for long audio)
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(120);
+
+/// Default number of retry attempts for transient failures
+const DEFAULT_MAX_RETRIES: u32 = 3;
+
+/// Initial backoff delay for retries
+const INITIAL_BACKOFF_MS: u64 = 500;
+
+/// Maximum backoff delay
+const MAX_BACKOFF_MS: u64 = 5000;
 
 /// Sample rate for Whisper (16kHz)
 const WHISPER_SAMPLE_RATE: u32 = 16000;
@@ -50,6 +59,37 @@ pub struct WhisperServerClient {
     client: reqwest::Client,
     base_url: String,
     model: String,
+}
+
+/// Check if a reqwest error is retryable (transient network issues)
+fn is_retryable_error(err: &reqwest::Error) -> bool {
+    // Retry on connection errors, timeouts, and certain status codes
+    if err.is_connect() || err.is_timeout() {
+        return true;
+    }
+    // Retry on 5xx server errors
+    if let Some(status) = err.status() {
+        return status.is_server_error() || status == reqwest::StatusCode::TOO_MANY_REQUESTS;
+    }
+    false
+}
+
+/// Check if an HTTP status code is retryable
+fn is_retryable_status(status: reqwest::StatusCode) -> bool {
+    status.is_server_error() || status == reqwest::StatusCode::TOO_MANY_REQUESTS
+}
+
+/// Calculate backoff delay with exponential increase and jitter
+fn calculate_backoff(attempt: u32) -> Duration {
+    let base_delay = INITIAL_BACKOFF_MS * 2u64.pow(attempt);
+    let capped_delay = base_delay.min(MAX_BACKOFF_MS);
+    // Add small random jitter (0-100ms) to prevent thundering herd
+    let jitter = (std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .subsec_millis() as u64)
+        % 100;
+    Duration::from_millis(capped_delay + jitter)
 }
 
 impl WhisperServerClient {
@@ -107,37 +147,72 @@ impl WhisperServerClient {
         }
     }
 
-    /// List available models from the Whisper server
+    /// List available models from the Whisper server with retry logic
     pub async fn list_models(&self) -> Result<Vec<String>, String> {
         let url = format!("{}/v1/models", self.base_url);
         debug!("Listing Whisper server models from {}", url);
 
-        let response = self
-            .client
-            .get(&url)
-            .send()
-            .await
-            .map_err(|e| format!("Failed to connect to Whisper server: {}", e))?;
+        let mut last_error = String::new();
 
-        if !response.status().is_success() {
-            return Err(format!(
-                "Whisper server returned error status: {}",
-                response.status()
-            ));
+        for attempt in 0..DEFAULT_MAX_RETRIES {
+            if attempt > 0 {
+                let backoff = calculate_backoff(attempt - 1);
+                warn!(
+                    "Whisper server list_models attempt {} failed, retrying in {:?}",
+                    attempt, backoff
+                );
+                tokio::time::sleep(backoff).await;
+            }
+
+            match self.client.get(&url).send().await {
+                Ok(response) => {
+                    if response.status().is_success() {
+                        match response.json::<ModelsResponse>().await {
+                            Ok(models) => {
+                                let model_ids: Vec<String> =
+                                    models.data.into_iter().map(|m| m.id).collect();
+                                info!("Found {} Whisper server models", model_ids.len());
+                                return Ok(model_ids);
+                            }
+                            Err(e) => {
+                                last_error = format!("Failed to parse Whisper server response: {}", e);
+                                // Parse errors are not retryable
+                                break;
+                            }
+                        }
+                    } else if is_retryable_status(response.status()) {
+                        last_error = format!(
+                            "Whisper server returned error status: {}",
+                            response.status()
+                        );
+                        continue;
+                    } else {
+                        // Non-retryable status code
+                        return Err(format!(
+                            "Whisper server returned error status: {}",
+                            response.status()
+                        ));
+                    }
+                }
+                Err(e) => {
+                    if is_retryable_error(&e) {
+                        last_error = format!("Failed to connect to Whisper server: {}", e);
+                        continue;
+                    } else {
+                        return Err(format!("Failed to connect to Whisper server: {}", e));
+                    }
+                }
+            }
         }
 
-        let models: ModelsResponse = response
-            .json()
-            .await
-            .map_err(|e| format!("Failed to parse Whisper server response: {}", e))?;
-
-        let model_ids: Vec<String> = models.data.into_iter().map(|m| m.id).collect();
-        info!("Found {} Whisper server models", model_ids.len());
-
-        Ok(model_ids)
+        error!(
+            "Whisper server list_models failed after {} attempts: {}",
+            DEFAULT_MAX_RETRIES, last_error
+        );
+        Err(last_error)
     }
 
-    /// Transcribe audio samples using the remote Whisper server
+    /// Transcribe audio samples using the remote Whisper server with retry logic
     ///
     /// # Arguments
     /// * `audio` - Audio samples as f32, normalized to [-1.0, 1.0], 16kHz mono
@@ -150,7 +225,7 @@ impl WhisperServerClient {
             return Ok(String::new());
         }
 
-        // Encode audio as WAV
+        // Encode audio as WAV (done once, reused for retries)
         let wav_bytes = encode_wav(audio, WHISPER_SAMPLE_RATE)?;
 
         let url = format!("{}/v1/audio/transcriptions", self.base_url);
@@ -161,51 +236,86 @@ impl WhisperServerClient {
             url
         );
 
-        // Build multipart form
-        let file_part = reqwest::multipart::Part::bytes(wav_bytes)
-            .file_name("audio.wav")
-            .mime_str("audio/wav")
-            .map_err(|e| format!("Failed to create file part: {}", e))?;
+        let mut last_error = String::new();
 
-        let mut form = reqwest::multipart::Form::new()
-            .part("file", file_part)
-            .text("model", self.model.clone())
-            .text("response_format", "json")
-            // Anti-hallucination parameters
-            .text("temperature", "0.0") // Deterministic output, reduces hallucination
-            .text("no_speech_threshold", "0.8") // Higher threshold to filter silence (default 0.6)
-            .text("condition_on_previous_text", "false"); // Prevents repetitive phrases
+        for attempt in 0..DEFAULT_MAX_RETRIES {
+            if attempt > 0 {
+                let backoff = calculate_backoff(attempt - 1);
+                warn!(
+                    "Whisper server transcribe attempt {} failed, retrying in {:?}",
+                    attempt, backoff
+                );
+                tokio::time::sleep(backoff).await;
+            }
 
-        // Add language if not auto-detect
-        if language != "auto" && !language.is_empty() {
-            form = form.text("language", language.to_string());
+            // Build multipart form (must be rebuilt for each attempt since it's consumed)
+            let file_part = reqwest::multipart::Part::bytes(wav_bytes.clone())
+                .file_name("audio.wav")
+                .mime_str("audio/wav")
+                .map_err(|e| format!("Failed to create file part: {}", e))?;
+
+            let mut form = reqwest::multipart::Form::new()
+                .part("file", file_part)
+                .text("model", self.model.clone())
+                .text("response_format", "json")
+                // Anti-hallucination parameters
+                .text("temperature", "0.0") // Deterministic output, reduces hallucination
+                .text("no_speech_threshold", "0.8") // Higher threshold to filter silence (default 0.6)
+                .text("condition_on_previous_text", "false"); // Prevents repetitive phrases
+
+            // Add language if not auto-detect
+            if language != "auto" && !language.is_empty() {
+                form = form.text("language", language.to_string());
+            }
+
+            match self.client.post(&url).multipart(form).send().await {
+                Ok(response) => {
+                    if response.status().is_success() {
+                        match response.json::<TranscriptionResponse>().await {
+                            Ok(result) => {
+                                debug!("Transcription result: {} chars", result.text.len());
+                                return Ok(result.text);
+                            }
+                            Err(e) => {
+                                last_error = format!("Failed to parse transcription response: {}", e);
+                                // Parse errors are not retryable
+                                break;
+                            }
+                        }
+                    } else if is_retryable_status(response.status()) {
+                        let status = response.status();
+                        let body = response.text().await.unwrap_or_default();
+                        last_error = format!(
+                            "Whisper server returned error: {} - {}",
+                            status, body
+                        );
+                        continue;
+                    } else {
+                        let status = response.status();
+                        let body = response.text().await.unwrap_or_default();
+                        error!("Whisper server transcription failed: {} - {}", status, body);
+                        return Err(format!(
+                            "Whisper server returned error: {} - {}",
+                            status, body
+                        ));
+                    }
+                }
+                Err(e) => {
+                    if is_retryable_error(&e) {
+                        last_error = format!("Failed to send transcription request: {}", e);
+                        continue;
+                    } else {
+                        return Err(format!("Failed to send transcription request: {}", e));
+                    }
+                }
+            }
         }
 
-        let response = self
-            .client
-            .post(&url)
-            .multipart(form)
-            .send()
-            .await
-            .map_err(|e| format!("Failed to send transcription request: {}", e))?;
-
-        if !response.status().is_success() {
-            let status = response.status();
-            let body = response.text().await.unwrap_or_default();
-            error!("Whisper server transcription failed: {} - {}", status, body);
-            return Err(format!(
-                "Whisper server returned error: {} - {}",
-                status, body
-            ));
-        }
-
-        let result: TranscriptionResponse = response
-            .json()
-            .await
-            .map_err(|e| format!("Failed to parse transcription response: {}", e))?;
-
-        debug!("Transcription result: {} chars", result.text.len());
-        Ok(result.text)
+        error!(
+            "Whisper server transcribe failed after {} attempts: {}",
+            DEFAULT_MAX_RETRIES, last_error
+        );
+        Err(last_error)
     }
 
     /// Blocking version of transcribe for use in synchronous pipeline code

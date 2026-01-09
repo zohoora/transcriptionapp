@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted
+Accepted (Updated January 2025 - Auto-Sync)
 
 ## Context
 
@@ -53,6 +53,23 @@ Integrate with **Medplum** as the EMR backend using OAuth 2.0 + PKCE flow.
 - Display local timezone to user
 - Date queries account for timezone boundaries
 
+### Auto-Sync on Session Complete (January 2025)
+
+**Problem**: Users might complete a recording session but forget to sync to Medplum, losing the transcript and audio. SOAP note generation happens after the session completes, so waiting for SOAP before sync risks data loss.
+
+**Decision**: Auto-sync transcript + audio immediately when session completes (if user is authenticated and auto-sync enabled). Add SOAP note to the existing encounter when generated later.
+
+**Implementation**:
+1. `SyncResult` returns `encounterId` and `encounterFhirId` for tracking
+2. Frontend stores synced encounter state in `useMedplumSync` hook
+3. `useEffect` triggers sync when session state becomes `completed`
+4. New `medplum_add_soap_to_encounter` command adds DocumentReference to existing encounter
+5. SOAP generation automatically updates the synced encounter
+
+**Alternative Considered**: Wait for SOAP before syncing
+- Rejected because: user might never generate SOAP, losing data
+- Auto-sync ensures data preservation even without SOAP
+
 ## Consequences
 
 ### Positive
@@ -62,6 +79,8 @@ Integrate with **Medplum** as the EMR backend using OAuth 2.0 + PKCE flow.
 - Self-hosted Medplum option for data sovereignty
 - Standard resources enable future integrations (lab results, medications)
 - Separate history window doesn't block recording workflow
+- **Auto-sync prevents data loss** - transcript/audio preserved even if user forgets to sync
+- **SOAP updates existing encounter** - no duplicate encounters when generating SOAP later
 
 ### Negative
 
@@ -69,6 +88,8 @@ Integrate with **Medplum** as the EMR backend using OAuth 2.0 + PKCE flow.
 - OAuth flow complexity (deep links, PKCE, token refresh)
 - FHIR learning curve for developers unfamiliar with healthcare standards
 - Multi-window adds complexity vs. single-page app
+- **Auto-sync creates encounters without SOAP** - may need cleanup if SOAP never generated
+- **Encounter tracking state** - frontend must track synced encounter IDs for updates
 
 ## References
 
