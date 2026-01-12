@@ -1,18 +1,21 @@
-//! Ollama / SOAP Note generation commands
+//! LLM Router / SOAP Note generation commands
 
 use crate::activity_log;
 use crate::config::Config;
-use crate::ollama::{AudioEvent, MultiPatientSoapResult, OllamaClient, OllamaStatus, SoapNote, SoapOptions};
+use crate::ollama::{AudioEvent, LLMClient, LLMStatus, MultiPatientSoapResult, SoapNote, SoapOptions};
 use tracing::info;
 
-/// Check Ollama server status and list available models
+// Re-export LLMStatus as OllamaStatus for backward compatibility with frontend
+pub use crate::ollama::OllamaStatus;
+
+/// Check LLM router status and list available models
 #[tauri::command]
-pub async fn check_ollama_status() -> OllamaStatus {
+pub async fn check_ollama_status() -> LLMStatus {
     let config = Config::load_or_default();
-    let client = match OllamaClient::new(&config.ollama_server_url, config.ollama_keep_alive) {
+    let client = match LLMClient::new(&config.llm_router_url, &config.llm_api_key, &config.llm_client_id) {
         Ok(c) => c,
         Err(e) => {
-            return OllamaStatus {
+            return LLMStatus {
                 connected: false,
                 available_models: vec![],
                 error: Some(e),
@@ -22,23 +25,24 @@ pub async fn check_ollama_status() -> OllamaStatus {
     client.check_status().await
 }
 
-/// List available models from Ollama server
+/// List available models from LLM router
 #[tauri::command]
 pub async fn list_ollama_models() -> Result<Vec<String>, String> {
     let config = Config::load_or_default();
-    let client = OllamaClient::new(&config.ollama_server_url, config.ollama_keep_alive)?;
+    let client = LLMClient::new(&config.llm_router_url, &config.llm_api_key, &config.llm_client_id)?;
     client.list_models().await
 }
 
-/// Pre-warm the Ollama model to reduce latency on first request
+/// Pre-warm the LLM model to reduce latency on first request
 ///
 /// This is especially useful for auto-session detection where speed is critical.
-/// Should be called on app startup or when Ollama settings change.
+/// Should be called on app startup or when LLM settings change.
 #[tauri::command]
 pub async fn prewarm_ollama_model() -> Result<(), String> {
     let config = Config::load_or_default();
-    let client = OllamaClient::new(&config.ollama_server_url, config.ollama_keep_alive)?;
-    client.prewarm_model(&config.ollama_model).await
+    let client = LLMClient::new(&config.llm_router_url, &config.llm_api_key, &config.llm_client_id)?;
+    // Pre-warm the fast model (used for greeting detection)
+    client.prewarm_model(&config.fast_model).await
 }
 
 /// Generate a SOAP note from the given transcript
@@ -65,7 +69,7 @@ pub async fn generate_soap_note(
     }
 
     let config = Config::load_or_default();
-    let client = OllamaClient::new(&config.ollama_server_url, config.ollama_keep_alive)?;
+    let client = LLMClient::new(&config.llm_router_url, &config.llm_api_key, &config.llm_client_id)?;
 
     // Count words for logging (not content)
     let word_count = transcript.split_whitespace().count();
@@ -73,7 +77,7 @@ pub async fn generate_soap_note(
 
     match client
         .generate_soap_note(
-            &config.ollama_model,
+            &config.soap_model,
             &transcript,
             audio_events.as_deref(),
             options.as_ref(),
@@ -86,7 +90,7 @@ pub async fn generate_soap_note(
                 "", // session_id not available here
                 word_count,
                 generation_time_ms,
-                &config.ollama_model,
+                &config.soap_model,
                 true,
                 None,
             );
@@ -98,7 +102,7 @@ pub async fn generate_soap_note(
                 "",
                 word_count,
                 generation_time_ms,
-                &config.ollama_model,
+                &config.soap_model,
                 false,
                 Some(&e),
             );
@@ -141,7 +145,7 @@ pub async fn generate_soap_note_auto_detect(
     }
 
     let config = Config::load_or_default();
-    let client = OllamaClient::new(&config.ollama_server_url, config.ollama_keep_alive)?;
+    let client = LLMClient::new(&config.llm_router_url, &config.llm_api_key, &config.llm_client_id)?;
 
     // Count words for logging (not content)
     let word_count = transcript.split_whitespace().count();
@@ -149,7 +153,7 @@ pub async fn generate_soap_note_auto_detect(
 
     match client
         .generate_multi_patient_soap_note(
-            &config.ollama_model,
+            &config.soap_model,
             &transcript,
             audio_events.as_deref(),
             options.as_ref(),
@@ -163,7 +167,7 @@ pub async fn generate_soap_note_auto_detect(
                 "",
                 word_count,
                 generation_time_ms,
-                &config.ollama_model,
+                &config.soap_model,
                 true,
                 None,
             );
@@ -180,7 +184,7 @@ pub async fn generate_soap_note_auto_detect(
                 "",
                 word_count,
                 generation_time_ms,
-                &config.ollama_model,
+                &config.soap_model,
                 false,
                 Some(&e),
             );

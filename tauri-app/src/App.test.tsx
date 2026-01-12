@@ -129,8 +129,8 @@ describe('App', () => {
 
       await waitFor(() => {
         expect(screen.getByText('Settings')).toBeInTheDocument();
-        // 'Model' appears twice now (Whisper and Ollama), so use getAllByText
-        expect(screen.getAllByText('Model').length).toBeGreaterThanOrEqual(1);
+        // Check for key settings labels
+        expect(screen.getByText('Server Model')).toBeInTheDocument();
         expect(screen.getByText('Language')).toBeInTheDocument();
         expect(screen.getByText('Microphone')).toBeInTheDocument();
       });

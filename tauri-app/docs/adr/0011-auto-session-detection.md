@@ -2,7 +2,9 @@
 
 ## Status
 
-Accepted
+Accepted (Updated Jan 12 2025: LLM Router)
+
+**Note**: LLM greeting detection now uses OpenAI-compatible API via LLM router. See ADR-0013.
 
 ## Context
 
@@ -14,7 +16,7 @@ The ideal solution would automatically detect when a patient encounter begins an
 2. **Low latency**: Minimize delay between encounter start and recording start
 3. **Low false positives**: Avoid starting recordings for non-clinical conversations
 
-The key challenge is that LLM-based greeting detection (using Ollama) takes approximately 35 seconds. If we wait for the greeting check to complete before starting recording, we lose ~35 seconds of conversation audio.
+The key challenge is that LLM-based greeting detection takes approximately 35 seconds. If we wait for the greeting check to complete before starting recording, we lose ~35 seconds of conversation audio.
 
 ## Decision
 
@@ -25,7 +27,7 @@ Implement auto-session detection using a "listening mode" with **optimistic reco
 1. **VAD Monitoring**: When idle and `auto_start_enabled` is true, continuously monitor audio for voice activity
 2. **Speech Accumulation**: Wait for 2+ seconds of sustained speech (configurable via `min_speech_duration_ms`)
 3. **Whisper Transcription**: Send captured audio to remote Whisper server for transcription
-4. **LLM Greeting Check**: Ask Ollama to evaluate if the transcript is a greeting that starts a clinical encounter
+4. **LLM Greeting Check**: Ask LLM router to evaluate if the transcript is a greeting that starts a clinical encounter
 
 ### Optimistic Recording Pattern
 
@@ -59,7 +61,7 @@ listening_event types:
 - Manages audio capture in listening mode (smaller buffer than recording)
 - Runs VAD on incoming audio
 - Buffers speech audio for transcription
-- Calls Whisper server and Ollama for detection
+- Calls Whisper server and LLM router for detection
 - Emits events to frontend
 
 **Shared State** (`commands/listening.rs`):
@@ -103,7 +105,7 @@ Respond with ONLY JSON:
 - **~35s detection latency**: User doesn't know if recording will be kept until check completes
 - **False starts**: May start recording conversations that aren't clinical (discarded on rejection)
 - **Resource usage**: Listening mode requires constant VAD processing
-- **LLM dependency**: Requires Ollama server to be running for detection
+- **LLM dependency**: Requires LLM router to be running for detection
 - **Complexity**: Optimistic recording pattern adds complexity to state management
 
 ### Trade-offs
@@ -114,7 +116,8 @@ Respond with ONLY JSON:
 
 ## References
 
-- [Ollama API](https://ollama.ai/docs/api) - LLM inference for greeting detection
+- [OpenAI API Reference](https://platform.openai.com/docs/api-reference/chat) - LLM inference format
 - [faster-whisper](https://github.com/SYSTRAN/faster-whisper) - Speech-to-text for transcription
 - ADR-0003: VAD-gated processing - Reused VAD infrastructure
-- ADR-0009: Ollama SOAP note generation - Reused Ollama client infrastructure
+- ADR-0009: LLM SOAP note generation - Reused LLM client infrastructure
+- ADR-0013: LLM Router migration - OpenAI-compatible API

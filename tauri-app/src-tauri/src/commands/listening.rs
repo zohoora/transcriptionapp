@@ -70,9 +70,10 @@ pub async fn start_listening(
         cooldown_ms: 5000,
         whisper_server_url: cfg.whisper_server_url.clone(),
         whisper_server_model: cfg.whisper_server_model.clone(),
-        ollama_server_url: cfg.ollama_server_url.clone(),
-        ollama_model: cfg.ollama_model.clone(),
-        ollama_keep_alive: cfg.ollama_keep_alive,
+        llm_router_url: cfg.llm_router_url.clone(),
+        llm_api_key: cfg.llm_api_key.clone(),
+        llm_client_id: cfg.llm_client_id.clone(),
+        fast_model: cfg.fast_model.clone(),
         language: cfg.language.clone(),
     };
 
@@ -121,9 +122,13 @@ pub async fn start_listening(
                     state.status.is_listening = false;
                     state.status.speech_detected = false;
                     state.status.analyzing = false;
+                    // Clear audio buffer to prevent memory leak
+                    state.initial_audio_buffer = None;
                 }
                 ListeningEvent::Error { .. } => {
                     state.status.analyzing = false;
+                    // Clear audio buffer to prevent memory leak
+                    state.initial_audio_buffer = None;
                 }
             }
         }

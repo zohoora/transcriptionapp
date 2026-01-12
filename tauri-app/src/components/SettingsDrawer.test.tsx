@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { SettingsDrawer, PendingSettings } from './SettingsDrawer';
-import type { Device, OllamaStatus, AuthState, WhisperServerStatus } from '../types';
+import type { Device, LLMStatus, AuthState, WhisperServerStatus } from '../types';
 
 const mockDevices: Device[] = [
   { id: 'device-1', name: 'Built-in Microphone', is_default: true },
@@ -15,14 +15,18 @@ const defaultPendingSettings: PendingSettings = {
   device: 'default',
   diarization_enabled: true,
   max_speakers: 4,
-  ollama_server_url: 'http://localhost:11434',
-  ollama_model: 'qwen3:4b',
+  llm_router_url: 'http://localhost:8080',
+  llm_api_key: 'test-api-key',
+  llm_client_id: 'clinic-001',
+  soap_model: 'gpt-4',
+  fast_model: 'gpt-3.5-turbo',
   medplum_server_url: 'http://localhost:8103',
   medplum_client_id: 'test-client-id',
   medplum_auto_sync: false,
   whisper_mode: 'remote',
   whisper_server_url: 'http://localhost:8001',
   whisper_server_model: 'large-v3-turbo',
+  auto_start_enabled: false,
 };
 
 const defaultAuthState: AuthState = {
@@ -49,9 +53,9 @@ const defaultWhisperServerStatus: WhisperServerStatus = {
   error: null,
 };
 
-const defaultOllamaStatus: OllamaStatus = {
+const defaultLLMStatus: LLMStatus = {
   connected: true,
-  available_models: ['qwen3:4b', 'llama3:8b'],
+  available_models: ['gpt-4', 'gpt-3.5-turbo'],
   error: null,
 };
 
@@ -67,9 +71,9 @@ const defaultProps = {
   whisperServerStatus: defaultWhisperServerStatus,
   whisperServerModels: ['large-v3', 'large-v3-turbo', 'base'],
   onTestWhisperServer: vi.fn(),
-  ollamaStatus: defaultOllamaStatus,
-  ollamaModels: ['qwen3:4b', 'llama3:8b'],
-  onTestOllama: vi.fn(),
+  llmStatus: defaultLLMStatus,
+  llmModels: ['gpt-4', 'gpt-3.5-turbo'],
+  onTestLLM: vi.fn(),
   medplumConnected: true,
   medplumError: null,
   onTestMedplum: vi.fn(),
@@ -108,12 +112,13 @@ describe('SettingsDrawer', () => {
 
       // SOAP Note settings
       expect(screen.getByText('SOAP Note Generation')).toBeInTheDocument();
-      expect(screen.getByLabelText('Ollama Server')).toBeInTheDocument();
+      expect(screen.getByLabelText('LLM Router URL')).toBeInTheDocument();
+      expect(screen.getByLabelText('API Key')).toBeInTheDocument();
+      expect(screen.getByLabelText('LLM Client ID')).toBeInTheDocument();
 
       // Medplum settings
       expect(screen.getByText('Medplum EMR')).toBeInTheDocument();
       expect(screen.getByLabelText('Server URL')).toBeInTheDocument();
-      expect(screen.getByLabelText('Client ID')).toBeInTheDocument();
     });
 
     it('renders close button', () => {
@@ -159,17 +164,21 @@ describe('SettingsDrawer', () => {
       expect(screen.getByText('4')).toBeInTheDocument();
     });
 
-    it('displays ollama server URL', () => {
+    it('displays LLM router URL', () => {
       render(<SettingsDrawer {...defaultProps} />);
-      expect(screen.getByLabelText('Ollama Server')).toHaveValue('http://localhost:11434');
+      expect(screen.getByLabelText('LLM Router URL')).toHaveValue('http://localhost:8080');
     });
 
-    it('displays ollama model', () => {
+    it('displays SOAP model', () => {
       render(<SettingsDrawer {...defaultProps} />);
-      // The select has the label "Model" but there might be multiple model selects
-      const modelSelects = screen.getAllByRole('combobox');
-      const ollamaModelSelect = modelSelects.find((s) => s.id === 'ollama-model');
-      expect(ollamaModelSelect).toHaveValue('qwen3:4b');
+      const modelSelect = screen.getByLabelText('SOAP Model');
+      expect(modelSelect).toHaveValue('gpt-4');
+    });
+
+    it('displays fast model', () => {
+      render(<SettingsDrawer {...defaultProps} />);
+      const modelSelect = screen.getByLabelText('Fast Model (for greeting detection)');
+      expect(modelSelect).toHaveValue('gpt-3.5-turbo');
     });
 
     it('displays medplum server URL', () => {
@@ -177,9 +186,9 @@ describe('SettingsDrawer', () => {
       expect(screen.getByLabelText('Server URL')).toHaveValue('http://localhost:8103');
     });
 
-    it('displays medplum client ID', () => {
+    it('displays LLM client ID', () => {
       render(<SettingsDrawer {...defaultProps} />);
-      expect(screen.getByLabelText('Client ID')).toHaveValue('test-client-id');
+      expect(screen.getByLabelText('LLM Client ID')).toHaveValue('clinic-001');
     });
   });
 
@@ -228,13 +237,13 @@ describe('SettingsDrawer', () => {
       );
     });
 
-    it('calls onSettingsChange when ollama server URL changes', async () => {
+    it('calls onSettingsChange when LLM router URL changes', async () => {
       const user = userEvent.setup();
       render(<SettingsDrawer {...defaultProps} />);
 
-      const input = screen.getByLabelText('Ollama Server');
+      const input = screen.getByLabelText('LLM Router URL');
       await user.clear(input);
-      await user.type(input, 'http://ollama:11434');
+      await user.type(input, 'http://llm:8080');
 
       expect(defaultProps.onSettingsChange).toHaveBeenCalled();
     });
@@ -285,17 +294,17 @@ describe('SettingsDrawer', () => {
       expect(screen.getByText('Connection refused')).toBeInTheDocument();
     });
 
-    it('shows ollama connected status', () => {
+    it('shows LLM connected status', () => {
       render(<SettingsDrawer {...defaultProps} />);
       expect(screen.getByText('Connected (2 models)')).toBeInTheDocument();
     });
 
-    it('shows ollama disconnected status with error', () => {
+    it('shows LLM disconnected status with error', () => {
       render(
         <SettingsDrawer
           {...defaultProps}
-          ollamaStatus={{ connected: false, available_models: [], error: 'Timeout' }}
-          ollamaModels={[]}
+          llmStatus={{ connected: false, available_models: [], error: 'Timeout' }}
+          llmModels={[]}
         />
       );
       expect(screen.getByText('Timeout')).toBeInTheDocument();
@@ -325,14 +334,14 @@ describe('SettingsDrawer', () => {
       expect(defaultProps.onTestWhisperServer).toHaveBeenCalled();
     });
 
-    it('calls onTestOllama when test button clicked', async () => {
+    it('calls onTestLLM when test button clicked', async () => {
       const user = userEvent.setup();
       render(<SettingsDrawer {...defaultProps} />);
 
       const testButtons = screen.getAllByRole('button', { name: 'Test' });
-      await user.click(testButtons[1]); // Second test button is for Ollama
+      await user.click(testButtons[1]); // Second test button is for LLM Router
 
-      expect(defaultProps.onTestOllama).toHaveBeenCalled();
+      expect(defaultProps.onTestLLM).toHaveBeenCalled();
     });
 
     it('calls onTestMedplum when test button clicked', async () => {
@@ -416,7 +425,6 @@ describe('SettingsDrawer', () => {
     it('disables medplum URL and client ID when authenticated', () => {
       render(<SettingsDrawer {...defaultProps} authState={authenticatedAuthState} />);
       expect(screen.getByLabelText('Server URL')).toBeDisabled();
-      expect(screen.getByLabelText('Client ID')).toBeDisabled();
     });
   });
 

@@ -1,6 +1,6 @@
 # Whisper Server Setup Guide
 
-This guide is for setting up a remote Whisper transcription server on the Mac that already runs Medplum and Ollama. The transcription app will connect to this server for speech-to-text processing.
+This guide is for setting up a remote Whisper transcription server on the Mac that already runs Medplum and the LLM router. The transcription app will connect to this server for speech-to-text processing.
 
 ## Overview
 
@@ -9,7 +9,7 @@ This guide is for setting up a remote Whisper transcription server on the Mac th
 - **Port**: 8000
 - **Existing services on this Mac**:
   - Medplum server (FHIR EMR)
-  - Ollama server (LLM for SOAP notes)
+  - LLM router (OpenAI-compatible API for SOAP notes)
 
 ## Prerequisites
 
@@ -338,7 +338,7 @@ After setup, this Mac will run:
 | Service | Port | Purpose |
 |---------|------|---------|
 | Medplum | 8103 | FHIR EMR server |
-| Ollama | 11434 | LLM for SOAP notes |
+| LLM Router | 4000 | OpenAI-compatible API for SOAP notes |
 | Whisper | 8000 | Speech-to-text |
 
 ## Maintenance

@@ -12,7 +12,7 @@ A real-time speech-to-text transcription desktop application built with Tauri, R
 - **Multiple Whisper models** - tiny, base, small, medium, large
 
 ### Clinical Features
-- **SOAP note generation** - AI-powered clinical notes via Ollama LLM
+- **SOAP note generation** - AI-powered clinical notes via OpenAI-compatible LLM router
 - **Multi-patient SOAP** - Supports up to 4 patients per visit with auto patient/physician detection
 - **Medplum EMR integration** - OAuth 2.0 + PKCE, FHIR resources
 - **Auto-sync to EMR** - Transcripts and audio automatically synced on session complete
@@ -45,7 +45,7 @@ A real-time speech-to-text transcription desktop application built with Tauri, R
 - Rust 1.70+
 - pnpm 10+
 - ONNX Runtime (for speaker diarization, enhancement, emotion, YAMNet)
-- Ollama (optional, for SOAP note generation)
+- LLM Router (optional, for SOAP note generation - OpenAI-compatible API)
 - Medplum server (optional, for EMR integration)
 
 ## Quick Start
@@ -109,7 +109,8 @@ tauri-app/
 │   │   ├── models.rs             # Model download management
 │   │   ├── checklist.rs          # Pre-flight checks
 │   │   ├── listening.rs          # Auto-session detection (VAD + greeting check)
-│   │   ├── ollama.rs             # Ollama LLM client
+│   │   ├── llm_client.rs         # OpenAI-compatible LLM client
+│   │   ├── ollama.rs             # Re-exports from llm_client.rs (backward compat)
 │   │   ├── medplum.rs            # Medplum FHIR client
 │   │   ├── activity_log.rs       # Structured logging
 │   │   ├── diarization/          # Speaker detection
@@ -196,7 +197,7 @@ pnpm soak:test         # Interactive
 
 | Category | Framework | Count |
 |----------|-----------|-------|
-| Unit Tests (Frontend) | Vitest | 429 tests |
+| Unit Tests (Frontend) | Vitest | 430 tests |
 | Unit Tests (Rust) | cargo test | 346 tests |
 | Snapshot Tests | Vitest | 7 snapshots |
 | Accessibility Tests | vitest-axe | 12 tests |
@@ -219,8 +220,11 @@ Settings are stored in `~/.transcriptionapp/config.json`:
   "input_device_id": null,
   "diarization_enabled": true,
   "max_speakers": 2,
-  "ollama_server_url": "http://localhost:11434",
-  "ollama_model": "qwen3:4b",
+  "llm_router_url": "http://localhost:4000",
+  "llm_api_key": "",
+  "llm_client_id": "clinic-001",
+  "soap_model": "gpt-4",
+  "fast_model": "gpt-3.5-turbo",
   "medplum_server_url": "http://localhost:8103",
   "medplum_client_id": "your-client-id",
   "medplum_auto_sync": true,

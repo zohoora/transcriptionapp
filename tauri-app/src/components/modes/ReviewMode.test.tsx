@@ -53,7 +53,7 @@ describe('ReviewMode', () => {
     soapResult: null as MultiPatientSoapResult | null,
     isGeneratingSoap: false,
     soapError: null,
-    ollamaConnected: true,
+    llmConnected: true,
     onGenerateSoap: vi.fn(),
     soapOptions: defaultSoapOptions,
     onSoapDetailLevelChange: vi.fn(),
@@ -309,12 +309,12 @@ describe('ReviewMode', () => {
       expect(screen.getByText('Generate SOAP Note')).toBeInTheDocument();
     });
 
-    it('disables Generate button when Ollama not connected', () => {
-      render(<ReviewMode {...defaultProps} ollamaConnected={false} />);
+    it('disables Generate button when LLM not connected', () => {
+      render(<ReviewMode {...defaultProps} llmConnected={false} />);
       navigateToSoapTab();
 
-      expect(screen.getByText('Ollama not connected')).toBeInTheDocument();
-      expect(screen.getByRole('button', { name: /ollama not connected/i })).toBeDisabled();
+      expect(screen.getByText('LLM not connected')).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /llm not connected/i })).toBeDisabled();
     });
 
     it('calls onGenerateSoap when Generate button is clicked', () => {

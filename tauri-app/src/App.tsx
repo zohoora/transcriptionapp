@@ -26,6 +26,18 @@ import type { Settings, WhisperServerStatus } from './types';
 // UI Mode type
 type UIMode = 'ready' | 'recording' | 'review';
 
+// Helper to get the current whisper model name based on mode
+function getWhisperModelName(
+  whisperMode: 'local' | 'remote' | undefined,
+  whisperServerModel: string | undefined,
+  localModel: string | undefined
+): string {
+  if (whisperMode === 'remote') {
+    return whisperServerModel || 'unknown';
+  }
+  return localModel || 'unknown';
+}
+
 function App() {
   // Medplum auth from context
   const { authState, login: medplumLogin, logout: medplumLogout, cancelLogin: medplumCancelLogin, isLoading: authLoading } = useAuth();
@@ -74,7 +86,6 @@ function App() {
     setSyncError,
     syncSuccess,
     syncedEncounter,
-    syncedPatients,
     isAddingSoap,
     resetSyncState,
     syncToMedplum,
@@ -334,21 +345,24 @@ function App() {
     }
   }, [saveSettings]);
 
-  // Test Ollama connection
-  const handleTestOllama = useCallback(async () => {
+  // Test LLM Router connection
+  const handleTestLLM = useCallback(async () => {
     if (!pendingSettings || !settings) return;
     try {
       // Save settings first, then re-check connection
       await invoke('set_settings', {
         settings: {
           ...settings,
-          ollama_server_url: pendingSettings.ollama_server_url,
-          ollama_model: pendingSettings.ollama_model,
+          llm_router_url: pendingSettings.llm_router_url,
+          llm_api_key: pendingSettings.llm_api_key,
+          llm_client_id: pendingSettings.llm_client_id,
+          soap_model: pendingSettings.soap_model,
+          fast_model: pendingSettings.fast_model,
         },
       });
       await checkOllamaConnection();
     } catch (e) {
-      console.error('Failed to test Ollama:', e);
+      console.error('Failed to test LLM router:', e);
       setOllamaStatus({ connected: false, available_models: [], error: String(e) });
     }
   }, [settings, pendingSettings, checkOllamaConnection, setOllamaStatus]);
@@ -552,9 +566,7 @@ function App() {
             transcriptText={transcript.finalized_text}
             draftText={transcript.draft_text}
             whisperMode={pendingSettings?.whisper_mode || 'local'}
-            whisperModel={pendingSettings?.whisper_mode === 'remote'
-              ? pendingSettings?.whisper_server_model || 'unknown'
-              : pendingSettings?.model || 'unknown'}
+            whisperModel={getWhisperModelName(pendingSettings?.whisper_mode, pendingSettings?.whisper_server_model, pendingSettings?.model)}
             isStopping={isStopping}
             onStop={handleStop}
           />
@@ -570,7 +582,7 @@ function App() {
             soapResult={soapResult}
             isGeneratingSoap={isGeneratingSoap}
             soapError={soapError}
-            ollamaConnected={ollamaStatus?.connected || false}
+            llmConnected={ollamaStatus?.connected || false}
             onGenerateSoap={handleGenerateSoap}
             soapOptions={soapOptions}
             onSoapDetailLevelChange={updateSoapDetailLevel}
@@ -578,9 +590,7 @@ function App() {
             onSoapCustomInstructionsChange={updateSoapCustomInstructions}
             biomarkers={biomarkers}
             whisperMode={pendingSettings?.whisper_mode || 'local'}
-            whisperModel={pendingSettings?.whisper_mode === 'remote'
-              ? pendingSettings?.whisper_server_model || 'unknown'
-              : pendingSettings?.model || 'unknown'}
+            whisperModel={getWhisperModelName(pendingSettings?.whisper_mode, pendingSettings?.whisper_server_model, pendingSettings?.model)}
             authState={authState}
             isSyncing={isSyncing}
             syncSuccess={syncSuccess}
@@ -610,9 +620,9 @@ function App() {
         whisperServerStatus={whisperServerStatus}
         whisperServerModels={whisperServerModels}
         onTestWhisperServer={handleTestWhisperServer}
-        ollamaStatus={ollamaStatus}
-        ollamaModels={ollamaModels}
-        onTestOllama={handleTestOllama}
+        llmStatus={ollamaStatus}
+        llmModels={ollamaModels}
+        onTestLLM={handleTestLLM}
         medplumConnected={medplumConnected}
         medplumError={medplumError}
         onTestMedplum={handleTestMedplum}

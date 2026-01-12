@@ -17,11 +17,13 @@ A real-time speech-to-text transcription desktop application built with Tauri, R
 - **Emotion Detection** - Arousal, Dominance, Valence analysis via wav2small
 
 ### Clinical Features
-- **SOAP Note Generation** - AI-powered clinical notes via local Ollama LLM
+- **SOAP Note Generation** - AI-powered clinical notes via OpenAI-compatible LLM router
+- **Multi-Patient SOAP** - Supports up to 4 patients per visit with auto-detection
 - **Audio Event Context** - Coughs, laughs, sneezes included in SOAP generation
 - **Medplum EMR Integration** - OAuth 2.0 + PKCE, FHIR resources
+- **Auto-Sync to EMR** - Transcripts and audio automatically synced on session complete
 - **Encounter History** - Browse past sessions with calendar view
-- **Audio Recording** - WAV files synced to EMR
+- **Auto-Session Detection** - Automatically starts recording when greeting detected
 
 ### Biomarker Analysis
 - **Vitality** - Pitch variability for affect detection (depression/PTSD indicator)
@@ -35,7 +37,7 @@ A real-time speech-to-text transcription desktop application built with Tauri, R
 - **Noise Floor Analysis** - Ambient noise level tracking
 - **Actionable Suggestions** - Context-aware feedback
 
-> **Note on Network Features**: The core transcription pipeline is fully offline. Optional features (SOAP notes via Ollama, EMR sync via Medplum) require network access but are disabled by default.
+> **Note on Network Features**: The core transcription pipeline can run offline with local Whisper. Optional features (SOAP notes via LLM router, EMR sync via Medplum, remote Whisper) require network access.
 
 ## Quick Start
 
@@ -69,8 +71,8 @@ ORT_DYLIB_PATH=$(./scripts/setup-ort.sh) \
 
 - **[tauri-app/CLAUDE.md](tauri-app/CLAUDE.md)** - Comprehensive AI coder context
 - **[tauri-app/CONTRIBUTING.md](tauri-app/CONTRIBUTING.md)** - Development guidelines
+- **[tauri-app/README.md](tauri-app/README.md)** - App-specific documentation
 - **[tauri-app/docs/adr/](tauri-app/docs/adr/)** - Architecture Decision Records
-- **[docs/SPEC.md](docs/SPEC.md)** - Original POC specification (historical)
 
 ## Architecture
 
@@ -84,7 +86,7 @@ ORT_DYLIB_PATH=$(./scripts/setup-ort.sh) \
 │  │  - Settings     │                │  - Audio Pipeline               │ │
 │  │  - Transcript   │                │  - Whisper + Diarization        │ │
 │  │  - SOAP Notes   │                │  - Biomarker Analysis           │ │
-│  │  - EMR Sync     │                │  - Ollama + Medplum Integration │ │
+│  │  - EMR Sync     │                │  - LLM Router + Medplum         │ │
 │  └─────────────────┘                └─────────────────────────────────┘ │
 └─────────────────────────────────────────────────────────────────────────┘
 ```
@@ -105,7 +107,7 @@ ORT_DYLIB_PATH=$(./scripts/setup-ort.sh) \
 | Emotion Detection | wav2small (ONNX) |
 | Cough Detection | YAMNet (ONNX) |
 | Audio Preprocessing | biquad + dagc |
-| SOAP Generation | Ollama (local LLM) |
+| SOAP Generation | OpenAI-compatible LLM router |
 | EMR Integration | Medplum FHIR (OAuth 2.0) |
 
 ## Testing
@@ -113,10 +115,10 @@ ORT_DYLIB_PATH=$(./scripts/setup-ort.sh) \
 ```bash
 cd tauri-app
 
-# Frontend tests (335 tests)
+# Frontend tests (430 tests)
 pnpm test:run
 
-# Rust tests (281 tests)
+# Rust tests (346 tests)
 cd src-tauri
 ORT_DYLIB_PATH=$(../scripts/setup-ort.sh) cargo test
 ```

@@ -59,10 +59,12 @@ export interface Settings {
   max_utterance_ms: number;
   diarization_enabled: boolean;
   max_speakers: number;
-  ollama_server_url: string;
-  ollama_model: string;
-  /** How long to keep Ollama model loaded in memory (seconds). -1 = forever, 0 = unload immediately */
-  ollama_keep_alive: number;
+  // LLM Router settings (OpenAI-compatible API)
+  llm_router_url: string;
+  llm_api_key: string;
+  llm_client_id: string;
+  soap_model: string;
+  fast_model: string;
   // Medplum EMR settings
   medplum_server_url: string;
   medplum_client_id: string;
@@ -212,12 +214,16 @@ export interface AudioQualitySnapshot {
   total_samples: number;
 }
 
-// Ollama / SOAP Note types
+// LLM Router / SOAP Note types
+// Note: Named OllamaStatus for backward compatibility with existing code
 export interface OllamaStatus {
   connected: boolean;
   available_models: string[];
   error: string | null;
 }
+
+// Type alias for clarity
+export type LLMStatus = OllamaStatus;
 
 // Whisper Server types (for remote transcription)
 export interface WhisperServerStatus {

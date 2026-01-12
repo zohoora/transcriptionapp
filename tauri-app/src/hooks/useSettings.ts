@@ -12,9 +12,13 @@ export interface PendingSettings {
   device: string;
   diarization_enabled: boolean;
   max_speakers: number;
-  ollama_server_url: string;
-  ollama_model: string;
-  ollama_keep_alive: number;
+  // LLM Router settings (OpenAI-compatible API)
+  llm_router_url: string;
+  llm_api_key: string;
+  llm_client_id: string;
+  soap_model: string;
+  fast_model: string;
+  // Medplum EMR settings
   medplum_server_url: string;
   medplum_client_id: string;
   medplum_auto_sync: boolean;
@@ -62,9 +66,11 @@ export function useSettings(): UseSettingsResult {
     device: s.input_device_id || 'default',
     diarization_enabled: true, // Always enabled - speaker detection is always on
     max_speakers: s.max_speakers,
-    ollama_server_url: s.ollama_server_url,
-    ollama_model: s.ollama_model,
-    ollama_keep_alive: s.ollama_keep_alive,
+    llm_router_url: s.llm_router_url,
+    llm_api_key: s.llm_api_key,
+    llm_client_id: s.llm_client_id,
+    soap_model: s.soap_model,
+    fast_model: s.fast_model,
     medplum_server_url: s.medplum_server_url,
     medplum_client_id: s.medplum_client_id,
     medplum_auto_sync: s.medplum_auto_sync,
@@ -112,9 +118,11 @@ export function useSettings(): UseSettingsResult {
         input_device_id: pendingSettings.device === 'default' ? null : pendingSettings.device,
         diarization_enabled: true, // Always enabled - speaker detection is always on
         max_speakers: pendingSettings.max_speakers,
-        ollama_server_url: pendingSettings.ollama_server_url,
-        ollama_model: pendingSettings.ollama_model,
-        ollama_keep_alive: pendingSettings.ollama_keep_alive,
+        llm_router_url: pendingSettings.llm_router_url,
+        llm_api_key: pendingSettings.llm_api_key,
+        llm_client_id: pendingSettings.llm_client_id,
+        soap_model: pendingSettings.soap_model,
+        fast_model: pendingSettings.fast_model,
         medplum_server_url: pendingSettings.medplum_server_url,
         medplum_client_id: pendingSettings.medplum_client_id,
         medplum_auto_sync: pendingSettings.medplum_auto_sync,
@@ -136,23 +144,30 @@ export function useSettings(): UseSettingsResult {
     }
   }, [settings, pendingSettings]);
 
-  // Check if there are unsaved changes
-  // Note: whisper_mode removed from comparison - always 'remote'
-  const hasUnsavedChanges = settings !== null && pendingSettings !== null && (
-    settings.whisper_model !== pendingSettings.model ||
-    settings.language !== pendingSettings.language ||
-    (settings.input_device_id || 'default') !== pendingSettings.device ||
-    settings.max_speakers !== pendingSettings.max_speakers ||
-    settings.ollama_server_url !== pendingSettings.ollama_server_url ||
-    settings.ollama_model !== pendingSettings.ollama_model ||
-    settings.ollama_keep_alive !== pendingSettings.ollama_keep_alive ||
-    settings.medplum_server_url !== pendingSettings.medplum_server_url ||
-    settings.medplum_client_id !== pendingSettings.medplum_client_id ||
-    settings.medplum_auto_sync !== pendingSettings.medplum_auto_sync ||
-    settings.whisper_server_url !== pendingSettings.whisper_server_url ||
-    settings.whisper_server_model !== pendingSettings.whisper_server_model ||
-    settings.auto_start_enabled !== pendingSettings.auto_start_enabled
-  );
+  // Check if there are unsaved changes by comparing settings to pending values
+  const hasUnsavedChanges = (() => {
+    if (!settings || !pendingSettings) return false;
+
+    const comparisons: [unknown, unknown][] = [
+      [settings.whisper_model, pendingSettings.model],
+      [settings.language, pendingSettings.language],
+      [settings.input_device_id || 'default', pendingSettings.device],
+      [settings.max_speakers, pendingSettings.max_speakers],
+      [settings.llm_router_url, pendingSettings.llm_router_url],
+      [settings.llm_api_key, pendingSettings.llm_api_key],
+      [settings.llm_client_id, pendingSettings.llm_client_id],
+      [settings.soap_model, pendingSettings.soap_model],
+      [settings.fast_model, pendingSettings.fast_model],
+      [settings.medplum_server_url, pendingSettings.medplum_server_url],
+      [settings.medplum_client_id, pendingSettings.medplum_client_id],
+      [settings.medplum_auto_sync, pendingSettings.medplum_auto_sync],
+      [settings.whisper_server_url, pendingSettings.whisper_server_url],
+      [settings.whisper_server_model, pendingSettings.whisper_server_model],
+      [settings.auto_start_enabled, pendingSettings.auto_start_enabled],
+    ];
+
+    return comparisons.some(([saved, pending]) => saved !== pending);
+  })();
 
   return {
     settings,

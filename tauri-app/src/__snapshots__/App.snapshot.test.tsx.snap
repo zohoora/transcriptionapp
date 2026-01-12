@@ -220,7 +220,7 @@ exports[`App Snapshots > renders completed state correctly 1`] = `
           class="btn-generate"
           disabled=""
         >
-          Ollama not connected
+          LLM not connected
         </button>
       </div>
     </div>

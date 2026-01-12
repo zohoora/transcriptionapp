@@ -17,7 +17,7 @@ use tracing::{debug, error, info, warn};
 use voice_activity_detector::VoiceActivityDetector;
 
 use crate::audio::{list_input_devices, AudioResampler};
-use crate::ollama::OllamaClient;
+use crate::llm_client::LLMClient;
 use crate::whisper_server::WhisperServerClient;
 
 /// Target sample rate for VAD (16kHz)
@@ -58,23 +58,21 @@ pub struct ListeningConfig {
     /// Whisper model name
     pub whisper_server_model: String,
 
-    /// Ollama server URL
-    pub ollama_server_url: String,
+    /// LLM Router URL
+    pub llm_router_url: String,
 
-    /// Ollama model name
-    pub ollama_model: String,
+    /// LLM Router API key
+    pub llm_api_key: String,
 
-    /// How long to keep Ollama model loaded (-1 = forever, 0 = unload immediately)
-    #[serde(default = "default_ollama_keep_alive")]
-    pub ollama_keep_alive: i32,
+    /// LLM Client ID
+    pub llm_client_id: String,
+
+    /// Fast model for greeting detection
+    pub fast_model: String,
 
     /// Language for transcription
     #[serde(default = "default_language")]
     pub language: String,
-}
-
-fn default_ollama_keep_alive() -> i32 {
-    -1 // Keep loaded indefinitely by default
 }
 
 fn default_vad_threshold() -> f32 {
@@ -106,9 +104,10 @@ impl Default for ListeningConfig {
             cooldown_ms: default_cooldown_ms(),
             whisper_server_url: "http://localhost:8000".to_string(),
             whisper_server_model: "large-v3-turbo".to_string(),
-            ollama_server_url: "http://localhost:11434".to_string(),
-            ollama_model: "qwen3:4b".to_string(),
-            ollama_keep_alive: default_ollama_keep_alive(),
+            llm_router_url: "http://localhost:4000".to_string(),
+            llm_api_key: String::new(),
+            llm_client_id: "ai-scribe".to_string(),
+            fast_model: "fast-model".to_string(),
             language: default_language(),
         }
     }
@@ -390,9 +389,9 @@ where
     let whisper_client = WhisperServerClient::new(&config.whisper_server_url, &config.whisper_server_model)
         .map_err(|e| format!("Failed to create Whisper client: {}", e))?;
 
-    // Ollama client
-    let ollama_client = OllamaClient::new(&config.ollama_server_url, config.ollama_keep_alive)
-        .map_err(|e| format!("Failed to create Ollama client: {}", e))?;
+    // LLM client for greeting detection
+    let llm_client = LLMClient::new(&config.llm_router_url, &config.llm_api_key, &config.llm_client_id)
+        .map_err(|e| format!("Failed to create LLM client: {}", e))?;
 
     // State variables
     let mut staging_buffer: Vec<f32> = Vec::new();
@@ -475,109 +474,99 @@ where
                 // Accumulate speech
                 speech_buffer.extend_from_slice(&chunk);
 
-                // Check duration
-                if let Some(start_time) = speech_start_time {
-                    let duration_ms = start_time.elapsed().as_millis() as u32;
+                // Check duration - continue if no start time recorded
+                let Some(start_time) = speech_start_time else {
+                    continue;
+                };
 
-                    // Emit speech detected event periodically
-                    if duration_ms % 500 < 50 {
-                        event_callback(ListeningEvent::SpeechDetected { duration_ms });
-                    }
+                let duration_ms = start_time.elapsed().as_millis() as u32;
 
-                    // Check if we have enough speech to analyze
-                    if speech_buffer.len() >= min_speech_samples {
-                        info!("Enough speech accumulated ({}ms), starting recording and analyzing...", duration_ms);
+                // Emit speech detected event periodically
+                if duration_ms % 500 < 50 {
+                    event_callback(ListeningEvent::SpeechDetected { duration_ms });
+                }
 
-                        // Cap the buffer
-                        if speech_buffer.len() > max_buffer_samples {
-                            speech_buffer = speech_buffer[speech_buffer.len() - max_buffer_samples..].to_vec();
-                        }
+                // Wait until we have enough speech to analyze
+                if speech_buffer.len() < min_speech_samples {
+                    continue;
+                }
 
-                        // Calculate duration of initial audio
-                        let initial_audio_duration_ms = (speech_buffer.len() as f32 / TARGET_SAMPLE_RATE as f32 * 1000.0) as u32;
+                info!("Enough speech accumulated ({}ms), starting recording and analyzing...", duration_ms);
 
-                        // OPTIMISTIC RECORDING: Start recording immediately BEFORE greeting check
-                        // This prevents losing audio during the ~35s LLM check
-                        info!("Emitting StartRecording with {}ms of initial audio", initial_audio_duration_ms);
-                        event_callback(ListeningEvent::StartRecording {
-                            initial_audio: speech_buffer.clone(),
-                            initial_audio_duration_ms,
+                // Cap the buffer to max size
+                if speech_buffer.len() > max_buffer_samples {
+                    speech_buffer = speech_buffer[speech_buffer.len() - max_buffer_samples..].to_vec();
+                }
+
+                // Calculate duration of initial audio
+                let initial_audio_duration_ms = (speech_buffer.len() as f32 / TARGET_SAMPLE_RATE as f32 * 1000.0) as u32;
+
+                // OPTIMISTIC RECORDING: Start recording immediately BEFORE greeting check
+                // This prevents losing audio during the ~35s LLM check
+                info!("Emitting StartRecording with {}ms of initial audio", initial_audio_duration_ms);
+                event_callback(ListeningEvent::StartRecording {
+                    initial_audio: speech_buffer.clone(),
+                    initial_audio_duration_ms,
+                });
+
+                // Analyze speech (blocking - transcribe then check greeting)
+                // Recording is already started, so no audio is lost during this check
+                let analysis_result = analyze_speech(&speech_buffer, &whisper_client, &llm_client, &config);
+
+                // Check if stop was requested while we were analyzing
+                if stop_flag.load(Ordering::SeqCst) {
+                    info!("Stop requested during analysis - not emitting greeting result");
+                    break;
+                }
+
+                match analysis_result {
+                    Ok(result) if result.is_greeting && result.confidence >= config.greeting_sensitivity => {
+                        info!(
+                            "Greeting confirmed: '{}' (confidence: {:.2})",
+                            result.detected_phrase.as_deref().unwrap_or(""),
+                            result.confidence
+                        );
+                        // Emit both GreetingConfirmed (new) and GreetingDetected (legacy)
+                        event_callback(ListeningEvent::GreetingConfirmed {
+                            transcript: result.transcript.clone(),
+                            confidence: result.confidence,
+                            detected_phrase: result.detected_phrase.clone(),
                         });
-
-                        // Analyze speech (blocking - transcribe then check greeting)
-                        // Recording is already started, so no audio is lost during this check
-                        match analyze_speech(
-                            &speech_buffer,
-                            &whisper_client,
-                            &ollama_client,
-                            &config,
-                        ) {
-                            Ok(result) => {
-                                // Check if stop was requested while we were analyzing
-                                // If so, don't emit any events - the session is already running
-                                if stop_flag.load(Ordering::SeqCst) {
-                                    info!("Stop requested during analysis - not emitting greeting result");
-                                    break;
-                                }
-
-                                if result.is_greeting && result.confidence >= config.greeting_sensitivity {
-                                    info!(
-                                        "Greeting confirmed: '{}' (confidence: {:.2})",
-                                        result.detected_phrase.as_deref().unwrap_or(""),
-                                        result.confidence
-                                    );
-                                    // Emit both GreetingConfirmed (new) and GreetingDetected (legacy)
-                                    event_callback(ListeningEvent::GreetingConfirmed {
-                                        transcript: result.transcript.clone(),
-                                        confidence: result.confidence,
-                                        detected_phrase: result.detected_phrase.clone(),
-                                    });
-                                    event_callback(ListeningEvent::GreetingDetected {
-                                        transcript: result.transcript,
-                                        confidence: result.confidence,
-                                        detected_phrase: result.detected_phrase,
-                                    });
-                                    // Stop after greeting confirmed
-                                    break;
-                                } else {
-                                    info!("Not a greeting, rejecting: '{}'", result.transcript);
-                                    // Emit GreetingRejected - recording should be discarded
-                                    event_callback(ListeningEvent::GreetingRejected {
-                                        transcript: result.transcript.clone(),
-                                        reason: "Speech did not match greeting patterns".to_string(),
-                                    });
-                                    event_callback(ListeningEvent::NotGreeting {
-                                        transcript: result.transcript,
-                                    });
-                                    last_analysis_time = Some(Instant::now());
-                                }
-                            }
-                            Err(e) => {
-                                // Check if stop was requested while we were analyzing
-                                if stop_flag.load(Ordering::SeqCst) {
-                                    info!("Stop requested during analysis - not emitting error");
-                                    break;
-                                }
-
-                                warn!("Analysis error: {}", e);
-                                // On error, reject the recording
-                                event_callback(ListeningEvent::GreetingRejected {
-                                    transcript: String::new(),
-                                    reason: e.to_string(),
-                                });
-                                event_callback(ListeningEvent::Error {
-                                    message: e.to_string(),
-                                });
-                                last_analysis_time = Some(Instant::now());
-                            }
-                        }
-
-                        // Reset state
-                        is_speech_active = false;
-                        speech_start_time = None;
-                        speech_buffer.clear();
+                        event_callback(ListeningEvent::GreetingDetected {
+                            transcript: result.transcript,
+                            confidence: result.confidence,
+                            detected_phrase: result.detected_phrase,
+                        });
+                        break; // Stop after greeting confirmed
+                    }
+                    Ok(result) => {
+                        info!("Not a greeting, rejecting: '{}'", result.transcript);
+                        event_callback(ListeningEvent::GreetingRejected {
+                            transcript: result.transcript.clone(),
+                            reason: "Speech did not match greeting patterns".to_string(),
+                        });
+                        event_callback(ListeningEvent::NotGreeting {
+                            transcript: result.transcript,
+                        });
+                        last_analysis_time = Some(Instant::now());
+                    }
+                    Err(e) => {
+                        warn!("Analysis error: {}", e);
+                        event_callback(ListeningEvent::GreetingRejected {
+                            transcript: String::new(),
+                            reason: e.to_string(),
+                        });
+                        event_callback(ListeningEvent::Error {
+                            message: e.to_string(),
+                        });
+                        last_analysis_time = Some(Instant::now());
                     }
                 }
+
+                // Reset state
+                is_speech_active = false;
+                speech_start_time = None;
+                speech_buffer.clear();
             }
 
             if !is_speech && is_speech_active {
@@ -617,7 +606,7 @@ struct AnalysisResult {
 fn analyze_speech(
     audio: &[f32],
     whisper_client: &WhisperServerClient,
-    ollama_client: &OllamaClient,
+    llm_client: &LLMClient,
     config: &ListeningConfig,
 ) -> Result<AnalysisResult, String> {
     // Create a runtime for async operations
@@ -645,9 +634,9 @@ fn analyze_speech(
 
         info!("Transcript: '{}'", transcript);
 
-        // Step 2: Check for greeting with Ollama
+        // Step 2: Check for greeting with LLM router
         info!("Checking for greeting...");
-        let greeting_result = ollama_client
+        let greeting_result = llm_client
             .check_greeting(&transcript, config.greeting_sensitivity)
             .await
             .map_err(|e| format!("Greeting check error: {}", e))?;

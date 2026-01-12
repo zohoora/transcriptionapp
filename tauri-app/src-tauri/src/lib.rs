@@ -38,6 +38,7 @@ pub mod config;
 pub mod diarization;
 pub mod enhancement;
 pub mod listening;
+pub mod llm_client;
 pub mod medplum;
 pub mod models;
 pub mod ollama;

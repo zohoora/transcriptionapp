@@ -81,9 +81,13 @@ export interface Settings {
   max_utterance_ms: number;
   diarization_enabled: boolean;
   max_speakers: number;
-  ollama_server_url: string;
-  ollama_model: string;
-  ollama_keep_alive: number;
+  // LLM Router settings (new)
+  llm_router_url: string;
+  llm_api_key: string;
+  llm_client_id: string;
+  soap_model: string;
+  fast_model: string;
+  // Medplum settings
   medplum_server_url: string;
   medplum_client_id: string;
   medplum_auto_sync: boolean;
@@ -108,9 +112,13 @@ export const mockSettings: Settings = {
   max_utterance_ms: 30000,
   diarization_enabled: true,
   max_speakers: 4,
-  ollama_server_url: 'http://localhost:11434',
-  ollama_model: 'qwen3:4b',
-  ollama_keep_alive: -1,
+  // LLM Router settings (new)
+  llm_router_url: 'http://localhost:8080',
+  llm_api_key: 'test-api-key',
+  llm_client_id: 'clinic-001',
+  soap_model: 'gpt-4',
+  fast_model: 'gpt-3.5-turbo',
+  // Medplum settings
   medplum_server_url: 'http://localhost:8103',
   medplum_client_id: 'test-client-id',
   medplum_auto_sync: false,

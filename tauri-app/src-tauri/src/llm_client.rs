@@ -1,0 +1,1321 @@
+//! LLM Router API client for SOAP note generation
+//!
+//! This module provides integration with an OpenAI-compatible LLM router for generating
+//! structured SOAP (Subjective, Objective, Assessment, Plan) notes from clinical transcripts.
+
+use chrono::Utc;
+use reqwest::header::{HeaderMap, HeaderValue, AUTHORIZATION, CONTENT_TYPE};
+use serde::{Deserialize, Serialize};
+use std::time::Duration;
+use tracing::{debug, error, info, warn};
+
+/// Default timeout for LLM API requests (2 minutes for generation)
+const DEFAULT_TIMEOUT: Duration = Duration::from_secs(120);
+
+/// Default number of retry attempts for transient failures
+const DEFAULT_MAX_RETRIES: u32 = 3;
+
+/// Initial backoff delay for retries
+const INITIAL_BACKOFF_MS: u64 = 500;
+
+/// Maximum backoff delay
+const MAX_BACKOFF_MS: u64 = 5000;
+
+/// Task identifiers for the X-Clinic-Task header
+pub mod tasks {
+    pub const SOAP_NOTE: &str = "soap_note";
+    pub const GREETING_DETECTION: &str = "greeting_detection";
+    pub const HEALTH_CHECK: &str = "health_check";
+}
+
+/// OpenAI-compatible chat message
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ChatMessage {
+    pub role: String,
+    pub content: String,
+}
+
+/// OpenAI-compatible chat completion request
+#[derive(Debug, Clone, Serialize)]
+struct ChatCompletionRequest {
+    model: String,
+    messages: Vec<ChatMessage>,
+    stream: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    max_tokens: Option<u32>,
+}
+
+/// OpenAI-compatible chat completion response
+#[derive(Debug, Clone, Deserialize)]
+struct ChatCompletionResponse {
+    choices: Vec<ChatChoice>,
+    #[allow(dead_code)]
+    model: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct ChatChoice {
+    message: ChatMessage,
+    #[allow(dead_code)]
+    finish_reason: Option<String>,
+}
+
+/// Model info from OpenAI-compatible /v1/models endpoint
+#[derive(Debug, Clone, Deserialize)]
+struct ModelInfo {
+    id: String,
+}
+
+/// Response from /v1/models endpoint
+#[derive(Debug, Clone, Deserialize)]
+struct ModelsResponse {
+    data: Vec<ModelInfo>,
+}
+
+/// Status of the LLM router connection
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LLMStatus {
+    pub connected: bool,
+    pub available_models: Vec<String>,
+    pub error: Option<String>,
+}
+
+// Re-export as OllamaStatus for backward compatibility with frontend types
+pub type OllamaStatus = LLMStatus;
+
+/// Audio event detected during recording (cough, laugh, sneeze, etc.)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AudioEvent {
+    /// Timestamp in milliseconds from start of recording
+    pub timestamp_ms: u64,
+    /// Duration of the event in milliseconds
+    pub duration_ms: u32,
+    /// Model confidence score (raw logit value, higher = more confident)
+    pub confidence: f32,
+    /// Event label (e.g., "Cough", "Laughter", "Sneeze", "Throat clearing")
+    pub label: String,
+}
+
+/// Generated SOAP note
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SoapNote {
+    pub subjective: String,
+    pub objective: String,
+    pub assessment: String,
+    pub plan: String,
+    pub generated_at: String,
+    pub model_used: String,
+    /// Raw response from the model (for debugging)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub raw_response: Option<String>,
+}
+
+/// Multi-patient SOAP result (returned by LLM auto-detection)
+/// Contains separate SOAP notes for each patient identified in the transcript
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MultiPatientSoapResult {
+    /// Individual SOAP notes for each patient detected
+    pub notes: Vec<PatientSoapNote>,
+    /// Which speaker was identified as the physician (e.g., "Speaker 2")
+    pub physician_speaker: Option<String>,
+    /// When the result was generated
+    pub generated_at: String,
+    /// Which LLM model was used
+    pub model_used: String,
+}
+
+/// Per-patient SOAP note with speaker identification
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PatientSoapNote {
+    /// Label for this patient (e.g., "Patient 1", "Patient 2", or custom name)
+    pub patient_label: String,
+    /// Which speaker this patient was identified as (e.g., "Speaker 1", "Speaker 3")
+    pub speaker_id: String,
+    /// The SOAP note for this patient
+    pub soap: SoapNote,
+}
+
+/// Result of greeting detection check
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GreetingResult {
+    /// Whether this appears to be a greeting starting a session
+    pub is_greeting: bool,
+    /// Confidence score (0.0 - 1.0)
+    pub confidence: f32,
+    /// The detected greeting phrase, if any
+    pub detected_phrase: Option<String>,
+}
+
+/// SOAP note format style
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum SoapFormat {
+    /// Organize by problem - separate S/O/A/P for each medical problem
+    #[default]
+    ProblemBased,
+    /// Single unified SOAP covering all problems together
+    Comprehensive,
+}
+
+/// Options for SOAP note generation
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SoapOptions {
+    /// Detail level (1-10, where 5 is standard)
+    #[serde(default = "default_detail_level")]
+    pub detail_level: u8,
+    /// SOAP format style
+    #[serde(default)]
+    pub format: SoapFormat,
+    /// Custom instructions from the physician
+    #[serde(default)]
+    pub custom_instructions: String,
+}
+
+fn default_detail_level() -> u8 {
+    5
+}
+
+impl Default for SoapOptions {
+    fn default() -> Self {
+        Self {
+            detail_level: 5,
+            format: SoapFormat::ProblemBased,
+            custom_instructions: String::new(),
+        }
+    }
+}
+
+/// LLM Router API client (OpenAI-compatible)
+#[derive(Debug)]
+pub struct LLMClient {
+    client: reqwest::Client,
+    base_url: String,
+    api_key: String,
+    client_id: String,
+}
+
+// Re-export as OllamaClient for backward compatibility
+pub type OllamaClient = LLMClient;
+
+/// Check if a reqwest error is retryable (transient network issues)
+fn is_retryable_error(err: &reqwest::Error) -> bool {
+    if err.is_connect() || err.is_timeout() {
+        return true;
+    }
+    if let Some(status) = err.status() {
+        return status.is_server_error() || status == reqwest::StatusCode::TOO_MANY_REQUESTS;
+    }
+    false
+}
+
+/// Check if an HTTP status code is retryable
+fn is_retryable_status(status: reqwest::StatusCode) -> bool {
+    status.is_server_error() || status == reqwest::StatusCode::TOO_MANY_REQUESTS
+}
+
+/// Calculate backoff delay with exponential increase and jitter
+fn calculate_backoff(attempt: u32) -> Duration {
+    let base_delay = INITIAL_BACKOFF_MS * 2u64.pow(attempt);
+    let capped_delay = base_delay.min(MAX_BACKOFF_MS);
+    let jitter = (std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .subsec_millis() as u64)
+        % 100;
+    Duration::from_millis(capped_delay + jitter)
+}
+
+impl LLMClient {
+    /// Create a new LLM client with URL validation
+    ///
+    /// # Arguments
+    /// * `base_url` - The LLM router URL (e.g., "http://localhost:4000")
+    /// * `api_key` - API key for authentication
+    /// * `client_id` - Client identifier for the X-Client-Id header
+    pub fn new(base_url: &str, api_key: &str, client_id: &str) -> Result<Self, String> {
+        let cleaned_url = base_url.trim_end_matches('/');
+
+        // Validate URL format and scheme
+        let parsed = reqwest::Url::parse(cleaned_url)
+            .map_err(|e| format!("Invalid LLM router URL '{}': {}", cleaned_url, e))?;
+
+        if !matches!(parsed.scheme(), "http" | "https") {
+            return Err(format!(
+                "LLM router URL must use http or https scheme, got: {}",
+                parsed.scheme()
+            ));
+        }
+
+        // Reject URLs with credentials (security risk)
+        if !parsed.username().is_empty() || parsed.password().is_some() {
+            return Err("LLM router URL must not contain credentials".to_string());
+        }
+
+        let client = reqwest::Client::builder()
+            .connect_timeout(Duration::from_secs(30))
+            .timeout(DEFAULT_TIMEOUT)
+            .build()
+            .map_err(|e| format!("Failed to create HTTP client: {}", e))?;
+
+        info!("LLMClient created for {}", cleaned_url);
+
+        Ok(Self {
+            client,
+            base_url: cleaned_url.to_string(),
+            api_key: api_key.to_string(),
+            client_id: client_id.to_string(),
+        })
+    }
+
+    /// Build authentication headers for requests
+    fn auth_headers(&self, task: &str) -> HeaderMap {
+        let mut headers = HeaderMap::new();
+
+        if !self.api_key.is_empty() {
+            headers.insert(
+                AUTHORIZATION,
+                HeaderValue::from_str(&format!("Bearer {}", self.api_key))
+                    .unwrap_or_else(|_| HeaderValue::from_static("")),
+            );
+        }
+
+        headers.insert(
+            "X-Client-Id",
+            HeaderValue::from_str(&self.client_id)
+                .unwrap_or_else(|_| HeaderValue::from_static("ai-scribe")),
+        );
+
+        headers.insert(
+            "X-Clinic-Task",
+            HeaderValue::from_str(task)
+                .unwrap_or_else(|_| HeaderValue::from_static("unknown")),
+        );
+
+        headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
+
+        headers
+    }
+
+    /// Check connection status and list available models
+    pub async fn check_status(&self) -> LLMStatus {
+        match self.list_models().await {
+            Ok(models) => LLMStatus {
+                connected: true,
+                available_models: models,
+                error: None,
+            },
+            Err(e) => LLMStatus {
+                connected: false,
+                available_models: vec![],
+                error: Some(e),
+            },
+        }
+    }
+
+    /// Pre-warm the model by sending a minimal request to load it into memory
+    pub async fn prewarm_model(&self, model: &str) -> Result<(), String> {
+        info!("Pre-warming LLM model: {}", model);
+        let start = std::time::Instant::now();
+
+        let request = ChatCompletionRequest {
+            model: model.to_string(),
+            messages: vec![ChatMessage {
+                role: "user".to_string(),
+                content: "Say OK".to_string(),
+            }],
+            stream: false,
+            max_tokens: Some(10),
+        };
+
+        let url = format!("{}/v1/chat/completions", self.base_url);
+
+        match self.client
+            .post(&url)
+            .headers(self.auth_headers(tasks::HEALTH_CHECK))
+            .json(&request)
+            .send()
+            .await
+        {
+            Ok(response) => {
+                if response.status().is_success() {
+                    let elapsed = start.elapsed();
+                    info!("Model {} pre-warmed successfully in {:?}", model, elapsed);
+                    Ok(())
+                } else {
+                    let status = response.status();
+                    let body = response.text().await.unwrap_or_default();
+                    error!("Failed to pre-warm model {}: {} - {}", model, status, body);
+                    Err(format!("Failed to pre-warm model: {} - {}", status, body))
+                }
+            }
+            Err(e) => {
+                error!("Failed to pre-warm model {}: {}", model, e);
+                Err(format!("Failed to connect to LLM router: {}", e))
+            }
+        }
+    }
+
+    /// List available models from the LLM router with retry logic
+    pub async fn list_models(&self) -> Result<Vec<String>, String> {
+        let url = format!("{}/v1/models", self.base_url);
+        debug!("Listing LLM models from {}", url);
+
+        let mut last_error = String::new();
+
+        for attempt in 0..DEFAULT_MAX_RETRIES {
+            if attempt > 0 {
+                let backoff = calculate_backoff(attempt - 1);
+                warn!(
+                    "LLM list_models attempt {} failed, retrying in {:?}",
+                    attempt, backoff
+                );
+                tokio::time::sleep(backoff).await;
+            }
+
+            match self.client
+                .get(&url)
+                .headers(self.auth_headers(tasks::HEALTH_CHECK))
+                .send()
+                .await
+            {
+                Ok(response) => {
+                    if response.status().is_success() {
+                        match response.json::<ModelsResponse>().await {
+                            Ok(models_response) => {
+                                let models: Vec<String> =
+                                    models_response.data.into_iter().map(|m| m.id).collect();
+                                info!("Found {} LLM models", models.len());
+                                return Ok(models);
+                            }
+                            Err(e) => {
+                                last_error = format!("Failed to parse LLM response: {}", e);
+                                break;
+                            }
+                        }
+                    } else if is_retryable_status(response.status()) {
+                        last_error = format!(
+                            "LLM router returned error status: {}",
+                            response.status()
+                        );
+                        continue;
+                    } else {
+                        return Err(format!(
+                            "LLM router returned error status: {}",
+                            response.status()
+                        ));
+                    }
+                }
+                Err(e) => {
+                    if is_retryable_error(&e) {
+                        last_error = format!("Failed to connect to LLM router: {}", e);
+                        continue;
+                    } else {
+                        return Err(format!("Failed to connect to LLM router: {}", e));
+                    }
+                }
+            }
+        }
+
+        error!(
+            "LLM list_models failed after {} attempts: {}",
+            DEFAULT_MAX_RETRIES, last_error
+        );
+        Err(last_error)
+    }
+
+    /// Generate text using the LLM with retry logic
+    async fn generate(
+        &self,
+        model: &str,
+        system_prompt: &str,
+        user_content: &str,
+        task: &str,
+    ) -> Result<String, String> {
+        if model.trim().is_empty() {
+            return Err("Model name cannot be empty".to_string());
+        }
+        if user_content.trim().is_empty() {
+            return Err("User content cannot be empty".to_string());
+        }
+
+        let url = format!("{}/v1/chat/completions", self.base_url);
+        debug!("Generating with LLM model {} at {}", model, url);
+
+        let mut messages = Vec::new();
+
+        if !system_prompt.is_empty() {
+            messages.push(ChatMessage {
+                role: "system".to_string(),
+                content: system_prompt.to_string(),
+            });
+        }
+
+        messages.push(ChatMessage {
+            role: "user".to_string(),
+            content: user_content.to_string(),
+        });
+
+        let request = ChatCompletionRequest {
+            model: model.to_string(),
+            messages,
+            stream: false,
+            max_tokens: None,
+        };
+
+        let mut last_error = String::new();
+
+        for attempt in 0..DEFAULT_MAX_RETRIES {
+            if attempt > 0 {
+                let backoff = calculate_backoff(attempt - 1);
+                warn!(
+                    "LLM generate attempt {} failed, retrying in {:?}",
+                    attempt, backoff
+                );
+                tokio::time::sleep(backoff).await;
+            }
+
+            match self.client
+                .post(&url)
+                .headers(self.auth_headers(task))
+                .json(&request)
+                .send()
+                .await
+            {
+                Ok(response) => {
+                    if response.status().is_success() {
+                        match response.json::<ChatCompletionResponse>().await {
+                            Ok(chat_response) => {
+                                if let Some(choice) = chat_response.choices.first() {
+                                    return Ok(choice.message.content.clone());
+                                }
+                                return Err("No response choices returned".to_string());
+                            }
+                            Err(e) => {
+                                last_error = format!("Failed to parse LLM response: {}", e);
+                                break;
+                            }
+                        }
+                    } else if is_retryable_status(response.status()) {
+                        let status = response.status();
+                        let body = response.text().await.unwrap_or_default();
+                        last_error = format!("LLM router returned error: {} - {}", status, body);
+                        continue;
+                    } else {
+                        let status = response.status();
+                        let body = response.text().await.unwrap_or_default();
+                        error!("LLM generate failed: {} - {}", status, body);
+                        return Err(format!("LLM router returned error: {} - {}", status, body));
+                    }
+                }
+                Err(e) => {
+                    if is_retryable_error(&e) {
+                        last_error = format!("Failed to connect to LLM router: {}", e);
+                        continue;
+                    } else {
+                        return Err(format!("Failed to connect to LLM router: {}", e));
+                    }
+                }
+            }
+        }
+
+        error!(
+            "LLM generate failed after {} attempts: {}",
+            DEFAULT_MAX_RETRIES, last_error
+        );
+        Err(last_error)
+    }
+
+    /// Maximum transcript size (100KB) to prevent memory issues
+    const MAX_TRANSCRIPT_SIZE: usize = 100_000;
+
+    /// Minimum transcript length (50 chars) to ensure meaningful SOAP generation
+    const MIN_TRANSCRIPT_LENGTH: usize = 50;
+
+    /// Minimum word count for meaningful SOAP generation
+    const MIN_WORD_COUNT: usize = 5;
+
+    /// Validate transcript for SOAP generation
+    fn validate_transcript(transcript: &str) -> Result<&str, String> {
+        let trimmed = transcript.trim();
+
+        if trimmed.is_empty() {
+            return Err("Transcript cannot be empty".to_string());
+        }
+
+        if trimmed.len() < Self::MIN_TRANSCRIPT_LENGTH {
+            return Err(format!(
+                "Transcript too short ({} characters). Minimum {} characters required.",
+                trimmed.len(),
+                Self::MIN_TRANSCRIPT_LENGTH
+            ));
+        }
+
+        let word_count = trimmed.split_whitespace().count();
+        if word_count < Self::MIN_WORD_COUNT {
+            return Err(format!(
+                "Transcript has too few words ({} words). Minimum {} words required.",
+                word_count,
+                Self::MIN_WORD_COUNT
+            ));
+        }
+
+        if transcript.len() > Self::MAX_TRANSCRIPT_SIZE {
+            return Err(format!(
+                "Transcript too large ({} bytes). Maximum size is {} bytes",
+                transcript.len(),
+                Self::MAX_TRANSCRIPT_SIZE
+            ));
+        }
+
+        Ok(trimmed)
+    }
+
+    /// Generate a SOAP note from a clinical transcript
+    pub async fn generate_soap_note(
+        &self,
+        model: &str,
+        transcript: &str,
+        audio_events: Option<&[AudioEvent]>,
+        options: Option<&SoapOptions>,
+    ) -> Result<SoapNote, String> {
+        Self::validate_transcript(transcript)?;
+        let opts = options.cloned().unwrap_or_default();
+        info!(
+            "Generating SOAP note with model {} for transcript of {} chars, {} audio events",
+            model,
+            transcript.len(),
+            audio_events.map(|e| e.len()).unwrap_or(0)
+        );
+
+        let system_prompt = build_soap_system_prompt(&opts);
+        let user_content = build_soap_user_content(transcript, audio_events);
+
+        let response = self.generate(model, &system_prompt, &user_content, tasks::SOAP_NOTE).await?;
+
+        match parse_soap_response(&response, model) {
+            Ok(mut soap_note) => {
+                soap_note.raw_response = Some(response);
+                info!("Successfully generated SOAP note");
+                Ok(soap_note)
+            }
+            Err(first_error) => {
+                info!("First SOAP generation attempt failed, retrying with stricter prompt...");
+
+                let retry_system = "You are a medical scribe. Output ONLY valid JSON with keys: subjective, objective, assessment, plan. No other text.";
+                let retry_user = format!(
+                    "Generate a SOAP note for this transcript. Output ONLY JSON.\n\nTRANSCRIPT:\n{}",
+                    transcript
+                );
+
+                match self.generate(model, retry_system, &retry_user, tasks::SOAP_NOTE).await {
+                    Ok(retry_response) => {
+                        match parse_soap_response(&retry_response, model) {
+                            Ok(mut soap_note) => {
+                                soap_note.raw_response = Some(retry_response);
+                                info!("Successfully generated SOAP note on retry");
+                                Ok(soap_note)
+                            }
+                            Err(retry_error) => {
+                                Err(format!(
+                                    "Failed to parse SOAP note after retry.\n\nFirst error: {}\n\nRetry error: {}",
+                                    first_error, retry_error
+                                ))
+                            }
+                        }
+                    }
+                    Err(gen_error) => {
+                        Err(format!(
+                            "SOAP generation failed: {}. Retry also failed: {}",
+                            first_error, gen_error
+                        ))
+                    }
+                }
+            }
+        }
+    }
+
+    /// Generate multi-patient SOAP notes from a clinical transcript
+    pub async fn generate_multi_patient_soap_note(
+        &self,
+        model: &str,
+        transcript: &str,
+        audio_events: Option<&[AudioEvent]>,
+        options: Option<&SoapOptions>,
+    ) -> Result<MultiPatientSoapResult, String> {
+        Self::validate_transcript(transcript)?;
+        let opts = options.cloned().unwrap_or_default();
+        info!(
+            "Generating multi-patient SOAP note with model {} for transcript of {} chars",
+            model,
+            transcript.len()
+        );
+
+        let system_prompt = build_multi_patient_system_prompt(&opts);
+        let user_content = build_soap_user_content(transcript, audio_events);
+
+        let response = self.generate(model, &system_prompt, &user_content, tasks::SOAP_NOTE).await?;
+
+        match parse_multi_patient_soap_response(&response, model) {
+            Ok(result) => {
+                info!(
+                    "Successfully generated multi-patient SOAP note ({} patients)",
+                    result.notes.len()
+                );
+                Ok(result)
+            }
+            Err(first_error) => {
+                info!("First multi-patient SOAP generation attempt failed, retrying...");
+
+                let retry_system = r#"You are a medical scribe. Identify patients vs physician in the transcript. Output ONLY valid JSON:
+{"physician_speaker":"Speaker X","patients":[{"patient_label":"Patient 1","speaker_id":"Speaker Y","subjective":"...","objective":"...","assessment":"...","plan":"..."}]}"#;
+
+                match self.generate(model, retry_system, &user_content, tasks::SOAP_NOTE).await {
+                    Ok(retry_response) => {
+                        match parse_multi_patient_soap_response(&retry_response, model) {
+                            Ok(result) => {
+                                info!(
+                                    "Successfully generated multi-patient SOAP note on retry ({} patients)",
+                                    result.notes.len()
+                                );
+                                Ok(result)
+                            }
+                            Err(retry_error) => {
+                                Err(format!(
+                                    "Failed to parse multi-patient SOAP note after retry.\n\nFirst error: {}\n\nRetry error: {}",
+                                    first_error, retry_error
+                                ))
+                            }
+                        }
+                    }
+                    Err(gen_error) => {
+                        Err(format!(
+                            "Multi-patient SOAP generation failed: {}. Retry also failed: {}",
+                            first_error, gen_error
+                        ))
+                    }
+                }
+            }
+        }
+    }
+
+    /// Timeout for greeting detection
+    const GREETING_TIMEOUT: Duration = Duration::from_secs(45);
+
+    /// Check if a transcript contains a greeting that should start a session
+    pub async fn check_greeting(
+        &self,
+        transcript: &str,
+        sensitivity: f32,
+    ) -> Result<GreetingResult, String> {
+        let trimmed = transcript.trim();
+
+        if trimmed.is_empty() || trimmed.len() < 3 {
+            return Ok(GreetingResult {
+                is_greeting: false,
+                confidence: 0.0,
+                detected_phrase: None,
+            });
+        }
+
+        let system_prompt = format!(
+            r#"You are a speech classifier. Analyze if the given speech is a greeting that would START a medical consultation.
+
+Common greeting patterns that START consultations:
+- "Hello" / "Hi" / "Good morning" / "Good afternoon"
+- "How are you today?" / "How are you feeling?"
+- "What brings you in today?"
+- Patient introductions or names
+- "Nice to meet you" / "Come on in"
+
+NOT greetings (ongoing conversation):
+- Medical symptoms discussion
+- Treatment discussions
+- Background noise or partial words
+- Mid-conversation phrases
+
+Use a sensitivity threshold of {:.2} (higher = more likely to classify as greeting).
+
+Respond ONLY with JSON: {{"is_greeting": true/false, "confidence": 0.0-1.0, "detected_phrase": "the greeting phrase if found or null"}}"#,
+            sensitivity
+        );
+
+        let url = format!("{}/v1/chat/completions", self.base_url);
+        info!("Checking greeting with LLM at {} (timeout={}s)", url, Self::GREETING_TIMEOUT.as_secs());
+
+        let request = ChatCompletionRequest {
+            model: "fast-model".to_string(), // Use fast model for greeting detection
+            messages: vec![
+                ChatMessage {
+                    role: "system".to_string(),
+                    content: system_prompt,
+                },
+                ChatMessage {
+                    role: "user".to_string(),
+                    content: trimmed.to_string(),
+                },
+            ],
+            stream: false,
+            max_tokens: Some(100),
+        };
+
+        let response = self.client
+            .post(&url)
+            .headers(self.auth_headers(tasks::GREETING_DETECTION))
+            .timeout(Self::GREETING_TIMEOUT)
+            .json(&request)
+            .send()
+            .await
+            .map_err(|e| {
+                if e.is_timeout() {
+                    format!("LLM request timed out after {}s", Self::GREETING_TIMEOUT.as_secs())
+                } else if e.is_connect() {
+                    format!("Failed to connect to LLM router at {}: {}", self.base_url, e)
+                } else {
+                    format!("Failed to connect to LLM router: {}", e)
+                }
+            })?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let body = response.text().await.unwrap_or_default();
+            return Err(format!("LLM router returned error: {} - {}", status, body));
+        }
+
+        let chat_response: ChatCompletionResponse = response
+            .json()
+            .await
+            .map_err(|e| format!("Failed to parse LLM response: {}", e))?;
+
+        let content = chat_response
+            .choices
+            .first()
+            .map(|c| c.message.content.as_str())
+            .unwrap_or("");
+
+        info!("LLM greeting check completed, parsing response");
+        debug!("Greeting check raw response: {}", &content.chars().take(200).collect::<String>());
+
+        parse_greeting_response(content, sensitivity)
+    }
+}
+
+/// Build the system prompt for SOAP note generation
+fn build_soap_system_prompt(options: &SoapOptions) -> String {
+    let format_instruction = match options.format {
+        SoapFormat::ProblemBased => "If the patient has multiple distinct medical problems, organize each problem separately within the JSON sections.",
+        SoapFormat::Comprehensive => "Create ONE unified SOAP note covering ALL problems together.",
+    };
+
+    let detail_instruction = match options.detail_level {
+        1..=3 => "Use brief, concise bullet points. Maximum 2-3 items per section.",
+        4..=6 => "Use standard clinical detail with moderate bullet points.",
+        7..=10 => "Include thorough clinical detail with all mentioned symptoms and findings.",
+        _ => "Use standard clinical detail.",
+    };
+
+    let custom_section = if options.custom_instructions.trim().is_empty() {
+        String::new()
+    } else {
+        format!("\n\nAdditional instructions: {}", options.custom_instructions.trim())
+    };
+
+    format!(
+        r#"You are a medical scribe assistant. Generate a SOAP note from the clinical transcript.
+
+CRITICAL RULES:
+- ONLY include information EXPLICITLY stated in the transcript
+- DO NOT hallucinate or invent information
+- Use "No information available" for sections without explicit content
+- Write entirely in English
+- Use concise bullet points, no paragraphs
+- No markdown formatting (no *, #, etc.)
+
+{format_instruction}
+{detail_instruction}{custom_section}
+
+Respond with ONLY valid JSON:
+{{"subjective": "...", "objective": "...", "assessment": "...", "plan": "..."}}"#
+    )
+}
+
+/// Build the system prompt for multi-patient SOAP note generation
+fn build_multi_patient_system_prompt(options: &SoapOptions) -> String {
+    let detail_instruction = match options.detail_level {
+        1..=3 => "Use brief, concise bullet points.",
+        4..=6 => "Use standard clinical detail.",
+        7..=10 => "Include thorough clinical detail with all mentioned symptoms and findings.",
+        _ => "Use standard clinical detail.",
+    };
+
+    let custom_section = if options.custom_instructions.trim().is_empty() {
+        String::new()
+    } else {
+        format!("\n\nAdditional instructions: {}", options.custom_instructions.trim())
+    };
+
+    format!(
+        r#"You are a medical scribe assistant. Analyze the transcript to identify patients and generate SOAP notes.
+
+CRITICAL: PATIENT & PHYSICIAN IDENTIFICATION
+- Analyze the conversation to identify who is the PHYSICIAN and who are the PATIENTS
+- The physician asks questions, examines, diagnoses, and prescribes
+- Patients describe symptoms, answer questions, receive instructions
+- DO NOT assume Speaker 1 is the physician - determine from context
+- There may be 1-4 patients in this visit
+
+ANTI-HALLUCINATION RULES:
+- ONLY include information EXPLICITLY stated in the transcript
+- DO NOT assume, infer, or add typical medical details not stated
+- Use "No information available" if a section lacks patient-specific content
+
+{detail_instruction}{custom_section}
+
+OUTPUT FORMAT - Respond with ONLY valid JSON:
+{{
+  "physician_speaker": "Speaker X",
+  "patients": [
+    {{
+      "patient_label": "Patient 1",
+      "speaker_id": "Speaker Y",
+      "subjective": "...",
+      "objective": "...",
+      "assessment": "...",
+      "plan": "..."
+    }}
+  ]
+}}"#
+    )
+}
+
+/// Build user content for SOAP generation
+fn build_soap_user_content(transcript: &str, audio_events: Option<&[AudioEvent]>) -> String {
+    let audio_section = audio_events
+        .filter(|e| !e.is_empty())
+        .map(format_audio_events)
+        .unwrap_or_default();
+
+    if audio_section.is_empty() {
+        format!("TRANSCRIPT:\n{}", transcript)
+    } else {
+        format!("TRANSCRIPT:\n{}\n\n{}", transcript, audio_section)
+    }
+}
+
+/// Format audio events for inclusion in the prompt
+fn format_audio_events(events: &[AudioEvent]) -> String {
+    if events.is_empty() {
+        return String::new();
+    }
+
+    let mut output = String::from("AUDIO EVENTS DETECTED:\n");
+    for event in events {
+        let total_seconds = event.timestamp_ms / 1000;
+        let minutes = total_seconds / 60;
+        let seconds = total_seconds % 60;
+        let conf_pct = 100.0 / (1.0 + (-event.confidence).exp());
+
+        output.push_str(&format!(
+            "- {} at {}:{:02} (confidence: {:.0}%)\n",
+            event.label, minutes, seconds, conf_pct
+        ));
+    }
+    output
+}
+
+/// Parse greeting detection response from the LLM
+fn parse_greeting_response(response: &str, _sensitivity: f32) -> Result<GreetingResult, String> {
+    let cleaned = response.trim();
+
+    // Try to find JSON in the response
+    let json_str = if let Some(start) = cleaned.find('{') {
+        if let Some(end) = cleaned.rfind('}') {
+            &cleaned[start..=end]
+        } else {
+            return Err("No valid JSON found in response".to_string());
+        }
+    } else {
+        return Err("No JSON object found in response".to_string());
+    };
+
+    #[derive(Deserialize)]
+    struct GreetingResponse {
+        is_greeting: bool,
+        confidence: f32,
+        detected_phrase: Option<String>,
+    }
+
+    let parsed: GreetingResponse = serde_json::from_str(json_str)
+        .map_err(|e| format!("Failed to parse greeting JSON: {} - Response: {}", e, json_str))?;
+
+    Ok(GreetingResult {
+        is_greeting: parsed.is_greeting,
+        confidence: parsed.confidence.clamp(0.0, 1.0),
+        detected_phrase: parsed.detected_phrase,
+    })
+}
+
+/// JSON structure for LLM response
+#[derive(Debug, Clone, Deserialize)]
+struct SoapNoteJson {
+    subjective: String,
+    objective: String,
+    assessment: String,
+    plan: String,
+}
+
+/// JSON structure for multi-patient LLM response
+#[derive(Debug, Clone, Deserialize)]
+struct MultiPatientSoapJson {
+    physician_speaker: Option<String>,
+    patients: Vec<PatientSoapJson>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct PatientSoapJson {
+    patient_label: String,
+    speaker_id: String,
+    subjective: String,
+    objective: String,
+    assessment: String,
+    plan: String,
+}
+
+/// Parse the LLM response into a structured SOAP note
+fn parse_soap_response(response: &str, model: &str) -> Result<SoapNote, String> {
+    let json_str = extract_json(response.trim());
+
+    match serde_json::from_str::<SoapNoteJson>(&json_str) {
+        Ok(parsed) => {
+            let has_content = !parsed.subjective.trim().is_empty()
+                || !parsed.objective.trim().is_empty()
+                || !parsed.assessment.trim().is_empty()
+                || !parsed.plan.trim().is_empty();
+
+            if !has_content {
+                return Err("SOAP note generation returned empty content for all sections.".to_string());
+            }
+
+            Ok(SoapNote {
+                subjective: soap_section_or_default(parsed.subjective),
+                objective: soap_section_or_default(parsed.objective),
+                assessment: soap_section_or_default(parsed.assessment),
+                plan: soap_section_or_default(parsed.plan),
+                generated_at: Utc::now().to_rfc3339(),
+                model_used: model.to_string(),
+                raw_response: None,
+            })
+        }
+        Err(e) => {
+            warn!(
+                "Failed to parse SOAP note JSON: {}. Response preview: {}",
+                e,
+                &json_str.chars().take(500).collect::<String>()
+            );
+            Err(format!(
+                "Could not parse SOAP note JSON: {}. Response started with: {}...",
+                e,
+                &json_str.chars().take(100).collect::<String>()
+            ))
+        }
+    }
+}
+
+/// Parse the multi-patient LLM response into a structured result
+fn parse_multi_patient_soap_response(
+    response: &str,
+    model: &str,
+) -> Result<MultiPatientSoapResult, String> {
+    let json_str = extract_json(response.trim());
+
+    match serde_json::from_str::<MultiPatientSoapJson>(&json_str) {
+        Ok(parsed) => {
+            if parsed.patients.is_empty() {
+                return Err("No patients identified in transcript".to_string());
+            }
+
+            if parsed.patients.len() > 4 {
+                warn!("LLM detected {} patients, limiting to 4", parsed.patients.len());
+            }
+
+            let generated_at = Utc::now().to_rfc3339();
+
+            let notes: Vec<PatientSoapNote> = parsed
+                .patients
+                .into_iter()
+                .take(4)
+                .map(|p| PatientSoapNote {
+                    patient_label: p.patient_label,
+                    speaker_id: p.speaker_id,
+                    soap: SoapNote {
+                        subjective: soap_section_or_default(p.subjective),
+                        objective: soap_section_or_default(p.objective),
+                        assessment: soap_section_or_default(p.assessment),
+                        plan: soap_section_or_default(p.plan),
+                        generated_at: generated_at.clone(),
+                        model_used: model.to_string(),
+                        raw_response: None,
+                    },
+                })
+                .collect();
+
+            let any_has_content = notes.iter().any(|n| {
+                has_soap_content(&n.soap.subjective)
+                    || has_soap_content(&n.soap.objective)
+                    || has_soap_content(&n.soap.assessment)
+                    || has_soap_content(&n.soap.plan)
+            });
+
+            if !any_has_content {
+                return Err("SOAP note generation returned empty content for all patients.".to_string());
+            }
+
+            Ok(MultiPatientSoapResult {
+                notes,
+                physician_speaker: parsed.physician_speaker,
+                generated_at,
+                model_used: model.to_string(),
+            })
+        }
+        Err(e) => {
+            warn!(
+                "Failed to parse multi-patient SOAP JSON: {}. Response preview: {}",
+                e,
+                &json_str.chars().take(500).collect::<String>()
+            );
+            Err(format!(
+                "Could not parse multi-patient SOAP JSON: {}",
+                e
+            ))
+        }
+    }
+}
+
+/// Default placeholder for empty SOAP sections
+const NO_INFO_PLACEHOLDER: &str = "No information available.";
+
+/// Returns the text if non-empty, otherwise returns the placeholder
+fn soap_section_or_default(text: String) -> String {
+    if text.trim().is_empty() {
+        NO_INFO_PLACEHOLDER.to_string()
+    } else {
+        text
+    }
+}
+
+/// Check if a SOAP section has actual content (not the placeholder)
+fn has_soap_content(text: &str) -> bool {
+    text != NO_INFO_PLACEHOLDER
+}
+
+/// Extract JSON from response, handling markdown code blocks
+fn extract_json(text: &str) -> String {
+    let trimmed = text.trim();
+
+    // Check for markdown code blocks: ```json ... ``` or ``` ... ```
+    if trimmed.starts_with("```") {
+        if let Some(start_idx) = trimmed.find('\n') {
+            let after_fence = &trimmed[start_idx + 1..];
+            if let Some(end_idx) = after_fence.rfind("```") {
+                return after_fence[..end_idx].trim().to_string();
+            }
+        }
+    }
+
+    trimmed.to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_soap_response_json() {
+        let response = r#"{
+            "subjective": "Patient complains of cough for 3 days.",
+            "objective": "Lungs clear on auscultation. No fever.",
+            "assessment": "Viral upper respiratory infection.",
+            "plan": "Rest, fluids, and OTC cough suppressant."
+        }"#;
+
+        let soap = parse_soap_response(response, "soap-model").unwrap();
+        assert!(soap.subjective.contains("cough"));
+        assert!(soap.objective.contains("Lungs clear"));
+        assert!(soap.assessment.contains("Viral"));
+        assert!(soap.plan.contains("Rest"));
+        assert_eq!(soap.model_used, "soap-model");
+    }
+
+    #[test]
+    fn test_parse_soap_response_with_markdown_code_block() {
+        let response = r#"```json
+{
+    "subjective": "Patient reports headache.",
+    "objective": "Vital signs normal.",
+    "assessment": "Tension headache.",
+    "plan": "Ibuprofen as needed."
+}
+```"#;
+
+        let soap = parse_soap_response(response, "llama3:8b").unwrap();
+        assert!(soap.subjective.contains("headache"));
+    }
+
+    #[test]
+    fn test_parse_soap_response_empty_sections() {
+        let response = r#"{
+            "subjective": "",
+            "objective": "Blood pressure 120/80.",
+            "assessment": "",
+            "plan": "Continue current medications."
+        }"#;
+
+        let soap = parse_soap_response(response, "soap-model").unwrap();
+        assert_eq!(soap.subjective, "No information available.");
+        assert!(soap.objective.contains("Blood pressure"));
+    }
+
+    #[test]
+    fn test_parse_soap_response_all_empty_sections() {
+        let response = r#"{
+            "subjective": "",
+            "objective": "",
+            "assessment": "",
+            "plan": ""
+        }"#;
+
+        let result = parse_soap_response(response, "soap-model");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_extract_json_plain() {
+        let input = r#"{"key": "value"}"#;
+        assert_eq!(extract_json(input), r#"{"key": "value"}"#);
+    }
+
+    #[test]
+    fn test_extract_json_from_code_block() {
+        let input = "```json\n{\"key\": \"value\"}\n```";
+        assert_eq!(extract_json(input), r#"{"key": "value"}"#);
+    }
+
+    #[test]
+    fn test_format_audio_events() {
+        let events = vec![AudioEvent {
+            timestamp_ms: 125000, // 2:05
+            duration_ms: 300,
+            confidence: 3.0, // ~95%
+            label: "Sneeze".to_string(),
+        }];
+        let formatted = format_audio_events(&events);
+        assert!(formatted.contains("Sneeze at 2:05"));
+        assert!(formatted.contains("95%"));
+    }
+
+    #[test]
+    fn test_format_audio_events_empty() {
+        let events: Vec<AudioEvent> = vec![];
+        let formatted = format_audio_events(&events);
+        assert!(formatted.is_empty());
+    }
+
+    #[test]
+    fn test_llm_client_new() {
+        let client = LLMClient::new("http://localhost:4000", "test-key", "ai-scribe").unwrap();
+        assert_eq!(client.base_url, "http://localhost:4000");
+        assert_eq!(client.api_key, "test-key");
+        assert_eq!(client.client_id, "ai-scribe");
+    }
+
+    #[test]
+    fn test_llm_client_new_trailing_slash() {
+        let client = LLMClient::new("http://localhost:4000/", "key", "client").unwrap();
+        assert_eq!(client.base_url, "http://localhost:4000");
+    }
+
+    #[test]
+    fn test_llm_client_new_invalid_url() {
+        let result = LLMClient::new("not-a-valid-url", "key", "client");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("Invalid LLM router URL"));
+    }
+
+    #[test]
+    fn test_llm_client_new_invalid_scheme() {
+        let result = LLMClient::new("ftp://localhost:4000", "key", "client");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("http or https"));
+    }
+
+    #[test]
+    fn test_llm_client_new_with_credentials() {
+        let result = LLMClient::new("http://user:pass@localhost:4000", "key", "client");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("must not contain credentials"));
+    }
+
+    #[test]
+    fn test_soap_options_default() {
+        let opts = SoapOptions::default();
+        assert_eq!(opts.detail_level, 5);
+        assert_eq!(opts.format, SoapFormat::ProblemBased);
+        assert!(opts.custom_instructions.is_empty());
+    }
+
+    #[test]
+    fn test_soap_format_serialization() {
+        let problem_based = SoapFormat::ProblemBased;
+        let json = serde_json::to_string(&problem_based).unwrap();
+        assert_eq!(json, "\"problem_based\"");
+
+        let comprehensive = SoapFormat::Comprehensive;
+        let json = serde_json::to_string(&comprehensive).unwrap();
+        assert_eq!(json, "\"comprehensive\"");
+    }
+
+    #[test]
+    fn test_llm_status_serialization() {
+        let status = LLMStatus {
+            connected: true,
+            available_models: vec!["soap-model".to_string(), "fast-model".to_string()],
+            error: None,
+        };
+        let json = serde_json::to_string(&status).unwrap();
+        let parsed: LLMStatus = serde_json::from_str(&json).unwrap();
+
+        assert!(parsed.connected);
+        assert_eq!(parsed.available_models.len(), 2);
+        assert!(parsed.error.is_none());
+    }
+
+    #[test]
+    fn test_parse_greeting_response_valid() {
+        let response = r#"{"is_greeting": true, "confidence": 0.85, "detected_phrase": "Hello"}"#;
+        let result = parse_greeting_response(response, 0.7).unwrap();
+        assert!(result.is_greeting);
+        assert!((result.confidence - 0.85).abs() < 0.01);
+        assert_eq!(result.detected_phrase, Some("Hello".to_string()));
+    }
+
+    #[test]
+    fn test_parse_greeting_response_not_greeting() {
+        let response = r#"{"is_greeting": false, "confidence": 0.2, "detected_phrase": null}"#;
+        let result = parse_greeting_response(response, 0.7).unwrap();
+        assert!(!result.is_greeting);
+        assert!(result.detected_phrase.is_none());
+    }
+
+    #[test]
+    fn test_audio_event_serialization() {
+        let event = AudioEvent {
+            timestamp_ms: 12345,
+            duration_ms: 500,
+            confidence: 2.5,
+            label: "Cough".to_string(),
+        };
+        let json = serde_json::to_string(&event).unwrap();
+        let parsed: AudioEvent = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed.timestamp_ms, 12345);
+        assert_eq!(parsed.label, "Cough");
+    }
+}

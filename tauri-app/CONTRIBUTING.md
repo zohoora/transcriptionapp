@@ -108,7 +108,7 @@ pub fn process(&mut self, samples: &[f32]) -> Vec<Utterance> {
 Follow [Conventional Commits](https://www.conventionalcommits.org/):
 
 ```
-feat: add SOAP note generation via Ollama
+feat: add SOAP note generation via LLM router
 fix: prevent audio buffer overflow during long recordings
 docs: update README with testing instructions
 test: add property-based tests for VAD config
@@ -117,15 +117,15 @@ refactor: extract audio resampling into separate module
 
 ## Testing
 
-We maintain comprehensive test coverage (335 frontend tests, 281 Rust tests). All PRs must pass tests.
+We maintain comprehensive test coverage (430 frontend tests, 346 Rust tests). All PRs must pass tests.
 
 ### Running Tests
 
 ```bash
-# Frontend tests (335 tests)
+# Frontend tests (430 tests)
 pnpm test:run
 
-# Rust tests with ONNX Runtime (281 tests)
+# Rust tests with ONNX Runtime (346 tests)
 cd src-tauri
 ORT_DYLIB_PATH=$(../scripts/setup-ort.sh) cargo test
 
@@ -274,8 +274,8 @@ proptest! {
 │  ┌─────────────┐  ┌─────────────┐  ┌─────────────────────────┐  │
 │  │ Biomarkers  │  │ Transcripts │  │     EMR Integration     │  │
 │  │  (sidecar)  │  │   Results   │  │  ┌─────────┐ ┌───────┐  │  │
-│  │ ┌─────────┐ │  └─────────────┘  │  │ Medplum │ │Ollama │  │  │
-│  │ │ Vitality│ │                   │  │  (FHIR) │ │(SOAP) │  │  │
+│  │ ┌─────────┐ │  └─────────────┘  │  │ Medplum │ │ LLM   │  │  │
+│  │ │ Vitality│ │                   │  │  (FHIR) │ │Router │  │  │
 │  │ │Stability│ │                   │  └─────────┘ └───────┘  │  │
 │  │ │ YAMNet  │ │                   └─────────────────────────┘  │
 │  │ └─────────┘ │                                                 │
@@ -302,7 +302,8 @@ proptest! {
 | `enhancement/` | Speech denoising (GTCRN ONNX model) |
 | `emotion/` | Emotion detection (wav2small ONNX model) |
 | `biomarkers/` | Vocal biomarker analysis (vitality, stability, cough) |
-| `ollama` | LLM client for SOAP note generation |
+| `llm_client` | OpenAI-compatible LLM client for SOAP generation |
+| `ollama` | Re-exports from llm_client.rs (backward compat) |
 | `medplum` | Medplum FHIR client (OAuth, encounters, documents) |
 | `activity_log` | Structured PHI-safe activity logging |
 
@@ -333,7 +334,7 @@ See `src/types/index.ts` for TypeScript types that mirror Rust backend types:
 - `SessionState`, `SessionStatus` - Recording state
 - `TranscriptUpdate` - Real-time transcript data
 - `BiomarkerUpdate`, `AudioQualitySnapshot` - Metrics
-- `SoapNote`, `OllamaStatus` - LLM integration
+- `SoapNote`, `LLMStatus` (alias: `OllamaStatus`) - LLM integration
 - `AuthState`, `Encounter`, `Patient` - Medplum types
 
 ## Adding New Features

@@ -4,13 +4,11 @@ import { SyncStatusBar } from '../SyncStatusBar';
 import type {
   AudioQualitySnapshot,
   BiomarkerUpdate,
-  SoapNote,
   AuthState,
   SoapOptions,
   SoapFormat,
   SyncedEncounter,
   MultiPatientSoapResult,
-  PatientSoapNote,
 } from '../../types';
 import { DETAIL_LEVEL_LABELS } from '../../types';
 import { formatLocalDateTime } from '../../utils';
@@ -31,7 +29,7 @@ interface ReviewModeProps {
   soapResult: MultiPatientSoapResult | null;
   isGeneratingSoap: boolean;
   soapError: string | null;
-  ollamaConnected: boolean;
+  llmConnected: boolean;
   onGenerateSoap: () => void;
 
   // SOAP options
@@ -103,7 +101,7 @@ export const ReviewMode = memo(function ReviewMode({
   soapResult,
   isGeneratingSoap,
   soapError,
-  ollamaConnected,
+  llmConnected,
   onGenerateSoap,
   soapOptions,
   onSoapDetailLevelChange,
@@ -326,9 +324,9 @@ export const ReviewMode = memo(function ReviewMode({
               <button
                 className="btn-generate"
                 onClick={onGenerateSoap}
-                disabled={!ollamaConnected}
+                disabled={!llmConnected}
               >
-                {ollamaConnected ? 'Generate SOAP Note' : 'Ollama not connected'}
+                {llmConnected ? 'Generate SOAP Note' : 'LLM not connected'}
               </button>
             )}
 

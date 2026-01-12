@@ -38,12 +38,15 @@
    - Audio quality monitoring
 
 5. **Additional Features** - COMPLETE
-   - SOAP note generation via Ollama LLM
+   - SOAP note generation via OpenAI-compatible LLM router (Jan 2025)
+   - Multi-patient SOAP generation with auto-detection (Jan 2025)
    - Audio events in SOAP context (Jan 2025)
    - Medplum EMR integration (OAuth 2.0, FHIR)
+   - Auto-sync to EMR on session complete
    - Encounter history with calendar view
    - Audio preprocessing (DC removal, high-pass, AGC)
    - Conversation dynamics analysis
+   - Auto-session detection (listening mode)
 
 ---
 
@@ -52,10 +55,7 @@
 ```
 transcriptionapp/
 ├── docs/
-│   ├── SPEC.md              # Original POC specification (historical)
-│   ├── DEVELOPMENT.md       # This file
-│   └── REVIEW.md            # Code review notes
-├── transcribe-cli/          # M0: Headless CLI (reference implementation)
+│   └── DEVELOPMENT.md       # This file
 └── tauri-app/               # Main application
     ├── src/                 # React frontend
     ├── src-tauri/           # Rust backend
@@ -102,7 +102,7 @@ ORT_DYLIB_PATH=$(./scripts/setup-ort.sh) \
 
 ## Testing
 
-### Frontend Tests (335 tests)
+### Frontend Tests (430 tests)
 
 ```bash
 cd tauri-app
@@ -111,7 +111,7 @@ pnpm test              # Watch mode
 pnpm test:coverage     # With coverage
 ```
 
-### Rust Tests (281 tests)
+### Rust Tests (346 tests)
 
 ```bash
 cd tauri-app/src-tauri
@@ -126,8 +126,8 @@ ORT_DYLIB_PATH=$(../scripts/setup-ort.sh) cargo test
 |----------|---------|
 | [tauri-app/CLAUDE.md](../tauri-app/CLAUDE.md) | **Primary reference** - Comprehensive AI coder context |
 | [tauri-app/CONTRIBUTING.md](../tauri-app/CONTRIBUTING.md) | Development guidelines, code style, PR process |
+| [tauri-app/README.md](../tauri-app/README.md) | App-specific documentation |
 | [tauri-app/docs/adr/](../tauri-app/docs/adr/) | Architecture Decision Records |
-| [docs/SPEC.md](./SPEC.md) | Original POC specification (historical) |
 
 ---
 
@@ -179,4 +179,4 @@ Models are stored at `~/.transcriptionapp/models/`:
 - **Whisper.cpp**: https://github.com/ggerganov/whisper.cpp
 - **Tauri 2.x docs**: https://v2.tauri.app
 - **Medplum docs**: https://www.medplum.com/docs
-- **Ollama docs**: https://ollama.ai/docs
+- **OpenAI API**: https://platform.openai.com/docs/api-reference (LLM router uses this format)

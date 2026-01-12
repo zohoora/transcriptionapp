@@ -1,5 +1,5 @@
 import { memo } from 'react';
-import type { Device, OllamaStatus, AuthState, WhisperServerStatus } from '../types';
+import type { Device, LLMStatus, AuthState, WhisperServerStatus } from '../types';
 
 // Supported languages
 const LANGUAGES = [
@@ -19,9 +19,13 @@ export interface PendingSettings {
   device: string;
   diarization_enabled: boolean;
   max_speakers: number;
-  ollama_server_url: string;
-  ollama_model: string;
-  ollama_keep_alive: number;
+  // LLM Router settings (OpenAI-compatible API)
+  llm_router_url: string;
+  llm_api_key: string;
+  llm_client_id: string;
+  soap_model: string;
+  fast_model: string;
+  // Medplum EMR settings
   medplum_server_url: string;
   medplum_client_id: string;
   medplum_auto_sync: boolean;
@@ -50,10 +54,10 @@ interface SettingsDrawerProps {
   whisperServerModels: string[];
   onTestWhisperServer: () => void;
 
-  // Ollama settings
-  ollamaStatus: OllamaStatus | null;
-  ollamaModels: string[];
-  onTestOllama: () => void;
+  // LLM Router settings
+  llmStatus: LLMStatus | null;
+  llmModels: string[];
+  onTestLLM: () => void;
 
   // Medplum settings
   medplumConnected: boolean;
@@ -83,9 +87,9 @@ export const SettingsDrawer = memo(function SettingsDrawer({
   whisperServerStatus,
   whisperServerModels,
   onTestWhisperServer,
-  ollamaStatus,
-  ollamaModels,
-  onTestOllama,
+  llmStatus,
+  llmModels,
+  onTestLLM,
   medplumConnected,
   medplumError,
   onTestMedplum,
@@ -235,33 +239,57 @@ export const SettingsDrawer = memo(function SettingsDrawer({
                 <span className="settings-hint">Start recording automatically when speech with a greeting is detected</span>
               </div>
 
-              {/* Ollama / SOAP Note Settings */}
+              {/* LLM Router / SOAP Note Settings */}
               <div className="settings-divider" />
               <div className="settings-section-title">SOAP Note Generation</div>
 
               <div className="settings-group">
-                <label className="settings-label" htmlFor="ollama-url">Ollama Server</label>
+                <label className="settings-label" htmlFor="llm-router-url">LLM Router URL</label>
                 <input
-                  id="ollama-url"
+                  id="llm-router-url"
                   type="text"
                   className="settings-input"
-                  value={pendingSettings.ollama_server_url}
-                  onChange={(e) => onSettingsChange({ ...pendingSettings, ollama_server_url: e.target.value })}
-                  placeholder="http://localhost:11434"
+                  value={pendingSettings.llm_router_url}
+                  onChange={(e) => onSettingsChange({ ...pendingSettings, llm_router_url: e.target.value })}
+                  placeholder="http://localhost:8080"
                 />
               </div>
 
               <div className="settings-group">
-                <label className="settings-label" htmlFor="ollama-model">Model</label>
+                <label className="settings-label" htmlFor="llm-api-key">API Key</label>
+                <input
+                  id="llm-api-key"
+                  type="password"
+                  className="settings-input"
+                  value={pendingSettings.llm_api_key}
+                  onChange={(e) => onSettingsChange({ ...pendingSettings, llm_api_key: e.target.value })}
+                  placeholder="Enter API key"
+                />
+              </div>
+
+              <div className="settings-group">
+                <label className="settings-label" htmlFor="llm-client-id">LLM Client ID</label>
+                <input
+                  id="llm-client-id"
+                  type="text"
+                  className="settings-input"
+                  value={pendingSettings.llm_client_id}
+                  onChange={(e) => onSettingsChange({ ...pendingSettings, llm_client_id: e.target.value })}
+                  placeholder="clinic-001"
+                />
+              </div>
+
+              <div className="settings-group">
+                <label className="settings-label" htmlFor="soap-model">SOAP Model</label>
                 <select
-                  id="ollama-model"
+                  id="soap-model"
                   className="settings-select"
-                  value={pendingSettings.ollama_model}
-                  onChange={(e) => onSettingsChange({ ...pendingSettings, ollama_model: e.target.value })}
+                  value={pendingSettings.soap_model}
+                  onChange={(e) => onSettingsChange({ ...pendingSettings, soap_model: e.target.value })}
                 >
-                  <option value={pendingSettings.ollama_model}>{pendingSettings.ollama_model}</option>
-                  {ollamaModels
-                    .filter((m) => m !== pendingSettings.ollama_model)
+                  <option value={pendingSettings.soap_model}>{pendingSettings.soap_model}</option>
+                  {llmModels
+                    .filter((m) => m !== pendingSettings.soap_model)
                     .map((m) => (
                       <option key={m} value={m}>{m}</option>
                     ))}
@@ -269,34 +297,32 @@ export const SettingsDrawer = memo(function SettingsDrawer({
               </div>
 
               <div className="settings-group">
-                <label className="settings-label" htmlFor="ollama-keep-alive">
-                  Keep Model Loaded
-                  <span className="settings-hint">Faster responses but uses more RAM</span>
-                </label>
+                <label className="settings-label" htmlFor="fast-model">Fast Model (for greeting detection)</label>
                 <select
-                  id="ollama-keep-alive"
+                  id="fast-model"
                   className="settings-select"
-                  value={pendingSettings.ollama_keep_alive}
-                  onChange={(e) => onSettingsChange({ ...pendingSettings, ollama_keep_alive: parseInt(e.target.value, 10) })}
+                  value={pendingSettings.fast_model}
+                  onChange={(e) => onSettingsChange({ ...pendingSettings, fast_model: e.target.value })}
                 >
-                  <option value={-1}>Forever (fastest)</option>
-                  <option value={300}>5 minutes</option>
-                  <option value={1800}>30 minutes</option>
-                  <option value={3600}>1 hour</option>
-                  <option value={0}>Unload immediately (saves RAM)</option>
+                  <option value={pendingSettings.fast_model}>{pendingSettings.fast_model}</option>
+                  {llmModels
+                    .filter((m) => m !== pendingSettings.fast_model)
+                    .map((m) => (
+                      <option key={m} value={m}>{m}</option>
+                    ))}
                 </select>
               </div>
 
               <div className="settings-group ollama-status-group">
                 <div className="ollama-status">
-                  <span className={`status-indicator ${ollamaStatus?.connected ? 'connected' : 'disconnected'}`} />
+                  <span className={`status-indicator ${llmStatus?.connected ? 'connected' : 'disconnected'}`} />
                   <span className="status-text">
-                    {ollamaStatus?.connected
-                      ? `Connected (${ollamaModels.length} models)`
-                      : ollamaStatus?.error || 'Not connected'}
+                    {llmStatus?.connected
+                      ? `Connected (${llmModels.length} models)`
+                      : llmStatus?.error || 'Not connected'}
                   </span>
                 </div>
-                <button className="btn-test" onClick={onTestOllama}>
+                <button className="btn-test" onClick={onTestLLM}>
                   Test
                 </button>
               </div>

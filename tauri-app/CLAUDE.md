@@ -37,7 +37,8 @@ Rust Backend
 │   └── provider.rs  # ONNX-based denoising
 ├── preprocessing.rs # Audio preprocessing (DC removal, high-pass, AGC)
 ├── listening.rs     # Auto-session detection (VAD + Whisper + LLM greeting check)
-├── ollama.rs        # Ollama LLM client for SOAP note generation
+├── llm_client.rs    # OpenAI-compatible LLM router client for SOAP note generation
+├── ollama.rs        # Re-exports from llm_client.rs (backward compatibility)
 ├── medplum.rs       # Medplum FHIR client (OAuth, encounters, documents)
 ├── whisper_server.rs # Remote Whisper server client (faster-whisper)
 ├── activity_log.rs  # Structured activity logging (PHI-safe)
@@ -76,9 +77,9 @@ Rust Backend
 | `download_enhancement_model` | Download GTCRN enhancement model |
 | `download_yamnet_model` | Download YAMNet cough detection model |
 | `ensure_models` | Download all required models |
-| `check_ollama_status` | Check Ollama server connection and list models |
-| `list_ollama_models` | Get available models from Ollama |
-| `generate_soap_note` | Generate SOAP note from transcript via Ollama (legacy) |
+| `check_ollama_status` | Check LLM router connection and list models (OpenAI-compatible API) |
+| `list_ollama_models` | Get available models from LLM router |
+| `generate_soap_note` | Generate SOAP note from transcript via LLM router (legacy) |
 | `generate_soap_note_auto_detect` | Generate multi-patient SOAP notes with auto physician/patient detection |
 | `medplum_multi_patient_quick_sync` | Sync multi-patient session to Medplum (creates N encounters) |
 | `check_whisper_server_status` | Check remote Whisper server connection |
@@ -192,24 +193,31 @@ Note: Some diarization tests require ONNX Runtime. Set `ORT_DYLIB_PATH` environm
 
 ## SOAP Note Generation (Dec 2024, Updated Jan 2025)
 
-Integration with Ollama LLM for generating structured SOAP (Subjective, Objective, Assessment, Plan) notes from clinical transcripts.
+Integration with OpenAI-compatible LLM router for generating structured SOAP (Subjective, Objective, Assessment, Plan) notes from clinical transcripts.
 
 **Features**
-- Configurable Ollama server URL and model selection
-- Default model: qwen3:4b
+- OpenAI-compatible API (`/v1/chat/completions`, `/v1/models`)
+- Configurable LLM router URL, API key, and client ID
+- Separate model selection for SOAP generation and fast tasks (greeting detection)
 - "Generate SOAP Note" button appears when session is completed
 - Collapsible SOAP section with copy functionality
 - Connection status indicator in settings
 - **Audio events included** (coughs, laughs, sneezes) with confidence scores
 
 **Architecture**
-- `ollama.rs`: Async HTTP client using reqwest for Ollama API
+- `llm_client.rs`: Async HTTP client using reqwest for OpenAI-compatible API
+- `ollama.rs`: Re-exports from `llm_client.rs` for backward compatibility
 - API endpoints used:
-  - `GET /api/tags` - List available models
-  - `POST /api/generate` - Generate SOAP note (stream: false)
+  - `GET /v1/models` - List available models
+  - `POST /v1/chat/completions` - Generate SOAP note (stream: false)
+- Authentication headers:
+  - `Authorization: Bearer <api_key>` - API authentication
+  - `X-Client-Id: <client_id>` - Client identification (e.g., "clinic-001")
+  - `X-Clinic-Task: <task>` - Task type ("soap-generation", "greeting-check", "prewarm")
 - **JSON output format** for reliable parsing (not text markers)
-- Handles Qwen's `<think>` blocks and markdown code fences
+- Handles various LLM response formats (`<think>` blocks, markdown code fences)
 - Type-safe parsing with `serde_json`
+- Exponential backoff retry for transient failures
 
 **Audio Events in SOAP Generation (Jan 2025)**
 - YAMNet-detected audio events are passed to the LLM for clinical context
@@ -244,17 +252,20 @@ Rules:
 - Output ONLY the JSON object, no markdown, no explanation
 ```
 
-Note: The prompt is model-agnostic (works with any Ollama model). The response parser handles Qwen's `<think>` blocks and markdown code fences gracefully.
+Note: The prompt is model-agnostic (works with any OpenAI-compatible LLM). The response parser handles various LLM response formats gracefully.
 
 **Configuration**
-- `ollama_server_url`: Ollama server address (default: `http://localhost:11434`)
-- `ollama_model`: Model to use (default: `qwen3:4b`)
+- `llm_router_url`: LLM router address (default: `http://localhost:4000`)
+- `llm_api_key`: API key for authentication
+- `llm_client_id`: Client identifier for tracking (e.g., "clinic-001")
+- `soap_model`: Model for SOAP generation (e.g., "gpt-4", "claude-3-opus")
+- `fast_model`: Model for quick tasks like greeting detection (e.g., "gpt-3.5-turbo")
 - Settings persisted in `~/.transcriptionapp/config.json`
 
 **UI Flow**
 1. Complete a recording session with transcript
 2. SOAP Note section appears below transcript
-3. Click "Generate SOAP Note" (requires Ollama connection)
+3. Click "Generate SOAP Note" (requires LLM router connection)
 4. Loading spinner during generation (~10-30s depending on model)
 5. Structured display of S/O/A/P sections
 6. Copy button to copy entire note
@@ -271,6 +282,56 @@ YAMNet (biomarkers thread)
 ```
 
 ## Recent Changes (Jan 2025)
+
+### LLM Router Migration - OpenAI-Compatible API (Jan 12, 2025)
+Migrated from Ollama native API to OpenAI-compatible LLM router API for SOAP note generation and greeting detection.
+
+**Why the Change**
+- OpenAI-compatible API is industry standard, works with many LLM providers
+- Supports authentication headers for multi-tenant deployments
+- Enables routing to different models for different tasks (SOAP vs greeting check)
+- Better error handling with exponential backoff retry
+
+**API Changes**
+| Old (Ollama) | New (OpenAI-compatible) |
+|--------------|-------------------------|
+| `GET /api/tags` | `GET /v1/models` |
+| `POST /api/generate` | `POST /v1/chat/completions` |
+| No auth | `Authorization: Bearer <key>` |
+| N/A | `X-Client-Id: <client_id>` |
+| N/A | `X-Clinic-Task: <task>` |
+
+**Configuration Changes**
+| Old Setting | New Setting |
+|-------------|-------------|
+| `ollama_server_url` | `llm_router_url` |
+| `ollama_model` | `soap_model` |
+| N/A | `llm_api_key` |
+| N/A | `llm_client_id` |
+| N/A | `fast_model` |
+
+**Files Modified**
+- `src-tauri/src/llm_client.rs` - New OpenAI-compatible client (new file)
+- `src-tauri/src/ollama.rs` - Now re-exports from `llm_client.rs`
+- `src-tauri/src/config.rs` - New settings fields
+- `src-tauri/src/commands/ollama.rs` - Updated for new config
+- `src-tauri/src/listening.rs` - Uses fast_model for greeting check
+- `src/types/index.ts` - New settings fields, `LLMStatus` type alias
+- `src/hooks/useOllamaConnection.ts` - Updated testConnection signature
+- `src/hooks/useSettings.ts` - New pending settings fields
+- `src/components/SettingsDrawer.tsx` - API Key input, model selects
+- Updated all test files with new field names
+
+**Backward Compatibility**
+- Command names unchanged (`check_ollama_status`, `list_ollama_models`, etc.)
+- TypeScript types have aliases (`OllamaStatus` = `LLMStatus`)
+- Hook names unchanged (`useOllamaConnection`)
+- Existing configs will need manual update to new field names
+
+**Test Coverage**
+- All 430 frontend tests passing
+- All Rust tests passing
+- Updated tests: `useSettings.test.ts`, `useOllamaConnection.test.ts`, `SettingsDrawer.test.tsx`, `ReviewMode.test.tsx`, `App.test.tsx`
 
 ### Multi-Patient SOAP Note Generation (Jan 9, 2025)
 Support for multi-patient visits (up to 4 patients) where one recording session produces separate SOAP notes for each patient. The LLM automatically detects the number of patients and identifies the physician from the transcript.
@@ -301,7 +362,7 @@ interface PatientSoapNote {
 ```
 
 ```rust
-// Backend types (src-tauri/src/ollama.rs)
+// Backend types (src-tauri/src/llm_client.rs, re-exported via ollama.rs)
 pub struct MultiPatientSoapResult {
     pub notes: Vec<PatientSoapNote>,
     pub physician_speaker: Option<String>,
@@ -352,7 +413,8 @@ The multi-patient prompt instructs the LLM to:
 - `App.tsx`: Updated sync flow to handle multi-patient case
 
 **Files Modified**
-- `src-tauri/src/ollama.rs` - Multi-patient types, prompt builder, parser
+- `src-tauri/src/llm_client.rs` - Multi-patient types, prompt builder, parser (new file)
+- `src-tauri/src/ollama.rs` - Re-exports from llm_client.rs for backward compatibility
 - `src-tauri/src/commands/ollama.rs` - New `generate_soap_note_auto_detect` command
 - `src-tauri/src/commands/medplum.rs` - New `medplum_multi_patient_quick_sync` command
 - `src-tauri/src/lib.rs` - Registered new commands
@@ -423,7 +485,7 @@ Idle (auto_start=true)
 **Backend Architecture**
 - `listening.rs`: Audio monitoring, VAD, Whisper transcription, LLM greeting check
 - `commands/listening.rs`: Tauri commands and shared state with initial audio buffer
-- `ollama.rs`: `check_greeting()` method for LLM-based greeting detection
+- `llm_client.rs`: `check_greeting()` method for LLM-based greeting detection (uses fast_model)
 - `pipeline.rs`: Accepts `initial_audio_buffer` to prepend captured audio
 
 **Frontend Architecture**
@@ -754,9 +816,9 @@ Resampler (16kHz) → DC Removal → High-Pass Filter → AGC → VAD → Enhanc
 - Status types: Pass, Fail, Warning, Skipped
 - Extensible for future features (see module docs)
 
-### Test Updates (Jan 9, 2025)
-- All frontend tests passing (429 tests across 20+ test files)
-- All Rust tests passing (346 tests, including ollama and multi-patient tests)
+### Test Updates (Jan 12, 2025)
+- All frontend tests passing (430 tests across 21 test files)
+- All Rust tests passing (including LLM client and multi-patient tests)
 - Mode component tests: RecordingMode 23, ReviewMode 49
 - Hook tests: useWhisperModels 12, useOllamaConnection 10, useDevices 10, useSettings 12, useSoapNote 16, useChecklist 11, useMedplumSync 9
 - Component tests: SettingsDrawer 44, HistoryWindow 36, AuthProvider 8, Header 6, AudioQualitySection 12
@@ -765,11 +827,19 @@ Resampler (16kHz) → DC Removal → High-Pass Filter → AGC → VAD → Enhanc
 - Audio preprocessing tests: 15+ Rust unit tests (DC, high-pass, AGC)
 - SOAP generation tests: 21 Rust tests including 6 new audio event tests
 
-**Test Fixes Applied:**
+**Test Fixes Applied (Jan 12, 2025 - LLM Router Migration):**
+- Updated `mockSettings` in all test files with new LLM router fields
+- Updated `testConnection` signature in `useOllamaConnection.test.ts` (6 params)
+- Fixed prewarm duplicate call prevention in `useOllamaConnection.ts`
+- Changed "LLM Client ID" label to avoid conflict with Medplum "Client ID"
+- Updated App.test.tsx to use "Server Model" instead of "Model"
+- Removed unused imports/variables causing TypeScript errors
+
+**Previous Test Fixes:**
 - Fixed `vi.useFakeTimers()` isolation issues causing test timeouts
 - HistoryWindow: Removed timer-based assertions, added proper `beforeEach`/`afterEach` cleanup
 - AuthProvider: Simplified tests to avoid fake timer conflicts with async React operations
-- SettingsDrawer: Fixed duplicate element queries by differentiating Whisper/Ollama model counts
+- SettingsDrawer: Fixed duplicate element queries by differentiating Whisper/LLM model counts
 - useWhisperModels: Switched from `mockResolvedValueOnce` to `mockImplementation` pattern
 - Added mocks for AuthProvider/useAuth hook in test setup
 - Updated mode tests to remove cough display assertions (moved to LLM)
@@ -801,15 +871,24 @@ interface Settings {
   preprocessing_enabled: boolean;      // Audio preprocessing (default: true)
   preprocessing_highpass_hz: number;   // High-pass filter cutoff (default: 80)
   preprocessing_agc_target_rms: number; // AGC target RMS (default: 0.1)
-  ollama_server_url: string;  // e.g., 'http://localhost:11434'
-  ollama_model: string;       // e.g., 'qwen3:4b'
+  // LLM Router settings (OpenAI-compatible API)
+  llm_router_url: string;     // e.g., 'http://localhost:4000' or 'http://172.16.100.45:4000'
+  llm_api_key: string;        // API key for authentication
+  llm_client_id: string;      // Client identifier (e.g., 'clinic-001')
+  soap_model: string;         // Model for SOAP generation (e.g., 'gpt-4', 'claude-3-opus')
+  fast_model: string;         // Model for quick tasks (e.g., 'gpt-3.5-turbo', 'claude-3-haiku')
+  // Medplum EMR settings
   medplum_server_url: string; // e.g., 'http://localhost:8103'
   medplum_client_id: string;  // OAuth client ID from Medplum
   medplum_auto_sync: boolean; // Auto-sync encounters after recording
   // Whisper server (remote transcription)
   whisper_mode: 'local' | 'remote'; // 'local' uses local model, 'remote' uses server
-  whisper_server_url: string; // e.g., 'http://192.168.50.149:8000'
+  whisper_server_url: string; // e.g., 'http://172.16.100.45:8001'
   whisper_server_model: string; // e.g., 'large-v3-turbo'
+  // SOAP generation options
+  soap_detail_level: number;  // 1-10, controls verbosity
+  soap_format: 'standard' | 'problem_based' | 'systems_based';
+  soap_custom_instructions: string;
   // Auto-session detection (listening mode)
   auto_start_enabled: boolean;    // Enable automatic session start on greeting detection
   greeting_sensitivity: number;   // LLM confidence threshold (0.0-1.0, default: 0.7)
@@ -1022,10 +1101,11 @@ See `docs/adr/` for Architecture Decision Records:
 - 0006: Speaker diarization (online clustering)
 - 0007: Biomarker analysis (vitality, stability, cough detection)
 - 0008: Medplum EMR integration (OAuth, FHIR resources)
-- 0009: Ollama SOAP note generation (JSON output)
+- 0009: LLM SOAP note generation (OpenAI-compatible API, JSON output)
 - 0010: Audio preprocessing (DC removal, high-pass, AGC)
 - 0011: Auto-session detection (optimistic recording)
 - 0012: Multi-patient SOAP generation (LLM auto-detection)
+- 0013: LLM Router migration (Ollama → OpenAI-compatible API)
 
 ## Frontend Components
 
@@ -1064,7 +1144,7 @@ All TypeScript types that mirror Rust backend structures:
 - `SessionState`, `SessionStatus` - Recording state machine
 - `TranscriptUpdate` - Real-time transcript data
 - `BiomarkerUpdate`, `AudioQualitySnapshot` - Metrics events
-- `SoapNote`, `MultiPatientSoapResult`, `PatientSoapNote`, `OllamaStatus` - LLM integration
+- `SoapNote`, `MultiPatientSoapResult`, `PatientSoapNote`, `LLMStatus` (alias: `OllamaStatus`) - LLM integration
 - `AuthState`, `Encounter`, `Patient`, `SyncResult`, `SyncedEncounter`, `MultiPatientSyncResult`, `PatientSyncInfo` - Medplum types
 - `CheckResult`, `ChecklistResult` - Pre-flight checks
 
@@ -1083,11 +1163,11 @@ Reusable React hooks for state management:
 |------|---------|
 | `useSessionState` | Recording session state, transcript, biomarkers, audio quality |
 | `useChecklist` | Pre-flight checks, model status, download handling |
-| `useSoapNote` | SOAP note generation via Ollama |
+| `useSoapNote` | SOAP note generation via LLM router |
 | `useMedplumSync` | Medplum EMR sync with encounter tracking and SOAP updates |
 | `useSettings` | Settings management with pending changes tracking |
 | `useDevices` | Audio input device listing and selection |
-| `useOllamaConnection` | Ollama server connection status and testing |
+| `useOllamaConnection` | LLM router connection status and testing (name kept for backward compatibility) |
 | `useWhisperModels` | Whisper model listing, downloading, and testing |
 | `useAutoDetection` | Auto-session detection via listening mode (VAD + greeting check) |
 
@@ -1098,12 +1178,12 @@ Reusable React hooks for state management:
 - `isAddingSoap` - True while adding SOAP to encounter
 - `resetSyncState()` - Clears sync state for new session
 
-## Current Project Status (Jan 9, 2025)
+## Current Project Status (Jan 12, 2025)
 
 ### What's Working
 - **Local transcription**: Full Whisper integration with 17 model options
 - **Remote transcription**: faster-whisper-server support with anti-hallucination params
-- **SOAP note generation**: Ollama LLM integration with audio event context
+- **SOAP note generation**: OpenAI-compatible LLM router with audio event context
 - **Multi-patient SOAP**: LLM auto-detects patients vs physician, generates separate notes
 - **Medplum EMR sync**: OAuth + FHIR encounters, documents, audio storage
 - **Multi-patient sync**: Creates N patients and N encounters for multi-patient visits
@@ -1112,16 +1192,21 @@ Reusable React hooks for state management:
 - **History window**: Browse past encounters with transcript/SOAP/audio playback
 - **Biomarkers**: Vitality, stability, conversation dynamics, audio quality metrics
 - **Speaker diarization**: Online clustering for multi-speaker detection
-- **Test coverage**: 429 frontend tests, 346 Rust tests all passing
+- **Test coverage**: 430 frontend tests, Rust tests all passing
 
 ### External Services Configuration
 The app connects to external services on the local network:
 
 | Service | Default URL | Purpose |
 |---------|-------------|---------|
-| Whisper Server | `http://192.168.50.149:8001` | Remote transcription (faster-whisper) |
-| Ollama | `http://localhost:11434` | SOAP note generation |
-| Medplum | `http://localhost:8103` | EMR/FHIR storage |
+| Whisper Server | `http://172.16.100.45:8001` | Remote transcription (faster-whisper) |
+| LLM Router | `http://172.16.100.45:4000` | SOAP note generation (OpenAI-compatible API) |
+| Medplum | `http://172.16.100.45:8103` | EMR/FHIR storage |
+
+**LLM Router Authentication:**
+- API Key: Required for authentication (`Authorization: Bearer <key>`)
+- Client ID: Identifies the clinic/client (`X-Client-Id` header)
+- Task headers: `X-Clinic-Task` indicates operation type
 
 ### Known Issues / Areas for Improvement
 1. **Hallucination in silence**: Anti-hallucination params added but not fully tested
@@ -1154,8 +1239,9 @@ cd src-tauri && cargo test  # Rust
 |------|-----------------|
 | Add new setting | `config.rs`, `types/index.ts`, `useSettings.ts`, `SettingsDrawer.tsx` |
 | Modify transcription | `pipeline.rs`, `whisper_server.rs` (remote), `transcription.rs` (local) |
-| Change SOAP prompt | `ollama.rs` (`build_multi_patient_soap_prompt()`) |
-| Modify multi-patient SOAP | `ollama.rs`, `useSoapNote.ts`, `ReviewMode.tsx`, `types/index.ts` |
+| Change SOAP prompt | `llm_client.rs` (`build_multi_patient_soap_prompt()`) |
+| Modify LLM integration | `llm_client.rs`, `commands/ollama.rs`, `useOllamaConnection.ts` |
+| Modify multi-patient SOAP | `llm_client.rs`, `useSoapNote.ts`, `ReviewMode.tsx`, `types/index.ts` |
 | Add new biomarker | `biomarkers/mod.rs`, `BiomarkersSection.tsx` |
 | Modify UI modes | `components/modes/` (ReadyMode, RecordingMode, ReviewMode) |
 | Add Tauri command | `commands/*.rs`, register in `lib.rs` |

@@ -16,17 +16,17 @@ pub struct Settings {
     // Diarization settings
     pub diarization_enabled: bool,
     pub max_speakers: usize,
-    // Ollama settings for SOAP note generation
-    #[serde(default = "default_ollama_url")]
-    pub ollama_server_url: String,
-    #[serde(default = "default_ollama_model")]
-    pub ollama_model: String,
-    /// How long to keep the Ollama model loaded in memory (seconds)
-    /// -1 = keep loaded indefinitely (fastest, uses more RAM)
-    /// 0 = unload immediately after each request
-    /// Positive values = seconds to keep loaded (default: -1)
-    #[serde(default = "default_ollama_keep_alive")]
-    pub ollama_keep_alive: i32,
+    // LLM Router settings for SOAP note generation
+    #[serde(default = "default_llm_router_url")]
+    pub llm_router_url: String,
+    #[serde(default = "default_llm_api_key")]
+    pub llm_api_key: String,
+    #[serde(default = "default_llm_client_id")]
+    pub llm_client_id: String,
+    #[serde(default = "default_soap_model")]
+    pub soap_model: String,
+    #[serde(default = "default_fast_model")]
+    pub fast_model: String,
     // Medplum EMR settings
     #[serde(default = "default_medplum_url")]
     pub medplum_server_url: String,
@@ -57,8 +57,24 @@ pub struct Settings {
     pub min_speech_duration_ms: Option<u32>,
 }
 
-fn default_ollama_keep_alive() -> i32 {
-    -1 // Keep loaded indefinitely by default for fastest response
+fn default_llm_router_url() -> String {
+    "http://127.0.0.1:8080".to_string()
+}
+
+fn default_llm_api_key() -> String {
+    "ai-scribe-key".to_string()
+}
+
+fn default_llm_client_id() -> String {
+    "ai-scribe".to_string()
+}
+
+fn default_soap_model() -> String {
+    "soap-model".to_string()
+}
+
+fn default_fast_model() -> String {
+    "fast-model".to_string()
 }
 
 // Auto-detection defaults
@@ -91,13 +107,6 @@ fn default_whisper_server_model() -> String {
     "large-v3-turbo".to_string()
 }
 
-fn default_ollama_url() -> String {
-    "http://172.16.100.45:11434".to_string()
-}
-
-fn default_ollama_model() -> String {
-    "gpt-oss:20b".to_string()
-}
 
 fn default_medplum_url() -> String {
     "http://172.16.100.45:8103".to_string()
@@ -125,9 +134,11 @@ impl Default for Settings {
             max_utterance_ms: 25000,
             diarization_enabled: false,
             max_speakers: 10,
-            ollama_server_url: default_ollama_url(),
-            ollama_model: default_ollama_model(),
-            ollama_keep_alive: default_ollama_keep_alive(),
+            llm_router_url: default_llm_router_url(),
+            llm_api_key: default_llm_api_key(),
+            llm_client_id: default_llm_client_id(),
+            soap_model: default_soap_model(),
+            fast_model: default_fast_model(),
             medplum_server_url: default_medplum_url(),
             medplum_client_id: default_medplum_client_id(),
             medplum_auto_sync: default_medplum_auto_sync(),
@@ -298,13 +309,17 @@ pub struct Config {
     pub preprocessing_highpass_hz: u32,
     #[serde(default = "default_preprocessing_agc_target_rms")]
     pub preprocessing_agc_target_rms: f32,
-    // Ollama settings for SOAP note generation
-    #[serde(default = "default_ollama_url")]
-    pub ollama_server_url: String,
-    #[serde(default = "default_ollama_model")]
-    pub ollama_model: String,
-    #[serde(default = "default_ollama_keep_alive")]
-    pub ollama_keep_alive: i32,
+    // LLM Router settings for SOAP note generation
+    #[serde(default = "default_llm_router_url")]
+    pub llm_router_url: String,
+    #[serde(default = "default_llm_api_key")]
+    pub llm_api_key: String,
+    #[serde(default = "default_llm_client_id")]
+    pub llm_client_id: String,
+    #[serde(default = "default_soap_model")]
+    pub soap_model: String,
+    #[serde(default = "default_fast_model")]
+    pub fast_model: String,
     // Medplum EMR settings
     #[serde(default = "default_medplum_url")]
     pub medplum_server_url: String,
@@ -387,9 +402,11 @@ impl Default for Config {
             preprocessing_enabled: default_preprocessing_enabled(),
             preprocessing_highpass_hz: default_preprocessing_highpass_hz(),
             preprocessing_agc_target_rms: default_preprocessing_agc_target_rms(),
-            ollama_server_url: default_ollama_url(),
-            ollama_model: default_ollama_model(),
-            ollama_keep_alive: default_ollama_keep_alive(),
+            llm_router_url: default_llm_router_url(),
+            llm_api_key: default_llm_api_key(),
+            llm_client_id: default_llm_client_id(),
+            soap_model: default_soap_model(),
+            fast_model: default_fast_model(),
             medplum_server_url: default_medplum_url(),
             medplum_client_id: default_medplum_client_id(),
             medplum_auto_sync: default_medplum_auto_sync(),
@@ -533,9 +550,11 @@ impl Config {
             max_utterance_ms: self.max_utterance_ms,
             diarization_enabled: self.diarization_enabled,
             max_speakers: self.max_speakers,
-            ollama_server_url: self.ollama_server_url.clone(),
-            ollama_model: self.ollama_model.clone(),
-            ollama_keep_alive: self.ollama_keep_alive,
+            llm_router_url: self.llm_router_url.clone(),
+            llm_api_key: self.llm_api_key.clone(),
+            llm_client_id: self.llm_client_id.clone(),
+            soap_model: self.soap_model.clone(),
+            fast_model: self.fast_model.clone(),
             medplum_server_url: self.medplum_server_url.clone(),
             medplum_client_id: self.medplum_client_id.clone(),
             medplum_auto_sync: self.medplum_auto_sync,
@@ -562,9 +581,11 @@ impl Config {
         self.max_utterance_ms = settings.max_utterance_ms;
         self.diarization_enabled = settings.diarization_enabled;
         self.max_speakers = settings.max_speakers;
-        self.ollama_server_url = settings.ollama_server_url.clone();
-        self.ollama_model = settings.ollama_model.clone();
-        self.ollama_keep_alive = settings.ollama_keep_alive;
+        self.llm_router_url = settings.llm_router_url.clone();
+        self.llm_api_key = settings.llm_api_key.clone();
+        self.llm_client_id = settings.llm_client_id.clone();
+        self.soap_model = settings.soap_model.clone();
+        self.fast_model = settings.fast_model.clone();
         self.medplum_server_url = settings.medplum_server_url.clone();
         self.medplum_client_id = settings.medplum_client_id.clone();
         self.medplum_auto_sync = settings.medplum_auto_sync;
@@ -664,9 +685,11 @@ mod tests {
             max_utterance_ms: 30000,
             diarization_enabled: true,
             max_speakers: 5,
-            ollama_server_url: "http://192.168.1.100:11434".to_string(),
-            ollama_model: "llama3:8b".to_string(),
-            ollama_keep_alive: 300,
+            llm_router_url: "http://192.168.1.100:4000".to_string(),
+            llm_api_key: "test-api-key".to_string(),
+            llm_client_id: "test-client".to_string(),
+            soap_model: "soap-model".to_string(),
+            fast_model: "fast-model".to_string(),
             medplum_server_url: "http://192.168.1.100:8103".to_string(),
             medplum_client_id: "test-client".to_string(),
             medplum_auto_sync: false,
@@ -693,8 +716,11 @@ mod tests {
         assert_eq!(config.max_utterance_ms, 30000);
         assert!(config.diarization_enabled);
         assert_eq!(config.max_speakers, 5);
-        assert_eq!(config.ollama_server_url, "http://192.168.1.100:11434");
-        assert_eq!(config.ollama_model, "llama3:8b");
+        assert_eq!(config.llm_router_url, "http://192.168.1.100:4000");
+        assert_eq!(config.llm_api_key, "test-api-key");
+        assert_eq!(config.llm_client_id, "test-client");
+        assert_eq!(config.soap_model, "soap-model");
+        assert_eq!(config.fast_model, "fast-model");
         assert_eq!(config.medplum_server_url, "http://192.168.1.100:8103");
         assert_eq!(config.medplum_client_id, "test-client");
         assert!(!config.medplum_auto_sync);
@@ -756,9 +782,11 @@ mod tests {
             max_utterance_ms: 25000,
             diarization_enabled: false,
             max_speakers: 10,
-            ollama_server_url: default_ollama_url(),
-            ollama_model: default_ollama_model(),
-            ollama_keep_alive: default_ollama_keep_alive(),
+            llm_router_url: default_llm_router_url(),
+            llm_api_key: default_llm_api_key(),
+            llm_client_id: default_llm_client_id(),
+            soap_model: default_soap_model(),
+            fast_model: default_fast_model(),
             medplum_server_url: default_medplum_url(),
             medplum_client_id: String::new(),
             medplum_auto_sync: true,
@@ -781,14 +809,20 @@ mod tests {
     }
 
     #[test]
-    fn test_ollama_defaults() {
+    fn test_llm_router_defaults() {
         let config = Config::default();
-        assert_eq!(config.ollama_server_url, "http://172.16.100.45:11434");
-        assert_eq!(config.ollama_model, "gpt-oss:20b");
+        assert_eq!(config.llm_router_url, "http://127.0.0.1:8080");
+        assert_eq!(config.llm_api_key, "ai-scribe-key");
+        assert_eq!(config.llm_client_id, "ai-scribe");
+        assert_eq!(config.soap_model, "soap-model");
+        assert_eq!(config.fast_model, "fast-model");
 
         let settings = Settings::default();
-        assert_eq!(settings.ollama_server_url, "http://172.16.100.45:11434");
-        assert_eq!(settings.ollama_model, "gpt-oss:20b");
+        assert_eq!(settings.llm_router_url, "http://127.0.0.1:8080");
+        assert_eq!(settings.llm_api_key, "ai-scribe-key");
+        assert_eq!(settings.llm_client_id, "ai-scribe");
+        assert_eq!(settings.soap_model, "soap-model");
+        assert_eq!(settings.fast_model, "fast-model");
     }
 
     #[test]
@@ -1137,7 +1171,9 @@ mod tests {
         assert_eq!(config.whisper_model, deserialized.whisper_model);
         assert_eq!(config.language, deserialized.language);
         assert_eq!(config.vad_threshold, deserialized.vad_threshold);
-        assert_eq!(config.ollama_server_url, deserialized.ollama_server_url);
+        assert_eq!(config.llm_router_url, deserialized.llm_router_url);
+        assert_eq!(config.llm_api_key, deserialized.llm_api_key);
+        assert_eq!(config.soap_model, deserialized.soap_model);
         assert_eq!(config.medplum_server_url, deserialized.medplum_server_url);
     }
 

@@ -1,8 +1,10 @@
-# ADR-0009: Ollama SOAP Note Generation
+# ADR-0009: LLM SOAP Note Generation
 
 ## Status
 
-Accepted (Updated Jan 2025: Audio Events)
+Accepted (Updated Jan 2025: Audio Events, Updated Jan 12 2025: OpenAI-compatible API)
+
+**Note**: See ADR-0013 for the migration from Ollama native API to OpenAI-compatible LLM router.
 
 ## Context
 
@@ -16,7 +18,7 @@ Physicians spend significant time converting transcribed conversations into stru
 
 ## Decision
 
-Integrate with **Ollama** for local LLM inference with JSON-structured output.
+Integrate with **OpenAI-compatible LLM router** for LLM inference with JSON-structured output.
 
 ### Architecture
 ```
@@ -26,12 +28,17 @@ Audio Events (from YAMNet) ─────────┤
 - Cough at 0:30 (88%)               │
 - Laughter at 1:05 (82%)            ▼
                               ┌─────────────────┐
-                              │   ollama.rs     │
-                              │ ┌─────────────┐ │
-                              │ │ HTTP Client │ │──> Ollama Server (localhost:11434)
-                              │ └─────────────┘ │            │
-                              │ ┌─────────────┐ │            ▼
-                              │ │JSON Parser  │<──── LLM Response (Qwen, Llama, etc.)
+                              │ llm_client.rs   │
+                              │ ┌─────────────┐ │     Authorization: Bearer <key>
+                              │ │ HTTP Client │ │──>  X-Client-Id: <client_id>
+                              │ └─────────────┘ │     X-Clinic-Task: soap-generation
+                              │       │         │              │
+                              │       ▼         │              ▼
+                              │ POST /v1/chat/  │     LLM Router (OpenAI-compatible)
+                              │   completions   │              │
+                              │       │         │              ▼
+                              │ ┌─────────────┐ │     LLM Response (GPT, Claude, etc.)
+                              │ │JSON Parser  │<────────────────┘
                               │ └─────────────┘ │
                               └─────────────────┘
                                       │
@@ -127,13 +134,12 @@ pub struct AudioEvent {
 
 ### Negative
 
-- Requires Ollama installation (user setup step)
-- Model download can be large (4GB+ for quality models)
+- Requires LLM router infrastructure (see ADR-0013)
 - Generation takes 10-30 seconds depending on model/hardware
 - LLM output not guaranteed to be medically accurate (for review only)
 
 ## References
 
-- [Ollama API Documentation](https://github.com/ollama/ollama/blob/main/docs/api.md)
-- [Qwen3 Model](https://huggingface.co/Qwen/Qwen3-4B)
+- [OpenAI API Reference](https://platform.openai.com/docs/api-reference/chat) - API format used
+- [ADR-0013: LLM Router Migration](./0013-llm-router-migration.md) - Migration to OpenAI-compatible API
 - [SOAP Note Format](https://en.wikipedia.org/wiki/SOAP_note)

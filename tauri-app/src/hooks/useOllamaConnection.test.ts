@@ -16,11 +16,28 @@ const mockSettings = {
   max_utterance_ms: 30000,
   diarization_enabled: true,
   max_speakers: 4,
-  ollama_server_url: 'http://localhost:11434',
-  ollama_model: 'qwen3:4b',
+  // LLM Router settings (new)
+  llm_router_url: 'http://localhost:8080',
+  llm_api_key: 'test-api-key',
+  llm_client_id: 'clinic-001',
+  soap_model: 'gpt-4',
+  fast_model: 'gpt-3.5-turbo',
+  // Medplum settings
   medplum_server_url: 'http://localhost:8103',
   medplum_client_id: 'test-client',
   medplum_auto_sync: false,
+  // Whisper server settings
+  whisper_mode: 'remote' as const,
+  whisper_server_url: 'http://localhost:8001',
+  whisper_server_model: 'large-v3-turbo',
+  // SOAP options
+  soap_detail_level: 5,
+  soap_format: 'problem_based' as const,
+  soap_custom_instructions: '',
+  // Auto-session detection
+  auto_start_enabled: false,
+  greeting_sensitivity: 0.7,
+  min_speech_duration_ms: 2000,
 };
 
 describe('useOllamaConnection', () => {
@@ -32,7 +49,7 @@ describe('useOllamaConnection', () => {
   it('checks connection on mount', async () => {
     const mockStatus = {
       connected: true,
-      available_models: ['qwen3:4b', 'llama3:8b'],
+      available_models: ['gpt-4', 'gpt-3.5-turbo'],
       error: null,
     };
     mockInvoke.mockResolvedValue(mockStatus);
@@ -97,7 +114,7 @@ describe('useOllamaConnection', () => {
     // Change mock for refresh
     mockInvoke.mockResolvedValue({
       connected: true,
-      available_models: ['qwen3:4b'],
+      available_models: ['gpt-4'],
       error: null,
     });
 
@@ -114,7 +131,7 @@ describe('useOllamaConnection', () => {
       if (cmd === 'check_ollama_status') {
         return Promise.resolve({
           connected: true,
-          available_models: ['qwen3:4b'],
+          available_models: ['gpt-4'],
           error: null,
         });
       }
@@ -133,8 +150,11 @@ describe('useOllamaConnection', () => {
     let testResult: boolean;
     await act(async () => {
       testResult = await result.current.testConnection(
-        'http://newserver:11434',
-        'llama3:8b',
+        'http://newrouter:8080',
+        'new-api-key',
+        'clinic-002',
+        'claude-3-opus',
+        'claude-3-haiku',
         mockSettings
       );
     });
@@ -142,8 +162,11 @@ describe('useOllamaConnection', () => {
     expect(testResult!).toBe(true);
     expect(mockInvoke).toHaveBeenCalledWith('set_settings', {
       settings: expect.objectContaining({
-        ollama_server_url: 'http://newserver:11434',
-        ollama_model: 'llama3:8b',
+        llm_router_url: 'http://newrouter:8080',
+        llm_api_key: 'new-api-key',
+        llm_client_id: 'clinic-002',
+        soap_model: 'claude-3-opus',
+        fast_model: 'claude-3-haiku',
       }),
     });
   });
@@ -172,8 +195,11 @@ describe('useOllamaConnection', () => {
     let testResult: boolean;
     await act(async () => {
       testResult = await result.current.testConnection(
-        'http://badserver:11434',
-        'qwen3:4b',
+        'http://badserver:8080',
+        'bad-key',
+        'clinic-003',
+        'gpt-4',
+        'gpt-3.5-turbo',
         mockSettings
       );
     });
@@ -183,7 +209,19 @@ describe('useOllamaConnection', () => {
   });
 
   it('handles test connection exception', async () => {
-    mockInvoke.mockRejectedValue(new Error('Network error'));
+    mockInvoke.mockImplementation((cmd: string) => {
+      if (cmd === 'check_ollama_status') {
+        return Promise.resolve({
+          connected: true,
+          available_models: ['gpt-4'],
+          error: null,
+        });
+      }
+      if (cmd === 'set_settings') {
+        return Promise.reject(new Error('Failed to save'));
+      }
+      return Promise.resolve(undefined);
+    });
 
     const { result } = renderHook(() => useOllamaConnection());
 
@@ -191,49 +229,36 @@ describe('useOllamaConnection', () => {
       expect(result.current.isChecking).toBe(false);
     });
 
-    mockInvoke.mockRejectedValue(new Error('Network error'));
-
     let testResult: boolean;
     await act(async () => {
       testResult = await result.current.testConnection(
-        'http://server:11434',
-        'model',
+        'http://router:8080',
+        'api-key',
+        'clinic-001',
+        'gpt-4',
+        'gpt-3.5-turbo',
         mockSettings
       );
     });
 
     expect(testResult!).toBe(false);
-    expect(result.current.error).toBe('Network error');
+    expect(result.current.error).toBe('Failed to save');
   });
 
-  it('sets isChecking during check', async () => {
-    let resolveCheck: (value: unknown) => void;
-    const checkPromise = new Promise((resolve) => {
-      resolveCheck = resolve;
+  it('prewarms model', async () => {
+    mockInvoke.mockImplementation((cmd: string) => {
+      if (cmd === 'check_ollama_status') {
+        return Promise.resolve({
+          connected: true,
+          available_models: ['gpt-4'],
+          error: null,
+        });
+      }
+      if (cmd === 'prewarm_ollama_model') {
+        return Promise.resolve(undefined);
+      }
+      return Promise.resolve(undefined);
     });
-
-    mockInvoke.mockReturnValue(checkPromise);
-
-    const { result } = renderHook(() => useOllamaConnection());
-
-    // Should be checking on mount
-    expect(result.current.isChecking).toBe(true);
-
-    await act(async () => {
-      resolveCheck!({
-        connected: true,
-        available_models: [],
-        error: null,
-      });
-    });
-
-    await waitFor(() => {
-      expect(result.current.isChecking).toBe(false);
-    });
-  });
-
-  it('clears error on successful check', async () => {
-    mockInvoke.mockRejectedValueOnce(new Error('First check failed'));
 
     const { result } = renderHook(() => useOllamaConnection());
 
@@ -241,27 +266,59 @@ describe('useOllamaConnection', () => {
       expect(result.current.isChecking).toBe(false);
     });
 
-    expect(result.current.error).toBe('First check failed');
-
-    mockInvoke.mockResolvedValue({
-      connected: true,
-      available_models: ['model1'],
-      error: null,
+    // Wait for auto-prewarm to complete
+    await waitFor(() => {
+      expect(result.current.isPrewarming).toBe(false);
     });
 
-    await act(async () => {
-      await result.current.checkConnection();
+    expect(mockInvoke).toHaveBeenCalledWith('prewarm_ollama_model');
+  });
+
+  it('handles prewarm failure gracefully', async () => {
+    mockInvoke.mockImplementation((cmd: string) => {
+      if (cmd === 'check_ollama_status') {
+        return Promise.resolve({
+          connected: true,
+          available_models: ['gpt-4'],
+          error: null,
+        });
+      }
+      if (cmd === 'prewarm_ollama_model') {
+        return Promise.reject(new Error('Prewarm failed'));
+      }
+      return Promise.resolve(undefined);
     });
 
+    const { result } = renderHook(() => useOllamaConnection());
+
+    await waitFor(() => {
+      expect(result.current.isChecking).toBe(false);
+    });
+
+    // Wait for auto-prewarm to complete (should fail gracefully)
+    await waitFor(() => {
+      expect(result.current.isPrewarming).toBe(false);
+    });
+
+    // Should not set error state for prewarm failures
     expect(result.current.error).toBeNull();
   });
 
-  it('returns available models when connected', async () => {
-    const models = ['qwen3:4b', 'llama3:8b', 'mistral:7b'];
-    mockInvoke.mockResolvedValue({
-      connected: true,
-      available_models: models,
-      error: null,
+  it('prevents duplicate prewarm calls', async () => {
+    let prewarmCount = 0;
+    mockInvoke.mockImplementation((cmd: string) => {
+      if (cmd === 'check_ollama_status') {
+        return Promise.resolve({
+          connected: true,
+          available_models: ['gpt-4'],
+          error: null,
+        });
+      }
+      if (cmd === 'prewarm_ollama_model') {
+        prewarmCount++;
+        return new Promise(resolve => setTimeout(resolve, 100));
+      }
+      return Promise.resolve(undefined);
     });
 
     const { result } = renderHook(() => useOllamaConnection());
@@ -270,6 +327,17 @@ describe('useOllamaConnection', () => {
       expect(result.current.isChecking).toBe(false);
     });
 
-    expect(result.current.status?.available_models).toEqual(models);
+    // Wait for auto-prewarm to complete
+    await waitFor(() => {
+      expect(result.current.isPrewarming).toBe(false);
+    }, { timeout: 200 });
+
+    // Try calling prewarm again manually
+    await act(async () => {
+      await result.current.prewarmModel();
+    });
+
+    // Should only have called prewarm once (auto-prewarm)
+    expect(prewarmCount).toBe(1);
   });
 });

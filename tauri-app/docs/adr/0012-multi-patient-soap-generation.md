@@ -2,7 +2,9 @@
 
 ## Status
 
-Accepted (January 2025)
+Accepted (January 2025, Updated Jan 12 2025: LLM Router)
+
+**Note**: SOAP generation now uses OpenAI-compatible API via LLM router. See ADR-0013.
 
 ## Context
 
@@ -132,7 +134,8 @@ For multi-patient visits:
 ### Files Modified
 
 **Backend**:
-- `ollama.rs`: Types, prompt builder, parser
+- `llm_client.rs`: Types, prompt builder, parser (new file)
+- `ollama.rs`: Re-exports from llm_client.rs (backward compat)
 - `commands/ollama.rs`: New command
 - `commands/medplum.rs`: Multi-patient sync
 - `lib.rs`: Command registration
@@ -147,12 +150,12 @@ For multi-patient visits:
 
 ### Testing
 
-- All 429 frontend tests passing
+- All 430 frontend tests passing
 - All 346 Rust tests passing
 - Updated tests: `ReviewMode.test.tsx`, `useSessionState.test.ts`, `useSoapNote.test.ts`
 
 ## References
 
-- [ADR-0009: Ollama SOAP Generation](./0009-ollama-soap-generation.md)
+- [ADR-0009: LLM SOAP Generation](./0009-ollama-soap-generation.md)
 - [ADR-0008: Medplum EMR Integration](./0008-medplum-emr-integration.md)
-- [Plan file: Multi-Patient SOAP Note Generation](/Users/backoffice/.claude/plans/wobbly-coalescing-toucan.md)
+- [ADR-0013: LLM Router Migration](./0013-llm-router-migration.md)
