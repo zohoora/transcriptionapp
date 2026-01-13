@@ -5,7 +5,8 @@ import { formatErrorMessage } from '../utils';
 
 /** Format a SoapNote to plain text for Medplum */
 function formatSoapNote(soapNote: SoapNote): string {
-  return `SUBJECTIVE:\n${soapNote.subjective}\n\nOBJECTIVE:\n${soapNote.objective}\n\nASSESSMENT:\n${soapNote.assessment}\n\nPLAN:\n${soapNote.plan}`;
+  // SOAP note content is now a single text block from the LLM
+  return soapNote.content;
 }
 
 export interface UseMedplumSyncResult {

@@ -214,9 +214,8 @@ Integration with OpenAI-compatible LLM router for generating structured SOAP (Su
   - `Authorization: Bearer <api_key>` - API authentication
   - `X-Client-Id: <client_id>` - Client identification (e.g., "clinic-001")
   - `X-Clinic-Task: <task>` - Task type ("soap-generation", "greeting-check", "prewarm")
-- **JSON output format** for reliable parsing (not text markers)
-- Handles various LLM response formats (`<think>` blocks, markdown code fences)
-- Type-safe parsing with `serde_json`
+- **Simplified output**: LLM response displayed as-is (no JSON parsing required)
+- Handles channel markers (`<|channel|>` tags) by stripping them
 - Exponential backoff retry for transient failures
 
 **Audio Events in SOAP Generation (Jan 2025)**
@@ -226,9 +225,9 @@ Integration with OpenAI-compatible LLM router for generating structured SOAP (Su
 - Events are NOT displayed in UI (removed) but used for SOAP note generation
 - Helps LLM understand patient's condition (e.g., frequent coughing → respiratory issue)
 
-**Prompt Format**
+**Prompt Format (Simplified - Jan 2025)**
 ```
-You are a medical scribe assistant. Based on the following clinical transcript, generate a SOAP note.
+Generate a SOAP note from this clinical transcript.
 
 TRANSCRIPT:
 [transcript text]
@@ -237,22 +236,11 @@ AUDIO EVENTS DETECTED:
 - Cough at 0:30 (confidence: 88%)
 - Laughter at 1:05 (confidence: 82%)
 
-Respond with ONLY valid JSON:
-{
-  "subjective": "...",
-  "objective": "...",
-  "assessment": "...",
-  "plan": "..."
-}
-
-Rules:
-- Only include information explicitly mentioned or directly inferable
-- Use "No information available" if a section has no relevant content
-- Consider audio events (coughs, laughs, etc.) when relevant to the clinical picture
-- Output ONLY the JSON object, no markdown, no explanation
+Format the note with clear S, O, A, P sections. Be concise and clinical.
+Only include information from the transcript. Use "Not documented" for missing sections.
 ```
 
-Note: The prompt is model-agnostic (works with any OpenAI-compatible LLM). The response parser handles various LLM response formats gracefully.
+Note: The LLM response is displayed as-is without parsing. This simplified approach avoids JSON parsing failures and lets the LLM format the note naturally.
 
 **Configuration**
 - `llm_router_url`: LLM router address (default: `http://localhost:4000`)
@@ -267,7 +255,7 @@ Note: The prompt is model-agnostic (works with any OpenAI-compatible LLM). The r
 2. SOAP Note section appears below transcript
 3. Click "Generate SOAP Note" (requires LLM router connection)
 4. Loading spinner during generation (~10-30s depending on model)
-5. Structured display of S/O/A/P sections
+5. LLM response displayed as single text block (pre-formatted)
 6. Copy button to copy entire note
 
 **Data Flow for Audio Events**
@@ -296,25 +284,57 @@ Added a toggle switch on the main Ready Mode screen to enable/disable auto-sessi
 - `src/App.tsx` - Added `handleAutoStartToggle` handler that saves to config
 - `src/styles.css` - Added `.auto-detect-toggle` styles
 
-### Enhanced SOAP Note Parsing (Jan 13, 2025)
-Improved SOAP note parsing to handle various LLM output formats, including markdown-formatted responses.
+### Simplified SOAP Note Display (Jan 13, 2025)
+Removed structured S/O/A/P parsing in favor of displaying the raw LLM output directly.
 
 **Problem**
-Some LLM models (e.g., `nightmedia/gpt-oss-20b`) return markdown-formatted SOAP notes with custom `<|channel|>` tags instead of JSON, ignoring the JSON output instruction.
+LLM models often ignore JSON output instructions and return markdown or plain text. Complex parsing logic was fragile and caused failures.
 
 **Solution**
-- Enhanced `extract_json()` to handle `<|channel|>final<|message|>` tags
-- Added `try_parse_markdown_soap()` fallback parser for markdown-formatted responses
-- Added `extract_markdown_sections()` to extract S/O/A/P sections from markdown headers
+- SOAP note is now stored as a single `content` string field
+- LLM response displayed as-is in a pre-formatted text block
+- Only cleanup performed: stripping `<|channel|>` tags from multi-channel outputs
+- Removed all JSON parsing, markdown extraction, and structured data handling
 
-**Supported Formats**
-1. Plain JSON: `{"subjective": "...", ...}`
-2. Markdown code blocks: ` ```json {...} ``` `
-3. Multi-channel outputs: `<|channel|>final<|message|>...`
-4. Markdown headers: `**S – Subjective**`, `**O – Objective**`, etc.
+**Benefits**
+1. No more parsing failures - whatever the LLM returns is shown
+2. Simpler code - removed ~200 lines of parsing logic
+3. LLM can format the note naturally without constraints
+4. Works with any model regardless of output format
+
+**Data Structure Changes**
+```typescript
+// Old structure
+interface SoapNote {
+  subjective: string;
+  objective: string;
+  assessment: string;
+  plan: string;
+  raw_response: string | null;
+}
+
+// New simplified structure
+interface SoapNote {
+  content: string;  // Single text block
+  generated_at: string;
+  model_used: string;
+}
+
+// PatientSoapNote also simplified
+interface PatientSoapNote {
+  patient_label: string;
+  speaker_id: string;
+  content: string;  // Direct content, no nested soap object
+}
+```
 
 **Files Modified**
-- `src-tauri/src/llm_client.rs` - Enhanced parsing with markdown fallback
+- `src-tauri/src/llm_client.rs` - Simplified SOAP structures and generation
+- `src/types/index.ts` - Updated TypeScript interfaces
+- `src/components/modes/ReviewMode.tsx` - Display single content block
+- `src/hooks/useMedplumSync.ts` - Updated formatSoapNote function
+- `src/App.tsx` - Construct SoapNote from PatientSoapNote
+- `src-tauri/src/commands/medplum.rs` - Use content directly
 
 ### LLM Router Migration - OpenAI-Compatible API (Jan 12, 2025)
 Migrated from Ollama native API to OpenAI-compatible LLM router API for SOAP note generation and greeting detection.
@@ -850,9 +870,9 @@ Resampler (16kHz) → DC Removal → High-Pass Filter → AGC → VAD → Enhanc
 - Extensible for future features (see module docs)
 
 ### Test Updates (Jan 12, 2025)
-- All frontend tests passing (430 tests across 21 test files)
+- All frontend tests passing (427 tests across 21 test files)
 - All Rust tests passing (including LLM client and multi-patient tests)
-- Mode component tests: RecordingMode 23, ReviewMode 49
+- Mode component tests: RecordingMode 23, ReviewMode 46
 - Hook tests: useWhisperModels 12, useOllamaConnection 10, useDevices 10, useSettings 12, useSoapNote 16, useChecklist 11, useMedplumSync 9
 - Component tests: SettingsDrawer 44, HistoryWindow 36, AuthProvider 8, Header 6, AudioQualitySection 12
 - App tests: snapshot 6, a11y 3
@@ -1225,7 +1245,7 @@ Reusable React hooks for state management:
 - **History window**: Browse past encounters with transcript/SOAP/audio playback
 - **Biomarkers**: Vitality, stability, conversation dynamics, audio quality metrics
 - **Speaker diarization**: Online clustering for multi-speaker detection
-- **Test coverage**: 430 frontend tests, Rust tests all passing
+- **Test coverage**: 427 frontend tests, Rust tests all passing
 
 ### External Services Configuration
 The app connects to external services on the local network:

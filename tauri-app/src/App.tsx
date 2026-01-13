@@ -461,13 +461,22 @@ function App() {
           });
         } else if (syncedEncounter && !syncedEncounter.hasSoap) {
           // Single patient, already synced: Add SOAP to existing encounter
-          await addSoapToEncounter(result.notes[0].soap);
+          // Construct SoapNote from PatientSoapNote content
+          await addSoapToEncounter({
+            content: result.notes[0].content,
+            generated_at: result.generated_at,
+            model_used: result.model_used,
+          });
         } else if (!syncedEncounter) {
           // Single patient, not yet synced: Sync with SOAP
           await syncToMedplum({
             authState,
             transcript: editedTranscript,
-            soapNote: result.notes[0].soap,
+            soapNote: {
+              content: result.notes[0].content,
+              generated_at: result.generated_at,
+              model_used: result.model_used,
+            },
             elapsedMs: status.elapsed_ms,
           });
         }

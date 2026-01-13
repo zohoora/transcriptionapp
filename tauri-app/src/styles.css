@@ -4723,6 +4723,26 @@ button.review-section-header-left:focus {
   gap: 8px;
 }
 
+/* Simplified SOAP content display */
+.soap-content {
+  background: var(--bg-secondary);
+  border-radius: 8px;
+  padding: 16px;
+  margin: 8px 0;
+}
+
+.soap-text-content {
+  font-family: inherit;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--text-primary);
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  margin: 0;
+  max-height: 400px;
+  overflow-y: auto;
+}
+
 .soap-sections {
   display: flex;
   flex-direction: column;

@@ -872,14 +872,8 @@ pub async fn medplum_multi_patient_quick_sync(
         }
 
         // Step 4: Upload patient-specific SOAP note
-        // Format the SOAP note as a string
-        let soap_text = format!(
-            "SUBJECTIVE:\n{}\n\nOBJECTIVE:\n{}\n\nASSESSMENT:\n{}\n\nPLAN:\n{}",
-            patient_note.soap.subjective,
-            patient_note.soap.objective,
-            patient_note.soap.assessment,
-            patient_note.soap.plan
-        );
+        // SOAP note content is now a single text block from the LLM
+        let soap_text = patient_note.content.clone();
         let soap_size = soap_text.len();
 
         match client

@@ -131,7 +131,6 @@ export const ReviewMode = memo(function ReviewMode({
   const [isEditing, setIsEditing] = useState(false);
   const [copySuccess, setCopySuccess] = useState(false);
   const [customInstructionsExpanded, setCustomInstructionsExpanded] = useState(false);
-  const [debugExpanded, setDebugExpanded] = useState(false);
   // Active patient tab for multi-patient SOAP notes
   const [activePatient, setActivePatient] = useState(0);
 
@@ -153,15 +152,14 @@ export const ReviewMode = memo(function ReviewMode({
     setTimeout(() => setCopySuccess(false), 2000);
   }, [editedTranscript]);
 
-  // Get active patient's SOAP note
-  const activeSoapNote = soapResult?.notes[activePatient]?.soap ?? null;
+  // Get active patient's SOAP note content
+  const activeSoapContent = soapResult?.notes[activePatient]?.content ?? null;
   const isMultiPatient = (soapResult?.notes.length ?? 0) > 1;
 
   const handleCopySoap = useCallback(async () => {
-    if (!activeSoapNote) return;
-    const fullNote = `SUBJECTIVE:\n${activeSoapNote.subjective}\n\nOBJECTIVE:\n${activeSoapNote.objective}\n\nASSESSMENT:\n${activeSoapNote.assessment}\n\nPLAN:\n${activeSoapNote.plan}`;
-    await writeText(fullNote);
-  }, [activeSoapNote]);
+    if (!activeSoapContent) return;
+    await writeText(activeSoapContent);
+  }, [activeSoapContent]);
 
   return (
     <div className="review-mode">
@@ -349,7 +347,7 @@ export const ReviewMode = memo(function ReviewMode({
             )}
 
             {/* SOAP Display */}
-            {soapResult && activeSoapNote && (
+            {soapResult && activeSoapContent && (
               <div className="soap-display">
                 <div className="soap-header">
                   <span className="soap-timestamp">
@@ -395,44 +393,13 @@ export const ReviewMode = memo(function ReviewMode({
                   </div>
                 )}
 
-                <div className="soap-sections">
-                  <div className="soap-item">
-                    <div className="soap-label">S</div>
-                    <div className="soap-text">{activeSoapNote.subjective}</div>
-                  </div>
-                  <div className="soap-item">
-                    <div className="soap-label">O</div>
-                    <div className="soap-text">{activeSoapNote.objective}</div>
-                  </div>
-                  <div className="soap-item">
-                    <div className="soap-label">A</div>
-                    <div className="soap-text">{activeSoapNote.assessment}</div>
-                  </div>
-                  <div className="soap-item">
-                    <div className="soap-label">P</div>
-                    <div className="soap-text">{activeSoapNote.plan}</div>
-                  </div>
+                <div className="soap-content">
+                  <pre className="soap-text-content">{activeSoapContent}</pre>
                 </div>
 
                 <div className="soap-meta">
                   <span className="soap-model">Model: {soapResult.model_used}</span>
                 </div>
-
-                {/* Debug: Raw Response */}
-                {activeSoapNote.raw_response && (
-                  <div className="soap-debug">
-                    <button
-                      className="soap-debug-toggle"
-                      onClick={() => setDebugExpanded(!debugExpanded)}
-                    >
-                      <span className={`chevron-small ${debugExpanded ? '' : 'collapsed'}`}>&#9660;</span>
-                      Raw Response
-                    </button>
-                    {debugExpanded && (
-                      <pre className="soap-debug-content">{activeSoapNote.raw_response}</pre>
-                    )}
-                  </div>
-                )}
               </div>
             )}
           </div>

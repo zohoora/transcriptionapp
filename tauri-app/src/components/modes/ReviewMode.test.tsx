@@ -16,7 +16,7 @@ const createSoapResult = (soap: SoapNote): MultiPatientSoapResult => ({
   notes: [{
     patient_label: 'Patient 1',
     speaker_id: 'Speaker 1',
-    soap,
+    content: soap.content,
   }],
   physician_speaker: 'Speaker 2',
   generated_at: soap.generated_at,
@@ -160,13 +160,9 @@ describe('ReviewMode', () => {
 
     it('shows checkmark on SOAP tab when note is generated', () => {
       const soapNote: SoapNote = {
-        subjective: 'S',
-        objective: 'O',
-        assessment: 'A',
-        plan: 'P',
+        content: 'SOAP note content',
         generated_at: '2024-12-15T10:30:00Z',
         model_used: 'qwen3:4b',
-        raw_response: null,
       };
       render(<ReviewMode {...defaultProps} soapResult={createSoapResult(soapNote)} />);
 
@@ -345,37 +341,23 @@ describe('ReviewMode', () => {
 
     it('shows SOAP note content when available', () => {
       const soapNote: SoapNote = {
-        subjective: 'Patient reports headache for 2 days.',
-        objective: 'BP 120/80, HR 72.',
-        assessment: 'Tension headache.',
-        plan: 'Rest, OTC analgesics.',
+        content: 'Patient reports headache for 2 days.\nBP 120/80, HR 72.\nTension headache.\nRest, OTC analgesics.',
         generated_at: '2024-12-15T10:30:00Z',
         model_used: 'qwen3:4b',
-        raw_response: null,
       };
       render(<ReviewMode {...defaultProps} soapResult={createSoapResult(soapNote)} />);
       navigateToSoapTab();
 
-      // In the new UI, SOAP labels are single letters: S, O, A, P
-      expect(screen.getByText('S')).toBeInTheDocument();
-      expect(screen.getByText('Patient reports headache for 2 days.')).toBeInTheDocument();
-      expect(screen.getByText('O')).toBeInTheDocument();
-      expect(screen.getByText('BP 120/80, HR 72.')).toBeInTheDocument();
-      expect(screen.getByText('A')).toBeInTheDocument();
-      expect(screen.getByText('Tension headache.')).toBeInTheDocument();
-      expect(screen.getByText('P')).toBeInTheDocument();
-      expect(screen.getByText('Rest, OTC analgesics.')).toBeInTheDocument();
+      // Content is displayed as plain text in a pre element
+      expect(screen.getByText(/Patient reports headache for 2 days/)).toBeInTheDocument();
+      expect(screen.getByText(/Tension headache/)).toBeInTheDocument();
     });
 
     it('shows model for generated SOAP', () => {
       const soapNote: SoapNote = {
-        subjective: 'S',
-        objective: 'O',
-        assessment: 'A',
-        plan: 'P',
+        content: 'SOAP content here',
         generated_at: '2024-12-15T10:30:00Z',
         model_used: 'qwen3:4b',
-        raw_response: null,
       };
       render(<ReviewMode {...defaultProps} soapResult={createSoapResult(soapNote)} />);
       navigateToSoapTab();
@@ -385,13 +367,9 @@ describe('ReviewMode', () => {
 
     it('copies SOAP note when Copy button is clicked', async () => {
       const soapNote: SoapNote = {
-        subjective: 'Subjective text',
-        objective: 'Objective text',
-        assessment: 'Assessment text',
-        plan: 'Plan text',
+        content: 'Full SOAP note content goes here',
         generated_at: '2024-12-15T10:30:00Z',
         model_used: 'qwen3:4b',
-        raw_response: null,
       };
       render(<ReviewMode {...defaultProps} soapResult={createSoapResult(soapNote)} />);
       navigateToSoapTab();
@@ -403,10 +381,9 @@ describe('ReviewMode', () => {
         expect(mockWriteText).toHaveBeenCalled();
       });
 
-      // Verify the SOAP content format
+      // Verify the SOAP content is copied
       const lastCall = mockWriteText.mock.calls[mockWriteText.mock.calls.length - 1][0];
-      expect(lastCall).toContain('SUBJECTIVE:');
-      expect(lastCall).toContain('Subjective text');
+      expect(lastCall).toContain('Full SOAP note content goes here');
     });
   });
 
@@ -633,64 +610,4 @@ describe('ReviewMode', () => {
     });
   });
 
-  describe('debug raw response', () => {
-    const navigateToSoapTab = () => {
-      const tabButtons = screen.getAllByRole('button').filter(
-        btn => btn.classList.contains('review-tab') && btn.textContent?.includes('SOAP')
-      );
-      if (tabButtons.length > 0) {
-        fireEvent.click(tabButtons[0]);
-      }
-    };
-
-    it('shows raw response toggle when raw_response present', () => {
-      const soapNote: SoapNote = {
-        subjective: 'S',
-        objective: 'O',
-        assessment: 'A',
-        plan: 'P',
-        generated_at: '2024-12-15T10:30:00Z',
-        model_used: 'qwen3:4b',
-        raw_response: '{"subjective": "S", "objective": "O"}',
-      };
-      render(<ReviewMode {...defaultProps} soapResult={createSoapResult(soapNote)} />);
-      navigateToSoapTab();
-
-      expect(screen.getByText('Raw Response')).toBeInTheDocument();
-    });
-
-    it('expands raw response when clicked', () => {
-      const soapNote: SoapNote = {
-        subjective: 'S',
-        objective: 'O',
-        assessment: 'A',
-        plan: 'P',
-        generated_at: '2024-12-15T10:30:00Z',
-        model_used: 'qwen3:4b',
-        raw_response: '{"debug": "data"}',
-      };
-      render(<ReviewMode {...defaultProps} soapResult={createSoapResult(soapNote)} />);
-      navigateToSoapTab();
-
-      fireEvent.click(screen.getByText('Raw Response'));
-
-      expect(screen.getByText('{"debug": "data"}')).toBeInTheDocument();
-    });
-
-    it('does not show raw response toggle when null', () => {
-      const soapNote: SoapNote = {
-        subjective: 'S',
-        objective: 'O',
-        assessment: 'A',
-        plan: 'P',
-        generated_at: '2024-12-15T10:30:00Z',
-        model_used: 'qwen3:4b',
-        raw_response: null,
-      };
-      render(<ReviewMode {...defaultProps} soapResult={createSoapResult(soapNote)} />);
-      navigateToSoapTab();
-
-      expect(screen.queryByText('Raw Response')).not.toBeInTheDocument();
-    });
-  });
 });
