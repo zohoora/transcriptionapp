@@ -19,6 +19,8 @@ interface ReadyModeProps {
   onStart: () => void;
   // Open system settings (for permission errors)
   onOpenSettings?: () => void;
+  // Toggle auto-detection on/off
+  onAutoStartToggle?: (enabled: boolean) => void;
 }
 
 /**
@@ -48,12 +50,29 @@ export const ReadyMode = memo(function ReadyMode({
   listeningStatus,
   onStart,
   onOpenSettings,
+  onAutoStartToggle,
 }: ReadyModeProps) {
   // Determine if we're in listening mode with visual feedback
   const showListeningIndicator = autoStartEnabled && isListening;
 
   return (
     <div className="ready-mode">
+      {/* Auto-Detection Toggle */}
+      {onAutoStartToggle && (
+        <div className="auto-detect-toggle">
+          <label className="toggle-label">
+            <input
+              type="checkbox"
+              checked={autoStartEnabled}
+              onChange={(e) => onAutoStartToggle(e.target.checked)}
+              className="toggle-checkbox"
+            />
+            <span className="toggle-switch"></span>
+            <span className="toggle-text">Auto-detect</span>
+          </label>
+        </div>
+      )}
+
       {/* Listening Mode Indicator */}
       {showListeningIndicator && (
         <div className="listening-indicator">

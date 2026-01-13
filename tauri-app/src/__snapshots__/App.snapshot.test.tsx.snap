@@ -329,6 +329,26 @@ exports[`App Snapshots > renders error state correctly 1`] = `
     class="ready-mode"
   >
     <div
+      class="auto-detect-toggle"
+    >
+      <label
+        class="toggle-label"
+      >
+        <input
+          class="toggle-checkbox"
+          type="checkbox"
+        />
+        <span
+          class="toggle-switch"
+        />
+        <span
+          class="toggle-text"
+        >
+          Auto-detect
+        </span>
+      </label>
+    </div>
+    <div
       class="mic-preview"
     >
       <div
@@ -458,6 +478,26 @@ exports[`App Snapshots > renders idle state correctly 1`] = `
   <div
     class="ready-mode"
   >
+    <div
+      class="auto-detect-toggle"
+    >
+      <label
+        class="toggle-label"
+      >
+        <input
+          class="toggle-checkbox"
+          type="checkbox"
+        />
+        <span
+          class="toggle-switch"
+        />
+        <span
+          class="toggle-text"
+        >
+          Auto-detect
+        </span>
+      </label>
+    </div>
     <div
       class="mic-preview"
     >

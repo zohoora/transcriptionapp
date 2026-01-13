@@ -3289,6 +3289,63 @@ body {
   color: var(--text-secondary);
 }
 
+/* Auto-Detection Toggle */
+.auto-detect-toggle {
+  margin-bottom: 8px;
+}
+
+.auto-detect-toggle .toggle-label {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.auto-detect-toggle .toggle-checkbox {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.auto-detect-toggle .toggle-switch {
+  position: relative;
+  width: 44px;
+  height: 24px;
+  background: var(--bg-tertiary);
+  border-radius: 12px;
+  transition: background-color 0.2s ease;
+  flex-shrink: 0;
+}
+
+.auto-detect-toggle .toggle-switch::before {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 20px;
+  height: 20px;
+  background: white;
+  border-radius: 50%;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+  transition: transform 0.2s ease;
+}
+
+.auto-detect-toggle .toggle-checkbox:checked + .toggle-switch {
+  background: var(--accent-blue);
+}
+
+.auto-detect-toggle .toggle-checkbox:checked + .toggle-switch::before {
+  transform: translateX(20px);
+}
+
+.auto-detect-toggle .toggle-text {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+
 /* Smaller start button when listening */
 .start-button-large.start-button-small {
   padding: 10px 20px;

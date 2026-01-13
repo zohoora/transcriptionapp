@@ -283,6 +283,39 @@ YAMNet (biomarkers thread)
 
 ## Recent Changes (Jan 2025)
 
+### Auto-Detection Toggle UI (Jan 13, 2025)
+Added a toggle switch on the main Ready Mode screen to enable/disable auto-session detection.
+
+**Features**
+- Toggle visible at the top of the Ready Mode screen
+- Settings saved immediately when toggled (persists across app restarts)
+- Clean CSS-only switch design matching the app's styling
+
+**Files Modified**
+- `src/components/modes/ReadyMode.tsx` - Added toggle UI and `onAutoStartToggle` callback prop
+- `src/App.tsx` - Added `handleAutoStartToggle` handler that saves to config
+- `src/styles.css` - Added `.auto-detect-toggle` styles
+
+### Enhanced SOAP Note Parsing (Jan 13, 2025)
+Improved SOAP note parsing to handle various LLM output formats, including markdown-formatted responses.
+
+**Problem**
+Some LLM models (e.g., `nightmedia/gpt-oss-20b`) return markdown-formatted SOAP notes with custom `<|channel|>` tags instead of JSON, ignoring the JSON output instruction.
+
+**Solution**
+- Enhanced `extract_json()` to handle `<|channel|>final<|message|>` tags
+- Added `try_parse_markdown_soap()` fallback parser for markdown-formatted responses
+- Added `extract_markdown_sections()` to extract S/O/A/P sections from markdown headers
+
+**Supported Formats**
+1. Plain JSON: `{"subjective": "...", ...}`
+2. Markdown code blocks: ` ```json {...} ``` `
+3. Multi-channel outputs: `<|channel|>final<|message|>...`
+4. Markdown headers: `**S – Subjective**`, `**O – Objective**`, etc.
+
+**Files Modified**
+- `src-tauri/src/llm_client.rs` - Enhanced parsing with markdown fallback
+
 ### LLM Router Migration - OpenAI-Compatible API (Jan 12, 2025)
 Migrated from Ollama native API to OpenAI-compatible LLM router API for SOAP note generation and greeting detection.
 

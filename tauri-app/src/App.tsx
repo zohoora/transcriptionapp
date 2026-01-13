@@ -162,6 +162,28 @@ function App() {
     }
   );
 
+  // Handle auto-start toggle - updates settings and saves immediately
+  const handleAutoStartToggle = useCallback(async (enabled: boolean) => {
+    if (!settings || !pendingSettings) return;
+
+    // Update pending settings first (for UI)
+    const newPendingSettings = { ...pendingSettings, auto_start_enabled: enabled };
+    setPendingSettings(newPendingSettings);
+
+    // Build full settings object and save directly (avoids async state issue)
+    const fullSettings: Settings = {
+      ...settings,
+      auto_start_enabled: enabled,
+    };
+
+    try {
+      await invoke('set_settings', { settings: fullSettings });
+      console.log(`Auto-detection ${enabled ? 'enabled' : 'disabled'} and saved`);
+    } catch (e) {
+      console.error('Failed to save auto-start setting:', e);
+    }
+  }, [settings, pendingSettings, setPendingSettings]);
+
   // Permission error state
   const [permissionError, setPermissionError] = useState<string | null>(null);
 
@@ -555,6 +577,7 @@ function App() {
             listeningStatus={listeningStatus}
             onStart={handleStart}
             onOpenSettings={openMicrophoneSettings}
+            onAutoStartToggle={handleAutoStartToggle}
           />
         )}
 

@@ -1006,18 +1006,133 @@ fn parse_soap_response(response: &str, model: &str) -> Result<SoapNote, String> 
             })
         }
         Err(e) => {
+            // Fallback: Try to parse markdown-formatted SOAP note
+            info!("JSON parsing failed, attempting markdown fallback: {}", e);
+            if let Some(soap) = try_parse_markdown_soap(response, model) {
+                return Ok(soap);
+            }
+
             warn!(
-                "Failed to parse SOAP note JSON: {}. Response preview: {}",
+                "Failed to parse SOAP note (JSON and markdown): {}. Response preview: {}",
                 e,
                 &json_str.chars().take(500).collect::<String>()
             );
             Err(format!(
-                "Could not parse SOAP note JSON: {}. Response started with: {}...",
+                "Could not parse SOAP note: {}. Response started with: {}...",
                 e,
                 &json_str.chars().take(100).collect::<String>()
             ))
         }
     }
+}
+
+/// Try to parse a markdown-formatted SOAP note as a fallback
+fn try_parse_markdown_soap(response: &str, model: &str) -> Option<SoapNote> {
+    let text = response.to_lowercase();
+
+    // Check if it looks like a SOAP note
+    if !text.contains("subjective") && !text.contains("s –") && !text.contains("s:") {
+        return None;
+    }
+
+    let sections = extract_markdown_sections(response);
+
+    let subjective = sections.get("subjective").cloned().unwrap_or_default();
+    let objective = sections.get("objective").cloned().unwrap_or_default();
+    let assessment = sections.get("assessment").cloned().unwrap_or_default();
+    let plan = sections.get("plan").cloned().unwrap_or_default();
+
+    // Check if we got meaningful content
+    let has_content = !subjective.trim().is_empty()
+        || !objective.trim().is_empty()
+        || !assessment.trim().is_empty()
+        || !plan.trim().is_empty();
+
+    if !has_content {
+        return None;
+    }
+
+    info!("Successfully parsed SOAP note from markdown format");
+    Some(SoapNote {
+        subjective: soap_section_or_default(subjective),
+        objective: soap_section_or_default(objective),
+        assessment: soap_section_or_default(assessment),
+        plan: soap_section_or_default(plan),
+        generated_at: Utc::now().to_rfc3339(),
+        model_used: model.to_string(),
+        raw_response: None,
+    })
+}
+
+/// Extract sections from markdown-formatted SOAP note
+fn extract_markdown_sections(text: &str) -> std::collections::HashMap<String, String> {
+    use std::collections::HashMap;
+
+    let mut sections: HashMap<String, String> = HashMap::new();
+
+    // Patterns to match section headers (case-insensitive matching)
+    let section_patterns = [
+        ("subjective", vec!["**s –", "**s:", "## s", "# s", "s –", "s:", "subjective"]),
+        ("objective", vec!["**o –", "**o:", "## o", "# o", "o –", "o:", "objective"]),
+        ("assessment", vec!["**a –", "**a:", "## a", "# a", "a –", "a:", "assessment"]),
+        ("plan", vec!["**p –", "**p:", "## p", "# p", "p –", "p:", "plan"]),
+    ];
+
+    let lower_text = text.to_lowercase();
+    let mut section_positions: Vec<(usize, &str)> = vec![];
+
+    // Find all section start positions
+    for (section_name, patterns) in &section_patterns {
+        for pattern in patterns {
+            if let Some(pos) = lower_text.find(pattern) {
+                section_positions.push((pos, section_name));
+                break; // Only match first occurrence of each section
+            }
+        }
+    }
+
+    // Sort by position
+    section_positions.sort_by_key(|(pos, _)| *pos);
+
+    // Extract content between sections
+    for i in 0..section_positions.len() {
+        let (start_pos, section_name) = section_positions[i];
+
+        // Find the start of actual content (after the header line)
+        let content_start = text[start_pos..]
+            .find('\n')
+            .map(|p| start_pos + p + 1)
+            .unwrap_or(start_pos);
+
+        // Find the end (start of next section or end of text)
+        let end_pos = if i + 1 < section_positions.len() {
+            section_positions[i + 1].0
+        } else {
+            text.len()
+        };
+
+        if content_start < end_pos {
+            let content = text[content_start..end_pos]
+                .lines()
+                .filter(|line| {
+                    let trimmed = line.trim();
+                    // Skip section headers, horizontal rules, and signatures
+                    !trimmed.starts_with("**") &&
+                    !trimmed.starts_with("---") &&
+                    !trimmed.starts_with("##") &&
+                    !trimmed.to_lowercase().starts_with("signature") &&
+                    !trimmed.to_lowercase().starts_with("date")
+                })
+                .collect::<Vec<_>>()
+                .join("\n")
+                .trim()
+                .to_string();
+
+            sections.insert(section_name.to_string(), content);
+        }
+    }
+
+    sections
 }
 
 /// Parse the multi-patient LLM response into a structured result
@@ -1107,9 +1222,22 @@ fn has_soap_content(text: &str) -> bool {
     text != NO_INFO_PLACEHOLDER
 }
 
-/// Extract JSON from response, handling markdown code blocks
+/// Extract JSON from response, handling various LLM output formats
 fn extract_json(text: &str) -> String {
-    let trimmed = text.trim();
+    let mut working_text = text.trim().to_string();
+
+    // Handle multi-channel LLM outputs (e.g., <|channel|>analysis<|message|>...<|channel|>final<|message|>...)
+    // We want the content after the "final" channel marker
+    if let Some(final_idx) = working_text.find("<|channel|>final<|message|>") {
+        working_text = working_text[final_idx + "<|channel|>final<|message|>".len()..].to_string();
+    }
+
+    // Strip any trailing end markers
+    if let Some(end_idx) = working_text.find("<|end|>") {
+        working_text = working_text[..end_idx].to_string();
+    }
+
+    let trimmed = working_text.trim();
 
     // Check for markdown code blocks: ```json ... ``` or ``` ... ```
     if trimmed.starts_with("```") {
@@ -1118,6 +1246,32 @@ fn extract_json(text: &str) -> String {
             if let Some(end_idx) = after_fence.rfind("```") {
                 return after_fence[..end_idx].trim().to_string();
             }
+        }
+    }
+
+    // Try to find a JSON object by looking for matching { and }
+    if let Some(start_idx) = trimmed.find('{') {
+        // Find the matching closing brace by counting
+        let chars: Vec<char> = trimmed[start_idx..].chars().collect();
+        let mut depth = 0;
+        let mut end_offset = 0;
+
+        for (i, c) in chars.iter().enumerate() {
+            match c {
+                '{' => depth += 1,
+                '}' => {
+                    depth -= 1;
+                    if depth == 0 {
+                        end_offset = i + 1;
+                        break;
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        if end_offset > 0 {
+            return trimmed[start_idx..start_idx + end_offset].to_string();
         }
     }
 
