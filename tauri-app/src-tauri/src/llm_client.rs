@@ -797,7 +797,7 @@ Generate complete SOAP note(s) with Subjective, Objective, Assessment, and Plan 
     )
 }
 
-/// Clean up LLM response by removing channel markers and other artifacts
+/// Clean up LLM response by removing channel markers, think tags, and markdown formatting
 fn clean_llm_response(response: &str) -> String {
     let mut text = response.to_string();
 
@@ -817,7 +817,80 @@ fn clean_llm_response(response: &str) -> String {
         .replace("<|assistant|>", "")
         .replace("<|user|>", "");
 
+    // Remove <think>...</think> blocks (including multiline)
+    while let Some(start) = text.find("<think>") {
+        if let Some(end) = text.find("</think>") {
+            let end_pos = end + "</think>".len();
+            text = format!("{}{}", &text[..start], &text[end_pos..]);
+        } else {
+            // No closing tag, remove everything from <think> onwards
+            text = text[..start].to_string();
+            break;
+        }
+    }
+
+    // Remove markdown formatting while preserving line breaks
+    text = remove_markdown_formatting(&text);
+
     text.trim().to_string()
+}
+
+/// Remove markdown formatting (bold, italic, headers) but preserve structure
+fn remove_markdown_formatting(text: &str) -> String {
+    let lines: Vec<String> = text
+        .lines()
+        .map(|line| {
+            let mut result = line.to_string();
+
+            // Remove markdown headers (# ## ### etc) but keep the text
+            let trimmed = result.trim_start();
+            if trimmed.starts_with('#') {
+                let leading_ws = result.len() - trimmed.len();
+                let content = trimmed.trim_start_matches('#').trim_start();
+                result = format!("{}{}", " ".repeat(leading_ws), content);
+            }
+
+            // Remove ** (bold) - do this before single *
+            result = result.replace("**", "");
+
+            // Remove __ (alternate bold)
+            result = result.replace("__", "");
+
+            // Remove backticks (code formatting)
+            result = result.replace('`', "");
+
+            // Remove italic markers (* and _) but preserve list markers
+            result = remove_italic_markers(&result);
+
+            result
+        })
+        .collect();
+
+    lines.join("\n")
+}
+
+/// Remove italic markers (* or _) that wrap text, preserving list markers
+fn remove_italic_markers(line: &str) -> String {
+    let trimmed = line.trim_start();
+
+    // Check if line starts with a list marker (-, *, +, or number.)
+    let is_list_item = trimmed.starts_with("- ")
+        || trimmed.starts_with("* ")
+        || trimmed.starts_with("+ ")
+        || (trimmed.chars().next().map(|c| c.is_ascii_digit()).unwrap_or(false)
+            && trimmed.contains(". "));
+
+    if is_list_item {
+        // For list items, only remove * or _ that appear after the list marker
+        let leading_ws = line.len() - trimmed.len();
+        let marker_end = trimmed.find(' ').unwrap_or(1) + 1;
+        let (marker, rest) = trimmed.split_at(marker_end.min(trimmed.len()));
+        let cleaned_rest = rest.replace('*', "").replace('_', "");
+        format!("{}{}{}", " ".repeat(leading_ws), marker, cleaned_rest)
+    } else {
+        // Not a list item, remove all * and _ (italic markers)
+        line.replace('*', "").replace('_', "")
+    }
 }
 
 /// Build user content for SOAP generation
