@@ -76,10 +76,7 @@ describe('useMedplumSync', () => {
     const { result } = renderHook(() => useMedplumSync());
 
     const soapNote = {
-      subjective: 'Patient symptoms',
-      objective: 'Exam findings',
-      assessment: 'Diagnosis',
-      plan: 'Treatment plan',
+      content: 'SOAP note content from LLM',
       generated_at: '2025-01-01T00:00:00Z',
       model_used: 'qwen3:4b',
     };
@@ -93,12 +90,9 @@ describe('useMedplumSync', () => {
       });
     });
 
-    const expectedSoapText =
-      'SUBJECTIVE:\nPatient symptoms\n\nOBJECTIVE:\nExam findings\n\nASSESSMENT:\nDiagnosis\n\nPLAN:\nTreatment plan';
-
     expect(mockInvoke).toHaveBeenCalledWith('medplum_quick_sync', {
       transcript: 'Transcript',
-      soapNote: expectedSoapText,
+      soapNote: 'SOAP note content from LLM',
       audioFilePath: null,
       sessionDurationMs: 1000,
     });

@@ -130,6 +130,7 @@ export const ReviewMode = memo(function ReviewMode({
   });
   const [isEditing, setIsEditing] = useState(false);
   const [copySuccess, setCopySuccess] = useState(false);
+  const [soapCopySuccess, setSoapCopySuccess] = useState(false);
   const [customInstructionsExpanded, setCustomInstructionsExpanded] = useState(false);
   // Active patient tab for multi-patient SOAP notes
   const [activePatient, setActivePatient] = useState(0);
@@ -159,6 +160,8 @@ export const ReviewMode = memo(function ReviewMode({
   const handleCopySoap = useCallback(async () => {
     if (!activeSoapContent) return;
     await writeText(activeSoapContent);
+    setSoapCopySuccess(true);
+    setTimeout(() => setSoapCopySuccess(false), 2000);
   }, [activeSoapContent]);
 
   return (
@@ -354,8 +357,11 @@ export const ReviewMode = memo(function ReviewMode({
                     Generated {formatLocalDateTime(soapResult.generated_at)}
                   </span>
                   <div className="soap-actions">
-                    <button className="btn-small copy-btn" onClick={handleCopySoap}>
-                      Copy
+                    <button
+                      className={`btn-small copy-btn ${soapCopySuccess ? 'success' : ''}`}
+                      onClick={handleCopySoap}
+                    >
+                      {soapCopySuccess ? 'Copied!' : 'Copy'}
                     </button>
                     <button
                       className="btn-small"
