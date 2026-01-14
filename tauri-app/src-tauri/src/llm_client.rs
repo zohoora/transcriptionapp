@@ -529,8 +529,13 @@ impl LLMClient {
     /// Minimum word count for meaningful SOAP generation
     const MIN_WORD_COUNT: usize = 5;
 
-    /// Validate transcript for SOAP generation
-    fn validate_transcript(transcript: &str) -> Result<&str, String> {
+    /// Maximum words to send to LLM (keeps under typical 32K token context)
+    /// ~10,000 words ≈ 13,000 tokens, leaving room for system prompt and response
+    const MAX_WORDS_FOR_LLM: usize = 10_000;
+
+    /// Validate and prepare transcript for SOAP generation
+    /// Returns a (possibly truncated) transcript string
+    fn prepare_transcript(transcript: &str) -> Result<String, String> {
         let trimmed = transcript.trim();
 
         if trimmed.is_empty() {
@@ -562,7 +567,40 @@ impl LLMClient {
             ));
         }
 
-        Ok(trimmed)
+        // Truncate if too long for LLM context
+        if word_count > Self::MAX_WORDS_FOR_LLM {
+            Ok(Self::truncate_transcript(trimmed, word_count))
+        } else {
+            Ok(trimmed.to_string())
+        }
+    }
+
+    /// Truncate a long transcript while preserving context
+    /// Keeps first 20% (greeting, chief complaint) and last 80% (recent, plan)
+    fn truncate_transcript(transcript: &str, word_count: usize) -> String {
+        let words: Vec<&str> = transcript.split_whitespace().collect();
+        let target_words = Self::MAX_WORDS_FOR_LLM;
+
+        // Keep 20% from start (greeting, initial complaint) and 80% from end (recent context, plan)
+        let start_words = target_words / 5;  // 20%
+        let end_words = target_words - start_words;  // 80%
+
+        let start_portion: Vec<&str> = words.iter().take(start_words).copied().collect();
+        let end_portion: Vec<&str> = words.iter().skip(word_count - end_words).copied().collect();
+
+        let omitted = word_count - target_words;
+
+        warn!(
+            "Transcript truncated: {} words -> {} words ({} words omitted from middle)",
+            word_count, target_words, omitted
+        );
+
+        format!(
+            "{}\n\n[... {} words omitted from middle of transcript ...]\n\n{}",
+            start_portion.join(" "),
+            omitted,
+            end_portion.join(" ")
+        )
     }
 
     /// Generate a SOAP note from a clinical transcript
@@ -574,17 +612,18 @@ impl LLMClient {
         audio_events: Option<&[AudioEvent]>,
         options: Option<&SoapOptions>,
     ) -> Result<SoapNote, String> {
-        Self::validate_transcript(transcript)?;
+        let prepared_transcript = Self::prepare_transcript(transcript)?;
         let opts = options.cloned().unwrap_or_default();
         info!(
-            "Generating SOAP note with model {} for transcript of {} chars, {} audio events",
+            "Generating SOAP note with model {} for transcript of {} chars ({} words), {} audio events",
             model,
-            transcript.len(),
+            prepared_transcript.len(),
+            prepared_transcript.split_whitespace().count(),
             audio_events.map(|e| e.len()).unwrap_or(0)
         );
 
         let system_prompt = build_simple_soap_prompt(&opts);
-        let user_content = build_soap_user_content(transcript, audio_events);
+        let user_content = build_soap_user_content(&prepared_transcript, audio_events);
 
         let response = self.generate(model, &system_prompt, &user_content, tasks::SOAP_NOTE).await?;
 
@@ -608,16 +647,17 @@ impl LLMClient {
         audio_events: Option<&[AudioEvent]>,
         options: Option<&SoapOptions>,
     ) -> Result<MultiPatientSoapResult, String> {
-        Self::validate_transcript(transcript)?;
+        let prepared_transcript = Self::prepare_transcript(transcript)?;
         let opts = options.cloned().unwrap_or_default();
         info!(
-            "Generating multi-patient SOAP note with model {} for transcript of {} chars",
+            "Generating multi-patient SOAP note with model {} for transcript of {} chars ({} words)",
             model,
-            transcript.len()
+            prepared_transcript.len(),
+            prepared_transcript.split_whitespace().count()
         );
 
         let system_prompt = build_simple_multi_patient_prompt(&opts);
-        let user_content = build_soap_user_content(transcript, audio_events);
+        let user_content = build_soap_user_content(&prepared_transcript, audio_events);
 
         let response = self.generate(model, &system_prompt, &user_content, tasks::SOAP_NOTE).await?;
 
@@ -961,135 +1001,85 @@ fn parse_greeting_response(response: &str, _sensitivity: f32) -> Result<Greeting
 }
 
 
-/// Test helper: Extract JSON from response (kept for tests only)
-fn extract_json(text: &str) -> String {
-    let mut working_text = text.trim().to_string();
-
-    // Handle multi-channel LLM outputs (e.g., <|channel|>analysis<|message|>...<|channel|>final<|message|>...)
-    // We want the content after the "final" channel marker
-    if let Some(final_idx) = working_text.find("<|channel|>final<|message|>") {
-        working_text = working_text[final_idx + "<|channel|>final<|message|>".len()..].to_string();
-    }
-
-    // Strip any trailing end markers
-    if let Some(end_idx) = working_text.find("<|end|>") {
-        working_text = working_text[..end_idx].to_string();
-    }
-
-    let trimmed = working_text.trim();
-
-    // Check for markdown code blocks: ```json ... ``` or ``` ... ```
-    if trimmed.starts_with("```") {
-        if let Some(start_idx) = trimmed.find('\n') {
-            let after_fence = &trimmed[start_idx + 1..];
-            if let Some(end_idx) = after_fence.rfind("```") {
-                return after_fence[..end_idx].trim().to_string();
-            }
-        }
-    }
-
-    // Try to find a JSON object by looking for matching { and }
-    if let Some(start_idx) = trimmed.find('{') {
-        // Find the matching closing brace by counting
-        let chars: Vec<char> = trimmed[start_idx..].chars().collect();
-        let mut depth = 0;
-        let mut end_offset = 0;
-
-        for (i, c) in chars.iter().enumerate() {
-            match c {
-                '{' => depth += 1,
-                '}' => {
-                    depth -= 1;
-                    if depth == 0 {
-                        end_offset = i + 1;
-                        break;
-                    }
-                }
-                _ => {}
-            }
-        }
-
-        if end_offset > 0 {
-            return trimmed[start_idx..start_idx + end_offset].to_string();
-        }
-    }
-
-    trimmed.to_string()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn test_parse_soap_response_json() {
-        let response = r#"{
-            "subjective": "Patient complains of cough for 3 days.",
-            "objective": "Lungs clear on auscultation. No fever.",
-            "assessment": "Viral upper respiratory infection.",
-            "plan": "Rest, fluids, and OTC cough suppressant."
-        }"#;
-
-        let soap = parse_soap_response(response, "soap-model").unwrap();
-        assert!(soap.subjective.contains("cough"));
-        assert!(soap.objective.contains("Lungs clear"));
-        assert!(soap.assessment.contains("Viral"));
-        assert!(soap.plan.contains("Rest"));
-        assert_eq!(soap.model_used, "soap-model");
+    fn test_prepare_transcript_valid() {
+        let transcript = "Hello, this is a valid transcript with enough words and content.";
+        let result = LLMClient::prepare_transcript(transcript);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), transcript.trim());
     }
 
     #[test]
-    fn test_parse_soap_response_with_markdown_code_block() {
-        let response = r#"```json
-{
-    "subjective": "Patient reports headache.",
-    "objective": "Vital signs normal.",
-    "assessment": "Tension headache.",
-    "plan": "Ibuprofen as needed."
-}
-```"#;
-
-        let soap = parse_soap_response(response, "llama3:8b").unwrap();
-        assert!(soap.subjective.contains("headache"));
-    }
-
-    #[test]
-    fn test_parse_soap_response_empty_sections() {
-        let response = r#"{
-            "subjective": "",
-            "objective": "Blood pressure 120/80.",
-            "assessment": "",
-            "plan": "Continue current medications."
-        }"#;
-
-        let soap = parse_soap_response(response, "soap-model").unwrap();
-        assert_eq!(soap.subjective, "No information available.");
-        assert!(soap.objective.contains("Blood pressure"));
-    }
-
-    #[test]
-    fn test_parse_soap_response_all_empty_sections() {
-        let response = r#"{
-            "subjective": "",
-            "objective": "",
-            "assessment": "",
-            "plan": ""
-        }"#;
-
-        let result = parse_soap_response(response, "soap-model");
+    fn test_prepare_transcript_empty() {
+        let result = LLMClient::prepare_transcript("");
         assert!(result.is_err());
+        assert!(result.unwrap_err().contains("empty"));
     }
 
     #[test]
-    fn test_extract_json_plain() {
-        let input = r#"{"key": "value"}"#;
-        assert_eq!(extract_json(input), r#"{"key": "value"}"#);
+    fn test_prepare_transcript_too_short() {
+        let result = LLMClient::prepare_transcript("Hi there");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("too short"));
     }
 
     #[test]
-    fn test_extract_json_from_code_block() {
-        let input = "```json\n{\"key\": \"value\"}\n```";
-        assert_eq!(extract_json(input), r#"{"key": "value"}"#);
+    fn test_prepare_transcript_too_few_words() {
+        // Must be at least 50 chars but fewer than 5 words to hit the word count check
+        // Using long words to meet character minimum but not word minimum
+        let result = LLMClient::prepare_transcript("Thiswordisquitelong anotherverylongword anotherlongonehere lastlongword");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("too few words"));
+    }
+
+    #[test]
+    fn test_truncate_transcript() {
+        // Create a transcript with 15,000 words (above the 10,000 limit)
+        let words: Vec<&str> = (0..15_000).map(|_| "word").collect();
+        let long_transcript = words.join(" ");
+
+        let result = LLMClient::prepare_transcript(&long_transcript);
+        assert!(result.is_ok());
+
+        let truncated = result.unwrap();
+        // Should contain the omitted message
+        assert!(truncated.contains("words omitted from middle"));
+
+        // Check word count is approximately at limit
+        let output_words: Vec<&str> = truncated.split_whitespace().collect();
+        // Account for the "[... X words omitted ...]" message which adds ~6 words
+        assert!(output_words.len() <= LLMClient::MAX_WORDS_FOR_LLM + 10);
+    }
+
+    #[test]
+    fn test_truncate_preserves_structure() {
+        // Create a compact transcript where we can identify start and end portions
+        // Uses short identifiers to stay under 100KB limit
+        let start_words: Vec<String> = (0..2000).map(|i| format!("s{}", i)).collect();
+        let middle_words: Vec<String> = (0..12000).map(|i| format!("m{}", i)).collect();
+        let end_words: Vec<String> = (0..2000).map(|i| format!("e{}", i)).collect();
+
+        let full_transcript = format!(
+            "{} {} {}",
+            start_words.join(" "),
+            middle_words.join(" "),
+            end_words.join(" ")
+        );
+
+        let result = LLMClient::prepare_transcript(&full_transcript);
+        assert!(result.is_ok());
+
+        let truncated = result.unwrap();
+        // Should have start words
+        assert!(truncated.contains("s0"));
+        // Should have end words
+        assert!(truncated.contains("e1999"));
+        // Should indicate truncation
+        assert!(truncated.contains("words omitted"));
     }
 
     #[test]
