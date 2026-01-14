@@ -53,6 +53,7 @@ mod tests {
             auto_start_enabled: false,
             greeting_sensitivity: Some(0.7),
             min_speech_duration_ms: Some(2000),
+            debug_storage_enabled: true,
         };
 
         // Serialize to JSON

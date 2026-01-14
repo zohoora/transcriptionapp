@@ -4,12 +4,13 @@ use super::listening::SharedListeningState;
 use super::{emit_status_arc, emit_transcript_arc, SharedPipelineState, SharedSessionManager};
 use crate::activity_log;
 use crate::config::Config;
+use crate::debug_storage::DebugStorage;
 use crate::pipeline::{start_pipeline, PipelineConfig, PipelineMessage};
 use crate::session::SessionError;
 use chrono::Utc;
 use tauri::{AppHandle, Emitter, State};
 use tokio::sync::mpsc;
-use tracing::{error, info};
+use tracing::{error, info, warn};
 
 /// Start a transcription session
 #[tauri::command]
@@ -304,6 +305,10 @@ pub async fn stop_session(
             .map(|m| m.len())
     };
 
+    // Load config to check debug storage setting
+    let config = Config::load_or_default();
+    let debug_enabled = config.debug_storage_enabled;
+
     if let Some(h) = handle {
         h.stop();
 
@@ -311,6 +316,7 @@ pub async fn stop_session(
         let app_clone = app.clone();
         let session_clone = session_arc.clone();
         let session_id_for_log = session_id.clone();
+        let session_id_for_debug = session_id.clone();
 
         tokio::task::spawn_blocking(move || {
             h.join();
@@ -321,7 +327,7 @@ pub async fn stop_session(
                 let status = session.status();
                 let transcript = session.transcript_update();
                 let _ = app_clone.emit("session_status", status.clone());
-                let _ = app_clone.emit("transcript_update", transcript);
+                let _ = app_clone.emit("transcript_update", transcript.clone());
 
                 // Log session stop (no PHI - just metrics)
                 activity_log::log_session_stop(
@@ -333,21 +339,102 @@ pub async fn stop_session(
                         .and_then(|p| std::fs::metadata(p).ok())
                         .map(|m| m.len()),
                 );
+
+                // Save to debug storage if enabled
+                if debug_enabled {
+                    if let Err(e) = save_session_to_debug_storage(
+                        &session_id_for_debug,
+                        &session,
+                        &transcript.finalized_text,
+                        status.elapsed_ms,
+                    ) {
+                        warn!("Failed to save session to debug storage: {}", e);
+                    }
+                }
             }
         });
     } else {
         // No pipeline running, just complete
-        {
+        let transcript_text = {
             let mut session = session_arc.lock().map_err(|e| e.to_string())?;
             session.complete();
-        }
+            session.transcript_update().finalized_text
+        };
 
         // Log session stop
         activity_log::log_session_stop(&session_id, elapsed_ms, segment_count, audio_file_size);
 
+        // Save to debug storage if enabled
+        if debug_enabled {
+            let session = session_arc.lock().map_err(|e| e.to_string())?;
+            if let Err(e) = save_session_to_debug_storage(
+                &session_id,
+                &session,
+                &transcript_text,
+                elapsed_ms,
+            ) {
+                warn!("Failed to save session to debug storage: {}", e);
+            }
+        }
+
         emit_status_arc(&app, &session_arc)?;
         emit_transcript_arc(&app, &session_arc)?;
     }
+
+    Ok(())
+}
+
+/// Save session data to debug storage
+/// This stores transcript, segments, and metadata locally for debugging purposes.
+/// IMPORTANT: This stores PHI and should only be used during development.
+fn save_session_to_debug_storage(
+    session_id: &str,
+    session: &crate::session::SessionManager,
+    transcript_text: &str,
+    elapsed_ms: u64,
+) -> Result<(), String> {
+    // Create debug storage instance
+    let mut debug_storage = DebugStorage::new(session_id, true)?;
+
+    // Add all segments from the session
+    for (index, segment) in session.segments().iter().enumerate() {
+        debug_storage.add_segment(
+            index,
+            segment.start_ms,
+            segment.end_ms,
+            &segment.text,
+            segment.speaker_id.clone(),
+        );
+    }
+
+    // Save the transcript
+    debug_storage.save_transcript()?;
+
+    // Copy audio file if it exists
+    if let Some(audio_path) = session.audio_file_path() {
+        if audio_path.exists() {
+            let debug_audio_path = debug_storage.audio_path();
+            if let Err(e) = std::fs::copy(audio_path, &debug_audio_path) {
+                warn!("Failed to copy audio to debug storage: {}", e);
+            } else {
+                info!(
+                    session_id = %session_id,
+                    path = %debug_audio_path.display(),
+                    "Audio copied to debug storage"
+                );
+            }
+        }
+    }
+
+    // Finalize with session duration
+    debug_storage.finalize(elapsed_ms)?;
+
+    info!(
+        session_id = %session_id,
+        segments = session.segments().len(),
+        chars = transcript_text.len(),
+        "Session saved to debug storage"
+    );
 
     Ok(())
 }

@@ -35,6 +35,7 @@ pub mod biomarkers;
 pub mod checklist;
 mod commands;
 pub mod config;
+pub mod debug_storage;
 pub mod diarization;
 pub mod enhancement;
 pub mod listening;

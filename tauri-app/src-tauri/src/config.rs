@@ -55,6 +55,13 @@ pub struct Settings {
     pub greeting_sensitivity: Option<f32>,
     #[serde(default = "default_min_speech_duration_ms")]
     pub min_speech_duration_ms: Option<u32>,
+    // Debug storage (development only - stores PHI locally)
+    #[serde(default = "default_debug_storage_enabled")]
+    pub debug_storage_enabled: bool,
+}
+
+fn default_debug_storage_enabled() -> bool {
+    true // Enabled by default for debugging - DISABLE IN PRODUCTION
 }
 
 fn default_llm_router_url() -> String {
@@ -151,6 +158,7 @@ impl Default for Settings {
             auto_start_enabled: false,
             greeting_sensitivity: default_greeting_sensitivity(),
             min_speech_duration_ms: default_min_speech_duration_ms(),
+            debug_storage_enabled: default_debug_storage_enabled(),
         }
     }
 }
@@ -348,6 +356,9 @@ pub struct Config {
     pub greeting_sensitivity: Option<f32>,
     #[serde(default = "default_min_speech_duration_ms")]
     pub min_speech_duration_ms: Option<u32>,
+    // Debug storage (development only - stores PHI locally)
+    #[serde(default = "default_debug_storage_enabled")]
+    pub debug_storage_enabled: bool,
 }
 
 fn default_max_speakers() -> usize {
@@ -419,6 +430,7 @@ impl Default for Config {
             auto_start_enabled: false,
             greeting_sensitivity: default_greeting_sensitivity(),
             min_speech_duration_ms: default_min_speech_duration_ms(),
+            debug_storage_enabled: default_debug_storage_enabled(),
         }
     }
 }
@@ -567,6 +579,7 @@ impl Config {
             auto_start_enabled: self.auto_start_enabled,
             greeting_sensitivity: self.greeting_sensitivity,
             min_speech_duration_ms: self.min_speech_duration_ms,
+            debug_storage_enabled: self.debug_storage_enabled,
         }
     }
 
@@ -599,6 +612,8 @@ impl Config {
         self.auto_start_enabled = settings.auto_start_enabled;
         self.greeting_sensitivity = settings.greeting_sensitivity;
         self.min_speech_duration_ms = settings.min_speech_duration_ms;
+        // Debug storage
+        self.debug_storage_enabled = settings.debug_storage_enabled;
     }
 }
 
@@ -702,6 +717,7 @@ mod tests {
             auto_start_enabled: true,
             greeting_sensitivity: Some(0.8),
             min_speech_duration_ms: Some(3000),
+            debug_storage_enabled: true,
         };
 
         let mut config = Config::default();
@@ -799,6 +815,7 @@ mod tests {
             auto_start_enabled: false,
             greeting_sensitivity: Some(0.7),
             min_speech_duration_ms: Some(2000),
+            debug_storage_enabled: true,
         };
 
         let mut config = Config::default();

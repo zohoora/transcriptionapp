@@ -2,8 +2,9 @@
 
 use crate::activity_log;
 use crate::config::Config;
+use crate::debug_storage;
 use crate::ollama::{AudioEvent, LLMClient, LLMStatus, MultiPatientSoapResult, SoapNote, SoapOptions};
-use tracing::info;
+use tracing::{info, warn};
 
 // Re-export LLMStatus as OllamaStatus for backward compatibility with frontend
 pub use crate::ollama::OllamaStatus;
@@ -51,11 +52,13 @@ pub async fn prewarm_ollama_model() -> Result<(), String> {
 /// * `transcript` - The clinical transcript text
 /// * `audio_events` - Optional audio events (coughs, laughs, etc.) detected during recording
 /// * `options` - Optional SOAP generation options (detail level, format, custom instructions)
+/// * `session_id` - Optional session ID for debug storage correlation
 #[tauri::command]
 pub async fn generate_soap_note(
     transcript: String,
     audio_events: Option<Vec<AudioEvent>>,
     options: Option<SoapOptions>,
+    session_id: Option<String>,
 ) -> Result<SoapNote, String> {
     info!(
         "Generating SOAP note for transcript of {} chars, {} audio events, options: {:?}",
@@ -87,19 +90,36 @@ pub async fn generate_soap_note(
         Ok(soap_note) => {
             let generation_time_ms = start_time.elapsed().as_millis() as u64;
             activity_log::log_soap_generation(
-                "", // session_id not available here
+                session_id.as_deref().unwrap_or(""),
                 word_count,
                 generation_time_ms,
                 &config.soap_model,
                 true,
                 None,
             );
+
+            // Save SOAP note to debug storage if enabled and session_id provided
+            if config.debug_storage_enabled {
+                if let Some(ref sid) = session_id {
+                    if let Err(e) = debug_storage::save_soap_note_standalone(
+                        sid,
+                        &soap_note.content,
+                        &config.soap_model,
+                        true,
+                    ) {
+                        warn!("Failed to save SOAP note to debug storage: {}", e);
+                    } else {
+                        info!(session_id = %sid, "SOAP note saved to debug storage");
+                    }
+                }
+            }
+
             Ok(soap_note)
         }
         Err(e) => {
             let generation_time_ms = start_time.elapsed().as_millis() as u64;
             activity_log::log_soap_generation(
-                "",
+                session_id.as_deref().unwrap_or(""),
                 word_count,
                 generation_time_ms,
                 &config.soap_model,
@@ -121,6 +141,7 @@ pub async fn generate_soap_note(
 /// * `transcript` - The clinical transcript text (with speaker labels)
 /// * `audio_events` - Optional audio events (coughs, laughs, etc.) detected during recording
 /// * `options` - Optional SOAP generation options (detail level, custom instructions)
+/// * `session_id` - Optional session ID for debug storage correlation
 ///
 /// # Returns
 /// A `MultiPatientSoapResult` containing:
@@ -133,6 +154,7 @@ pub async fn generate_soap_note_auto_detect(
     transcript: String,
     audio_events: Option<Vec<AudioEvent>>,
     options: Option<SoapOptions>,
+    session_id: Option<String>,
 ) -> Result<MultiPatientSoapResult, String> {
     info!(
         "Generating multi-patient SOAP note for transcript of {} chars, {} audio events",
@@ -164,7 +186,7 @@ pub async fn generate_soap_note_auto_detect(
             let generation_time_ms = start_time.elapsed().as_millis() as u64;
             // Log as multi-patient generation
             activity_log::log_soap_generation(
-                "",
+                session_id.as_deref().unwrap_or(""),
                 word_count,
                 generation_time_ms,
                 &config.soap_model,
@@ -176,12 +198,42 @@ pub async fn generate_soap_note_auto_detect(
                 result.notes.len(),
                 result.physician_speaker
             );
+
+            // Save SOAP notes to debug storage if enabled and session_id provided
+            if config.debug_storage_enabled {
+                if let Some(ref sid) = session_id {
+                    // Combine all patient SOAP notes into one file for debug storage
+                    let combined_soap = result.notes.iter()
+                        .map(|note| format!("=== {} ({}) ===\n\n{}", note.patient_label, note.speaker_id, note.content))
+                        .collect::<Vec<_>>()
+                        .join("\n\n---\n\n");
+
+                    let soap_with_header = format!(
+                        "Multi-Patient SOAP Notes\nPhysician: {}\nPatients: {}\n\n{}",
+                        result.physician_speaker.as_deref().unwrap_or("Unknown"),
+                        result.notes.len(),
+                        combined_soap
+                    );
+
+                    if let Err(e) = debug_storage::save_soap_note_standalone(
+                        sid,
+                        &soap_with_header,
+                        &config.soap_model,
+                        true,
+                    ) {
+                        warn!("Failed to save multi-patient SOAP notes to debug storage: {}", e);
+                    } else {
+                        info!(session_id = %sid, patients = result.notes.len(), "Multi-patient SOAP notes saved to debug storage");
+                    }
+                }
+            }
+
             Ok(result)
         }
         Err(e) => {
             let generation_time_ms = start_time.elapsed().as_millis() as u64;
             activity_log::log_soap_generation(
-                "",
+                session_id.as_deref().unwrap_or(""),
                 word_count,
                 generation_time_ms,
                 &config.soap_model,

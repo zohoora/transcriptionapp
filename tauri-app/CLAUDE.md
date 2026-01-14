@@ -42,6 +42,7 @@ Rust Backend
 ├── medplum.rs       # Medplum FHIR client (OAuth, encounters, documents)
 ├── whisper_server.rs # Remote Whisper server client (faster-whisper)
 ├── activity_log.rs  # Structured activity logging (PHI-safe)
+├── debug_storage.rs # Local debug storage for PHI (development only)
 ├── checklist.rs     # Pre-flight verification checks
 └── biomarkers/      # Vocal biomarker analysis
     ├── mod.rs       # Types (CoughEvent, VocalBiomarkers, SessionMetrics, AudioQualitySnapshot)
@@ -990,6 +991,8 @@ interface Settings {
   auto_start_enabled: boolean;    // Enable automatic session start on greeting detection
   greeting_sensitivity: number;   // LLM confidence threshold (0.0-1.0, default: 0.7)
   min_speech_duration_ms: number; // Minimum speech duration to trigger check (default: 2000)
+  // Debug storage (development only)
+  debug_storage_enabled: boolean; // Store PHI locally for debugging (default: true in dev)
 }
 ```
 
@@ -1003,6 +1006,43 @@ interface Settings {
 - **Settings**: `~/.transcriptionapp/config.json`
 - **Medplum Auth**: `~/.transcriptionapp/medplum_auth.json` - persisted OAuth tokens
 - **Activity Logs**: `~/.transcriptionapp/logs/activity.log.*` - daily rotated JSON logs
+- **Debug Storage**: `~/.transcriptionapp/debug/<session-id>/` - local PHI storage (development only)
+
+## Debug Storage (Development Only)
+
+**IMPORTANT**: This feature stores PHI (Protected Health Information) locally for debugging purposes. It should be disabled in production by setting `debug_storage_enabled: false` in config.
+
+**Purpose**: Store audio, transcripts, and SOAP notes locally for debugging and analysis during development.
+
+**Storage Location**: `~/.transcriptionapp/debug/<session-id>/`
+
+**Files per session**:
+- `audio.wav` - Copy of recorded audio
+- `transcript.txt` - Full transcript with speaker labels
+- `transcript_segments.json` - Detailed segment data with timestamps
+- `soap_note.txt` - Generated SOAP note(s)
+- `metadata.json` - Session metadata (timestamps, settings, etc.)
+
+**Configuration**:
+- `debug_storage_enabled`: Enable/disable debug storage (default: `true` for development)
+- Setting is in `config.rs` and accessible via Settings
+
+**Key Functions** (`debug_storage.rs`):
+| Function | Purpose |
+|----------|---------|
+| `DebugStorage::new(session_id, enabled)` | Create storage instance |
+| `add_segment(...)` | Add transcript segment |
+| `save_transcript()` | Write transcript files |
+| `save_soap_note(content, model)` | Write SOAP note file |
+| `finalize(duration_ms)` | Write metadata and finalize |
+| `save_soap_note_standalone(...)` | Save SOAP without full DebugStorage instance |
+| `list_debug_sessions()` | List all stored sessions |
+| `cleanup_old_sessions(keep_count)` | Delete old sessions |
+
+**Integration Points**:
+- `stop_session` - Saves transcript and audio when session ends
+- `generate_soap_note` - Saves SOAP note with optional session_id
+- `generate_soap_note_auto_detect` - Saves multi-patient SOAP notes
 
 ## Common Issues
 
