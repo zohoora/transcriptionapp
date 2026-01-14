@@ -271,6 +271,50 @@ YAMNet (biomarkers thread)
 
 ## Recent Changes (Jan 2025)
 
+### Transcript Length Handling for Long Sessions (Jan 14, 2025)
+Added automatic transcript truncation for very long clinical sessions (2+ hours) to prevent LLM context overflow.
+
+**Problem**
+Long sessions can produce transcripts exceeding 20,000+ words, which would overflow the LLM's context window (~32K tokens for typical models) and cause SOAP generation failures.
+
+**Solution**
+- `prepare_transcript()` validates and optionally truncates transcripts
+- `truncate_transcript()` uses a **20/80 split strategy**:
+  - Keeps **first 20%** (greeting, patient identification, chief complaint)
+  - Keeps **last 80%** (recent discussion, assessment, care plan)
+  - Omits middle portion with clear marker
+
+**Limits**
+| Constraint | Value | Reason |
+|------------|-------|--------|
+| `MAX_WORDS_FOR_LLM` | 10,000 words | ~13K tokens, leaves room for system prompt + response |
+| `MAX_TRANSCRIPT_SIZE` | 100KB | Prevents memory issues |
+| `MIN_TRANSCRIPT_LENGTH` | 50 chars | Ensures meaningful content |
+| `MIN_WORD_COUNT` | 5 words | Minimum for SOAP generation |
+
+**Example Truncation**
+For a 20,000-word transcript:
+```
+[First 2,000 words - greeting, chief complaint...]
+
+[... 10,000 words omitted from middle of transcript ...]
+
+[Last 8,000 words - recent discussion, assessment, plan...]
+```
+
+**Why 20/80?**
+- Beginning: Contains patient greeting, identification, and presenting complaint
+- End: Contains most recent assessment and care plan - most relevant for SOAP
+- Middle: Often contains examination details that can be summarized from end context
+
+**Files Modified**
+- `src-tauri/src/llm_client.rs` - Added `prepare_transcript()`, `truncate_transcript()`, constants
+- Added 6 new tests for transcript validation and truncation
+
+**Test Coverage**
+- All 19 Rust LLM client tests passing
+- All 427 frontend tests passing
+
 ### Auto-Detection Toggle UI (Jan 13, 2025)
 Added a toggle switch on the main Ready Mode screen to enable/disable auto-session detection.
 
@@ -1231,12 +1275,13 @@ Reusable React hooks for state management:
 - `isAddingSoap` - True while adding SOAP to encounter
 - `resetSyncState()` - Clears sync state for new session
 
-## Current Project Status (Jan 12, 2025)
+## Current Project Status (Jan 14, 2025)
 
 ### What's Working
 - **Local transcription**: Full Whisper integration with 17 model options
 - **Remote transcription**: faster-whisper-server support with anti-hallucination params
 - **SOAP note generation**: OpenAI-compatible LLM router with audio event context
+- **Long session support**: Automatic transcript truncation (20/80 split) for 2+ hour sessions
 - **Multi-patient SOAP**: LLM auto-detects patients vs physician, generates separate notes
 - **Medplum EMR sync**: OAuth + FHIR encounters, documents, audio storage
 - **Multi-patient sync**: Creates N patients and N encounters for multi-patient visits
