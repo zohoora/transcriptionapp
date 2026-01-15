@@ -498,6 +498,10 @@ fn run_pipeline_thread_inner(
     // Context for transcription
     let mut context = String::new();
 
+    // Track consecutive transcription errors
+    let mut consecutive_transcription_errors: u32 = 0;
+    const MAX_CONSECUTIVE_ERRORS: u32 = 3;
+
     info!("Audio processor started, waiting for audio data...");
 
     loop {
@@ -618,10 +622,19 @@ fn run_pipeline_thread_inner(
                             if tx.blocking_send(PipelineMessage::Segment(segment)).is_err() {
                                 break;
                             }
+                            // Reset consecutive error counter on success
+                            consecutive_transcription_errors = 0;
                         }
                     }
                     Err(e) => {
                         error!("Transcription error: {}", e);
+                        consecutive_transcription_errors += 1;
+                        if consecutive_transcription_errors >= MAX_CONSECUTIVE_ERRORS {
+                            let _ = tx.blocking_send(PipelineMessage::Error(format!(
+                                "Transcription service unavailable after {} attempts: {}",
+                                consecutive_transcription_errors, e
+                            )));
+                        }
                     }
                 }
             }
@@ -888,12 +901,21 @@ fn run_pipeline_thread_inner(
                             let _ = capture.stop();
                             return Ok(());
                         }
+                        // Reset consecutive error counter on success
+                        consecutive_transcription_errors = 0;
                     } else {
                         info!("Skipping empty segment");
                     }
                 }
                 Err(e) => {
                     error!("Transcription error: {}", e);
+                    consecutive_transcription_errors += 1;
+                    if consecutive_transcription_errors >= MAX_CONSECUTIVE_ERRORS {
+                        let _ = tx.blocking_send(PipelineMessage::Error(format!(
+                            "Transcription service unavailable after {} attempts: {}",
+                            consecutive_transcription_errors, e
+                        )));
+                    }
                 }
             }
         }

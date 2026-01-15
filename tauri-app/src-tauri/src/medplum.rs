@@ -99,6 +99,7 @@ impl AuthState {
     }
 
     /// Save auth state to disk for persistence across app restarts
+    /// Uses atomic write with strict permissions (600) since file contains OAuth tokens
     pub fn save_to_file(&self) -> Result<(), std::io::Error> {
         if let Some(path) = Self::auth_file_path() {
             if let Some(parent) = path.parent() {
@@ -106,7 +107,21 @@ impl AuthState {
             }
             let json = serde_json::to_string_pretty(self)
                 .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
-            std::fs::write(&path, json)?;
+
+            // Atomic write: write to temp file, then rename
+            let temp_path = path.with_extension("json.tmp");
+            std::fs::write(&temp_path, &json)?;
+
+            // Set strict permissions (600) on Unix - file contains OAuth tokens
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                let permissions = std::fs::Permissions::from_mode(0o600);
+                std::fs::set_permissions(&temp_path, permissions)?;
+            }
+
+            // Atomic rename (on same filesystem)
+            std::fs::rename(&temp_path, &path)?;
             tracing::debug!("Saved auth state to {:?}", path);
         }
         Ok(())
@@ -425,7 +440,7 @@ impl MedplumClient {
         }
 
         // Exchange code for tokens
-        let token_response: TokenResponse = self
+        let response = self
             .http_client
             .post(&format!("{}/oauth2/token", self.base_url))
             .form(&[
@@ -436,9 +451,19 @@ impl MedplumClient {
                 ("code_verifier", &pkce.code_verifier),
             ])
             .send()
-            .await?
-            .json()
             .await?;
+
+        // Check for HTTP errors before parsing JSON
+        if !response.status().is_success() {
+            let status = response.status();
+            // Don't log the error body as it may contain sensitive info
+            return Err(MedplumError::AuthError(format!(
+                "Token exchange failed with status: {}",
+                status
+            )));
+        }
+
+        let token_response: TokenResponse = response.json().await?;
 
         // Get user info
         let user_info = self.get_user_info(&token_response.access_token).await?;
@@ -494,7 +519,7 @@ impl MedplumClient {
             .refresh_token
             .ok_or_else(|| MedplumError::AuthError("No refresh token available".to_string()))?;
 
-        let token_response: TokenResponse = self
+        let response = self
             .http_client
             .post(&format!("{}/oauth2/token", self.base_url))
             .form(&[
@@ -503,9 +528,19 @@ impl MedplumClient {
                 ("refresh_token", &refresh_token),
             ])
             .send()
-            .await?
-            .json()
             .await?;
+
+        // Check for HTTP errors before parsing JSON
+        if !response.status().is_success() {
+            let status = response.status();
+            // Don't log the error body as it may contain sensitive info
+            return Err(MedplumError::AuthError(format!(
+                "Token refresh failed with status: {}",
+                status
+            )));
+        }
+
+        let token_response: TokenResponse = response.json().await?;
 
         // Calculate new token expiry
         let token_expiry = token_response.expires_in.map(|secs| {

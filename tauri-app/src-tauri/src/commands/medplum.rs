@@ -188,7 +188,7 @@ pub async fn medplum_search_patients(
     medplum_state: State<'_, SharedMedplumClient>,
     query: String,
 ) -> Result<Vec<Patient>, String> {
-    info!("Searching for patients: {}", query);
+    info!("Searching for patients (query_len={})", query.len());
 
     let client_guard = medplum_state.read().await;
     let client = client_guard

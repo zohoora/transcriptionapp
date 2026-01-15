@@ -173,7 +173,8 @@ pub fn run() {
                         .trim_start_matches("fabricscribe://");
                     activity_log::log_deep_link("fabricscribe", path, has_code, has_state);
 
-                    info!("Deep link received via single instance: {}", arg);
+                    // Log path only, not query params (may contain OAuth code/state)
+                    info!("Deep link received: {} (has_params={})", path, arg.contains('?'));
                     let _ = app.emit("deep-link", arg);
                 }
             }

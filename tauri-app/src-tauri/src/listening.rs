@@ -390,7 +390,7 @@ where
         .map_err(|e| format!("Failed to create Whisper client: {}", e))?;
 
     // LLM client for greeting detection
-    let llm_client = LLMClient::new(&config.llm_router_url, &config.llm_api_key, &config.llm_client_id)
+    let llm_client = LLMClient::new(&config.llm_router_url, &config.llm_api_key, &config.llm_client_id, &config.fast_model)
         .map_err(|e| format!("Failed to create LLM client: {}", e))?;
 
     // State variables
@@ -540,7 +540,7 @@ where
                         break; // Stop after greeting confirmed
                     }
                     Ok(result) => {
-                        info!("Not a greeting, rejecting: '{}'", result.transcript);
+                        info!("Not a greeting, rejecting (len={}, words={})", result.transcript.len(), result.transcript.split_whitespace().count());
                         event_callback(ListeningEvent::GreetingRejected {
                             transcript: result.transcript.clone(),
                             reason: "Speech did not match greeting patterns".to_string(),
@@ -632,7 +632,7 @@ fn analyze_speech(
             });
         }
 
-        info!("Transcript: '{}'", transcript);
+        info!("Transcribed {} chars, {} words", transcript.len(), transcript.split_whitespace().count());
 
         // Step 2: Check for greeting with LLM router
         info!("Checking for greeting...");

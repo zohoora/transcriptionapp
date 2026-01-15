@@ -1,7 +1,6 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
-import ErrorBoundary from './ErrorBoundary';
-import { AuthProvider } from './components/AuthProvider';
+import { ErrorBoundary, AuthProvider } from './components';
 import HistoryWindow from './components/HistoryWindow';
 import './styles.css';
 

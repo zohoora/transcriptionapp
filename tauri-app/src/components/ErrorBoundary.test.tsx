@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import React from 'react';
-import ErrorBoundary from './ErrorBoundary';
+import { ErrorBoundary, ErrorFallback } from './ErrorBoundary';
 
 // Component that throws an error
 function ThrowError({ shouldThrow = true }: { shouldThrow?: boolean }) {
@@ -233,5 +233,50 @@ describe('ErrorBoundary', () => {
 
       expect(screen.getByText('An unexpected error occurred')).toBeInTheDocument();
     });
+  });
+});
+
+describe('ErrorFallback', () => {
+  it('renders error message', () => {
+    const error = new Error('Custom error message');
+    render(<ErrorFallback error={error} />);
+
+    expect(screen.getByText('Custom error message')).toBeInTheDocument();
+    expect(screen.getByText('Oops! Something went wrong')).toBeInTheDocument();
+  });
+
+  it('renders default message when no error provided', () => {
+    render(<ErrorFallback />);
+
+    expect(screen.getByText('An unexpected error occurred in the application.')).toBeInTheDocument();
+  });
+
+  it('renders retry button when onRetry provided', () => {
+    const onRetry = vi.fn();
+    render(<ErrorFallback onRetry={onRetry} />);
+
+    const retryButton = screen.getByRole('button', { name: /retry/i });
+    expect(retryButton).toBeInTheDocument();
+
+    fireEvent.click(retryButton);
+    expect(onRetry).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not render retry button when onRetry not provided', () => {
+    render(<ErrorFallback />);
+
+    expect(screen.queryByRole('button', { name: /retry/i })).not.toBeInTheDocument();
+  });
+
+  it('has proper accessibility attributes', () => {
+    render(<ErrorFallback />);
+
+    expect(screen.getByRole('alert')).toBeInTheDocument();
+  });
+
+  it('renders help text', () => {
+    render(<ErrorFallback />);
+
+    expect(screen.getByText(/restart the application/i)).toBeInTheDocument();
   });
 });

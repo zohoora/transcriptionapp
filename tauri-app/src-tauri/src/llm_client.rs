@@ -187,6 +187,7 @@ pub struct LLMClient {
     base_url: String,
     api_key: String,
     client_id: String,
+    fast_model: String,
 }
 
 // Re-export as OllamaClient for backward compatibility
@@ -227,7 +228,8 @@ impl LLMClient {
     /// * `base_url` - The LLM router URL (e.g., "http://localhost:4000")
     /// * `api_key` - API key for authentication
     /// * `client_id` - Client identifier for the X-Client-Id header
-    pub fn new(base_url: &str, api_key: &str, client_id: &str) -> Result<Self, String> {
+    /// * `fast_model` - Model to use for fast tasks like greeting detection
+    pub fn new(base_url: &str, api_key: &str, client_id: &str, fast_model: &str) -> Result<Self, String> {
         let cleaned_url = base_url.trim_end_matches('/');
 
         // Validate URL format and scheme
@@ -259,6 +261,7 @@ impl LLMClient {
             base_url: cleaned_url.to_string(),
             api_key: api_key.to_string(),
             client_id: client_id.to_string(),
+            fast_model: fast_model.to_string(),
         })
     }
 
@@ -722,7 +725,7 @@ Respond ONLY with JSON: {{"is_greeting": true/false, "confidence": 0.0-1.0, "det
         info!("Checking greeting with LLM at {} (timeout={}s)", url, Self::GREETING_TIMEOUT.as_secs());
 
         let request = ChatCompletionRequest {
-            model: "fast-model".to_string(), // Use fast model for greeting detection
+            model: self.fast_model.clone(), // Use configured fast model for greeting detection
             messages: vec![
                 ChatMessage {
                     role: "system".to_string(),
@@ -1104,7 +1107,7 @@ mod tests {
 
     #[test]
     fn test_llm_client_new() {
-        let client = LLMClient::new("http://localhost:4000", "test-key", "ai-scribe").unwrap();
+        let client = LLMClient::new("http://localhost:4000", "test-key", "ai-scribe", "fast-model").unwrap();
         assert_eq!(client.base_url, "http://localhost:4000");
         assert_eq!(client.api_key, "test-key");
         assert_eq!(client.client_id, "ai-scribe");
@@ -1112,27 +1115,27 @@ mod tests {
 
     #[test]
     fn test_llm_client_new_trailing_slash() {
-        let client = LLMClient::new("http://localhost:4000/", "key", "client").unwrap();
+        let client = LLMClient::new("http://localhost:4000/", "key", "client", "fast-model").unwrap();
         assert_eq!(client.base_url, "http://localhost:4000");
     }
 
     #[test]
     fn test_llm_client_new_invalid_url() {
-        let result = LLMClient::new("not-a-valid-url", "key", "client");
+        let result = LLMClient::new("not-a-valid-url", "key", "client", "fast-model");
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("Invalid LLM router URL"));
     }
 
     #[test]
     fn test_llm_client_new_invalid_scheme() {
-        let result = LLMClient::new("ftp://localhost:4000", "key", "client");
+        let result = LLMClient::new("ftp://localhost:4000", "key", "client", "fast-model");
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("http or https"));
     }
 
     #[test]
     fn test_llm_client_new_with_credentials() {
-        let result = LLMClient::new("http://user:pass@localhost:4000", "key", "client");
+        let result = LLMClient::new("http://user:pass@localhost:4000", "key", "client", "fast-model");
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("must not contain credentials"));
     }

@@ -61,15 +61,18 @@ pub struct Settings {
 }
 
 fn default_debug_storage_enabled() -> bool {
-    true // Enabled by default for debugging - DISABLE IN PRODUCTION
+    // Only enabled by default in debug builds - disabled in release/production
+    cfg!(debug_assertions)
 }
 
 fn default_llm_router_url() -> String {
-    "http://127.0.0.1:8080".to_string()
+    // Empty by default - must be configured by user for SOAP generation
+    String::new()
 }
 
 fn default_llm_api_key() -> String {
-    "ai-scribe-key".to_string()
+    // Empty by default - must be configured by user
+    String::new()
 }
 
 fn default_llm_client_id() -> String {
@@ -107,7 +110,8 @@ fn default_whisper_mode() -> String {
 }
 
 fn default_whisper_server_url() -> String {
-    "http://172.16.100.45:8001".to_string()
+    // Empty by default - must be configured by user for remote transcription
+    String::new()
 }
 
 fn default_whisper_server_model() -> String {
@@ -116,7 +120,8 @@ fn default_whisper_server_model() -> String {
 
 
 fn default_medplum_url() -> String {
-    "http://172.16.100.45:8103".to_string()
+    // Empty by default - must be configured by user for EMR integration
+    String::new()
 }
 
 fn default_medplum_client_id() -> String {
@@ -475,7 +480,7 @@ impl Config {
         }
     }
 
-    /// Save config to file
+    /// Save config to file with atomic write and strict permissions
     pub fn save(&self) -> Result<()> {
         let path = Self::config_path()?;
 
@@ -485,7 +490,21 @@ impl Config {
         }
 
         let content = serde_json::to_string_pretty(self)?;
-        std::fs::write(&path, content)?;
+
+        // Atomic write: write to temp file, then rename
+        let temp_path = path.with_extension("json.tmp");
+        std::fs::write(&temp_path, &content)?;
+
+        // Set strict permissions (600) on Unix - file contains API keys
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let permissions = std::fs::Permissions::from_mode(0o600);
+            std::fs::set_permissions(&temp_path, permissions)?;
+        }
+
+        // Atomic rename (on same filesystem)
+        std::fs::rename(&temp_path, &path)?;
         Ok(())
     }
 
@@ -828,15 +847,16 @@ mod tests {
     #[test]
     fn test_llm_router_defaults() {
         let config = Config::default();
-        assert_eq!(config.llm_router_url, "http://127.0.0.1:8080");
-        assert_eq!(config.llm_api_key, "ai-scribe-key");
+        // LLM router URL and API key are empty by default - must be configured by user
+        assert!(config.llm_router_url.is_empty());
+        assert!(config.llm_api_key.is_empty());
         assert_eq!(config.llm_client_id, "ai-scribe");
         assert_eq!(config.soap_model, "soap-model");
         assert_eq!(config.fast_model, "fast-model");
 
         let settings = Settings::default();
-        assert_eq!(settings.llm_router_url, "http://127.0.0.1:8080");
-        assert_eq!(settings.llm_api_key, "ai-scribe-key");
+        assert!(settings.llm_router_url.is_empty());
+        assert!(settings.llm_api_key.is_empty());
         assert_eq!(settings.llm_client_id, "ai-scribe");
         assert_eq!(settings.soap_model, "soap-model");
         assert_eq!(settings.fast_model, "fast-model");
@@ -845,13 +865,13 @@ mod tests {
     #[test]
     fn test_medplum_defaults() {
         let config = Config::default();
-        assert_eq!(config.medplum_server_url, "http://172.16.100.45:8103");
-        // Client ID should be empty by default - must be configured by user
+        // Medplum server URL and client ID are empty by default - must be configured by user
+        assert!(config.medplum_server_url.is_empty());
         assert!(config.medplum_client_id.is_empty());
         assert!(config.medplum_auto_sync);
 
         let settings = Settings::default();
-        assert_eq!(settings.medplum_server_url, "http://172.16.100.45:8103");
+        assert!(settings.medplum_server_url.is_empty());
         assert!(settings.medplum_client_id.is_empty());
         assert!(settings.medplum_auto_sync);
     }
@@ -895,12 +915,13 @@ mod tests {
     fn test_whisper_server_defaults() {
         let config = Config::default();
         assert_eq!(config.whisper_mode, "remote");  // Always remote
-        assert_eq!(config.whisper_server_url, "http://172.16.100.45:8001");
+        // Whisper server URL is empty by default - must be configured by user
+        assert!(config.whisper_server_url.is_empty());
         assert_eq!(config.whisper_server_model, "large-v3-turbo");
 
         let settings = Settings::default();
         assert_eq!(settings.whisper_mode, "remote");  // Always remote
-        assert_eq!(settings.whisper_server_url, "http://172.16.100.45:8001");
+        assert!(settings.whisper_server_url.is_empty());
         assert_eq!(settings.whisper_server_model, "large-v3-turbo");
     }
 

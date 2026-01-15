@@ -1,7 +1,7 @@
 export { default as AudioQualitySection } from './AudioQualitySection';
 export { default as BiomarkersSection } from './BiomarkersSection';
 export { default as ConversationDynamicsSection } from './ConversationDynamicsSection';
-export { default as ErrorBoundary } from './ErrorBoundary';
+export { ErrorBoundary, ErrorFallback } from './ErrorBoundary';
 export { Header, type SyncStatus } from './Header';
 export { SettingsDrawer, type PendingSettings } from './SettingsDrawer';
 export { SyncStatusBar } from './SyncStatusBar';

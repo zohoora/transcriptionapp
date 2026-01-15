@@ -60,7 +60,8 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
   // Handle OAuth callback from deep link URL
   const processDeepLink = useCallback((url: string) => {
-    console.log('Processing deep link:', url);
+    // Log path only, not query params (may contain OAuth code/state)
+    console.log('Processing deep link:', url.split('?')[0]);
     if (url.startsWith('fabricscribe://oauth/callback')) {
       handleOAuthCallback(url);
     }
@@ -70,7 +71,8 @@ export function AuthProvider({ children }: AuthProviderProps) {
   useEffect(() => {
     getCurrent().then((urls) => {
       if (urls && urls.length > 0) {
-        console.log('Deep link at startup:', urls);
+        // Log count only, not URLs (may contain OAuth code/state)
+        console.log('Deep links at startup:', urls.length);
         for (const url of urls) {
           processDeepLink(url);
         }
@@ -84,7 +86,8 @@ export function AuthProvider({ children }: AuthProviderProps) {
   useEffect(() => {
     // Listen for deep links from the plugin (when app is already running)
     const unlistenPlugin = onOpenUrl((urls) => {
-      console.log('Deep link received via plugin:', urls);
+      // Log count only, not URLs (may contain OAuth code/state)
+      console.log('Deep link received via plugin:', urls.length);
       for (const url of urls) {
         processDeepLink(url);
       }
@@ -92,7 +95,8 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
     // Also listen for deep links from single-instance callback (when second instance tries to launch)
     const unlistenEvent = listen<string>('deep-link', (event) => {
-      console.log('Deep link received via event:', event.payload);
+      // Log path only, not query params (may contain OAuth code/state)
+      console.log('Deep link received via event:', event.payload.split('?')[0]);
       processDeepLink(event.payload);
     });
 

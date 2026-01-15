@@ -13,7 +13,7 @@ pub use crate::ollama::OllamaStatus;
 #[tauri::command]
 pub async fn check_ollama_status() -> LLMStatus {
     let config = Config::load_or_default();
-    let client = match LLMClient::new(&config.llm_router_url, &config.llm_api_key, &config.llm_client_id) {
+    let client = match LLMClient::new(&config.llm_router_url, &config.llm_api_key, &config.llm_client_id, &config.fast_model) {
         Ok(c) => c,
         Err(e) => {
             return LLMStatus {
@@ -30,7 +30,7 @@ pub async fn check_ollama_status() -> LLMStatus {
 #[tauri::command]
 pub async fn list_ollama_models() -> Result<Vec<String>, String> {
     let config = Config::load_or_default();
-    let client = LLMClient::new(&config.llm_router_url, &config.llm_api_key, &config.llm_client_id)?;
+    let client = LLMClient::new(&config.llm_router_url, &config.llm_api_key, &config.llm_client_id, &config.fast_model)?;
     client.list_models().await
 }
 
@@ -41,7 +41,7 @@ pub async fn list_ollama_models() -> Result<Vec<String>, String> {
 #[tauri::command]
 pub async fn prewarm_ollama_model() -> Result<(), String> {
     let config = Config::load_or_default();
-    let client = LLMClient::new(&config.llm_router_url, &config.llm_api_key, &config.llm_client_id)?;
+    let client = LLMClient::new(&config.llm_router_url, &config.llm_api_key, &config.llm_client_id, &config.fast_model)?;
     // Pre-warm the fast model (used for greeting detection)
     client.prewarm_model(&config.fast_model).await
 }
@@ -72,7 +72,7 @@ pub async fn generate_soap_note(
     }
 
     let config = Config::load_or_default();
-    let client = LLMClient::new(&config.llm_router_url, &config.llm_api_key, &config.llm_client_id)?;
+    let client = LLMClient::new(&config.llm_router_url, &config.llm_api_key, &config.llm_client_id, &config.fast_model)?;
 
     // Count words for logging (not content)
     let word_count = transcript.split_whitespace().count();
@@ -167,7 +167,7 @@ pub async fn generate_soap_note_auto_detect(
     }
 
     let config = Config::load_or_default();
-    let client = LLMClient::new(&config.llm_router_url, &config.llm_api_key, &config.llm_client_id)?;
+    let client = LLMClient::new(&config.llm_router_url, &config.llm_api_key, &config.llm_client_id, &config.fast_model)?;
 
     // Count words for logging (not content)
     let word_count = transcript.split_whitespace().count();

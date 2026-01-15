@@ -29,7 +29,7 @@ interface State {
  * </ErrorBoundary>
  * ```
  */
-class ErrorBoundary extends Component<Props, State> {
+export class ErrorBoundary extends Component<Props, State> {
   constructor(props: Props) {
     super(props);
     this.state = { hasError: false, error: null };
@@ -55,7 +55,7 @@ class ErrorBoundary extends Component<Props, State> {
       }
 
       return (
-        <div className="error-boundary">
+        <div className="error-boundary" role="alert">
           <div className="error-boundary-content">
             <h3>Something went wrong</h3>
             <p className="error-message">
@@ -78,6 +78,37 @@ class ErrorBoundary extends Component<Props, State> {
 
     return this.props.children;
   }
+}
+
+/**
+ * Default error fallback component for use with ErrorBoundary
+ */
+export function ErrorFallback({
+  error,
+  onRetry,
+}: {
+  error?: Error;
+  onRetry?: () => void;
+}): JSX.Element {
+  return (
+    <div className="error-fallback" role="alert">
+      <div className="error-icon" aria-hidden="true">
+        ⚠️
+      </div>
+      <h2>Oops! Something went wrong</h2>
+      <p className="error-details">
+        {error?.message || 'An unexpected error occurred in the application.'}
+      </p>
+      {onRetry && (
+        <button onClick={onRetry} className="btn btn-primary">
+          Retry
+        </button>
+      )}
+      <p className="error-help">
+        If this problem persists, please restart the application.
+      </p>
+    </div>
+  );
 }
 
 export default ErrorBoundary;
