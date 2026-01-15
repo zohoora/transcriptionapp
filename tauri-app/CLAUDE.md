@@ -1315,7 +1315,7 @@ Reusable React hooks for state management:
 - `isAddingSoap` - True while adding SOAP to encounter
 - `resetSyncState()` - Clears sync state for new session
 
-## Current Project Status (Jan 14, 2025)
+## Current Project Status (Jan 15, 2025)
 
 ### What's Working
 - **Local transcription**: Full Whisper integration with 17 model options
@@ -1330,7 +1330,8 @@ Reusable React hooks for state management:
 - **History window**: Browse past encounters with transcript/SOAP/audio playback
 - **Biomarkers**: Vitality, stability, conversation dynamics, audio quality metrics
 - **Speaker diarization**: Online clustering for multi-speaker detection
-- **Test coverage**: 427 frontend tests, Rust tests all passing
+- **Debug storage**: Local PHI storage for development debugging (audio, transcripts, SOAP)
+- **Test coverage**: 314 Rust tests, frontend tests all passing
 
 ### External Services Configuration
 The app connects to external services on the local network:
