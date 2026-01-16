@@ -40,6 +40,7 @@ pub mod diarization;
 pub mod enhancement;
 pub mod listening;
 pub mod llm_client;
+pub mod mcp;
 pub mod medplum;
 pub mod models;
 pub mod ollama;
@@ -182,7 +183,7 @@ pub fn run() {
         .setup(|app| {
             // Initialize session manager (wrapped in Arc for sharing)
             let session_manager = Arc::new(Mutex::new(session::SessionManager::new()));
-            app.manage(session_manager);
+            app.manage(session_manager.clone());
 
             // Initialize pipeline state (wrapped in Arc for sharing with async tasks)
             let pipeline_state = Arc::new(Mutex::new(PipelineState::default()));
@@ -195,6 +196,48 @@ pub fn run() {
             // Initialize listening state for auto-session detection (Arc-wrapped for callback sharing)
             let listening_state: commands::SharedListeningState = Arc::new(Mutex::new(Default::default()));
             app.manage(listening_state);
+
+            // Start MCP server on port 7101 for IT Admin Coordinator
+            let mcp_session = session_manager.clone();
+            tauri::async_runtime::spawn(async move {
+                info!("Starting MCP server on port 7101");
+                mcp::start_mcp_server(mcp_session).await;
+            });
+
+            // Resize window to match screen height (sidebar mode)
+            if let Some(window) = app.get_webview_window("main") {
+                if let Ok(Some(monitor)) = window.current_monitor() {
+                    let monitor_size = monitor.size();
+                    let scale_factor = monitor.scale_factor();
+
+                    // Convert physical pixels to logical pixels
+                    let screen_height = (monitor_size.height as f64 / scale_factor) as u32;
+
+                    // Use full screen height minus some padding for menu bar/dock
+                    // macOS menu bar is ~25px, dock can vary but ~70px is typical
+                    let padding = 100u32;
+                    let window_height = screen_height.saturating_sub(padding);
+
+                    // Keep width at 320px (sidebar width)
+                    let window_width = 320u32;
+
+                    // Position window on the right side of the screen
+                    let screen_width = (monitor_size.width as f64 / scale_factor) as i32;
+                    let x_position = screen_width - window_width as i32 - 10; // 10px from right edge
+                    let y_position = 30i32; // Below menu bar
+
+                    use tauri::{LogicalSize, LogicalPosition};
+                    if let Err(e) = window.set_size(LogicalSize::new(window_width, window_height)) {
+                        warn!("Failed to set window size: {}", e);
+                    }
+                    if let Err(e) = window.set_position(LogicalPosition::new(x_position, y_position)) {
+                        warn!("Failed to set window position: {}", e);
+                    }
+
+                    info!("Window resized to {}x{} at ({}, {})",
+                          window_width, window_height, x_position, y_position);
+                }
+            }
 
             info!("App setup complete");
             Ok(())

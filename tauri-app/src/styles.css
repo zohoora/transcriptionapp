@@ -2972,11 +2972,8 @@ body {
   font-style: italic;
 }
 
-.transcript-content,
-.soap-content {
-  max-height: 200px;
-  overflow-y: auto;
-}
+/* Note: transcript-content and soap-content now use flex to fill available space
+   See tab-panel styles for flex-based layout */
 
 /* =============================================================================
    AUDIO PLAYER
@@ -4506,6 +4503,8 @@ button.review-section-header-left:focus {
 .tab-panel {
   display: flex;
   flex-direction: column;
+  flex: 1;
+  min-height: 0;
   height: 100%;
 }
 
@@ -4538,8 +4537,15 @@ button.review-section-header-left:focus {
 }
 
 /* Transcript Panel */
+.transcript-panel {
+  flex: 1;
+  min-height: 0;
+}
+
 .transcript-panel .panel-body {
   padding: 0;
+  flex: 1;
+  min-height: 0;
 }
 
 .transcript-panel .transcript-editor {
@@ -4555,8 +4561,13 @@ button.review-section-header-left:focus {
 
 /* SOAP Panel */
 .soap-panel {
+  display: flex;
+  flex-direction: column;
   padding: 16px;
   gap: 16px;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
 }
 
 .soap-options {
@@ -4699,6 +4710,8 @@ button.review-section-header-left:focus {
   display: flex;
   flex-direction: column;
   gap: 12px;
+  flex: 1;
+  min-height: 0;
 }
 
 .soap-panel .soap-header {
@@ -4729,6 +4742,9 @@ button.review-section-header-left:focus {
   border-radius: 8px;
   padding: 16px;
   margin: 8px 0;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
 }
 
 .soap-text-content {
@@ -4739,8 +4755,6 @@ button.review-section-header-left:focus {
   white-space: pre-wrap;
   word-wrap: break-word;
   margin: 0;
-  max-height: 400px;
-  overflow-y: auto;
 }
 
 .soap-sections {

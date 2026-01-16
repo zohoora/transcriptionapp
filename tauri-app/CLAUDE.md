@@ -44,6 +44,11 @@ Rust Backend
 ├── activity_log.rs  # Structured activity logging (PHI-safe)
 ├── debug_storage.rs # Local debug storage for PHI (development only)
 ├── checklist.rs     # Pre-flight verification checks
+├── mcp/             # MCP server for IT Admin Coordinator
+│   ├── mod.rs       # Module exports
+│   ├── server.rs    # Axum HTTP server on port 7101
+│   ├── handlers.rs  # Tool handlers (agent_identity, health_check, etc.)
+│   └── types.rs     # JSON-RPC 2.0 types
 └── biomarkers/      # Vocal biomarker analysis
     ├── mod.rs       # Types (CoughEvent, VocalBiomarkers, SessionMetrics, AudioQualitySnapshot)
     ├── config.rs    # BiomarkerConfig
@@ -270,7 +275,98 @@ YAMNet (biomarkers thread)
     → LLM considers events for clinical context
 ```
 
+## MCP Server (IT Admin Coordinator Integration)
+
+The app exposes an MCP (Model Context Protocol) server on port 7101 for integration with the IT Admin Coordinator. This enables centralized monitoring of the clinic's AI scribe system.
+
+**Agent ID:** `clinic-scribe`
+**Port:** `7101`
+**Protocol:** JSON-RPC 2.0 over HTTP POST
+
+### Endpoints
+
+| Endpoint | Method | Purpose |
+|----------|--------|---------|
+| `/health` | GET | Quick health check (non-MCP) |
+| `/mcp` | POST | JSON-RPC 2.0 MCP endpoint |
+
+### Available Tools (V1 - Monitor Only)
+
+| Tool | Description |
+|------|-------------|
+| `agent_identity` | Agent info, version, uptime, capabilities |
+| `health_check` | Health status with dependency checks |
+| `get_status` | Detailed service status (scribe-ui, whisper, llm-router, medplum) |
+| `get_logs` | Log retrieval with filtering (level, service, search, since) |
+
+### Example Usage
+
+```bash
+# Quick health check
+curl http://localhost:7101/health
+
+# MCP tool call
+curl -X POST http://localhost:7101/mcp \
+  -H "Content-Type: application/json" \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"get_status","arguments":{}}}'
+```
+
+### Architecture
+
+The MCP server runs as an async task within the Tauri process, sharing `SessionManager` state via `Arc<Mutex<T>>`. This provides real-time access to session state without IPC overhead.
+
+See `docs/MCP-SERVER.md` for full documentation.
+
 ## Recent Changes (Jan 2025)
+
+### Adaptive Sidebar Window Sizing (Jan 16, 2025)
+The app now automatically resizes to fill the screen height as a sidebar on startup.
+
+**Features**
+- Detects monitor size and DPI scaling at startup
+- Sets window height to screen height minus 100px (for menu bar + dock)
+- Positions window on the right edge of the screen
+- Width stays at 320px (sidebar width)
+- Still resizable/movable after initial positioning
+
+**Implementation**
+- Added monitor detection in `lib.rs` setup closure
+- Uses `window.current_monitor()` to get screen dimensions
+- Calculates logical pixels from physical pixels using scale factor
+- Sets position with `LogicalPosition` and size with `LogicalSize`
+
+**Files Modified**
+- `src-tauri/src/lib.rs` - Added window sizing logic in setup
+
+### SOAP Note UI Expansion Fix (Jan 16, 2025)
+Fixed the SOAP note and transcript content areas to expand and fill available vertical space in the sidebar.
+
+**Problem**
+The SOAP note content area had a fixed `max-height: 200px` constraint, leaving empty space below the content in the full-height sidebar.
+
+**Solution**
+- Removed fixed `max-height` constraints on `.soap-content` and `.transcript-content`
+- Added `flex: 1` and `min-height: 0` to content containers for proper flexbox expansion
+- Updated `.tab-panel`, `.soap-panel`, `.soap-display`, `.transcript-panel` styles
+
+**Files Modified**
+- `src/styles.css` - Updated flex layout for expandable content areas
+
+### SOAP Model Configuration Fix (Jan 16, 2025)
+Fixed SOAP note generation failing on long transcripts when using `soap-model-fast`.
+
+**Problem**
+The `soap-model-fast` model would echo back the transcript instead of generating a SOAP note when given long or noisy transcripts. This happened because the smaller/faster model couldn't handle complex inputs.
+
+**Solution**
+- Default `soap_model` in code is `soap-model` (not `soap-model-fast`)
+- Users who had manually configured `soap-model-fast` should switch to `soap-model`
+- The `soap-model` handles longer transcripts correctly
+
+**Diagnosis**
+- Short transcripts (~500 chars): `soap-model-fast` works fine
+- Long transcripts (8000+ chars): `soap-model-fast` echoes input
+- Long transcripts: `soap-model` works correctly
 
 ### Transcript Length Handling for Long Sessions (Jan 14, 2025)
 Added automatic transcript truncation for very long clinical sessions (2+ hours) to prevent LLM context overflow.
@@ -1315,9 +1411,10 @@ Reusable React hooks for state management:
 - `isAddingSoap` - True while adding SOAP to encounter
 - `resetSyncState()` - Clears sync state for new session
 
-## Current Project Status (Jan 15, 2025)
+## Current Project Status (Jan 16, 2025)
 
 ### What's Working
+- **Adaptive sidebar UI**: Auto-sizes to screen height, positions on right edge
 - **Local transcription**: Full Whisper integration with 17 model options
 - **Remote transcription**: faster-whisper-server support with anti-hallucination params
 - **SOAP note generation**: OpenAI-compatible LLM router with audio event context
@@ -1330,6 +1427,7 @@ Reusable React hooks for state management:
 - **History window**: Browse past encounters with transcript/SOAP/audio playback
 - **Biomarkers**: Vitality, stability, conversation dynamics, audio quality metrics
 - **Speaker diarization**: Online clustering for multi-speaker detection
+- **MCP server**: JSON-RPC 2.0 server on port 7101 for IT Admin Coordinator integration
 - **Debug storage**: Local PHI storage for development debugging (audio, transcripts, SOAP)
 - **Test coverage**: 314 Rust tests, frontend tests all passing
 
@@ -1338,9 +1436,9 @@ The app connects to external services on the local network:
 
 | Service | Default URL | Purpose |
 |---------|-------------|---------|
-| Whisper Server | `http://172.16.100.45:8001` | Remote transcription (faster-whisper) |
-| LLM Router | `http://172.16.100.45:4000` | SOAP note generation (OpenAI-compatible API) |
-| Medplum | `http://172.16.100.45:8103` | EMR/FHIR storage |
+| Whisper Server | `http://10.241.15.154:8001` | Remote transcription (faster-whisper) |
+| LLM Router | `http://10.241.15.154:8000` | SOAP note generation (OpenAI-compatible API) |
+| Medplum | `http://10.241.15.154:8103` | EMR/FHIR storage |
 
 **LLM Router Authentication:**
 - API Key: Required for authentication (`Authorization: Bearer <key>`)
@@ -1348,13 +1446,15 @@ The app connects to external services on the local network:
 - Task headers: `X-Clinic-Task` indicates operation type
 
 ### Known Issues / Areas for Improvement
-1. **Hallucination in silence**: Anti-hallucination params added but not fully tested
+1. **SOAP model selection**: Use `soap-model` (not `soap-model-fast`) for reliable SOAP generation
+   - `soap-model-fast` may echo transcript on long/noisy inputs
+   - Default in code is correct (`soap-model`), but check user config if issues occur
+
+2. **Hallucination in silence**: Anti-hallucination params added but not fully tested
    - If still occurring, try increasing `no_speech_threshold` to 0.9
    - Or adjust local VAD threshold in settings
 
-2. **Whisper server port**: Currently hardcoded to 8001 in user's config
-   - Server was moved from 8000 to 8001 during testing
-   - Port is configurable in Settings → Transcription → Remote Server URL
+3. **Whisper server port**: Configurable in Settings → Transcription → Remote Server URL
 
 ### Quick Start for New AI Coders
 ```bash
