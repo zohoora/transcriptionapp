@@ -1,5 +1,6 @@
 import { memo } from 'react';
 import type { Device, LLMStatus, AuthState, WhisperServerStatus } from '../types';
+import { SpeakerEnrollment } from './SpeakerEnrollment';
 
 // Supported languages
 const LANGUAGES = [
@@ -35,6 +36,8 @@ export interface PendingSettings {
   whisper_server_model: string;
   // Auto-session detection settings
   auto_start_enabled: boolean;
+  // Auto-end settings
+  auto_end_enabled: boolean;
 }
 
 interface SettingsDrawerProps {
@@ -208,6 +211,14 @@ export const SettingsDrawer = memo(function SettingsDrawer({
                 </div>
               </div>
 
+              {/* Speaker Profiles (Enrollment) */}
+              <div className="settings-divider" />
+              <div className="settings-section-title">Speaker Profiles</div>
+              <div className="settings-group">
+                <SpeakerEnrollment />
+              </div>
+
+              <div className="settings-divider" />
               <div className="settings-group">
                 <div className="settings-toggle">
                   <span className="settings-label" style={{ marginBottom: 0 }}>Show Biomarkers</span>
@@ -237,6 +248,22 @@ export const SettingsDrawer = memo(function SettingsDrawer({
                   </label>
                 </div>
                 <span className="settings-hint">Start recording automatically when speech with a greeting is detected</span>
+              </div>
+
+              <div className="settings-group">
+                <div className="settings-toggle">
+                  <span className="settings-label" style={{ marginBottom: 0 }}>Auto-end on Silence</span>
+                  <label className="toggle-switch">
+                    <input
+                      type="checkbox"
+                      checked={pendingSettings.auto_end_enabled}
+                      onChange={(e) => onSettingsChange({ ...pendingSettings, auto_end_enabled: e.target.checked })}
+                      aria-label="Auto-end recording after prolonged silence"
+                    />
+                    <span className="toggle-slider"></span>
+                  </label>
+                </div>
+                <span className="settings-hint">End recording automatically after 2 minutes of silence (with countdown warning at 1 minute)</span>
               </div>
 
               {/* LLM Router / SOAP Note Settings */}

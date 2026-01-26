@@ -82,6 +82,11 @@ export interface Settings {
   auto_start_enabled: boolean;
   greeting_sensitivity: number | null;
   min_speech_duration_ms: number | null;
+  // Auto-end settings
+  auto_end_enabled: boolean;
+  auto_end_silence_ms: number;
+  // Debug storage (development only)
+  debug_storage_enabled: boolean;
 }
 
 // Listening mode types (auto-session detection)
@@ -618,4 +623,12 @@ export interface LocalArchiveDetails {
 export interface AutoEndEventPayload {
   reason: 'silence';
   silence_duration_ms: number;
+}
+
+/** Silence warning event payload (for countdown display) */
+export interface SilenceWarningPayload {
+  /** Milliseconds of silence so far */
+  silence_ms: number;
+  /** Milliseconds remaining until auto-end (0 = cancelled/speech detected) */
+  remaining_ms: number;
 }

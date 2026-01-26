@@ -20,6 +20,7 @@ import {
   useOllamaConnection,
   useChecklist,
   useAutoDetection,
+  useClinicalChat,
 } from './hooks';
 import type { Settings, WhisperServerStatus } from './types';
 
@@ -53,6 +54,7 @@ function App() {
     soapResult,
     setSoapResult,
     localElapsedMs,
+    silenceWarning,
     isIdle,
     isRecording,
     handleStart: sessionStart,
@@ -67,7 +69,7 @@ function App() {
     ollamaStatus,
     setOllamaStatus,
     ollamaModels,
-    setOllamaModels,
+    setOllamaModels,  // Still needed for connection sync
     soapOptions,
     generateSoapNote,
     updateSoapDetailLevel,
@@ -110,6 +112,19 @@ function App() {
   // Checklist from hook (for permission checks)
   const { checkMicrophonePermission, openMicrophoneSettings } = useChecklist();
 
+  // Clinical chat for during-appointment Q&A
+  const {
+    messages: chatMessages,
+    isLoading: chatIsLoading,
+    error: chatError,
+    sendMessage: chatSendMessage,
+    clearChat,
+  } = useClinicalChat(
+    settings?.llm_router_url || '',
+    settings?.llm_api_key || '',
+    settings?.llm_client_id || 'ai-scribe'
+  );
+
   // Ref to track if an auto-started session is still pending greeting confirmation
   const autoStartPendingRef = useRef(false);
 
@@ -118,6 +133,7 @@ function App() {
   const handleAutoStartRecording = useCallback(async () => {
     console.log('Auto-detection: Starting recording immediately (optimistic)');
     autoStartPendingRef.current = true; // Mark as pending confirmation
+    setSessionNotes(''); // Reset session notes on auto-start
     const device = pendingSettings?.device === 'default' ? null : pendingSettings?.device ?? null;
     resetSyncState();
     await sessionStart(device);
@@ -178,14 +194,39 @@ function App() {
 
     try {
       await invoke('set_settings', { settings: fullSettings });
-      console.log(`Auto-detection ${enabled ? 'enabled' : 'disabled'} and saved`);
+      console.log(`Auto-start ${enabled ? 'enabled' : 'disabled'} and saved`);
     } catch (e) {
       console.error('Failed to save auto-start setting:', e);
     }
   }, [settings, pendingSettings, setPendingSettings]);
 
+  // Handle auto-end toggle - updates settings and saves immediately
+  const handleAutoEndToggle = useCallback(async (enabled: boolean) => {
+    if (!settings || !pendingSettings) return;
+
+    // Update pending settings first (for UI)
+    const newPendingSettings = { ...pendingSettings, auto_end_enabled: enabled };
+    setPendingSettings(newPendingSettings);
+
+    // Build full settings object and save directly (avoids async state issue)
+    const fullSettings: Settings = {
+      ...settings,
+      auto_end_enabled: enabled,
+    };
+
+    try {
+      await invoke('set_settings', { settings: fullSettings });
+      console.log(`Auto-end ${enabled ? 'enabled' : 'disabled'} and saved`);
+    } catch (e) {
+      console.error('Failed to save auto-end setting:', e);
+    }
+  }, [settings, pendingSettings, setPendingSettings]);
+
   // Permission error state
   const [permissionError, setPermissionError] = useState<string | null>(null);
+
+  // Session notes state (clinician observations during recording)
+  const [sessionNotes, setSessionNotes] = useState('');
 
   // Sync indicator dismissed state (for hiding after user dismisses)
   const [syncDismissed, setSyncDismissed] = useState(false);
@@ -346,6 +387,7 @@ function App() {
     }
 
     setPermissionError(null);
+    setSessionNotes(''); // Reset session notes on new recording
     autoStartPendingRef.current = false; // Manual start, not pending auto-confirmation
     const device = pendingSettings?.device === 'default' ? null : pendingSettings?.device ?? null;
     resetSyncState();
@@ -355,11 +397,12 @@ function App() {
   // Handle reset/new session with cleanup
   const handleReset = useCallback(async () => {
     autoStartPendingRef.current = false; // Clear pending state on reset
+    setSessionNotes(''); // Reset session notes
     resetSyncState();
     await sessionReset();
   }, [resetSyncState, sessionReset]);
 
-  // Save settings
+  // SettingsDrawer handlers
   const handleSaveSettings = useCallback(async () => {
     const success = await saveSettings();
     if (success) {
@@ -367,11 +410,9 @@ function App() {
     }
   }, [saveSettings]);
 
-  // Test LLM Router connection
   const handleTestLLM = useCallback(async () => {
     if (!pendingSettings || !settings) return;
     try {
-      // Save settings first, then re-check connection
       await invoke('set_settings', {
         settings: {
           ...settings,
@@ -389,7 +430,6 @@ function App() {
     }
   }, [settings, pendingSettings, checkOllamaConnection, setOllamaStatus]);
 
-  // Test Medplum connection
   const handleTestMedplum = useCallback(async () => {
     if (!pendingSettings) return;
     setMedplumError(null);
@@ -414,11 +454,9 @@ function App() {
     }
   }, [settings, pendingSettings, setMedplumConnected, setMedplumError]);
 
-  // Test Whisper server connection
   const handleTestWhisperServer = useCallback(async () => {
     if (!pendingSettings || !settings) return;
     try {
-      // Save settings first with the whisper server URL
       await invoke('set_settings', {
         settings: {
           ...settings,
@@ -427,7 +465,6 @@ function App() {
         },
       });
 
-      // Check connection
       const status = await invoke<WhisperServerStatus>('check_whisper_server_status');
       setWhisperServerStatus(status);
       if (status.connected) {
@@ -443,7 +480,12 @@ function App() {
   // If already synced to Medplum, auto-add SOAP to the encounter
   // For multi-patient sessions, use multi-patient sync
   const handleGenerateSoap = useCallback(async () => {
-    const result = await generateSoapNote(editedTranscript, biomarkers?.recent_events);
+    // Include session notes in the SOAP options
+    const optionsWithNotes = sessionNotes.trim()
+      ? { ...soapOptions, session_notes: sessionNotes }
+      : soapOptions;
+    // Pass session_id for debug storage correlation
+    const result = await generateSoapNote(editedTranscript, biomarkers?.recent_events, optionsWithNotes, status.session_id);
     if (result) {
       setSoapResult(result);
 
@@ -488,11 +530,14 @@ function App() {
     generateSoapNote,
     setSoapResult,
     authState,
+    status.session_id,
     status.elapsed_ms,
     syncedEncounter,
     syncToMedplum,
     syncMultiPatientToMedplum,
     addSoapToEncounter,
+    sessionNotes,
+    soapOptions,
   ]);
 
   // Auto-generate SOAP note when session completes (if Ollama is connected)
@@ -584,9 +629,15 @@ function App() {
             autoStartEnabled={pendingSettings?.auto_start_enabled ?? false}
             isListening={isListening}
             listeningStatus={listeningStatus}
+            authState={authState}
+            authLoading={authLoading}
+            onLogin={medplumLogin}
+            onCancelLogin={medplumCancelLogin}
             onStart={handleStart}
             onOpenSettings={openMicrophoneSettings}
             onAutoStartToggle={handleAutoStartToggle}
+            autoEndEnabled={pendingSettings?.auto_end_enabled ?? true}
+            onAutoEndToggle={handleAutoEndToggle}
           />
         )}
 
@@ -599,8 +650,17 @@ function App() {
             draftText={transcript.draft_text}
             whisperMode={pendingSettings?.whisper_mode || 'local'}
             whisperModel={getWhisperModelName(pendingSettings?.whisper_mode, pendingSettings?.whisper_server_model, pendingSettings?.model)}
+            sessionNotes={sessionNotes}
+            onSessionNotesChange={setSessionNotes}
             isStopping={isStopping}
+            silenceWarning={silenceWarning}
+            chatMessages={chatMessages}
+            chatIsLoading={chatIsLoading}
+            chatError={chatError}
+            onChatSendMessage={chatSendMessage}
+            onChatClear={clearChat}
             onStop={handleStop}
+            onCancelAutoEnd={() => invoke('reset_silence_timer').catch(console.error)}
           />
         )}
 

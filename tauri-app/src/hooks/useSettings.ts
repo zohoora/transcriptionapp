@@ -28,6 +28,8 @@ export interface PendingSettings {
   whisper_server_model: string;
   // Auto-session detection settings
   auto_start_enabled: boolean;
+  // Auto-end settings
+  auto_end_enabled: boolean;
 }
 
 export interface UseSettingsResult {
@@ -78,6 +80,7 @@ export function useSettings(): UseSettingsResult {
     whisper_server_url: s.whisper_server_url,
     whisper_server_model: s.whisper_server_model,
     auto_start_enabled: s.auto_start_enabled,
+    auto_end_enabled: s.auto_end_enabled,
   }), []);
 
   // Load settings
@@ -130,6 +133,7 @@ export function useSettings(): UseSettingsResult {
         whisper_server_url: pendingSettings.whisper_server_url,
         whisper_server_model: pendingSettings.whisper_server_model,
         auto_start_enabled: pendingSettings.auto_start_enabled,
+        auto_end_enabled: pendingSettings.auto_end_enabled,
       };
 
       await invoke('set_settings', { settings: newSettings });
@@ -164,6 +168,7 @@ export function useSettings(): UseSettingsResult {
       [settings.whisper_server_url, pendingSettings.whisper_server_url],
       [settings.whisper_server_model, pendingSettings.whisper_server_model],
       [settings.auto_start_enabled, pendingSettings.auto_start_enabled],
+      [settings.auto_end_enabled, pendingSettings.auto_end_enabled],
     ];
 
     return comparisons.some(([saved, pending]) => saved !== pending);

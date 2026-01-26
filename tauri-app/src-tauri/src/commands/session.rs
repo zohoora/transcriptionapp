@@ -130,6 +130,7 @@ pub async fn start_session(
         whisper_server_url: config.whisper_server_url.clone(),
         whisper_server_model: config.whisper_server_model.clone(),
         initial_audio_buffer,
+        auto_end_enabled: config.auto_end_enabled,
         auto_end_silence_ms: config.auto_end_silence_ms,
     };
 
@@ -239,6 +240,13 @@ pub async fn start_session(
                     // Emit audio quality update to frontend
                     let _ = app_clone.emit("audio_quality", snapshot);
                 }
+                PipelineMessage::SilenceWarning { silence_ms, remaining_ms } => {
+                    // Emit silence warning to frontend for countdown display
+                    let _ = app_clone.emit("silence_warning", serde_json::json!({
+                        "silence_ms": silence_ms,
+                        "remaining_ms": remaining_ms
+                    }));
+                }
                 PipelineMessage::AutoEndSilence { silence_duration_ms } => {
                     // Auto-end triggered due to continuous silence
                     info!(
@@ -250,11 +258,19 @@ pub async fn start_session(
                         "reason": "silence",
                         "silence_duration_ms": silence_duration_ms
                     }));
-                    // Pipeline will self-stop via stop_flag, no need to break here
-                    // The Stopped message will follow
+                    // Pipeline will self-stop via stop_flag, the Stopped message will follow
+                    // and handle session completion
                 }
                 PipelineMessage::Stopped => {
-                    info!("Pipeline stopped message received");
+                    info!("Pipeline stopped message received, completing session");
+                    // Complete the session and emit final status
+                    if let Ok(mut session) = session_clone.lock() {
+                        session.complete();
+                        let status = session.status();
+                        let transcript = session.transcript_update();
+                        let _ = app_clone.emit("session_status", status);
+                        let _ = app_clone.emit("transcript_update", transcript);
+                    }
                     break;
                 }
                 PipelineMessage::Error(e) => {
@@ -532,4 +548,21 @@ pub fn get_audio_file_path(
     Ok(session
         .audio_file_path()
         .map(|p| p.to_string_lossy().to_string()))
+}
+
+/// Reset the silence timer to cancel auto-end countdown
+/// Called when user clicks "Keep Recording" button during silence warning
+#[tauri::command]
+pub fn reset_silence_timer(
+    pipeline_state: State<'_, SharedPipelineState>,
+) -> Result<(), String> {
+    info!("Resetting silence timer (user cancelled auto-end)");
+
+    let ps = pipeline_state.lock().map_err(|e| e.to_string())?;
+    if let Some(ref handle) = ps.handle {
+        handle.reset_silence_timer();
+        Ok(())
+    } else {
+        Err("No active recording session".to_string())
+    }
 }

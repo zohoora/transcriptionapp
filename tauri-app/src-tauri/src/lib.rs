@@ -252,6 +252,7 @@ pub fn run() {
             commands::stop_session,
             commands::reset_session,
             commands::get_audio_file_path,
+            commands::reset_silence_timer,
             commands::check_model_status,
             commands::get_model_info,
             commands::download_whisper_model,

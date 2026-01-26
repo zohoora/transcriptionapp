@@ -57,12 +57,18 @@ pub struct Settings {
     pub greeting_sensitivity: Option<f32>,
     #[serde(default = "default_min_speech_duration_ms")]
     pub min_speech_duration_ms: Option<u32>,
+    // Auto-end session after continuous silence
+    #[serde(default = "default_auto_end_enabled")]
+    pub auto_end_enabled: bool,
+    #[serde(default = "default_auto_end_silence_ms")]
+    pub auto_end_silence_ms: u64,
     // Debug storage (development only - stores PHI locally)
     #[serde(default = "default_debug_storage_enabled")]
     pub debug_storage_enabled: bool,
-    // Auto-end session after continuous silence (milliseconds)
-    #[serde(default = "default_auto_end_silence_ms")]
-    pub auto_end_silence_ms: u64,
+}
+
+fn default_auto_end_enabled() -> bool {
+    true // Auto-end enabled by default
 }
 
 fn default_auto_end_silence_ms() -> u64 {
@@ -176,8 +182,9 @@ impl Default for Settings {
             auto_start_enabled: false,
             greeting_sensitivity: default_greeting_sensitivity(),
             min_speech_duration_ms: default_min_speech_duration_ms(),
-            debug_storage_enabled: default_debug_storage_enabled(),
+            auto_end_enabled: default_auto_end_enabled(),
             auto_end_silence_ms: default_auto_end_silence_ms(),
+            debug_storage_enabled: default_debug_storage_enabled(),
         }
     }
 }
@@ -377,12 +384,14 @@ pub struct Config {
     pub greeting_sensitivity: Option<f32>,
     #[serde(default = "default_min_speech_duration_ms")]
     pub min_speech_duration_ms: Option<u32>,
+    // Auto-end session after continuous silence
+    #[serde(default = "default_auto_end_enabled")]
+    pub auto_end_enabled: bool,
+    #[serde(default = "default_auto_end_silence_ms")]
+    pub auto_end_silence_ms: u64,
     // Debug storage (development only - stores PHI locally)
     #[serde(default = "default_debug_storage_enabled")]
     pub debug_storage_enabled: bool,
-    // Auto-end session after continuous silence (milliseconds)
-    #[serde(default = "default_auto_end_silence_ms")]
-    pub auto_end_silence_ms: u64,
 }
 
 fn default_max_speakers() -> usize {
@@ -455,8 +464,9 @@ impl Default for Config {
             auto_start_enabled: false,
             greeting_sensitivity: default_greeting_sensitivity(),
             min_speech_duration_ms: default_min_speech_duration_ms(),
-            debug_storage_enabled: default_debug_storage_enabled(),
+            auto_end_enabled: default_auto_end_enabled(),
             auto_end_silence_ms: default_auto_end_silence_ms(),
+            debug_storage_enabled: default_debug_storage_enabled(),
         }
     }
 }
@@ -620,8 +630,9 @@ impl Config {
             auto_start_enabled: self.auto_start_enabled,
             greeting_sensitivity: self.greeting_sensitivity,
             min_speech_duration_ms: self.min_speech_duration_ms,
-            debug_storage_enabled: self.debug_storage_enabled,
+            auto_end_enabled: self.auto_end_enabled,
             auto_end_silence_ms: self.auto_end_silence_ms,
+            debug_storage_enabled: self.debug_storage_enabled,
         }
     }
 
@@ -655,10 +666,11 @@ impl Config {
         self.auto_start_enabled = settings.auto_start_enabled;
         self.greeting_sensitivity = settings.greeting_sensitivity;
         self.min_speech_duration_ms = settings.min_speech_duration_ms;
+        // Auto-end settings
+        self.auto_end_enabled = settings.auto_end_enabled;
+        self.auto_end_silence_ms = settings.auto_end_silence_ms;
         // Debug storage
         self.debug_storage_enabled = settings.debug_storage_enabled;
-        // Auto-end silence
-        self.auto_end_silence_ms = settings.auto_end_silence_ms;
     }
 }
 

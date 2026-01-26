@@ -1,5 +1,7 @@
 import { memo, useState, useCallback } from 'react';
-import type { AudioQualitySnapshot, BiomarkerUpdate } from '../../types';
+import type { AudioQualitySnapshot, BiomarkerUpdate, SilenceWarningPayload } from '../../types';
+import type { ChatMessage } from '../../hooks/useClinicalChat';
+import { ClinicalChat } from '../ClinicalChat';
 
 interface RecordingModeProps {
   // Timer (kept for potential future use, not displayed)
@@ -19,11 +21,26 @@ interface RecordingModeProps {
   whisperMode: 'local' | 'remote';
   whisperModel: string;
 
+  // Session notes (clinician observations during recording)
+  sessionNotes: string;
+  onSessionNotesChange: (notes: string) => void;
+
   // State
   isStopping: boolean;
 
+  // Silence warning for auto-end countdown
+  silenceWarning: SilenceWarningPayload | null;
+
+  // Clinical chat props
+  chatMessages: ChatMessage[];
+  chatIsLoading: boolean;
+  chatError: string | null;
+  onChatSendMessage: (content: string) => void;
+  onChatClear: () => void;
+
   // Actions
   onStop: () => void;
+  onCancelAutoEnd?: () => void;
 }
 
 // Get audio quality status (good/fair/poor) for indicator
@@ -51,11 +68,22 @@ export const RecordingMode = memo(function RecordingMode({
   draftText,
   whisperMode,
   whisperModel,
+  sessionNotes,
+  onSessionNotesChange,
   isStopping,
+  silenceWarning,
+  chatMessages,
+  chatIsLoading,
+  chatError,
+  onChatSendMessage,
+  onChatClear,
   onStop,
+  onCancelAutoEnd,
 }: RecordingModeProps) {
   const [showTranscript, setShowTranscript] = useState(false);
   const [showDetails, setShowDetails] = useState(false);
+  const [showNotes, setShowNotes] = useState(false);
+  const [chatExpanded, setChatExpanded] = useState(false);
 
   const qualityLevel = getQualityLevel(audioQuality);
 
@@ -63,8 +91,48 @@ export const RecordingMode = memo(function RecordingMode({
     setShowDetails(!showDetails);
   }, [showDetails]);
 
+  const handleNotesToggle = useCallback(() => {
+    setShowNotes(!showNotes);
+  }, [showNotes]);
+
+  const handleNotesChange = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    onSessionNotesChange(e.target.value);
+  }, [onSessionNotesChange]);
+
+  // Format remaining time for display
+  const formatRemainingTime = (ms: number): string => {
+    const seconds = Math.ceil(ms / 1000);
+    return `${seconds}s`;
+  };
+
   return (
     <div className="recording-mode">
+      {/* Silence warning countdown overlay */}
+      {silenceWarning && silenceWarning.remaining_ms > 0 && (
+        <div className="silence-warning-overlay">
+          <div className="silence-warning-content">
+            <div className="silence-warning-icon">⏱️</div>
+            <div className="silence-warning-text">
+              No speech detected
+            </div>
+            <div className="silence-warning-countdown">
+              Ending in {formatRemainingTime(silenceWarning.remaining_ms)}
+            </div>
+            {onCancelAutoEnd && (
+              <button
+                className="silence-warning-cancel"
+                onClick={onCancelAutoEnd}
+              >
+                Keep Recording
+              </button>
+            )}
+            <div className="silence-warning-hint">
+              Or speak to continue
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Session in progress indicator */}
       <div className="session-progress">
         <div className="session-progress-indicator">
@@ -107,6 +175,31 @@ export const RecordingMode = memo(function RecordingMode({
         </div>
       )}
 
+      {/* Session Notes Toggle & Input */}
+      <button
+        className={`notes-toggle ${showNotes ? 'active' : ''} ${sessionNotes.trim() ? 'has-notes' : ''}`}
+        onClick={handleNotesToggle}
+        aria-label={showNotes ? 'Hide notes' : 'Add notes'}
+        aria-expanded={showNotes}
+      >
+        <span className="notes-icon">📝</span>
+        <span className="notes-label">{showNotes ? 'Hide Notes' : 'Add Notes'}</span>
+        <span className="notes-chevron">{showNotes ? '▲' : '▼'}</span>
+      </button>
+
+      {showNotes && (
+        <div className="session-notes-container">
+          <textarea
+            className="session-notes-input"
+            placeholder="Enter observations, procedures, or notes for this session..."
+            value={sessionNotes}
+            onChange={handleNotesChange}
+            rows={3}
+            aria-label="Session notes"
+          />
+        </div>
+      )}
+
       {/* End Session Button */}
       <button
         className={`stop-button ${isStopping ? 'stopping' : ''}`}
@@ -141,6 +234,17 @@ export const RecordingMode = memo(function RecordingMode({
           )}
         </div>
       )}
+
+      {/* Clinical Assistant Chat */}
+      <ClinicalChat
+        messages={chatMessages}
+        isLoading={chatIsLoading}
+        error={chatError}
+        onSendMessage={onChatSendMessage}
+        onClear={onChatClear}
+        isExpanded={chatExpanded}
+        onToggleExpand={() => setChatExpanded(!chatExpanded)}
+      />
 
       {/* Model indicator */}
       <div className="model-indicator">

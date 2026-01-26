@@ -85,6 +85,13 @@ pub enum PipelineMessage {
         /// Duration of continuous silence in milliseconds
         silence_duration_ms: u64,
     },
+    /// Warning: silence detected, auto-end approaching
+    SilenceWarning {
+        /// Milliseconds of silence so far
+        silence_ms: u64,
+        /// Milliseconds remaining until auto-end
+        remaining_ms: u64,
+    },
     /// Pipeline has stopped
     Stopped,
     /// Error occurred
@@ -128,7 +135,8 @@ pub struct PipelineConfig {
     // This buffer contains audio captured before the greeting check completed
     // and should be prepended to the recording at startup
     pub initial_audio_buffer: Option<Vec<f32>>,
-    // Auto-end silence threshold in milliseconds (0 = disabled)
+    // Auto-end settings
+    pub auto_end_enabled: bool,
     pub auto_end_silence_ms: u64,
 }
 
@@ -158,6 +166,7 @@ impl Default for PipelineConfig {
             whisper_server_url: "http://172.16.100.45:8001".to_string(),
             whisper_server_model: "large-v3-turbo".to_string(),
             initial_audio_buffer: None,
+            auto_end_enabled: true,
             auto_end_silence_ms: 120_000, // 2 minutes default
         }
     }
@@ -169,6 +178,7 @@ impl Default for PipelineConfig {
 /// when shared across threads (which Tauri's state management handles automatically).
 pub struct PipelineHandle {
     stop_flag: Arc<AtomicBool>,
+    reset_silence_flag: Arc<AtomicBool>,
     processor_handle: Option<std::thread::JoinHandle<()>>,
 }
 
@@ -177,6 +187,12 @@ impl PipelineHandle {
     pub fn stop(&self) {
         info!("Requesting pipeline stop");
         self.stop_flag.store(true, Ordering::SeqCst);
+    }
+
+    /// Reset the silence timer (cancels auto-end countdown)
+    pub fn reset_silence_timer(&self) {
+        info!("Resetting silence timer");
+        self.reset_silence_flag.store(true, Ordering::SeqCst);
     }
 
     /// Wait for the pipeline to fully stop
@@ -207,16 +223,21 @@ pub fn start_pipeline(
     let stop_flag = Arc::new(AtomicBool::new(false));
     let stop_flag_clone = stop_flag.clone();
 
+    // Create reset silence flag (for canceling auto-end countdown)
+    let reset_silence_flag = Arc::new(AtomicBool::new(false));
+    let reset_silence_flag_clone = reset_silence_flag.clone();
+
     // Clone config for the processing thread
     let tx = message_tx;
 
     // Spawn the processing thread - everything happens on this thread
     let processor_handle = std::thread::spawn(move || {
-        run_pipeline_thread(config, tx, stop_flag_clone);
+        run_pipeline_thread(config, tx, stop_flag_clone, reset_silence_flag_clone);
     });
 
     Ok(PipelineHandle {
         stop_flag,
+        reset_silence_flag,
         processor_handle: Some(processor_handle),
     })
 }
@@ -226,8 +247,9 @@ fn run_pipeline_thread(
     config: PipelineConfig,
     tx: mpsc::Sender<PipelineMessage>,
     stop_flag: Arc<AtomicBool>,
+    reset_silence_flag: Arc<AtomicBool>,
 ) {
-    if let Err(e) = run_pipeline_thread_inner(&config, &tx, &stop_flag) {
+    if let Err(e) = run_pipeline_thread_inner(&config, &tx, &stop_flag, &reset_silence_flag) {
         let _ = tx.blocking_send(PipelineMessage::Error(e.to_string()));
     }
     let _ = tx.blocking_send(PipelineMessage::Stopped);
@@ -237,6 +259,7 @@ fn run_pipeline_thread_inner(
     config: &PipelineConfig,
     tx: &mpsc::Sender<PipelineMessage>,
     stop_flag: &Arc<AtomicBool>,
+    reset_silence_flag: &Arc<AtomicBool>,
 ) -> Result<()> {
     info!("Pipeline thread started");
     info!("Device: {:?}", config.device_id);
@@ -535,9 +558,12 @@ fn run_pipeline_thread_inner(
     // Track continuous silence for auto-end feature
     // This is different from VAD's per-utterance silence tracking - this tracks
     // continuous silence across utterances to detect when a session should auto-end
-    let auto_end_enabled = config.auto_end_silence_ms > 0;
+    let auto_end_enabled = config.auto_end_enabled && config.auto_end_silence_ms > 0;
     let mut continuous_silence_start: Option<std::time::Instant> = None;
     let auto_end_threshold = Duration::from_millis(config.auto_end_silence_ms);
+    // Warning threshold is half of auto-end threshold (e.g., 1 min warning for 2 min auto-end)
+    let warning_threshold = Duration::from_millis(config.auto_end_silence_ms / 2);
+    let mut last_warning_second: Option<u64> = None;
 
     info!("Audio processor started, waiting for audio data...");
     if auto_end_enabled {
@@ -774,23 +800,45 @@ fn run_pipeline_thread_inner(
 
             // Track continuous silence for auto-end feature
             if auto_end_enabled {
-                if is_speech {
-                    // Speech detected - reset silence timer
+                // Check if user cancelled the auto-end countdown
+                if reset_silence_flag.swap(false, Ordering::SeqCst) {
+                    info!("User cancelled auto-end countdown, resetting silence timer");
                     if continuous_silence_start.is_some() {
-                        debug!("Speech detected, resetting auto-end silence timer");
+                        // Emit a "cancelled" warning with 0 remaining to clear UI countdown
+                        let _ = tx.blocking_send(PipelineMessage::SilenceWarning {
+                            silence_ms: 0,
+                            remaining_ms: 0,
+                        });
                     }
                     continuous_silence_start = None;
+                    last_warning_second = None;
+                }
+
+                if is_speech {
+                    // Speech detected - reset silence timer and warning state
+                    if continuous_silence_start.is_some() {
+                        debug!("Speech detected, resetting auto-end silence timer");
+                        // Emit a "cancelled" warning with 0 remaining to clear UI countdown
+                        let _ = tx.blocking_send(PipelineMessage::SilenceWarning {
+                            silence_ms: 0,
+                            remaining_ms: 0,
+                        });
+                    }
+                    continuous_silence_start = None;
+                    last_warning_second = None;
                 } else {
                     // No speech - start or continue silence timer
                     if continuous_silence_start.is_none() {
                         continuous_silence_start = Some(std::time::Instant::now());
                     }
 
-                    // Check if silence threshold exceeded
+                    // Check silence duration and emit warnings/auto-end
                     if let Some(start) = continuous_silence_start {
                         let silence_duration = start.elapsed();
+                        let silence_ms = silence_duration.as_millis() as u64;
+
                         if silence_duration >= auto_end_threshold {
-                            let silence_ms = silence_duration.as_millis() as u64;
+                            // Auto-end threshold reached
                             info!(
                                 "Auto-end triggered: {} seconds of continuous silence",
                                 silence_ms / 1000
@@ -800,6 +848,23 @@ fn run_pipeline_thread_inner(
                             });
                             // Set stop flag to trigger graceful shutdown
                             stop_flag.store(true, Ordering::SeqCst);
+                        } else if silence_duration >= warning_threshold {
+                            // Past warning threshold - emit countdown warnings every second
+                            let current_second = silence_ms / 1000;
+                            let remaining_ms = config.auto_end_silence_ms.saturating_sub(silence_ms);
+
+                            if last_warning_second != Some(current_second) {
+                                last_warning_second = Some(current_second);
+                                debug!(
+                                    "Silence warning: {}s elapsed, {}s remaining",
+                                    current_second,
+                                    remaining_ms / 1000
+                                );
+                                let _ = tx.blocking_send(PipelineMessage::SilenceWarning {
+                                    silence_ms,
+                                    remaining_ms,
+                                });
+                            }
                         }
                     }
                 }

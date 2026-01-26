@@ -8,6 +8,7 @@ import type {
   AudioQualitySnapshot,
   MultiPatientSoapResult,
   AutoEndEventPayload,
+  SilenceWarningPayload,
 } from '../types';
 
 export interface UseSessionStateResult {
@@ -22,6 +23,8 @@ export interface UseSessionStateResult {
   setSoapResult: (result: MultiPatientSoapResult | null) => void;
   localElapsedMs: number;
   autoEndInfo: AutoEndEventPayload | null;
+  /** Silence warning for auto-end countdown display (null = no warning active) */
+  silenceWarning: SilenceWarningPayload | null;
 
   // Actions
   handleStart: (deviceId: string | null) => Promise<void>;
@@ -53,6 +56,7 @@ export function useSessionState(): UseSessionStateResult {
   const [audioQuality, setAudioQuality] = useState<AudioQualitySnapshot | null>(null);
   const [soapResult, setSoapResult] = useState<MultiPatientSoapResult | null>(null);
   const [autoEndInfo, setAutoEndInfo] = useState<AutoEndEventPayload | null>(null);
+  const [silenceWarning, setSilenceWarning] = useState<SilenceWarningPayload | null>(null);
 
   // Timer state
   const [localElapsedMs, setLocalElapsedMs] = useState(0);
@@ -122,6 +126,20 @@ export function useSessionState(): UseSessionStateResult {
         if (mounted) {
           console.log('Session auto-ended:', event.payload);
           setAutoEndInfo(event.payload);
+          setSilenceWarning(null); // Clear warning when auto-end triggers
+        }
+      })
+    );
+
+    unlistenPromises.push(
+      listen<SilenceWarningPayload>('silence_warning', (event) => {
+        if (mounted) {
+          // remaining_ms of 0 means speech detected, clear the warning
+          if (event.payload.remaining_ms === 0) {
+            setSilenceWarning(null);
+          } else {
+            setSilenceWarning(event.payload);
+          }
         }
       })
     );
@@ -144,6 +162,7 @@ export function useSessionState(): UseSessionStateResult {
     setAudioQuality(null);
     setSoapResult(null);
     setAutoEndInfo(null);
+    setSilenceWarning(null);
 
     await invoke('start_session', { deviceId });
   }, []);
@@ -162,6 +181,7 @@ export function useSessionState(): UseSessionStateResult {
     setAudioQuality(null);
     setSoapResult(null);
     setAutoEndInfo(null);
+    setSilenceWarning(null);
   }, []);
 
   // Derived state
@@ -181,6 +201,7 @@ export function useSessionState(): UseSessionStateResult {
     setSoapResult,
     localElapsedMs,
     autoEndInfo,
+    silenceWarning,
     handleStart,
     handleStop,
     handleReset,

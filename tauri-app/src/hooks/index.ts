@@ -24,3 +24,6 @@ export type { UseWhisperModelsResult, DownloadProgress } from './useWhisperModel
 
 export { useAutoDetection } from './useAutoDetection';
 export type { UseAutoDetectionResult, UseAutoDetectionCallbacks } from './useAutoDetection';
+
+export { useClinicalChat } from './useClinicalChat';
+export type { UseClinicalChatResult, ChatMessage } from './useClinicalChat';
