@@ -37,6 +37,7 @@ mod commands;
 pub mod config;
 pub mod debug_storage;
 pub mod diarization;
+pub mod local_archive;
 pub mod enhancement;
 pub mod listening;
 pub mod llm_client;
@@ -47,6 +48,7 @@ pub mod ollama;
 pub mod permissions;
 mod pipeline;
 pub mod preprocessing;
+pub mod speaker_profiles;
 #[cfg(test)]
 mod command_tests;
 #[cfg(test)]
@@ -296,6 +298,18 @@ pub fn run() {
             commands::start_listening,
             commands::stop_listening,
             commands::get_listening_status,
+            // Speaker profile commands (enrollment)
+            commands::list_speaker_profiles,
+            commands::get_speaker_profile,
+            commands::create_speaker_profile,
+            commands::update_speaker_profile,
+            commands::reenroll_speaker_profile,
+            commands::delete_speaker_profile,
+            // Local archive commands (session history)
+            commands::get_local_session_dates,
+            commands::get_local_sessions_by_date,
+            commands::get_local_session_details,
+            commands::save_local_soap_note,
         ])
         .on_window_event(|window, event| {
             if let WindowEvent::CloseRequested { .. } = event {

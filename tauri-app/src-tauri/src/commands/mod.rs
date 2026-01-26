@@ -2,6 +2,7 @@
 //!
 //! This module re-exports all command handlers for registration in lib.rs.
 
+mod archive;
 mod audio;
 mod listening;
 mod medplum;
@@ -10,9 +11,11 @@ mod ollama;
 mod permissions;
 mod session;
 mod settings;
+mod speaker_profiles;
 mod whisper_server;
 
 // Re-export all commands for lib.rs registration
+pub use archive::*;
 pub use audio::*;
 pub use listening::*;
 pub use medplum::*;
@@ -21,6 +24,7 @@ pub use ollama::*;
 pub use permissions::*;
 pub use session::*;
 pub use settings::*;
+pub use speaker_profiles::*;
 pub use whisper_server::*;
 
 use crate::medplum::MedplumClient;

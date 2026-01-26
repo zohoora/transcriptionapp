@@ -7,6 +7,7 @@ import type {
   BiomarkerUpdate,
   AudioQualitySnapshot,
   MultiPatientSoapResult,
+  AutoEndEventPayload,
 } from '../types';
 
 export interface UseSessionStateResult {
@@ -20,6 +21,7 @@ export interface UseSessionStateResult {
   soapResult: MultiPatientSoapResult | null;
   setSoapResult: (result: MultiPatientSoapResult | null) => void;
   localElapsedMs: number;
+  autoEndInfo: AutoEndEventPayload | null;
 
   // Actions
   handleStart: (deviceId: string | null) => Promise<void>;
@@ -50,6 +52,7 @@ export function useSessionState(): UseSessionStateResult {
   const [biomarkers, setBiomarkers] = useState<BiomarkerUpdate | null>(null);
   const [audioQuality, setAudioQuality] = useState<AudioQualitySnapshot | null>(null);
   const [soapResult, setSoapResult] = useState<MultiPatientSoapResult | null>(null);
+  const [autoEndInfo, setAutoEndInfo] = useState<AutoEndEventPayload | null>(null);
 
   // Timer state
   const [localElapsedMs, setLocalElapsedMs] = useState(0);
@@ -114,6 +117,15 @@ export function useSessionState(): UseSessionStateResult {
       })
     );
 
+    unlistenPromises.push(
+      listen<AutoEndEventPayload>('session_auto_end', (event) => {
+        if (mounted) {
+          console.log('Session auto-ended:', event.payload);
+          setAutoEndInfo(event.payload);
+        }
+      })
+    );
+
     return () => {
       mounted = false;
       // Await all promises and unsubscribe
@@ -131,6 +143,7 @@ export function useSessionState(): UseSessionStateResult {
     setBiomarkers(null);
     setAudioQuality(null);
     setSoapResult(null);
+    setAutoEndInfo(null);
 
     await invoke('start_session', { deviceId });
   }, []);
@@ -148,6 +161,7 @@ export function useSessionState(): UseSessionStateResult {
     setBiomarkers(null);
     setAudioQuality(null);
     setSoapResult(null);
+    setAutoEndInfo(null);
   }, []);
 
   // Derived state
@@ -166,6 +180,7 @@ export function useSessionState(): UseSessionStateResult {
     soapResult,
     setSoapResult,
     localElapsedMs,
+    autoEndInfo,
     handleStart,
     handleStop,
     handleReset,

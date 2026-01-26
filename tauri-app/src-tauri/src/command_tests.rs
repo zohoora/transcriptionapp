@@ -39,7 +39,8 @@ mod tests {
             llm_router_url: "http://localhost:4000".to_string(),
             llm_api_key: "test-api-key".to_string(),
             llm_client_id: "test-client".to_string(),
-            soap_model: "soap-model".to_string(),
+            soap_model: "soap-model-fast".to_string(),
+            soap_model_fast: "soap-model-fast".to_string(),
             fast_model: "fast-model".to_string(),
             medplum_server_url: "http://localhost:8103".to_string(),
             medplum_client_id: "test-client-id".to_string(),
@@ -54,6 +55,7 @@ mod tests {
             greeting_sensitivity: Some(0.7),
             min_speech_duration_ms: Some(2000),
             debug_storage_enabled: true,
+            auto_end_silence_ms: 120_000,
         };
 
         // Serialize to JSON

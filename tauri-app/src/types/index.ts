@@ -16,6 +16,7 @@ export interface SessionStatus {
   elapsed_ms: number;
   is_processing_behind: boolean;
   error_message?: string;
+  session_id?: string;
 }
 
 export interface TranscriptUpdate {
@@ -271,8 +272,10 @@ export interface SoapOptions {
   detail_level: number;
   /** SOAP format style */
   format: SoapFormat;
-  /** Custom instructions from the physician */
+  /** Custom instructions from the physician (persisted in settings) */
   custom_instructions: string;
+  /** Session-specific notes from the clinician (entered during recording) */
+  session_notes?: string;
 }
 
 /** Default SOAP options */
@@ -332,6 +335,92 @@ export const AUDIO_QUALITY_THRESHOLDS = {
   // Clipping ratio
   CLIPPING_OK: 0.001,     // 0.1% - below this is acceptable
 } as const;
+
+// ============================================================================
+// Biomarker Status Helper Functions
+// These functions interpret raw biomarker values into clinically meaningful labels
+// ============================================================================
+
+export type BiomarkerLevel = 'good' | 'moderate' | 'low';
+export type ResponseTimeLevel = 'good' | 'moderate' | 'slow';
+
+export interface BiomarkerStatus {
+  label: string;
+  level: BiomarkerLevel;
+}
+
+export interface ResponseTimeStatus {
+  label: string;
+  level: ResponseTimeLevel;
+}
+
+/**
+ * Interpret vitality (pitch variability) value
+ * Vitality measures emotional expression through F0 std dev in Hz
+ * - High vitality (≥30 Hz): Normal emotional expression
+ * - Moderate (15-30 Hz): Reduced expression, worth noting
+ * - Low (<15 Hz): Flat affect, clinically notable
+ */
+export function getVitalityStatus(value: number): BiomarkerStatus {
+  if (value >= BIOMARKER_THRESHOLDS.VITALITY_GOOD) {
+    return { label: 'Normal', level: 'good' };
+  }
+  if (value >= BIOMARKER_THRESHOLDS.VITALITY_WARNING) {
+    return { label: 'Reduced', level: 'moderate' };
+  }
+  return { label: 'Low', level: 'low' };
+}
+
+/**
+ * Interpret stability (CPP - Cepstral Peak Prominence) value
+ * Stability measures vocal fold regularity in dB
+ * - Good stability (≥8 dB): Regular vocal fold vibration
+ * - Moderate (5-8 dB): Some irregularity
+ * - Unstable (<5 dB): Tremor, strain, or vocal pathology
+ */
+export function getStabilityStatus(value: number): BiomarkerStatus {
+  if (value >= BIOMARKER_THRESHOLDS.STABILITY_GOOD) {
+    return { label: 'Good', level: 'good' };
+  }
+  if (value >= BIOMARKER_THRESHOLDS.STABILITY_WARNING) {
+    return { label: 'Moderate', level: 'moderate' };
+  }
+  return { label: 'Unstable', level: 'low' };
+}
+
+/**
+ * Interpret engagement score (0-100)
+ * Engagement measures conversation balance and responsiveness
+ * - Good engagement (≥70): Active participation
+ * - Moderate (40-70): Some interaction issues
+ * - Low (<40): Poor conversation dynamics
+ */
+export function getEngagementStatus(value: number): BiomarkerStatus {
+  if (value >= BIOMARKER_THRESHOLDS.ENGAGEMENT_GOOD) {
+    return { label: 'Good', level: 'good' };
+  }
+  if (value >= BIOMARKER_THRESHOLDS.ENGAGEMENT_WARNING) {
+    return { label: 'Moderate', level: 'moderate' };
+  }
+  return { label: 'Low', level: 'low' };
+}
+
+/**
+ * Interpret response latency (turn-taking speed) in ms
+ * Response time measures conversation flow
+ * - Quick (≤500ms): Responsive conversation
+ * - Moderate (500-1500ms): Normal latency
+ * - Slow (>1500ms): Delayed responses, possible cognitive load
+ */
+export function getResponseTimeStatus(value: number): ResponseTimeStatus {
+  if (value <= BIOMARKER_THRESHOLDS.RESPONSE_LATENCY_GOOD) {
+    return { label: 'Quick', level: 'good' };
+  }
+  if (value <= BIOMARKER_THRESHOLDS.RESPONSE_LATENCY_WARNING) {
+    return { label: 'Moderate', level: 'moderate' };
+  }
+  return { label: 'Slow', level: 'slow' };
+}
 
 // ============================================================================
 // Medplum EMR Types
@@ -436,4 +525,97 @@ export interface MultiPatientSyncResult {
   patients: PatientSyncInfo[];
   /** Error message if any patient sync failed */
   error: string | null;
+}
+
+// ============================================================================
+// Speaker Profile Types (for enrollment-based speaker recognition)
+// ============================================================================
+
+/** Speaker role in clinical encounters */
+export type SpeakerRole = 'physician' | 'pa' | 'rn' | 'ma' | 'patient' | 'other';
+
+/** Human-readable labels for speaker roles */
+export const SPEAKER_ROLE_LABELS: Record<SpeakerRole, string> = {
+  physician: 'Physician',
+  pa: 'Physician Assistant',
+  rn: 'Registered Nurse',
+  ma: 'Medical Assistant',
+  patient: 'Patient',
+  other: 'Other',
+};
+
+/** Speaker profile info (without embedding, safe for frontend) */
+export interface SpeakerProfileInfo {
+  /** Unique identifier (UUID) */
+  id: string;
+  /** Display name (e.g., "Dr. Smith") */
+  name: string;
+  /** Role in clinical encounters */
+  role: SpeakerRole;
+  /** Custom description (e.g., "Internal medicine") */
+  description: string;
+  /** Creation timestamp (Unix epoch seconds) */
+  created_at: number;
+  /** Last update timestamp (Unix epoch seconds) */
+  updated_at: number;
+}
+
+/** Information about a speaker for SOAP generation context */
+export interface SpeakerInfo {
+  /** Speaker ID as it appears in transcript (e.g., "Dr. Smith", "Speaker 2") */
+  id: string;
+  /** Description for LLM context (e.g., "Attending physician, internal medicine") */
+  description: string;
+  /** Whether this speaker was enrolled (recognized) vs auto-detected */
+  is_enrolled: boolean;
+}
+
+/** Speaker context for SOAP generation */
+export interface SpeakerContext {
+  /** List of identified speakers with their descriptions */
+  speakers: SpeakerInfo[];
+}
+
+// ============================================================================
+// Local Archive Types (for offline session history)
+// ============================================================================
+
+/** Summary of an archived session (for list views) */
+export interface LocalArchiveSummary {
+  session_id: string;
+  date: string;
+  duration_ms: number | null;
+  word_count: number;
+  has_soap_note: boolean;
+  has_audio: boolean;
+  auto_ended: boolean;
+}
+
+/** Metadata for an archived session */
+export interface LocalArchiveMetadata {
+  session_id: string;
+  started_at: string;
+  ended_at: string | null;
+  duration_ms: number | null;
+  segment_count: number;
+  word_count: number;
+  has_soap_note: boolean;
+  has_audio: boolean;
+  auto_ended: boolean;
+  auto_end_reason: string | null;
+}
+
+/** Detailed archived session (for detail view) */
+export interface LocalArchiveDetails {
+  session_id: string;
+  metadata: LocalArchiveMetadata;
+  transcript: string | null;
+  soap_note: string | null;
+  audio_path: string | null;
+}
+
+/** Auto-end event payload */
+export interface AutoEndEventPayload {
+  reason: 'silence';
+  silence_duration_ms: number;
 }

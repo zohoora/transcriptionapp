@@ -5,6 +5,7 @@ use super::{emit_status_arc, emit_transcript_arc, SharedPipelineState, SharedSes
 use crate::activity_log;
 use crate::config::Config;
 use crate::debug_storage::DebugStorage;
+use crate::local_archive;
 use crate::pipeline::{start_pipeline, PipelineConfig, PipelineMessage};
 use crate::session::SessionError;
 use chrono::Utc;
@@ -129,6 +130,7 @@ pub async fn start_session(
         whisper_server_url: config.whisper_server_url.clone(),
         whisper_server_model: config.whisper_server_model.clone(),
         initial_audio_buffer,
+        auto_end_silence_ms: config.auto_end_silence_ms,
     };
 
     // Create message channel
@@ -236,6 +238,20 @@ pub async fn start_session(
                 PipelineMessage::AudioQuality(snapshot) => {
                     // Emit audio quality update to frontend
                     let _ = app_clone.emit("audio_quality", snapshot);
+                }
+                PipelineMessage::AutoEndSilence { silence_duration_ms } => {
+                    // Auto-end triggered due to continuous silence
+                    info!(
+                        "Auto-end silence detected: {}s of continuous silence",
+                        silence_duration_ms / 1000
+                    );
+                    // Emit session_auto_end event to frontend with reason
+                    let _ = app_clone.emit("session_auto_end", serde_json::json!({
+                        "reason": "silence",
+                        "silence_duration_ms": silence_duration_ms
+                    }));
+                    // Pipeline will self-stop via stop_flag, no need to break here
+                    // The Stopped message will follow
                 }
                 PipelineMessage::Stopped => {
                     info!("Pipeline stopped message received");
@@ -351,6 +367,18 @@ pub async fn stop_session(
                         warn!("Failed to save session to debug storage: {}", e);
                     }
                 }
+
+                // Save to local archive (always, for calendar history)
+                if let Err(e) = local_archive::save_session(
+                    &session_id_for_log,
+                    &transcript.finalized_text,
+                    status.elapsed_ms,
+                    session.audio_file_path(),
+                    false, // auto_ended - tracked separately via session_auto_end event
+                    None,  // auto_end_reason
+                ) {
+                    warn!("Failed to save session to local archive: {}", e);
+                }
             }
         });
     } else {
@@ -374,6 +402,21 @@ pub async fn stop_session(
                 elapsed_ms,
             ) {
                 warn!("Failed to save session to debug storage: {}", e);
+            }
+        }
+
+        // Save to local archive (always, for calendar history)
+        {
+            let session = session_arc.lock().map_err(|e| e.to_string())?;
+            if let Err(e) = local_archive::save_session(
+                &session_id,
+                &transcript_text,
+                elapsed_ms,
+                session.audio_file_path(),
+                false, // auto_ended
+                None,  // auto_end_reason
+            ) {
+                warn!("Failed to save session to local archive: {}", e);
             }
         }
 

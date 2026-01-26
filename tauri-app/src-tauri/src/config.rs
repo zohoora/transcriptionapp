@@ -25,6 +25,8 @@ pub struct Settings {
     pub llm_client_id: String,
     #[serde(default = "default_soap_model")]
     pub soap_model: String,
+    #[serde(default = "default_soap_model_fast")]
+    pub soap_model_fast: String,
     #[serde(default = "default_fast_model")]
     pub fast_model: String,
     // Medplum EMR settings
@@ -58,6 +60,13 @@ pub struct Settings {
     // Debug storage (development only - stores PHI locally)
     #[serde(default = "default_debug_storage_enabled")]
     pub debug_storage_enabled: bool,
+    // Auto-end session after continuous silence (milliseconds)
+    #[serde(default = "default_auto_end_silence_ms")]
+    pub auto_end_silence_ms: u64,
+}
+
+fn default_auto_end_silence_ms() -> u64 {
+    120_000 // 2 minutes
 }
 
 fn default_debug_storage_enabled() -> bool {
@@ -80,7 +89,11 @@ fn default_llm_client_id() -> String {
 }
 
 fn default_soap_model() -> String {
-    "soap-model".to_string()
+    "soap-model-fast".to_string()
+}
+
+fn default_soap_model_fast() -> String {
+    "soap-model-fast".to_string()
 }
 
 fn default_fast_model() -> String {
@@ -125,9 +138,8 @@ fn default_medplum_url() -> String {
 }
 
 fn default_medplum_client_id() -> String {
-    // Empty by default - must be configured by user for their Medplum instance
-    // This prevents accidental use of a development client ID in production
-    String::new()
+    // Default to the FabricScribe ClientApplication ID
+    "af1464aa-e00c-4940-a32e-18d878b7911c".to_string()
 }
 
 fn default_medplum_auto_sync() -> bool {
@@ -150,6 +162,7 @@ impl Default for Settings {
             llm_api_key: default_llm_api_key(),
             llm_client_id: default_llm_client_id(),
             soap_model: default_soap_model(),
+            soap_model_fast: default_soap_model_fast(),
             fast_model: default_fast_model(),
             medplum_server_url: default_medplum_url(),
             medplum_client_id: default_medplum_client_id(),
@@ -164,6 +177,7 @@ impl Default for Settings {
             greeting_sensitivity: default_greeting_sensitivity(),
             min_speech_duration_ms: default_min_speech_duration_ms(),
             debug_storage_enabled: default_debug_storage_enabled(),
+            auto_end_silence_ms: default_auto_end_silence_ms(),
         }
     }
 }
@@ -331,6 +345,8 @@ pub struct Config {
     pub llm_client_id: String,
     #[serde(default = "default_soap_model")]
     pub soap_model: String,
+    #[serde(default = "default_soap_model_fast")]
+    pub soap_model_fast: String,
     #[serde(default = "default_fast_model")]
     pub fast_model: String,
     // Medplum EMR settings
@@ -364,6 +380,9 @@ pub struct Config {
     // Debug storage (development only - stores PHI locally)
     #[serde(default = "default_debug_storage_enabled")]
     pub debug_storage_enabled: bool,
+    // Auto-end session after continuous silence (milliseconds)
+    #[serde(default = "default_auto_end_silence_ms")]
+    pub auto_end_silence_ms: u64,
 }
 
 fn default_max_speakers() -> usize {
@@ -422,6 +441,7 @@ impl Default for Config {
             llm_api_key: default_llm_api_key(),
             llm_client_id: default_llm_client_id(),
             soap_model: default_soap_model(),
+            soap_model_fast: default_soap_model_fast(),
             fast_model: default_fast_model(),
             medplum_server_url: default_medplum_url(),
             medplum_client_id: default_medplum_client_id(),
@@ -436,6 +456,7 @@ impl Default for Config {
             greeting_sensitivity: default_greeting_sensitivity(),
             min_speech_duration_ms: default_min_speech_duration_ms(),
             debug_storage_enabled: default_debug_storage_enabled(),
+            auto_end_silence_ms: default_auto_end_silence_ms(),
         }
     }
 }
@@ -585,6 +606,7 @@ impl Config {
             llm_api_key: self.llm_api_key.clone(),
             llm_client_id: self.llm_client_id.clone(),
             soap_model: self.soap_model.clone(),
+            soap_model_fast: self.soap_model_fast.clone(),
             fast_model: self.fast_model.clone(),
             medplum_server_url: self.medplum_server_url.clone(),
             medplum_client_id: self.medplum_client_id.clone(),
@@ -599,6 +621,7 @@ impl Config {
             greeting_sensitivity: self.greeting_sensitivity,
             min_speech_duration_ms: self.min_speech_duration_ms,
             debug_storage_enabled: self.debug_storage_enabled,
+            auto_end_silence_ms: self.auto_end_silence_ms,
         }
     }
 
@@ -617,6 +640,7 @@ impl Config {
         self.llm_api_key = settings.llm_api_key.clone();
         self.llm_client_id = settings.llm_client_id.clone();
         self.soap_model = settings.soap_model.clone();
+        self.soap_model_fast = settings.soap_model_fast.clone();
         self.fast_model = settings.fast_model.clone();
         self.medplum_server_url = settings.medplum_server_url.clone();
         self.medplum_client_id = settings.medplum_client_id.clone();
@@ -633,6 +657,8 @@ impl Config {
         self.min_speech_duration_ms = settings.min_speech_duration_ms;
         // Debug storage
         self.debug_storage_enabled = settings.debug_storage_enabled;
+        // Auto-end silence
+        self.auto_end_silence_ms = settings.auto_end_silence_ms;
     }
 }
 
@@ -722,7 +748,8 @@ mod tests {
             llm_router_url: "http://192.168.1.100:4000".to_string(),
             llm_api_key: "test-api-key".to_string(),
             llm_client_id: "test-client".to_string(),
-            soap_model: "soap-model".to_string(),
+            soap_model: "soap-model-fast".to_string(),
+            soap_model_fast: "soap-model-fast".to_string(),
             fast_model: "fast-model".to_string(),
             medplum_server_url: "http://192.168.1.100:8103".to_string(),
             medplum_client_id: "test-client".to_string(),
@@ -737,6 +764,7 @@ mod tests {
             greeting_sensitivity: Some(0.8),
             min_speech_duration_ms: Some(3000),
             debug_storage_enabled: true,
+            auto_end_silence_ms: 180_000, // 3 minutes
         };
 
         let mut config = Config::default();
@@ -754,7 +782,7 @@ mod tests {
         assert_eq!(config.llm_router_url, "http://192.168.1.100:4000");
         assert_eq!(config.llm_api_key, "test-api-key");
         assert_eq!(config.llm_client_id, "test-client");
-        assert_eq!(config.soap_model, "soap-model");
+        assert_eq!(config.soap_model, "soap-model-fast");
         assert_eq!(config.fast_model, "fast-model");
         assert_eq!(config.medplum_server_url, "http://192.168.1.100:8103");
         assert_eq!(config.medplum_client_id, "test-client");
@@ -821,6 +849,7 @@ mod tests {
             llm_api_key: default_llm_api_key(),
             llm_client_id: default_llm_client_id(),
             soap_model: default_soap_model(),
+            soap_model_fast: default_soap_model_fast(),
             fast_model: default_fast_model(),
             medplum_server_url: default_medplum_url(),
             medplum_client_id: String::new(),
@@ -835,6 +864,7 @@ mod tests {
             greeting_sensitivity: Some(0.7),
             min_speech_duration_ms: Some(2000),
             debug_storage_enabled: true,
+            auto_end_silence_ms: 120_000,
         };
 
         let mut config = Config::default();
@@ -851,28 +881,28 @@ mod tests {
         assert!(config.llm_router_url.is_empty());
         assert!(config.llm_api_key.is_empty());
         assert_eq!(config.llm_client_id, "ai-scribe");
-        assert_eq!(config.soap_model, "soap-model");
+        assert_eq!(config.soap_model, "soap-model-fast");
         assert_eq!(config.fast_model, "fast-model");
 
         let settings = Settings::default();
         assert!(settings.llm_router_url.is_empty());
         assert!(settings.llm_api_key.is_empty());
         assert_eq!(settings.llm_client_id, "ai-scribe");
-        assert_eq!(settings.soap_model, "soap-model");
+        assert_eq!(settings.soap_model, "soap-model-fast");
         assert_eq!(settings.fast_model, "fast-model");
     }
 
     #[test]
     fn test_medplum_defaults() {
         let config = Config::default();
-        // Medplum server URL and client ID are empty by default - must be configured by user
+        // Medplum server URL is empty by default, client ID has a default
         assert!(config.medplum_server_url.is_empty());
-        assert!(config.medplum_client_id.is_empty());
+        assert_eq!(config.medplum_client_id, "af1464aa-e00c-4940-a32e-18d878b7911c");
         assert!(config.medplum_auto_sync);
 
         let settings = Settings::default();
         assert!(settings.medplum_server_url.is_empty());
-        assert!(settings.medplum_client_id.is_empty());
+        assert_eq!(settings.medplum_client_id, "af1464aa-e00c-4940-a32e-18d878b7911c");
         assert!(settings.medplum_auto_sync);
     }
 

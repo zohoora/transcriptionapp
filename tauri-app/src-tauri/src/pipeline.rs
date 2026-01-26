@@ -22,6 +22,9 @@ use crate::whisper_server::WhisperServerClient;
 #[cfg(feature = "diarization")]
 use crate::diarization::{DiarizationConfig, DiarizationProvider};
 
+#[cfg(feature = "diarization")]
+use crate::speaker_profiles::{SpeakerProfile, SpeakerProfileManager};
+
 #[cfg(feature = "enhancement")]
 use crate::enhancement::{EnhancementConfig, EnhancementProvider};
 
@@ -77,6 +80,11 @@ pub enum PipelineMessage {
     Biomarker(BiomarkerUpdate),
     /// Audio quality update for frontend
     AudioQuality(AudioQualitySnapshot),
+    /// Auto-end due to continuous silence detected
+    AutoEndSilence {
+        /// Duration of continuous silence in milliseconds
+        silence_duration_ms: u64,
+    },
     /// Pipeline has stopped
     Stopped,
     /// Error occurred
@@ -120,6 +128,8 @@ pub struct PipelineConfig {
     // This buffer contains audio captured before the greeting check completed
     // and should be prepended to the recording at startup
     pub initial_audio_buffer: Option<Vec<f32>>,
+    // Auto-end silence threshold in milliseconds (0 = disabled)
+    pub auto_end_silence_ms: u64,
 }
 
 impl Default for PipelineConfig {
@@ -148,6 +158,7 @@ impl Default for PipelineConfig {
             whisper_server_url: "http://172.16.100.45:8001".to_string(),
             whisper_server_model: "large-v3-turbo".to_string(),
             initial_audio_buffer: None,
+            auto_end_silence_ms: 120_000, // 2 minutes default
         }
     }
 }
@@ -329,8 +340,27 @@ fn run_pipeline_thread_inner(
                 info!("Diarization config: similarity_threshold={}, max_speakers={}",
                       diar_config.similarity_threshold, diar_config.max_speakers);
                 match DiarizationProvider::new(diar_config) {
-                    Ok(provider) => {
+                    Ok(mut provider) => {
                         info!("Diarization enabled with model: {:?}", model_path);
+
+                        // Load enrolled speaker profiles
+                        match SpeakerProfileManager::load() {
+                            Ok(manager) => {
+                                let profiles: &[SpeakerProfile] = manager.list();
+                                if !profiles.is_empty() {
+                                    info!("Loading {} enrolled speaker profiles...", profiles.len());
+                                    provider.load_enrolled_speakers(profiles);
+                                    let names = provider.enrolled_speaker_names();
+                                    info!("Enrolled speakers loaded: {:?}", names);
+                                } else {
+                                    info!("No enrolled speaker profiles found");
+                                }
+                            }
+                            Err(e) => {
+                                warn!("Failed to load speaker profile manager: {}", e);
+                            }
+                        }
+
                         Some(provider)
                     }
                     Err(e) => {
@@ -502,7 +532,17 @@ fn run_pipeline_thread_inner(
     let mut consecutive_transcription_errors: u32 = 0;
     const MAX_CONSECUTIVE_ERRORS: u32 = 3;
 
+    // Track continuous silence for auto-end feature
+    // This is different from VAD's per-utterance silence tracking - this tracks
+    // continuous silence across utterances to detect when a session should auto-end
+    let auto_end_enabled = config.auto_end_silence_ms > 0;
+    let mut continuous_silence_start: Option<std::time::Instant> = None;
+    let auto_end_threshold = Duration::from_millis(config.auto_end_silence_ms);
+
     info!("Audio processor started, waiting for audio data...");
+    if auto_end_enabled {
+        info!("Auto-end enabled: session will end after {:?} of silence", auto_end_threshold);
+    }
 
     loop {
         // Check stop flag
@@ -730,6 +770,39 @@ fn run_pipeline_thread_inner(
             // Send audio with VAD state to biomarker thread for quality analysis
             if let Some(ref bio_handle) = biomarker_handle {
                 bio_handle.send_audio_chunk_with_vad(chunk, pipeline.audio_clock_ms(), is_speech);
+            }
+
+            // Track continuous silence for auto-end feature
+            if auto_end_enabled {
+                if is_speech {
+                    // Speech detected - reset silence timer
+                    if continuous_silence_start.is_some() {
+                        debug!("Speech detected, resetting auto-end silence timer");
+                    }
+                    continuous_silence_start = None;
+                } else {
+                    // No speech - start or continue silence timer
+                    if continuous_silence_start.is_none() {
+                        continuous_silence_start = Some(std::time::Instant::now());
+                    }
+
+                    // Check if silence threshold exceeded
+                    if let Some(start) = continuous_silence_start {
+                        let silence_duration = start.elapsed();
+                        if silence_duration >= auto_end_threshold {
+                            let silence_ms = silence_duration.as_millis() as u64;
+                            info!(
+                                "Auto-end triggered: {} seconds of continuous silence",
+                                silence_ms / 1000
+                            );
+                            let _ = tx.blocking_send(PipelineMessage::AutoEndSilence {
+                                silence_duration_ms: silence_ms,
+                            });
+                            // Set stop flag to trigger graceful shutdown
+                            stop_flag.store(true, Ordering::SeqCst);
+                        }
+                    }
+                }
             }
         }
 
