@@ -1,5 +1,6 @@
 import { memo } from 'react';
-import type { Device, LLMStatus, AuthState, WhisperServerStatus } from '../types';
+import type { Device, LLMStatus, AuthState, WhisperServerStatus, SpeakerRole } from '../types';
+import { SPEAKER_ROLE_LABELS } from '../types';
 import { SpeakerEnrollment } from './SpeakerEnrollment';
 
 // Supported languages
@@ -36,6 +37,8 @@ export interface PendingSettings {
   whisper_server_model: string;
   // Auto-session detection settings
   auto_start_enabled: boolean;
+  auto_start_require_enrolled: boolean;
+  auto_start_required_role: SpeakerRole | null;
   // Auto-end settings
   auto_end_enabled: boolean;
 }
@@ -249,6 +252,48 @@ export const SettingsDrawer = memo(function SettingsDrawer({
                 </div>
                 <span className="settings-hint">Start recording automatically when speech with a greeting is detected</span>
               </div>
+
+              {/* Speaker verification options - only shown when auto-start is enabled */}
+              {pendingSettings.auto_start_enabled && (
+                <>
+                  <div className="settings-group settings-subgroup">
+                    <div className="settings-toggle">
+                      <span className="settings-label" style={{ marginBottom: 0 }}>Require Enrolled Speaker</span>
+                      <label className="toggle-switch">
+                        <input
+                          type="checkbox"
+                          checked={pendingSettings.auto_start_require_enrolled}
+                          onChange={(e) => onSettingsChange({ ...pendingSettings, auto_start_require_enrolled: e.target.checked })}
+                          aria-label="Only auto-start when speaker is enrolled"
+                        />
+                        <span className="toggle-slider"></span>
+                      </label>
+                    </div>
+                    <span className="settings-hint">Only auto-start when the speaker's voice matches an enrolled profile</span>
+                  </div>
+
+                  {pendingSettings.auto_start_require_enrolled && (
+                    <div className="settings-group settings-subgroup">
+                      <label className="settings-label" htmlFor="required-role">Required Role (optional)</label>
+                      <select
+                        id="required-role"
+                        className="settings-select"
+                        value={pendingSettings.auto_start_required_role || ''}
+                        onChange={(e) => onSettingsChange({
+                          ...pendingSettings,
+                          auto_start_required_role: e.target.value ? e.target.value as SpeakerRole : null
+                        })}
+                      >
+                        <option value="">Any enrolled speaker</option>
+                        {Object.entries(SPEAKER_ROLE_LABELS).map(([role, label]) => (
+                          <option key={role} value={role}>{label}</option>
+                        ))}
+                      </select>
+                      <span className="settings-hint">Optionally restrict auto-start to speakers with a specific role</span>
+                    </div>
+                  )}
+                </>
+              )}
 
               <div className="settings-group">
                 <div className="settings-toggle">

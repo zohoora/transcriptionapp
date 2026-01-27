@@ -64,6 +64,7 @@ describe('useSoapNote', () => {
         format: 'problem_based',
         custom_instructions: '',
       },
+      sessionId: null, // Optional session ID for debug storage
     });
     expect(soapResult).toEqual(mockSoapResult);
     expect(result.current.soapError).toBeNull();
@@ -111,6 +112,7 @@ describe('useSoapNote', () => {
         format: 'problem_based',
         custom_instructions: '',
       },
+      sessionId: null, // Optional session ID for debug storage
     });
     expect(soapResult).toEqual(mockSoapResult);
   });
@@ -248,10 +250,8 @@ describe('useSoapNote', () => {
     mockInvoke
       .mockRejectedValueOnce(new Error('First error'))
       .mockResolvedValueOnce({
-        subjective: 'test',
-        objective: 'test',
-        assessment: 'test',
-        plan: 'test',
+        notes: [{ patient_label: 'Patient 1', speaker_id: 'Speaker 1', content: 'Test SOAP note' }],
+        physician_speaker: 'Speaker 2',
         generated_at: '2025-01-01T00:00:00Z',
         model_used: 'test',
       });

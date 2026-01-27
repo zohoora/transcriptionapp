@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import type { Settings } from '../types';
+import type { Settings, SpeakerRole } from '../types';
 
 /**
  * Pending settings that the user is editing before saving.
@@ -28,6 +28,8 @@ export interface PendingSettings {
   whisper_server_model: string;
   // Auto-session detection settings
   auto_start_enabled: boolean;
+  auto_start_require_enrolled: boolean;
+  auto_start_required_role: SpeakerRole | null;
   // Auto-end settings
   auto_end_enabled: boolean;
 }
@@ -80,6 +82,8 @@ export function useSettings(): UseSettingsResult {
     whisper_server_url: s.whisper_server_url,
     whisper_server_model: s.whisper_server_model,
     auto_start_enabled: s.auto_start_enabled,
+    auto_start_require_enrolled: s.auto_start_require_enrolled,
+    auto_start_required_role: s.auto_start_required_role,
     auto_end_enabled: s.auto_end_enabled,
   }), []);
 
@@ -133,6 +137,8 @@ export function useSettings(): UseSettingsResult {
         whisper_server_url: pendingSettings.whisper_server_url,
         whisper_server_model: pendingSettings.whisper_server_model,
         auto_start_enabled: pendingSettings.auto_start_enabled,
+        auto_start_require_enrolled: pendingSettings.auto_start_require_enrolled,
+        auto_start_required_role: pendingSettings.auto_start_required_role,
         auto_end_enabled: pendingSettings.auto_end_enabled,
       };
 
@@ -168,6 +174,8 @@ export function useSettings(): UseSettingsResult {
       [settings.whisper_server_url, pendingSettings.whisper_server_url],
       [settings.whisper_server_model, pendingSettings.whisper_server_model],
       [settings.auto_start_enabled, pendingSettings.auto_start_enabled],
+      [settings.auto_start_require_enrolled, pendingSettings.auto_start_require_enrolled],
+      [settings.auto_start_required_role, pendingSettings.auto_start_required_role],
       [settings.auto_end_enabled, pendingSettings.auto_end_enabled],
     ];
 

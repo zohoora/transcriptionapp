@@ -62,6 +62,18 @@ pub async fn start_listening(
 
     // Load config from disk (consistent with other commands)
     let cfg = load_config();
+
+    // Get speaker model path (if speaker verification is enabled)
+    let speaker_model_path = if cfg.auto_start_require_enrolled {
+        dirs::home_dir().map(|h| {
+            h.join(".transcriptionapp/models/ecapa_tdnn.onnx")
+                .to_string_lossy()
+                .to_string()
+        })
+    } else {
+        None
+    };
+
     let config = ListeningConfig {
         vad_threshold: cfg.vad_threshold,
         min_speech_duration_ms: cfg.min_speech_duration_ms.unwrap_or(2000),
@@ -75,6 +87,9 @@ pub async fn start_listening(
         llm_client_id: cfg.llm_client_id.clone(),
         fast_model: cfg.fast_model.clone(),
         language: cfg.language.clone(),
+        require_enrolled: cfg.auto_start_require_enrolled,
+        required_role: cfg.auto_start_required_role.clone(),
+        speaker_model_path,
     };
 
     // Create event callback that emits to frontend
@@ -123,6 +138,13 @@ pub async fn start_listening(
                     state.status.speech_detected = false;
                     state.status.analyzing = false;
                     // Clear audio buffer to prevent memory leak
+                    state.initial_audio_buffer = None;
+                }
+                ListeningEvent::SpeakerNotVerified { .. } => {
+                    state.status.analyzing = false;
+                    state.status.speech_detected = false;
+                    state.status.speech_duration_ms = 0;
+                    // Clear audio buffer since speaker was not verified
                     state.initial_audio_buffer = None;
                 }
                 ListeningEvent::Error { .. } => {

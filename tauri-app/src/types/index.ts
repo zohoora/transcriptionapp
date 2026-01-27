@@ -82,6 +82,9 @@ export interface Settings {
   auto_start_enabled: boolean;
   greeting_sensitivity: number | null;
   min_speech_duration_ms: number | null;
+  // Speaker verification for auto-start
+  auto_start_require_enrolled: boolean;
+  auto_start_required_role: SpeakerRole | null;
   // Auto-end settings
   auto_end_enabled: boolean;
   auto_end_silence_ms: number;
@@ -102,11 +105,12 @@ export type ListeningEventType =
   | 'started'
   | 'speech_detected'
   | 'analyzing'
-  | 'start_recording'      // Optimistic recording start (before greeting check completes)
-  | 'greeting_confirmed'   // Greeting check passed, recording should continue
-  | 'greeting_rejected'    // Not a greeting, recording should be discarded
-  | 'greeting_detected'    // Legacy: greeting detected
-  | 'not_greeting'         // Legacy: not a greeting
+  | 'start_recording'       // Optimistic recording start (before greeting check completes)
+  | 'greeting_confirmed'    // Greeting check passed, recording should continue
+  | 'greeting_rejected'     // Not a greeting, recording should be discarded
+  | 'greeting_detected'     // Legacy: greeting detected
+  | 'not_greeting'          // Legacy: not a greeting
+  | 'speaker_not_verified'  // Speaker not enrolled or wrong role (if require_enrolled is true)
   | 'error'
   | 'stopped';
 

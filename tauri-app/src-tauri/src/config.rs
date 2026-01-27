@@ -57,6 +57,11 @@ pub struct Settings {
     pub greeting_sensitivity: Option<f32>,
     #[serde(default = "default_min_speech_duration_ms")]
     pub min_speech_duration_ms: Option<u32>,
+    // Speaker verification for auto-start
+    #[serde(default)]
+    pub auto_start_require_enrolled: bool,
+    #[serde(default)]
+    pub auto_start_required_role: Option<String>,
     // Auto-end session after continuous silence
     #[serde(default = "default_auto_end_enabled")]
     pub auto_end_enabled: bool,
@@ -182,6 +187,8 @@ impl Default for Settings {
             auto_start_enabled: false,
             greeting_sensitivity: default_greeting_sensitivity(),
             min_speech_duration_ms: default_min_speech_duration_ms(),
+            auto_start_require_enrolled: false,
+            auto_start_required_role: None,
             auto_end_enabled: default_auto_end_enabled(),
             auto_end_silence_ms: default_auto_end_silence_ms(),
             debug_storage_enabled: default_debug_storage_enabled(),
@@ -384,6 +391,11 @@ pub struct Config {
     pub greeting_sensitivity: Option<f32>,
     #[serde(default = "default_min_speech_duration_ms")]
     pub min_speech_duration_ms: Option<u32>,
+    // Speaker verification for auto-start
+    #[serde(default)]
+    pub auto_start_require_enrolled: bool,
+    #[serde(default)]
+    pub auto_start_required_role: Option<String>,
     // Auto-end session after continuous silence
     #[serde(default = "default_auto_end_enabled")]
     pub auto_end_enabled: bool,
@@ -464,6 +476,8 @@ impl Default for Config {
             auto_start_enabled: false,
             greeting_sensitivity: default_greeting_sensitivity(),
             min_speech_duration_ms: default_min_speech_duration_ms(),
+            auto_start_require_enrolled: false,
+            auto_start_required_role: None,
             auto_end_enabled: default_auto_end_enabled(),
             auto_end_silence_ms: default_auto_end_silence_ms(),
             debug_storage_enabled: default_debug_storage_enabled(),
@@ -630,6 +644,8 @@ impl Config {
             auto_start_enabled: self.auto_start_enabled,
             greeting_sensitivity: self.greeting_sensitivity,
             min_speech_duration_ms: self.min_speech_duration_ms,
+            auto_start_require_enrolled: self.auto_start_require_enrolled,
+            auto_start_required_role: self.auto_start_required_role.clone(),
             auto_end_enabled: self.auto_end_enabled,
             auto_end_silence_ms: self.auto_end_silence_ms,
             debug_storage_enabled: self.debug_storage_enabled,
@@ -666,6 +682,9 @@ impl Config {
         self.auto_start_enabled = settings.auto_start_enabled;
         self.greeting_sensitivity = settings.greeting_sensitivity;
         self.min_speech_duration_ms = settings.min_speech_duration_ms;
+        // Speaker verification for auto-start
+        self.auto_start_require_enrolled = settings.auto_start_require_enrolled;
+        self.auto_start_required_role = settings.auto_start_required_role.clone();
         // Auto-end settings
         self.auto_end_enabled = settings.auto_end_enabled;
         self.auto_end_silence_ms = settings.auto_end_silence_ms;

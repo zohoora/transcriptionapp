@@ -329,24 +329,49 @@ exports[`App Snapshots > renders error state correctly 1`] = `
     class="ready-mode"
   >
     <div
-      class="auto-detect-toggle"
+      class="automation-toggles"
     >
-      <label
-        class="toggle-label"
+      <div
+        class="auto-toggle-item"
       >
-        <input
-          class="toggle-checkbox"
-          type="checkbox"
-        />
-        <span
-          class="toggle-switch"
-        />
-        <span
-          class="toggle-text"
+        <label
+          class="toggle-label"
         >
-          Auto-detect
-        </span>
-      </label>
+          <input
+            class="toggle-checkbox"
+            type="checkbox"
+          />
+          <span
+            class="toggle-switch"
+          />
+          <span
+            class="toggle-text"
+          >
+            Auto-start
+          </span>
+        </label>
+      </div>
+      <div
+        class="auto-toggle-item"
+      >
+        <label
+          class="toggle-label"
+        >
+          <input
+            checked=""
+            class="toggle-checkbox"
+            type="checkbox"
+          />
+          <span
+            class="toggle-switch"
+          />
+          <span
+            class="toggle-text"
+          >
+            Auto-end
+          </span>
+        </label>
+      </div>
     </div>
     <div
       class="mic-preview"
@@ -381,6 +406,29 @@ exports[`App Snapshots > renders error state correctly 1`] = `
         >
           Microphone access denied
         </span>
+      </div>
+    </div>
+    <div
+      class="medplum-status-section"
+    >
+      <div
+        class="medplum-logged-out"
+      >
+        <span
+          class="medplum-status-text"
+        >
+          Log in to enable automatic sync to your EMR
+        </span>
+        <div
+          class="medplum-login-actions"
+        >
+          <button
+            aria-label="Log in to Medplum"
+            class="medplum-login-btn"
+          >
+            Log In
+          </button>
+        </div>
       </div>
     </div>
   </div>
@@ -479,24 +527,49 @@ exports[`App Snapshots > renders idle state correctly 1`] = `
     class="ready-mode"
   >
     <div
-      class="auto-detect-toggle"
+      class="automation-toggles"
     >
-      <label
-        class="toggle-label"
+      <div
+        class="auto-toggle-item"
       >
-        <input
-          class="toggle-checkbox"
-          type="checkbox"
-        />
-        <span
-          class="toggle-switch"
-        />
-        <span
-          class="toggle-text"
+        <label
+          class="toggle-label"
         >
-          Auto-detect
-        </span>
-      </label>
+          <input
+            class="toggle-checkbox"
+            type="checkbox"
+          />
+          <span
+            class="toggle-switch"
+          />
+          <span
+            class="toggle-text"
+          >
+            Auto-start
+          </span>
+        </label>
+      </div>
+      <div
+        class="auto-toggle-item"
+      >
+        <label
+          class="toggle-label"
+        >
+          <input
+            checked=""
+            class="toggle-checkbox"
+            type="checkbox"
+          />
+          <span
+            class="toggle-switch"
+          />
+          <span
+            class="toggle-text"
+          >
+            Auto-end
+          </span>
+        </label>
+      </div>
     </div>
     <div
       class="mic-preview"
@@ -520,6 +593,29 @@ exports[`App Snapshots > renders idle state correctly 1`] = `
         Start New Session
       </span>
     </button>
+    <div
+      class="medplum-status-section"
+    >
+      <div
+        class="medplum-logged-out"
+      >
+        <span
+          class="medplum-status-text"
+        >
+          Log in to enable automatic sync to your EMR
+        </span>
+        <div
+          class="medplum-login-actions"
+        >
+          <button
+            aria-label="Log in to Medplum"
+            class="medplum-login-btn"
+          >
+            Log In
+          </button>
+        </div>
+      </div>
+    </div>
   </div>
 </div>
 `;
@@ -653,6 +749,27 @@ exports[`App Snapshots > renders recording state correctly 1`] = `
       </span>
     </button>
     <button
+      aria-expanded="false"
+      aria-label="Add notes"
+      class="notes-toggle  "
+    >
+      <span
+        class="notes-icon"
+      >
+        📝
+      </span>
+      <span
+        class="notes-label"
+      >
+        Add Notes
+      </span>
+      <span
+        class="notes-chevron"
+      >
+        ▼
+      </span>
+    </button>
+    <button
       aria-label="End session"
       class="stop-button "
     >
@@ -670,6 +787,31 @@ exports[`App Snapshots > renders recording state correctly 1`] = `
     >
       Show Transcript
     </button>
+    <div
+      class="clinical-chat collapsed"
+    >
+      <button
+        aria-expanded="false"
+        aria-label="Expand clinical assistant"
+        class="clinical-chat-header"
+      >
+        <span
+          class="chat-header-icon"
+        >
+          💬
+        </span>
+        <span
+          class="chat-header-title"
+        >
+          Clinical Assistant
+        </span>
+        <span
+          class="chat-header-chevron"
+        >
+          ▲
+        </span>
+      </button>
+    </div>
     <div
       class="model-indicator"
     >
@@ -810,6 +952,27 @@ exports[`App Snapshots > renders stopping state correctly 1`] = `
       </span>
     </button>
     <button
+      aria-expanded="false"
+      aria-label="Add notes"
+      class="notes-toggle  "
+    >
+      <span
+        class="notes-icon"
+      >
+        📝
+      </span>
+      <span
+        class="notes-label"
+      >
+        Add Notes
+      </span>
+      <span
+        class="notes-chevron"
+      >
+        ▼
+      </span>
+    </button>
+    <button
       aria-label="Ending session..."
       class="stop-button stopping"
       disabled=""
@@ -828,6 +991,31 @@ exports[`App Snapshots > renders stopping state correctly 1`] = `
     >
       Show Transcript
     </button>
+    <div
+      class="clinical-chat collapsed"
+    >
+      <button
+        aria-expanded="false"
+        aria-label="Expand clinical assistant"
+        class="clinical-chat-header"
+      >
+        <span
+          class="chat-header-icon"
+        >
+          💬
+        </span>
+        <span
+          class="chat-header-title"
+        >
+          Clinical Assistant
+        </span>
+        <span
+          class="chat-header-chevron"
+        >
+          ▲
+        </span>
+      </button>
+    </div>
     <div
       class="model-indicator"
     >
@@ -968,6 +1156,27 @@ exports[`App Snapshots > renders with transcript correctly 1`] = `
       </span>
     </button>
     <button
+      aria-expanded="false"
+      aria-label="Add notes"
+      class="notes-toggle  "
+    >
+      <span
+        class="notes-icon"
+      >
+        📝
+      </span>
+      <span
+        class="notes-label"
+      >
+        Add Notes
+      </span>
+      <span
+        class="notes-chevron"
+      >
+        ▼
+      </span>
+    </button>
+    <button
       aria-label="End session"
       class="stop-button "
     >
@@ -1000,6 +1209,31 @@ This is the second paragraph.
       >
         Still speaking...
       </div>
+    </div>
+    <div
+      class="clinical-chat collapsed"
+    >
+      <button
+        aria-expanded="false"
+        aria-label="Expand clinical assistant"
+        class="clinical-chat-header"
+      >
+        <span
+          class="chat-header-icon"
+        >
+          💬
+        </span>
+        <span
+          class="chat-header-title"
+        >
+          Clinical Assistant
+        </span>
+        <span
+          class="chat-header-chevron"
+        >
+          ▲
+        </span>
+      </button>
     </div>
     <div
       class="model-indicator"

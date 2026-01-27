@@ -17,7 +17,9 @@ use tracing::{debug, error, info, warn};
 use voice_activity_detector::VoiceActivityDetector;
 
 use crate::audio::{list_input_devices, AudioResampler};
+use crate::diarization::{cosine_similarity, l2_normalize, DiarizationConfig, DiarizationProvider};
 use crate::llm_client::LLMClient;
+use crate::speaker_profiles::{SpeakerProfile, SpeakerProfileManager, SpeakerRole};
 use crate::whisper_server::WhisperServerClient;
 
 /// Target sample rate for VAD (16kHz)
@@ -73,6 +75,18 @@ pub struct ListeningConfig {
     /// Language for transcription
     #[serde(default = "default_language")]
     pub language: String,
+
+    /// Whether to require an enrolled speaker for auto-start
+    #[serde(default)]
+    pub require_enrolled: bool,
+
+    /// If set, only auto-start for speakers with this role
+    #[serde(default)]
+    pub required_role: Option<String>,
+
+    /// Path to the speaker embedding model (ECAPA-TDNN ONNX)
+    #[serde(default)]
+    pub speaker_model_path: Option<String>,
 }
 
 fn default_vad_threshold() -> f32 {
@@ -109,6 +123,9 @@ impl Default for ListeningConfig {
             llm_client_id: "ai-scribe".to_string(),
             fast_model: "fast-model".to_string(),
             language: default_language(),
+            require_enrolled: false,
+            required_role: None,
+            speaker_model_path: None,
         }
     }
 }
@@ -162,6 +179,11 @@ pub enum ListeningEvent {
     /// Not a greeting - continue listening
     NotGreeting {
         transcript: String,
+    },
+
+    /// Speaker not verified - not an enrolled speaker or wrong role
+    SpeakerNotVerified {
+        reason: String,
     },
 
     /// Error occurred
@@ -222,6 +244,139 @@ impl Drop for ListeningHandle {
     fn drop(&mut self) {
         self.stop_flag.store(true, Ordering::SeqCst);
         let _ = self.cmd_tx.send(ListeningCommand::Stop);
+    }
+}
+
+/// Similarity threshold for enrolled speaker matching during auto-start
+const SPEAKER_VERIFY_THRESHOLD: f32 = 0.6;
+
+/// Speaker verification for auto-start
+/// Checks if the speaking person is an enrolled user with optional role filtering
+struct SpeakerVerifier {
+    /// Loaded speaker profiles with embeddings
+    profiles: Vec<SpeakerProfile>,
+    /// Diarization provider for embedding extraction
+    diarization: DiarizationProvider,
+    /// Required role filter (if any)
+    required_role: Option<SpeakerRole>,
+}
+
+impl SpeakerVerifier {
+    /// Create a new speaker verifier from config
+    fn new(config: &ListeningConfig) -> Result<Self, String> {
+        // Load speaker profiles
+        let manager = SpeakerProfileManager::load()
+            .map_err(|e| format!("Failed to load speaker profiles: {}", e))?;
+
+        let profiles = manager.profiles();
+        if profiles.is_empty() {
+            return Err("No speaker profiles enrolled".to_string());
+        }
+
+        // Get model path
+        let model_path = config.speaker_model_path.clone()
+            .or_else(|| {
+                dirs::home_dir().map(|h| {
+                    h.join(".transcriptionapp/models/ecapa_tdnn.onnx")
+                        .to_string_lossy()
+                        .to_string()
+                })
+            })
+            .ok_or_else(|| "Could not determine speaker model path".to_string())?;
+
+        // Check if model exists
+        if !std::path::Path::new(&model_path).exists() {
+            return Err(format!("Speaker model not found at: {}", model_path));
+        }
+
+        // Initialize diarization provider
+        let diarization_config = DiarizationConfig {
+            model_path: std::path::PathBuf::from(&model_path),
+            ..Default::default()
+        };
+        let diarization = DiarizationProvider::new(diarization_config)
+            .map_err(|e| format!("Failed to initialize speaker model: {}", e))?;
+
+        // Parse required role if specified
+        let required_role = config.required_role.as_ref().and_then(|r| {
+            match r.to_lowercase().as_str() {
+                "physician" => Some(SpeakerRole::Physician),
+                "pa" => Some(SpeakerRole::Pa),
+                "rn" => Some(SpeakerRole::Rn),
+                "ma" => Some(SpeakerRole::Ma),
+                "patient" => Some(SpeakerRole::Patient),
+                "other" => Some(SpeakerRole::Other),
+                _ => None,
+            }
+        });
+
+        Ok(Self {
+            profiles,
+            diarization,
+            required_role,
+        })
+    }
+
+    /// Get the number of enrolled profiles
+    fn profile_count(&self) -> usize {
+        self.profiles.len()
+    }
+
+    /// Verify if the speaker matches an enrolled profile
+    /// Returns Ok(profile_name) if verified, Err(reason) if not
+    fn verify(&mut self, audio: &[f32]) -> Result<String, String> {
+        // Extract embedding from audio
+        let mut embedding = self.diarization.extract_embedding(audio)
+            .map_err(|e| format!("Failed to extract embedding: {}", e))?;
+
+        // Normalize the embedding
+        l2_normalize(&mut embedding);
+
+        // Find best matching profile
+        let mut best_match: Option<(&SpeakerProfile, f32)> = None;
+
+        for profile in &self.profiles {
+            // Check role filter if specified
+            if let Some(ref required) = self.required_role {
+                if &profile.role != required {
+                    continue;
+                }
+            }
+
+            // Compute similarity
+            let mut profile_embedding = profile.embedding.clone();
+            l2_normalize(&mut profile_embedding);
+            let similarity = cosine_similarity(&embedding, &profile_embedding);
+
+            if similarity >= SPEAKER_VERIFY_THRESHOLD {
+                match best_match {
+                    None => best_match = Some((profile, similarity)),
+                    Some((_, best_sim)) if similarity > best_sim => {
+                        best_match = Some((profile, similarity));
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        match best_match {
+            Some((profile, similarity)) => {
+                info!(
+                    "Speaker verified as '{}' (similarity: {:.2})",
+                    profile.name, similarity
+                );
+                Ok(profile.name.clone())
+            }
+            None => {
+                if self.required_role.is_some() {
+                    Err(format!(
+                        "Speaker does not match any enrolled profile with required role"
+                    ))
+                } else {
+                    Err("Speaker does not match any enrolled profile".to_string())
+                }
+            }
+        }
     }
 }
 
@@ -393,6 +548,26 @@ where
     let llm_client = LLMClient::new(&config.llm_router_url, &config.llm_api_key, &config.llm_client_id, &config.fast_model)
         .map_err(|e| format!("Failed to create LLM client: {}", e))?;
 
+    // Speaker verification setup (optional - only if require_enrolled is true)
+    let mut speaker_verifier: Option<SpeakerVerifier> = if config.require_enrolled {
+        info!("Speaker verification enabled - loading profiles and model");
+        match SpeakerVerifier::new(&config) {
+            Ok(verifier) => {
+                info!("  Loaded {} enrolled profiles", verifier.profile_count());
+                Some(verifier)
+            }
+            Err(e) => {
+                warn!("Failed to initialize speaker verification: {}. Disabling.", e);
+                event_callback(ListeningEvent::Error {
+                    message: format!("Speaker verification disabled: {}", e),
+                });
+                None
+            }
+        }
+    } else {
+        None
+    };
+
     // State variables
     let mut staging_buffer: Vec<f32> = Vec::new();
     let mut speech_buffer: Vec<f32> = Vec::new();
@@ -500,6 +675,28 @@ where
 
                 // Calculate duration of initial audio
                 let initial_audio_duration_ms = (speech_buffer.len() as f32 / TARGET_SAMPLE_RATE as f32 * 1000.0) as u32;
+
+                // SPEAKER VERIFICATION: Check if speaker is enrolled (if enabled)
+                if let Some(ref mut verifier) = speaker_verifier {
+                    info!("Verifying speaker identity...");
+                    match verifier.verify(&speech_buffer) {
+                        Ok(speaker_name) => {
+                            info!("Speaker verified: {}", speaker_name);
+                        }
+                        Err(reason) => {
+                            info!("Speaker not verified: {}", reason);
+                            event_callback(ListeningEvent::SpeakerNotVerified {
+                                reason: reason.clone(),
+                            });
+                            // Reset state and enter cooldown
+                            is_speech_active = false;
+                            speech_start_time = None;
+                            speech_buffer.clear();
+                            last_analysis_time = Some(Instant::now());
+                            continue;
+                        }
+                    }
+                }
 
                 // OPTIMISTIC RECORDING: Start recording immediately BEFORE greeting check
                 // This prevents losing audio during the ~35s LLM check

@@ -166,6 +166,15 @@ export function useAutoDetection(
             speech_duration_ms: 0,
             analyzing: false,
           }));
+        } else if (eventType === 'speaker_not_verified') {
+          // Speaker verification failed - not an enrolled speaker or wrong role
+          console.log('Speaker not verified:', payload.reason);
+          setListeningStatus((prev) => ({
+            ...prev!,
+            speech_detected: false,
+            speech_duration_ms: 0,
+            analyzing: false,
+          }));
         } else if (eventType === 'error') {
           setError(payload.message || 'Unknown error');
           setIsPendingConfirmation(false);
