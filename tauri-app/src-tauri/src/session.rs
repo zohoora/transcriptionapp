@@ -40,6 +40,7 @@ pub struct SessionStatus {
     pub elapsed_ms: u64,
     pub is_processing_behind: bool,
     pub error_message: Option<String>,
+    pub session_id: Option<String>,
 }
 
 /// Transcript update sent to the frontend
@@ -107,6 +108,7 @@ impl SessionManager {
             elapsed_ms,
             is_processing_behind: self.pending_count > 3,
             error_message: self.error.as_ref().map(|e| e.to_string()),
+            session_id: self.session_id.clone(),
         }
     }
 

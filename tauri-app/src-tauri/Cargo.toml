@@ -107,6 +107,8 @@ dirs = "5"
 [dev-dependencies]
 # Property-based testing
 proptest = "1.5"
+# Temporary directories for tests
+tempfile = "3"
 # Benchmarking
 criterion = { version = "0.5", features = ["html_reports"] }
 # Serial test execution for tests with shared state

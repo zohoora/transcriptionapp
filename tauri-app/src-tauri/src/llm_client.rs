@@ -96,6 +96,70 @@ pub struct AudioEvent {
     pub label: String,
 }
 
+/// Speaker context for SOAP generation
+/// Contains information about identified speakers in the transcript
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct SpeakerContext {
+    /// List of identified speakers with their descriptions
+    /// Key: speaker ID as it appears in transcript (e.g., "Dr. Smith", "Speaker 2")
+    /// Value: description for LLM context (e.g., "Attending physician, internal medicine")
+    pub speakers: Vec<SpeakerInfo>,
+}
+
+/// Information about a single speaker
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SpeakerInfo {
+    /// Speaker ID as it appears in transcript (e.g., "Dr. Smith", "Speaker 2")
+    pub id: String,
+    /// Description for LLM context (e.g., "Attending physician, internal medicine")
+    pub description: String,
+    /// Whether this speaker was enrolled (recognized) vs auto-detected
+    pub is_enrolled: bool,
+}
+
+impl SpeakerContext {
+    /// Create a new empty speaker context
+    pub fn new() -> Self {
+        Self { speakers: Vec::new() }
+    }
+
+    /// Add an enrolled speaker (recognized from profile)
+    pub fn add_enrolled(&mut self, name: String, description: String) {
+        self.speakers.push(SpeakerInfo {
+            id: name,
+            description,
+            is_enrolled: true,
+        });
+    }
+
+    /// Add an auto-detected speaker (not enrolled)
+    pub fn add_auto_detected(&mut self, speaker_id: String) {
+        self.speakers.push(SpeakerInfo {
+            id: speaker_id,
+            description: "Unidentified speaker".to_string(),
+            is_enrolled: false,
+        });
+    }
+
+    /// Check if there are any speakers
+    pub fn has_speakers(&self) -> bool {
+        !self.speakers.is_empty()
+    }
+
+    /// Format for LLM prompt
+    pub fn format_for_prompt(&self) -> String {
+        if self.speakers.is_empty() {
+            return String::new();
+        }
+
+        let mut output = String::from("SPEAKER CONTEXT:\nThe following speakers have been identified in this encounter:\n");
+        for speaker in &self.speakers {
+            output.push_str(&format!("- {}: {}\n", speaker.id, speaker.description));
+        }
+        output
+    }
+}
+
 /// Generated SOAP note - simplified to single text content
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SoapNote {
@@ -130,6 +194,19 @@ pub struct PatientSoapNote {
     pub content: String,
 }
 
+/// JSON structure for SOAP note from LLM
+#[derive(Debug, Clone, Deserialize)]
+struct SoapJsonResponse {
+    #[serde(default)]
+    subjective: Vec<String>,
+    #[serde(default)]
+    objective: Vec<String>,
+    #[serde(default)]
+    assessment: Vec<String>,
+    #[serde(default)]
+    plan: Vec<String>,
+}
+
 /// Result of greeting detection check
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GreetingResult {
@@ -161,9 +238,12 @@ pub struct SoapOptions {
     /// SOAP format style
     #[serde(default)]
     pub format: SoapFormat,
-    /// Custom instructions from the physician
+    /// Custom instructions from the physician (persisted in settings)
     #[serde(default)]
     pub custom_instructions: String,
+    /// Session-specific notes from the clinician (entered during recording)
+    #[serde(default)]
+    pub session_notes: String,
 }
 
 fn default_detail_level() -> u8 {
@@ -176,6 +256,7 @@ impl Default for SoapOptions {
             detail_level: 5,
             format: SoapFormat::ProblemBased,
             custom_instructions: String::new(),
+            session_notes: String::new(),
         }
     }
 }
@@ -523,8 +604,9 @@ impl LLMClient {
         Err(last_error)
     }
 
-    /// Maximum transcript size (100KB) to prevent memory issues
-    const MAX_TRANSCRIPT_SIZE: usize = 100_000;
+    /// Maximum transcript size (500KB) to prevent memory issues
+    /// Allows sessions up to ~5 hours before hitting this limit
+    const MAX_TRANSCRIPT_SIZE: usize = 500_000;
 
     /// Minimum transcript length (50 chars) to ensure meaningful SOAP generation
     const MIN_TRANSCRIPT_LENGTH: usize = 50;
@@ -608,30 +690,40 @@ impl LLMClient {
 
     /// Generate a SOAP note from a clinical transcript
     /// Returns the raw LLM output as a single text block
+    ///
+    /// # Arguments
+    /// * `model` - LLM model name to use
+    /// * `transcript` - Clinical transcript text
+    /// * `audio_events` - Optional detected audio events (coughs, etc.)
+    /// * `options` - SOAP generation options
+    /// * `speaker_context` - Optional speaker identification context
     pub async fn generate_soap_note(
         &self,
         model: &str,
         transcript: &str,
         audio_events: Option<&[AudioEvent]>,
         options: Option<&SoapOptions>,
+        speaker_context: Option<&SpeakerContext>,
     ) -> Result<SoapNote, String> {
         let prepared_transcript = Self::prepare_transcript(transcript)?;
         let opts = options.cloned().unwrap_or_default();
         info!(
-            "Generating SOAP note with model {} for transcript of {} chars ({} words), {} audio events",
+            "Generating SOAP note with model {} for transcript of {} chars ({} words), {} audio events, {} speakers",
             model,
             prepared_transcript.len(),
             prepared_transcript.split_whitespace().count(),
-            audio_events.map(|e| e.len()).unwrap_or(0)
+            audio_events.map(|e| e.len()).unwrap_or(0),
+            speaker_context.map(|c| c.speakers.len()).unwrap_or(0)
         );
 
         let system_prompt = build_simple_soap_prompt(&opts);
-        let user_content = build_soap_user_content(&prepared_transcript, audio_events);
+        let session_notes = if opts.session_notes.trim().is_empty() { None } else { Some(opts.session_notes.as_str()) };
+        let user_content = build_soap_user_content(&prepared_transcript, audio_events, session_notes, speaker_context);
 
         let response = self.generate(model, &system_prompt, &user_content, tasks::SOAP_NOTE).await?;
 
-        // Clean up the response - remove any channel markers from multi-channel LLMs
-        let content = clean_llm_response(&response);
+        // Parse JSON response and format as bullet-point text
+        let content = parse_and_format_soap_json(&response);
 
         info!("Successfully generated SOAP note ({} chars)", content.len());
         Ok(SoapNote {
@@ -643,29 +735,39 @@ impl LLMClient {
 
     /// Generate multi-patient SOAP notes from a clinical transcript
     /// Returns a single combined note covering all patients
+    ///
+    /// # Arguments
+    /// * `model` - LLM model name to use
+    /// * `transcript` - Clinical transcript text
+    /// * `audio_events` - Optional detected audio events (coughs, etc.)
+    /// * `options` - SOAP generation options
+    /// * `speaker_context` - Optional speaker identification context
     pub async fn generate_multi_patient_soap_note(
         &self,
         model: &str,
         transcript: &str,
         audio_events: Option<&[AudioEvent]>,
         options: Option<&SoapOptions>,
+        speaker_context: Option<&SpeakerContext>,
     ) -> Result<MultiPatientSoapResult, String> {
         let prepared_transcript = Self::prepare_transcript(transcript)?;
         let opts = options.cloned().unwrap_or_default();
         info!(
-            "Generating multi-patient SOAP note with model {} for transcript of {} chars ({} words)",
+            "Generating multi-patient SOAP note with model {} for transcript of {} chars ({} words), {} speakers",
             model,
             prepared_transcript.len(),
-            prepared_transcript.split_whitespace().count()
+            prepared_transcript.split_whitespace().count(),
+            speaker_context.map(|c| c.speakers.len()).unwrap_or(0)
         );
 
         let system_prompt = build_simple_multi_patient_prompt(&opts);
-        let user_content = build_soap_user_content(&prepared_transcript, audio_events);
+        let session_notes = if opts.session_notes.trim().is_empty() { None } else { Some(opts.session_notes.as_str()) };
+        let user_content = build_soap_user_content(&prepared_transcript, audio_events, session_notes, speaker_context);
 
         let response = self.generate(model, &system_prompt, &user_content, tasks::SOAP_NOTE).await?;
 
-        // Clean up the response and return as a single patient note
-        let content = clean_llm_response(&response);
+        // Parse JSON response and format as bullet-point text
+        let content = parse_and_format_soap_json(&response);
 
         info!("Successfully generated multi-patient SOAP note ({} chars)", content.len());
         Ok(MultiPatientSoapResult {
@@ -781,7 +883,7 @@ Respond ONLY with JSON: {{"is_greeting": true/false, "confidence": 0.0-1.0, "det
     }
 }
 
-/// Build a simple system prompt for SOAP note generation (no JSON required)
+/// Build a simple system prompt for SOAP note generation (JSON output required)
 fn build_simple_soap_prompt(options: &SoapOptions) -> String {
     let detail_instruction = match options.detail_level {
         1..=3 => "Be brief and concise.",
@@ -797,19 +899,29 @@ fn build_simple_soap_prompt(options: &SoapOptions) -> String {
     };
 
     format!(
-        r#"You are a medical scribe assistant. Generate a SOAP note from the clinical transcript.
+        r#"You are a medical scribe that outputs ONLY valid JSON. Extract clinical information from transcripts into SOAP notes.
 
-RULES:
-- ONLY include information explicitly stated in the transcript
-- Do NOT hallucinate or invent information
-- {detail_instruction}
-- Write clearly and professionally{custom_section}
+The transcript is from speech-to-text and may contain errors. Interpret medical terms correctly:
+- "human blade 1c" or "h b a 1 c" → HbA1c (hemoglobin A1c)
+- "ekg" or "e k g" → EKG/ECG
+- Homophones and phonetic errors are common - use clinical context
 
-Generate a complete SOAP note with Subjective, Objective, Assessment, and Plan sections."#
+RESPOND WITH ONLY THIS JSON STRUCTURE - NO OTHER TEXT:
+{{"subjective":["item"],"objective":["item"],"assessment":["item"],"plan":["item"]}}
+
+Rules:
+- Your entire response must be valid JSON - nothing else
+- Use simple string arrays, no nested objects
+- Use empty arrays [] for sections with no information
+- Use correct medical terminology
+- Do NOT hallucinate or embellish - only include what was explicitly stated
+- PLAN SECTION: Include ONLY treatments, tests, and follow-ups the doctor actually mentioned. Do NOT add recommendations, monitoring suggestions, or instructions not stated in the transcript.
+- CLINICIAN NOTES: If provided, incorporate clinician observations into the appropriate SOAP sections (usually Objective for physical observations, Subjective for reported symptoms).
+- {detail_instruction}{custom_section}"#
     )
 }
 
-/// Build a simple system prompt for multi-patient SOAP note generation
+/// Build a simple system prompt for multi-patient SOAP note generation (JSON output required)
 fn build_simple_multi_patient_prompt(options: &SoapOptions) -> String {
     let detail_instruction = match options.detail_level {
         1..=3 => "Be brief and concise.",
@@ -825,33 +937,43 @@ fn build_simple_multi_patient_prompt(options: &SoapOptions) -> String {
     };
 
     format!(
-        r#"You are a medical scribe assistant. Generate SOAP notes from the clinical transcript.
+        r#"You are a medical scribe that outputs ONLY valid JSON. Extract clinical information from transcripts into SOAP notes.
 
-If there are multiple patients in the conversation, create a separate SOAP note for each patient.
-Identify the physician and patients from context (who asks questions vs who describes symptoms).
+The transcript is from speech-to-text and may contain errors. Interpret medical terms correctly:
+- "human blade 1c" or "h b a 1 c" → HbA1c (hemoglobin A1c)
+- "ekg" or "e k g" → EKG/ECG
+- Homophones and phonetic errors are common - use clinical context
 
-RULES:
-- ONLY include information explicitly stated in the transcript
-- Do NOT hallucinate or invent information
-- {detail_instruction}
-- Write clearly and professionally{custom_section}
+RESPOND WITH ONLY THIS JSON STRUCTURE - NO OTHER TEXT:
+{{"subjective":["item"],"objective":["item"],"assessment":["item"],"plan":["item"]}}
 
-Generate complete SOAP note(s) with Subjective, Objective, Assessment, and Plan sections."#
+Rules:
+- Your entire response must be valid JSON - nothing else
+- Use simple string arrays, no nested objects
+- Use empty arrays [] for sections with no information
+- Use correct medical terminology
+- Do NOT hallucinate or embellish - only include what was explicitly stated
+- PLAN SECTION: Include ONLY treatments, tests, and follow-ups the doctor actually mentioned. Do NOT add recommendations, monitoring suggestions, or instructions not stated in the transcript.
+- CLINICIAN NOTES: If provided, incorporate clinician observations into the appropriate SOAP sections (usually Objective for physical observations, Subjective for reported symptoms).
+- {detail_instruction}{custom_section}"#
     )
 }
 
 /// Clean up LLM response by removing channel markers, think tags, and markdown formatting
 fn clean_llm_response(response: &str) -> String {
     let mut text = response.to_string();
+    info!("clean_llm_response INPUT ({} chars): {:?}", response.len(), &response[..response.len().min(300)]);
 
     // Handle multi-channel LLM outputs - extract content after "final" channel
     if let Some(final_idx) = text.find("<|channel|>final<|message|>") {
         text = text[final_idx + "<|channel|>final<|message|>".len()..].to_string();
+        debug!("After channel extraction: {} chars", text.len());
     }
 
     // Strip end markers
     if let Some(end_idx) = text.find("<|end|>") {
         text = text[..end_idx].to_string();
+        debug!("After end marker strip: {} chars", text.len());
     }
 
     // Remove other common artifacts
@@ -872,10 +994,110 @@ fn clean_llm_response(response: &str) -> String {
         }
     }
 
+    // Remove <unused94>thought reasoning blocks (MedGemma reasoning leak)
+    // These can appear in two forms:
+    // 1. <unused94>thought...reasoning...</unused94>actual content
+    // 2. <unused94>thought...reasoning...<unused95>actual content (no closing tag)
+    if let Some(start) = text.find("<unused94>") {
+        info!("Found <unused94> at position {}", start);
+        // Check for </unused94> closing tag
+        if let Some(end) = text.find("</unused94>") {
+            info!("Found </unused94> at position {}", end);
+            let end_pos = end + "</unused94>".len();
+            text = format!("{}{}", &text[..start], &text[end_pos..]);
+        } else if let Some(content_start) = text.find("<unused95>") {
+            info!("Found <unused95> at position {}, extracting content after it", content_start);
+            text = text[content_start + "<unused95>".len()..].to_string();
+            info!("After unused95 extraction: {} chars, starts with: {:?}", text.len(), &text[..text.len().min(100)]);
+        } else {
+            info!("No </unused94> or <unused95> found, looking for S: marker");
+            // No clear end marker - try to find the SOAP note by looking for "S:" or "**S:**"
+            let after_unused94 = &text[start + "<unused94>".len()..];
+            if let Some(soap_start) = after_unused94.find("\nS:").or_else(|| after_unused94.find("\n**S:")) {
+                info!("Found S: marker at position {} after <unused94>", soap_start);
+                text = after_unused94[soap_start..].to_string();
+            } else {
+                // Last resort: keep text before <unused94>
+                info!("No S: marker found, keeping text before <unused94> (will be empty if at start)");
+                text = text[..start].to_string();
+            }
+        }
+    } else {
+        info!("No <unused94> found in response");
+    }
+    info!("After unused94/95 handling: {} chars", text.len());
+
+    debug!("Before strip_transcript_echo: {} chars, starts with: {:?}", text.len(), &text[..text.len().min(100)]);
+
+    // Strip transcript echoing - model sometimes echoes the transcript before the SOAP note
+    // Look for the start of the actual SOAP note (S: or Subjective:)
+    text = strip_transcript_echo(&text);
+    debug!("After strip_transcript_echo: {} chars", text.len());
+
     // Remove markdown formatting while preserving line breaks
     text = remove_markdown_formatting(&text);
+    debug!("After remove_markdown_formatting: {} chars", text.len());
 
-    text.trim().to_string()
+    let result = text.trim().to_string();
+    debug!("clean_llm_response output: {} chars", result.len());
+    result
+}
+
+/// Strip transcript echoing from LLM response
+/// The model sometimes echoes the transcript before outputting the SOAP note.
+/// This function finds the start of the actual SOAP note and removes the preamble.
+fn strip_transcript_echo(text: &str) -> String {
+    // Look for SOAP note markers - the note should start with one of these
+    let soap_markers = [
+        "\nS:\n",           // Standard format with newlines
+        "\nS:\r\n",         // Windows newlines
+        "S:\n•",            // Starts with S: and bullet
+        "\nS:\n•",          // Newline before S:
+        "\nSubjective:\n",  // Full word format
+        "\nSubjective\n",   // Without colon
+        "**S:**",           // Bold markdown format
+        "**Subjective:**",  // Bold full word
+        "## S:",            // Header format
+        "## Subjective:",   // Header full word
+    ];
+
+    // First check if the text starts cleanly with S:
+    let trimmed = text.trim_start();
+    if trimmed.starts_with("S:") || trimmed.starts_with("S\n") || trimmed.starts_with("**S:**") {
+        debug!("strip_transcript_echo: text already starts with S:, returning as-is");
+        return text.to_string();
+    }
+
+    // Look for SOAP markers in the text
+    for marker in soap_markers {
+        if let Some(idx) = text.find(marker) {
+            // Found a SOAP marker - extract from just before it
+            // We want to keep any leading whitespace/newline before S:
+            let start = if marker.starts_with('\n') { idx + 1 } else { idx };
+            let extracted = text[start..].trim_start();
+            if !extracted.is_empty() {
+                debug!("strip_transcript_echo: found marker {:?} at {}, extracted {} chars", marker, idx, extracted.len());
+                return extracted.to_string();
+            }
+        }
+    }
+
+    // Alternative: look for a line that starts with "S:" (case sensitive)
+    for (i, line) in text.lines().enumerate() {
+        let trimmed_line = line.trim();
+        if trimmed_line == "S:" || trimmed_line.starts_with("S:\n") || trimmed_line.starts_with("S:•")
+            || (trimmed_line.len() > 2 && trimmed_line.starts_with("S:") && !trimmed_line.chars().nth(2).unwrap_or(' ').is_alphabetic())
+        {
+            // Found start of SOAP - join from this line onwards
+            let remaining: Vec<&str> = text.lines().skip(i).collect();
+            debug!("strip_transcript_echo: found S: on line {}, returning {} lines", i, remaining.len());
+            return remaining.join("\n");
+        }
+    }
+
+    // No clear SOAP marker found - return original text
+    debug!("strip_transcript_echo: no SOAP marker found, returning original {} chars", text.len());
+    text.to_string()
 }
 
 /// Remove markdown formatting (bold, italic, headers) but preserve structure
@@ -936,18 +1158,237 @@ fn remove_italic_markers(line: &str) -> String {
     }
 }
 
+/// Extract JSON from LLM response (handles markdown code blocks and cleanup)
+fn extract_json_from_response(response: &str) -> String {
+    let mut text = response.to_string();
+
+    // Remove <unused94>...<unused95> reasoning blocks
+    if let Some(unused95_pos) = text.find("<unused95>") {
+        text = text[unused95_pos + "<unused95>".len()..].to_string();
+    } else if let Some(unused94_pos) = text.find("<unused94>") {
+        // If no <unused95>, look for JSON after reasoning
+        if let Some(json_start) = text[unused94_pos..].find('{') {
+            text = text[unused94_pos + json_start..].to_string();
+        }
+    }
+
+    // Remove markdown code block markers
+    text = text.replace("```json", "").replace("```", "");
+
+    // Find the JSON object boundaries
+    if let Some(start) = text.find('{') {
+        if let Some(end) = text.rfind('}') {
+            return text[start..=end].to_string();
+        }
+    }
+
+    text.trim().to_string()
+}
+
+/// Parse JSON SOAP response and format as bullet-point text
+fn parse_and_format_soap_json(response: &str) -> String {
+    let json_str = extract_json_from_response(response);
+    info!("Extracted JSON for parsing: {} chars", json_str.len());
+
+    match serde_json::from_str::<SoapJsonResponse>(&json_str) {
+        Ok(soap) => {
+            info!("Successfully parsed SOAP JSON: S={}, O={}, A={}, P={}",
+                  soap.subjective.len(), soap.objective.len(),
+                  soap.assessment.len(), soap.plan.len());
+            format_soap_as_text(&soap)
+        }
+        Err(e) => {
+            warn!("Failed to parse SOAP JSON: {}. Raw: {:?}", e, &json_str[..json_str.len().min(200)]);
+            // Try to extract SOAP from text format as fallback
+            let cleaned = clean_llm_response(response);
+            if let Some(soap) = try_parse_text_soap(&cleaned) {
+                info!("Successfully parsed SOAP from text format");
+                format_soap_as_text(&soap)
+            } else {
+                // Return cleaned text as last resort
+                cleaned
+            }
+        }
+    }
+}
+
+/// Try to parse SOAP note from text format (S:/O:/A:/P: sections)
+fn try_parse_text_soap(text: &str) -> Option<SoapJsonResponse> {
+    let mut subjective = Vec::new();
+    let mut objective = Vec::new();
+    let mut assessment = Vec::new();
+    let mut plan = Vec::new();
+
+    let mut current_section: Option<&str> = None;
+
+    for line in text.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+
+        // Check for section headers
+        let lower = trimmed.to_lowercase();
+        if lower.starts_with("s:") || lower == "s" || lower.starts_with("subjective") {
+            current_section = Some("S");
+            // Check if there's content after the colon on same line
+            if let Some(content) = trimmed.split_once(':').map(|(_, c)| c.trim()) {
+                if !content.is_empty() {
+                    subjective.push(content.to_string());
+                }
+            }
+            continue;
+        } else if lower.starts_with("o:") || lower == "o" || lower.starts_with("objective") {
+            current_section = Some("O");
+            if let Some(content) = trimmed.split_once(':').map(|(_, c)| c.trim()) {
+                if !content.is_empty() {
+                    objective.push(content.to_string());
+                }
+            }
+            continue;
+        } else if lower.starts_with("a:") || lower == "a" || lower.starts_with("assessment") {
+            current_section = Some("A");
+            if let Some(content) = trimmed.split_once(':').map(|(_, c)| c.trim()) {
+                if !content.is_empty() {
+                    assessment.push(content.to_string());
+                }
+            }
+            continue;
+        } else if lower.starts_with("p:") || lower == "p" || lower.starts_with("plan") {
+            current_section = Some("P");
+            if let Some(content) = trimmed.split_once(':').map(|(_, c)| c.trim()) {
+                if !content.is_empty() {
+                    plan.push(content.to_string());
+                }
+            }
+            continue;
+        }
+
+        // Add content to current section
+        if let Some(section) = current_section {
+            // Strip bullet markers
+            let content = trimmed
+                .trim_start_matches('•')
+                .trim_start_matches('-')
+                .trim_start_matches('*')
+                .trim();
+
+            if !content.is_empty() && content.to_lowercase() != "not documented" {
+                match section {
+                    "S" => subjective.push(content.to_string()),
+                    "O" => objective.push(content.to_string()),
+                    "A" => assessment.push(content.to_string()),
+                    "P" => plan.push(content.to_string()),
+                    _ => {}
+                }
+            }
+        }
+    }
+
+    // Only return if we found at least one section
+    if subjective.is_empty() && objective.is_empty() && assessment.is_empty() && plan.is_empty() {
+        None
+    } else {
+        Some(SoapJsonResponse {
+            subjective,
+            objective,
+            assessment,
+            plan,
+        })
+    }
+}
+
+/// Format parsed SOAP JSON as bullet-point text for EMR copy-paste
+fn format_soap_as_text(soap: &SoapJsonResponse) -> String {
+    let mut output = String::new();
+
+    // Subjective
+    output.push_str("S:\n");
+    if soap.subjective.is_empty() {
+        output.push_str("• Not documented\n");
+    } else {
+        for item in &soap.subjective {
+            output.push_str(&format!("• {}\n", item));
+        }
+    }
+
+    // Objective
+    output.push_str("\nO:\n");
+    if soap.objective.is_empty() {
+        output.push_str("• Not documented\n");
+    } else {
+        for item in &soap.objective {
+            output.push_str(&format!("• {}\n", item));
+        }
+    }
+
+    // Assessment
+    output.push_str("\nA:\n");
+    if soap.assessment.is_empty() {
+        output.push_str("• Not documented\n");
+    } else {
+        for item in &soap.assessment {
+            output.push_str(&format!("• {}\n", item));
+        }
+    }
+
+    // Plan
+    output.push_str("\nP:\n");
+    if soap.plan.is_empty() {
+        output.push_str("• Not documented\n");
+    } else {
+        for item in &soap.plan {
+            output.push_str(&format!("• {}\n", item));
+        }
+    }
+
+    output.trim_end().to_string()
+}
+
 /// Build user content for SOAP generation
-fn build_soap_user_content(transcript: &str, audio_events: Option<&[AudioEvent]>) -> String {
+fn build_soap_user_content(
+    transcript: &str,
+    audio_events: Option<&[AudioEvent]>,
+    session_notes: Option<&str>,
+    speaker_context: Option<&SpeakerContext>,
+) -> String {
+    let mut content = String::new();
+
+    // Add speaker context FIRST (before transcript)
+    if let Some(ctx) = speaker_context {
+        let speaker_section = ctx.format_for_prompt();
+        if !speaker_section.is_empty() {
+            content.push_str(&speaker_section);
+            content.push_str("\n");
+        }
+    }
+
+    // Add transcript
+    content.push_str(&format!("TRANSCRIPT:\n{}", transcript));
+
+    // Add audio events
     let audio_section = audio_events
         .filter(|e| !e.is_empty())
         .map(format_audio_events)
         .unwrap_or_default();
 
-    if audio_section.is_empty() {
-        format!("TRANSCRIPT:\n{}", transcript)
-    } else {
-        format!("TRANSCRIPT:\n{}\n\n{}", transcript, audio_section)
+    if !audio_section.is_empty() {
+        content.push_str("\n\n");
+        content.push_str(&audio_section);
     }
+
+    // Add session notes
+    let notes_section = session_notes
+        .filter(|n| !n.trim().is_empty())
+        .map(|n| format!("CLINICIAN NOTES:\n{}", n.trim()))
+        .unwrap_or_default();
+
+    if !notes_section.is_empty() {
+        content.push_str("\n\n");
+        content.push_str(&notes_section);
+    }
+
+    content
 }
 
 /// Format audio events for inclusion in the prompt

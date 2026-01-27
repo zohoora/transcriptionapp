@@ -4,6 +4,7 @@
 
 mod archive;
 mod audio;
+mod clinical_chat;
 mod listening;
 mod medplum;
 mod models;
@@ -17,6 +18,7 @@ mod whisper_server;
 // Re-export all commands for lib.rs registration
 pub use archive::*;
 pub use audio::*;
+pub use clinical_chat::*;
 pub use listening::*;
 pub use medplum::*;
 pub use models::*;

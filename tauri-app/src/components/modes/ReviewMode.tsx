@@ -10,7 +10,13 @@ import type {
   SyncedEncounter,
   MultiPatientSoapResult,
 } from '../../types';
-import { DETAIL_LEVEL_LABELS } from '../../types';
+import {
+  DETAIL_LEVEL_LABELS,
+  getVitalityStatus,
+  getStabilityStatus,
+  getEngagementStatus,
+  getResponseTimeStatus,
+} from '../../types';
 import { formatLocalDateTime } from '../../utils';
 
 type ReviewTab = 'transcript' | 'soap' | 'insights';
@@ -415,22 +421,22 @@ export const ReviewMode = memo(function ReviewMode({
         {activeTab === 'insights' && (
           <div className="tab-panel insights-panel">
             {/* Audio Quality */}
-            {audioQuality && (
+            {audioQuality != null && (
               <div className="insight-card">
                 <div className="insight-card-header">Audio Quality</div>
                 <div className="insight-card-body">
                   <div className="insight-metric">
                     <span className="metric-label">Level</span>
-                    <span className="metric-value">{audioQuality.rms_db.toFixed(0)} dB</span>
+                    <span className="metric-value">{audioQuality?.rms_db?.toFixed(0) ?? '—'} dB</span>
                   </div>
                   <div className="insight-metric">
                     <span className="metric-label">SNR</span>
-                    <span className="metric-value">{audioQuality.snr_db.toFixed(0)} dB</span>
+                    <span className="metric-value">{audioQuality?.snr_db?.toFixed(0) ?? '—'} dB</span>
                   </div>
-                  {audioQuality.total_clipped > 0 && (
+                  {(audioQuality?.total_clipped ?? 0) > 0 && (
                     <div className="insight-metric warning">
                       <span className="metric-label">Clipped</span>
-                      <span className="metric-value">{audioQuality.total_clipped}</span>
+                      <span className="metric-value">{audioQuality?.total_clipped}</span>
                     </div>
                   )}
                 </div>
@@ -460,15 +466,25 @@ export const ReviewMode = memo(function ReviewMode({
                 <div className="insight-card-body">
                   <div className="insight-metric">
                     <span className="metric-label">Response Time</span>
-                    <span className="metric-value">
-                      {Math.round(biomarkers.conversation_dynamics.mean_response_latency_ms)}ms
+                    <span className="metric-value-group">
+                      <span className="metric-value">
+                        {Math.round(biomarkers.conversation_dynamics.mean_response_latency_ms)}ms
+                      </span>
+                      <span className={`metric-status status-${getResponseTimeStatus(biomarkers.conversation_dynamics.mean_response_latency_ms).level}`}>
+                        {getResponseTimeStatus(biomarkers.conversation_dynamics.mean_response_latency_ms).label}
+                      </span>
                     </span>
                   </div>
                   {biomarkers.conversation_dynamics.engagement_score !== null && (
                     <div className="insight-metric">
                       <span className="metric-label">Engagement</span>
-                      <span className="metric-value">
-                        {Math.round(biomarkers.conversation_dynamics.engagement_score)}
+                      <span className="metric-value-group">
+                        <span className="metric-value">
+                          {Math.round(biomarkers.conversation_dynamics.engagement_score)}
+                        </span>
+                        <span className={`metric-status status-${getEngagementStatus(biomarkers.conversation_dynamics.engagement_score).level}`}>
+                          {getEngagementStatus(biomarkers.conversation_dynamics.engagement_score).label}
+                        </span>
                       </span>
                     </div>
                   )}
@@ -492,13 +508,23 @@ export const ReviewMode = memo(function ReviewMode({
                   {biomarkers.vitality_session_mean !== null && (
                     <div className="insight-metric">
                       <span className="metric-label">Vitality</span>
-                      <span className="metric-value">{biomarkers.vitality_session_mean.toFixed(1)}</span>
+                      <span className="metric-value-group">
+                        <span className="metric-value">{biomarkers.vitality_session_mean.toFixed(1)} Hz</span>
+                        <span className={`metric-status status-${getVitalityStatus(biomarkers.vitality_session_mean).level}`}>
+                          {getVitalityStatus(biomarkers.vitality_session_mean).label}
+                        </span>
+                      </span>
                     </div>
                   )}
                   {biomarkers.stability_session_mean !== null && (
                     <div className="insight-metric">
                       <span className="metric-label">Stability</span>
-                      <span className="metric-value">{biomarkers.stability_session_mean.toFixed(1)}</span>
+                      <span className="metric-value-group">
+                        <span className="metric-value">{biomarkers.stability_session_mean.toFixed(1)} dB</span>
+                        <span className={`metric-status status-${getStabilityStatus(biomarkers.stability_session_mean).level}`}>
+                          {getStabilityStatus(biomarkers.stability_session_mean).label}
+                        </span>
+                      </span>
                     </div>
                   )}
                 </div>

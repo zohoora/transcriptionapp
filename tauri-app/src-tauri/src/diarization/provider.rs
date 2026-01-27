@@ -2,12 +2,15 @@
 //!
 //! Combines mel spectrogram generation, embedding extraction, and speaker
 //! clustering into a single easy-to-use interface.
+//!
+//! Supports enrolled speaker recognition for known speakers.
 
 use super::clustering::SpeakerClusterer;
 use super::config::{ClusterConfig, DiarizationConfig, MelConfig};
 use super::embedding::EmbeddingExtractor;
 use super::mel::MelSpectrogramGenerator;
 use super::DiarizationError;
+use crate::speaker_profiles::SpeakerProfile;
 
 /// Utterance structure for diarization input
 /// (matches the structure from the transcription module)
@@ -143,18 +146,18 @@ impl DiarizationProvider {
     /// Reset the speaker clusterer for a new session
     ///
     /// Call this when starting a new recording session to clear
-    /// all existing speaker information.
+    /// auto-detected speakers. Enrolled speakers are preserved.
     pub fn reset(&mut self) {
         self.clusterer.reset();
         tracing::info!("Diarization provider reset");
     }
 
-    /// Get the current number of identified speakers
+    /// Get the current number of identified speakers (auto-detected only)
     pub fn speaker_count(&self) -> usize {
         self.clusterer.speaker_count()
     }
 
-    /// Get all current speaker IDs
+    /// Get all current speaker IDs (auto-detected only)
     pub fn speaker_ids(&self) -> Vec<String> {
         self.clusterer.speaker_ids()
     }
@@ -162,6 +165,89 @@ impl DiarizationProvider {
     /// Check if the diarization model is loaded and ready
     pub fn is_ready(&self) -> bool {
         true // If we got this far, the model is loaded
+    }
+
+    // =========================================================================
+    // Enrolled Speaker Methods
+    // =========================================================================
+
+    /// Load enrolled speakers from profiles
+    ///
+    /// Call this at the start of a recording session to enable
+    /// recognition of known speakers. Enrolled speakers have priority
+    /// over auto-detected speakers.
+    pub fn load_enrolled_speakers(&mut self, profiles: &[SpeakerProfile]) {
+        let enrolled_data: Vec<(String, String, Vec<f32>)> = profiles
+            .iter()
+            .map(|p| (p.id.clone(), p.name.clone(), p.embedding.clone()))
+            .collect();
+
+        self.clusterer.load_enrolled_speakers(&enrolled_data);
+        tracing::info!("Loaded {} enrolled speakers into diarization", profiles.len());
+    }
+
+    /// Extract a voice embedding from audio samples
+    ///
+    /// Use this during speaker enrollment to get the embedding
+    /// that will be stored in the speaker profile.
+    ///
+    /// # Arguments
+    /// * `audio` - Audio samples at 16kHz mono, should be 5-10 seconds
+    ///
+    /// # Returns
+    /// 256-dimensional embedding vector, or error if extraction fails
+    pub fn extract_embedding(&mut self, audio: &[f32]) -> Result<Vec<f32>, DiarizationError> {
+        // Check minimum audio length (at least 1 second for reliable embedding)
+        let min_samples = 16000; // 1 second at 16kHz
+        if audio.len() < min_samples {
+            return Err(DiarizationError::InvalidAudio(format!(
+                "Audio too short for embedding extraction: {} samples (min: {})",
+                audio.len(),
+                min_samples
+            )));
+        }
+
+        // Compute mel spectrogram
+        let mel_spec = self.mel_gen.compute(audio)?;
+
+        // Check for silence
+        let energy = MelSpectrogramGenerator::compute_energy(&mel_spec);
+        if energy < self.config.min_energy_threshold.exp() {
+            return Err(DiarizationError::InvalidAudio(
+                "Audio is too quiet for reliable embedding extraction".to_string()
+            ));
+        }
+
+        // Extract embedding
+        let embedding = self.extractor.extract(&mel_spec)?;
+
+        tracing::info!(
+            "Extracted embedding from {} samples ({:.1}s of audio)",
+            audio.len(),
+            audio.len() as f32 / 16000.0
+        );
+
+        Ok(embedding)
+    }
+
+    /// Get the number of enrolled speakers
+    pub fn enrolled_speaker_count(&self) -> usize {
+        self.clusterer.enrolled_speaker_count()
+    }
+
+    /// Get all enrolled speaker names
+    pub fn enrolled_speaker_names(&self) -> Vec<String> {
+        self.clusterer.enrolled_speaker_names()
+    }
+
+    /// Check if a speaker name is enrolled
+    pub fn is_speaker_enrolled(&self, name: &str) -> bool {
+        self.clusterer.is_enrolled(name)
+    }
+
+    /// Get all speaker IDs including enrolled speakers
+    pub fn all_speaker_ids(&self) -> Vec<String> {
+        self.clusterer.all_speaker_ids()
     }
 }
 
@@ -200,6 +286,29 @@ impl DiarizationProvider {
 
     pub fn is_ready(&self) -> bool {
         false
+    }
+
+    // Stub methods for enrolled speakers
+    pub fn load_enrolled_speakers(&mut self, _profiles: &[SpeakerProfile]) {}
+
+    pub fn extract_embedding(&self, _audio: &[f32]) -> Result<Vec<f32>, DiarizationError> {
+        Err(DiarizationError::FeatureNotEnabled)
+    }
+
+    pub fn enrolled_speaker_count(&self) -> usize {
+        0
+    }
+
+    pub fn enrolled_speaker_names(&self) -> Vec<String> {
+        Vec::new()
+    }
+
+    pub fn is_speaker_enrolled(&self, _name: &str) -> bool {
+        false
+    }
+
+    pub fn all_speaker_ids(&self) -> Vec<String> {
+        Vec::new()
     }
 }
 

@@ -311,6 +311,8 @@ pub fn run() {
             commands::get_local_sessions_by_date,
             commands::get_local_session_details,
             commands::save_local_soap_note,
+            // Clinical chat commands
+            commands::clinical_chat_send,
         ])
         .on_window_event(|window, event| {
             if let WindowEvent::CloseRequested { .. } = event {

@@ -177,7 +177,8 @@ describe('Accessibility Tests', () => {
     expect(results).toHaveNoViolations();
   });
 
-  it('settings drawer has no accessibility violations', async () => {
+  // Settings drawer is currently hidden (hideSettingsButton={true})
+  it.skip('settings drawer has no accessibility violations', async () => {
     const user = userEvent.setup();
     mockInvoke.mockImplementation(createStandardMock());
 
@@ -207,7 +208,8 @@ describe('Accessibility Tests', () => {
       expect(startButton).not.toBeDisabled();
     });
 
-    it('settings button is accessible', async () => {
+    // Settings button is currently hidden (hideSettingsButton={true})
+    it.skip('settings button is accessible', async () => {
       mockInvoke.mockImplementation(createStandardMock());
 
       const { findByRole } = render(<App />);
@@ -217,7 +219,8 @@ describe('Accessibility Tests', () => {
       expect(settingsBtn).toBeInTheDocument();
     });
 
-    it('device select in settings is accessible', async () => {
+    // Settings drawer is currently hidden (hideSettingsButton={true})
+    it.skip('device select in settings is accessible', async () => {
       const user = userEvent.setup();
       mockInvoke.mockImplementation(createStandardMock());
 

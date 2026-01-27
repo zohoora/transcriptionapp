@@ -34,6 +34,7 @@
  */
 import { useState, useCallback } from 'react';
 import { invoke } from '@tauri-apps/api/core';
+import { writeText } from '@tauri-apps/plugin-clipboard-manager';
 import type { CoughEvent, OllamaStatus, SoapNote, SoapOptions, SoapFormat, MultiPatientSoapResult } from '../types';
 import { DEFAULT_SOAP_OPTIONS } from '../types';
 import { formatErrorMessage } from '../utils';
@@ -53,9 +54,9 @@ export interface UseSoapNoteResult {
   ollamaModels: string[];
   soapOptions: SoapOptions;
   /** Generate multi-patient SOAP notes with auto-detection */
-  generateSoapNote: (transcript: string, audioEvents?: CoughEvent[], options?: SoapOptions) => Promise<MultiPatientSoapResult | null>;
+  generateSoapNote: (transcript: string, audioEvents?: CoughEvent[], options?: SoapOptions, sessionId?: string) => Promise<MultiPatientSoapResult | null>;
   /** Legacy: Generate single-patient SOAP note (for backward compatibility) */
-  generateSingleSoapNote: (transcript: string, audioEvents?: CoughEvent[], options?: SoapOptions) => Promise<SoapNote | null>;
+  generateSingleSoapNote: (transcript: string, audioEvents?: CoughEvent[], options?: SoapOptions, sessionId?: string) => Promise<SoapNote | null>;
   setOllamaStatus: (status: OllamaStatus | null) => void;
   setOllamaModels: (models: string[]) => void;
   setSoapError: (error: string | null) => void;
@@ -90,7 +91,8 @@ export function useSoapNote(): UseSoapNoteResult {
   const generateSoapNote = useCallback(async (
     transcript: string,
     audioEvents?: CoughEvent[],
-    options?: SoapOptions
+    options?: SoapOptions,
+    sessionId?: string
   ): Promise<MultiPatientSoapResult | null> => {
     if (!transcript.trim()) return null;
 
@@ -110,11 +112,28 @@ export function useSoapNote(): UseSoapNoteResult {
       const finalOptions = options || soapOptions;
 
       // Use auto-detect command which returns MultiPatientSoapResult
+      // Pass sessionId for debug storage correlation
       const result = await invoke<MultiPatientSoapResult>('generate_soap_note_auto_detect', {
         transcript,
         audioEvents: events,
         options: finalOptions,
+        sessionId: sessionId || null,
       });
+
+      // Auto-copy SOAP note to clipboard
+      if (result && result.notes.length > 0) {
+        try {
+          // Combine all patient notes (usually just one)
+          const clipboardContent = result.notes
+            .map(note => note.content)
+            .join('\n\n---\n\n');
+          await writeText(clipboardContent);
+          console.log('SOAP note copied to clipboard');
+        } catch (clipErr) {
+          console.warn('Failed to copy SOAP note to clipboard:', clipErr);
+        }
+      }
+
       return result;
     } catch (e) {
       console.error('Failed to generate SOAP note:', e);
@@ -129,7 +148,8 @@ export function useSoapNote(): UseSoapNoteResult {
   const generateSingleSoapNote = useCallback(async (
     transcript: string,
     audioEvents?: CoughEvent[],
-    options?: SoapOptions
+    options?: SoapOptions,
+    sessionId?: string
   ): Promise<SoapNote | null> => {
     if (!transcript.trim()) return null;
 
@@ -152,7 +172,19 @@ export function useSoapNote(): UseSoapNoteResult {
         transcript,
         audioEvents: events,
         options: finalOptions,
+        sessionId: sessionId || null,
       });
+
+      // Auto-copy SOAP note to clipboard
+      if (result && result.content) {
+        try {
+          await writeText(result.content);
+          console.log('SOAP note copied to clipboard');
+        } catch (clipErr) {
+          console.warn('Failed to copy SOAP note to clipboard:', clipErr);
+        }
+      }
+
       return result;
     } catch (e) {
       console.error('Failed to generate SOAP note:', e);

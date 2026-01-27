@@ -14,6 +14,8 @@ describe('RecordingMode', () => {
     onStop: vi.fn(),
     whisperMode: 'remote' as const,
     whisperModel: 'large-v3-turbo',
+    sessionNotes: '',
+    onSessionNotesChange: vi.fn(),
   };
 
   beforeEach(() => {
@@ -272,6 +274,52 @@ describe('RecordingMode', () => {
       render(<RecordingMode {...defaultProps} whisperMode="local" whisperModel="small" />);
 
       expect(screen.getByText(/💻 small/)).toBeInTheDocument();
+    });
+  });
+
+  describe('session notes', () => {
+    it('shows "Add Notes" button by default', () => {
+      render(<RecordingMode {...defaultProps} />);
+
+      expect(screen.getByText('Add Notes')).toBeInTheDocument();
+    });
+
+    it('shows notes input when toggle is clicked', () => {
+      render(<RecordingMode {...defaultProps} />);
+
+      fireEvent.click(screen.getByText('Add Notes'));
+
+      expect(screen.getByText('Hide Notes')).toBeInTheDocument();
+      expect(screen.getByPlaceholderText(/enter observations/i)).toBeInTheDocument();
+    });
+
+    it('shows "has-notes" class when notes exist', () => {
+      render(<RecordingMode {...defaultProps} sessionNotes="Patient anxious" />);
+
+      const toggle = screen.getByRole('button', { name: /add notes/i });
+      expect(toggle).toHaveClass('has-notes');
+    });
+
+    it('calls onSessionNotesChange when notes are typed', () => {
+      const onSessionNotesChange = vi.fn();
+      render(<RecordingMode {...defaultProps} onSessionNotesChange={onSessionNotesChange} />);
+
+      fireEvent.click(screen.getByText('Add Notes'));
+      fireEvent.change(screen.getByPlaceholderText(/enter observations/i), {
+        target: { value: 'Patient limping' },
+      });
+
+      expect(onSessionNotesChange).toHaveBeenCalledWith('Patient limping');
+    });
+
+    it('hides notes input when toggle is clicked again', () => {
+      render(<RecordingMode {...defaultProps} />);
+
+      fireEvent.click(screen.getByText('Add Notes'));
+      expect(screen.getByPlaceholderText(/enter observations/i)).toBeInTheDocument();
+
+      fireEvent.click(screen.getByText('Hide Notes'));
+      expect(screen.queryByPlaceholderText(/enter observations/i)).not.toBeInTheDocument();
     });
   });
 });

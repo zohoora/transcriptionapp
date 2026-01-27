@@ -2,9 +2,46 @@
 //!
 //! Assigns speaker embeddings to clusters in real-time using
 //! cosine similarity with exponential moving average centroid updates.
+//!
+//! Supports enrolled speakers with higher matching priority.
 
 use super::config::ClusterConfig;
 use super::{cosine_similarity, l2_normalize};
+
+/// An enrolled speaker centroid (from speaker profiles)
+/// These have priority over auto-detected speakers
+#[derive(Debug, Clone)]
+pub struct EnrolledCentroid {
+    /// Profile ID (UUID from SpeakerProfile)
+    pub profile_id: String,
+
+    /// Display name (e.g., "Dr. Smith")
+    pub name: String,
+
+    /// Voice embedding (L2 normalized, 256-dim)
+    pub embedding: Vec<f32>,
+
+    /// Whether the embedding is frozen (not updated during session)
+    pub is_frozen: bool,
+}
+
+impl EnrolledCentroid {
+    /// Create a new enrolled centroid from a speaker profile
+    pub fn new(profile_id: String, name: String, mut embedding: Vec<f32>, is_frozen: bool) -> Self {
+        l2_normalize(&mut embedding);
+        Self {
+            profile_id,
+            name,
+            embedding,
+            is_frozen,
+        }
+    }
+
+    /// Compute cosine similarity to another embedding
+    pub fn similarity(&self, embedding: &[f32]) -> f32 {
+        cosine_similarity(&self.embedding, embedding)
+    }
+}
 
 /// A speaker centroid with running statistics
 #[derive(Debug, Clone)]
@@ -68,24 +105,66 @@ impl SpeakerCentroid {
 /// Online speaker clustering with incremental centroid updates
 #[derive(Debug)]
 pub struct SpeakerClusterer {
-    /// Current speaker centroids
+    /// Current speaker centroids (auto-detected)
     centroids: Vec<SpeakerCentroid>,
+
+    /// Enrolled speaker centroids (from profiles, checked first)
+    enrolled_centroids: Vec<EnrolledCentroid>,
 
     /// Configuration parameters
     config: ClusterConfig,
 
     /// Next speaker number for ID generation
     next_speaker_num: u32,
+
+    /// Similarity threshold for enrolled speaker matching
+    /// Typically higher than auto-clustering threshold for more confident matches
+    enrolled_similarity_threshold: f32,
 }
+
+/// Default similarity threshold for enrolled speaker matching
+/// Higher than auto-clustering for more confident recognition
+const DEFAULT_ENROLLED_THRESHOLD: f32 = 0.6;
 
 impl SpeakerClusterer {
     /// Create a new speaker clusterer with the given configuration
     pub fn new(config: ClusterConfig) -> Self {
         Self {
             centroids: Vec::new(),
+            enrolled_centroids: Vec::new(),
             config,
             next_speaker_num: 0,
+            enrolled_similarity_threshold: DEFAULT_ENROLLED_THRESHOLD,
         }
+    }
+
+    /// Load enrolled speakers from profiles
+    ///
+    /// These speakers will be checked first during assignment with higher priority.
+    /// Call this at the start of a recording session.
+    pub fn load_enrolled_speakers(&mut self, profiles: &[(String, String, Vec<f32>)]) {
+        self.enrolled_centroids.clear();
+
+        for (profile_id, name, embedding) in profiles {
+            let centroid = EnrolledCentroid::new(
+                profile_id.clone(),
+                name.clone(),
+                embedding.clone(),
+                true, // Enrolled speakers are frozen by default
+            );
+            tracing::info!("Loaded enrolled speaker: {} ({})", name, profile_id);
+            self.enrolled_centroids.push(centroid);
+        }
+
+        tracing::info!(
+            "Loaded {} enrolled speakers for recognition",
+            self.enrolled_centroids.len()
+        );
+    }
+
+    /// Set the similarity threshold for enrolled speaker matching
+    pub fn set_enrolled_threshold(&mut self, threshold: f32) {
+        self.enrolled_similarity_threshold = threshold.clamp(0.0, 1.0);
     }
 
     /// Assign a speaker ID to an embedding
@@ -96,12 +175,45 @@ impl SpeakerClusterer {
     ///
     /// # Returns
     /// Tuple of (Speaker ID string, confidence score 0.0-1.0)
+    ///
+    /// # Priority
+    /// 1. Check enrolled speakers first (higher threshold)
+    /// 2. Fall back to auto-detected speakers
+    /// 3. Create new auto-detected speaker if no match
     pub fn assign(&mut self, embedding: &[f32], timestamp_ms: u64) -> (String, f32) {
         // L2 normalize the embedding
         let mut normalized = embedding.to_vec();
         l2_normalize(&mut normalized);
 
-        // Find best matching centroid
+        // Step 1: Check enrolled speakers FIRST (higher priority)
+        if !self.enrolled_centroids.is_empty() {
+            let enrolled_match = self
+                .enrolled_centroids
+                .iter()
+                .map(|c| (c, c.similarity(&normalized)))
+                .max_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
+
+            if let Some((centroid, sim)) = enrolled_match {
+                if sim >= self.enrolled_similarity_threshold {
+                    tracing::info!(
+                        "Enrolled speaker match: {} with similarity {:.3} (threshold: {:.3})",
+                        centroid.name,
+                        sim,
+                        self.enrolled_similarity_threshold
+                    );
+                    return (centroid.name.clone(), sim);
+                } else {
+                    tracing::debug!(
+                        "Best enrolled match {} has similarity {:.3}, below threshold {:.3}",
+                        centroid.name,
+                        sim,
+                        self.enrolled_similarity_threshold
+                    );
+                }
+            }
+        }
+
+        // Step 2: Fall back to auto-detected speakers
         let best_match = self
             .centroids
             .iter()
@@ -112,13 +224,13 @@ impl SpeakerClusterer {
         // Log all similarities for debugging
         if let Some((best_idx, best_sim)) = best_match {
             tracing::info!(
-                "Best match: {} with similarity {:.3} (threshold: {:.3})",
+                "Best auto-detected match: {} with similarity {:.3} (threshold: {:.3})",
                 self.centroids.get(best_idx).map(|c| c.id.as_str()).unwrap_or("?"),
                 best_sim,
                 self.config.similarity_threshold
             );
         } else {
-            tracing::info!("No existing speakers to compare against");
+            tracing::info!("No existing auto-detected speakers to compare against");
         }
 
         match best_match {
@@ -158,21 +270,55 @@ impl SpeakerClusterer {
         id
     }
 
-    /// Reset the clusterer, clearing all speakers
+    /// Reset the clusterer, clearing auto-detected speakers but preserving enrolled speakers
     pub fn reset(&mut self) {
         self.centroids.clear();
         self.next_speaker_num = 0;
-        tracing::debug!("Speaker clusterer reset");
+        // NOTE: enrolled_centroids are intentionally preserved across reset
+        tracing::debug!(
+            "Speaker clusterer reset (preserved {} enrolled speakers)",
+            self.enrolled_centroids.len()
+        );
     }
 
-    /// Get the current number of tracked speakers
+    /// Full reset including enrolled speakers (for new enrollment session)
+    pub fn reset_all(&mut self) {
+        self.centroids.clear();
+        self.enrolled_centroids.clear();
+        self.next_speaker_num = 0;
+        tracing::debug!("Speaker clusterer fully reset (including enrolled speakers)");
+    }
+
+    /// Get the current number of tracked speakers (auto-detected only)
     pub fn speaker_count(&self) -> usize {
         self.centroids.len()
     }
 
-    /// Get all current speaker IDs
+    /// Get the number of enrolled speakers
+    pub fn enrolled_speaker_count(&self) -> usize {
+        self.enrolled_centroids.len()
+    }
+
+    /// Get all current speaker IDs (auto-detected only)
     pub fn speaker_ids(&self) -> Vec<String> {
         self.centroids.iter().map(|c| c.id.clone()).collect()
+    }
+
+    /// Get all enrolled speaker names
+    pub fn enrolled_speaker_names(&self) -> Vec<String> {
+        self.enrolled_centroids.iter().map(|c| c.name.clone()).collect()
+    }
+
+    /// Get all speaker IDs including enrolled
+    pub fn all_speaker_ids(&self) -> Vec<String> {
+        let mut ids: Vec<String> = self.enrolled_centroids.iter().map(|c| c.name.clone()).collect();
+        ids.extend(self.centroids.iter().map(|c| c.id.clone()));
+        ids
+    }
+
+    /// Check if a speaker name is enrolled
+    pub fn is_enrolled(&self, name: &str) -> bool {
+        self.enrolled_centroids.iter().any(|c| c.name == name)
     }
 
     /// Get statistics about a specific speaker
@@ -373,5 +519,130 @@ mod tests {
         assert!(ids.contains(&"Speaker 1".to_string()));
         assert!(ids.contains(&"Speaker 2".to_string()));
         assert!(ids.contains(&"Speaker 3".to_string()));
+    }
+
+    #[test]
+    fn test_enrolled_centroid_new() {
+        let embedding = vec![3.0, 4.0];
+        let centroid = EnrolledCentroid::new(
+            "profile-123".to_string(),
+            "Dr. Smith".to_string(),
+            embedding,
+            true,
+        );
+
+        assert_eq!(centroid.profile_id, "profile-123");
+        assert_eq!(centroid.name, "Dr. Smith");
+        assert!(centroid.is_frozen);
+
+        // Should be L2 normalized
+        let norm: f32 = centroid.embedding.iter().map(|x| x * x).sum::<f32>().sqrt();
+        assert!((norm - 1.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_enrolled_speaker_priority() {
+        let config = create_test_config();
+        let mut clusterer = SpeakerClusterer::new(config);
+        clusterer.set_enrolled_threshold(0.5);
+
+        // Create a specific embedding for "Dr. Smith"
+        let dr_smith_embedding = create_normalized_embedding(42, 256);
+
+        // Load enrolled speaker
+        clusterer.load_enrolled_speakers(&[(
+            "profile-1".to_string(),
+            "Dr. Smith".to_string(),
+            dr_smith_embedding.clone(),
+        )]);
+
+        assert_eq!(clusterer.enrolled_speaker_count(), 1);
+        assert!(clusterer.is_enrolled("Dr. Smith"));
+
+        // Assign the same embedding - should match Dr. Smith
+        let (speaker, confidence) = clusterer.assign(&dr_smith_embedding, 0);
+        assert_eq!(speaker, "Dr. Smith");
+        assert!(confidence >= 0.5);
+
+        // Auto-detected speakers should still be 0
+        assert_eq!(clusterer.speaker_count(), 0);
+    }
+
+    #[test]
+    fn test_enrolled_speaker_fallback_to_auto() {
+        let config = create_test_config();
+        let mut clusterer = SpeakerClusterer::new(config);
+        clusterer.set_enrolled_threshold(0.8); // High threshold
+
+        // Load enrolled speaker with specific embedding
+        let dr_smith_embedding = create_normalized_embedding(42, 256);
+        clusterer.load_enrolled_speakers(&[(
+            "profile-1".to_string(),
+            "Dr. Smith".to_string(),
+            dr_smith_embedding,
+        )]);
+
+        // Assign a completely different embedding
+        let different_embedding = create_orthogonal_embedding(100, 256);
+        let (speaker, _) = clusterer.assign(&different_embedding, 0);
+
+        // Should NOT match Dr. Smith, should create "Speaker 1"
+        assert_eq!(speaker, "Speaker 1");
+        assert_eq!(clusterer.speaker_count(), 1);
+    }
+
+    #[test]
+    fn test_reset_preserves_enrolled() {
+        let config = create_test_config();
+        let mut clusterer = SpeakerClusterer::new(config);
+
+        // Load enrolled speaker
+        clusterer.load_enrolled_speakers(&[(
+            "profile-1".to_string(),
+            "Dr. Smith".to_string(),
+            create_normalized_embedding(42, 256),
+        )]);
+
+        // Create some auto-detected speakers
+        for i in 0..2 {
+            let embedding = create_orthogonal_embedding(i * 50, 256);
+            clusterer.assign(&embedding, i as u64 * 1000);
+        }
+
+        assert_eq!(clusterer.speaker_count(), 2);
+        assert_eq!(clusterer.enrolled_speaker_count(), 1);
+
+        // Regular reset should preserve enrolled
+        clusterer.reset();
+        assert_eq!(clusterer.speaker_count(), 0);
+        assert_eq!(clusterer.enrolled_speaker_count(), 1);
+        assert!(clusterer.is_enrolled("Dr. Smith"));
+
+        // Full reset should clear everything
+        clusterer.reset_all();
+        assert_eq!(clusterer.speaker_count(), 0);
+        assert_eq!(clusterer.enrolled_speaker_count(), 0);
+    }
+
+    #[test]
+    fn test_all_speaker_ids() {
+        let config = create_test_config();
+        let mut clusterer = SpeakerClusterer::new(config);
+
+        // Load enrolled speakers
+        clusterer.load_enrolled_speakers(&[
+            ("p1".to_string(), "Dr. Smith".to_string(), create_normalized_embedding(42, 256)),
+            ("p2".to_string(), "Nurse Jane".to_string(), create_normalized_embedding(99, 256)),
+        ]);
+
+        // Create auto-detected speaker
+        let embedding = create_orthogonal_embedding(200, 256);
+        clusterer.assign(&embedding, 0);
+
+        let all_ids = clusterer.all_speaker_ids();
+        assert_eq!(all_ids.len(), 3);
+        assert!(all_ids.contains(&"Dr. Smith".to_string()));
+        assert!(all_ids.contains(&"Nurse Jane".to_string()));
+        assert!(all_ids.contains(&"Speaker 1".to_string()));
     }
 }

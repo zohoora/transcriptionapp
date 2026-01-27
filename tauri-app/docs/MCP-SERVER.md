@@ -229,7 +229,7 @@ Returns detailed operational status of the agent and its managed services.
     {
       "name": "llm-router",
       "status": "configured",
-      "details": "http://10.241.15.154:8000"
+      "details": "http://10.241.15.154:8080"
     },
     {
       "name": "medplum",
@@ -387,7 +387,7 @@ The agent reads configuration from `~/.transcriptionapp/config.json`. Key fields
 {
   "whisper_mode": "remote",
   "whisper_server_url": "http://10.241.15.154:8001",
-  "llm_router_url": "http://10.241.15.154:8000",
+  "llm_router_url": "http://10.241.15.154:8080",
   "llm_api_key": "...",
   "llm_client_id": "ai-scribe",
   "medplum_server_url": "http://10.241.15.154:8103",
