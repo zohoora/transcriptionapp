@@ -104,7 +104,9 @@ cd src-tauri && cargo test       # Rust
 | `transcript_update` | Real-time transcript |
 | `biomarker_update` | Vitality, stability, session metrics |
 | `audio_quality` | Level, SNR, clipping metrics |
-| `listening_event` | Auto-detection status |
+| `listening_event` | Auto-detection status (includes `speaker_not_verified`) |
+| `silence_warning` | Auto-end countdown (silence_ms, remaining_ms) |
+| `session_auto_end` | Session auto-ended due to silence |
 
 ## Session States
 
@@ -122,6 +124,7 @@ Idle → Preparing → Recording → Stopping → Completed
 - Audio events (coughs, laughs) passed to LLM for clinical context
 - Adaptive model selection: `soap_model_fast` for <5K words, `soap_model` for longer
 - Long transcript support: 20/80 truncation strategy for sessions >10K words
+- **Auto-copy**: SOAP notes automatically copied to clipboard on generation
 
 ### Transcription
 - **Local**: 17 Whisper models (tiny → large-v3-turbo, quantized, distil)
@@ -308,6 +311,9 @@ interface Settings {
 | OAuth opens new instance | Use `pnpm tauri build --debug`, not `tauri dev` |
 | Deep links not working | Ensure app was built and `fabricscribe://` scheme registered |
 | Clinical chat shows raw JSON | Router must execute tools for `clinical-assistant` alias |
+| Speaker verification fails | Ensure profiles exist and speaker model at `~/.transcriptionapp/models/ecapa_tdnn.onnx` |
+| Auto-end too aggressive | Increase `auto_end_silence_ms` or disable `auto_end_enabled` |
+| SOAP not copying to clipboard | Check Tauri clipboard plugin permissions |
 
 ## Testing Best Practices
 
@@ -324,4 +330,24 @@ interface Settings {
 
 ## ADRs
 
-See `docs/adr/` for Architecture Decision Records covering all major design choices.
+See `docs/adr/` for Architecture Decision Records:
+
+| ADR | Title |
+|-----|-------|
+| 0001 | Use Tauri for desktop app |
+| 0002 | Whisper for transcription |
+| 0003 | VAD-gated processing |
+| 0004 | Ring buffer audio pipeline |
+| 0005 | Session state machine |
+| 0006 | Speaker diarization |
+| 0007 | Biomarker analysis |
+| 0008 | Medplum EMR integration |
+| 0009 | Ollama SOAP generation |
+| 0010 | Audio preprocessing |
+| 0011 | Auto-session detection |
+| 0012 | Multi-patient SOAP generation |
+| 0013 | LLM router migration |
+| 0014 | Speaker enrollment system |
+| 0015 | Auto-end silence detection |
+| 0016 | Speaker-verified auto-start |
+| 0017 | Clinical assistant chat |
