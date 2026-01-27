@@ -3748,6 +3748,29 @@ body {
   transform: scale(0.98);
 }
 
+.silence-warning-end-now {
+  padding: 8px 16px;
+  font-size: 13px;
+  font-weight: 500;
+  background: transparent;
+  color: var(--text-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  margin-top: 8px;
+}
+
+.silence-warning-end-now:hover {
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  border-color: var(--text-muted);
+}
+
+.silence-warning-end-now:active {
+  transform: scale(0.98);
+}
+
 .silence-warning-hint {
   font-size: 12px;
   color: var(--text-muted);

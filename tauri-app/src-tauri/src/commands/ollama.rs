@@ -3,11 +3,22 @@
 use crate::activity_log;
 use crate::config::Config;
 use crate::debug_storage;
-use crate::ollama::{AudioEvent, LLMClient, LLMStatus, MultiPatientSoapResult, SoapNote, SoapOptions};
+use crate::ollama::{AudioEvent, LLMClient, LLMStatus, MultiPatientSoapResult, SoapNote, SoapOptions, SpeakerContext, SpeakerInfo};
 use tracing::{info, warn};
 
 // Re-export LLMStatus as OllamaStatus for backward compatibility with frontend
 pub use crate::ollama::OllamaStatus;
+
+/// Select the SOAP model for generation.
+/// Uses soap_model for all transcript lengths.
+fn select_soap_model(config: &Config, word_count: usize) -> &str {
+    info!(
+        word_count = word_count,
+        model = %config.soap_model,
+        "Using SOAP model"
+    );
+    &config.soap_model
+}
 
 /// Check LLM router status and list available models
 #[tauri::command]
@@ -53,17 +64,20 @@ pub async fn prewarm_ollama_model() -> Result<(), String> {
 /// * `audio_events` - Optional audio events (coughs, laughs, etc.) detected during recording
 /// * `options` - Optional SOAP generation options (detail level, format, custom instructions)
 /// * `session_id` - Optional session ID for debug storage correlation
+/// * `speaker_context` - Optional speaker identification context for better SOAP generation
 #[tauri::command]
 pub async fn generate_soap_note(
     transcript: String,
     audio_events: Option<Vec<AudioEvent>>,
     options: Option<SoapOptions>,
     session_id: Option<String>,
+    speaker_context: Option<Vec<SpeakerInfo>>,
 ) -> Result<SoapNote, String> {
     info!(
-        "Generating SOAP note for transcript of {} chars, {} audio events, options: {:?}",
+        "Generating SOAP note for transcript of {} chars, {} audio events, {} speakers, options: {:?}",
         transcript.len(),
         audio_events.as_ref().map(|e| e.len()).unwrap_or(0),
+        speaker_context.as_ref().map(|s| s.len()).unwrap_or(0),
         options
     );
 
@@ -74,16 +88,27 @@ pub async fn generate_soap_note(
     let config = Config::load_or_default();
     let client = LLMClient::new(&config.llm_router_url, &config.llm_api_key, &config.llm_client_id, &config.fast_model)?;
 
-    // Count words for logging (not content)
+    // Count words for logging and model selection
     let word_count = transcript.split_whitespace().count();
+
+    // Build speaker context if provided
+    let ctx = speaker_context.map(|speakers| {
+        let mut ctx = SpeakerContext::new();
+        ctx.speakers = speakers;
+        ctx
+    });
+
+    // Select appropriate model based on transcript length
+    let selected_model = select_soap_model(&config, word_count);
     let start_time = std::time::Instant::now();
 
     match client
         .generate_soap_note(
-            &config.soap_model,
+            selected_model,
             &transcript,
             audio_events.as_deref(),
             options.as_ref(),
+            ctx.as_ref(),
         )
         .await
     {
@@ -93,7 +118,7 @@ pub async fn generate_soap_note(
                 session_id.as_deref().unwrap_or(""),
                 word_count,
                 generation_time_ms,
-                &config.soap_model,
+                selected_model,
                 true,
                 None,
             );
@@ -104,7 +129,7 @@ pub async fn generate_soap_note(
                     if let Err(e) = debug_storage::save_soap_note_standalone(
                         sid,
                         &soap_note.content,
-                        &config.soap_model,
+                        selected_model,
                         true,
                     ) {
                         warn!("Failed to save SOAP note to debug storage: {}", e);
@@ -122,7 +147,7 @@ pub async fn generate_soap_note(
                 session_id.as_deref().unwrap_or(""),
                 word_count,
                 generation_time_ms,
-                &config.soap_model,
+                selected_model,
                 false,
                 Some(&e),
             );
@@ -142,6 +167,7 @@ pub async fn generate_soap_note(
 /// * `audio_events` - Optional audio events (coughs, laughs, etc.) detected during recording
 /// * `options` - Optional SOAP generation options (detail level, custom instructions)
 /// * `session_id` - Optional session ID for debug storage correlation
+/// * `speaker_context` - Optional speaker identification context for better SOAP generation
 ///
 /// # Returns
 /// A `MultiPatientSoapResult` containing:
@@ -155,11 +181,13 @@ pub async fn generate_soap_note_auto_detect(
     audio_events: Option<Vec<AudioEvent>>,
     options: Option<SoapOptions>,
     session_id: Option<String>,
+    speaker_context: Option<Vec<SpeakerInfo>>,
 ) -> Result<MultiPatientSoapResult, String> {
     info!(
-        "Generating multi-patient SOAP note for transcript of {} chars, {} audio events",
+        "Generating multi-patient SOAP note for transcript of {} chars, {} audio events, {} speakers",
         transcript.len(),
         audio_events.as_ref().map(|e| e.len()).unwrap_or(0),
+        speaker_context.as_ref().map(|s| s.len()).unwrap_or(0),
     );
 
     if transcript.trim().is_empty() {
@@ -169,16 +197,27 @@ pub async fn generate_soap_note_auto_detect(
     let config = Config::load_or_default();
     let client = LLMClient::new(&config.llm_router_url, &config.llm_api_key, &config.llm_client_id, &config.fast_model)?;
 
-    // Count words for logging (not content)
+    // Count words for logging and model selection
     let word_count = transcript.split_whitespace().count();
+
+    // Build speaker context if provided
+    let ctx = speaker_context.map(|speakers| {
+        let mut ctx = SpeakerContext::new();
+        ctx.speakers = speakers;
+        ctx
+    });
+
+    // Select appropriate model based on transcript length
+    let selected_model = select_soap_model(&config, word_count);
     let start_time = std::time::Instant::now();
 
     match client
         .generate_multi_patient_soap_note(
-            &config.soap_model,
+            selected_model,
             &transcript,
             audio_events.as_deref(),
             options.as_ref(),
+            ctx.as_ref(),
         )
         .await
     {
@@ -189,7 +228,7 @@ pub async fn generate_soap_note_auto_detect(
                 session_id.as_deref().unwrap_or(""),
                 word_count,
                 generation_time_ms,
-                &config.soap_model,
+                selected_model,
                 true,
                 None,
             );
@@ -218,7 +257,7 @@ pub async fn generate_soap_note_auto_detect(
                     if let Err(e) = debug_storage::save_soap_note_standalone(
                         sid,
                         &soap_with_header,
-                        &config.soap_model,
+                        selected_model,
                         true,
                     ) {
                         warn!("Failed to save multi-patient SOAP notes to debug storage: {}", e);
@@ -236,7 +275,7 @@ pub async fn generate_soap_note_auto_detect(
                 session_id.as_deref().unwrap_or(""),
                 word_count,
                 generation_time_ms,
-                &config.soap_model,
+                selected_model,
                 false,
                 Some(&e),
             );

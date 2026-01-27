@@ -126,6 +126,12 @@ export const RecordingMode = memo(function RecordingMode({
                 Keep Recording
               </button>
             )}
+            <button
+              className="silence-warning-end-now"
+              onClick={onStop}
+            >
+              End Now
+            </button>
             <div className="silence-warning-hint">
               Or speak to continue
             </div>
