@@ -76,6 +76,7 @@ cd src-tauri && cargo test       # Rust
 | Modify speaker enrollment | `speaker_profiles.rs`, `commands/speaker_profiles.rs`, `useSpeakerProfiles.ts`, `SpeakerEnrollment.tsx` |
 | Modify clinical chat | `commands/clinical_chat.rs`, `useClinicalChat.ts`, `ClinicalChat.tsx` |
 | Modify auto-end detection | `pipeline.rs` (silence tracking), `config.rs` (settings), `useSessionState.ts` |
+| Modify SOAP options | `useSoapNote.ts` (hook), `llm_client.rs` (prompt building), `local_archive.rs` (metadata) |
 
 ## IPC Commands
 
@@ -125,6 +126,9 @@ Idle → Preparing → Recording → Stopping → Completed
 - Adaptive model selection: `soap_model_fast` for <5K words, `soap_model` for longer
 - Long transcript support: 20/80 truncation strategy for sessions >10K words
 - **Auto-copy**: SOAP notes automatically copied to clipboard on generation
+- **Format options**: Problem-based (organizes by medical problem) vs Comprehensive (unified sections)
+- **Detail level**: 1-10 slider controls verbosity (persisted across sessions)
+- **Session metadata**: SOAP options stored with local archive sessions for regeneration context
 
 ### Transcription
 - **Local**: 17 Whisper models (tiny → large-v3-turbo, quantized, distil)
@@ -253,6 +257,11 @@ interface Settings {
   auto_end_silence_ms: number;   // Default: 120000 (2 minutes)
   greeting_sensitivity: number;  // 0.0-1.0
   min_speech_duration_ms: number;
+
+  // SOAP Generation
+  soap_detail_level: number;       // 1-10, controls verbosity (persisted across sessions)
+  soap_format: 'problem_based' | 'comprehensive';  // Organization style
+  soap_custom_instructions: string; // Additional prompt instructions
 
   // Debug
   debug_storage_enabled: boolean;  // PHI storage for dev only

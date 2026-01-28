@@ -2906,6 +2906,193 @@ body {
   color: #3498db;
 }
 
+.badge.auto-badge {
+  background: rgba(155, 89, 182, 0.15);
+  color: #9b59b6;
+}
+
+/* History footer */
+.history-footer {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 16px;
+  border-top: 1px solid var(--border-subtle);
+  margin-top: auto;
+}
+
+.data-source-indicator {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+.auth-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.auth-status.authenticated {
+  color: var(--accent-idle);
+}
+
+.auth-status.not-authenticated {
+  background: none;
+  border: 1px solid var(--border-color);
+  padding: 8px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  width: 100%;
+  justify-content: center;
+  transition: all 0.15s ease;
+}
+
+.auth-status.not-authenticated:hover {
+  background: var(--bg-secondary);
+  border-color: var(--accent-idle);
+  color: var(--accent-idle);
+}
+
+/* Detail view badges */
+.detail-badge {
+  padding: 4px 8px;
+  font-size: 11px;
+  font-weight: 500;
+  border-radius: 4px;
+}
+
+.detail-badge.auto-ended {
+  background: rgba(155, 89, 182, 0.15);
+  color: #9b59b6;
+}
+
+/* Sync status section in detail view */
+.detail-section.sync-status {
+  margin-top: 8px;
+}
+
+.detail-section.sync-status .section-content {
+  padding: 12px;
+}
+
+.sync-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--accent-idle);
+  font-size: 13px;
+}
+
+.sync-prompt {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: center;
+}
+
+.sync-prompt p {
+  font-size: 13px;
+  color: var(--text-muted);
+  margin: 0;
+}
+
+.secondary-btn {
+  padding: 8px 16px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  color: var(--text-primary);
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.secondary-btn:hover {
+  border-color: var(--accent-idle);
+  color: var(--accent-idle);
+}
+
+/* History window detail content */
+.history-content.detail-content {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.history-content.detail-content .session-summary {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  background: var(--bg-secondary);
+  border-radius: 6px;
+  font-size: 13px;
+}
+
+.history-content.detail-content .summary-time {
+  font-weight: 600;
+}
+
+.history-content.detail-content .summary-duration {
+  color: var(--text-muted);
+}
+
+.history-content.detail-content .summary-words {
+  color: var(--text-muted);
+}
+
+.history-content.detail-content .summary-badge {
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.history-content.detail-content .summary-badge.auto {
+  background: rgba(155, 89, 182, 0.15);
+  color: #9b59b6;
+}
+
+/* Use same review-tabs styling */
+.history-content.detail-content .review-tabs {
+  display: flex;
+  gap: 0;
+  border-bottom: 1px solid var(--border-subtle);
+  margin-bottom: 0;
+}
+
+.history-content.detail-content .review-tab-content {
+  flex: 1;
+  overflow-y: auto;
+  min-height: 0;
+}
+
+.history-content.detail-content .tab-panel {
+  padding: 12px 0;
+}
+
+.history-content.detail-content .panel-header {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 8px;
+}
+
+.history-content.detail-content .panel-body {
+  flex: 1;
+  overflow-y: auto;
+}
+
+/* Audio player in insight card */
+.audio-player-container {
+  padding: 8px 0;
+}
+
 /* =============================================================================
    SESSION DETAIL VIEW
    ============================================================================= */

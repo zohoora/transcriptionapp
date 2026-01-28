@@ -25,6 +25,26 @@ vi.mock('./AuthProvider', () => ({
   useAuth: vi.fn(),
 }));
 
+// Mock useSoapNote hook
+vi.mock('../hooks/useSoapNote', () => ({
+  useSoapNote: vi.fn(() => ({
+    isGeneratingSoap: false,
+    soapError: null,
+    setSoapError: vi.fn(),
+    ollamaStatus: { connected: true },
+    soapOptions: {
+      detail_level: 5,
+      format: 'problem_based',
+      custom_instructions: '',
+    },
+    setSoapOptions: vi.fn(),
+    updateSoapDetailLevel: vi.fn(),
+    updateSoapFormat: vi.fn(),
+    updateSoapCustomInstructions: vi.fn(),
+    generateSoapNote: vi.fn().mockResolvedValue(null),
+  })),
+}));
+
 // Mock child components
 vi.mock('./Calendar', () => ({
   default: ({ selectedDate, onDateSelect }: { selectedDate: Date; onDateSelect: (date: Date) => void }) => (
@@ -119,6 +139,14 @@ const mockSessionDetails: EncounterDetails = {
   audioUrl: 'https://medplum.test/audio/session-1.wav',
 };
 
+// Default settings mock (uses Medplum by default since debug_storage_enabled: false)
+const mockSettings = {
+  debug_storage_enabled: false,
+  soap_detail_level: 5,
+  soap_format: 'problem_based',
+  soap_custom_instructions: '',
+};
+
 describe('HistoryWindow', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -126,8 +154,21 @@ describe('HistoryWindow', () => {
       close: vi.fn().mockResolvedValue(undefined),
     } as unknown as ReturnType<typeof getCurrentWindow>);
     mockWriteText.mockResolvedValue(undefined);
-    // Default: return empty array for history to prevent errors
-    mockInvoke.mockResolvedValue([]);
+    // Default mock implementation that handles different commands
+    mockInvoke.mockImplementation((cmd: string) => {
+      switch (cmd) {
+        case 'get_settings':
+          return Promise.resolve(mockSettings);
+        case 'medplum_get_encounter_history':
+          return Promise.resolve([]);
+        case 'get_local_session_dates':
+          return Promise.resolve([]);
+        case 'get_local_sessions_by_date':
+          return Promise.resolve([]);
+        default:
+          return Promise.resolve([]);
+      }
+    });
   });
 
   describe('unauthenticated state', () => {

@@ -892,6 +892,11 @@ fn build_simple_soap_prompt(options: &SoapOptions) -> String {
         _ => "Use standard clinical detail.",
     };
 
+    let format_instruction = match options.format {
+        SoapFormat::ProblemBased => "ORGANIZATION: If multiple medical problems are discussed, organize by problem - label each problem (e.g., 'Problem 1: Hypertension') and include its relevant S/O/A/P items grouped together.",
+        SoapFormat::Comprehensive => "ORGANIZATION: Create a single unified SOAP note covering all problems together in each section.",
+    };
+
     let custom_section = if options.custom_instructions.trim().is_empty() {
         String::new()
     } else {
@@ -920,7 +925,8 @@ Rules:
 - Do NOT hallucinate or embellish - only include what was explicitly stated
 - PLAN SECTION: Include ONLY treatments, tests, and follow-ups the doctor actually mentioned. Do NOT add recommendations, monitoring suggestions, or instructions not stated in the transcript.
 - CLINICIAN NOTES: If provided, incorporate clinician observations into the appropriate SOAP sections (usually Objective for physical observations, Subjective for reported symptoms).
-- {detail_instruction}{custom_section}"#
+- {detail_instruction}
+- {format_instruction}{custom_section}"#
     )
 }
 
@@ -933,6 +939,11 @@ fn build_simple_multi_patient_prompt(options: &SoapOptions) -> String {
         _ => "Use standard clinical detail.",
     };
 
+    let format_instruction = match options.format {
+        SoapFormat::ProblemBased => "ORGANIZATION: If multiple medical problems are discussed, organize by problem - label each problem (e.g., 'Problem 1: Hypertension') and include its relevant S/O/A/P items grouped together.",
+        SoapFormat::Comprehensive => "ORGANIZATION: Create a single unified SOAP note covering all problems together in each section.",
+    };
+
     let custom_section = if options.custom_instructions.trim().is_empty() {
         String::new()
     } else {
@@ -961,7 +972,8 @@ Rules:
 - Do NOT hallucinate or embellish - only include what was explicitly stated
 - PLAN SECTION: Include ONLY treatments, tests, and follow-ups the doctor actually mentioned. Do NOT add recommendations, monitoring suggestions, or instructions not stated in the transcript.
 - CLINICIAN NOTES: If provided, incorporate clinician observations into the appropriate SOAP sections (usually Objective for physical observations, Subjective for reported symptoms).
-- {detail_instruction}{custom_section}"#
+- {detail_instruction}
+- {format_instruction}{custom_section}"#
     )
 }
 

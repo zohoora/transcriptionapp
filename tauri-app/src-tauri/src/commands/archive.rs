@@ -32,8 +32,13 @@ pub fn save_local_soap_note(
     session_id: String,
     date: String,
     soap_content: String,
+    detail_level: Option<u8>,
+    format: Option<String>,
 ) -> Result<(), String> {
-    info!("Saving SOAP note to local archive: {}", session_id);
+    info!(
+        "Saving SOAP note to local archive: {} (detail: {:?}, format: {:?})",
+        session_id, detail_level, format
+    );
 
     // Parse date and convert to DateTime
     let naive_date = chrono::NaiveDate::parse_from_str(&date, "%Y-%m-%d")
@@ -43,5 +48,11 @@ pub fn save_local_soap_note(
         .ok_or("Invalid time")?;
     let utc_datetime = chrono::DateTime::<chrono::Utc>::from_naive_utc_and_offset(datetime, chrono::Utc);
 
-    local_archive::add_soap_note(&session_id, &utc_datetime, &soap_content)
+    local_archive::add_soap_note(
+        &session_id,
+        &utc_datetime,
+        &soap_content,
+        detail_level,
+        format.as_deref(),
+    )
 }

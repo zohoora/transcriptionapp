@@ -6,12 +6,25 @@ import { invoke } from '@tauri-apps/api/core';
 // Type the mock from global setup
 const mockInvoke = vi.mocked(invoke);
 
+// Default settings for tests
+const mockSettings = {
+  soap_detail_level: 5,
+  soap_format: 'problem_based',
+  soap_custom_instructions: '',
+};
+
 describe('useSoapNote', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     // Reset mock to default resolved value to prevent state bleeding between tests
     mockInvoke.mockReset();
-    mockInvoke.mockResolvedValue(undefined);
+    // Default implementation that handles get_settings properly
+    mockInvoke.mockImplementation((cmd: string) => {
+      if (cmd === 'get_settings') {
+        return Promise.resolve(mockSettings);
+      }
+      return Promise.resolve(undefined);
+    });
   });
 
   it('initializes with correct default state', () => {
@@ -180,7 +193,8 @@ describe('useSoapNote', () => {
     });
 
     expect(soapResult).toBeNull();
-    expect(mockInvoke).not.toHaveBeenCalled();
+    // Should not call SOAP generation (get_settings may still be called on mount)
+    expect(mockInvoke).not.toHaveBeenCalledWith('generate_soap_note_auto_detect', expect.anything());
   });
 
   it('returns null for whitespace-only transcript', async () => {
@@ -192,11 +206,20 @@ describe('useSoapNote', () => {
     });
 
     expect(soapResult).toBeNull();
-    expect(mockInvoke).not.toHaveBeenCalled();
+    // Should not call SOAP generation (get_settings may still be called on mount)
+    expect(mockInvoke).not.toHaveBeenCalledWith('generate_soap_note_auto_detect', expect.anything());
   });
 
   it('handles generation error gracefully', async () => {
-    mockInvoke.mockRejectedValue(new Error('Ollama not available'));
+    mockInvoke.mockImplementation((cmd: string) => {
+      if (cmd === 'get_settings') {
+        return Promise.resolve(mockSettings);
+      }
+      if (cmd === 'generate_soap_note_auto_detect') {
+        return Promise.reject(new Error('Ollama not available'));
+      }
+      return Promise.resolve(undefined);
+    });
 
     const { result } = renderHook(() => useSoapNote());
 
@@ -247,14 +270,28 @@ describe('useSoapNote', () => {
   });
 
   it('clears previous error on new generation', async () => {
-    mockInvoke
-      .mockRejectedValueOnce(new Error('First error'))
-      .mockResolvedValueOnce({
-        notes: [{ patient_label: 'Patient 1', speaker_id: 'Speaker 1', content: 'Test SOAP note' }],
-        physician_speaker: 'Speaker 2',
-        generated_at: '2025-01-01T00:00:00Z',
-        model_used: 'test',
-      });
+    let soapCallCount = 0;
+    mockInvoke.mockImplementation((cmd: string) => {
+      if (cmd === 'get_settings') {
+        return Promise.resolve(mockSettings);
+      }
+      if (cmd === 'set_settings') {
+        return Promise.resolve(undefined);
+      }
+      if (cmd === 'generate_soap_note_auto_detect') {
+        soapCallCount++;
+        if (soapCallCount === 1) {
+          return Promise.reject(new Error('First error'));
+        }
+        return Promise.resolve({
+          notes: [{ patient_label: 'Patient 1', speaker_id: 'Speaker 1', content: 'Test SOAP note' }],
+          physician_speaker: 'Speaker 2',
+          generated_at: '2025-01-01T00:00:00Z',
+          model_used: 'test',
+        });
+      }
+      return Promise.resolve(undefined);
+    });
 
     const { result } = renderHook(() => useSoapNote());
 

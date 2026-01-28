@@ -59,6 +59,12 @@ pub struct ArchiveMetadata {
     pub has_audio: bool,
     pub auto_ended: bool,
     pub auto_end_reason: Option<String>,
+    /// SOAP detail level used when generating (1-10), None if no SOAP or pre-feature
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub soap_detail_level: Option<u8>,
+    /// SOAP format used when generating, None if no SOAP or pre-feature
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub soap_format: Option<String>,
 }
 
 impl ArchiveMetadata {
@@ -74,6 +80,8 @@ impl ArchiveMetadata {
             has_audio: false,
             auto_ended: false,
             auto_end_reason: None,
+            soap_detail_level: None,
+            soap_format: None,
         }
     }
 }
@@ -169,7 +177,13 @@ pub fn save_session(
 }
 
 /// Add or update SOAP note for an archived session
-pub fn add_soap_note(session_id: &str, date: &DateTime<Utc>, soap_content: &str) -> Result<(), String> {
+pub fn add_soap_note(
+    session_id: &str,
+    date: &DateTime<Utc>,
+    soap_content: &str,
+    detail_level: Option<u8>,
+    format: Option<&str>,
+) -> Result<(), String> {
     let session_dir = get_session_archive_dir(session_id, date)?;
 
     if !session_dir.exists() {
@@ -192,6 +206,8 @@ pub fn add_soap_note(session_id: &str, date: &DateTime<Utc>, soap_content: &str)
             .map_err(|e| format!("Failed to parse metadata: {}", e))?;
 
         metadata.has_soap_note = true;
+        metadata.soap_detail_level = detail_level;
+        metadata.soap_format = format.map(|s| s.to_string());
 
         let metadata_json = serde_json::to_string_pretty(&metadata)
             .map_err(|e| format!("Failed to serialize metadata: {}", e))?;
@@ -201,6 +217,8 @@ pub fn add_soap_note(session_id: &str, date: &DateTime<Utc>, soap_content: &str)
 
     info!(
         session_id = %session_id,
+        detail_level = ?detail_level,
+        format = ?format,
         "SOAP note added to archive"
     );
 

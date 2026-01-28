@@ -612,6 +612,10 @@ export interface LocalArchiveMetadata {
   has_audio: boolean;
   auto_ended: boolean;
   auto_end_reason: string | null;
+  /** SOAP detail level used when generating (1-10), null if no SOAP or pre-feature */
+  soap_detail_level: number | null;
+  /** SOAP format used when generating ('problem_based' or 'comprehensive'), null if no SOAP or pre-feature */
+  soap_format: SoapFormat | null;
 }
 
 /** Detailed archived session (for detail view) */

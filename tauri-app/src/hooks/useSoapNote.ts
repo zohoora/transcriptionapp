@@ -32,10 +32,10 @@
  * @see MultiPatientSoapResult for the return type structure
  * @see ADR-0012 for architecture decisions
  */
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { writeText } from '@tauri-apps/plugin-clipboard-manager';
-import type { CoughEvent, OllamaStatus, SoapNote, SoapOptions, SoapFormat, MultiPatientSoapResult } from '../types';
+import type { CoughEvent, OllamaStatus, SoapNote, SoapOptions, SoapFormat, MultiPatientSoapResult, Settings } from '../types';
 import { DEFAULT_SOAP_OPTIONS } from '../types';
 import { formatErrorMessage } from '../utils';
 
@@ -72,6 +72,40 @@ export function useSoapNote(): UseSoapNoteResult {
   const [ollamaStatus, setOllamaStatus] = useState<OllamaStatus | null>(null);
   const [ollamaModels, setOllamaModels] = useState<string[]>([]);
   const [soapOptions, setSoapOptions] = useState<SoapOptions>(DEFAULT_SOAP_OPTIONS);
+
+  // Load initial SOAP options from settings on mount
+  useEffect(() => {
+    const loadSoapSettings = async () => {
+      try {
+        const settings = await invoke<Settings>('get_settings');
+        setSoapOptions({
+          detail_level: settings.soap_detail_level ?? DEFAULT_SOAP_OPTIONS.detail_level,
+          format: settings.soap_format ?? DEFAULT_SOAP_OPTIONS.format,
+          custom_instructions: settings.soap_custom_instructions ?? DEFAULT_SOAP_OPTIONS.custom_instructions,
+        });
+      } catch (e) {
+        console.warn('Failed to load SOAP settings, using defaults:', e);
+      }
+    };
+    loadSoapSettings();
+  }, []);
+
+  // Persist SOAP options to settings
+  const persistSoapOptions = useCallback(async (options: SoapOptions) => {
+    try {
+      const currentSettings = await invoke<Settings>('get_settings');
+      await invoke('set_settings', {
+        settings: {
+          ...currentSettings,
+          soap_detail_level: options.detail_level,
+          soap_format: options.format,
+          soap_custom_instructions: options.custom_instructions,
+        },
+      });
+    } catch (e) {
+      console.warn('Failed to persist SOAP settings:', e);
+    }
+  }, []);
 
   // Update individual SOAP options
   const updateSoapDetailLevel = useCallback((level: number) => {
@@ -132,6 +166,9 @@ export function useSoapNote(): UseSoapNoteResult {
         } catch (clipErr) {
           console.warn('Failed to copy SOAP note to clipboard:', clipErr);
         }
+
+        // Persist SOAP options to settings for future sessions
+        await persistSoapOptions(finalOptions);
       }
 
       return result;
@@ -142,7 +179,7 @@ export function useSoapNote(): UseSoapNoteResult {
     } finally {
       setIsGeneratingSoap(false);
     }
-  }, [soapOptions]);
+  }, [soapOptions, persistSoapOptions]);
 
   // Legacy single-patient SOAP note generation (for backward compatibility)
   const generateSingleSoapNote = useCallback(async (
