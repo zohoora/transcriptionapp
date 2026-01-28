@@ -912,9 +912,11 @@ RESPOND WITH ONLY THIS JSON STRUCTURE - NO OTHER TEXT:
 Rules:
 - Your entire response must be valid JSON - nothing else
 - Use simple string arrays, no nested objects
+- Do NOT use newlines inside JSON strings - keep each array item as a single line
 - Use empty arrays [] for sections with no information
 - Use correct medical terminology
 - Do NOT use any markdown formatting (no **, no __, no #, no backticks) - output plain text only
+- Do NOT include specific patient names or healthcare provider names - use "patient" or "the physician/provider" instead
 - Do NOT hallucinate or embellish - only include what was explicitly stated
 - PLAN SECTION: Include ONLY treatments, tests, and follow-ups the doctor actually mentioned. Do NOT add recommendations, monitoring suggestions, or instructions not stated in the transcript.
 - CLINICIAN NOTES: If provided, incorporate clinician observations into the appropriate SOAP sections (usually Objective for physical observations, Subjective for reported symptoms).
@@ -951,9 +953,11 @@ RESPOND WITH ONLY THIS JSON STRUCTURE - NO OTHER TEXT:
 Rules:
 - Your entire response must be valid JSON - nothing else
 - Use simple string arrays, no nested objects
+- Do NOT use newlines inside JSON strings - keep each array item as a single line
 - Use empty arrays [] for sections with no information
 - Use correct medical terminology
 - Do NOT use any markdown formatting (no **, no __, no #, no backticks) - output plain text only
+- Do NOT include specific patient names or healthcare provider names - use "patient" or "the physician/provider" instead
 - Do NOT hallucinate or embellish - only include what was explicitly stated
 - PLAN SECTION: Include ONLY treatments, tests, and follow-ups the doctor actually mentioned. Do NOT add recommendations, monitoring suggestions, or instructions not stated in the transcript.
 - CLINICIAN NOTES: If provided, incorporate clinician observations into the appropriate SOAP sections (usually Objective for physical observations, Subjective for reported symptoms).
@@ -1161,6 +1165,45 @@ fn remove_italic_markers(line: &str) -> String {
 }
 
 /// Extract JSON from LLM response (handles markdown code blocks and cleanup)
+/// Fix unescaped newlines inside JSON strings
+/// LLMs sometimes produce JSON with literal newlines in strings which is invalid
+fn fix_json_newlines(json: &str) -> String {
+    let mut result = String::with_capacity(json.len());
+    let mut in_string = false;
+    let mut escape_next = false;
+
+    for ch in json.chars() {
+        if escape_next {
+            result.push(ch);
+            escape_next = false;
+            continue;
+        }
+
+        match ch {
+            '\\' if in_string => {
+                result.push(ch);
+                escape_next = true;
+            }
+            '"' => {
+                in_string = !in_string;
+                result.push(ch);
+            }
+            '\n' if in_string => {
+                // Escape the newline inside a string
+                result.push_str("\\n");
+            }
+            '\r' if in_string => {
+                // Skip carriage returns inside strings
+            }
+            _ => {
+                result.push(ch);
+            }
+        }
+    }
+
+    result
+}
+
 fn extract_json_from_response(response: &str) -> String {
     let mut text = response.to_string();
 
@@ -1180,7 +1223,9 @@ fn extract_json_from_response(response: &str) -> String {
     // Find the JSON object boundaries
     if let Some(start) = text.find('{') {
         if let Some(end) = text.rfind('}') {
-            return text[start..=end].to_string();
+            let json_str = text[start..=end].to_string();
+            // Fix unescaped newlines inside strings (common LLM error)
+            return fix_json_newlines(&json_str);
         }
     }
 
