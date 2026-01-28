@@ -914,6 +914,7 @@ Rules:
 - Use simple string arrays, no nested objects
 - Use empty arrays [] for sections with no information
 - Use correct medical terminology
+- Do NOT use any markdown formatting (no **, no __, no #, no backticks) - output plain text only
 - Do NOT hallucinate or embellish - only include what was explicitly stated
 - PLAN SECTION: Include ONLY treatments, tests, and follow-ups the doctor actually mentioned. Do NOT add recommendations, monitoring suggestions, or instructions not stated in the transcript.
 - CLINICIAN NOTES: If provided, incorporate clinician observations into the appropriate SOAP sections (usually Objective for physical observations, Subjective for reported symptoms).
@@ -952,6 +953,7 @@ Rules:
 - Use simple string arrays, no nested objects
 - Use empty arrays [] for sections with no information
 - Use correct medical terminology
+- Do NOT use any markdown formatting (no **, no __, no #, no backticks) - output plain text only
 - Do NOT hallucinate or embellish - only include what was explicitly stated
 - PLAN SECTION: Include ONLY treatments, tests, and follow-ups the doctor actually mentioned. Do NOT add recommendations, monitoring suggestions, or instructions not stated in the transcript.
 - CLINICIAN NOTES: If provided, incorporate clinician observations into the appropriate SOAP sections (usually Objective for physical observations, Subjective for reported symptoms).
@@ -1298,6 +1300,16 @@ fn try_parse_text_soap(text: &str) -> Option<SoapJsonResponse> {
     }
 }
 
+/// Strip markdown formatting from a single item string
+fn strip_markdown_from_item(item: &str) -> String {
+    item.replace("**", "")
+        .replace("__", "")
+        .replace('`', "")
+        .replace("###", "")
+        .replace("##", "")
+        .replace("# ", "")
+}
+
 /// Format parsed SOAP JSON as bullet-point text for EMR copy-paste
 fn format_soap_as_text(soap: &SoapJsonResponse) -> String {
     let mut output = String::new();
@@ -1308,7 +1320,7 @@ fn format_soap_as_text(soap: &SoapJsonResponse) -> String {
         output.push_str("• Not documented\n");
     } else {
         for item in &soap.subjective {
-            output.push_str(&format!("• {}\n", item));
+            output.push_str(&format!("• {}\n", strip_markdown_from_item(item)));
         }
     }
 
@@ -1318,7 +1330,7 @@ fn format_soap_as_text(soap: &SoapJsonResponse) -> String {
         output.push_str("• Not documented\n");
     } else {
         for item in &soap.objective {
-            output.push_str(&format!("• {}\n", item));
+            output.push_str(&format!("• {}\n", strip_markdown_from_item(item)));
         }
     }
 
@@ -1328,7 +1340,7 @@ fn format_soap_as_text(soap: &SoapJsonResponse) -> String {
         output.push_str("• Not documented\n");
     } else {
         for item in &soap.assessment {
-            output.push_str(&format!("• {}\n", item));
+            output.push_str(&format!("• {}\n", strip_markdown_from_item(item)));
         }
     }
 
@@ -1338,7 +1350,7 @@ fn format_soap_as_text(soap: &SoapJsonResponse) -> String {
         output.push_str("• Not documented\n");
     } else {
         for item in &soap.plan {
-            output.push_str(&format!("• {}\n", item));
+            output.push_str(&format!("• {}\n", strip_markdown_from_item(item)));
         }
     }
 
