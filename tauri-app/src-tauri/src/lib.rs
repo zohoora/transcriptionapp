@@ -270,6 +270,7 @@ pub fn run() {
             commands::prewarm_ollama_model,
             commands::generate_soap_note,
             commands::generate_soap_note_auto_detect,
+            commands::generate_predictive_hint,
             // Medplum EMR commands
             commands::medplum_get_auth_state,
             commands::medplum_try_restore_session,

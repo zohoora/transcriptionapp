@@ -283,3 +283,69 @@ pub async fn generate_soap_note_auto_detect(
         }
     }
 }
+
+/// Generate a predictive hint based on the current transcript
+/// Returns a one-sentence prediction of what the physician might want to know
+#[tauri::command]
+pub async fn generate_predictive_hint(transcript: String) -> Result<String, String> {
+    if transcript.trim().is_empty() || transcript.split_whitespace().count() < 20 {
+        return Ok(String::new()); // Not enough content yet
+    }
+
+    let config = Config::load_or_default();
+    let client = LLMClient::new(
+        &config.llm_router_url,
+        &config.llm_api_key,
+        &config.llm_client_id,
+        &config.soap_model,
+    )?;
+
+    let system_prompt = r#"You are a clinical assistant helping during a patient encounter. Based on the transcript so far, predict what information the physician is likely to want to know next (e.g., medication dosages, likely diagnoses, red flags to watch for, relevant guidelines, etc.).
+
+Respond with ONLY a single, concise sentence starting with a relevant topic. Do not use markdown. Be specific and clinically useful.
+
+Examples:
+- "Common lisinopril doses for hypertension: 10-40mg daily, start low if elderly or volume-depleted."
+- "Red flags for chest pain: radiation to arm/jaw, diaphoresis, shortness of breath, or pain at rest suggest ACS."
+- "Type 2 diabetes first-line: metformin 500mg BID, titrate to 1000mg BID if tolerated."
+- "Consider DVT workup if unilateral leg swelling with recent immobility or malignancy history."
+"#;
+
+    // Truncate transcript if too long (keep last ~2000 words for context)
+    let words: Vec<&str> = transcript.split_whitespace().collect();
+    let truncated = if words.len() > 2000 {
+        words[words.len() - 2000..].join(" ")
+    } else {
+        transcript.clone()
+    };
+
+    let user_content = format!("Current transcript:\n\n{}", truncated);
+
+    match client
+        .generate(&config.soap_model, system_prompt, &user_content, "predictive_hint")
+        .await
+    {
+        Ok(response) => {
+            // Clean up the response - take first sentence only
+            let cleaned: String = response
+                .trim()
+                .lines()
+                .next()
+                .unwrap_or("")
+                .trim()
+                .replace("**", "")
+                .replace("*", "");
+
+            // Ensure it's not too long (max ~200 chars)
+            if cleaned.len() > 200 {
+                Ok(format!("{}...", &cleaned[..197]))
+            } else {
+                Ok(cleaned)
+            }
+        }
+        Err(e) => {
+            warn!("Failed to generate predictive hint: {}", e);
+            Ok(String::new()) // Return empty on error, don't fail the whole thing
+        }
+    }
+}

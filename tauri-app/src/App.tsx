@@ -22,6 +22,7 @@ import {
   useAutoDetection,
   useClinicalChat,
 } from './hooks';
+import { usePredictiveHint } from './hooks/usePredictiveHint';
 import type { Settings, WhisperServerStatus } from './types';
 
 // UI Mode type
@@ -279,6 +280,15 @@ function App() {
   };
 
   const uiMode = getUIMode();
+
+  // Predictive hints during recording
+  const {
+    hint: predictiveHint,
+    isLoading: predictiveHintLoading,
+  } = usePredictiveHint({
+    transcript: transcript.finalized_text,
+    isRecording: uiMode === 'recording',
+  });
 
   // Sync Ollama status from connection hook to SOAP hook
   useEffect(() => {
@@ -659,6 +669,8 @@ function App() {
             chatError={chatError}
             onChatSendMessage={chatSendMessage}
             onChatClear={clearChat}
+            predictiveHint={predictiveHint}
+            predictiveHintLoading={predictiveHintLoading}
             onStop={handleStop}
             onCancelAutoEnd={() => invoke('reset_silence_timer').catch(console.error)}
           />

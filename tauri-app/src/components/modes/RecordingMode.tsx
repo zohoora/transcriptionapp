@@ -38,6 +38,10 @@ interface RecordingModeProps {
   onChatSendMessage: (content: string) => void;
   onChatClear: () => void;
 
+  // Predictive hint
+  predictiveHint: string;
+  predictiveHintLoading: boolean;
+
   // Actions
   onStop: () => void;
   onCancelAutoEnd?: () => void;
@@ -77,6 +81,8 @@ export const RecordingMode = memo(function RecordingMode({
   chatError,
   onChatSendMessage,
   onChatClear,
+  predictiveHint,
+  predictiveHintLoading,
   onStop,
   onCancelAutoEnd,
 }: RecordingModeProps) {
@@ -135,6 +141,20 @@ export const RecordingMode = memo(function RecordingMode({
             <div className="silence-warning-hint">
               Or speak to continue
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Predictive hint - "Pssst..." section */}
+      {(predictiveHint || predictiveHintLoading) && (
+        <div className="predictive-hint-container">
+          <div className="predictive-hint-label">Pssst...</div>
+          <div className="predictive-hint-content">
+            {predictiveHintLoading ? (
+              <span className="predictive-hint-loading">Thinking...</span>
+            ) : (
+              predictiveHint
+            )}
           </div>
         </div>
       )}

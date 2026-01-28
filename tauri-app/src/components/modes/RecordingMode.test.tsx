@@ -16,6 +16,14 @@ describe('RecordingMode', () => {
     whisperModel: 'large-v3-turbo',
     sessionNotes: '',
     onSessionNotesChange: vi.fn(),
+    silenceWarning: null,
+    chatMessages: [],
+    chatIsLoading: false,
+    chatError: null,
+    onChatSendMessage: vi.fn(),
+    onChatClear: vi.fn(),
+    predictiveHint: '',
+    predictiveHintLoading: false,
   };
 
   beforeEach(() => {

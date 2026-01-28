@@ -503,7 +503,7 @@ impl LLMClient {
     }
 
     /// Generate text using the LLM with retry logic
-    async fn generate(
+    pub async fn generate(
         &self,
         model: &str,
         system_prompt: &str,

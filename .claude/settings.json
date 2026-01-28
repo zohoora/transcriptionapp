@@ -1,0 +1,29 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "for f in $CLAUDE_FILE_PATHS; do if [[ \"$f\" == *.ts ]] || [[ \"$f\" == *.tsx ]]; then cd tauri-app && npx prettier --write \"$f\" 2>/dev/null; fi; done"
+          },
+          {
+            "type": "command",
+            "command": "for f in $CLAUDE_FILE_PATHS; do if [[ \"$f\" == *.rs ]]; then cd tauri-app/src-tauri && cargo fmt 2>/dev/null; fi; done"
+          }
+        ]
+      }
+    ]
+  },
+  "permissions": {
+    "allow": [
+      "Bash(npm run:*)",
+      "Bash(npm test:*)",
+      "Bash(cargo test:*)",
+      "Bash(cargo clippy:*)",
+      "Bash(cargo fmt:*)",
+      "Bash(npx prettier:*)"
+    ]
+  }
+}
