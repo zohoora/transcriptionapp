@@ -1204,6 +1204,63 @@ fn fix_json_newlines(json: &str) -> String {
     result
 }
 
+/// Fix truncated JSON by adding missing closing brackets
+/// LLMs sometimes get cut off before completing the JSON structure
+fn fix_truncated_json(json: &str) -> String {
+    // Count unmatched brackets
+    let mut brace_count = 0;  // {}
+    let mut bracket_count = 0; // []
+    let mut in_string = false;
+    let mut escape_next = false;
+
+    for ch in json.chars() {
+        if escape_next {
+            escape_next = false;
+            continue;
+        }
+        match ch {
+            '\\' if in_string => escape_next = true,
+            '"' => in_string = !in_string,
+            '{' if !in_string => brace_count += 1,
+            '}' if !in_string => brace_count -= 1,
+            '[' if !in_string => bracket_count += 1,
+            ']' if !in_string => bracket_count -= 1,
+            _ => {}
+        }
+    }
+
+    // If balanced, return as-is
+    if bracket_count == 0 && brace_count == 0 {
+        return json.to_string();
+    }
+
+    // Build the missing closers in reverse order (] before })
+    let mut closers = String::new();
+    for _ in 0..bracket_count {
+        closers.push(']');
+    }
+    for _ in 0..brace_count {
+        closers.push('}');
+    }
+
+    // If JSON ends with }, we need to insert missing ] before it
+    let trimmed = json.trim_end();
+    if trimmed.ends_with('}') && bracket_count > 0 {
+        // Find the last } and insert brackets before it
+        if let Some(last_brace) = trimmed.rfind('}') {
+            let mut result = trimmed[..last_brace].to_string();
+            for _ in 0..bracket_count {
+                result.push(']');
+            }
+            result.push('}');
+            return result;
+        }
+    }
+
+    // Otherwise just append
+    format!("{}{}", json, closers)
+}
+
 fn extract_json_from_response(response: &str) -> String {
     let mut text = response.to_string();
 
@@ -1225,7 +1282,9 @@ fn extract_json_from_response(response: &str) -> String {
         if let Some(end) = text.rfind('}') {
             let json_str = text[start..=end].to_string();
             // Fix unescaped newlines inside strings (common LLM error)
-            return fix_json_newlines(&json_str);
+            let fixed_newlines = fix_json_newlines(&json_str);
+            // Fix truncated JSON (missing closing brackets)
+            return fix_truncated_json(&fixed_newlines);
         }
     }
 
