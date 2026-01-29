@@ -1384,8 +1384,9 @@ fn try_parse_text_soap(text: &str) -> Option<SoapJsonResponse> {
 
         // Add content to current section
         if let Some(section) = current_section {
-            // Strip bullet markers
+            // Strip bullet markers (including double dashes that LLM may use for sub-bullets)
             let content = trimmed
+                .trim_start_matches("-- ")
                 .trim_start_matches('•')
                 .trim_start_matches('-')
                 .trim_start_matches('*')
@@ -1416,14 +1417,26 @@ fn try_parse_text_soap(text: &str) -> Option<SoapJsonResponse> {
     }
 }
 
-/// Strip markdown formatting from a single item string
+/// Strip markdown formatting and sub-bullet markers from a single item string
 fn strip_markdown_from_item(item: &str) -> String {
-    item.replace("**", "")
+    let cleaned = item
+        .replace("**", "")
         .replace("__", "")
         .replace('`', "")
         .replace("###", "")
         .replace("##", "")
-        .replace("# ", "")
+        .replace("# ", "");
+
+    // Remove leading bullet/dash markers that LLM may add (e.g., "-- ", "- ", "• ")
+    let trimmed = cleaned.trim();
+    let without_bullets = trimmed
+        .strip_prefix("-- ")
+        .or_else(|| trimmed.strip_prefix("- "))
+        .or_else(|| trimmed.strip_prefix("• "))
+        .or_else(|| trimmed.strip_prefix("* "))
+        .unwrap_or(trimmed);
+
+    without_bullets.to_string()
 }
 
 /// Format parsed SOAP JSON as bullet-point text for EMR copy-paste
