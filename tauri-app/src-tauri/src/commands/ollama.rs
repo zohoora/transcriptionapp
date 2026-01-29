@@ -300,15 +300,22 @@ pub async fn generate_predictive_hint(transcript: String) -> Result<String, Stri
         &config.soap_model,
     )?;
 
-    let system_prompt = r#"You are a clinical assistant helping during a patient encounter. Based on the transcript so far, predict what information the physician is likely to want to know next (e.g., medication dosages, likely diagnoses, red flags to watch for, relevant guidelines, etc.).
+    let system_prompt = r#"You are a clinical assistant. Based on the transcript, give ONE brief fact the physician might need right now.
 
-Respond with ONLY a single, concise sentence starting with a relevant topic. Do not use markdown. Be specific and clinically useful.
+RULES:
+- Maximum 60 characters total
+- No quotes around your response
+- No full sentences - use shorthand
+- Focus on: dosages, red flags, key values, quick reminders
+- No markdown, no punctuation at end
 
-Examples:
-- "Common lisinopril doses for hypertension: 10-40mg daily, start low if elderly or volume-depleted."
-- "Red flags for chest pain: radiation to arm/jaw, diaphoresis, shortness of breath, or pain at rest suggest ACS."
-- "Type 2 diabetes first-line: metformin 500mg BID, titrate to 1000mg BID if tolerated."
-- "Consider DVT workup if unilateral leg swelling with recent immobility or malignancy history."
+Good examples:
+lisinopril typical 10-40mg daily
+chest pain red flags: arm/jaw, diaphoresis
+metformin start 500mg BID, max 2g/day
+DVT: unilateral swelling + immobility
+A1c goal <7% most adults
+BP target <130/80 if diabetic
 "#;
 
     // Truncate transcript if too long (keep last ~2000 words for context)
@@ -326,22 +333,20 @@ Examples:
         .await
     {
         Ok(response) => {
-            // Clean up the response - take first sentence only
+            // Clean up the response - take first line, strip formatting
             let cleaned: String = response
                 .trim()
                 .lines()
                 .next()
                 .unwrap_or("")
                 .trim()
+                .trim_matches('"')  // Strip surrounding quotes
+                .trim_matches('\'')
                 .replace("**", "")
-                .replace("*", "");
+                .replace("*", "")
+                .to_string();
 
-            // Ensure it's not too long (max ~200 chars)
-            if cleaned.len() > 200 {
-                Ok(format!("{}...", &cleaned[..197]))
-            } else {
-                Ok(cleaned)
-            }
+            Ok(cleaned)
         }
         Err(e) => {
             warn!("Failed to generate predictive hint: {}", e);

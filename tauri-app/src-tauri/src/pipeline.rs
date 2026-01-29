@@ -167,7 +167,7 @@ impl Default for PipelineConfig {
             whisper_server_model: "large-v3-turbo".to_string(),
             initial_audio_buffer: None,
             auto_end_enabled: true,
-            auto_end_silence_ms: 120_000, // 2 minutes default
+            auto_end_silence_ms: 180_000, // 3 minutes default
         }
     }
 }
@@ -561,8 +561,8 @@ fn run_pipeline_thread_inner(
     let auto_end_enabled = config.auto_end_enabled && config.auto_end_silence_ms > 0;
     let mut continuous_silence_start: Option<std::time::Instant> = None;
     let auto_end_threshold = Duration::from_millis(config.auto_end_silence_ms);
-    // Warning threshold is half of auto-end threshold (e.g., 1 min warning for 2 min auto-end)
-    let warning_threshold = Duration::from_millis(config.auto_end_silence_ms / 2);
+    // Warning threshold is 60 seconds before auto-end (countdown for last minute)
+    let warning_threshold = Duration::from_millis(config.auto_end_silence_ms.saturating_sub(60_000));
     let mut last_warning_second: Option<u64> = None;
 
     info!("Audio processor started, waiting for audio data...");

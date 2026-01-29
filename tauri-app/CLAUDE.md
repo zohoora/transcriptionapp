@@ -203,7 +203,7 @@ Without router-side tool execution, raw tool call JSON will be displayed instead
 ### Auto-End Silence Detection
 Automatically ends recording sessions after prolonged silence.
 
-**Configuration**: `auto_end_enabled` setting + `auto_end_silence_ms` (default: 120000ms = 2 minutes)
+**Configuration**: `auto_end_enabled` setting + `auto_end_silence_ms` (default: 180000ms = 3 minutes)
 
 **Flow**:
 1. VAD tracks continuous silence during recording
@@ -254,7 +254,7 @@ interface Settings {
   auto_start_require_enrolled: boolean;  // Require enrolled speaker for auto-start
   auto_start_required_role: string | null; // Role filter (e.g., "physician")
   auto_end_enabled: boolean;
-  auto_end_silence_ms: number;   // Default: 120000 (2 minutes)
+  auto_end_silence_ms: number;   // Default: 180000 (3 minutes)
   greeting_sensitivity: number;  // 0.0-1.0
   min_speech_duration_ms: number;
 

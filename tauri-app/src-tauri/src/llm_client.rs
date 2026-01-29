@@ -886,10 +886,22 @@ Respond ONLY with JSON: {{"is_greeting": true/false, "confidence": 0.0-1.0, "det
 /// Build a simple system prompt for SOAP note generation (JSON output required)
 fn build_simple_soap_prompt(options: &SoapOptions) -> String {
     let detail_instruction = match options.detail_level {
-        1..=3 => "Be brief and concise.",
-        4..=6 => "Use standard clinical detail.",
-        7..=10 => "Include thorough clinical detail.",
-        _ => "Use standard clinical detail.",
+        1..=3 => format!(
+            "DETAIL LEVEL: {}/10 - Be BRIEF. Use short phrases, 1-2 items per section. Omit minor details.",
+            options.detail_level
+        ),
+        4..=6 => format!(
+            "DETAIL LEVEL: {}/10 - Use STANDARD clinical detail. Include key findings and relevant history.",
+            options.detail_level
+        ),
+        7..=10 => format!(
+            "DETAIL LEVEL: {}/10 - Be THOROUGH. Include all findings, measurements, pertinent negatives, and clinical reasoning.",
+            options.detail_level
+        ),
+        _ => format!(
+            "DETAIL LEVEL: {}/10 - Use standard clinical detail.",
+            options.detail_level
+        ),
     };
 
     let format_instruction = match options.format {
@@ -924,6 +936,7 @@ Rules:
 - Do NOT include specific patient names or healthcare provider names - use "patient" or "the physician/provider" instead
 - Do NOT hallucinate or embellish - only include what was explicitly stated
 - PLAN SECTION: Include ONLY treatments, tests, and follow-ups the doctor actually mentioned. Do NOT add recommendations, monitoring suggestions, or instructions not stated in the transcript.
+- PROCEDURES: Put descriptions of any procedures in the Plan section. Do NOT include them in the Objective section.
 - CLINICIAN NOTES: If provided, incorporate clinician observations into the appropriate SOAP sections (usually Objective for physical observations, Subjective for reported symptoms).
 - {detail_instruction}
 - {format_instruction}{custom_section}"#
@@ -933,10 +946,22 @@ Rules:
 /// Build a simple system prompt for multi-patient SOAP note generation (JSON output required)
 fn build_simple_multi_patient_prompt(options: &SoapOptions) -> String {
     let detail_instruction = match options.detail_level {
-        1..=3 => "Be brief and concise.",
-        4..=6 => "Use standard clinical detail.",
-        7..=10 => "Include thorough clinical detail.",
-        _ => "Use standard clinical detail.",
+        1..=3 => format!(
+            "DETAIL LEVEL: {}/10 - Be BRIEF. Use short phrases, 1-2 items per section. Omit minor details.",
+            options.detail_level
+        ),
+        4..=6 => format!(
+            "DETAIL LEVEL: {}/10 - Use STANDARD clinical detail. Include key findings and relevant history.",
+            options.detail_level
+        ),
+        7..=10 => format!(
+            "DETAIL LEVEL: {}/10 - Be THOROUGH. Include all findings, measurements, pertinent negatives, and clinical reasoning.",
+            options.detail_level
+        ),
+        _ => format!(
+            "DETAIL LEVEL: {}/10 - Use standard clinical detail.",
+            options.detail_level
+        ),
     };
 
     let format_instruction = match options.format {
@@ -971,7 +996,8 @@ Rules:
 - Do NOT include specific patient names or healthcare provider names - use "patient" or "the physician/provider" instead
 - Do NOT hallucinate or embellish - only include what was explicitly stated
 - PLAN SECTION: Include ONLY treatments, tests, and follow-ups the doctor actually mentioned. Do NOT add recommendations, monitoring suggestions, or instructions not stated in the transcript.
-- CLINICIAN NOTES: If provided, incorporate clinician observations into the appropriate SOAP sections (usually Objective for physical observations, Subjective for reported symptoms).
+- PROCEDURES: Put descriptions of any procedures in the Plan section. Do NOT include them in the Objective section.
+- CLINICIAN NOTES: If provided, incorporate clinician observations into the appropriate SOAP sections (usually Objective for physical observations, Subjected for reported symptoms).
 - {detail_instruction}
 - {format_instruction}{custom_section}"#
     )
@@ -1317,6 +1343,13 @@ fn parse_and_format_soap_json(response: &str) -> String {
         }
         Err(e) => {
             warn!("Failed to parse SOAP JSON: {}. Raw: {:?}", e, &json_str[..json_str.len().min(200)]);
+
+            // Try to parse nested JSON structure (e.g., {"subjective": [{"Problem 1": [...]}]})
+            if let Some(soap) = try_parse_nested_json_soap(&json_str) {
+                info!("Successfully parsed SOAP from nested JSON structure");
+                return format_soap_as_text(&soap);
+            }
+
             // Try to extract SOAP from text format as fallback
             let cleaned = clean_llm_response(response);
             if let Some(soap) = try_parse_text_soap(&cleaned) {
@@ -1408,6 +1441,77 @@ fn try_parse_text_soap(text: &str) -> Option<SoapJsonResponse> {
     if subjective.is_empty() && objective.is_empty() && assessment.is_empty() && plan.is_empty() {
         None
     } else {
+        Some(SoapJsonResponse {
+            subjective,
+            objective,
+            assessment,
+            plan,
+        })
+    }
+}
+
+/// Try to parse SOAP from nested JSON structure (where sections contain objects instead of strings)
+/// E.g.: {"subjective": [{"Problem 1: Cancer": ["item1", "item2"]}]}
+fn try_parse_nested_json_soap(json_str: &str) -> Option<SoapJsonResponse> {
+    use serde_json::Value;
+
+    let value: Value = serde_json::from_str(json_str).ok()?;
+    let obj = value.as_object()?;
+
+    /// Recursively extract all string values from a JSON value
+    fn extract_strings(value: &Value) -> Vec<String> {
+        match value {
+            Value::String(s) => vec![s.clone()],
+            Value::Array(arr) => arr.iter().flat_map(extract_strings).collect(),
+            Value::Object(map) => {
+                // For objects, include the key as a header if it looks like a problem/category
+                // and extract values from the nested structure
+                let mut result = Vec::new();
+                for (key, val) in map {
+                    // Add key as a contextual prefix if it looks like a problem header
+                    if key.to_lowercase().contains("problem")
+                        || key.contains(':')
+                        || key.len() > 20
+                    {
+                        // This is likely a category header like "Problem 1: Chest Pain"
+                        // Extract the items without the problem header (LLM is grouping by problem)
+                        result.extend(extract_strings(val));
+                    } else {
+                        // Regular key, just extract the values
+                        result.extend(extract_strings(val));
+                    }
+                }
+                result
+            }
+            _ => vec![],
+        }
+    }
+
+    let subjective = obj
+        .get("subjective")
+        .map(extract_strings)
+        .unwrap_or_default();
+    let objective = obj
+        .get("objective")
+        .map(extract_strings)
+        .unwrap_or_default();
+    let assessment = obj
+        .get("assessment")
+        .map(extract_strings)
+        .unwrap_or_default();
+    let plan = obj.get("plan").map(extract_strings).unwrap_or_default();
+
+    // Only return if we found at least one section
+    if subjective.is_empty() && objective.is_empty() && assessment.is_empty() && plan.is_empty() {
+        None
+    } else {
+        info!(
+            "Parsed nested JSON SOAP: S={}, O={}, A={}, P={}",
+            subjective.len(),
+            objective.len(),
+            assessment.len(),
+            plan.len()
+        );
         Some(SoapJsonResponse {
             subjective,
             objective,

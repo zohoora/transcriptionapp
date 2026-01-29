@@ -52,10 +52,12 @@ mod tests {
             soap_format: "problem_based".to_string(),
             soap_custom_instructions: String::new(),
             auto_start_enabled: false,
+            auto_start_require_enrolled: false,
+            auto_start_required_role: None,
             greeting_sensitivity: Some(0.7),
             min_speech_duration_ms: Some(2000),
             auto_end_enabled: true,
-            auto_end_silence_ms: 120_000,
+            auto_end_silence_ms: 180_000,
             debug_storage_enabled: true,
         };
 

@@ -77,7 +77,7 @@ fn default_auto_end_enabled() -> bool {
 }
 
 fn default_auto_end_silence_ms() -> u64 {
-    120_000 // 2 minutes
+    180_000 // 3 minutes
 }
 
 fn default_debug_storage_enabled() -> bool {
@@ -792,10 +792,13 @@ mod tests {
             soap_format: "comprehensive".to_string(),
             soap_custom_instructions: "Add more detail".to_string(),
             auto_start_enabled: true,
+            auto_start_require_enrolled: false,
+            auto_start_required_role: None,
             greeting_sensitivity: Some(0.8),
             min_speech_duration_ms: Some(3000),
-            debug_storage_enabled: true,
+            auto_end_enabled: true,
             auto_end_silence_ms: 180_000, // 3 minutes
+            debug_storage_enabled: true,
         };
 
         let mut config = Config::default();
@@ -892,10 +895,13 @@ mod tests {
             soap_format: default_soap_format(),
             soap_custom_instructions: String::new(),
             auto_start_enabled: false,
+            auto_start_require_enrolled: false,
+            auto_start_required_role: None,
             greeting_sensitivity: Some(0.7),
             min_speech_duration_ms: Some(2000),
+            auto_end_enabled: true,
+            auto_end_silence_ms: 180_000,
             debug_storage_enabled: true,
-            auto_end_silence_ms: 120_000,
         };
 
         let mut config = Config::default();
