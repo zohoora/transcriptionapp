@@ -70,6 +70,15 @@ pub struct Settings {
     // Debug storage (development only - stores PHI locally)
     #[serde(default = "default_debug_storage_enabled")]
     pub debug_storage_enabled: bool,
+    // MIIS (Medical Illustration Image Server) settings
+    #[serde(default)]
+    pub miis_enabled: bool,
+    #[serde(default = "default_miis_server_url")]
+    pub miis_server_url: String,
+}
+
+fn default_miis_server_url() -> String {
+    "http://172.16.100.45:7843".to_string()
 }
 
 fn default_auto_end_enabled() -> bool {
@@ -192,6 +201,8 @@ impl Default for Settings {
             auto_end_enabled: default_auto_end_enabled(),
             auto_end_silence_ms: default_auto_end_silence_ms(),
             debug_storage_enabled: default_debug_storage_enabled(),
+            miis_enabled: false,
+            miis_server_url: default_miis_server_url(),
         }
     }
 }
@@ -404,6 +415,11 @@ pub struct Config {
     // Debug storage (development only - stores PHI locally)
     #[serde(default = "default_debug_storage_enabled")]
     pub debug_storage_enabled: bool,
+    // MIIS (Medical Illustration Image Server) settings
+    #[serde(default)]
+    pub miis_enabled: bool,
+    #[serde(default = "default_miis_server_url")]
+    pub miis_server_url: String,
 }
 
 fn default_max_speakers() -> usize {
@@ -481,6 +497,8 @@ impl Default for Config {
             auto_end_enabled: default_auto_end_enabled(),
             auto_end_silence_ms: default_auto_end_silence_ms(),
             debug_storage_enabled: default_debug_storage_enabled(),
+            miis_enabled: false,
+            miis_server_url: default_miis_server_url(),
         }
     }
 }
@@ -649,6 +667,8 @@ impl Config {
             auto_end_enabled: self.auto_end_enabled,
             auto_end_silence_ms: self.auto_end_silence_ms,
             debug_storage_enabled: self.debug_storage_enabled,
+            miis_enabled: self.miis_enabled,
+            miis_server_url: self.miis_server_url.clone(),
         }
     }
 
@@ -690,6 +710,9 @@ impl Config {
         self.auto_end_silence_ms = settings.auto_end_silence_ms;
         // Debug storage
         self.debug_storage_enabled = settings.debug_storage_enabled;
+        // MIIS settings
+        self.miis_enabled = settings.miis_enabled;
+        self.miis_server_url = settings.miis_server_url.clone();
     }
 }
 
@@ -799,6 +822,8 @@ mod tests {
             auto_end_enabled: true,
             auto_end_silence_ms: 180_000, // 3 minutes
             debug_storage_enabled: true,
+            miis_enabled: false,
+            miis_server_url: "http://172.16.100.45:7843".to_string(),
         };
 
         let mut config = Config::default();
@@ -902,6 +927,8 @@ mod tests {
             auto_end_enabled: true,
             auto_end_silence_ms: 180_000,
             debug_storage_enabled: true,
+            miis_enabled: false,
+            miis_server_url: default_miis_server_url(),
         };
 
         let mut config = Config::default();

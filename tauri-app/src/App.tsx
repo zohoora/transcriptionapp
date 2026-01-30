@@ -23,6 +23,7 @@ import {
   useClinicalChat,
 } from './hooks';
 import { usePredictiveHint } from './hooks/usePredictiveHint';
+import { useMiisImages } from './hooks/useMiisImages';
 import type { Settings, WhisperServerStatus } from './types';
 
 // UI Mode type
@@ -281,13 +282,30 @@ function App() {
 
   const uiMode = getUIMode();
 
-  // Predictive hints during recording
+  // Predictive hints and image concepts during recording
   const {
     hint: predictiveHint,
+    concepts: imageConcepts,
     isLoading: predictiveHintLoading,
   } = usePredictiveHint({
     transcript: transcript.finalized_text,
     isRecording: uiMode === 'recording',
+  });
+
+  // MIIS image suggestions (uses concepts from predictive hints)
+  const {
+    suggestions: miisSuggestions,
+    isLoading: miisLoading,
+    error: miisError,
+    recordImpression: miisRecordImpression,
+    recordClick: miisRecordClick,
+    recordDismiss: miisRecordDismiss,
+    getImageUrl: miisGetImageUrl,
+  } = useMiisImages({
+    sessionId: status.session_id ?? null,
+    concepts: imageConcepts,
+    enabled: settings?.miis_enabled ?? false,
+    serverUrl: settings?.miis_server_url ?? '',
   });
 
   // Sync Ollama status from connection hook to SOAP hook
@@ -671,6 +689,15 @@ function App() {
             onChatClear={clearChat}
             predictiveHint={predictiveHint}
             predictiveHintLoading={predictiveHintLoading}
+            // MIIS image suggestions
+            miisSuggestions={miisSuggestions}
+            miisLoading={miisLoading}
+            miisError={miisError}
+            miisEnabled={settings?.miis_enabled ?? false}
+            onMiisImpression={miisRecordImpression}
+            onMiisClick={miisRecordClick}
+            onMiisDismiss={miisRecordDismiss}
+            miisGetImageUrl={miisGetImageUrl}
             onStop={handleStop}
             onCancelAutoEnd={() => invoke('reset_silence_timer').catch(console.error)}
           />

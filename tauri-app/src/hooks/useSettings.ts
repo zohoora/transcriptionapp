@@ -32,6 +32,9 @@ export interface PendingSettings {
   auto_start_required_role: SpeakerRole | null;
   // Auto-end settings
   auto_end_enabled: boolean;
+  // MIIS (Medical Illustration Image Server) settings
+  miis_enabled: boolean;
+  miis_server_url: string;
 }
 
 export interface UseSettingsResult {
@@ -85,6 +88,8 @@ export function useSettings(): UseSettingsResult {
     auto_start_require_enrolled: s.auto_start_require_enrolled,
     auto_start_required_role: s.auto_start_required_role,
     auto_end_enabled: s.auto_end_enabled,
+    miis_enabled: s.miis_enabled,
+    miis_server_url: s.miis_server_url,
   }), []);
 
   // Load settings
@@ -140,6 +145,8 @@ export function useSettings(): UseSettingsResult {
         auto_start_require_enrolled: pendingSettings.auto_start_require_enrolled,
         auto_start_required_role: pendingSettings.auto_start_required_role,
         auto_end_enabled: pendingSettings.auto_end_enabled,
+        miis_enabled: pendingSettings.miis_enabled,
+        miis_server_url: pendingSettings.miis_server_url,
       };
 
       await invoke('set_settings', { settings: newSettings });
@@ -177,6 +184,8 @@ export function useSettings(): UseSettingsResult {
       [settings.auto_start_require_enrolled, pendingSettings.auto_start_require_enrolled],
       [settings.auto_start_required_role, pendingSettings.auto_start_required_role],
       [settings.auto_end_enabled, pendingSettings.auto_end_enabled],
+      [settings.miis_enabled, pendingSettings.miis_enabled],
+      [settings.miis_server_url, pendingSettings.miis_server_url],
     ];
 
     return comparisons.some(([saved, pending]) => saved !== pending);

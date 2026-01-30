@@ -41,6 +41,9 @@ export interface PendingSettings {
   auto_start_required_role: SpeakerRole | null;
   // Auto-end settings
   auto_end_enabled: boolean;
+  // MIIS (Medical Illustration Image Server) settings
+  miis_enabled: boolean;
+  miis_server_url: string;
 }
 
 interface SettingsDrawerProps {
@@ -308,8 +311,42 @@ export const SettingsDrawer = memo(function SettingsDrawer({
                     <span className="toggle-slider"></span>
                   </label>
                 </div>
-                <span className="settings-hint">End recording automatically after 2 minutes of silence (with countdown warning at 1 minute)</span>
+                <span className="settings-hint">End recording automatically after 3 minutes of silence (with countdown warning at 1 minute)</span>
               </div>
+
+              {/* MIIS (Medical Illustration Image Server) Settings */}
+              <div className="settings-divider" />
+              <div className="settings-section-title">Medical Illustrations</div>
+
+              <div className="settings-group">
+                <div className="settings-row">
+                  <span className="settings-label" style={{ marginBottom: 0 }}>Show Relevant Images</span>
+                  <label className="toggle-switch">
+                    <input
+                      type="checkbox"
+                      checked={pendingSettings.miis_enabled}
+                      onChange={(e) => onSettingsChange({ ...pendingSettings, miis_enabled: e.target.checked })}
+                      aria-label="Show relevant medical illustrations during recording"
+                    />
+                    <span className="toggle-slider"></span>
+                  </label>
+                </div>
+                <span className="settings-hint">Display relevant anatomical diagrams and illustrations based on the conversation</span>
+              </div>
+
+              {pendingSettings.miis_enabled && (
+                <div className="settings-group">
+                  <label className="settings-label" htmlFor="miis-server-url">Image Server URL</label>
+                  <input
+                    id="miis-server-url"
+                    type="text"
+                    className="settings-input"
+                    value={pendingSettings.miis_server_url}
+                    onChange={(e) => onSettingsChange({ ...pendingSettings, miis_server_url: e.target.value })}
+                    placeholder="http://172.16.100.45:7843"
+                  />
+                </div>
+              )}
 
               {/* LLM Router / SOAP Note Settings */}
               <div className="settings-divider" />

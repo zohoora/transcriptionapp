@@ -77,6 +77,7 @@ cd src-tauri && cargo test       # Rust
 | Modify clinical chat | `commands/clinical_chat.rs`, `useClinicalChat.ts`, `ClinicalChat.tsx` |
 | Modify auto-end detection | `pipeline.rs` (silence tracking), `config.rs` (settings), `useSessionState.ts` |
 | Modify SOAP options | `useSoapNote.ts` (hook), `llm_client.rs` (prompt building), `local_archive.rs` (metadata) |
+| Modify MIIS integration | `commands/miis.rs`, `useMiisImages.ts`, `ImageSuggestions.tsx`, `usePredictiveHint.ts` |
 
 ## IPC Commands
 
@@ -96,6 +97,8 @@ cd src-tauri && cargo test       # Rust
 | `reenroll_speaker_profile` | Re-record voice sample for existing profile |
 | `reset_silence_timer` | Cancel auto-end countdown |
 | `clinical_chat_send` | Send message to clinical assistant LLM |
+| `miis_suggest` | Fetch image suggestions from MIIS server |
+| `miis_send_usage` | Send telemetry events to MIIS server |
 
 ## Events (Backend → Frontend)
 
@@ -216,6 +219,34 @@ Automatically ends recording sessions after prolonged silence.
 ### MCP Server
 Port 7101, JSON-RPC 2.0. Tools: `agent_identity`, `health_check`, `get_status`, `get_logs`
 
+### MIIS (Medical Illustration Image Server)
+Real-time medical image suggestions during recording based on conversation concepts.
+
+**How it works**:
+1. Every 30 seconds during recording, LLM extracts medical concepts from transcript
+2. Concepts sent to MIIS server for image suggestions
+3. Relevant anatomical diagrams/illustrations displayed as thumbnails
+4. Click to expand, dismiss to remove from view
+5. Usage telemetry (impressions, clicks, dismisses) sent back for ranking improvement
+
+**Architecture**:
+- Frontend: `useMiisImages.ts` hook, `ImageSuggestions.tsx` component
+- Backend: `commands/miis.rs` - proxies HTTP through Rust (avoids CORS)
+- Concept extraction: Piggybacks on `generate_predictive_hint` LLM call
+
+**Configuration**:
+- `miis_enabled`: Enable/disable image suggestions
+- `miis_server_url`: MIIS server URL (default: `http://172.16.100.45:7843`)
+
+**Server Requirements**:
+The MIIS server must have:
+- `/v5/ambient/suggest` - Returns ranked image suggestions based on concepts
+- `/v5/usage` - Accepts telemetry events (impressions, clicks, dismisses)
+- `/v5/assets/{path}` - Serves image files (thumbnails, display size)
+- Embedder enabled for semantic concept matching
+
+**Files**: `commands/miis.rs`, `useMiisImages.ts`, `usePredictiveHint.ts`, `ImageSuggestions.tsx`
+
 ## Settings Schema
 
 ```typescript
@@ -263,6 +294,10 @@ interface Settings {
   soap_format: 'problem_based' | 'comprehensive';  // Organization style
   soap_custom_instructions: string; // Additional prompt instructions
 
+  // MIIS (Medical Illustration Image Server)
+  miis_enabled: boolean;           // Enable image suggestions during recording
+  miis_server_url: string;         // MIIS server URL
+
   // Debug
   debug_storage_enabled: boolean;  // PHI storage for dev only
 }
@@ -286,6 +321,7 @@ interface Settings {
 | Whisper Server | `http://10.241.15.154:8001` | Remote transcription |
 | LLM Router | `http://10.241.15.154:8080` | SOAP generation |
 | Medplum | `http://10.241.15.154:8103` | EMR/FHIR |
+| MIIS | `http://172.16.100.45:7843` | Medical illustration images |
 
 ## Frontend Structure
 
@@ -302,6 +338,8 @@ interface Settings {
 - `useAutoDetection` - Listening mode
 - `useSpeakerProfiles` - Speaker enrollment CRUD operations
 - `useClinicalChat` - Clinical assistant chat during recording
+- `usePredictiveHint` - LLM hints + concept extraction during recording
+- `useMiisImages` - Medical illustration suggestions from MIIS server
 
 **Speaker Enrollment** (`src/components/`):
 - `SpeakerEnrollment.tsx` - Profile list, enrollment form, audio recording
@@ -323,6 +361,8 @@ interface Settings {
 | Speaker verification fails | Ensure profiles exist and speaker model at `~/.transcriptionapp/models/ecapa_tdnn.onnx` |
 | Auto-end too aggressive | Increase `auto_end_silence_ms` or disable `auto_end_enabled` |
 | SOAP not copying to clipboard | Check Tauri clipboard plugin permissions |
+| MIIS images not loading | Check CSP allows MIIS server domain in `tauri.conf.json` |
+| MIIS same images for all queries | Server needs embedder enabled for semantic matching |
 
 ## Testing Best Practices
 
@@ -360,3 +400,4 @@ See `docs/adr/` for Architecture Decision Records:
 | 0015 | Auto-end silence detection |
 | 0016 | Speaker-verified auto-start |
 | 0017 | Clinical assistant chat |
+| 0018 | MIIS medical illustration integration |

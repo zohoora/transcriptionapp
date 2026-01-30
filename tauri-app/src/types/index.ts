@@ -90,6 +90,9 @@ export interface Settings {
   auto_end_silence_ms: number;
   // Debug storage (development only)
   debug_storage_enabled: boolean;
+  // MIIS (Medical Illustration Image Server)
+  miis_enabled: boolean;
+  miis_server_url: string;
 }
 
 // Listening mode types (auto-session detection)

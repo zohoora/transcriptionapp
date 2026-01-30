@@ -314,6 +314,9 @@ pub fn run() {
             commands::save_local_soap_note,
             // Clinical chat commands
             commands::clinical_chat_send,
+            // MIIS (Medical Illustration Image Server) commands
+            commands::miis_suggest,
+            commands::miis_send_usage,
         ])
         .on_window_event(|window, event| {
             if let WindowEvent::CloseRequested { .. } = event {

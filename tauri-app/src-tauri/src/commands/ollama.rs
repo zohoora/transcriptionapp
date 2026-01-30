@@ -4,6 +4,7 @@ use crate::activity_log;
 use crate::config::Config;
 use crate::debug_storage;
 use crate::ollama::{AudioEvent, LLMClient, LLMStatus, MultiPatientSoapResult, SoapNote, SoapOptions, SpeakerContext, SpeakerInfo};
+use serde::{Deserialize, Serialize};
 use tracing::{info, warn};
 
 // Re-export LLMStatus as OllamaStatus for backward compatibility with frontend
@@ -284,12 +285,35 @@ pub async fn generate_soap_note_auto_detect(
     }
 }
 
-/// Generate a predictive hint based on the current transcript
-/// Returns a one-sentence prediction of what the physician might want to know
+/// Response from predictive hint generation including MIIS image concepts
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PredictiveHintResponse {
+    /// Brief clinical hint for the physician (max 60 chars)
+    pub hint: String,
+    /// Medical concepts for MIIS image search (de-identified)
+    pub concepts: Vec<ImageConcept>,
+}
+
+/// A medical concept for MIIS image search
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ImageConcept {
+    /// The concept text (e.g., "knee anatomy", "rotator cuff")
+    pub text: String,
+    /// Relevance weight 0.0-1.0
+    pub weight: f64,
+}
+
+/// Generate a predictive hint and image concepts based on the current transcript
+/// Returns both a clinical hint and MIIS image search concepts
 #[tauri::command]
-pub async fn generate_predictive_hint(transcript: String) -> Result<String, String> {
+pub async fn generate_predictive_hint(transcript: String) -> Result<PredictiveHintResponse, String> {
+    let empty_response = PredictiveHintResponse {
+        hint: String::new(),
+        concepts: Vec::new(),
+    };
+
     if transcript.trim().is_empty() || transcript.split_whitespace().count() < 20 {
-        return Ok(String::new()); // Not enough content yet
+        return Ok(empty_response); // Not enough content yet
     }
 
     let config = Config::load_or_default();
@@ -300,22 +324,27 @@ pub async fn generate_predictive_hint(transcript: String) -> Result<String, Stri
         &config.soap_model,
     )?;
 
-    let system_prompt = r#"You are a clinical assistant. Based on the transcript, give ONE brief fact the physician might need right now.
+    let system_prompt = r#"You are a clinical assistant analyzing a medical transcript. Provide TWO things:
 
-RULES:
-- Maximum 60 characters total
-- No quotes around your response
-- No full sentences - use shorthand
+1. HINT: A brief clinical fact the physician might need right now (max 60 chars, shorthand style)
+2. CONCEPTS: 1-5 medical image search terms for relevant anatomical diagrams or illustrations
+
+Respond ONLY with this JSON format:
+{"hint":"brief clinical fact here","concepts":[{"text":"anatomy term","weight":0.9},{"text":"condition","weight":0.7}]}
+
+RULES for hint:
+- Maximum 60 characters
+- Use shorthand, not full sentences
 - Focus on: dosages, red flags, key values, quick reminders
-- No markdown, no punctuation at end
 
-Good examples:
-lisinopril typical 10-40mg daily
-chest pain red flags: arm/jaw, diaphoresis
-metformin start 500mg BID, max 2g/day
-DVT: unilateral swelling + immobility
-A1c goal <7% most adults
-BP target <130/80 if diabetic
+RULES for concepts:
+- Extract de-identified medical/anatomical terms only
+- NO patient names, NO PII
+- Focus on: body parts, conditions, procedures that could have helpful diagrams
+- Weight 0.0-1.0 based on relevance to current discussion
+- Examples: "knee anatomy", "rotator cuff", "cardiac conduction", "lumbar spine"
+
+If no relevant image concepts, return empty array: "concepts":[]
 "#;
 
     // Truncate transcript if too long (keep last ~2000 words for context)
@@ -333,24 +362,81 @@ BP target <130/80 if diabetic
         .await
     {
         Ok(response) => {
-            // Clean up the response - take first line, strip formatting
+            // Try to parse as JSON first
+            if let Some(parsed) = parse_hint_response(&response) {
+                info!("Predictive hint parsed: hint={} chars, concepts={}",
+                      parsed.hint.len(), parsed.concepts.len());
+                return Ok(parsed);
+            }
+
+            // Fallback: treat as plain text hint (backwards compatibility)
             let cleaned: String = response
                 .trim()
                 .lines()
                 .next()
                 .unwrap_or("")
                 .trim()
-                .trim_matches('"')  // Strip surrounding quotes
+                .trim_matches('"')
                 .trim_matches('\'')
                 .replace("**", "")
                 .replace("*", "")
                 .to_string();
 
-            Ok(cleaned)
+            Ok(PredictiveHintResponse {
+                hint: cleaned,
+                concepts: Vec::new(),
+            })
         }
         Err(e) => {
             warn!("Failed to generate predictive hint: {}", e);
-            Ok(String::new()) // Return empty on error, don't fail the whole thing
+            Ok(empty_response) // Return empty on error, don't fail the whole thing
         }
     }
+}
+
+/// Parse the JSON response from the LLM for hint + concepts
+fn parse_hint_response(response: &str) -> Option<PredictiveHintResponse> {
+    // Find JSON in response (may have markdown or other text around it)
+    let text = response.replace("```json", "").replace("```", "");
+
+    if let Some(start) = text.find('{') {
+        if let Some(end) = text.rfind('}') {
+            let json_str = &text[start..=end];
+
+            #[derive(Deserialize)]
+            struct RawResponse {
+                hint: Option<String>,
+                concepts: Option<Vec<RawConcept>>,
+            }
+
+            #[derive(Deserialize)]
+            struct RawConcept {
+                text: String,
+                weight: Option<f64>,
+            }
+
+            if let Ok(raw) = serde_json::from_str::<RawResponse>(json_str) {
+                let hint = raw.hint.unwrap_or_default()
+                    .trim()
+                    .trim_matches('"')
+                    .trim_matches('\'')
+                    .to_string();
+
+                let concepts: Vec<ImageConcept> = raw.concepts
+                    .unwrap_or_default()
+                    .into_iter()
+                    .filter(|c| !c.text.trim().is_empty())
+                    .map(|c| ImageConcept {
+                        text: c.text.trim().to_string(),
+                        weight: c.weight.unwrap_or(1.0).clamp(0.0, 1.0),
+                    })
+                    .take(5) // Max 5 concepts
+                    .collect();
+
+                return Some(PredictiveHintResponse { hint, concepts });
+            }
+        }
+    }
+
+    None
 }

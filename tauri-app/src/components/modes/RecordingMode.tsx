@@ -1,7 +1,9 @@
 import { memo, useState, useCallback } from 'react';
 import type { AudioQualitySnapshot, BiomarkerUpdate, SilenceWarningPayload } from '../../types';
 import type { ChatMessage } from '../../hooks/useClinicalChat';
+import type { MiisSuggestion } from '../../hooks/useMiisImages';
 import { ClinicalChat } from '../ClinicalChat';
+import { ImageSuggestions } from '../ImageSuggestions';
 
 interface RecordingModeProps {
   // Timer (kept for potential future use, not displayed)
@@ -41,6 +43,16 @@ interface RecordingModeProps {
   // Predictive hint
   predictiveHint: string;
   predictiveHintLoading: boolean;
+
+  // MIIS (Medical Illustration Image Server) suggestions
+  miisSuggestions: MiisSuggestion[];
+  miisLoading: boolean;
+  miisError: string | null;
+  miisEnabled: boolean;
+  onMiisImpression: (imageId: number) => void;
+  onMiisClick: (imageId: number) => void;
+  onMiisDismiss: (imageId: number) => void;
+  miisGetImageUrl: (path: string) => string;
 
   // Actions
   onStop: () => void;
@@ -83,6 +95,14 @@ export const RecordingMode = memo(function RecordingMode({
   onChatClear,
   predictiveHint,
   predictiveHintLoading,
+  miisSuggestions,
+  miisLoading,
+  miisError,
+  miisEnabled,
+  onMiisImpression,
+  onMiisClick,
+  onMiisDismiss,
+  miisGetImageUrl,
   onStop,
   onCancelAutoEnd,
 }: RecordingModeProps) {
@@ -157,6 +177,19 @@ export const RecordingMode = memo(function RecordingMode({
             )}
           </div>
         </div>
+      )}
+
+      {/* MIIS Image Suggestions */}
+      {miisEnabled && (
+        <ImageSuggestions
+          suggestions={miisSuggestions}
+          isLoading={miisLoading}
+          error={miisError}
+          getImageUrl={miisGetImageUrl}
+          onImpression={onMiisImpression}
+          onClickImage={onMiisClick}
+          onDismiss={onMiisDismiss}
+        />
       )}
 
       {/* Session in progress indicator */}

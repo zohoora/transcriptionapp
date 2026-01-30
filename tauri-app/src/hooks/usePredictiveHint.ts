@@ -5,14 +5,33 @@ const HINT_INTERVAL_MS = 30000; // 30 seconds
 const INITIAL_DELAY_MS = 5000; // First hint after 5 seconds
 const MIN_WORDS_FOR_HINT = 20;
 
+/** Medical concept for MIIS image search */
+export interface ImageConcept {
+  /** The concept text (e.g., "knee anatomy", "rotator cuff") */
+  text: string;
+  /** Relevance weight 0.0-1.0 */
+  weight: number;
+}
+
+/** Response from predictive hint generation */
+interface PredictiveHintResponse {
+  hint: string;
+  concepts: ImageConcept[];
+}
+
 interface UsePredictiveHintOptions {
   transcript: string;
   isRecording: boolean;
 }
 
 interface UsePredictiveHintResult {
+  /** Brief clinical hint for the physician */
   hint: string;
+  /** Medical concepts for MIIS image search */
+  concepts: ImageConcept[];
+  /** Whether a hint is being generated */
   isLoading: boolean;
+  /** Timestamp of last update */
   lastUpdated: number | null;
 }
 
@@ -26,6 +45,7 @@ export function usePredictiveHint({
   isRecording,
 }: UsePredictiveHintOptions): UsePredictiveHintResult {
   const [hint, setHint] = useState('');
+  const [concepts, setConcepts] = useState<ImageConcept[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [lastUpdated, setLastUpdated] = useState<number | null>(null);
 
@@ -68,13 +88,19 @@ export function usePredictiveHint({
     isLoadingRef.current = true;
 
     try {
-      const result = await invoke<string>('generate_predictive_hint', {
+      const result = await invoke<PredictiveHintResponse>('generate_predictive_hint', {
         transcript: text,
       });
 
-      if (result && result.trim()) {
-        console.log('Predictive hint received:', result.substring(0, 50) + '...');
-        setHint(result);
+      if (result) {
+        if (result.hint && result.hint.trim()) {
+          console.log('Predictive hint received:', result.hint.substring(0, 50) + '...');
+          setHint(result.hint);
+        }
+        if (result.concepts && result.concepts.length > 0) {
+          console.log('Image concepts received:', result.concepts.map(c => c.text).join(', '));
+          setConcepts(result.concepts);
+        }
         setLastUpdated(Date.now());
         lastGeneratedRef.current = text;
       }
@@ -115,6 +141,7 @@ export function usePredictiveHint({
     } else {
       // Clear state when not recording
       setHint('');
+      setConcepts([]);
       setLastUpdated(null);
       lastGeneratedRef.current = '';
       if (timeoutRef.current) {
@@ -130,6 +157,7 @@ export function usePredictiveHint({
 
   return {
     hint,
+    concepts,
     isLoading,
     lastUpdated,
   };

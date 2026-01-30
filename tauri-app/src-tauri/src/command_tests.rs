@@ -59,6 +59,8 @@ mod tests {
             auto_end_enabled: true,
             auto_end_silence_ms: 180_000,
             debug_storage_enabled: true,
+            miis_enabled: false,
+            miis_server_url: "http://172.16.100.45:7843".to_string(),
         };
 
         // Serialize to JSON
