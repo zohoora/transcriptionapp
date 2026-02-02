@@ -3741,6 +3741,29 @@ body {
   position: relative;
 }
 
+/* Auto-end toggle in recording mode */
+.recording-auto-end-toggle {
+  width: 100%;
+  display: flex;
+  justify-content: center;
+  margin-bottom: -12px;
+}
+
+.recording-auto-end-toggle .toggle-label.compact {
+  font-size: 12px;
+  opacity: 0.7;
+  transition: opacity 0.15s ease;
+}
+
+.recording-auto-end-toggle .toggle-label.compact:hover {
+  opacity: 1;
+}
+
+.recording-auto-end-toggle .toggle-label.compact .toggle-text {
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
 /* Session in Progress - calm indicator */
 .session-progress {
   display: flex;
@@ -3992,6 +4015,38 @@ body {
 .predictive-hint-loading {
   color: #7ba3b5;
   font-style: italic;
+}
+
+/* Predictive hint markdown styling */
+.predictive-hint-markdown {
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.predictive-hint-markdown p {
+  margin: 0;
+}
+
+.predictive-hint-markdown strong {
+  font-weight: 700;
+  color: #1a4a5e;
+}
+
+.predictive-hint-markdown em {
+  font-style: italic;
+  color: #c7254e;
+  background: #f9f2f4;
+  padding: 1px 4px;
+  border-radius: 3px;
+}
+
+.predictive-hint-markdown code {
+  font-family: 'SF Mono', Monaco, 'Courier New', monospace;
+  font-size: 12px;
+  background: #e8f4f8;
+  padding: 2px 5px;
+  border-radius: 3px;
+  color: #1a4a5e;
 }
 
 /* Stop Button - calmer design */

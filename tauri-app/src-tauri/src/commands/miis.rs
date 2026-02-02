@@ -19,6 +19,23 @@ fn default_weight() -> f64 {
     1.0
 }
 
+/// Sanitize concept text for FTS5 compatibility
+/// Removes special characters that break FTS5 syntax: - * " ( ) : / '
+fn sanitize_fts5_text(text: &str) -> String {
+    text.chars()
+        .map(|c| {
+            if c.is_alphanumeric() || c.is_whitespace() {
+                c
+            } else {
+                ' ' // Replace special chars with space (including apostrophes)
+            }
+        })
+        .collect::<String>()
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ") // Normalize whitespace
+}
+
 /// MIIS suggestion response
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MiisSuggestion {
@@ -73,8 +90,25 @@ pub async fn miis_suggest(
         });
     }
 
+    // Sanitize concept text to avoid FTS5 syntax errors
+    let sanitized_concepts: Vec<MiisConcept> = concepts
+        .into_iter()
+        .map(|c| MiisConcept {
+            text: sanitize_fts5_text(&c.text),
+            weight: c.weight,
+        })
+        .filter(|c| !c.text.is_empty()) // Remove empty concepts after sanitization
+        .collect();
+
+    if sanitized_concepts.is_empty() {
+        return Ok(SuggestResponse {
+            suggestions: Vec::new(),
+            suggestion_set_id: String::new(),
+        });
+    }
+
     let url = format!("{}/v5/ambient/suggest", server_url.trim_end_matches('/'));
-    info!("MIIS suggest request to {} with {} concepts: {:?}", url, concepts.len(), concepts);
+    info!("MIIS suggest request to {} with {} concepts: {:?}", url, sanitized_concepts.len(), sanitized_concepts);
 
     #[derive(Serialize)]
     struct SuggestRequest {
@@ -85,7 +119,7 @@ pub async fn miis_suggest(
 
     let request_body = SuggestRequest {
         session_id,
-        concepts,
+        concepts: sanitized_concepts,
         limit: 6,
     };
 

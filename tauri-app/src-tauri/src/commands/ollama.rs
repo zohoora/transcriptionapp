@@ -338,11 +338,14 @@ RULES for hint:
 - Focus on: dosages, red flags, key values, quick reminders
 
 RULES for concepts:
-- Extract de-identified medical/anatomical terms only
-- NO patient names, NO PII
-- Focus on: body parts, conditions, procedures that could have helpful diagrams
+- Use SIMPLE, common anatomical terms (1-3 words max)
+- Prefer basic anatomy: "knee anatomy", "heart anatomy", "liver", "spine"
+- Avoid complex phrases like "iron metabolism pathway" - use "blood cells" or "bone marrow" instead
+- NO patient names, NO PII, NO protocols/procedures
+- Focus on: body parts, organs, basic conditions that have anatomical diagrams
 - Weight 0.0-1.0 based on relevance to current discussion
-- Examples: "knee anatomy", "rotator cuff", "cardiac conduction", "lumbar spine"
+- GOOD examples: "knee anatomy", "rotator cuff", "heart valves", "lumbar spine", "anemia", "thyroid"
+- BAD examples: "iron metabolism pathway", "ferritin levels reference ranges", "McMurray test positioning"
 
 If no relevant image concepts, return empty array: "concepts":[]
 "#;

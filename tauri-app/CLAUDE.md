@@ -236,7 +236,7 @@ Real-time medical image suggestions during recording based on conversation conce
 
 **Configuration**:
 - `miis_enabled`: Enable/disable image suggestions
-- `miis_server_url`: MIIS server URL (default: `http://172.16.100.45:7843`)
+- `miis_server_url`: MIIS server URL (default: `http://10.241.15.154:7843`)
 
 **Server Requirements**:
 The MIIS server must have:
@@ -321,7 +321,7 @@ interface Settings {
 | Whisper Server | `http://10.241.15.154:8001` | Remote transcription |
 | LLM Router | `http://10.241.15.154:8080` | SOAP generation |
 | Medplum | `http://10.241.15.154:8103` | EMR/FHIR |
-| MIIS | `http://172.16.100.45:7843` | Medical illustration images |
+| MIIS | `http://10.241.15.154:7843` | Medical illustration images |
 
 ## Frontend Structure
 

@@ -698,6 +698,8 @@ function App() {
             onMiisClick={miisRecordClick}
             onMiisDismiss={miisRecordDismiss}
             miisGetImageUrl={miisGetImageUrl}
+            autoEndEnabled={pendingSettings?.auto_end_enabled ?? true}
+            onAutoEndToggle={handleAutoEndToggle}
             onStop={handleStop}
             onCancelAutoEnd={() => invoke('reset_silence_timer').catch(console.error)}
           />

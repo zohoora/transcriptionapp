@@ -76,12 +76,13 @@ function parseMarkdown(text: string): string {
  * Component to render markdown content safely
  * HTML is sanitized by escaping all HTML entities before markdown parsing
  */
-function MarkdownContent({ content }: { content: string }) {
+export function MarkdownContent({ content, className }: { content: string; className?: string }) {
+  // Content is sanitized in parseMarkdown by escaping HTML entities before parsing
   const html = useMemo(() => parseMarkdown(content), [content]);
 
   return (
     <div
-      className="markdown-content"
+      className={className ? `markdown-content ${className}` : 'markdown-content'}
       dangerouslySetInnerHTML={{ __html: html }}
     />
   );

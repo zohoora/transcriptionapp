@@ -78,7 +78,7 @@ pub struct Settings {
 }
 
 fn default_miis_server_url() -> String {
-    "http://172.16.100.45:7843".to_string()
+    "http://10.241.15.154:7843".to_string()
 }
 
 fn default_auto_end_enabled() -> bool {

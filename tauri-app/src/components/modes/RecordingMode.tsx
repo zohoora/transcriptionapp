@@ -2,7 +2,7 @@ import { memo, useState, useCallback } from 'react';
 import type { AudioQualitySnapshot, BiomarkerUpdate, SilenceWarningPayload } from '../../types';
 import type { ChatMessage } from '../../hooks/useClinicalChat';
 import type { MiisSuggestion } from '../../hooks/useMiisImages';
-import { ClinicalChat } from '../ClinicalChat';
+import { ClinicalChat, MarkdownContent } from '../ClinicalChat';
 import { ImageSuggestions } from '../ImageSuggestions';
 
 interface RecordingModeProps {
@@ -54,6 +54,10 @@ interface RecordingModeProps {
   onMiisDismiss: (imageId: number) => void;
   miisGetImageUrl: (path: string) => string;
 
+  // Auto-end toggle
+  autoEndEnabled: boolean;
+  onAutoEndToggle: (enabled: boolean) => void;
+
   // Actions
   onStop: () => void;
   onCancelAutoEnd?: () => void;
@@ -103,6 +107,8 @@ export const RecordingMode = memo(function RecordingMode({
   onMiisClick,
   onMiisDismiss,
   miisGetImageUrl,
+  autoEndEnabled,
+  onAutoEndToggle,
   onStop,
   onCancelAutoEnd,
 }: RecordingModeProps) {
@@ -165,6 +171,20 @@ export const RecordingMode = memo(function RecordingMode({
         </div>
       )}
 
+      {/* Auto-end toggle */}
+      <div className="recording-auto-end-toggle">
+        <label className="toggle-label compact">
+          <input
+            type="checkbox"
+            checked={autoEndEnabled}
+            onChange={(e) => onAutoEndToggle(e.target.checked)}
+            className="toggle-checkbox"
+          />
+          <span className="toggle-switch"></span>
+          <span className="toggle-text">Auto-end</span>
+        </label>
+      </div>
+
       {/* Predictive hint - "Pssst..." section */}
       {(predictiveHint || predictiveHintLoading) && (
         <div className="predictive-hint-container">
@@ -173,7 +193,7 @@ export const RecordingMode = memo(function RecordingMode({
             {predictiveHintLoading ? (
               <span className="predictive-hint-loading">Thinking...</span>
             ) : (
-              predictiveHint
+              <MarkdownContent content={predictiveHint} className="predictive-hint-markdown" />
             )}
           </div>
         </div>
