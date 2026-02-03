@@ -48,6 +48,7 @@ pub mod ollama;
 pub mod permissions;
 mod pipeline;
 pub mod preprocessing;
+pub mod screenshot;
 pub mod speaker_profiles;
 #[cfg(test)]
 mod command_tests;
@@ -199,6 +200,10 @@ pub fn run() {
             let listening_state: commands::SharedListeningState = Arc::new(Mutex::new(Default::default()));
             app.manage(listening_state);
 
+            // Initialize screen capture state
+            let screen_capture_state: commands::SharedScreenCaptureState = Arc::new(Mutex::new(Default::default()));
+            app.manage(screen_capture_state);
+
             // Start MCP server on port 7101 for IT Admin Coordinator
             let mcp_session = session_manager.clone();
             tauri::async_runtime::spawn(async move {
@@ -317,6 +322,12 @@ pub fn run() {
             // MIIS (Medical Illustration Image Server) commands
             commands::miis_suggest,
             commands::miis_send_usage,
+            // Screen capture commands
+            commands::check_screen_recording_permission,
+            commands::open_screen_recording_settings,
+            commands::start_screen_capture,
+            commands::stop_screen_capture,
+            commands::get_screen_capture_status,
         ])
         .on_window_event(|window, event| {
             if let WindowEvent::CloseRequested { .. } = event {

@@ -93,6 +93,9 @@ export interface Settings {
   // MIIS (Medical Illustration Image Server)
   miis_enabled: boolean;
   miis_server_url: string;
+  // Screen capture
+  screen_capture_enabled: boolean;
+  screen_capture_interval_secs: number;
 }
 
 // Listening mode types (auto-session detection)

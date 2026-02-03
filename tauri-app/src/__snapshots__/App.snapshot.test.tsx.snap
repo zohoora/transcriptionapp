@@ -714,6 +714,27 @@ exports[`App Snapshots > renders recording state correctly 1`] = `
     class="recording-mode"
   >
     <div
+      class="recording-auto-end-toggle"
+    >
+      <label
+        class="toggle-label compact"
+      >
+        <input
+          checked=""
+          class="toggle-checkbox"
+          type="checkbox"
+        />
+        <span
+          class="toggle-switch"
+        />
+        <span
+          class="toggle-text"
+        >
+          Auto-end
+        </span>
+      </label>
+    </div>
+    <div
       class="session-progress"
     >
       <div
@@ -916,6 +937,27 @@ exports[`App Snapshots > renders stopping state correctly 1`] = `
   <div
     class="recording-mode"
   >
+    <div
+      class="recording-auto-end-toggle"
+    >
+      <label
+        class="toggle-label compact"
+      >
+        <input
+          checked=""
+          class="toggle-checkbox"
+          type="checkbox"
+        />
+        <span
+          class="toggle-switch"
+        />
+        <span
+          class="toggle-text"
+        >
+          Auto-end
+        </span>
+      </label>
+    </div>
     <div
       class="session-progress"
     >
@@ -1120,6 +1162,27 @@ exports[`App Snapshots > renders with transcript correctly 1`] = `
   <div
     class="recording-mode"
   >
+    <div
+      class="recording-auto-end-toggle"
+    >
+      <label
+        class="toggle-label compact"
+      >
+        <input
+          checked=""
+          class="toggle-checkbox"
+          type="checkbox"
+        />
+        <span
+          class="toggle-switch"
+        />
+        <span
+          class="toggle-text"
+        >
+          Auto-end
+        </span>
+      </label>
+    </div>
     <div
       class="session-progress"
     >

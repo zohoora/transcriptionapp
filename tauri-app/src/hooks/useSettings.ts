@@ -35,6 +35,9 @@ export interface PendingSettings {
   // MIIS (Medical Illustration Image Server) settings
   miis_enabled: boolean;
   miis_server_url: string;
+  // Screen capture settings
+  screen_capture_enabled: boolean;
+  screen_capture_interval_secs: number;
 }
 
 export interface UseSettingsResult {
@@ -90,6 +93,8 @@ export function useSettings(): UseSettingsResult {
     auto_end_enabled: s.auto_end_enabled,
     miis_enabled: s.miis_enabled,
     miis_server_url: s.miis_server_url,
+    screen_capture_enabled: s.screen_capture_enabled,
+    screen_capture_interval_secs: s.screen_capture_interval_secs,
   }), []);
 
   // Load settings
@@ -147,6 +152,8 @@ export function useSettings(): UseSettingsResult {
         auto_end_enabled: pendingSettings.auto_end_enabled,
         miis_enabled: pendingSettings.miis_enabled,
         miis_server_url: pendingSettings.miis_server_url,
+        screen_capture_enabled: pendingSettings.screen_capture_enabled,
+        screen_capture_interval_secs: pendingSettings.screen_capture_interval_secs,
       };
 
       await invoke('set_settings', { settings: newSettings });
@@ -186,6 +193,8 @@ export function useSettings(): UseSettingsResult {
       [settings.auto_end_enabled, pendingSettings.auto_end_enabled],
       [settings.miis_enabled, pendingSettings.miis_enabled],
       [settings.miis_server_url, pendingSettings.miis_server_url],
+      [settings.screen_capture_enabled, pendingSettings.screen_capture_enabled],
+      [settings.screen_capture_interval_secs, pendingSettings.screen_capture_interval_secs],
     ];
 
     return comparisons.some(([saved, pending]) => saved !== pending);

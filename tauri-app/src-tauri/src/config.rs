@@ -75,6 +75,15 @@ pub struct Settings {
     pub miis_enabled: bool,
     #[serde(default = "default_miis_server_url")]
     pub miis_server_url: String,
+    // Screen capture settings
+    #[serde(default)]
+    pub screen_capture_enabled: bool,
+    #[serde(default = "default_screen_capture_interval_secs")]
+    pub screen_capture_interval_secs: u32,
+}
+
+fn default_screen_capture_interval_secs() -> u32 {
+    30 // 30 seconds default
 }
 
 fn default_miis_server_url() -> String {
@@ -203,6 +212,8 @@ impl Default for Settings {
             debug_storage_enabled: default_debug_storage_enabled(),
             miis_enabled: false,
             miis_server_url: default_miis_server_url(),
+            screen_capture_enabled: false,
+            screen_capture_interval_secs: default_screen_capture_interval_secs(),
         }
     }
 }
@@ -291,6 +302,17 @@ impl Settings {
                 message: format!(
                     "Max speakers {} is out of range. Must be between 1 and 20",
                     self.max_speakers
+                ),
+            });
+        }
+
+        // Validate screen capture interval (10-60 seconds)
+        if self.screen_capture_interval_secs < 10 || self.screen_capture_interval_secs > 60 {
+            errors.push(SettingsValidationError {
+                field: "screen_capture_interval_secs".to_string(),
+                message: format!(
+                    "Screen capture interval {}s is out of range. Must be between 10 and 60 seconds",
+                    self.screen_capture_interval_secs
                 ),
             });
         }
@@ -420,6 +442,11 @@ pub struct Config {
     pub miis_enabled: bool,
     #[serde(default = "default_miis_server_url")]
     pub miis_server_url: String,
+    // Screen capture settings
+    #[serde(default)]
+    pub screen_capture_enabled: bool,
+    #[serde(default = "default_screen_capture_interval_secs")]
+    pub screen_capture_interval_secs: u32,
 }
 
 fn default_max_speakers() -> usize {
@@ -499,6 +526,8 @@ impl Default for Config {
             debug_storage_enabled: default_debug_storage_enabled(),
             miis_enabled: false,
             miis_server_url: default_miis_server_url(),
+            screen_capture_enabled: false,
+            screen_capture_interval_secs: default_screen_capture_interval_secs(),
         }
     }
 }
@@ -669,6 +698,8 @@ impl Config {
             debug_storage_enabled: self.debug_storage_enabled,
             miis_enabled: self.miis_enabled,
             miis_server_url: self.miis_server_url.clone(),
+            screen_capture_enabled: self.screen_capture_enabled,
+            screen_capture_interval_secs: self.screen_capture_interval_secs,
         }
     }
 
@@ -713,6 +744,9 @@ impl Config {
         // MIIS settings
         self.miis_enabled = settings.miis_enabled;
         self.miis_server_url = settings.miis_server_url.clone();
+        // Screen capture settings
+        self.screen_capture_enabled = settings.screen_capture_enabled;
+        self.screen_capture_interval_secs = settings.screen_capture_interval_secs;
     }
 }
 
@@ -824,6 +858,8 @@ mod tests {
             debug_storage_enabled: true,
             miis_enabled: false,
             miis_server_url: "http://172.16.100.45:7843".to_string(),
+            screen_capture_enabled: false,
+            screen_capture_interval_secs: 30,
         };
 
         let mut config = Config::default();
@@ -929,6 +965,8 @@ mod tests {
             debug_storage_enabled: true,
             miis_enabled: false,
             miis_server_url: default_miis_server_url(),
+            screen_capture_enabled: false,
+            screen_capture_interval_secs: 30,
         };
 
         let mut config = Config::default();

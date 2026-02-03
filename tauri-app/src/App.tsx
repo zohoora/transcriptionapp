@@ -24,6 +24,7 @@ import {
 } from './hooks';
 import { usePredictiveHint } from './hooks/usePredictiveHint';
 import { useMiisImages } from './hooks/useMiisImages';
+import { useScreenCapture } from './hooks/useScreenCapture';
 import type { Settings, WhisperServerStatus } from './types';
 
 // UI Mode type
@@ -307,6 +308,9 @@ function App() {
     enabled: settings?.miis_enabled ?? false,
     serverUrl: settings?.miis_server_url ?? '',
   });
+
+  // Screen capture tied to recording lifecycle
+  useScreenCapture(isRecording, settings);
 
   // Sync Ollama status from connection hook to SOAP hook
   useEffect(() => {

@@ -44,6 +44,9 @@ export interface PendingSettings {
   // MIIS (Medical Illustration Image Server) settings
   miis_enabled: boolean;
   miis_server_url: string;
+  // Screen capture settings
+  screen_capture_enabled: boolean;
+  screen_capture_interval_secs: number;
 }
 
 interface SettingsDrawerProps {
@@ -345,6 +348,46 @@ export const SettingsDrawer = memo(function SettingsDrawer({
                     onChange={(e) => onSettingsChange({ ...pendingSettings, miis_server_url: e.target.value })}
                     placeholder="http://172.16.100.45:7843"
                   />
+                </div>
+              )}
+
+              {/* Screen Capture Settings */}
+              <div className="settings-divider" />
+              <div className="settings-section-title">Screen Capture</div>
+
+              <div className="settings-group">
+                <div className="settings-toggle">
+                  <span className="settings-label" style={{ marginBottom: 0 }}>Capture Screen During Recording</span>
+                  <label className="toggle-switch">
+                    <input
+                      type="checkbox"
+                      checked={pendingSettings.screen_capture_enabled}
+                      onChange={(e) => onSettingsChange({ ...pendingSettings, screen_capture_enabled: e.target.checked })}
+                      aria-label="Capture screenshots periodically during recording"
+                    />
+                    <span className="toggle-slider"></span>
+                  </label>
+                </div>
+                <span className="settings-hint">Periodically capture the screen during recording (requires Screen Recording permission)</span>
+              </div>
+
+              {pendingSettings.screen_capture_enabled && (
+                <div className="settings-group">
+                  <label className="settings-label" htmlFor="screen-capture-interval">Capture Interval</label>
+                  <div className="settings-slider">
+                    <input
+                      id="screen-capture-interval"
+                      type="range"
+                      min="10"
+                      max="60"
+                      step="5"
+                      value={pendingSettings.screen_capture_interval_secs}
+                      onChange={(e) =>
+                        onSettingsChange({ ...pendingSettings, screen_capture_interval_secs: parseInt(e.target.value) })
+                      }
+                    />
+                    <span className="slider-value">{pendingSettings.screen_capture_interval_secs}s</span>
+                  </div>
                 </div>
               )}
 

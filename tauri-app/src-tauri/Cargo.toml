@@ -83,12 +83,17 @@ urlencoding = "2.1"
 anyhow = "1"
 thiserror = "1"
 
-# macOS permissions (microphone access check)
+# Image encoding for screenshots
+image = { version = "0.25", default-features = false, features = ["jpeg"] }
+
+# macOS permissions (microphone access check) and screen capture
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "0.6"
 block2 = "0.6"
 objc2-foundation = { version = "0.3", features = ["NSString"] }
 objc2-av-foundation = { version = "0.3", features = ["AVCaptureDevice", "AVMediaFormat"] }
+core-graphics = "0.24"
+core-foundation = "0.10"
 
 # Logging
 tracing = "0.1"
