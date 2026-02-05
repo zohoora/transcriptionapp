@@ -61,6 +61,7 @@ mod stress_tests;
 pub mod session;
 pub mod transcription;
 pub mod vad;
+pub mod vision_experiment;
 pub mod whisper_server;
 
 use commands::PipelineState;
@@ -328,6 +329,15 @@ pub fn run() {
             commands::start_screen_capture,
             commands::stop_screen_capture,
             commands::get_screen_capture_status,
+            commands::get_screenshot_paths,
+            commands::get_screenshot_thumbnails,
+            // Vision SOAP (experimental)
+            commands::generate_vision_soap_note,
+            // Vision prompt experiments
+            commands::run_vision_experiments,
+            commands::get_vision_experiment_results,
+            commands::get_vision_experiment_report,
+            commands::list_vision_experiment_strategies,
         ])
         .on_window_event(|window, event| {
             if let WindowEvent::CloseRequested { .. } = event {

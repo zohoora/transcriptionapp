@@ -28,11 +28,52 @@ pub mod tasks {
     pub const HEALTH_CHECK: &str = "health_check";
 }
 
+/// A single part of a multimodal message content array
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type")]
+pub enum ContentPart {
+    /// Text content
+    #[serde(rename = "text")]
+    Text { text: String },
+    /// Image as a data URL or remote URL
+    #[serde(rename = "image_url")]
+    ImageUrl { image_url: ImageUrlContent },
+}
+
+/// Image URL payload for multimodal messages
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ImageUrlContent {
+    /// data:image/jpeg;base64,... or https://...
+    pub url: String,
+}
+
+/// Chat message content — either a plain string or a multimodal array.
+/// Serializes as a JSON string or array depending on the variant.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum ChatMessageContent {
+    /// Plain text (backward-compatible with all existing call sites)
+    Text(String),
+    /// Multimodal content array (text + images)
+    Multimodal(Vec<ContentPart>),
+}
+
+impl ChatMessageContent {
+    /// Extract the text content. For Text variant returns the string directly.
+    /// For Multimodal, concatenates all text parts.
+    pub fn as_text(&self) -> &str {
+        match self {
+            ChatMessageContent::Text(s) => s,
+            ChatMessageContent::Multimodal(_) => "",
+        }
+    }
+}
+
 /// OpenAI-compatible chat message
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChatMessage {
     pub role: String,
-    pub content: String,
+    pub content: ChatMessageContent,
 }
 
 /// OpenAI-compatible chat completion request
@@ -43,6 +84,12 @@ struct ChatCompletionRequest {
     stream: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     max_tokens: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    temperature: Option<f32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    repetition_penalty: Option<f32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    repetition_context_size: Option<u32>,
 }
 
 /// OpenAI-compatible chat completion response
@@ -400,10 +447,13 @@ impl LLMClient {
             model: model.to_string(),
             messages: vec![ChatMessage {
                 role: "user".to_string(),
-                content: "Say OK".to_string(),
+                content: ChatMessageContent::Text("Say OK".to_string()),
             }],
             stream: false,
             max_tokens: Some(10),
+            temperature: None,
+            repetition_penalty: None,
+            repetition_context_size: None,
         };
 
         let url = format!("{}/v1/chat/completions", self.base_url);
@@ -525,13 +575,13 @@ impl LLMClient {
         if !system_prompt.is_empty() {
             messages.push(ChatMessage {
                 role: "system".to_string(),
-                content: system_prompt.to_string(),
+                content: ChatMessageContent::Text(system_prompt.to_string()),
             });
         }
 
         messages.push(ChatMessage {
             role: "user".to_string(),
-            content: user_content.to_string(),
+            content: ChatMessageContent::Text(user_content.to_string()),
         });
 
         let request = ChatCompletionRequest {
@@ -539,6 +589,9 @@ impl LLMClient {
             messages,
             stream: false,
             max_tokens: None,
+            temperature: None,
+            repetition_penalty: None,
+            repetition_context_size: None,
         };
 
         let mut last_error = String::new();
@@ -565,7 +618,7 @@ impl LLMClient {
                         match response.json::<ChatCompletionResponse>().await {
                             Ok(chat_response) => {
                                 if let Some(choice) = chat_response.choices.first() {
-                                    return Ok(choice.message.content.clone());
+                                    return Ok(choice.message.content.as_text().to_string());
                                 }
                                 return Err("No response choices returned".to_string());
                             }
@@ -831,15 +884,18 @@ Respond ONLY with JSON: {{"is_greeting": true/false, "confidence": 0.0-1.0, "det
             messages: vec![
                 ChatMessage {
                     role: "system".to_string(),
-                    content: system_prompt,
+                    content: ChatMessageContent::Text(system_prompt),
                 },
                 ChatMessage {
                     role: "user".to_string(),
-                    content: trimmed.to_string(),
+                    content: ChatMessageContent::Text(trimmed.to_string()),
                 },
             ],
             stream: false,
             max_tokens: Some(100),
+            temperature: None,
+            repetition_penalty: None,
+            repetition_context_size: None,
         };
 
         let response = self.client
@@ -873,7 +929,7 @@ Respond ONLY with JSON: {{"is_greeting": true/false, "confidence": 0.0-1.0, "det
         let content = chat_response
             .choices
             .first()
-            .map(|c| c.message.content.as_str())
+            .map(|c| c.message.content.as_text())
             .unwrap_or("");
 
         info!("LLM greeting check completed, parsing response");
@@ -881,6 +937,212 @@ Respond ONLY with JSON: {{"is_greeting": true/false, "confidence": 0.0-1.0, "det
 
         parse_greeting_response(content, sensitivity)
     }
+
+    /// Generate text using the LLM with a multimodal user message (text + images).
+    /// The system prompt is sent as a plain text message, but the user message
+    /// uses a content array with ContentPart items.
+    pub async fn generate_vision(
+        &self,
+        model: &str,
+        system_prompt: &str,
+        user_content: Vec<ContentPart>,
+        task: &str,
+        temperature: Option<f32>,
+        max_tokens: Option<u32>,
+        repetition_penalty: Option<f32>,
+        repetition_context_size: Option<u32>,
+    ) -> Result<String, String> {
+        if model.trim().is_empty() {
+            return Err("Model name cannot be empty".to_string());
+        }
+
+        let url = format!("{}/v1/chat/completions", self.base_url);
+        info!("Generating vision response with model {} at {}", model, url);
+
+        let mut messages = Vec::new();
+
+        if !system_prompt.is_empty() {
+            messages.push(ChatMessage {
+                role: "system".to_string(),
+                content: ChatMessageContent::Text(system_prompt.to_string()),
+            });
+        }
+
+        messages.push(ChatMessage {
+            role: "user".to_string(),
+            content: ChatMessageContent::Multimodal(user_content),
+        });
+
+        let request = ChatCompletionRequest {
+            model: model.to_string(),
+            messages,
+            stream: false,
+            max_tokens,
+            temperature,
+            repetition_penalty,
+            repetition_context_size,
+        };
+
+        let mut last_error = String::new();
+
+        for attempt in 0..DEFAULT_MAX_RETRIES {
+            if attempt > 0 {
+                let backoff = calculate_backoff(attempt - 1);
+                warn!(
+                    "Vision generate attempt {} failed, retrying in {:?}",
+                    attempt, backoff
+                );
+                tokio::time::sleep(backoff).await;
+            }
+
+            match self.client
+                .post(&url)
+                .headers(self.auth_headers(task))
+                .json(&request)
+                .send()
+                .await
+            {
+                Ok(response) => {
+                    if response.status().is_success() {
+                        match response.json::<ChatCompletionResponse>().await {
+                            Ok(chat_response) => {
+                                if let Some(choice) = chat_response.choices.first() {
+                                    return Ok(choice.message.content.as_text().to_string());
+                                }
+                                return Err("No response choices returned".to_string());
+                            }
+                            Err(e) => {
+                                last_error = format!("Failed to parse LLM response: {}", e);
+                                break;
+                            }
+                        }
+                    } else if is_retryable_status(response.status()) {
+                        let status = response.status();
+                        let body = response.text().await.unwrap_or_default();
+                        last_error = format!("LLM router returned error: {} - {}", status, body);
+                        continue;
+                    } else {
+                        let status = response.status();
+                        let body = response.text().await.unwrap_or_default();
+                        error!("Vision generate failed: {} - {}", status, body);
+                        return Err(format!("LLM router returned error: {} - {}", status, body));
+                    }
+                }
+                Err(e) => {
+                    if is_retryable_error(&e) {
+                        last_error = format!("Failed to connect to LLM router: {}", e);
+                        continue;
+                    } else {
+                        return Err(format!("Failed to connect to LLM router: {}", e));
+                    }
+                }
+            }
+        }
+
+        error!(
+            "Vision generate failed after {} attempts: {}",
+            DEFAULT_MAX_RETRIES, last_error
+        );
+        Err(last_error)
+    }
+
+    /// Generate a SOAP note from a clinical transcript + screenshot composite.
+    /// Uses the vision-model alias and sends the stitched image as a data URL.
+    ///
+    /// # Arguments
+    /// * `model` - Vision-capable model name (e.g., "vision-model")
+    /// * `transcript` - Clinical transcript text
+    /// * `image_base64` - Base64-encoded JPEG of stitched thumbnails
+    /// * `audio_events` - Optional audio events
+    /// * `options` - Optional SOAP generation options
+    pub async fn generate_vision_soap_note(
+        &self,
+        model: &str,
+        transcript: &str,
+        image_base64: &str,
+        audio_events: Option<&[AudioEvent]>,
+        options: Option<&SoapOptions>,
+    ) -> Result<SoapNote, String> {
+        let prepared_transcript = Self::prepare_transcript(transcript)?;
+        let opts = options.cloned().unwrap_or_default();
+
+        info!(
+            "Generating vision SOAP note with model {} for transcript of {} chars, image {} bytes",
+            model,
+            prepared_transcript.len(),
+            image_base64.len(),
+        );
+
+        let system_prompt = build_vision_soap_prompt(&opts);
+
+        // Build user content: text BEFORE image (slightly faster per integration guide)
+        let session_notes = if opts.session_notes.trim().is_empty() { None } else { Some(opts.session_notes.as_str()) };
+        let text_content = build_soap_user_content(&prepared_transcript, audio_events, session_notes, None);
+
+        let user_parts = vec![
+            ContentPart::Text { text: text_content },
+            ContentPart::ImageUrl {
+                image_url: ImageUrlContent {
+                    url: format!("data:image/jpeg;base64,{}", image_base64),
+                },
+            },
+        ];
+
+        let response = self.generate_vision(
+            model,
+            &system_prompt,
+            user_parts,
+            tasks::SOAP_NOTE,
+            Some(0.3),           // temperature
+            Some(2000),          // max_tokens
+            Some(1.1),           // repetition_penalty - prevents repetitive output
+            Some(50),            // repetition_context_size - window for penalty
+        ).await?;
+
+        // Parse JSON response and format as bullet-point text
+        let content = parse_and_format_soap_json(&response);
+
+        info!("Successfully generated vision SOAP note ({} chars)", content.len());
+        Ok(SoapNote {
+            content,
+            generated_at: Utc::now().to_rfc3339(),
+            model_used: model.to_string(),
+        })
+    }
+}
+
+/// Build system prompt for vision SOAP note generation
+/// Uses the "Verified Steps" prompt strategy (P11) which achieved perfect scores in experiments
+fn build_vision_soap_prompt(_options: &SoapOptions) -> String {
+    // Note: detail_level and custom_instructions are intentionally ignored for vision path
+    // The step-by-step prompt with explicit verification prevents irrelevant EHR data extraction
+    r#"Medical scribe AI. Follow these steps EXACTLY:
+
+STEP 1: Read ONLY the transcript. Identify:
+- Patient name (if mentioned in greeting)
+- Chief complaint and symptoms discussed
+- Treatment plan mentioned (medications, tests, follow-up)
+
+STEP 2: Look at the EHR header ONLY. Find:
+- Full patient name (to complete partial name from transcript)
+
+STEP 3: Look at the medications section ONLY. Find:
+- Specific medication names referenced in the transcript (e.g., "weekly medication" -> actual drug name)
+
+STEP 4: VERIFY you are NOT including:
+- Past medical history from EHR (unless discussed in transcript)
+- Previous visits from EHR
+- Unrelated conditions, allergies, or medications from EHR
+- Family history from EHR
+
+Output a concise JSON SOAP note:
+{"subjective":[...],"objective":[...],"assessment":[...],"plan":[...]}
+
+Rules:
+- Only include information from the transcript PLUS specific lookups from Steps 2-3
+- Do NOT include EHR data that wasn't referenced in the conversation
+- Stop immediately after the closing brace
+- Do not repeat information"#.to_string()
 }
 
 /// Build a simple system prompt for SOAP note generation (JSON output required)

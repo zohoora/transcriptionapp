@@ -6,6 +6,7 @@ authors = ["you"]
 license = "MIT"
 repository = ""
 edition = "2021"
+default-run = "transcription-app"
 
 [lib]
 name = "transcription_app_lib"
@@ -129,6 +130,10 @@ enhancement = ["ort", "rustfft"]
 # Biomarker analysis (YAMNet cough detection, vitality, stability)
 biomarkers = ["ort", "rustfft"]
 default = ["diarization", "enhancement", "biomarkers"]
+
+[[bin]]
+name = "vision_experiment_cli"
+path = "tools/vision_experiment_cli.rs"
 
 [[bench]]
 name = "audio_benchmarks"

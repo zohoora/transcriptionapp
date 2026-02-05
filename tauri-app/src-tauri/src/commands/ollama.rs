@@ -4,8 +4,15 @@ use crate::activity_log;
 use crate::config::Config;
 use crate::debug_storage;
 use crate::ollama::{AudioEvent, LLMClient, LLMStatus, MultiPatientSoapResult, SoapNote, SoapOptions, SpeakerContext, SpeakerInfo};
+use crate::screenshot;
+use crate::vision_experiment::{
+    self, ExperimentParams, ExperimentResult, PromptStrategy,
+    run_experiment, save_result, load_results, generate_summary_report,
+};
+use super::SharedScreenCaptureState;
+use base64::Engine;
 use serde::{Deserialize, Serialize};
-use tracing::{info, warn};
+use tracing::{info, warn, error};
 
 // Re-export LLMStatus as OllamaStatus for backward compatibility with frontend
 pub use crate::ollama::OllamaStatus;
@@ -397,6 +404,119 @@ If no relevant image concepts, return empty array: "concepts":[]
     }
 }
 
+/// Generate a vision SOAP note using transcript + stitched screenshots.
+///
+/// Sends the transcript and a composite image (stitched thumbnails) to the
+/// vision-model LLM alias. This is an experimental parallel code path
+/// that does not affect existing SOAP generation.
+///
+/// # Arguments
+/// * `transcript` - The clinical transcript text
+/// * `audio_events` - Optional audio events
+/// * `options` - Optional SOAP generation options
+/// * `session_id` - Optional session ID for logging
+/// * `screenshot_state` - Shared screen capture state containing screenshot paths
+#[tauri::command]
+pub async fn generate_vision_soap_note(
+    transcript: String,
+    audio_events: Option<Vec<AudioEvent>>,
+    options: Option<SoapOptions>,
+    session_id: Option<String>,
+    image_path: Option<String>,
+    screenshot_state: tauri::State<'_, SharedScreenCaptureState>,
+) -> Result<SoapNote, String> {
+    info!(
+        "Generating vision SOAP note for transcript of {} chars, image_path: {:?}",
+        transcript.len(),
+        image_path,
+    );
+
+    if transcript.trim().is_empty() {
+        return Err("Cannot generate vision SOAP note from empty transcript".to_string());
+    }
+
+    // Build base64 image: either from a user-selected path or the legacy stitch flow
+    let image_base64 = if let Some(ref path) = image_path {
+        // Single image mode: read and base64-encode the selected file
+        let data = std::fs::read(path)
+            .map_err(|e| format!("Failed to read image at {:?}: {}", path, e))?;
+        info!("Using single image for vision SOAP: {} ({} bytes)", path, data.len());
+        base64::engine::general_purpose::STANDARD.encode(&data)
+    } else {
+        // Legacy stitch mode: select and stitch thumbnails
+        let paths = {
+            let capture = screenshot_state.lock().map_err(|e| e.to_string())?;
+            capture.screenshot_paths()
+        };
+
+        if paths.is_empty() {
+            return Err("No screenshots available for vision SOAP generation".to_string());
+        }
+
+        let selected = screenshot::select_thumbnails(&paths, 3);
+        if selected.is_empty() {
+            return Err("No thumbnail screenshots found".to_string());
+        }
+
+        info!("Selected {} thumbnails for vision SOAP (legacy stitch)", selected.len());
+        screenshot::stitch_thumbnails_to_base64(&selected)?
+    };
+
+    // Create LLM client and generate
+    let config = Config::load_or_default();
+    let client = LLMClient::new(
+        &config.llm_router_url,
+        &config.llm_api_key,
+        &config.llm_client_id,
+        &config.fast_model,
+    )?;
+
+    let start_time = std::time::Instant::now();
+    let word_count = transcript.split_whitespace().count();
+    let model = "vision-model";
+
+    match client
+        .generate_vision_soap_note(
+            model,
+            &transcript,
+            &image_base64,
+            audio_events.as_deref(),
+            options.as_ref(),
+        )
+        .await
+    {
+        Ok(soap_note) => {
+            let generation_time_ms = start_time.elapsed().as_millis() as u64;
+            activity_log::log_soap_generation(
+                session_id.as_deref().unwrap_or(""),
+                word_count,
+                generation_time_ms,
+                model,
+                true,
+                None,
+            );
+            info!(
+                "Vision SOAP note generated in {}ms ({} chars)",
+                generation_time_ms,
+                soap_note.content.len()
+            );
+            Ok(soap_note)
+        }
+        Err(e) => {
+            let generation_time_ms = start_time.elapsed().as_millis() as u64;
+            activity_log::log_soap_generation(
+                session_id.as_deref().unwrap_or(""),
+                word_count,
+                generation_time_ms,
+                model,
+                false,
+                Some(&e),
+            );
+            Err(e)
+        }
+    }
+}
+
 /// Parse the JSON response from the LLM for hint + concepts
 fn parse_hint_response(response: &str) -> Option<PredictiveHintResponse> {
     // Find JSON in response (may have markdown or other text around it)
@@ -442,4 +562,227 @@ fn parse_hint_response(response: &str) -> Option<PredictiveHintResponse> {
     }
 
     None
+}
+
+// ============================================================================
+// Vision SOAP Prompt Experimentation Commands
+// ============================================================================
+
+/// Request to run vision prompt experiments
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VisionExperimentRequest {
+    /// Path to transcript file
+    pub transcript_path: String,
+    /// Path to EHR screenshot image
+    pub image_path: String,
+    /// Which prompt strategies to test (empty = all)
+    pub strategies: Vec<String>,
+    /// Temperature values to test (empty = [0.3])
+    pub temperatures: Vec<f32>,
+    /// Whether to test image-first ordering
+    pub test_image_order: bool,
+}
+
+/// Summary of experiment results
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VisionExperimentSummary {
+    pub total_experiments: usize,
+    pub best_strategy: String,
+    pub best_score: i32,
+    pub results: Vec<ExperimentResultSummary>,
+    pub report_path: String,
+}
+
+/// Condensed result for UI display
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExperimentResultSummary {
+    pub strategy: String,
+    pub temperature: f32,
+    pub score: i32,
+    pub has_patient_name: bool,
+    pub has_medication_name: bool,
+    pub has_weight_issue: bool,
+    pub irrelevant_count: usize,
+    pub generation_time_ms: u64,
+    pub result_path: String,
+}
+
+/// Run vision prompt experiments
+///
+/// Tests different prompt strategies for vision SOAP generation to find
+/// the optimal approach for using EHR screenshots appropriately.
+///
+/// # Arguments
+/// * `request` - Experiment configuration including paths and strategies to test
+#[tauri::command]
+pub async fn run_vision_experiments(
+    request: VisionExperimentRequest,
+) -> Result<VisionExperimentSummary, String> {
+    let strategy_count = if request.strategies.is_empty() {
+        "all".to_string()
+    } else {
+        request.strategies.len().to_string()
+    };
+    let temp_count = if request.temperatures.is_empty() {
+        "default".to_string()
+    } else {
+        request.temperatures.len().to_string()
+    };
+    info!(
+        "Running vision experiments: {} strategies, {} temperatures",
+        strategy_count,
+        temp_count
+    );
+
+    // Load transcript
+    let transcript = std::fs::read_to_string(&request.transcript_path)
+        .map_err(|e| format!("Failed to read transcript: {}", e))?;
+
+    // Load and encode image
+    let image_data = std::fs::read(&request.image_path)
+        .map_err(|e| format!("Failed to read image: {}", e))?;
+    let image_base64 = base64::engine::general_purpose::STANDARD.encode(&image_data);
+
+    // Create LLM client
+    let config = Config::load_or_default();
+    let client = LLMClient::new(
+        &config.llm_router_url,
+        &config.llm_api_key,
+        &config.llm_client_id,
+        &config.fast_model,
+    )?;
+
+    // Determine strategies to test
+    let strategies: Vec<PromptStrategy> = if request.strategies.is_empty() {
+        PromptStrategy::all()
+    } else {
+        request.strategies.iter()
+            .filter_map(|s| match s.as_str() {
+                "current" | "p0" => Some(PromptStrategy::Current),
+                "negative" | "p1" => Some(PromptStrategy::NegativeFraming),
+                "flip" | "p2" => Some(PromptStrategy::FlipDefault),
+                "twostep" | "p3" => Some(PromptStrategy::TwoStepReasoning),
+                "prominent" | "p4" => Some(PromptStrategy::ProminentPlacement),
+                "examples" | "p5" => Some(PromptStrategy::ConcreteExamples),
+                "minimal" | "p6" => Some(PromptStrategy::MinimalImage),
+                _ => None,
+            })
+            .collect()
+    };
+
+    // Determine temperatures to test
+    let temperatures: Vec<f32> = if request.temperatures.is_empty() {
+        vec![0.3]
+    } else {
+        request.temperatures.clone()
+    };
+
+    // Run experiments
+    let mut results: Vec<ExperimentResult> = Vec::new();
+    let mut result_summaries: Vec<ExperimentResultSummary> = Vec::new();
+
+    for strategy in &strategies {
+        for &temp in &temperatures {
+            let orderings = if request.test_image_order {
+                vec![false, true] // text-first, then image-first
+            } else {
+                vec![false] // text-first only
+            };
+
+            for image_first in orderings {
+                let params = ExperimentParams {
+                    strategy: *strategy,
+                    temperature: temp,
+                    max_tokens: 2000,
+                    image_first,
+                };
+
+                match run_experiment(&client, "vision-model", &transcript, &image_base64, &params).await {
+                    Ok(result) => {
+                        // Save result to disk
+                        let result_path = match save_result(&result) {
+                            Ok(p) => p.to_string_lossy().to_string(),
+                            Err(e) => {
+                                warn!("Failed to save result: {}", e);
+                                String::new()
+                            }
+                        };
+
+                        // Create summary
+                        let summary = ExperimentResultSummary {
+                            strategy: strategy.name().to_string(),
+                            temperature: temp,
+                            score: result.score.total_score,
+                            has_patient_name: result.score.has_patient_name,
+                            has_medication_name: result.score.has_medication_name,
+                            has_weight_issue: result.score.has_weight_issue,
+                            irrelevant_count: result.score.irrelevant_inclusions.len(),
+                            generation_time_ms: result.generation_time_ms,
+                            result_path,
+                        };
+
+                        info!(
+                            "Experiment complete: {} temp={} score={} (patient={}, med={}, weight={}, irrelevant={})",
+                            strategy.name(),
+                            temp,
+                            result.score.total_score,
+                            result.score.has_patient_name,
+                            result.score.has_medication_name,
+                            result.score.has_weight_issue,
+                            result.score.irrelevant_inclusions.len()
+                        );
+
+                        result_summaries.push(summary);
+                        results.push(result);
+                    }
+                    Err(e) => {
+                        error!("Experiment failed: {} temp={} - {}", strategy.name(), temp, e);
+                    }
+                }
+            }
+        }
+    }
+
+    // Generate and save summary report
+    let report = generate_summary_report(&results);
+    let report_path = vision_experiment::experiments_dir().join("summary.md");
+    if let Err(e) = std::fs::write(&report_path, &report) {
+        warn!("Failed to save summary report: {}", e);
+    }
+
+    // Find best result
+    let best = results.iter()
+        .max_by_key(|r| r.score.total_score)
+        .map(|r| (r.params.strategy.name().to_string(), r.score.total_score))
+        .unwrap_or_else(|| ("None".to_string(), 0));
+
+    Ok(VisionExperimentSummary {
+        total_experiments: results.len(),
+        best_strategy: best.0,
+        best_score: best.1,
+        results: result_summaries,
+        report_path: report_path.to_string_lossy().to_string(),
+    })
+}
+
+/// Get all saved experiment results
+#[tauri::command]
+pub async fn get_vision_experiment_results() -> Result<Vec<ExperimentResult>, String> {
+    load_results()
+}
+
+/// Get the summary report for all experiments
+#[tauri::command]
+pub async fn get_vision_experiment_report() -> Result<String, String> {
+    let results = load_results()?;
+    Ok(generate_summary_report(&results))
+}
+
+/// List available prompt strategies
+#[tauri::command]
+pub async fn list_vision_experiment_strategies() -> Vec<(String, String)> {
+    PromptStrategy::all()
+        .iter()
+        .map(|s| (s.id().to_string(), s.name().to_string()))
+        .collect()
 }
