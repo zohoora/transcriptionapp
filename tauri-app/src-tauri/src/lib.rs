@@ -35,6 +35,7 @@ pub mod biomarkers;
 pub mod checklist;
 mod commands;
 pub mod config;
+pub mod continuous_mode;
 pub mod debug_storage;
 pub mod diarization;
 pub mod local_archive;
@@ -205,6 +206,10 @@ pub fn run() {
             let screen_capture_state: commands::SharedScreenCaptureState = Arc::new(Mutex::new(Default::default()));
             app.manage(screen_capture_state);
 
+            // Initialize continuous mode state
+            let continuous_mode_state: commands::SharedContinuousModeState = Arc::new(Mutex::new(None));
+            app.manage(continuous_mode_state);
+
             // Start MCP server on port 7101 for IT Admin Coordinator
             let mcp_session = session_manager.clone();
             tauri::async_runtime::spawn(async move {
@@ -338,6 +343,10 @@ pub fn run() {
             commands::get_vision_experiment_results,
             commands::get_vision_experiment_report,
             commands::list_vision_experiment_strategies,
+            // Continuous charting mode
+            commands::start_continuous_mode,
+            commands::stop_continuous_mode,
+            commands::get_continuous_mode_status,
         ])
         .on_window_event(|window, event| {
             if let WindowEvent::CloseRequested { .. } = event {
@@ -348,7 +357,17 @@ pub fn run() {
                     return;
                 }
 
-                // Main window close - try graceful shutdown of the pipeline
+                // Main window close - stop continuous mode if active
+                if let Some(continuous_state) = window.app_handle().try_state::<commands::SharedContinuousModeState>() {
+                    if let Ok(state) = continuous_state.lock() {
+                        if let Some(ref handle) = *state {
+                            info!("Stopping continuous mode on window close");
+                            handle.stop();
+                        }
+                    }
+                }
+
+                // Try graceful shutdown of the pipeline
                 let mut graceful_success = true;
 
                 if let Some(pipeline_state) = window.app_handle().try_state::<Arc<Mutex<PipelineState>>>() {

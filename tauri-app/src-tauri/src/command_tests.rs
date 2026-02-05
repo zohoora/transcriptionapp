@@ -63,6 +63,10 @@ mod tests {
             miis_server_url: "http://172.16.100.45:7843".to_string(),
             screen_capture_enabled: false,
             screen_capture_interval_secs: 30,
+            charting_mode: "session".to_string(),
+            continuous_auto_copy_soap: false,
+            encounter_check_interval_secs: 120,
+            encounter_silence_trigger_secs: 60,
         };
 
         // Serialize to JSON

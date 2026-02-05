@@ -216,12 +216,23 @@ exports[`App Snapshots > renders completed state correctly 1`] = `
             </button>
           </div>
         </div>
-        <button
-          class="btn-generate"
-          disabled=""
+        <div
+          class="soap-generate-actions"
         >
-          LLM not connected
-        </button>
+          <button
+            class="btn-generate"
+            disabled=""
+          >
+            LLM not connected
+          </button>
+          <button
+            class="btn-generate btn-vision"
+            disabled=""
+            title="No screenshots captured"
+          >
+            Vision SOAP
+          </button>
+        </div>
       </div>
     </div>
     <div

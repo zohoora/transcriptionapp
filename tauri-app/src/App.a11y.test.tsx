@@ -313,7 +313,7 @@ describe('Accessibility Tests', () => {
       expect(transcriptTab).toBeInTheDocument();
       expect(transcriptTab).toHaveClass('review-tab');
 
-      const soapTab = await findByRole('button', { name: /soap/i });
+      const soapTab = await findByRole('button', { name: /^soap$/i });
       expect(soapTab).toBeInTheDocument();
 
       const insightsTab = await findByRole('button', { name: /insights/i });

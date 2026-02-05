@@ -4,6 +4,7 @@ import { getCurrentWindow } from '@tauri-apps/api/window';
 import { writeText } from '@tauri-apps/plugin-clipboard-manager';
 import { useAuth } from './AuthProvider';
 import { useSoapNote } from '../hooks/useSoapNote';
+import { useOllamaConnection } from '../hooks/useOllamaConnection';
 import Calendar from './Calendar';
 import AudioPlayer from './AudioPlayer';
 import { formatDateForApi, formatLocalTime, formatLocalDateTime } from '../utils';
@@ -53,6 +54,7 @@ const HistoryWindow: React.FC = () => {
     soapError,
     setSoapError,
     ollamaStatus,
+    setOllamaStatus,
     soapOptions,
     setSoapOptions,
     updateSoapDetailLevel,
@@ -90,6 +92,16 @@ const HistoryWindow: React.FC = () => {
   const [soapResult, setSoapResult] = useState<MultiPatientSoapResult | null>(null);
   const [customInstructionsExpanded, setCustomInstructionsExpanded] = useState(false);
   const [activePatient, setActivePatient] = useState(0);
+
+  // LLM connection check - sync to SOAP hook
+  const { status: ollamaConnectionStatus } = useOllamaConnection();
+
+  // Sync Ollama status from connection hook to SOAP hook
+  useEffect(() => {
+    if (ollamaConnectionStatus) {
+      setOllamaStatus(ollamaConnectionStatus);
+    }
+  }, [ollamaConnectionStatus, setOllamaStatus]);
 
   // LLM connection status from hook
   const llmConnected = ollamaStatus?.connected ?? false;
@@ -199,6 +211,8 @@ const HistoryWindow: React.FC = () => {
           has_soap_note: enc.hasSoapNote,
           has_audio: enc.hasAudio,
           auto_ended: false, // Not tracked in Medplum
+          charting_mode: null,
+          encounter_number: null,
         }));
         setSessions(converted);
       }
@@ -254,6 +268,8 @@ const HistoryWindow: React.FC = () => {
           auto_end_reason: null,
           soap_detail_level: null, // Not available from Medplum
           soap_format: null, // Not available from Medplum
+          charting_mode: null,
+          encounter_number: null,
         };
 
         details = {
@@ -418,6 +434,11 @@ const HistoryWindow: React.FC = () => {
               <span className="summary-duration">{formatDuration(selectedSession.metadata.duration_ms)}</span>
             )}
             <span className="summary-words">{selectedSession.metadata.word_count} words</span>
+            {selectedSession.metadata.charting_mode === 'continuous' && (
+              <span className="summary-badge charted">
+                Auto-charted{selectedSession.metadata.encounter_number != null ? ` #${selectedSession.metadata.encounter_number}` : ''}
+              </span>
+            )}
             {selectedSession.metadata.auto_ended && (
               <span className="summary-badge auto">Auto-ended</span>
             )}
@@ -774,11 +795,21 @@ const HistoryWindow: React.FC = () => {
       </div>
 
       <div className="history-content">
-        <Calendar
-          selectedDate={selectedDate}
-          onDateSelect={setSelectedDate}
-          datesWithSessions={Array.from(datesWithSessions)}
-        />
+        <div className="calendar-with-today">
+          <Calendar
+            selectedDate={selectedDate}
+            onDateSelect={setSelectedDate}
+            datesWithSessions={Array.from(datesWithSessions)}
+          />
+          {selectedDate.toDateString() !== new Date().toDateString() && (
+            <button
+              className="btn-today"
+              onClick={() => setSelectedDate(new Date())}
+            >
+              Today
+            </button>
+          )}
+        </div>
 
         <div className="sessions-section">
           <h2 className="sessions-date-header">
@@ -809,9 +840,11 @@ const HistoryWindow: React.FC = () => {
                   <div className="session-info">
                     <span className="session-time">{formatTime(session.date)}</span>
                     <span className="session-name">
-                      {session.word_count > 0
-                        ? `${session.word_count} words`
-                        : 'Scribe Session'}
+                      {session.charting_mode === 'continuous' && session.encounter_number != null
+                        ? `Encounter #${session.encounter_number}`
+                        : session.word_count > 0
+                          ? `${session.word_count} words`
+                          : 'Scribe Session'}
                     </span>
                   </div>
                   <div className="session-meta">
@@ -821,6 +854,9 @@ const HistoryWindow: React.FC = () => {
                       </span>
                     )}
                     <div className="session-badges">
+                      {session.charting_mode === 'continuous' && (
+                        <span className="badge charted-badge">Auto-charted</span>
+                      )}
                       {session.has_soap_note && (
                         <span className="badge soap-badge">SOAP</span>
                       )}

@@ -65,6 +65,12 @@ pub struct ArchiveMetadata {
     /// SOAP format used when generating, None if no SOAP or pre-feature
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub soap_format: Option<String>,
+    /// Charting mode that created this session ("session" or "continuous")
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub charting_mode: Option<String>,
+    /// Encounter number within a continuous mode day (e.g., 3 for "Encounter #3")
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub encounter_number: Option<u32>,
 }
 
 impl ArchiveMetadata {
@@ -82,6 +88,8 @@ impl ArchiveMetadata {
             auto_end_reason: None,
             soap_detail_level: None,
             soap_format: None,
+            charting_mode: None,
+            encounter_number: None,
         }
     }
 }
@@ -96,6 +104,10 @@ pub struct ArchiveSummary {
     pub has_soap_note: bool,
     pub has_audio: bool,
     pub auto_ended: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub charting_mode: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub encounter_number: Option<u32>,
 }
 
 /// Detailed archived session (for detail view)
@@ -337,6 +349,8 @@ pub fn list_sessions_by_date(date_str: &str) -> Result<Vec<ArchiveSummary>, Stri
             has_soap_note: metadata.has_soap_note,
             has_audio: metadata.has_audio,
             auto_ended: metadata.auto_ended,
+            charting_mode: metadata.charting_mode,
+            encounter_number: metadata.encounter_number,
         });
     }
 
@@ -428,6 +442,8 @@ mod tests {
             has_soap_note: true,
             has_audio: false,
             auto_ended: false,
+            charting_mode: None,
+            encounter_number: None,
         };
 
         let json = serde_json::to_string(&summary).unwrap();

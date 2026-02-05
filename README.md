@@ -24,6 +24,7 @@ A real-time speech-to-text transcription desktop application built with Tauri, R
 - **Auto-Sync to EMR** - Transcripts and audio automatically synced on session complete
 - **Encounter History** - Browse past sessions with calendar view
 - **Auto-Session Detection** - Automatically starts recording when greeting detected
+- **Continuous Charting Mode** - Records all day, auto-detects encounters, generates SOAP at end of day
 
 ### Biomarker Analysis
 - **Vitality** - Pitch variability for affect detection (depression/PTSD indicator)

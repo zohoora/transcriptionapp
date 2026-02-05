@@ -33,6 +33,7 @@ Rust Backend
 ├── listening.rs       # Auto-session detection
 ├── speaker_profiles.rs # Speaker enrollment storage
 ├── local_archive.rs   # Local session storage
+├── continuous_mode.rs # Continuous charting mode (end-of-day)
 ├── diarization/       # Speaker detection (ONNX embeddings, clustering)
 ├── enhancement/       # Speech enhancement (GTCRN)
 ├── biomarkers/        # Vocal analysis (vitality, stability, cough detection)
@@ -78,6 +79,7 @@ cd src-tauri && cargo test       # Rust
 | Modify auto-end detection | `pipeline.rs` (silence tracking), `config.rs` (settings), `useSessionState.ts` |
 | Modify SOAP options | `useSoapNote.ts` (hook), `llm_client.rs` (prompt building), `local_archive.rs` (metadata) |
 | Modify MIIS integration | `commands/miis.rs`, `useMiisImages.ts`, `ImageSuggestions.tsx`, `usePredictiveHint.ts` |
+| Modify continuous mode | `continuous_mode.rs`, `commands/continuous.rs`, `useContinuousMode.ts`, `ContinuousMode.tsx` |
 
 ## IPC Commands
 
@@ -99,6 +101,8 @@ cd src-tauri && cargo test       # Rust
 | `clinical_chat_send` | Send message to clinical assistant LLM |
 | `miis_suggest` | Fetch image suggestions from MIIS server |
 | `miis_send_usage` | Send telemetry events to MIIS server |
+| `start_continuous_mode` / `stop_continuous_mode` | Continuous charting mode lifecycle |
+| `get_continuous_mode_status` | Get continuous mode stats (state, encounters, buffer) |
 
 ## Events (Backend → Frontend)
 
@@ -111,6 +115,7 @@ cd src-tauri && cargo test       # Rust
 | `listening_event` | Auto-detection status (includes `speaker_not_verified`) |
 | `silence_warning` | Auto-end countdown (silence_ms, remaining_ms) |
 | `session_auto_end` | Session auto-ended due to silence |
+| `continuous_mode_event` | Continuous mode status changes (started, encounter_detected, soap_generated, etc.) |
 
 ## Session States
 
@@ -247,6 +252,59 @@ The MIIS server must have:
 
 **Files**: `commands/miis.rs`, `useMiisImages.ts`, `usePredictiveHint.ts`, `ImageSuggestions.tsx`
 
+### Continuous Charting Mode (End of Day)
+Records continuously all day without manual session start/stop. An LLM-based encounter detector automatically segments the transcript into individual patient encounters and generates SOAP notes. The physician reviews all notes at end of day via the session history window.
+
+**Two Charting Modes**:
+- **Session Mode** (default): Manual start/stop per patient, SOAP generated after each session
+- **Continuous Mode**: Records all day, encounters auto-detected, SOAPs generated automatically
+
+**Architecture**:
+```
+Microphone → Pipeline (runs all day) → TranscriptBuffer
+                                              ↓ (every 2 min or on 60s silence)
+                                        Encounter Detector (LLM)
+                                              ↓
+                                        Complete encounter found?
+                                        YES → Extract → SOAP → Archive
+                                        NO  → Continue buffering
+```
+
+**Encounter Detection**:
+- LLM analyzes accumulated transcript to find complete patient encounters
+- Triggers: Every `encounter_check_interval_secs` (default: 120s) OR after `encounter_silence_trigger_secs` of silence (default: 60s)
+- Detection looks for greeting/introduction → clinical discussion → farewell/wrap-up
+- Partial encounters stay in buffer until complete
+
+**Configuration**:
+- `charting_mode`: `"session"` | `"continuous"` (default: `"session"`)
+- `continuous_auto_copy_soap`: Auto-copy SOAP to clipboard (default: `false` - avoids spam)
+- `encounter_check_interval_secs`: How often to check for complete encounters (default: 120)
+- `encounter_silence_trigger_secs`: Silence duration that triggers immediate check (default: 60)
+
+**Frontend UI**:
+- Settings → Charting Mode → "End of Day" toggle
+- ContinuousMode component shows: pulsing status, running timer, live transcript preview, encounter count, last encounter summary, buffer word count
+- History window shows "Auto-charted" badge and "Encounter #N" for continuous mode sessions
+
+**Session Metadata**:
+- `charting_mode`: `"continuous"` for auto-detected encounters
+- `encounter_number`: Sequential number within the day (e.g., 3 for third encounter)
+
+**Files**:
+- Backend: `continuous_mode.rs` (TranscriptBuffer, encounter detector, main loop), `commands/continuous.rs` (Tauri commands)
+- Frontend: `useContinuousMode.ts` (hook), `ContinuousMode.tsx` (dashboard component)
+- Settings: `config.rs`, `SettingsDrawer.tsx`, `useSettings.ts`
+- Archive: `local_archive.rs` (ArchiveMetadata with charting_mode, encounter_number)
+
+**Workflow**:
+1. Enable "End of Day" in Settings → Charting Mode
+2. Click "Start Recording" on the continuous mode dashboard
+3. Conduct patient visits normally - no interaction needed
+4. Encounters are auto-detected and SOAP notes generated
+5. At end of day, review all encounters in History window
+6. Click "Stop" to end continuous recording
+
 ## Settings Schema
 
 ```typescript
@@ -298,6 +356,16 @@ interface Settings {
   miis_enabled: boolean;           // Enable image suggestions during recording
   miis_server_url: string;         // MIIS server URL
 
+  // Screen Capture (for Vision SOAP)
+  screen_capture_enabled: boolean;        // Enable periodic screenshot capture
+  screen_capture_interval_secs: number;   // Capture interval (default: 30)
+
+  // Continuous Charting Mode
+  charting_mode: 'session' | 'continuous';  // Default: 'session'
+  continuous_auto_copy_soap: boolean;       // Auto-copy SOAP in continuous mode (default: false)
+  encounter_check_interval_secs: number;    // Encounter detection interval (default: 120)
+  encounter_silence_trigger_secs: number;   // Silence trigger threshold (default: 60)
+
   // Debug
   debug_storage_enabled: boolean;  // PHI storage for dev only
 }
@@ -329,6 +397,7 @@ interface Settings {
 - `ReadyMode.tsx` - Pre-recording (checklist, device selection)
 - `RecordingMode.tsx` - Active recording (timer, quality, transcript preview)
 - `ReviewMode.tsx` - Post-recording (transcript, SOAP, EMR sync)
+- `ContinuousMode.tsx` - Continuous charting dashboard (monitoring, live transcript, encounter stats)
 
 **Key Hooks** (`src/hooks/`):
 - `useSessionState` - Recording state, transcript, biomarkers
@@ -340,6 +409,7 @@ interface Settings {
 - `useClinicalChat` - Clinical assistant chat during recording
 - `usePredictiveHint` - LLM hints + concept extraction during recording
 - `useMiisImages` - Medical illustration suggestions from MIIS server
+- `useContinuousMode` - Continuous charting mode state and controls
 
 **Speaker Enrollment** (`src/components/`):
 - `SpeakerEnrollment.tsx` - Profile list, enrollment form, audio recording
@@ -363,6 +433,9 @@ interface Settings {
 | SOAP not copying to clipboard | Check Tauri clipboard plugin permissions |
 | MIIS images not loading | Check CSP allows MIIS server domain in `tauri.conf.json` |
 | MIIS same images for all queries | Server needs embedder enabled for semantic matching |
+| Continuous mode not detecting encounters | Check LLM router connection, increase `encounter_check_interval_secs` |
+| Continuous mode UI not showing | Verify `charting_mode: "continuous"` in config.json, restart app |
+| "Auto-charted" badge not appearing | Session was created in session mode, not continuous mode |
 
 ## Testing Best Practices
 
@@ -401,3 +474,4 @@ See `docs/adr/` for Architecture Decision Records:
 | 0016 | Speaker-verified auto-start |
 | 0017 | Clinical assistant chat |
 | 0018 | MIIS medical illustration integration |
+| 0019 | Continuous charting mode (end of day) |

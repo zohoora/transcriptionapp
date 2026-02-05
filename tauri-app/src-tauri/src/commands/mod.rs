@@ -5,6 +5,7 @@
 mod archive;
 mod audio;
 mod clinical_chat;
+mod continuous;
 mod listening;
 mod medplum;
 mod miis;
@@ -21,6 +22,7 @@ mod whisper_server;
 pub use archive::*;
 pub use audio::*;
 pub use clinical_chat::*;
+pub use continuous::*;
 pub use listening::*;
 pub use medplum::*;
 pub use miis::*;

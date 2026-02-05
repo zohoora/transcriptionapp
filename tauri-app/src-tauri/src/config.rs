@@ -80,6 +80,27 @@ pub struct Settings {
     pub screen_capture_enabled: bool,
     #[serde(default = "default_screen_capture_interval_secs")]
     pub screen_capture_interval_secs: u32,
+    // Continuous charting mode settings
+    #[serde(default = "default_charting_mode")]
+    pub charting_mode: String,
+    #[serde(default)]
+    pub continuous_auto_copy_soap: bool,
+    #[serde(default = "default_encounter_check_interval_secs")]
+    pub encounter_check_interval_secs: u32,
+    #[serde(default = "default_encounter_silence_trigger_secs")]
+    pub encounter_silence_trigger_secs: u32,
+}
+
+fn default_charting_mode() -> String {
+    "session".to_string()
+}
+
+fn default_encounter_check_interval_secs() -> u32 {
+    120 // 2 minutes
+}
+
+fn default_encounter_silence_trigger_secs() -> u32 {
+    60 // 1 minute
 }
 
 fn default_screen_capture_interval_secs() -> u32 {
@@ -214,6 +235,10 @@ impl Default for Settings {
             miis_server_url: default_miis_server_url(),
             screen_capture_enabled: false,
             screen_capture_interval_secs: default_screen_capture_interval_secs(),
+            charting_mode: default_charting_mode(),
+            continuous_auto_copy_soap: false,
+            encounter_check_interval_secs: default_encounter_check_interval_secs(),
+            encounter_silence_trigger_secs: default_encounter_silence_trigger_secs(),
         }
     }
 }
@@ -447,6 +472,15 @@ pub struct Config {
     pub screen_capture_enabled: bool,
     #[serde(default = "default_screen_capture_interval_secs")]
     pub screen_capture_interval_secs: u32,
+    // Continuous charting mode settings
+    #[serde(default = "default_charting_mode")]
+    pub charting_mode: String,
+    #[serde(default)]
+    pub continuous_auto_copy_soap: bool,
+    #[serde(default = "default_encounter_check_interval_secs")]
+    pub encounter_check_interval_secs: u32,
+    #[serde(default = "default_encounter_silence_trigger_secs")]
+    pub encounter_silence_trigger_secs: u32,
 }
 
 fn default_max_speakers() -> usize {
@@ -528,6 +562,10 @@ impl Default for Config {
             miis_server_url: default_miis_server_url(),
             screen_capture_enabled: false,
             screen_capture_interval_secs: default_screen_capture_interval_secs(),
+            charting_mode: default_charting_mode(),
+            continuous_auto_copy_soap: false,
+            encounter_check_interval_secs: default_encounter_check_interval_secs(),
+            encounter_silence_trigger_secs: default_encounter_silence_trigger_secs(),
         }
     }
 }
@@ -700,6 +738,10 @@ impl Config {
             miis_server_url: self.miis_server_url.clone(),
             screen_capture_enabled: self.screen_capture_enabled,
             screen_capture_interval_secs: self.screen_capture_interval_secs,
+            charting_mode: self.charting_mode.clone(),
+            continuous_auto_copy_soap: self.continuous_auto_copy_soap,
+            encounter_check_interval_secs: self.encounter_check_interval_secs,
+            encounter_silence_trigger_secs: self.encounter_silence_trigger_secs,
         }
     }
 
@@ -747,6 +789,11 @@ impl Config {
         // Screen capture settings
         self.screen_capture_enabled = settings.screen_capture_enabled;
         self.screen_capture_interval_secs = settings.screen_capture_interval_secs;
+        // Continuous charting mode settings
+        self.charting_mode = settings.charting_mode.clone();
+        self.continuous_auto_copy_soap = settings.continuous_auto_copy_soap;
+        self.encounter_check_interval_secs = settings.encounter_check_interval_secs;
+        self.encounter_silence_trigger_secs = settings.encounter_silence_trigger_secs;
     }
 }
 
@@ -860,6 +907,10 @@ mod tests {
             miis_server_url: "http://172.16.100.45:7843".to_string(),
             screen_capture_enabled: false,
             screen_capture_interval_secs: 30,
+            charting_mode: "session".to_string(),
+            continuous_auto_copy_soap: false,
+            encounter_check_interval_secs: 120,
+            encounter_silence_trigger_secs: 60,
         };
 
         let mut config = Config::default();
@@ -967,6 +1018,10 @@ mod tests {
             miis_server_url: default_miis_server_url(),
             screen_capture_enabled: false,
             screen_capture_interval_secs: 30,
+            charting_mode: default_charting_mode(),
+            continuous_auto_copy_soap: false,
+            encounter_check_interval_secs: default_encounter_check_interval_secs(),
+            encounter_silence_trigger_secs: default_encounter_silence_trigger_secs(),
         };
 
         let mut config = Config::default();

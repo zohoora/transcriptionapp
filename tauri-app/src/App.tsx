@@ -9,6 +9,7 @@ import {
   ReadyMode,
   RecordingMode,
   ReviewMode,
+  ContinuousMode,
 } from './components';
 import type { SyncStatus } from './components';
 import {
@@ -25,7 +26,8 @@ import {
 import { usePredictiveHint } from './hooks/usePredictiveHint';
 import { useMiisImages } from './hooks/useMiisImages';
 import { useScreenCapture } from './hooks/useScreenCapture';
-import type { Settings, WhisperServerStatus } from './types';
+import { useContinuousMode } from './hooks/useContinuousMode';
+import type { Settings, WhisperServerStatus, ChartingMode } from './types';
 
 // UI Mode type
 type UIMode = 'ready' | 'recording' | 'review';
@@ -75,6 +77,7 @@ function App() {
     setOllamaModels,  // Still needed for connection sync
     soapOptions,
     generateSoapNote,
+    generateVisionSoapNote,
     updateSoapDetailLevel,
     updateSoapFormat,
     updateSoapCustomInstructions,
@@ -128,6 +131,20 @@ function App() {
     settings?.llm_client_id || 'ai-scribe'
   );
 
+  // Derive charting mode from settings
+  const chartingMode: ChartingMode = (settings?.charting_mode as ChartingMode) || 'session';
+  const isContinuousMode = chartingMode === 'continuous';
+
+  // Continuous mode hook
+  const {
+    isActive: continuousModeActive,
+    stats: continuousModeStats,
+    liveTranscript: continuousLiveTranscript,
+    start: startContinuousMode,
+    stop: stopContinuousMode,
+    error: continuousModeError,
+  } = useContinuousMode();
+
   // Ref to track if an auto-started session is still pending greeting confirmation
   const autoStartPendingRef = useRef(false);
 
@@ -173,7 +190,7 @@ function App() {
     startListening,
     stopListening,
   } = useAutoDetection(
-    pendingSettings?.auto_start_enabled ?? false,
+    !isContinuousMode && (pendingSettings?.auto_start_enabled ?? false),
     {
       onStartRecording: handleAutoStartRecording,
       onGreetingConfirmed: handleGreetingConfirmed,
@@ -572,8 +589,46 @@ function App() {
     soapOptions,
   ]);
 
-  // Auto-generate SOAP note when session completes (if Ollama is connected)
+  // Generate Vision SOAP note (experimental — uses transcript + screenshots)
+  const handleGenerateVisionSoap = useCallback(async (imagePath: string) => {
+    const optionsWithNotes = sessionNotes.trim()
+      ? { ...soapOptions, session_notes: sessionNotes }
+      : soapOptions;
+    const result = await generateVisionSoapNote(editedTranscript, biomarkers?.recent_events, optionsWithNotes, status.session_id, imagePath);
+    if (result) {
+      // Wrap as MultiPatientSoapResult so ReviewMode can display it
+      setSoapResult({
+        notes: [{ patient_label: 'Vision', speaker_id: 'All', content: result.content }],
+        physician_speaker: null,
+        generated_at: result.generated_at,
+        model_used: result.model_used,
+      });
+    }
+  }, [
+    editedTranscript,
+    biomarkers?.recent_events,
+    generateVisionSoapNote,
+    setSoapResult,
+    status.session_id,
+    sessionNotes,
+    soapOptions,
+  ]);
+
+  // Screen capture screenshot count for UI
+  const [screenshotCount, setScreenshotCount] = useState(0);
   useEffect(() => {
+    if (uiMode !== 'review') return;
+    let cancelled = false;
+    invoke<{ running: boolean; screenshot_count: number }>('get_screen_capture_status')
+      .then(s => { if (!cancelled) setScreenshotCount(s.screenshot_count); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [uiMode]);
+
+  // Auto-generate SOAP note when session completes (if Ollama is connected)
+  // Disabled in continuous mode — encounter detector handles SOAP generation
+  useEffect(() => {
+    if (isContinuousMode) return;
     // Only auto-generate when:
     // 1. Session just completed
     // 2. Ollama is connected
@@ -596,6 +651,7 @@ function App() {
     soapResult,
     transcript.finalized_text,
     handleGenerateSoap,
+    isContinuousMode,
   ]);
 
   // Open history window
@@ -653,7 +709,21 @@ function App() {
 
       {/* Mode-based content wrapped in ErrorBoundary */}
       <ErrorBoundary>
-        {uiMode === 'ready' && (
+        {/* Continuous charting mode */}
+        {isContinuousMode && (
+          <ContinuousMode
+            isActive={continuousModeActive}
+            stats={continuousModeStats}
+            liveTranscript={continuousLiveTranscript}
+            error={continuousModeError}
+            onStart={startContinuousMode}
+            onStop={stopContinuousMode}
+            onViewHistory={openHistoryWindow}
+          />
+        )}
+
+        {/* Session-based mode (original flow) */}
+        {!isContinuousMode && uiMode === 'ready' && (
           <ReadyMode
             audioLevel={audioQuality ? Math.min(100, (audioQuality.rms_db + 60) / 0.6) : 0}
             errorMessage={permissionError || listeningError || (status.state === 'error' ? status.error_message : null)}
@@ -673,7 +743,7 @@ function App() {
           />
         )}
 
-        {uiMode === 'recording' && (
+        {!isContinuousMode && uiMode === 'recording' && (
           <RecordingMode
             elapsedMs={localElapsedMs}
             audioQuality={audioQuality}
@@ -709,7 +779,7 @@ function App() {
           />
         )}
 
-        {uiMode === 'review' && (
+        {!isContinuousMode && uiMode === 'review' && (
           <ReviewMode
             elapsedMs={status.elapsed_ms || localElapsedMs}
             audioQuality={audioQuality}
@@ -728,6 +798,8 @@ function App() {
             biomarkers={biomarkers}
             whisperMode={pendingSettings?.whisper_mode || 'local'}
             whisperModel={getWhisperModelName(pendingSettings?.whisper_mode, pendingSettings?.whisper_server_model, pendingSettings?.model)}
+            onGenerateVisionSoap={handleGenerateVisionSoap}
+            screenshotCount={screenshotCount}
             authState={authState}
             isSyncing={isSyncing}
             syncSuccess={syncSuccess}

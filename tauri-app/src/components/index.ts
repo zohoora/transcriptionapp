@@ -7,7 +7,7 @@ export { SettingsDrawer, type PendingSettings } from './SettingsDrawer';
 export { SyncStatusBar } from './SyncStatusBar';
 
 // Mode components
-export { ReadyMode, RecordingMode, ReviewMode } from './modes';
+export { ReadyMode, RecordingMode, ReviewMode, ContinuousMode } from './modes';
 
 // Medplum EMR components
 export { AuthProvider, useAuth } from './AuthProvider';

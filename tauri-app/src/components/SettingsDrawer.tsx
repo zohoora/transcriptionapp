@@ -47,6 +47,10 @@ export interface PendingSettings {
   // Screen capture settings
   screen_capture_enabled: boolean;
   screen_capture_interval_secs: number;
+  // Continuous charting mode
+  charting_mode: string;
+  encounter_check_interval_secs: number;
+  encounter_silence_trigger_secs: number;
 }
 
 interface SettingsDrawerProps {
@@ -126,6 +130,66 @@ export const SettingsDrawer = memo(function SettingsDrawer({
         <div className="settings-drawer-content">
           {pendingSettings && (
             <>
+              {/* Charting Mode */}
+              <div className="settings-section">
+                <h3>Charting Mode</h3>
+                <div className="settings-row">
+                  <div className="charting-mode-toggle">
+                    <button
+                      className={`charting-mode-btn ${(pendingSettings as PendingSettings & { charting_mode?: string }).charting_mode !== 'continuous' ? 'active' : ''}`}
+                      onClick={() => onSettingsChange({ ...pendingSettings, charting_mode: 'session' } as PendingSettings)}
+                    >
+                      After Every Session
+                    </button>
+                    <button
+                      className={`charting-mode-btn ${(pendingSettings as PendingSettings & { charting_mode?: string }).charting_mode === 'continuous' ? 'active' : ''}`}
+                      onClick={() => onSettingsChange({ ...pendingSettings, charting_mode: 'continuous' } as PendingSettings)}
+                    >
+                      End of Day
+                    </button>
+                  </div>
+                </div>
+                {(pendingSettings as PendingSettings & { charting_mode?: string }).charting_mode === 'continuous' && (
+                  <>
+                    <p className="settings-hint">
+                      Records continuously. Encounters are auto-detected and SOAP notes generated automatically.
+                    </p>
+                    <div className="settings-row">
+                      <label>Encounter check interval</label>
+                      <div className="settings-slider-row">
+                        <input
+                          type="range"
+                          min="60"
+                          max="300"
+                          step="30"
+                          value={(pendingSettings as PendingSettings & { encounter_check_interval_secs?: number }).encounter_check_interval_secs ?? 120}
+                          onChange={(e) => onSettingsChange({ ...pendingSettings, encounter_check_interval_secs: Number(e.target.value) } as PendingSettings)}
+                        />
+                        <span className="settings-slider-value">
+                          {(pendingSettings as PendingSettings & { encounter_check_interval_secs?: number }).encounter_check_interval_secs ?? 120}s
+                        </span>
+                      </div>
+                    </div>
+                    <div className="settings-row">
+                      <label>Silence trigger</label>
+                      <div className="settings-slider-row">
+                        <input
+                          type="range"
+                          min="30"
+                          max="180"
+                          step="15"
+                          value={(pendingSettings as PendingSettings & { encounter_silence_trigger_secs?: number }).encounter_silence_trigger_secs ?? 60}
+                          onChange={(e) => onSettingsChange({ ...pendingSettings, encounter_silence_trigger_secs: Number(e.target.value) } as PendingSettings)}
+                        />
+                        <span className="settings-slider-value">
+                          {(pendingSettings as PendingSettings & { encounter_silence_trigger_secs?: number }).encounter_silence_trigger_secs ?? 60}s
+                        </span>
+                      </div>
+                    </div>
+                  </>
+                )}
+              </div>
+
               {/* Whisper Server Settings (remote only mode) */}
               <div className="settings-group">
                 <label className="settings-label" htmlFor="whisper-server-url">Whisper Server URL</label>

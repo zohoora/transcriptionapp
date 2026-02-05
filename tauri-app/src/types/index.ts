@@ -96,6 +96,11 @@ export interface Settings {
   // Screen capture
   screen_capture_enabled: boolean;
   screen_capture_interval_secs: number;
+  // Continuous charting mode
+  charting_mode: ChartingMode;
+  continuous_auto_copy_soap: boolean;
+  encounter_check_interval_secs: number;
+  encounter_silence_trigger_secs: number;
 }
 
 // Listening mode types (auto-session detection)
@@ -604,6 +609,8 @@ export interface LocalArchiveSummary {
   has_soap_note: boolean;
   has_audio: boolean;
   auto_ended: boolean;
+  charting_mode: ChartingMode | null;
+  encounter_number: number | null;
 }
 
 /** Metadata for an archived session */
@@ -622,6 +629,10 @@ export interface LocalArchiveMetadata {
   soap_detail_level: number | null;
   /** SOAP format used when generating ('problem_based' or 'comprehensive'), null if no SOAP or pre-feature */
   soap_format: SoapFormat | null;
+  /** Charting mode that created this session ('session' or 'continuous') */
+  charting_mode: ChartingMode | null;
+  /** Encounter number within a continuous mode day */
+  encounter_number: number | null;
 }
 
 /** Detailed archived session (for detail view) */
@@ -631,6 +642,41 @@ export interface LocalArchiveDetails {
   transcript: string | null;
   soap_note: string | null;
   audio_path: string | null;
+}
+
+// ============================================================================
+// Continuous Charting Mode Types
+// ============================================================================
+
+/** Charting mode: session-based or continuous all-day */
+export type ChartingMode = 'session' | 'continuous';
+
+/** Stats for the continuous mode monitoring dashboard */
+export interface ContinuousModeStats {
+  state: 'idle' | 'recording' | 'checking' | 'error';
+  recording_since: string;
+  encounters_detected: number;
+  last_encounter_at: string | null;
+  last_encounter_words: number | null;
+  last_error: string | null;
+  buffer_word_count: number;
+}
+
+/** Event payloads emitted from continuous mode backend */
+export type ContinuousModeEventType =
+  | 'started'
+  | 'encounter_detected'
+  | 'soap_generated'
+  | 'soap_failed'
+  | 'checking'
+  | 'error'
+  | 'stopped';
+
+export interface ContinuousModeEvent {
+  type: ContinuousModeEventType;
+  session_id?: string;
+  word_count?: number;
+  error?: string;
 }
 
 /** Auto-end event payload */

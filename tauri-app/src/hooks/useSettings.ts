@@ -38,6 +38,10 @@ export interface PendingSettings {
   // Screen capture settings
   screen_capture_enabled: boolean;
   screen_capture_interval_secs: number;
+  // Continuous charting mode
+  charting_mode: string;
+  encounter_check_interval_secs: number;
+  encounter_silence_trigger_secs: number;
 }
 
 export interface UseSettingsResult {
@@ -95,6 +99,9 @@ export function useSettings(): UseSettingsResult {
     miis_server_url: s.miis_server_url,
     screen_capture_enabled: s.screen_capture_enabled,
     screen_capture_interval_secs: s.screen_capture_interval_secs,
+    charting_mode: s.charting_mode,
+    encounter_check_interval_secs: s.encounter_check_interval_secs,
+    encounter_silence_trigger_secs: s.encounter_silence_trigger_secs,
   }), []);
 
   // Load settings
@@ -154,6 +161,10 @@ export function useSettings(): UseSettingsResult {
         miis_server_url: pendingSettings.miis_server_url,
         screen_capture_enabled: pendingSettings.screen_capture_enabled,
         screen_capture_interval_secs: pendingSettings.screen_capture_interval_secs,
+        charting_mode: pendingSettings.charting_mode as Settings['charting_mode'],
+        continuous_auto_copy_soap: settings.continuous_auto_copy_soap,
+        encounter_check_interval_secs: pendingSettings.encounter_check_interval_secs,
+        encounter_silence_trigger_secs: pendingSettings.encounter_silence_trigger_secs,
       };
 
       await invoke('set_settings', { settings: newSettings });
@@ -195,6 +206,9 @@ export function useSettings(): UseSettingsResult {
       [settings.miis_server_url, pendingSettings.miis_server_url],
       [settings.screen_capture_enabled, pendingSettings.screen_capture_enabled],
       [settings.screen_capture_interval_secs, pendingSettings.screen_capture_interval_secs],
+      [settings.charting_mode, pendingSettings.charting_mode],
+      [settings.encounter_check_interval_secs, pendingSettings.encounter_check_interval_secs],
+      [settings.encounter_silence_trigger_secs, pendingSettings.encounter_silence_trigger_secs],
     ];
 
     return comparisons.some(([saved, pending]) => saved !== pending);

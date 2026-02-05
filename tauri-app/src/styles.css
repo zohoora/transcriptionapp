@@ -1390,6 +1390,80 @@ body {
   cursor: pointer;
 }
 
+/* Vision Thumbnail Picker */
+.vision-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px;
+  background: var(--bg-secondary);
+  border-radius: 6px;
+  border: 1px solid var(--border-color);
+}
+
+.vision-picker-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.vision-picker-title {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+
+.vision-picker-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+  gap: 6px;
+}
+
+.vision-thumb-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 4px;
+  background: var(--bg-primary);
+  border: 2px solid transparent;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.vision-thumb-btn:hover {
+  border-color: var(--accent-blue);
+  box-shadow: 0 0 0 1px var(--accent-blue);
+}
+
+.vision-thumb-img {
+  width: 100%;
+  height: auto;
+  border-radius: 4px;
+  object-fit: cover;
+}
+
+.vision-thumb-label {
+  font-size: 9px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.btn-link {
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  font-size: 12px;
+  cursor: pointer;
+  padding: 2px 4px;
+  text-decoration: underline;
+}
+
+.btn-link:hover {
+  color: var(--text-primary);
+}
+
 .soap-note-content {
   display: flex;
   flex-direction: column;
@@ -2911,6 +2985,37 @@ body {
   color: #9b59b6;
 }
 
+.badge.charted-badge {
+  background: rgba(230, 126, 34, 0.15);
+  color: #e67e22;
+}
+
+/* Calendar with Today button */
+.calendar-with-today {
+  position: relative;
+}
+
+.btn-today {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  padding: 3px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-subtle);
+  border-radius: 4px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.btn-today:hover {
+  background: var(--accent-idle);
+  color: #fff;
+  border-color: var(--accent-idle);
+}
+
 /* History footer */
 .history-footer {
   display: flex;
@@ -3057,6 +3162,11 @@ body {
 .history-content.detail-content .summary-badge.auto {
   background: rgba(155, 89, 182, 0.15);
   color: #9b59b6;
+}
+
+.history-content.detail-content .summary-badge.charted {
+  background: rgba(230, 126, 34, 0.15);
+  color: #e67e22;
 }
 
 /* Use same review-tabs styling */
@@ -6353,4 +6463,201 @@ button.review-section-header-left:focus {
 .btn-cancel-recording:hover {
   background: var(--bg-hover);
   color: var(--text-primary);
+}
+
+/* ============================================================================
+   Continuous Charting Mode
+   ============================================================================ */
+
+.continuous-mode {
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* Idle state */
+.continuous-idle {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 12px;
+  padding: 24px 0;
+}
+
+.continuous-icon {
+  color: var(--accent-blue);
+  opacity: 0.8;
+}
+
+.continuous-idle h3 {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.continuous-description {
+  font-size: 12px;
+  color: var(--text-secondary);
+  line-height: 1.5;
+  max-width: 260px;
+}
+
+.continuous-start-btn {
+  margin-top: 8px;
+  width: 100%;
+  max-width: 200px;
+}
+
+/* Status header with pulsing dot */
+.continuous-status-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.continuous-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.continuous-dot.recording {
+  background-color: var(--accent-recording);
+  animation: continuous-pulse 2s ease-in-out infinite;
+}
+
+.continuous-dot.checking {
+  background-color: var(--accent-blue);
+  animation: continuous-pulse 0.8s ease-in-out infinite;
+}
+
+@keyframes continuous-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+.continuous-status-text {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.continuous-timer {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+/* Stats grid */
+.continuous-stats {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.continuous-stat {
+  background: var(--bg-secondary);
+  border-radius: 8px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+
+.continuous-stat-value {
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.continuous-stat-label {
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+/* Last encounter */
+.continuous-last-encounter {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.continuous-section-label {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-muted);
+}
+
+.continuous-last-encounter-info {
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+/* Transcript preview */
+.continuous-transcript-section {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1;
+  min-height: 0;
+}
+
+.continuous-transcript-preview {
+  background: var(--bg-secondary);
+  border-radius: 8px;
+  padding: 10px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+  max-height: 200px;
+  overflow-y: auto;
+  flex: 1;
+}
+
+.continuous-transcript-preview p {
+  margin: 0;
+  word-wrap: break-word;
+}
+
+.continuous-transcript-empty {
+  font-style: italic;
+  color: var(--text-muted);
+}
+
+/* Error display */
+.continuous-error {
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  border-radius: 6px;
+  padding: 8px 10px;
+  font-size: 12px;
+  color: #dc2626;
+}
+
+/* Actions */
+.continuous-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.btn-danger {
+  padding: 8px 16px;
+  font-size: 13px;
+  font-weight: 500;
+  background: #dc2626;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.btn-danger:hover {
+  background: #b91c1c;
 }
