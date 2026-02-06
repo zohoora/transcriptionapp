@@ -15,7 +15,7 @@ use voice_activity_detector::VoiceActivityDetector;
 
 use crate::audio::{calculate_ring_buffer_capacity, get_device, select_input_config, AudioCapture, AudioResampler};
 use crate::preprocessing::AudioPreprocessor;
-use crate::transcription::{Segment, Utterance, WhisperProvider};
+use crate::transcription::{Segment, Utterance};
 use crate::vad::{VadConfig, VadGatedPipeline};
 use crate::whisper_server::WhisperServerClient;
 
@@ -34,34 +34,14 @@ use std::collections::VecDeque;
 /// VAD chunk size at 16kHz
 const VAD_CHUNK_SIZE: usize = 512;
 
-/// Transcription provider - remote Whisper server only
-/// Note: Local variant kept for potential future use but marked dead_code
-enum TranscriptionProvider {
-    /// Local Whisper model via whisper-rs (not currently used)
-    #[allow(dead_code)]
-    Local(WhisperProvider),
-    /// Remote Whisper server (faster-whisper-server/Speaches)
-    Remote(WhisperServerClient),
-}
-
-impl TranscriptionProvider {
-    /// Transcribe an utterance and return a segment
-    fn transcribe(&self, utterance: &Utterance, context: Option<&str>, language: &str) -> Result<Segment, String> {
-        match self {
-            TranscriptionProvider::Local(whisper) => {
-                whisper.transcribe(utterance, context).map_err(|e| e.to_string())
-            }
-            TranscriptionProvider::Remote(client) => {
-                // Use blocking transcribe for remote server
-                let text = client.transcribe_blocking(&utterance.audio, language)?;
-                Ok(Segment::new(
-                    utterance.start_ms,
-                    utterance.end_ms,
-                    text,
-                ))
-            }
-        }
-    }
+/// Transcribe an utterance via the remote Whisper server and return a segment.
+fn transcribe_utterance(client: &WhisperServerClient, utterance: &Utterance, language: &str) -> Result<Segment, String> {
+    let text = client.transcribe_blocking(&utterance.audio, language)?;
+    Ok(Segment::new(
+        utterance.start_ms,
+        utterance.end_ms,
+        text,
+    ))
 }
 
 /// Message from the transcription pipeline to the session controller
@@ -107,7 +87,6 @@ pub struct PipelineConfig {
     pub vad_threshold: f32,
     pub silence_to_flush_ms: u32,
     pub max_utterance_ms: u32,
-    pub n_threads: i32,
     // Diarization settings
     pub diarization_enabled: bool,
     pub diarization_model_path: Option<PathBuf>,
@@ -128,7 +107,6 @@ pub struct PipelineConfig {
     pub preprocessing_highpass_hz: u32,
     pub preprocessing_agc_target_rms: f32,
     // Whisper server settings (for remote transcription)
-    pub whisper_mode: String,
     pub whisper_server_url: String,
     pub whisper_server_model: String,
     // Initial audio buffer from listening mode (optimistic recording)
@@ -149,7 +127,6 @@ impl Default for PipelineConfig {
             vad_threshold: 0.5,
             silence_to_flush_ms: 500,
             max_utterance_ms: 25000,
-            n_threads: 4,
             diarization_enabled: false,
             diarization_model_path: None,
             speaker_similarity_threshold: 0.5,
@@ -162,7 +139,6 @@ impl Default for PipelineConfig {
             preprocessing_enabled: true,
             preprocessing_highpass_hz: 80,
             preprocessing_agc_target_rms: 0.1,
-            whisper_mode: "remote".to_string(),  // Always use remote server
             whisper_server_url: "http://172.16.100.45:8001".to_string(),
             whisper_server_model: "large-v3-turbo".to_string(),
             initial_audio_buffer: None,
@@ -206,6 +182,17 @@ impl PipelineHandle {
     #[allow(dead_code)] // Useful for future monitoring features
     pub fn is_running(&self) -> bool {
         !self.stop_flag.load(Ordering::Relaxed)
+    }
+}
+
+impl Drop for PipelineHandle {
+    fn drop(&mut self) {
+        if !self.stop_flag.load(Ordering::Relaxed) {
+            self.stop_flag.store(true, Ordering::SeqCst);
+        }
+        if let Some(handle) = self.processor_handle.take() {
+            let _ = handle.join();
+        }
     }
 }
 
@@ -292,11 +279,10 @@ fn run_pipeline_thread_inner(
     capture.start()?;
     info!("Audio capture started");
 
-    // Create transcription provider (always remote)
+    // Create remote Whisper client
     info!("Using remote Whisper server at {}", config.whisper_server_url);
-    let client = WhisperServerClient::new(&config.whisper_server_url, &config.whisper_server_model)
+    let whisper_client = WhisperServerClient::new(&config.whisper_server_url, &config.whisper_server_model)
         .map_err(|e| anyhow::anyhow!("Failed to create Whisper server client: {}", e))?;
-    let provider = TranscriptionProvider::Remote(client);
 
     // Create resampler
     let mut resampler = AudioResampler::new(sample_rate)?;
@@ -648,14 +634,15 @@ fn run_pipeline_thread_inner(
                     }
                 }
 
-                let context_ref = if context.is_empty() {
+                // TODO: Pass context to transcription for improved accuracy
+                let _context_ref = if context.is_empty() {
                     None
                 } else {
                     Some(context.as_str())
                 };
 
                 // Transcribe (using enhanced audio if available)
-                match provider.transcribe(&utterance, context_ref, &config.language) {
+                match transcribe_utterance(&whisper_client, &utterance, &config.language) {
                     Ok(mut segment) => {
                         if !segment.text.is_empty() {
                             // Only run diarization if we have actual text
@@ -846,6 +833,8 @@ fn run_pipeline_thread_inner(
                             let _ = tx.blocking_send(PipelineMessage::AutoEndSilence {
                                 silence_duration_ms: silence_ms,
                             });
+                            // Reset to prevent duplicate messages
+                            continuous_silence_start = None;
                             // Set stop flag to trigger graceful shutdown
                             stop_flag.store(true, Ordering::SeqCst);
                         } else if silence_duration >= warning_threshold {
@@ -912,14 +901,15 @@ fn run_pipeline_thread_inner(
                 }
             }
 
-            let context_ref = if context.is_empty() {
+            // TODO: Pass context to transcription for improved accuracy
+            let _context_ref = if context.is_empty() {
                 None
             } else {
                 Some(context.as_str())
             };
 
             // Transcribe (using enhanced audio if available)
-            match provider.transcribe(&utterance, context_ref, &config.language) {
+            match transcribe_utterance(&whisper_client, &utterance, &config.language) {
                 Ok(mut segment) => {
                     if !segment.text.is_empty() {
                         // Use original audio for diarization (speaker fingerprints)
@@ -1085,7 +1075,7 @@ fn run_pipeline_thread_inner(
     #[cfg(feature = "enhancement")]
     drop(enhancement);
 
-    drop(provider);
+    drop(whisper_client);
 
     // Small delay to let ONNX/Whisper C++ destructors complete
     std::thread::sleep(Duration::from_millis(50));

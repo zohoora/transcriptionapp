@@ -1,5 +1,5 @@
 use std::collections::VecDeque;
-use tracing::{debug, trace};
+use tracing::debug;
 use voice_activity_detector::VoiceActivityDetector;
 
 use crate::transcription::Utterance;

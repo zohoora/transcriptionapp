@@ -41,7 +41,7 @@ mod tests {
                     + (t * 250.0 * std::f32::consts::TAU).sin() * 0.2
                     + (t * 400.0 * std::f32::consts::TAU).sin() * 0.1;
                 // Add envelope (words have gaps)
-                let envelope = ((t * 3.0).sin().abs() * 0.7 + 0.3);
+                let envelope = (t * 3.0).sin().abs() * 0.7 + 0.3;
                 speech * envelope
             })
             .collect()

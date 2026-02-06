@@ -257,18 +257,6 @@ impl std::fmt::Display for SettingsValidationError {
 }
 
 impl Settings {
-    /// Valid whisper model names (for local mode)
-    const VALID_MODELS: &'static [&'static str] = &[
-        // Standard models
-        "tiny", "tiny.en", "base", "base.en", "small", "small.en", "medium", "medium.en",
-        // Large models
-        "large", "large-v2", "large-v3", "large-v3-turbo",
-        // Quantized models
-        "large-v3-q5_0", "large-v3-turbo-q5_0",
-        // Distil-Whisper models
-        "distil-large-v3", "distil-large-v3.en",
-    ];
-
     /// Valid output formats
     const VALID_OUTPUT_FORMATS: &'static [&'static str] = &["paragraphs", "single_paragraph"];
 
@@ -350,6 +338,87 @@ impl Settings {
                 self.output_format,
                 Self::VALID_OUTPUT_FORMATS.join(", ")
             );
+        }
+
+        // --- Cross-field and range constraints ---
+
+        // SOAP detail level must be 1-10
+        if self.soap_detail_level < 1 || self.soap_detail_level > 10 {
+            errors.push(SettingsValidationError {
+                field: "soap_detail_level".to_string(),
+                message: format!(
+                    "SOAP detail level {} is out of range. Must be between 1 and 10",
+                    self.soap_detail_level
+                ),
+            });
+        }
+
+        // Auto-end silence must be at least 10 seconds if enabled to prevent accidental sessions
+        if self.auto_end_enabled && self.auto_end_silence_ms > 0 && self.auto_end_silence_ms < 10_000 {
+            errors.push(SettingsValidationError {
+                field: "auto_end_silence_ms".to_string(),
+                message: format!(
+                    "Auto-end silence {}ms is too short. Must be at least 10000ms (10 seconds) to avoid premature session ends",
+                    self.auto_end_silence_ms
+                ),
+            });
+        }
+
+        // Greeting sensitivity must be 0.0-1.0
+        if let Some(sensitivity) = self.greeting_sensitivity {
+            if !(0.0..=1.0).contains(&sensitivity) {
+                errors.push(SettingsValidationError {
+                    field: "greeting_sensitivity".to_string(),
+                    message: format!(
+                        "Greeting sensitivity {} is out of range. Must be between 0.0 and 1.0",
+                        sensitivity
+                    ),
+                });
+            }
+        }
+
+        // Encounter check interval must be at least 30 seconds
+        if self.encounter_check_interval_secs > 0 && self.encounter_check_interval_secs < 30 {
+            errors.push(SettingsValidationError {
+                field: "encounter_check_interval_secs".to_string(),
+                message: format!(
+                    "Encounter check interval {}s is too frequent. Must be at least 30 seconds",
+                    self.encounter_check_interval_secs
+                ),
+            });
+        }
+
+        // Encounter silence trigger must be at least 10 seconds
+        if self.encounter_silence_trigger_secs > 0 && self.encounter_silence_trigger_secs < 10 {
+            errors.push(SettingsValidationError {
+                field: "encounter_silence_trigger_secs".to_string(),
+                message: format!(
+                    "Encounter silence trigger {}s is too short. Must be at least 10 seconds",
+                    self.encounter_silence_trigger_secs
+                ),
+            });
+        }
+
+        // Charting mode must be a known value
+        if self.charting_mode != "session" && self.charting_mode != "continuous" {
+            errors.push(SettingsValidationError {
+                field: "charting_mode".to_string(),
+                message: format!(
+                    "Unknown charting mode '{}'. Must be 'session' or 'continuous'",
+                    self.charting_mode
+                ),
+            });
+        }
+
+        // SOAP format must be a known value
+        if self.soap_format != "problem_based" && self.soap_format != "comprehensive" {
+            errors.push(SettingsValidationError {
+                field: "soap_format".to_string(),
+                message: format!(
+                    "Unknown SOAP format '{}'. Must be 'problem_based' or 'comprehensive'",
+                    self.soap_format
+                ),
+            });
         }
 
         errors
@@ -587,14 +656,41 @@ impl Config {
         Ok(Self::config_dir()?.join("models"))
     }
 
-    /// Load config from file or return default
+    /// Load config from file or return default.
+    /// Clamps out-of-range values to safe defaults to prevent runtime errors.
     pub fn load_or_default() -> Self {
-        match Self::load() {
+        let mut config = match Self::load() {
             Ok(config) => config,
             Err(e) => {
                 debug!("Failed to load config, using default: {}", e);
                 Self::default()
             }
+        };
+        config.clamp_values();
+        config
+    }
+
+    /// Clamp values that could cause runtime errors to safe ranges.
+    /// This is a safety net for manually edited config files or corrupt state.
+    fn clamp_values(&mut self) {
+        // speaker_similarity_threshold must be 0.0-1.0 (cosine similarity)
+        self.speaker_similarity_threshold = self.speaker_similarity_threshold.clamp(0.0, 1.0);
+
+        // auto_end_silence_ms must be >= 10s if enabled, or 0 to disable
+        if self.auto_end_silence_ms > 0 && self.auto_end_silence_ms < 10_000 {
+            debug!("Clamping auto_end_silence_ms from {} to 10000", self.auto_end_silence_ms);
+            self.auto_end_silence_ms = 10_000;
+        }
+
+        // SOAP detail level must be 1-10
+        self.soap_detail_level = self.soap_detail_level.clamp(1, 10);
+
+        // vad_threshold must be 0.0-1.0
+        self.vad_threshold = self.vad_threshold.clamp(0.0, 1.0);
+
+        // encounter_check_interval_secs must be at least 30
+        if self.encounter_check_interval_secs < 30 {
+            self.encounter_check_interval_secs = 30;
         }
     }
 
@@ -1268,27 +1364,6 @@ mod tests {
         };
 
         assert_eq!(format!("{}", error), "test_field: test message");
-    }
-
-    #[test]
-    fn test_valid_models_list() {
-        // Verify all expected models are in the list
-        assert!(Settings::VALID_MODELS.contains(&"tiny"));
-        assert!(Settings::VALID_MODELS.contains(&"tiny.en"));
-        assert!(Settings::VALID_MODELS.contains(&"base"));
-        assert!(Settings::VALID_MODELS.contains(&"base.en"));
-        assert!(Settings::VALID_MODELS.contains(&"small"));
-        assert!(Settings::VALID_MODELS.contains(&"small.en"));
-        assert!(Settings::VALID_MODELS.contains(&"medium"));
-        assert!(Settings::VALID_MODELS.contains(&"medium.en"));
-        assert!(Settings::VALID_MODELS.contains(&"large"));
-        assert!(Settings::VALID_MODELS.contains(&"large-v2"));
-        assert!(Settings::VALID_MODELS.contains(&"large-v3"));
-        assert!(Settings::VALID_MODELS.contains(&"large-v3-turbo"));
-        assert!(Settings::VALID_MODELS.contains(&"large-v3-q5_0"));
-        assert!(Settings::VALID_MODELS.contains(&"large-v3-turbo-q5_0"));
-        assert!(Settings::VALID_MODELS.contains(&"distil-large-v3"));
-        assert!(Settings::VALID_MODELS.contains(&"distil-large-v3.en"));
     }
 
     #[test]

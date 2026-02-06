@@ -40,13 +40,22 @@ pub struct BufferedSegment {
     pub text: String,
     /// Speaker ID from diarization
     pub speaker_id: Option<String>,
+    /// Pipeline generation that produced this segment (prevents stale data across restarts)
+    pub generation: u64,
 }
+
+/// Safety cap: discard oldest segments when buffer exceeds this count.
+/// ~5000 segments ≈ 8 hours at ~10 segments/minute. Prevents unbounded growth
+/// if encounter detection fails or is misconfigured.
+const MAX_BUFFER_SEGMENTS: usize = 5000;
 
 /// Thread-safe transcript buffer for continuous mode.
 /// Accumulates segments and allows the encounter detector to drain completed encounters.
 pub struct TranscriptBuffer {
     segments: Vec<BufferedSegment>,
     next_index: u64,
+    /// Current pipeline generation — segments from older generations are discarded on push
+    current_generation: u64,
 }
 
 impl TranscriptBuffer {
@@ -54,20 +63,42 @@ impl TranscriptBuffer {
         Self {
             segments: Vec::new(),
             next_index: 0,
+            current_generation: 0,
         }
     }
 
-    /// Add a new segment to the buffer
-    pub fn push(&mut self, text: String, timestamp_ms: u64, speaker_id: Option<String>) {
+    /// Set the expected pipeline generation. Segments from older generations
+    /// that arrive after this call will be discarded.
+    pub fn set_generation(&mut self, generation: u64) {
+        self.current_generation = generation;
+    }
+
+    /// Add a new segment to the buffer, tagged with the given generation.
+    /// Segments from stale generations are silently dropped.
+    pub fn push(&mut self, text: String, timestamp_ms: u64, speaker_id: Option<String>, generation: u64) {
+        if generation < self.current_generation {
+            return; // Stale segment from a previous pipeline instance
+        }
         let segment = BufferedSegment {
             index: self.next_index,
             timestamp_ms,
             started_at: Utc::now(),
             text,
             speaker_id,
+            generation,
         };
         self.next_index += 1;
         self.segments.push(segment);
+
+        // Safety cap: trim oldest segments to prevent unbounded growth
+        if self.segments.len() > MAX_BUFFER_SEGMENTS {
+            let excess = self.segments.len() - MAX_BUFFER_SEGMENTS;
+            warn!(
+                "Transcript buffer exceeded {} segments, discarding {} oldest",
+                MAX_BUFFER_SEGMENTS, excess
+            );
+            self.segments.drain(..excess);
+        }
     }
 
     /// Get all text from segments with index > the given index
@@ -327,16 +358,6 @@ pub async fn run_continuous_mode(
 ) -> Result<(), String> {
     use tauri::Emitter;
 
-    // Set state to recording
-    if let Ok(mut state) = handle.state.lock() {
-        *state = ContinuousState::Recording;
-    }
-
-    // Emit started event
-    let _ = app.emit("continuous_mode_event", serde_json::json!({
-        "type": "started"
-    }));
-
     // Build pipeline config — same as session but with auto_end disabled
     let diarization_model_path = if config.diarization_enabled {
         config.get_diarization_model_path().ok()
@@ -375,7 +396,6 @@ pub async fn run_continuous_mode(
         vad_threshold: config.vad_threshold,
         silence_to_flush_ms: config.silence_to_flush_ms,
         max_utterance_ms: config.max_utterance_ms,
-        n_threads: 4,
         diarization_enabled: config.diarization_enabled,
         diarization_model_path,
         speaker_similarity_threshold: config.speaker_similarity_threshold,
@@ -388,7 +408,6 @@ pub async fn run_continuous_mode(
         preprocessing_enabled: config.preprocessing_enabled,
         preprocessing_highpass_hz: config.preprocessing_highpass_hz,
         preprocessing_agc_target_rms: config.preprocessing_agc_target_rms,
-        whisper_mode: config.whisper_mode.clone(),
         whisper_server_url: config.whisper_server_url.clone(),
         whisper_server_model: config.whisper_server_model.clone(),
         initial_audio_buffer: None,
@@ -416,6 +435,20 @@ pub async fn run_continuous_mode(
     };
 
     info!("Continuous mode pipeline started");
+
+    // Pipeline started successfully — now set state and emit event
+    if let Ok(mut state) = handle.state.lock() {
+        *state = ContinuousState::Recording;
+    }
+    let _ = app.emit("continuous_mode_event", serde_json::json!({
+        "type": "started"
+    }));
+
+    // Tag the buffer with this pipeline's generation so stale segments are rejected
+    let pipeline_generation: u64 = 1; // Single pipeline per continuous mode run
+    if let Ok(mut buffer) = handle.transcript_buffer.lock() {
+        buffer.set_generation(pipeline_generation);
+    }
 
     // Clone handles for the segment consumer task
     let buffer_for_consumer = handle.transcript_buffer.clone();
@@ -448,19 +481,23 @@ pub async fn run_continuous_mode(
                             segment.text.clone(),
                             segment.end_ms,
                             segment.speaker_id.clone(),
+                            pipeline_generation,
                         );
                     }
 
-                    // Emit transcript_update for live preview in monitoring view
+                    // Emit transcript preview for live monitoring view
                     if let Ok(buffer) = buffer_for_consumer.lock() {
                         let text = buffer.full_text();
-                        // Only send last ~500 chars for preview
+                        // Only send last ~500 chars for preview (char-boundary safe)
                         let preview = if text.len() > 500 {
-                            format!("...{}", &text[text.len() - 500..])
+                            let target = text.len() - 500;
+                            // Find the nearest char boundary at or after the target offset
+                            let start = text.ceil_char_boundary(target);
+                            format!("...{}", &text[start..])
                         } else {
                             text
                         };
-                        let _ = app_for_consumer.emit("transcript_update", serde_json::json!({
+                        let _ = app_for_consumer.emit("continuous_transcript_preview", serde_json::json!({
                             "finalized_text": preview,
                             "draft_text": null,
                             "segment_count": 0
@@ -578,11 +615,12 @@ pub async fn run_continuous_mode(
                 "type": "checking"
             }));
 
-            // Run encounter detection via LLM
+            // Run encounter detection via LLM (with 60s timeout to prevent blocking)
             let detection_result = if let Some(ref client) = llm_client {
                 let (system_prompt, user_prompt) = build_encounter_detection_prompt(&formatted);
-                match client.generate(&fast_model, &system_prompt, &user_prompt, "encounter_detection").await {
-                    Ok(response) => {
+                let llm_future = client.generate(&fast_model, &system_prompt, &user_prompt, "encounter_detection");
+                match tokio::time::timeout(tokio::time::Duration::from_secs(60), llm_future).await {
+                    Ok(Ok(response)) => {
                         match parse_encounter_detection(&response) {
                             Ok(result) => Some(result),
                             Err(e) => {
@@ -594,7 +632,7 @@ pub async fn run_continuous_mode(
                             }
                         }
                     }
-                    Err(e) => {
+                    Ok(Err(e)) => {
                         warn!("Encounter detection LLM call failed: {}", e);
                         if let Ok(mut err) = last_error_for_detector.lock() {
                             *err = Some(e);
@@ -603,6 +641,13 @@ pub async fn run_continuous_mode(
                             "type": "error",
                             "error": "Encounter detection failed"
                         }));
+                        None
+                    }
+                    Err(_elapsed) => {
+                        warn!("Encounter detection LLM call timed out after 60s");
+                        if let Ok(mut err) = last_error_for_detector.lock() {
+                            *err = Some("Encounter detection timed out".to_string());
+                        }
                         None
                     }
                 }
@@ -702,17 +747,18 @@ pub async fn run_continuous_mode(
                             "word_count": encounter_word_count
                         }));
 
-                        // Generate SOAP note asynchronously
+                        // Generate SOAP note (with 120s timeout — SOAP is heavier than detection)
                         if let Some(ref client) = llm_client {
                             info!("Generating SOAP for encounter #{}", encounter_number);
-                            match client.generate_multi_patient_soap_note(
+                            let soap_future = client.generate_multi_patient_soap_note(
                                 &soap_model,
                                 &encounter_text,
                                 None, // No audio events in continuous mode
                                 None, // Use default SOAP options
                                 None, // No speaker context
-                            ).await {
-                                Ok(soap_result) => {
+                            );
+                            match tokio::time::timeout(tokio::time::Duration::from_secs(120), soap_future).await {
+                                Ok(Ok(soap_result)) => {
                                     // Save SOAP to archive
                                     let soap_content = &soap_result.notes
                                         .iter()
@@ -737,7 +783,7 @@ pub async fn run_continuous_mode(
                                     }));
                                     info!("SOAP generated for encounter #{}", encounter_number);
                                 }
-                                Err(e) => {
+                                Ok(Err(e)) => {
                                     warn!("Failed to generate SOAP for encounter: {}", e);
                                     if let Ok(mut err) = last_error_for_detector.lock() {
                                         *err = Some(format!("SOAP generation failed: {}", e));
@@ -746,6 +792,17 @@ pub async fn run_continuous_mode(
                                         "type": "soap_failed",
                                         "session_id": session_id,
                                         "error": e
+                                    }));
+                                }
+                                Err(_elapsed) => {
+                                    warn!("SOAP generation timed out after 120s for encounter #{}", encounter_number);
+                                    if let Ok(mut err) = last_error_for_detector.lock() {
+                                        *err = Some("SOAP generation timed out".to_string());
+                                    }
+                                    let _ = app_for_detector.emit("continuous_mode_event", serde_json::json!({
+                                        "type": "soap_failed",
+                                        "session_id": session_id,
+                                        "error": "SOAP generation timed out"
                                     }));
                                 }
                             }
@@ -832,8 +889,8 @@ mod tests {
     #[test]
     fn test_transcript_buffer_push_and_read() {
         let mut buffer = TranscriptBuffer::new();
-        buffer.push("Hello doctor".to_string(), 1000, Some("Speaker 1".to_string()));
-        buffer.push("How are you?".to_string(), 2000, Some("Speaker 2".to_string()));
+        buffer.push("Hello doctor".to_string(), 1000, Some("Speaker 1".to_string()), 0);
+        buffer.push("How are you?".to_string(), 2000, Some("Speaker 2".to_string()), 0);
 
         assert_eq!(buffer.word_count(), 5);
         assert_eq!(buffer.first_index(), Some(0));
@@ -844,8 +901,8 @@ mod tests {
     #[test]
     fn test_transcript_buffer_full_text() {
         let mut buffer = TranscriptBuffer::new();
-        buffer.push("Hello".to_string(), 1000, None);
-        buffer.push("World".to_string(), 2000, None);
+        buffer.push("Hello".to_string(), 1000, None, 0);
+        buffer.push("World".to_string(), 2000, None, 0);
 
         assert_eq!(buffer.full_text(), "Hello World");
     }
@@ -853,9 +910,9 @@ mod tests {
     #[test]
     fn test_transcript_buffer_drain_through() {
         let mut buffer = TranscriptBuffer::new();
-        buffer.push("A".to_string(), 1000, None);
-        buffer.push("B".to_string(), 2000, None);
-        buffer.push("C".to_string(), 3000, None);
+        buffer.push("A".to_string(), 1000, None, 0);
+        buffer.push("B".to_string(), 2000, None, 0);
+        buffer.push("C".to_string(), 3000, None, 0);
 
         let drained = buffer.drain_through(1);
         assert_eq!(drained.len(), 2);
@@ -870,9 +927,9 @@ mod tests {
     #[test]
     fn test_transcript_buffer_get_text_since() {
         let mut buffer = TranscriptBuffer::new();
-        buffer.push("First".to_string(), 1000, None);
-        buffer.push("Second".to_string(), 2000, None);
-        buffer.push("Third".to_string(), 3000, None);
+        buffer.push("First".to_string(), 1000, None, 0);
+        buffer.push("Second".to_string(), 2000, None, 0);
+        buffer.push("Third".to_string(), 3000, None, 0);
 
         let text = buffer.get_text_since(0);
         assert_eq!(text, "Second Third");
@@ -881,12 +938,22 @@ mod tests {
     #[test]
     fn test_transcript_buffer_format_for_detection() {
         let mut buffer = TranscriptBuffer::new();
-        buffer.push("Hello".to_string(), 1000, Some("Dr. Smith".to_string()));
-        buffer.push("Hi there".to_string(), 2000, None);
+        buffer.push("Hello".to_string(), 1000, Some("Dr. Smith".to_string()), 0);
+        buffer.push("Hi there".to_string(), 2000, None, 0);
 
         let formatted = buffer.format_for_detection();
         assert!(formatted.contains("[0] (Dr. Smith): Hello"));
         assert!(formatted.contains("[1] (Unknown): Hi there"));
+    }
+
+    #[test]
+    fn test_transcript_buffer_stale_generation_rejected() {
+        let mut buffer = TranscriptBuffer::new();
+        buffer.set_generation(2);
+        buffer.push("old".to_string(), 1000, None, 1); // stale
+        buffer.push("current".to_string(), 2000, None, 2); // current
+        assert_eq!(buffer.word_count(), 1);
+        assert_eq!(buffer.full_text(), "current");
     }
 
     #[test]

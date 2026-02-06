@@ -266,6 +266,9 @@ pub struct EncounterDetails {
     pub audio_url: Option<String>,
     #[serde(rename = "sessionInfo")]
     pub session_info: Option<String>,
+    /// Patient FHIR ID extracted from encounter subject reference
+    #[serde(rename = "patientId", default, skip_serializing_if = "Option::is_none")]
+    pub patient_id: Option<String>,
 }
 
 /// Sync status for an encounter
@@ -1070,8 +1073,11 @@ impl MedplumClient {
         if let Some(end) = end_date {
             // End date is inclusive - query for < next day midnight UTC
             if let Ok(date) = NaiveDate::parse_from_str(end, "%Y-%m-%d") {
-                let next_day = date + Duration::days(1);
-                url.push_str(&format!("&date=lt{}T00:00:00Z", next_day.format("%Y-%m-%d")));
+                if let Some(next_day) = date.checked_add_signed(Duration::days(1)) {
+                    url.push_str(&format!("&date=lt{}T00:00:00Z", next_day.format("%Y-%m-%d")));
+                } else {
+                    url.push_str(&format!("&date=le{}T23:59:59Z", end));
+                }
             } else {
                 // Fallback if parsing fails - use end of day
                 url.push_str(&format!("&date=le{}T23:59:59Z", end));
@@ -1327,6 +1333,12 @@ impl MedplumClient {
             None
         };
 
+        // Extract patient ID from subject reference (e.g., "Patient/123" -> "123")
+        let patient_id = encounter["subject"]["reference"]
+            .as_str()
+            .and_then(|r| r.strip_prefix("Patient/"))
+            .map(|id| id.to_string());
+
         let patient_name = self
             .get_patient_name_from_encounter(&token, &encounter)
             .await
@@ -1412,6 +1424,7 @@ impl MedplumClient {
             soap_note,
             audio_url,
             session_info,
+            patient_id,
         })
     }
 

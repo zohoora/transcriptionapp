@@ -12,11 +12,6 @@ mod tests {
     const VAD_CHUNK_SIZE: usize = 512;
     const SAMPLE_RATE: usize = 16000;
 
-    // Generate silence samples
-    fn generate_silence(samples: usize) -> Vec<f32> {
-        vec![0.0001; samples]
-    }
-
     #[test]
     fn stress_test_session_many_segments() {
         let mut session = SessionManager::new();

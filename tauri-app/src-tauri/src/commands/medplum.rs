@@ -699,12 +699,20 @@ pub async fn medplum_add_soap_to_encounter(
         .as_ref()
         .ok_or_else(|| "Medplum client not initialized".to_string())?;
 
-    // We need to get the patient ID from the encounter
-    // For now, we'll use a placeholder since the encounter already has the context
+    // Fetch patient ID from the encounter's subject reference
+    let encounter_details = client
+        .get_encounter_details(&encounter_fhir_id)
+        .await
+        .map_err(|e| format!("Failed to fetch encounter for patient ID: {}", e))?;
+
+    let patient_id = encounter_details
+        .patient_id
+        .ok_or_else(|| "Encounter has no patient reference".to_string())?;
+
     let soap_size = soap_note.len();
 
     match client
-        .upload_soap_note(&encounter_fhir_id, &encounter_fhir_id, &encounter_fhir_id, &soap_note)
+        .upload_soap_note(&encounter_fhir_id, &encounter_fhir_id, &patient_id, &soap_note)
         .await
     {
         Ok(doc_id) => {
@@ -737,6 +745,7 @@ pub async fn medplum_add_soap_to_encounter(
 
 /// Info about a synced patient in multi-patient sync
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct PatientSyncInfo {
     /// Label from SOAP result (e.g., "Patient 1")
     pub patient_label: String,
@@ -752,6 +761,7 @@ pub struct PatientSyncInfo {
 
 /// Result of multi-patient sync operation
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct MultiPatientSyncResult {
     /// Whether all syncs succeeded
     pub success: bool,

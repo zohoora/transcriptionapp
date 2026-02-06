@@ -15,13 +15,13 @@ export interface UseAutoDetectionResult {
 
 export interface UseAutoDetectionCallbacks {
   /** Called when recording should start immediately (optimistic recording) */
-  onStartRecording: () => void;
+  onStartRecording: () => void | Promise<void>;
   /** Called when greeting check passes - recording should continue */
-  onGreetingConfirmed: (transcript: string, confidence: number) => void;
+  onGreetingConfirmed: (transcript: string, confidence: number) => void | Promise<void>;
   /** Called when greeting check fails - recording should be aborted */
-  onGreetingRejected: (reason: string) => void;
+  onGreetingRejected: (reason: string) => void | Promise<void>;
   /** Legacy: Called when a greeting is detected (for backward compatibility) */
-  onGreetingDetected?: (transcript: string, confidence: number) => void;
+  onGreetingDetected?: (transcript: string, confidence: number) => void | Promise<void>;
 }
 
 /**
@@ -48,6 +48,10 @@ export function useAutoDetection(
   const [listeningStatus, setListeningStatus] = useState<ListeningStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
   const unlistenRef = useRef<UnlistenFn | null>(null);
+  const isPendingConfirmationRef = useRef(false);
+
+  // Keep ref in sync with state (ref used inside listener to avoid re-subscription)
+  isPendingConfirmationRef.current = isPendingConfirmation;
 
   // Extract callbacks for use in effect
   const { onStartRecording, onGreetingConfirmed, onGreetingRejected, onGreetingDetected } = callbacks;
@@ -128,7 +132,7 @@ export function useAutoDetection(
             analyzing: true,
           }));
           // Notify parent to start session NOW
-          onStartRecording();
+          Promise.resolve(onStartRecording()).catch(e => console.error('onStartRecording failed:', e));
         } else if (eventType === 'greeting_confirmed') {
           // Greeting check passed - recording should continue
           const transcript = payload.transcript || '';
@@ -136,7 +140,7 @@ export function useAutoDetection(
           setIsPendingConfirmation(false);
           setIsListening(false);
           setListeningStatus(null);
-          onGreetingConfirmed(transcript, confidence);
+          Promise.resolve(onGreetingConfirmed(transcript, confidence)).catch(e => console.error('onGreetingConfirmed failed:', e));
         } else if (eventType === 'greeting_rejected') {
           // Greeting check failed - recording should be discarded
           const reason = payload.reason || 'Not a greeting';
@@ -147,13 +151,13 @@ export function useAutoDetection(
             speech_detected: false,
             speech_duration_ms: 0,
           }));
-          onGreetingRejected(reason);
+          Promise.resolve(onGreetingRejected(reason)).catch(e => console.error('onGreetingRejected failed:', e));
         } else if (eventType === 'greeting_detected') {
           // Legacy event - for backward compatibility
           const transcript = payload.transcript || '';
           const confidence = payload.confidence || 0;
           // Only call if not already handled by start_recording flow
-          if (!isPendingConfirmation) {
+          if (!isPendingConfirmationRef.current) {
             setIsListening(false);
             setListeningStatus(null);
             onGreetingDetected?.(transcript, confidence);
@@ -189,7 +193,12 @@ export function useAutoDetection(
         }
       });
 
-      unlistenRef.current = unlisten;
+      if (mounted) {
+        unlistenRef.current = unlisten;
+      } else {
+        // Component unmounted before listener was set up — clean up immediately
+        unlisten();
+      }
     };
 
     setupListener();
@@ -201,7 +210,7 @@ export function useAutoDetection(
         unlistenRef.current = null;
       }
     };
-  }, [onStartRecording, onGreetingConfirmed, onGreetingRejected, onGreetingDetected, isPendingConfirmation]);
+  }, [onStartRecording, onGreetingConfirmed, onGreetingRejected, onGreetingDetected]);
 
   return {
     isListening,

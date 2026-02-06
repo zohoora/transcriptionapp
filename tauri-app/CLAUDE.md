@@ -6,7 +6,7 @@ Clinical ambient scribe for physicians - real-time speech-to-text transcription 
 
 - **Frontend**: React + TypeScript + Vite
 - **Backend**: Rust + Tauri v2
-- **Transcription**: Whisper (local via whisper-rs, or remote via faster-whisper-server)
+- **Transcription**: Whisper (remote via faster-whisper-server)
 - **Speaker Detection**: ONNX-based speaker embeddings + online clustering
 - **LLM**: OpenAI-compatible API for SOAP note generation
 - **EMR**: Medplum FHIR server integration
@@ -65,7 +65,7 @@ cd src-tauri && cargo test       # Rust
 | Task | Files to Modify |
 |------|-----------------|
 | Add new setting | `config.rs`, `types/index.ts`, `useSettings.ts`, `SettingsDrawer.tsx` |
-| Modify transcription | `pipeline.rs`, `whisper_server.rs` (remote), `transcription.rs` (local) |
+| Modify transcription | `pipeline.rs`, `whisper_server.rs` (remote), `transcription.rs` (types) |
 | Change SOAP prompt | `llm_client.rs` (`build_multi_patient_soap_prompt()`) |
 | Modify LLM integration | `llm_client.rs`, `commands/ollama.rs`, `useOllamaConnection.ts` |
 | Add new biomarker | `biomarkers/mod.rs`, `BiomarkersSection.tsx` |
@@ -80,6 +80,7 @@ cd src-tauri && cargo test       # Rust
 | Modify SOAP options | `useSoapNote.ts` (hook), `llm_client.rs` (prompt building), `local_archive.rs` (metadata) |
 | Modify MIIS integration | `commands/miis.rs`, `useMiisImages.ts`, `ImageSuggestions.tsx`, `usePredictiveHint.ts` |
 | Modify continuous mode | `continuous_mode.rs`, `commands/continuous.rs`, `useContinuousMode.ts`, `ContinuousMode.tsx` |
+| Add session-scoped state | `useSessionLifecycle.ts` (add reset call to `resetAllSessionState`) |
 
 ## IPC Commands
 
@@ -103,19 +104,21 @@ cd src-tauri && cargo test       # Rust
 | `miis_send_usage` | Send telemetry events to MIIS server |
 | `start_continuous_mode` / `stop_continuous_mode` | Continuous charting mode lifecycle |
 | `get_continuous_mode_status` | Get continuous mode stats (state, encounters, buffer) |
+| `read_local_audio_file` | Read audio file bytes from local archive (path-validated) |
 
 ## Events (Backend → Frontend)
 
 | Event | Purpose |
 |-------|---------|
 | `session_status` | Recording state changes |
-| `transcript_update` | Real-time transcript |
+| `transcript_update` | Real-time transcript (session mode only) |
 | `biomarker_update` | Vitality, stability, session metrics |
 | `audio_quality` | Level, SNR, clipping metrics |
 | `listening_event` | Auto-detection status (includes `speaker_not_verified`) |
 | `silence_warning` | Auto-end countdown (silence_ms, remaining_ms) |
 | `session_auto_end` | Session auto-ended due to silence |
 | `continuous_mode_event` | Continuous mode status changes (started, encounter_detected, soap_generated, etc.) |
+| `continuous_transcript_preview` | Live transcript preview in continuous mode (separate from `transcript_update`) |
 
 ## Session States
 
@@ -139,8 +142,7 @@ Idle → Preparing → Recording → Stopping → Completed
 - **Session metadata**: SOAP options stored with local archive sessions for regeneration context
 
 ### Transcription
-- **Local**: 17 Whisper models (tiny → large-v3-turbo, quantized, distil)
-- **Remote**: faster-whisper-server with anti-hallucination params
+- **Remote**: faster-whisper-server with anti-hallucination params (local WhisperProvider removed)
 - Audio preprocessing: DC removal, 80Hz high-pass, AGC
 
 ### Auto-Session Detection
@@ -154,7 +156,7 @@ Idle → Preparing → Recording → Stopping → Completed
 ### Medplum EMR Integration
 - OAuth 2.0 + PKCE via `fabricscribe://oauth/callback`
 - Auto-sync: transcript + audio synced on session complete
-- SOAP auto-added to existing encounter
+- SOAP auto-added to existing encounter (patient ID resolved from `Encounter.subject.reference`)
 
 ### Biomarkers
 - **Vitality**: Pitch variability (F0 std dev) - detects flat affect
@@ -218,8 +220,10 @@ Automatically ends recording sessions after prolonged silence.
 2. After threshold reached, emits `SilenceWarning` with countdown
 3. User can cancel via "Keep Recording" button (calls `reset_silence_timer`)
 4. If not cancelled, session auto-stops gracefully
+5. Auto-ended sessions are archived with `auto_ended: true` and `auto_end_reason: "silence"` metadata
+6. Debug storage is also saved for auto-ended sessions (if enabled)
 
-**Files**: `pipeline.rs` (silence tracking), `commands/session.rs` (reset command), `useSessionState.ts` (UI)
+**Files**: `pipeline.rs` (silence tracking), `commands/session.rs` (reset command + auto-end archive in `Stopped` handler), `useSessionState.ts` (UI)
 
 ### MCP Server
 Port 7101, JSON-RPC 2.0. Tools: `agent_identity`, `health_check`, `get_status`, `get_logs`
@@ -258,6 +262,13 @@ Records continuously all day without manual session start/stop. An LLM-based enc
 **Two Charting Modes**:
 - **Session Mode** (default): Manual start/stop per patient, SOAP generated after each session
 - **Continuous Mode**: Records all day, encounters auto-detected, SOAPs generated automatically
+
+**Lifecycle Notes**:
+- Backend emits `started` event only after pipeline successfully starts (not before)
+- Frontend sets `isActive=false` on `error` events to prevent stale active state
+- Auto-detection (listening mode) is disabled while continuous mode is active
+- Switching charting mode to "session" while continuous recording is active is blocked (user must stop first)
+- Transcript preview uses `continuous_transcript_preview` event (separate from session's `transcript_update`)
 
 **Architecture**:
 ```
@@ -311,7 +322,7 @@ Microphone → Pipeline (runs all day) → TranscriptBuffer
 interface Settings {
   // Transcription
   whisper_model: string;
-  whisper_mode: 'local' | 'remote';
+  whisper_mode: 'remote';  // Always remote (local provider removed)
   whisper_server_url: string;
   whisper_server_model: string;
   language: string;
@@ -400,6 +411,7 @@ interface Settings {
 - `ContinuousMode.tsx` - Continuous charting dashboard (monitoring, live transcript, encounter stats)
 
 **Key Hooks** (`src/hooks/`):
+- `useSessionLifecycle` - Centralized session start/reset coordination across all hooks
 - `useSessionState` - Recording state, transcript, biomarkers
 - `useSoapNote` - SOAP generation
 - `useMedplumSync` - EMR sync with encounter tracking
@@ -436,6 +448,8 @@ interface Settings {
 | Continuous mode not detecting encounters | Check LLM router connection, increase `encounter_check_interval_secs` |
 | Continuous mode UI not showing | Verify `charting_mode: "continuous"` in config.json, restart app |
 | "Auto-charted" badge not appearing | Session was created in session mode, not continuous mode |
+| Can't switch charting mode | Stop continuous recording before switching from continuous to session mode |
+| Auto-detection runs during continuous | Verify `isContinuousMode` guard in App.tsx listening effect |
 
 ## Testing Best Practices
 

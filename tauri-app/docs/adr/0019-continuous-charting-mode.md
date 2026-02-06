@@ -40,6 +40,10 @@ Microphone → Pipeline (runs indefinitely) → TranscriptBuffer
 - `useContinuousMode.ts`: Hook for events, status, and controls
 - Settings toggle: "After Every Session" vs "End of Day"
 
+**Events**:
+- `continuous_mode_event`: Lifecycle events (started, stopped, encounter_detected, soap_generated, error)
+- `continuous_transcript_preview`: Live transcript preview (separate from session's `transcript_update` to prevent cross-talk)
+
 ### Detection Strategy
 
 The encounter detector uses an LLM prompt that instructs the model to:
@@ -108,3 +112,9 @@ Continuous mode sessions include additional metadata:
 - Encounter detection uses `fast_model` alias (lightweight classification task)
 - Frontend conditionally renders ContinuousMode vs Ready/Recording/Review modes
 - History window displays "Auto-charted" badge and encounter numbers
+- Backend emits `started` event only after pipeline startup succeeds (prevents false active state)
+- Frontend sets `isActive=false` on `error` events to avoid stale UI state
+- Auto-detection (listening mode) is automatically disabled while continuous mode is active
+- Switching charting mode from continuous to session is blocked while recording is active
+- Transcript preview uses `continuous_transcript_preview` event (not `transcript_update`) to prevent cross-talk with session mode
+- UTF-8 safe slicing via `ceil_char_boundary()` for transcript preview truncation

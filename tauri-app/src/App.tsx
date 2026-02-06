@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { WebviewWindow } from '@tauri-apps/api/webviewWindow';
 import { useAuth } from './components/AuthProvider';
@@ -22,11 +22,12 @@ import {
   useChecklist,
   useAutoDetection,
   useClinicalChat,
+  useSessionLifecycle,
+  usePredictiveHint,
+  useMiisImages,
+  useScreenCapture,
+  useContinuousMode,
 } from './hooks';
-import { usePredictiveHint } from './hooks/usePredictiveHint';
-import { useMiisImages } from './hooks/useMiisImages';
-import { useScreenCapture } from './hooks/useScreenCapture';
-import { useContinuousMode } from './hooks/useContinuousMode';
 import type { Settings, WhisperServerStatus, ChartingMode } from './types';
 
 // UI Mode type
@@ -76,6 +77,7 @@ function App() {
     ollamaModels,
     setOllamaModels,  // Still needed for connection sync
     soapOptions,
+    setSoapError,
     generateSoapNote,
     generateVisionSoapNote,
     updateSoapDetailLevel,
@@ -131,6 +133,23 @@ function App() {
     settings?.llm_client_id || 'ai-scribe'
   );
 
+  // Centralized session lifecycle coordination
+  const {
+    sessionNotes,
+    setSessionNotes,
+    startSession: lifecycleStartSession,
+    startSessionAutoDetect,
+    confirmAutoStart,
+    handleGreetingRejected: lifecycleGreetingRejected,
+    resetSession: lifecycleResetSession,
+  } = useSessionLifecycle({
+    sessionStart: sessionStart,
+    sessionReset: sessionReset,
+    resetSyncState,
+    clearChat,
+    clearSoapError: () => setSoapError(null),
+  });
+
   // Derive charting mode from settings
   const chartingMode: ChartingMode = (settings?.charting_mode as ChartingMode) || 'session';
   const isContinuousMode = chartingMode === 'continuous';
@@ -145,41 +164,27 @@ function App() {
     error: continuousModeError,
   } = useContinuousMode();
 
-  // Ref to track if an auto-started session is still pending greeting confirmation
-  const autoStartPendingRef = useRef(false);
-
-  // Auto-detection callbacks for optimistic recording flow
-  // 1. onStartRecording: Start recording immediately when speech detected
+  // Auto-detection callbacks — delegate to lifecycle hook for coordinated resets
   const handleAutoStartRecording = useCallback(async () => {
     console.log('Auto-detection: Starting recording immediately (optimistic)');
-    autoStartPendingRef.current = true; // Mark as pending confirmation
-    setSessionNotes(''); // Reset session notes on auto-start
     const device = pendingSettings?.device === 'default' ? null : pendingSettings?.device ?? null;
-    resetSyncState();
-    await sessionStart(device);
-  }, [pendingSettings?.device, resetSyncState, sessionStart]);
+    await startSessionAutoDetect(device);
+  }, [pendingSettings?.device, startSessionAutoDetect]);
 
-  // 2. onGreetingConfirmed: Greeting check passed - recording continues
   const handleGreetingConfirmed = useCallback((transcript: string, confidence: number) => {
     console.log(`Greeting confirmed: "${transcript}" (confidence: ${confidence.toFixed(2)})`);
-    autoStartPendingRef.current = false; // No longer pending - session is confirmed
-    // Recording is already in progress, just log confirmation
-  }, []);
+    confirmAutoStart();
+  }, [confirmAutoStart]);
 
-  // 3. onGreetingRejected: Not a greeting - abort recording only if session is still new
   const handleGreetingRejected = useCallback(async (reason: string) => {
     console.log(`Greeting rejected: ${reason}`);
-    // Only reset if we're still pending confirmation (session just started)
-    // If the session has been running for a while, the user may have started speaking
-    // and we shouldn't discard their recording
-    if (autoStartPendingRef.current) {
-      console.log('Session still pending confirmation - aborting recording');
-      autoStartPendingRef.current = false;
-      await sessionReset();
+    const didReset = await lifecycleGreetingRejected();
+    if (didReset) {
+      console.log('Session still pending confirmation - aborted recording');
     } else {
       console.log('Session already confirmed or user-initiated - keeping recording');
     }
-  }, [sessionReset]);
+  }, [lifecycleGreetingRejected]);
 
   // Auto-detection from hook
   const {
@@ -244,9 +249,6 @@ function App() {
 
   // Permission error state
   const [permissionError, setPermissionError] = useState<string | null>(null);
-
-  // Session notes state (clinician observations during recording)
-  const [sessionNotes, setSessionNotes] = useState('');
 
   // Sync indicator dismissed state (for hiding after user dismisses)
   const [syncDismissed, setSyncDismissed] = useState(false);
@@ -414,21 +416,21 @@ function App() {
     // 1. In ready mode (idle or error state)
     // 2. Auto-start is enabled
     // 3. Not already listening
-    if (uiMode === 'ready' && autoStartEnabled && !isListening) {
+    if (uiMode === 'ready' && autoStartEnabled && !isListening && !isContinuousMode) {
       startListening(deviceId);
     }
 
     // Stop listening when:
     // 1. Not in ready mode (recording started)
     // 2. OR auto-start is disabled
-    if ((uiMode !== 'ready' || !autoStartEnabled) && isListening) {
+    // 3. OR continuous mode is active
+    if ((uiMode !== 'ready' || !autoStartEnabled || isContinuousMode) && isListening) {
       stopListening();
     }
-  }, [uiMode, pendingSettings?.auto_start_enabled, pendingSettings?.device, isListening, startListening, stopListening]);
+  }, [uiMode, pendingSettings?.auto_start_enabled, pendingSettings?.device, isListening, isContinuousMode, startListening, stopListening]);
 
   // Handle start recording with permission check
   const handleStart = useCallback(async () => {
-    // Check microphone permission first
     const permStatus = await checkMicrophonePermission();
     if (!permStatus.authorized) {
       setPermissionError(permStatus.message);
@@ -436,28 +438,32 @@ function App() {
     }
 
     setPermissionError(null);
-    setSessionNotes(''); // Reset session notes on new recording
-    autoStartPendingRef.current = false; // Manual start, not pending auto-confirmation
     const device = pendingSettings?.device === 'default' ? null : pendingSettings?.device ?? null;
-    resetSyncState();
-    await sessionStart(device);
-  }, [pendingSettings?.device, resetSyncState, sessionStart, checkMicrophonePermission]);
+    await lifecycleStartSession(device);
+  }, [pendingSettings?.device, lifecycleStartSession, checkMicrophonePermission]);
 
-  // Handle reset/new session with cleanup
+  // Handle reset/new session — lifecycle hook coordinates all resets
   const handleReset = useCallback(async () => {
-    autoStartPendingRef.current = false; // Clear pending state on reset
-    setSessionNotes(''); // Reset session notes
-    resetSyncState();
-    await sessionReset();
-  }, [resetSyncState, sessionReset]);
+    await lifecycleResetSession();
+  }, [lifecycleResetSession]);
 
   // SettingsDrawer handlers
   const handleSaveSettings = useCallback(async () => {
+    // Prevent switching from continuous to session mode while continuous recording is active
+    if (
+      continuousModeActive &&
+      settings?.charting_mode === 'continuous' &&
+      pendingSettings?.charting_mode === 'session'
+    ) {
+      alert('Cannot switch charting mode while continuous recording is active. Please stop recording first.');
+      return;
+    }
+
     const success = await saveSettings();
     if (success) {
       setShowSettings(false);
     }
-  }, [saveSettings]);
+  }, [saveSettings, continuousModeActive, settings?.charting_mode, pendingSettings]);
 
   const handleTestLLM = useCallback(async () => {
     if (!pendingSettings || !settings) return;

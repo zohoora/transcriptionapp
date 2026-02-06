@@ -14,8 +14,6 @@ use base64::Engine;
 use serde::{Deserialize, Serialize};
 use tracing::{info, warn, error};
 
-// Re-export LLMStatus as OllamaStatus for backward compatibility with frontend
-pub use crate::ollama::OllamaStatus;
 
 /// Select the SOAP model for generation.
 /// Uses soap_model for all transcript lengths.

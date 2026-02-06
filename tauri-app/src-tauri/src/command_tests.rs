@@ -204,7 +204,8 @@ mod tests {
         // Status should have elapsed_ms field
         let status = session.status();
         // Initially elapsed time is 0 or very small
-        assert!(status.elapsed_ms >= 0);
+        // elapsed_ms is u64, always >= 0
+        let _ = status.elapsed_ms;
     }
 
     /// Test model status response structure

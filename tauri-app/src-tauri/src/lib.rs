@@ -323,6 +323,7 @@ pub fn run() {
             commands::get_local_sessions_by_date,
             commands::get_local_session_details,
             commands::save_local_soap_note,
+            commands::read_local_audio_file,
             // Clinical chat commands
             commands::clinical_chat_send,
             // MIIS (Medical Illustration Image Server) commands

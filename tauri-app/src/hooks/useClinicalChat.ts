@@ -35,6 +35,12 @@ export function useClinicalChat(
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const cancelledRef = useRef(false);
+  const sendingRef = useRef(false);
+
+  // Ref tracks latest messages so sendMessage doesn't need messages in its deps.
+  // This keeps sendMessage stable across renders, preventing downstream re-renders.
+  const messagesRef = useRef<ChatMessage[]>([]);
+  messagesRef.current = messages;
 
   const sendMessage = useCallback(async (content: string) => {
     console.log('Clinical chat: sending message via Tauri invoke', { llmRouterUrl, llmApiKey: llmApiKey ? '***' : 'empty', llmClientId });
@@ -44,8 +50,14 @@ export function useClinicalChat(
       return;
     }
 
+    if (sendingRef.current) {
+      console.warn('Clinical chat: send already in progress, skipping');
+      return;
+    }
+
     // Reset cancelled flag
     cancelledRef.current = false;
+    sendingRef.current = true;
 
     const userMessage: ChatMessage = {
       id: `user-${Date.now()}`,
@@ -68,10 +80,10 @@ export function useClinicalChat(
     setError(null);
 
     try {
-      // Build conversation history for API
+      // Build conversation history from ref (avoids stale closure, keeps sendMessage stable)
       const apiMessages = [
         { role: 'system', content: SYSTEM_PROMPT },
-        ...messages.filter(m => !m.isLoading).map(m => ({
+        ...messagesRef.current.filter(m => !m.isLoading).map(m => ({
           role: m.role,
           content: m.content,
         })),
@@ -128,13 +140,15 @@ export function useClinicalChat(
           : m
       ));
     } finally {
+      sendingRef.current = false;
       setIsLoading(false);
     }
-  }, [llmRouterUrl, llmApiKey, llmClientId, messages]);
+  }, [llmRouterUrl, llmApiKey, llmClientId]);
 
   const clearChat = useCallback(() => {
     // Mark any pending request as cancelled
     cancelledRef.current = true;
+    sendingRef.current = false;
     setMessages([]);
     setError(null);
     setIsLoading(false);

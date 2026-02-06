@@ -81,7 +81,7 @@ pub fn check_microphone_permission() -> MicrophoneAuthStatus {
 pub fn request_microphone_permission() -> bool {
     use objc2_av_foundation::{AVCaptureDevice, AVMediaTypeAudio};
     use objc2::runtime::Bool;
-    use block2::ConcreteBlock;
+    use block2::StackBlock;
 
     let status = check_microphone_permission();
 
@@ -96,7 +96,7 @@ pub fn request_microphone_permission() -> bool {
 
         // Create a simple completion handler block
         // The block signature expected by AVCaptureDevice is (Bool) -> ()
-        let handler = ConcreteBlock::new(|_granted: Bool| {
+        let handler = StackBlock::new(|_granted: Bool| {
             // Logging happens on re-check, not here
         });
         let handler = handler.copy();

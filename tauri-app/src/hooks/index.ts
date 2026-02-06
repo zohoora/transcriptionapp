@@ -27,3 +27,20 @@ export type { UseAutoDetectionResult, UseAutoDetectionCallbacks } from './useAut
 
 export { useClinicalChat } from './useClinicalChat';
 export type { UseClinicalChatResult, ChatMessage } from './useClinicalChat';
+
+export { useSessionLifecycle } from './useSessionLifecycle';
+export type { UseSessionLifecycleResult, SessionLifecycleHandlers } from './useSessionLifecycle';
+
+export { useSpeakerProfiles } from './useSpeakerProfiles';
+export type { UseSpeakerProfilesResult } from './useSpeakerProfiles';
+
+export { usePredictiveHint } from './usePredictiveHint';
+export type { ImageConcept } from './usePredictiveHint';
+
+export { useMiisImages } from './useMiisImages';
+export type { MiisSuggestion } from './useMiisImages';
+
+export { useScreenCapture } from './useScreenCapture';
+
+export { useContinuousMode } from './useContinuousMode';
+export type { UseContinuousModeResult } from './useContinuousMode';

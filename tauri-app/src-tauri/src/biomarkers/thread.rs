@@ -292,7 +292,8 @@ fn run_biomarker_thread(
 
                 // Keep only last 50 pending (cleanup old ones)
                 if pending_biomarkers.len() > 50 {
-                    pending_biomarkers.remove(0);
+                    let excess = pending_biomarkers.len() - 50;
+                    pending_biomarkers.drain(..excess);
                 }
 
                 let _ = output_tx.send(BiomarkerOutput::VocalBiomarkers(biomarkers));

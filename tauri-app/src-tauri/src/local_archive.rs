@@ -16,7 +16,7 @@ use serde::{Deserialize, Serialize};
 use std::fs::{self, File};
 use std::io::Write;
 use std::path::PathBuf;
-use tracing::{debug, info, warn};
+use tracing::{info, warn};
 
 /// Get the archive base directory
 pub fn get_archive_dir() -> Result<PathBuf, String> {
@@ -199,7 +199,9 @@ pub fn add_soap_note(
     let session_dir = get_session_archive_dir(session_id, date)?;
 
     if !session_dir.exists() {
-        return Err(format!("Session archive not found: {}", session_id));
+        // Create directory if it doesn't exist yet (race with continuous mode SOAP generation)
+        fs::create_dir_all(&session_dir)
+            .map_err(|e| format!("Failed to create session directory: {}", e))?;
     }
 
     // Save SOAP note

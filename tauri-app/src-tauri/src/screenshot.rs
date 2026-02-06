@@ -41,6 +41,14 @@ impl ScreenCaptureState {
             return Err("Screen capture already running".to_string());
         }
 
+        // Join any previous thread handle to avoid leaking resources
+        if let Some(old_handle) = self.thread_handle.take() {
+            let _ = old_handle.join();
+        }
+
+        // Clean up previous session's temp directory before creating a new one
+        self.cleanup_temp_files();
+
         // Create temp directory for this session
         let temp_dir = std::env::temp_dir().join(format!(
             "transcriptionapp-screenshots-{}",
@@ -53,7 +61,7 @@ impl ScreenCaptureState {
         self.temp_dir = Some(temp_dir.clone());
         self.running.store(true, Ordering::SeqCst);
 
-        // Clear previous screenshots
+        // Clear previous screenshot paths
         if let Ok(mut ss) = self.screenshots.lock() {
             ss.clear();
         }
@@ -90,7 +98,8 @@ impl ScreenCaptureState {
         Ok(())
     }
 
-    /// Stop capture and clean up temp files.
+    /// Stop capture. Screenshot files are retained for vision SOAP until
+    /// the next `start()` call or explicit `cleanup_temp_files()`.
     pub fn stop(&mut self) {
         if !self.running.load(Ordering::SeqCst) {
             return;
@@ -104,16 +113,26 @@ impl ScreenCaptureState {
             let _ = handle.join();
         }
 
-        // Log where screenshots are stored (not deleting for now)
         if let Some(ref dir) = self.temp_dir {
             let count = self.screenshots.lock().map(|ss| ss.len()).unwrap_or(0);
-            info!("Screen capture stopped. {} screenshots saved in {:?}", count, dir);
+            info!("Screen capture stopped. {} screenshots retained in {:?}", count, dir);
         }
+    }
 
+    /// Remove the temp directory and all screenshot files from this session.
+    /// Called automatically on the next `start()` and on `Drop`.
+    pub fn cleanup_temp_files(&mut self) {
+        if let Some(dir) = self.temp_dir.take() {
+            if dir.exists() {
+                match std::fs::remove_dir_all(&dir) {
+                    Ok(()) => info!("Cleaned up screenshot temp dir: {:?}", dir),
+                    Err(e) => warn!("Failed to clean up screenshot temp dir {:?}: {}", dir, e),
+                }
+            }
+        }
         if let Ok(mut ss) = self.screenshots.lock() {
             ss.clear();
         }
-        self.temp_dir = None;
     }
 
     /// Check if capture is currently running
@@ -135,30 +154,43 @@ impl ScreenCaptureState {
 impl Drop for ScreenCaptureState {
     fn drop(&mut self) {
         self.stop();
+        self.cleanup_temp_files();
     }
 }
 
-/// Capture a screenshot and save it to the temp directory
+/// Capture a screenshot and save both full-size and resized versions to the temp directory
 fn capture_and_save(temp_dir: &Path, screenshots: &Arc<Mutex<Vec<PathBuf>>>) {
     debug!("Attempting screen capture...");
     match capture_screen() {
         Ok(image_data) => {
-            let filename = format!(
-                "capture-{}.jpg",
-                chrono::Utc::now().format("%H%M%S-%3f")
-            );
-            let path = temp_dir.join(&filename);
+            let timestamp = chrono::Utc::now().format("%H%M%S-%3f");
 
-            match save_jpeg(&image_data, &path) {
+            // Save full-size version
+            let full_path = temp_dir.join(format!("capture-{}-full.jpg", timestamp));
+            match save_jpeg(&image_data, &full_path) {
                 Ok(()) => {
-                    debug!("Screenshot saved: {:?} ({}x{}, {} bytes)",
-                           path, image_data.width, image_data.height,
-                           std::fs::metadata(&path).map(|m| m.len()).unwrap_or(0));
+                    debug!("Full screenshot saved: {:?} ({}x{}, {} bytes)",
+                           full_path, image_data.width, image_data.height,
+                           std::fs::metadata(&full_path).map(|m| m.len()).unwrap_or(0));
                     if let Ok(mut ss) = screenshots.lock() {
-                        ss.push(path);
+                        ss.push(full_path);
                     }
                 }
-                Err(e) => warn!("Failed to save screenshot: {}", e),
+                Err(e) => warn!("Failed to save full screenshot: {}", e),
+            }
+
+            // Save resized version (~1150px on the long edge)
+            let thumb_path = temp_dir.join(format!("capture-{}-thumb.jpg", timestamp));
+            match save_jpeg_resized(&image_data, &thumb_path, 1150) {
+                Ok((tw, th)) => {
+                    debug!("Resized screenshot saved: {:?} ({}x{}, {} bytes)",
+                           thumb_path, tw, th,
+                           std::fs::metadata(&thumb_path).map(|m| m.len()).unwrap_or(0));
+                    if let Ok(mut ss) = screenshots.lock() {
+                        ss.push(thumb_path);
+                    }
+                }
+                Err(e) => warn!("Failed to save resized screenshot: {}", e),
             }
         }
         Err(e) => warn!("Failed to capture screen: {}", e),
@@ -393,6 +425,136 @@ fn save_jpeg(raw: &RawImage, path: &Path) -> Result<(), String> {
     encoder.encode_image(&img).map_err(|e| format!("JPEG encode failed: {}", e))?;
 
     Ok(())
+}
+
+/// Save raw RGBA image data as JPEG, resized so the long edge is `max_edge` pixels.
+/// Returns the (width, height) of the resized image.
+fn save_jpeg_resized(raw: &RawImage, path: &Path, max_edge: u32) -> Result<(u32, u32), String> {
+    use image::{ImageBuffer, Rgba, codecs::jpeg::JpegEncoder, imageops::FilterType};
+    use std::fs::File;
+    use std::io::BufWriter;
+
+    let img: ImageBuffer<Rgba<u8>, _> = ImageBuffer::from_raw(raw.width, raw.height, raw.data.clone())
+        .ok_or("Failed to create image buffer")?;
+
+    let long_edge = raw.width.max(raw.height);
+    let (new_w, new_h) = if long_edge <= max_edge {
+        (raw.width, raw.height)
+    } else {
+        let scale = max_edge as f64 / long_edge as f64;
+        ((raw.width as f64 * scale).round() as u32, (raw.height as f64 * scale).round() as u32)
+    };
+
+    let resized = image::imageops::resize(&img, new_w, new_h, FilterType::Lanczos3);
+
+    let file = File::create(path).map_err(|e| format!("Failed to create file: {}", e))?;
+    let writer = BufWriter::new(file);
+
+    let mut encoder = JpegEncoder::new_with_quality(writer, 70);
+    encoder.encode_image(&resized).map_err(|e| format!("JPEG encode failed: {}", e))?;
+
+    Ok((new_w, new_h))
+}
+
+/// Select evenly-spaced thumbnail screenshots from the captured list.
+///
+/// Filters for `-thumb.jpg` files and picks up to `count` images
+/// evenly distributed through the timeline.
+pub fn select_thumbnails(screenshots: &[PathBuf], count: usize) -> Vec<PathBuf> {
+    let thumbs: Vec<&PathBuf> = screenshots
+        .iter()
+        .filter(|p| {
+            p.file_name()
+                .and_then(|n| n.to_str())
+                .map(|n| n.contains("-thumb.jpg"))
+                .unwrap_or(false)
+        })
+        .collect();
+
+    if thumbs.is_empty() || count == 0 {
+        return Vec::new();
+    }
+
+    let count = count.min(3).min(thumbs.len());
+
+    if count >= thumbs.len() {
+        return thumbs.into_iter().cloned().collect();
+    }
+
+    // Pick evenly spaced indices
+    let mut selected = Vec::with_capacity(count);
+    for i in 0..count {
+        let idx = i * (thumbs.len() - 1) / (count - 1).max(1);
+        selected.push(thumbs[idx].clone());
+    }
+    selected
+}
+
+/// Stitch multiple thumbnail images horizontally into a single composite JPEG.
+///
+/// Returns the base64-encoded JPEG string. Uses quality 70 to keep size reasonable.
+/// The composite is created by placing images side-by-side horizontally.
+pub fn stitch_thumbnails_to_base64(paths: &[PathBuf]) -> Result<String, String> {
+    use base64::Engine;
+    use image::{DynamicImage, RgbaImage, codecs::jpeg::JpegEncoder};
+    use std::io::Cursor;
+
+    if paths.is_empty() {
+        return Err("No thumbnail paths provided".to_string());
+    }
+
+    // Load all images
+    let images: Vec<DynamicImage> = paths
+        .iter()
+        .map(|p| {
+            image::open(p).map_err(|e| format!("Failed to open {:?}: {}", p, e))
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+
+    if images.len() == 1 {
+        // Single image: just encode directly
+        let img = &images[0];
+        let mut buf = Vec::new();
+        let mut encoder = JpegEncoder::new_with_quality(Cursor::new(&mut buf), 70);
+        encoder.encode_image(img).map_err(|e| format!("JPEG encode failed: {}", e))?;
+        return Ok(base64::engine::general_purpose::STANDARD.encode(&buf));
+    }
+
+    // Calculate composite dimensions (horizontal layout)
+    let total_width: u32 = images.iter().map(|img| img.width()).sum();
+    let max_height: u32 = images.iter().map(|img| img.height()).max().unwrap_or(0);
+
+    // Create composite canvas
+    let mut composite = RgbaImage::new(total_width, max_height);
+
+    // Place images side-by-side
+    let mut x_offset = 0u32;
+    for img in &images {
+        let rgba = img.to_rgba8();
+        for (x, y, pixel) in rgba.enumerate_pixels() {
+            if x + x_offset < total_width && y < max_height {
+                composite.put_pixel(x + x_offset, y, *pixel);
+            }
+        }
+        x_offset += img.width();
+    }
+
+    // Encode as JPEG
+    let mut buf = Vec::new();
+    let mut encoder = JpegEncoder::new_with_quality(Cursor::new(&mut buf), 70);
+    encoder
+        .encode_image(&DynamicImage::ImageRgba8(composite))
+        .map_err(|e| format!("JPEG encode failed: {}", e))?;
+
+    info!(
+        "Stitched {} thumbnails into {}x{} composite ({} bytes)",
+        images.len(),
+        total_width,
+        max_height,
+        buf.len()
+    );
+
+    Ok(base64::engine::general_purpose::STANDARD.encode(&buf))
 }
 
 /// Check if screen recording permission is granted (macOS).

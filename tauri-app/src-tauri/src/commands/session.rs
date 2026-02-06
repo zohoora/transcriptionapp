@@ -55,7 +55,7 @@ pub async fn start_session(
 
     // Load config - always uses remote Whisper server, no local model needed
     let config = Config::load_or_default();
-    let model_path = config.get_model_path().unwrap_or_default(); // Placeholder, not used
+    let model_path = config.get_model_path().unwrap_or_default(); // Fallback path for local model (unused with remote transcription)
 
     // Create pipeline config
     let diarization_model_path = if config.diarization_enabled {
@@ -113,7 +113,6 @@ pub async fn start_session(
         vad_threshold: config.vad_threshold,
         silence_to_flush_ms: config.silence_to_flush_ms,
         max_utterance_ms: config.max_utterance_ms,
-        n_threads: 4,
         diarization_enabled: config.diarization_enabled,
         diarization_model_path,
         speaker_similarity_threshold: config.speaker_similarity_threshold,
@@ -126,7 +125,6 @@ pub async fn start_session(
         preprocessing_enabled: config.preprocessing_enabled,
         preprocessing_highpass_hz: config.preprocessing_highpass_hz,
         preprocessing_agc_target_rms: config.preprocessing_agc_target_rms,
-        whisper_mode: config.whisper_mode.clone(),
         whisper_server_url: config.whisper_server_url.clone(),
         whisper_server_model: config.whisper_server_model.clone(),
         initial_audio_buffer,
@@ -179,7 +177,13 @@ pub async fn start_session(
     let session_clone = session_arc.clone();
     let pipeline_clone = pipeline_arc.clone();
 
+    // Load config for archive/debug in the spawned task scope
+    let debug_enabled_for_task = config.debug_storage_enabled;
+    let session_id_for_task = session_id.clone();
+
     tokio::spawn(async move {
+        let mut auto_end_triggered = false;
+
         while let Some(msg) = rx.recv().await {
             // Check if this pipeline instance is still current
             // If generation has changed (due to reset), discard messages
@@ -253,6 +257,7 @@ pub async fn start_session(
                         "Auto-end silence detected: {}s of continuous silence",
                         silence_duration_ms / 1000
                     );
+                    auto_end_triggered = true;
                     // Emit session_auto_end event to frontend with reason
                     let _ = app_clone.emit("session_auto_end", serde_json::json!({
                         "reason": "silence",
@@ -268,8 +273,42 @@ pub async fn start_session(
                         session.complete();
                         let status = session.status();
                         let transcript = session.transcript_update();
-                        let _ = app_clone.emit("session_status", status);
-                        let _ = app_clone.emit("transcript_update", transcript);
+                        let _ = app_clone.emit("session_status", status.clone());
+                        let _ = app_clone.emit("transcript_update", transcript.clone());
+
+                        // Archive and debug-save (mirrors stop_session logic)
+                        // This is critical for auto-ended sessions which bypass stop_session
+                        activity_log::log_session_stop(
+                            &session_id_for_task,
+                            status.elapsed_ms,
+                            session.segments().len(),
+                            session
+                                .audio_file_path()
+                                .and_then(|p| std::fs::metadata(p).ok())
+                                .map(|m| m.len()),
+                        );
+
+                        if debug_enabled_for_task {
+                            if let Err(e) = save_session_to_debug_storage(
+                                &session_id_for_task,
+                                &session,
+                                &transcript.finalized_text,
+                                status.elapsed_ms,
+                            ) {
+                                warn!("Failed to save auto-ended session to debug storage: {}", e);
+                            }
+                        }
+
+                        if let Err(e) = local_archive::save_session(
+                            &session_id_for_task,
+                            &transcript.finalized_text,
+                            status.elapsed_ms,
+                            session.audio_file_path(),
+                            auto_end_triggered,
+                            if auto_end_triggered { Some("silence") } else { None },
+                        ) {
+                            warn!("Failed to archive auto-ended session: {}", e);
+                        }
                     }
                     break;
                 }
@@ -518,9 +557,11 @@ pub fn reset_session(
         ps.next_generation();
         if let Some(h) = ps.handle.take() {
             h.stop();
-            // Note: We don't join here because it would block the main thread.
-            // The receiver task will exit when it sees the Stopped message or
-            // when it notices the generation has changed.
+            // Join in a background thread to avoid blocking the Tauri command thread.
+            // Drop would also join, but that blocks the current thread.
+            std::thread::spawn(move || {
+                h.join();
+            });
         }
     }
 

@@ -633,6 +633,7 @@ mod tests {
 
     // Tests for sample conversion (these don't require hardware)
 
+    #[test]
     fn test_f32_to_mono_conversion() {
         // Simulating stereo to mono by averaging
         let stereo: Vec<f32> = vec![0.5, 0.3, 0.8, 0.2, -0.1, 0.1];

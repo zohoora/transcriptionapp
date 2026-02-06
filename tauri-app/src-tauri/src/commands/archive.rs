@@ -3,6 +3,7 @@
 use crate::local_archive::{
     self, ArchiveDetails, ArchiveSummary,
 };
+use std::path::PathBuf;
 use tracing::info;
 
 /// Get all dates that have archived sessions
@@ -55,4 +56,23 @@ pub fn save_local_soap_note(
         detail_level,
         format.as_deref(),
     )
+}
+
+/// Read a local audio file and return its bytes
+/// Used by the history window's audio player for locally-archived sessions
+#[tauri::command]
+pub fn read_local_audio_file(path: String) -> Result<Vec<u8>, String> {
+    let file_path = PathBuf::from(&path);
+    if !file_path.exists() {
+        return Err(format!("Audio file not found: {}", path));
+    }
+
+    // Validate the path is within the archive directory to prevent arbitrary file reads
+    let archive_dir = local_archive::get_archive_dir()?;
+    if !file_path.starts_with(&archive_dir) {
+        return Err("Access denied: path is outside the archive directory".to_string());
+    }
+
+    info!("Reading local audio file: {}", path);
+    std::fs::read(&file_path).map_err(|e| format!("Failed to read audio file: {}", e))
 }

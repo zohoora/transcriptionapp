@@ -120,12 +120,12 @@ export const RecordingMode = memo(function RecordingMode({
   const qualityLevel = getQualityLevel(audioQuality);
 
   const handleDetailsClick = useCallback(() => {
-    setShowDetails(!showDetails);
-  }, [showDetails]);
+    setShowDetails(prev => !prev);
+  }, []);
 
   const handleNotesToggle = useCallback(() => {
-    setShowNotes(!showNotes);
-  }, [showNotes]);
+    setShowNotes(prev => !prev);
+  }, []);
 
   const handleNotesChange = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
     onSessionNotesChange(e.target.value);
@@ -133,7 +133,7 @@ export const RecordingMode = memo(function RecordingMode({
 
   // Format remaining time for display
   const formatRemainingTime = (ms: number): string => {
-    const seconds = Math.ceil(ms / 1000);
+    const seconds = Math.max(0, Math.ceil(ms / 1000));
     return `${seconds}s`;
   };
 

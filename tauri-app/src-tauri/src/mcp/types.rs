@@ -70,10 +70,6 @@ impl JsonRpcResponse {
         Self::error(id, -32602, message)
     }
 
-    /// Create an internal error
-    pub fn internal_error(id: Value, message: impl Into<String>) -> Self {
-        Self::error(id, -32603, message)
-    }
 }
 
 /// MCP tools/call params
@@ -140,14 +136,3 @@ pub struct ToolsListResult {
     pub tools: Vec<ToolDefinition>,
 }
 
-// ============================================================================
-// Standard JSON-RPC error codes
-// ============================================================================
-
-pub mod error_codes {
-    pub const PARSE_ERROR: i32 = -32700;
-    pub const INVALID_REQUEST: i32 = -32600;
-    pub const METHOD_NOT_FOUND: i32 = -32601;
-    pub const INVALID_PARAMS: i32 = -32602;
-    pub const INTERNAL_ERROR: i32 = -32603;
-}

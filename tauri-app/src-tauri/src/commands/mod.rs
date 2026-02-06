@@ -43,6 +43,29 @@ use std::sync::{Arc, Mutex};
 use tauri::AppHandle;
 use tokio::sync::RwLock;
 
+/// Structured error type for Tauri commands.
+/// Provides better context than raw String errors.
+#[derive(Debug, thiserror::Error)]
+pub enum CommandError {
+    #[error("Lock poisoned: {context}")]
+    LockPoisoned { context: String },
+
+    #[error("Session error: {0}")]
+    Session(#[from] crate::session::SessionError),
+
+    #[error("{0}")]
+    Other(String),
+}
+
+impl serde::Serialize for CommandError {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.serialize_str(&self.to_string())
+    }
+}
+
 /// Device information for the frontend
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Device {

@@ -375,17 +375,6 @@ Output a concise JSON SOAP note:
     }
 }
 
-/// Expected correct terms for the test case (Julie/Wegovy weight management)
-const CORRECT_INCLUSIONS: &[&str] = &[
-    "julie",
-    "wegovy",
-    "weight",
-    "metabolic",
-    "weekly",
-    "medication",
-    "bloodwork",
-];
-
 /// Terms that indicate incorrect EHR data extraction
 const INCORRECT_INCLUSIONS: &[&str] = &[
     "menstrual",

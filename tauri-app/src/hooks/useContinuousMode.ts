@@ -44,8 +44,10 @@ export function useContinuousMode(): UseContinuousModeResult {
   // Listen to continuous mode events from backend
   useEffect(() => {
     let unlisten: UnlistenFn | null = null;
+    let mounted = true;
 
     listen<ContinuousModeEvent>('continuous_mode_event', (event) => {
+      if (!mounted) return;
       const payload = event.payload;
 
       switch (payload.type) {
@@ -70,13 +72,19 @@ export function useContinuousMode(): UseContinuousModeResult {
           break;
         case 'error':
           setError(payload.error || 'Unknown error');
+          setIsActive(false);
           break;
       }
     }).then((fn) => {
-      unlisten = fn;
+      if (mounted) {
+        unlisten = fn;
+      } else {
+        fn(); // Component unmounted before listener resolved
+      }
     });
 
     return () => {
+      mounted = false;
       if (unlisten) unlisten();
     };
   }, []);
@@ -86,14 +94,20 @@ export function useContinuousMode(): UseContinuousModeResult {
     if (!isActive) return;
 
     let unlisten: UnlistenFn | null = null;
+    let mounted = true;
 
-    listen<TranscriptUpdate>('transcript_update', (event) => {
-      setLiveTranscript(event.payload.finalized_text || '');
+    listen<TranscriptUpdate>('continuous_transcript_preview', (event) => {
+      if (mounted) setLiveTranscript(event.payload.finalized_text || '');
     }).then((fn) => {
-      unlisten = fn;
+      if (mounted) {
+        unlisten = fn;
+      } else {
+        fn();
+      }
     });
 
     return () => {
+      mounted = false;
       if (unlisten) unlisten();
     };
   }, [isActive]);

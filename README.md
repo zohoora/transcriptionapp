@@ -38,7 +38,7 @@ A real-time speech-to-text transcription desktop application built with Tauri, R
 - **Noise Floor Analysis** - Ambient noise level tracking
 - **Actionable Suggestions** - Context-aware feedback
 
-> **Note on Network Features**: The core transcription pipeline can run offline with local Whisper. Optional features (SOAP notes via LLM router, EMR sync via Medplum, remote Whisper) require network access.
+> **Note on Network Features**: The transcription pipeline requires a remote faster-whisper-server. SOAP generation (LLM router) and EMR sync (Medplum) also require network access.
 
 ## Quick Start
 
@@ -102,7 +102,7 @@ ORT_DYLIB_PATH=$(./scripts/setup-ort.sh) \
 | Ring Buffer | ringbuf |
 | Resampling | rubato |
 | VAD | voice_activity_detector (Silero) |
-| Transcription | whisper-rs (GGML) |
+| Transcription | faster-whisper-server (remote) |
 | Speaker Diarization | ONNX Runtime + WeSpeaker |
 | Speech Enhancement | GTCRN (ONNX) |
 | Emotion Detection | wav2small (ONNX) |

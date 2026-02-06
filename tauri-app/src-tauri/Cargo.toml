@@ -38,8 +38,6 @@ rubato = "0.16"
 # Voice Activity Detection (Silero VAD)
 voice_activity_detector = "0.2"
 
-# Whisper bindings
-whisper-rs = "0.13"
 
 # Speaker diarization (ONNX embeddings)
 ort = { version = "2.0.0-rc.9", default-features = false, features = ["load-dynamic"], optional = true }

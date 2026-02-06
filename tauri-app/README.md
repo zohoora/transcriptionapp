@@ -5,7 +5,7 @@ A real-time speech-to-text transcription desktop application built with Tauri, R
 ## Features
 
 ### Core Transcription
-- **Real-time Whisper transcription** - Local on-device inference using whisper-rs
+- **Real-time Whisper transcription** - Remote inference via faster-whisper-server
 - **Voice Activity Detection (VAD)** - Silero VAD for smart audio segmentation
 - **Speaker diarization** - ONNX-based speaker embeddings with online clustering
 - **Speech enhancement** - GTCRN denoising for cleaner audio (~2ms latency)

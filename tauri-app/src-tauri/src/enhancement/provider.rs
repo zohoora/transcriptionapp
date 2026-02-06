@@ -450,20 +450,6 @@ mod tests {
                 .collect()
         }
 
-        /// Generate speech-like signal (mixed frequencies)
-        fn generate_speech_signal(samples: usize) -> Vec<f32> {
-            let sample_rate = 16000.0;
-            (0..samples)
-                .map(|i| {
-                    let t = i as f32 / sample_rate;
-                    let f1 = (2.0 * PI * 200.0 * t).sin() * 0.4;
-                    let f2 = (2.0 * PI * 400.0 * t).sin() * 0.3;
-                    let f3 = (2.0 * PI * 800.0 * t).sin() * 0.2;
-                    f1 + f2 + f3
-                })
-                .collect()
-        }
-
         #[test]
         fn test_stft_frame_count() {
             // For FFT_SIZE=512, HOP_SIZE=256:

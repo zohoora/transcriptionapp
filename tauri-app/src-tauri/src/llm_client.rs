@@ -127,9 +127,6 @@ pub struct LLMStatus {
     pub error: Option<String>,
 }
 
-// Re-export as OllamaStatus for backward compatibility with frontend types
-pub type OllamaStatus = LLMStatus;
-
 /// Audio event detected during recording (cough, laugh, sneeze, etc.)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AudioEvent {

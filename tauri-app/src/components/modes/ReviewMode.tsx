@@ -1,4 +1,5 @@
 import { memo, useState, useCallback, useEffect } from 'react';
+import { invoke } from '@tauri-apps/api/core';
 import { writeText } from '@tauri-apps/plugin-clipboard-manager';
 import { SyncStatusBar } from '../SyncStatusBar';
 import type {
@@ -59,6 +60,10 @@ interface ReviewModeProps {
   syncedEncounter: SyncedEncounter | null;
   isAddingSoap: boolean;
   onClearSyncError: () => void;
+
+  // Vision SOAP (experimental)
+  onGenerateVisionSoap?: (imagePath: string) => void;
+  screenshotCount?: number;
 
   // Actions
   onNewSession: () => void;
@@ -122,6 +127,8 @@ export const ReviewMode = memo(function ReviewMode({
   syncError,
   syncedEncounter,
   isAddingSoap,
+  onGenerateVisionSoap,
+  screenshotCount = 0,
   onClearSyncError,
   onNewSession,
   onLogin,
@@ -141,12 +148,24 @@ export const ReviewMode = memo(function ReviewMode({
   // Active patient tab for multi-patient SOAP notes
   const [activePatient, setActivePatient] = useState(0);
 
+  // Vision thumbnail picker state
+  const [showVisionPicker, setShowVisionPicker] = useState(false);
+  const [visionThumbnails, setVisionThumbnails] = useState<Array<{ path: string; data_url: string; label: string }>>([]);
+  const [loadingThumbnails, setLoadingThumbnails] = useState(false);
+
   // Auto-switch to SOAP tab when generation starts
   useEffect(() => {
     if (isGeneratingSoap) {
       setActiveTab('soap');
     }
   }, [isGeneratingSoap]);
+
+  // Reset activePatient when soapResult changes and index is out of bounds
+  useEffect(() => {
+    if (soapResult && activePatient >= soapResult.notes.length) {
+      setActivePatient(0);
+    }
+  }, [soapResult, activePatient]);
 
   const qualityBadge = getQualityBadge(audioQuality);
   const hasTranscript = editedTranscript.trim().length > 0;
@@ -159,8 +178,9 @@ export const ReviewMode = memo(function ReviewMode({
     setTimeout(() => setCopySuccess(false), 2000);
   }, [editedTranscript]);
 
-  // Get active patient's SOAP note content
-  const activeSoapContent = soapResult?.notes[activePatient]?.content ?? null;
+  // Get active patient's SOAP note content (safe bounds check)
+  const safeActivePatient = soapResult && activePatient < soapResult.notes.length ? activePatient : 0;
+  const activeSoapContent = soapResult?.notes[safeActivePatient]?.content ?? null;
   const isMultiPatient = (soapResult?.notes.length ?? 0) > 1;
 
   const handleCopySoap = useCallback(async () => {
@@ -169,6 +189,27 @@ export const ReviewMode = memo(function ReviewMode({
     setSoapCopySuccess(true);
     setTimeout(() => setSoapCopySuccess(false), 2000);
   }, [activeSoapContent]);
+
+  // Open vision picker: fetch thumbnails and show grid
+  const handleOpenVisionPicker = useCallback(async () => {
+    setLoadingThumbnails(true);
+    setShowVisionPicker(true);
+    try {
+      const thumbs = await invoke<Array<{ path: string; data_url: string; label: string }>>('get_screenshot_thumbnails');
+      setVisionThumbnails(thumbs);
+    } catch (e) {
+      console.error('Failed to fetch thumbnails:', e);
+      setVisionThumbnails([]);
+    } finally {
+      setLoadingThumbnails(false);
+    }
+  }, []);
+
+  // Select a thumbnail and trigger vision SOAP generation
+  const handleThumbnailSelect = useCallback((path: string) => {
+    setShowVisionPicker(false);
+    onGenerateVisionSoap?.(path);
+  }, [onGenerateVisionSoap]);
 
   return (
     <div className="review-mode">
@@ -326,15 +367,59 @@ export const ReviewMode = memo(function ReviewMode({
               </div>
             )}
 
-            {/* Generate Button */}
+            {/* Generate Buttons */}
             {!soapResult && !isGeneratingSoap && !soapError && (
-              <button
-                className="btn-generate"
-                onClick={onGenerateSoap}
-                disabled={!llmConnected}
-              >
-                {llmConnected ? 'Generate SOAP Note' : 'LLM not connected'}
-              </button>
+              <div className="soap-generate-actions">
+                <button
+                  className="btn-generate"
+                  onClick={onGenerateSoap}
+                  disabled={!llmConnected}
+                >
+                  {llmConnected ? 'Generate SOAP Note' : 'LLM not connected'}
+                </button>
+                {onGenerateVisionSoap && (
+                  <button
+                    className="btn-generate btn-vision"
+                    onClick={handleOpenVisionPicker}
+                    disabled={!llmConnected || screenshotCount === 0}
+                    title={screenshotCount === 0 ? 'No screenshots captured' : `${screenshotCount} screenshots available`}
+                  >
+                    Vision SOAP
+                  </button>
+                )}
+              </div>
+            )}
+
+            {/* Vision Thumbnail Picker */}
+            {showVisionPicker && (
+              <div className="vision-picker">
+                <div className="vision-picker-header">
+                  <span className="vision-picker-title">Select a screenshot</span>
+                  <button className="btn-link" onClick={() => setShowVisionPicker(false)}>Cancel</button>
+                </div>
+                {loadingThumbnails ? (
+                  <div className="soap-loading">
+                    <div className="spinner-small" />
+                    <span>Loading thumbnails...</span>
+                  </div>
+                ) : visionThumbnails.length === 0 ? (
+                  <div className="panel-empty">No thumbnails available</div>
+                ) : (
+                  <div className="vision-picker-grid">
+                    {visionThumbnails.map((thumb, i) => (
+                      <button
+                        key={i}
+                        className="vision-thumb-btn"
+                        onClick={() => handleThumbnailSelect(thumb.path)}
+                        title={thumb.label}
+                      >
+                        <img src={thumb.data_url} alt={thumb.label} className="vision-thumb-img" />
+                        <span className="vision-thumb-label">{thumb.label}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
             )}
 
             {/* Loading State */}
@@ -376,6 +461,16 @@ export const ReviewMode = memo(function ReviewMode({
                     >
                       Regenerate
                     </button>
+                    {onGenerateVisionSoap && screenshotCount > 0 && (
+                      <button
+                        className="btn-small btn-vision"
+                        onClick={handleOpenVisionPicker}
+                        disabled={isGeneratingSoap || !llmConnected}
+                        title={`${screenshotCount} screenshots available`}
+                      >
+                        Vision
+                      </button>
+                    )}
                   </div>
                 </div>
 

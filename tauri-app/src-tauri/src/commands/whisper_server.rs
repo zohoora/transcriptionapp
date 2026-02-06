@@ -51,14 +51,3 @@ pub async fn list_whisper_server_models() -> Result<Vec<String>, String> {
     client.list_models().await
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[tokio::test]
-    async fn test_check_whisper_server_status_no_url() {
-        // When URL is empty, should return error
-        // This test works with the default config which has a URL set,
-        // so we can't easily test the empty URL case without mocking config
-    }
-}

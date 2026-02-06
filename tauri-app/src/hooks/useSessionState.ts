@@ -94,62 +94,42 @@ export function useSessionState(): UseSessionStateResult {
   // Subscribe to events
   useEffect(() => {
     let mounted = true;
-    const unlistenPromises: Promise<UnlistenFn>[] = [];
+    const unlistenFns: UnlistenFn[] = [];
 
-    // Set up listeners and collect their unsubscribe promises
-    unlistenPromises.push(
-      listen<SessionStatus>('session_status', (event) => {
-        if (mounted) setStatus(event.payload);
-      })
-    );
-
-    unlistenPromises.push(
-      listen<TranscriptUpdate>('transcript_update', (event) => {
-        if (mounted) setTranscript(event.payload);
-      })
-    );
-
-    unlistenPromises.push(
-      listen<BiomarkerUpdate>('biomarker_update', (event) => {
-        if (mounted) setBiomarkers(event.payload);
-      })
-    );
-
-    unlistenPromises.push(
-      listen<AudioQualitySnapshot>('audio_quality', (event) => {
-        if (mounted) setAudioQuality(event.payload);
-      })
-    );
-
-    unlistenPromises.push(
-      listen<AutoEndEventPayload>('session_auto_end', (event) => {
+    const setupListener = <T>(event: string, handler: (payload: T) => void) => {
+      listen<T>(event, (e) => {
+        if (mounted) handler(e.payload);
+      }).then((fn) => {
         if (mounted) {
-          console.log('Session auto-ended:', event.payload);
-          setAutoEndInfo(event.payload);
-          setSilenceWarning(null); // Clear warning when auto-end triggers
+          unlistenFns.push(fn);
+        } else {
+          fn(); // Component unmounted before listener resolved
         }
-      })
-    );
+      });
+    };
 
-    unlistenPromises.push(
-      listen<SilenceWarningPayload>('silence_warning', (event) => {
-        if (mounted) {
-          // remaining_ms of 0 means speech detected, clear the warning
-          if (event.payload.remaining_ms === 0) {
-            setSilenceWarning(null);
-          } else {
-            setSilenceWarning(event.payload);
-          }
-        }
-      })
-    );
+    setupListener<SessionStatus>('session_status', setStatus);
+    setupListener<TranscriptUpdate>('transcript_update', setTranscript);
+    setupListener<BiomarkerUpdate>('biomarker_update', setBiomarkers);
+    setupListener<AudioQualitySnapshot>('audio_quality', setAudioQuality);
+
+    setupListener<AutoEndEventPayload>('session_auto_end', (payload) => {
+      console.log('Session auto-ended:', payload);
+      setAutoEndInfo(payload);
+      setSilenceWarning(null);
+    });
+
+    setupListener<SilenceWarningPayload>('silence_warning', (payload) => {
+      if (payload.remaining_ms === 0) {
+        setSilenceWarning(null);
+      } else {
+        setSilenceWarning(payload);
+      }
+    });
 
     return () => {
       mounted = false;
-      // Await all promises and unsubscribe
-      Promise.all(unlistenPromises).then((unlisteners) => {
-        unlisteners.forEach((fn) => fn());
-      });
+      unlistenFns.forEach((fn) => fn());
     };
   }, []);
 
