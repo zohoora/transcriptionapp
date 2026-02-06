@@ -53,6 +53,10 @@ pnpm tauri build --debug
 # Run
 open "src-tauri/target/debug/bundle/macos/Transcription App.app"
 
+# Verify
+npx tsc --noEmit                 # TypeScript typecheck
+cd src-tauri && cargo check      # Rust compile check
+
 # Tests
 pnpm test:run                    # Frontend (Vitest)
 cd src-tauri && cargo test       # Rust
@@ -128,6 +132,25 @@ Idle → Preparing → Recording → Stopping → Completed
   └──────────── Reset / Error ←───────────────┘
 ```
 
+## Code Patterns & Gotchas
+
+| Pattern | Rule |
+|---------|------|
+| Concurrent async guards | Use `useRef` (not `useState`) — state is async, can't prevent double-clicks |
+| Session lifecycle resets | Add cleanup to `useSessionLifecycle.resetAllSessionState()` |
+| Pipeline staleness | Generation counter (`u64`) — discard messages from previous pipeline runs |
+| Tauri `listen()` cleanup | Use `mounted` flag + call `fn()` immediately if unmounted before resolve |
+| Pipeline handle cleanup | `PipelineHandle` has `Drop` impl; spawn background thread for `h.join()` to avoid blocking Tauri thread |
+| Config safety | Clamp loaded values to safe ranges (user could edit JSON manually) |
+| Date arithmetic | Use `checked_add_signed` not `+` for chrono dates (prevents panic) |
+| UTF-8 slicing | Use `ceil_char_boundary()` for safe substring truncation |
+| Serde casing | All frontend-facing structs need `#[serde(rename_all = "camelCase")]` |
+| Event namespacing | Session events (`transcript_update`) vs continuous events (`continuous_transcript_preview`) — never share |
+| File read commands | Always validate paths are within expected directories (path traversal prevention) |
+| Emit after success | Don't emit "started" events before the operation actually succeeds |
+| Functional setState | Use `prev => !prev` pattern in `useCallback` to avoid stale closures |
+| Vec batch cleanup | Use `drain(..excess)` not `remove(0)` in loop |
+
 ## Features
 
 ### SOAP Note Generation
@@ -159,56 +182,13 @@ Idle → Preparing → Recording → Stopping → Completed
 - SOAP auto-added to existing encounter (patient ID resolved from `Encounter.subject.reference`)
 
 ### Biomarkers
-- **Vitality**: Pitch variability (F0 std dev) - detects flat affect
-- **Stability**: CPP (Cepstral Peak Prominence) - vocal fold regularity
-- **Cough Detection**: YAMNet ONNX model
-- **Conversation Dynamics**: Turn-taking, overlap, response latency, engagement score
-
-**Interpretable Metrics** (Insights tab in ReviewMode):
-| Metric | Unit | Good | Moderate | Concerning |
-|--------|------|------|----------|------------|
-| Vitality | Hz | ≥30 (Normal) | 15-30 (Reduced) | <15 (Low) |
-| Stability | dB | ≥8 (Good) | 5-8 (Moderate) | <5 (Unstable) |
-| Engagement | 0-100 | ≥70 (Good) | 40-70 (Moderate) | <40 (Low) |
-| Response Time | ms | ≤500 (Quick) | 500-1500 (Moderate) | >1500 (Slow) |
-
-Helper functions: `getVitalityStatus()`, `getStabilityStatus()`, `getEngagementStatus()`, `getResponseTimeStatus()` in `types/index.ts`
+Vitality (F0 pitch variability), Stability (CPP), Cough Detection (YAMNet ONNX), Conversation Dynamics (turn-taking, engagement score). Thresholds and status helpers (`getVitalityStatus()`, etc.) in `types/index.ts`.
 
 ### Speaker Enrollment
-- Train diarization to recognize known speakers by voice
-- Profiles include: name, role (Physician/PA/RN/MA/Patient/Other), description
-- 256-dim ECAPA-TDNN voice embeddings stored in `speaker_profiles.json`
-- Enrolled speakers loaded at session start, matched with higher threshold (0.6 vs 0.3)
-- Speaker context injected into SOAP prompts for better clinical attribution
-
-**Enrollment Flow**:
-1. Settings → Speaker Profiles → Add
-2. Enter name, role, description
-3. Record 5-15 second voice sample
-4. Save profile (embedding extracted automatically)
-
-**Recognition Priority**: Enrolled speakers checked first → fall back to auto-clustering if no match
+Voice profiles (name, role, 256-dim ECAPA-TDNN embedding) stored in `speaker_profiles.json`. Enrolled speakers matched first (threshold 0.6) → fall back to auto-clustering (0.3). Speaker context injected into SOAP prompts. See ADR 0014.
 
 ### Clinical Assistant Chat
-Real-time chat with an LLM during recording sessions for quick medical lookups.
-
-**Features**:
-- Collapsible chat window in RecordingMode
-- Markdown rendering (bold, italic, code, lists, headers)
-- Shows when web search tools were used
-
-**Architecture**:
-- Frontend: `useClinicalChat.ts` hook, `ClinicalChat.tsx` component
-- Backend: `commands/clinical_chat.rs` - proxies HTTP through Rust (bypasses browser CSP)
-- Uses `clinical-assistant` model alias on LLM router
-
-**Router Requirements**:
-The LLM router must handle tool execution for the `clinical-assistant` alias. If the model returns a tool call (e.g., `{"toolcall": {"name": "toolsearch", ...}}`), the router must:
-1. Execute the tool (web search, etc.)
-2. Feed results back to the model
-3. Return the final response
-
-Without router-side tool execution, raw tool call JSON will be displayed instead of results.
+Real-time LLM chat during recording via `clinical-assistant` model alias. Backend proxies HTTP through Rust (bypasses CSP). Router must handle tool execution server-side — without it, raw tool call JSON is shown instead of results. See ADR 0017.
 
 ### Auto-End Silence Detection
 Automatically ends recording sessions after prolonged silence.
@@ -229,158 +209,25 @@ Automatically ends recording sessions after prolonged silence.
 Port 7101, JSON-RPC 2.0. Tools: `agent_identity`, `health_check`, `get_status`, `get_logs`
 
 ### MIIS (Medical Illustration Image Server)
-Real-time medical image suggestions during recording based on conversation concepts.
-
-**How it works**:
-1. Every 30 seconds during recording, LLM extracts medical concepts from transcript
-2. Concepts sent to MIIS server for image suggestions
-3. Relevant anatomical diagrams/illustrations displayed as thumbnails
-4. Click to expand, dismiss to remove from view
-5. Usage telemetry (impressions, clicks, dismisses) sent back for ranking improvement
-
-**Architecture**:
-- Frontend: `useMiisImages.ts` hook, `ImageSuggestions.tsx` component
-- Backend: `commands/miis.rs` - proxies HTTP through Rust (avoids CORS)
-- Concept extraction: Piggybacks on `generate_predictive_hint` LLM call
-
-**Configuration**:
-- `miis_enabled`: Enable/disable image suggestions
-- `miis_server_url`: MIIS server URL (default: `http://10.241.15.154:7843`)
-
-**Server Requirements**:
-The MIIS server must have:
-- `/v5/ambient/suggest` - Returns ranked image suggestions based on concepts
-- `/v5/usage` - Accepts telemetry events (impressions, clicks, dismisses)
-- `/v5/assets/{path}` - Serves image files (thumbnails, display size)
-- Embedder enabled for semantic concept matching
-
-**Files**: `commands/miis.rs`, `useMiisImages.ts`, `usePredictiveHint.ts`, `ImageSuggestions.tsx`
+LLM extracts medical concepts from transcript every 30s → MIIS server returns ranked image suggestions. Backend proxies through Rust (avoids CORS). Config: `miis_enabled`, `miis_server_url`. Server needs embedder enabled for semantic matching. See ADR 0018.
 
 ### Continuous Charting Mode (End of Day)
-Records continuously all day without manual session start/stop. An LLM-based encounter detector automatically segments the transcript into individual patient encounters and generates SOAP notes. The physician reviews all notes at end of day via the session history window.
+Records all day without manual start/stop. LLM encounter detector segments transcript into patient encounters and generates SOAP notes automatically. Two modes: **Session** (default, manual) and **Continuous** (end-of-day). See ADR 0019.
 
-**Two Charting Modes**:
-- **Session Mode** (default): Manual start/stop per patient, SOAP generated after each session
-- **Continuous Mode**: Records all day, encounters auto-detected, SOAPs generated automatically
+**Detection**: Pipeline → TranscriptBuffer → LLM check every `encounter_check_interval_secs` (120s) or on `encounter_silence_trigger_secs` (60s) of silence → archive + SOAP on complete encounter.
 
-**Lifecycle Notes**:
-- Backend emits `started` event only after pipeline successfully starts (not before)
-- Frontend sets `isActive=false` on `error` events to prevent stale active state
-- Auto-detection (listening mode) is disabled while continuous mode is active
-- Switching charting mode to "session" while continuous recording is active is blocked (user must stop first)
+**Lifecycle**:
+- `started` event emitted only after pipeline successfully starts
+- `isActive=false` on `error` events (prevents stale UI state)
+- Auto-detection (listening mode) disabled while continuous mode is active
+- Charting mode switch to "session" blocked while continuous recording is active
 - Transcript preview uses `continuous_transcript_preview` event (separate from session's `transcript_update`)
-
-**Architecture**:
-```
-Microphone → Pipeline (runs all day) → TranscriptBuffer
-                                              ↓ (every 2 min or on 60s silence)
-                                        Encounter Detector (LLM)
-                                              ↓
-                                        Complete encounter found?
-                                        YES → Extract → SOAP → Archive
-                                        NO  → Continue buffering
-```
-
-**Encounter Detection**:
-- LLM analyzes accumulated transcript to find complete patient encounters
-- Triggers: Every `encounter_check_interval_secs` (default: 120s) OR after `encounter_silence_trigger_secs` of silence (default: 60s)
-- Detection looks for greeting/introduction → clinical discussion → farewell/wrap-up
-- Partial encounters stay in buffer until complete
-
-**Configuration**:
-- `charting_mode`: `"session"` | `"continuous"` (default: `"session"`)
-- `continuous_auto_copy_soap`: Auto-copy SOAP to clipboard (default: `false` - avoids spam)
-- `encounter_check_interval_secs`: How often to check for complete encounters (default: 120)
-- `encounter_silence_trigger_secs`: Silence duration that triggers immediate check (default: 60)
-
-**Frontend UI**:
-- Settings → Charting Mode → "End of Day" toggle
-- ContinuousMode component shows: pulsing status, running timer, live transcript preview, encounter count, last encounter summary, buffer word count
-- History window shows "Auto-charted" badge and "Encounter #N" for continuous mode sessions
-
-**Session Metadata**:
-- `charting_mode`: `"continuous"` for auto-detected encounters
-- `encounter_number`: Sequential number within the day (e.g., 3 for third encounter)
-
-**Files**:
-- Backend: `continuous_mode.rs` (TranscriptBuffer, encounter detector, main loop), `commands/continuous.rs` (Tauri commands)
-- Frontend: `useContinuousMode.ts` (hook), `ContinuousMode.tsx` (dashboard component)
-- Settings: `config.rs`, `SettingsDrawer.tsx`, `useSettings.ts`
-- Archive: `local_archive.rs` (ArchiveMetadata with charting_mode, encounter_number)
-
-**Workflow**:
-1. Enable "End of Day" in Settings → Charting Mode
-2. Click "Start Recording" on the continuous mode dashboard
-3. Conduct patient visits normally - no interaction needed
-4. Encounters are auto-detected and SOAP notes generated
-5. At end of day, review all encounters in History window
-6. Click "Stop" to end continuous recording
 
 ## Settings Schema
 
-```typescript
-interface Settings {
-  // Transcription
-  whisper_model: string;
-  whisper_mode: 'remote';  // Always remote (local provider removed)
-  whisper_server_url: string;
-  whisper_server_model: string;
-  language: string;
+Source of truth: `src-tauri/src/config.rs` (Rust) / `src/types/index.ts` (TypeScript).
 
-  // Audio
-  input_device_id: string | null;
-  vad_threshold: number;
-  diarization_enabled: boolean;
-  max_speakers: number;  // 2-10
-  enhancement_enabled: boolean;
-  biomarkers_enabled: boolean;
-  preprocessing_enabled: boolean;
-
-  // LLM Router
-  llm_router_url: string;
-  llm_api_key: string;
-  llm_client_id: string;
-  soap_model: string;       // Long sessions (≥5K words)
-  soap_model_fast: string;  // Short sessions (<5K words)
-  fast_model: string;       // Greeting detection
-
-  // Medplum
-  medplum_server_url: string;
-  medplum_client_id: string;
-  medplum_auto_sync: boolean;
-
-  // Auto-detection
-  auto_start_enabled: boolean;
-  auto_start_require_enrolled: boolean;  // Require enrolled speaker for auto-start
-  auto_start_required_role: string | null; // Role filter (e.g., "physician")
-  auto_end_enabled: boolean;
-  auto_end_silence_ms: number;   // Default: 180000 (3 minutes)
-  greeting_sensitivity: number;  // 0.0-1.0
-  min_speech_duration_ms: number;
-
-  // SOAP Generation
-  soap_detail_level: number;       // 1-10, controls verbosity (persisted across sessions)
-  soap_format: 'problem_based' | 'comprehensive';  // Organization style
-  soap_custom_instructions: string; // Additional prompt instructions
-
-  // MIIS (Medical Illustration Image Server)
-  miis_enabled: boolean;           // Enable image suggestions during recording
-  miis_server_url: string;         // MIIS server URL
-
-  // Screen Capture (for Vision SOAP)
-  screen_capture_enabled: boolean;        // Enable periodic screenshot capture
-  screen_capture_interval_secs: number;   // Capture interval (default: 30)
-
-  // Continuous Charting Mode
-  charting_mode: 'session' | 'continuous';  // Default: 'session'
-  continuous_auto_copy_soap: boolean;       // Auto-copy SOAP in continuous mode (default: false)
-  encounter_check_interval_secs: number;    // Encounter detection interval (default: 120)
-  encounter_silence_trigger_secs: number;   // Silence trigger threshold (default: 60)
-
-  // Debug
-  debug_storage_enabled: boolean;  // PHI storage for dev only
-}
-```
+Key settings groups: Transcription (whisper_mode always `"remote"`), Audio (VAD, diarization, enhancement), LLM Router (soap_model/soap_model_fast/fast_model), Medplum (OAuth, auto_sync), Auto-detection (auto_start, auto_end_silence_ms=180000), SOAP (detail_level 1-10, format, custom_instructions), MIIS, Screen Capture, Continuous Mode (charting_mode, encounter intervals), Debug.
 
 ## File Locations
 
@@ -390,6 +237,7 @@ interface Settings {
 | `~/.transcriptionapp/config.json` | Settings |
 | `~/.transcriptionapp/speaker_profiles.json` | Enrolled speaker voice profiles |
 | `~/.transcriptionapp/medplum_auth.json` | OAuth tokens |
+| `~/.transcriptionapp/archive/` | Local session archive (`YYYY/MM/DD/session_id/`) |
 | `~/.transcriptionapp/logs/` | Activity logs (daily rotation, PHI-safe) |
 | `~/.transcriptionapp/debug/` | Debug storage (dev only) |
 
@@ -422,13 +270,12 @@ interface Settings {
 - `usePredictiveHint` - LLM hints + concept extraction during recording
 - `useMiisImages` - Medical illustration suggestions from MIIS server
 - `useContinuousMode` - Continuous charting mode state and controls
+- `useScreenCapture` - Periodic screenshot capture during recording
+- `useChecklist` - Pre-flight system checks
+- `useDevices` - Audio input device enumeration
+- `useWhisperModels` - Whisper model download and management
 
-**Speaker Enrollment** (`src/components/`):
-- `SpeakerEnrollment.tsx` - Profile list, enrollment form, audio recording
-
-**Types**: `src/types/index.ts` - All TypeScript interfaces mirroring Rust structs, plus:
-- `BIOMARKER_THRESHOLDS` - Clinical thresholds for biomarker interpretation
-- `getVitalityStatus()`, `getStabilityStatus()`, `getEngagementStatus()`, `getResponseTimeStatus()` - Convert raw values to interpretable labels
+**Types**: `src/types/index.ts` - All TypeScript interfaces mirroring Rust structs, biomarker thresholds and status helpers
 
 ## Common Issues
 
@@ -460,7 +307,7 @@ interface Settings {
 ## Adding New Features
 
 1. **Config**: Add field to `config.rs`, `types/index.ts`, `useSettings.ts`, `SettingsDrawer.tsx`
-2. **Model**: Add URL/download in `models.rs`, check in `checklist.rs`
+2. **Model**: Add URL/download in `commands/models.rs`, check in `checklist.rs`
 3. **Command**: Add to `commands/*.rs`, register in `lib.rs`
 4. **Pipeline**: Add provider initialization in `pipeline.rs`
 
