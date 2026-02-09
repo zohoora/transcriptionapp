@@ -71,6 +71,9 @@ pub struct ArchiveMetadata {
     /// Encounter number within a continuous mode day (e.g., 3 for "Encounter #3")
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub encounter_number: Option<u32>,
+    /// Patient name extracted via vision-based screenshot analysis (majority vote)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub patient_name: Option<String>,
 }
 
 impl ArchiveMetadata {
@@ -90,6 +93,7 @@ impl ArchiveMetadata {
             soap_format: None,
             charting_mode: None,
             encounter_number: None,
+            patient_name: None,
         }
     }
 }
@@ -108,6 +112,8 @@ pub struct ArchiveSummary {
     pub charting_mode: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub encounter_number: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub patient_name: Option<String>,
 }
 
 /// Detailed archived session (for detail view)
@@ -353,6 +359,7 @@ pub fn list_sessions_by_date(date_str: &str) -> Result<Vec<ArchiveSummary>, Stri
             auto_ended: metadata.auto_ended,
             charting_mode: metadata.charting_mode,
             encounter_number: metadata.encounter_number,
+            patient_name: metadata.patient_name,
         });
     }
 
@@ -511,6 +518,7 @@ mod tests {
             auto_ended: false,
             charting_mode: None,
             encounter_number: None,
+            patient_name: None,
         };
 
         let json = serde_json::to_string(&summary).unwrap();

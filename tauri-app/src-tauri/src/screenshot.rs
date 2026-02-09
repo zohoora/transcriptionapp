@@ -456,6 +456,49 @@ fn save_jpeg_resized(raw: &RawImage, path: &Path, max_edge: u32) -> Result<(u32,
     Ok((new_w, new_h))
 }
 
+/// Capture the screen and return a resized JPEG as a base64-encoded string.
+///
+/// Used by continuous mode for vision-based patient name extraction.
+/// No temp files are written — the image stays in memory.
+pub fn capture_to_base64(max_edge: u32) -> Result<String, String> {
+    use base64::Engine;
+    use image::{ImageBuffer, Rgba, codecs::jpeg::JpegEncoder, imageops::FilterType};
+    use std::io::Cursor;
+
+    let raw = capture_screen()?;
+
+    let img: ImageBuffer<Rgba<u8>, _> = ImageBuffer::from_raw(raw.width, raw.height, raw.data.clone())
+        .ok_or("Failed to create image buffer")?;
+
+    // Resize to fit within max_edge
+    let long_edge = raw.width.max(raw.height);
+    let (new_w, new_h) = if long_edge <= max_edge {
+        (raw.width, raw.height)
+    } else {
+        let scale = max_edge as f64 / long_edge as f64;
+        (
+            (raw.width as f64 * scale).round() as u32,
+            (raw.height as f64 * scale).round() as u32,
+        )
+    };
+
+    let resized = image::imageops::resize(&img, new_w, new_h, FilterType::Lanczos3);
+
+    // Encode as JPEG to in-memory buffer
+    let mut buf = Vec::new();
+    let mut encoder = JpegEncoder::new_with_quality(Cursor::new(&mut buf), 70);
+    encoder
+        .encode_image(&resized)
+        .map_err(|e| format!("JPEG encode failed: {}", e))?;
+
+    debug!(
+        "Screen capture to base64: {}x{} → {}x{}, {} bytes JPEG",
+        raw.width, raw.height, new_w, new_h, buf.len()
+    );
+
+    Ok(base64::engine::general_purpose::STANDARD.encode(&buf))
+}
+
 /// Select evenly-spaced thumbnail screenshots from the captured list.
 ///
 /// Filters for `-thumb.jpg` files and picks up to `count` images

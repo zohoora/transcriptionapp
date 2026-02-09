@@ -99,6 +99,7 @@ pub fn get_continuous_mode_status(
             encounters_detected: 0,
             last_encounter_at: None,
             last_encounter_words: None,
+            last_encounter_patient_name: None,
             last_error: None,
             buffer_word_count: 0,
         })

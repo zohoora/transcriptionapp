@@ -213,6 +213,7 @@ const HistoryWindow: React.FC = () => {
           auto_ended: false, // Not tracked in Medplum
           charting_mode: null,
           encounter_number: null,
+          patient_name: null,
         }));
         setSessions(converted);
       }
@@ -270,6 +271,7 @@ const HistoryWindow: React.FC = () => {
           soap_format: null, // Not available from Medplum
           charting_mode: null,
           encounter_number: null,
+          patient_name: null,
         };
 
         details = {
@@ -436,7 +438,7 @@ const HistoryWindow: React.FC = () => {
             <span className="summary-words">{selectedSession.metadata.word_count} words</span>
             {selectedSession.metadata.charting_mode === 'continuous' && (
               <span className="summary-badge charted">
-                Auto-charted{selectedSession.metadata.encounter_number != null ? ` #${selectedSession.metadata.encounter_number}` : ''}
+                Auto-charted{selectedSession.metadata.encounter_number != null ? ` #${selectedSession.metadata.encounter_number}` : ''}{selectedSession.metadata.patient_name ? ` \u2014 ${selectedSession.metadata.patient_name}` : ''}
               </span>
             )}
             {selectedSession.metadata.auto_ended && (
@@ -841,7 +843,7 @@ const HistoryWindow: React.FC = () => {
                     <span className="session-time">{formatTime(session.date)}</span>
                     <span className="session-name">
                       {session.charting_mode === 'continuous' && session.encounter_number != null
-                        ? `Encounter #${session.encounter_number}`
+                        ? `Encounter #${session.encounter_number}${session.patient_name ? ` \u2014 ${session.patient_name}` : ''}`
                         : session.word_count > 0
                           ? `${session.word_count} words`
                           : 'Scribe Session'}

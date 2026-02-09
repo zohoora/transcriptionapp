@@ -176,6 +176,9 @@ export const ContinuousMode = memo(function ContinuousMode({
             {stats.last_encounter_words && (
               <span> &middot; {stats.last_encounter_words} words</span>
             )}
+            {stats.last_encounter_patient_name && (
+              <span> &mdash; {stats.last_encounter_patient_name}</span>
+            )}
           </div>
         </div>
       )}

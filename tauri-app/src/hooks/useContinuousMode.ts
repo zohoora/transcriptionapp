@@ -24,6 +24,7 @@ const IDLE_STATS: ContinuousModeStats = {
   encounters_detected: 0,
   last_encounter_at: null,
   last_encounter_words: null,
+  last_encounter_patient_name: null,
   last_error: null,
   buffer_word_count: 0,
 };

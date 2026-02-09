@@ -615,6 +615,7 @@ export interface LocalArchiveSummary {
   auto_ended: boolean;
   charting_mode: ChartingMode | null;
   encounter_number: number | null;
+  patient_name: string | null;
 }
 
 /** Metadata for an archived session */
@@ -637,6 +638,8 @@ export interface LocalArchiveMetadata {
   charting_mode: ChartingMode | null;
   /** Encounter number within a continuous mode day */
   encounter_number: number | null;
+  /** Patient name extracted via vision-based screenshot analysis */
+  patient_name: string | null;
 }
 
 /** Detailed archived session (for detail view) */
@@ -662,6 +665,7 @@ export interface ContinuousModeStats {
   encounters_detected: number;
   last_encounter_at: string | null;
   last_encounter_words: number | null;
+  last_encounter_patient_name: string | null;
   last_error: string | null;
   buffer_word_count: number;
 }
@@ -681,6 +685,7 @@ export interface ContinuousModeEvent {
   type: ContinuousModeEventType;
   session_id?: string;
   word_count?: number;
+  patient_name?: string;
   error?: string;
   merged_into_session_id?: string;
   removed_session_id?: string;
