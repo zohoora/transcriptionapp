@@ -9,7 +9,7 @@ A real-time speech-to-text transcription desktop application built with Tauri, R
 ## Features
 
 ### Core Transcription
-- **Offline Transcription** - Core transcription runs entirely on-device using Whisper
+- **STT Router Streaming** - Real-time transcription via WebSocket streaming through STT Router with medical-optimized aliases
 - **Real-time Updates** - Finalized transcript within 1-4 seconds of each utterance
 - **VAD-Gated** - Voice Activity Detection prevents hallucinations during silence
 - **Speaker Diarization** - Identifies up to 10 different speakers in conversation
@@ -38,7 +38,7 @@ A real-time speech-to-text transcription desktop application built with Tauri, R
 - **Noise Floor Analysis** - Ambient noise level tracking
 - **Actionable Suggestions** - Context-aware feedback
 
-> **Note on Network Features**: The transcription pipeline requires a remote faster-whisper-server. SOAP generation (LLM router) and EMR sync (Medplum) also require network access.
+> **Note on Network Features**: The transcription pipeline requires the STT Router (WebSocket streaming to Whisper backend). SOAP generation (LLM Router) and EMR sync (Medplum) also require network access.
 
 ## Quick Start
 
@@ -85,7 +85,7 @@ ORT_DYLIB_PATH=$(./scripts/setup-ort.sh) \
 │  │   React/TS UI   │◄──────────────►│          Rust Backend           │ │
 │  │  - Sidebar      │    Events      │  - Session State Machine        │ │
 │  │  - Settings     │                │  - Audio Pipeline               │ │
-│  │  - Transcript   │                │  - Whisper + Diarization        │ │
+│  │  - Transcript   │                │  - STT Router + Diarization     │ │
 │  │  - SOAP Notes   │                │  - Biomarker Analysis           │ │
 │  │  - EMR Sync     │                │  - LLM Router + Medplum         │ │
 │  └─────────────────┘                └─────────────────────────────────┘ │
@@ -102,7 +102,7 @@ ORT_DYLIB_PATH=$(./scripts/setup-ort.sh) \
 | Ring Buffer | ringbuf |
 | Resampling | rubato |
 | VAD | voice_activity_detector (Silero) |
-| Transcription | faster-whisper-server (remote) |
+| Transcription | STT Router (WebSocket streaming to Whisper backend) |
 | Speaker Diarization | ONNX Runtime + WeSpeaker |
 | Speech Enhancement | GTCRN (ONNX) |
 | Emotion Detection | wav2small (ONNX) |
@@ -116,12 +116,15 @@ ORT_DYLIB_PATH=$(./scripts/setup-ort.sh) \
 ```bash
 cd tauri-app
 
-# Frontend tests (430 tests)
+# Frontend tests (387 tests)
 pnpm test:run
 
-# Rust tests (346 tests)
+# Rust tests (355 unit + 9 E2E integration)
 cd src-tauri
 ORT_DYLIB_PATH=$(../scripts/setup-ort.sh) cargo test
+
+# E2E integration tests (requires STT Router + LLM Router running)
+cargo test e2e_ -- --ignored --nocapture
 ```
 
 ## File Locations

@@ -34,9 +34,32 @@ use std::collections::VecDeque;
 /// VAD chunk size at 16kHz
 const VAD_CHUNK_SIZE: usize = 512;
 
-/// Transcribe an utterance via the remote Whisper server and return a segment.
-fn transcribe_utterance(client: &WhisperServerClient, utterance: &Utterance, language: &str) -> Result<Segment, String> {
-    let text = client.transcribe_blocking(&utterance.audio, language)?;
+/// Transcribe an utterance via the STT server streaming endpoint and return a segment.
+///
+/// Uses WebSocket streaming to get partial transcript chunks in real-time.
+/// Falls back to batch transcription if streaming fails.
+fn transcribe_utterance(
+    client: &WhisperServerClient,
+    utterance: &Utterance,
+    _language: &str,
+    stt_alias: &str,
+    stt_postprocess: bool,
+    tx: &tokio::sync::mpsc::Sender<PipelineMessage>,
+) -> Result<Segment, String> {
+    // Use streaming transcription with chunk callback
+    let tx_clone = tx.clone();
+    let text = client.transcribe_streaming_blocking(
+        &utterance.audio,
+        stt_alias,
+        stt_postprocess,
+        |chunk_text| {
+            // Emit partial transcript chunk to frontend
+            let _ = tx_clone.blocking_send(PipelineMessage::TranscriptChunk {
+                text: chunk_text.to_string(),
+            });
+        },
+    )?;
+
     Ok(Segment::new(
         utterance.start_ms,
         utterance.end_ms,
@@ -50,6 +73,10 @@ fn transcribe_utterance(client: &WhisperServerClient, utterance: &Utterance, lan
 pub enum PipelineMessage {
     /// New segment transcribed
     Segment(Segment),
+    /// Partial transcript chunk from streaming STT (for real-time display)
+    TranscriptChunk {
+        text: String,
+    },
     /// Processing status update
     Status {
         audio_clock_ms: u64,
@@ -106,9 +133,13 @@ pub struct PipelineConfig {
     pub preprocessing_enabled: bool,
     pub preprocessing_highpass_hz: u32,
     pub preprocessing_agc_target_rms: f32,
-    // Whisper server settings (for remote transcription)
+    // STT server settings (for remote transcription)
     pub whisper_server_url: String,
     pub whisper_server_model: String,
+    /// STT alias to use for streaming transcription (e.g., "medical-streaming")
+    pub stt_alias: String,
+    /// Whether to enable medical term post-processing on STT results
+    pub stt_postprocess: bool,
     // Initial audio buffer from listening mode (optimistic recording)
     // This buffer contains audio captured before the greeting check completed
     // and should be prepended to the recording at startup
@@ -139,8 +170,10 @@ impl Default for PipelineConfig {
             preprocessing_enabled: true,
             preprocessing_highpass_hz: 80,
             preprocessing_agc_target_rms: 0.1,
-            whisper_server_url: "http://172.16.100.45:8001".to_string(),
+            whisper_server_url: "http://10.241.15.154:8001".to_string(),
             whisper_server_model: "large-v3-turbo".to_string(),
+            stt_alias: "medical-streaming".to_string(),
+            stt_postprocess: true,
             initial_audio_buffer: None,
             auto_end_enabled: true,
             auto_end_silence_ms: 180_000, // 3 minutes default
@@ -642,7 +675,7 @@ fn run_pipeline_thread_inner(
                 };
 
                 // Transcribe (using enhanced audio if available)
-                match transcribe_utterance(&whisper_client, &utterance, &config.language) {
+                match transcribe_utterance(&whisper_client, &utterance, &config.language, &config.stt_alias, config.stt_postprocess, &tx) {
                     Ok(mut segment) => {
                         if !segment.text.is_empty() {
                             // Only run diarization if we have actual text
@@ -909,7 +942,7 @@ fn run_pipeline_thread_inner(
             };
 
             // Transcribe (using enhanced audio if available)
-            match transcribe_utterance(&whisper_client, &utterance, &config.language) {
+            match transcribe_utterance(&whisper_client, &utterance, &config.language, &config.stt_alias, config.stt_postprocess, &tx) {
                 Ok(mut segment) => {
                     if !segment.text.is_empty() {
                         // Use original audio for diarization (speaker fingerprints)

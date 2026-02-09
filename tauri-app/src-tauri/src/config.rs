@@ -43,6 +43,11 @@ pub struct Settings {
     pub whisper_server_url: String,
     #[serde(default = "default_whisper_server_model")]
     pub whisper_server_model: String,
+    // STT streaming settings
+    #[serde(default = "default_stt_alias")]
+    pub stt_alias: String,
+    #[serde(default = "default_stt_postprocess")]
+    pub stt_postprocess: bool,
     // SOAP note generation preferences (persisted)
     #[serde(default = "default_soap_detail_level")]
     pub soap_detail_level: u8,
@@ -89,6 +94,14 @@ pub struct Settings {
     pub encounter_check_interval_secs: u32,
     #[serde(default = "default_encounter_silence_trigger_secs")]
     pub encounter_silence_trigger_secs: u32,
+}
+
+fn default_stt_alias() -> String {
+    "medical-streaming".to_string()
+}
+
+fn default_stt_postprocess() -> bool {
+    true
 }
 
 fn default_charting_mode() -> String {
@@ -173,8 +186,7 @@ fn default_whisper_mode() -> String {
 }
 
 fn default_whisper_server_url() -> String {
-    // Empty by default - must be configured by user for remote transcription
-    String::new()
+    "http://10.241.15.154:8001".to_string()
 }
 
 fn default_whisper_server_model() -> String {
@@ -220,6 +232,8 @@ impl Default for Settings {
             whisper_mode: default_whisper_mode(),
             whisper_server_url: default_whisper_server_url(),
             whisper_server_model: default_whisper_server_model(),
+            stt_alias: default_stt_alias(),
+            stt_postprocess: default_stt_postprocess(),
             soap_detail_level: default_soap_detail_level(),
             soap_format: default_soap_format(),
             soap_custom_instructions: String::new(),
@@ -504,6 +518,11 @@ pub struct Config {
     pub whisper_server_url: String,
     #[serde(default = "default_whisper_server_model")]
     pub whisper_server_model: String,
+    // STT streaming settings
+    #[serde(default = "default_stt_alias")]
+    pub stt_alias: String,
+    #[serde(default = "default_stt_postprocess")]
+    pub stt_postprocess: bool,
     // SOAP note generation preferences (persisted)
     #[serde(default = "default_soap_detail_level")]
     pub soap_detail_level: u8,
@@ -616,6 +635,8 @@ impl Default for Config {
             whisper_mode: default_whisper_mode(),
             whisper_server_url: default_whisper_server_url(),
             whisper_server_model: default_whisper_server_model(),
+            stt_alias: default_stt_alias(),
+            stt_postprocess: default_stt_postprocess(),
             soap_detail_level: default_soap_detail_level(),
             soap_format: default_soap_format(),
             soap_custom_instructions: String::new(),
@@ -819,6 +840,8 @@ impl Config {
             whisper_mode: self.whisper_mode.clone(),
             whisper_server_url: self.whisper_server_url.clone(),
             whisper_server_model: self.whisper_server_model.clone(),
+            stt_alias: self.stt_alias.clone(),
+            stt_postprocess: self.stt_postprocess,
             soap_detail_level: self.soap_detail_level,
             soap_format: self.soap_format.clone(),
             soap_custom_instructions: self.soap_custom_instructions.clone(),
@@ -864,6 +887,8 @@ impl Config {
         self.whisper_mode = settings.whisper_mode.clone();
         self.whisper_server_url = settings.whisper_server_url.clone();
         self.whisper_server_model = settings.whisper_server_model.clone();
+        self.stt_alias = settings.stt_alias.clone();
+        self.stt_postprocess = settings.stt_postprocess;
         self.soap_detail_level = settings.soap_detail_level;
         self.soap_format = settings.soap_format.clone();
         self.soap_custom_instructions = settings.soap_custom_instructions.clone();
@@ -1007,6 +1032,8 @@ mod tests {
             continuous_auto_copy_soap: false,
             encounter_check_interval_secs: 120,
             encounter_silence_trigger_secs: 60,
+            stt_alias: "medical-streaming".to_string(),
+            stt_postprocess: true,
         };
 
         let mut config = Config::default();
@@ -1118,6 +1145,8 @@ mod tests {
             continuous_auto_copy_soap: false,
             encounter_check_interval_secs: default_encounter_check_interval_secs(),
             encounter_silence_trigger_secs: default_encounter_silence_trigger_secs(),
+            stt_alias: default_stt_alias(),
+            stt_postprocess: default_stt_postprocess(),
         };
 
         let mut config = Config::default();
@@ -1198,14 +1227,17 @@ mod tests {
     fn test_whisper_server_defaults() {
         let config = Config::default();
         assert_eq!(config.whisper_mode, "remote");  // Always remote
-        // Whisper server URL is empty by default - must be configured by user
-        assert!(config.whisper_server_url.is_empty());
+        assert_eq!(config.whisper_server_url, "http://10.241.15.154:8001");
         assert_eq!(config.whisper_server_model, "large-v3-turbo");
+        assert_eq!(config.stt_alias, "medical-streaming");
+        assert!(config.stt_postprocess);
 
         let settings = Settings::default();
         assert_eq!(settings.whisper_mode, "remote");  // Always remote
-        assert!(settings.whisper_server_url.is_empty());
+        assert_eq!(settings.whisper_server_url, "http://10.241.15.154:8001");
         assert_eq!(settings.whisper_server_model, "large-v3-turbo");
+        assert_eq!(settings.stt_alias, "medical-streaming");
+        assert!(settings.stt_postprocess);
     }
 
     // Settings validation tests

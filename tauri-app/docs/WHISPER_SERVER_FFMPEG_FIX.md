@@ -128,19 +128,20 @@ After installing ffmpeg, verify the fix:
 
 ## Client Configuration Reference
 
+> **Note (Feb 2026)**: The app now uses the STT Router with WebSocket streaming (see ADR-0020). The batch `/v1/audio/transcriptions` endpoint documented here is the legacy path. The STT Router wraps this Whisper server and exposes streaming via `/v1/audio/stream`.
+
 The transcription app is configured to use:
 
 | Setting | Value |
 |---------|-------|
 | `whisper_server_url` | `http://10.241.15.154:8001` |
-| `whisper_server_model` | `large-v3-turbo` |
-| `whisper_mode` | `remote` |
+| `stt_alias` | `medical-streaming` |
+| `stt_postprocess` | `true` |
 
-The app sends requests to `/v1/audio/transcriptions` with:
-- Audio as WAV file (16kHz, mono, 16-bit PCM)
-- `temperature: 0.0` (deterministic output)
-- `no_speech_threshold: 0.8` (filter silence)
-- `condition_on_previous_text: false` (prevent repetition)
+The app connects via WebSocket to `/v1/audio/stream` and sends:
+- JSON config: `{"alias": "medical-streaming", "postprocess": true}`
+- Binary WAV audio (16kHz, mono, 16-bit PCM)
+- Receives `transcript_chunk` and `transcript_final` JSON messages
 
 ## Additional Notes
 

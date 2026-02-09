@@ -1,15 +1,18 @@
 # Whisper Server Setup Guide
 
-This guide is for setting up a remote Whisper transcription server on the Mac that already runs Medplum and the LLM router. The transcription app will connect to this server for speech-to-text processing.
+> **Note (Feb 2026)**: The transcription app now connects through the **STT Router** (see ADR-0020), not directly to this Whisper server. The STT Router wraps this server and provides WebSocket streaming with alias-based routing. This guide documents the **backend Whisper server** setup. The app's `whisper_server_url` config points to the STT Router, which forwards to this server.
+
+This guide is for setting up the Whisper transcription backend on the Mac that already runs Medplum and the LLM router.
 
 ## Overview
 
 - **Server**: faster-whisper-server (Speaches) - OpenAI-compatible API
 - **Model**: large-v3-turbo (recommended for speed/quality balance)
-- **Port**: 8000
+- **Port**: 8000 (STT Router on port 8001 forwards to this)
 - **Existing services on this Mac**:
   - Medplum server (FHIR EMR)
   - LLM router (OpenAI-compatible API for SOAP notes)
+  - STT Router (WebSocket streaming gateway on port 8001)
 
 ## Prerequisites
 
@@ -270,14 +273,19 @@ Response:
 
 ## Integration with Transcription App
 
-In the transcription app settings:
+The app connects through the **STT Router**, not directly to this Whisper server.
 
-1. Open Settings drawer
-2. Under "Transcription Mode", select "Remote Server"
-3. Enter the server URL: `http://192.168.50.149:8000` (use your server's IP)
-4. Select model: `large-v3-turbo`
-5. Click "Test" to verify connection
-6. Save settings
+In `~/.transcriptionapp/config.json`:
+
+```json
+{
+  "whisper_server_url": "http://10.241.15.154:8001",
+  "stt_alias": "medical-streaming",
+  "stt_postprocess": true
+}
+```
+
+The STT Router on port 8001 handles WebSocket streaming and forwards to this Whisper backend. See ADR-0020 for protocol details.
 
 ## Troubleshooting
 
@@ -338,8 +346,9 @@ After setup, this Mac will run:
 | Service | Port | Purpose |
 |---------|------|---------|
 | Medplum | 8103 | FHIR EMR server |
-| LLM Router | 4000 | OpenAI-compatible API for SOAP notes |
-| Whisper | 8000 | Speech-to-text |
+| LLM Router | 8080 | OpenAI-compatible API for SOAP notes |
+| Whisper | 8000 | Speech-to-text backend |
+| STT Router | 8001 | WebSocket streaming gateway (app connects here) |
 
 ## Maintenance
 

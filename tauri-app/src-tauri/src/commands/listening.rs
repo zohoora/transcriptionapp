@@ -87,6 +87,8 @@ pub async fn start_listening(
         llm_client_id: cfg.llm_client_id.clone(),
         fast_model: cfg.fast_model.clone(),
         language: cfg.language.clone(),
+        stt_alias: cfg.stt_alias.clone(),
+        stt_postprocess: cfg.stt_postprocess,
         require_enrolled: cfg.auto_start_require_enrolled,
         required_role: cfg.auto_start_required_role.clone(),
         speaker_model_path,

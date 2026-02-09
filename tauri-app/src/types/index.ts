@@ -96,6 +96,9 @@ export interface Settings {
   // Screen capture
   screen_capture_enabled: boolean;
   screen_capture_interval_secs: number;
+  // STT Router settings (streaming transcription)
+  stt_alias: string;
+  stt_postprocess: boolean;
   // Continuous charting mode
   charting_mode: ChartingMode;
   continuous_auto_copy_soap: boolean;

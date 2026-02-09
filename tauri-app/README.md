@@ -5,11 +5,11 @@ A real-time speech-to-text transcription desktop application built with Tauri, R
 ## Features
 
 ### Core Transcription
-- **Real-time Whisper transcription** - Remote inference via faster-whisper-server
+- **Real-time streaming transcription** - WebSocket streaming via STT Router with medical-optimized aliases
 - **Voice Activity Detection (VAD)** - Silero VAD for smart audio segmentation
 - **Speaker diarization** - ONNX-based speaker embeddings with online clustering
 - **Speech enhancement** - GTCRN denoising for cleaner audio (~2ms latency)
-- **Multiple Whisper models** - tiny, base, small, medium, large
+- **Continuous charting mode** - Records all day, auto-detects encounters, generates SOAP
 
 ### Clinical Features
 - **SOAP note generation** - AI-powered clinical notes via OpenAI-compatible LLM router
@@ -45,7 +45,8 @@ A real-time speech-to-text transcription desktop application built with Tauri, R
 - Rust 1.70+
 - pnpm 10+
 - ONNX Runtime (for speaker diarization, enhancement, emotion, YAMNet)
-- LLM Router (optional, for SOAP note generation - OpenAI-compatible API)
+- STT Router (required, for speech-to-text via WebSocket streaming)
+- LLM Router (required, for SOAP note generation - OpenAI-compatible API)
 - Medplum server (optional, for EMR integration)
 
 ## Quick Start
@@ -197,8 +198,9 @@ pnpm soak:test         # Interactive
 
 | Category | Framework | Count |
 |----------|-----------|-------|
-| Unit Tests (Frontend) | Vitest | 430 tests |
-| Unit Tests (Rust) | cargo test | 346 tests |
+| Unit Tests (Frontend) | Vitest | 387 tests |
+| Unit Tests (Rust) | cargo test | 355 tests |
+| E2E Integration (Rust) | cargo test (ignored) | 9 tests |
 | Snapshot Tests | Vitest | 7 snapshots |
 | Accessibility Tests | vitest-axe | 12 tests |
 | Contract Tests | Vitest | 24 tests |
@@ -215,22 +217,25 @@ Settings are stored in `~/.transcriptionapp/config.json`:
 
 ```json
 {
-  "whisper_model": "small",
   "language": "en",
   "input_device_id": null,
   "diarization_enabled": true,
   "max_speakers": 2,
-  "llm_router_url": "http://localhost:4000",
+  "whisper_server_url": "http://10.241.15.154:8001",
+  "stt_alias": "medical-streaming",
+  "stt_postprocess": true,
+  "llm_router_url": "http://10.241.15.154:8080",
   "llm_api_key": "",
   "llm_client_id": "clinic-001",
   "soap_model": "gpt-4",
   "fast_model": "gpt-3.5-turbo",
-  "medplum_server_url": "http://localhost:8103",
+  "medplum_server_url": "http://10.241.15.154:8103",
   "medplum_client_id": "your-client-id",
   "medplum_auto_sync": true,
   "auto_start_enabled": false,
   "greeting_sensitivity": 0.7,
-  "min_speech_duration_ms": 2000
+  "min_speech_duration_ms": 2000,
+  "charting_mode": "session"
 }
 ```
 
@@ -255,11 +260,12 @@ See [docs/adr/](./docs/adr/) for Architecture Decision Records.
 
 ## Common Issues
 
-1. **Model not found**: Ensure Whisper model exists at `~/.transcriptionapp/models/`
+1. **STT Router unreachable**: Verify `whisper_server_url` points to STT Router, check with `curl http://<ip>:8001/health`
 2. **ONNX tests failing**: Set `ORT_DYLIB_PATH` to ONNX Runtime library
 3. **Audio device errors**: Check microphone permissions (macOS: System Settings > Privacy)
 4. **OAuth opens new window**: Use `pnpm tauri build --debug` instead of `tauri dev`
 5. **Medplum auth fails**: Verify `medplum_client_id` matches your Medplum ClientApplication
+6. **E2E tests failing**: Ensure STT Router and LLM Router are running and API key is in config
 
 ## License
 

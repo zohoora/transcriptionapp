@@ -26,7 +26,7 @@ Implement auto-session detection using a "listening mode" with **optimistic reco
 
 1. **VAD Monitoring**: When idle and `auto_start_enabled` is true, continuously monitor audio for voice activity
 2. **Speech Accumulation**: Wait for 2+ seconds of sustained speech (configurable via `min_speech_duration_ms`)
-3. **Whisper Transcription**: Send captured audio to remote Whisper server for transcription
+3. **STT Router Transcription**: Stream captured audio to STT Router via WebSocket (uses `stt_alias` and `stt_postprocess` from config)
 4. **LLM Greeting Check**: Ask LLM router to evaluate if the transcript is a greeting that starts a clinical encounter
 
 ### Optimistic Recording Pattern
@@ -61,7 +61,7 @@ listening_event types:
 - Manages audio capture in listening mode (smaller buffer than recording)
 - Runs VAD on incoming audio
 - Buffers speech audio for transcription
-- Calls Whisper server and LLM router for detection
+- Calls STT Router (streaming) and LLM router for detection
 - Emits events to frontend
 
 **Shared State** (`commands/listening.rs`):
@@ -117,7 +117,7 @@ Respond with ONLY JSON:
 ## References
 
 - [OpenAI API Reference](https://platform.openai.com/docs/api-reference/chat) - LLM inference format
-- [faster-whisper](https://github.com/SYSTRAN/faster-whisper) - Speech-to-text for transcription
 - ADR-0003: VAD-gated processing - Reused VAD infrastructure
 - ADR-0009: LLM SOAP note generation - Reused LLM client infrastructure
 - ADR-0013: LLM Router migration - OpenAI-compatible API
+- ADR-0020: STT Router streaming - WebSocket streaming transcription

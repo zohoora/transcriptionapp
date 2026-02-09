@@ -2,7 +2,9 @@
 
 ## Status
 
-Accepted
+**Superseded by ADR-0020** (STT Router Streaming Integration)
+
+The app no longer uses local Whisper via whisper-rs bindings. All transcription now routes through the STT Router using WebSocket streaming with named aliases (e.g., `medical-streaming`). The Whisper model still powers the backend, but it runs on a remote server accessed through the STT Router.
 
 ## Context
 

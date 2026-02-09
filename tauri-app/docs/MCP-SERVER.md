@@ -188,7 +188,7 @@ Quick health check for monitoring systems.
 - `services_running`: Can access internal session state
 - `disk_space_ok`: Models directory is writable
 - `memory_ok`: Currently always true (placeholder for future)
-- `dependencies_ok`: Required services (Whisper, LLM Router) are configured
+- `dependencies_ok`: Required services (STT Router, LLM Router) are configured
 
 ---
 
@@ -369,11 +369,9 @@ This agent depends on external services:
 
 | Service | Required | Purpose | Health Check |
 |---------|----------|---------|--------------|
-| Whisper Server | Yes* | Speech-to-text transcription | URL configured |
+| STT Router | Yes | WebSocket streaming transcription | URL configured |
 | LLM Router | Yes | SOAP note generation | URL configured |
 | Medplum | No | EMR integration | URL configured |
-
-*Whisper can be local or remote. Remote is checked; local assumes model will be downloaded.
 
 **Dependency URLs are read from:** `~/.transcriptionapp/config.json`
 
@@ -385,8 +383,9 @@ The agent reads configuration from `~/.transcriptionapp/config.json`. Key fields
 
 ```json
 {
-  "whisper_mode": "remote",
   "whisper_server_url": "http://10.241.15.154:8001",
+  "stt_alias": "medical-streaming",
+  "stt_postprocess": true,
   "llm_router_url": "http://10.241.15.154:8080",
   "llm_api_key": "...",
   "llm_client_id": "ai-scribe",

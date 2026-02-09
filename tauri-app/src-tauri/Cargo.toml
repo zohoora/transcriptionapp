@@ -66,6 +66,9 @@ tokio = { version = "1", features = ["rt-multi-thread", "sync", "macros"] }
 reqwest = { version = "0.12", features = ["blocking", "stream", "json", "multipart"] }
 futures-util = "0.3"
 
+# WebSocket client for STT streaming
+tungstenite = { version = "0.24", features = ["native-tls"] }
+
 # MCP server (HTTP/JSON-RPC)
 axum = "0.7"
 tower-http = { version = "0.5", features = ["cors"] }

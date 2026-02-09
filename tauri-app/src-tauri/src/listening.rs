@@ -76,6 +76,12 @@ pub struct ListeningConfig {
     #[serde(default = "default_language")]
     pub language: String,
 
+    /// STT alias for transcription (e.g., "medical-streaming")
+    pub stt_alias: String,
+
+    /// Whether to enable medical term post-processing
+    pub stt_postprocess: bool,
+
     /// Whether to require an enrolled speaker for auto-start
     #[serde(default)]
     pub require_enrolled: bool,
@@ -123,6 +129,8 @@ impl Default for ListeningConfig {
             llm_client_id: "ai-scribe".to_string(),
             fast_model: "fast-model".to_string(),
             language: default_language(),
+            stt_alias: "medical-streaming".to_string(),
+            stt_postprocess: true,
             require_enrolled: false,
             required_role: None,
             speaker_model_path: None,
@@ -812,13 +820,18 @@ fn analyze_speech(
         .build()
         .map_err(|e| format!("Failed to create runtime: {}", e))?;
 
+    // Step 1: Transcribe with STT streaming (blocking, no need for async)
+    info!("Transcribing {} samples via streaming...", audio.len());
+    let transcript = whisper_client
+        .transcribe_streaming_blocking(
+            audio,
+            &config.stt_alias,
+            config.stt_postprocess,
+            |_chunk| {}, // No real-time display needed for greeting detection
+        )
+        .map_err(|e| format!("Transcription error: {}", e))?;
+
     rt.block_on(async {
-        // Step 1: Transcribe with Whisper
-        info!("Transcribing {} samples...", audio.len());
-        let transcript = whisper_client
-            .transcribe(audio, &config.language)
-            .await
-            .map_err(|e| format!("Transcription error: {}", e))?;
 
         if transcript.trim().is_empty() {
             return Ok(AnalysisResult {

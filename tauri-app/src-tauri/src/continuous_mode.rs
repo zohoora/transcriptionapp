@@ -186,7 +186,7 @@ pub struct EncounterDetectionResult {
 }
 
 /// Build the encounter detection prompt
-fn build_encounter_detection_prompt(formatted_segments: &str) -> (String, String) {
+pub(crate) fn build_encounter_detection_prompt(formatted_segments: &str) -> (String, String) {
     let system = r#"You are analyzing a continuous transcript from a medical office.
 The microphone has been recording all day without stopping.
 
@@ -215,7 +215,7 @@ Return ONLY the JSON object, nothing else."#;
 }
 
 /// Parse the encounter detection response from the LLM
-fn parse_encounter_detection(response: &str) -> Result<EncounterDetectionResult, String> {
+pub(crate) fn parse_encounter_detection(response: &str) -> Result<EncounterDetectionResult, String> {
     // Try to extract JSON from the response (LLM may include surrounding text)
     let json_str = if let Some(start) = response.find('{') {
         if let Some(end) = response.rfind('}') {
@@ -410,6 +410,8 @@ pub async fn run_continuous_mode(
         preprocessing_agc_target_rms: config.preprocessing_agc_target_rms,
         whisper_server_url: config.whisper_server_url.clone(),
         whisper_server_model: config.whisper_server_model.clone(),
+        stt_alias: config.stt_alias.clone(),
+        stt_postprocess: config.stt_postprocess,
         initial_audio_buffer: None,
         auto_end_enabled: false, // Never auto-end in continuous mode
         auto_end_silence_ms: 0,
@@ -536,6 +538,14 @@ pub async fn run_continuous_mode(
                 PipelineMessage::Error(e) => {
                     error!("Continuous mode pipeline error: {}", e);
                     break;
+                }
+                PipelineMessage::TranscriptChunk { text } => {
+                    // Emit streaming chunk as draft_text for live preview
+                    let _ = app_for_consumer.emit("continuous_transcript_preview", serde_json::json!({
+                        "finalized_text": null,
+                        "draft_text": text,
+                        "segment_count": 0
+                    }));
                 }
                 // Ignore auto-end messages in continuous mode
                 PipelineMessage::AutoEndSilence { .. } | PipelineMessage::SilenceWarning { .. } => {}

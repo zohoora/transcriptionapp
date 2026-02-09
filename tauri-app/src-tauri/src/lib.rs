@@ -54,6 +54,8 @@ pub mod speaker_profiles;
 #[cfg(test)]
 mod command_tests;
 #[cfg(test)]
+mod e2e_tests;
+#[cfg(test)]
 mod pipeline_tests;
 #[cfg(test)]
 mod soak_tests;

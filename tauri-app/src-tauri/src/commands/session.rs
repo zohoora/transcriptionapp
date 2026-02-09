@@ -127,6 +127,8 @@ pub async fn start_session(
         preprocessing_agc_target_rms: config.preprocessing_agc_target_rms,
         whisper_server_url: config.whisper_server_url.clone(),
         whisper_server_model: config.whisper_server_model.clone(),
+        stt_alias: config.stt_alias.clone(),
+        stt_postprocess: config.stt_postprocess,
         initial_audio_buffer,
         auto_end_enabled: config.auto_end_enabled,
         auto_end_silence_ms: config.auto_end_silence_ms,
@@ -243,6 +245,14 @@ pub async fn start_session(
                 PipelineMessage::AudioQuality(snapshot) => {
                     // Emit audio quality update to frontend
                     let _ = app_clone.emit("audio_quality", snapshot);
+                }
+                PipelineMessage::TranscriptChunk { text } => {
+                    // Emit streaming chunk as draft_text for real-time display
+                    if let Ok(session) = session_clone.lock() {
+                        let mut transcript = session.transcript_update();
+                        transcript.draft_text = Some(text);
+                        let _ = app_clone.emit("transcript_update", transcript);
+                    }
                 }
                 PipelineMessage::SilenceWarning { silence_ms, remaining_ms } => {
                     // Emit silence warning to frontend for countdown display

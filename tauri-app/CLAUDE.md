@@ -6,7 +6,7 @@ Clinical ambient scribe for physicians - real-time speech-to-text transcription 
 
 - **Frontend**: React + TypeScript + Vite
 - **Backend**: Rust + Tauri v2
-- **Transcription**: Whisper (remote via faster-whisper-server)
+- **Transcription**: STT Router (WebSocket streaming to Whisper backend, alias-based routing)
 - **Speaker Detection**: ONNX-based speaker embeddings + online clustering
 - **LLM**: OpenAI-compatible API for SOAP note generation
 - **EMR**: Medplum FHIR server integration
@@ -29,7 +29,7 @@ Rust Backend
 ├── config.rs          # Settings persistence
 ├── llm_client.rs      # OpenAI-compatible LLM client
 ├── medplum.rs         # FHIR client (OAuth, encounters)
-├── whisper_server.rs  # Remote Whisper client
+├── whisper_server.rs  # STT Router client (WebSocket streaming + batch fallback)
 ├── listening.rs       # Auto-session detection
 ├── speaker_profiles.rs # Speaker enrollment storage
 ├── local_archive.rs   # Local session storage
@@ -69,7 +69,7 @@ cd src-tauri && cargo test       # Rust
 | Task | Files to Modify |
 |------|-----------------|
 | Add new setting | `config.rs`, `types/index.ts`, `useSettings.ts`, `SettingsDrawer.tsx` |
-| Modify transcription | `pipeline.rs`, `whisper_server.rs` (remote), `transcription.rs` (types) |
+| Modify transcription | `pipeline.rs`, `whisper_server.rs` (STT Router streaming), `transcription.rs` (types) |
 | Change SOAP prompt | `llm_client.rs` (`build_multi_patient_soap_prompt()`) |
 | Modify LLM integration | `llm_client.rs`, `commands/ollama.rs`, `useOllamaConnection.ts` |
 | Add new biomarker | `biomarkers/mod.rs`, `BiomarkersSection.tsx` |
@@ -165,7 +165,9 @@ Idle → Preparing → Recording → Stopping → Completed
 - **Session metadata**: SOAP options stored with local archive sessions for regeneration context
 
 ### Transcription
-- **Remote**: faster-whisper-server with anti-hallucination params (local WhisperProvider removed)
+- **STT Router streaming**: WebSocket connection to STT Router using named aliases (e.g., `medical-streaming`)
+- Alias-based routing: `stt_alias` selects the backend model/pipeline, `stt_postprocess` enables medical term correction
+- All modes (session, continuous, listening) use streaming — no batch transcription
 - Audio preprocessing: DC removal, 80Hz high-pass, AGC
 
 ### Auto-Session Detection
@@ -227,7 +229,7 @@ Records all day without manual start/stop. LLM encounter detector segments trans
 
 Source of truth: `src-tauri/src/config.rs` (Rust) / `src/types/index.ts` (TypeScript).
 
-Key settings groups: Transcription (whisper_mode always `"remote"`), Audio (VAD, diarization, enhancement), LLM Router (soap_model/soap_model_fast/fast_model), Medplum (OAuth, auto_sync), Auto-detection (auto_start, auto_end_silence_ms=180000), SOAP (detail_level 1-10, format, custom_instructions), MIIS, Screen Capture, Continuous Mode (charting_mode, encounter intervals), Debug.
+Key settings groups: STT Router (whisper_server_url, stt_alias=`"medical-streaming"`, stt_postprocess=true), Audio (VAD, diarization, enhancement), LLM Router (soap_model/soap_model_fast/fast_model), Medplum (OAuth, auto_sync), Auto-detection (auto_start, auto_end_silence_ms=180000), SOAP (detail_level 1-10, format, custom_instructions), MIIS, Screen Capture, Continuous Mode (charting_mode, encounter intervals), Debug.
 
 ## File Locations
 
@@ -245,7 +247,7 @@ Key settings groups: Transcription (whisper_mode always `"remote"`), Audio (VAD,
 
 | Service | Default URL | Purpose |
 |---------|-------------|---------|
-| Whisper Server | `http://10.241.15.154:8001` | Remote transcription |
+| STT Router | `http://10.241.15.154:8001` | WebSocket streaming transcription (alias: `medical-streaming`) |
 | LLM Router | `http://10.241.15.154:8080` | SOAP generation |
 | Medplum | `http://10.241.15.154:8103` | EMR/FHIR |
 | MIIS | `http://10.241.15.154:7843` | Medical illustration images |
@@ -281,7 +283,7 @@ Key settings groups: Transcription (whisper_mode always `"remote"`), Audio (VAD,
 
 | Problem | Solution |
 |---------|----------|
-| "Model not found" | Check `~/.transcriptionapp/models/` for Whisper model |
+| "Model not found" | Check `~/.transcriptionapp/models/` for ONNX models (diarization, enhancement) |
 | ONNX tests failing | Set `ORT_DYLIB_PATH` environment variable |
 | Audio device errors | Check macOS microphone permissions |
 | OAuth opens new instance | Use `pnpm tauri build --debug`, not `tauri dev` |
@@ -336,3 +338,4 @@ See `docs/adr/` for Architecture Decision Records:
 | 0017 | Clinical assistant chat |
 | 0018 | MIIS medical illustration integration |
 | 0019 | Continuous charting mode (end of day) |
+| 0020 | STT Router streaming integration |
