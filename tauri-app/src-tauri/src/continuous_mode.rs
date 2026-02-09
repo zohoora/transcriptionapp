@@ -130,6 +130,21 @@ impl TranscriptBuffer {
             .join(" ")
     }
 
+    /// Get full text with speaker labels for display (e.g. "Speaker 1: text\n")
+    pub fn full_text_with_speakers(&self) -> String {
+        self.segments
+            .iter()
+            .map(|s| {
+                if let Some(ref spk) = s.speaker_id {
+                    format!("{}: {}", spk, s.text)
+                } else {
+                    s.text.clone()
+                }
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
     /// Format segments for the encounter detector prompt (numbered)
     pub fn format_for_detection(&self) -> String {
         self.segments
@@ -183,6 +198,9 @@ pub struct EncounterDetectionResult {
     pub complete: bool,
     #[serde(default)]
     pub end_segment_index: Option<u64>,
+    /// Confidence score from the LLM (0.0-1.0). Used to gate low-confidence detections.
+    #[serde(default)]
+    pub confidence: Option<f64>,
 }
 
 /// Build the encounter detection prompt
@@ -192,18 +210,23 @@ The microphone has been recording all day without stopping.
 
 Determine if the text below contains one or more COMPLETE patient encounters.
 
-A complete encounter:
-- Begins with a greeting or start of clinical discussion with a patient
-- Ends with a farewell, wrap-up ("we'll see you in X weeks"), or a clear shift to a different patient
+A complete encounter must have BOTH:
+1. A clear BEGINNING: greeting, patient introduction, or start of clinical discussion with a patient
+2. A clear ENDING: farewell, wrap-up ("we'll see you in X weeks"), discharge instructions, or a clear transition to a different patient
 
-If a COMPLETE encounter exists, return JSON:
-{"complete": true, "end_segment_index": <last segment index number of the encounter>}
+Do NOT mark as complete:
+- Brief staff conversations, scheduling chatter, or hallway talk
+- Encounters that are still in progress (no clear ending yet)
+- Ambient noise or non-clinical discussion
+- Short exchanges under 2 minutes of clinical content
 
-If the encounter is still in progress or the text is just ambient noise/hallway chatter, return:
-{"complete": false}
+If a COMPLETE encounter exists, return JSON with a confidence score:
+{"complete": true, "end_segment_index": <last segment index of the encounter>, "confidence": <0.0-1.0>}
 
-IMPORTANT: Only mark an encounter complete if you are confident it has ended.
-Do not split in the middle of a conversation.
+If the encounter is still in progress, incomplete, or the text is non-clinical, return:
+{"complete": false, "confidence": <0.0-1.0>}
+
+When in doubt, return {"complete": false, "confidence": 0.0}. It is better to wait for more data than to split an encounter prematurely.
 Return ONLY the JSON object, nothing else."#;
 
     let user = format!(
@@ -229,6 +252,68 @@ pub(crate) fn parse_encounter_detection(response: &str) -> Result<EncounterDetec
 
     serde_json::from_str(json_str)
         .map_err(|e| format!("Failed to parse encounter detection response: {} (raw: {})", e, response))
+}
+
+// ============================================================================
+// Retrospective Encounter Merge
+// ============================================================================
+
+/// Result of encounter merge check
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MergeCheckResult {
+    pub same_encounter: bool,
+    #[serde(default)]
+    pub reason: Option<String>,
+}
+
+/// Build the encounter merge prompt — asks if two excerpts are from the same patient visit
+pub(crate) fn build_encounter_merge_prompt(prev_tail: &str, curr_head: &str) -> (String, String) {
+    let system = r#"You are reviewing two consecutive transcript excerpts from a medical office where a microphone records all day.
+
+The system split these into two separate encounters, but they may actually be the SAME patient visit that was incorrectly split (e.g., due to a pause, phone call, or silence during an examination).
+
+Determine if both excerpts are from the SAME patient encounter or DIFFERENT encounters.
+
+Signs they are the SAME encounter:
+- Same patient name or context referenced
+- Continuation of the same clinical discussion
+- No farewell/greeting between them
+- Natural pause (examination, looking at charts) rather than patient change
+
+Signs they are DIFFERENT encounters:
+- Different patient names or contexts
+- A farewell followed by a new greeting
+- Clearly different clinical topics with no continuity
+
+Return JSON:
+{"same_encounter": true, "reason": "brief explanation"}
+or
+{"same_encounter": false, "reason": "brief explanation"}
+
+Return ONLY the JSON object, nothing else."#;
+
+    let user = format!(
+        "EXCERPT FROM END OF PREVIOUS ENCOUNTER:\n{}\n\n---\n\nEXCERPT FROM START OF NEXT ENCOUNTER:\n{}",
+        prev_tail, curr_head
+    );
+
+    (system.to_string(), user)
+}
+
+/// Parse the merge check response from the LLM
+pub(crate) fn parse_merge_check(response: &str) -> Result<MergeCheckResult, String> {
+    let json_str = if let Some(start) = response.find('{') {
+        if let Some(end) = response.rfind('}') {
+            &response[start..=end]
+        } else {
+            response
+        }
+    } else {
+        response
+    };
+
+    serde_json::from_str(json_str)
+        .map_err(|e| format!("Failed to parse merge check response: {} (raw: {})", e, response))
 }
 
 // ============================================================================
@@ -487,9 +572,9 @@ pub async fn run_continuous_mode(
                         );
                     }
 
-                    // Emit transcript preview for live monitoring view
+                    // Emit transcript preview for live monitoring view (with speaker labels)
                     if let Ok(buffer) = buffer_for_consumer.lock() {
-                        let text = buffer.full_text();
+                        let text = buffer.full_text_with_speakers();
                         // Only send last ~500 chars for preview (char-boundary safe)
                         let preview = if text.len() > 500 {
                             let target = text.len() - 500;
@@ -581,9 +666,15 @@ pub async fn run_continuous_mode(
     let fast_model = config.fast_model.clone();
     let soap_detail_level = config.soap_detail_level;
     let soap_format = config.soap_format.clone();
+    let merge_enabled = config.encounter_merge_enabled;
 
     let detector_task = tokio::spawn(async move {
         let mut encounter_number: u32 = 0;
+
+        // Track previous encounter for retrospective merge checks
+        let mut prev_encounter_session_id: Option<String> = None;
+        let mut prev_encounter_text: Option<String> = None;
+        let mut prev_encounter_date: Option<DateTime<Utc>> = None;
 
         loop {
             // Wait for either the check interval or a silence trigger
@@ -599,20 +690,30 @@ pub async fn run_continuous_mode(
             }
 
             // Check if buffer has enough content to analyze
-            let (formatted, word_count, is_empty) = {
+            let (formatted, word_count, is_empty, first_ts) = {
                 let buffer = match buffer_for_detector.lock() {
                     Ok(b) => b,
                     Err(_) => continue,
                 };
-                (buffer.format_for_detection(), buffer.word_count(), buffer.is_empty())
+                (buffer.format_for_detection(), buffer.word_count(), buffer.is_empty(), buffer.first_timestamp())
             };
 
-            if is_empty || word_count < 20 {
-                continue; // Not enough text to analyze
+            if is_empty || word_count < 100 {
+                continue; // Not enough text to analyze — encounters are typically 100+ words
             }
 
             // Also trigger if buffer is very large (safety valve)
             let force_check = word_count > 5000;
+
+            // Minimum encounter duration: 2 minutes (unless force_check)
+            if !force_check {
+                if let Some(first_time) = first_ts {
+                    let buffer_age_secs = (Utc::now() - first_time).num_seconds();
+                    if buffer_age_secs < 120 {
+                        continue; // Buffer is too young — encounter still building
+                    }
+                }
+            }
             if force_check {
                 info!("Buffer exceeds 5000 words — forcing encounter check");
             }
@@ -669,6 +770,22 @@ pub async fn run_continuous_mode(
             // Process detection result
             if let Some(result) = detection_result {
                 if result.complete {
+                    // Confidence gate: require >= 0.7 to proceed
+                    let confidence = result.confidence.unwrap_or(0.0);
+                    if confidence < 0.7 {
+                        info!(
+                            "Encounter detection returned complete=true but low confidence ({:.2}), skipping",
+                            confidence
+                        );
+                        // Return to recording state and continue
+                        if let Ok(mut state) = state_for_detector.lock() {
+                            if *state == ContinuousState::Checking {
+                                *state = ContinuousState::Recording;
+                            }
+                        }
+                        continue;
+                    }
+
                     if let Some(end_index) = result.end_segment_index {
                         encounter_number += 1;
                         info!(
@@ -817,6 +934,120 @@ pub async fn run_continuous_mode(
                                 }
                             }
                         }
+
+                        // ---- Retrospective merge check ----
+                        // After archiving + SOAP for encounter N, check if it should merge with N-1
+                        if merge_enabled && encounter_number > 1 {
+                            if let (Some(ref prev_id), Some(ref prev_text), Some(ref prev_date)) =
+                                (&prev_encounter_session_id, &prev_encounter_text, &prev_encounter_date)
+                            {
+                                // Extract ~500 words from tail of prev + ~500 words from head of current
+                                let prev_words: Vec<&str> = prev_text.split_whitespace().collect();
+                                let prev_tail: String = if prev_words.len() > 500 {
+                                    prev_words[prev_words.len() - 500..].join(" ")
+                                } else {
+                                    prev_text.clone()
+                                };
+
+                                let curr_words: Vec<&str> = encounter_text.split_whitespace().collect();
+                                let curr_head: String = if curr_words.len() > 500 {
+                                    curr_words[..500].join(" ")
+                                } else {
+                                    encounter_text.clone()
+                                };
+
+                                if let Some(ref client) = llm_client {
+                                    let (merge_system, merge_user) = build_encounter_merge_prompt(&prev_tail, &curr_head);
+                                    let merge_future = client.generate(&fast_model, &merge_system, &merge_user, "encounter_merge");
+                                    match tokio::time::timeout(tokio::time::Duration::from_secs(60), merge_future).await {
+                                        Ok(Ok(merge_response)) => {
+                                            match parse_merge_check(&merge_response) {
+                                                Ok(merge_result) => {
+                                                    if merge_result.same_encounter {
+                                                        info!(
+                                                            "Merge check: encounters are the same visit (reason: {:?}). Merging {} into {}",
+                                                            merge_result.reason, session_id, prev_id
+                                                        );
+
+                                                        // Build merged transcript
+                                                        let merged_text = format!("{}\n{}", prev_text, encounter_text);
+                                                        let merged_wc = merged_text.split_whitespace().count();
+                                                        let merged_duration = duration_ms; // Approximate
+
+                                                        if let Err(e) = local_archive::merge_encounters(
+                                                            prev_id,
+                                                            &session_id,
+                                                            prev_date,
+                                                            &merged_text,
+                                                            merged_wc,
+                                                            merged_duration,
+                                                        ) {
+                                                            warn!("Failed to merge encounters: {}", e);
+                                                        } else {
+                                                            // Regenerate SOAP for the merged encounter
+                                                            if let Some(ref client) = llm_client {
+                                                                let soap_future = client.generate_multi_patient_soap_note(
+                                                                    &soap_model,
+                                                                    &merged_text,
+                                                                    None,
+                                                                    None,
+                                                                    None,
+                                                                );
+                                                                match tokio::time::timeout(tokio::time::Duration::from_secs(120), soap_future).await {
+                                                                    Ok(Ok(soap_result)) => {
+                                                                        let soap_content = &soap_result.notes
+                                                                            .iter()
+                                                                            .map(|n| n.content.clone())
+                                                                            .collect::<Vec<_>>()
+                                                                            .join("\n\n---\n\n");
+                                                                        let _ = local_archive::add_soap_note(
+                                                                            prev_id,
+                                                                            prev_date,
+                                                                            soap_content,
+                                                                            Some(soap_detail_level),
+                                                                            Some(&soap_format),
+                                                                        );
+                                                                        info!("Regenerated SOAP for merged encounter {}", prev_id);
+                                                                    }
+                                                                    Ok(Err(e)) => warn!("Failed to regenerate SOAP after merge: {}", e),
+                                                                    Err(_) => warn!("SOAP regeneration timed out after merge"),
+                                                                }
+                                                            }
+
+                                                            encounter_number -= 1;
+
+                                                            let _ = app_for_detector.emit("continuous_mode_event", serde_json::json!({
+                                                                "type": "encounter_merged",
+                                                                "merged_into_session_id": prev_id,
+                                                                "removed_session_id": session_id
+                                                            }));
+
+                                                            // Update prev tracking to the merged encounter
+                                                            prev_encounter_text = Some(merged_text);
+                                                            // prev_encounter_session_id and prev_encounter_date stay the same (A)
+                                                            continue; // Skip updating prev to current since we merged
+                                                        }
+                                                    } else {
+                                                        info!(
+                                                            "Merge check: different encounters (reason: {:?})",
+                                                            merge_result.reason
+                                                        );
+                                                    }
+                                                }
+                                                Err(e) => warn!("Failed to parse merge check: {}", e),
+                                            }
+                                        }
+                                        Ok(Err(e)) => warn!("Merge check LLM call failed: {}", e),
+                                        Err(_) => warn!("Merge check timed out after 60s"),
+                                    }
+                                }
+                            }
+                        }
+
+                        // Update prev encounter tracking for next iteration
+                        prev_encounter_session_id = Some(session_id.clone());
+                        prev_encounter_text = Some(encounter_text);
+                        prev_encounter_date = Some(Utc::now());
                     }
                 }
             }
@@ -859,7 +1090,7 @@ pub async fn run_continuous_mode(
 
     if let Some(text) = remaining_text {
         let word_count = text.split_whitespace().count();
-        if word_count > 20 {
+        if word_count > 100 {
             info!("Flushing remaining buffer ({} words) as final session", word_count);
             let session_id = uuid::Uuid::new_v4().to_string();
             if let Err(e) = local_archive::save_session(
@@ -957,6 +1188,17 @@ mod tests {
     }
 
     #[test]
+    fn test_transcript_buffer_full_text_with_speakers() {
+        let mut buffer = TranscriptBuffer::new();
+        buffer.push("Hello doctor".to_string(), 1000, Some("Speaker 1".to_string()), 0);
+        buffer.push("How are you?".to_string(), 2000, Some("Speaker 2".to_string()), 0);
+        buffer.push("ambient noise".to_string(), 3000, None, 0);
+
+        let text = buffer.full_text_with_speakers();
+        assert_eq!(text, "Speaker 1: Hello doctor\nSpeaker 2: How are you?\nambient noise");
+    }
+
+    #[test]
     fn test_transcript_buffer_stale_generation_rejected() {
         let mut buffer = TranscriptBuffer::new();
         buffer.set_generation(2);
@@ -968,26 +1210,48 @@ mod tests {
 
     #[test]
     fn test_parse_encounter_detection_complete() {
+        let response = r#"{"complete": true, "end_segment_index": 15, "confidence": 0.95}"#;
+        let result = parse_encounter_detection(response).unwrap();
+        assert!(result.complete);
+        assert_eq!(result.end_segment_index, Some(15));
+        assert!((result.confidence.unwrap() - 0.95).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_parse_encounter_detection_complete_without_confidence() {
+        // Backwards-compatible: confidence is optional
         let response = r#"{"complete": true, "end_segment_index": 15}"#;
         let result = parse_encounter_detection(response).unwrap();
         assert!(result.complete);
         assert_eq!(result.end_segment_index, Some(15));
+        assert!(result.confidence.is_none());
     }
 
     #[test]
     fn test_parse_encounter_detection_incomplete() {
-        let response = r#"{"complete": false}"#;
+        let response = r#"{"complete": false, "confidence": 0.1}"#;
         let result = parse_encounter_detection(response).unwrap();
         assert!(!result.complete);
         assert_eq!(result.end_segment_index, None);
+        assert!((result.confidence.unwrap() - 0.1).abs() < 0.001);
     }
 
     #[test]
     fn test_parse_encounter_detection_with_surrounding_text() {
-        let response = r#"Based on my analysis, here is the result: {"complete": true, "end_segment_index": 42} That's my assessment."#;
+        let response = r#"Based on my analysis, here is the result: {"complete": true, "end_segment_index": 42, "confidence": 0.85} That's my assessment."#;
         let result = parse_encounter_detection(response).unwrap();
         assert!(result.complete);
         assert_eq!(result.end_segment_index, Some(42));
+        assert!((result.confidence.unwrap() - 0.85).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_parse_encounter_detection_low_confidence() {
+        let response = r#"{"complete": true, "end_segment_index": 10, "confidence": 0.3}"#;
+        let result = parse_encounter_detection(response).unwrap();
+        assert!(result.complete);
+        // Confidence is below 0.7 threshold — caller should skip this detection
+        assert!(result.confidence.unwrap() < 0.7);
     }
 
     #[test]
@@ -1006,5 +1270,41 @@ mod tests {
         assert!(!handle.is_stopped());
         handle.stop();
         assert!(handle.is_stopped());
+    }
+
+    // ---- Merge prompt/parse tests ----
+
+    #[test]
+    fn test_build_encounter_merge_prompt() {
+        let (system, user) = build_encounter_merge_prompt(
+            "...we'll see you in two weeks",
+            "Good morning Mr. Smith..."
+        );
+        assert!(system.contains("SAME patient visit"));
+        assert!(user.contains("we'll see you in two weeks"));
+        assert!(user.contains("Good morning Mr. Smith"));
+    }
+
+    #[test]
+    fn test_parse_merge_check_same() {
+        let response = r#"{"same_encounter": true, "reason": "Same patient, brief pause for examination"}"#;
+        let result = parse_merge_check(response).unwrap();
+        assert!(result.same_encounter);
+        assert!(result.reason.unwrap().contains("pause"));
+    }
+
+    #[test]
+    fn test_parse_merge_check_different() {
+        let response = r#"{"same_encounter": false, "reason": "Different patients — farewell followed by new greeting"}"#;
+        let result = parse_merge_check(response).unwrap();
+        assert!(!result.same_encounter);
+        assert!(result.reason.is_some());
+    }
+
+    #[test]
+    fn test_parse_merge_check_with_surrounding_text() {
+        let response = r#"Here is my analysis: {"same_encounter": true, "reason": "continuation"} Done."#;
+        let result = parse_merge_check(response).unwrap();
+        assert!(result.same_encounter);
     }
 }

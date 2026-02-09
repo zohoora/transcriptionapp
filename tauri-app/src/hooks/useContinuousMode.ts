@@ -70,6 +70,9 @@ export function useContinuousMode(): UseContinuousModeResult {
           break;
         case 'checking':
           break;
+        case 'encounter_merged':
+          // Encounters were merged retrospectively — stats will refresh via polling
+          break;
         case 'error':
           setError(payload.error || 'Unknown error');
           setIsActive(false);

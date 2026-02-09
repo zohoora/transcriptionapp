@@ -176,15 +176,25 @@ export const SettingsDrawer = memo(function SettingsDrawer({
                         <input
                           type="range"
                           min="30"
-                          max="180"
+                          max="300"
                           step="15"
-                          value={(pendingSettings as PendingSettings & { encounter_silence_trigger_secs?: number }).encounter_silence_trigger_secs ?? 60}
+                          value={(pendingSettings as PendingSettings & { encounter_silence_trigger_secs?: number }).encounter_silence_trigger_secs ?? 180}
                           onChange={(e) => onSettingsChange({ ...pendingSettings, encounter_silence_trigger_secs: Number(e.target.value) } as PendingSettings)}
                         />
                         <span className="settings-slider-value">
-                          {(pendingSettings as PendingSettings & { encounter_silence_trigger_secs?: number }).encounter_silence_trigger_secs ?? 60}s
+                          {(pendingSettings as PendingSettings & { encounter_silence_trigger_secs?: number }).encounter_silence_trigger_secs ?? 180}s
                         </span>
                       </div>
+                    </div>
+                    <div className="settings-row">
+                      <label>
+                        <input
+                          type="checkbox"
+                          checked={(pendingSettings as PendingSettings & { encounter_merge_enabled?: boolean }).encounter_merge_enabled ?? true}
+                          onChange={(e) => onSettingsChange({ ...pendingSettings, encounter_merge_enabled: e.target.checked } as PendingSettings)}
+                        />
+                        {' '}Auto-merge split encounters
+                      </label>
                     </div>
                   </>
                 )}

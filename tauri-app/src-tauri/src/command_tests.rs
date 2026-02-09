@@ -67,6 +67,7 @@ mod tests {
             continuous_auto_copy_soap: false,
             encounter_check_interval_secs: 120,
             encounter_silence_trigger_secs: 60,
+            encounter_merge_enabled: true,
             stt_alias: "medical-streaming".to_string(),
             stt_postprocess: true,
         };

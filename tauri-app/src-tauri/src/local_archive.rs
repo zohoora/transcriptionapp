@@ -421,6 +421,71 @@ pub fn get_session(session_id: &str, date_str: &str) -> Result<ArchiveDetails, S
     })
 }
 
+/// Merge two encounters: append B's transcript to A, update A's metadata, delete B's directory.
+///
+/// Safety: A is updated first, then B is deleted. If the delete fails, we have a duplicate
+/// but no data loss.
+pub fn merge_encounters(
+    session_a_id: &str,
+    session_b_id: &str,
+    date: &DateTime<Utc>,
+    merged_transcript: &str,
+    merged_word_count: usize,
+    merged_duration_ms: u64,
+) -> Result<(), String> {
+    let a_dir = get_session_archive_dir(session_a_id, date)?;
+    let b_dir = get_session_archive_dir(session_b_id, date)?;
+
+    if !a_dir.exists() {
+        return Err(format!("Session A directory does not exist: {}", a_dir.display()));
+    }
+    if !b_dir.exists() {
+        return Err(format!("Session B directory does not exist: {}", b_dir.display()));
+    }
+
+    // Step 1: Write merged transcript to A
+    let transcript_path = a_dir.join("transcript.txt");
+    fs::write(&transcript_path, merged_transcript)
+        .map_err(|e| format!("Failed to write merged transcript: {}", e))?;
+
+    // Step 2: Update A's metadata
+    let metadata_path = a_dir.join("metadata.json");
+    if metadata_path.exists() {
+        let content = fs::read_to_string(&metadata_path)
+            .map_err(|e| format!("Failed to read metadata: {}", e))?;
+        let mut metadata: ArchiveMetadata = serde_json::from_str(&content)
+            .map_err(|e| format!("Failed to parse metadata: {}", e))?;
+
+        metadata.word_count = merged_word_count;
+        metadata.duration_ms = Some(merged_duration_ms);
+        metadata.has_soap_note = false; // SOAP is stale after merge
+
+        let json = serde_json::to_string_pretty(&metadata)
+            .map_err(|e| format!("Failed to serialize metadata: {}", e))?;
+        fs::write(&metadata_path, json)
+            .map_err(|e| format!("Failed to write metadata: {}", e))?;
+    }
+
+    // Step 3: Delete A's stale SOAP note (will be regenerated)
+    let soap_path = a_dir.join("soap_note.txt");
+    if soap_path.exists() {
+        let _ = fs::remove_file(&soap_path);
+    }
+
+    // Step 4: Delete B's directory (only after A is safely updated)
+    if let Err(e) = fs::remove_dir_all(&b_dir) {
+        warn!("Failed to delete merged session B directory {}: {}", b_dir.display(), e);
+        // Non-fatal: A has the merged data, B is just a stale duplicate
+    }
+
+    info!(
+        "Merged encounter {} into {} ({} words, {}ms)",
+        session_b_id, session_a_id, merged_word_count, merged_duration_ms
+    );
+
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -459,5 +524,20 @@ mod tests {
         assert!(result.is_ok());
         let path = result.unwrap();
         assert!(path.to_string_lossy().contains("archive"));
+    }
+
+    #[test]
+    fn test_merge_encounters_missing_dir() {
+        let now = Utc::now();
+        let result = merge_encounters(
+            "nonexistent-a",
+            "nonexistent-b",
+            &now,
+            "merged text",
+            10,
+            5000,
+        );
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("does not exist"));
     }
 }

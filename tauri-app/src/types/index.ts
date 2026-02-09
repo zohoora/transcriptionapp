@@ -104,6 +104,7 @@ export interface Settings {
   continuous_auto_copy_soap: boolean;
   encounter_check_interval_secs: number;
   encounter_silence_trigger_secs: number;
+  encounter_merge_enabled: boolean;
 }
 
 // Listening mode types (auto-session detection)
@@ -673,13 +674,16 @@ export type ContinuousModeEventType =
   | 'soap_failed'
   | 'checking'
   | 'error'
-  | 'stopped';
+  | 'stopped'
+  | 'encounter_merged';
 
 export interface ContinuousModeEvent {
   type: ContinuousModeEventType;
   session_id?: string;
   word_count?: number;
   error?: string;
+  merged_into_session_id?: string;
+  removed_session_id?: string;
 }
 
 /** Auto-end event payload */

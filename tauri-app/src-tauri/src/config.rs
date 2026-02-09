@@ -94,6 +94,12 @@ pub struct Settings {
     pub encounter_check_interval_secs: u32,
     #[serde(default = "default_encounter_silence_trigger_secs")]
     pub encounter_silence_trigger_secs: u32,
+    #[serde(default = "default_encounter_merge_enabled")]
+    pub encounter_merge_enabled: bool,
+}
+
+fn default_encounter_merge_enabled() -> bool {
+    true // Auto-merge split encounters by default
 }
 
 fn default_stt_alias() -> String {
@@ -113,7 +119,7 @@ fn default_encounter_check_interval_secs() -> u32 {
 }
 
 fn default_encounter_silence_trigger_secs() -> u32 {
-    60 // 1 minute
+    180 // 3 minutes — short pauses shouldn't split encounters
 }
 
 fn default_screen_capture_interval_secs() -> u32 {
@@ -253,6 +259,7 @@ impl Default for Settings {
             continuous_auto_copy_soap: false,
             encounter_check_interval_secs: default_encounter_check_interval_secs(),
             encounter_silence_trigger_secs: default_encounter_silence_trigger_secs(),
+            encounter_merge_enabled: default_encounter_merge_enabled(),
         }
     }
 }
@@ -569,6 +576,8 @@ pub struct Config {
     pub encounter_check_interval_secs: u32,
     #[serde(default = "default_encounter_silence_trigger_secs")]
     pub encounter_silence_trigger_secs: u32,
+    #[serde(default = "default_encounter_merge_enabled")]
+    pub encounter_merge_enabled: bool,
 }
 
 fn default_max_speakers() -> usize {
@@ -656,6 +665,7 @@ impl Default for Config {
             continuous_auto_copy_soap: false,
             encounter_check_interval_secs: default_encounter_check_interval_secs(),
             encounter_silence_trigger_secs: default_encounter_silence_trigger_secs(),
+            encounter_merge_enabled: default_encounter_merge_enabled(),
         }
     }
 }
@@ -861,6 +871,7 @@ impl Config {
             continuous_auto_copy_soap: self.continuous_auto_copy_soap,
             encounter_check_interval_secs: self.encounter_check_interval_secs,
             encounter_silence_trigger_secs: self.encounter_silence_trigger_secs,
+            encounter_merge_enabled: self.encounter_merge_enabled,
         }
     }
 
@@ -915,6 +926,7 @@ impl Config {
         self.continuous_auto_copy_soap = settings.continuous_auto_copy_soap;
         self.encounter_check_interval_secs = settings.encounter_check_interval_secs;
         self.encounter_silence_trigger_secs = settings.encounter_silence_trigger_secs;
+        self.encounter_merge_enabled = settings.encounter_merge_enabled;
     }
 }
 
@@ -1032,6 +1044,7 @@ mod tests {
             continuous_auto_copy_soap: false,
             encounter_check_interval_secs: 120,
             encounter_silence_trigger_secs: 60,
+            encounter_merge_enabled: true,
             stt_alias: "medical-streaming".to_string(),
             stt_postprocess: true,
         };
@@ -1145,6 +1158,7 @@ mod tests {
             continuous_auto_copy_soap: false,
             encounter_check_interval_secs: default_encounter_check_interval_secs(),
             encounter_silence_trigger_secs: default_encounter_silence_trigger_secs(),
+            encounter_merge_enabled: default_encounter_merge_enabled(),
             stt_alias: default_stt_alias(),
             stt_postprocess: default_stt_postprocess(),
         };
