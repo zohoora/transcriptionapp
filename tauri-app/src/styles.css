@@ -6524,8 +6524,8 @@ button.review-section-header-left:focus {
   flex-shrink: 0;
 }
 
-.continuous-dot.recording {
-  background-color: var(--accent-recording);
+.continuous-dot.listening {
+  background-color: #0d9488;
   animation: continuous-pulse 2s ease-in-out infinite;
 }
 
@@ -6666,6 +6666,24 @@ button.review-section-header-left:focus {
 
 .btn-danger:hover {
   background: #b91c1c;
+}
+
+.btn-end-session {
+  padding: 8px 16px;
+  font-size: 13px;
+  font-weight: 500;
+  background: transparent;
+  color: var(--text-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.btn-end-session:hover {
+  background: rgba(100, 116, 139, 0.1);
+  color: var(--text-primary);
+  border-color: var(--text-secondary);
 }
 
 /* New Patient button */

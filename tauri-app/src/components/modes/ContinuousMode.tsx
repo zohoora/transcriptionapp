@@ -2,14 +2,14 @@
  * ContinuousMode - Dashboard for continuous charting mode (end-of-day workflow)
  *
  * Displays:
- * - Idle state: Icon, description, "Start Recording" button
+ * - Idle state: Icon, description, "Start Session" button
  * - Active state: Pulsing status dot, elapsed timer, audio quality indicator,
  *   stats grid (encounters/buffer), last encounter summary, encounter notes,
- *   toggleable transcript preview, MIIS image suggestions, error display, stop button
+ *   toggleable transcript preview, MIIS image suggestions, error display, end button
  *
- * The continuous mode records all day without manual session start/stop.
- * An LLM-based encounter detector automatically segments the transcript
- * and generates SOAP notes for each detected patient encounter.
+ * Runs as an ambient companion throughout the day. An LLM-based encounter
+ * detector automatically segments the transcript and generates SOAP notes
+ * for each detected patient encounter.
  */
 import { memo, useState, useEffect, useRef, useCallback } from 'react';
 import type { ContinuousModeStats, AudioQualitySnapshot } from '../../types';
@@ -127,7 +127,7 @@ const getQualityLevel = (quality: AudioQualitySnapshot | null): 'good' | 'fair' 
 /**
  * Continuous Mode monitoring dashboard.
  *
- * Shows recording status, encounter count, live transcript preview,
+ * Shows session status, encounter count, live transcript preview,
  * and controls for the end-of-day charting workflow.
  */
 export const ContinuousMode = memo(function ContinuousMode({
@@ -203,7 +203,7 @@ export const ContinuousMode = memo(function ContinuousMode({
           </div>
           <h3>End-of-Day Charting</h3>
           <p className="continuous-description">
-            Records continuously throughout the day. Patient encounters are detected automatically and SOAP notes generated in the background.
+            Listens throughout the day. Patient encounters are detected automatically and SOAP notes generated in the background.
           </p>
 
           {error && (
@@ -213,7 +213,7 @@ export const ContinuousMode = memo(function ContinuousMode({
           )}
 
           <button className="btn-primary continuous-start-btn" onClick={onStart}>
-            Start Recording
+            Start Session
           </button>
 
           <button className="btn-link" onClick={onViewHistory}>
@@ -229,20 +229,20 @@ export const ContinuousMode = memo(function ContinuousMode({
     <div className="mode-content continuous-mode">
       {/* Status header with pulsing indicator */}
       <div className="continuous-status-header">
-        <span className={`continuous-dot ${isStopping ? 'stopping' : stats.state === 'checking' ? 'checking' : 'recording'}`} />
+        <span className={`continuous-dot ${isStopping ? 'stopping' : stats.state === 'checking' ? 'checking' : 'listening'}`} />
         <span className="continuous-status-text">
           {isStopping
-            ? 'Stopping... finalizing notes'
+            ? 'Ending... finalizing notes'
             : stats.state === 'checking'
               ? 'Checking for encounters...'
-              : 'Recording continuously'}
+              : 'Continuous mode active'}
         </span>
       </div>
 
-      {/* Running timer */}
+      {/* Session length timer */}
       {elapsedTime && (
         <div className="continuous-timer">
-          Recording for {elapsedTime}
+          Session: {elapsedTime}
         </div>
       )}
 
@@ -421,11 +421,11 @@ export const ContinuousMode = memo(function ContinuousMode({
           View Today&apos;s Sessions
         </button>
         <button
-          className={`btn-danger ${isStopping ? 'btn-stopping' : ''}`}
+          className={`btn-end-session ${isStopping ? 'btn-stopping' : ''}`}
           onClick={onStop}
           disabled={isStopping}
         >
-          {isStopping ? 'Stopping...' : 'Stop Recording'}
+          {isStopping ? 'Ending...' : 'End Session'}
         </button>
       </div>
     </div>
