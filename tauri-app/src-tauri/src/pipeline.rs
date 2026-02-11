@@ -29,7 +29,7 @@ use crate::speaker_profiles::{SpeakerProfile, SpeakerProfileManager};
 use crate::enhancement::{EnhancementConfig, EnhancementProvider};
 
 use crate::biomarkers::{AudioQualitySnapshot, BiomarkerConfig, BiomarkerHandle, BiomarkerOutput, BiomarkerUpdate, CoughEvent, start_biomarker_thread};
-use std::collections::VecDeque;
+use std::collections::{HashSet, VecDeque};
 
 /// VAD chunk size at 16kHz
 const VAD_CHUNK_SIZE: usize = 512;
@@ -188,6 +188,7 @@ impl Default for PipelineConfig {
 pub struct PipelineHandle {
     stop_flag: Arc<AtomicBool>,
     reset_silence_flag: Arc<AtomicBool>,
+    reset_biomarkers_flag: Arc<AtomicBool>,
     processor_handle: Option<std::thread::JoinHandle<()>>,
 }
 
@@ -202,6 +203,18 @@ impl PipelineHandle {
     pub fn reset_silence_timer(&self) {
         info!("Resetting silence timer");
         self.reset_silence_flag.store(true, Ordering::SeqCst);
+    }
+
+    /// Reset biomarker accumulators (triggered on encounter boundary in continuous mode)
+    #[allow(dead_code)]
+    pub fn reset_biomarkers(&self) {
+        info!("Requesting biomarker reset");
+        self.reset_biomarkers_flag.store(true, Ordering::SeqCst);
+    }
+
+    /// Get a clone of the reset biomarkers flag (for external tasks to trigger resets)
+    pub fn reset_biomarkers_flag(&self) -> Arc<AtomicBool> {
+        self.reset_biomarkers_flag.clone()
     }
 
     /// Wait for the pipeline to fully stop
@@ -247,17 +260,22 @@ pub fn start_pipeline(
     let reset_silence_flag = Arc::new(AtomicBool::new(false));
     let reset_silence_flag_clone = reset_silence_flag.clone();
 
+    // Create reset biomarkers flag (for encounter boundary resets in continuous mode)
+    let reset_biomarkers_flag = Arc::new(AtomicBool::new(false));
+    let reset_biomarkers_flag_clone = reset_biomarkers_flag.clone();
+
     // Clone config for the processing thread
     let tx = message_tx;
 
     // Spawn the processing thread - everything happens on this thread
     let processor_handle = std::thread::spawn(move || {
-        run_pipeline_thread(config, tx, stop_flag_clone, reset_silence_flag_clone);
+        run_pipeline_thread(config, tx, stop_flag_clone, reset_silence_flag_clone, reset_biomarkers_flag_clone);
     });
 
     Ok(PipelineHandle {
         stop_flag,
         reset_silence_flag,
+        reset_biomarkers_flag,
         processor_handle: Some(processor_handle),
     })
 }
@@ -268,8 +286,9 @@ fn run_pipeline_thread(
     tx: mpsc::Sender<PipelineMessage>,
     stop_flag: Arc<AtomicBool>,
     reset_silence_flag: Arc<AtomicBool>,
+    reset_biomarkers_flag: Arc<AtomicBool>,
 ) {
-    if let Err(e) = run_pipeline_thread_inner(&config, &tx, &stop_flag, &reset_silence_flag) {
+    if let Err(e) = run_pipeline_thread_inner(&config, &tx, &stop_flag, &reset_silence_flag, &reset_biomarkers_flag) {
         let _ = tx.blocking_send(PipelineMessage::Error(e.to_string()));
     }
     let _ = tx.blocking_send(PipelineMessage::Stopped);
@@ -280,6 +299,7 @@ fn run_pipeline_thread_inner(
     tx: &mpsc::Sender<PipelineMessage>,
     stop_flag: &Arc<AtomicBool>,
     reset_silence_flag: &Arc<AtomicBool>,
+    reset_biomarkers_flag: &Arc<AtomicBool>,
 ) -> Result<()> {
     info!("Pipeline thread started");
     info!("Device: {:?}", config.device_id);
@@ -424,6 +444,33 @@ fn run_pipeline_thread_inner(
 
     #[cfg(not(feature = "diarization"))]
     let diarization: Option<()> = None;
+
+    // Build clinician name set from enrolled speaker profiles (for biomarker filtering)
+    // Clinician roles: Physician, PA, RN, MA — patients and "other" are excluded
+    let clinician_names: HashSet<String> = {
+        #[cfg(feature = "diarization")]
+        {
+            use crate::speaker_profiles::{SpeakerProfileManager, SpeakerRole};
+            match SpeakerProfileManager::load() {
+                Ok(manager) => {
+                    let names: HashSet<String> = manager.list()
+                        .iter()
+                        .filter(|p| matches!(p.role, SpeakerRole::Physician | SpeakerRole::Pa | SpeakerRole::Rn | SpeakerRole::Ma))
+                        .map(|p| p.name.clone())
+                        .collect();
+                    if !names.is_empty() {
+                        info!("Clinician names for biomarker filtering: {:?}", names);
+                    }
+                    names
+                }
+                Err(_) => HashSet::new(),
+            }
+        }
+        #[cfg(not(feature = "diarization"))]
+        {
+            HashSet::new()
+        }
+    };
 
     // Create enhancement provider if enabled
     #[cfg(feature = "enhancement")]
@@ -1025,11 +1072,23 @@ fn run_pipeline_thread_inner(
                                 }
                             }
 
+                            // Check biomarker reset flag (encounter boundary in continuous mode)
+                            if reset_biomarkers_flag.swap(false, Ordering::SeqCst) {
+                                info!("Biomarker reset flag detected — resetting accumulators");
+                                bio_handle.send_reset();
+                                recent_coughs.clear();
+                                latest_session_metrics = None;
+                            }
+
                             // Emit biomarker update to frontend (throttled to 2Hz)
                             if last_biomarker_emit.elapsed() >= biomarker_emit_interval {
                                 if let Some(ref metrics) = latest_session_metrics {
                                     let coughs_vec: Vec<CoughEvent> = recent_coughs.iter().cloned().collect();
-                                    let update = BiomarkerUpdate::from_metrics(metrics, &coughs_vec);
+                                    let mut update = BiomarkerUpdate::from_metrics(metrics, &coughs_vec);
+                                    // Annotate clinician status on speaker metrics
+                                    for speaker in &mut update.speaker_metrics {
+                                        speaker.is_clinician = clinician_names.contains(&speaker.speaker_id);
+                                    }
                                     let _ = tx.blocking_send(PipelineMessage::Biomarker(update));
                                     last_biomarker_emit = std::time::Instant::now();
                                 }

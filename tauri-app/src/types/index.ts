@@ -105,6 +105,8 @@ export interface Settings {
   encounter_check_interval_secs: number;
   encounter_silence_trigger_secs: number;
   encounter_merge_enabled: boolean;
+  encounter_detection_model: string;
+  encounter_detection_nothink: boolean;
 }
 
 // Listening mode types (auto-session detection)
@@ -185,6 +187,8 @@ export interface SpeakerBiomarkers {
   turn_count: number;
   mean_turn_duration_ms: number;
   median_turn_duration_ms: number;
+  /** Whether this speaker is an enrolled clinician (Physician/PA/RN/MA) */
+  is_clinician: boolean;
 }
 
 // Conversation dynamics types
@@ -668,6 +672,8 @@ export interface ContinuousModeStats {
   last_encounter_patient_name: string | null;
   last_error: string | null;
   buffer_word_count: number;
+  /** ISO timestamp of the first segment in the current buffer (for "current encounter" display) */
+  buffer_started_at: string | null;
 }
 
 /** Event payloads emitted from continuous mode backend */

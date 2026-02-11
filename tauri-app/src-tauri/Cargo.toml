@@ -136,6 +136,10 @@ default = ["diarization", "enhancement", "biomarkers"]
 name = "vision_experiment_cli"
 path = "tools/vision_experiment_cli.rs"
 
+[[bin]]
+name = "encounter_experiment_cli"
+path = "tools/encounter_experiment_cli.rs"
+
 [[bench]]
 name = "audio_benchmarks"
 harness = false

@@ -68,6 +68,8 @@ mod tests {
             encounter_check_interval_secs: 120,
             encounter_silence_trigger_secs: 60,
             encounter_merge_enabled: true,
+            encounter_detection_model: "faster".to_string(),
+            encounter_detection_nothink: true,
             stt_alias: "medical-streaming".to_string(),
             stt_postprocess: true,
         };

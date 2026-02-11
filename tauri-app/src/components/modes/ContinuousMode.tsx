@@ -3,29 +3,60 @@
  *
  * Displays:
  * - Idle state: Icon, description, "Start Recording" button
- * - Active state: Pulsing status dot, elapsed timer, stats grid (encounters/buffer),
- *   last encounter summary, live transcript preview, error display, stop button
+ * - Active state: Pulsing status dot, elapsed timer, audio quality indicator,
+ *   stats grid (encounters/buffer), last encounter summary, encounter notes,
+ *   toggleable transcript preview, MIIS image suggestions, error display, stop button
  *
  * The continuous mode records all day without manual session start/stop.
  * An LLM-based encounter detector automatically segments the transcript
  * and generates SOAP notes for each detected patient encounter.
  */
-import { memo, useState, useEffect } from 'react';
-import type { ContinuousModeStats } from '../../types';
+import { memo, useState, useEffect, useRef, useCallback } from 'react';
+import type { ContinuousModeStats, AudioQualitySnapshot } from '../../types';
+import type { PatientBiomarkerData } from '../../hooks/usePatientBiomarkers';
+import type { MiisSuggestion } from '../../hooks/useMiisImages';
+import { MarkdownContent } from '../ClinicalChat';
+import { ImageSuggestions } from '../ImageSuggestions';
+import { PatientVoiceMonitor } from '../PatientVoiceMonitor';
 
 interface ContinuousModeProps {
   /** Whether continuous mode is active */
   isActive: boolean;
+  /** Whether a stop is in progress (flushing buffer, generating final SOAP) */
+  isStopping: boolean;
   /** Stats from the backend */
   stats: ContinuousModeStats;
   /** Live transcript preview (last ~500 chars) */
   liveTranscript: string;
   /** Error message */
   error: string | null;
+  /** Predictive hint text for the physician */
+  predictiveHint: string;
+  /** Whether a predictive hint is being generated */
+  predictiveHintLoading: boolean;
+  /** Audio quality snapshot from the pipeline */
+  audioQuality: AudioQualitySnapshot | null;
+  /** Patient-focused biomarker data with trends */
+  patientBiomarkers: PatientBiomarkerData;
+  /** Per-encounter notes text */
+  encounterNotes: string;
+  /** Callback when encounter notes change */
+  onEncounterNotesChange: (notes: string) => void;
+  /** MIIS image suggestions */
+  miisSuggestions: MiisSuggestion[];
+  miisLoading: boolean;
+  miisError: string | null;
+  miisEnabled: boolean;
+  onMiisImpression: (imageId: number) => void;
+  onMiisClick: (imageId: number) => void;
+  onMiisDismiss: (imageId: number) => void;
+  miisGetImageUrl: (path: string) => string;
   /** Start continuous mode */
   onStart: () => void;
   /** Stop continuous mode */
   onStop: () => void;
+  /** Trigger manual new patient encounter split */
+  onNewPatient: () => void;
   /** Open history window to view today's sessions */
   onViewHistory: () => void;
 }
@@ -80,6 +111,19 @@ function formatTime(isoString: string | null): string {
   }
 }
 
+// Get audio quality status (same logic as RecordingMode)
+const getQualityLevel = (quality: AudioQualitySnapshot | null): 'good' | 'fair' | 'poor' => {
+  if (!quality) return 'good';
+
+  const rmsOk = quality.rms_db >= -40 && quality.rms_db <= -6;
+  const snrOk = quality.snr_db >= 15;
+  const clippingOk = quality.clipped_ratio < 0.001;
+
+  if (rmsOk && snrOk && clippingOk) return 'good';
+  if (quality.snr_db < 10 || quality.clipped_ratio >= 0.01) return 'poor';
+  return 'fair';
+};
+
 /**
  * Continuous Mode monitoring dashboard.
  *
@@ -88,14 +132,59 @@ function formatTime(isoString: string | null): string {
  */
 export const ContinuousMode = memo(function ContinuousMode({
   isActive,
+  isStopping,
   stats,
   liveTranscript,
   error,
+  predictiveHint,
+  predictiveHintLoading,
+  audioQuality,
+  patientBiomarkers,
+  encounterNotes,
+  onEncounterNotesChange,
+  miisSuggestions,
+  miisLoading,
+  miisError,
+  miisEnabled,
+  onMiisImpression,
+  onMiisClick,
+  onMiisDismiss,
+  miisGetImageUrl,
   onStart,
   onStop,
+  onNewPatient,
   onViewHistory,
 }: ContinuousModeProps) {
   const elapsedTime = useElapsedTime(isActive ? stats.recording_since : undefined);
+  const encounterElapsed = useElapsedTime(stats.buffer_started_at ?? undefined);
+
+  // Local UI toggle states
+  const [showTranscript, setShowTranscript] = useState(false);
+  const [showDetails, setShowDetails] = useState(false);
+  const [showNotes, setShowNotes] = useState(false);
+
+  // 2-second cooldown guard to prevent double-clicks on "New Patient"
+  const newPatientCooldownRef = useRef(false);
+  const handleNewPatient = useCallback(() => {
+    if (newPatientCooldownRef.current) return;
+    newPatientCooldownRef.current = true;
+    onNewPatient();
+    setTimeout(() => { newPatientCooldownRef.current = false; }, 2000);
+  }, [onNewPatient]);
+
+  const qualityLevel = getQualityLevel(audioQuality);
+
+  const handleDetailsClick = useCallback(() => {
+    setShowDetails(prev => !prev);
+  }, []);
+
+  const handleNotesToggle = useCallback(() => {
+    setShowNotes(prev => !prev);
+  }, []);
+
+  const handleNotesChange = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    onEncounterNotesChange(e.target.value);
+  }, [onEncounterNotesChange]);
 
   // Not active — show start button
   if (!isActive) {
@@ -140,9 +229,13 @@ export const ContinuousMode = memo(function ContinuousMode({
     <div className="mode-content continuous-mode">
       {/* Status header with pulsing indicator */}
       <div className="continuous-status-header">
-        <span className={`continuous-dot ${stats.state === 'checking' ? 'checking' : 'recording'}`} />
+        <span className={`continuous-dot ${isStopping ? 'stopping' : stats.state === 'checking' ? 'checking' : 'recording'}`} />
         <span className="continuous-status-text">
-          {stats.state === 'checking' ? 'Checking for encounters...' : 'Recording continuously'}
+          {isStopping
+            ? 'Stopping... finalizing notes'
+            : stats.state === 'checking'
+              ? 'Checking for encounters...'
+              : 'Recording continuously'}
         </span>
       </div>
 
@@ -151,6 +244,94 @@ export const ContinuousMode = memo(function ContinuousMode({
         <div className="continuous-timer">
           Recording for {elapsedTime}
         </div>
+      )}
+
+      {/* Audio quality indicator */}
+      <button
+        className={`quality-indicator ${qualityLevel}`}
+        onClick={handleDetailsClick}
+        aria-label="Audio quality - tap for details"
+      >
+        <span className="quality-dot" />
+        <span className="quality-label">
+          {qualityLevel === 'good' ? 'Good audio' : qualityLevel === 'fair' ? 'Fair audio' : 'Poor audio'}
+        </span>
+      </button>
+
+      {/* Audio quality details popover */}
+      {showDetails && audioQuality && (
+        <div className="recording-details-popover">
+          <div className="detail-row">
+            <span className="detail-label">Level</span>
+            <span className="detail-value">{audioQuality.rms_db.toFixed(0)} dB</span>
+          </div>
+          <div className="detail-row">
+            <span className="detail-label">SNR</span>
+            <span className="detail-value">{audioQuality.snr_db.toFixed(0)} dB</span>
+          </div>
+          {audioQuality.total_clipped > 0 && (
+            <div className="detail-row warning">
+              <span className="detail-label">Clips</span>
+              <span className="detail-value">{audioQuality.total_clipped}</span>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* New Patient button */}
+      <button
+        className="continuous-new-patient-btn"
+        onClick={handleNewPatient}
+        disabled={isStopping}
+      >
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
+          <circle cx="9" cy="7" r="4" />
+          <line x1="19" y1="8" x2="19" y2="14" />
+          <line x1="22" y1="11" x2="16" y2="11" />
+        </svg>
+        New Patient
+      </button>
+
+      {/* Patient voice biomarker monitor */}
+      {patientBiomarkers.hasData && (
+        <PatientVoiceMonitor data={patientBiomarkers} />
+      )}
+
+      {/* Current encounter info */}
+      <div className="continuous-encounter-info">
+        {stats.buffer_started_at && stats.buffer_word_count > 0 ? (
+          <span>Current encounter: {encounterElapsed || '<1m'} &middot; {stats.buffer_word_count} words</span>
+        ) : (
+          <span className="continuous-encounter-waiting">Waiting for next patient...</span>
+        )}
+      </div>
+
+      {/* Predictive hint — "Pssst..." */}
+      {(predictiveHint || predictiveHintLoading) && (
+        <div className="predictive-hint-container">
+          <div className="predictive-hint-label">Pssst...</div>
+          <div className="predictive-hint-content">
+            {predictiveHintLoading ? (
+              <span className="predictive-hint-loading">Thinking...</span>
+            ) : (
+              <MarkdownContent content={predictiveHint} className="predictive-hint-markdown" />
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* MIIS Image Suggestions */}
+      {miisEnabled && (
+        <ImageSuggestions
+          suggestions={miisSuggestions}
+          isLoading={miisLoading}
+          error={miisError}
+          getImageUrl={miisGetImageUrl}
+          onImpression={onMiisImpression}
+          onClickImage={onMiisClick}
+          onDismiss={onMiisDismiss}
+        />
       )}
 
       {/* Stats grid */}
@@ -183,17 +364,49 @@ export const ContinuousMode = memo(function ContinuousMode({
         </div>
       )}
 
-      {/* Live transcript preview */}
-      <div className="continuous-transcript-section">
-        <span className="continuous-section-label">Live transcript</span>
-        <div className="continuous-transcript-preview">
+      {/* Encounter Notes Toggle & Input */}
+      <button
+        className={`notes-toggle ${showNotes ? 'active' : ''} ${encounterNotes.trim() ? 'has-notes' : ''}`}
+        onClick={handleNotesToggle}
+        aria-label={showNotes ? 'Hide notes' : 'Add notes'}
+        aria-expanded={showNotes}
+      >
+        <span className="notes-icon">📝</span>
+        <span className="notes-label">{showNotes ? 'Hide Notes' : 'Add Notes'}</span>
+        <span className="notes-chevron">{showNotes ? '▲' : '▼'}</span>
+      </button>
+
+      {showNotes && (
+        <div className="session-notes-container">
+          <textarea
+            className="session-notes-input"
+            placeholder="Enter observations for this encounter..."
+            value={encounterNotes}
+            onChange={handleNotesChange}
+            rows={3}
+            aria-label="Encounter notes"
+          />
+        </div>
+      )}
+
+      {/* Transcript Toggle */}
+      <button
+        className={`transcript-toggle ${showTranscript ? 'active' : ''}`}
+        onClick={() => setShowTranscript(!showTranscript)}
+      >
+        {showTranscript ? 'Hide Transcript' : 'Show Transcript'}
+      </button>
+
+      {/* Live transcript preview (toggleable) */}
+      {showTranscript && (
+        <div className="transcript-preview">
           {liveTranscript ? (
-            <p>{liveTranscript}</p>
+            <div className="transcript-preview-text">{liveTranscript}</div>
           ) : (
-            <p className="continuous-transcript-empty">Waiting for speech...</p>
+            <div className="transcript-preview-placeholder">Waiting for speech...</div>
           )}
         </div>
-      </div>
+      )}
 
       {/* Error display */}
       {(error || stats.last_error) && (
@@ -207,8 +420,12 @@ export const ContinuousMode = memo(function ContinuousMode({
         <button className="btn-secondary" onClick={onViewHistory}>
           View Today&apos;s Sessions
         </button>
-        <button className="btn-danger" onClick={onStop}>
-          Stop Recording
+        <button
+          className={`btn-danger ${isStopping ? 'btn-stopping' : ''}`}
+          onClick={onStop}
+          disabled={isStopping}
+        >
+          {isStopping ? 'Stopping...' : 'Stop Recording'}
         </button>
       </div>
     </div>

@@ -6534,6 +6534,11 @@ button.review-section-header-left:focus {
   animation: continuous-pulse 0.8s ease-in-out infinite;
 }
 
+.continuous-dot.stopping {
+  background-color: var(--accent-stopping);
+  animation: continuous-pulse 1s ease-in-out infinite;
+}
+
 @keyframes continuous-pulse {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.4; }
@@ -6661,4 +6666,179 @@ button.review-section-header-left:focus {
 
 .btn-danger:hover {
   background: #b91c1c;
+}
+
+/* New Patient button */
+.continuous-new-patient-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn-stopping {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
+.continuous-new-patient-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  padding: 10px 16px;
+  font-size: 14px;
+  font-weight: 600;
+  background: #0d9488;
+  color: white;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.continuous-new-patient-btn:hover {
+  background: #0f766e;
+}
+
+.continuous-new-patient-btn:active {
+  background: #115e59;
+}
+
+/* Current encounter info line */
+.continuous-encounter-info {
+  font-size: 12px;
+  color: var(--text-secondary);
+  text-align: center;
+}
+
+.continuous-encounter-waiting {
+  font-style: italic;
+  color: var(--text-muted);
+}
+
+/* ============================================================================
+   Patient Voice Monitor
+   ============================================================================ */
+
+.patient-voice-monitor {
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 10px 12px;
+  background: var(--bg-secondary);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.pvm-header {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.pvm-speaker-label {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  margin-top: 4px;
+  margin-bottom: 2px;
+}
+
+.pvm-metric-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+}
+
+.pvm-metric-label {
+  width: 80px;
+  flex-shrink: 0;
+  color: var(--text-secondary);
+  font-size: 11px;
+}
+
+.pvm-bar {
+  display: flex;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+.pvm-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--border-color);
+}
+
+.pvm-dot.filled.good {
+  background: var(--accent-idle);
+}
+
+.pvm-dot.filled.moderate {
+  background: var(--accent-stopping);
+}
+
+.pvm-dot.filled.low {
+  background: var(--accent-recording);
+}
+
+.pvm-metric-value {
+  font-size: 11px;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+  min-width: 40px;
+}
+
+.pvm-talk-share {
+  font-weight: 500;
+}
+
+.pvm-trend-arrow {
+  font-size: 13px;
+  flex-shrink: 0;
+}
+
+.pvm-trend-arrow.improving {
+  color: var(--accent-idle);
+}
+
+.pvm-trend-arrow.stable {
+  color: var(--text-muted);
+}
+
+.pvm-trend-arrow.declining {
+  color: var(--accent-recording);
+}
+
+.pvm-insight {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  background: #fef3c7;
+  border-radius: 4px;
+  font-size: 11px;
+  color: #92400e;
+}
+
+.pvm-insight-icon {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #f59e0b;
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.pvm-cough-row {
+  font-size: 11px;
+  color: var(--text-secondary);
 }

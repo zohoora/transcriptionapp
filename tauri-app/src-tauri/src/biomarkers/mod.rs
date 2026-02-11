@@ -80,6 +80,8 @@ pub enum BiomarkerInput {
     },
     /// Record a dropout event (buffer overflow)
     Dropout,
+    /// Reset all per-encounter accumulators (triggered on encounter boundary)
+    Reset,
     /// Shutdown signal
     Shutdown,
 }
@@ -155,6 +157,9 @@ pub struct SpeakerBiomarkers {
     pub mean_turn_duration_ms: f32,
     /// Median turn duration in ms
     pub median_turn_duration_ms: f32,
+    /// Whether this speaker is an enrolled clinician (Physician/PA/RN/MA)
+    #[serde(default)]
+    pub is_clinician: bool,
 }
 
 /// Per-speaker turn statistics for conversation dynamics

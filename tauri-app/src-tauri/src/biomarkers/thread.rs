@@ -98,6 +98,11 @@ impl BiomarkerHandle {
         let _ = self.input_tx.send(BiomarkerInput::Dropout);
     }
 
+    /// Reset per-encounter accumulators (vitality, stability, session metrics, speaker data)
+    pub fn send_reset(&self) {
+        let _ = self.input_tx.send(BiomarkerInput::Reset);
+    }
+
     /// Try to receive a biomarker output (non-blocking)
     pub fn try_recv(&self) -> Option<BiomarkerOutput> {
         self.output_rx.try_recv().ok()
@@ -392,6 +397,7 @@ fn run_biomarker_thread(
                                 turn_count: 0,  // Will be populated from session metrics
                                 mean_turn_duration_ms: 0.0,
                                 median_turn_duration_ms: 0.0,
+                                is_clinician: false, // Annotated by pipeline after emission
                             },
                         );
                     }
@@ -416,6 +422,17 @@ fn run_biomarker_thread(
                 // Record dropout event for quality tracking
                 audio_quality.record_dropout();
                 debug!("Recorded audio dropout event");
+            }
+
+            BiomarkerInput::Reset => {
+                // Reset per-encounter accumulators (triggered on encounter boundary)
+                info!("Biomarker thread: resetting per-encounter accumulators");
+                session.reset();
+                vitality_values.clear();
+                stability_values.clear();
+                speaker_accumulators.clear();
+                pending_biomarkers.clear();
+                // Note: audio_quality is NOT reset — it's continuous, not per-encounter
             }
 
             BiomarkerInput::Shutdown => {
@@ -461,6 +478,7 @@ fn run_biomarker_thread(
                     turn_count: 0,  // Will be populated from session metrics
                     mean_turn_duration_ms: 0.0,
                     median_turn_duration_ms: 0.0,
+                    is_clinician: false, // Annotated by pipeline after emission
                 },
             );
         }

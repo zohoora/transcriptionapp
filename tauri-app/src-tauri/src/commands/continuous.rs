@@ -102,6 +102,45 @@ pub fn get_continuous_mode_status(
             last_encounter_patient_name: None,
             last_error: None,
             buffer_word_count: 0,
+            buffer_started_at: None,
         })
+    }
+}
+
+/// Set per-encounter notes for the current continuous mode encounter
+///
+/// Notes are passed to SOAP generation and cleared when a new encounter starts.
+#[tauri::command]
+pub fn set_continuous_encounter_notes(
+    notes: String,
+    continuous_state: State<'_, SharedContinuousModeState>,
+) -> Result<(), String> {
+    let state = continuous_state.lock().map_err(|e| e.to_string())?;
+    if let Some(ref handle) = *state {
+        if let Ok(mut encounter_notes) = handle.encounter_notes.lock() {
+            *encounter_notes = notes;
+        }
+        Ok(())
+    } else {
+        Err("Continuous mode is not running".to_string())
+    }
+}
+
+/// Trigger a manual new patient encounter split
+///
+/// Wakes the encounter detector immediately, bypassing minimum duration and
+/// word count guards. If the buffer has any content, it will be archived as
+/// an encounter and a new SOAP note generated.
+#[tauri::command]
+pub fn trigger_new_patient(
+    continuous_state: State<'_, SharedContinuousModeState>,
+) -> Result<(), String> {
+    info!("Manual new patient trigger received");
+    let state = continuous_state.lock().map_err(|e| e.to_string())?;
+    if let Some(ref handle) = *state {
+        handle.encounter_manual_trigger.notify_one();
+        Ok(())
+    } else {
+        Err("Continuous mode is not running".to_string())
     }
 }

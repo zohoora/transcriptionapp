@@ -64,6 +64,7 @@ mod stress_tests;
 pub mod session;
 pub mod transcription;
 pub mod vad;
+pub mod encounter_experiment;
 pub mod vision_experiment;
 pub mod whisper_server;
 
@@ -350,6 +351,8 @@ pub fn run() {
             commands::start_continuous_mode,
             commands::stop_continuous_mode,
             commands::get_continuous_mode_status,
+            commands::trigger_new_patient,
+            commands::set_continuous_encounter_notes,
         ])
         .on_window_event(|window, event| {
             if let WindowEvent::CloseRequested { .. } = event {

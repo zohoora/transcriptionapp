@@ -1,19 +1,29 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { listen, UnlistenFn } from '@tauri-apps/api/event';
-import type { ContinuousModeStats, ContinuousModeEvent, TranscriptUpdate } from '../types';
+import type { ContinuousModeStats, ContinuousModeEvent, TranscriptUpdate, AudioQualitySnapshot } from '../types';
 
 export interface UseContinuousModeResult {
   /** Whether continuous mode is actively running */
   isActive: boolean;
+  /** Whether a stop has been requested and we're waiting for cleanup (buffer flush + SOAP) */
+  isStopping: boolean;
   /** Current stats from the backend */
   stats: ContinuousModeStats;
   /** Live transcript preview text (last ~500 chars) */
   liveTranscript: string;
+  /** Audio quality snapshot from the pipeline */
+  audioQuality: AudioQualitySnapshot | null;
+  /** Per-encounter notes (passed to SOAP generation) */
+  encounterNotes: string;
+  /** Update encounter notes (debounced backend sync) */
+  setEncounterNotes: (notes: string) => void;
   /** Start continuous mode */
   start: () => Promise<void>;
   /** Stop continuous mode */
   stop: () => Promise<void>;
+  /** Manually trigger a new patient encounter split */
+  triggerNewPatient: () => Promise<void>;
   /** Error message if any */
   error: string | null;
 }
@@ -27,6 +37,7 @@ const IDLE_STATS: ContinuousModeStats = {
   last_encounter_patient_name: null,
   last_error: null,
   buffer_word_count: 0,
+  buffer_started_at: null,
 };
 
 /**
@@ -37,10 +48,14 @@ const IDLE_STATS: ContinuousModeStats = {
  */
 export function useContinuousMode(): UseContinuousModeResult {
   const [isActive, setIsActive] = useState(false);
+  const [isStopping, setIsStopping] = useState(false);
   const [stats, setStats] = useState<ContinuousModeStats>(IDLE_STATS);
   const [liveTranscript, setLiveTranscript] = useState('');
+  const [audioQuality, setAudioQuality] = useState<AudioQualitySnapshot | null>(null);
+  const [encounterNotes, setEncounterNotesState] = useState('');
   const [error, setError] = useState<string | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const notesDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Listen to continuous mode events from backend
   useEffect(() => {
@@ -58,11 +73,15 @@ export function useContinuousMode(): UseContinuousModeResult {
           break;
         case 'stopped':
           setIsActive(false);
+          setIsStopping(false);
           setStats(IDLE_STATS);
           setLiveTranscript('');
+          setAudioQuality(null);
+          setEncounterNotesState('');
           break;
         case 'encounter_detected':
-          // Stats will be refreshed by polling
+          // Clear notes for the new encounter (backend also clears)
+          setEncounterNotesState('');
           break;
         case 'soap_generated':
           break;
@@ -77,6 +96,7 @@ export function useContinuousMode(): UseContinuousModeResult {
         case 'error':
           setError(payload.error || 'Unknown error');
           setIsActive(false);
+          setIsStopping(false);
           break;
       }
     }).then((fn) => {
@@ -147,6 +167,52 @@ export function useContinuousMode(): UseContinuousModeResult {
     };
   }, [isActive]);
 
+  // Listen to audio quality events from pipeline
+  useEffect(() => {
+    if (!isActive) return;
+
+    let unlisten: UnlistenFn | null = null;
+    let mounted = true;
+
+    listen<AudioQualitySnapshot>('audio_quality', (event) => {
+      if (mounted) setAudioQuality(event.payload);
+    }).then((fn) => {
+      if (mounted) {
+        unlisten = fn;
+      } else {
+        fn();
+      }
+    });
+
+    return () => {
+      mounted = false;
+      if (unlisten) unlisten();
+    };
+  }, [isActive]);
+
+  // Debounced encounter notes setter — syncs to backend after 500ms idle
+  const setEncounterNotes = useCallback((notes: string) => {
+    setEncounterNotesState(notes);
+
+    if (notesDebounceRef.current) {
+      clearTimeout(notesDebounceRef.current);
+    }
+    notesDebounceRef.current = setTimeout(() => {
+      invoke('set_continuous_encounter_notes', { notes }).catch((e) => {
+        console.error('Failed to sync encounter notes:', e);
+      });
+    }, 500);
+  }, []);
+
+  // Cleanup debounce timer on unmount
+  useEffect(() => {
+    return () => {
+      if (notesDebounceRef.current) {
+        clearTimeout(notesDebounceRef.current);
+      }
+    };
+  }, []);
+
   const start = useCallback(async () => {
     try {
       setError(null);
@@ -159,21 +225,36 @@ export function useContinuousMode(): UseContinuousModeResult {
 
   const stop = useCallback(async () => {
     try {
+      setIsStopping(true);
       await invoke('stop_continuous_mode');
       // isActive will be set to false when we receive the 'stopped' event
     } catch (e) {
       setError(String(e));
       // Force reset if stop failed
       setIsActive(false);
+      setIsStopping(false);
+    }
+  }, []);
+
+  const triggerNewPatient = useCallback(async () => {
+    try {
+      await invoke('trigger_new_patient');
+    } catch (e) {
+      setError(String(e));
     }
   }, []);
 
   return {
     isActive,
+    isStopping,
     stats,
     liveTranscript,
+    audioQuality,
+    encounterNotes,
+    setEncounterNotes,
     start,
     stop,
+    triggerNewPatient,
     error,
   };
 }

@@ -44,3 +44,6 @@ export { useScreenCapture } from './useScreenCapture';
 
 export { useContinuousMode } from './useContinuousMode';
 export type { UseContinuousModeResult } from './useContinuousMode';
+
+export { usePatientBiomarkers } from './usePatientBiomarkers';
+export type { PatientBiomarkerData, PatientMetrics, TrendDirection } from './usePatientBiomarkers';

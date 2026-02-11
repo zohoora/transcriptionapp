@@ -20,6 +20,7 @@ use tokio::sync::mpsc;
 use tracing::{debug, error, info, warn};
 
 use crate::config::Config;
+use crate::encounter_experiment::strip_hallucinations;
 use crate::llm_client::LLMClient;
 use crate::local_archive;
 use crate::pipeline::{start_pipeline, PipelineConfig, PipelineMessage};
@@ -205,7 +206,7 @@ pub struct EncounterDetectionResult {
 }
 
 /// Build the encounter detection prompt
-pub(crate) fn build_encounter_detection_prompt(formatted_segments: &str) -> (String, String) {
+pub fn build_encounter_detection_prompt(formatted_segments: &str) -> (String, String) {
     let system = r#"You are analyzing a continuous transcript from a medical office.
 The microphone has been recording all day without stopping.
 
@@ -239,7 +240,7 @@ Return ONLY the JSON object, nothing else."#;
 }
 
 /// Parse the encounter detection response from the LLM
-pub(crate) fn parse_encounter_detection(response: &str) -> Result<EncounterDetectionResult, String> {
+pub fn parse_encounter_detection(response: &str) -> Result<EncounterDetectionResult, String> {
     // Try to extract JSON from the response (LLM may include surrounding text)
     let json_str = if let Some(start) = response.find('{') {
         if let Some(end) = response.rfind('}') {
@@ -267,9 +268,22 @@ pub struct MergeCheckResult {
     pub reason: Option<String>,
 }
 
-/// Build the encounter merge prompt — asks if two excerpts are from the same patient visit
-pub(crate) fn build_encounter_merge_prompt(prev_tail: &str, curr_head: &str) -> (String, String) {
-    let system = r#"You are reviewing two consecutive transcript excerpts from a medical office where a microphone records all day.
+/// Build the encounter merge prompt — asks if two excerpts are from the same patient visit.
+///
+/// When `patient_name` is provided (e.g. from vision-based extraction), the prompt
+/// includes it as context, significantly improving merge accuracy on topic-shift cases
+/// (33% → 100% in experiments — see encounter-experiments/summary.md).
+pub fn build_encounter_merge_prompt(prev_tail: &str, curr_head: &str, patient_name: Option<&str>) -> (String, String) {
+    let patient_context = match patient_name {
+        Some(name) if !name.is_empty() => format!(
+            "\n\nCONTEXT: The patient being seen is {}. If both excerpts reference this patient or the same clinical context, they are almost certainly the same encounter.",
+            name
+        ),
+        _ => String::new(),
+    };
+
+    let system = format!(
+        r#"You are reviewing two consecutive transcript excerpts from a medical office where a microphone records all day.
 
 The system split these into two separate encounters, but they may actually be the SAME patient visit that was incorrectly split (e.g., due to a pause, phone call, or silence during an examination).
 
@@ -280,29 +294,32 @@ Signs they are the SAME encounter:
 - Continuation of the same clinical discussion
 - No farewell/greeting between them
 - Natural pause (examination, looking at charts) rather than patient change
+- Same medical condition being discussed from different angles
 
 Signs they are DIFFERENT encounters:
 - Different patient names or contexts
 - A farewell followed by a new greeting
-- Clearly different clinical topics with no continuity
+- Clearly different clinical topics with no continuity{}
 
 Return JSON:
-{"same_encounter": true, "reason": "brief explanation"}
+{{"same_encounter": true, "reason": "brief explanation"}}
 or
-{"same_encounter": false, "reason": "brief explanation"}
+{{"same_encounter": false, "reason": "brief explanation"}}
 
-Return ONLY the JSON object, nothing else."#;
+Return ONLY the JSON object, nothing else."#,
+        patient_context
+    );
 
     let user = format!(
         "EXCERPT FROM END OF PREVIOUS ENCOUNTER:\n{}\n\n---\n\nEXCERPT FROM START OF NEXT ENCOUNTER:\n{}",
         prev_tail, curr_head
     );
 
-    (system.to_string(), user)
+    (system, user)
 }
 
 /// Parse the merge check response from the LLM
-pub(crate) fn parse_merge_check(response: &str) -> Result<MergeCheckResult, String> {
+pub fn parse_merge_check(response: &str) -> Result<MergeCheckResult, String> {
     let json_str = if let Some(start) = response.find('{') {
         if let Some(end) = response.rfind('}') {
             &response[start..=end]
@@ -440,6 +457,8 @@ pub struct ContinuousModeStats {
     pub last_encounter_patient_name: Option<String>,
     pub last_error: Option<String>,
     pub buffer_word_count: usize,
+    /// ISO timestamp of the first segment in the current buffer (for "current encounter" display)
+    pub buffer_started_at: Option<String>,
 }
 
 /// Handle to control the running continuous mode
@@ -454,6 +473,10 @@ pub struct ContinuousModeHandle {
     pub last_encounter_patient_name: Arc<Mutex<Option<String>>>,
     pub last_error: Arc<Mutex<Option<String>>>,
     pub name_tracker: Arc<Mutex<PatientNameTracker>>,
+    /// Manual trigger for "New Patient" button — wakes the encounter detector immediately
+    pub encounter_manual_trigger: Arc<tokio::sync::Notify>,
+    /// Per-encounter notes from the clinician (passed to SOAP generation, cleared on new encounter)
+    pub encounter_notes: Arc<Mutex<String>>,
 }
 
 impl ContinuousModeHandle {
@@ -469,6 +492,8 @@ impl ContinuousModeHandle {
             last_encounter_patient_name: Arc::new(Mutex::new(None)),
             last_error: Arc::new(Mutex::new(None)),
             name_tracker: Arc::new(Mutex::new(PatientNameTracker::new())),
+            encounter_manual_trigger: Arc::new(tokio::sync::Notify::new()),
+            encounter_notes: Arc::new(Mutex::new(String::new())),
         }
     }
 
@@ -511,11 +536,11 @@ impl ContinuousModeHandle {
             .ok()
             .and_then(|n| n.clone());
 
-        let buffer_wc = self
+        let (buffer_wc, buffer_started) = self
             .transcript_buffer
             .lock()
-            .map(|b| b.word_count())
-            .unwrap_or(0);
+            .map(|b| (b.word_count(), b.first_timestamp().map(|t| t.to_rfc3339())))
+            .unwrap_or((0, None));
 
         ContinuousModeStats {
             state,
@@ -526,6 +551,7 @@ impl ContinuousModeHandle {
             last_encounter_patient_name: last_patient,
             last_error: last_err,
             buffer_word_count: buffer_wc,
+            buffer_started_at: buffer_started,
         }
     }
 }
@@ -623,6 +649,9 @@ pub async fn run_continuous_mode(
     };
 
     info!("Continuous mode pipeline started");
+
+    // Clone the biomarker reset flag so the detector task can trigger resets on encounter boundaries
+    let reset_bio_for_detector = pipeline_handle.reset_biomarkers_flag();
 
     // Pipeline started successfully — now set state and emit event
     if let Ok(mut state) = handle.state.lock() {
@@ -752,13 +781,15 @@ pub async fn run_continuous_mode(
     let app_for_detector = app.clone();
     let check_interval = config.encounter_check_interval_secs;
 
-    // Build LLM client for encounter detection
+    // Build LLM client for encounter detection (uses smaller model for better accuracy)
+    let detection_model = config.encounter_detection_model.clone();
+    let detection_nothink = config.encounter_detection_nothink;
     let llm_client = if !config.llm_router_url.is_empty() {
         LLMClient::new(
             &config.llm_router_url,
             &config.llm_api_key,
             &config.llm_client_id,
-            &config.fast_model,
+            &detection_model,
         )
         .ok()
     } else {
@@ -771,6 +802,31 @@ pub async fn run_continuous_mode(
     let soap_format = config.soap_format.clone();
     let merge_enabled = config.encounter_merge_enabled;
 
+    // Clone config values for flush-on-stop SOAP generation (outside detector task)
+    let flush_soap_model = config.soap_model_fast.clone();
+    let flush_soap_detail_level = config.soap_detail_level;
+    let flush_soap_format = config.soap_format.clone();
+    let flush_llm_client = if !config.llm_router_url.is_empty() {
+        LLMClient::new(
+            &config.llm_router_url,
+            &config.llm_api_key,
+            &config.llm_client_id,
+            &config.fast_model,
+        )
+        .ok()
+    } else {
+        None
+    };
+
+    // Clone encounter notes for the detector task
+    let encounter_notes_for_detector = handle.encounter_notes.clone();
+
+    // Clone manual trigger for the detector task
+    let manual_trigger_rx = handle.encounter_manual_trigger.clone();
+
+    // Clone biomarker reset flag for the detector task
+    let reset_bio_flag = reset_bio_for_detector;
+
     let detector_task = tokio::spawn(async move {
         let mut encounter_number: u32 = 0;
 
@@ -780,13 +836,18 @@ pub async fn run_continuous_mode(
         let mut prev_encounter_date: Option<DateTime<Utc>> = None;
 
         loop {
-            // Wait for either the check interval or a silence trigger
-            tokio::select! {
-                _ = tokio::time::sleep(tokio::time::Duration::from_secs(check_interval as u64)) => {}
+            // Wait for check interval, silence trigger, or manual "New Patient" trigger
+            let manual_triggered = tokio::select! {
+                _ = tokio::time::sleep(tokio::time::Duration::from_secs(check_interval as u64)) => false,
                 _ = silence_trigger_rx.notified() => {
                     info!("Silence gap detected — triggering encounter check");
+                    false
                 }
-            }
+                _ = manual_trigger_rx.notified() => {
+                    info!("Manual new patient trigger received");
+                    true
+                }
+            };
 
             if stop_for_detector.load(Ordering::Relaxed) {
                 break;
@@ -801,24 +862,33 @@ pub async fn run_continuous_mode(
                 (buffer.format_for_detection(), buffer.word_count(), buffer.is_empty(), buffer.first_timestamp())
             };
 
-            if is_empty || word_count < 100 {
-                continue; // Not enough text to analyze — encounters are typically 100+ words
-            }
+            // Manual trigger: skip minimum guards, but still need >0 words
+            if manual_triggered {
+                if is_empty {
+                    info!("Manual trigger: buffer is empty, nothing to archive");
+                    continue;
+                }
+                info!("Manual trigger: bypassing minimum duration/word count guards ({} words)", word_count);
+            } else {
+                if is_empty || word_count < 100 {
+                    continue; // Not enough text to analyze — encounters are typically 100+ words
+                }
 
-            // Also trigger if buffer is very large (safety valve)
-            let force_check = word_count > 5000;
+                // Also trigger if buffer is very large (safety valve)
+                let force_check = word_count > 5000;
 
-            // Minimum encounter duration: 2 minutes (unless force_check)
-            if !force_check {
-                if let Some(first_time) = first_ts {
-                    let buffer_age_secs = (Utc::now() - first_time).num_seconds();
-                    if buffer_age_secs < 120 {
-                        continue; // Buffer is too young — encounter still building
+                // Minimum encounter duration: 2 minutes (unless force_check)
+                if !force_check {
+                    if let Some(first_time) = first_ts {
+                        let buffer_age_secs = (Utc::now() - first_time).num_seconds();
+                        if buffer_age_secs < 120 {
+                            continue; // Buffer is too young — encounter still building
+                        }
                     }
                 }
-            }
-            if force_check {
-                info!("Buffer exceeds 5000 words — forcing encounter check");
+                if force_check {
+                    info!("Buffer exceeds 5000 words — forcing encounter check");
+                }
             }
 
             // Set state to checking
@@ -831,8 +901,16 @@ pub async fn run_continuous_mode(
 
             // Run encounter detection via LLM (with 60s timeout to prevent blocking)
             let detection_result = if let Some(ref client) = llm_client {
-                let (system_prompt, user_prompt) = build_encounter_detection_prompt(&formatted);
-                let llm_future = client.generate(&fast_model, &system_prompt, &user_prompt, "encounter_detection");
+                // Strip hallucinated repetitions (e.g. STT "fractured" loop) before LLM call
+                let (filtered_formatted, _) = strip_hallucinations(&formatted, 5);
+                let (system_prompt, user_prompt) = build_encounter_detection_prompt(&filtered_formatted);
+                // Prepend /nothink for Qwen3 models to disable thinking mode (improves detection accuracy)
+                let system_prompt = if detection_nothink {
+                    format!("/nothink\n{}", system_prompt)
+                } else {
+                    system_prompt
+                };
+                let llm_future = client.generate(&detection_model, &system_prompt, &user_prompt, "encounter_detection");
                 match tokio::time::timeout(tokio::time::Duration::from_secs(60), llm_future).await {
                     Ok(Ok(response)) => {
                         match parse_encounter_detection(&response) {
@@ -976,6 +1054,14 @@ pub async fn run_continuous_mode(
                             tracker.reset();
                         }
 
+                        // Clear encounter notes for next encounter
+                        if let Ok(mut notes) = encounter_notes_for_detector.lock() {
+                            notes.clear();
+                        }
+
+                        // Reset biomarker accumulators for the new encounter
+                        reset_bio_flag.store(true, std::sync::atomic::Ordering::SeqCst);
+
                         // Update stats
                         encounters_for_detector.fetch_add(1, Ordering::Relaxed);
                         if let Ok(mut at) = last_at_for_detector.lock() {
@@ -998,12 +1084,25 @@ pub async fn run_continuous_mode(
 
                         // Generate SOAP note (with 120s timeout — SOAP is heavier than detection)
                         if let Some(ref client) = llm_client {
+                            // Strip hallucinated repetitions before SOAP generation
+                            let (filtered_encounter_text, _) = strip_hallucinations(&encounter_text, 5);
+                            // Build SOAP options with encounter notes from clinician
+                            let notes_text = encounter_notes_for_detector
+                                .lock()
+                                .map(|n| n.clone())
+                                .unwrap_or_default();
+                            let soap_opts = crate::llm_client::SoapOptions {
+                                detail_level: soap_detail_level,
+                                format: if soap_format == "comprehensive" { crate::llm_client::SoapFormat::Comprehensive } else { crate::llm_client::SoapFormat::ProblemBased },
+                                session_notes: notes_text,
+                                ..Default::default()
+                            };
                             info!("Generating SOAP for encounter #{}", encounter_number);
                             let soap_future = client.generate_multi_patient_soap_note(
                                 &soap_model,
-                                &encounter_text,
+                                &filtered_encounter_text,
                                 None, // No audio events in continuous mode
-                                None, // Use default SOAP options
+                                Some(&soap_opts),
                                 None, // No speaker context
                             );
                             match tokio::time::timeout(tokio::time::Duration::from_secs(120), soap_future).await {
@@ -1079,7 +1178,19 @@ pub async fn run_continuous_mode(
                                 };
 
                                 if let Some(ref client) = llm_client {
-                                    let (merge_system, merge_user) = build_encounter_merge_prompt(&prev_tail, &curr_head);
+                                    // Strip hallucinated repetitions from merge excerpts
+                                    let (filtered_prev_tail, _) = strip_hallucinations(&prev_tail, 5);
+                                    let (filtered_curr_head, _) = strip_hallucinations(&curr_head, 5);
+                                    // Get patient name from vision tracker for merge context (M1 strategy)
+                                    let merge_patient_name = name_tracker_for_detector
+                                        .lock()
+                                        .ok()
+                                        .and_then(|t| t.majority_name());
+                                    let (merge_system, merge_user) = build_encounter_merge_prompt(
+                                        &filtered_prev_tail,
+                                        &filtered_curr_head,
+                                        merge_patient_name.as_deref(),
+                                    );
                                     let merge_future = client.generate(&fast_model, &merge_system, &merge_user, "encounter_merge");
                                     match tokio::time::timeout(tokio::time::Duration::from_secs(60), merge_future).await {
                                         Ok(Ok(merge_response)) => {
@@ -1108,11 +1219,22 @@ pub async fn run_continuous_mode(
                                                         } else {
                                                             // Regenerate SOAP for the merged encounter
                                                             if let Some(ref client) = llm_client {
+                                                                let (filtered_merged, _) = strip_hallucinations(&merged_text, 5);
+                                                                let merge_notes = encounter_notes_for_detector
+                                                                    .lock()
+                                                                    .map(|n| n.clone())
+                                                                    .unwrap_or_default();
+                                                                let merge_soap_opts = crate::llm_client::SoapOptions {
+                                                                    detail_level: soap_detail_level,
+                                                                    format: if soap_format == "comprehensive" { crate::llm_client::SoapFormat::Comprehensive } else { crate::llm_client::SoapFormat::ProblemBased },
+                                                                    session_notes: merge_notes,
+                                                                    ..Default::default()
+                                                                };
                                                                 let soap_future = client.generate_multi_patient_soap_note(
                                                                     &soap_model,
-                                                                    &merged_text,
+                                                                    &filtered_merged,
                                                                     None,
-                                                                    None,
+                                                                    Some(&merge_soap_opts),
                                                                     None,
                                                                 );
                                                                 match tokio::time::timeout(tokio::time::Duration::from_secs(120), soap_future).await {
@@ -1231,6 +1353,31 @@ pub async fn run_continuous_mode(
                     }
                 };
 
+                // Save screenshot to disk for debugging
+                {
+                    use base64::Engine;
+                    let debug_dir = dirs::home_dir()
+                        .unwrap_or_default()
+                        .join(".transcriptionapp")
+                        .join("debug")
+                        .join("continuous-screenshots");
+                    let _ = std::fs::create_dir_all(&debug_dir);
+                    let timestamp = chrono::Local::now().format("%Y%m%d-%H%M%S");
+                    let filename = debug_dir.join(format!("{}.jpg", timestamp));
+                    match base64::engine::general_purpose::STANDARD.decode(&image_base64) {
+                        Ok(bytes) => {
+                            if let Err(e) = std::fs::write(&filename, &bytes) {
+                                warn!("Failed to save debug screenshot: {}", e);
+                            } else {
+                                debug!("Debug screenshot saved: {:?}", filename);
+                            }
+                        }
+                        Err(e) => {
+                            warn!("Failed to decode screenshot base64 for debug save: {}", e);
+                        }
+                    }
+                }
+
                 // Send to vision model for name extraction
                 let client = match &llm_client_for_screenshot {
                     Some(c) => c,
@@ -1324,19 +1471,74 @@ pub async fn run_continuous_mode(
     };
 
     if let Some(text) = remaining_text {
-        let word_count = text.split_whitespace().count();
+        // Strip hallucinations before word count check and SOAP generation
+        let (filtered_text, _) = strip_hallucinations(&text, 5);
+        let word_count = filtered_text.split_whitespace().count();
         if word_count > 100 {
-            info!("Flushing remaining buffer ({} words) as final session", word_count);
+            info!("Flushing remaining buffer ({} words after filtering) as final session", word_count);
             let session_id = uuid::Uuid::new_v4().to_string();
             if let Err(e) = local_archive::save_session(
                 &session_id,
-                &text,
+                &text, // Archive the raw text (preserve original for audit)
                 0, // Unknown duration for flush
                 None,
                 false,
                 Some("continuous_mode_stopped"),
             ) {
                 warn!("Failed to archive final buffer: {}", e);
+            } else {
+                // Generate SOAP note for the flushed buffer (the orphaned encounter fix)
+                if let Some(ref client) = flush_llm_client {
+                    let flush_notes = handle.encounter_notes
+                        .lock()
+                        .map(|n| n.clone())
+                        .unwrap_or_default();
+                    let flush_soap_opts = crate::llm_client::SoapOptions {
+                        detail_level: flush_soap_detail_level,
+                        format: if flush_soap_format == "comprehensive" { crate::llm_client::SoapFormat::Comprehensive } else { crate::llm_client::SoapFormat::ProblemBased },
+                        session_notes: flush_notes,
+                        ..Default::default()
+                    };
+                    info!("Generating SOAP for flushed buffer ({} words)", word_count);
+                    let soap_future = client.generate_multi_patient_soap_note(
+                        &flush_soap_model,
+                        &filtered_text,
+                        None,
+                        Some(&flush_soap_opts),
+                        None,
+                    );
+                    match tokio::time::timeout(tokio::time::Duration::from_secs(120), soap_future).await {
+                        Ok(Ok(soap_result)) => {
+                            let soap_content = &soap_result.notes
+                                .iter()
+                                .map(|n| n.content.clone())
+                                .collect::<Vec<_>>()
+                                .join("\n\n---\n\n");
+                            let now = Utc::now();
+                            if let Err(e) = local_archive::add_soap_note(
+                                &session_id,
+                                &now,
+                                soap_content,
+                                Some(flush_soap_detail_level),
+                                Some(&flush_soap_format),
+                            ) {
+                                warn!("Failed to save SOAP for flushed buffer: {}", e);
+                            } else {
+                                info!("SOAP generated for flushed buffer");
+                                let _ = app.emit("continuous_mode_event", serde_json::json!({
+                                    "type": "soap_generated",
+                                    "session_id": session_id
+                                }));
+                            }
+                        }
+                        Ok(Err(e)) => {
+                            warn!("Failed to generate SOAP for flushed buffer: {}", e);
+                        }
+                        Err(_) => {
+                            warn!("SOAP generation timed out for flushed buffer");
+                        }
+                    }
+                }
             }
         }
     }
@@ -1513,11 +1715,23 @@ mod tests {
     fn test_build_encounter_merge_prompt() {
         let (system, user) = build_encounter_merge_prompt(
             "...we'll see you in two weeks",
-            "Good morning Mr. Smith..."
+            "Good morning Mr. Smith...",
+            None,
         );
         assert!(system.contains("SAME patient visit"));
         assert!(user.contains("we'll see you in two weeks"));
         assert!(user.contains("Good morning Mr. Smith"));
+    }
+
+    #[test]
+    fn test_build_encounter_merge_prompt_with_patient_name() {
+        let (system, _user) = build_encounter_merge_prompt(
+            "tail text",
+            "head text",
+            Some("Buckland, Deborah Ann"),
+        );
+        assert!(system.contains("Buckland, Deborah Ann"));
+        assert!(system.contains("almost certainly the same encounter"));
     }
 
     #[test]

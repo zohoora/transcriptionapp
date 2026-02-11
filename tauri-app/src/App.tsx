@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { WebviewWindow } from '@tauri-apps/api/webviewWindow';
 import { useAuth } from './components/AuthProvider';
@@ -27,6 +27,7 @@ import {
   useMiisImages,
   useScreenCapture,
   useContinuousMode,
+  usePatientBiomarkers,
 } from './hooks';
 import type { Settings, WhisperServerStatus, ChartingMode } from './types';
 
@@ -157,12 +158,20 @@ function App() {
   // Continuous mode hook
   const {
     isActive: continuousModeActive,
+    isStopping: continuousModeStopping,
     stats: continuousModeStats,
     liveTranscript: continuousLiveTranscript,
+    audioQuality: continuousAudioQuality,
+    encounterNotes: continuousEncounterNotes,
+    setEncounterNotes: setContinuousEncounterNotes,
     start: startContinuousMode,
     stop: stopContinuousMode,
+    triggerNewPatient,
     error: continuousModeError,
   } = useContinuousMode();
+
+  // Patient biomarker trending for continuous mode (filters clinician voices, tracks trends)
+  const patientBiomarkers = usePatientBiomarkers(continuousModeActive);
 
   // Auto-detection callbacks — delegate to lifecycle hook for coordinated resets
   const handleAutoStartRecording = useCallback(async () => {
@@ -312,6 +321,16 @@ function App() {
     isRecording: uiMode === 'recording',
   });
 
+  // Predictive hints for continuous mode (uses live transcript preview)
+  const {
+    hint: continuousPredictiveHint,
+    concepts: continuousImageConcepts,
+    isLoading: continuousPredictiveHintLoading,
+  } = usePredictiveHint({
+    transcript: continuousLiveTranscript,
+    isRecording: continuousModeActive && !continuousModeStopping,
+  });
+
   // MIIS image suggestions (uses concepts from predictive hints)
   const {
     suggestions: miisSuggestions,
@@ -324,6 +343,30 @@ function App() {
   } = useMiisImages({
     sessionId: status.session_id ?? null,
     concepts: imageConcepts,
+    enabled: settings?.miis_enabled ?? false,
+    serverUrl: settings?.miis_server_url ?? '',
+  });
+
+  // Stable session ID for continuous mode MIIS (set on start, cleared on stop)
+  const continuousMiisSessionIdRef = useRef<string | null>(null);
+  if (continuousModeActive && !continuousMiisSessionIdRef.current) {
+    continuousMiisSessionIdRef.current = `continuous-${Date.now()}`;
+  } else if (!continuousModeActive && continuousMiisSessionIdRef.current) {
+    continuousMiisSessionIdRef.current = null;
+  }
+
+  // MIIS image suggestions for continuous mode
+  const {
+    suggestions: continuousMiisSuggestions,
+    isLoading: continuousMiisLoading,
+    error: continuousMiisError,
+    recordImpression: continuousMiisRecordImpression,
+    recordClick: continuousMiisRecordClick,
+    recordDismiss: continuousMiisRecordDismiss,
+    getImageUrl: continuousMiisGetImageUrl,
+  } = useMiisImages({
+    sessionId: continuousMiisSessionIdRef.current,
+    concepts: continuousImageConcepts,
     enabled: settings?.miis_enabled ?? false,
     serverUrl: settings?.miis_server_url ?? '',
   });
@@ -719,11 +762,28 @@ function App() {
         {isContinuousMode && (
           <ContinuousMode
             isActive={continuousModeActive}
+            isStopping={continuousModeStopping}
             stats={continuousModeStats}
             liveTranscript={continuousLiveTranscript}
             error={continuousModeError}
+            predictiveHint={continuousPredictiveHint}
+            predictiveHintLoading={continuousPredictiveHintLoading}
+            audioQuality={continuousAudioQuality}
+            patientBiomarkers={patientBiomarkers}
+            encounterNotes={continuousEncounterNotes}
+            onEncounterNotesChange={setContinuousEncounterNotes}
+            // MIIS image suggestions
+            miisSuggestions={continuousMiisSuggestions}
+            miisLoading={continuousMiisLoading}
+            miisError={continuousMiisError}
+            miisEnabled={settings?.miis_enabled ?? false}
+            onMiisImpression={continuousMiisRecordImpression}
+            onMiisClick={continuousMiisRecordClick}
+            onMiisDismiss={continuousMiisRecordDismiss}
+            miisGetImageUrl={continuousMiisGetImageUrl}
             onStart={startContinuousMode}
             onStop={stopContinuousMode}
+            onNewPatient={triggerNewPatient}
             onViewHistory={openHistoryWindow}
           />
         )}

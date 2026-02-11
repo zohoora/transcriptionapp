@@ -60,6 +60,10 @@ cd src-tauri && cargo check      # Rust compile check
 # Tests
 pnpm test:run                    # Frontend (Vitest)
 cd src-tauri && cargo test       # Rust
+
+# Daily preflight (verifies STT + LLM + Archive before clinic)
+./scripts/preflight.sh           # Quick (~10s): layers 1-3
+./scripts/preflight.sh --full    # Full (~30s): all 5 layers
 ```
 
 **Why not `tauri dev`?** Deep links and single-instance plugin don't work in dev mode. OAuth callbacks open new instances instead of routing to existing app.
@@ -121,7 +125,7 @@ cd src-tauri && cargo test       # Rust
 | `listening_event` | Auto-detection status (includes `speaker_not_verified`) |
 | `silence_warning` | Auto-end countdown (silence_ms, remaining_ms) |
 | `session_auto_end` | Session auto-ended due to silence |
-| `continuous_mode_event` | Continuous mode status changes (started, encounter_detected, soap_generated, etc.) |
+| `continuous_mode_event` | Continuous mode status changes (started, encounter_detected, soap_generated, encounter_merged, etc.) |
 | `continuous_transcript_preview` | Live transcript preview in continuous mode (separate from `transcript_update`) |
 
 ## Session States
@@ -218,6 +222,8 @@ Records all day without manual start/stop. LLM encounter detector segments trans
 
 **Detection**: Pipeline → TranscriptBuffer → LLM check every `encounter_check_interval_secs` (120s) or on `encounter_silence_trigger_secs` (60s) of silence → archive + SOAP on complete encounter.
 
+**Vision-Based Patient Name Extraction**: When `screen_capture_enabled` is true, a background task captures screenshots every `screen_capture_interval_secs` (min 30s), sends them to the `vision-model` LLM alias, and extracts patient names from on-screen EHR charts. A `PatientNameTracker` uses majority-vote across screenshots to determine the most likely patient for each encounter. The extracted name is written to `ArchiveMetadata.patient_name` and displayed in the dashboard and history views.
+
 **Lifecycle**:
 - `started` event emitted only after pipeline successfully starts
 - `isActive=false` on `error` events (prevents stale UI state)
@@ -248,7 +254,7 @@ Key settings groups: STT Router (whisper_server_url, stt_alias=`"medical-streami
 | Service | Default URL | Purpose |
 |---------|-------------|---------|
 | STT Router | `http://10.241.15.154:8001` | WebSocket streaming transcription (alias: `medical-streaming`) |
-| LLM Router | `http://10.241.15.154:8080` | SOAP generation |
+| LLM Router | `http://10.241.15.154:8080` | SOAP generation, encounter detection, vision-based patient name extraction (`vision-model` alias) |
 | Medplum | `http://10.241.15.154:8103` | EMR/FHIR |
 | MIIS | `http://10.241.15.154:7843` | Medical illustration images |
 
@@ -300,11 +306,87 @@ Key settings groups: STT Router (whisper_server_url, stt_alias=`"medical-streami
 | Can't switch charting mode | Stop continuous recording before switching from continuous to session mode |
 | Auto-detection runs during continuous | Verify `isContinuousMode` guard in App.tsx listening effect |
 
+## E2E Integration Tests
+
+End-to-end tests verify the full pipeline against live STT and LLM Router services. They live in `src-tauri/src/e2e_tests.rs` and are marked `#[ignore]` so they don't run during normal `cargo test`.
+
+### Daily Preflight Script
+
+```bash
+./scripts/preflight.sh           # Quick check (~10s) — layers 1-3
+./scripts/preflight.sh --full    # Full pipeline (~30s) — all 5 layers
+./scripts/preflight.sh --layer 2 # Specific layer only
+```
+
+### Running Tests Directly
+
+```bash
+cd src-tauri
+
+# All E2E tests (run one at a time — concurrent WebSocket streams can overload STT Router)
+cargo test e2e_layer1 -- --ignored --nocapture  # STT Router
+cargo test e2e_layer2 -- --ignored --nocapture  # LLM Router
+cargo test e2e_layer3 -- --ignored --nocapture  # Local Archive
+cargo test e2e_layer4 -- --ignored --nocapture  # Session mode full pipeline
+cargo test e2e_layer5 -- --ignored --nocapture  # Continuous mode full pipeline
+
+# Single test
+cargo test e2e_layer2_hybrid -- --ignored --nocapture
+```
+
+### Test Layers
+
+| Layer | What it Tests | Services Required |
+|-------|--------------|-------------------|
+| 1 | STT Router health, alias, WebSocket streaming | STT Router |
+| 2 | SOAP generation, encounter detection (faster + /nothink), hybrid model + merge + hallucination filter | LLM Router |
+| 3 | Archive save/retrieve, continuous mode metadata | Filesystem only |
+| 4 | Session mode: Audio → STT → SOAP → Archive → History | STT + LLM Router |
+| 5 | Continuous mode: Audio → STT → Detection → SOAP → Archive → History | STT + LLM Router |
+
+### Hybrid Model Configuration
+
+E2E tests use the production model configuration:
+- **Detection**: `faster` (Qwen3-1.7B) + `/nothink` — smaller model resists over-splitting
+- **Merge**: `fast-model` (~7B) + patient name (M1 strategy) — better semantic understanding
+- **SOAP**: `soap-model-fast` — dedicated SOAP generation model
+
+Config fields in `config.rs`: `encounter_detection_model` (default "faster"), `encounter_detection_nothink` (default true)
+
+### Troubleshooting E2E Failures
+
+| Failure | Likely Cause | Fix |
+|---------|-------------|-----|
+| Layer 1 health check | STT Router down | Check `http://10.241.15.154:8001/health` |
+| Layer 1 streaming "Connection reset" | Too many concurrent WebSocket connections | Run tests one layer at a time |
+| Layer 2 SOAP empty | LLM Router down or model not loaded | Check `http://10.241.15.154:8080/health` |
+| Layer 2 detection not complete | Model changed or prompt regression | Run encounter experiment CLI to compare |
+| Layer 2 merge says different | Patient name not in prompt or model regression | Check `build_encounter_merge_prompt()` |
+| Layer 3 archive failure | Disk permissions | Check `~/.transcriptionapp/archive/` writable |
+| Layer 4/5 "STT returned 4 chars" | Normal — sine wave test audio produces no speech | Test uses fixture transcript as fallback |
+
+### Experiment CLIs
+
+For deeper investigation of model accuracy:
+
+```bash
+cd src-tauri
+
+# Encounter detection experiments (replays archived transcripts)
+cargo run --bin encounter_experiment_cli
+cargo run --bin encounter_experiment_cli -- --model faster --nothink
+cargo run --bin encounter_experiment_cli -- --detect-only p0 p3
+
+# Vision SOAP experiments
+cargo run --bin vision_experiment_cli
+```
+
 ## Testing Best Practices
 
 - Avoid `vi.useFakeTimers()` with React async - conflicts with RTL's `waitFor`
 - Use `mockImplementation` with command routing instead of `mockResolvedValueOnce` chains
 - Always clean up timers in `beforeEach`/`afterEach`
+- Run E2E tests one layer at a time to avoid STT Router WebSocket concurrency limits
 
 ## Adding New Features
 

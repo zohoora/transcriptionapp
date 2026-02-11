@@ -43,8 +43,10 @@
 mod tests {
     use crate::config::Config;
     use crate::continuous_mode::{
-        build_encounter_detection_prompt, parse_encounter_detection,
+        build_encounter_detection_prompt, build_encounter_merge_prompt,
+        parse_encounter_detection, parse_merge_check,
     };
+    use crate::encounter_experiment::strip_hallucinations;
     use crate::llm_client::LLMClient;
     use crate::local_archive;
     use crate::whisper_server::WhisperServerClient;
@@ -66,7 +68,10 @@ mod tests {
     /// Model for SOAP note generation
     const SOAP_MODEL: &str = "soap-model-fast";
 
-    /// Model for encounter detection
+    /// Model for encounter detection (hybrid: smaller model resists over-splitting)
+    const DETECTION_MODEL: &str = "faster";
+
+    /// Model for encounter merge and general fast tasks
     const FAST_MODEL: &str = "fast-model";
 
     /// LLM client ID
@@ -288,8 +293,8 @@ Speaker 1: Take care. We'll see you soon.";
 
     /// Verify the LLM Router can detect a completed encounter in transcript segments.
     ///
-    /// Sends the fixture continuous-mode segments through the encounter detection
-    /// prompt and checks that the LLM identifies a complete encounter.
+    /// Uses the hybrid detection model ("faster" / Qwen3-1.7B) with /nothink prefix,
+    /// matching the production configuration in continuous_mode.rs.
     #[test]
     #[ignore = "Requires live LLM Router"]
     fn e2e_layer2_llm_encounter_detection() {
@@ -302,8 +307,11 @@ Speaker 1: Take care. We'll see you soon.";
         let (system_prompt, user_prompt) =
             build_encounter_detection_prompt(FIXTURE_CONTINUOUS_SEGMENTS);
 
+        // Prepend /nothink to match production (disables Qwen3 thinking mode)
+        let system_prompt = format!("/nothink\n{}", system_prompt);
+
         let response = rt.block_on(client.generate(
-            FAST_MODEL,
+            DETECTION_MODEL,
             &system_prompt,
             &user_prompt,
             "encounter_detection",
@@ -319,10 +327,101 @@ Speaker 1: Take care. We'll see you soon.";
         );
 
         println!(
-            "[PASS] Encounter detected: complete={}, end_segment_index={:?}",
+            "[PASS] Encounter detected (model={}): complete={}, end_segment_index={:?}",
+            DETECTION_MODEL,
             detection.complete,
             detection.end_segment_index
         );
+    }
+
+    /// Verify the hybrid model approach: detection uses "faster" model,
+    /// merge uses "fast-model". Also verifies the hallucination filter
+    /// and /nothink prefix work correctly with the LLM Router.
+    #[test]
+    #[ignore = "Requires live LLM Router"]
+    fn e2e_layer2_hybrid_detection_and_merge() {
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+
+        let config = Config::load_or_default();
+        let llm_url = if config.llm_router_url.is_empty() { LLM_ROUTER_URL } else { &config.llm_router_url };
+        let api_key = &config.llm_api_key;
+        let client_id = if config.llm_client_id.is_empty() { LLM_CLIENT_ID } else { &config.llm_client_id };
+
+        // ── Detection with smaller model + /nothink ──────────────────────
+        println!("Step 1: Detection with model='{}' + /nothink...", DETECTION_MODEL);
+        let detection_client = LLMClient::new(llm_url, api_key, client_id, DETECTION_MODEL)
+            .expect("Failed to create detection LLM client");
+
+        let (system_prompt, user_prompt) =
+            build_encounter_detection_prompt(FIXTURE_CONTINUOUS_SEGMENTS);
+        let system_prompt = format!("/nothink\n{}", system_prompt);
+
+        let response = rt.block_on(detection_client.generate(
+            DETECTION_MODEL,
+            &system_prompt,
+            &user_prompt,
+            "encounter_detection",
+        )).expect("Detection LLM call failed");
+
+        let detection = parse_encounter_detection(&response)
+            .expect("Failed to parse detection response");
+        assert!(detection.complete, "Detection model did not detect complete encounter");
+        println!("  Detection OK: complete=true, end_segment_index={:?}", detection.end_segment_index);
+
+        // ── Merge with larger model + patient name (M1 strategy) ─────────
+        println!("Step 2: Merge with model='{}' + patient name...", FAST_MODEL);
+        let merge_client = LLMClient::new(llm_url, api_key, client_id, FAST_MODEL)
+            .expect("Failed to create merge LLM client");
+
+        // Simulate two encounter excerpts from the same visit
+        let prev_tail = "Speaker 1: I'd like to start you on sumatriptan as needed and \
+            schedule a follow-up in two weeks. If the headaches get worse or you develop \
+            new symptoms, come back sooner.\n\
+            Speaker 2: Thank you doctor. I'll see you in two weeks then.";
+        let curr_head = "Speaker 1: Take care. We'll see you soon.\n\
+            Speaker 2: Thanks again doctor.\n\
+            Speaker 1: Now let me update the chart with your visit notes.";
+
+        let (merge_system, merge_user) = build_encounter_merge_prompt(
+            prev_tail,
+            curr_head,
+            Some("Test Patient"),
+        );
+
+        let merge_response = rt.block_on(merge_client.generate(
+            FAST_MODEL,
+            &merge_system,
+            &merge_user,
+            "encounter_merge",
+        )).expect("Merge LLM call failed");
+
+        let merge_result = parse_merge_check(&merge_response)
+            .expect("Failed to parse merge response");
+        assert!(merge_result.same_encounter, "Merge model should identify same encounter");
+        println!("  Merge OK: same_encounter=true, reason={:?}", merge_result.reason);
+
+        // ── Hallucination filter ─────────────────────────────────────────
+        println!("Step 3: Hallucination filter...");
+        let hallucinated = "The patient presented with fractured ".to_string()
+            + &"fractured ".repeat(100)
+            + "kneecap after a fall.";
+        let (cleaned, report) = strip_hallucinations(&hallucinated, 5);
+        assert!(!report.repetitions.is_empty(), "Should detect hallucinated repetitions");
+        assert!(cleaned.len() < hallucinated.len(), "Cleaned text should be shorter");
+        println!(
+            "  Filter OK: {} -> {} words, found {} repetition(s)",
+            report.original_word_count,
+            report.cleaned_word_count,
+            report.repetitions.len()
+        );
+
+        println!("\n[PASS] Hybrid model E2E complete");
+        println!("  Detection: model={} + /nothink → complete=true", DETECTION_MODEL);
+        println!("  Merge: model={} + patient name → same_encounter=true", FAST_MODEL);
+        println!("  Hallucination filter → cleaned {} repetitions", report.repetitions.len());
     }
 
     // ========================================================================
@@ -507,9 +606,10 @@ Speaker 1: Take care. We'll see you soon.";
             chunks.len()
         );
 
-        // Use fixture if STT returned empty (expected for non-speech audio)
-        let transcript = if stt_result.trim().is_empty() {
-            println!("  Using fixture transcript (STT returned empty for test audio)");
+        // Use fixture if STT returned empty or too short for SOAP (expected for
+        // non-speech test audio — some models hallucinate short text like "The.")
+        let transcript = if stt_result.trim().len() < 50 {
+            println!("  Using fixture transcript (STT returned {} chars — too short for SOAP)", stt_result.trim().len());
             FIXTURE_TRANSCRIPT.to_string()
         } else {
             println!("  Using real STT transcript");
@@ -632,9 +732,10 @@ Speaker 1: Take care. We'll see you soon.";
 
         println!("  STT result: {} chars", stt_result.len());
 
-        // Use fixture transcript (expected for non-speech test audio)
-        let transcript = if stt_result.trim().is_empty() {
-            println!("  Using fixture transcript");
+        // Use fixture transcript (expected for non-speech test audio — some
+        // models hallucinate short text like "The." from sine waves)
+        let transcript = if stt_result.trim().len() < 50 {
+            println!("  Using fixture transcript (STT returned {} chars — too short)", stt_result.trim().len());
             FIXTURE_TRANSCRIPT.to_string()
         } else {
             stt_result
@@ -651,8 +752,11 @@ Speaker 1: Take care. We'll see you soon.";
         let (system_prompt, user_prompt) =
             build_encounter_detection_prompt(FIXTURE_CONTINUOUS_SEGMENTS);
 
+        // Prepend /nothink to match production hybrid detection model config
+        let system_prompt = format!("/nothink\n{}", system_prompt);
+
         let detection_response = rt.block_on(llm_client.generate(
-            FAST_MODEL,
+            DETECTION_MODEL,
             &system_prompt,
             &user_prompt,
             "encounter_detection",

@@ -96,10 +96,23 @@ pub struct Settings {
     pub encounter_silence_trigger_secs: u32,
     #[serde(default = "default_encounter_merge_enabled")]
     pub encounter_merge_enabled: bool,
+    // Hybrid model: use a smaller/faster model for encounter detection
+    #[serde(default = "default_encounter_detection_model")]
+    pub encounter_detection_model: String,
+    #[serde(default = "default_encounter_detection_nothink")]
+    pub encounter_detection_nothink: bool,
 }
 
 fn default_encounter_merge_enabled() -> bool {
     true // Auto-merge split encounters by default
+}
+
+fn default_encounter_detection_model() -> String {
+    "faster".to_string() // Qwen3-1.7B — smaller models resist over-splitting
+}
+
+fn default_encounter_detection_nothink() -> bool {
+    true // Disable Qwen3 thinking mode for detection (improves accuracy)
 }
 
 fn default_stt_alias() -> String {
@@ -119,7 +132,7 @@ fn default_encounter_check_interval_secs() -> u32 {
 }
 
 fn default_encounter_silence_trigger_secs() -> u32 {
-    180 // 3 minutes — short pauses shouldn't split encounters
+    45 // 45 seconds — catches natural patient transitions; LLM detector validates completeness
 }
 
 fn default_screen_capture_interval_secs() -> u32 {
@@ -260,6 +273,8 @@ impl Default for Settings {
             encounter_check_interval_secs: default_encounter_check_interval_secs(),
             encounter_silence_trigger_secs: default_encounter_silence_trigger_secs(),
             encounter_merge_enabled: default_encounter_merge_enabled(),
+            encounter_detection_model: default_encounter_detection_model(),
+            encounter_detection_nothink: default_encounter_detection_nothink(),
         }
     }
 }
@@ -578,6 +593,11 @@ pub struct Config {
     pub encounter_silence_trigger_secs: u32,
     #[serde(default = "default_encounter_merge_enabled")]
     pub encounter_merge_enabled: bool,
+    // Hybrid model: use a smaller/faster model for encounter detection
+    #[serde(default = "default_encounter_detection_model")]
+    pub encounter_detection_model: String,
+    #[serde(default = "default_encounter_detection_nothink")]
+    pub encounter_detection_nothink: bool,
 }
 
 fn default_max_speakers() -> usize {
@@ -666,6 +686,8 @@ impl Default for Config {
             encounter_check_interval_secs: default_encounter_check_interval_secs(),
             encounter_silence_trigger_secs: default_encounter_silence_trigger_secs(),
             encounter_merge_enabled: default_encounter_merge_enabled(),
+            encounter_detection_model: default_encounter_detection_model(),
+            encounter_detection_nothink: default_encounter_detection_nothink(),
         }
     }
 }
@@ -872,6 +894,8 @@ impl Config {
             encounter_check_interval_secs: self.encounter_check_interval_secs,
             encounter_silence_trigger_secs: self.encounter_silence_trigger_secs,
             encounter_merge_enabled: self.encounter_merge_enabled,
+            encounter_detection_model: self.encounter_detection_model.clone(),
+            encounter_detection_nothink: self.encounter_detection_nothink,
         }
     }
 
@@ -927,6 +951,8 @@ impl Config {
         self.encounter_check_interval_secs = settings.encounter_check_interval_secs;
         self.encounter_silence_trigger_secs = settings.encounter_silence_trigger_secs;
         self.encounter_merge_enabled = settings.encounter_merge_enabled;
+        self.encounter_detection_model = settings.encounter_detection_model.clone();
+        self.encounter_detection_nothink = settings.encounter_detection_nothink;
     }
 }
 
@@ -1045,6 +1071,8 @@ mod tests {
             encounter_check_interval_secs: 120,
             encounter_silence_trigger_secs: 60,
             encounter_merge_enabled: true,
+            encounter_detection_model: default_encounter_detection_model(),
+            encounter_detection_nothink: default_encounter_detection_nothink(),
             stt_alias: "medical-streaming".to_string(),
             stt_postprocess: true,
         };
@@ -1159,6 +1187,8 @@ mod tests {
             encounter_check_interval_secs: default_encounter_check_interval_secs(),
             encounter_silence_trigger_secs: default_encounter_silence_trigger_secs(),
             encounter_merge_enabled: default_encounter_merge_enabled(),
+            encounter_detection_model: default_encounter_detection_model(),
+            encounter_detection_nothink: default_encounter_detection_nothink(),
             stt_alias: default_stt_alias(),
             stt_postprocess: default_stt_postprocess(),
         };

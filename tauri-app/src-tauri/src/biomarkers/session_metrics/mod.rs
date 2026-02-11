@@ -378,8 +378,7 @@ impl SessionAggregator {
         Some((balance_score + response_score + turn_score).clamp(0.0, 100.0))
     }
 
-    /// Reset the aggregator for a new session
-    #[allow(dead_code)]
+    /// Reset the aggregator for a new session/encounter
     pub fn reset(&mut self) {
         self.session_start_ms = None;
         self.session_end_ms = 0;

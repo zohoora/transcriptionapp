@@ -23,8 +23,11 @@ Microphone → Pipeline (runs indefinitely) → TranscriptBuffer
                                             Encounter Detector (LLM)
                                                    ↓
                                             Complete encounter?
-                                            YES → Archive + SOAP
+                                            YES → Archive + SOAP (+ patient_name from vision)
                                             NO  → Continue buffering
+
+Screenshot Task (parallel, if screen_capture_enabled):
+  capture_screen() → vision-model → PatientNameTracker (majority vote)
 ```
 
 ### Key Components
@@ -33,6 +36,7 @@ Microphone → Pipeline (runs indefinitely) → TranscriptBuffer
 - `TranscriptBuffer`: Thread-safe buffer accumulating timestamped segments
 - `EncounterDetector`: LLM-based analysis to identify complete patient encounters
 - `ContinuousModeHandle`: Orchestrates pipeline, buffer, and detector tasks
+- `PatientNameTracker`: Majority-vote tracker for vision-extracted patient names
 - Detection triggers: Periodic timer OR silence gap detection
 
 **Frontend (React)**:
@@ -41,7 +45,8 @@ Microphone → Pipeline (runs indefinitely) → TranscriptBuffer
 - Settings toggle: "After Every Session" vs "End of Day"
 
 **Events**:
-- `continuous_mode_event`: Lifecycle events (started, stopped, encounter_detected, soap_generated, error)
+- `continuous_mode_event`: Lifecycle events (started, stopped, encounter_detected, soap_generated, encounter_merged, error)
+  - `encounter_detected` includes `patient_name` when available from vision extraction
 - `continuous_transcript_preview`: Live transcript preview (separate from session's `transcript_update` to prevent cross-talk)
 
 ### Detection Strategy
@@ -66,11 +71,31 @@ encounter_check_interval_secs: u32,  // Default: 120
 encounter_silence_trigger_secs: u32, // Default: 60
 ```
 
+### Vision-Based Patient Name Extraction
+
+When `screen_capture_enabled` is true, a parallel screenshot task runs alongside the encounter detector:
+
+```
+Screenshot Task (every 60s)
+  capture_screen() → base64 JPEG → vision-model LLM
+        ↓
+  PatientNameTracker (majority-vote per encounter)
+        ↓ on encounter archive
+  patient_name → ArchiveMetadata
+```
+
+- **PatientNameTracker**: Accumulates name votes from each screenshot. On encounter archive, extracts the majority name and writes it to metadata. Resets for the next encounter.
+- **Vision prompt**: Instructs the model to extract a patient's full name from on-screen EHR/chart, or respond `NOT_FOUND` if none is visible.
+- **Capture**: In-memory JPEG encoding via `capture_to_base64()` — no temp files written to disk.
+- **Fault tolerance**: Vision call failures are logged and skipped (do not block encounter detection). If the vision-model backend is down, extraction is simply unavailable.
+- **Configuration**: `screen_capture_enabled` (bool), `screen_capture_interval_secs` (u32, min 30s)
+
 ### Session Metadata
 
 Continuous mode sessions include additional metadata:
 - `charting_mode: "continuous"` - Identifies auto-charted sessions
 - `encounter_number: u32` - Sequential number within the day
+- `patient_name: Option<String>` - Extracted patient name from vision model (if available)
 
 ## Consequences
 
@@ -118,3 +143,6 @@ Continuous mode sessions include additional metadata:
 - Switching charting mode from continuous to session is blocked while recording is active
 - Transcript preview uses `continuous_transcript_preview` event (not `transcript_update`) to prevent cross-talk with session mode
 - UTF-8 safe slicing via `ceil_char_boundary()` for transcript preview truncation
+- Screenshot task runs in parallel via `tokio::spawn`, uses `spawn_blocking` for FFI capture, and respects `stop_flag`
+- Vision-model failures do not affect encounter detection — screenshot task is fully independent
+- `capture_to_base64()` performs in-memory JPEG encoding (no temp files) to avoid cleanup concerns
