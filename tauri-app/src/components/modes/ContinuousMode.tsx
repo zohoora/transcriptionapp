@@ -193,12 +193,13 @@ export const ContinuousMode = memo(function ContinuousMode({
         <div className="continuous-idle">
           <div className="continuous-icon">
             <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-              <circle cx="12" cy="12" r="10" />
-              <circle cx="12" cy="12" r="3" />
-              <line x1="12" y1="2" x2="12" y2="4" />
-              <line x1="12" y1="20" x2="12" y2="22" />
-              <line x1="2" y1="12" x2="4" y2="12" />
-              <line x1="20" y1="12" x2="22" y2="12" />
+              {/* Stethoscope — clinical listening, not surveillance */}
+              <path d="M4.5 12.5a5 5 0 0 0 5 5h1a3 3 0 0 0 3-3v-2" />
+              <path d="M19.5 8.5a2.5 2.5 0 1 0-5 0v3a3 3 0 0 1-3 3" />
+              <circle cx="19.5" cy="6" r="1.5" />
+              <path d="M4.5 12.5V6" />
+              <path d="M9.5 12.5V6" />
+              <path d="M4.5 6a2.5 2.5 0 0 1 5 0" />
             </svg>
           </div>
           <h3>End-of-Day Charting</h3>

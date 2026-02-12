@@ -46,4 +46,4 @@ export { useContinuousMode } from './useContinuousMode';
 export type { UseContinuousModeResult } from './useContinuousMode';
 
 export { usePatientBiomarkers } from './usePatientBiomarkers';
-export type { PatientBiomarkerData, PatientMetrics, TrendDirection } from './usePatientBiomarkers';
+export type { PatientBiomarkerData, PatientMetrics, TrendDirection, UsePatientBiomarkersResult } from './usePatientBiomarkers';

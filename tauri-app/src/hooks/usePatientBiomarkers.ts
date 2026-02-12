@@ -114,7 +114,13 @@ interface Baseline {
   talkSharePct: number;
 }
 
-export function usePatientBiomarkers(isActive: boolean): PatientBiomarkerData {
+export interface UsePatientBiomarkersResult {
+  data: PatientBiomarkerData;
+  /** Immediately reset all metrics (call on manual "New Patient" click) */
+  reset: () => void;
+}
+
+export function usePatientBiomarkers(isActive: boolean): UsePatientBiomarkersResult {
   const [data, setData] = useState<PatientBiomarkerData>(EMPTY_DATA);
 
   // Baseline snapshot — stored as ref to avoid re-renders on capture
@@ -236,5 +242,5 @@ export function usePatientBiomarkers(isActive: boolean): PatientBiomarkerData {
     };
   }, [isActive, resetBaseline]);
 
-  return data;
+  return { data, reset: resetBaseline };
 }
