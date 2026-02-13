@@ -1,6 +1,6 @@
 export { default as AudioQualitySection } from './AudioQualitySection';
-export { default as BiomarkersSection } from './BiomarkersSection';
 export { default as ConversationDynamicsSection } from './ConversationDynamicsSection';
+export { PatientPulse } from './PatientPulse';
 export { ErrorBoundary, ErrorFallback } from './ErrorBoundary';
 export { Header, type SyncStatus } from './Header';
 export { SettingsDrawer, type PendingSettings } from './SettingsDrawer';

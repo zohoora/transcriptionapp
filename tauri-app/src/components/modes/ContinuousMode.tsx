@@ -12,12 +12,12 @@
  * for each detected patient encounter.
  */
 import { memo, useState, useEffect, useRef, useCallback } from 'react';
-import type { ContinuousModeStats, AudioQualitySnapshot } from '../../types';
-import type { PatientBiomarkerData } from '../../hooks/usePatientBiomarkers';
+import type { ContinuousModeStats, AudioQualitySnapshot, BiomarkerUpdate } from '../../types';
+import type { PatientTrends } from '../../hooks/usePatientBiomarkers';
 import type { MiisSuggestion } from '../../hooks/useMiisImages';
 import { MarkdownContent } from '../ClinicalChat';
 import { ImageSuggestions } from '../ImageSuggestions';
-import { PatientVoiceMonitor } from '../PatientVoiceMonitor';
+import { PatientPulse } from '../PatientPulse';
 
 interface ContinuousModeProps {
   /** Whether continuous mode is active */
@@ -36,8 +36,10 @@ interface ContinuousModeProps {
   predictiveHintLoading: boolean;
   /** Audio quality snapshot from the pipeline */
   audioQuality: AudioQualitySnapshot | null;
-  /** Patient-focused biomarker data with trends */
-  patientBiomarkers: PatientBiomarkerData;
+  /** Raw biomarker update for PatientPulse */
+  biomarkers: BiomarkerUpdate | null;
+  /** Aggregated patient trends from baseline tracking */
+  biomarkerTrends: PatientTrends;
   /** Per-encounter notes text */
   encounterNotes: string;
   /** Callback when encounter notes change */
@@ -139,7 +141,8 @@ export const ContinuousMode = memo(function ContinuousMode({
   predictiveHint,
   predictiveHintLoading,
   audioQuality,
-  patientBiomarkers,
+  biomarkers,
+  biomarkerTrends,
   encounterNotes,
   onEncounterNotesChange,
   miisSuggestions,
@@ -294,10 +297,8 @@ export const ContinuousMode = memo(function ContinuousMode({
         New Patient
       </button>
 
-      {/* Patient voice biomarker monitor */}
-      {patientBiomarkers.hasData && (
-        <PatientVoiceMonitor data={patientBiomarkers} />
-      )}
+      {/* Patient voice pulse indicator */}
+      <PatientPulse biomarkers={biomarkers} trends={biomarkerTrends} />
 
       {/* Current encounter info */}
       <div className="continuous-encounter-info">

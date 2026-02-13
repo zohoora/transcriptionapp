@@ -1,9 +1,12 @@
 /**
  * usePatientBiomarkers — Patient-focused biomarker trending for continuous mode.
  *
- * Listens to `biomarker_update` events, filters to patient voices only
- * (enrolled clinical staff excluded), computes per-encounter baselines
- * and trends, and generates clinical insight text.
+ * Listens to `biomarker_update` events, stores the latest raw update for
+ * PatientPulse, aggregates non-clinician speakers into one "patient" via
+ * weighted average, and computes per-encounter baseline trends on the aggregate.
+ *
+ * Session mode doesn't need this hook — PatientPulse handles aggregation
+ * internally from the raw `biomarkers` prop.
  */
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { listen } from '@tauri-apps/api/event';
@@ -15,6 +18,7 @@ import type { BiomarkerUpdate, SpeakerBiomarkers } from '../types';
 
 export type TrendDirection = 'improving' | 'stable' | 'declining' | 'insufficient';
 
+// Legacy types — kept for backward compatibility (PatientVoiceMonitor)
 export interface PatientMetrics {
   speakerId: string;
   vitality: number | null;
@@ -34,21 +38,76 @@ export interface PatientBiomarkerData {
   hasData: boolean;
 }
 
+export interface PatientTrends {
+  vitalityTrend: TrendDirection;
+  stabilityTrend: TrendDirection;
+}
+
 // ============================================================================
 // Constants
 // ============================================================================
 
-/** Minimum utterances before establishing baseline */
+/** Minimum total utterances before establishing baseline */
 const BASELINE_MIN_UTTERANCES = 3;
 
 /** Percent change threshold for trend detection (15%) */
 const TREND_THRESHOLD = 0.15;
 
-/** Cough rate threshold for insight (coughs per minute) */
-const COUGH_RATE_INSIGHT_THRESHOLD = 2.0;
+// ============================================================================
+// Aggregation utility
+// ============================================================================
 
-/** Talk share threshold for "patient speaking less" insight */
-const TALK_SHARE_LOW_THRESHOLD = 10; // percent
+interface AggregatedBaseline {
+  vitality: number | null;
+  stability: number | null;
+}
+
+/**
+ * Pool all non-clinician speakers into one aggregate via weighted average
+ * by talk_time_ms. Returns aggregated vitality, stability, and total utterances.
+ */
+function aggregatePatientSpeakers(speakers: SpeakerBiomarkers[]): {
+  vitality: number | null;
+  stability: number | null;
+  totalUtterances: number;
+} {
+  const hasClinicians = speakers.some(s => s.is_clinician);
+  const patients = hasClinicians ? speakers.filter(s => !s.is_clinician) : speakers;
+
+  if (patients.length === 0) {
+    return { vitality: null, stability: null, totalUtterances: 0 };
+  }
+
+  const totalTalkTime = patients.reduce((sum, s) => sum + s.talk_time_ms, 0);
+  const totalUtterances = patients.reduce((sum, s) => sum + s.utterance_count, 0);
+
+  let vitality: number | null = null;
+  let stability: number | null = null;
+
+  if (totalTalkTime > 0) {
+    const vSpeakers = patients.filter(s => s.vitality_mean !== null);
+    if (vSpeakers.length > 0) {
+      const vTalkTime = vSpeakers.reduce((sum, s) => sum + s.talk_time_ms, 0);
+      if (vTalkTime > 0) {
+        vitality = vSpeakers.reduce(
+          (sum, s) => sum + (s.vitality_mean! * s.talk_time_ms), 0,
+        ) / vTalkTime;
+      }
+    }
+
+    const sSpeakers = patients.filter(s => s.stability_mean !== null);
+    if (sSpeakers.length > 0) {
+      const sTalkTime = sSpeakers.reduce((sum, s) => sum + s.talk_time_ms, 0);
+      if (sTalkTime > 0) {
+        stability = sSpeakers.reduce(
+          (sum, s) => sum + (s.stability_mean! * s.talk_time_ms), 0,
+        ) / sTalkTime;
+      }
+    }
+  }
+
+  return { vitality, stability, totalUtterances };
+}
 
 // ============================================================================
 // Trend computation
@@ -64,83 +123,42 @@ function computeTrend(current: number | null, baseline: number | null): TrendDir
 }
 
 // ============================================================================
-// Insight generation (threshold-based, not LLM)
-// ============================================================================
-
-function generateInsight(patients: PatientMetrics[], coughRatePerMin: number): string | null {
-  // Priority order: stability declining > vitality declining > talk share dropping > coughing
-  for (const p of patients) {
-    if (p.stabilityTrend === 'declining') {
-      return 'Vocal strain increasing';
-    }
-  }
-
-  for (const p of patients) {
-    if (p.vitalityTrend === 'declining' && p.stabilityTrend !== 'declining') {
-      return 'Voice becoming more monotone';
-    }
-  }
-
-  for (const p of patients) {
-    if (p.talkSharePct < TALK_SHARE_LOW_THRESHOLD && p.utteranceCount >= BASELINE_MIN_UTTERANCES) {
-      return 'Patient speaking less';
-    }
-  }
-
-  if (coughRatePerMin > COUGH_RATE_INSIGHT_THRESHOLD) {
-    return 'Frequent coughing detected';
-  }
-
-  return null;
-}
-
-// ============================================================================
 // Hook
 // ============================================================================
 
-const EMPTY_DATA: PatientBiomarkerData = {
-  patients: [],
-  coughCount: 0,
-  coughRatePerMin: 0,
-  engagementScore: null,
-  insight: null,
-  hasData: false,
+const EMPTY_TRENDS: PatientTrends = {
+  vitalityTrend: 'insufficient',
+  stabilityTrend: 'insufficient',
 };
 
-interface Baseline {
-  speakerId: string;
-  vitality: number | null;
-  stability: number | null;
-  talkSharePct: number;
-}
-
 export interface UsePatientBiomarkersResult {
-  data: PatientBiomarkerData;
+  /** Latest raw biomarker update (passed to PatientPulse) */
+  biomarkers: BiomarkerUpdate | null;
+  /** Aggregated trends from baseline (only meaningful after baseline captured) */
+  trends: PatientTrends;
   /** Immediately reset all metrics (call on manual "New Patient" click) */
   reset: () => void;
 }
 
 export function usePatientBiomarkers(isActive: boolean): UsePatientBiomarkersResult {
-  const [data, setData] = useState<PatientBiomarkerData>(EMPTY_DATA);
+  const [biomarkers, setBiomarkers] = useState<BiomarkerUpdate | null>(null);
+  const [trends, setTrends] = useState<PatientTrends>(EMPTY_TRENDS);
 
   // Baseline snapshot — stored as ref to avoid re-renders on capture
-  const baselineRef = useRef<Baseline[]>([]);
+  const baselineRef = useRef<AggregatedBaseline | null>(null);
   const baselineCapturedRef = useRef(false);
 
-  // Track previous talk share for "speaking less" insight
-  const prevTalkShareRef = useRef<Map<string, number>>(new Map());
-
   // Reset baseline on encounter boundary
-  const resetBaseline = useCallback(() => {
-    baselineRef.current = [];
+  const reset = useCallback(() => {
+    baselineRef.current = null;
     baselineCapturedRef.current = false;
-    prevTalkShareRef.current.clear();
-    setData(EMPTY_DATA);
+    setBiomarkers(null);
+    setTrends(EMPTY_TRENDS);
   }, []);
 
   useEffect(() => {
     if (!isActive) {
-      resetBaseline();
+      reset();
       return;
     }
 
@@ -152,78 +170,28 @@ export function usePatientBiomarkers(isActive: boolean): UsePatientBiomarkersRes
 
       const update = event.payload;
 
-      // Filter to patient speakers only (exclude enrolled clinicians)
-      // If no speakers are marked as clinicians, show all (no enrollment = no filtering)
-      const hasClinicians = update.speaker_metrics.some(s => s.is_clinician);
-      const patientSpeakers: SpeakerBiomarkers[] = hasClinicians
-        ? update.speaker_metrics.filter(s => !s.is_clinician)
-        : update.speaker_metrics;
+      // Store raw update for PatientPulse
+      setBiomarkers(update);
 
-      // Calculate total talk time across all speakers for talk share %
-      const totalTalkTimeMs = update.speaker_metrics.reduce((sum, s) => sum + s.talk_time_ms, 0);
+      // Aggregate patient speakers for trend computation
+      const agg = aggregatePatientSpeakers(update.speaker_metrics);
 
-      // Build patient metrics
-      const patients: PatientMetrics[] = patientSpeakers.map(s => {
-        const talkSharePct = totalTalkTimeMs > 0
-          ? (s.talk_time_ms / totalTalkTimeMs) * 100
-          : 0;
-
-        // Capture baseline if not yet captured and this speaker has enough data
-        if (!baselineCapturedRef.current && s.utterance_count >= BASELINE_MIN_UTTERANCES) {
-          // Capture baseline for ALL patient speakers at this point
-          baselineRef.current = patientSpeakers.map(ps => ({
-            speakerId: ps.speaker_id,
-            vitality: ps.vitality_mean,
-            stability: ps.stability_mean,
-            talkSharePct: totalTalkTimeMs > 0
-              ? (ps.talk_time_ms / totalTalkTimeMs) * 100
-              : 0,
-          }));
-          baselineCapturedRef.current = true;
-        }
-
-        // Find this speaker's baseline
-        const baseline = baselineRef.current.find(b => b.speakerId === s.speaker_id);
-
-        const vitalityTrend = baselineCapturedRef.current
-          ? computeTrend(s.vitality_mean, baseline?.vitality ?? null)
-          : 'insufficient' as TrendDirection;
-
-        const stabilityTrend = baselineCapturedRef.current
-          ? computeTrend(s.stability_mean, baseline?.stability ?? null)
-          : 'insufficient' as TrendDirection;
-
-        // Track talk share history for "speaking less" insight
-        prevTalkShareRef.current.set(s.speaker_id, talkSharePct);
-
-        return {
-          speakerId: s.speaker_id,
-          vitality: s.vitality_mean,
-          stability: s.stability_mean,
-          talkSharePct,
-          utteranceCount: s.utterance_count,
-          vitalityTrend,
-          stabilityTrend,
+      // Capture baseline on first adequate data
+      if (!baselineCapturedRef.current && agg.totalUtterances >= BASELINE_MIN_UTTERANCES) {
+        baselineRef.current = {
+          vitality: agg.vitality,
+          stability: agg.stability,
         };
-      });
+        baselineCapturedRef.current = true;
+      }
 
-      // Extract engagement score from conversation dynamics
-      const engagementScore = update.conversation_dynamics?.engagement_score ?? null;
-
-      // Generate clinical insight
-      const insight = generateInsight(patients, update.cough_rate_per_min);
-
-      // Determine if we have enough data to render
-      const hasData = patients.length > 0 && patients.some(p => p.utteranceCount >= 1);
-
-      setData({
-        patients,
-        coughCount: update.cough_count,
-        coughRatePerMin: update.cough_rate_per_min,
-        engagementScore,
-        insight,
-        hasData,
-      });
+      // Compute trends against baseline
+      if (baselineCapturedRef.current && baselineRef.current) {
+        setTrends({
+          vitalityTrend: computeTrend(agg.vitality, baselineRef.current.vitality),
+          stabilityTrend: computeTrend(agg.stability, baselineRef.current.stability),
+        });
+      }
     });
 
     // Listen for encounter_detected → reset baseline for next encounter
@@ -231,7 +199,7 @@ export function usePatientBiomarkers(isActive: boolean): UsePatientBiomarkersRes
       if (!mounted) return;
       const payload = event.payload as { type: string };
       if (payload.type === 'encounter_detected') {
-        resetBaseline();
+        reset();
       }
     });
 
@@ -240,7 +208,7 @@ export function usePatientBiomarkers(isActive: boolean): UsePatientBiomarkersRes
       unlistenBiomarker.then(fn => fn());
       unlistenEncounter.then(fn => fn());
     };
-  }, [isActive, resetBaseline]);
+  }, [isActive, reset]);
 
-  return { data, reset: resetBaseline };
+  return { biomarkers, trends, reset };
 }

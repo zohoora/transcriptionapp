@@ -171,7 +171,7 @@ function App() {
   } = useContinuousMode();
 
   // Patient biomarker trending for continuous mode (filters clinician voices, tracks trends)
-  const { data: patientBiomarkers, reset: resetPatientBiomarkers } = usePatientBiomarkers(continuousModeActive);
+  const { biomarkers: continuousBiomarkers, trends: continuousTrends, reset: resetPatientBiomarkers } = usePatientBiomarkers(continuousModeActive);
 
   // Wrap "New Patient" to immediately reset frontend state before backend processes
   const handleNewPatient = useCallback(async () => {
@@ -775,7 +775,8 @@ function App() {
             predictiveHint={continuousPredictiveHint}
             predictiveHintLoading={continuousPredictiveHintLoading}
             audioQuality={continuousAudioQuality}
-            patientBiomarkers={patientBiomarkers}
+            biomarkers={continuousBiomarkers}
+            biomarkerTrends={continuousTrends}
             encounterNotes={continuousEncounterNotes}
             onEncounterNotesChange={setContinuousEncounterNotes}
             // MIIS image suggestions

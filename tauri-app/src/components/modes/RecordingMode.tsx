@@ -4,6 +4,7 @@ import type { ChatMessage } from '../../hooks/useClinicalChat';
 import type { MiisSuggestion } from '../../hooks/useMiisImages';
 import { ClinicalChat, MarkdownContent } from '../ClinicalChat';
 import { ImageSuggestions } from '../ImageSuggestions';
+import { PatientPulse } from '../PatientPulse';
 
 interface RecordingModeProps {
   // Timer (kept for potential future use, not displayed)
@@ -83,7 +84,7 @@ const getQualityLevel = (quality: AudioQualitySnapshot | null): 'good' | 'fair' 
 export const RecordingMode = memo(function RecordingMode({
   elapsedMs: _elapsedMs, // Kept for potential future use, not displayed
   audioQuality,
-  biomarkers: _biomarkers, // Kept for potential future use (audio events now sent to LLM)
+  biomarkers,
   transcriptText,
   draftText,
   whisperMode,
@@ -253,6 +254,9 @@ export const RecordingMode = memo(function RecordingMode({
           )}
         </div>
       )}
+
+      {/* Patient voice pulse indicator */}
+      <PatientPulse biomarkers={biomarkers} />
 
       {/* Session Notes Toggle & Input */}
       <button

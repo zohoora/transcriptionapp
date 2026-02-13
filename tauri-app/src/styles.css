@@ -6735,7 +6735,132 @@ button.review-section-header-left:focus {
 }
 
 /* ============================================================================
-   Patient Voice Monitor
+   Patient Pulse (glanceable biomarker indicator)
+   ============================================================================ */
+
+.patient-pulse {
+  margin: 6px 0;
+  border-radius: 6px;
+  font-size: 12px;
+}
+
+/* Normal state — single muted row, ~32px */
+.patient-pulse.normal {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  color: var(--text-muted);
+}
+
+.pulse-status-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.pulse-status-dot.normal {
+  background: var(--accent-idle);
+}
+
+.pulse-status-text {
+  font-size: 12px;
+  line-height: 1;
+}
+
+/* Attention state — amber left border card */
+.patient-pulse.attention {
+  border-left: 3px solid var(--accent-stopping);
+  background: rgba(234, 179, 8, 0.06);
+  padding: 8px 10px;
+}
+
+/* Alert state — red left border card */
+.patient-pulse.alert {
+  border-left: 3px solid var(--accent-recording);
+  background: rgba(220, 38, 38, 0.06);
+  padding: 8px 10px;
+}
+
+/* Alert header row */
+.pulse-alert-header {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-bottom: 6px;
+  font-weight: 500;
+  font-size: 12px;
+}
+
+.patient-pulse.attention .pulse-alert-header {
+  color: var(--accent-stopping);
+}
+
+.patient-pulse.alert .pulse-alert-header {
+  color: var(--accent-recording);
+}
+
+.pulse-alert-icon {
+  font-size: 13px;
+  line-height: 1;
+}
+
+.pulse-alert-text {
+  line-height: 1;
+}
+
+/* Metric row inside alert card */
+.pulse-metric-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 0;
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+.pulse-metric-label {
+  width: 78px;
+  flex-shrink: 0;
+  color: var(--text-muted);
+}
+
+.pulse-metric-value {
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  min-width: 40px;
+  text-align: right;
+}
+
+/* Compact capsule mini-bar (40px wide) */
+.pulse-mini-bar {
+  display: inline-block;
+  width: 40px;
+  height: 5px;
+  border-radius: 3px;
+  background: var(--border-color);
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.pulse-mini-bar-fill {
+  display: block;
+  height: 100%;
+  border-radius: 3px;
+  transition: width 0.3s ease;
+}
+
+.patient-pulse.attention .pulse-mini-bar-fill {
+  background: var(--accent-stopping);
+}
+
+.patient-pulse.alert .pulse-mini-bar-fill {
+  background: var(--accent-recording);
+}
+
+/* ============================================================================
+   Patient Voice Monitor (legacy — kept for ReviewMode Insights)
    ============================================================================ */
 
 .patient-voice-monitor {
