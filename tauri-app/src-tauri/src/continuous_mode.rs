@@ -239,21 +239,71 @@ Return ONLY the JSON object, nothing else."#;
     (system.to_string(), user)
 }
 
+/// Strip `<think>...</think>` tags from LLM output (model may emit these even with /nothink)
+fn strip_think_tags(text: &str) -> String {
+    let mut result = text.to_string();
+    while let Some(start) = result.find("<think>") {
+        if let Some(end) = result.find("</think>") {
+            let end_pos = end + "</think>".len();
+            result = format!("{}{}", &result[..start], &result[end_pos..]);
+        } else {
+            result = result[..start].to_string();
+            break;
+        }
+    }
+    result.trim().to_string()
+}
+
+/// Extract the first balanced JSON object from text using brace counting.
+/// Handles cases like `{return {"complete": ...}}` by finding the matched `{...}`.
+fn extract_first_json_object(text: &str) -> Option<String> {
+    let start = text.find('{')?;
+    let mut depth = 0;
+    let mut in_string = false;
+    let mut escape_next = false;
+
+    for (i, ch) in text[start..].char_indices() {
+        if escape_next {
+            escape_next = false;
+            continue;
+        }
+        match ch {
+            '\\' if in_string => escape_next = true,
+            '"' => in_string = !in_string,
+            '{' if !in_string => depth += 1,
+            '}' if !in_string => {
+                depth -= 1;
+                if depth == 0 {
+                    return Some(text[start..=start + i].to_string());
+                }
+            }
+            _ => {}
+        }
+    }
+    None
+}
+
 /// Parse the encounter detection response from the LLM
 pub fn parse_encounter_detection(response: &str) -> Result<EncounterDetectionResult, String> {
-    // Try to extract JSON from the response (LLM may include surrounding text)
-    let json_str = if let Some(start) = response.find('{') {
-        if let Some(end) = response.rfind('}') {
-            &response[start..=end]
-        } else {
-            response
-        }
-    } else {
-        response
-    };
+    let cleaned = strip_think_tags(response);
 
-    serde_json::from_str(json_str)
-        .map_err(|e| format!("Failed to parse encounter detection response: {} (raw: {})", e, response))
+    // Try outermost braces first
+    if let Some(json_str) = extract_first_json_object(&cleaned) {
+        if let Ok(result) = serde_json::from_str::<EncounterDetectionResult>(&json_str) {
+            return Ok(result);
+        }
+    }
+
+    // Fallback: model may wrap JSON in {return {...}} — find inner {"complete" object
+    if let Some(inner_start) = cleaned.find("{\"complete\"") {
+        if let Some(json_str) = extract_first_json_object(&cleaned[inner_start..]) {
+            if let Ok(result) = serde_json::from_str::<EncounterDetectionResult>(&json_str) {
+                return Ok(result);
+            }
+        }
+    }
+
+    Err(format!("Failed to parse encounter detection response: (raw: {})", response))
 }
 
 // ============================================================================
@@ -320,18 +370,25 @@ Return ONLY the JSON object, nothing else."#,
 
 /// Parse the merge check response from the LLM
 pub fn parse_merge_check(response: &str) -> Result<MergeCheckResult, String> {
-    let json_str = if let Some(start) = response.find('{') {
-        if let Some(end) = response.rfind('}') {
-            &response[start..=end]
-        } else {
-            response
-        }
-    } else {
-        response
-    };
+    let cleaned = strip_think_tags(response);
 
-    serde_json::from_str(json_str)
-        .map_err(|e| format!("Failed to parse merge check response: {} (raw: {})", e, response))
+    // Try outermost braces first
+    if let Some(json_str) = extract_first_json_object(&cleaned) {
+        if let Ok(result) = serde_json::from_str::<MergeCheckResult>(&json_str) {
+            return Ok(result);
+        }
+    }
+
+    // Fallback: look for {"same_encounter" inside wrapper
+    if let Some(inner_start) = cleaned.find("{\"same_encounter\"") {
+        if let Some(json_str) = extract_first_json_object(&cleaned[inner_start..]) {
+            if let Ok(result) = serde_json::from_str::<MergeCheckResult>(&json_str) {
+                return Ok(result);
+            }
+        }
+    }
+
+    Err(format!("Failed to parse merge check response: (raw: {})", response))
 }
 
 // ============================================================================
@@ -1680,6 +1737,28 @@ mod tests {
         assert!(result.complete);
         assert_eq!(result.end_segment_index, Some(42));
         assert!((result.confidence.unwrap() - 0.85).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_parse_encounter_detection_with_think_tags() {
+        let response = r#"<think> </think> {"complete": false, "confidence": 0.0}"#;
+        let result = parse_encounter_detection(response).unwrap();
+        assert!(!result.complete);
+    }
+
+    #[test]
+    fn test_parse_encounter_detection_with_return_wrapper() {
+        // Model wraps JSON in {return {...}} — the actual error from production
+        let response = r#"<think> </think> {return {"complete": false, "confidence": 0.0}}"#;
+        let result = parse_encounter_detection(response).unwrap();
+        assert!(!result.complete);
+    }
+
+    #[test]
+    fn test_parse_merge_check_with_think_tags() {
+        let response = r#"<think>reasoning here</think> {"same_encounter": true, "reason": "same patient"}"#;
+        let result = parse_merge_check(response).unwrap();
+        assert!(result.same_encounter);
     }
 
     #[test]
