@@ -18,7 +18,7 @@ Thank you for your interest in contributing! This document provides guidelines a
 - Node.js 20+
 - Rust 1.70+ (install via [rustup](https://rustup.rs/))
 - pnpm 10+ (`npm install -g pnpm`)
-- ONNX Runtime (for diarization, enhancement, emotion, YAMNet)
+- ONNX Runtime (for diarization, enhancement, YAMNet)
 - Platform-specific dependencies:
   - **macOS**: Xcode Command Line Tools
   - **Ubuntu**: `sudo apt install libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libssl-dev libasound2-dev`
@@ -117,15 +117,15 @@ refactor: extract audio resampling into separate module
 
 ## Testing
 
-We maintain comprehensive test coverage (430 frontend tests, 346 Rust tests). All PRs must pass tests.
+We maintain comprehensive test coverage (387 frontend tests, 421 Rust tests). All PRs must pass tests.
 
 ### Running Tests
 
 ```bash
-# Frontend tests (430 tests)
+# Frontend tests (387 tests)
 pnpm test:run
 
-# Rust tests with ONNX Runtime (346 tests)
+# Rust tests with ONNX Runtime (421 tests)
 cd src-tauri
 ORT_DYLIB_PATH=$(../scripts/setup-ort.sh) cargo test
 
@@ -263,10 +263,10 @@ proptest! {
 │                   │  └─────┘  └─────────┘  └─────────────┘  │    │
 │                   │       │                                  │    │
 │                   │       ▼                                  │    │
-│                   │  ┌─────────────┐  ┌───────────────────┐ │    │
-│                   │  │ Enhancement │  │ Emotion Detection │ │    │
-│                   │  │  (GTCRN)    │  │   (wav2small)     │ │    │
-│                   │  └─────────────┘  └───────────────────┘ │    │
+│                   │  ┌─────────────┐                        │    │
+│                   │  │ Enhancement │                        │    │
+│                   │  │  (GTCRN)    │                        │    │
+│                   │  └─────────────┘                        │    │
 │                   └─────────────────────────────────────────┘    │
 │                          │                                        │
 │       ┌──────────────────┼──────────────────┐                    │
@@ -289,7 +289,7 @@ proptest! {
 
 | Module | Purpose |
 |--------|---------|
-| `commands` | Tauri IPC command handlers |
+| `commands/` | Tauri IPC command handlers (16 submodules) |
 | `session` | Recording state machine (Idle→Preparing→Recording→Stopping→Completed) |
 | `pipeline` | Audio processing coordination (VAD, Whisper, diarization, enhancement) |
 | `audio` | Device enumeration, audio capture, resampling (rubato) |
@@ -300,7 +300,13 @@ proptest! {
 | `checklist` | Pre-flight verification system |
 | `diarization/` | Speaker embedding extraction (ONNX) and clustering |
 | `enhancement/` | Speech denoising (GTCRN ONNX model) |
-| `emotion/` | Emotion detection (wav2small ONNX model) |
+| `continuous_mode` | Continuous charting mode (end-of-day encounter detection) |
+| `local_archive` | Local session storage and history |
+| `speaker_profiles` | Speaker voice enrollment storage |
+| `whisper_server` | STT Router client (WebSocket streaming) |
+| `listening` | Auto-session detection (VAD + greeting check) |
+| `screenshot` | Screen capture (in-memory JPEG for vision) |
+| `mcp/` | MCP server on port 7101 for IT Admin Coordinator |
 | `biomarkers/` | Vocal biomarker analysis (vitality, stability, cough) |
 | `llm_client` | OpenAI-compatible LLM client for SOAP generation |
 | `ollama` | Re-exports from llm_client.rs (backward compat) |
@@ -315,16 +321,24 @@ proptest! {
 | `modes/ReadyMode` | Pre-recording state (device selection, start button) |
 | `modes/RecordingMode` | Active recording (timer, transcript preview) |
 | `modes/ReviewMode` | Post-recording (full transcript, SOAP note, sync) |
+| `modes/ContinuousMode` | Continuous charting dashboard (monitoring, encounters) |
 | `AudioQualitySection` | Real-time audio level/SNR display |
 | `BiomarkersSection` | Vitality, stability, cough metrics |
 | `ConversationDynamicsSection` | Turn-taking, overlap, response latency |
+| `PatientPulse` | Glanceable biomarker summary |
+| `PatientVoiceMonitor` | Patient-focused voice metric trending |
 | `SettingsDrawer` | Configuration panel |
 | `Header` | App title, history button, settings button |
 | `AuthProvider` | Medplum OAuth context |
 | `LoginScreen` | Medplum login UI |
 | `PatientSearch` | FHIR patient search |
 | `EncounterBar` | Active encounter display |
+| `SpeakerEnrollment` | Speaker voice enrollment |
+| `ClinicalChat` | Clinical assistant chat panel |
+| `ImageSuggestions` | MIIS medical illustration display |
+| `SyncStatusBar` | EMR sync status indicator |
 | `HistoryWindow` | Separate window for encounter history |
+| `HistoryView` | Encounter history list |
 | `Calendar` | Date picker for history |
 | `AudioPlayer` | Playback of recorded audio |
 
@@ -334,8 +348,13 @@ See `src/types/index.ts` for TypeScript types that mirror Rust backend types:
 - `SessionState`, `SessionStatus` - Recording state
 - `TranscriptUpdate` - Real-time transcript data
 - `BiomarkerUpdate`, `AudioQualitySnapshot` - Metrics
-- `SoapNote`, `LLMStatus` (alias: `OllamaStatus`) - LLM integration
+- `SoapNote`, `MultiPatientSoapResult`, `SoapOptions` - SOAP generation
+- `LLMStatus` (alias: `OllamaStatus`) - LLM integration
 - `AuthState`, `Encounter`, `Patient` - Medplum types
+- `SpeakerProfileInfo`, `SpeakerRole` - Speaker enrollment
+- `LocalArchiveSummary`, `LocalArchiveMetadata`, `LocalArchiveDetails` - Session history
+- `ContinuousModeStats`, `ContinuousModeEvent` - Continuous charting mode
+- `ListeningEventPayload` - Auto-session detection
 
 ## Adding New Features
 
@@ -356,8 +375,8 @@ When adding a new feature that requires models or external resources:
    - Add check in `run_model_checks()` or create new category
    - Return appropriate `CheckStatus` based on config
 
-4. **Add Tauri Command** (`commands.rs`):
-   - Add `download_feature_model()` command
+4. **Add Tauri Command** (`commands/*.rs`):
+   - Add command function in the appropriate `commands/` submodule
    - Register in `lib.rs` invoke_handler
 
 5. **Add to Pipeline** (`pipeline.rs`):

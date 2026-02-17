@@ -20,8 +20,22 @@ React Frontend (sidebar UI)
        ▼
 Rust Backend
 ├── commands/          # Tauri command handlers
-│   ├── clinical_chat.rs  # Clinical assistant chat proxy
-│   └── ...
+│   ├── mod.rs             # Re-exports, CommandError, PipelineState
+│   ├── session.rs         # Recording lifecycle + auto-end archive
+│   ├── settings.rs        # get/set settings
+│   ├── audio.rs           # Device enumeration
+│   ├── models.rs          # Model download commands
+│   ├── ollama.rs          # LLM router connection
+│   ├── medplum.rs         # EMR sync commands
+│   ├── listening.rs       # Auto-session detection commands
+│   ├── speaker_profiles.rs # Speaker enrollment CRUD
+│   ├── clinical_chat.rs   # Clinical assistant chat proxy
+│   ├── miis.rs            # Medical illustration proxy
+│   ├── screenshot.rs      # Screen capture commands
+│   ├── continuous.rs      # Continuous charting mode commands
+│   ├── archive.rs         # Local session history commands
+│   ├── whisper_server.rs  # STT Router status commands
+│   └── permissions.rs     # Microphone permission commands
 ├── session.rs         # Recording state machine
 ├── audio.rs           # Audio capture, resampling
 ├── vad.rs             # Voice Activity Detection
@@ -30,10 +44,20 @@ Rust Backend
 ├── llm_client.rs      # OpenAI-compatible LLM client
 ├── medplum.rs         # FHIR client (OAuth, encounters)
 ├── whisper_server.rs  # STT Router client (WebSocket streaming + batch fallback)
+├── transcription.rs   # Segment and utterance types
+├── models.rs          # Model download management
+├── checklist.rs       # Pre-flight verification system
 ├── listening.rs       # Auto-session detection
 ├── speaker_profiles.rs # Speaker enrollment storage
 ├── local_archive.rs   # Local session storage
 ├── continuous_mode.rs # Continuous charting mode (end-of-day)
+├── screenshot.rs      # Screen capture (in-memory JPEG)
+├── debug_storage.rs   # Debug storage (dev only)
+├── permissions.rs     # macOS permission checks
+├── ollama.rs          # Re-exports from llm_client.rs (backward compat)
+├── activity_log.rs    # Structured PHI-safe activity logging
+├── encounter_experiment.rs # Encounter detection experiment CLI support
+├── vision_experiment.rs    # Vision SOAP experiment CLI support
 ├── diarization/       # Speaker detection (ONNX embeddings, clustering)
 ├── enhancement/       # Speech enhancement (GTCRN)
 ├── biomarkers/        # Vocal analysis (vitality, stability, cough detection)
@@ -88,6 +112,7 @@ cd src-tauri && cargo test       # Rust
 | Modify SOAP options | `useSoapNote.ts` (hook), `llm_client.rs` (prompt building), `local_archive.rs` (metadata) |
 | Modify MIIS integration | `commands/miis.rs`, `useMiisImages.ts`, `ImageSuggestions.tsx`, `usePredictiveHint.ts` |
 | Modify continuous mode | `continuous_mode.rs`, `commands/continuous.rs`, `useContinuousMode.ts`, `ContinuousMode.tsx` |
+| Modify patient biomarkers | `usePatientBiomarkers.ts`, `PatientPulse.tsx`, `PatientVoiceMonitor.tsx` |
 | Add session-scoped state | `useSessionLifecycle.ts` (add reset call to `resetAllSessionState`) |
 
 ## IPC Commands
@@ -98,21 +123,38 @@ cd src-tauri && cargo test       # Rust
 | `run_checklist` | Pre-flight checks |
 | `list_input_devices` | Available microphones |
 | `get_settings` / `set_settings` | Configuration |
-| `get_whisper_models` / `download_whisper_model_by_id` | Model management |
-| `check_ollama_status` / `list_ollama_models` | LLM router connection |
-| `generate_soap_note_auto_detect` | Multi-patient SOAP generation |
-| `medplum_quick_sync` / `medplum_add_soap_to_encounter` | EMR sync |
-| `start_listening` / `stop_listening` | Auto-session detection |
-| `list_speaker_profiles` / `create_speaker_profile` | Speaker enrollment management |
-| `update_speaker_profile` / `delete_speaker_profile` | Speaker profile CRUD |
-| `reenroll_speaker_profile` | Re-record voice sample for existing profile |
+| `get_audio_file_path` | Get audio file path for playback |
 | `reset_silence_timer` | Cancel auto-end countdown |
+| `check_model_status` / `get_model_info` / `ensure_models` | Model availability |
+| `download_whisper_model` / `download_speaker_model` / `download_enhancement_model` / `download_yamnet_model` | Model downloads |
+| `get_whisper_models` / `download_whisper_model_by_id` / `test_whisper_model` / `is_model_downloaded` | Whisper model management |
+| `check_ollama_status` / `list_ollama_models` / `prewarm_ollama_model` | LLM router connection |
+| `generate_soap_note` / `generate_soap_note_auto_detect` | SOAP generation (single + multi-patient) |
+| `generate_predictive_hint` | LLM hints during recording |
+| `medplum_get_auth_state` / `medplum_start_auth` / `medplum_handle_callback` / `medplum_logout` | Medplum auth lifecycle |
+| `medplum_try_restore_session` / `medplum_refresh_token` / `medplum_check_connection` | Medplum session management |
+| `medplum_search_patients` / `medplum_create_encounter` / `medplum_complete_encounter` | Patient/encounter CRUD |
+| `medplum_get_encounter_history` / `medplum_get_encounter_details` / `medplum_get_audio_data` | Encounter history |
+| `medplum_sync_encounter` / `medplum_quick_sync` / `medplum_add_soap_to_encounter` | EMR sync |
+| `medplum_multi_patient_quick_sync` | Multi-patient encounter sync |
+| `check_whisper_server_status` / `list_whisper_server_models` | STT Router status |
+| `check_microphone_permission` / `request_microphone_permission` / `open_microphone_settings` | Microphone permissions |
+| `start_listening` / `stop_listening` / `get_listening_status` | Auto-session detection |
+| `list_speaker_profiles` / `get_speaker_profile` / `create_speaker_profile` | Speaker enrollment management |
+| `update_speaker_profile` / `delete_speaker_profile` / `reenroll_speaker_profile` | Speaker profile CRUD |
+| `get_local_session_dates` / `get_local_sessions_by_date` / `get_local_session_details` | Local archive history |
+| `save_local_soap_note` / `read_local_audio_file` | Local archive operations (path-validated) |
 | `clinical_chat_send` | Send message to clinical assistant LLM |
-| `miis_suggest` | Fetch image suggestions from MIIS server |
-| `miis_send_usage` | Send telemetry events to MIIS server |
+| `miis_suggest` / `miis_send_usage` | Medical illustration suggestions + telemetry |
+| `check_screen_recording_permission` / `open_screen_recording_settings` | Screen recording permissions |
+| `start_screen_capture` / `stop_screen_capture` / `get_screen_capture_status` | Screen capture lifecycle |
+| `get_screenshot_paths` / `get_screenshot_thumbnails` | Screenshot retrieval |
+| `generate_vision_soap_note` | Vision-based SOAP (experimental) |
+| `run_vision_experiments` / `get_vision_experiment_results` / `get_vision_experiment_report` / `list_vision_experiment_strategies` | Vision experiments |
 | `start_continuous_mode` / `stop_continuous_mode` | Continuous charting mode lifecycle |
 | `get_continuous_mode_status` | Get continuous mode stats (state, encounters, buffer) |
-| `read_local_audio_file` | Read audio file bytes from local archive (path-validated) |
+| `trigger_new_patient` | Force new encounter boundary in continuous mode |
+| `set_continuous_encounter_notes` | Set clinician notes for current encounter |
 
 ## Events (Backend → Frontend)
 
@@ -154,6 +196,12 @@ Idle → Preparing → Recording → Stopping → Completed
 | Emit after success | Don't emit "started" events before the operation actually succeeds |
 | Functional setState | Use `prev => !prev` pattern in `useCallback` to avoid stale closures |
 | Vec batch cleanup | Use `drain(..excess)` not `remove(0)` in loop |
+| Path traversal prevention | `validate_session_id()` in local_archive.rs, `validate_fhir_id()` in medplum.rs — reject `..` and non-alphanumeric IDs |
+| Error body truncation | `truncate_error_body()` in medplum.rs — prevents huge HTML error pages from flooding logs |
+| Token refresh locking | `get_valid_token()` in medplum.rs — double-check locking pattern to avoid concurrent refresh races |
+| Settings validation after update | `clamp_values()` called after `update_from_settings()` in config.rs — safety net for user-edited JSON |
+| Encounter notes: clone before clear | In continuous mode detector, clone accumulated notes before clearing buffer to avoid data loss |
+| Audio quality shared util | `getAudioQualityLevel()` in utils.ts — shared across RecordingMode, ReviewMode, ContinuousMode |
 
 ## Features
 
@@ -220,7 +268,7 @@ LLM extracts medical concepts from transcript every 30s → MIIS server returns 
 ### Continuous Charting Mode (End of Day)
 Records all day without manual start/stop. LLM encounter detector segments transcript into patient encounters and generates SOAP notes automatically. Two modes: **Session** (default, manual) and **Continuous** (end-of-day). See ADR 0019.
 
-**Detection**: Pipeline → TranscriptBuffer → LLM check every `encounter_check_interval_secs` (120s) or on `encounter_silence_trigger_secs` (60s) of silence → archive + SOAP on complete encounter.
+**Detection**: Pipeline → TranscriptBuffer → LLM check every `encounter_check_interval_secs` (120s) or on `encounter_silence_trigger_secs` (45s) of silence → archive + SOAP on complete encounter.
 
 **Vision-Based Patient Name Extraction**: When `screen_capture_enabled` is true, a background task captures screenshots every `screen_capture_interval_secs` (min 30s), sends them to the `vision-model` LLM alias, and extracts patient names from on-screen EHR charts. A `PatientNameTracker` uses majority-vote across screenshots to determine the most likely patient for each encounter. The extracted name is written to `ArchiveMetadata.patient_name` and displayed in the dashboard and history views.
 
@@ -235,7 +283,7 @@ Records all day without manual start/stop. LLM encounter detector segments trans
 
 Source of truth: `src-tauri/src/config.rs` (Rust) / `src/types/index.ts` (TypeScript).
 
-Key settings groups: STT Router (whisper_server_url, stt_alias=`"medical-streaming"`, stt_postprocess=true), Audio (VAD, diarization, enhancement), LLM Router (soap_model/soap_model_fast/fast_model), Medplum (OAuth, auto_sync), Auto-detection (auto_start, auto_end_silence_ms=180000), SOAP (detail_level 1-10, format, custom_instructions), MIIS, Screen Capture, Continuous Mode (charting_mode, encounter intervals), Debug.
+Key settings groups: STT Router (whisper_server_url, stt_alias=`"medical-streaming"`, stt_postprocess=true), Audio (VAD, diarization, enhancement), LLM Router (soap_model=`"soap-model-fast"`, soap_model_fast=`"soap-model-fast"`, fast_model=`"fast-model"`), Medplum (OAuth, auto_sync), Auto-detection (auto_start, auto_end_silence_ms=180000), SOAP (detail_level 1-10, format, custom_instructions), MIIS, Screen Capture, Continuous Mode (charting_mode, encounter_check_interval_secs=120, encounter_silence_trigger_secs=45, encounter_merge_enabled, encounter_detection_model=`"faster"`, encounter_detection_nothink=true), Debug.
 
 ## File Locations
 
@@ -266,6 +314,14 @@ Key settings groups: STT Router (whisper_server_url, stt_alias=`"medical-streami
 - `ReviewMode.tsx` - Post-recording (transcript, SOAP, EMR sync)
 - `ContinuousMode.tsx` - Continuous charting dashboard (monitoring, live transcript, encounter stats)
 
+**Key Components** (`src/components/`):
+- `PatientPulse.tsx` - Glanceable biomarker summary (vitality, stability, cough, engagement)
+- `PatientVoiceMonitor.tsx` - Patient-focused voice metric trending
+- `SpeakerEnrollment.tsx` - Speaker voice enrollment UI
+- `ClinicalChat.tsx` - Clinical assistant chat panel
+- `ImageSuggestions.tsx` - MIIS medical illustration display
+- `SyncStatusBar.tsx` - EMR sync status indicator
+
 **Key Hooks** (`src/hooks/`):
 - `useSessionLifecycle` - Centralized session start/reset coordination across all hooks
 - `useSessionState` - Recording state, transcript, biomarkers
@@ -278,6 +334,7 @@ Key settings groups: STT Router (whisper_server_url, stt_alias=`"medical-streami
 - `usePredictiveHint` - LLM hints + concept extraction during recording
 - `useMiisImages` - Medical illustration suggestions from MIIS server
 - `useContinuousMode` - Continuous charting mode state and controls
+- `usePatientBiomarkers` - Patient-focused biomarker trending for continuous mode
 - `useScreenCapture` - Periodic screenshot capture during recording
 - `useChecklist` - Pre-flight system checks
 - `useDevices` - Audio input device enumeration
@@ -295,7 +352,7 @@ Key settings groups: STT Router (whisper_server_url, stt_alias=`"medical-streami
 | OAuth opens new instance | Use `pnpm tauri build --debug`, not `tauri dev` |
 | Deep links not working | Ensure app was built and `fabricscribe://` scheme registered |
 | Clinical chat shows raw JSON | Router must execute tools for `clinical-assistant` alias |
-| Speaker verification fails | Ensure profiles exist and speaker model at `~/.transcriptionapp/models/ecapa_tdnn.onnx` |
+| Speaker verification fails | Ensure profiles exist and speaker model at `~/.transcriptionapp/models/speaker_embedding.onnx` (or legacy `voxceleb_ECAPA512_LM.onnx`) |
 | Auto-end too aggressive | Increase `auto_end_silence_ms` or disable `auto_end_enabled` |
 | SOAP not copying to clipboard | Check Tauri clipboard plugin permissions |
 | MIIS images not loading | Check CSP allows MIIS server domain in `tauri.conf.json` |

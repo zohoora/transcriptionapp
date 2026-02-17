@@ -14,19 +14,25 @@ A real-time speech-to-text transcription desktop application built with Tauri, R
 - **VAD-Gated** - Voice Activity Detection prevents hallucinations during silence
 - **Speaker Diarization** - Identifies up to 10 different speakers in conversation
 - **Speech Enhancement** - GTCRN denoising for cleaner audio (~2ms latency)
-- **Emotion Detection** - Arousal, Dominance, Valence analysis via wav2small
 
 ### Clinical Features
 - **SOAP Note Generation** - AI-powered clinical notes via OpenAI-compatible LLM router
 - **Multi-Patient SOAP** - Supports up to 4 patients per visit with auto-detection
 - **Audio Event Context** - Coughs, laughs, sneezes included in SOAP generation
+- **Clinical Assistant Chat** - Real-time LLM chat during recording via `clinical-assistant` model alias
 - **Medplum EMR Integration** - OAuth 2.0 + PKCE, FHIR resources
 - **Auto-Sync to EMR** - Transcripts and audio automatically synced on session complete
 - **Encounter History** - Browse past sessions with calendar view
 - **Auto-Session Detection** - Automatically starts recording when greeting detected
+- **Speaker Enrollment** - Voice profiles with ECAPA-TDNN embeddings for speaker-verified auto-start
+- **Auto-End Silence Detection** - Automatically ends recording after configurable silence threshold
 - **Continuous Charting Mode** - Records all day, auto-detects encounters, generates SOAP at end of day
+- **Vision-Based Patient Name Extraction** - Screenshots + vision LLM extract patient names from on-screen EHR
+- **MIIS Image Suggestions** - Medical illustration images suggested from transcript concepts
+- **MCP Server** - JSON-RPC 2.0 server on port 7101 for external tool integration
 
 ### Biomarker Analysis
+- **PatientPulse Display** - Glanceable "check engine light" for patient voice metrics (hidden/normal/alert states)
 - **Vitality** - Pitch variability for affect detection (depression/PTSD indicator)
 - **Stability** - CPP measurement for vocal control (Parkinson's indicator)
 - **Cough Detection** - YAMNet-based audio event classification
@@ -47,7 +53,7 @@ A real-time speech-to-text transcription desktop application built with Tauri, R
 - Rust 1.70+
 - Node.js 20+
 - pnpm 10+
-- ONNX Runtime (for diarization, enhancement, emotion, YAMNet)
+- ONNX Runtime (for diarization, enhancement, YAMNet)
 
 ### Run Desktop App
 
@@ -88,7 +94,10 @@ ORT_DYLIB_PATH=$(./scripts/setup-ort.sh) \
 │  │  - Transcript   │                │  - STT Router + Diarization     │ │
 │  │  - SOAP Notes   │                │  - Biomarker Analysis           │ │
 │  │  - EMR Sync     │                │  - LLM Router + Medplum         │ │
-│  └─────────────────┘                └─────────────────────────────────┘ │
+│  │  - Clinical Chat│                │  - Continuous Mode              │ │
+│  │  - Continuous   │                │  - Speaker Profiles             │ │
+│  └─────────────────┘                │  - MCP Server (port 7101)       │ │
+│                                     └─────────────────────────────────┘ │
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -105,7 +114,6 @@ ORT_DYLIB_PATH=$(./scripts/setup-ort.sh) \
 | Transcription | STT Router (WebSocket streaming to Whisper backend) |
 | Speaker Diarization | ONNX Runtime + WeSpeaker |
 | Speech Enhancement | GTCRN (ONNX) |
-| Emotion Detection | wav2small (ONNX) |
 | Cough Detection | YAMNet (ONNX) |
 | Audio Preprocessing | biquad + dagc |
 | SOAP Generation | OpenAI-compatible LLM router |
@@ -119,7 +127,7 @@ cd tauri-app
 # Frontend tests (387 tests)
 pnpm test:run
 
-# Rust tests (355 unit + 9 E2E integration)
+# Rust tests (421 unit + 10 E2E integration)
 cd src-tauri
 ORT_DYLIB_PATH=$(../scripts/setup-ort.sh) cargo test
 
@@ -133,8 +141,11 @@ cargo test e2e_ -- --ignored --nocapture
 |------|----------|
 | All models | `~/.transcriptionapp/models/` |
 | Settings | `~/.transcriptionapp/config.json` |
+| Speaker profiles | `~/.transcriptionapp/speaker_profiles.json` |
 | Medplum auth | `~/.transcriptionapp/medplum_auth.json` |
+| Session archive | `~/.transcriptionapp/archive/YYYY/MM/DD/session_id/` |
 | Activity logs | `~/.transcriptionapp/logs/activity.log.*` |
+| Debug storage | `~/.transcriptionapp/debug/` (dev builds only) |
 
 ## License
 

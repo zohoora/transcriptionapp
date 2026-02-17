@@ -1,9 +1,21 @@
-# Transcription App — Detailed Code Review & Next‑Level Recommendations
+# Transcription App — Detailed Code Review & Next-Level Recommendations
 
-Date: 2026-01-15  
+> **Historical Document (2026-01-15)**: This review predates the code-first review in [CODE_REVIEW_FINDINGS.md](../CODE_REVIEW_FINDINGS.md) (2026-02-06, updated 2026-02-17). Several findings below have been addressed in subsequent commits. Refer to CODE_REVIEW_FINDINGS.md for the current resolution status. This document is retained for its security-focused analysis (P0 items) which was intentionally out of scope for the later review.
+
+Date: 2026-01-15
 Reviewed repo: `/Users/backoffice/transcriptionapp` (focus: `tauri-app/` and `tauri-app/src-tauri/`)
 
 This review is based on reading and cross-referencing the actual codepaths (not docs). I traced the main flows end-to-end: UI → Tauri IPC → pipeline threads → network integrations (Whisper server, LLM router, Medplum) → persistence (config/auth/logs/audio/debug storage).
+
+### Findings resolved since this review (as of 2026-02-17)
+
+- **P0-2 Debug storage default=true**: FIXED — now `cfg!(debug_assertions)` (only enabled in debug builds)
+- **P0-4 Default API key shipped**: FIXED — `llm_api_key` now defaults to empty string
+- **P0-4 Default Medplum URL**: FIXED — `medplum_server_url` now defaults to empty string
+- **P1-2 Hard-coded "fast-model"**: FIXED — `LLMClient` now accepts `fast_model` parameter, used in greeting detection
+- **P1-4 Medplum SOAP uses placeholder IDs**: FIXED — patient ID now resolved from encounter `subject.reference`
+- **P1-Reliability-2 Thread lifecycle (stop without join)**: FIXED — Pipeline handle join in background `std::thread::spawn` / `spawn_blocking`
+- **Test results**: Now 421 Rust tests passing (0 failed), 387 frontend tests passing
 
 ---
 
@@ -24,6 +36,17 @@ These items are solvable, but they must be addressed before calling the app “p
 
 ## Local Verification I Ran (in this environment)
 
+> **Updated 2026-02-17**: Current test results are significantly improved from the original review.
+
+As of 2026-02-17:
+- `pnpm -C tauri-app typecheck` — 0 errors
+- `pnpm -C tauri-app lint` — 2 errors, 111 warnings
+- `pnpm -C tauri-app test:run` — 387 passed, 6 skipped
+- `cargo test --lib` — 421 passed, 0 failed
+- `cargo check` — 0 warnings
+
+Original results (2026-01-15):
+
 Frontend (`tauri-app/`):
 - `pnpm -C tauri-app typecheck` ✅
 - `pnpm -C tauri-app lint` ✅ (warnings: widespread `console.*` usage + a few React hook dependency warnings)
@@ -31,7 +54,7 @@ Frontend (`tauri-app/`):
 
 Rust (`tauri-app/src-tauri/`):
 - `cargo test` ❌ on this machine (308 passed, 6 failed, 16 ignored)
-  - `llm_client` / `medplum` / `whisper_server` “client creation” tests panic inside `system-configuration` (`Attempted to create a NULL object.`). This is consistent with macOS system proxy discovery failing in some environments when constructing `reqwest::Client`.
+  - `llm_client` / `medplum` / `whisper_server` "client creation" tests panic inside `system-configuration` (`Attempted to create a NULL object.`). This is consistent with macOS system proxy discovery failing in some environments when constructing `reqwest::Client`.
   - `audio::tests::test_get_device_default` fails because CPAL returns a device but `device.name()` can error in restricted environments.
 
 Recommendations from these results:

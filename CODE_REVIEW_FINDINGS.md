@@ -1,18 +1,19 @@
 # Transcription App Code Review Findings (Code-First)
 
-Date: 2026-02-06
+Date: 2026-02-06 (initial review), 2026-02-17 (latest update)
 Scope: `tauri-app/src` and `tauri-app/src-tauri/src` (security intentionally deprioritized per request)
 
-**Resolution Status (2026-02-06)**: 11 of 18 findings fixed, 5 deferred, 2 in progress. See individual findings for details.
+**Resolution Status (2026-02-17)**: Of the original 18 findings: 11 fixed, 5 deferred (1 mostly resolved), 2 open (#10, #16). Additionally, 16 new findings were fixed in a Feb 17 round (see update section below).
 
 ## How this review was performed
 - Read implementation code directly (frontend + Rust backend + command wiring + archive + Medplum + continuous mode).
 - Ignored documentation claims where behavior in code differed.
-- Ran validation commands:
-  - `pnpm -C tauri-app typecheck` (passes)
-  - `pnpm -C tauri-app lint` (fails: 2 errors, 107 warnings)
-  - `pnpm -C tauri-app test:run` (tests mostly pass but run fails due Node OOM worker crash)
-  - `cargo test --lib` in `tauri-app/src-tauri` (343 passed, 6 failed)
+- Ran validation commands (as of 2026-02-17):
+  - `pnpm -C tauri-app typecheck` (passes, 0 errors)
+  - `pnpm -C tauri-app lint` (fails: 2 errors, 111 warnings)
+  - `pnpm -C tauri-app test:run` (387 passed, 6 skipped)
+  - `cargo test --lib` in `tauri-app/src-tauri` (421 passed, 0 failed)
+  - `cargo check` (0 warnings)
 
 ---
 
@@ -180,9 +181,9 @@ Scope: `tauri-app/src` and `tauri-app/src-tauri/src` (security intentionally dep
 
 ### 16) [Medium] Lint gate is currently red; codebase has high warning volume — OPEN
 - Evidence:
-  - `pnpm -C tauri-app lint` reports 2 errors and 107 warnings.
-  - Hard errors in markdown parser regex: `tauri-app/src/components/ClinicalChat.tsx:44`.
-  - Multiple hook dependency warnings (e.g., `AuthProvider.tsx`, `HistoryView.tsx`, `SpeakerEnrollment.tsx`).
+  - `pnpm -C tauri-app lint` reports 2 errors and 111 warnings (as of 2026-02-17).
+  - Hard errors are `no-useless-escape` in markdown parser regex: `tauri-app/src/components/ClinicalChat.tsx:44`.
+  - Warnings are predominantly `no-console` and a few hook dependency warnings.
 - Impact:
   - Noise masks meaningful regressions; CI quality signal degraded.
 - Recommendation:
@@ -237,7 +238,7 @@ Scope: `tauri-app/src` and `tauri-app/src-tauri/src` (security intentionally dep
 
 ---
 
-## Resolution Summary (2026-02-06)
+## Resolution Summary (2026-02-06, initial review)
 
 | Finding | Status | Resolution |
 |---------|--------|------------|
@@ -256,6 +257,52 @@ Scope: `tauri-app/src` and `tauri-app/src-tauri/src` (security intentionally dep
 | #13 Event cross-talk | **FIXED** | Renamed to `continuous_transcript_preview` (separate from `transcript_update`) |
 | #14 Medplum pagination | **DEFERRED** | Not urgent for current dataset sizes |
 | #15 Async callback type mismatch | **FIXED** | Types changed to `void | Promise<void>`, wrapped with `Promise.resolve().catch()` |
-| #16 Lint errors + warnings | **OPEN** | 2 hard errors + 107 warnings remain (regex lookbehind in ClinicalChat.tsx) |
-| #17 Test stability | **DEFERRED** | Environment-specific (Node OOM, system-configuration NULL) |
-| #18 App.tsx size | **DEFERRED** | Low priority refactor |
+| #16 Lint errors + warnings | **OPEN** | 2 `no-useless-escape` errors + 111 warnings remain (ClinicalChat.tsx:44) |
+| #17 Test stability | **DEFERRED** | Environment-specific (Node OOM, system-configuration NULL) — mostly resolved, see Feb 17 update |
+| #18 App.tsx size | **DEFERRED** | Low priority refactor (~921 lines as of Feb 17) |
+
+---
+
+## Feb 17, 2026 Update — Additional Fixes (Commit 87179cf)
+
+A second round of fixes addressed 16 additional findings across backend and frontend. Test/lint status after this round:
+
+- `cargo test --lib`: **421 passed**, 0 failed
+- `pnpm test:run`: **387 passed**, 6 skipped
+- `npx tsc --noEmit`: **0 errors**
+- `cargo check`: **0 warnings**
+
+### Backend Fixes (Rust)
+
+| ID | Finding | Resolution |
+|----|---------|------------|
+| C1 | Path traversal in `local_archive.rs` | Added `validate_session_id()` — rejects path separators and special directory references |
+| C2 | Encounter notes cleared before SOAP generation | Clone encounter notes before clearing the buffer, so SOAP receives the full transcript |
+| I1 | Duplicate archival race in continuous mode | Added state guard in `Stopped` handler to prevent double-archive |
+| I2 | Pipeline `Drop` blocks Tokio runtime | Join moved to `spawn_blocking` to avoid blocking the async runtime |
+| I3 | Poisoned lock silent drops across codebase | Added `warn!` logging at 22 sites where poisoned `Mutex`/`RwLock` are recovered |
+| I4 | FHIR ID validation missing | Added `validate_fhir_id()` in `medplum.rs` — rejects IDs with path traversal characters |
+| I5 | Error body leakage in HTTP responses | Truncate error body strings to 200 chars before including in error messages |
+| I6 | Token refresh TOCTOU race | Implemented double-check locking pattern for OAuth token refresh |
+| I7 | Settings update skips validation | `clamp_values()` called after every settings update to enforce safe ranges |
+
+### Frontend Fixes (TypeScript/React)
+
+| Finding | Resolution |
+|---------|------------|
+| PendingSettings deduplication | Eliminated duplicate pending-settings tracking in settings hooks |
+| Audio quality utility extraction | Extracted audio quality helper logic into shared utility functions |
+| Patient aggregation utility | Extracted patient speaker aggregation into `aggregatePatientSpeakers()` in `utils.ts` |
+| `useAutoDetection` callback refs | Fixed callback reference stability to prevent unnecessary re-renders |
+| Redundant `setIsActive` removal | Removed redundant active-state setting in continuous mode hook |
+| Dead code cleanup | Removed unused code paths identified during review |
+| `useMemo` for `hasUnsavedChanges` | Memoized computed value to prevent unnecessary recalculations |
+| Test mocks synced with real types | Updated test mocks to match current TypeScript interface definitions |
+
+### Impact on Original Findings
+
+- **Finding #7** (reset_session blocking): Further hardened — Pipeline `Drop` now uses `spawn_blocking` (I2)
+- **Finding #10** (archive timestamps): Still **OPEN** — `started_at` and `segment_count` remain unresolved
+- **Finding #16** (lint): Still **OPEN** — 2 errors (`no-useless-escape` in ClinicalChat.tsx) + 111 warnings
+- **Finding #17** (test stability): **Mostly resolved** — Rust tests now 421 passed / 0 failed; frontend 387 passed / 6 skipped
+- **Finding #18** (App.tsx size): Unchanged at ~921 lines (was ~840 at initial review)

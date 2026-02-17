@@ -1,10 +1,10 @@
 # Transcription App - Development Guide
 
-> **Note**: This document has been updated from the original handoff document. For the most comprehensive and up-to-date development context, see [tauri-app/CLAUDE.md](../tauri-app/CLAUDE.md).
+> **Note**: This is a historical document from the original handoff (January 2025), updated with minor corrections. For the most comprehensive and up-to-date development context, see [tauri-app/CLAUDE.md](../tauri-app/CLAUDE.md). For code review findings and resolution status, see [CODE_REVIEW_FINDINGS.md](../CODE_REVIEW_FINDINGS.md).
 
 ## Project Status
 
-**Date:** January 2025
+**Date:** January 2025 (original), February 2026 (last updated)
 **Status:** Production-Ready - All milestones complete
 
 ### Completed Work
@@ -47,6 +47,15 @@
    - Audio preprocessing (DC removal, high-pass, AGC)
    - Conversation dynamics analysis
    - Auto-session detection (listening mode)
+   - Speaker enrollment with voice profiles (ECAPA-TDNN embeddings)
+   - Auto-end silence detection
+   - Clinical assistant chat (real-time LLM during recording)
+   - MIIS medical illustration integration
+   - Continuous charting mode (end-of-day encounter detection)
+   - Vision-based patient name extraction (screen capture + vision LLM)
+   - PatientPulse glanceable biomarker display
+   - MCP server (port 7101, JSON-RPC 2.0)
+   - STT Router streaming (WebSocket-based, alias routing)
 
 ---
 
@@ -54,8 +63,11 @@
 
 ```
 transcriptionapp/
-├── docs/
-│   └── DEVELOPMENT.md       # This file
+├── docs/                    # Historical review documents
+│   ├── DEVELOPMENT.md       # This file
+│   ├── DETAILED_CODE_REVIEW.md
+│   └── CODE_REVIEW_ACTION_PLAN.md
+├── CODE_REVIEW_FINDINGS.md  # Current code review findings & resolution status
 └── tauri-app/               # Main application
     ├── src/                 # React frontend
     ├── src-tauri/           # Rust backend
@@ -102,7 +114,7 @@ ORT_DYLIB_PATH=$(./scripts/setup-ort.sh) \
 
 ## Testing
 
-### Frontend Tests (430 tests)
+### Frontend Tests (387 tests)
 
 ```bash
 cd tauri-app
@@ -111,11 +123,14 @@ pnpm test              # Watch mode
 pnpm test:coverage     # With coverage
 ```
 
-### Rust Tests (346 tests)
+### Rust Tests (421 unit + 10 E2E)
 
 ```bash
 cd tauri-app/src-tauri
 ORT_DYLIB_PATH=$(../scripts/setup-ort.sh) cargo test
+
+# E2E integration tests (requires STT Router + LLM Router running)
+cargo test e2e_ -- --ignored --nocapture
 ```
 
 ---
@@ -143,7 +158,7 @@ For detailed architecture, see [tauri-app/CLAUDE.md](../tauri-app/CLAUDE.md).
 
 ---
 
-## Recent Changes (January 2025)
+## Historical Changes (January 2025)
 
 ### Audio Events in SOAP Generation
 - YAMNet-detected audio events (coughs, laughs, sneezes) now passed to LLM
@@ -163,13 +178,14 @@ See [tauri-app/CLAUDE.md](../tauri-app/CLAUDE.md) for complete change history.
 
 Models are stored at `~/.transcriptionapp/models/`:
 
-| Model | Size | Purpose |
-|-------|------|---------|
-| `ggml-small.bin` | ~465MB | Whisper transcription (recommended) |
-| `speaker_embedding.onnx` | ~26MB | Speaker diarization |
-| `gtcrn_simple.onnx` | ~523KB | Speech enhancement |
-| `wav2small.onnx` | ~120KB | Emotion detection |
-| `yamnet.onnx` | ~3MB | Audio event detection |
+| Model | Purpose |
+|-------|---------|
+| `ggml-small.bin` / `ggml-large-v3-turbo.bin` | Whisper transcription (local, if enabled) |
+| `speaker_embedding.onnx` / `ecapa_tdnn.onnx` | Speaker diarization + enrollment |
+| `gtcrn_simple.onnx` | Speech enhancement |
+| `yamnet.onnx` | Audio event detection (cough, laugh, sneeze) |
+
+> **Note**: Transcription currently uses the remote STT Router by default. Local Whisper models are only needed if local transcription is enabled.
 
 ---
 

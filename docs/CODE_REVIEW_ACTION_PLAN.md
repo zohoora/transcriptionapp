@@ -1,30 +1,32 @@
 # Code Review Action Plan
 
+> **Historical Document (2026-01-15)**: This action plan was based on the detailed review in `DETAILED_CODE_REVIEW.md`. Several items have been resolved. For the current status of all review findings, see [CODE_REVIEW_FINDINGS.md](../CODE_REVIEW_FINDINGS.md) (updated 2026-02-17). Items marked below with ~~strikethrough~~ have been addressed.
+
 Based on the detailed code review in `DETAILED_CODE_REVIEW.md`, this document outlines the validated findings and prioritized remediation plan.
 
 ## Validation Summary
 
 All P0 findings have been verified against the actual codebase:
 
-| Finding | Status | Location |
-|---------|--------|----------|
-| PHI in logs (transcript) | **Confirmed** | `listening.rs:543, 635` |
-| PHI in logs (patient search) | **Confirmed** | `commands/medplum.rs:191` |
-| OAuth code in logs | **Confirmed** | `lib.rs:176` (full deep link URL) |
-| OAuth code in console | **Confirmed** | `AuthProvider.tsx:63, 73, 87, 95` |
-| Debug storage default=true | **Confirmed** | `config.rs:63-64` |
-| Hard-coded internal IPs | **Confirmed** | `config.rs:109-120` |
-| Default API key shipped | **Confirmed** | `config.rs:71-72` |
-| Hard-coded "fast-model" | **Confirmed** | `llm_client.rs:725` |
-| Secrets stored unencrypted | **Confirmed** | `medplum.rs`, `config.rs` |
+| Finding | Status (Jan 2026) | Status (Feb 2026) | Location |
+|---------|-------------------|-------------------|----------|
+| PHI in logs (transcript) | **Confirmed** | Still open | `listening.rs` |
+| PHI in logs (patient search) | **Confirmed** | Still open | `commands/medplum.rs` |
+| OAuth code in logs | **Confirmed** | Still open | `lib.rs` |
+| OAuth code in console | **Confirmed** | Still open | `AuthProvider.tsx` |
+| Debug storage default=true | **Confirmed** | **FIXED** (`cfg!(debug_assertions)`) | `config.rs` |
+| Hard-coded internal IPs | **Confirmed** | Partially fixed (Medplum default now empty) | `config.rs` |
+| Default API key shipped | **Confirmed** | **FIXED** (now empty string) | `config.rs` |
+| Hard-coded "fast-model" | **Confirmed** | **FIXED** (uses `self.fast_model`) | `llm_client.rs` |
+| Secrets stored unencrypted | **Confirmed** | Still open | `medplum.rs`, `config.rs` |
 
 ---
 
 ## Phase 0: Critical Security Fixes (P0)
 
-**Target: 1-2 days**
+**Target: 1-2 days** | Status: 0.2 and 0.3 completed (Feb 2026), 0.1 still open
 
-### 0.1 Remove PHI from Logs
+### 0.1 Remove PHI from Logs (STILL OPEN)
 
 **Files to modify:**
 
@@ -80,63 +82,25 @@ All P0 findings have been verified against the actual codebase:
    // Or remove entirely in production builds
    ```
 
-### 0.2 Disable Debug Storage by Default
+### 0.2 Disable Debug Storage by Default -- FIXED (Feb 2026)
+
+**File:** `src-tauri/src/config.rs` -- Now uses `cfg!(debug_assertions)`, only enabled in debug builds.
+
+### 0.3 Remove Hard-coded Defaults -- PARTIALLY FIXED (Feb 2026)
 
 **File:** `src-tauri/src/config.rs`
 
-```rust
-// Before (line 63-64)
-fn default_debug_storage_enabled() -> bool {
-    true // Enabled by default for debugging - DISABLE IN PRODUCTION
-}
-
-// After
-fn default_debug_storage_enabled() -> bool {
-    cfg!(debug_assertions) // Only enabled in debug builds
-}
-```
-
-### 0.3 Remove Hard-coded Defaults
-
-**File:** `src-tauri/src/config.rs`
-
-```rust
-// Before
-fn default_llm_api_key() -> String {
-    "ai-scribe-key".to_string()
-}
-
-fn default_whisper_server_url() -> String {
-    "http://172.16.100.45:8001".to_string()
-}
-
-fn default_medplum_url() -> String {
-    "http://172.16.100.45:8103".to_string()
-}
-
-// After
-fn default_llm_api_key() -> String {
-    String::new() // Must be configured
-}
-
-fn default_whisper_server_url() -> String {
-    String::new() // Must be configured
-}
-
-fn default_medplum_url() -> String {
-    String::new() // Must be configured
-}
-```
-
-**Also add validation in Settings UI** to show "Not configured" state and prevent app usage without required settings.
+- ~~`llm_api_key`~~: Now defaults to empty string
+- ~~`medplum_server_url`~~: Now defaults to empty string
+- `whisper_server_url`: Still defaults to a network IP (`10.241.15.154:8001`) -- the configured STT Router
 
 ---
 
 ## Phase 1: Correctness Fixes (P1)
 
-**Target: 3-5 days**
+**Target: 3-5 days** | Status: 1.1 completed (Feb 2026), 1.2 and 1.3 still open
 
-### 1.1 Fix Hard-coded "fast-model" in Greeting Detection
+### 1.1 Fix Hard-coded "fast-model" in Greeting Detection -- FIXED (Feb 2026)
 
 **File:** `src-tauri/src/llm_client.rs`
 
@@ -411,19 +375,19 @@ fn test_no_phi_in_log_messages() {
 
 ## Implementation Order
 
-| Priority | Item | Effort | Risk if Skipped |
-|----------|------|--------|-----------------|
-| **0.1** | Remove PHI from logs | 2h | HIPAA violation |
-| **0.2** | Disable debug storage default | 30m | PHI exposure |
-| **0.3** | Remove hard-coded defaults | 1h | Credential leak |
-| **1.1** | Fix hard-coded fast-model | 2h | Config ignored |
-| **1.2** | HTTP error handling | 1h | Silent failures |
-| **1.3** | Surface transcription errors | 2h | User confusion |
-| **2.1** | Secure storage | 1-2d | Token theft |
-| **2.2** | Atomic writes | 2h | Data corruption |
-| **2.3** | Model integrity | 4h | Supply chain risk |
-| **3.x** | Reliability | 1w | Performance/stability |
-| **4.x** | Code quality | Ongoing | Tech debt |
+| Priority | Item | Effort | Risk if Skipped | Status (Feb 2026) |
+|----------|------|--------|-----------------|-------------------|
+| **0.1** | Remove PHI from logs | 2h | HIPAA violation | Open |
+| **0.2** | Disable debug storage default | 30m | PHI exposure | **FIXED** |
+| **0.3** | Remove hard-coded defaults | 1h | Credential leak | Partially fixed |
+| **1.1** | Fix hard-coded fast-model | 2h | Config ignored | **FIXED** |
+| **1.2** | HTTP error handling | 1h | Silent failures | Open |
+| **1.3** | Surface transcription errors | 2h | User confusion | Open |
+| **2.1** | Secure storage | 1-2d | Token theft | Open |
+| **2.2** | Atomic writes | 2h | Data corruption | Open |
+| **2.3** | Model integrity | 4h | Supply chain risk | Open |
+| **3.x** | Reliability | 1w | Performance/stability | Partially fixed |
+| **4.x** | Code quality | Ongoing | Tech debt | Partially fixed |
 
 ---
 
@@ -433,3 +397,5 @@ fn test_no_phi_in_log_messages() {
 - Phase 1 items should be completed before wider testing
 - Phase 2+ can be done iteratively based on priority
 - The review correctly identified that local Whisper is currently dead code - a decision should be made whether to remove it or complete the implementation
+- As of Feb 2026, the codebase has 421 Rust unit tests (0 failures), 387 frontend tests, and 0 cargo/tsc warnings
+- For the full resolution status of all code review findings, see [CODE_REVIEW_FINDINGS.md](../CODE_REVIEW_FINDINGS.md)

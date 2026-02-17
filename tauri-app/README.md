@@ -44,7 +44,7 @@ A real-time speech-to-text transcription desktop application built with Tauri, R
 - Node.js 20+
 - Rust 1.70+
 - pnpm 10+
-- ONNX Runtime (for speaker diarization, enhancement, emotion, YAMNet)
+- ONNX Runtime (for speaker diarization, enhancement, YAMNet)
 - STT Router (required, for speech-to-text via WebSocket streaming)
 - LLM Router (required, for SOAP note generation - OpenAI-compatible API)
 - Medplum server (optional, for EMR integration)
@@ -75,10 +75,11 @@ tauri-app/
 ├── src/                          # React frontend
 │   ├── App.tsx                   # Main sidebar component
 │   ├── components/
-│   │   ├── modes/                # UI modes (Ready, Recording, Review)
+│   │   ├── modes/                # UI modes (Ready, Recording, Review, Continuous)
 │   │   │   ├── ReadyMode.tsx     # Pre-recording state
 │   │   │   ├── RecordingMode.tsx # Active recording
-│   │   │   └── ReviewMode.tsx    # Post-recording review
+│   │   │   ├── ReviewMode.tsx    # Post-recording review
+│   │   │   └── ContinuousMode.tsx # Continuous charting dashboard
 │   │   ├── AudioQualitySection.tsx
 │   │   ├── BiomarkersSection.tsx
 │   │   ├── ConversationDynamicsSection.tsx
@@ -91,7 +92,13 @@ tauri-app/
 │   │   ├── HistoryView.tsx       # Encounter history
 │   │   ├── HistoryWindow.tsx     # Separate history window
 │   │   ├── Calendar.tsx
-│   │   └── AudioPlayer.tsx
+│   │   ├── AudioPlayer.tsx
+│   │   ├── SpeakerEnrollment.tsx # Speaker voice enrollment
+│   │   ├── ClinicalChat.tsx      # Clinical assistant chat
+│   │   ├── ImageSuggestions.tsx   # MIIS medical illustrations
+│   │   ├── PatientPulse.tsx      # Glanceable biomarker summary
+│   │   ├── PatientVoiceMonitor.tsx # Patient voice metric trending
+│   │   └── SyncStatusBar.tsx     # EMR sync status
 │   ├── types/index.ts            # Shared TypeScript types
 │   ├── utils.ts                  # Date/time utilities
 │   ├── ErrorBoundary.tsx
@@ -100,7 +107,23 @@ tauri-app/
 │   ├── src/
 │   │   ├── lib.rs                # Tauri plugin registration
 │   │   ├── main.rs               # Entry point
-│   │   ├── commands.rs           # IPC command handlers
+│   │   ├── commands/             # IPC command handlers
+│   │   │   ├── mod.rs            # Re-exports, CommandError, PipelineState
+│   │   │   ├── session.rs        # Recording lifecycle + auto-end
+│   │   │   ├── settings.rs       # get/set settings
+│   │   │   ├── audio.rs          # Device enumeration
+│   │   │   ├── models.rs         # Model downloads
+│   │   │   ├── ollama.rs         # LLM router connection
+│   │   │   ├── medplum.rs        # EMR sync commands
+│   │   │   ├── listening.rs      # Auto-session detection
+│   │   │   ├── speaker_profiles.rs # Speaker enrollment CRUD
+│   │   │   ├── clinical_chat.rs  # Clinical assistant chat
+│   │   │   ├── miis.rs           # Medical illustration proxy
+│   │   │   ├── screenshot.rs     # Screen capture
+│   │   │   ├── continuous.rs     # Continuous charting mode
+│   │   │   ├── archive.rs        # Local session history
+│   │   │   ├── whisper_server.rs # STT Router status
+│   │   │   └── permissions.rs    # Microphone permissions
 │   │   ├── session.rs            # Recording state machine
 │   │   ├── pipeline.rs           # Audio processing pipeline
 │   │   ├── audio.rs              # Audio capture, resampling
@@ -113,7 +136,15 @@ tauri-app/
 │   │   ├── llm_client.rs         # OpenAI-compatible LLM client
 │   │   ├── ollama.rs             # Re-exports from llm_client.rs (backward compat)
 │   │   ├── medplum.rs            # Medplum FHIR client
+│   │   ├── continuous_mode.rs    # Continuous charting mode (end-of-day)
+│   │   ├── local_archive.rs      # Local session storage
+│   │   ├── speaker_profiles.rs   # Speaker enrollment storage
+│   │   ├── screenshot.rs         # Screen capture (in-memory JPEG)
+│   │   ├── whisper_server.rs     # STT Router client
+│   │   ├── debug_storage.rs      # Debug storage (dev only)
+│   │   ├── permissions.rs        # macOS permission checks
 │   │   ├── activity_log.rs       # Structured logging
+│   │   ├── preprocessing.rs      # Audio preprocessing (DC removal, high-pass, AGC)
 │   │   ├── diarization/          # Speaker detection
 │   │   │   ├── mod.rs            # Module exports
 │   │   │   ├── provider.rs       # ONNX embedding extraction
@@ -124,19 +155,17 @@ tauri-app/
 │   │   ├── enhancement/          # Speech denoising
 │   │   │   ├── mod.rs
 │   │   │   └── provider.rs       # GTCRN ONNX model
-│   │   ├── emotion/              # Emotion detection
-│   │   │   ├── mod.rs
-│   │   │   └── provider.rs       # wav2small ONNX model
-│   │   └── biomarkers/           # Vocal biomarker analysis
-│   │       ├── mod.rs            # Types and exports
-│   │       ├── config.rs         # Biomarker settings
-│   │       ├── thread.rs         # Sidecar processing thread
-│   │       ├── audio_quality.rs  # Real-time quality metrics
-│   │       ├── yamnet/           # Cough detection
-│   │       ├── voice_metrics/    # Vitality, stability
-│   │       │   ├── vitality.rs   # F0 pitch analysis
-│   │       │   └── stability.rs  # CPP cepstral analysis
-│   │       └── session_metrics/  # Turn-taking stats
+│   │   ├── biomarkers/           # Vocal biomarker analysis
+│   │   │   ├── mod.rs            # Types and exports
+│   │   │   ├── config.rs         # Biomarker settings
+│   │   │   ├── thread.rs         # Sidecar processing thread
+│   │   │   ├── audio_quality.rs  # Real-time quality metrics
+│   │   │   ├── yamnet/           # Cough detection
+│   │   │   ├── voice_metrics/    # Vitality, stability
+│   │   │   │   ├── vitality.rs   # F0 pitch analysis
+│   │   │   │   └── stability.rs  # CPP cepstral analysis
+│   │   │   └── session_metrics/  # Turn-taking stats
+│   │   └── mcp/                  # MCP server on port 7101
 │   ├── benches/                  # Performance benchmarks
 │   └── Cargo.toml
 ├── docs/
@@ -199,8 +228,8 @@ pnpm soak:test         # Interactive
 | Category | Framework | Count |
 |----------|-----------|-------|
 | Unit Tests (Frontend) | Vitest | 387 tests |
-| Unit Tests (Rust) | cargo test | 355 tests |
-| E2E Integration (Rust) | cargo test (ignored) | 9 tests |
+| Unit Tests (Rust) | cargo test | 421 tests |
+| E2E Integration (Rust) | cargo test (ignored) | 10 tests |
 | Snapshot Tests | Vitest | 7 snapshots |
 | Accessibility Tests | vitest-axe | 12 tests |
 | Contract Tests | Vitest | 24 tests |
@@ -219,18 +248,19 @@ Settings are stored in `~/.transcriptionapp/config.json`:
 {
   "language": "en",
   "input_device_id": null,
-  "diarization_enabled": true,
-  "max_speakers": 2,
+  "diarization_enabled": false,
+  "max_speakers": 10,
   "whisper_server_url": "http://10.241.15.154:8001",
   "stt_alias": "medical-streaming",
   "stt_postprocess": true,
-  "llm_router_url": "http://10.241.15.154:8080",
+  "llm_router_url": "",
   "llm_api_key": "",
-  "llm_client_id": "clinic-001",
-  "soap_model": "gpt-4",
-  "fast_model": "gpt-3.5-turbo",
-  "medplum_server_url": "http://10.241.15.154:8103",
-  "medplum_client_id": "your-client-id",
+  "llm_client_id": "ai-scribe",
+  "soap_model": "soap-model-fast",
+  "soap_model_fast": "soap-model-fast",
+  "fast_model": "fast-model",
+  "medplum_server_url": "",
+  "medplum_client_id": "af1464aa-e00c-4940-a32e-18d878b7911c",
   "medplum_auto_sync": true,
   "auto_start_enabled": false,
   "greeting_sensitivity": 0.7,
@@ -245,8 +275,11 @@ Settings are stored in `~/.transcriptionapp/config.json`:
 |------|----------|
 | All models | `~/.transcriptionapp/models/` |
 | Settings | `~/.transcriptionapp/config.json` |
+| Speaker profiles | `~/.transcriptionapp/speaker_profiles.json` |
 | Medplum auth | `~/.transcriptionapp/medplum_auth.json` |
+| Session archive | `~/.transcriptionapp/archive/` |
 | Activity logs | `~/.transcriptionapp/logs/activity.log.*` |
+| Debug storage | `~/.transcriptionapp/debug/` |
 
 ## Architecture
 
