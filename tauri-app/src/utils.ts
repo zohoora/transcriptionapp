@@ -130,6 +130,94 @@ export function formatDuration(ms: number): string {
 // Error Utilities
 // ============================================================================
 
+// ============================================================================
+// Audio Quality Utilities
+// ============================================================================
+
+import type { AudioQualitySnapshot, SpeakerBiomarkers } from './types';
+import { AUDIO_QUALITY_THRESHOLDS } from './types';
+
+export type AudioQualityLevel = 'good' | 'fair' | 'poor';
+
+/**
+ * Evaluate audio quality snapshot and return a level.
+ * Used by RecordingMode, ContinuousMode, and ReviewMode.
+ */
+export function getAudioQualityLevel(quality: AudioQualitySnapshot | null): AudioQualityLevel {
+  if (!quality) return 'good';
+
+  const rmsOk = quality.rms_db >= AUDIO_QUALITY_THRESHOLDS.LEVEL_TOO_QUIET
+             && quality.rms_db <= AUDIO_QUALITY_THRESHOLDS.LEVEL_TOO_HOT;
+  const snrOk = quality.snr_db >= AUDIO_QUALITY_THRESHOLDS.SNR_GOOD;
+  const clippingOk = quality.clipped_ratio < AUDIO_QUALITY_THRESHOLDS.CLIPPING_OK;
+
+  if (rmsOk && snrOk && clippingOk) return 'good';
+  if (quality.snr_db < AUDIO_QUALITY_THRESHOLDS.SNR_WARNING || quality.clipped_ratio >= 0.01) return 'poor';
+  return 'fair';
+}
+
+// ============================================================================
+// Patient Speaker Aggregation
+// ============================================================================
+
+export interface AggregatedPatientMetrics {
+  vitality: number | null;
+  stability: number | null;
+  totalUtterances: number;
+}
+
+/**
+ * Pool all non-clinician speakers into one aggregate via weighted average
+ * by talk_time_ms. If no enrolled clinicians exist, all speakers are treated
+ * as patient.
+ *
+ * Used by PatientPulse (with engagement) and usePatientBiomarkers (for trending).
+ */
+export function aggregatePatientSpeakers(speakers: SpeakerBiomarkers[]): AggregatedPatientMetrics {
+  const hasClinicians = speakers.some(s => s.is_clinician);
+  const patients = hasClinicians ? speakers.filter(s => !s.is_clinician) : speakers;
+
+  if (patients.length === 0) {
+    return { vitality: null, stability: null, totalUtterances: 0 };
+  }
+
+  const totalTalkTime = patients.reduce((sum, s) => sum + s.talk_time_ms, 0);
+  const totalUtterances = patients.reduce((sum, s) => sum + s.utterance_count, 0);
+
+  let vitality: number | null = null;
+  let stability: number | null = null;
+
+  if (totalTalkTime > 0) {
+    // Weighted average for vitality
+    const vSpeakers = patients.filter(s => s.vitality_mean !== null);
+    if (vSpeakers.length > 0) {
+      const vTalkTime = vSpeakers.reduce((sum, s) => sum + s.talk_time_ms, 0);
+      if (vTalkTime > 0) {
+        vitality = vSpeakers.reduce(
+          (sum, s) => sum + (s.vitality_mean! * s.talk_time_ms), 0,
+        ) / vTalkTime;
+      }
+    }
+
+    // Weighted average for stability
+    const sSpeakers = patients.filter(s => s.stability_mean !== null);
+    if (sSpeakers.length > 0) {
+      const sTalkTime = sSpeakers.reduce((sum, s) => sum + s.talk_time_ms, 0);
+      if (sTalkTime > 0) {
+        stability = sSpeakers.reduce(
+          (sum, s) => sum + (s.stability_mean! * s.talk_time_ms), 0,
+        ) / sTalkTime;
+      }
+    }
+  }
+
+  return { vitality, stability, totalUtterances };
+}
+
+// ============================================================================
+// Error Utilities
+// ============================================================================
+
 /**
  * Extract a user-friendly error message from various error types.
  * Handles: Error objects, Tauri errors, string errors, and unknown values.

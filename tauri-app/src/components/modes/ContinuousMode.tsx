@@ -15,6 +15,7 @@ import { memo, useState, useEffect, useRef, useCallback } from 'react';
 import type { ContinuousModeStats, AudioQualitySnapshot, BiomarkerUpdate } from '../../types';
 import type { PatientTrends } from '../../hooks/usePatientBiomarkers';
 import type { MiisSuggestion } from '../../hooks/useMiisImages';
+import { getAudioQualityLevel } from '../../utils';
 import { MarkdownContent } from '../ClinicalChat';
 import { ImageSuggestions } from '../ImageSuggestions';
 import { PatientPulse } from '../PatientPulse';
@@ -113,19 +114,6 @@ function formatTime(isoString: string | null): string {
   }
 }
 
-// Get audio quality status (same logic as RecordingMode)
-const getQualityLevel = (quality: AudioQualitySnapshot | null): 'good' | 'fair' | 'poor' => {
-  if (!quality) return 'good';
-
-  const rmsOk = quality.rms_db >= -40 && quality.rms_db <= -6;
-  const snrOk = quality.snr_db >= 15;
-  const clippingOk = quality.clipped_ratio < 0.001;
-
-  if (rmsOk && snrOk && clippingOk) return 'good';
-  if (quality.snr_db < 10 || quality.clipped_ratio >= 0.01) return 'poor';
-  return 'fair';
-};
-
 /**
  * Continuous Mode monitoring dashboard.
  *
@@ -175,7 +163,7 @@ export const ContinuousMode = memo(function ContinuousMode({
     setTimeout(() => { newPatientCooldownRef.current = false; }, 2000);
   }, [onNewPatient]);
 
-  const qualityLevel = getQualityLevel(audioQuality);
+  const qualityLevel = getAudioQualityLevel(audioQuality);
 
   const handleDetailsClick = useCallback(() => {
     setShowDetails(prev => !prev);

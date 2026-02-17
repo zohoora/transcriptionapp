@@ -1,7 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { SettingsDrawer, PendingSettings } from './SettingsDrawer';
+import { SettingsDrawer } from './SettingsDrawer';
+import type { PendingSettings } from '../hooks/useSettings';
 import type { Device, LLMStatus, AuthState, WhisperServerStatus } from '../types';
 
 const mockDevices: Device[] = [

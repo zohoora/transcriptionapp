@@ -953,6 +953,9 @@ impl Config {
         self.encounter_merge_enabled = settings.encounter_merge_enabled;
         self.encounter_detection_model = settings.encounter_detection_model.clone();
         self.encounter_detection_nothink = settings.encounter_detection_nothink;
+
+        // Clamp values to safe ranges after applying settings
+        self.clamp_values();
     }
 }
 

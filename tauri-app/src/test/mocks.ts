@@ -1,30 +1,14 @@
 import { vi } from 'vitest';
-
-export interface Device {
-  id: string;
-  name: string;
-  is_default: boolean;
-}
-
-export interface ModelStatus {
-  available: boolean;
-  path: string | null;
-  error: string | null;
-}
-
-export interface SessionStatus {
-  state: 'idle' | 'preparing' | 'recording' | 'stopping' | 'completed' | 'error';
-  provider: 'whisper' | 'apple' | null;
-  elapsed_ms: number;
-  is_processing_behind: boolean;
-  error_message?: string;
-}
-
-export interface TranscriptUpdate {
-  finalized_text: string;
-  draft_text: string | null;
-  segment_count: number;
-}
+import type {
+  Device,
+  ModelStatus,
+  SessionStatus,
+  TranscriptUpdate,
+  Settings,
+  OllamaStatus,
+  SoapNote,
+  AudioQualitySnapshot,
+} from '../types';
 
 // Default mock data
 export const mockDevices: Device[] = [
@@ -71,37 +55,6 @@ export const mockTranscript: TranscriptUpdate = {
   segment_count: 1,
 };
 
-export interface Settings {
-  whisper_model: string;
-  language: string;
-  input_device_id: string | null;
-  output_format: string;
-  vad_threshold: number;
-  silence_to_flush_ms: number;
-  max_utterance_ms: number;
-  diarization_enabled: boolean;
-  max_speakers: number;
-  // LLM Router settings (new)
-  llm_router_url: string;
-  llm_api_key: string;
-  llm_client_id: string;
-  soap_model: string;
-  fast_model: string;
-  // Medplum settings
-  medplum_server_url: string;
-  medplum_client_id: string;
-  medplum_auto_sync: boolean;
-  whisper_mode: 'remote';
-  whisper_server_url: string;
-  whisper_server_model: string;
-  soap_detail_level: number;
-  soap_format: string;
-  soap_custom_instructions: string;
-  auto_start_enabled: boolean;
-  greeting_sensitivity: number | null;
-  min_speech_duration_ms: number | null;
-}
-
 export const mockSettings: Settings = {
   whisper_model: 'small',
   language: 'en',
@@ -112,7 +65,7 @@ export const mockSettings: Settings = {
   max_utterance_ms: 30000,
   diarization_enabled: true,
   max_speakers: 4,
-  // LLM Router settings (new)
+  // LLM Router settings
   llm_router_url: 'http://localhost:8080',
   llm_api_key: 'test-api-key',
   llm_client_id: 'clinic-001',
@@ -122,33 +75,46 @@ export const mockSettings: Settings = {
   medplum_server_url: 'http://localhost:8103',
   medplum_client_id: 'test-client-id',
   medplum_auto_sync: false,
+  // Whisper server settings
   whisper_mode: 'remote',
   whisper_server_url: 'http://localhost:8001',
   whisper_server_model: 'large-v3-turbo',
+  // SOAP note preferences
   soap_detail_level: 5,
   soap_format: 'problem_based',
   soap_custom_instructions: '',
+  // Auto-session detection
   auto_start_enabled: false,
   greeting_sensitivity: 0.7,
   min_speech_duration_ms: 2000,
+  // Speaker verification for auto-start
+  auto_start_require_enrolled: false,
+  auto_start_required_role: null,
+  // Auto-end settings
+  auto_end_enabled: false,
+  auto_end_silence_ms: 180000,
+  // Debug storage
+  debug_storage_enabled: false,
+  // MIIS
+  miis_enabled: false,
+  miis_server_url: 'http://localhost:7843',
+  // Screen capture
+  screen_capture_enabled: false,
+  screen_capture_interval_secs: 60,
+  // STT Router settings
+  stt_alias: 'medical-streaming',
+  stt_postprocess: true,
+  // Continuous charting mode
+  charting_mode: 'session',
+  continuous_auto_copy_soap: false,
+  encounter_check_interval_secs: 120,
+  encounter_silence_trigger_secs: 60,
+  encounter_merge_enabled: true,
+  encounter_detection_model: 'faster',
+  encounter_detection_nothink: true,
 };
 
-// Ollama types
-export interface OllamaStatus {
-  connected: boolean;
-  available_models: string[];
-  error: string | null;
-}
-
-export interface SoapNote {
-  subjective: string;
-  objective: string;
-  assessment: string;
-  plan: string;
-  generated_at: string;
-  model_used: string;
-}
-
+// LLM Router / Ollama types
 export const mockOllamaStatusConnected: OllamaStatus = {
   connected: true,
   available_models: ['qwen3:4b', 'llama3:8b', 'mistral:7b'],
@@ -162,28 +128,10 @@ export const mockOllamaStatusDisconnected: OllamaStatus = {
 };
 
 export const mockSoapNote: SoapNote = {
-  subjective: 'Patient reports persistent cough for 3 days, accompanied by mild fever and fatigue.',
-  objective: 'Temperature 38.2C, respiratory rate normal, lungs clear on auscultation.',
-  assessment: 'Likely viral upper respiratory infection.',
-  plan: 'Rest and hydration, OTC fever reducer as needed, follow up if symptoms worsen or persist beyond 7 days.',
+  content: 'S: Patient reports persistent cough for 3 days, accompanied by mild fever and fatigue.\n\nO: Temperature 38.2C, respiratory rate normal, lungs clear on auscultation.\n\nA: Likely viral upper respiratory infection.\n\nP: Rest and hydration, OTC fever reducer as needed, follow up if symptoms worsen or persist beyond 7 days.',
   generated_at: '2025-01-15T14:32:00Z',
   model_used: 'qwen3:4b',
 };
-
-// Audio Quality types
-export interface AudioQualitySnapshot {
-  timestamp_ms: number;
-  peak_db: number;
-  rms_db: number;
-  clipped_samples: number;
-  clipped_ratio: number;
-  noise_floor_db: number;
-  snr_db: number;
-  silence_ratio: number;
-  dropout_count: number;
-  total_clipped: number;
-  total_samples: number;
-}
 
 // Good audio quality - no issues
 export const mockAudioQualityGood: AudioQualitySnapshot = {

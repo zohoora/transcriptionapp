@@ -1,6 +1,7 @@
 import { memo } from 'react';
 import type { Device, LLMStatus, AuthState, WhisperServerStatus, SpeakerRole } from '../types';
 import { SPEAKER_ROLE_LABELS } from '../types';
+import type { PendingSettings } from '../hooks/useSettings';
 import { SpeakerEnrollment } from './SpeakerEnrollment';
 
 // Supported languages
@@ -14,44 +15,6 @@ const LANGUAGES = [
   { value: 'ja', label: 'Japanese' },
   { value: 'auto', label: 'Auto-detect' },
 ];
-
-export interface PendingSettings {
-  model: string;
-  language: string;
-  device: string;
-  diarization_enabled: boolean;
-  max_speakers: number;
-  // LLM Router settings (OpenAI-compatible API)
-  llm_router_url: string;
-  llm_api_key: string;
-  llm_client_id: string;
-  soap_model: string;
-  fast_model: string;
-  // Medplum EMR settings
-  medplum_server_url: string;
-  medplum_client_id: string;
-  medplum_auto_sync: boolean;
-  // Whisper server settings (remote only - local mode removed)
-  whisper_mode: 'remote';  // Always 'remote'
-  whisper_server_url: string;
-  whisper_server_model: string;
-  // Auto-session detection settings
-  auto_start_enabled: boolean;
-  auto_start_require_enrolled: boolean;
-  auto_start_required_role: SpeakerRole | null;
-  // Auto-end settings
-  auto_end_enabled: boolean;
-  // MIIS (Medical Illustration Image Server) settings
-  miis_enabled: boolean;
-  miis_server_url: string;
-  // Screen capture settings
-  screen_capture_enabled: boolean;
-  screen_capture_interval_secs: number;
-  // Continuous charting mode
-  charting_mode: string;
-  encounter_check_interval_secs: number;
-  encounter_silence_trigger_secs: number;
-}
 
 interface SettingsDrawerProps {
   isOpen: boolean;

@@ -217,7 +217,7 @@ export function useContinuousMode(): UseContinuousModeResult {
     try {
       setError(null);
       await invoke('start_continuous_mode');
-      setIsActive(true);
+      // isActive will be set to true when we receive the 'started' event
     } catch (e) {
       setError(String(e));
     }

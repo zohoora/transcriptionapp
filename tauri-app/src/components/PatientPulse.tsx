@@ -13,9 +13,10 @@
  * by talk_time_ms, eliminating noisy per-speaker breakdowns from VAD splits.
  */
 import { memo, useMemo } from 'react';
-import type { BiomarkerUpdate, SpeakerBiomarkers } from '../types';
+import type { BiomarkerUpdate } from '../types';
 import { BIOMARKER_THRESHOLDS } from '../types';
 import type { TrendDirection } from '../hooks/usePatientBiomarkers';
+import { aggregatePatientSpeakers } from '../utils';
 
 // ============================================================================
 // Types
@@ -60,50 +61,14 @@ const MIN_UTTERANCES = 3;
 
 /**
  * Pool all non-clinician speakers into one aggregate patient via weighted
- * average by talk_time_ms. If no enrolled clinicians exist, all speakers
- * are treated as patient.
+ * average by talk_time_ms, adding engagement from conversation dynamics.
+ * Delegates core aggregation to shared utility.
  */
 function aggregatePatientMetrics(
-  speakers: SpeakerBiomarkers[],
+  speakers: import('../types').SpeakerBiomarkers[],
   engagementScore: number | null,
 ): AggregatedPatient {
-  const hasClinicians = speakers.some(s => s.is_clinician);
-  const patients = hasClinicians ? speakers.filter(s => !s.is_clinician) : speakers;
-
-  if (patients.length === 0) {
-    return { vitality: null, stability: null, engagement: engagementScore, totalUtterances: 0 };
-  }
-
-  const totalTalkTime = patients.reduce((sum, s) => sum + s.talk_time_ms, 0);
-  const totalUtterances = patients.reduce((sum, s) => sum + s.utterance_count, 0);
-
-  let vitality: number | null = null;
-  let stability: number | null = null;
-
-  if (totalTalkTime > 0) {
-    // Weighted average for vitality
-    const vSpeakers = patients.filter(s => s.vitality_mean !== null);
-    if (vSpeakers.length > 0) {
-      const vTalkTime = vSpeakers.reduce((sum, s) => sum + s.talk_time_ms, 0);
-      if (vTalkTime > 0) {
-        vitality = vSpeakers.reduce(
-          (sum, s) => sum + (s.vitality_mean! * s.talk_time_ms), 0,
-        ) / vTalkTime;
-      }
-    }
-
-    // Weighted average for stability
-    const sSpeakers = patients.filter(s => s.stability_mean !== null);
-    if (sSpeakers.length > 0) {
-      const sTalkTime = sSpeakers.reduce((sum, s) => sum + s.talk_time_ms, 0);
-      if (sTalkTime > 0) {
-        stability = sSpeakers.reduce(
-          (sum, s) => sum + (s.stability_mean! * s.talk_time_ms), 0,
-        ) / sTalkTime;
-      }
-    }
-  }
-
+  const { vitality, stability, totalUtterances } = aggregatePatientSpeakers(speakers);
   return { vitality, stability, engagement: engagementScore, totalUtterances };
 }
 

@@ -18,6 +18,29 @@ use std::io::Write;
 use std::path::PathBuf;
 use tracing::{info, warn};
 
+/// Validate a session ID to prevent path traversal attacks.
+///
+/// Rejects session IDs that:
+/// - Are empty
+/// - Contain `/` or `\` (directory separators)
+/// - Contain `..` (parent directory traversal)
+/// - Contain null bytes (`\0`)
+fn validate_session_id(session_id: &str) -> Result<(), String> {
+    if session_id.is_empty() {
+        return Err("Session ID must not be empty".to_string());
+    }
+    if session_id.contains('/') || session_id.contains('\\') {
+        return Err("Session ID must not contain path separators".to_string());
+    }
+    if session_id.contains("..") {
+        return Err("Session ID must not contain '..'".to_string());
+    }
+    if session_id.contains('\0') {
+        return Err("Session ID must not contain null bytes".to_string());
+    }
+    Ok(())
+}
+
 /// Get the archive base directory
 pub fn get_archive_dir() -> Result<PathBuf, String> {
     let home = dirs::home_dir().ok_or("Could not determine home directory")?;
@@ -35,12 +58,14 @@ fn get_date_dir(date: &DateTime<Utc>) -> Result<PathBuf, String> {
 
 /// Get the session-specific archive directory
 pub fn get_session_archive_dir(session_id: &str, date: &DateTime<Utc>) -> Result<PathBuf, String> {
+    validate_session_id(session_id)?;
     let date_dir = get_date_dir(date)?;
     Ok(date_dir.join(session_id))
 }
 
 /// Ensure the archive directory exists for a session
 fn ensure_session_dir(session_id: &str, date: &DateTime<Utc>) -> Result<PathBuf, String> {
+    validate_session_id(session_id)?;
     let dir = get_session_archive_dir(session_id, date)?;
     fs::create_dir_all(&dir).map_err(|e| format!("Failed to create archive directory: {}", e))?;
     Ok(dir)
@@ -135,6 +160,7 @@ pub fn save_session(
     auto_ended: bool,
     auto_end_reason: Option<&str>,
 ) -> Result<PathBuf, String> {
+    validate_session_id(session_id)?;
     let now = Utc::now();
     let session_dir = ensure_session_dir(session_id, &now)?;
 
@@ -202,6 +228,7 @@ pub fn add_soap_note(
     detail_level: Option<u8>,
     format: Option<&str>,
 ) -> Result<(), String> {
+    validate_session_id(session_id)?;
     let session_dir = get_session_archive_dir(session_id, date)?;
 
     if !session_dir.exists() {
@@ -371,6 +398,8 @@ pub fn list_sessions_by_date(date_str: &str) -> Result<Vec<ArchiveSummary>, Stri
 
 /// Get full details of an archived session
 pub fn get_session(session_id: &str, date_str: &str) -> Result<ArchiveDetails, String> {
+    validate_session_id(session_id)?;
+
     // Parse date string (YYYY-MM-DD)
     let date = NaiveDate::parse_from_str(date_str, "%Y-%m-%d")
         .map_err(|e| format!("Invalid date format: {}", e))?;
@@ -440,6 +469,8 @@ pub fn merge_encounters(
     merged_word_count: usize,
     merged_duration_ms: u64,
 ) -> Result<(), String> {
+    validate_session_id(session_a_id)?;
+    validate_session_id(session_b_id)?;
     let a_dir = get_session_archive_dir(session_a_id, date)?;
     let b_dir = get_session_archive_dir(session_b_id, date)?;
 
@@ -547,5 +578,85 @@ mod tests {
         );
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("does not exist"));
+    }
+
+    #[test]
+    fn test_validate_session_id_valid() {
+        assert!(validate_session_id("abc-123").is_ok());
+        assert!(validate_session_id("session_2024-01-15_abc123").is_ok());
+        assert!(validate_session_id("a").is_ok());
+        assert!(validate_session_id("uuid-v4-like-550e8400-e29b").is_ok());
+    }
+
+    #[test]
+    fn test_validate_session_id_empty() {
+        let err = validate_session_id("").unwrap_err();
+        assert!(err.contains("empty"));
+    }
+
+    #[test]
+    fn test_validate_session_id_forward_slash() {
+        let err = validate_session_id("../etc/passwd").unwrap_err();
+        assert!(err.contains("path separators") || err.contains("'..'"));
+    }
+
+    #[test]
+    fn test_validate_session_id_backslash() {
+        let err = validate_session_id("foo\\bar").unwrap_err();
+        assert!(err.contains("path separators"));
+    }
+
+    #[test]
+    fn test_validate_session_id_dot_dot() {
+        let err = validate_session_id("a..b").unwrap_err();
+        assert!(err.contains("'..'"));
+    }
+
+    #[test]
+    fn test_validate_session_id_null_byte() {
+        let err = validate_session_id("abc\0def").unwrap_err();
+        assert!(err.contains("null bytes"));
+    }
+
+    #[test]
+    fn test_validate_session_id_traversal_attack() {
+        assert!(validate_session_id("../../secrets").is_err());
+        assert!(validate_session_id("..").is_err());
+        assert!(validate_session_id("/absolute/path").is_err());
+        assert!(validate_session_id("foo/bar").is_err());
+    }
+
+    #[test]
+    fn test_get_session_archive_dir_rejects_traversal() {
+        let now = Utc::now();
+        assert!(get_session_archive_dir("../../etc", &now).is_err());
+        assert!(get_session_archive_dir("", &now).is_err());
+        assert!(get_session_archive_dir("foo/bar", &now).is_err());
+    }
+
+    #[test]
+    fn test_save_session_rejects_traversal() {
+        let result = save_session("../escape", "text", 1000, None, false, None);
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(err.contains("'..'") || err.contains("path separators"));
+    }
+
+    #[test]
+    fn test_get_session_rejects_traversal() {
+        let result = get_session("../../etc/passwd", "2024-01-15");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_merge_encounters_rejects_traversal() {
+        let now = Utc::now();
+        // Session A has traversal
+        let result = merge_encounters("../escape", "valid-id", &now, "text", 10, 5000);
+        assert!(result.is_err());
+
+        // Session B has traversal
+        let result = merge_encounters("valid-id", "foo/bar", &now, "text", 10, 5000);
+        assert!(result.is_err());
     }
 }

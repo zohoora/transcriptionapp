@@ -696,6 +696,8 @@ pub async fn run_continuous_mode(
             error!("Failed to start continuous mode pipeline: {}", e);
             if let Ok(mut state) = handle.state.lock() {
                 *state = ContinuousState::Error(e.to_string());
+            } else {
+                warn!("State lock poisoned while setting error state");
             }
             let _ = app.emit("continuous_mode_event", serde_json::json!({
                 "type": "error",
@@ -713,6 +715,8 @@ pub async fn run_continuous_mode(
     // Pipeline started successfully — now set state and emit event
     if let Ok(mut state) = handle.state.lock() {
         *state = ContinuousState::Recording;
+    } else {
+        warn!("State lock poisoned while setting recording state");
     }
     let _ = app.emit("continuous_mode_event", serde_json::json!({
         "type": "started"
@@ -722,6 +726,8 @@ pub async fn run_continuous_mode(
     let pipeline_generation: u64 = 1; // Single pipeline per continuous mode run
     if let Ok(mut buffer) = handle.transcript_buffer.lock() {
         buffer.set_generation(pipeline_generation);
+    } else {
+        warn!("Buffer lock poisoned while setting generation");
     }
 
     // Clone handles for the segment consumer task
@@ -748,6 +754,8 @@ pub async fn run_continuous_mode(
                     // Reset silence tracking on speech
                     if let Ok(mut s) = silence_start_for_consumer.lock() {
                         *s = None;
+                    } else {
+                        warn!("Silence tracking lock poisoned, silence state may be stale");
                     }
 
                     if let Ok(mut buffer) = buffer_for_consumer.lock() {
@@ -757,6 +765,8 @@ pub async fn run_continuous_mode(
                             segment.speaker_id.clone(),
                             pipeline_generation,
                         );
+                    } else {
+                        warn!("Buffer lock poisoned, segment dropped: {}", segment.text);
                     }
 
                     // Emit transcript preview for live monitoring view (with speaker labels)
@@ -776,6 +786,8 @@ pub async fn run_continuous_mode(
                             "draft_text": null,
                             "segment_count": 0
                         }));
+                    } else {
+                        warn!("Buffer lock poisoned, transcript preview skipped");
                     }
                 }
                 PipelineMessage::Status { is_speech_active, .. } => {
@@ -951,6 +963,8 @@ pub async fn run_continuous_mode(
             // Set state to checking
             if let Ok(mut state) = state_for_detector.lock() {
                 *state = ContinuousState::Checking;
+            } else {
+                warn!("State lock poisoned while setting checking state");
             }
             let _ = app_for_detector.emit("continuous_mode_event", serde_json::json!({
                 "type": "checking"
@@ -976,6 +990,8 @@ pub async fn run_continuous_mode(
                                 warn!("Failed to parse encounter detection: {}", e);
                                 if let Ok(mut err) = last_error_for_detector.lock() {
                                     *err = Some(e);
+                                } else {
+                                    warn!("Last error lock poisoned, error state not updated");
                                 }
                                 None
                             }
@@ -985,6 +1001,8 @@ pub async fn run_continuous_mode(
                         warn!("Encounter detection LLM call failed: {}", e);
                         if let Ok(mut err) = last_error_for_detector.lock() {
                             *err = Some(e);
+                        } else {
+                            warn!("Last error lock poisoned, error state not updated");
                         }
                         let _ = app_for_detector.emit("continuous_mode_event", serde_json::json!({
                             "type": "error",
@@ -996,6 +1014,8 @@ pub async fn run_continuous_mode(
                         warn!("Encounter detection LLM call timed out after 60s");
                         if let Ok(mut err) = last_error_for_detector.lock() {
                             *err = Some("Encounter detection timed out".to_string());
+                        } else {
+                            warn!("Last error lock poisoned, error state not updated");
                         }
                         None
                     }
@@ -1020,6 +1040,8 @@ pub async fn run_continuous_mode(
                             if *state == ContinuousState::Checking {
                                 *state = ContinuousState::Recording;
                             }
+                        } else {
+                            warn!("State lock poisoned while returning to recording state");
                         }
                         continue;
                     }
@@ -1091,6 +1113,8 @@ pub async fn run_continuous_mode(
                                         // Add patient name from vision extraction (majority vote)
                                         if let Ok(tracker) = name_tracker_for_detector.lock() {
                                             metadata.patient_name = tracker.majority_name();
+                                        } else {
+                                            warn!("Name tracker lock poisoned, patient name not written to metadata");
                                         }
                                         if let Ok(json) = serde_json::to_string_pretty(&metadata) {
                                             let _ = std::fs::write(&date_path, json);
@@ -1109,11 +1133,21 @@ pub async fn run_continuous_mode(
                         // Reset name tracker for next encounter
                         if let Ok(mut tracker) = name_tracker_for_detector.lock() {
                             tracker.reset();
+                        } else {
+                            warn!("Name tracker lock poisoned, tracker not reset for next encounter");
                         }
+
+                        // Read encounter notes BEFORE clearing (SOAP generation needs them)
+                        let notes_text = encounter_notes_for_detector
+                            .lock()
+                            .map(|n| n.clone())
+                            .unwrap_or_default();
 
                         // Clear encounter notes for next encounter
                         if let Ok(mut notes) = encounter_notes_for_detector.lock() {
                             notes.clear();
+                        } else {
+                            warn!("Encounter notes lock poisoned, notes not cleared for next encounter");
                         }
 
                         // Reset biomarker accumulators for the new encounter
@@ -1123,12 +1157,18 @@ pub async fn run_continuous_mode(
                         encounters_for_detector.fetch_add(1, Ordering::Relaxed);
                         if let Ok(mut at) = last_at_for_detector.lock() {
                             *at = Some(Utc::now());
+                        } else {
+                            warn!("Last encounter time lock poisoned, stats not updated");
                         }
                         if let Ok(mut words) = last_words_for_detector.lock() {
                             *words = Some(encounter_word_count as u32);
+                        } else {
+                            warn!("Last encounter words lock poisoned, stats not updated");
                         }
                         if let Ok(mut name) = last_patient_name_for_detector.lock() {
                             *name = encounter_patient_name.clone();
+                        } else {
+                            warn!("Last patient name lock poisoned, stats not updated");
                         }
 
                         // Emit encounter detected event
@@ -1143,11 +1183,7 @@ pub async fn run_continuous_mode(
                         if let Some(ref client) = llm_client {
                             // Strip hallucinated repetitions before SOAP generation
                             let (filtered_encounter_text, _) = strip_hallucinations(&encounter_text, 5);
-                            // Build SOAP options with encounter notes from clinician
-                            let notes_text = encounter_notes_for_detector
-                                .lock()
-                                .map(|n| n.clone())
-                                .unwrap_or_default();
+                            // Build SOAP options with encounter notes from clinician (uses pre-cloned notes_text)
                             let soap_opts = crate::llm_client::SoapOptions {
                                 detail_level: soap_detail_level,
                                 format: if soap_format == "comprehensive" { crate::llm_client::SoapFormat::Comprehensive } else { crate::llm_client::SoapFormat::ProblemBased },
@@ -1192,6 +1228,8 @@ pub async fn run_continuous_mode(
                                     warn!("Failed to generate SOAP for encounter: {}", e);
                                     if let Ok(mut err) = last_error_for_detector.lock() {
                                         *err = Some(format!("SOAP generation failed: {}", e));
+                                    } else {
+                                        warn!("Last error lock poisoned, error state not updated");
                                     }
                                     let _ = app_for_detector.emit("continuous_mode_event", serde_json::json!({
                                         "type": "soap_failed",
@@ -1203,6 +1241,8 @@ pub async fn run_continuous_mode(
                                     warn!("SOAP generation timed out after 120s for encounter #{}", encounter_number);
                                     if let Ok(mut err) = last_error_for_detector.lock() {
                                         *err = Some("SOAP generation timed out".to_string());
+                                    } else {
+                                        warn!("Last error lock poisoned, error state not updated");
                                     }
                                     let _ = app_for_detector.emit("continuous_mode_event", serde_json::json!({
                                         "type": "soap_failed",
@@ -1358,6 +1398,8 @@ pub async fn run_continuous_mode(
                 if *state == ContinuousState::Checking {
                     *state = ContinuousState::Recording;
                 }
+            } else {
+                warn!("State lock poisoned while returning to recording state");
             }
         }
     });
@@ -1476,6 +1518,8 @@ pub async fn run_continuous_mode(
                             info!("Vision extracted patient name: {}", name);
                             if let Ok(mut tracker) = name_tracker_for_screenshot.lock() {
                                 tracker.record(&name);
+                            } else {
+                                warn!("Name tracker lock poisoned, patient name vote dropped: {}", name);
                             }
                         } else {
                             debug!("Vision did not find a patient name on screen");
@@ -1507,6 +1551,11 @@ pub async fn run_continuous_mode(
     // Cleanup: stop pipeline
     info!("Stopping continuous mode pipeline");
     pipeline_handle.stop();
+
+    // Join pipeline handle in a blocking task to avoid Drop blocking the Tokio thread
+    tokio::task::spawn_blocking(move || {
+        pipeline_handle.join();
+    }).await.ok();
 
     // Wait for tasks to finish
     let _ = consumer_task.await;
@@ -1603,6 +1652,8 @@ pub async fn run_continuous_mode(
     // Set state to idle
     if let Ok(mut state) = handle.state.lock() {
         *state = ContinuousState::Idle;
+    } else {
+        warn!("State lock poisoned while setting idle state on shutdown");
     }
 
     let _ = app.emit("continuous_mode_event", serde_json::json!({

@@ -53,8 +53,16 @@ export function useAutoDetection(
   // Keep ref in sync with state (ref used inside listener to avoid re-subscription)
   isPendingConfirmationRef.current = isPendingConfirmation;
 
-  // Extract callbacks for use in effect
-  const { onStartRecording, onGreetingConfirmed, onGreetingRejected, onGreetingDetected } = callbacks;
+  // Store callbacks in refs so the effect doesn't re-run when callback identities change.
+  // This prevents tearing down and re-establishing the listener, which could miss events.
+  const onStartRecordingRef = useRef(callbacks.onStartRecording);
+  onStartRecordingRef.current = callbacks.onStartRecording;
+  const onGreetingConfirmedRef = useRef(callbacks.onGreetingConfirmed);
+  onGreetingConfirmedRef.current = callbacks.onGreetingConfirmed;
+  const onGreetingRejectedRef = useRef(callbacks.onGreetingRejected);
+  onGreetingRejectedRef.current = callbacks.onGreetingRejected;
+  const onGreetingDetectedRef = useRef(callbacks.onGreetingDetected);
+  onGreetingDetectedRef.current = callbacks.onGreetingDetected;
 
   // Start listening mode
   const startListening = useCallback(async (deviceId: string | null) => {
@@ -132,7 +140,7 @@ export function useAutoDetection(
             analyzing: true,
           }));
           // Notify parent to start session NOW
-          Promise.resolve(onStartRecording()).catch(e => console.error('onStartRecording failed:', e));
+          Promise.resolve(onStartRecordingRef.current()).catch(e => console.error('onStartRecording failed:', e));
         } else if (eventType === 'greeting_confirmed') {
           // Greeting check passed - recording should continue
           const transcript = payload.transcript || '';
@@ -140,7 +148,7 @@ export function useAutoDetection(
           setIsPendingConfirmation(false);
           setIsListening(false);
           setListeningStatus(null);
-          Promise.resolve(onGreetingConfirmed(transcript, confidence)).catch(e => console.error('onGreetingConfirmed failed:', e));
+          Promise.resolve(onGreetingConfirmedRef.current(transcript, confidence)).catch(e => console.error('onGreetingConfirmed failed:', e));
         } else if (eventType === 'greeting_rejected') {
           // Greeting check failed - recording should be discarded
           const reason = payload.reason || 'Not a greeting';
@@ -151,7 +159,7 @@ export function useAutoDetection(
             speech_detected: false,
             speech_duration_ms: 0,
           }));
-          Promise.resolve(onGreetingRejected(reason)).catch(e => console.error('onGreetingRejected failed:', e));
+          Promise.resolve(onGreetingRejectedRef.current(reason)).catch(e => console.error('onGreetingRejected failed:', e));
         } else if (eventType === 'greeting_detected') {
           // Legacy event - for backward compatibility
           const transcript = payload.transcript || '';
@@ -160,7 +168,7 @@ export function useAutoDetection(
           if (!isPendingConfirmationRef.current) {
             setIsListening(false);
             setListeningStatus(null);
-            onGreetingDetected?.(transcript, confidence);
+            onGreetingDetectedRef.current?.(transcript, confidence);
           }
         } else if (eventType === 'not_greeting') {
           // Legacy event
@@ -210,7 +218,7 @@ export function useAutoDetection(
         unlistenRef.current = null;
       }
     };
-  }, [onStartRecording, onGreetingConfirmed, onGreetingRejected, onGreetingDetected]);
+  }, []); // Callbacks accessed via refs — no dependency-driven re-subscription
 
   return {
     isListening,

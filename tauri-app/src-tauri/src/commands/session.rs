@@ -7,7 +7,7 @@ use crate::config::Config;
 use crate::debug_storage::DebugStorage;
 use crate::local_archive;
 use crate::pipeline::{start_pipeline, PipelineConfig, PipelineMessage};
-use crate::session::SessionError;
+use crate::session::{SessionError, SessionState};
 use chrono::Utc;
 use tauri::{AppHandle, Emitter, State};
 use tokio::sync::mpsc;
@@ -280,6 +280,13 @@ pub async fn start_session(
                     info!("Pipeline stopped message received, completing session");
                     // Complete the session and emit final status
                     if let Ok(mut session) = session_clone.lock() {
+                        // Check if stop_session already completed and archived this session.
+                        // This prevents duplicate archival when auto-end races with manual stop.
+                        if session.state() == &SessionState::Completed {
+                            info!("Session already completed and archived, skipping duplicate archive");
+                            break;
+                        }
+
                         session.complete();
                         let status = session.status();
                         let transcript = session.transcript_update();

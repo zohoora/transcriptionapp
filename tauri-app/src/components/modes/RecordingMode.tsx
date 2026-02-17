@@ -2,6 +2,7 @@ import { memo, useState, useCallback } from 'react';
 import type { AudioQualitySnapshot, BiomarkerUpdate, SilenceWarningPayload } from '../../types';
 import type { ChatMessage } from '../../hooks/useClinicalChat';
 import type { MiisSuggestion } from '../../hooks/useMiisImages';
+import { getAudioQualityLevel } from '../../utils';
 import { ClinicalChat, MarkdownContent } from '../ClinicalChat';
 import { ImageSuggestions } from '../ImageSuggestions';
 import { PatientPulse } from '../PatientPulse';
@@ -64,19 +65,6 @@ interface RecordingModeProps {
   onCancelAutoEnd?: () => void;
 }
 
-// Get audio quality status (good/fair/poor) for indicator
-const getQualityLevel = (quality: AudioQualitySnapshot | null): 'good' | 'fair' | 'poor' => {
-  if (!quality) return 'good';
-
-  const rmsOk = quality.rms_db >= -40 && quality.rms_db <= -6;
-  const snrOk = quality.snr_db >= 15;
-  const clippingOk = quality.clipped_ratio < 0.001;
-
-  if (rmsOk && snrOk && clippingOk) return 'good';
-  if (quality.snr_db < 10 || quality.clipped_ratio >= 0.01) return 'poor';
-  return 'fair';
-};
-
 /**
  * Recording mode UI - minimal distraction while clinician focuses on patient.
  * Shows timer, stop button, and optional transcript preview.
@@ -118,7 +106,7 @@ export const RecordingMode = memo(function RecordingMode({
   const [showNotes, setShowNotes] = useState(false);
   const [chatExpanded, setChatExpanded] = useState(false);
 
-  const qualityLevel = getQualityLevel(audioQuality);
+  const qualityLevel = getAudioQualityLevel(audioQuality);
 
   const handleDetailsClick = useCallback(() => {
     setShowDetails(prev => !prev);

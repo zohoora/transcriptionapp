@@ -731,7 +731,6 @@ exports[`App Snapshots > renders recording state correctly 1`] = `
         class="toggle-label compact"
       >
         <input
-          checked=""
           class="toggle-checkbox"
           type="checkbox"
         />
@@ -955,7 +954,6 @@ exports[`App Snapshots > renders stopping state correctly 1`] = `
         class="toggle-label compact"
       >
         <input
-          checked=""
           class="toggle-checkbox"
           type="checkbox"
         />
@@ -1180,7 +1178,6 @@ exports[`App Snapshots > renders with transcript correctly 1`] = `
         class="toggle-label compact"
       >
         <input
-          checked=""
           class="toggle-checkbox"
           type="checkbox"
         />

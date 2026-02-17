@@ -18,7 +18,7 @@ import {
   getEngagementStatus,
   getResponseTimeStatus,
 } from '../../types';
-import { formatLocalDateTime } from '../../utils';
+import { formatLocalDateTime, getAudioQualityLevel } from '../../utils';
 
 type ReviewTab = 'transcript' | 'soap' | 'insights';
 
@@ -86,17 +86,13 @@ const formatDuration = (ms: number): string => {
   return `${minutes}:${seconds.toString().padStart(2, '0')}`;
 };
 
-// Get quality badge from audio quality
+// Get quality badge from audio quality (thin wrapper over shared utility)
 const getQualityBadge = (quality: AudioQualitySnapshot | null): { label: string; className: string } => {
   if (!quality) return { label: 'Unknown', className: 'quality-unknown' };
 
-  const rmsOk = quality.rms_db >= -40 && quality.rms_db <= -6;
-  const snrOk = quality.snr_db >= 15;
-  const clippingOk = quality.clipped_ratio < 0.001;
-
-  if (rmsOk && snrOk && clippingOk) return { label: 'Good', className: 'quality-good' };
-  if (quality.snr_db < 10 || quality.clipped_ratio >= 0.01) return { label: 'Poor', className: 'quality-poor' };
-  return { label: 'Fair', className: 'quality-fair' };
+  const level = getAudioQualityLevel(quality);
+  const labelMap = { good: 'Good', fair: 'Fair', poor: 'Poor' } as const;
+  return { label: labelMap[level], className: `quality-${level}` };
 };
 
 /**
@@ -136,11 +132,8 @@ export const ReviewMode = memo(function ReviewMode({
   authLoading,
   autoSyncEnabled,
 }: ReviewModeProps) {
-  // Start on SOAP tab if generating or already have a note
-  const [activeTab, setActiveTab] = useState<ReviewTab>(() => {
-    if (isGeneratingSoap || soapResult) return 'soap';
-    return 'soap'; // Default to SOAP tab since we auto-generate
-  });
+  // Default to SOAP tab since we auto-generate
+  const [activeTab, setActiveTab] = useState<ReviewTab>('soap');
   const [isEditing, setIsEditing] = useState(false);
   const [copySuccess, setCopySuccess] = useState(false);
   const [soapCopySuccess, setSoapCopySuccess] = useState(false);

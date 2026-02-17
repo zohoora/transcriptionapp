@@ -3,7 +3,8 @@ export { default as ConversationDynamicsSection } from './ConversationDynamicsSe
 export { PatientPulse } from './PatientPulse';
 export { ErrorBoundary, ErrorFallback } from './ErrorBoundary';
 export { Header, type SyncStatus } from './Header';
-export { SettingsDrawer, type PendingSettings } from './SettingsDrawer';
+export { SettingsDrawer } from './SettingsDrawer';
+export { type PendingSettings } from '../hooks/useSettings';
 export { SyncStatusBar } from './SyncStatusBar';
 
 // Mode components

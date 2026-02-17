@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import type { Settings, SpeakerRole } from '../types';
 
@@ -180,7 +180,7 @@ export function useSettings(): UseSettingsResult {
   }, [settings, pendingSettings]);
 
   // Check if there are unsaved changes by comparing settings to pending values
-  const hasUnsavedChanges = (() => {
+  const hasUnsavedChanges = useMemo(() => {
     if (!settings || !pendingSettings) return false;
 
     const comparisons: [unknown, unknown][] = [
@@ -212,7 +212,7 @@ export function useSettings(): UseSettingsResult {
     ];
 
     return comparisons.some(([saved, pending]) => saved !== pending);
-  })();
+  }, [settings, pendingSettings]);
 
   return {
     settings,

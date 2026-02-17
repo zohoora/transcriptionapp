@@ -300,6 +300,33 @@ pub struct SyncResult {
     pub encounter_fhir_id: Option<String>,
 }
 
+/// Validate a FHIR resource ID per the FHIR specification.
+///
+/// FHIR IDs must match `[A-Za-z0-9\-\.]{1,64}`. This prevents path traversal
+/// and injection when IDs are interpolated into URL paths.
+fn validate_fhir_id(id: &str) -> Result<(), MedplumError> {
+    if id.is_empty() {
+        return Err(MedplumError::ValidationError(
+            "FHIR ID must not be empty".to_string(),
+        ));
+    }
+    if id.len() > 64 {
+        return Err(MedplumError::ValidationError(
+            "FHIR ID must not exceed 64 characters".to_string(),
+        ));
+    }
+    if !id
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '.')
+    {
+        return Err(MedplumError::ValidationError(
+            "FHIR ID contains invalid characters (only alphanumeric, hyphens, and dots allowed)"
+                .to_string(),
+        ));
+    }
+    Ok(())
+}
+
 /// Medplum client for API interactions
 #[derive(Debug)]
 pub struct MedplumClient {
@@ -308,6 +335,8 @@ pub struct MedplumClient {
     client_id: String,
     auth_state: Arc<RwLock<AuthState>>,
     pending_pkce: Arc<RwLock<Option<PkceData>>>,
+    /// Serializes concurrent token refresh attempts to prevent TOCTOU races
+    refresh_lock: tokio::sync::Mutex<()>,
 }
 
 impl MedplumClient {
@@ -342,6 +371,7 @@ impl MedplumClient {
             client_id: client_id.to_string(),
             auth_state: Arc::new(RwLock::new(initial_state)),
             pending_pkce: Arc::new(RwLock::new(None)),
+            refresh_lock: tokio::sync::Mutex::new(()),
         })
     }
 
@@ -573,8 +603,10 @@ impl MedplumClient {
         AuthState::delete_file();
     }
 
-    /// Get access token, refreshing if needed
+    /// Get access token, refreshing if needed.
+    /// Uses a double-check pattern with refresh_lock to prevent concurrent refresh attempts.
     async fn get_valid_token(&self) -> Result<String, MedplumError> {
+        // First check without refresh lock
         {
             let state = self.auth_state.read().await;
             if !state.is_authenticated {
@@ -588,7 +620,20 @@ impl MedplumClient {
             }
         }
 
-        // Token is expired, try to refresh
+        // Acquire refresh lock to serialize concurrent refreshes
+        let _refresh_guard = self.refresh_lock.lock().await;
+
+        // Double-check: another caller may have already refreshed while we waited
+        {
+            let state = self.auth_state.read().await;
+            if !state.is_token_expired() {
+                if let Some(ref token) = state.access_token {
+                    return Ok(token.clone());
+                }
+            }
+        }
+
+        // Actually refresh
         let new_state = self.refresh_token().await?;
         new_state
             .access_token
@@ -736,6 +781,7 @@ impl MedplumClient {
 
     /// Create a new encounter for a patient
     pub async fn create_encounter(&self, patient_id: &str) -> Result<Encounter, MedplumError> {
+        validate_fhir_id(patient_id)?;
         let token = self.get_valid_token().await?;
         let state = self.auth_state.read().await;
 
@@ -830,6 +876,8 @@ impl MedplumClient {
         patient_id: &str,
         transcript: &str,
     ) -> Result<String, MedplumError> {
+        validate_fhir_id(encounter_fhir_id)?;
+        validate_fhir_id(patient_id)?;
         let token = self.get_valid_token().await?;
 
         let doc_ref = serde_json::json!({
@@ -889,6 +937,8 @@ impl MedplumClient {
         patient_id: &str,
         soap_note: &str,
     ) -> Result<String, MedplumError> {
+        validate_fhir_id(encounter_fhir_id)?;
+        validate_fhir_id(patient_id)?;
         let token = self.get_valid_token().await?;
 
         let doc_ref = serde_json::json!({
@@ -950,6 +1000,8 @@ impl MedplumClient {
         content_type: &str,
         duration_seconds: Option<u64>,
     ) -> Result<String, MedplumError> {
+        validate_fhir_id(encounter_fhir_id)?;
+        validate_fhir_id(patient_id)?;
         let token = self.get_valid_token().await?;
 
         // Step 1: Upload binary audio data
@@ -1016,6 +1068,7 @@ impl MedplumClient {
 
     /// Complete an encounter (set status to finished)
     pub async fn complete_encounter(&self, encounter_fhir_id: &str) -> Result<(), MedplumError> {
+        validate_fhir_id(encounter_fhir_id)?;
         let token = self.get_valid_token().await?;
 
         // Get current encounter
@@ -1301,6 +1354,7 @@ impl MedplumClient {
 
     /// Get detailed encounter data including documents
     pub async fn get_encounter_details(&self, encounter_id: &str) -> Result<EncounterDetails, MedplumError> {
+        validate_fhir_id(encounter_id)?;
         let token = self.get_valid_token().await?;
 
         // Fetch encounter directly by FHIR ID
@@ -1430,6 +1484,7 @@ impl MedplumClient {
 
     /// Fetch raw binary data (e.g., audio files) from Medplum
     pub async fn get_audio_data(&self, binary_id: &str) -> Result<Vec<u8>, MedplumError> {
+        validate_fhir_id(binary_id)?;
         let token = self.get_valid_token().await?;
 
         let response = self
@@ -1449,7 +1504,7 @@ impl MedplumClient {
             }
             reqwest::StatusCode::FORBIDDEN => {
                 let body = response.text().await.unwrap_or_default();
-                Err(MedplumError::AccessDenied(body))
+                Err(MedplumError::AccessDenied(Self::truncate_error_body(&body)))
             }
             reqwest::StatusCode::NOT_FOUND => {
                 Err(MedplumError::NotFound(format!("Binary/{}", binary_id)))
@@ -1458,9 +1513,21 @@ impl MedplumClient {
                 let body = response.text().await.unwrap_or_default();
                 Err(MedplumError::AuthError(format!(
                     "Failed to fetch audio: {}",
-                    body
+                    Self::truncate_error_body(&body)
                 )))
             }
+        }
+    }
+
+    /// Truncate an error body to avoid leaking PHI from server responses.
+    /// Uses `ceil_char_boundary()` for safe UTF-8 truncation (project convention).
+    fn truncate_error_body(body: &str) -> String {
+        const MAX_ERROR_BODY_LEN: usize = 200;
+        if body.len() <= MAX_ERROR_BODY_LEN {
+            body.to_string()
+        } else {
+            let boundary = body.ceil_char_boundary(MAX_ERROR_BODY_LEN);
+            format!("{}...", &body[..boundary])
         }
     }
 
@@ -1478,20 +1545,20 @@ impl MedplumClient {
             }
             reqwest::StatusCode::FORBIDDEN => {
                 let body = response.text().await.unwrap_or_default();
-                Err(MedplumError::AccessDenied(body))
+                Err(MedplumError::AccessDenied(Self::truncate_error_body(&body)))
             }
             reqwest::StatusCode::NOT_FOUND => {
                 Err(MedplumError::NotFound("Resource not found".into()))
             }
             reqwest::StatusCode::UNPROCESSABLE_ENTITY => {
                 let body = response.text().await.unwrap_or_default();
-                Err(MedplumError::ValidationError(body))
+                Err(MedplumError::ValidationError(Self::truncate_error_body(&body)))
             }
             _ => {
                 let body = response.text().await.unwrap_or_default();
                 Err(MedplumError::AuthError(format!(
                     "Unexpected response: {}",
-                    body
+                    Self::truncate_error_body(&body)
                 )))
             }
         }
@@ -1569,6 +1636,79 @@ mod tests {
         assert!(!status.soap_note_synced);
         assert!(!status.audio_synced);
         assert!(status.last_sync_time.is_none());
+    }
+
+    #[test]
+    fn test_validate_fhir_id_valid() {
+        assert!(validate_fhir_id("abc123").is_ok());
+        assert!(validate_fhir_id("550e8400-e29b-41d4-a716-446655440000").is_ok());
+        assert!(validate_fhir_id("Patient.123").is_ok());
+        assert!(validate_fhir_id("a").is_ok());
+        assert!(validate_fhir_id("ABC-def-123.456").is_ok());
+    }
+
+    #[test]
+    fn test_validate_fhir_id_empty() {
+        let err = validate_fhir_id("").unwrap_err();
+        assert!(matches!(err, MedplumError::ValidationError(_)));
+    }
+
+    #[test]
+    fn test_validate_fhir_id_too_long() {
+        let long_id = "a".repeat(65);
+        let err = validate_fhir_id(&long_id).unwrap_err();
+        assert!(matches!(err, MedplumError::ValidationError(_)));
+
+        // Exactly 64 should be fine
+        let max_id = "a".repeat(64);
+        assert!(validate_fhir_id(&max_id).is_ok());
+    }
+
+    #[test]
+    fn test_validate_fhir_id_invalid_chars() {
+        assert!(validate_fhir_id("foo/bar").is_err());
+        assert!(validate_fhir_id("foo\\bar").is_err());
+        assert!(validate_fhir_id("../etc").is_err());
+        assert!(validate_fhir_id("id with spaces").is_err());
+        assert!(validate_fhir_id("id\0null").is_err());
+        assert!(validate_fhir_id("id?query=1").is_err());
+        assert!(validate_fhir_id("id#fragment").is_err());
+        assert!(validate_fhir_id("id&param=val").is_err());
+    }
+
+    #[test]
+    fn test_truncate_error_body_short() {
+        let short = "Short error message";
+        assert_eq!(MedplumClient::truncate_error_body(short), short);
+    }
+
+    #[test]
+    fn test_truncate_error_body_exact_limit() {
+        let exact = "a".repeat(200);
+        assert_eq!(MedplumClient::truncate_error_body(&exact), exact);
+    }
+
+    #[test]
+    fn test_truncate_error_body_over_limit() {
+        let long = "a".repeat(300);
+        let truncated = MedplumClient::truncate_error_body(&long);
+        assert!(truncated.len() <= 204); // 200 + "..."
+        assert!(truncated.ends_with("..."));
+    }
+
+    #[test]
+    fn test_truncate_error_body_utf8_safety() {
+        // Multi-byte characters: each is 4 bytes
+        let emoji_string = "x".repeat(198) + "\u{1F600}\u{1F600}\u{1F600}"; // 198 + 12 = 210 bytes
+        let truncated = MedplumClient::truncate_error_body(&emoji_string);
+        assert!(truncated.ends_with("..."));
+        // Verify it's valid UTF-8 (would panic if not)
+        let _ = truncated.as_bytes();
+    }
+
+    #[test]
+    fn test_truncate_error_body_empty() {
+        assert_eq!(MedplumClient::truncate_error_body(""), "");
     }
 
     /// Integration test to verify Medplum server connection
