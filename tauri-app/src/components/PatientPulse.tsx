@@ -13,7 +13,7 @@
  * by talk_time_ms, eliminating noisy per-speaker breakdowns from VAD splits.
  */
 import { memo, useMemo } from 'react';
-import type { BiomarkerUpdate } from '../types';
+import type { BiomarkerUpdate, SpeakerBiomarkers } from '../types';
 import { BIOMARKER_THRESHOLDS } from '../types';
 import type { TrendDirection } from '../hooks/usePatientBiomarkers';
 import { aggregatePatientSpeakers } from '../utils';
@@ -65,7 +65,7 @@ const MIN_UTTERANCES = 3;
  * Delegates core aggregation to shared utility.
  */
 function aggregatePatientMetrics(
-  speakers: import('../types').SpeakerBiomarkers[],
+  speakers: SpeakerBiomarkers[],
   engagementScore: number | null,
 ): AggregatedPatient {
   const { vitality, stability, totalUtterances } = aggregatePatientSpeakers(speakers);
