@@ -239,7 +239,8 @@ Return ONLY the JSON object, nothing else."#;
     (system.to_string(), user)
 }
 
-/// Strip `<think>...</think>` tags from LLM output (model may emit these even with /nothink)
+/// Strip `<think>...</think>` tags from LLM output (model may emit these even with /nothink).
+/// For unclosed `<think>` tags, keeps content after the tag (model may place JSON inside).
 fn strip_think_tags(text: &str) -> String {
     let mut result = text.to_string();
     while let Some(start) = result.find("<think>") {
@@ -247,11 +248,40 @@ fn strip_think_tags(text: &str) -> String {
             let end_pos = end + "</think>".len();
             result = format!("{}{}", &result[..start], &result[end_pos..]);
         } else {
-            result = result[..start].to_string();
+            // Unclosed <think> — keep content after the tag (JSON may be inside)
+            let after = result[start + "<think>".len()..].to_string();
+            let before = result[..start].to_string();
+            // Prefer whichever side contains JSON
+            result = if after.contains('{') { after } else { before };
             break;
         }
     }
+    // Strip markdown code fences (```json ... ``` or ``` ... ```)
+    result = strip_markdown_code_fences(&result);
     result.trim().to_string()
+}
+
+/// Strip markdown code fences from text (e.g. ```json\n{...}\n``` → {...})
+fn strip_markdown_code_fences(text: &str) -> String {
+    let trimmed = text.trim();
+    if trimmed.starts_with("```") {
+        // Find end of opening fence line
+        let after_open = if let Some(newline_pos) = trimmed.find('\n') {
+            &trimmed[newline_pos + 1..]
+        } else {
+            // Single line like ```json { ... }``` — strip opening backticks
+            trimmed.trim_start_matches('`').trim_start_matches("json").trim_start()
+        };
+        // Strip closing fence
+        let stripped = if let Some(close_pos) = after_open.rfind("```") {
+            &after_open[..close_pos]
+        } else {
+            after_open
+        };
+        stripped.trim().to_string()
+    } else {
+        text.to_string()
+    }
 }
 
 /// Extract the first balanced JSON object from text using brace counting.
@@ -1793,6 +1823,29 @@ mod tests {
     #[test]
     fn test_parse_encounter_detection_with_think_tags() {
         let response = r#"<think> </think> {"complete": false, "confidence": 0.0}"#;
+        let result = parse_encounter_detection(response).unwrap();
+        assert!(!result.complete);
+    }
+
+    #[test]
+    fn test_parse_encounter_detection_with_unclosed_think_and_code_fence() {
+        // Exact production failure: unclosed <think> with JSON inside markdown code fence
+        let response = "<think> ```json { \"complete\": false, \"confidence\": 0.0 } ```";
+        let result = parse_encounter_detection(response).unwrap();
+        assert!(!result.complete);
+    }
+
+    #[test]
+    fn test_parse_encounter_detection_with_unclosed_think_complete() {
+        let response = "<think> ```json\n{ \"complete\": true, \"end_segment_index\": 42, \"confidence\": 0.95 }\n```";
+        let result = parse_encounter_detection(response).unwrap();
+        assert!(result.complete);
+        assert_eq!(result.end_segment_index, Some(42));
+    }
+
+    #[test]
+    fn test_parse_encounter_detection_with_code_fence_no_think() {
+        let response = "```json\n{\"complete\": false, \"confidence\": 0.0}\n```";
         let result = parse_encounter_detection(response).unwrap();
         assert!(!result.complete);
     }
