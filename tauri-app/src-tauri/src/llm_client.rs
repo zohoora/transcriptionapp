@@ -664,9 +664,9 @@ impl LLMClient {
     /// Minimum word count for meaningful SOAP generation
     const MIN_WORD_COUNT: usize = 5;
 
-    /// Maximum words to send to LLM (keeps under typical 32K token context)
-    /// ~10,000 words ≈ 13,000 tokens, leaving room for system prompt and response
-    const MAX_WORDS_FOR_LLM: usize = 10_000;
+    /// Maximum words to send to LLM (Mistral Small 3 8B has 128K token context)
+    /// ~30,000 words ≈ 39,000 tokens, leaving room for system prompt and response
+    const MAX_WORDS_FOR_LLM: usize = 30_000;
 
     /// Validate and prepare transcript for SOAP generation
     /// Returns a (possibly truncated) transcript string
@@ -1986,8 +1986,8 @@ mod tests {
 
     #[test]
     fn test_truncate_transcript() {
-        // Create a transcript with 15,000 words (above the 10,000 limit)
-        let words: Vec<&str> = (0..15_000).map(|_| "word").collect();
+        // Create a transcript with 35,000 words (above the 30,000 limit)
+        let words: Vec<&str> = (0..35_000).map(|_| "word").collect();
         let long_transcript = words.join(" ");
 
         let result = LLMClient::prepare_transcript(&long_transcript);
@@ -2007,9 +2007,9 @@ mod tests {
     fn test_truncate_preserves_structure() {
         // Create a compact transcript where we can identify start and end portions
         // Uses short identifiers to stay under 100KB limit
-        let start_words: Vec<String> = (0..2000).map(|i| format!("s{}", i)).collect();
-        let middle_words: Vec<String> = (0..12000).map(|i| format!("m{}", i)).collect();
-        let end_words: Vec<String> = (0..2000).map(|i| format!("e{}", i)).collect();
+        let start_words: Vec<String> = (0..6000).map(|i| format!("s{}", i)).collect();
+        let middle_words: Vec<String> = (0..26000).map(|i| format!("m{}", i)).collect();
+        let end_words: Vec<String> = (0..6000).map(|i| format!("e{}", i)).collect();
 
         let full_transcript = format!(
             "{} {} {}",
@@ -2025,7 +2025,7 @@ mod tests {
         // Should have start words
         assert!(truncated.contains("s0"));
         // Should have end words
-        assert!(truncated.contains("e1999"));
+        assert!(truncated.contains("e5999"));
         // Should indicate truncation
         assert!(truncated.contains("words omitted"));
     }
