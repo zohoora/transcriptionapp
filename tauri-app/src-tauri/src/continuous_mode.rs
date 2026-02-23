@@ -51,6 +51,15 @@ pub struct BufferedSegment {
 /// if encounter detection fails or is misconfigured.
 const MAX_BUFFER_SEGMENTS: usize = 5000;
 
+/// Word count forcing encounter check regardless of buffer age.
+const FORCE_CHECK_WORD_THRESHOLD: usize = 5000;
+/// Force-split when buffer exceeds this AND consecutive_no_split >= limit.
+const FORCE_SPLIT_WORD_THRESHOLD: usize = 8000;
+/// Consecutive non-split detection cycles before force-split (at FORCE_SPLIT_WORD_THRESHOLD).
+const FORCE_SPLIT_CONSECUTIVE_LIMIT: u32 = 3;
+/// Unconditional force-split — hard safety valve, no counter needed.
+const ABSOLUTE_WORD_CAP: usize = 15_000;
+
 /// Thread-safe transcript buffer for continuous mode.
 /// Accumulates segments and allows the encounter detector to drain completed encounters.
 pub struct TranscriptBuffer {
@@ -267,28 +276,27 @@ pub struct EncounterDetectionResult {
 pub fn build_encounter_detection_prompt(formatted_segments: &str) -> (String, String) {
     let system = r#"You MUST respond in English with ONLY a JSON object. No other text, no explanations, no markdown.
 
-You are analyzing a continuous transcript from a medical office.
-The microphone has been recording all day without stopping.
+You are analyzing a continuous transcript from a medical office where the microphone records all day.
 
-Determine if the text below contains one or more COMPLETE patient encounters.
+Your task: determine if there is a TRANSITION POINT where one patient encounter ends and another begins, or where a patient encounter has clearly concluded.
 
-A complete encounter must have BOTH:
-1. A clear BEGINNING: greeting, patient introduction, or start of clinical discussion with a patient
-2. A clear ENDING: farewell, wrap-up ("we'll see you in X weeks"), discharge instructions, or a clear transition to a different patient
+Signs of a transition or completed encounter:
+- Farewell, wrap-up, or discharge instructions ("we'll see you in X weeks", "take care")
+- A greeting or introduction of a DIFFERENT patient after clinical discussion
+- A clear shift from one patient's clinical topics to another's
+- Extended non-clinical gap (scheduling, staff chat) after substantive clinical content
 
-Do NOT mark as complete:
-- Brief staff conversations, scheduling chatter, or hallway talk
-- Encounters that are still in progress (no clear ending yet)
-- Ambient noise or non-clinical discussion
-- Short exchanges under 2 minutes of clinical content
+This is NOT a transition:
+- Brief pauses, phone calls, or sidebar conversations DURING an ongoing patient visit
+- The very beginning of the first encounter (no prior encounter to split from)
+- Short exchanges or greetings with no substantive clinical content yet
 
-If a COMPLETE encounter exists, return:
-{"complete": true, "end_segment_index": <last segment index of the encounter>, "confidence": <0.0-1.0>}
+If you find a transition point or completed encounter, return:
+{"complete": true, "end_segment_index": <last segment index of the CONCLUDED encounter>, "confidence": <0.0-1.0>}
 
-If the encounter is still in progress, incomplete, or the text is non-clinical, return:
+If the current discussion is still one ongoing encounter with no transition, return:
 {"complete": false, "confidence": <0.0-1.0>}
 
-When in doubt, return {"complete": false, "confidence": 0.0}. It is better to wait for more data than to split an encounter prematurely.
 Respond with ONLY the JSON object."#;
 
     let user = format!(
@@ -1395,7 +1403,7 @@ pub async fn run_continuous_mode(
 
     let detector_task = tokio::spawn(async move {
         let mut encounter_number: u32 = 0;
-        let mut consecutive_detection_failures: u32 = 0;
+        let mut consecutive_no_split: u32 = 0;
 
         // Track previous encounter for retrospective merge checks
         let mut prev_encounter_session_id: Option<String> = None;
@@ -1457,23 +1465,25 @@ pub async fn run_continuous_mode(
                     if sensor_triggered { "Sensor trigger" } else { "Manual trigger" }, word_count);
             } else {
                 if is_empty || word_count < 100 {
-                    continue; // Not enough text to analyze — encounters are typically 100+ words
+                    debug!("Skipping detection: word_count={} (minimum 100)", word_count);
+                    continue;
                 }
 
                 // Also trigger if buffer is very large (safety valve)
-                let force_check = word_count > 5000;
+                let force_check = word_count > FORCE_CHECK_WORD_THRESHOLD;
 
                 // Minimum encounter duration: 2 minutes (unless force_check)
                 if !force_check {
                     if let Some(first_time) = first_ts {
                         let buffer_age_secs = (Utc::now() - first_time).num_seconds();
                         if buffer_age_secs < 120 {
-                            continue; // Buffer is too young — encounter still building
+                            debug!("Skipping detection: buffer_age={}s (minimum 120s), word_count={}", buffer_age_secs, word_count);
+                            continue;
                         }
                     }
                 }
                 if force_check {
-                    info!("Buffer exceeds 5000 words — forcing encounter check");
+                    info!("Buffer exceeds {} words ({}) — forcing encounter check", FORCE_CHECK_WORD_THRESHOLD, word_count);
                 }
             }
 
@@ -1512,7 +1522,13 @@ pub async fn run_continuous_mode(
                 match tokio::time::timeout(tokio::time::Duration::from_secs(60), llm_future).await {
                     Ok(Ok(response)) => {
                         match parse_encounter_detection(&response) {
-                            Ok(result) => Some(result),
+                            Ok(result) => {
+                                info!(
+                                    "Detection result: complete={}, confidence={:?}, end_segment_index={:?}, word_count={}",
+                                    result.complete, result.confidence, result.end_segment_index, word_count
+                                );
+                                Some(result)
+                            }
                             Err(e) => {
                                 warn!("Failed to parse encounter detection: {}", e);
                                 if let Ok(mut err) = last_error_for_detector.lock() {
@@ -1552,34 +1568,59 @@ pub async fn run_continuous_mode(
                 None
             };
 
-            // Force-split safety valve: if buffer is very large and LLM keeps failing,
-            // force a split to prevent unbounded growth. After 3 consecutive failures
-            // with a buffer over 8000 words, we split anyway.
+            // Force-split safety valve: tracks consecutive non-split outcomes (both LLM
+            // failures AND negative results). Prevents unbounded buffer growth when the
+            // LLM consistently says "no encounter detected."
             let mut force_split = false;
-            let detection_result = if detection_result.is_none() && !manual_triggered && !sensor_triggered {
-                consecutive_detection_failures += 1;
-                if word_count > 8000 && consecutive_detection_failures >= 3 {
-                    warn!(
-                        "Force-splitting: {} consecutive detection failures with {} words in buffer",
-                        consecutive_detection_failures, word_count
+            let mut detection_result = detection_result;
+
+            // Absolute word cap: unconditional force-split at 15K words
+            if word_count > ABSOLUTE_WORD_CAP && !manual_triggered && !sensor_triggered {
+                warn!("ABSOLUTE WORD CAP: force-splitting at {} words", word_count);
+                let last_idx = buffer_for_detector.lock().ok().and_then(|b| b.last_index());
+                consecutive_no_split = 0;
+                force_split = true;
+                detection_result = Some(EncounterDetectionResult {
+                    complete: true,
+                    end_segment_index: last_idx,
+                    confidence: Some(1.0),
+                });
+            }
+
+            // Track consecutive no-split outcomes
+            if !force_split && !manual_triggered && !sensor_triggered {
+                let is_negative = match &detection_result {
+                    None => true,                    // LLM failure/timeout
+                    Some(r) if !r.complete => true,  // LLM said no — THE BUG FIX
+                    _ => false,                      // complete=true — resolved by confidence gate below
+                };
+                if is_negative {
+                    consecutive_no_split += 1;
+                    info!(
+                        "Detection non-split: result={}, consecutive_no_split={}, word_count={}",
+                        if detection_result.is_none() { "error/timeout" } else { "complete=false" },
+                        consecutive_no_split, word_count
                     );
-                    let last_idx = buffer_for_detector.lock().ok().and_then(|b| b.last_index());
-                    consecutive_detection_failures = 0;
-                    force_split = true;
-                    Some(EncounterDetectionResult {
-                        complete: true,
-                        end_segment_index: last_idx,
-                        confidence: Some(1.0),
-                    })
-                } else {
-                    None
+                    // Graduated force-split
+                    if word_count > FORCE_SPLIT_WORD_THRESHOLD
+                        && consecutive_no_split >= FORCE_SPLIT_CONSECUTIVE_LIMIT
+                    {
+                        warn!(
+                            "Force-splitting: {} consecutive non-splits with {} words",
+                            consecutive_no_split, word_count
+                        );
+                        let last_idx = buffer_for_detector.lock().ok().and_then(|b| b.last_index());
+                        consecutive_no_split = 0;
+                        force_split = true;
+                        detection_result = Some(EncounterDetectionResult {
+                            complete: true,
+                            end_segment_index: last_idx,
+                            confidence: Some(1.0),
+                        });
+                    }
                 }
-            } else {
-                if detection_result.is_some() {
-                    consecutive_detection_failures = 0;
-                }
-                detection_result
-            };
+                // NOTE: Don't reset counter on complete=true here — confidence gate may reject
+            }
 
             // Process detection result
             if let Some(result) = detection_result {
@@ -1587,9 +1628,10 @@ pub async fn run_continuous_mode(
                     // Confidence gate: require >= 0.7 to proceed (skip for forced splits)
                     let confidence = result.confidence.unwrap_or(0.0);
                     if confidence < 0.7 && !force_split {
+                        consecutive_no_split += 1;
                         info!(
-                            "Encounter detection returned complete=true but low confidence ({:.2}), skipping",
-                            confidence
+                            "Confidence gate rejected: confidence={:.2}, word_count={}, consecutive_no_split={}",
+                            confidence, word_count, consecutive_no_split
                         );
                         // Return to recording state and continue
                         if let Ok(mut state) = state_for_detector.lock() {
@@ -1603,6 +1645,7 @@ pub async fn run_continuous_mode(
                     }
 
                     if let Some(end_index) = result.end_segment_index {
+                        consecutive_no_split = 0;
                         encounter_number += 1;
                         info!(
                             "Encounter #{} detected (end_segment_index={})",
@@ -2647,5 +2690,49 @@ mod tests {
         let (system, _) = build_encounter_detection_prompt("test transcript");
         assert!(system.contains("MUST respond in English"), "Prompt should require English response");
         assert!(system.contains("ONLY a JSON object"), "Prompt should require JSON only");
+    }
+
+    #[test]
+    fn test_force_split_constants() {
+        assert!(
+            FORCE_CHECK_WORD_THRESHOLD < FORCE_SPLIT_WORD_THRESHOLD,
+            "FORCE_CHECK ({}) must be less than FORCE_SPLIT ({})",
+            FORCE_CHECK_WORD_THRESHOLD, FORCE_SPLIT_WORD_THRESHOLD
+        );
+        assert!(
+            FORCE_SPLIT_WORD_THRESHOLD < ABSOLUTE_WORD_CAP,
+            "FORCE_SPLIT ({}) must be less than ABSOLUTE_WORD_CAP ({})",
+            FORCE_SPLIT_WORD_THRESHOLD, ABSOLUTE_WORD_CAP
+        );
+    }
+
+    #[test]
+    fn test_detection_prompt_transition_framing() {
+        let (system, _) = build_encounter_detection_prompt("test transcript");
+        assert!(
+            system.to_lowercase().contains("transition"),
+            "Prompt should use transition-based framing"
+        );
+        assert!(
+            !system.contains("must have BOTH"),
+            "Prompt should not require BOTH beginning and ending"
+        );
+        assert!(
+            !system.contains("when in doubt"),
+            "Prompt should not have 'when in doubt' bias"
+        );
+    }
+
+    #[test]
+    fn test_detection_prompt_no_premature_bias() {
+        let (system, _) = build_encounter_detection_prompt("test transcript");
+        assert!(
+            !system.contains("better to wait"),
+            "Prompt should not have 'better to wait' bias"
+        );
+        assert!(
+            !system.contains("under 2 minutes"),
+            "Prompt should not have 'under 2 minutes' rule (enforced in code)"
+        );
     }
 }
