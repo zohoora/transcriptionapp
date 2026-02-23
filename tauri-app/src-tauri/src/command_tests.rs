@@ -72,6 +72,13 @@ mod tests {
             encounter_detection_nothink: true,
             stt_alias: "medical-streaming".to_string(),
             stt_postprocess: true,
+            encounter_detection_mode: "llm".to_string(),
+            presence_sensor_port: String::new(),
+            presence_absence_threshold_secs: 90,
+            presence_debounce_secs: 10,
+            presence_csv_log_enabled: true,
+            shadow_active_method: "llm".to_string(),
+            shadow_csv_log_enabled: true,
         };
 
         // Serialize to JSON

@@ -162,6 +162,64 @@ impl TranscriptBuffer {
             .join("\n")
     }
 
+    /// Format segments for LLM detection, truncated to ~3000 words.
+    /// Keeps first ~1500 words (encounter start) + last ~1500 words (encounter end)
+    /// with a separator, so the small detection model doesn't get overwhelmed.
+    pub fn format_for_detection_truncated(&self) -> String {
+        const MAX_WORDS: usize = 3000;
+        const HALF: usize = MAX_WORDS / 2;
+
+        let lines: Vec<String> = self.segments
+            .iter()
+            .map(|s| {
+                let speaker = s.speaker_id.as_deref().unwrap_or("Unknown");
+                format!("[{}] ({}): {}", s.index, speaker, s.text)
+            })
+            .collect();
+
+        // Count words per line to find truncation points
+        let word_counts: Vec<usize> = lines.iter()
+            .map(|l| l.split_whitespace().count())
+            .collect();
+        let total_words: usize = word_counts.iter().sum();
+
+        if total_words <= MAX_WORDS {
+            return lines.join("\n");
+        }
+
+        // Find the line index where first HALF words end
+        let mut head_words = 0;
+        let mut head_end = 0;
+        for (i, &wc) in word_counts.iter().enumerate() {
+            head_words += wc;
+            if head_words >= HALF {
+                head_end = i + 1;
+                break;
+            }
+        }
+
+        // Find the line index where last HALF words start
+        let mut tail_words = 0;
+        let mut tail_start = lines.len();
+        for (i, &wc) in word_counts.iter().enumerate().rev() {
+            tail_words += wc;
+            if tail_words >= HALF {
+                tail_start = i;
+                break;
+            }
+        }
+
+        // Ensure no overlap
+        if tail_start <= head_end {
+            return lines.join("\n");
+        }
+
+        let skipped = tail_start - head_end;
+        let head = lines[..head_end].join("\n");
+        let tail = lines[tail_start..].join("\n");
+        format!("{}\n\n[... {} segments omitted for brevity ...]\n\n{}", head, skipped, tail)
+    }
+
     /// Total word count in the buffer
     pub fn word_count(&self) -> usize {
         self.segments
@@ -207,7 +265,9 @@ pub struct EncounterDetectionResult {
 
 /// Build the encounter detection prompt
 pub fn build_encounter_detection_prompt(formatted_segments: &str) -> (String, String) {
-    let system = r#"You are analyzing a continuous transcript from a medical office.
+    let system = r#"You MUST respond in English with ONLY a JSON object. No other text, no explanations, no markdown.
+
+You are analyzing a continuous transcript from a medical office.
 The microphone has been recording all day without stopping.
 
 Determine if the text below contains one or more COMPLETE patient encounters.
@@ -222,14 +282,14 @@ Do NOT mark as complete:
 - Ambient noise or non-clinical discussion
 - Short exchanges under 2 minutes of clinical content
 
-If a COMPLETE encounter exists, return JSON with a confidence score:
+If a COMPLETE encounter exists, return:
 {"complete": true, "end_segment_index": <last segment index of the encounter>, "confidence": <0.0-1.0>}
 
 If the encounter is still in progress, incomplete, or the text is non-clinical, return:
 {"complete": false, "confidence": <0.0-1.0>}
 
 When in doubt, return {"complete": false, "confidence": 0.0}. It is better to wait for more data than to split an encounter prematurely.
-Return ONLY the JSON object, nothing else."#;
+Respond with ONLY the JSON object."#;
 
     let user = format!(
         "Transcript (segments numbered with speaker labels):\n{}",
@@ -546,6 +606,21 @@ pub struct ContinuousModeStats {
     pub buffer_word_count: usize,
     /// ISO timestamp of the first segment in the current buffer (for "current encounter" display)
     pub buffer_started_at: Option<String>,
+    /// Presence sensor connection status (None when in LLM detection mode)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sensor_connected: Option<bool>,
+    /// Presence sensor state: "present", "absent", "unknown" (None when in LLM mode)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sensor_state: Option<String>,
+    /// Whether shadow mode is active (dual detection comparison)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub shadow_mode_active: Option<bool>,
+    /// Which method is the shadow ("llm" or "sensor"), None when not in shadow mode
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub shadow_method: Option<String>,
+    /// Last shadow decision outcome: "would_split" or "would_not_split"
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_shadow_outcome: Option<String>,
 }
 
 /// Handle to control the running continuous mode
@@ -564,6 +639,14 @@ pub struct ContinuousModeHandle {
     pub encounter_manual_trigger: Arc<tokio::sync::Notify>,
     /// Per-encounter notes from the clinician (passed to SOAP generation, cleared on new encounter)
     pub encounter_notes: Arc<Mutex<String>>,
+    /// Presence sensor state receiver (None when in LLM detection mode)
+    pub sensor_state_rx: Mutex<Option<tokio::sync::watch::Receiver<crate::presence_sensor::PresenceState>>>,
+    /// Presence sensor status receiver (None when in LLM detection mode)
+    pub sensor_status_rx: Mutex<Option<tokio::sync::watch::Receiver<crate::presence_sensor::SensorStatus>>>,
+    /// Shadow mode: accumulated shadow decisions for the current encounter
+    pub shadow_decisions: Arc<Mutex<Vec<crate::shadow_log::ShadowDecisionSummary>>>,
+    /// Shadow mode: most recent shadow decision (for dashboard display)
+    pub last_shadow_decision: Arc<Mutex<Option<crate::shadow_log::ShadowDecision>>>,
 }
 
 impl ContinuousModeHandle {
@@ -581,6 +664,10 @@ impl ContinuousModeHandle {
             name_tracker: Arc::new(Mutex::new(PatientNameTracker::new())),
             encounter_manual_trigger: Arc::new(tokio::sync::Notify::new()),
             encounter_notes: Arc::new(Mutex::new(String::new())),
+            sensor_state_rx: Mutex::new(None),
+            sensor_status_rx: Mutex::new(None),
+            shadow_decisions: Arc::new(Mutex::new(Vec::new())),
+            last_shadow_decision: Arc::new(Mutex::new(None)),
         }
     }
 
@@ -629,6 +716,34 @@ impl ContinuousModeHandle {
             .map(|b| (b.word_count(), b.first_timestamp().map(|t| t.to_rfc3339())))
             .unwrap_or((0, None));
 
+        // Read sensor state if available
+        let sensor_connected = self
+            .sensor_status_rx
+            .lock()
+            .ok()
+            .and_then(|rx| rx.as_ref().map(|r| r.borrow().is_connected()));
+
+        let sensor_state = self
+            .sensor_state_rx
+            .lock()
+            .ok()
+            .and_then(|rx| rx.as_ref().map(|r| r.borrow().as_str().to_string()));
+
+        // Shadow mode stats
+        let last_shadow = self
+            .last_shadow_decision
+            .lock()
+            .ok()
+            .and_then(|d| d.as_ref().map(|dec| (
+                dec.shadow_method.clone(),
+                dec.outcome.as_str().to_string(),
+            )));
+
+        let (shadow_mode_active, shadow_method, last_shadow_outcome) = match last_shadow {
+            Some((method, outcome)) => (Some(true), Some(method), Some(outcome)),
+            None => (None, None, None),
+        };
+
         ContinuousModeStats {
             state,
             recording_since: self.recording_since.to_rfc3339(),
@@ -639,6 +754,11 @@ impl ContinuousModeHandle {
             last_error: last_err,
             buffer_word_count: buffer_wc,
             buffer_started_at: buffer_started,
+            sensor_connected,
+            sensor_state,
+            shadow_mode_active,
+            shadow_method,
+            last_shadow_outcome,
         }
     }
 }
@@ -829,7 +949,8 @@ pub async fn run_continuous_mode(
                         } else if let Some(start) = *s {
                             if start.elapsed().as_secs() >= silence_threshold_secs as u64 {
                                 // Silence gap detected — trigger encounter check
-                                silence_trigger_tx.notify_one();
+                                // Use notify_waiters so both active detector AND shadow observer receive the event
+                                silence_trigger_tx.notify_waiters();
                                 *s = None; // Reset so we don't keep triggering
                             }
                         }
@@ -866,6 +987,340 @@ pub async fn run_continuous_mode(
             }
         }
     });
+
+    // Start presence sensor if in sensor or shadow detection mode
+    let is_shadow_mode = config.encounter_detection_mode == "shadow";
+    let shadow_active_method = config.shadow_active_method.clone();
+    let use_sensor_mode = (config.encounter_detection_mode == "sensor"
+        || (is_shadow_mode && !config.presence_sensor_port.is_empty()))
+        && !config.presence_sensor_port.is_empty();
+    let mut sensor_handle: Option<crate::presence_sensor::PresenceSensor> = None;
+    let sensor_absence_trigger: Arc<tokio::sync::Notify>;
+
+    if use_sensor_mode {
+        let sensor_config = crate::presence_sensor::SensorConfig {
+            port: config.presence_sensor_port.clone(),
+            debounce_secs: config.presence_debounce_secs,
+            absence_threshold_secs: config.presence_absence_threshold_secs,
+            csv_log_enabled: config.presence_csv_log_enabled,
+        };
+
+        match crate::presence_sensor::PresenceSensor::start(&sensor_config) {
+            Ok(sensor) => {
+                info!("Presence sensor started for encounter detection");
+                sensor_absence_trigger = sensor.absence_notifier();
+
+                // Store sensor state receivers in the handle for stats
+                if let Ok(mut rx) = handle.sensor_state_rx.lock() {
+                    *rx = Some(sensor.subscribe_state());
+                }
+                if let Ok(mut rx) = handle.sensor_status_rx.lock() {
+                    *rx = Some(sensor.subscribe_status());
+                }
+
+                // Emit sensor status event
+                let _ = app.emit("continuous_mode_event", serde_json::json!({
+                    "type": "sensor_status",
+                    "connected": true,
+                    "state": "unknown"
+                }));
+
+                sensor_handle = Some(sensor);
+            }
+            Err(e) => {
+                warn!("Failed to start presence sensor: {}. Falling back to LLM mode.", e);
+                let _ = app.emit("continuous_mode_event", serde_json::json!({
+                    "type": "error",
+                    "error": format!("Sensor failed to start: {}. Using LLM detection.", e)
+                }));
+                // Fall back: create a dummy Notify that never fires
+                sensor_absence_trigger = Arc::new(tokio::sync::Notify::new());
+            }
+        }
+    } else {
+        // LLM mode — no sensor absence trigger
+        sensor_absence_trigger = Arc::new(tokio::sync::Notify::new());
+    }
+
+    // Determine effective detection mode (may have fallen back from sensor to LLM)
+    // In shadow mode, the active method controls which detection branch runs
+    let effective_sensor_mode = if is_shadow_mode {
+        shadow_active_method == "sensor" && sensor_handle.is_some()
+    } else {
+        sensor_handle.is_some()
+    };
+
+    // Spawn sensor status monitoring task (emits events on state/status changes)
+    let sensor_monitor_task: Option<tokio::task::JoinHandle<()>> = if effective_sensor_mode {
+        let mut state_rx = sensor_handle.as_ref().unwrap().subscribe_state();
+        let mut status_rx = sensor_handle.as_ref().unwrap().subscribe_status();
+        let stop_for_monitor = handle.stop_flag.clone();
+        let app_for_monitor = app.clone();
+
+        Some(tokio::spawn(async move {
+            loop {
+                if stop_for_monitor.load(Ordering::Relaxed) {
+                    break;
+                }
+
+                tokio::select! {
+                    Ok(()) = state_rx.changed() => {
+                        let state = *state_rx.borrow_and_update();
+                        let state_str = match state {
+                            crate::presence_sensor::PresenceState::Present => "present",
+                            crate::presence_sensor::PresenceState::Absent => "absent",
+                            crate::presence_sensor::PresenceState::Unknown => "unknown",
+                        };
+                        info!("Sensor state changed: {}", state_str);
+                        let _ = app_for_monitor.emit("continuous_mode_event", serde_json::json!({
+                            "type": "sensor_status",
+                            "connected": true,
+                            "state": state_str
+                        }));
+                    }
+                    Ok(()) = status_rx.changed() => {
+                        let status = status_rx.borrow_and_update().clone();
+                        let connected = matches!(status, crate::presence_sensor::SensorStatus::Connected);
+                        let _ = app_for_monitor.emit("continuous_mode_event", serde_json::json!({
+                            "type": "sensor_status",
+                            "connected": connected,
+                            "state": "unknown"
+                        }));
+                        if !connected {
+                            warn!("Sensor disconnected: {:?}", status);
+                        }
+                    }
+                    else => break,
+                }
+            }
+        }))
+    } else {
+        None
+    };
+
+    // Spawn shadow observer task (if shadow mode is active)
+    let shadow_task: Option<tokio::task::JoinHandle<()>> = if is_shadow_mode {
+        let shadow_method = if shadow_active_method == "sensor" { "llm" } else { "sensor" };
+        let active_method = shadow_active_method.clone();
+        info!("Shadow mode: active={}, shadow={}", active_method, shadow_method);
+
+        // Initialize shadow CSV logger
+        let shadow_csv_logger: Option<Arc<Mutex<crate::shadow_log::ShadowCsvLogger>>> = if config.shadow_csv_log_enabled {
+            match crate::shadow_log::ShadowCsvLogger::new() {
+                Ok(logger) => Some(Arc::new(Mutex::new(logger))),
+                Err(e) => {
+                    warn!("Failed to create shadow CSV logger: {}", e);
+                    None
+                }
+            }
+        } else {
+            None
+        };
+
+        let shadow_decisions_for_task = handle.shadow_decisions.clone();
+        let last_shadow_for_task = handle.last_shadow_decision.clone();
+        let stop_for_shadow = handle.stop_flag.clone();
+        let app_for_shadow = app.clone();
+        let buffer_for_shadow = handle.transcript_buffer.clone();
+
+        if shadow_method == "sensor" {
+            // Active=LLM, Shadow=sensor — observe sensor absence triggers
+            let sensor_trigger_for_shadow = sensor_absence_trigger.clone();
+
+            Some(tokio::spawn(async move {
+                info!("Shadow sensor observer started");
+                loop {
+                    if stop_for_shadow.load(Ordering::Relaxed) {
+                        break;
+                    }
+
+                    // Wait for sensor absence trigger
+                    sensor_trigger_for_shadow.notified().await;
+
+                    if stop_for_shadow.load(Ordering::Relaxed) {
+                        break;
+                    }
+
+                    // Read buffer state (non-destructive)
+                    let (word_count, last_segment) = buffer_for_shadow
+                        .lock()
+                        .map(|b| (b.word_count(), b.last_index()))
+                        .unwrap_or((0, None));
+
+                    let decision = crate::shadow_log::ShadowDecision {
+                        timestamp: Utc::now(),
+                        shadow_method: "sensor".to_string(),
+                        active_method: active_method.clone(),
+                        outcome: crate::shadow_log::ShadowOutcome::WouldSplit,
+                        confidence: Some(1.0),
+                        buffer_word_count: word_count,
+                        buffer_last_segment: last_segment,
+                    };
+
+                    // Log to CSV
+                    if let Some(ref logger) = shadow_csv_logger {
+                        if let Ok(mut l) = logger.lock() {
+                            l.write_decision(&decision);
+                        }
+                    }
+
+                    // Store for encounter comparison
+                    let summary = crate::shadow_log::ShadowDecisionSummary::from(&decision);
+                    if let Ok(mut decisions) = shadow_decisions_for_task.lock() {
+                        decisions.push(summary);
+                    }
+                    if let Ok(mut last) = last_shadow_for_task.lock() {
+                        *last = Some(decision);
+                    }
+
+                    // Emit event for frontend
+                    let _ = app_for_shadow.emit("continuous_mode_event", serde_json::json!({
+                        "type": "shadow_decision",
+                        "shadow_method": "sensor",
+                        "outcome": "would_split",
+                        "buffer_words": word_count
+                    }));
+
+                    info!("Shadow sensor: would_split (buffer {} words)", word_count);
+                }
+                info!("Shadow sensor observer stopped");
+            }))
+        } else {
+            // Active=sensor, Shadow=LLM — run shadow LLM detection loop
+            let silence_trigger_for_shadow = silence_trigger_rx.clone();
+            let check_interval_shadow = config.encounter_check_interval_secs;
+            let shadow_detection_model = config.encounter_detection_model.clone();
+            let shadow_detection_nothink = config.encounter_detection_nothink;
+            let shadow_llm_client = if !config.llm_router_url.is_empty() {
+                LLMClient::new(
+                    &config.llm_router_url,
+                    &config.llm_api_key,
+                    &config.llm_client_id,
+                    &shadow_detection_model,
+                )
+                .ok()
+            } else {
+                None
+            };
+
+            Some(tokio::spawn(async move {
+                info!("Shadow LLM observer started");
+                loop {
+                    if stop_for_shadow.load(Ordering::Relaxed) {
+                        break;
+                    }
+
+                    // Wait for timer or silence trigger (same as active LLM detector)
+                    tokio::select! {
+                        _ = tokio::time::sleep(tokio::time::Duration::from_secs(check_interval_shadow as u64)) => {}
+                        _ = silence_trigger_for_shadow.notified() => {
+                            debug!("Shadow LLM: silence trigger received");
+                        }
+                    }
+
+                    if stop_for_shadow.load(Ordering::Relaxed) {
+                        break;
+                    }
+
+                    // Read buffer state (non-destructive, truncated for small model)
+                    let (formatted, word_count, last_segment) = buffer_for_shadow
+                        .lock()
+                        .map(|b| (b.format_for_detection_truncated(), b.word_count(), b.last_index()))
+                        .unwrap_or_else(|_| (String::new(), 0, None));
+
+                    if word_count < 100 {
+                        continue; // Not enough text to analyze
+                    }
+
+                    // Call LLM for encounter detection
+                    let outcome;
+                    let confidence;
+                    if let Some(ref client) = shadow_llm_client {
+                        let (filtered, _) = crate::encounter_experiment::strip_hallucinations(&formatted, 5);
+                        let (system_prompt, user_prompt) = build_encounter_detection_prompt(&filtered);
+                        let system_prompt = if shadow_detection_nothink {
+                            format!("/nothink\n{}", system_prompt)
+                        } else {
+                            system_prompt
+                        };
+                        let llm_future = client.generate(
+                            &shadow_detection_model, &system_prompt, &user_prompt, "shadow_encounter_detection"
+                        );
+                        match tokio::time::timeout(tokio::time::Duration::from_secs(60), llm_future).await {
+                            Ok(Ok(response)) => {
+                                match parse_encounter_detection(&response) {
+                                    Ok(result) => {
+                                        if result.complete && result.confidence.unwrap_or(0.0) >= 0.7 {
+                                            outcome = crate::shadow_log::ShadowOutcome::WouldSplit;
+                                        } else {
+                                            outcome = crate::shadow_log::ShadowOutcome::WouldNotSplit;
+                                        }
+                                        confidence = result.confidence;
+                                    }
+                                    Err(e) => {
+                                        debug!("Shadow LLM: failed to parse detection: {}", e);
+                                        continue;
+                                    }
+                                }
+                            }
+                            Ok(Err(e)) => {
+                                debug!("Shadow LLM: detection call failed: {}", e);
+                                continue;
+                            }
+                            Err(_) => {
+                                debug!("Shadow LLM: detection timed out after 60s");
+                                continue;
+                            }
+                        }
+                    } else {
+                        continue; // No LLM client
+                    }
+
+                    let decision = crate::shadow_log::ShadowDecision {
+                        timestamp: Utc::now(),
+                        shadow_method: "llm".to_string(),
+                        active_method: active_method.clone(),
+                        outcome,
+                        confidence,
+                        buffer_word_count: word_count,
+                        buffer_last_segment: last_segment,
+                    };
+
+                    // Log to CSV
+                    if let Some(ref logger) = shadow_csv_logger {
+                        if let Ok(mut l) = logger.lock() {
+                            l.write_decision(&decision);
+                        }
+                    }
+
+                    // Store for encounter comparison
+                    let outcome_str = decision.outcome.as_str().to_string();
+                    let summary = crate::shadow_log::ShadowDecisionSummary::from(&decision);
+                    if let Ok(mut decisions) = shadow_decisions_for_task.lock() {
+                        decisions.push(summary);
+                    }
+                    if let Ok(mut last) = last_shadow_for_task.lock() {
+                        *last = Some(decision);
+                    }
+
+                    // Emit event for frontend
+                    let _ = app_for_shadow.emit("continuous_mode_event", serde_json::json!({
+                        "type": "shadow_decision",
+                        "shadow_method": "llm",
+                        "outcome": outcome_str,
+                        "confidence": confidence,
+                        "buffer_words": word_count
+                    }));
+
+                    info!("Shadow LLM: {} (confidence={:?}, buffer {} words)",
+                        outcome_str, confidence, word_count);
+                }
+                info!("Shadow LLM observer stopped");
+            }))
+        }
+    } else {
+        None
+    };
 
     // Spawn encounter detection loop
     let buffer_for_detector = handle.transcript_buffer.clone();
@@ -926,8 +1381,17 @@ pub async fn run_continuous_mode(
     // Clone biomarker reset flag for the detector task
     let reset_bio_flag = reset_bio_for_detector;
 
+    // Clone sensor trigger for detector task
+    let sensor_trigger_for_detector = sensor_absence_trigger.clone();
+
+    // Clone shadow state for detector task
+    let handle_shadow_decisions = handle.shadow_decisions.clone();
+    let is_shadow_mode = is_shadow_mode;
+    let shadow_active_method = shadow_active_method.clone();
+
     let detector_task = tokio::spawn(async move {
         let mut encounter_number: u32 = 0;
+        let mut consecutive_detection_failures: u32 = 0;
 
         // Track previous encounter for retrospective merge checks
         let mut prev_encounter_session_id: Option<String> = None;
@@ -935,18 +1399,35 @@ pub async fn run_continuous_mode(
         let mut prev_encounter_date: Option<DateTime<Utc>> = None;
 
         loop {
-            // Wait for check interval, silence trigger, or manual "New Patient" trigger
-            let manual_triggered = tokio::select! {
-                _ = tokio::time::sleep(tokio::time::Duration::from_secs(check_interval as u64)) => false,
-                _ = silence_trigger_rx.notified() => {
-                    info!("Silence gap detected — triggering encounter check");
-                    false
+            // Wait for trigger based on detection mode
+            let (manual_triggered, sensor_triggered) = if effective_sensor_mode {
+                // Sensor mode: wait for sensor absence threshold OR manual trigger
+                tokio::select! {
+                    _ = sensor_trigger_for_detector.notified() => {
+                        info!("Sensor: absence threshold reached — triggering encounter split");
+                        (false, true)
+                    }
+                    _ = manual_trigger_rx.notified() => {
+                        info!("Manual new patient trigger received");
+                        (true, false)
+                    }
                 }
-                _ = manual_trigger_rx.notified() => {
-                    info!("Manual new patient trigger received");
-                    true
-                }
+            } else {
+                // LLM mode: wait for timer, silence, or manual trigger (unchanged)
+                let manual = tokio::select! {
+                    _ = tokio::time::sleep(tokio::time::Duration::from_secs(check_interval as u64)) => false,
+                    _ = silence_trigger_rx.notified() => {
+                        info!("Silence gap detected — triggering encounter check");
+                        false
+                    }
+                    _ = manual_trigger_rx.notified() => {
+                        info!("Manual new patient trigger received");
+                        true
+                    }
+                };
+                (manual, false)
             };
+            let manual_triggered = manual_triggered;
 
             if stop_for_detector.load(Ordering::Relaxed) {
                 break;
@@ -958,16 +1439,18 @@ pub async fn run_continuous_mode(
                     Ok(b) => b,
                     Err(_) => continue,
                 };
-                (buffer.format_for_detection(), buffer.word_count(), buffer.is_empty(), buffer.first_timestamp())
+                (buffer.format_for_detection_truncated(), buffer.word_count(), buffer.is_empty(), buffer.first_timestamp())
             };
 
-            // Manual trigger: skip minimum guards, but still need >0 words
-            if manual_triggered {
+            // Manual or sensor trigger: skip minimum guards, but still need >0 words
+            if manual_triggered || sensor_triggered {
                 if is_empty {
-                    info!("Manual trigger: buffer is empty, nothing to archive");
+                    info!("{}: buffer is empty, nothing to archive",
+                        if sensor_triggered { "Sensor trigger" } else { "Manual trigger" });
                     continue;
                 }
-                info!("Manual trigger: bypassing minimum duration/word count guards ({} words)", word_count);
+                info!("{}: bypassing minimum duration/word count guards ({} words)",
+                    if sensor_triggered { "Sensor trigger" } else { "Manual trigger" }, word_count);
             } else {
                 if is_empty || word_count < 100 {
                     continue; // Not enough text to analyze — encounters are typically 100+ words
@@ -1001,7 +1484,17 @@ pub async fn run_continuous_mode(
             }));
 
             // Run encounter detection via LLM (with 60s timeout to prevent blocking)
-            let detection_result = if let Some(ref client) = llm_client {
+            // Manual/sensor trigger: skip LLM — directly split the encounter
+            let detection_result = if manual_triggered || sensor_triggered {
+                let last_idx = buffer_for_detector.lock().ok().and_then(|b| b.last_index());
+                let source = if sensor_triggered { "Sensor" } else { "Manual" };
+                info!("{} trigger: forcing encounter split (last_index={:?})", source, last_idx);
+                Some(EncounterDetectionResult {
+                    complete: true,
+                    end_segment_index: last_idx,
+                    confidence: Some(1.0),
+                })
+            } else if let Some(ref client) = llm_client {
                 // Strip hallucinated repetitions (e.g. STT "fractured" loop) before LLM call
                 let (filtered_formatted, _) = strip_hallucinations(&formatted, 5);
                 let (system_prompt, user_prompt) = build_encounter_detection_prompt(&filtered_formatted);
@@ -1055,12 +1548,41 @@ pub async fn run_continuous_mode(
                 None
             };
 
+            // Force-split safety valve: if buffer is very large and LLM keeps failing,
+            // force a split to prevent unbounded growth. After 3 consecutive failures
+            // with a buffer over 8000 words, we split anyway.
+            let mut force_split = false;
+            let detection_result = if detection_result.is_none() && !manual_triggered && !sensor_triggered {
+                consecutive_detection_failures += 1;
+                if word_count > 8000 && consecutive_detection_failures >= 3 {
+                    warn!(
+                        "Force-splitting: {} consecutive detection failures with {} words in buffer",
+                        consecutive_detection_failures, word_count
+                    );
+                    let last_idx = buffer_for_detector.lock().ok().and_then(|b| b.last_index());
+                    consecutive_detection_failures = 0;
+                    force_split = true;
+                    Some(EncounterDetectionResult {
+                        complete: true,
+                        end_segment_index: last_idx,
+                        confidence: Some(1.0),
+                    })
+                } else {
+                    None
+                }
+            } else {
+                if detection_result.is_some() {
+                    consecutive_detection_failures = 0;
+                }
+                detection_result
+            };
+
             // Process detection result
             if let Some(result) = detection_result {
                 if result.complete {
-                    // Confidence gate: require >= 0.7 to proceed
+                    // Confidence gate: require >= 0.7 to proceed (skip for forced splits)
                     let confidence = result.confidence.unwrap_or(0.0);
-                    if confidence < 0.7 {
+                    if confidence < 0.7 && !force_split {
                         info!(
                             "Encounter detection returned complete=true but low confidence ({:.2}), skipping",
                             confidence
@@ -1140,17 +1662,63 @@ pub async fn run_continuous_mode(
                                     if let Ok(mut metadata) = serde_json::from_str::<local_archive::ArchiveMetadata>(&content) {
                                         metadata.charting_mode = Some("continuous".to_string());
                                         metadata.encounter_number = Some(encounter_number);
+                                        // Record how this encounter was detected
+                                        metadata.detection_method = Some(
+                                            if manual_triggered { "manual" }
+                                            else if sensor_triggered { "sensor" }
+                                            else { "llm" }.to_string()
+                                        );
                                         // Add patient name from vision extraction (majority vote)
                                         if let Ok(tracker) = name_tracker_for_detector.lock() {
                                             metadata.patient_name = tracker.majority_name();
                                         } else {
                                             warn!("Name tracker lock poisoned, patient name not written to metadata");
                                         }
+                                        // Add shadow comparison data if in shadow mode
+                                        if is_shadow_mode {
+                                            let shadow_method = if shadow_active_method == "sensor" { "llm" } else { "sensor" };
+                                            let decisions: Vec<crate::shadow_log::ShadowDecisionSummary> = handle_shadow_decisions
+                                                .lock()
+                                                .map(|d| d.clone())
+                                                .unwrap_or_default();
+
+                                            let active_split_at = Utc::now().to_rfc3339();
+
+                                            // Check if shadow agreed: any "would_split" decision in last 5 minutes
+                                            let now = Utc::now();
+                                            let shadow_agreed = if decisions.is_empty() {
+                                                None
+                                            } else {
+                                                let agreed = decisions.iter().any(|d| {
+                                                    d.outcome == "would_split" && {
+                                                        chrono::DateTime::parse_from_rfc3339(&d.timestamp)
+                                                            .map(|ts| (now - ts.with_timezone(&Utc)).num_seconds().abs() < 300)
+                                                            .unwrap_or(false)
+                                                    }
+                                                });
+                                                Some(agreed)
+                                            };
+
+                                            metadata.shadow_comparison = Some(crate::shadow_log::ShadowEncounterComparison {
+                                                shadow_method: shadow_method.to_string(),
+                                                decisions,
+                                                active_split_at,
+                                                shadow_agreed,
+                                            });
+                                        }
+
                                         if let Ok(json) = serde_json::to_string_pretty(&metadata) {
                                             let _ = std::fs::write(&date_path, json);
                                         }
                                     }
                                 }
+                            }
+                        }
+
+                        // Clear shadow decisions for next encounter (if in shadow mode)
+                        if is_shadow_mode {
+                            if let Ok(mut decisions) = handle_shadow_decisions.lock() {
+                                decisions.clear();
                             }
                         }
 
@@ -1578,6 +2146,12 @@ pub async fn run_continuous_mode(
         tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
     }
 
+    // Cleanup: stop presence sensor if active
+    if let Some(mut sensor) = sensor_handle.take() {
+        info!("Stopping presence sensor");
+        sensor.stop();
+    }
+
     // Cleanup: stop pipeline
     info!("Stopping continuous mode pipeline");
     pipeline_handle.stop();
@@ -1592,6 +2166,14 @@ pub async fn run_continuous_mode(
     detector_task.abort(); // Force stop the detector loop
     let _ = detector_task.await;
     if let Some(task) = screenshot_task {
+        task.abort();
+        let _ = task.await;
+    }
+    if let Some(task) = shadow_task {
+        task.abort();
+        let _ = task.await;
+    }
+    if let Some(task) = sensor_monitor_task {
         task.abort();
         let _ = task.await;
     }
@@ -2017,5 +2599,49 @@ mod tests {
         assert!(!user.is_empty());
         assert!(system.contains("patient"));
         assert!(user.contains("NOT_FOUND"));
+    }
+
+    #[test]
+    fn test_format_for_detection_truncated_small_buffer() {
+        // Under 3000 words — should return everything, same as format_for_detection
+        let mut buffer = TranscriptBuffer::new();
+        buffer.push("Hello doctor".to_string(), 1000, Some("Speaker 1".to_string()), 0);
+        buffer.push("How are you today".to_string(), 2000, Some("Speaker 2".to_string()), 0);
+
+        let full = buffer.format_for_detection();
+        let truncated = buffer.format_for_detection_truncated();
+        assert_eq!(full, truncated);
+    }
+
+    #[test]
+    fn test_format_for_detection_truncated_large_buffer() {
+        // Create a buffer with >3000 words to trigger truncation
+        let mut buffer = TranscriptBuffer::new();
+        // Each segment: ~50 words, so 80 segments = ~4000 words
+        for i in 0..80 {
+            let text = (0..50).map(|w| format!("word{}seg{}", w, i)).collect::<Vec<_>>().join(" ");
+            buffer.push(text, i * 1000, Some(format!("Speaker {}", i % 3)), 0);
+        }
+
+        let total_words = buffer.word_count();
+        assert!(total_words > 3000, "Buffer should have >3000 words, got {}", total_words);
+
+        let truncated = buffer.format_for_detection_truncated();
+        assert!(truncated.contains("segments omitted for brevity"));
+
+        // Should contain first segment and last segment
+        assert!(truncated.contains("[0]"));
+        assert!(truncated.contains(&format!("[{}]", 79)));
+
+        // Truncated should be shorter than full
+        let full = buffer.format_for_detection();
+        assert!(truncated.len() < full.len(), "Truncated ({}) should be shorter than full ({})", truncated.len(), full.len());
+    }
+
+    #[test]
+    fn test_detection_prompt_requires_english() {
+        let (system, _) = build_encounter_detection_prompt("test transcript");
+        assert!(system.contains("MUST respond in English"), "Prompt should require English response");
+        assert!(system.contains("ONLY a JSON object"), "Prompt should require JSON only");
     }
 }

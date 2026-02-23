@@ -103,6 +103,11 @@ pub fn get_continuous_mode_status(
             last_error: None,
             buffer_word_count: 0,
             buffer_started_at: None,
+            sensor_connected: None,
+            sensor_state: None,
+            shadow_mode_active: None,
+            shadow_method: None,
+            last_shadow_outcome: None,
         })
     }
 }
@@ -124,6 +129,19 @@ pub fn set_continuous_encounter_notes(
     } else {
         Err("Continuous mode is not running".to_string())
     }
+}
+
+/// List available serial ports (for presence sensor configuration)
+///
+/// Returns a list of port names (e.g. `/dev/cu.usbserial-2110`) that can be
+/// used with the mmWave presence sensor.
+#[tauri::command]
+pub fn list_serial_ports() -> Result<Vec<String>, String> {
+    let ports = serialport::available_ports().map_err(|e| e.to_string())?;
+    Ok(ports
+        .into_iter()
+        .map(|p| p.port_name)
+        .collect())
 }
 
 /// Trigger a manual new patient encounter split

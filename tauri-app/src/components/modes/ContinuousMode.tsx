@@ -231,6 +231,63 @@ export const ContinuousMode = memo(function ContinuousMode({
         </span>
       </div>
 
+      {/* Sensor status indicator (only in sensor detection mode) */}
+      {stats.sensor_connected !== undefined && (
+        <div className="continuous-sensor-status" style={{ fontSize: 11, marginBottom: 4, display: 'flex', alignItems: 'center', gap: 4 }}>
+          <span style={{
+            display: 'inline-block',
+            width: 8,
+            height: 8,
+            borderRadius: '50%',
+            backgroundColor: !stats.sensor_connected
+              ? '#ef4444'
+              : stats.sensor_state === 'present'
+                ? '#22c55e'
+                : stats.sensor_state === 'absent'
+                  ? '#94a3b8'
+                  : '#a3a3a3',
+          }} />
+          <span style={{ opacity: 0.7 }}>
+            Sensor: {!stats.sensor_connected
+              ? 'Disconnected'
+              : stats.sensor_state === 'present'
+                ? 'Present'
+                : stats.sensor_state === 'absent'
+                  ? 'Absent'
+                  : 'Unknown'}
+          </span>
+        </div>
+      )}
+
+      {/* Shadow mode indicator (dual detection comparison) */}
+      {stats.shadow_mode_active && (
+        <div style={{
+          fontSize: 11,
+          marginBottom: 4,
+          display: 'flex',
+          alignItems: 'center',
+          gap: 4,
+          padding: '2px 6px',
+          borderRadius: 4,
+          backgroundColor: 'rgba(147, 51, 234, 0.1)',
+        }}>
+          <span style={{
+            display: 'inline-block',
+            width: 8,
+            height: 8,
+            borderRadius: '50%',
+            backgroundColor: stats.last_shadow_outcome === 'would_split' ? '#a855f7' : '#6b7280',
+          }} />
+          <span style={{ opacity: 0.7 }}>
+            Shadow ({stats.shadow_method?.toUpperCase()}): {
+              stats.last_shadow_outcome === 'would_split'
+                ? 'Would split'
+                : 'Observing...'
+            }
+          </span>
+        </div>
+      )}
+
       {/* Session length timer */}
       {elapsedTime && (
         <div className="continuous-timer">

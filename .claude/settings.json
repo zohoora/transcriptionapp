@@ -1,5 +1,16 @@
 {
   "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "for f in $CLAUDE_FILE_PATHS; do case \"$f\" in *.env|*.env.*|*auth.json|*credentials*|*secrets*) echo 'BLOCKED: Refusing to edit sensitive file: '\"$f\" >&2; exit 2;; esac; done"
+          }
+        ]
+      }
+    ],
     "PostToolUse": [
       {
         "matcher": "Edit|Write",
@@ -11,6 +22,10 @@
           {
             "type": "command",
             "command": "for f in $CLAUDE_FILE_PATHS; do if [[ \"$f\" == *.rs ]]; then cd tauri-app/src-tauri && cargo fmt 2>/dev/null; fi; done"
+          },
+          {
+            "type": "command",
+            "command": "for f in $CLAUDE_FILE_PATHS; do if [[ \"$f\" == *.ts ]] || [[ \"$f\" == *.tsx ]]; then cd tauri-app && npx eslint \"$f\" --max-warnings 0 2>/dev/null; fi; done"
           }
         ]
       }
@@ -23,7 +38,8 @@
       "Bash(cargo test:*)",
       "Bash(cargo clippy:*)",
       "Bash(cargo fmt:*)",
-      "Bash(npx prettier:*)"
+      "Bash(npx prettier:*)",
+      "Bash(npx eslint:*)"
     ]
   }
 }

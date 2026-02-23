@@ -159,6 +159,119 @@ export const SettingsDrawer = memo(function SettingsDrawer({
                         {' '}Auto-merge split encounters
                       </label>
                     </div>
+
+                    {/* Presence Sensor Settings */}
+                    <h4 style={{ marginTop: 12, marginBottom: 4, fontSize: 12, opacity: 0.7 }}>Encounter Detection</h4>
+                    <div className="settings-row">
+                      <div className="charting-mode-toggle">
+                        <button
+                          className={`charting-mode-btn ${pendingSettings.encounter_detection_mode === 'llm' ? 'active' : ''}`}
+                          onClick={() => onSettingsChange({ ...pendingSettings, encounter_detection_mode: 'llm' })}
+                        >
+                          LLM
+                        </button>
+                        <button
+                          className={`charting-mode-btn ${pendingSettings.encounter_detection_mode === 'sensor' ? 'active' : ''}`}
+                          onClick={() => onSettingsChange({ ...pendingSettings, encounter_detection_mode: 'sensor' })}
+                        >
+                          Sensor
+                        </button>
+                        <button
+                          className={`charting-mode-btn ${pendingSettings.encounter_detection_mode === 'shadow' ? 'active' : ''}`}
+                          onClick={() => onSettingsChange({ ...pendingSettings, encounter_detection_mode: 'shadow' })}
+                          style={{ fontSize: 10 }}
+                        >
+                          Shadow
+                        </button>
+                      </div>
+                    </div>
+                    {pendingSettings.encounter_detection_mode === 'shadow' && (
+                      <>
+                        <div className="settings-row" style={{ marginTop: 4 }}>
+                          <label style={{ fontSize: 11, opacity: 0.7 }}>Active method</label>
+                          <div className="charting-mode-toggle" style={{ marginTop: 2 }}>
+                            <button
+                              className={`charting-mode-btn ${pendingSettings.shadow_active_method === 'llm' ? 'active' : ''}`}
+                              onClick={() => onSettingsChange({ ...pendingSettings, shadow_active_method: 'llm' })}
+                            >
+                              LLM
+                            </button>
+                            <button
+                              className={`charting-mode-btn ${pendingSettings.shadow_active_method === 'sensor' ? 'active' : ''}`}
+                              onClick={() => onSettingsChange({ ...pendingSettings, shadow_active_method: 'sensor' })}
+                            >
+                              Sensor
+                            </button>
+                          </div>
+                        </div>
+                        <div className="settings-row">
+                          <label>
+                            <input
+                              type="checkbox"
+                              checked={pendingSettings.shadow_csv_log_enabled}
+                              onChange={(e) => onSettingsChange({ ...pendingSettings, shadow_csv_log_enabled: e.target.checked })}
+                            />
+                            {' '}Log shadow decisions to CSV
+                          </label>
+                        </div>
+                      </>
+                    )}
+                    {(pendingSettings.encounter_detection_mode === 'sensor' || pendingSettings.encounter_detection_mode === 'shadow') && (
+                      <>
+                        <div className="settings-row">
+                          <label>Serial port</label>
+                          <input
+                            type="text"
+                            value={pendingSettings.presence_sensor_port}
+                            onChange={(e) => onSettingsChange({ ...pendingSettings, presence_sensor_port: e.target.value })}
+                            placeholder="/dev/cu.usbserial-2110"
+                            style={{ width: '100%', fontSize: 11 }}
+                          />
+                        </div>
+                        <div className="settings-row">
+                          <label>Absence threshold</label>
+                          <div className="settings-slider-row">
+                            <input
+                              type="range"
+                              min="10"
+                              max="600"
+                              step="10"
+                              value={pendingSettings.presence_absence_threshold_secs}
+                              onChange={(e) => onSettingsChange({ ...pendingSettings, presence_absence_threshold_secs: Number(e.target.value) })}
+                            />
+                            <span className="settings-slider-value">
+                              {pendingSettings.presence_absence_threshold_secs}s
+                            </span>
+                          </div>
+                        </div>
+                        <div className="settings-row">
+                          <label>Debounce</label>
+                          <div className="settings-slider-row">
+                            <input
+                              type="range"
+                              min="1"
+                              max="60"
+                              step="1"
+                              value={pendingSettings.presence_debounce_secs}
+                              onChange={(e) => onSettingsChange({ ...pendingSettings, presence_debounce_secs: Number(e.target.value) })}
+                            />
+                            <span className="settings-slider-value">
+                              {pendingSettings.presence_debounce_secs}s
+                            </span>
+                          </div>
+                        </div>
+                        <div className="settings-row">
+                          <label>
+                            <input
+                              type="checkbox"
+                              checked={pendingSettings.presence_csv_log_enabled}
+                              onChange={(e) => onSettingsChange({ ...pendingSettings, presence_csv_log_enabled: e.target.checked })}
+                            />
+                            {' '}Log sensor data to CSV
+                          </label>
+                        </div>
+                      </>
+                    )}
                   </>
                 )}
               </div>

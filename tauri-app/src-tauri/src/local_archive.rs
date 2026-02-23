@@ -99,6 +99,12 @@ pub struct ArchiveMetadata {
     /// Patient name extracted via vision-based screenshot analysis (majority vote)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub patient_name: Option<String>,
+    /// How the encounter was detected: "llm", "sensor", or "manual"
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub detection_method: Option<String>,
+    /// Shadow mode comparison data (dual detection method analysis)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shadow_comparison: Option<crate::shadow_log::ShadowEncounterComparison>,
 }
 
 impl ArchiveMetadata {
@@ -119,6 +125,8 @@ impl ArchiveMetadata {
             charting_mode: None,
             encounter_number: None,
             patient_name: None,
+            detection_method: None,
+            shadow_comparison: None,
         }
     }
 }

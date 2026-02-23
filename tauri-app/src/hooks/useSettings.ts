@@ -42,6 +42,15 @@ export interface PendingSettings {
   charting_mode: string;
   encounter_check_interval_secs: number;
   encounter_silence_trigger_secs: number;
+  // Presence sensor settings
+  encounter_detection_mode: string;
+  presence_sensor_port: string;
+  presence_absence_threshold_secs: number;
+  presence_debounce_secs: number;
+  presence_csv_log_enabled: boolean;
+  // Shadow mode settings
+  shadow_active_method: string;
+  shadow_csv_log_enabled: boolean;
 }
 
 export interface UseSettingsResult {
@@ -102,6 +111,13 @@ export function useSettings(): UseSettingsResult {
     charting_mode: s.charting_mode,
     encounter_check_interval_secs: s.encounter_check_interval_secs,
     encounter_silence_trigger_secs: s.encounter_silence_trigger_secs,
+    encounter_detection_mode: s.encounter_detection_mode,
+    presence_sensor_port: s.presence_sensor_port,
+    presence_absence_threshold_secs: s.presence_absence_threshold_secs,
+    presence_debounce_secs: s.presence_debounce_secs,
+    presence_csv_log_enabled: s.presence_csv_log_enabled,
+    shadow_active_method: s.shadow_active_method,
+    shadow_csv_log_enabled: s.shadow_csv_log_enabled,
   }), []);
 
   // Load settings
@@ -165,6 +181,13 @@ export function useSettings(): UseSettingsResult {
         continuous_auto_copy_soap: settings.continuous_auto_copy_soap,
         encounter_check_interval_secs: pendingSettings.encounter_check_interval_secs,
         encounter_silence_trigger_secs: pendingSettings.encounter_silence_trigger_secs,
+        encounter_detection_mode: pendingSettings.encounter_detection_mode,
+        presence_sensor_port: pendingSettings.presence_sensor_port,
+        presence_absence_threshold_secs: pendingSettings.presence_absence_threshold_secs,
+        presence_debounce_secs: pendingSettings.presence_debounce_secs,
+        presence_csv_log_enabled: pendingSettings.presence_csv_log_enabled,
+        shadow_active_method: pendingSettings.shadow_active_method,
+        shadow_csv_log_enabled: pendingSettings.shadow_csv_log_enabled,
       };
 
       await invoke('set_settings', { settings: newSettings });
@@ -209,6 +232,13 @@ export function useSettings(): UseSettingsResult {
       [settings.charting_mode, pendingSettings.charting_mode],
       [settings.encounter_check_interval_secs, pendingSettings.encounter_check_interval_secs],
       [settings.encounter_silence_trigger_secs, pendingSettings.encounter_silence_trigger_secs],
+      [settings.encounter_detection_mode, pendingSettings.encounter_detection_mode],
+      [settings.presence_sensor_port, pendingSettings.presence_sensor_port],
+      [settings.presence_absence_threshold_secs, pendingSettings.presence_absence_threshold_secs],
+      [settings.presence_debounce_secs, pendingSettings.presence_debounce_secs],
+      [settings.presence_csv_log_enabled, pendingSettings.presence_csv_log_enabled],
+      [settings.shadow_active_method, pendingSettings.shadow_active_method],
+      [settings.shadow_csv_log_enabled, pendingSettings.shadow_csv_log_enabled],
     ];
 
     return comparisons.some(([saved, pending]) => saved !== pending);

@@ -101,6 +101,46 @@ pub struct Settings {
     pub encounter_detection_model: String,
     #[serde(default = "default_encounter_detection_nothink")]
     pub encounter_detection_nothink: bool,
+    // Presence sensor settings (mmWave encounter detection)
+    #[serde(default = "default_encounter_detection_mode")]
+    pub encounter_detection_mode: String,
+    #[serde(default)]
+    pub presence_sensor_port: String,
+    #[serde(default = "default_presence_absence_threshold_secs")]
+    pub presence_absence_threshold_secs: u64,
+    #[serde(default = "default_presence_debounce_secs")]
+    pub presence_debounce_secs: u64,
+    #[serde(default = "default_presence_csv_log_enabled")]
+    pub presence_csv_log_enabled: bool,
+    // Shadow mode settings (dual detection comparison)
+    #[serde(default = "default_shadow_active_method")]
+    pub shadow_active_method: String,
+    #[serde(default = "default_shadow_csv_log_enabled")]
+    pub shadow_csv_log_enabled: bool,
+}
+
+fn default_shadow_active_method() -> String {
+    "llm".to_string()
+}
+
+fn default_shadow_csv_log_enabled() -> bool {
+    true
+}
+
+fn default_encounter_detection_mode() -> String {
+    "llm".to_string()
+}
+
+fn default_presence_absence_threshold_secs() -> u64 {
+    180
+}
+
+fn default_presence_debounce_secs() -> u64 {
+    10
+}
+
+fn default_presence_csv_log_enabled() -> bool {
+    true
 }
 
 fn default_encounter_merge_enabled() -> bool {
@@ -275,6 +315,13 @@ impl Default for Settings {
             encounter_merge_enabled: default_encounter_merge_enabled(),
             encounter_detection_model: default_encounter_detection_model(),
             encounter_detection_nothink: default_encounter_detection_nothink(),
+            encounter_detection_mode: default_encounter_detection_mode(),
+            presence_sensor_port: String::new(),
+            presence_absence_threshold_secs: default_presence_absence_threshold_secs(),
+            presence_debounce_secs: default_presence_debounce_secs(),
+            presence_csv_log_enabled: default_presence_csv_log_enabled(),
+            shadow_active_method: default_shadow_active_method(),
+            shadow_csv_log_enabled: default_shadow_csv_log_enabled(),
         }
     }
 }
@@ -432,6 +479,14 @@ impl Settings {
                     "Encounter silence trigger {}s is too short. Must be at least 10 seconds",
                     self.encounter_silence_trigger_secs
                 ),
+            });
+        }
+
+        // Shadow mode requires a sensor port
+        if self.encounter_detection_mode == "shadow" && self.presence_sensor_port.is_empty() {
+            errors.push(SettingsValidationError {
+                field: "presence_sensor_port".to_string(),
+                message: "Shadow mode requires a presence sensor port to be configured".to_string(),
             });
         }
 
@@ -598,6 +653,22 @@ pub struct Config {
     pub encounter_detection_model: String,
     #[serde(default = "default_encounter_detection_nothink")]
     pub encounter_detection_nothink: bool,
+    // Presence sensor settings (mmWave encounter detection)
+    #[serde(default = "default_encounter_detection_mode")]
+    pub encounter_detection_mode: String,
+    #[serde(default)]
+    pub presence_sensor_port: String,
+    #[serde(default = "default_presence_absence_threshold_secs")]
+    pub presence_absence_threshold_secs: u64,
+    #[serde(default = "default_presence_debounce_secs")]
+    pub presence_debounce_secs: u64,
+    #[serde(default = "default_presence_csv_log_enabled")]
+    pub presence_csv_log_enabled: bool,
+    // Shadow mode settings (dual detection comparison)
+    #[serde(default = "default_shadow_active_method")]
+    pub shadow_active_method: String,
+    #[serde(default = "default_shadow_csv_log_enabled")]
+    pub shadow_csv_log_enabled: bool,
 }
 
 fn default_max_speakers() -> usize {
@@ -688,6 +759,13 @@ impl Default for Config {
             encounter_merge_enabled: default_encounter_merge_enabled(),
             encounter_detection_model: default_encounter_detection_model(),
             encounter_detection_nothink: default_encounter_detection_nothink(),
+            encounter_detection_mode: default_encounter_detection_mode(),
+            presence_sensor_port: String::new(),
+            presence_absence_threshold_secs: default_presence_absence_threshold_secs(),
+            presence_debounce_secs: default_presence_debounce_secs(),
+            presence_csv_log_enabled: default_presence_csv_log_enabled(),
+            shadow_active_method: default_shadow_active_method(),
+            shadow_csv_log_enabled: default_shadow_csv_log_enabled(),
         }
     }
 }
@@ -745,6 +823,12 @@ impl Config {
         if self.encounter_check_interval_secs < 30 {
             self.encounter_check_interval_secs = 30;
         }
+
+        // Presence sensor: absence threshold 10-600 seconds
+        self.presence_absence_threshold_secs = self.presence_absence_threshold_secs.clamp(10, 600);
+
+        // Presence sensor: debounce 1-60 seconds
+        self.presence_debounce_secs = self.presence_debounce_secs.clamp(1, 60);
     }
 
     /// Load config from file
@@ -896,6 +980,13 @@ impl Config {
             encounter_merge_enabled: self.encounter_merge_enabled,
             encounter_detection_model: self.encounter_detection_model.clone(),
             encounter_detection_nothink: self.encounter_detection_nothink,
+            encounter_detection_mode: self.encounter_detection_mode.clone(),
+            presence_sensor_port: self.presence_sensor_port.clone(),
+            presence_absence_threshold_secs: self.presence_absence_threshold_secs,
+            presence_debounce_secs: self.presence_debounce_secs,
+            presence_csv_log_enabled: self.presence_csv_log_enabled,
+            shadow_active_method: self.shadow_active_method.clone(),
+            shadow_csv_log_enabled: self.shadow_csv_log_enabled,
         }
     }
 
@@ -953,6 +1044,15 @@ impl Config {
         self.encounter_merge_enabled = settings.encounter_merge_enabled;
         self.encounter_detection_model = settings.encounter_detection_model.clone();
         self.encounter_detection_nothink = settings.encounter_detection_nothink;
+        // Presence sensor settings
+        self.encounter_detection_mode = settings.encounter_detection_mode.clone();
+        self.presence_sensor_port = settings.presence_sensor_port.clone();
+        self.presence_absence_threshold_secs = settings.presence_absence_threshold_secs;
+        self.presence_debounce_secs = settings.presence_debounce_secs;
+        self.presence_csv_log_enabled = settings.presence_csv_log_enabled;
+        // Shadow mode settings
+        self.shadow_active_method = settings.shadow_active_method.clone();
+        self.shadow_csv_log_enabled = settings.shadow_csv_log_enabled;
 
         // Clamp values to safe ranges after applying settings
         self.clamp_values();
@@ -1076,6 +1176,13 @@ mod tests {
             encounter_merge_enabled: true,
             encounter_detection_model: default_encounter_detection_model(),
             encounter_detection_nothink: default_encounter_detection_nothink(),
+            encounter_detection_mode: default_encounter_detection_mode(),
+            presence_sensor_port: String::new(),
+            presence_absence_threshold_secs: default_presence_absence_threshold_secs(),
+            presence_debounce_secs: default_presence_debounce_secs(),
+            presence_csv_log_enabled: default_presence_csv_log_enabled(),
+            shadow_active_method: default_shadow_active_method(),
+            shadow_csv_log_enabled: default_shadow_csv_log_enabled(),
             stt_alias: "medical-streaming".to_string(),
             stt_postprocess: true,
         };
@@ -1192,6 +1299,13 @@ mod tests {
             encounter_merge_enabled: default_encounter_merge_enabled(),
             encounter_detection_model: default_encounter_detection_model(),
             encounter_detection_nothink: default_encounter_detection_nothink(),
+            encounter_detection_mode: default_encounter_detection_mode(),
+            presence_sensor_port: String::new(),
+            presence_absence_threshold_secs: default_presence_absence_threshold_secs(),
+            presence_debounce_secs: default_presence_debounce_secs(),
+            presence_csv_log_enabled: default_presence_csv_log_enabled(),
+            shadow_active_method: default_shadow_active_method(),
+            shadow_csv_log_enabled: default_shadow_csv_log_enabled(),
             stt_alias: default_stt_alias(),
             stt_postprocess: default_stt_postprocess(),
         };
@@ -1565,5 +1679,92 @@ mod tests {
         assert_eq!(settings.whisper_model, deserialized.whisper_model);
         assert_eq!(settings.language, deserialized.language);
         assert_eq!(settings.vad_threshold, deserialized.vad_threshold);
+    }
+
+    #[test]
+    fn test_presence_sensor_defaults() {
+        let config = Config::default();
+        assert_eq!(config.encounter_detection_mode, "llm");
+        assert!(config.presence_sensor_port.is_empty());
+        assert_eq!(config.presence_absence_threshold_secs, 180);
+        assert_eq!(config.presence_debounce_secs, 10);
+        assert!(config.presence_csv_log_enabled);
+
+        let settings = Settings::default();
+        assert_eq!(settings.encounter_detection_mode, "llm");
+        assert!(settings.presence_sensor_port.is_empty());
+        assert_eq!(settings.presence_absence_threshold_secs, 180);
+        assert_eq!(settings.presence_debounce_secs, 10);
+        assert!(settings.presence_csv_log_enabled);
+    }
+
+    #[test]
+    fn test_presence_sensor_clamping() {
+        let mut config = Config::default();
+
+        // Out-of-range absence threshold should be clamped
+        config.presence_absence_threshold_secs = 5;
+        config.clamp_values();
+        assert_eq!(config.presence_absence_threshold_secs, 10);
+
+        config.presence_absence_threshold_secs = 1000;
+        config.clamp_values();
+        assert_eq!(config.presence_absence_threshold_secs, 600);
+
+        // Out-of-range debounce should be clamped
+        config.presence_debounce_secs = 0;
+        config.clamp_values();
+        assert_eq!(config.presence_debounce_secs, 1);
+
+        config.presence_debounce_secs = 100;
+        config.clamp_values();
+        assert_eq!(config.presence_debounce_secs, 60);
+    }
+
+    #[test]
+    fn test_old_config_without_sensor_fields_loads_with_defaults() {
+        // Simulate an old config JSON without sensor fields
+        let json = r#"{
+            "schema_version": 1,
+            "whisper_model": "small",
+            "language": "en",
+            "output_format": "paragraphs",
+            "vad_threshold": 0.5,
+            "vad_pre_roll_ms": 300,
+            "silence_to_flush_ms": 500,
+            "max_utterance_ms": 25000
+        }"#;
+
+        let config: Config = serde_json::from_str(json).expect("Should deserialize old config");
+        assert_eq!(config.encounter_detection_mode, "llm");
+        assert!(config.presence_sensor_port.is_empty());
+        assert_eq!(config.presence_absence_threshold_secs, 180);
+        assert_eq!(config.presence_debounce_secs, 10);
+        assert!(config.presence_csv_log_enabled);
+    }
+
+    #[test]
+    fn test_presence_sensor_settings_roundtrip() {
+        let mut config = Config::default();
+        config.encounter_detection_mode = "sensor".to_string();
+        config.presence_sensor_port = "/dev/cu.usbserial-2110".to_string();
+        config.presence_absence_threshold_secs = 120;
+        config.presence_debounce_secs = 15;
+        config.presence_csv_log_enabled = false;
+
+        let settings = config.to_settings();
+        assert_eq!(settings.encounter_detection_mode, "sensor");
+        assert_eq!(settings.presence_sensor_port, "/dev/cu.usbserial-2110");
+        assert_eq!(settings.presence_absence_threshold_secs, 120);
+        assert_eq!(settings.presence_debounce_secs, 15);
+        assert!(!settings.presence_csv_log_enabled);
+
+        let mut config2 = Config::default();
+        config2.update_from_settings(&settings);
+        assert_eq!(config2.encounter_detection_mode, "sensor");
+        assert_eq!(config2.presence_sensor_port, "/dev/cu.usbserial-2110");
+        assert_eq!(config2.presence_absence_threshold_secs, 120);
+        assert_eq!(config2.presence_debounce_secs, 15);
+        assert!(!config2.presence_csv_log_enabled);
     }
 }

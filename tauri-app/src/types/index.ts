@@ -107,6 +107,15 @@ export interface Settings {
   encounter_merge_enabled: boolean;
   encounter_detection_model: string;
   encounter_detection_nothink: boolean;
+  // Presence sensor settings (mmWave encounter detection)
+  encounter_detection_mode: string;  // "sensor" | "llm" | "shadow"
+  presence_sensor_port: string;
+  presence_absence_threshold_secs: number;
+  presence_debounce_secs: number;
+  presence_csv_log_enabled: boolean;
+  // Shadow mode settings (dual detection comparison)
+  shadow_active_method: string;  // "llm" | "sensor"
+  shadow_csv_log_enabled: boolean;
 }
 
 // Listening mode types (auto-session detection)
@@ -674,6 +683,16 @@ export interface ContinuousModeStats {
   buffer_word_count: number;
   /** ISO timestamp of the first segment in the current buffer (for "current encounter" display) */
   buffer_started_at: string | null;
+  /** Whether presence sensor is connected (null when in LLM detection mode) */
+  sensor_connected?: boolean;
+  /** Current presence sensor state: "present", "absent", "unknown" (null when in LLM mode) */
+  sensor_state?: string;
+  /** Whether shadow mode (dual detection comparison) is active */
+  shadow_mode_active?: boolean;
+  /** Which method is the shadow observer ("llm" or "sensor") */
+  shadow_method?: string;
+  /** Last shadow decision: "would_split" or "would_not_split" */
+  last_shadow_outcome?: string;
 }
 
 /** Event payloads emitted from continuous mode backend */
@@ -685,7 +704,9 @@ export type ContinuousModeEventType =
   | 'checking'
   | 'error'
   | 'stopped'
-  | 'encounter_merged';
+  | 'encounter_merged'
+  | 'sensor_status'
+  | 'shadow_decision';
 
 export interface ContinuousModeEvent {
   type: ContinuousModeEventType;
@@ -695,6 +716,18 @@ export interface ContinuousModeEvent {
   error?: string;
   merged_into_session_id?: string;
   removed_session_id?: string;
+  /** Sensor connection status (for sensor_status events) */
+  connected?: boolean;
+  /** Sensor presence state (for sensor_status events) */
+  state?: string;
+  /** Shadow method that made the decision (for shadow_decision events) */
+  shadow_method?: string;
+  /** Shadow outcome: "would_split" or "would_not_split" (for shadow_decision events) */
+  outcome?: string;
+  /** Buffer word count at shadow decision time */
+  buffer_words?: number;
+  /** LLM confidence for shadow decision */
+  confidence?: number;
 }
 
 /** Auto-end event payload */

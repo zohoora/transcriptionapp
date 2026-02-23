@@ -88,6 +88,9 @@ thiserror = "1"
 # Image encoding for screenshots
 image = { version = "0.25", default-features = false, features = ["jpeg"] }
 
+# Serial port access for presence sensor (mmWave SEN0395)
+serialport = "4"
+
 # macOS permissions (microphone access check) and screen capture
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "0.6"

@@ -48,8 +48,10 @@ pub mod models;
 pub mod ollama;
 pub mod permissions;
 mod pipeline;
+pub mod presence_sensor;
 pub mod preprocessing;
 pub mod screenshot;
+pub mod shadow_log;
 pub mod speaker_profiles;
 #[cfg(test)]
 mod command_tests;
@@ -353,6 +355,7 @@ pub fn run() {
             commands::get_continuous_mode_status,
             commands::trigger_new_patient,
             commands::set_continuous_encounter_notes,
+            commands::list_serial_ports,
         ])
         .on_window_event(|window, event| {
             if let WindowEvent::CloseRequested { .. } = event {
