@@ -43,3 +43,6 @@ pnpm-debug.log*
 # Models (too large for git)
 *.bin
 models/
+
+# Git worktrees
+.worktrees/
