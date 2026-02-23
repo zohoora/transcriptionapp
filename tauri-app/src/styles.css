@@ -7382,3 +7382,175 @@ button.review-section-header-left:focus {
   background: var(--accent-blue);
   box-shadow: 0 0 4px rgba(59, 130, 246, 0.4);
 }
+
+.split-gutter.suggested {
+  height: 4px;
+  background: rgba(234, 179, 8, 0.3);
+}
+
+.split-gutter.suggested:hover {
+  background: rgba(234, 179, 8, 0.5);
+}
+
+.split-gutter.suggested.active {
+  background: var(--accent-blue);
+}
+
+/* ============================================================================
+   Split Window (standalone window)
+   ============================================================================ */
+
+.split-window {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  background: var(--bg-primary);
+}
+
+.split-window-header {
+  padding: 16px 20px 8px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.split-window-header h1 {
+  font-size: 16px;
+  font-weight: 600;
+  margin: 0 0 4px;
+  color: var(--text-primary);
+}
+
+.split-window-subtitle {
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin: 0;
+}
+
+.split-window-stats {
+  display: flex;
+  justify-content: space-between;
+  padding: 8px 20px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  border-bottom: 1px solid var(--border-color);
+}
+
+.split-stat.part-a {
+  color: var(--accent-blue);
+}
+
+.split-stat.part-b {
+  color: #22c55e;
+}
+
+.split-suggestions-panel {
+  padding: 8px 20px;
+  border-bottom: 1px solid var(--border-color);
+  max-height: 160px;
+  overflow-y: auto;
+}
+
+.split-suggestions-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 6px;
+}
+
+.split-suggestion {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 8px;
+  font-size: 12px;
+  background: transparent;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  cursor: pointer;
+  color: var(--text-primary);
+  text-align: left;
+  margin-bottom: 4px;
+  transition: all 0.15s ease;
+}
+
+.split-suggestion:hover {
+  background: var(--bg-hover);
+}
+
+.split-suggestion.active {
+  border-color: var(--accent-blue);
+  background: rgba(59, 130, 246, 0.06);
+}
+
+.split-suggestion-badge {
+  font-size: 10px;
+  font-weight: 700;
+  color: white;
+  padding: 2px 8px;
+  border-radius: 4px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.split-suggestion-reason {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-secondary);
+  font-size: 11px;
+}
+
+.split-suggestion-confidence {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.split-transcript-container {
+  flex: 1;
+  overflow-y: auto;
+  border-top: 1px solid var(--border-color);
+  padding: 0;
+}
+
+.split-line-suggestion-marker {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  border: 2px solid;
+  flex-shrink: 0;
+  margin-left: auto;
+}
+
+.split-window-footer {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  padding: 12px 20px;
+  border-top: 1px solid var(--border-color);
+  background: var(--bg-primary);
+}
+
+.split-window-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 40px 20px;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.split-window-error {
+  padding: 20px;
+  color: #dc2626;
+  font-size: 13px;
+  text-align: center;
+}

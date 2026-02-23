@@ -20,6 +20,10 @@ A real-time speech-to-text transcription desktop application built with Tauri, R
 - **Encounter history** - Browse past sessions with calendar view
 - **Audio recording** - WAV files synced to EMR
 - **Auto-session detection** - Automatically starts recording when a greeting is detected
+- **Session cleanup tools** - Delete, split, merge sessions, rename patients, renumber encounters
+- **Presence sensor** - mmWave radar (SEN0395) for hardware-based encounter detection
+- **Shadow mode** - Dual detection comparison (sensor vs LLM) with CSV logging
+- **Vision-based patient name** - Screenshot capture + vision LLM to extract patient name from EMR
 
 ### Biomarker Analysis
 - **Vitality (prosody)** - Pitch variability analysis for affect detection
@@ -98,7 +102,13 @@ tauri-app/
 │   │   ├── ImageSuggestions.tsx   # MIIS medical illustrations
 │   │   ├── PatientPulse.tsx      # Glanceable biomarker summary
 │   │   ├── PatientVoiceMonitor.tsx # Patient voice metric trending
-│   │   └── SyncStatusBar.tsx     # EMR sync status
+│   │   ├── SyncStatusBar.tsx     # EMR sync status
+│   │   └── cleanup/             # Session cleanup tools
+│   │       ├── CleanupActionBar.tsx
+│   │       ├── DeleteConfirmDialog.tsx
+│   │       ├── EditNameDialog.tsx
+│   │       ├── MergeConfirmDialog.tsx
+│   │       └── SplitView.tsx
 │   ├── types/index.ts            # Shared TypeScript types
 │   ├── utils.ts                  # Date/time utilities
 │   ├── ErrorBoundary.tsx
@@ -144,6 +154,8 @@ tauri-app/
 │   │   ├── debug_storage.rs      # Debug storage (dev only)
 │   │   ├── permissions.rs        # macOS permission checks
 │   │   ├── activity_log.rs       # Structured logging
+│   │   ├── shadow_log.rs         # Shadow mode CSV logging
+│   │   ├── presence_sensor.rs    # mmWave presence sensor (serial)
 │   │   ├── preprocessing.rs      # Audio preprocessing (DC removal, high-pass, AGC)
 │   │   ├── diarization/          # Speaker detection
 │   │   │   ├── mod.rs            # Module exports
@@ -227,9 +239,9 @@ pnpm soak:test         # Interactive
 
 | Category | Framework | Count |
 |----------|-----------|-------|
-| Unit Tests (Frontend) | Vitest | 387 tests |
-| Unit Tests (Rust) | cargo test | 421 tests |
-| E2E Integration (Rust) | cargo test (ignored) | 10 tests |
+| Unit Tests (Frontend) | Vitest | 414 tests |
+| Unit Tests (Rust) | cargo test | 475 tests |
+| E2E Integration (Rust) | cargo test (ignored) | 28 tests |
 | Snapshot Tests | Vitest | 7 snapshots |
 | Accessibility Tests | vitest-axe | 12 tests |
 | Contract Tests | Vitest | 24 tests |
@@ -265,7 +277,12 @@ Settings are stored in `~/.transcriptionapp/config.json`:
   "auto_start_enabled": false,
   "greeting_sensitivity": 0.7,
   "min_speech_duration_ms": 2000,
-  "charting_mode": "session"
+  "charting_mode": "session",
+  "encounter_detection_mode": "llm",
+  "encounter_check_interval_secs": 120,
+  "presence_sensor_port": "/dev/cu.usbserial-2110",
+  "presence_absence_threshold_secs": 180,
+  "screen_capture_enabled": false
 }
 ```
 
@@ -280,6 +297,8 @@ Settings are stored in `~/.transcriptionapp/config.json`:
 | Session archive | `~/.transcriptionapp/archive/` |
 | Activity logs | `~/.transcriptionapp/logs/activity.log.*` |
 | Debug storage | `~/.transcriptionapp/debug/` |
+| mmWave sensor logs | `~/.transcriptionapp/mmwave/` |
+| Shadow mode logs | `~/.transcriptionapp/shadow/` |
 
 ## Architecture
 
@@ -299,6 +318,7 @@ See [docs/adr/](./docs/adr/) for Architecture Decision Records.
 4. **OAuth opens new window**: Use `pnpm tauri build --debug` instead of `tauri dev`
 5. **Medplum auth fails**: Verify `medplum_client_id` matches your Medplum ClientApplication
 6. **E2E tests failing**: Ensure STT Router and LLM Router are running and API key is in config
+7. **Presence sensor "Device or resource busy"**: Another process (e.g., `mmwave_logger.py`) holds the serial port — stop it before starting continuous mode
 
 ## License
 

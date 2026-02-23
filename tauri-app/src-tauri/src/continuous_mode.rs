@@ -2229,7 +2229,7 @@ pub async fn run_continuous_mode(
     let remaining_text = {
         let buffer = handle.transcript_buffer.lock().unwrap_or_else(|e| e.into_inner());
         if !buffer.is_empty() {
-            Some(buffer.full_text())
+            Some(buffer.full_text_with_speakers())
         } else {
             None
         }

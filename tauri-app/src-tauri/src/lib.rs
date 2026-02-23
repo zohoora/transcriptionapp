@@ -336,6 +336,7 @@ pub fn run() {
             commands::update_session_patient_name,
             commands::renumber_local_encounters,
             commands::get_session_transcript_lines,
+            commands::suggest_split_points,
             // Clinical chat commands
             commands::clinical_chat_send,
             // MIIS (Medical Illustration Image Server) commands

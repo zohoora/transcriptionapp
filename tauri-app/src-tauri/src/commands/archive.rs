@@ -1,10 +1,13 @@
 //! Archive command handlers for local session history
 
+use crate::config::Config;
 use crate::local_archive::{
     self, ArchiveDetails, ArchiveSummary,
 };
+use crate::ollama::LLMClient;
+use serde::Serialize;
 use std::path::PathBuf;
-use tracing::info;
+use tracing::{info, warn};
 
 /// Get all dates that have archived sessions
 #[tauri::command]
@@ -135,4 +138,246 @@ pub fn read_local_audio_file(path: String) -> Result<Vec<u8>, String> {
 
     info!("Reading local audio file: {}", path);
     std::fs::read(&file_path).map_err(|e| format!("Failed to read audio file: {}", e))
+}
+
+// ============================================================================
+// LLM-Suggested Split Points
+// ============================================================================
+
+/// An LLM-suggested split point in a transcript
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SuggestedSplit {
+    pub line_index: usize,
+    pub confidence: f64,
+    pub reason: String,
+}
+
+/// System prompt for split-point detection
+const SPLIT_DETECTION_PROMPT: &str = r#"You MUST respond in English with ONLY a JSON object. No other text.
+
+You are analyzing a clinical transcript that was recorded continuously in a medical office.
+The transcript contains multiple patient encounters concatenated together.
+
+Your task: identify where the FIRST complete patient encounter ends. Find the single best split point — the line where the first encounter wraps up and a new one is about to begin.
+
+Signs the first encounter is ending:
+- Farewell/wrap-up ("take care", "we'll see you in X weeks", "have a good day")
+- New patient greeting/introduction after prior clinical discussion
+- Clear topic shift from one patient's conditions to another's
+
+Return the LINE NUMBER of the LAST line of the first encounter.
+
+Return a JSON object (or empty object {} if no transition found):
+{"line_index": <line number>, "confidence": <0.0-1.0>, "reason": "<brief explanation>"}
+
+Respond with ONLY the JSON."#;
+
+/// Parse the LLM response into suggested split points
+pub fn parse_split_suggestions(response: &str, max_line: usize) -> Vec<SuggestedSplit> {
+    // Strip markdown fences if present
+    let trimmed = response.trim();
+    let json_str = if trimmed.starts_with("```") {
+        let inner = trimmed
+            .trim_start_matches("```json")
+            .trim_start_matches("```")
+            .trim_end_matches("```")
+            .trim();
+        inner
+    } else {
+        trimmed
+    };
+
+    #[derive(serde::Deserialize)]
+    struct RawSuggestion {
+        line_index: Option<usize>,
+        confidence: Option<f64>,
+        reason: Option<String>,
+    }
+
+    // Try parsing as a single object first, then fall back to array
+    let raw_list: Vec<RawSuggestion> = if json_str.starts_with('{') {
+        match serde_json::from_str::<RawSuggestion>(json_str) {
+            Ok(s) => vec![s],
+            Err(e) => {
+                warn!("Failed to parse split suggestion JSON: {} — response: {}", e, &json_str[..json_str.len().min(200)]);
+                return Vec::new();
+            }
+        }
+    } else {
+        match serde_json::from_str::<Vec<RawSuggestion>>(json_str) {
+            Ok(v) => v,
+            Err(e) => {
+                warn!("Failed to parse split suggestions JSON: {} — response: {}", e, &json_str[..json_str.len().min(200)]);
+                return Vec::new();
+            }
+        }
+    };
+
+    let mut suggestions: Vec<SuggestedSplit> = raw_list
+        .into_iter()
+        .filter_map(|s| {
+            let idx = s.line_index?;
+            if idx > 0 && idx <= max_line {
+                Some(SuggestedSplit {
+                    line_index: idx,
+                    confidence: s.confidence.unwrap_or(0.5).clamp(0.0, 1.0),
+                    reason: s.reason.unwrap_or_default(),
+                })
+            } else {
+                None
+            }
+        })
+        .collect();
+
+    suggestions.sort_by_key(|s| s.line_index);
+    suggestions.dedup_by_key(|s| s.line_index);
+    suggestions
+}
+
+/// Build the user prompt with numbered transcript lines
+pub fn build_split_user_prompt(lines: &[String]) -> String {
+    let mut prompt = String::with_capacity(lines.len() * 80);
+    for (i, line) in lines.iter().enumerate() {
+        prompt.push_str(&format!("{}: {}\n", i + 1, line));
+    }
+    prompt
+}
+
+/// Ask the LLM to suggest split points in a transcript
+#[tauri::command]
+pub async fn suggest_split_points(
+    session_id: String,
+    date: String,
+) -> Result<Vec<SuggestedSplit>, String> {
+    info!("Suggesting split points for session: {} on {}", session_id, date);
+
+    let lines = local_archive::get_transcript_lines(&session_id, &date)?;
+    if lines.len() < 2 {
+        return Ok(Vec::new());
+    }
+
+    let config = Config::load_or_default();
+    let client = LLMClient::new(
+        &config.llm_router_url,
+        &config.llm_api_key,
+        &config.llm_client_id,
+        &config.fast_model,
+    )?;
+
+    let user_prompt = build_split_user_prompt(&lines);
+
+    let response = client
+        .generate(
+            &config.fast_model,
+            SPLIT_DETECTION_PROMPT,
+            &user_prompt,
+            "split_detection",
+        )
+        .await?;
+
+    let suggestions = parse_split_suggestions(&response, lines.len());
+    info!(
+        "LLM suggested {} split points for session {}",
+        suggestions.len(),
+        session_id
+    );
+
+    Ok(suggestions)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_build_split_user_prompt() {
+        let lines = vec![
+            "Doctor: Hello, how are you?".to_string(),
+            "Patient: I'm doing well.".to_string(),
+            "Doctor: Great, take care.".to_string(),
+        ];
+        let prompt = build_split_user_prompt(&lines);
+        assert!(prompt.contains("1: Doctor: Hello, how are you?"));
+        assert!(prompt.contains("2: Patient: I'm doing well."));
+        assert!(prompt.contains("3: Doctor: Great, take care."));
+    }
+
+    #[test]
+    fn test_parse_single_object() {
+        let response = r#"{"line_index": 5, "confidence": 0.9, "reason": "Farewell detected"}"#;
+        let suggestions = parse_split_suggestions(response, 10);
+        assert_eq!(suggestions.len(), 1);
+        assert_eq!(suggestions[0].line_index, 5);
+        assert!((suggestions[0].confidence - 0.9).abs() < f64::EPSILON);
+        assert_eq!(suggestions[0].reason, "Farewell detected");
+    }
+
+    #[test]
+    fn test_parse_empty_object() {
+        let response = "{}";
+        let suggestions = parse_split_suggestions(response, 10);
+        assert!(suggestions.is_empty());
+    }
+
+    #[test]
+    fn test_parse_array_fallback() {
+        let response = r#"[{"line_index": 3, "confidence": 0.8, "reason": "Wrap-up"}]"#;
+        let suggestions = parse_split_suggestions(response, 10);
+        assert_eq!(suggestions.len(), 1);
+        assert_eq!(suggestions[0].line_index, 3);
+    }
+
+    #[test]
+    fn test_parse_empty_array() {
+        let response = "[]";
+        let suggestions = parse_split_suggestions(response, 10);
+        assert!(suggestions.is_empty());
+    }
+
+    #[test]
+    fn test_parse_invalid_json() {
+        let response = "not json at all";
+        let suggestions = parse_split_suggestions(response, 10);
+        assert!(suggestions.is_empty());
+    }
+
+    #[test]
+    fn test_parse_markdown_fences() {
+        let response = "```json\n{\"line_index\": 4, \"confidence\": 0.7, \"reason\": \"Topic shift\"}\n```";
+        let suggestions = parse_split_suggestions(response, 10);
+        assert_eq!(suggestions.len(), 1);
+        assert_eq!(suggestions[0].line_index, 4);
+    }
+
+    #[test]
+    fn test_parse_filters_out_of_range() {
+        let response = r#"{"line_index": 15, "confidence": 0.9, "reason": "Past end"}"#;
+        let suggestions = parse_split_suggestions(response, 10);
+        assert!(suggestions.is_empty());
+    }
+
+    #[test]
+    fn test_parse_clamps_confidence() {
+        let response = r#"{"line_index": 5, "confidence": 1.5, "reason": "Over max"}"#;
+        let suggestions = parse_split_suggestions(response, 10);
+        assert_eq!(suggestions.len(), 1);
+        assert!((suggestions[0].confidence - 1.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn test_parse_missing_optional_fields() {
+        let response = r#"{"line_index": 5}"#;
+        let suggestions = parse_split_suggestions(response, 10);
+        assert_eq!(suggestions.len(), 1);
+        assert!((suggestions[0].confidence - 0.5).abs() < f64::EPSILON);
+        assert_eq!(suggestions[0].reason, "");
+    }
+
+    #[test]
+    fn test_parse_zero_line_index_filtered() {
+        let response = r#"{"line_index": 0, "confidence": 0.8, "reason": "Bad"}"#;
+        let suggestions = parse_split_suggestions(response, 10);
+        assert!(suggestions.is_empty());
+    }
 }

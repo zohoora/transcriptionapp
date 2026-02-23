@@ -582,11 +582,11 @@ pub fn split_session(session_id: &str, date_str: &str, split_line: usize) -> Res
         return Err(format!("Session not found: {}", session_id));
     }
 
-    // Read transcript
+    // Read transcript (uses sentence-boundary fallback for single-line transcripts)
     let transcript_path = session_dir.join("transcript.txt");
     let transcript = fs::read_to_string(&transcript_path)
         .map_err(|e| format!("Failed to read transcript: {}", e))?;
-    let lines: Vec<&str> = transcript.lines().collect();
+    let lines = split_transcript_into_lines(&transcript);
 
     // Validate split point
     if lines.is_empty() {
@@ -886,6 +886,36 @@ pub fn renumber_encounters(date_str: &str) -> Result<(), String> {
     Ok(())
 }
 
+/// Split a transcript string into lines. Falls back to sentence-boundary
+/// splitting for single-line transcripts (e.g., continuous mode flush before
+/// the newline fix).
+fn split_transcript_into_lines(transcript: &str) -> Vec<String> {
+    let lines: Vec<String> = transcript.lines().map(|l| l.to_string()).collect();
+
+    // If the transcript already has multiple lines, use them as-is
+    if lines.len() > 1 || transcript.len() <= 200 {
+        return lines;
+    }
+
+    // Fallback: split on sentence boundaries (at least 10 words per chunk)
+    let mut result = Vec::new();
+    let mut current = String::new();
+    for word in transcript.split_whitespace() {
+        current.push_str(word);
+        current.push(' ');
+        if (word.ends_with('.') || word.ends_with('?') || word.ends_with('!'))
+            && current.split_whitespace().count() >= 10
+        {
+            result.push(current.trim().to_string());
+            current = String::new();
+        }
+    }
+    if !current.trim().is_empty() {
+        result.push(current.trim().to_string());
+    }
+    result
+}
+
 /// Get transcript lines for a session (used by split UI).
 pub fn get_transcript_lines(session_id: &str, date_str: &str) -> Result<Vec<String>, String> {
     let session_dir = get_session_dir_from_str(session_id, date_str)?;
@@ -900,12 +930,45 @@ pub fn get_transcript_lines(session_id: &str, date_str: &str) -> Result<Vec<Stri
 
     let transcript = fs::read_to_string(&transcript_path)
         .map_err(|e| format!("Failed to read transcript: {}", e))?;
-    Ok(transcript.lines().map(|l| l.to_string()).collect())
+    Ok(split_transcript_into_lines(&transcript))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_split_transcript_into_lines_multiline() {
+        let text = "Line one.\nLine two.\nLine three.";
+        let lines = split_transcript_into_lines(text);
+        assert_eq!(lines.len(), 3);
+        assert_eq!(lines[0], "Line one.");
+    }
+
+    #[test]
+    fn test_split_transcript_into_lines_single_line_fallback() {
+        // Simulate a continuous mode flush transcript (no newlines, >200 chars)
+        let words: Vec<String> = (0..100)
+            .map(|i| if i % 15 == 14 { format!("word{}.", i) } else { format!("word{}", i) })
+            .collect();
+        let text = words.join(" ");
+        assert!(text.len() > 200);
+        assert!(!text.contains('\n'));
+
+        let lines = split_transcript_into_lines(&text);
+        assert!(lines.len() > 1, "Should split single-line transcript into multiple lines");
+        // Rejoin should preserve all words
+        let rejoined_words: usize = lines.iter().map(|l| l.split_whitespace().count()).sum();
+        assert_eq!(rejoined_words, 100);
+    }
+
+    #[test]
+    fn test_split_transcript_into_lines_short_single_line() {
+        // Short single-line transcripts should NOT be split
+        let text = "A short transcript.";
+        let lines = split_transcript_into_lines(text);
+        assert_eq!(lines.len(), 1);
+    }
 
     #[test]
     fn test_archive_metadata_new() {

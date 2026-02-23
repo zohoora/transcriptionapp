@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { invoke } from '@tauri-apps/api/core';
+import { listen } from '@tauri-apps/api/event';
 import { getCurrentWindow } from '@tauri-apps/api/window';
+import { WebviewWindow } from '@tauri-apps/api/webviewWindow';
 import { writeText } from '@tauri-apps/plugin-clipboard-manager';
 import { useAuth } from './AuthProvider';
 import { useSoapNote } from '../hooks/useSoapNote';
@@ -12,7 +14,6 @@ import {
   DeleteConfirmDialog,
   EditNameDialog,
   MergeConfirmDialog,
-  SplitView,
 } from './cleanup';
 import { formatDateForApi, formatLocalTime, formatLocalDateTime } from '../utils';
 import type {
@@ -30,7 +31,7 @@ import { DETAIL_LEVEL_LABELS } from '../types';
 type View = 'list' | 'detail';
 type DetailTab = 'transcript' | 'soap' | 'insights';
 type DataSource = 'local' | 'medplum';
-type CleanupDialog = 'none' | 'delete' | 'merge' | 'editName' | 'split';
+type CleanupDialog = 'none' | 'delete' | 'merge' | 'editName';
 
 function formatDateForDisplay(date: Date): string {
   return date.toLocaleDateString('en-US', {
@@ -517,18 +518,64 @@ const HistoryWindow: React.FC = () => {
     }
   }, [selectedDate, selectedIds, afterCleanupOp]);
 
-  // Split operation
-  const handleSplitConfirm = useCallback(async (splitLine: number) => {
+  // Open split window — passes context via URL query params
+  const openSplitWindow = useCallback(async () => {
     const dateStr = formatDateForApi(selectedDate);
     const id = Array.from(selectedIds)[0];
+    if (!id) return;
+
     try {
-      await invoke<string>('split_local_session', { sessionId: id, date: dateStr, splitLine });
-      await afterCleanupOp('Session split into two');
+      // Close existing split window if any
+      const existing = await WebviewWindow.getByLabel('split');
+      if (existing) {
+        await existing.close();
+      }
+
+      const splitWindow = new WebviewWindow('split', {
+        url: `split.html?sessionId=${encodeURIComponent(id)}&date=${encodeURIComponent(dateStr)}`,
+        title: 'Split Session',
+        width: 700,
+        height: 800,
+        minWidth: 500,
+        minHeight: 400,
+        resizable: true,
+      });
+
+      splitWindow.once('tauri://error', (e) => {
+        console.error('Failed to open split window:', e);
+      });
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-      setCleanupDialog('none');
+      console.error('Error opening split window:', e);
     }
-  }, [selectedDate, selectedIds, afterCleanupOp]);
+  }, [selectedDate, selectedIds]);
+
+  // Listen for split_complete from SplitWindow
+  useEffect(() => {
+    let mounted = true;
+    let cleanup: (() => void) | undefined;
+
+    const setup = async () => {
+      const unlisten = await listen('split_complete', () => {
+        if (mounted) {
+          afterCleanupOp('Session split into two');
+        }
+      });
+
+      if (!mounted) {
+        unlisten();
+        return;
+      }
+
+      cleanup = unlisten;
+    };
+
+    setup();
+
+    return () => {
+      mounted = false;
+      cleanup?.();
+    };
+  }, [afterCleanupOp]);
 
   // SOAP regeneration for selected sessions
   const handleRegenSoap = useCallback(async () => {
@@ -1078,7 +1125,7 @@ const HistoryWindow: React.FC = () => {
             onMerge={() => setCleanupDialog('merge')}
             onDelete={() => setCleanupDialog('delete')}
             onEditName={() => setCleanupDialog('editName')}
-            onSplit={() => setCleanupDialog('split')}
+            onSplit={openSplitWindow}
             onRegenSoap={handleRegenSoap}
           />
         )}
@@ -1125,14 +1172,7 @@ const HistoryWindow: React.FC = () => {
           onCancel={() => setCleanupDialog('none')}
         />
       )}
-      {cleanupDialog === 'split' && selectedIds.size === 1 && (
-        <SplitView
-          sessionId={Array.from(selectedIds)[0]}
-          date={formatDateForApi(selectedDate)}
-          onConfirm={handleSplitConfirm}
-          onCancel={() => setCleanupDialog('none')}
-        />
-      )}
+      {/* Split is now handled in a separate window via openSplitWindow */}
     </div>
   );
 };

@@ -59,6 +59,7 @@ Rust Backend
 ├── permissions.rs     # macOS permission checks
 ├── ollama.rs          # Re-exports from llm_client.rs (backward compat)
 ├── activity_log.rs    # Structured PHI-safe activity logging
+├── shadow_log.rs      # Shadow mode CSV logging (dual detection comparison)
 ├── encounter_experiment.rs # Encounter detection experiment CLI support
 ├── vision_experiment.rs    # Vision SOAP experiment CLI support
 ├── diarization/       # Speaker detection (ONNX embeddings, clustering)
@@ -122,9 +123,11 @@ cd src-tauri && cargo test       # Rust
 | Modify continuous mode | `continuous_mode.rs`, `commands/continuous.rs`, `useContinuousMode.ts`, `ContinuousMode.tsx` |
 | Modify presence sensor | `presence_sensor.rs`, `config.rs` (sensor fields), `commands/continuous.rs`, `SettingsDrawer.tsx`, `ContinuousMode.tsx` |
 | Modify patient biomarkers | `usePatientBiomarkers.ts`, `PatientPulse.tsx`, `PatientVoiceMonitor.tsx` |
+| Modify session cleanup (history) | `commands/archive.rs`, `HistoryWindow.tsx`, `components/cleanup/` (CleanupActionBar, DeleteConfirmDialog, EditNameDialog, MergeConfirmDialog, SplitView), `SplitWindow.tsx` (standalone split window) |
+| Modify shadow mode | `shadow_log.rs`, `continuous_mode.rs` (shadow observer task), `config.rs` (`shadow_active_method`, `shadow_csv_log_enabled`) |
 | Add session-scoped state | `useSessionLifecycle.ts` (add reset call to `resetAllSessionState`) |
 
-## IPC Commands (83 total across 15 modules)
+## IPC Commands (90 total across 16 modules)
 
 | Module | Commands | Source |
 |--------|----------|--------|
@@ -132,16 +135,16 @@ cd src-tauri && cargo test       # Rust
 | Settings (2) | `get_settings`, `set_settings` | `commands/settings.rs` |
 | Audio (1) | `list_input_devices` | `commands/audio.rs` |
 | Models (12) | `check_model_status`, `ensure_models`, `download_*_model`, `get_whisper_models`, etc. | `commands/models.rs` |
-| LLM/SOAP (11) | `check_ollama_status`, `generate_soap_note*`, `generate_predictive_hint`, vision experiments | `commands/ollama.rs` |
+| LLM/SOAP (16) | `check_ollama_status`, `list_ollama_models`, `prewarm_ollama_model`, `generate_soap_note`, `generate_soap_note_auto_detect`, `generate_predictive_hint`, `generate_vision_soap_note`, `run_vision_experiments`, `get_vision_experiment_results`, `get_vision_experiment_report`, `list_vision_experiment_strategies` | `commands/ollama.rs` |
 | Medplum (17) | `medplum_*` — auth, patients, encounters, sync, history | `commands/medplum.rs` |
 | STT Router (2) | `check_whisper_server_status`, `list_whisper_server_models` | `commands/whisper_server.rs` |
 | Permissions (3) | `check_microphone_permission`, `request_*`, `open_*_settings` | `commands/permissions.rs` |
 | Listening (3) | `start_listening`, `stop_listening`, `get_listening_status` | `commands/listening.rs` |
-| Speaker Profiles (6) | `list_speaker_profiles`, `create_*`, `update_*`, `delete_*`, `reenroll_*` | `commands/speaker_profiles.rs` |
-| Archive (5) | `get_local_session_dates`, `get_local_sessions_by_date`, `get_local_session_details`, `save_local_soap_note`, `read_local_audio_file` | `commands/archive.rs` |
+| Speaker Profiles (6) | `list_speaker_profiles`, `get_speaker_profile`, `create_*`, `update_*`, `delete_*`, `reenroll_*` | `commands/speaker_profiles.rs` |
+| Archive (12) | `get_local_session_dates`, `get_local_sessions_by_date`, `get_local_session_details`, `save_local_soap_note`, `read_local_audio_file`, `delete_local_session`, `split_local_session`, `merge_local_sessions`, `update_session_patient_name`, `renumber_local_encounters`, `get_session_transcript_lines`, `suggest_split_points` | `commands/archive.rs` |
 | Clinical Chat (1) | `clinical_chat_send` | `commands/clinical_chat.rs` |
 | MIIS (2) | `miis_suggest`, `miis_send_usage` | `commands/miis.rs` |
-| Screenshot (7) | `check_screen_recording_permission`, `start/stop_screen_capture`, `get_screenshot_*` | `commands/screenshot.rs` |
+| Screenshot (7) | `check_screen_recording_permission`, `open_screen_recording_settings`, `start/stop_screen_capture`, `get_screen_capture_status`, `get_screenshot_paths`, `get_screenshot_thumbnails` | `commands/screenshot.rs` |
 | Continuous (6) | `start/stop_continuous_mode`, `get_continuous_mode_status`, `trigger_new_patient`, `set_continuous_encounter_notes`, `list_serial_ports` | `commands/continuous.rs` |
 
 ## Events (Backend → Frontend)
@@ -155,7 +158,7 @@ cd src-tauri && cargo test       # Rust
 | `listening_event` | Auto-detection status (includes `speaker_not_verified`) |
 | `silence_warning` | Auto-end countdown (silence_ms, remaining_ms) |
 | `session_auto_end` | Session auto-ended due to silence |
-| `continuous_mode_event` | Continuous mode status changes (started, encounter_detected, soap_generated, encounter_merged, etc.) |
+| `continuous_mode_event` | Continuous mode status changes (started, encounter_detected, soap_generated, encounter_merged, sensor_status, shadow_decision, etc.) |
 | `continuous_transcript_preview` | Live transcript preview in continuous mode (separate from `transcript_update`) |
 
 ## Session States
@@ -190,6 +193,8 @@ Idle → Preparing → Recording → Stopping → Completed
 | Settings validation after update | `clamp_values()` called after `update_from_settings()` in config.rs — safety net for user-edited JSON |
 | Encounter notes: clone before clear | In continuous mode detector, clone accumulated notes before clearing buffer to avoid data loss |
 | Audio quality shared util | `getAudioQualityLevel()` in utils.ts — shared across RecordingMode, ReviewMode, ContinuousMode |
+| Force-split constants | Named constants in continuous_mode.rs: `FORCE_CHECK_WORD_THRESHOLD` (5K), `FORCE_SPLIT_WORD_THRESHOLD` (8K), `FORCE_SPLIT_CONSECUTIVE_LIMIT` (3), `ABSOLUTE_WORD_CAP` (15K) |
+| Presence sensor auto-detect | `auto_detect_port()` in presence_sensor.rs scans USB-serial devices when configured port fails |
 
 ## Features
 
@@ -206,7 +211,10 @@ Idle → Preparing → Recording → Stopping → Completed
 | **MCP Server** | Port 7101, JSON-RPC 2.0. Tools: `agent_identity`, `health_check`, `get_status`, `get_logs` | `mcp/` |
 | **MIIS Images** | LLM extracts concepts every 30s → MIIS returns ranked images. Backend proxies through Rust (CORS). Server needs embedder enabled | `commands/miis.rs`, ADR 0018 |
 | **Continuous Mode** | All-day recording, LLM or sensor-based encounter detection, auto-SOAP per encounter. Vision-based patient name extraction via `vision-model` alias + `PatientNameTracker` majority-vote | `continuous_mode.rs`, ADR 0019 |
-| **Presence Sensor** | DFRobot SEN0395 24GHz mmWave via USB-UART. Debounced presence state → absence threshold → encounter split. CSV logging, graceful fallback to LLM on failure | `presence_sensor.rs` |
+| **Presence Sensor** | DFRobot SEN0395 24GHz mmWave via USB-UART. Debounced presence state → absence threshold → encounter split. CSV logging, auto-detect port, graceful fallback to LLM on failure | `presence_sensor.rs` |
+| **Shadow Mode** | Dual detection comparison — runs sensor and LLM concurrently, logs decisions to CSV for accuracy analysis. Config: `encounter_detection_mode="shadow"`, `shadow_active_method` | `shadow_log.rs`, `continuous_mode.rs` |
+| **Session Cleanup** | History window tools: delete, split, merge sessions, rename patients, renumber encounters. Split opens in separate resizable window with LLM-suggested split point (`suggest_split_points` via `fast-model`) | `commands/archive.rs`, `components/cleanup/`, `SplitWindow.tsx` |
+| **Vision Experiments** | CLI + IPC tools for comparing vision-based SOAP strategies across archived sessions | `vision_experiment.rs`, `commands/ollama.rs` |
 
 ### Continuous Mode Lifecycle Notes
 - `started` event emitted only after pipeline successfully starts
@@ -219,7 +227,7 @@ Idle → Preparing → Recording → Stopping → Completed
 
 Source of truth: `src-tauri/src/config.rs` (Rust) / `src/types/index.ts` (TypeScript).
 
-Key settings groups: STT Router (whisper_server_url, stt_alias=`"medical-streaming"`, stt_postprocess=true), Audio (VAD, diarization, enhancement), LLM Router (soap_model=`"soap-model-fast"`, soap_model_fast=`"soap-model-fast"`, fast_model=`"fast-model"`), Medplum (OAuth, auto_sync), Auto-detection (auto_start, auto_end_silence_ms=180000), SOAP (detail_level 1-10, format, custom_instructions), MIIS, Screen Capture, Continuous Mode (charting_mode, encounter_check_interval_secs=120, encounter_silence_trigger_secs=45, encounter_merge_enabled, encounter_detection_model=`"faster"`, encounter_detection_nothink=true), Presence Sensor (encounter_detection_mode=`"llm"`, presence_sensor_port, presence_absence_threshold_secs=90, presence_debounce_secs=10, presence_csv_log_enabled=true), Debug.
+Key settings groups: STT Router (whisper_server_url, stt_alias=`"medical-streaming"`, stt_postprocess=true), Audio (VAD, diarization, enhancement), LLM Router (soap_model=`"soap-model-fast"`, soap_model_fast=`"soap-model-fast"`, fast_model=`"fast-model"`), Medplum (OAuth, auto_sync), Auto-detection (auto_start, auto_end_silence_ms=180000), SOAP (detail_level 1-10, format, custom_instructions), MIIS, Screen Capture, Continuous Mode (charting_mode, encounter_check_interval_secs=120, encounter_silence_trigger_secs=45, encounter_merge_enabled, encounter_detection_model=`"faster"`, encounter_detection_nothink=true), Presence Sensor (encounter_detection_mode=`"llm"`, presence_sensor_port, presence_absence_threshold_secs=180, presence_debounce_secs=10, presence_csv_log_enabled=true), Shadow Mode (shadow_active_method=`"llm"`, shadow_csv_log_enabled=true), Debug.
 
 ## File Locations
 
@@ -233,6 +241,7 @@ Key settings groups: STT Router (whisper_server_url, stt_alias=`"medical-streami
 | `~/.transcriptionapp/logs/` | Activity logs (daily rotation, PHI-safe) |
 | `~/.transcriptionapp/debug/` | Debug storage (dev only) |
 | `~/.transcriptionapp/mmwave/` | Presence sensor CSV logs (daily rotation) |
+| `~/.transcriptionapp/shadow/` | Shadow mode CSV logs (dual detection comparison) |
 
 ## External Services
 
@@ -271,6 +280,19 @@ Key settings groups: STT Router (whisper_server_url, stt_alias=`"medical-streami
 - `SyncStatusBar.tsx` - EMR sync status indicator
 - `ConversationDynamicsSection.tsx` - Turn-taking and engagement metrics
 - `BiomarkersSection.tsx` - Detailed biomarker display (legacy, PatientPulse preferred)
+
+**Cleanup Components** (`src/components/cleanup/`):
+- `CleanupActionBar.tsx` - Toolbar with delete/split/merge/rename actions for session cleanup
+- `DeleteConfirmDialog.tsx` - Confirmation dialog for session deletion
+- `EditNameDialog.tsx` - Dialog for renaming patient name on a session
+- `MergeConfirmDialog.tsx` - Confirmation dialog for merging adjacent sessions
+- `SplitView.tsx` - Transcript line viewer for selecting split points (inline, legacy)
+
+**Split Window** (`src/components/SplitWindow.tsx`):
+- Standalone window for splitting sessions (opened from HistoryWindow)
+- LLM-suggested split point via `suggest_split_points` command
+- Context passed via URL query params, completion via `emitTo`
+- Entry: `split.html` → `src/split.tsx` → `<SplitWindow />`
 
 **Key Hooks** (`src/hooks/`):
 - `useSessionLifecycle` - Centralized session start/reset coordination across all hooks
@@ -312,6 +334,8 @@ Key settings groups: STT Router (whisper_server_url, stt_alias=`"medical-streami
 | "Auto-charted" badge not appearing | Session was created in session mode, not continuous mode |
 | Can't switch charting mode | Stop continuous recording before switching from continuous to session mode |
 | Auto-detection runs during continuous | Verify `isContinuousMode` guard in App.tsx listening effect |
+| Presence sensor "Device or resource busy" | Another process (e.g., `mmwave_logger.py`) holds the serial port — kill it or stop it before starting continuous mode |
+| Encounter detection not splitting | Check activity logs for `consecutive_no_split` count; force-split fires at 8K words + 3 non-splits, absolute cap at 15K words |
 
 ## E2E Integration Tests
 
