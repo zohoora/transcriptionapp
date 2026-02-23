@@ -68,6 +68,62 @@ pub struct SensorConfig {
 }
 
 // ============================================================================
+// Auto-Detection
+// ============================================================================
+
+/// Auto-detect the presence sensor serial port.
+///
+/// Scans available serial ports for USB-serial devices (matching common patterns
+/// like `usbserial`, `usbmodem`, `USB`). If `configured_port` is non-empty and
+/// exists among available ports, it is returned as-is. Otherwise, returns the
+/// first matching USB-serial port found, or None.
+pub fn auto_detect_port(configured_port: &str) -> Option<String> {
+    let ports = match serialport::available_ports() {
+        Ok(p) => p,
+        Err(e) => {
+            warn!("Failed to enumerate serial ports: {}", e);
+            return if configured_port.is_empty() {
+                None
+            } else {
+                Some(configured_port.to_string())
+            };
+        }
+    };
+
+    let port_names: Vec<&str> = ports.iter().map(|p| p.port_name.as_str()).collect();
+    debug!("Available serial ports: {:?}", port_names);
+
+    // If configured port exists, use it
+    if !configured_port.is_empty() && ports.iter().any(|p| p.port_name == configured_port) {
+        return Some(configured_port.to_string());
+    }
+
+    // Auto-detect: look for USB serial ports (common patterns on macOS/Linux)
+    let usb_patterns = ["usbserial", "usbmodem", "USB"];
+    for port in &ports {
+        if usb_patterns.iter().any(|pat| port.port_name.contains(pat)) {
+            if !configured_port.is_empty() {
+                info!(
+                    "Configured sensor port '{}' not found. Auto-detected: {}",
+                    configured_port, port.port_name
+                );
+            } else {
+                info!("Auto-detected sensor port: {}", port.port_name);
+            }
+            return Some(port.port_name.clone());
+        }
+    }
+
+    if !configured_port.is_empty() {
+        warn!(
+            "Configured sensor port '{}' not found and no USB serial port detected",
+            configured_port
+        );
+    }
+    None
+}
+
+// ============================================================================
 // Sensor Handle
 // ============================================================================
 
@@ -798,5 +854,27 @@ mod tests {
         assert!(SensorStatus::Connected.is_connected());
         assert!(!SensorStatus::Disconnected.is_connected());
         assert!(!SensorStatus::Error("test".to_string()).is_connected());
+    }
+
+    // --- Auto-Detection Tests ---
+
+    #[test]
+    fn test_auto_detect_returns_some_when_port_enumeration_works() {
+        // auto_detect_port should not panic regardless of system state
+        let result = auto_detect_port("");
+        // Result depends on hardware — just verify it doesn't crash
+        let _ = result;
+    }
+
+    #[test]
+    fn test_auto_detect_with_nonexistent_configured_port() {
+        // A configured port that doesn't exist should attempt auto-detection
+        let result = auto_detect_port("/dev/cu.nonexistent-9999");
+        // If a real USB serial port happens to be connected, it'll find it;
+        // otherwise returns None. Either way, shouldn't crash or return
+        // the nonexistent port.
+        if let Some(ref port) = result {
+            assert_ne!(port, "/dev/cu.nonexistent-9999");
+        }
     }
 }

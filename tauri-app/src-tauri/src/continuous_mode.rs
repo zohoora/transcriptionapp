@@ -998,8 +998,12 @@ pub async fn run_continuous_mode(
     let sensor_absence_trigger: Arc<tokio::sync::Notify>;
 
     if use_sensor_mode {
+        // Auto-detect sensor port if configured port is missing or changed
+        let sensor_port = crate::presence_sensor::auto_detect_port(&config.presence_sensor_port)
+            .unwrap_or_default();
+
         let sensor_config = crate::presence_sensor::SensorConfig {
-            port: config.presence_sensor_port.clone(),
+            port: sensor_port,
             debounce_secs: config.presence_debounce_secs,
             absence_threshold_secs: config.presence_absence_threshold_secs,
             csv_log_enabled: config.presence_csv_log_enabled,
