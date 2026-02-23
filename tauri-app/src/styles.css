@@ -2911,8 +2911,8 @@ body {
 
 .session-item {
   display: flex;
-  justify-content: space-between;
   align-items: center;
+  gap: 8px;
   padding: 12px;
   background: var(--bg-primary);
   border: 1px solid var(--border-color);
@@ -6984,4 +6984,401 @@ button.review-section-header-left:focus {
 .pvm-cough-row {
   font-size: 11px;
   color: var(--text-secondary);
+}
+
+/* ============================================================================
+   Session Cleanup Mode
+   ============================================================================ */
+
+/* Cleanup toggle button (pencil icon) in history header */
+.cleanup-toggle-btn {
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 16px;
+  padding: 4px 8px;
+  color: var(--text-muted);
+  transition: all 0.15s ease;
+  line-height: 1;
+}
+
+.cleanup-toggle-btn:hover {
+  color: var(--text-primary);
+  background: var(--bg-hover);
+}
+
+.cleanup-toggle-btn.active {
+  color: var(--accent-blue);
+  background: rgba(59, 130, 246, 0.1);
+  border-color: var(--accent-blue);
+}
+
+/* Session item with checkbox layout in cleanup mode */
+.session-item.selected {
+  border-color: var(--accent-blue);
+  background: rgba(59, 130, 246, 0.05);
+}
+
+.session-item-body {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+  background: none;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+  color: inherit;
+  font: inherit;
+}
+
+.cleanup-checkbox {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+}
+
+.cleanup-checkbox input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+  accent-color: var(--accent-blue);
+}
+
+/* Cleanup action bar (floating at bottom) */
+.cleanup-action-bar {
+  position: sticky;
+  bottom: 0;
+  padding: 10px 16px;
+  background: var(--bg-primary);
+  border-top: 1px solid var(--border-color);
+  box-shadow: 0 -2px 8px rgba(0, 0, 0, 0.08);
+}
+
+.cleanup-hint {
+  font-size: 12px;
+  color: var(--text-muted);
+  text-align: center;
+  display: block;
+}
+
+.cleanup-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.cleanup-count {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  margin-right: 4px;
+}
+
+.cleanup-btn {
+  padding: 5px 12px;
+  font-size: 11px;
+  font-weight: 500;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.cleanup-btn:hover {
+  background: var(--bg-hover);
+  border-color: var(--accent-blue);
+}
+
+.cleanup-btn.delete {
+  color: #dc2626;
+  border-color: rgba(220, 38, 38, 0.3);
+}
+
+.cleanup-btn.delete:hover {
+  background: rgba(220, 38, 38, 0.08);
+  border-color: #dc2626;
+}
+
+.cleanup-btn.merge {
+  color: var(--accent-blue);
+  border-color: rgba(59, 130, 246, 0.3);
+}
+
+.cleanup-btn.merge:hover {
+  background: rgba(59, 130, 246, 0.08);
+  border-color: var(--accent-blue);
+}
+
+/* Success message */
+.cleanup-success-message {
+  padding: 8px 16px;
+  background: rgba(34, 197, 94, 0.1);
+  border: 1px solid rgba(34, 197, 94, 0.3);
+  border-radius: 6px;
+  color: var(--accent-idle);
+  font-size: 12px;
+  font-weight: 500;
+  text-align: center;
+  margin: 8px 16px 0;
+}
+
+/* Cleanup dialog overlay */
+.cleanup-dialog-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 16px;
+}
+
+.cleanup-dialog {
+  background: var(--bg-primary);
+  border-radius: 12px;
+  padding: 20px;
+  max-width: 400px;
+  width: 100%;
+  max-height: 80vh;
+  overflow-y: auto;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+}
+
+.cleanup-dialog.split-dialog {
+  max-width: 500px;
+}
+
+.cleanup-dialog h3 {
+  font-size: 16px;
+  font-weight: 600;
+  margin-bottom: 8px;
+  color: var(--text-primary);
+}
+
+.cleanup-dialog-subtitle {
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin-bottom: 12px;
+}
+
+.cleanup-dialog-warning {
+  font-size: 12px;
+  color: #dc2626;
+  margin: 8px 0;
+  padding: 8px;
+  background: rgba(220, 38, 38, 0.06);
+  border-radius: 4px;
+}
+
+.cleanup-dialog-list {
+  list-style: none;
+  padding: 0;
+  margin: 12px 0;
+}
+
+.cleanup-dialog-list li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+}
+
+.cleanup-dialog-list li.merge-target {
+  background: rgba(59, 130, 246, 0.06);
+}
+
+.dialog-session-time {
+  font-weight: 600;
+  color: var(--text-primary);
+  white-space: nowrap;
+}
+
+.dialog-session-info {
+  color: var(--text-secondary);
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.merge-target-badge {
+  font-size: 9px;
+  font-weight: 600;
+  text-transform: uppercase;
+  color: var(--accent-blue);
+  background: rgba(59, 130, 246, 0.1);
+  padding: 2px 6px;
+  border-radius: 3px;
+  flex-shrink: 0;
+}
+
+.cleanup-dialog-meta {
+  font-size: 12px;
+  color: var(--text-secondary);
+  padding: 4px 0;
+}
+
+.cleanup-dialog-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  margin-top: 16px;
+}
+
+.cleanup-dialog-btn {
+  padding: 8px 16px;
+  font-size: 12px;
+  font-weight: 500;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.cleanup-dialog-btn.cancel {
+  background: var(--bg-primary);
+  color: var(--text-secondary);
+}
+
+.cleanup-dialog-btn.cancel:hover {
+  background: var(--bg-hover);
+}
+
+.cleanup-dialog-btn.confirm {
+  background: var(--accent-blue);
+  color: white;
+  border-color: var(--accent-blue);
+}
+
+.cleanup-dialog-btn.confirm:hover {
+  opacity: 0.9;
+}
+
+.cleanup-dialog-btn.confirm:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.cleanup-dialog-btn.confirm-delete {
+  background: #dc2626;
+  color: white;
+  border-color: #dc2626;
+}
+
+.cleanup-dialog-btn.confirm-delete:hover {
+  opacity: 0.9;
+}
+
+.cleanup-dialog-input {
+  width: 100%;
+  padding: 8px 12px;
+  font-size: 13px;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  margin: 8px 0;
+}
+
+.cleanup-dialog-input:focus {
+  outline: none;
+  border-color: var(--accent-blue);
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
+}
+
+.cleanup-dialog-loading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 24px;
+  color: var(--text-muted);
+  font-size: 13px;
+  justify-content: center;
+}
+
+/* Split view */
+.split-preview-stats {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+  color: var(--text-secondary);
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border-color);
+  margin-bottom: 8px;
+}
+
+.split-transcript {
+  max-height: 400px;
+  overflow-y: auto;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  margin: 8px 0;
+}
+
+.split-line {
+  display: flex;
+  gap: 8px;
+  padding: 4px 8px;
+  font-size: 11px;
+  line-height: 1.5;
+  transition: background 0.1s ease;
+}
+
+.split-line.part-a {
+  background: rgba(59, 130, 246, 0.04);
+}
+
+.split-line.part-b {
+  background: rgba(34, 197, 94, 0.04);
+}
+
+.split-line-number {
+  color: var(--text-muted);
+  font-size: 10px;
+  min-width: 24px;
+  text-align: right;
+  user-select: none;
+  flex-shrink: 0;
+}
+
+.split-line-text {
+  color: var(--text-primary);
+  word-break: break-word;
+}
+
+.split-gutter {
+  display: block;
+  width: 100%;
+  height: 4px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  position: relative;
+  transition: all 0.1s ease;
+}
+
+.split-gutter:hover {
+  height: 6px;
+  background: rgba(59, 130, 246, 0.2);
+}
+
+.split-gutter.active {
+  height: 4px;
+  background: var(--accent-blue);
+  box-shadow: 0 0 4px rgba(59, 130, 246, 0.4);
 }

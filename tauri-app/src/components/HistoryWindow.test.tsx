@@ -25,6 +25,19 @@ vi.mock('./AuthProvider', () => ({
   useAuth: vi.fn(),
 }));
 
+// Mock useOllamaConnection hook
+vi.mock('../hooks/useOllamaConnection', () => ({
+  useOllamaConnection: vi.fn(() => ({
+    status: { connected: true },
+    isChecking: false,
+    isPrewarming: false,
+    error: null,
+    checkConnection: vi.fn(),
+    prewarmModel: vi.fn(),
+    testConnection: vi.fn(),
+  })),
+}));
+
 // Mock useSoapNote hook
 vi.mock('../hooks/useSoapNote', () => ({
   useSoapNote: vi.fn(() => ({
@@ -32,6 +45,7 @@ vi.mock('../hooks/useSoapNote', () => ({
     soapError: null,
     setSoapError: vi.fn(),
     ollamaStatus: { connected: true },
+    setOllamaStatus: vi.fn(),
     soapOptions: {
       detail_level: 5,
       format: 'problem_based',

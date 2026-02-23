@@ -7,6 +7,13 @@ import { useSoapNote } from '../hooks/useSoapNote';
 import { useOllamaConnection } from '../hooks/useOllamaConnection';
 import Calendar from './Calendar';
 import AudioPlayer from './AudioPlayer';
+import {
+  CleanupActionBar,
+  DeleteConfirmDialog,
+  EditNameDialog,
+  MergeConfirmDialog,
+  SplitView,
+} from './cleanup';
 import { formatDateForApi, formatLocalTime, formatLocalDateTime } from '../utils';
 import type {
   LocalArchiveSummary,
@@ -23,6 +30,7 @@ import { DETAIL_LEVEL_LABELS } from '../types';
 type View = 'list' | 'detail';
 type DetailTab = 'transcript' | 'soap' | 'insights';
 type DataSource = 'local' | 'medplum';
+type CleanupDialog = 'none' | 'delete' | 'merge' | 'editName' | 'split';
 
 function formatDateForDisplay(date: Date): string {
   return date.toLocaleDateString('en-US', {
@@ -92,6 +100,12 @@ const HistoryWindow: React.FC = () => {
   const [soapResult, setSoapResult] = useState<MultiPatientSoapResult | null>(null);
   const [customInstructionsExpanded, setCustomInstructionsExpanded] = useState(false);
   const [activePatient, setActivePatient] = useState(0);
+
+  // Cleanup mode state
+  const [isCleanupMode, setIsCleanupMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [cleanupDialog, setCleanupDialog] = useState<CleanupDialog>('none');
+  const [cleanupMessage, setCleanupMessage] = useState<string | null>(null);
 
   // LLM connection check - sync to SOAP hook
   const { status: ollamaConnectionStatus } = useOllamaConnection();
@@ -407,6 +421,153 @@ const HistoryWindow: React.FC = () => {
       console.error('Failed to close window:', e);
     }
   };
+
+  // Cleanup mode helpers
+  const toggleCleanupMode = useCallback(() => {
+    setIsCleanupMode(prev => {
+      if (prev) {
+        // Exiting cleanup mode — clear selection
+        setSelectedIds(new Set());
+        setCleanupDialog('none');
+      }
+      return !prev;
+    });
+  }, []);
+
+  const toggleSessionSelection = useCallback((sessionId: string) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(sessionId)) {
+        next.delete(sessionId);
+      } else {
+        next.add(sessionId);
+      }
+      return next;
+    });
+  }, []);
+
+  // Get selected sessions in display order (for dialogs)
+  const getSelectedSessions = useCallback((): LocalArchiveSummary[] => {
+    return sessions.filter(s => selectedIds.has(s.session_id));
+  }, [sessions, selectedIds]);
+
+  // Post-operation: refresh list, renumber, clear selection, show message
+  const afterCleanupOp = useCallback(async (message: string) => {
+    setCleanupDialog('none');
+    setSelectedIds(new Set());
+    setCleanupMessage(message);
+    setTimeout(() => setCleanupMessage(null), 3000);
+
+    // Renumber encounters and refresh
+    const dateStr = formatDateForApi(selectedDate);
+    try {
+      await invoke('renumber_local_encounters', { date: dateStr });
+    } catch (e) {
+      console.error('Failed to renumber encounters:', e);
+    }
+    await fetchSessions();
+
+    // Refresh calendar dates
+    try {
+      const dates = await invoke<string[]>('get_local_session_dates');
+      setDatesWithSessions(new Set(dates));
+    } catch (e) {
+      console.error('Failed to refresh dates:', e);
+    }
+  }, [selectedDate, fetchSessions]);
+
+  // Delete operation
+  const handleDeleteConfirm = useCallback(async () => {
+    const dateStr = formatDateForApi(selectedDate);
+    const ids = Array.from(selectedIds);
+    try {
+      for (const id of ids) {
+        await invoke('delete_local_session', { sessionId: id, date: dateStr });
+      }
+      await afterCleanupOp(`Deleted ${ids.length} session${ids.length > 1 ? 's' : ''}`);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+      setCleanupDialog('none');
+    }
+  }, [selectedDate, selectedIds, afterCleanupOp]);
+
+  // Merge operation
+  const handleMergeConfirm = useCallback(async () => {
+    const dateStr = formatDateForApi(selectedDate);
+    const ids = Array.from(selectedIds);
+    try {
+      await invoke<string>('merge_local_sessions', { sessionIds: ids, date: dateStr });
+      await afterCleanupOp(`Merged ${ids.length} sessions`);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+      setCleanupDialog('none');
+    }
+  }, [selectedDate, selectedIds, afterCleanupOp]);
+
+  // Edit name operation
+  const handleEditNameConfirm = useCallback(async (name: string) => {
+    const dateStr = formatDateForApi(selectedDate);
+    const id = Array.from(selectedIds)[0];
+    try {
+      await invoke('update_session_patient_name', { sessionId: id, date: dateStr, patientName: name });
+      await afterCleanupOp('Patient name updated');
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+      setCleanupDialog('none');
+    }
+  }, [selectedDate, selectedIds, afterCleanupOp]);
+
+  // Split operation
+  const handleSplitConfirm = useCallback(async (splitLine: number) => {
+    const dateStr = formatDateForApi(selectedDate);
+    const id = Array.from(selectedIds)[0];
+    try {
+      await invoke<string>('split_local_session', { sessionId: id, date: dateStr, splitLine });
+      await afterCleanupOp('Session split into two');
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+      setCleanupDialog('none');
+    }
+  }, [selectedDate, selectedIds, afterCleanupOp]);
+
+  // SOAP regeneration for selected sessions
+  const handleRegenSoap = useCallback(async () => {
+    const dateStr = formatDateForApi(selectedDate);
+    const ids = Array.from(selectedIds);
+    let regenCount = 0;
+    for (const id of ids) {
+      try {
+        const details = await invoke<LocalArchiveDetails>('get_local_session_details', {
+          sessionId: id,
+          date: dateStr,
+        });
+        if (details.transcript?.trim()) {
+          const result = await generateSoapNote(details.transcript, undefined, soapOptions, id);
+          if (result) {
+            const soapContent = result.notes.map(n =>
+              result.notes.length > 1
+                ? `=== ${n.patient_label} ===\n\n${n.content}`
+                : n.content
+            ).join('\n\n---\n\n');
+            await invoke('save_local_soap_note', {
+              sessionId: id,
+              date: dateStr,
+              soapContent,
+              detailLevel: soapOptions.detail_level,
+              format: soapOptions.format,
+            });
+            regenCount++;
+          }
+        }
+      } catch (e) {
+        console.error(`Failed to regen SOAP for ${id}:`, e);
+      }
+    }
+    await afterCleanupOp(`Regenerated SOAP for ${regenCount} session${regenCount !== 1 ? 's' : ''}`);
+  }, [selectedDate, selectedIds, soapOptions, generateSoapNote, afterCleanupOp]);
+
+  // Cleanup mode only works with local data source
+  const canCleanup = dataSource === 'local';
 
   // Derived values
   const hasTranscript = editedTranscript.trim().length > 0;
@@ -794,9 +955,24 @@ const HistoryWindow: React.FC = () => {
           &times;
         </button>
         <h1>Session History</h1>
+        {canCleanup && sessions.length > 0 && (
+          <button
+            className={`cleanup-toggle-btn ${isCleanupMode ? 'active' : ''}`}
+            onClick={toggleCleanupMode}
+            aria-label={isCleanupMode ? 'Exit cleanup mode' : 'Enter cleanup mode'}
+            title={isCleanupMode ? 'Exit cleanup mode' : 'Manage sessions'}
+          >
+            &#9998;
+          </button>
+        )}
       </div>
 
       <div className="history-content">
+        {/* Success message */}
+        {cleanupMessage && (
+          <div className="cleanup-success-message">{cleanupMessage}</div>
+        )}
+
         <div className="calendar-with-today">
           <Calendar
             selectedDate={selectedDate}
@@ -834,50 +1010,81 @@ const HistoryWindow: React.FC = () => {
           ) : (
             <div className="sessions-list">
               {[...sessions].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()).map((session) => (
-                <button
+                <div
                   key={session.session_id}
-                  className="session-item"
-                  onClick={() => fetchSessionDetails(session)}
+                  className={`session-item ${isCleanupMode && selectedIds.has(session.session_id) ? 'selected' : ''}`}
                 >
-                  <div className="session-info">
-                    <span className="session-time">{formatTime(session.date)}</span>
-                    <span className="session-name">
-                      {session.charting_mode === 'continuous' && session.encounter_number != null
-                        ? `Encounter #${session.encounter_number}${session.patient_name ? ` \u2014 ${session.patient_name}` : ''}`
-                        : session.word_count > 0
-                          ? `${session.word_count} words`
-                          : 'Scribe Session'}
-                    </span>
-                  </div>
-                  <div className="session-meta">
-                    {session.duration_ms && (
-                      <span className="session-duration">
-                        {formatDuration(session.duration_ms)}
+                  {isCleanupMode && (
+                    <label className="cleanup-checkbox" onClick={(e) => e.stopPropagation()}>
+                      <input
+                        type="checkbox"
+                        checked={selectedIds.has(session.session_id)}
+                        onChange={() => toggleSessionSelection(session.session_id)}
+                      />
+                    </label>
+                  )}
+                  <button
+                    className="session-item-body"
+                    onClick={() => {
+                      if (isCleanupMode) {
+                        toggleSessionSelection(session.session_id);
+                      } else {
+                        fetchSessionDetails(session);
+                      }
+                    }}
+                  >
+                    <div className="session-info">
+                      <span className="session-time">{formatTime(session.date)}</span>
+                      <span className="session-name">
+                        {session.charting_mode === 'continuous' && session.encounter_number != null
+                          ? `Encounter #${session.encounter_number}${session.patient_name ? ` \u2014 ${session.patient_name}` : ''}`
+                          : session.word_count > 0
+                            ? `${session.word_count} words`
+                            : 'Scribe Session'}
                       </span>
-                    )}
-                    <div className="session-badges">
-                      {session.charting_mode === 'continuous' && (
-                        <span className="badge charted-badge">Auto-charted</span>
-                      )}
-                      {session.has_soap_note && (
-                        <span className="badge soap-badge">SOAP</span>
-                      )}
-                      {session.has_audio && (
-                        <span className="badge audio-badge">Audio</span>
-                      )}
-                      {session.auto_ended && (
-                        <span className="badge auto-badge">Auto</span>
-                      )}
                     </div>
-                  </div>
-                </button>
+                    <div className="session-meta">
+                      {session.duration_ms && (
+                        <span className="session-duration">
+                          {formatDuration(session.duration_ms)}
+                        </span>
+                      )}
+                      <div className="session-badges">
+                        {session.charting_mode === 'continuous' && (
+                          <span className="badge charted-badge">Auto-charted</span>
+                        )}
+                        {session.has_soap_note && (
+                          <span className="badge soap-badge">SOAP</span>
+                        )}
+                        {session.has_audio && (
+                          <span className="badge audio-badge">Audio</span>
+                        )}
+                        {session.auto_ended && (
+                          <span className="badge auto-badge">Auto</span>
+                        )}
+                      </div>
+                    </div>
+                  </button>
+                </div>
               ))}
             </div>
           )}
         </div>
 
+        {/* Cleanup action bar */}
+        {isCleanupMode && (
+          <CleanupActionBar
+            selectedCount={selectedIds.size}
+            onMerge={() => setCleanupDialog('merge')}
+            onDelete={() => setCleanupDialog('delete')}
+            onEditName={() => setCleanupDialog('editName')}
+            onSplit={() => setCleanupDialog('split')}
+            onRegenSoap={handleRegenSoap}
+          />
+        )}
+
         {/* Data source and auth status footer */}
-        {!authLoading && (
+        {!authLoading && !isCleanupMode && (
           <div className="history-footer">
             <span className="data-source-indicator">
               {dataSource === 'local' ? '💾 Local Storage' : '☁️ Medplum'}
@@ -895,6 +1102,37 @@ const HistoryWindow: React.FC = () => {
           </div>
         )}
       </div>
+
+      {/* Cleanup dialogs */}
+      {cleanupDialog === 'delete' && (
+        <DeleteConfirmDialog
+          sessions={getSelectedSessions()}
+          onConfirm={handleDeleteConfirm}
+          onCancel={() => setCleanupDialog('none')}
+        />
+      )}
+      {cleanupDialog === 'merge' && (
+        <MergeConfirmDialog
+          sessions={getSelectedSessions()}
+          onConfirm={handleMergeConfirm}
+          onCancel={() => setCleanupDialog('none')}
+        />
+      )}
+      {cleanupDialog === 'editName' && selectedIds.size === 1 && (
+        <EditNameDialog
+          currentName={getSelectedSessions()[0]?.patient_name ?? null}
+          onConfirm={handleEditNameConfirm}
+          onCancel={() => setCleanupDialog('none')}
+        />
+      )}
+      {cleanupDialog === 'split' && selectedIds.size === 1 && (
+        <SplitView
+          sessionId={Array.from(selectedIds)[0]}
+          date={formatDateForApi(selectedDate)}
+          onConfirm={handleSplitConfirm}
+          onCancel={() => setCleanupDialog('none')}
+        />
+      )}
     </div>
   );
 };

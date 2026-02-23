@@ -58,6 +58,66 @@ pub fn save_local_soap_note(
     )
 }
 
+// ============================================================================
+// Session Cleanup Commands
+// ============================================================================
+
+/// Delete a session from the local archive
+#[tauri::command]
+pub fn delete_local_session(session_id: String, date: String) -> Result<(), String> {
+    info!("Deleting local session: {} on {}", session_id, date);
+    local_archive::delete_session(&session_id, &date)
+}
+
+/// Split a session at a line boundary, returning the new session ID
+#[tauri::command]
+pub fn split_local_session(
+    session_id: String,
+    date: String,
+    split_line: usize,
+) -> Result<String, String> {
+    info!("Splitting local session: {} at line {}", session_id, split_line);
+    local_archive::split_session(&session_id, &date, split_line)
+}
+
+/// Merge multiple sessions into one, returning the surviving session ID
+#[tauri::command]
+pub fn merge_local_sessions(
+    session_ids: Vec<String>,
+    date: String,
+) -> Result<String, String> {
+    info!("Merging {} local sessions on {}", session_ids.len(), date);
+    local_archive::merge_sessions(&session_ids, &date)
+}
+
+/// Update the patient name for a session
+#[tauri::command]
+pub fn update_session_patient_name(
+    session_id: String,
+    date: String,
+    patient_name: String,
+) -> Result<(), String> {
+    info!("Updating patient name for session: {}", session_id);
+    local_archive::update_patient_name(&session_id, &date, &patient_name)
+}
+
+/// Renumber encounter numbers for continuous mode sessions on a date
+#[tauri::command]
+pub fn renumber_local_encounters(date: String) -> Result<(), String> {
+    info!("Renumbering encounters for date: {}", date);
+    local_archive::renumber_encounters(&date)
+}
+
+/// Get transcript lines for split UI
+#[tauri::command]
+pub fn get_session_transcript_lines(
+    session_id: String,
+    date: String,
+) -> Result<Vec<String>, String> {
+    info!("Getting transcript lines for session: {}", session_id);
+    local_archive::get_transcript_lines(&session_id, &date)
+}
+
 /// Read a local audio file and return its bytes
 /// Used by the history window's audio player for locally-archived sessions
 #[tauri::command]

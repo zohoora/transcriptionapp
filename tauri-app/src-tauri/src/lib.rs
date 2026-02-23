@@ -329,6 +329,13 @@ pub fn run() {
             commands::get_local_session_details,
             commands::save_local_soap_note,
             commands::read_local_audio_file,
+            // Session cleanup commands (history window)
+            commands::delete_local_session,
+            commands::split_local_session,
+            commands::merge_local_sessions,
+            commands::update_session_patient_name,
+            commands::renumber_local_encounters,
+            commands::get_session_transcript_lines,
             // Clinical chat commands
             commands::clinical_chat_send,
             // MIIS (Medical Illustration Image Server) commands
