@@ -261,6 +261,32 @@ pub fn run() {
                 }
             }
 
+            // Request all permissions upfront so the user isn't interrupted during recording
+            std::thread::spawn(|| {
+                // Small delay to let the main window render first
+                std::thread::sleep(std::time::Duration::from_millis(500));
+
+                // 1. Microphone permission
+                let mic_status = permissions::check_microphone_permission();
+                info!("Startup permission check — Microphone: {}", mic_status);
+                if mic_status == permissions::MicrophoneAuthStatus::NotDetermined {
+                    permissions::request_microphone_permission();
+                    // Wait for user to respond before showing next dialog
+                    std::thread::sleep(std::time::Duration::from_secs(2));
+                }
+
+                // 2. Screen Recording permission (no request API — trigger via 1x1 capture)
+                let screen_ok = screenshot::check_screen_recording_permission();
+                info!("Startup permission check — Screen Recording: {}", screen_ok);
+
+                // 3. Speech Recognition permission
+                let speech_status = native_stt::check_speech_recognition_permission();
+                info!("Startup permission check — Speech Recognition: {}", speech_status);
+                if speech_status == native_stt::SpeechAuthStatus::NotDetermined {
+                    native_stt::request_speech_recognition_permission();
+                }
+            });
+
             info!("App setup complete");
             Ok(())
         })
