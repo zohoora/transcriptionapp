@@ -288,16 +288,6 @@ export const SettingsDrawer = memo(function SettingsDrawer({
                     {' '}Shadow native STT (Apple Speech)
                   </label>
                 </div>
-                <div className="settings-row">
-                  <label>
-                    <input
-                      type="checkbox"
-                      checked={pendingSettings.on_device_soap_shadow_enabled}
-                      onChange={(e) => onSettingsChange({ ...pendingSettings, on_device_soap_shadow_enabled: e.target.checked })}
-                    />
-                    {' '}Shadow on-device SOAP (Apple Intelligence)
-                  </label>
-                </div>
               </div>
 
               {/* Whisper Server Settings (remote only mode) */}

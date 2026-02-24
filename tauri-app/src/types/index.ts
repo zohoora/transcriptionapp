@@ -118,8 +118,6 @@ export interface Settings {
   shadow_csv_log_enabled: boolean;
   // Native STT shadow (Apple SFSpeechRecognizer comparison)
   native_stt_shadow_enabled: boolean;
-  // On-device SOAP shadow (Apple Foundation Models comparison)
-  on_device_soap_shadow_enabled: boolean;
 }
 
 // Listening mode types (auto-session detection)

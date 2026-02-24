@@ -53,8 +53,6 @@ pub mod preprocessing;
 pub mod screenshot;
 pub mod native_stt;
 pub mod native_stt_shadow;
-pub mod on_device_llm;
-pub mod on_device_soap_shadow;
 pub mod shadow_log;
 pub mod speaker_profiles;
 #[cfg(test)]

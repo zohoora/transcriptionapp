@@ -120,16 +120,9 @@ pub struct Settings {
     // Native STT shadow (Apple SFSpeechRecognizer comparison)
     #[serde(default = "default_native_stt_shadow_enabled")]
     pub native_stt_shadow_enabled: bool,
-    // On-device SOAP shadow (Apple Foundation Models comparison)
-    #[serde(default = "default_on_device_soap_shadow_enabled")]
-    pub on_device_soap_shadow_enabled: bool,
 }
 
 fn default_native_stt_shadow_enabled() -> bool {
-    false // Experimental — requires opt-in via settings toggle
-}
-
-fn default_on_device_soap_shadow_enabled() -> bool {
     false // Experimental — requires opt-in via settings toggle
 }
 
@@ -337,7 +330,6 @@ impl Default for Settings {
             shadow_active_method: default_shadow_active_method(),
             shadow_csv_log_enabled: default_shadow_csv_log_enabled(),
             native_stt_shadow_enabled: default_native_stt_shadow_enabled(),
-            on_device_soap_shadow_enabled: default_on_device_soap_shadow_enabled(),
         }
     }
 }
@@ -688,9 +680,6 @@ pub struct Config {
     // Native STT shadow (Apple SFSpeechRecognizer comparison)
     #[serde(default = "default_native_stt_shadow_enabled")]
     pub native_stt_shadow_enabled: bool,
-    // On-device SOAP shadow (Apple Foundation Models comparison)
-    #[serde(default = "default_on_device_soap_shadow_enabled")]
-    pub on_device_soap_shadow_enabled: bool,
 }
 
 fn default_max_speakers() -> usize {
@@ -789,7 +778,6 @@ impl Default for Config {
             shadow_active_method: default_shadow_active_method(),
             shadow_csv_log_enabled: default_shadow_csv_log_enabled(),
             native_stt_shadow_enabled: default_native_stt_shadow_enabled(),
-            on_device_soap_shadow_enabled: default_on_device_soap_shadow_enabled(),
         }
     }
 }
@@ -1012,7 +1000,6 @@ impl Config {
             shadow_active_method: self.shadow_active_method.clone(),
             shadow_csv_log_enabled: self.shadow_csv_log_enabled,
             native_stt_shadow_enabled: self.native_stt_shadow_enabled,
-            on_device_soap_shadow_enabled: self.on_device_soap_shadow_enabled,
         }
     }
 
@@ -1081,9 +1068,6 @@ impl Config {
         self.shadow_csv_log_enabled = settings.shadow_csv_log_enabled;
         // Native STT shadow
         self.native_stt_shadow_enabled = settings.native_stt_shadow_enabled;
-        // On-device SOAP shadow
-        self.on_device_soap_shadow_enabled = settings.on_device_soap_shadow_enabled;
-
         // Clamp values to safe ranges after applying settings
         self.clamp_values();
     }
@@ -1214,7 +1198,6 @@ mod tests {
             shadow_active_method: default_shadow_active_method(),
             shadow_csv_log_enabled: default_shadow_csv_log_enabled(),
             native_stt_shadow_enabled: default_native_stt_shadow_enabled(),
-            on_device_soap_shadow_enabled: default_on_device_soap_shadow_enabled(),
             stt_alias: "medical-streaming".to_string(),
             stt_postprocess: true,
         };
@@ -1339,7 +1322,6 @@ mod tests {
             shadow_active_method: default_shadow_active_method(),
             shadow_csv_log_enabled: default_shadow_csv_log_enabled(),
             native_stt_shadow_enabled: default_native_stt_shadow_enabled(),
-            on_device_soap_shadow_enabled: default_on_device_soap_shadow_enabled(),
             stt_alias: default_stt_alias(),
             stt_postprocess: default_stt_postprocess(),
         };
