@@ -4,6 +4,8 @@
 <dict>
     <key>NSMicrophoneUsageDescription</key>
     <string>This app needs access to your microphone for real-time speech transcription.</string>
+    <key>NSSpeechRecognitionUsageDescription</key>
+    <string>This app uses on-device speech recognition to create a comparison transcript for quality analysis.</string>
     <key>CFBundleURLTypes</key>
     <array>
         <dict>

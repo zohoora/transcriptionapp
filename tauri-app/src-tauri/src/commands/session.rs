@@ -132,6 +132,7 @@ pub async fn start_session(
         initial_audio_buffer,
         auto_end_enabled: config.auto_end_enabled,
         auto_end_silence_ms: config.auto_end_silence_ms,
+        native_stt_shadow_enabled: config.native_stt_shadow_enabled,
     };
 
     // Create message channel
@@ -185,6 +186,7 @@ pub async fn start_session(
 
     tokio::spawn(async move {
         let mut auto_end_triggered = false;
+        let mut native_stt_shadow_transcript: Option<String> = None;
 
         while let Some(msg) = rx.recv().await {
             // Check if this pipeline instance is still current
@@ -276,6 +278,10 @@ pub async fn start_session(
                     // Pipeline will self-stop via stop_flag, the Stopped message will follow
                     // and handle session completion
                 }
+                PipelineMessage::NativeSttShadowTranscript { transcript } => {
+                    info!("Received native STT shadow transcript ({} chars)", transcript.len());
+                    native_stt_shadow_transcript = Some(transcript);
+                }
                 PipelineMessage::Stopped => {
                     info!("Pipeline stopped message received, completing session");
                     // Complete the session and emit final status
@@ -284,6 +290,20 @@ pub async fn start_session(
                         // This prevents duplicate archival when auto-end races with manual stop.
                         if session.state() == &SessionState::Completed {
                             info!("Session already completed and archived, skipping duplicate archive");
+                            // Still save shadow transcript (archive dir already exists from stop_session)
+                            if let Some(ref shadow_text) = native_stt_shadow_transcript {
+                                if let Ok(archive_dir) = local_archive::get_session_archive_dir(
+                                    &session_id_for_task,
+                                    &chrono::Utc::now(),
+                                ) {
+                                    let shadow_path = archive_dir.join("shadow_transcript.txt");
+                                    if let Err(e) = std::fs::write(&shadow_path, shadow_text) {
+                                        warn!("Failed to save shadow transcript: {}", e);
+                                    } else {
+                                        info!("Shadow transcript saved to archive ({} chars)", shadow_text.len());
+                                    }
+                                }
+                            }
                             break;
                         }
 
@@ -316,7 +336,7 @@ pub async fn start_session(
                             }
                         }
 
-                        if let Err(e) = local_archive::save_session(
+                        match local_archive::save_session(
                             &session_id_for_task,
                             &transcript.finalized_text,
                             status.elapsed_ms,
@@ -324,7 +344,21 @@ pub async fn start_session(
                             auto_end_triggered,
                             if auto_end_triggered { Some("silence") } else { None },
                         ) {
-                            warn!("Failed to archive auto-ended session: {}", e);
+                            Ok(session_dir) => {
+                                // Save native STT shadow transcript into same dir
+                                // (uses returned path to avoid midnight UTC date boundary race)
+                                if let Some(ref shadow_text) = native_stt_shadow_transcript {
+                                    let shadow_path = session_dir.join("shadow_transcript.txt");
+                                    if let Err(e) = std::fs::write(&shadow_path, shadow_text) {
+                                        warn!("Failed to save shadow transcript: {}", e);
+                                    } else {
+                                        info!("Shadow transcript saved to archive ({} chars)", shadow_text.len());
+                                    }
+                                }
+                            }
+                            Err(e) => {
+                                warn!("Failed to archive auto-ended session: {}", e);
+                            }
                         }
                     }
                     break;

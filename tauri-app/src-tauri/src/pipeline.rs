@@ -99,6 +99,10 @@ pub enum PipelineMessage {
         /// Milliseconds remaining until auto-end
         remaining_ms: u64,
     },
+    /// Native STT shadow transcript (accumulated from Apple SFSpeechRecognizer)
+    NativeSttShadowTranscript {
+        transcript: String,
+    },
     /// Pipeline has stopped
     Stopped,
     /// Error occurred
@@ -147,6 +151,8 @@ pub struct PipelineConfig {
     // Auto-end settings
     pub auto_end_enabled: bool,
     pub auto_end_silence_ms: u64,
+    // Native STT shadow (Apple SFSpeechRecognizer comparison)
+    pub native_stt_shadow_enabled: bool,
 }
 
 impl Default for PipelineConfig {
@@ -177,6 +183,7 @@ impl Default for PipelineConfig {
             initial_audio_buffer: None,
             auto_end_enabled: true,
             auto_end_silence_ms: 180_000, // 3 minutes default
+            native_stt_shadow_enabled: false,
         }
     }
 }
@@ -336,6 +343,38 @@ fn run_pipeline_thread_inner(
     info!("Using remote Whisper server at {}", config.whisper_server_url);
     let whisper_client = WhisperServerClient::new(&config.whisper_server_url, &config.whisper_server_model)
         .map_err(|e| anyhow::anyhow!("Failed to create Whisper server client: {}", e))?;
+
+    // Create native STT shadow client + accumulator + CSV logger (if enabled)
+    let native_stt_client: Option<Arc<crate::native_stt::NativeSttClient>> = if config.native_stt_shadow_enabled {
+        match crate::native_stt::NativeSttClient::new() {
+            Ok(client) => {
+                info!("Native STT shadow enabled (Apple SFSpeechRecognizer)");
+                Some(Arc::new(client))
+            }
+            Err(e) => {
+                warn!("Native STT shadow init failed, continuing without: {}", e);
+                None
+            }
+        }
+    } else {
+        None
+    };
+    let native_stt_accumulator: Option<Arc<std::sync::Mutex<crate::native_stt_shadow::NativeSttShadowAccumulator>>> =
+        native_stt_client.as_ref().map(|_| Arc::new(std::sync::Mutex::new(crate::native_stt_shadow::NativeSttShadowAccumulator::new())));
+    let native_stt_csv_logger: Option<Arc<std::sync::Mutex<crate::native_stt_shadow::NativeSttCsvLogger>>> =
+        if native_stt_client.is_some() {
+            match crate::native_stt_shadow::NativeSttCsvLogger::new() {
+                Ok(logger) => Some(Arc::new(std::sync::Mutex::new(logger))),
+                Err(e) => {
+                    warn!("Native STT CSV logger init failed, continuing without: {}", e);
+                    None
+                }
+            }
+        } else {
+            None
+        };
+    let native_stt_handles: Arc<std::sync::Mutex<Vec<std::thread::JoinHandle<()>>>> =
+        Arc::new(std::sync::Mutex::new(Vec::new()));
 
     // Create resampler
     let mut resampler = AudioResampler::new(sample_rate)?;
@@ -750,6 +789,47 @@ fn run_pipeline_thread_inner(
                                 }
                             }
 
+                            // Fork to native STT shadow (drain loop)
+                            if let Some(ref client) = native_stt_client {
+                                let client = client.clone();
+                                let accumulator = native_stt_accumulator.clone().unwrap();
+                                let csv_logger = native_stt_csv_logger.clone();
+                                #[cfg(feature = "enhancement")]
+                                let native_audio = original_audio.clone().unwrap_or_else(|| utterance.audio.clone());
+                                #[cfg(not(feature = "enhancement"))]
+                                let native_audio = utterance.audio.clone();
+                                let primary_text = segment.text.clone();
+                                let speaker_id = segment.speaker_id.clone();
+                                let utt_id = utterance.id;
+                                let start_ms = utterance.start_ms;
+                                let end_ms = utterance.end_ms;
+
+                                let handle = std::thread::spawn(move || {
+                                    let native_start = std::time::Instant::now();
+                                    match client.transcribe_blocking(&native_audio, 16000) {
+                                        Ok(native_text) => {
+                                            let native_latency_ms = native_start.elapsed().as_millis() as u64;
+                                            let seg = crate::native_stt_shadow::NativeSttSegment {
+                                                utterance_id: utt_id,
+                                                start_ms, end_ms,
+                                                native_text, primary_text, speaker_id,
+                                                native_latency_ms, primary_latency_ms: 0,
+                                            };
+                                            if let Some(ref logger) = csv_logger {
+                                                if let Ok(mut l) = logger.lock() { l.write_segment(&seg); }
+                                            }
+                                            if let Ok(mut acc) = accumulator.lock() { acc.push(seg); }
+                                        }
+                                        Err(e) => {
+                                            tracing::warn!("Native STT shadow failed (drain): {}", e);
+                                        }
+                                    }
+                                });
+                                if let Ok(mut handles) = native_stt_handles.lock() {
+                                    handles.push(handle);
+                                }
+                            }
+
                             context.push(' ');
                             context.push_str(&segment.text);
                             if tx.blocking_send(PipelineMessage::Segment(segment)).is_err() {
@@ -1095,6 +1175,60 @@ fn run_pipeline_thread_inner(
                             }
                         }
 
+                        // Fork utterance to native STT shadow (if enabled)
+                        if let Some(ref client) = native_stt_client {
+                            let client = client.clone();
+                            let accumulator = native_stt_accumulator.clone().unwrap();
+                            let csv_logger = native_stt_csv_logger.clone();
+                            // Use pre-enhancement audio (same as what STT Router receives)
+                            #[cfg(feature = "enhancement")]
+                            let native_audio = original_audio.clone().unwrap_or_else(|| utterance.audio.clone());
+                            #[cfg(not(feature = "enhancement"))]
+                            let native_audio = utterance.audio.clone();
+                            let primary_text = segment.text.clone();
+                            let speaker_id = segment.speaker_id.clone();
+                            let utt_id = utterance.id;
+                            let start_ms = utterance.start_ms;
+                            let end_ms = utterance.end_ms;
+                            // Primary latency not tracked here (would need timing around transcribe_utterance)
+                            let primary_latency_ms = 0u64;
+
+                            let handle = std::thread::spawn(move || {
+                                let native_start = std::time::Instant::now();
+                                match client.transcribe_blocking(&native_audio, 16000) {
+                                    Ok(native_text) => {
+                                        let native_latency_ms = native_start.elapsed().as_millis() as u64;
+                                        let seg = crate::native_stt_shadow::NativeSttSegment {
+                                            utterance_id: utt_id,
+                                            start_ms,
+                                            end_ms,
+                                            native_text,
+                                            primary_text,
+                                            speaker_id,
+                                            native_latency_ms,
+                                            primary_latency_ms,
+                                        };
+                                        // Log to CSV
+                                        if let Some(ref logger) = csv_logger {
+                                            if let Ok(mut l) = logger.lock() {
+                                                l.write_segment(&seg);
+                                            }
+                                        }
+                                        // Push to accumulator
+                                        if let Ok(mut acc) = accumulator.lock() {
+                                            acc.push(seg);
+                                        }
+                                    }
+                                    Err(e) => {
+                                        warn!("Native STT shadow failed for utterance {}: {}", utt_id, e);
+                                    }
+                                }
+                            });
+                            if let Ok(mut handles) = native_stt_handles.lock() {
+                                handles.push(handle);
+                            }
+                        }
+
                         // Log segment metadata only - no transcript text (PHI)
                         info!("Sending segment: {} words ({}ms - {}ms)", segment.text.split_whitespace().count(), segment.start_ms, segment.end_ms);
 
@@ -1171,6 +1305,33 @@ fn run_pipeline_thread_inner(
 
     // Small delay to let ONNX/Whisper C++ destructors complete
     std::thread::sleep(Duration::from_millis(50));
+
+    // Join all in-flight native STT threads before draining accumulator
+    {
+        let handles_to_join: Vec<std::thread::JoinHandle<()>> = native_stt_handles
+            .lock()
+            .map(|mut h| std::mem::take(&mut *h))
+            .unwrap_or_default();
+        if !handles_to_join.is_empty() {
+            info!("Waiting for {} native STT shadow threads to complete", handles_to_join.len());
+            for handle in handles_to_join {
+                let _ = handle.join();
+            }
+        }
+    }
+
+    // Drain native STT shadow accumulator and send transcript before Stopped
+    if let Some(ref accumulator) = native_stt_accumulator {
+        if let Ok(mut acc) = accumulator.lock() {
+            if !acc.is_empty() {
+                let (transcript, _segments) = acc.drain_all();
+                if !transcript.is_empty() {
+                    info!("Sending native STT shadow transcript ({} chars)", transcript.len());
+                    let _ = tx.blocking_send(PipelineMessage::NativeSttShadowTranscript { transcript });
+                }
+            }
+        }
+    }
 
     info!("Audio processor stopped");
     Ok(())
