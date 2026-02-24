@@ -41,7 +41,7 @@ Rust Backend
 ├── session.rs         # Recording state machine
 ├── audio.rs           # Audio capture, resampling
 ├── vad.rs             # Voice Activity Detection
-├── pipeline.rs        # Processing pipeline + silence tracking
+├── pipeline.rs        # Processing pipeline + silence tracking + native STT shadow fork
 ├── config.rs          # Settings persistence
 ├── llm_client.rs      # OpenAI-compatible LLM client
 ├── medplum.rs         # FHIR client (OAuth, encounters)
@@ -59,6 +59,8 @@ Rust Backend
 ├── permissions.rs     # macOS permission checks
 ├── ollama.rs          # Re-exports from llm_client.rs (backward compat)
 ├── activity_log.rs    # Structured PHI-safe activity logging
+├── native_stt.rs      # Apple SFSpeechRecognizer FFI client
+├── native_stt_shadow.rs # Native STT shadow accumulator + CSV logger
 ├── shadow_log.rs      # Shadow mode CSV logging (dual detection comparison)
 ├── encounter_experiment.rs # Encounter detection experiment CLI support
 ├── vision_experiment.rs    # Vision SOAP experiment CLI support
@@ -69,7 +71,7 @@ Rust Backend
 ├── preprocessing.rs   # DC removal, high-pass filter, AGC
 ├── command_tests.rs   # Unit tests for commands
 ├── pipeline_tests.rs  # Unit tests for pipeline
-├── e2e_tests.rs       # Integration tests (5 layers, #[ignore])
+├── e2e_tests.rs       # Integration tests (6 layers, #[ignore])
 ├── soak_tests.rs      # Long-running stability tests
 └── stress_tests.rs    # Load/stress tests
 ```
@@ -125,6 +127,7 @@ cd src-tauri && cargo test       # Rust
 | Modify patient biomarkers | `usePatientBiomarkers.ts`, `PatientPulse.tsx`, `PatientVoiceMonitor.tsx` |
 | Modify session cleanup (history) | `commands/archive.rs`, `HistoryWindow.tsx`, `components/cleanup/` (CleanupActionBar, DeleteConfirmDialog, EditNameDialog, MergeConfirmDialog, SplitView), `SplitWindow.tsx` (standalone split window) |
 | Modify shadow mode | `shadow_log.rs`, `continuous_mode.rs` (shadow observer task), `config.rs` (`shadow_active_method`, `shadow_csv_log_enabled`) |
+| Modify native STT shadow | `native_stt.rs` (FFI client), `native_stt_shadow.rs` (accumulator + CSV), `pipeline.rs` (utterance fork + drain), `commands/session.rs` (archive shadow transcript) |
 | Add session-scoped state | `useSessionLifecycle.ts` (add reset call to `resetAllSessionState`) |
 
 ## IPC Commands (90 total across 16 modules)
@@ -135,7 +138,7 @@ cd src-tauri && cargo test       # Rust
 | Settings (2) | `get_settings`, `set_settings` | `commands/settings.rs` |
 | Audio (1) | `list_input_devices` | `commands/audio.rs` |
 | Models (12) | `check_model_status`, `ensure_models`, `download_*_model`, `get_whisper_models`, etc. | `commands/models.rs` |
-| LLM/SOAP (16) | `check_ollama_status`, `list_ollama_models`, `prewarm_ollama_model`, `generate_soap_note`, `generate_soap_note_auto_detect`, `generate_predictive_hint`, `generate_vision_soap_note`, `run_vision_experiments`, `get_vision_experiment_results`, `get_vision_experiment_report`, `list_vision_experiment_strategies` | `commands/ollama.rs` |
+| LLM/SOAP (11) | `check_ollama_status`, `list_ollama_models`, `prewarm_ollama_model`, `generate_soap_note`, `generate_soap_note_auto_detect`, `generate_predictive_hint`, `generate_vision_soap_note`, `run_vision_experiments`, `get_vision_experiment_results`, `get_vision_experiment_report`, `list_vision_experiment_strategies` | `commands/ollama.rs` |
 | Medplum (17) | `medplum_*` — auth, patients, encounters, sync, history | `commands/medplum.rs` |
 | STT Router (2) | `check_whisper_server_status`, `list_whisper_server_models` | `commands/whisper_server.rs` |
 | Permissions (3) | `check_microphone_permission`, `request_*`, `open_*_settings` | `commands/permissions.rs` |
@@ -160,6 +163,7 @@ cd src-tauri && cargo test       # Rust
 | `session_auto_end` | Session auto-ended due to silence |
 | `continuous_mode_event` | Continuous mode status changes (started, encounter_detected, soap_generated, encounter_merged, sensor_status, shadow_decision, etc.) |
 | `continuous_transcript_preview` | Live transcript preview in continuous mode (separate from `transcript_update`) |
+| `deep-link` | OAuth callback URL received via single-instance plugin |
 
 ## Session States
 
@@ -214,6 +218,7 @@ Idle → Preparing → Recording → Stopping → Completed
 | **Presence Sensor** | DFRobot SEN0395 24GHz mmWave via USB-UART. Debounced presence state → absence threshold → encounter split. CSV logging, auto-detect port, graceful fallback to LLM on failure | `presence_sensor.rs` |
 | **Shadow Mode** | Dual detection comparison — runs sensor and LLM concurrently, logs decisions to CSV for accuracy analysis. Config: `encounter_detection_mode="shadow"`, `shadow_active_method` | `shadow_log.rs`, `continuous_mode.rs` |
 | **Session Cleanup** | History window tools: delete, split, merge sessions, rename patients, renumber encounters. Split opens in separate resizable window with LLM-suggested split point (`suggest_split_points` via `fast-model`) | `commands/archive.rs`, `components/cleanup/`, `SplitWindow.tsx` |
+| **Native STT Shadow** | Runs Apple SFSpeechRecognizer in parallel with STT Router for quality comparison. Each utterance forked to native STT on background thread; accumulates and saves as `shadow_transcript.txt` in archive. Segment-level CSV logging for WER analysis. Config: `native_stt_shadow_enabled` | `native_stt.rs`, `native_stt_shadow.rs`, `pipeline.rs` |
 | **Vision Experiments** | CLI + IPC tools for comparing vision-based SOAP strategies across archived sessions | `vision_experiment.rs`, `commands/ollama.rs` |
 
 ### Continuous Mode Lifecycle Notes
@@ -227,7 +232,7 @@ Idle → Preparing → Recording → Stopping → Completed
 
 Source of truth: `src-tauri/src/config.rs` (Rust) / `src/types/index.ts` (TypeScript).
 
-Key settings groups: STT Router (whisper_server_url, stt_alias=`"medical-streaming"`, stt_postprocess=true), Audio (VAD, diarization, enhancement), LLM Router (soap_model=`"soap-model-fast"`, soap_model_fast=`"soap-model-fast"`, fast_model=`"fast-model"`), Medplum (OAuth, auto_sync), Auto-detection (auto_start, auto_end_silence_ms=180000), SOAP (detail_level 1-10, format, custom_instructions), MIIS, Screen Capture, Continuous Mode (charting_mode, encounter_check_interval_secs=120, encounter_silence_trigger_secs=45, encounter_merge_enabled, encounter_detection_model=`"faster"`, encounter_detection_nothink=true), Presence Sensor (encounter_detection_mode=`"shadow"`, presence_sensor_port, presence_absence_threshold_secs=180, presence_debounce_secs=10, presence_csv_log_enabled=true), Shadow Mode (shadow_active_method=`"sensor"`, shadow_csv_log_enabled=true), Debug.
+Key settings groups: STT Router (whisper_server_url, stt_alias=`"medical-streaming"`, stt_postprocess=true), Audio (VAD, diarization, enhancement), LLM Router (soap_model=`"soap-model-fast"`, soap_model_fast=`"soap-model-fast"`, fast_model=`"fast-model"`), Medplum (OAuth, auto_sync), Auto-detection (auto_start, auto_end_silence_ms=180000), SOAP (detail_level 1-10, format, custom_instructions), MIIS, Screen Capture, Continuous Mode (charting_mode, encounter_check_interval_secs=120, encounter_silence_trigger_secs=45, encounter_merge_enabled, encounter_detection_model=`"faster"`, encounter_detection_nothink=true), Presence Sensor (encounter_detection_mode=`"shadow"`, presence_sensor_port, presence_absence_threshold_secs=180, presence_debounce_secs=10, presence_csv_log_enabled=true), Shadow Mode (shadow_active_method=`"sensor"`, shadow_csv_log_enabled=true), Native STT Shadow (native_stt_shadow_enabled=false), Debug.
 
 ## File Locations
 
@@ -242,6 +247,7 @@ Key settings groups: STT Router (whisper_server_url, stt_alias=`"medical-streami
 | `~/.transcriptionapp/debug/` | Debug storage (dev only) |
 | `~/.transcriptionapp/mmwave/` | Presence sensor CSV logs (daily rotation) |
 | `~/.transcriptionapp/shadow/` | Shadow mode CSV logs (dual detection comparison) |
+| `~/.transcriptionapp/shadow_stt/` | Native STT shadow CSV logs (segment-level WER comparison) |
 
 ## External Services
 
@@ -345,7 +351,7 @@ End-to-end tests verify the full pipeline against live STT and LLM Router servic
 
 ```bash
 ./scripts/preflight.sh           # Quick check (~10s) — layers 1-3
-./scripts/preflight.sh --full    # Full pipeline (~30s) — all 5 layers
+./scripts/preflight.sh --full    # Full pipeline (~30s) — layers 1-5
 ./scripts/preflight.sh --layer 2 # Specific layer only
 ```
 
@@ -360,6 +366,7 @@ cargo test e2e_layer2 -- --ignored --nocapture  # LLM Router
 cargo test e2e_layer3 -- --ignored --nocapture  # Local Archive
 cargo test e2e_layer4 -- --ignored --nocapture  # Session mode full pipeline
 cargo test e2e_layer5 -- --ignored --nocapture  # Continuous mode full pipeline
+cargo test e2e_layer6 -- --ignored --nocapture  # Native STT shadow
 
 # Single test
 cargo test e2e_layer2_hybrid -- --ignored --nocapture
@@ -374,6 +381,7 @@ cargo test e2e_layer2_hybrid -- --ignored --nocapture
 | 3 | Archive save/retrieve, continuous mode metadata | Filesystem only |
 | 4 | Session mode: Audio → STT → SOAP → Archive → History | STT + LLM Router |
 | 5 | Continuous mode: Audio → STT → Detection → SOAP → Archive → History | STT + LLM Router |
+| 6 | Native STT shadow: client creation, accumulator lifecycle, archive integration, full pipeline | macOS Speech Recognition + STT Router |
 
 ### Hybrid Model Configuration
 
