@@ -51,6 +51,10 @@ export interface PendingSettings {
   // Shadow mode settings
   shadow_active_method: string;
   shadow_csv_log_enabled: boolean;
+  // Native STT shadow (Apple Speech)
+  native_stt_shadow_enabled: boolean;
+  // On-device SOAP shadow (Apple Foundation Models)
+  on_device_soap_shadow_enabled: boolean;
 }
 
 export interface UseSettingsResult {
@@ -118,6 +122,8 @@ export function useSettings(): UseSettingsResult {
     presence_csv_log_enabled: s.presence_csv_log_enabled,
     shadow_active_method: s.shadow_active_method,
     shadow_csv_log_enabled: s.shadow_csv_log_enabled,
+    native_stt_shadow_enabled: s.native_stt_shadow_enabled,
+    on_device_soap_shadow_enabled: s.on_device_soap_shadow_enabled,
   }), []);
 
   // Load settings
@@ -188,6 +194,8 @@ export function useSettings(): UseSettingsResult {
         presence_csv_log_enabled: pendingSettings.presence_csv_log_enabled,
         shadow_active_method: pendingSettings.shadow_active_method,
         shadow_csv_log_enabled: pendingSettings.shadow_csv_log_enabled,
+        native_stt_shadow_enabled: pendingSettings.native_stt_shadow_enabled,
+        on_device_soap_shadow_enabled: pendingSettings.on_device_soap_shadow_enabled,
       };
 
       await invoke('set_settings', { settings: newSettings });
@@ -239,6 +247,8 @@ export function useSettings(): UseSettingsResult {
       [settings.presence_csv_log_enabled, pendingSettings.presence_csv_log_enabled],
       [settings.shadow_active_method, pendingSettings.shadow_active_method],
       [settings.shadow_csv_log_enabled, pendingSettings.shadow_csv_log_enabled],
+      [settings.native_stt_shadow_enabled, pendingSettings.native_stt_shadow_enabled],
+      [settings.on_device_soap_shadow_enabled, pendingSettings.on_device_soap_shadow_enabled],
     ];
 
     return comparisons.some(([saved, pending]) => saved !== pending);

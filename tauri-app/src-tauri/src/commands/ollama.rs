@@ -273,6 +273,50 @@ pub async fn generate_soap_note_auto_detect(
                 }
             }
 
+            // Shadow on-device SOAP generation (fire-and-forget)
+            if config.on_device_soap_shadow_enabled {
+                let transcript_clone = transcript.clone();
+                let session_id_clone = session_id.clone();
+                let primary_latency = generation_time_ms;
+                let primary_content = result.notes.iter()
+                    .map(|n| n.content.clone()).collect::<Vec<_>>().join("\n\n---\n\n");
+                let detail_level = options.as_ref().map(|o| o.detail_level).unwrap_or(5);
+
+                std::thread::spawn(move || {
+                    let start = std::time::Instant::now();
+                    match crate::on_device_llm::OnDeviceLLMClient::new() {
+                        Ok(client) => match client.generate_soap(&transcript_clone, detail_level, "problem_based") {
+                            Ok(shadow_soap) => {
+                                let ondevice_latency = start.elapsed().as_millis() as u64;
+                                // Save to archive
+                                if let Some(ref sid) = session_id_clone {
+                                    let now = chrono::Utc::now();
+                                    let _ = crate::local_archive::add_shadow_soap_note(sid, &now, &shadow_soap);
+                                }
+                                // Log to CSV
+                                let primary_wc = primary_content.split_whitespace().count();
+                                let ondevice_wc = shadow_soap.split_whitespace().count();
+                                let primary_sections = crate::on_device_llm::count_soap_sections(&primary_content);
+                                let ondevice_sections = crate::on_device_llm::count_soap_sections(&shadow_soap);
+                                let _ = crate::on_device_soap_shadow::OnDeviceSoapCsvLogger::new()
+                                    .map(|mut logger| logger.log(&crate::on_device_soap_shadow::SoapComparisonMetrics {
+                                        session_id: session_id_clone.unwrap_or_default(),
+                                        primary_word_count: primary_wc,
+                                        ondevice_word_count: ondevice_wc,
+                                        primary_latency_ms: primary_latency,
+                                        ondevice_latency_ms: ondevice_latency,
+                                        primary_section_count: primary_sections,
+                                        ondevice_section_count: ondevice_sections,
+                                    }));
+                                info!("Shadow on-device SOAP generated in {}ms ({} words)", ondevice_latency, ondevice_wc);
+                            }
+                            Err(e) => warn!("Shadow on-device SOAP failed: {}", e),
+                        },
+                        Err(e) => warn!("On-device LLM not available for shadow SOAP: {}", e),
+                    }
+                });
+            }
+
             Ok(result)
         }
         Err(e) => {

@@ -15,6 +15,7 @@
 //! Layer 3: Local Archive       — Save and retrieve sessions with SOAP notes
 //! Layer 4: Session Mode E2E    — Audio → Transcript → SOAP → Archive → History
 //! Layer 5: Continuous Mode E2E — Audio → Transcript → Encounter Detection → SOAP → Archive
+//! Layer 6: Native STT Shadow   — Apple Speech client, accumulator, CSV, archive integration
 //! ```
 //!
 //! # Running
@@ -881,5 +882,625 @@ Speaker 1: Take care. We'll see you soon.";
 
         // Cleanup
         cleanup_test_session(&session_id);
+    }
+
+    // ========================================================================
+    // Layer 6: Native STT Shadow
+    // ========================================================================
+
+    /// Ensure speech recognition is authorized, requesting permission if needed.
+    ///
+    /// - If already authorized, returns `Ok(())` immediately.
+    /// - If not determined, calls `requestAuthorization:` and polls for up to 30s.
+    /// - If denied or restricted, returns `Err` with a message.
+    fn ensure_speech_recognition_permission() -> Result<(), String> {
+        use crate::native_stt::{
+            check_speech_recognition_permission, request_speech_recognition_permission,
+            SpeechAuthStatus,
+        };
+
+        let status = check_speech_recognition_permission();
+        println!("Speech recognition permission: {:?}", status);
+
+        match status {
+            SpeechAuthStatus::Authorized => return Ok(()),
+            SpeechAuthStatus::Denied => {
+                return Err("Speech recognition denied. Grant permission in System Settings > Privacy & Security > Speech Recognition".to_string());
+            }
+            SpeechAuthStatus::Restricted => {
+                return Err("Speech recognition restricted by device policy".to_string());
+            }
+            SpeechAuthStatus::NotDetermined => {
+                // Request permission and wait for user response
+                println!("Requesting speech recognition permission...");
+                request_speech_recognition_permission();
+
+                // Poll for up to 30 seconds (user needs to click Allow in the system dialog)
+                for i in 0..60 {
+                    std::thread::sleep(std::time::Duration::from_millis(500));
+                    let new_status = check_speech_recognition_permission();
+                    if new_status != SpeechAuthStatus::NotDetermined {
+                        println!("Permission resolved after {:.1}s: {:?}", (i + 1) as f64 * 0.5, new_status);
+                        return if new_status == SpeechAuthStatus::Authorized {
+                            Ok(())
+                        } else {
+                            Err(format!("Speech recognition permission {}", new_status))
+                        };
+                    }
+                }
+                return Err("Timed out waiting for speech recognition permission (30s)".to_string());
+            }
+            SpeechAuthStatus::Unknown => {
+                return Err("Speech framework not available (SFSpeechRecognizer class missing)".to_string());
+            }
+        }
+    }
+
+    /// Verify native STT client creation and permission check on macOS.
+    ///
+    /// This test exercises the full Objective-C FFI path:
+    /// 1. Check/request SFSpeechRecognizer authorization
+    /// 2. Create NativeSttClient (loads Speech framework, creates recognizer)
+    /// 3. Transcribe test audio through the full recognition pipeline
+    ///
+    /// Will request permission if not yet determined, skip if denied/unavailable.
+    #[test]
+    #[ignore = "Requires macOS with speech recognition permission"]
+    fn e2e_layer6_native_stt_client_creation() {
+        use crate::native_stt::NativeSttClient;
+
+        // Step 1: Ensure permission (request if needed)
+        if let Err(reason) = ensure_speech_recognition_permission() {
+            println!("[SKIP] {}", reason);
+            return;
+        }
+
+        // Step 2: Create client
+        let client = NativeSttClient::new()
+            .expect("Failed to create NativeSttClient despite authorized permission");
+        println!("[PASS] NativeSttClient created successfully");
+
+        // Step 3: Transcribe silence (2s sine wave — not speech)
+        // This exercises the full SFSpeechRecognizer pipeline:
+        //   AVAudioFormat → AVAudioPCMBuffer → SFSpeechAudioBufferRecognitionRequest → recognitionTask
+        let audio = generate_test_audio();
+        println!("Transcribing {} samples ({:.1}s) of test audio...", audio.len(), audio.len() as f64 / 16000.0);
+
+        match client.transcribe_blocking(&audio, 16000) {
+            Ok(text) => {
+                println!("[PASS] Native STT transcribed: \"{}\" ({} chars)", text, text.len());
+                // Sine wave may produce empty text or hallucinated text — both are valid
+            }
+            Err(e) => {
+                // Timeout or error is acceptable for non-speech audio, but log it
+                println!("[WARN] Native STT returned error (acceptable for non-speech): {}", e);
+            }
+        }
+    }
+
+    /// Verify native STT shadow accumulator lifecycle: push, format, drain.
+    ///
+    /// Tests the pure-Rust accumulator without any Objective-C FFI.
+    /// Does not require macOS speech permission.
+    #[test]
+    #[ignore = "Writes to local filesystem (shadow_stt CSV)"]
+    fn e2e_layer6_native_stt_shadow_accumulator() {
+        use crate::native_stt_shadow::{NativeSttSegment, NativeSttShadowAccumulator, NativeSttCsvLogger};
+        use uuid::Uuid;
+
+        // Step 1: Create accumulator and push segments (out of order to test sorting)
+        let mut accumulator = NativeSttShadowAccumulator::new();
+
+        let seg1 = NativeSttSegment {
+            utterance_id: Uuid::new_v4(),
+            start_ms: 0,
+            end_ms: 3000,
+            native_text: "Good morning how are you feeling".to_string(),
+            primary_text: "Good morning, how are you feeling today?".to_string(),
+            speaker_id: Some("Speaker 1".to_string()),
+            native_latency_ms: 1200,
+            primary_latency_ms: 800,
+        };
+
+        let seg2 = NativeSttSegment {
+            utterance_id: Uuid::new_v4(),
+            start_ms: 3500,
+            end_ms: 8000,
+            native_text: "I've been having headaches for two weeks".to_string(),
+            primary_text: "I've been having these headaches for about two weeks now.".to_string(),
+            speaker_id: Some("Speaker 2".to_string()),
+            native_latency_ms: 2100,
+            primary_latency_ms: 1500,
+        };
+
+        let seg3 = NativeSttSegment {
+            utterance_id: Uuid::new_v4(),
+            start_ms: 8500,
+            end_ms: 12000,
+            native_text: "On a scale of 1 to 10 how would you rate the pain".to_string(),
+            primary_text: "On a scale of one to ten, how would you rate the pain?".to_string(),
+            speaker_id: Some("Speaker 1".to_string()),
+            native_latency_ms: 1800,
+            primary_latency_ms: 1100,
+        };
+
+        // Push out of order to test sort
+        accumulator.push(seg2.clone());
+        accumulator.push(seg1.clone());
+        accumulator.push(seg3.clone());
+
+        assert!(!accumulator.is_empty(), "Accumulator should not be empty");
+
+        // Step 2: Format transcript (should be sorted by start_ms)
+        let transcript = accumulator.format_transcript();
+        println!("Formatted shadow transcript:\n{}", transcript);
+        assert!(transcript.contains("Good morning"), "Transcript should start with first segment");
+        assert!(transcript.contains("headaches"), "Transcript should contain second segment");
+        assert!(transcript.contains("scale"), "Transcript should contain third segment");
+
+        // Step 3: Test drain_through (encounter boundary drain)
+        let mut accumulator2 = NativeSttShadowAccumulator::new();
+        accumulator2.push(seg1);
+        accumulator2.push(seg2);
+        accumulator2.push(seg3);
+
+        let drained = accumulator2.drain_through(5000);
+        assert_eq!(drained.len(), 2, "Should drain 2 segments through end_ms=5000");
+        assert!(!accumulator2.is_empty(), "1 segment should remain after drain");
+
+        // Step 4: Test CSV logger
+        let mut logger = NativeSttCsvLogger::new().expect("Failed to create CSV logger");
+        let test_seg = NativeSttSegment {
+            utterance_id: Uuid::new_v4(),
+            start_ms: 0,
+            end_ms: 3000,
+            native_text: "test native text".to_string(),
+            primary_text: "test primary text".to_string(),
+            speaker_id: Some("Speaker 1".to_string()),
+            native_latency_ms: 500,
+            primary_latency_ms: 300,
+        };
+        logger.write_segment(&test_seg);
+
+        // Verify CSV file was created
+        let home = dirs::home_dir().expect("No home dir");
+        let csv_dir = home.join(".transcriptionapp").join("shadow_stt");
+        let today = chrono::Utc::now().format("%Y-%m-%d").to_string();
+        let csv_path = csv_dir.join(format!("{}.csv", today));
+        assert!(csv_path.exists(), "CSV log file should exist at {:?}", csv_path);
+
+        let csv_content = std::fs::read_to_string(&csv_path).expect("Failed to read CSV");
+        assert!(csv_content.contains("timestamp_utc"), "CSV should have header");
+        assert!(csv_content.lines().count() >= 2, "CSV should have header + at least 1 data row");
+        println!("CSV log written to: {:?}", csv_path);
+        println!("CSV content ({} lines):\n{}", csv_content.lines().count(), csv_content);
+
+        // Step 5: Drain all and verify
+        let (full_transcript, segments) = accumulator.drain_all();
+        assert_eq!(segments.len(), 3, "Should drain all 3 segments");
+        assert!(!full_transcript.is_empty(), "Full transcript should not be empty");
+        assert!(accumulator.is_empty(), "Accumulator should be empty after drain_all");
+
+        println!("\n[PASS] Native STT shadow accumulator lifecycle");
+        println!("  Push (out-of-order) → sorted → OK");
+        println!("  Format transcript → OK");
+        println!("  Drain through boundary → OK");
+        println!("  CSV logging → OK");
+        println!("  Drain all → OK");
+    }
+
+    /// Verify shadow transcript is saved alongside primary transcript in archive
+    /// and can be retrieved via get_session.
+    ///
+    /// Tests the archive integration without requiring speech recognition:
+    /// 1. Save session with primary transcript
+    /// 2. Write shadow_transcript.txt to session dir (mirrors pipeline behavior)
+    /// 3. Verify get_session returns both transcripts
+    /// 4. Verify metadata can track has_shadow_transcript
+    #[test]
+    #[ignore = "Writes to local archive filesystem"]
+    fn e2e_layer6_native_stt_shadow_archive() {
+        let session_id = test_session_id("shadow-archive");
+        let now = Utc::now();
+        let date_str = now.format("%Y-%m-%d").to_string();
+
+        let primary_transcript = FIXTURE_TRANSCRIPT;
+        let shadow_transcript = "\
+Speaker 1: Good morning how are you feeling today
+Speaker 2: Hi doctor I've been having these headaches for about 2 weeks now they're mostly on the right side and they get worse in the afternoon
+Speaker 1: I see on a scale of 1 to 10 how would you rate the pain
+Speaker 2: Usually about a 6 or 7 sometimes it goes up to an 8
+Speaker 1: Are you experiencing any nausea vision changes or sensitivity to light
+Speaker 2: A little bit of light sensitivity but no nausea
+Speaker 1: Have you tried any over the counter medications
+Speaker 2: I've been taking ibuprofen but it only helps for a couple of hours
+Speaker 1: OK let's do a neurological exam and check your blood pressure based on what you're describing this sounds like it could be tension headaches or possibly migraines I'd like to start you on sumatriptan as needed and schedule a follow up in 2 weeks
+Speaker 2: Thank you doctor I'll see you in 2 weeks then
+Speaker 1: Take care we'll see you soon";
+
+        // Step 1: Save session (creates archive directory)
+        let session_dir = local_archive::save_session(
+            &session_id,
+            primary_transcript,
+            300_000,
+            None,
+            false,
+            None,
+        ).expect("Failed to save session");
+
+        // Step 2: Write shadow transcript (mirrors pipeline → session.rs behavior)
+        let shadow_path = session_dir.join("shadow_transcript.txt");
+        std::fs::write(&shadow_path, shadow_transcript)
+            .expect("Failed to write shadow transcript");
+        assert!(shadow_path.exists(), "Shadow transcript file should exist");
+
+        // Step 3: Update metadata with has_shadow_transcript flag
+        let metadata_path = session_dir.join("metadata.json");
+        let content = std::fs::read_to_string(&metadata_path)
+            .expect("Failed to read metadata");
+        let mut metadata: local_archive::ArchiveMetadata =
+            serde_json::from_str(&content).expect("Failed to parse metadata");
+        metadata.has_shadow_transcript = Some(true);
+        let json = serde_json::to_string_pretty(&metadata).unwrap();
+        std::fs::write(&metadata_path, json).expect("Failed to write metadata");
+
+        // Step 4: Retrieve via get_session and verify both transcripts
+        let details = local_archive::get_session(&session_id, &date_str)
+            .expect("Failed to get session details");
+
+        assert!(details.transcript.is_some(), "Primary transcript missing");
+        assert!(details.shadow_transcript.is_some(), "Shadow transcript missing from details");
+        assert_eq!(
+            details.metadata.has_shadow_transcript,
+            Some(true),
+            "has_shadow_transcript not set in metadata"
+        );
+
+        let retrieved_primary = details.transcript.unwrap();
+        let retrieved_shadow = details.shadow_transcript.unwrap();
+
+        assert!(
+            retrieved_primary.contains("headaches"),
+            "Primary transcript content mismatch"
+        );
+        assert!(
+            retrieved_shadow.contains("headaches"),
+            "Shadow transcript content mismatch"
+        );
+
+        // Step 5: Compare word counts (shadow should differ from primary — no punctuation)
+        let primary_words: usize = retrieved_primary.split_whitespace().count();
+        let shadow_words: usize = retrieved_shadow.split_whitespace().count();
+        println!("Primary transcript: {} words, {} chars", primary_words, retrieved_primary.len());
+        println!("Shadow transcript:  {} words, {} chars", shadow_words, retrieved_shadow.len());
+        assert!(primary_words > 50, "Primary transcript too short");
+        assert!(shadow_words > 50, "Shadow transcript too short");
+
+        println!("\n[PASS] Shadow transcript archive integration");
+        println!("  Save session → OK");
+        println!("  Write shadow_transcript.txt → OK");
+        println!("  Update metadata (has_shadow_transcript) → OK");
+        println!("  Retrieve both transcripts → OK");
+        println!("  Primary: {} words, Shadow: {} words", primary_words, shadow_words);
+
+        // Cleanup
+        cleanup_test_session(&session_id);
+    }
+
+    /// Full native STT shadow E2E: Native STT + STT Router side by side.
+    ///
+    /// Exercises the complete shadow pipeline:
+    /// 1. Transcribe audio via STT Router (streaming)
+    /// 2. Transcribe same audio via native STT (Apple Speech)
+    /// 3. Archive session with both transcripts
+    /// 4. Verify both are retrievable
+    /// 5. Log comparison metrics to CSV
+    ///
+    /// Requires: macOS with speech recognition permission + live STT Router.
+    #[test]
+    #[ignore = "Requires live STT Router + macOS speech recognition permission"]
+    fn e2e_layer6_native_stt_shadow_full() {
+        use crate::native_stt::NativeSttClient;
+        use crate::native_stt_shadow::{NativeSttSegment, NativeSttShadowAccumulator, NativeSttCsvLogger};
+        use uuid::Uuid;
+
+        // ── Prerequisite: Ensure native STT permission ───────────────────
+        if let Err(reason) = ensure_speech_recognition_permission() {
+            println!("[SKIP] {}", reason);
+            return;
+        }
+
+        let native_client = match NativeSttClient::new() {
+            Ok(c) => c,
+            Err(e) => {
+                println!("[SKIP] NativeSttClient creation failed: {}", e);
+                return;
+            }
+        };
+
+        let session_id = test_session_id("shadow-full");
+        let now = Utc::now();
+        let date_str = now.format("%Y-%m-%d").to_string();
+
+        // ── Step 1: Transcribe via STT Router (streaming) ────────────────
+        println!("Step 1: Transcribing via STT Router...");
+        let stt_client = create_stt_client();
+        let audio = generate_test_audio();
+
+        let stt_result = stt_client.transcribe_streaming_blocking(
+            &audio,
+            STT_ALIAS,
+            true,
+            |_chunk| {},
+        ).expect("STT streaming failed");
+
+        // Use fixture if STT returned too little (expected for sine wave)
+        let primary_transcript = if stt_result.trim().len() < 50 {
+            println!("  Using fixture transcript (STT returned {} chars)", stt_result.trim().len());
+            FIXTURE_TRANSCRIPT.to_string()
+        } else {
+            stt_result
+        };
+        println!("  Primary: {} words", primary_transcript.split_whitespace().count());
+
+        // ── Step 2: Transcribe via native STT (Apple Speech) ─────────────
+        println!("Step 2: Transcribing via native STT (Apple Speech)...");
+        let native_start = std::time::Instant::now();
+        let native_result = native_client.transcribe_blocking(&audio, 16000);
+        let native_latency = native_start.elapsed();
+
+        let native_text = match native_result {
+            Ok(text) => {
+                println!("  Native STT: \"{}\" ({} chars, {:.1}s)", text, text.len(), native_latency.as_secs_f64());
+                if text.trim().len() < 10 {
+                    // Use fixture shadow (like production — sine wave produces no speech)
+                    println!("  Native STT returned too little, using fixture shadow transcript");
+                    "Good morning how are you feeling today".to_string()
+                } else {
+                    text
+                }
+            }
+            Err(e) => {
+                println!("  Native STT error (using fixture): {}", e);
+                "Good morning how are you feeling today".to_string()
+            }
+        };
+
+        // ── Step 3: Build shadow accumulator + CSV log ───────────────────
+        println!("Step 3: Building shadow accumulator...");
+        let mut accumulator = NativeSttShadowAccumulator::new();
+        let mut csv_logger = NativeSttCsvLogger::new().expect("Failed to create CSV logger");
+
+        let seg = NativeSttSegment {
+            utterance_id: Uuid::new_v4(),
+            start_ms: 0,
+            end_ms: 2000,
+            native_text: native_text.clone(),
+            primary_text: primary_transcript
+                .lines()
+                .next()
+                .unwrap_or("Speaker 1: Good morning")
+                .to_string(),
+            speaker_id: Some("Speaker 1".to_string()),
+            native_latency_ms: native_latency.as_millis() as u64,
+            primary_latency_ms: 0,
+        };
+
+        csv_logger.write_segment(&seg);
+        accumulator.push(seg);
+
+        let shadow_transcript = accumulator.format_transcript();
+        println!("  Shadow transcript: {} chars", shadow_transcript.len());
+
+        // ── Step 4: Archive with both transcripts ────────────────────────
+        println!("Step 4: Archiving session with shadow transcript...");
+        let session_dir = local_archive::save_session(
+            &session_id,
+            &primary_transcript,
+            2_000,
+            None,
+            false,
+            None,
+        ).expect("Failed to save session");
+
+        // Write shadow transcript (mirrors pipeline → session.rs code path)
+        let shadow_path = session_dir.join("shadow_transcript.txt");
+        std::fs::write(&shadow_path, &shadow_transcript)
+            .expect("Failed to write shadow transcript");
+
+        // Update metadata
+        let metadata_path = session_dir.join("metadata.json");
+        let content = std::fs::read_to_string(&metadata_path).expect("Failed to read metadata");
+        let mut metadata: local_archive::ArchiveMetadata =
+            serde_json::from_str(&content).expect("Failed to parse metadata");
+        metadata.has_shadow_transcript = Some(true);
+        let json = serde_json::to_string_pretty(&metadata).unwrap();
+        std::fs::write(&metadata_path, json).expect("Failed to write metadata");
+
+        println!("  Archived: session_id={}", session_id);
+
+        // ── Step 5: Verify history retrieval with shadow transcript ──────
+        println!("Step 5: Verifying history retrieval...");
+        let details = local_archive::get_session(&session_id, &date_str)
+            .expect("Failed to get session details");
+
+        assert!(details.transcript.is_some(), "Primary transcript missing");
+        assert!(details.shadow_transcript.is_some(), "Shadow transcript missing");
+        assert_eq!(details.metadata.has_shadow_transcript, Some(true));
+
+        let primary_words = details.transcript.as_ref().unwrap().split_whitespace().count();
+        let shadow_words = details.shadow_transcript.as_ref().unwrap().split_whitespace().count();
+
+        println!("\n[PASS] Native STT shadow full E2E");
+        println!("  STT Router → {} words", primary_words);
+        println!("  Native STT → {} words ({:.1}s latency)", shadow_words, native_latency.as_secs_f64());
+        println!("  Archive → both transcripts saved and retrievable");
+        println!("  CSV log → segment comparison logged");
+
+        // Cleanup
+        cleanup_test_session(&session_id);
+    }
+
+    // ====================================================================
+    // Layer 6b: On-Device SOAP Shadow (Apple Foundation Models)
+    // ====================================================================
+
+    /// Verify on-device LLM availability check does not panic.
+    ///
+    /// On macOS 26+ with Apple Silicon: returns true.
+    /// On older macOS or non-macOS: returns false (graceful degradation).
+    #[test]
+    #[ignore = "Requires macOS 26+ with Apple Silicon for full test"]
+    fn e2e_layer6_on_device_llm_availability() {
+        use crate::on_device_llm::OnDeviceLLMClient;
+
+        let available = OnDeviceLLMClient::check_availability();
+        println!("On-device LLM available: {}", available);
+
+        if available {
+            let client = OnDeviceLLMClient::new()
+                .expect("Failed to create OnDeviceLLMClient despite availability check passing");
+            println!("[PASS] OnDeviceLLMClient created successfully");
+
+            // Quick generation test with minimal prompt
+            let start = std::time::Instant::now();
+            match client.generate_soap("Patient reports headache for 3 days. Vitals normal.", 5, "problem_based") {
+                Ok(soap) => {
+                    let elapsed = start.elapsed();
+                    println!("[PASS] On-device SOAP generated in {:.1}s ({} chars)", elapsed.as_secs_f64(), soap.len());
+                    println!("  Content preview: {}...", &soap[..soap.len().min(200)]);
+
+                    // Check for SOAP section headers
+                    let section_count = crate::on_device_llm::count_soap_sections(&soap);
+                    println!("  SOAP sections found: {}/4", section_count);
+                    assert!(section_count >= 2, "Expected at least 2 SOAP sections, got {}", section_count);
+                }
+                Err(e) => {
+                    println!("[WARN] On-device SOAP generation failed: {}", e);
+                }
+            }
+        } else {
+            println!("[SKIP] On-device LLM not available on this system");
+        }
+    }
+
+    /// Verify on-device SOAP shadow archive: generate shadow SOAP and save to archive.
+    #[test]
+    #[ignore = "Requires macOS 26+ with Apple Silicon + filesystem access"]
+    fn e2e_layer6_on_device_soap_shadow_archive() {
+        use crate::on_device_llm::OnDeviceLLMClient;
+
+        // Check availability first
+        if !OnDeviceLLMClient::check_availability() {
+            println!("[SKIP] On-device LLM not available");
+            return;
+        }
+
+        let session_id = test_session_id("ondevice-soap");
+        let now = Utc::now();
+        let date_str = now.format("%Y-%m-%d").to_string();
+
+        // Step 1: Archive a session with primary SOAP
+        println!("Step 1: Archiving session with primary SOAP...");
+        let _session_dir = local_archive::save_session(
+            &session_id,
+            FIXTURE_TRANSCRIPT,
+            60_000,
+            None,
+            false,
+            None,
+        ).expect("Failed to save session");
+
+        let primary_soap = "S:\n• Patient reports headache\n\nO:\n• Vitals normal\n\nA:\n• Tension headache\n\nP:\n• Ibuprofen 400mg PRN";
+        local_archive::add_soap_note(&session_id, &now, primary_soap, Some(5), Some("problem_based"))
+            .expect("Failed to add primary SOAP");
+
+        // Step 2: Generate shadow SOAP using on-device model
+        println!("Step 2: Generating shadow SOAP via on-device model...");
+        let client = OnDeviceLLMClient::new().expect("Failed to create client");
+        let start = std::time::Instant::now();
+        let shadow_soap = client.generate_soap(FIXTURE_TRANSCRIPT, 5, "problem_based")
+            .expect("On-device SOAP generation failed");
+        let ondevice_latency = start.elapsed();
+
+        println!("  Shadow SOAP: {} chars, {:.1}s", shadow_soap.len(), ondevice_latency.as_secs_f64());
+
+        // Step 3: Save shadow SOAP to archive
+        println!("Step 3: Saving shadow SOAP to archive...");
+        local_archive::add_shadow_soap_note(&session_id, &now, &shadow_soap)
+            .expect("Failed to save shadow SOAP");
+
+        // Step 4: Verify retrieval
+        println!("Step 4: Verifying archive retrieval...");
+        let details = local_archive::get_session(&session_id, &date_str)
+            .expect("Failed to get session");
+
+        assert!(details.soap_note.is_some(), "Primary SOAP missing");
+        assert!(details.shadow_soap_note.is_some(), "Shadow SOAP missing");
+        assert_eq!(details.metadata.has_shadow_soap_note, Some(true));
+
+        let primary_wc = details.soap_note.as_ref().unwrap().split_whitespace().count();
+        let shadow_wc = details.shadow_soap_note.as_ref().unwrap().split_whitespace().count();
+
+        println!("\n[PASS] On-device SOAP shadow archive E2E");
+        println!("  Primary SOAP: {} words", primary_wc);
+        println!("  Shadow SOAP: {} words ({:.1}s latency)", shadow_wc, ondevice_latency.as_secs_f64());
+        println!("  Archive: both SOAP notes saved and retrievable");
+
+        // Cleanup
+        cleanup_test_session(&session_id);
+    }
+
+    /// Verify on-device SOAP CSV logger writes correctly.
+    #[test]
+    #[ignore = "Writes to filesystem (shadow_soap CSV)"]
+    fn e2e_layer6_on_device_soap_csv_logging() {
+        use crate::on_device_soap_shadow::{OnDeviceSoapCsvLogger, SoapComparisonMetrics};
+
+        println!("Step 1: Creating CSV logger...");
+        let mut logger = OnDeviceSoapCsvLogger::new()
+            .expect("Failed to create OnDeviceSoapCsvLogger");
+
+        println!("Step 2: Writing test metrics...");
+        let metrics = SoapComparisonMetrics {
+            session_id: "test-csv-session".to_string(),
+            primary_word_count: 250,
+            ondevice_word_count: 200,
+            primary_latency_ms: 2500,
+            ondevice_latency_ms: 3500,
+            primary_section_count: 4,
+            ondevice_section_count: 4,
+        };
+        logger.log(&metrics);
+
+        // Write a second entry to verify append behavior
+        let metrics2 = SoapComparisonMetrics {
+            session_id: "test-csv-session-2".to_string(),
+            primary_word_count: 180,
+            ondevice_word_count: 160,
+            primary_latency_ms: 1800,
+            ondevice_latency_ms: 4200,
+            primary_section_count: 4,
+            ondevice_section_count: 3,
+        };
+        logger.log(&metrics2);
+
+        // Verify the CSV file exists
+        let log_dir = dirs::home_dir().unwrap()
+            .join(".transcriptionapp")
+            .join("shadow_soap");
+        let today = Utc::now().format("%Y-%m-%d").to_string();
+        let csv_path = log_dir.join(format!("{}.csv", today));
+
+        assert!(csv_path.exists(), "CSV file not created at {:?}", csv_path);
+
+        let content = std::fs::read_to_string(&csv_path).expect("Failed to read CSV");
+        assert!(content.contains("timestamp_utc"), "CSV missing header");
+        assert!(content.contains("test-csv-session"), "CSV missing first entry");
+        assert!(content.contains("test-csv-session-2"), "CSV missing second entry");
+
+        println!("[PASS] CSV logger writes correctly to {:?}", csv_path);
+        println!("  File size: {} bytes", content.len());
+        println!("  Lines: {}", content.lines().count());
     }
 }

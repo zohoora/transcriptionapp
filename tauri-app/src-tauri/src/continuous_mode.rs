@@ -842,6 +842,7 @@ pub async fn run_continuous_mode(
         initial_audio_buffer: None,
         auto_end_enabled: false, // Never auto-end in continuous mode
         auto_end_silence_ms: 0,
+        native_stt_shadow_enabled: config.native_stt_shadow_enabled,
     };
 
     // Create message channel
@@ -992,6 +993,9 @@ pub async fn run_continuous_mode(
                 }
                 // Ignore auto-end messages in continuous mode
                 PipelineMessage::AutoEndSilence { .. } | PipelineMessage::SilenceWarning { .. } => {}
+                // Shadow native STT transcript — ignore in continuous mode consumer
+                // (shadow accumulator is managed by pipeline thread, saved during encounter archival)
+                PipelineMessage::NativeSttShadowTranscript { .. } => {}
             }
         }
     });
@@ -1367,6 +1371,7 @@ pub async fn run_continuous_mode(
     let soap_detail_level = config.soap_detail_level;
     let soap_format = config.soap_format.clone();
     let merge_enabled = config.encounter_merge_enabled;
+    let on_device_soap_shadow_enabled = config.on_device_soap_shadow_enabled;
 
     // Clone config values for flush-on-stop SOAP generation (outside detector task)
     let flush_soap_model = config.soap_model_fast.clone();
@@ -1868,6 +1873,43 @@ pub async fn run_continuous_mode(
                                         "session_id": session_id
                                     }));
                                     info!("SOAP generated for encounter #{}", encounter_number);
+
+                                    // Shadow on-device SOAP generation (fire-and-forget)
+                                    if on_device_soap_shadow_enabled {
+                                        let shadow_transcript = filtered_encounter_text.clone();
+                                        let shadow_session_id = session_id.clone();
+                                        let shadow_primary_content = soap_content.clone();
+                                        let shadow_detail_level = soap_detail_level;
+                                        std::thread::spawn(move || {
+                                            let start = std::time::Instant::now();
+                                            match crate::on_device_llm::OnDeviceLLMClient::new() {
+                                                Ok(client) => match client.generate_soap(&shadow_transcript, shadow_detail_level, "problem_based") {
+                                                    Ok(shadow_soap) => {
+                                                        let ondevice_latency = start.elapsed().as_millis() as u64;
+                                                        let now = chrono::Utc::now();
+                                                        let _ = crate::local_archive::add_shadow_soap_note(&shadow_session_id, &now, &shadow_soap);
+                                                        let primary_wc = shadow_primary_content.split_whitespace().count();
+                                                        let ondevice_wc = shadow_soap.split_whitespace().count();
+                                                        let primary_sections = crate::on_device_llm::count_soap_sections(&shadow_primary_content);
+                                                        let ondevice_sections = crate::on_device_llm::count_soap_sections(&shadow_soap);
+                                                        let _ = crate::on_device_soap_shadow::OnDeviceSoapCsvLogger::new()
+                                                            .map(|mut logger| logger.log(&crate::on_device_soap_shadow::SoapComparisonMetrics {
+                                                                session_id: shadow_session_id,
+                                                                primary_word_count: primary_wc,
+                                                                ondevice_word_count: ondevice_wc,
+                                                                primary_latency_ms: 0, // Primary latency not easily available in continuous mode
+                                                                ondevice_latency_ms: ondevice_latency,
+                                                                primary_section_count: primary_sections,
+                                                                ondevice_section_count: ondevice_sections,
+                                                            }));
+                                                        info!("Shadow on-device SOAP generated for encounter in {}ms", ondevice_latency);
+                                                    }
+                                                    Err(e) => warn!("Shadow on-device SOAP failed: {}", e),
+                                                },
+                                                Err(e) => warn!("On-device LLM not available for shadow SOAP: {}", e),
+                                            }
+                                        });
+                                    }
                                 }
                                 Ok(Err(e)) => {
                                     warn!("Failed to generate SOAP for encounter: {}", e);

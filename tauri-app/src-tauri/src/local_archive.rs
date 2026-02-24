@@ -106,6 +106,12 @@ pub struct ArchiveMetadata {
     /// Shadow mode comparison data (dual detection method analysis)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub shadow_comparison: Option<crate::shadow_log::ShadowEncounterComparison>,
+    /// Whether a shadow native STT transcript exists for this session
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub has_shadow_transcript: Option<bool>,
+    /// Whether a shadow on-device SOAP note exists for this session
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub has_shadow_soap_note: Option<bool>,
 }
 
 impl ArchiveMetadata {
@@ -128,6 +134,8 @@ impl ArchiveMetadata {
             patient_name: None,
             detection_method: None,
             shadow_comparison: None,
+            has_shadow_transcript: None,
+            has_shadow_soap_note: None,
         }
     }
 }
@@ -158,6 +166,8 @@ pub struct ArchiveDetails {
     pub transcript: Option<String>,
     pub soap_note: Option<String>,
     pub audio_path: Option<String>,
+    pub shadow_transcript: Option<String>,
+    pub shadow_soap_note: Option<String>,
 }
 
 /// Archive a completed session
@@ -276,6 +286,55 @@ pub fn add_soap_note(
         detail_level = ?detail_level,
         format = ?format,
         "SOAP note added to archive"
+    );
+
+    Ok(())
+}
+
+/// Add shadow on-device SOAP note for an archived session.
+///
+/// Follows the same pattern as `add_soap_note()` but saves to `shadow_soap_note.txt`
+/// and updates `has_shadow_soap_note` in metadata.
+pub fn add_shadow_soap_note(
+    session_id: &str,
+    date: &DateTime<Utc>,
+    shadow_soap_content: &str,
+) -> Result<(), String> {
+    validate_session_id(session_id)?;
+    let session_dir = get_session_archive_dir(session_id, date)?;
+
+    if !session_dir.exists() {
+        // Create directory if it doesn't exist yet (race with continuous mode archiving)
+        fs::create_dir_all(&session_dir)
+            .map_err(|e| format!("Failed to create session directory: {}", e))?;
+    }
+
+    // Save shadow SOAP note
+    let shadow_soap_path = session_dir.join("shadow_soap_note.txt");
+    let mut file = File::create(&shadow_soap_path)
+        .map_err(|e| format!("Failed to create shadow SOAP note file: {}", e))?;
+    file.write_all(shadow_soap_content.as_bytes())
+        .map_err(|e| format!("Failed to write shadow SOAP note: {}", e))?;
+
+    // Update metadata
+    let metadata_path = session_dir.join("metadata.json");
+    if metadata_path.exists() {
+        let content = fs::read_to_string(&metadata_path)
+            .map_err(|e| format!("Failed to read metadata: {}", e))?;
+        let mut metadata: ArchiveMetadata = serde_json::from_str(&content)
+            .map_err(|e| format!("Failed to parse metadata: {}", e))?;
+
+        metadata.has_shadow_soap_note = Some(true);
+
+        let metadata_json = serde_json::to_string_pretty(&metadata)
+            .map_err(|e| format!("Failed to serialize metadata: {}", e))?;
+        fs::write(&metadata_path, metadata_json)
+            .map_err(|e| format!("Failed to write metadata: {}", e))?;
+    }
+
+    info!(
+        session_id = %session_id,
+        "Shadow on-device SOAP note added to archive"
     );
 
     Ok(())
@@ -457,12 +516,32 @@ pub fn get_session(session_id: &str, date_str: &str) -> Result<ArchiveDetails, S
         None
     };
 
+    // Load shadow transcript if exists
+    let shadow_transcript_path = session_dir.join("shadow_transcript.txt");
+    let shadow_transcript = if shadow_transcript_path.exists() {
+        Some(fs::read_to_string(&shadow_transcript_path)
+            .map_err(|e| format!("Failed to read shadow transcript: {}", e))?)
+    } else {
+        None
+    };
+
+    // Load shadow SOAP note if exists
+    let shadow_soap_path = session_dir.join("shadow_soap_note.txt");
+    let shadow_soap_note = if shadow_soap_path.exists() {
+        Some(fs::read_to_string(&shadow_soap_path)
+            .map_err(|e| format!("Failed to read shadow SOAP note: {}", e))?)
+    } else {
+        None
+    };
+
     Ok(ArchiveDetails {
         session_id: session_id.to_string(),
         metadata,
         transcript,
         soap_note,
         audio_path,
+        shadow_transcript,
+        shadow_soap_note,
     })
 }
 
@@ -659,6 +738,8 @@ pub fn split_session(session_id: &str, date_str: &str, split_line: usize) -> Res
         patient_name: original_meta.patient_name.clone(),
         detection_method: original_meta.detection_method.clone(),
         shadow_comparison: None,
+        has_shadow_transcript: None,
+        has_shadow_soap_note: None,
     };
     let new_meta_json = serde_json::to_string_pretty(&new_meta)
         .map_err(|e| format!("Failed to serialize new metadata: {}", e))?;

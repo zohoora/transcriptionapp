@@ -117,10 +117,24 @@ pub struct Settings {
     pub shadow_active_method: String,
     #[serde(default = "default_shadow_csv_log_enabled")]
     pub shadow_csv_log_enabled: bool,
+    // Native STT shadow (Apple SFSpeechRecognizer comparison)
+    #[serde(default = "default_native_stt_shadow_enabled")]
+    pub native_stt_shadow_enabled: bool,
+    // On-device SOAP shadow (Apple Foundation Models comparison)
+    #[serde(default = "default_on_device_soap_shadow_enabled")]
+    pub on_device_soap_shadow_enabled: bool,
+}
+
+fn default_native_stt_shadow_enabled() -> bool {
+    false // Experimental — requires opt-in via settings toggle
+}
+
+fn default_on_device_soap_shadow_enabled() -> bool {
+    false // Experimental — requires opt-in via settings toggle
 }
 
 fn default_shadow_active_method() -> String {
-    "llm".to_string()
+    "sensor".to_string()
 }
 
 fn default_shadow_csv_log_enabled() -> bool {
@@ -128,7 +142,7 @@ fn default_shadow_csv_log_enabled() -> bool {
 }
 
 fn default_encounter_detection_mode() -> String {
-    "llm".to_string()
+    "shadow".to_string()
 }
 
 fn default_presence_absence_threshold_secs() -> u64 {
@@ -322,6 +336,8 @@ impl Default for Settings {
             presence_csv_log_enabled: default_presence_csv_log_enabled(),
             shadow_active_method: default_shadow_active_method(),
             shadow_csv_log_enabled: default_shadow_csv_log_enabled(),
+            native_stt_shadow_enabled: default_native_stt_shadow_enabled(),
+            on_device_soap_shadow_enabled: default_on_device_soap_shadow_enabled(),
         }
     }
 }
@@ -482,11 +498,11 @@ impl Settings {
             });
         }
 
-        // Shadow mode requires a sensor port
-        if self.encounter_detection_mode == "shadow" && self.presence_sensor_port.is_empty() {
+        // Sensor-only mode requires a sensor port (shadow mode falls back to LLM gracefully)
+        if self.encounter_detection_mode == "sensor" && self.presence_sensor_port.is_empty() {
             errors.push(SettingsValidationError {
                 field: "presence_sensor_port".to_string(),
-                message: "Shadow mode requires a presence sensor port to be configured".to_string(),
+                message: "Sensor mode requires a presence sensor port to be configured".to_string(),
             });
         }
 
@@ -669,6 +685,12 @@ pub struct Config {
     pub shadow_active_method: String,
     #[serde(default = "default_shadow_csv_log_enabled")]
     pub shadow_csv_log_enabled: bool,
+    // Native STT shadow (Apple SFSpeechRecognizer comparison)
+    #[serde(default = "default_native_stt_shadow_enabled")]
+    pub native_stt_shadow_enabled: bool,
+    // On-device SOAP shadow (Apple Foundation Models comparison)
+    #[serde(default = "default_on_device_soap_shadow_enabled")]
+    pub on_device_soap_shadow_enabled: bool,
 }
 
 fn default_max_speakers() -> usize {
@@ -766,6 +788,8 @@ impl Default for Config {
             presence_csv_log_enabled: default_presence_csv_log_enabled(),
             shadow_active_method: default_shadow_active_method(),
             shadow_csv_log_enabled: default_shadow_csv_log_enabled(),
+            native_stt_shadow_enabled: default_native_stt_shadow_enabled(),
+            on_device_soap_shadow_enabled: default_on_device_soap_shadow_enabled(),
         }
     }
 }
@@ -987,6 +1011,8 @@ impl Config {
             presence_csv_log_enabled: self.presence_csv_log_enabled,
             shadow_active_method: self.shadow_active_method.clone(),
             shadow_csv_log_enabled: self.shadow_csv_log_enabled,
+            native_stt_shadow_enabled: self.native_stt_shadow_enabled,
+            on_device_soap_shadow_enabled: self.on_device_soap_shadow_enabled,
         }
     }
 
@@ -1053,6 +1079,10 @@ impl Config {
         // Shadow mode settings
         self.shadow_active_method = settings.shadow_active_method.clone();
         self.shadow_csv_log_enabled = settings.shadow_csv_log_enabled;
+        // Native STT shadow
+        self.native_stt_shadow_enabled = settings.native_stt_shadow_enabled;
+        // On-device SOAP shadow
+        self.on_device_soap_shadow_enabled = settings.on_device_soap_shadow_enabled;
 
         // Clamp values to safe ranges after applying settings
         self.clamp_values();
@@ -1183,6 +1213,8 @@ mod tests {
             presence_csv_log_enabled: default_presence_csv_log_enabled(),
             shadow_active_method: default_shadow_active_method(),
             shadow_csv_log_enabled: default_shadow_csv_log_enabled(),
+            native_stt_shadow_enabled: default_native_stt_shadow_enabled(),
+            on_device_soap_shadow_enabled: default_on_device_soap_shadow_enabled(),
             stt_alias: "medical-streaming".to_string(),
             stt_postprocess: true,
         };
@@ -1306,6 +1338,8 @@ mod tests {
             presence_csv_log_enabled: default_presence_csv_log_enabled(),
             shadow_active_method: default_shadow_active_method(),
             shadow_csv_log_enabled: default_shadow_csv_log_enabled(),
+            native_stt_shadow_enabled: default_native_stt_shadow_enabled(),
+            on_device_soap_shadow_enabled: default_on_device_soap_shadow_enabled(),
             stt_alias: default_stt_alias(),
             stt_postprocess: default_stt_postprocess(),
         };
@@ -1684,14 +1718,14 @@ mod tests {
     #[test]
     fn test_presence_sensor_defaults() {
         let config = Config::default();
-        assert_eq!(config.encounter_detection_mode, "llm");
+        assert_eq!(config.encounter_detection_mode, "shadow");
         assert!(config.presence_sensor_port.is_empty());
         assert_eq!(config.presence_absence_threshold_secs, 180);
         assert_eq!(config.presence_debounce_secs, 10);
         assert!(config.presence_csv_log_enabled);
 
         let settings = Settings::default();
-        assert_eq!(settings.encounter_detection_mode, "llm");
+        assert_eq!(settings.encounter_detection_mode, "shadow");
         assert!(settings.presence_sensor_port.is_empty());
         assert_eq!(settings.presence_absence_threshold_secs, 180);
         assert_eq!(settings.presence_debounce_secs, 10);
@@ -1736,7 +1770,7 @@ mod tests {
         }"#;
 
         let config: Config = serde_json::from_str(json).expect("Should deserialize old config");
-        assert_eq!(config.encounter_detection_mode, "llm");
+        assert_eq!(config.encounter_detection_mode, "shadow");
         assert!(config.presence_sensor_port.is_empty());
         assert_eq!(config.presence_absence_threshold_secs, 180);
         assert_eq!(config.presence_debounce_secs, 10);

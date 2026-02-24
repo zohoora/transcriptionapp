@@ -79,6 +79,8 @@ mod tests {
             presence_csv_log_enabled: true,
             shadow_active_method: "llm".to_string(),
             shadow_csv_log_enabled: true,
+            native_stt_shadow_enabled: true,
+            on_device_soap_shadow_enabled: false,
         };
 
         // Serialize to JSON
