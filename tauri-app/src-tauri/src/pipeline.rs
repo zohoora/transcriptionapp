@@ -261,6 +261,8 @@ pub struct PipelineHandle {
     reset_silence_flag: Arc<AtomicBool>,
     reset_biomarkers_flag: Arc<AtomicBool>,
     processor_handle: Option<std::thread::JoinHandle<()>>,
+    /// Native STT shadow accumulator — shared with pipeline thread for draining at encounter boundaries
+    native_stt_accumulator: Option<Arc<std::sync::Mutex<crate::native_stt_shadow::NativeSttShadowAccumulator>>>,
 }
 
 impl PipelineHandle {
@@ -286,6 +288,11 @@ impl PipelineHandle {
     /// Get a clone of the reset biomarkers flag (for external tasks to trigger resets)
     pub fn reset_biomarkers_flag(&self) -> Arc<AtomicBool> {
         self.reset_biomarkers_flag.clone()
+    }
+
+    /// Get the native STT shadow accumulator (for draining at encounter boundaries in continuous mode)
+    pub fn native_stt_accumulator(&self) -> Option<Arc<std::sync::Mutex<crate::native_stt_shadow::NativeSttShadowAccumulator>>> {
+        self.native_stt_accumulator.clone()
     }
 
     /// Wait for the pipeline to fully stop
@@ -338,9 +345,18 @@ pub fn start_pipeline(
     // Clone config for the processing thread
     let tx = message_tx;
 
+    // Create shared native STT shadow accumulator (pre-thread so PipelineHandle can expose it)
+    let native_stt_accumulator: Option<Arc<std::sync::Mutex<crate::native_stt_shadow::NativeSttShadowAccumulator>>> =
+        if config.native_stt_shadow_enabled {
+            Some(Arc::new(std::sync::Mutex::new(crate::native_stt_shadow::NativeSttShadowAccumulator::new())))
+        } else {
+            None
+        };
+    let accumulator_for_thread = native_stt_accumulator.clone();
+
     // Spawn the processing thread - everything happens on this thread
     let processor_handle = std::thread::spawn(move || {
-        run_pipeline_thread(config, tx, stop_flag_clone, reset_silence_flag_clone, reset_biomarkers_flag_clone);
+        run_pipeline_thread(config, tx, stop_flag_clone, reset_silence_flag_clone, reset_biomarkers_flag_clone, accumulator_for_thread);
     });
 
     Ok(PipelineHandle {
@@ -348,6 +364,7 @@ pub fn start_pipeline(
         reset_silence_flag,
         reset_biomarkers_flag,
         processor_handle: Some(processor_handle),
+        native_stt_accumulator,
     })
 }
 
@@ -358,8 +375,9 @@ fn run_pipeline_thread(
     stop_flag: Arc<AtomicBool>,
     reset_silence_flag: Arc<AtomicBool>,
     reset_biomarkers_flag: Arc<AtomicBool>,
+    shared_accumulator: Option<Arc<std::sync::Mutex<crate::native_stt_shadow::NativeSttShadowAccumulator>>>,
 ) {
-    if let Err(e) = run_pipeline_thread_inner(&config, &tx, &stop_flag, &reset_silence_flag, &reset_biomarkers_flag) {
+    if let Err(e) = run_pipeline_thread_inner(&config, &tx, &stop_flag, &reset_silence_flag, &reset_biomarkers_flag, shared_accumulator.as_ref()) {
         let _ = tx.blocking_send(PipelineMessage::Error(e.to_string()));
     }
     let _ = tx.blocking_send(PipelineMessage::Stopped);
@@ -371,6 +389,7 @@ fn run_pipeline_thread_inner(
     stop_flag: &Arc<AtomicBool>,
     reset_silence_flag: &Arc<AtomicBool>,
     reset_biomarkers_flag: &Arc<AtomicBool>,
+    shared_accumulator: Option<&Arc<std::sync::Mutex<crate::native_stt_shadow::NativeSttShadowAccumulator>>>,
 ) -> Result<()> {
     info!("Pipeline thread started");
     info!("Device: {:?}", config.device_id);
@@ -423,8 +442,14 @@ fn run_pipeline_thread_inner(
     } else {
         None
     };
+    // Use shared accumulator from PipelineHandle if provided (for continuous mode external drain),
+    // otherwise create a local one (session mode — drained via PipelineMessage at stop)
     let native_stt_accumulator: Option<Arc<std::sync::Mutex<crate::native_stt_shadow::NativeSttShadowAccumulator>>> =
-        native_stt_client.as_ref().map(|_| Arc::new(std::sync::Mutex::new(crate::native_stt_shadow::NativeSttShadowAccumulator::new())));
+        native_stt_client.as_ref().map(|_| {
+            shared_accumulator
+                .cloned()
+                .unwrap_or_else(|| Arc::new(std::sync::Mutex::new(crate::native_stt_shadow::NativeSttShadowAccumulator::new())))
+        });
     let native_stt_csv_logger: Option<Arc<std::sync::Mutex<crate::native_stt_shadow::NativeSttCsvLogger>>> =
         if native_stt_client.is_some() {
             match crate::native_stt_shadow::NativeSttCsvLogger::new() {

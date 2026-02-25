@@ -282,6 +282,7 @@ const HistoryWindow: React.FC = () => {
           charting_mode: null,
           encounter_number: null,
           patient_name: null,
+          likely_non_clinical: null,
         };
 
         details = {

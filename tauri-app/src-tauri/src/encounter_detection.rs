@@ -157,6 +157,75 @@ pub fn parse_encounter_detection(response: &str) -> Result<EncounterDetectionRes
     Err(format!("Failed to parse encounter detection response: (raw: {})", response))
 }
 
+// ============================================================================
+// Clinical Content Check (post-split two-pass)
+// ============================================================================
+
+/// Result of clinical content check
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ClinicalContentCheckResult {
+    pub clinical: bool,
+    #[serde(default)]
+    pub reason: Option<String>,
+}
+
+/// Build the clinical content check prompt.
+/// Called after encounter text is extracted, before SOAP generation.
+pub fn build_clinical_content_check_prompt(encounter_text: &str) -> (String, String) {
+    let system = r#"You MUST respond in English with ONLY a JSON object. No other text, no explanations, no markdown.
+
+You are reviewing a segment of transcript from a medical office where the microphone records all day.
+
+Your task: determine if this transcript contains a clinical patient encounter (examination, consultation, treatment discussion) OR if it is non-clinical content (personal conversation, staff chat, phone calls unrelated to patient care, silence/noise).
+
+If it contains ANY substantive clinical content (history-taking, physical exam, diagnosis discussion, treatment planning), return:
+{"clinical": true, "reason": "brief description of clinical content found"}
+
+If it is entirely non-clinical (personal chat, administrative only, no patient care), return:
+{"clinical": false, "reason": "brief description of why this is not clinical"}
+
+Respond with ONLY the JSON object."#;
+
+    // Truncate to ~2000 words for fast-model efficiency
+    let words: Vec<&str> = encounter_text.split_whitespace().collect();
+    let truncated = if words.len() > 2000 {
+        format!(
+            "{}\n[... {} words omitted ...]\n{}",
+            words[..1000].join(" "),
+            words.len() - 2000,
+            words[words.len() - 1000..].join(" ")
+        )
+    } else {
+        encounter_text.to_string()
+    };
+
+    let user = format!("Transcript to evaluate:\n{}", truncated);
+
+    (system.to_string(), user)
+}
+
+/// Parse the clinical content check response from the LLM
+pub fn parse_clinical_content_check(response: &str) -> Result<ClinicalContentCheckResult, String> {
+    let cleaned = strip_think_tags(response);
+
+    if let Some(json_str) = extract_first_json_object(&cleaned) {
+        if let Ok(result) = serde_json::from_str::<ClinicalContentCheckResult>(&json_str) {
+            return Ok(result);
+        }
+    }
+
+    // Fallback: try to find {"clinical" in the text
+    if let Some(inner_start) = cleaned.find("{\"clinical\"") {
+        if let Some(json_str) = extract_first_json_object(&cleaned[inner_start..]) {
+            if let Ok(result) = serde_json::from_str::<ClinicalContentCheckResult>(&json_str) {
+                return Ok(result);
+            }
+        }
+    }
+
+    Err(format!("Failed to parse clinical content check response: (raw: {})", response))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -281,5 +350,54 @@ mod tests {
             !system.contains("when in doubt"),
             "Prompt should not have 'when in doubt' bias"
         );
+    }
+
+    // ── Clinical content check tests ─────────────────────────────
+
+    #[test]
+    fn test_parse_clinical_content_check_clinical() {
+        let response = r#"{"clinical": true, "reason": "Patient history-taking and exam discussion"}"#;
+        let result = parse_clinical_content_check(response).unwrap();
+        assert!(result.clinical);
+        assert!(result.reason.unwrap().contains("history"));
+    }
+
+    #[test]
+    fn test_parse_clinical_content_check_non_clinical() {
+        let response = r#"{"clinical": false, "reason": "Personal conversation about weekend plans"}"#;
+        let result = parse_clinical_content_check(response).unwrap();
+        assert!(!result.clinical);
+        assert!(result.reason.unwrap().contains("weekend"));
+    }
+
+    #[test]
+    fn test_parse_clinical_content_check_with_think_tags() {
+        let response = r#"<think>analyzing</think>{"clinical": true, "reason": "exam"}"#;
+        let result = parse_clinical_content_check(response).unwrap();
+        assert!(result.clinical);
+    }
+
+    #[test]
+    fn test_parse_clinical_content_check_no_reason() {
+        let response = r#"{"clinical": false}"#;
+        let result = parse_clinical_content_check(response).unwrap();
+        assert!(!result.clinical);
+        assert!(result.reason.is_none());
+    }
+
+    #[test]
+    fn test_build_clinical_content_check_prompt_truncation() {
+        let long_text = "word ".repeat(3000);
+        let (_, user) = build_clinical_content_check_prompt(&long_text);
+        assert!(user.contains("words omitted"));
+    }
+
+    #[test]
+    fn test_build_clinical_content_check_prompt_short() {
+        let short_text = "Patient reports headache for two weeks.";
+        let (system, user) = build_clinical_content_check_prompt(short_text);
+        assert!(system.contains("clinical patient encounter"));
+        assert!(user.contains("headache"));
+        assert!(!user.contains("words omitted"));
     }
 }

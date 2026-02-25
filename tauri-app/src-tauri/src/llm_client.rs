@@ -1501,6 +1501,95 @@ fn fix_json_newlines(json: &str) -> String {
     result
 }
 
+/// Remove leading commas inside arrays/objects (e.g. `[,"item"]` → `["item"]`)
+/// LLMs sometimes produce empty leading elements before real content.
+fn remove_leading_commas(json: &str) -> String {
+    let mut result = String::with_capacity(json.len());
+    let mut in_string = false;
+    let mut escape_next = false;
+    let mut prev_bracket = false; // true if last non-whitespace was [ or {
+
+    for ch in json.chars() {
+        if escape_next {
+            result.push(ch);
+            escape_next = false;
+            prev_bracket = false;
+            continue;
+        }
+        match ch {
+            '\\' if in_string => {
+                result.push(ch);
+                escape_next = true;
+            }
+            '"' => {
+                in_string = !in_string;
+                result.push(ch);
+                prev_bracket = false;
+            }
+            '[' | '{' if !in_string => {
+                result.push(ch);
+                prev_bracket = true;
+            }
+            ',' if !in_string && prev_bracket => {
+                // Skip comma immediately after opening bracket (leading comma)
+                // prev_bracket stays true to handle `[,,"item"]`
+            }
+            _ if !in_string && ch.is_whitespace() => {
+                result.push(ch);
+                // Don't reset prev_bracket on whitespace: `[ , "item"]`
+            }
+            _ => {
+                result.push(ch);
+                prev_bracket = false;
+            }
+        }
+    }
+
+    result
+}
+
+/// Remove trailing commas before closing brackets (e.g. `["item",]` → `["item"]`)
+/// Also handles `,"item",}` patterns.
+fn remove_trailing_commas(json: &str) -> String {
+    let mut result = String::with_capacity(json.len());
+    let mut in_string = false;
+    let mut escape_next = false;
+    let chars: Vec<char> = json.chars().collect();
+
+    for i in 0..chars.len() {
+        let ch = chars[i];
+        if escape_next {
+            result.push(ch);
+            escape_next = false;
+            continue;
+        }
+        match ch {
+            '\\' if in_string => {
+                result.push(ch);
+                escape_next = true;
+            }
+            '"' => {
+                in_string = !in_string;
+                result.push(ch);
+            }
+            ',' if !in_string => {
+                // Look ahead: skip this comma if the next non-whitespace is ] or }
+                let next_significant = chars[i + 1..].iter().find(|c| !c.is_whitespace());
+                if matches!(next_significant, Some(']') | Some('}')) {
+                    // Skip trailing comma
+                } else {
+                    result.push(ch);
+                }
+            }
+            _ => {
+                result.push(ch);
+            }
+        }
+    }
+
+    result
+}
+
 /// Fix truncated JSON by adding missing closing brackets
 /// LLMs sometimes get cut off before completing the JSON structure
 fn fix_truncated_json(json: &str) -> String {
@@ -1580,8 +1669,10 @@ fn extract_json_from_response(response: &str) -> String {
             let json_str = text[start..=end].to_string();
             // Fix unescaped newlines inside strings (common LLM error)
             let fixed_newlines = fix_json_newlines(&json_str);
+            // Fix leading/trailing commas (e.g. [,"item"] or ["item",])
+            let fixed_commas = remove_trailing_commas(&remove_leading_commas(&fixed_newlines));
             // Fix truncated JSON (missing closing brackets)
-            return fix_truncated_json(&fixed_newlines);
+            return fix_truncated_json(&fixed_commas);
         }
     }
 
@@ -1595,6 +1686,13 @@ fn parse_and_format_soap_json(response: &str) -> String {
 
     match serde_json::from_str::<SoapJsonResponse>(&json_str) {
         Ok(soap) => {
+            // Filter out empty string elements (LLM artifact: ["", "real item"])
+            let soap = SoapJsonResponse {
+                subjective: soap.subjective.into_iter().filter(|s| !s.trim().is_empty()).collect(),
+                objective: soap.objective.into_iter().filter(|s| !s.trim().is_empty()).collect(),
+                assessment: soap.assessment.into_iter().filter(|s| !s.trim().is_empty()).collect(),
+                plan: soap.plan.into_iter().filter(|s| !s.trim().is_empty()).collect(),
+            };
             info!("Successfully parsed SOAP JSON: S={}, O={}, A={}, P={}",
                   soap.subjective.len(), soap.objective.len(),
                   soap.assessment.len(), soap.plan.len());
@@ -2148,5 +2246,104 @@ mod tests {
         let parsed: AudioEvent = serde_json::from_str(&json).unwrap();
         assert_eq!(parsed.timestamp_ms, 12345);
         assert_eq!(parsed.label, "Cough");
+    }
+
+    // ── JSON repair tests ──────────────────────────────────────────
+
+    #[test]
+    fn test_remove_leading_commas_array() {
+        assert_eq!(remove_leading_commas(r#"[,"item"]"#), r#"["item"]"#);
+    }
+
+    #[test]
+    fn test_remove_leading_commas_double() {
+        assert_eq!(remove_leading_commas(r#"[,,"item"]"#), r#"["item"]"#);
+    }
+
+    #[test]
+    fn test_remove_leading_commas_with_spaces() {
+        // Comma is removed, whitespace around it preserved
+        assert_eq!(remove_leading_commas(r#"[ , "item"]"#), r#"[  "item"]"#);
+    }
+
+    #[test]
+    fn test_remove_leading_commas_no_change() {
+        let valid = r#"["a","b"]"#;
+        assert_eq!(remove_leading_commas(valid), valid);
+    }
+
+    #[test]
+    fn test_remove_leading_commas_preserves_strings() {
+        // Comma inside a string after [ should NOT be touched
+        let input = r#"["[,test"]"#;
+        assert_eq!(remove_leading_commas(input), input);
+    }
+
+    #[test]
+    fn test_remove_trailing_commas_array() {
+        assert_eq!(remove_trailing_commas(r#"["item",]"#), r#"["item"]"#);
+    }
+
+    #[test]
+    fn test_remove_trailing_commas_object() {
+        assert_eq!(remove_trailing_commas(r#"{"key":"val",}"#), r#"{"key":"val"}"#);
+    }
+
+    #[test]
+    fn test_remove_trailing_commas_with_whitespace() {
+        assert_eq!(remove_trailing_commas(r#"["item" , ]"#), r#"["item"  ]"#);
+    }
+
+    #[test]
+    fn test_remove_trailing_commas_no_change() {
+        let valid = r#"["a","b"]"#;
+        assert_eq!(remove_trailing_commas(valid), valid);
+    }
+
+    #[test]
+    fn test_remove_trailing_commas_preserves_strings() {
+        let input = r#"["item,]inside"]"#;
+        assert_eq!(remove_trailing_commas(input), input);
+    }
+
+    #[test]
+    fn test_fix_truncated_json_missing_bracket() {
+        let input = r#"{"subjective":["item1","item2"}"#;
+        let fixed = fix_truncated_json(input);
+        assert!(serde_json::from_str::<serde_json::Value>(&fixed).is_ok(),
+            "Should produce valid JSON, got: {}", fixed);
+    }
+
+    #[test]
+    fn test_fix_truncated_json_balanced() {
+        let input = r#"{"key":["a","b"]}"#;
+        assert_eq!(fix_truncated_json(input), input);
+    }
+
+    #[test]
+    fn test_extract_json_from_response_leading_comma() {
+        let response = r#"{"subjective":[,"Patient reports pain"],"objective":["BP 120/80"],"assessment":["Headache"],"plan":["Tylenol"]}"#;
+        let json = extract_json_from_response(response);
+        let parsed: Result<SoapJsonResponse, _> = serde_json::from_str(&json);
+        assert!(parsed.is_ok(), "Should parse after leading comma removal, got: {}", json);
+        assert_eq!(parsed.unwrap().subjective, vec!["Patient reports pain"]);
+    }
+
+    #[test]
+    fn test_extract_json_from_response_trailing_comma() {
+        let response = r#"{"subjective":["Patient reports pain",],"objective":["BP 120/80"],"assessment":["Headache"],"plan":["Tylenol"]}"#;
+        let json = extract_json_from_response(response);
+        let parsed: Result<SoapJsonResponse, _> = serde_json::from_str(&json);
+        assert!(parsed.is_ok(), "Should parse after trailing comma removal, got: {}", json);
+    }
+
+    #[test]
+    fn test_parse_and_format_soap_json_empty_strings() {
+        // LLM produces empty elements mixed with real content
+        let response = r#"{"subjective":["","Patient reports headache",""],"objective":["BP normal"],"assessment":["Tension headache"],"plan":["Follow up"]}"#;
+        let result = parse_and_format_soap_json(response);
+        assert!(result.contains("Patient reports headache"));
+        // Empty strings should be filtered out — only real items produce bullets
+        assert_eq!(result.matches("•").count(), 4); // one per non-empty item across all sections
     }
 }

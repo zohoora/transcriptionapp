@@ -303,6 +303,7 @@ pub async fn start_session(
                             session.audio_file_path(),
                             auto_end_triggered,
                             if auto_end_triggered { Some("silence") } else { None },
+                            None, // session mode uses elapsed_ms directly
                         ) {
                             Ok(session_dir) => {
                                 // Save native STT shadow transcript into same dir
@@ -442,6 +443,7 @@ pub async fn stop_session(
                     session.audio_file_path(),
                     false, // auto_ended - tracked separately via session_auto_end event
                     None,  // auto_end_reason
+                    None,  // session mode uses elapsed_ms directly
                 ) {
                     warn!("Failed to save session to local archive: {}", e);
                 }
@@ -481,6 +483,7 @@ pub async fn stop_session(
                 session.audio_file_path(),
                 false, // auto_ended
                 None,  // auto_end_reason
+                None,  // session mode uses elapsed_ms directly
             ) {
                 warn!("Failed to save session to local archive: {}", e);
             }

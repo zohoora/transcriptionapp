@@ -109,6 +109,9 @@ pub struct ArchiveMetadata {
     /// Whether a shadow native STT transcript exists for this session
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub has_shadow_transcript: Option<bool>,
+    /// Flagged as likely non-clinical by two-pass content check
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub likely_non_clinical: Option<bool>,
 }
 
 impl ArchiveMetadata {
@@ -132,6 +135,7 @@ impl ArchiveMetadata {
             detection_method: None,
             shadow_comparison: None,
             has_shadow_transcript: None,
+            likely_non_clinical: None,
         }
     }
 }
@@ -166,6 +170,10 @@ pub struct ArchiveDetails {
 }
 
 /// Archive a completed session
+///
+/// `encounter_started_at` — if provided, overrides `started_at` in metadata
+/// and recalculates `duration_ms` as `(now - encounter_started_at)`. Use this
+/// in continuous mode where encounters start well before archival.
 pub fn save_session(
     session_id: &str,
     transcript: &str,
@@ -173,6 +181,7 @@ pub fn save_session(
     audio_path: Option<&PathBuf>,
     auto_ended: bool,
     auto_end_reason: Option<&str>,
+    encounter_started_at: Option<DateTime<Utc>>,
 ) -> Result<PathBuf, String> {
     validate_session_id(session_id)?;
     let now = Utc::now();
@@ -181,8 +190,14 @@ pub fn save_session(
     // Create metadata
     let word_count = transcript.split_whitespace().count();
     let mut metadata = ArchiveMetadata::new(session_id);
+    // Use actual encounter start time if provided (continuous mode)
+    if let Some(started) = encounter_started_at {
+        metadata.started_at = started.to_rfc3339();
+        metadata.duration_ms = Some((now - started).num_milliseconds().max(0) as u64);
+    } else {
+        metadata.duration_ms = Some(duration_ms);
+    }
     metadata.ended_at = Some(now.to_rfc3339());
-    metadata.duration_ms = Some(duration_ms);
     metadata.word_count = word_count;
     metadata.auto_ended = auto_ended;
     metadata.auto_end_reason = auto_end_reason.map(|s| s.to_string());
@@ -675,6 +690,7 @@ pub fn split_session(session_id: &str, date_str: &str, split_line: usize) -> Res
         detection_method: original_meta.detection_method.clone(),
         shadow_comparison: None,
         has_shadow_transcript: None,
+        likely_non_clinical: original_meta.likely_non_clinical,
     };
     let new_meta_json = serde_json::to_string_pretty(&new_meta)
         .map_err(|e| format!("Failed to serialize new metadata: {}", e))?;
@@ -1094,7 +1110,7 @@ mod tests {
 
     #[test]
     fn test_save_session_rejects_traversal() {
-        let result = save_session("../escape", "text", 1000, None, false, None);
+        let result = save_session("../escape", "text", 1000, None, false, None, None);
         assert!(result.is_err());
         let err = result.unwrap_err();
         assert!(err.contains("'..'") || err.contains("path separators"));

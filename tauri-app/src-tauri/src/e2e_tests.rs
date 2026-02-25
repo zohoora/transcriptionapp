@@ -452,6 +452,7 @@ Speaker 1: Take care. We'll see you soon.";
             None,    // No audio file
             false,   // Not auto-ended
             None,    // No auto-end reason
+            None,    // No encounter start override
         ).expect("Failed to save session to archive");
 
         assert!(session_dir.exists(), "Session directory not created");
@@ -523,6 +524,7 @@ Speaker 1: Take care. We'll see you soon.";
             600_000,
             None,
             false,
+            None,
             None,
         ).expect("Failed to save session");
 
@@ -650,6 +652,7 @@ Speaker 1: Take care. We'll see you soon.";
             300_000,
             None,
             false,
+            None,
             None,
         ).expect("Failed to save session");
 
@@ -804,6 +807,7 @@ Speaker 1: Take care. We'll see you soon.";
             600_000, // 10 minutes
             None,
             false,
+            None,
             None,
         ).expect("Failed to save session");
 
@@ -1126,6 +1130,7 @@ Speaker 1: Take care we'll see you soon";
             None,
             false,
             None,
+            None,
         ).expect("Failed to save session");
 
         // Step 2: Write shadow transcript (mirrors pipeline → session.rs behavior)
@@ -1300,6 +1305,7 @@ Speaker 1: Take care we'll see you soon";
             2_000,
             None,
             false,
+            None,
             None,
         ).expect("Failed to save session");
 
