@@ -27,6 +27,7 @@ pub enum EncounterDetectionMode {
     Llm,
     Sensor,
     Shadow,
+    Hybrid,
 }
 
 impl std::fmt::Display for EncounterDetectionMode {
@@ -35,6 +36,7 @@ impl std::fmt::Display for EncounterDetectionMode {
             EncounterDetectionMode::Llm => write!(f, "llm"),
             EncounterDetectionMode::Sensor => write!(f, "sensor"),
             EncounterDetectionMode::Shadow => write!(f, "shadow"),
+            EncounterDetectionMode::Hybrid => write!(f, "hybrid"),
         }
     }
 }
@@ -173,10 +175,23 @@ pub struct Settings {
     // Native STT shadow (Apple SFSpeechRecognizer comparison)
     #[serde(default = "default_native_stt_shadow_enabled")]
     pub native_stt_shadow_enabled: bool,
+    // Hybrid detection settings (sensor accelerates LLM confirmation)
+    #[serde(default = "default_hybrid_confirm_window_secs")]
+    pub hybrid_confirm_window_secs: u64,
+    #[serde(default = "default_hybrid_min_words_for_sensor_split")]
+    pub hybrid_min_words_for_sensor_split: usize,
 }
 
 fn default_native_stt_shadow_enabled() -> bool {
-    false // Experimental — requires opt-in via settings toggle
+    true // Enabled for continuous mode shadow transcript comparison
+}
+
+fn default_hybrid_confirm_window_secs() -> u64 {
+    180 // 3 minutes — sensor timeout before force-split
+}
+
+fn default_hybrid_min_words_for_sensor_split() -> usize {
+    500 // Minimum words for sensor timeout to force-split
 }
 
 fn default_shadow_active_method() -> ShadowActiveMethod {
@@ -188,7 +203,7 @@ fn default_shadow_csv_log_enabled() -> bool {
 }
 
 fn default_encounter_detection_mode() -> EncounterDetectionMode {
-    EncounterDetectionMode::Shadow
+    EncounterDetectionMode::Hybrid
 }
 
 fn default_presence_absence_threshold_secs() -> u64 {
@@ -383,6 +398,8 @@ impl Default for Settings {
             shadow_active_method: default_shadow_active_method(),
             shadow_csv_log_enabled: default_shadow_csv_log_enabled(),
             native_stt_shadow_enabled: default_native_stt_shadow_enabled(),
+            hybrid_confirm_window_secs: default_hybrid_confirm_window_secs(),
+            hybrid_min_words_for_sensor_split: default_hybrid_min_words_for_sensor_split(),
         }
     }
 }
@@ -729,6 +746,12 @@ impl Config {
 
         // Presence sensor: debounce 1-60 seconds
         self.presence_debounce_secs = self.presence_debounce_secs.clamp(1, 60);
+
+        // Hybrid: confirm window 30-600 seconds
+        self.hybrid_confirm_window_secs = self.hybrid_confirm_window_secs.clamp(30, 600);
+
+        // Hybrid: min words 100-5000
+        self.hybrid_min_words_for_sensor_split = self.hybrid_min_words_for_sensor_split.clamp(100, 5000);
     }
 
     /// Load config from file (with clamping for safety)
@@ -970,6 +993,8 @@ mod tests {
             shadow_active_method: default_shadow_active_method(),
             shadow_csv_log_enabled: default_shadow_csv_log_enabled(),
             native_stt_shadow_enabled: default_native_stt_shadow_enabled(),
+            hybrid_confirm_window_secs: default_hybrid_confirm_window_secs(),
+            hybrid_min_words_for_sensor_split: default_hybrid_min_words_for_sensor_split(),
             stt_alias: "medical-streaming".to_string(),
             stt_postprocess: true,
         };
@@ -1094,6 +1119,8 @@ mod tests {
             shadow_active_method: default_shadow_active_method(),
             shadow_csv_log_enabled: default_shadow_csv_log_enabled(),
             native_stt_shadow_enabled: default_native_stt_shadow_enabled(),
+            hybrid_confirm_window_secs: default_hybrid_confirm_window_secs(),
+            hybrid_min_words_for_sensor_split: default_hybrid_min_words_for_sensor_split(),
             stt_alias: default_stt_alias(),
             stt_postprocess: default_stt_postprocess(),
         };
@@ -1472,14 +1499,14 @@ mod tests {
     #[test]
     fn test_presence_sensor_defaults() {
         let config = Config::default();
-        assert_eq!(config.encounter_detection_mode, EncounterDetectionMode::Shadow);
+        assert_eq!(config.encounter_detection_mode, EncounterDetectionMode::Hybrid);
         assert!(config.presence_sensor_port.is_empty());
         assert_eq!(config.presence_absence_threshold_secs, 180);
         assert_eq!(config.presence_debounce_secs, 10);
         assert!(config.presence_csv_log_enabled);
 
         let settings = Settings::default();
-        assert_eq!(settings.encounter_detection_mode, EncounterDetectionMode::Shadow);
+        assert_eq!(settings.encounter_detection_mode, EncounterDetectionMode::Hybrid);
         assert!(settings.presence_sensor_port.is_empty());
         assert_eq!(settings.presence_absence_threshold_secs, 180);
         assert_eq!(settings.presence_debounce_secs, 10);
@@ -1527,7 +1554,7 @@ mod tests {
         }"#;
 
         let config: Config = serde_json::from_str(json).expect("Should deserialize old config");
-        assert_eq!(config.encounter_detection_mode, EncounterDetectionMode::Shadow);
+        assert_eq!(config.encounter_detection_mode, EncounterDetectionMode::Hybrid);
         assert!(config.presence_sensor_port.is_empty());
         assert_eq!(config.presence_absence_threshold_secs, 180);
         assert_eq!(config.presence_debounce_secs, 10);
@@ -1557,5 +1584,83 @@ mod tests {
         assert_eq!(config2.presence_absence_threshold_secs, 120);
         assert_eq!(config2.presence_debounce_secs, 15);
         assert!(!config2.presence_csv_log_enabled);
+    }
+
+    #[test]
+    fn test_hybrid_detection_mode_round_trip() {
+        let mut config = Config::default();
+        config.encounter_detection_mode = EncounterDetectionMode::Hybrid;
+        config.hybrid_confirm_window_secs = 120;
+        config.hybrid_min_words_for_sensor_split = 300;
+
+        let settings = config.to_settings();
+        assert_eq!(settings.encounter_detection_mode, EncounterDetectionMode::Hybrid);
+        assert_eq!(settings.hybrid_confirm_window_secs, 120);
+        assert_eq!(settings.hybrid_min_words_for_sensor_split, 300);
+
+        // Serialize and deserialize
+        let json = serde_json::to_string(&settings).unwrap();
+        let deserialized: Settings = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized.encounter_detection_mode, EncounterDetectionMode::Hybrid);
+        assert_eq!(deserialized.hybrid_confirm_window_secs, 120);
+        assert_eq!(deserialized.hybrid_min_words_for_sensor_split, 300);
+
+        // Round-trip through update_from_settings
+        let mut config2 = Config::default();
+        config2.update_from_settings(&deserialized);
+        assert_eq!(config2.encounter_detection_mode, EncounterDetectionMode::Hybrid);
+        assert_eq!(config2.hybrid_confirm_window_secs, 120);
+        assert_eq!(config2.hybrid_min_words_for_sensor_split, 300);
+    }
+
+    #[test]
+    fn test_hybrid_config_clamping() {
+        let mut config = Config::default();
+
+        // Below minimum
+        config.hybrid_confirm_window_secs = 5;
+        config.hybrid_min_words_for_sensor_split = 10;
+        config.clamp_values();
+        assert_eq!(config.hybrid_confirm_window_secs, 30);
+        assert_eq!(config.hybrid_min_words_for_sensor_split, 100);
+
+        // Above maximum
+        config.hybrid_confirm_window_secs = 9999;
+        config.hybrid_min_words_for_sensor_split = 99999;
+        config.clamp_values();
+        assert_eq!(config.hybrid_confirm_window_secs, 600);
+        assert_eq!(config.hybrid_min_words_for_sensor_split, 5000);
+
+        // Within range — unchanged
+        config.hybrid_confirm_window_secs = 180;
+        config.hybrid_min_words_for_sensor_split = 500;
+        config.clamp_values();
+        assert_eq!(config.hybrid_confirm_window_secs, 180);
+        assert_eq!(config.hybrid_min_words_for_sensor_split, 500);
+    }
+
+    #[test]
+    fn test_hybrid_mode_no_sensor_port_is_valid() {
+        let mut settings = Settings::default();
+        settings.encounter_detection_mode = EncounterDetectionMode::Hybrid;
+        settings.presence_sensor_port = String::new();
+        // Hybrid mode should be valid without sensor port (graceful fallback to LLM)
+        let port_errors: Vec<_> = settings.validate().into_iter()
+            .filter(|e| e.field == "presence_sensor_port")
+            .collect();
+        assert!(port_errors.is_empty(), "Hybrid mode should not require sensor port");
+    }
+
+    #[test]
+    fn test_hybrid_defaults() {
+        let config = Config::default();
+        assert_eq!(config.encounter_detection_mode, EncounterDetectionMode::Hybrid);
+        assert_eq!(config.hybrid_confirm_window_secs, 180);
+        assert_eq!(config.hybrid_min_words_for_sensor_split, 500);
+    }
+
+    #[test]
+    fn test_hybrid_mode_display() {
+        assert_eq!(EncounterDetectionMode::Hybrid.to_string(), "hybrid");
     }
 }
