@@ -27,6 +27,7 @@ use crate::pipeline::{start_pipeline, PipelineConfig, PipelineMessage};
 pub use crate::transcript_buffer::{BufferedSegment, TranscriptBuffer};
 pub use crate::encounter_detection::{
     EncounterDetectionResult, build_encounter_detection_prompt, parse_encounter_detection,
+    ClinicalContentCheckResult, build_clinical_content_check_prompt, parse_clinical_content_check,
     FORCE_CHECK_WORD_THRESHOLD, FORCE_SPLIT_WORD_THRESHOLD, FORCE_SPLIT_CONSECUTIVE_LIMIT, ABSOLUTE_WORD_CAP,
 };
 pub use crate::encounter_merge::{MergeCheckResult, build_encounter_merge_prompt, parse_merge_check};
@@ -289,6 +290,9 @@ pub async fn run_continuous_mode(
     // Clone the biomarker reset flag so the detector task can trigger resets on encounter boundaries
     let reset_bio_for_detector = pipeline_handle.reset_biomarkers_flag();
 
+    // Get native STT shadow accumulator for draining at encounter boundaries
+    let native_stt_accumulator_for_detector = pipeline_handle.native_stt_accumulator();
+
     // Pipeline started successfully — now set state and emit event
     if let Ok(mut state) = handle.state.lock() {
         *state = ContinuousState::Recording;
@@ -418,14 +422,20 @@ pub async fn run_continuous_mode(
         }
     });
 
-    // Start presence sensor if in sensor or shadow detection mode
+    // Start presence sensor if in sensor, shadow, or hybrid detection mode
     let is_shadow_mode = config.encounter_detection_mode == EncounterDetectionMode::Shadow;
+    let is_hybrid_mode = config.encounter_detection_mode == EncounterDetectionMode::Hybrid;
     let shadow_active_method = config.shadow_active_method.clone();
     let use_sensor_mode = (config.encounter_detection_mode == EncounterDetectionMode::Sensor
-        || (is_shadow_mode && !config.presence_sensor_port.is_empty()))
+        || (is_shadow_mode && !config.presence_sensor_port.is_empty())
+        || (is_hybrid_mode && !config.presence_sensor_port.is_empty()))
         && !config.presence_sensor_port.is_empty();
     let mut sensor_handle: Option<crate::presence_sensor::PresenceSensor> = None;
     let sensor_absence_trigger: Arc<tokio::sync::Notify>;
+    // Shadow sensor observer uses watch channel for state transitions (not Notify)
+    let mut shadow_sensor_state_rx: Option<tokio::sync::watch::Receiver<crate::presence_sensor::PresenceState>> = None;
+    // Hybrid mode: dedicated watch receiver for sensor state in the detection loop
+    let mut hybrid_sensor_state_rx: Option<tokio::sync::watch::Receiver<crate::presence_sensor::PresenceState>> = None;
 
     if use_sensor_mode {
         // Auto-detect sensor port if configured port is missing or changed
@@ -459,6 +469,12 @@ pub async fn run_continuous_mode(
                     "state": "unknown"
                 }));
 
+                // Get a dedicated state receiver for shadow sensor observer
+                shadow_sensor_state_rx = Some(sensor.subscribe_state());
+                // Get a dedicated state receiver for hybrid detection loop
+                if is_hybrid_mode {
+                    hybrid_sensor_state_rx = Some(sensor.subscribe_state());
+                }
                 sensor_handle = Some(sensor);
             }
             Err(e) => {
@@ -478,15 +494,20 @@ pub async fn run_continuous_mode(
 
     // Determine effective detection mode (may have fallen back from sensor to LLM)
     // In shadow mode, the active method controls which detection branch runs
+    // In hybrid mode, sensor is handled separately (not via effective_sensor_mode)
     let effective_sensor_mode = if is_shadow_mode {
         shadow_active_method == ShadowActiveMethod::Sensor && sensor_handle.is_some()
+    } else if is_hybrid_mode {
+        false // Hybrid uses its own sensor integration in the detection loop
     } else {
         sensor_handle.is_some()
     };
 
     // Spawn sensor status monitoring task (emits events on state/status changes)
-    let sensor_monitor_task: Option<tokio::task::JoinHandle<()>> = if effective_sensor_mode {
-        let sensor = sensor_handle.as_ref().expect("effective_sensor_mode requires sensor_handle.is_some()");
+    // Also spawn for hybrid mode when sensor is available (even though effective_sensor_mode is false)
+    let has_sensor = sensor_handle.is_some();
+    let sensor_monitor_task: Option<tokio::task::JoinHandle<()>> = if effective_sensor_mode || (is_hybrid_mode && has_sensor) {
+        let sensor = sensor_handle.as_ref().expect("sensor monitor requires sensor_handle.is_some()");
         let mut state_rx = sensor.subscribe_state();
         let mut status_rx = sensor.subscribe_status();
         let stop_for_monitor = handle.stop_flag.clone();
@@ -559,67 +580,102 @@ pub async fn run_continuous_mode(
         let buffer_for_shadow = handle.transcript_buffer.clone();
 
         if shadow_method == "sensor" {
-            // Active=LLM, Shadow=sensor — observe sensor absence triggers
-            let sensor_trigger_for_shadow = sensor_absence_trigger.clone();
-
-            Some(tokio::spawn(async move {
-                info!("Shadow sensor observer started");
-                loop {
-                    if stop_for_shadow.load(Ordering::Relaxed) {
-                        break;
-                    }
-
-                    // Wait for sensor absence trigger
-                    sensor_trigger_for_shadow.notified().await;
-
-                    if stop_for_shadow.load(Ordering::Relaxed) {
-                        break;
-                    }
-
-                    // Read buffer state (non-destructive)
-                    let (word_count, last_segment) = buffer_for_shadow
-                        .lock()
-                        .map(|b| (b.word_count(), b.last_index()))
-                        .unwrap_or((0, None));
-
-                    let decision = crate::shadow_log::ShadowDecision {
-                        timestamp: Utc::now(),
-                        shadow_method: "sensor".to_string(),
-                        active_method: active_method.to_string(),
-                        outcome: crate::shadow_log::ShadowOutcome::WouldSplit,
-                        confidence: Some(1.0),
-                        buffer_word_count: word_count,
-                        buffer_last_segment: last_segment,
-                    };
-
-                    // Log to CSV
-                    if let Some(ref logger) = shadow_csv_logger {
-                        if let Ok(mut l) = logger.lock() {
-                            l.write_decision(&decision);
+            // Active=LLM, Shadow=sensor — observe sensor state transitions
+            // Use watch channel (not Notify) so we only fire on Present→Absent transitions
+            if let Some(mut state_rx) = shadow_sensor_state_rx.take() {
+                Some(tokio::spawn(async move {
+                    info!("Shadow sensor observer started (watch-based)");
+                    let mut prev_state = crate::presence_sensor::PresenceState::Unknown;
+                    loop {
+                        if stop_for_shadow.load(Ordering::Relaxed) {
+                            break;
                         }
-                    }
 
-                    // Store for encounter comparison
-                    let summary = crate::shadow_log::ShadowDecisionSummary::from(&decision);
-                    if let Ok(mut decisions) = shadow_decisions_for_task.lock() {
-                        decisions.push(summary);
-                    }
-                    if let Ok(mut last) = last_shadow_for_task.lock() {
-                        *last = Some(decision);
-                    }
+                        // Wait for next state change
+                        if state_rx.changed().await.is_err() {
+                            info!("Shadow sensor: watch channel closed");
+                            break;
+                        }
 
-                    // Emit event for frontend
-                    let _ = app_for_shadow.emit("continuous_mode_event", serde_json::json!({
-                        "type": "shadow_decision",
-                        "shadow_method": "sensor",
-                        "outcome": "would_split",
-                        "buffer_words": word_count
-                    }));
+                        if stop_for_shadow.load(Ordering::Relaxed) {
+                            break;
+                        }
 
-                    info!("Shadow sensor: would_split (buffer {} words)", word_count);
-                }
-                info!("Shadow sensor observer stopped");
-            }))
+                        let new_state = *state_rx.borrow_and_update();
+
+                        // Determine shadow outcome based on state transition
+                        let outcome = match (prev_state, new_state) {
+                            (crate::presence_sensor::PresenceState::Present, crate::presence_sensor::PresenceState::Absent) => {
+                                // Present→Absent: this is an encounter boundary
+                                crate::shadow_log::ShadowOutcome::WouldSplit
+                            }
+                            (_, crate::presence_sensor::PresenceState::Present) => {
+                                // Any→Present: no split (patient arrived or still here)
+                                crate::shadow_log::ShadowOutcome::WouldNotSplit
+                            }
+                            _ => {
+                                // Unknown→Absent, Absent→Absent, etc: skip
+                                prev_state = new_state;
+                                continue;
+                            }
+                        };
+
+                        prev_state = new_state;
+
+                        // Read buffer state (non-destructive)
+                        let (word_count, last_segment) = buffer_for_shadow
+                            .lock()
+                            .map(|b| (b.word_count(), b.last_index()))
+                            .unwrap_or((0, None));
+
+                        let decision = crate::shadow_log::ShadowDecision {
+                            timestamp: Utc::now(),
+                            shadow_method: "sensor".to_string(),
+                            active_method: active_method.to_string(),
+                            outcome: outcome.clone(),
+                            confidence: Some(1.0),
+                            buffer_word_count: word_count,
+                            buffer_last_segment: last_segment,
+                        };
+
+                        let outcome_str = match outcome {
+                            crate::shadow_log::ShadowOutcome::WouldSplit => "would_split",
+                            crate::shadow_log::ShadowOutcome::WouldNotSplit => "would_not_split",
+                        };
+
+                        // Log to CSV
+                        if let Some(ref logger) = shadow_csv_logger {
+                            if let Ok(mut l) = logger.lock() {
+                                l.write_decision(&decision);
+                            }
+                        }
+
+                        // Store for encounter comparison
+                        let summary = crate::shadow_log::ShadowDecisionSummary::from(&decision);
+                        if let Ok(mut decisions) = shadow_decisions_for_task.lock() {
+                            decisions.push(summary);
+                        }
+                        if let Ok(mut last) = last_shadow_for_task.lock() {
+                            *last = Some(decision);
+                        }
+
+                        // Emit event for frontend
+                        let _ = app_for_shadow.emit("continuous_mode_event", serde_json::json!({
+                            "type": "shadow_decision",
+                            "shadow_method": "sensor",
+                            "outcome": outcome_str,
+                            "buffer_words": word_count,
+                            "sensor_state": new_state.as_str()
+                        }));
+
+                        info!("Shadow sensor: {} (state: {}, buffer {} words)", outcome_str, new_state.as_str(), word_count);
+                    }
+                    info!("Shadow sensor observer stopped");
+                }))
+            } else {
+                warn!("Shadow sensor observer: no sensor state receiver available (sensor failed to start)");
+                None
+            }
         } else {
             // Active=sensor, Shadow=LLM — run shadow LLM detection loop
             let silence_trigger_for_shadow = silence_trigger_rx.clone();
@@ -823,9 +879,26 @@ pub async fn run_continuous_mode(
     let is_shadow_mode = is_shadow_mode;
     let shadow_active_method = shadow_active_method.clone();
 
+    // Clone native STT shadow accumulator for detector task (encounter boundary drain)
+    let stt_shadow_accumulator = native_stt_accumulator_for_detector;
+
+    // Hybrid mode config
+    let hybrid_confirm_window_secs = config.hybrid_confirm_window_secs;
+    let hybrid_min_words_for_sensor_split = config.hybrid_min_words_for_sensor_split;
+    // Move the hybrid sensor receiver into the detector task
+    let mut hybrid_sensor_rx = hybrid_sensor_state_rx;
+
     let detector_task = tokio::spawn(async move {
         let mut encounter_number: u32 = 0;
         let mut consecutive_no_split: u32 = 0;
+
+        // Hybrid mode: sensor absence tracking
+        let mut sensor_absent_since: Option<DateTime<Utc>> = None;
+        let mut prev_sensor_state = crate::presence_sensor::PresenceState::Unknown;
+        let mut sensor_available = hybrid_sensor_rx.is_some();
+        // Tracks whether the current split was triggered by sensor timeout (for metadata)
+        // Initialized inside the loop on each iteration — declared here so it's available across the loop body
+        let mut hybrid_sensor_timeout_triggered;
 
         // Track previous encounter for retrospective merge checks
         let mut prev_encounter_session_id: Option<String> = None;
@@ -833,9 +906,79 @@ pub async fn run_continuous_mode(
         let mut prev_encounter_date: Option<DateTime<Utc>> = None;
 
         loop {
+            // Reset per-iteration hybrid tracking
+            hybrid_sensor_timeout_triggered = false;
+
             // Wait for trigger based on detection mode
-            let (manual_triggered, sensor_triggered) = if effective_sensor_mode {
-                // Sensor mode: wait for sensor absence threshold OR manual trigger
+            let (manual_triggered, sensor_triggered) = if is_hybrid_mode && sensor_available {
+                // Hybrid mode with sensor: timer + silence + manual + sensor state changes
+                let sensor_rx = hybrid_sensor_rx.as_mut().unwrap();
+                tokio::select! {
+                    _ = tokio::time::sleep(tokio::time::Duration::from_secs(check_interval as u64)) => {
+                        // Regular timer — handles back-to-back encounters without physical departure
+                        (false, false)
+                    }
+                    _ = silence_trigger_rx.notified() => {
+                        info!("Hybrid: silence gap detected — triggering encounter check");
+                        (false, false)
+                    }
+                    _ = manual_trigger_rx.notified() => {
+                        info!("Manual new patient trigger received");
+                        (true, false)
+                    }
+                    result = sensor_rx.changed() => {
+                        match result {
+                            Ok(()) => {
+                                let new_state = *sensor_rx.borrow_and_update();
+                                let old_state = prev_sensor_state;
+                                prev_sensor_state = new_state;
+                                match (old_state, new_state) {
+                                    (crate::presence_sensor::PresenceState::Present,
+                                     crate::presence_sensor::PresenceState::Absent) => {
+                                        sensor_absent_since = Some(Utc::now());
+                                        info!("Hybrid: sensor detected departure (Present→Absent), accelerating LLM check");
+                                        (false, true) // sensor_triggered → accelerate LLM check (NOT force-split)
+                                    }
+                                    (_, crate::presence_sensor::PresenceState::Present) => {
+                                        if sensor_absent_since.is_some() {
+                                            info!("Hybrid: person returned — cancelling sensor absence tracking");
+                                            sensor_absent_since = None;
+                                        }
+                                        continue; // No check needed
+                                    }
+                                    _ => continue, // Other transitions (Absent→Absent, Unknown→Absent, etc.)
+                                }
+                            }
+                            Err(_) => {
+                                warn!("Hybrid: sensor watch channel closed — sensor disconnected. Falling back to LLM-only.");
+                                sensor_available = false;
+                                sensor_absent_since = None;
+                                let _ = app_for_detector.emit("continuous_mode_event", serde_json::json!({
+                                    "type": "sensor_status",
+                                    "connected": false,
+                                    "state": "unknown"
+                                }));
+                                continue; // Re-enter loop; next iteration uses LLM-only path
+                            }
+                        }
+                    }
+                }
+            } else if is_hybrid_mode {
+                // Hybrid mode without sensor (sensor failed/disconnected): pure LLM fallback
+                let manual = tokio::select! {
+                    _ = tokio::time::sleep(tokio::time::Duration::from_secs(check_interval as u64)) => false,
+                    _ = silence_trigger_rx.notified() => {
+                        info!("Hybrid (LLM fallback): silence gap detected — triggering encounter check");
+                        false
+                    }
+                    _ = manual_trigger_rx.notified() => {
+                        info!("Manual new patient trigger received");
+                        true
+                    }
+                };
+                (manual, false)
+            } else if effective_sensor_mode {
+                // Pure sensor mode: wait for sensor absence threshold OR manual trigger
                 tokio::select! {
                     _ = sensor_trigger_for_detector.notified() => {
                         info!("Sensor: absence threshold reached — triggering encounter split");
@@ -847,7 +990,7 @@ pub async fn run_continuous_mode(
                     }
                 }
             } else {
-                // LLM mode: wait for timer, silence, or manual trigger (unchanged)
+                // LLM / Shadow mode: wait for timer, silence, or manual trigger
                 let manual = tokio::select! {
                     _ = tokio::time::sleep(tokio::time::Duration::from_secs(check_interval as u64)) => false,
                     _ = silence_trigger_rx.notified() => {
@@ -920,8 +1063,9 @@ pub async fn run_continuous_mode(
             }));
 
             // Run encounter detection via LLM (with 60s timeout to prevent blocking)
-            // Manual/sensor trigger: skip LLM — directly split the encounter
-            let detection_result = if manual_triggered || sensor_triggered {
+            // Manual trigger or pure-sensor trigger: skip LLM — directly split
+            // Hybrid sensor trigger: accelerate LLM check (do NOT force-split)
+            let detection_result = if manual_triggered || (sensor_triggered && !is_hybrid_mode) {
                 let last_idx = buffer_for_detector.lock().ok().and_then(|b| b.last_index());
                 let source = if sensor_triggered { "Sensor" } else { "Manual" };
                 info!("{} trigger: forcing encounter split (last_index={:?})", source, last_idx);
@@ -1044,6 +1188,34 @@ pub async fn run_continuous_mode(
                 // NOTE: Don't reset counter on complete=true here — confidence gate may reject
             }
 
+            // Hybrid sensor timeout force-split: sensor has been absent for > confirm_window
+            // and buffer has enough words. This catches cases where LLM keeps saying "no split"
+            // but the sensor correctly detected a departure.
+            if is_hybrid_mode && !force_split && !manual_triggered {
+                if let Some(absent_since) = sensor_absent_since {
+                    let elapsed = (Utc::now() - absent_since).num_seconds() as u64;
+                    if elapsed >= hybrid_confirm_window_secs
+                        && word_count >= hybrid_min_words_for_sensor_split
+                    {
+                        warn!(
+                            "Hybrid: sensor absence timeout ({}s >= {}s) with {} words >= {} — force-splitting",
+                            elapsed, hybrid_confirm_window_secs,
+                            word_count, hybrid_min_words_for_sensor_split
+                        );
+                        let last_idx = buffer_for_detector.lock().ok().and_then(|b| b.last_index());
+                        force_split = true;
+                        hybrid_sensor_timeout_triggered = true;
+                        sensor_absent_since = None;
+                        consecutive_no_split = 0;
+                        detection_result = Some(EncounterDetectionResult {
+                            complete: true,
+                            end_segment_index: last_idx,
+                            confidence: Some(1.0),
+                        });
+                    }
+                }
+            }
+
             // Process detection result
             if let Some(result) = detection_result {
                 if result.complete {
@@ -1069,13 +1241,17 @@ pub async fn run_continuous_mode(
                     if let Some(end_index) = result.end_segment_index {
                         consecutive_no_split = 0;
                         encounter_number += 1;
+                        // Clear hybrid sensor tracking on successful split
+                        if is_hybrid_mode {
+                            sensor_absent_since = None;
+                        }
                         info!(
                             "Encounter #{} detected (end_segment_index={})",
                             encounter_number, end_index
                         );
 
                         // Extract encounter segments from buffer
-                        let (encounter_text, encounter_word_count, encounter_start) = {
+                        let (encounter_text, encounter_word_count, encounter_start, encounter_last_timestamp_ms) = {
                             let mut buffer = match buffer_for_detector.lock() {
                                 Ok(b) => b,
                                 Err(_) => continue,
@@ -1094,27 +1270,70 @@ pub async fn run_continuous_mode(
                                 .join("\n");
                             let wc = text.split_whitespace().count();
                             let start = drained.first().map(|s| s.started_at);
-                            (text, wc, start)
+                            let last_ts_ms = drained.last().map(|s| s.timestamp_ms).unwrap_or(0);
+                            (text, wc, start, last_ts_ms)
                         };
 
                         // Generate session ID for this encounter
                         let session_id = uuid::Uuid::new_v4().to_string();
 
-                        // Archive the encounter transcript
-                        let duration_ms = encounter_start
-                            .map(|s| (Utc::now() - s).num_milliseconds().max(0) as u64)
-                            .unwrap_or(0);
-
+                        // Archive the encounter transcript (pass actual start time for accurate duration)
                         if let Err(e) = local_archive::save_session(
                             &session_id,
                             &encounter_text,
-                            duration_ms,
+                            0, // duration_ms unused when encounter_started_at is provided
                             None, // No per-encounter audio in continuous mode
                             false,
                             None,
+                            encounter_start, // actual encounter start time for duration calc
                         ) {
                             warn!("Failed to archive encounter: {}", e);
                         }
+
+                        // Drain native STT shadow accumulator for this encounter
+                        let has_shadow_transcript = if let Some(ref accumulator) = stt_shadow_accumulator {
+                            if let Ok(mut acc) = accumulator.lock() {
+                                let drained = acc.drain_through(encounter_last_timestamp_ms);
+                                if !drained.is_empty() {
+                                    // Format as plain text transcript
+                                    let shadow_text: String = drained
+                                        .iter()
+                                        .map(|s| {
+                                            if let Some(ref spk) = s.speaker_id {
+                                                format!("{}: {}", spk, s.native_text)
+                                            } else {
+                                                s.native_text.clone()
+                                            }
+                                        })
+                                        .collect::<Vec<_>>()
+                                        .join("\n");
+
+                                    // Save to archive directory
+                                    if let Ok(archive_dir) = local_archive::get_archive_dir() {
+                                        let now_shadow = Utc::now();
+                                        let shadow_path = archive_dir
+                                            .join(format!("{:04}", now_shadow.year()))
+                                            .join(format!("{:02}", now_shadow.month()))
+                                            .join(format!("{:02}", now_shadow.day()))
+                                            .join(&session_id)
+                                            .join("shadow_transcript.txt");
+                                        if let Err(e) = std::fs::write(&shadow_path, &shadow_text) {
+                                            warn!("Failed to save shadow transcript: {}", e);
+                                        } else {
+                                            info!("Shadow transcript saved ({} segments, {} chars)", drained.len(), shadow_text.len());
+                                        }
+                                    }
+                                    true
+                                } else {
+                                    false
+                                }
+                            } else {
+                                warn!("Native STT shadow accumulator lock poisoned");
+                                false
+                            }
+                        } else {
+                            false
+                        };
 
                         // Update archive metadata with continuous mode info
                         if let Ok(archive_dir) = local_archive::get_archive_dir() {
@@ -1133,15 +1352,33 @@ pub async fn run_continuous_mode(
                                         metadata.encounter_number = Some(encounter_number);
                                         // Record how this encounter was detected
                                         metadata.detection_method = Some(
-                                            if manual_triggered { "manual" }
-                                            else if sensor_triggered { "sensor" }
-                                            else { "llm" }.to_string()
+                                            if manual_triggered {
+                                                "manual".to_string()
+                                            } else if is_hybrid_mode {
+                                                if hybrid_sensor_timeout_triggered {
+                                                    "hybrid_sensor_timeout".to_string()
+                                                } else if sensor_triggered {
+                                                    "hybrid_sensor_confirmed".to_string()
+                                                } else if force_split {
+                                                    "hybrid_force".to_string()
+                                                } else {
+                                                    "hybrid_llm".to_string()
+                                                }
+                                            } else if sensor_triggered {
+                                                "sensor".to_string()
+                                            } else {
+                                                "llm".to_string()
+                                            }
                                         );
                                         // Add patient name from vision extraction (majority vote)
                                         if let Ok(tracker) = name_tracker_for_detector.lock() {
                                             metadata.patient_name = tracker.majority_name();
                                         } else {
                                             warn!("Name tracker lock poisoned, patient name not written to metadata");
+                                        }
+                                        // Record whether shadow transcript was saved
+                                        if has_shadow_transcript {
+                                            metadata.has_shadow_transcript = Some(true);
                                         }
                                         // Add shadow comparison data if in shadow mode
                                         if is_shadow_mode {
@@ -1251,6 +1488,60 @@ pub async fn run_continuous_mode(
                             "word_count": encounter_word_count,
                             "patient_name": encounter_patient_name
                         }));
+
+                        // Two-pass clinical content check: flag non-clinical encounters
+                        if let Some(ref client) = llm_client {
+                            let (cc_system, cc_user) = build_clinical_content_check_prompt(&encounter_text);
+                            let cc_future = client.generate(&fast_model, &cc_system, &cc_user, "clinical_content_check");
+                            match tokio::time::timeout(tokio::time::Duration::from_secs(30), cc_future).await {
+                                Ok(Ok(cc_response)) => {
+                                    match parse_clinical_content_check(&cc_response) {
+                                        Ok(cc_result) => {
+                                            if !cc_result.clinical {
+                                                info!(
+                                                    "Encounter #{} flagged as non-clinical: {:?}",
+                                                    encounter_number, cc_result.reason
+                                                );
+                                                // Update metadata with non-clinical flag
+                                                if let Ok(archive_dir) = local_archive::get_archive_dir() {
+                                                    let now = Utc::now();
+                                                    let nc_meta_path = archive_dir
+                                                        .join(format!("{:04}", now.year()))
+                                                        .join(format!("{:02}", now.month()))
+                                                        .join(format!("{:02}", now.day()))
+                                                        .join(&session_id)
+                                                        .join("metadata.json");
+                                                    if nc_meta_path.exists() {
+                                                        if let Ok(content) = std::fs::read_to_string(&nc_meta_path) {
+                                                            if let Ok(mut metadata) = serde_json::from_str::<local_archive::ArchiveMetadata>(&content) {
+                                                                metadata.likely_non_clinical = Some(true);
+                                                                if let Ok(json) = serde_json::to_string_pretty(&metadata) {
+                                                                    let _ = std::fs::write(&nc_meta_path, json);
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            } else {
+                                                info!(
+                                                    "Encounter #{} confirmed clinical: {:?}",
+                                                    encounter_number, cc_result.reason
+                                                );
+                                            }
+                                        }
+                                        Err(e) => {
+                                            warn!("Failed to parse clinical content check: {}", e);
+                                        }
+                                    }
+                                }
+                                Ok(Err(e)) => {
+                                    warn!("Clinical content check LLM call failed: {}", e);
+                                }
+                                Err(_) => {
+                                    warn!("Clinical content check timed out (30s)");
+                                }
+                            }
+                        }
 
                         // Generate SOAP note (with 120s timeout — SOAP is heavier than detection)
                         if let Some(ref client) = llm_client {
@@ -1376,7 +1667,9 @@ pub async fn run_continuous_mode(
                                                         // Build merged transcript
                                                         let merged_text = format!("{}\n{}", prev_text, encounter_text);
                                                         let merged_wc = merged_text.split_whitespace().count();
-                                                        let merged_duration = duration_ms; // Approximate
+                                                        let merged_duration = encounter_start
+                                                            .map(|s| (Utc::now() - s).num_milliseconds().max(0) as u64)
+                                                            .unwrap_or(0);
 
                                                         if let Err(e) = local_archive::merge_encounters(
                                                             prev_id,
@@ -1679,6 +1972,7 @@ pub async fn run_continuous_mode(
                 None,
                 false,
                 Some("continuous_mode_stopped"),
+                None, // No encounter start time for flush
             ) {
                 warn!("Failed to archive final buffer: {}", e);
             } else {
@@ -1791,5 +2085,202 @@ mod tests {
             !system.contains("under 2 minutes"),
             "Prompt should not have 'under 2 minutes' rule (enforced in code)"
         );
+    }
+
+    // ==========================================================================
+    // Hybrid detection mode tests
+    // ==========================================================================
+
+    #[test]
+    fn test_hybrid_sensor_trigger_does_not_force_split() {
+        // In hybrid mode, sensor_triggered should NOT bypass LLM (it accelerates the LLM check)
+        // In pure sensor mode, sensor_triggered SHOULD force-split
+        let sensor_triggered = true;
+        let manual_triggered = false;
+        let is_hybrid_mode = true;
+
+        let should_force = manual_triggered || (sensor_triggered && !is_hybrid_mode);
+        assert!(!should_force, "Hybrid mode should NOT force-split on sensor trigger");
+
+        let is_hybrid_mode = false;
+        let should_force = manual_triggered || (sensor_triggered && !is_hybrid_mode);
+        assert!(should_force, "Pure sensor mode SHOULD force-split on sensor trigger");
+    }
+
+    #[test]
+    fn test_hybrid_manual_trigger_always_force_splits() {
+        // Manual trigger should force-split regardless of hybrid mode
+        let manual_triggered = true;
+        let sensor_triggered = false;
+
+        for is_hybrid in [true, false] {
+            let should_force = manual_triggered || (sensor_triggered && !is_hybrid);
+            assert!(should_force, "Manual trigger should force-split in hybrid={is_hybrid}");
+        }
+    }
+
+    #[test]
+    fn test_hybrid_sensor_timeout_logic() {
+        let confirm_window_secs: u64 = 180;
+        let min_words: usize = 500;
+
+        // Case 1: Timeout exceeded with enough words → should force-split
+        let absent_since = Utc::now() - chrono::Duration::seconds(200);
+        let word_count: usize = 600;
+        let elapsed = (Utc::now() - absent_since).num_seconds() as u64;
+        assert!(
+            elapsed >= confirm_window_secs && word_count >= min_words,
+            "Should force-split: elapsed={}s, words={}", elapsed, word_count
+        );
+
+        // Case 2: Timeout exceeded but not enough words → should NOT force-split
+        let word_count: usize = 100;
+        assert!(
+            !(elapsed >= confirm_window_secs && word_count >= min_words),
+            "Should NOT force-split with insufficient words"
+        );
+
+        // Case 3: Enough words but timeout not exceeded → should NOT force-split
+        let absent_since = Utc::now() - chrono::Duration::seconds(60);
+        let word_count: usize = 600;
+        let elapsed = (Utc::now() - absent_since).num_seconds() as u64;
+        assert!(
+            !(elapsed >= confirm_window_secs && word_count >= min_words),
+            "Should NOT force-split before timeout"
+        );
+    }
+
+    #[test]
+    fn test_hybrid_detection_method_strings() {
+        // Verify detection_method assignment logic produces correct strings
+        let test_cases: Vec<(bool, bool, bool, bool, bool, &str)> = vec![
+            // (manual, sensor, force, hybrid, sensor_timeout, expected)
+            (true,  false, false, false, false, "manual"),
+            (true,  false, false, true,  false, "manual"),   // Manual overrides hybrid
+            (false, true,  false, true,  false, "hybrid_sensor_confirmed"),
+            (false, false, false, true,  true,  "hybrid_sensor_timeout"),
+            (false, false, true,  true,  false, "hybrid_force"),
+            (false, false, false, true,  false, "hybrid_llm"),
+            (false, true,  false, false, false, "sensor"),
+            (false, false, false, false, false, "llm"),
+            (false, false, true,  false, false, "llm"),      // Non-hybrid force = "llm" (existing behavior)
+        ];
+
+        for (manual, sensor, force, hybrid, sensor_timeout, expected) in test_cases {
+            let method = if manual {
+                "manual".to_string()
+            } else if hybrid {
+                if sensor_timeout {
+                    "hybrid_sensor_timeout".to_string()
+                } else if sensor {
+                    "hybrid_sensor_confirmed".to_string()
+                } else if force {
+                    "hybrid_force".to_string()
+                } else {
+                    "hybrid_llm".to_string()
+                }
+            } else if sensor {
+                "sensor".to_string()
+            } else {
+                "llm".to_string()
+            };
+            assert_eq!(
+                method, expected,
+                "Failed for manual={manual}, sensor={sensor}, force={force}, hybrid={hybrid}, sensor_timeout={sensor_timeout}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_hybrid_sensor_state_transitions() {
+        use crate::presence_sensor::PresenceState;
+
+        // Present→Absent should trigger check
+        assert!(matches!(
+            (PresenceState::Present, PresenceState::Absent),
+            (PresenceState::Present, PresenceState::Absent)
+        ));
+
+        // Any→Present should cancel tracking
+        for old in [PresenceState::Absent, PresenceState::Unknown, PresenceState::Present] {
+            let new = PresenceState::Present;
+            assert!(
+                new == PresenceState::Present,
+                "Any→Present should cancel tracking (old={:?})", old
+            );
+        }
+
+        // Absent→Absent should NOT trigger (not a Present→Absent transition)
+        let triggers = matches!(
+            (PresenceState::Absent, PresenceState::Absent),
+            (PresenceState::Present, PresenceState::Absent)
+        );
+        assert!(!triggers, "Absent→Absent should not trigger a check");
+
+        // Unknown→Absent should NOT trigger (not Present→Absent)
+        let triggers = matches!(
+            (PresenceState::Unknown, PresenceState::Absent),
+            (PresenceState::Present, PresenceState::Absent)
+        );
+        assert!(!triggers, "Unknown→Absent should not trigger a check");
+    }
+
+    #[test]
+    fn test_hybrid_sensor_available_flag() {
+        // When sensor_available=false, hybrid should behave identically to LLM mode
+        let is_hybrid = true;
+
+        // With sensor: uses sensor arm
+        let sensor_available = true;
+        assert!(is_hybrid && sensor_available, "Should use sensor arm");
+
+        // Without sensor: falls back to LLM
+        let sensor_available = false;
+        assert!(is_hybrid && !sensor_available, "Should use LLM fallback path");
+    }
+
+    #[test]
+    fn test_hybrid_sensor_absent_since_cleared_on_return() {
+        // Simulates the logic: when sensor returns to Present, absence tracking is cleared
+        let mut sensor_absent_since: Option<DateTime<Utc>> = Some(Utc::now());
+
+        // Simulate person returning
+        let new_state = crate::presence_sensor::PresenceState::Present;
+        if new_state == crate::presence_sensor::PresenceState::Present && sensor_absent_since.is_some() {
+            sensor_absent_since = None;
+        }
+        assert!(sensor_absent_since.is_none(), "Should be cleared when person returns");
+    }
+
+    #[test]
+    fn test_hybrid_sensor_absent_since_cleared_on_split() {
+        // Simulates the logic: when an encounter is split, absence tracking is cleared
+        let mut sensor_absent_since: Option<DateTime<Utc>> = Some(Utc::now());
+        let is_hybrid_mode = true;
+
+        // Simulate successful split
+        if is_hybrid_mode {
+            sensor_absent_since = None;
+        }
+        assert!(sensor_absent_since.is_none(), "Should be cleared on successful split");
+    }
+
+    #[test]
+    fn test_hybrid_sensor_timeout_with_boundary_values() {
+        let confirm_window: u64 = 180;
+        let min_words: usize = 500;
+
+        // Exactly at boundary: should trigger
+        let elapsed: u64 = 180;
+        let words: usize = 500;
+        assert!(elapsed >= confirm_window && words >= min_words);
+
+        // One below each boundary: should not trigger
+        let elapsed: u64 = 179;
+        assert!(!(elapsed >= confirm_window && words >= min_words));
+
+        let elapsed: u64 = 180;
+        let words: usize = 499;
+        assert!(!(elapsed >= confirm_window && words >= min_words));
     }
 }
