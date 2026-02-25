@@ -119,6 +119,9 @@ export interface Settings {
   shadow_csv_log_enabled: boolean;
   // Native STT shadow (Apple SFSpeechRecognizer comparison)
   native_stt_shadow_enabled: boolean;
+  // Hybrid detection settings (sensor accelerates LLM confirmation)
+  hybrid_confirm_window_secs: number;
+  hybrid_min_words_for_sensor_split: number;
 }
 
 // Listening mode types (auto-session detection)
@@ -656,6 +659,8 @@ export interface LocalArchiveMetadata {
   encounter_number: number | null;
   /** Patient name extracted via vision-based screenshot analysis */
   patient_name: string | null;
+  /** Flagged as likely non-clinical by two-pass content check */
+  likely_non_clinical: boolean | null;
 }
 
 /** Detailed archived session (for detail view) */
@@ -675,7 +680,7 @@ export interface LocalArchiveDetails {
 export type ChartingMode = 'session' | 'continuous';
 
 /** How encounters are detected in continuous mode */
-export type EncounterDetectionMode = 'llm' | 'sensor' | 'shadow';
+export type EncounterDetectionMode = 'llm' | 'sensor' | 'shadow' | 'hybrid';
 
 /** Which detection method is "active" in shadow mode */
 export type ShadowActiveMethod = 'llm' | 'sensor';

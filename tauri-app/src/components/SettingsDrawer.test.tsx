@@ -46,6 +46,8 @@ const defaultPendingSettings: PendingSettings = {
   shadow_active_method: 'llm',
   shadow_csv_log_enabled: true,
   native_stt_shadow_enabled: true,
+  hybrid_confirm_window_secs: 180,
+  hybrid_min_words_for_sensor_split: 500,
 };
 
 const defaultAuthState: AuthState = {

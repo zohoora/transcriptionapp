@@ -177,6 +177,12 @@ export const SettingsDrawer = memo(function SettingsDrawer({
                           Sensor
                         </button>
                         <button
+                          className={`charting-mode-btn ${pendingSettings.encounter_detection_mode === 'hybrid' ? 'active' : ''}`}
+                          onClick={() => onSettingsChange({ ...pendingSettings, encounter_detection_mode: 'hybrid' })}
+                        >
+                          Hybrid
+                        </button>
+                        <button
                           className={`charting-mode-btn ${pendingSettings.encounter_detection_mode === 'shadow' ? 'active' : ''}`}
                           onClick={() => onSettingsChange({ ...pendingSettings, encounter_detection_mode: 'shadow' })}
                           style={{ fontSize: 10 }}
@@ -216,7 +222,7 @@ export const SettingsDrawer = memo(function SettingsDrawer({
                         </div>
                       </>
                     )}
-                    {(pendingSettings.encounter_detection_mode === 'sensor' || pendingSettings.encounter_detection_mode === 'shadow') && (
+                    {(pendingSettings.encounter_detection_mode === 'sensor' || pendingSettings.encounter_detection_mode === 'shadow' || pendingSettings.encounter_detection_mode === 'hybrid') && (
                       <>
                         <div className="settings-row">
                           <label>Serial port</label>
