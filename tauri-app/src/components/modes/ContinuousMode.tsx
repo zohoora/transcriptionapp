@@ -67,7 +67,7 @@ interface ContinuousModeProps {
 /**
  * Format elapsed time since a given ISO timestamp
  */
-function useElapsedTime(since: string | undefined): string {
+function useElapsedTime(since: string | undefined, intervalMs = 30000): string {
   const [elapsed, setElapsed] = useState('');
 
   useEffect(() => {
@@ -92,9 +92,9 @@ function useElapsedTime(since: string | undefined): string {
     };
 
     update();
-    const interval = setInterval(update, 30000); // Update every 30s
+    const interval = setInterval(update, intervalMs);
     return () => clearInterval(interval);
-  }, [since]);
+  }, [since, intervalMs]);
 
   return elapsed;
 }
@@ -147,7 +147,7 @@ export const ContinuousMode = memo(function ContinuousMode({
   onViewHistory,
 }: ContinuousModeProps) {
   const elapsedTime = useElapsedTime(isActive ? stats.recording_since : undefined);
-  const encounterElapsed = useElapsedTime(stats.buffer_started_at ?? undefined);
+  const encounterElapsed = useElapsedTime(stats.buffer_started_at ?? undefined, 10000);
 
   // Local UI toggle states
   const [showTranscript, setShowTranscript] = useState(false);

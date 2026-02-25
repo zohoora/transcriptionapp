@@ -104,11 +104,10 @@ export function useAutoDetection(
     let mounted = true;
 
     const setupListener = async () => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const unlisten = await listen<any>('listening_event', (event) => {
+      const unlisten = await listen<ListeningEventPayload>('listening_event', (event) => {
         if (!mounted) return;
 
-        const payload = event.payload as ListeningEventPayload;
+        const payload = event.payload;
 
         // Handle different event types (Rust uses tag="type", rename_all="snake_case")
         const eventType = payload.type;
@@ -122,13 +121,16 @@ export function useAutoDetection(
           });
         } else if (eventType === 'speech_detected') {
           setListeningStatus((prev) => ({
-            ...prev!,
+            is_listening: true,
             speech_detected: true,
             speech_duration_ms: payload.duration_ms || 0,
+            analyzing: prev?.analyzing ?? false,
           }));
         } else if (eventType === 'analyzing') {
           setListeningStatus((prev) => ({
-            ...prev!,
+            is_listening: true,
+            speech_detected: prev?.speech_detected ?? false,
+            speech_duration_ms: prev?.speech_duration_ms ?? 0,
             analyzing: true,
           }));
         } else if (eventType === 'start_recording') {
@@ -136,7 +138,9 @@ export function useAutoDetection(
           // The greeting check will run in the background
           setIsPendingConfirmation(true);
           setListeningStatus((prev) => ({
-            ...prev!,
+            is_listening: true,
+            speech_detected: prev?.speech_detected ?? false,
+            speech_duration_ms: prev?.speech_duration_ms ?? 0,
             analyzing: true,
           }));
           // Notify parent to start session NOW
@@ -154,7 +158,7 @@ export function useAutoDetection(
           const reason = payload.reason || 'Not a greeting';
           setIsPendingConfirmation(false);
           setListeningStatus((prev) => ({
-            ...prev!,
+            is_listening: prev?.is_listening ?? true,
             analyzing: false,
             speech_detected: false,
             speech_duration_ms: 0,
@@ -173,7 +177,7 @@ export function useAutoDetection(
         } else if (eventType === 'not_greeting') {
           // Legacy event
           setListeningStatus((prev) => ({
-            ...prev!,
+            is_listening: prev?.is_listening ?? true,
             speech_detected: false,
             speech_duration_ms: 0,
             analyzing: false,
@@ -182,7 +186,7 @@ export function useAutoDetection(
           // Speaker verification failed - not an enrolled speaker or wrong role
           console.log('Speaker not verified:', payload.reason);
           setListeningStatus((prev) => ({
-            ...prev!,
+            is_listening: prev?.is_listening ?? true,
             speech_detected: false,
             speech_duration_ms: 0,
             analyzing: false,
@@ -191,7 +195,9 @@ export function useAutoDetection(
           setError(payload.message || 'Unknown error');
           setIsPendingConfirmation(false);
           setListeningStatus((prev) => ({
-            ...prev!,
+            is_listening: prev?.is_listening ?? true,
+            speech_detected: prev?.speech_detected ?? false,
+            speech_duration_ms: prev?.speech_duration_ms ?? 0,
             analyzing: false,
           }));
         } else if (eventType === 'stopped') {

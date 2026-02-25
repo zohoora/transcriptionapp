@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { emitTo } from '@tauri-apps/api/event';
 import { getCurrentWindow } from '@tauri-apps/api/window';
@@ -126,13 +126,14 @@ const SplitWindow: React.FC = () => {
     await win.close();
   }, []);
 
-  // Word counts
-  const firstHalfWords = splitLine !== null
-    ? lines.slice(0, splitLine).join(' ').split(/\s+/).filter(Boolean).length
-    : 0;
-  const secondHalfWords = splitLine !== null
-    ? lines.slice(splitLine).join(' ').split(/\s+/).filter(Boolean).length
-    : 0;
+  // Word counts (memoized — can be expensive for large transcripts)
+  const { firstHalfWords, secondHalfWords } = useMemo(() => {
+    if (splitLine === null) return { firstHalfWords: 0, secondHalfWords: 0 };
+    return {
+      firstHalfWords: lines.slice(0, splitLine).join(' ').split(/\s+/).filter(Boolean).length,
+      secondHalfWords: lines.slice(splitLine).join(' ').split(/\s+/).filter(Boolean).length,
+    };
+  }, [lines, splitLine]);
 
   // Confidence badge color
   const confidenceColor = (confidence: number): string => {

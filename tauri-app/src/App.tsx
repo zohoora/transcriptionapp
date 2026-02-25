@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { WebviewWindow } from '@tauri-apps/api/webviewWindow';
 import { useAuth } from './components/AuthProvider';
@@ -18,7 +18,6 @@ import {
   useMedplumSync,
   useSettings,
   useDevices,
-  useOllamaConnection,
   useChecklist,
   useAutoDetection,
   useClinicalChat,
@@ -26,10 +25,10 @@ import {
   usePredictiveHint,
   useMiisImages,
   useScreenCapture,
-  useContinuousMode,
-  usePatientBiomarkers,
+  useContinuousModeOrchestrator,
+  useConnectionTests,
 } from './hooks';
-import type { Settings, WhisperServerStatus, ChartingMode } from './types';
+import type { Settings, ChartingMode } from './types';
 
 // UI Mode type
 type UIMode = 'ready' | 'recording' | 'review';
@@ -76,7 +75,7 @@ function App() {
     ollamaStatus,
     setOllamaStatus,
     ollamaModels,
-    setOllamaModels,  // Still needed for connection sync
+    setOllamaModels,
     soapOptions,
     setSoapError,
     generateSoapNote,
@@ -115,8 +114,21 @@ function App() {
   // Devices from hook
   const { devices } = useDevices();
 
-  // Ollama connection from hook
-  const { status: ollamaConnectionStatus, checkConnection: checkOllamaConnection } = useOllamaConnection();
+  // Connection tests composite hook (LLM, Medplum init, Whisper server)
+  const {
+    whisperServerStatus,
+    whisperServerModels,
+    handleTestLLM,
+    handleTestMedplum,
+    handleTestWhisperServer,
+  } = useConnectionTests({
+    settings,
+    pendingSettings,
+    setOllamaStatus,
+    setOllamaModels,
+    setMedplumConnected,
+    setMedplumError,
+  });
 
   // Checklist from hook (for permission checks)
   const { checkMicrophonePermission, openMicrophoneSettings } = useChecklist();
@@ -152,32 +164,12 @@ function App() {
   });
 
   // Derive charting mode from settings
-  const chartingMode: ChartingMode = (settings?.charting_mode as ChartingMode) || 'session';
+  const chartingMode: ChartingMode = settings?.charting_mode || 'session';
   const isContinuousMode = chartingMode === 'continuous';
 
-  // Continuous mode hook
-  const {
-    isActive: continuousModeActive,
-    isStopping: continuousModeStopping,
-    stats: continuousModeStats,
-    liveTranscript: continuousLiveTranscript,
-    audioQuality: continuousAudioQuality,
-    encounterNotes: continuousEncounterNotes,
-    setEncounterNotes: setContinuousEncounterNotes,
-    start: startContinuousMode,
-    stop: stopContinuousMode,
-    triggerNewPatient,
-    error: continuousModeError,
-  } = useContinuousMode();
-
-  // Patient biomarker trending for continuous mode (filters clinician voices, tracks trends)
-  const { biomarkers: continuousBiomarkers, trends: continuousTrends, reset: resetPatientBiomarkers } = usePatientBiomarkers(continuousModeActive);
-
-  // Wrap "New Patient" to immediately reset frontend state before backend processes
-  const handleNewPatient = useCallback(async () => {
-    resetPatientBiomarkers();
-    await triggerNewPatient();
-  }, [resetPatientBiomarkers, triggerNewPatient]);
+  // Continuous mode orchestrator (groups useContinuousMode, usePatientBiomarkers,
+  // usePredictiveHint, useMiisImages, and related state)
+  const continuous = useContinuousModeOrchestrator({ settings });
 
   // Auto-detection callbacks — delegate to lifecycle hook for coordinated resets
   const handleAutoStartRecording = useCallback(async () => {
@@ -269,13 +261,13 @@ function App() {
   const [syncDismissed, setSyncDismissed] = useState(false);
 
   // Derive sync status for header indicator
-  const getSyncStatus = (): SyncStatus => {
+  const syncStatus: SyncStatus = useMemo(() => {
     if (syncDismissed) return 'idle';
     if (isSyncing || isAddingSoap) return 'syncing';
     if (syncError) return 'error';
     if (syncSuccess) return 'success';
     return 'idle';
-  };
+  }, [syncDismissed, isSyncing, isAddingSoap, syncError, syncSuccess]);
 
   // Reset dismissed state when sync starts
   useEffect(() => {
@@ -295,12 +287,8 @@ function App() {
   const [showSettings, setShowSettings] = useState(false);
   const [showBiomarkers, setShowBiomarkers] = useState(false);
 
-  // Whisper server state
-  const [whisperServerStatus, setWhisperServerStatus] = useState<WhisperServerStatus | null>(null);
-  const [whisperServerModels, setWhisperServerModels] = useState<string[]>([]);
-
   // Determine current UI mode based on session state
-  const getUIMode = (): UIMode => {
+  const uiMode: UIMode = useMemo(() => {
     switch (status.state) {
       case 'recording':
       case 'preparing':
@@ -313,9 +301,7 @@ function App() {
       default:
         return 'ready';
     }
-  };
-
-  const uiMode = getUIMode();
+  }, [status.state]);
 
   // Predictive hints and image concepts during recording
   const {
@@ -325,16 +311,6 @@ function App() {
   } = usePredictiveHint({
     transcript: transcript.finalized_text,
     isRecording: uiMode === 'recording',
-  });
-
-  // Predictive hints for continuous mode (uses live transcript preview)
-  const {
-    hint: continuousPredictiveHint,
-    concepts: continuousImageConcepts,
-    isLoading: continuousPredictiveHintLoading,
-  } = usePredictiveHint({
-    transcript: continuousLiveTranscript,
-    isRecording: continuousModeActive && !continuousModeStopping,
   });
 
   // MIIS image suggestions (uses concepts from predictive hints)
@@ -353,71 +329,8 @@ function App() {
     serverUrl: settings?.miis_server_url ?? '',
   });
 
-  // Stable session ID for continuous mode MIIS (set on start, cleared on stop)
-  const continuousMiisSessionIdRef = useRef<string | null>(null);
-  if (continuousModeActive && !continuousMiisSessionIdRef.current) {
-    continuousMiisSessionIdRef.current = `continuous-${Date.now()}`;
-  } else if (!continuousModeActive && continuousMiisSessionIdRef.current) {
-    continuousMiisSessionIdRef.current = null;
-  }
-
-  // MIIS image suggestions for continuous mode
-  const {
-    suggestions: continuousMiisSuggestions,
-    isLoading: continuousMiisLoading,
-    error: continuousMiisError,
-    recordImpression: continuousMiisRecordImpression,
-    recordClick: continuousMiisRecordClick,
-    recordDismiss: continuousMiisRecordDismiss,
-    getImageUrl: continuousMiisGetImageUrl,
-  } = useMiisImages({
-    sessionId: continuousMiisSessionIdRef.current,
-    concepts: continuousImageConcepts,
-    enabled: settings?.miis_enabled ?? false,
-    serverUrl: settings?.miis_server_url ?? '',
-  });
-
   // Screen capture tied to recording lifecycle
   useScreenCapture(isRecording, settings);
-
-  // Sync Ollama status from connection hook to SOAP hook
-  useEffect(() => {
-    if (ollamaConnectionStatus) {
-      setOllamaStatus(ollamaConnectionStatus);
-      if (ollamaConnectionStatus.connected) {
-        setOllamaModels(ollamaConnectionStatus.available_models);
-      }
-    }
-  }, [ollamaConnectionStatus, setOllamaStatus, setOllamaModels]);
-
-  // Check Medplum connection and restore session on mount
-  useEffect(() => {
-    let mounted = true;
-
-    async function initMedplum() {
-      try {
-        // Try restore session
-        await invoke('medplum_try_restore_session');
-        if (!mounted) return;
-
-        // Check Medplum connection
-        const connected = await invoke<boolean>('medplum_check_connection');
-        if (mounted) {
-          setMedplumConnected(connected);
-        }
-      } catch (e) {
-        if (mounted) {
-          setMedplumConnected(false);
-          setMedplumError(String(e));
-        }
-      }
-    }
-    initMedplum();
-
-    return () => {
-      mounted = false;
-    };
-  }, [setMedplumConnected, setMedplumError]);
 
   // Auto-sync to Medplum when session completes (if authenticated and auto-sync enabled)
   useEffect(() => {
@@ -500,7 +413,7 @@ function App() {
   const handleSaveSettings = useCallback(async () => {
     // Prevent switching from continuous to session mode while continuous recording is active
     if (
-      continuousModeActive &&
+      continuous.isActive &&
       settings?.charting_mode === 'continuous' &&
       pendingSettings?.charting_mode === 'session'
     ) {
@@ -512,73 +425,7 @@ function App() {
     if (success) {
       setShowSettings(false);
     }
-  }, [saveSettings, continuousModeActive, settings?.charting_mode, pendingSettings]);
-
-  const handleTestLLM = useCallback(async () => {
-    if (!pendingSettings || !settings) return;
-    try {
-      await invoke('set_settings', {
-        settings: {
-          ...settings,
-          llm_router_url: pendingSettings.llm_router_url,
-          llm_api_key: pendingSettings.llm_api_key,
-          llm_client_id: pendingSettings.llm_client_id,
-          soap_model: pendingSettings.soap_model,
-          fast_model: pendingSettings.fast_model,
-        },
-      });
-      await checkOllamaConnection();
-    } catch (e) {
-      console.error('Failed to test LLM router:', e);
-      setOllamaStatus({ connected: false, available_models: [], error: String(e) });
-    }
-  }, [settings, pendingSettings, checkOllamaConnection, setOllamaStatus]);
-
-  const handleTestMedplum = useCallback(async () => {
-    if (!pendingSettings) return;
-    setMedplumError(null);
-    try {
-      const testSettings: Settings = {
-        ...settings!,
-        medplum_server_url: pendingSettings.medplum_server_url,
-        medplum_client_id: pendingSettings.medplum_client_id,
-        medplum_auto_sync: pendingSettings.medplum_auto_sync,
-      };
-      await invoke('set_settings', { settings: testSettings });
-
-      const result = await invoke<boolean>('medplum_check_connection');
-      setMedplumConnected(result);
-      if (!result) {
-        setMedplumError('Could not connect to server');
-      }
-    } catch (e) {
-      console.error('Failed to test Medplum:', e);
-      setMedplumConnected(false);
-      setMedplumError(String(e));
-    }
-  }, [settings, pendingSettings, setMedplumConnected, setMedplumError]);
-
-  const handleTestWhisperServer = useCallback(async () => {
-    if (!pendingSettings || !settings) return;
-    try {
-      await invoke('set_settings', {
-        settings: {
-          ...settings,
-          whisper_server_url: pendingSettings.whisper_server_url,
-          whisper_server_model: pendingSettings.whisper_server_model,
-        },
-      });
-
-      const status = await invoke<WhisperServerStatus>('check_whisper_server_status');
-      setWhisperServerStatus(status);
-      if (status.connected) {
-        setWhisperServerModels(status.available_models);
-      }
-    } catch (e) {
-      console.error('Failed to test Whisper server:', e);
-      setWhisperServerStatus({ connected: false, available_models: [], error: String(e) });
-    }
-  }, [settings, pendingSettings]);
+  }, [saveSettings, continuous.isActive, settings?.charting_mode, pendingSettings?.charting_mode]);
 
   // Generate SOAP note (includes audio events like coughs, laughs for clinical context)
   // If already synced to Medplum, auto-add SOAP to the encounter
@@ -739,25 +586,25 @@ function App() {
   // Derived state
   const isStopping = status.state === 'stopping';
 
-  // Get status dot class for header
-  const getStatusDotClass = (): string => {
+  // Status dot class for header
+  const statusDotClass = useMemo(() => {
     if (isRecording) return 'recording';
     if (isStopping) return 'stopping';
     if (status.state === 'preparing') return 'preparing';
     if (isIdle) return 'idle';
     return '';
-  };
+  }, [isRecording, isStopping, status.state, isIdle]);
 
   return (
     <div className={`sidebar mode-${uiMode}`}>
       {/* Header - always visible */}
       <Header
-        statusDotClass={getStatusDotClass()}
+        statusDotClass={statusDotClass}
         showSettings={showSettings}
         disabled={isRecording || isStopping}
         onHistoryClick={openHistoryWindow}
         onSettingsClick={() => setShowSettings(!showSettings)}
-        syncStatus={getSyncStatus()}
+        syncStatus={syncStatus}
         syncError={syncError}
         onDismissSync={handleDismissSync}
       />
@@ -767,30 +614,30 @@ function App() {
         {/* Continuous charting mode */}
         {isContinuousMode && (
           <ContinuousMode
-            isActive={continuousModeActive}
-            isStopping={continuousModeStopping}
-            stats={continuousModeStats}
-            liveTranscript={continuousLiveTranscript}
-            error={continuousModeError}
-            predictiveHint={continuousPredictiveHint}
-            predictiveHintLoading={continuousPredictiveHintLoading}
-            audioQuality={continuousAudioQuality}
-            biomarkers={continuousBiomarkers}
-            biomarkerTrends={continuousTrends}
-            encounterNotes={continuousEncounterNotes}
-            onEncounterNotesChange={setContinuousEncounterNotes}
+            isActive={continuous.isActive}
+            isStopping={continuous.isStopping}
+            stats={continuous.stats}
+            liveTranscript={continuous.liveTranscript}
+            error={continuous.error}
+            predictiveHint={continuous.predictiveHint}
+            predictiveHintLoading={continuous.predictiveHintLoading}
+            audioQuality={continuous.audioQuality}
+            biomarkers={continuous.biomarkers}
+            biomarkerTrends={continuous.biomarkerTrends}
+            encounterNotes={continuous.encounterNotes}
+            onEncounterNotesChange={continuous.onEncounterNotesChange}
             // MIIS image suggestions
-            miisSuggestions={continuousMiisSuggestions}
-            miisLoading={continuousMiisLoading}
-            miisError={continuousMiisError}
-            miisEnabled={settings?.miis_enabled ?? false}
-            onMiisImpression={continuousMiisRecordImpression}
-            onMiisClick={continuousMiisRecordClick}
-            onMiisDismiss={continuousMiisRecordDismiss}
-            miisGetImageUrl={continuousMiisGetImageUrl}
-            onStart={startContinuousMode}
-            onStop={stopContinuousMode}
-            onNewPatient={handleNewPatient}
+            miisSuggestions={continuous.miisSuggestions}
+            miisLoading={continuous.miisLoading}
+            miisError={continuous.miisError}
+            miisEnabled={continuous.miisEnabled}
+            onMiisImpression={continuous.onMiisImpression}
+            onMiisClick={continuous.onMiisClick}
+            onMiisDismiss={continuous.onMiisDismiss}
+            miisGetImageUrl={continuous.miisGetImageUrl}
+            onStart={continuous.onStart}
+            onStop={continuous.onStop}
+            onNewPatient={continuous.onNewPatient}
             onViewHistory={openHistoryWindow}
           />
         )}

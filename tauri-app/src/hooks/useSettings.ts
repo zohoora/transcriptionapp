@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import type { Settings, SpeakerRole } from '../types';
+import type { Settings, SpeakerRole, ChartingMode, EncounterDetectionMode, ShadowActiveMethod } from '../types';
 
 /**
  * Pending settings that the user is editing before saving.
@@ -39,17 +39,19 @@ export interface PendingSettings {
   screen_capture_enabled: boolean;
   screen_capture_interval_secs: number;
   // Continuous charting mode
-  charting_mode: string;
+  charting_mode: ChartingMode;
   encounter_check_interval_secs: number;
   encounter_silence_trigger_secs: number;
   // Presence sensor settings
-  encounter_detection_mode: string;
+  encounter_detection_mode: EncounterDetectionMode;
   presence_sensor_port: string;
   presence_absence_threshold_secs: number;
   presence_debounce_secs: number;
   presence_csv_log_enabled: boolean;
+  // Encounter merge
+  encounter_merge_enabled: boolean;
   // Shadow mode settings
-  shadow_active_method: string;
+  shadow_active_method: ShadowActiveMethod;
   shadow_csv_log_enabled: boolean;
   // Native STT shadow (Apple Speech)
   native_stt_shadow_enabled: boolean;
@@ -113,6 +115,7 @@ export function useSettings(): UseSettingsResult {
     charting_mode: s.charting_mode,
     encounter_check_interval_secs: s.encounter_check_interval_secs,
     encounter_silence_trigger_secs: s.encounter_silence_trigger_secs,
+    encounter_merge_enabled: s.encounter_merge_enabled,
     encounter_detection_mode: s.encounter_detection_mode,
     presence_sensor_port: s.presence_sensor_port,
     presence_absence_threshold_secs: s.presence_absence_threshold_secs,
@@ -180,10 +183,11 @@ export function useSettings(): UseSettingsResult {
         miis_server_url: pendingSettings.miis_server_url,
         screen_capture_enabled: pendingSettings.screen_capture_enabled,
         screen_capture_interval_secs: pendingSettings.screen_capture_interval_secs,
-        charting_mode: pendingSettings.charting_mode as Settings['charting_mode'],
+        charting_mode: pendingSettings.charting_mode,
         continuous_auto_copy_soap: settings.continuous_auto_copy_soap,
         encounter_check_interval_secs: pendingSettings.encounter_check_interval_secs,
         encounter_silence_trigger_secs: pendingSettings.encounter_silence_trigger_secs,
+        encounter_merge_enabled: pendingSettings.encounter_merge_enabled,
         encounter_detection_mode: pendingSettings.encounter_detection_mode,
         presence_sensor_port: pendingSettings.presence_sensor_port,
         presence_absence_threshold_secs: pendingSettings.presence_absence_threshold_secs,
@@ -236,6 +240,7 @@ export function useSettings(): UseSettingsResult {
       [settings.charting_mode, pendingSettings.charting_mode],
       [settings.encounter_check_interval_secs, pendingSettings.encounter_check_interval_secs],
       [settings.encounter_silence_trigger_secs, pendingSettings.encounter_silence_trigger_secs],
+      [settings.encounter_merge_enabled, pendingSettings.encounter_merge_enabled],
       [settings.encounter_detection_mode, pendingSettings.encounter_detection_mode],
       [settings.presence_sensor_port, pendingSettings.presence_sensor_port],
       [settings.presence_absence_threshold_secs, pendingSettings.presence_absence_threshold_secs],

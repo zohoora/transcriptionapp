@@ -155,6 +155,70 @@ pub struct PipelineConfig {
     pub native_stt_shadow_enabled: bool,
 }
 
+impl PipelineConfig {
+    /// Build a PipelineConfig from a Config, resolving model paths.
+    ///
+    /// Caller provides the mode-specific overrides:
+    /// - `device_id`: audio device (session mode maps "default" to None)
+    /// - `audio_output_path`: WAV output path (session uses "session_*.wav", continuous uses "continuous_*.wav")
+    /// - `initial_audio_buffer`: pre-recorded audio from listening mode (session only)
+    /// - `auto_end_enabled` / `auto_end_silence_ms`: auto-end silence (disabled in continuous mode)
+    pub fn from_config(
+        config: &crate::config::Config,
+        device_id: Option<String>,
+        audio_output_path: Option<std::path::PathBuf>,
+        initial_audio_buffer: Option<Vec<f32>>,
+        auto_end_enabled: bool,
+        auto_end_silence_ms: u64,
+    ) -> Self {
+        let model_path = config.get_model_path().unwrap_or_default();
+        let diarization_model_path = if config.diarization_enabled {
+            config.get_diarization_model_path().ok()
+        } else {
+            None
+        };
+        let enhancement_model_path = if config.enhancement_enabled {
+            config.get_enhancement_model_path().ok()
+        } else {
+            None
+        };
+        let yamnet_model_path = if config.biomarkers_enabled {
+            config.get_yamnet_model_path().ok()
+        } else {
+            None
+        };
+
+        Self {
+            device_id,
+            model_path,
+            language: config.language.clone(),
+            vad_threshold: config.vad_threshold,
+            silence_to_flush_ms: config.silence_to_flush_ms,
+            max_utterance_ms: config.max_utterance_ms,
+            diarization_enabled: config.diarization_enabled,
+            diarization_model_path,
+            speaker_similarity_threshold: config.speaker_similarity_threshold,
+            max_speakers: config.max_speakers,
+            enhancement_enabled: config.enhancement_enabled,
+            enhancement_model_path,
+            biomarkers_enabled: config.biomarkers_enabled,
+            yamnet_model_path,
+            audio_output_path,
+            preprocessing_enabled: config.preprocessing_enabled,
+            preprocessing_highpass_hz: config.preprocessing_highpass_hz,
+            preprocessing_agc_target_rms: config.preprocessing_agc_target_rms,
+            whisper_server_url: config.whisper_server_url.clone(),
+            whisper_server_model: config.whisper_server_model.clone(),
+            stt_alias: config.stt_alias.clone(),
+            stt_postprocess: config.stt_postprocess,
+            initial_audio_buffer,
+            auto_end_enabled,
+            auto_end_silence_ms,
+            native_stt_shadow_enabled: config.native_stt_shadow_enabled,
+        }
+    }
+}
+
 impl Default for PipelineConfig {
     fn default() -> Self {
         Self {
@@ -792,7 +856,10 @@ fn run_pipeline_thread_inner(
                             // Fork to native STT shadow (drain loop)
                             if let Some(ref client) = native_stt_client {
                                 let client = client.clone();
-                                let accumulator = native_stt_accumulator.clone().unwrap();
+                                let Some(accumulator) = native_stt_accumulator.clone() else {
+                                    warn!("Native STT client present but accumulator missing — skipping shadow");
+                                    continue;
+                                };
                                 let csv_logger = native_stt_csv_logger.clone();
                                 #[cfg(feature = "enhancement")]
                                 let native_audio = original_audio.clone().unwrap_or_else(|| utterance.audio.clone());
@@ -1178,7 +1245,10 @@ fn run_pipeline_thread_inner(
                         // Fork utterance to native STT shadow (if enabled)
                         if let Some(ref client) = native_stt_client {
                             let client = client.clone();
-                            let accumulator = native_stt_accumulator.clone().unwrap();
+                            let Some(accumulator) = native_stt_accumulator.clone() else {
+                                warn!("Native STT client present but accumulator missing — skipping shadow");
+                                break;
+                            };
                             let csv_logger = native_stt_csv_logger.clone();
                             // Use pre-enhancement audio (same as what STT Router receives)
                             #[cfg(feature = "enhancement")]

@@ -99,20 +99,20 @@ export const SettingsDrawer = memo(function SettingsDrawer({
                 <div className="settings-row">
                   <div className="charting-mode-toggle">
                     <button
-                      className={`charting-mode-btn ${(pendingSettings as PendingSettings & { charting_mode?: string }).charting_mode !== 'continuous' ? 'active' : ''}`}
-                      onClick={() => onSettingsChange({ ...pendingSettings, charting_mode: 'session' } as PendingSettings)}
+                      className={`charting-mode-btn ${pendingSettings.charting_mode !== 'continuous' ? 'active' : ''}`}
+                      onClick={() => onSettingsChange({ ...pendingSettings, charting_mode: 'session' })}
                     >
                       After Every Session
                     </button>
                     <button
-                      className={`charting-mode-btn ${(pendingSettings as PendingSettings & { charting_mode?: string }).charting_mode === 'continuous' ? 'active' : ''}`}
-                      onClick={() => onSettingsChange({ ...pendingSettings, charting_mode: 'continuous' } as PendingSettings)}
+                      className={`charting-mode-btn ${pendingSettings.charting_mode === 'continuous' ? 'active' : ''}`}
+                      onClick={() => onSettingsChange({ ...pendingSettings, charting_mode: 'continuous' })}
                     >
                       End of Day
                     </button>
                   </div>
                 </div>
-                {(pendingSettings as PendingSettings & { charting_mode?: string }).charting_mode === 'continuous' && (
+                {pendingSettings.charting_mode === 'continuous' && (
                   <>
                     <p className="settings-hint">
                       Records continuously. Encounters are auto-detected and SOAP notes generated automatically.
@@ -125,11 +125,11 @@ export const SettingsDrawer = memo(function SettingsDrawer({
                           min="60"
                           max="300"
                           step="30"
-                          value={(pendingSettings as PendingSettings & { encounter_check_interval_secs?: number }).encounter_check_interval_secs ?? 120}
-                          onChange={(e) => onSettingsChange({ ...pendingSettings, encounter_check_interval_secs: Number(e.target.value) } as PendingSettings)}
+                          value={pendingSettings.encounter_check_interval_secs}
+                          onChange={(e) => onSettingsChange({ ...pendingSettings, encounter_check_interval_secs: Number(e.target.value) })}
                         />
                         <span className="settings-slider-value">
-                          {(pendingSettings as PendingSettings & { encounter_check_interval_secs?: number }).encounter_check_interval_secs ?? 120}s
+                          {pendingSettings.encounter_check_interval_secs}s
                         </span>
                       </div>
                     </div>
@@ -141,11 +141,11 @@ export const SettingsDrawer = memo(function SettingsDrawer({
                           min="30"
                           max="300"
                           step="15"
-                          value={(pendingSettings as PendingSettings & { encounter_silence_trigger_secs?: number }).encounter_silence_trigger_secs ?? 180}
-                          onChange={(e) => onSettingsChange({ ...pendingSettings, encounter_silence_trigger_secs: Number(e.target.value) } as PendingSettings)}
+                          value={pendingSettings.encounter_silence_trigger_secs}
+                          onChange={(e) => onSettingsChange({ ...pendingSettings, encounter_silence_trigger_secs: Number(e.target.value) })}
                         />
                         <span className="settings-slider-value">
-                          {(pendingSettings as PendingSettings & { encounter_silence_trigger_secs?: number }).encounter_silence_trigger_secs ?? 180}s
+                          {pendingSettings.encounter_silence_trigger_secs}s
                         </span>
                       </div>
                     </div>
@@ -153,8 +153,8 @@ export const SettingsDrawer = memo(function SettingsDrawer({
                       <label>
                         <input
                           type="checkbox"
-                          checked={(pendingSettings as PendingSettings & { encounter_merge_enabled?: boolean }).encounter_merge_enabled ?? true}
-                          onChange={(e) => onSettingsChange({ ...pendingSettings, encounter_merge_enabled: e.target.checked } as PendingSettings)}
+                          checked={pendingSettings.encounter_merge_enabled}
+                          onChange={(e) => onSettingsChange({ ...pendingSettings, encounter_merge_enabled: e.target.checked })}
                         />
                         {' '}Auto-merge split encounters
                       </label>
@@ -377,7 +377,7 @@ export const SettingsDrawer = memo(function SettingsDrawer({
                     max="10"
                     value={pendingSettings.max_speakers}
                     onChange={(e) =>
-                      onSettingsChange({ ...pendingSettings, max_speakers: parseInt(e.target.value) })
+                      onSettingsChange({ ...pendingSettings, max_speakers: Number(e.target.value) || 2 })
                     }
                   />
                   <span className="slider-value">{pendingSettings.max_speakers}</span>
@@ -547,7 +547,7 @@ export const SettingsDrawer = memo(function SettingsDrawer({
                       step="5"
                       value={pendingSettings.screen_capture_interval_secs}
                       onChange={(e) =>
-                        onSettingsChange({ ...pendingSettings, screen_capture_interval_secs: parseInt(e.target.value) })
+                        onSettingsChange({ ...pendingSettings, screen_capture_interval_secs: Number(e.target.value) || 30 })
                       }
                     />
                     <span className="slider-value">{pendingSettings.screen_capture_interval_secs}s</span>

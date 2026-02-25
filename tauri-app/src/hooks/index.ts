@@ -47,3 +47,9 @@ export type { UseContinuousModeResult } from './useContinuousMode';
 
 export { usePatientBiomarkers } from './usePatientBiomarkers';
 export type { PatientBiomarkerData, PatientMetrics, PatientTrends, TrendDirection, UsePatientBiomarkersResult } from './usePatientBiomarkers';
+
+export { useContinuousModeOrchestrator } from './useContinuousModeOrchestrator';
+export type { ContinuousModeOrchestratorConfig, ContinuousModeOrchestratorResult } from './useContinuousModeOrchestrator';
+
+export { useConnectionTests } from './useConnectionTests';
+export type { ConnectionTestsConfig, ConnectionTestsResult } from './useConnectionTests';

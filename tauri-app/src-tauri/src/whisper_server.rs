@@ -744,7 +744,9 @@ pub fn encode_wav(samples: &[f32], sample_rate: u32) -> Result<Vec<u8>, String> 
     let bits_per_sample: u16 = 16;
     let byte_rate = sample_rate * num_channels as u32 * bits_per_sample as u32 / 8;
     let block_align = num_channels * bits_per_sample / 8;
-    let data_size = samples.len() as u32 * 2;
+    let data_size: u32 = (samples.len() * 2)
+        .try_into()
+        .map_err(|_| "Audio too large for WAV format (exceeds u32 data size limit)".to_string())?;
     let file_size = 36 + data_size;
 
     // RIFF header

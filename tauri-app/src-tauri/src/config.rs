@@ -3,6 +3,59 @@ use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use tracing::debug;
 
+/// Charting mode: session-by-session or continuous all-day recording
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ChartingMode {
+    Session,
+    Continuous,
+}
+
+impl std::fmt::Display for ChartingMode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ChartingMode::Session => write!(f, "session"),
+            ChartingMode::Continuous => write!(f, "continuous"),
+        }
+    }
+}
+
+/// How encounters are detected in continuous mode
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum EncounterDetectionMode {
+    Llm,
+    Sensor,
+    Shadow,
+}
+
+impl std::fmt::Display for EncounterDetectionMode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            EncounterDetectionMode::Llm => write!(f, "llm"),
+            EncounterDetectionMode::Sensor => write!(f, "sensor"),
+            EncounterDetectionMode::Shadow => write!(f, "shadow"),
+        }
+    }
+}
+
+/// Which detection method is "active" in shadow mode
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ShadowActiveMethod {
+    Llm,
+    Sensor,
+}
+
+impl std::fmt::Display for ShadowActiveMethod {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ShadowActiveMethod::Llm => write!(f, "llm"),
+            ShadowActiveMethod::Sensor => write!(f, "sensor"),
+        }
+    }
+}
+
 /// Settings exposed to the frontend
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Settings {
@@ -87,7 +140,7 @@ pub struct Settings {
     pub screen_capture_interval_secs: u32,
     // Continuous charting mode settings
     #[serde(default = "default_charting_mode")]
-    pub charting_mode: String,
+    pub charting_mode: ChartingMode,
     #[serde(default)]
     pub continuous_auto_copy_soap: bool,
     #[serde(default = "default_encounter_check_interval_secs")]
@@ -103,7 +156,7 @@ pub struct Settings {
     pub encounter_detection_nothink: bool,
     // Presence sensor settings (mmWave encounter detection)
     #[serde(default = "default_encounter_detection_mode")]
-    pub encounter_detection_mode: String,
+    pub encounter_detection_mode: EncounterDetectionMode,
     #[serde(default)]
     pub presence_sensor_port: String,
     #[serde(default = "default_presence_absence_threshold_secs")]
@@ -114,7 +167,7 @@ pub struct Settings {
     pub presence_csv_log_enabled: bool,
     // Shadow mode settings (dual detection comparison)
     #[serde(default = "default_shadow_active_method")]
-    pub shadow_active_method: String,
+    pub shadow_active_method: ShadowActiveMethod,
     #[serde(default = "default_shadow_csv_log_enabled")]
     pub shadow_csv_log_enabled: bool,
     // Native STT shadow (Apple SFSpeechRecognizer comparison)
@@ -126,16 +179,16 @@ fn default_native_stt_shadow_enabled() -> bool {
     false // Experimental — requires opt-in via settings toggle
 }
 
-fn default_shadow_active_method() -> String {
-    "sensor".to_string()
+fn default_shadow_active_method() -> ShadowActiveMethod {
+    ShadowActiveMethod::Sensor
 }
 
 fn default_shadow_csv_log_enabled() -> bool {
     true
 }
 
-fn default_encounter_detection_mode() -> String {
-    "shadow".to_string()
+fn default_encounter_detection_mode() -> EncounterDetectionMode {
+    EncounterDetectionMode::Shadow
 }
 
 fn default_presence_absence_threshold_secs() -> u64 {
@@ -170,8 +223,8 @@ fn default_stt_postprocess() -> bool {
     true
 }
 
-fn default_charting_mode() -> String {
-    "session".to_string()
+fn default_charting_mode() -> ChartingMode {
+    ChartingMode::Session
 }
 
 fn default_encounter_check_interval_secs() -> u32 {
@@ -491,21 +544,10 @@ impl Settings {
         }
 
         // Sensor-only mode requires a sensor port (shadow mode falls back to LLM gracefully)
-        if self.encounter_detection_mode == "sensor" && self.presence_sensor_port.is_empty() {
+        if self.encounter_detection_mode == EncounterDetectionMode::Sensor && self.presence_sensor_port.is_empty() {
             errors.push(SettingsValidationError {
                 field: "presence_sensor_port".to_string(),
                 message: "Sensor mode requires a presence sensor port to be configured".to_string(),
-            });
-        }
-
-        // Charting mode must be a known value
-        if self.charting_mode != "session" && self.charting_mode != "continuous" {
-            errors.push(SettingsValidationError {
-                field: "charting_mode".to_string(),
-                message: format!(
-                    "Unknown charting mode '{}'. Must be 'session' or 'continuous'",
-                    self.charting_mode
-                ),
             });
         }
 
@@ -541,147 +583,46 @@ pub struct ModelStatus {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
     pub schema_version: u32,
-    pub whisper_model: String,
-    pub language: String,
-    pub input_device_id: Option<String>,
-    pub output_format: String,
-    pub vad_threshold: f32,
-    pub vad_pre_roll_ms: u32,
-    pub silence_to_flush_ms: u32,
-    pub max_utterance_ms: u32,
-    pub model_path: Option<PathBuf>,
-    // Diarization settings
+    /// All frontend-visible settings, flattened into the same JSON level
+    #[serde(flatten)]
+    pub settings: Settings,
+    // Config-only fields below (not exposed to frontend)
     #[serde(default)]
-    pub diarization_enabled: bool,
-    #[serde(default = "default_max_speakers")]
-    pub max_speakers: usize,
-    #[serde(default = "default_similarity_threshold")]
-    pub speaker_similarity_threshold: f32,
+    pub model_path: Option<PathBuf>,
     #[serde(default)]
     pub diarization_model_path: Option<PathBuf>,
-    // Enhancement settings
+    #[serde(default = "default_similarity_threshold")]
+    pub speaker_similarity_threshold: f32,
     #[serde(default = "default_enhancement_enabled")]
     pub enhancement_enabled: bool,
     #[serde(default)]
     pub enhancement_model_path: Option<PathBuf>,
-    // Biomarker analysis settings
     #[serde(default = "default_biomarkers_enabled")]
     pub biomarkers_enabled: bool,
     #[serde(default)]
     pub yamnet_model_path: Option<PathBuf>,
-    // Audio preprocessing settings
     #[serde(default = "default_preprocessing_enabled")]
     pub preprocessing_enabled: bool,
     #[serde(default = "default_preprocessing_highpass_hz")]
     pub preprocessing_highpass_hz: u32,
     #[serde(default = "default_preprocessing_agc_target_rms")]
     pub preprocessing_agc_target_rms: f32,
-    // LLM Router settings for SOAP note generation
-    #[serde(default = "default_llm_router_url")]
-    pub llm_router_url: String,
-    #[serde(default = "default_llm_api_key")]
-    pub llm_api_key: String,
-    #[serde(default = "default_llm_client_id")]
-    pub llm_client_id: String,
-    #[serde(default = "default_soap_model")]
-    pub soap_model: String,
-    #[serde(default = "default_soap_model_fast")]
-    pub soap_model_fast: String,
-    #[serde(default = "default_fast_model")]
-    pub fast_model: String,
-    // Medplum EMR settings
-    #[serde(default = "default_medplum_url")]
-    pub medplum_server_url: String,
-    #[serde(default = "default_medplum_client_id")]
-    pub medplum_client_id: String,
-    #[serde(default = "default_medplum_auto_sync")]
-    pub medplum_auto_sync: bool,
-    // Whisper server settings (for remote transcription)
-    #[serde(default = "default_whisper_mode")]
-    pub whisper_mode: String,
-    #[serde(default = "default_whisper_server_url")]
-    pub whisper_server_url: String,
-    #[serde(default = "default_whisper_server_model")]
-    pub whisper_server_model: String,
-    // STT streaming settings
-    #[serde(default = "default_stt_alias")]
-    pub stt_alias: String,
-    #[serde(default = "default_stt_postprocess")]
-    pub stt_postprocess: bool,
-    // SOAP note generation preferences (persisted)
-    #[serde(default = "default_soap_detail_level")]
-    pub soap_detail_level: u8,
-    #[serde(default = "default_soap_format")]
-    pub soap_format: String,
-    #[serde(default)]
-    pub soap_custom_instructions: String,
-    // Auto-session detection settings
-    #[serde(default)]
-    pub auto_start_enabled: bool,
-    #[serde(default = "default_greeting_sensitivity")]
-    pub greeting_sensitivity: Option<f32>,
-    #[serde(default = "default_min_speech_duration_ms")]
-    pub min_speech_duration_ms: Option<u32>,
-    // Speaker verification for auto-start
-    #[serde(default)]
-    pub auto_start_require_enrolled: bool,
-    #[serde(default)]
-    pub auto_start_required_role: Option<String>,
-    // Auto-end session after continuous silence
-    #[serde(default = "default_auto_end_enabled")]
-    pub auto_end_enabled: bool,
-    #[serde(default = "default_auto_end_silence_ms")]
-    pub auto_end_silence_ms: u64,
-    // Debug storage (development only - stores PHI locally)
-    #[serde(default = "default_debug_storage_enabled")]
-    pub debug_storage_enabled: bool,
-    // MIIS (Medical Illustration Image Server) settings
-    #[serde(default)]
-    pub miis_enabled: bool,
-    #[serde(default = "default_miis_server_url")]
-    pub miis_server_url: String,
-    // Screen capture settings
-    #[serde(default)]
-    pub screen_capture_enabled: bool,
-    #[serde(default = "default_screen_capture_interval_secs")]
-    pub screen_capture_interval_secs: u32,
-    // Continuous charting mode settings
-    #[serde(default = "default_charting_mode")]
-    pub charting_mode: String,
-    #[serde(default)]
-    pub continuous_auto_copy_soap: bool,
-    #[serde(default = "default_encounter_check_interval_secs")]
-    pub encounter_check_interval_secs: u32,
-    #[serde(default = "default_encounter_silence_trigger_secs")]
-    pub encounter_silence_trigger_secs: u32,
-    #[serde(default = "default_encounter_merge_enabled")]
-    pub encounter_merge_enabled: bool,
-    // Hybrid model: use a smaller/faster model for encounter detection
-    #[serde(default = "default_encounter_detection_model")]
-    pub encounter_detection_model: String,
-    #[serde(default = "default_encounter_detection_nothink")]
-    pub encounter_detection_nothink: bool,
-    // Presence sensor settings (mmWave encounter detection)
-    #[serde(default = "default_encounter_detection_mode")]
-    pub encounter_detection_mode: String,
-    #[serde(default)]
-    pub presence_sensor_port: String,
-    #[serde(default = "default_presence_absence_threshold_secs")]
-    pub presence_absence_threshold_secs: u64,
-    #[serde(default = "default_presence_debounce_secs")]
-    pub presence_debounce_secs: u64,
-    #[serde(default = "default_presence_csv_log_enabled")]
-    pub presence_csv_log_enabled: bool,
-    // Shadow mode settings (dual detection comparison)
-    #[serde(default = "default_shadow_active_method")]
-    pub shadow_active_method: String,
-    #[serde(default = "default_shadow_csv_log_enabled")]
-    pub shadow_csv_log_enabled: bool,
-    // Native STT shadow (Apple SFSpeechRecognizer comparison)
-    #[serde(default = "default_native_stt_shadow_enabled")]
-    pub native_stt_shadow_enabled: bool,
 }
 
+impl std::ops::Deref for Config {
+    type Target = Settings;
+    fn deref(&self) -> &Settings {
+        &self.settings
+    }
+}
+
+impl std::ops::DerefMut for Config {
+    fn deref_mut(&mut self) -> &mut Settings {
+        &mut self.settings
+    }
+}
+
+#[allow(dead_code)]
 fn default_max_speakers() -> usize {
     10
 }
@@ -714,19 +655,10 @@ impl Default for Config {
     fn default() -> Self {
         Self {
             schema_version: 1,
-            whisper_model: "small".to_string(),
-            language: "en".to_string(),
-            input_device_id: None,
-            output_format: "paragraphs".to_string(),
-            vad_threshold: 0.5,
-            vad_pre_roll_ms: 300,
-            silence_to_flush_ms: 500,
-            max_utterance_ms: 25000,
+            settings: Settings::default(),
             model_path: None,
-            diarization_enabled: false,
-            max_speakers: 10,
-            speaker_similarity_threshold: 0.5,
             diarization_model_path: None,
+            speaker_similarity_threshold: 0.5,
             enhancement_enabled: default_enhancement_enabled(),
             enhancement_model_path: None,
             biomarkers_enabled: default_biomarkers_enabled(),
@@ -734,50 +666,6 @@ impl Default for Config {
             preprocessing_enabled: default_preprocessing_enabled(),
             preprocessing_highpass_hz: default_preprocessing_highpass_hz(),
             preprocessing_agc_target_rms: default_preprocessing_agc_target_rms(),
-            llm_router_url: default_llm_router_url(),
-            llm_api_key: default_llm_api_key(),
-            llm_client_id: default_llm_client_id(),
-            soap_model: default_soap_model(),
-            soap_model_fast: default_soap_model_fast(),
-            fast_model: default_fast_model(),
-            medplum_server_url: default_medplum_url(),
-            medplum_client_id: default_medplum_client_id(),
-            medplum_auto_sync: default_medplum_auto_sync(),
-            whisper_mode: default_whisper_mode(),
-            whisper_server_url: default_whisper_server_url(),
-            whisper_server_model: default_whisper_server_model(),
-            stt_alias: default_stt_alias(),
-            stt_postprocess: default_stt_postprocess(),
-            soap_detail_level: default_soap_detail_level(),
-            soap_format: default_soap_format(),
-            soap_custom_instructions: String::new(),
-            auto_start_enabled: false,
-            greeting_sensitivity: default_greeting_sensitivity(),
-            min_speech_duration_ms: default_min_speech_duration_ms(),
-            auto_start_require_enrolled: false,
-            auto_start_required_role: None,
-            auto_end_enabled: default_auto_end_enabled(),
-            auto_end_silence_ms: default_auto_end_silence_ms(),
-            debug_storage_enabled: default_debug_storage_enabled(),
-            miis_enabled: false,
-            miis_server_url: default_miis_server_url(),
-            screen_capture_enabled: false,
-            screen_capture_interval_secs: default_screen_capture_interval_secs(),
-            charting_mode: default_charting_mode(),
-            continuous_auto_copy_soap: false,
-            encounter_check_interval_secs: default_encounter_check_interval_secs(),
-            encounter_silence_trigger_secs: default_encounter_silence_trigger_secs(),
-            encounter_merge_enabled: default_encounter_merge_enabled(),
-            encounter_detection_model: default_encounter_detection_model(),
-            encounter_detection_nothink: default_encounter_detection_nothink(),
-            encounter_detection_mode: default_encounter_detection_mode(),
-            presence_sensor_port: String::new(),
-            presence_absence_threshold_secs: default_presence_absence_threshold_secs(),
-            presence_debounce_secs: default_presence_debounce_secs(),
-            presence_csv_log_enabled: default_presence_csv_log_enabled(),
-            shadow_active_method: default_shadow_active_method(),
-            shadow_csv_log_enabled: default_shadow_csv_log_enabled(),
-            native_stt_shadow_enabled: default_native_stt_shadow_enabled(),
         }
     }
 }
@@ -843,16 +731,17 @@ impl Config {
         self.presence_debounce_secs = self.presence_debounce_secs.clamp(1, 60);
     }
 
-    /// Load config from file
+    /// Load config from file (with clamping for safety)
     pub fn load() -> Result<Self> {
         let path = Self::config_path()?;
-        if path.exists() {
+        let mut config = if path.exists() {
             let content = std::fs::read_to_string(&path)?;
-            let config: Config = serde_json::from_str(&content)?;
-            Ok(config)
+            serde_json::from_str(&content)?
         } else {
-            Ok(Self::default())
-        }
+            Self::default()
+        };
+        config.clamp_values();
+        Ok(config)
     }
 
     /// Save config to file with atomic write and strict permissions
@@ -946,128 +835,12 @@ impl Config {
 
     /// Convert to frontend Settings
     pub fn to_settings(&self) -> Settings {
-        Settings {
-            whisper_model: self.whisper_model.clone(),
-            language: self.language.clone(),
-            input_device_id: self.input_device_id.clone(),
-            output_format: self.output_format.clone(),
-            vad_threshold: self.vad_threshold,
-            silence_to_flush_ms: self.silence_to_flush_ms,
-            max_utterance_ms: self.max_utterance_ms,
-            diarization_enabled: self.diarization_enabled,
-            max_speakers: self.max_speakers,
-            llm_router_url: self.llm_router_url.clone(),
-            llm_api_key: self.llm_api_key.clone(),
-            llm_client_id: self.llm_client_id.clone(),
-            soap_model: self.soap_model.clone(),
-            soap_model_fast: self.soap_model_fast.clone(),
-            fast_model: self.fast_model.clone(),
-            medplum_server_url: self.medplum_server_url.clone(),
-            medplum_client_id: self.medplum_client_id.clone(),
-            medplum_auto_sync: self.medplum_auto_sync,
-            whisper_mode: self.whisper_mode.clone(),
-            whisper_server_url: self.whisper_server_url.clone(),
-            whisper_server_model: self.whisper_server_model.clone(),
-            stt_alias: self.stt_alias.clone(),
-            stt_postprocess: self.stt_postprocess,
-            soap_detail_level: self.soap_detail_level,
-            soap_format: self.soap_format.clone(),
-            soap_custom_instructions: self.soap_custom_instructions.clone(),
-            auto_start_enabled: self.auto_start_enabled,
-            greeting_sensitivity: self.greeting_sensitivity,
-            min_speech_duration_ms: self.min_speech_duration_ms,
-            auto_start_require_enrolled: self.auto_start_require_enrolled,
-            auto_start_required_role: self.auto_start_required_role.clone(),
-            auto_end_enabled: self.auto_end_enabled,
-            auto_end_silence_ms: self.auto_end_silence_ms,
-            debug_storage_enabled: self.debug_storage_enabled,
-            miis_enabled: self.miis_enabled,
-            miis_server_url: self.miis_server_url.clone(),
-            screen_capture_enabled: self.screen_capture_enabled,
-            screen_capture_interval_secs: self.screen_capture_interval_secs,
-            charting_mode: self.charting_mode.clone(),
-            continuous_auto_copy_soap: self.continuous_auto_copy_soap,
-            encounter_check_interval_secs: self.encounter_check_interval_secs,
-            encounter_silence_trigger_secs: self.encounter_silence_trigger_secs,
-            encounter_merge_enabled: self.encounter_merge_enabled,
-            encounter_detection_model: self.encounter_detection_model.clone(),
-            encounter_detection_nothink: self.encounter_detection_nothink,
-            encounter_detection_mode: self.encounter_detection_mode.clone(),
-            presence_sensor_port: self.presence_sensor_port.clone(),
-            presence_absence_threshold_secs: self.presence_absence_threshold_secs,
-            presence_debounce_secs: self.presence_debounce_secs,
-            presence_csv_log_enabled: self.presence_csv_log_enabled,
-            shadow_active_method: self.shadow_active_method.clone(),
-            shadow_csv_log_enabled: self.shadow_csv_log_enabled,
-            native_stt_shadow_enabled: self.native_stt_shadow_enabled,
-        }
+        self.settings.clone()
     }
 
     /// Update from frontend Settings
     pub fn update_from_settings(&mut self, settings: &Settings) {
-        self.whisper_model = settings.whisper_model.clone();
-        self.language = settings.language.clone();
-        self.input_device_id = settings.input_device_id.clone();
-        self.output_format = settings.output_format.clone();
-        self.vad_threshold = settings.vad_threshold;
-        self.silence_to_flush_ms = settings.silence_to_flush_ms;
-        self.max_utterance_ms = settings.max_utterance_ms;
-        self.diarization_enabled = settings.diarization_enabled;
-        self.max_speakers = settings.max_speakers;
-        self.llm_router_url = settings.llm_router_url.clone();
-        self.llm_api_key = settings.llm_api_key.clone();
-        self.llm_client_id = settings.llm_client_id.clone();
-        self.soap_model = settings.soap_model.clone();
-        self.soap_model_fast = settings.soap_model_fast.clone();
-        self.fast_model = settings.fast_model.clone();
-        self.medplum_server_url = settings.medplum_server_url.clone();
-        self.medplum_client_id = settings.medplum_client_id.clone();
-        self.medplum_auto_sync = settings.medplum_auto_sync;
-        self.whisper_mode = settings.whisper_mode.clone();
-        self.whisper_server_url = settings.whisper_server_url.clone();
-        self.whisper_server_model = settings.whisper_server_model.clone();
-        self.stt_alias = settings.stt_alias.clone();
-        self.stt_postprocess = settings.stt_postprocess;
-        self.soap_detail_level = settings.soap_detail_level;
-        self.soap_format = settings.soap_format.clone();
-        self.soap_custom_instructions = settings.soap_custom_instructions.clone();
-        // Auto-session detection settings
-        self.auto_start_enabled = settings.auto_start_enabled;
-        self.greeting_sensitivity = settings.greeting_sensitivity;
-        self.min_speech_duration_ms = settings.min_speech_duration_ms;
-        // Speaker verification for auto-start
-        self.auto_start_require_enrolled = settings.auto_start_require_enrolled;
-        self.auto_start_required_role = settings.auto_start_required_role.clone();
-        // Auto-end settings
-        self.auto_end_enabled = settings.auto_end_enabled;
-        self.auto_end_silence_ms = settings.auto_end_silence_ms;
-        // Debug storage
-        self.debug_storage_enabled = settings.debug_storage_enabled;
-        // MIIS settings
-        self.miis_enabled = settings.miis_enabled;
-        self.miis_server_url = settings.miis_server_url.clone();
-        // Screen capture settings
-        self.screen_capture_enabled = settings.screen_capture_enabled;
-        self.screen_capture_interval_secs = settings.screen_capture_interval_secs;
-        // Continuous charting mode settings
-        self.charting_mode = settings.charting_mode.clone();
-        self.continuous_auto_copy_soap = settings.continuous_auto_copy_soap;
-        self.encounter_check_interval_secs = settings.encounter_check_interval_secs;
-        self.encounter_silence_trigger_secs = settings.encounter_silence_trigger_secs;
-        self.encounter_merge_enabled = settings.encounter_merge_enabled;
-        self.encounter_detection_model = settings.encounter_detection_model.clone();
-        self.encounter_detection_nothink = settings.encounter_detection_nothink;
-        // Presence sensor settings
-        self.encounter_detection_mode = settings.encounter_detection_mode.clone();
-        self.presence_sensor_port = settings.presence_sensor_port.clone();
-        self.presence_absence_threshold_secs = settings.presence_absence_threshold_secs;
-        self.presence_debounce_secs = settings.presence_debounce_secs;
-        self.presence_csv_log_enabled = settings.presence_csv_log_enabled;
-        // Shadow mode settings
-        self.shadow_active_method = settings.shadow_active_method.clone();
-        self.shadow_csv_log_enabled = settings.shadow_csv_log_enabled;
-        // Native STT shadow
-        self.native_stt_shadow_enabled = settings.native_stt_shadow_enabled;
+        self.settings = settings.clone();
         // Clamp values to safe ranges after applying settings
         self.clamp_values();
     }
@@ -1102,7 +875,6 @@ mod tests {
         let config = Config::default();
         assert_eq!(config.output_format, "paragraphs");
         assert_eq!(config.vad_threshold, 0.5);
-        assert_eq!(config.vad_pre_roll_ms, 300);
         assert_eq!(config.silence_to_flush_ms, 500);
         assert_eq!(config.max_utterance_ms, 25000);
         assert!(config.model_path.is_none());
@@ -1183,7 +955,7 @@ mod tests {
             miis_server_url: "http://172.16.100.45:7843".to_string(),
             screen_capture_enabled: false,
             screen_capture_interval_secs: 30,
-            charting_mode: "session".to_string(),
+            charting_mode: ChartingMode::Session,
             continuous_auto_copy_soap: false,
             encounter_check_interval_secs: 120,
             encounter_silence_trigger_secs: 60,
@@ -1700,14 +1472,14 @@ mod tests {
     #[test]
     fn test_presence_sensor_defaults() {
         let config = Config::default();
-        assert_eq!(config.encounter_detection_mode, "shadow");
+        assert_eq!(config.encounter_detection_mode, EncounterDetectionMode::Shadow);
         assert!(config.presence_sensor_port.is_empty());
         assert_eq!(config.presence_absence_threshold_secs, 180);
         assert_eq!(config.presence_debounce_secs, 10);
         assert!(config.presence_csv_log_enabled);
 
         let settings = Settings::default();
-        assert_eq!(settings.encounter_detection_mode, "shadow");
+        assert_eq!(settings.encounter_detection_mode, EncounterDetectionMode::Shadow);
         assert!(settings.presence_sensor_port.is_empty());
         assert_eq!(settings.presence_absence_threshold_secs, 180);
         assert_eq!(settings.presence_debounce_secs, 10);
@@ -1740,19 +1512,22 @@ mod tests {
     #[test]
     fn test_old_config_without_sensor_fields_loads_with_defaults() {
         // Simulate an old config JSON without sensor fields
+        // Includes required Settings fields (whisper_model, language, etc.) plus
+        // diarization_enabled/max_speakers which Settings requires without serde(default)
         let json = r#"{
             "schema_version": 1,
             "whisper_model": "small",
             "language": "en",
             "output_format": "paragraphs",
             "vad_threshold": 0.5,
-            "vad_pre_roll_ms": 300,
             "silence_to_flush_ms": 500,
-            "max_utterance_ms": 25000
+            "max_utterance_ms": 25000,
+            "diarization_enabled": false,
+            "max_speakers": 10
         }"#;
 
         let config: Config = serde_json::from_str(json).expect("Should deserialize old config");
-        assert_eq!(config.encounter_detection_mode, "shadow");
+        assert_eq!(config.encounter_detection_mode, EncounterDetectionMode::Shadow);
         assert!(config.presence_sensor_port.is_empty());
         assert_eq!(config.presence_absence_threshold_secs, 180);
         assert_eq!(config.presence_debounce_secs, 10);
@@ -1762,14 +1537,14 @@ mod tests {
     #[test]
     fn test_presence_sensor_settings_roundtrip() {
         let mut config = Config::default();
-        config.encounter_detection_mode = "sensor".to_string();
+        config.encounter_detection_mode = EncounterDetectionMode::Sensor;
         config.presence_sensor_port = "/dev/cu.usbserial-2110".to_string();
         config.presence_absence_threshold_secs = 120;
         config.presence_debounce_secs = 15;
         config.presence_csv_log_enabled = false;
 
         let settings = config.to_settings();
-        assert_eq!(settings.encounter_detection_mode, "sensor");
+        assert_eq!(settings.encounter_detection_mode, EncounterDetectionMode::Sensor);
         assert_eq!(settings.presence_sensor_port, "/dev/cu.usbserial-2110");
         assert_eq!(settings.presence_absence_threshold_secs, 120);
         assert_eq!(settings.presence_debounce_secs, 15);
@@ -1777,7 +1552,7 @@ mod tests {
 
         let mut config2 = Config::default();
         config2.update_from_settings(&settings);
-        assert_eq!(config2.encounter_detection_mode, "sensor");
+        assert_eq!(config2.encounter_detection_mode, EncounterDetectionMode::Sensor);
         assert_eq!(config2.presence_sensor_port, "/dev/cu.usbserial-2110");
         assert_eq!(config2.presence_absence_threshold_secs, 120);
         assert_eq!(config2.presence_debounce_secs, 15);

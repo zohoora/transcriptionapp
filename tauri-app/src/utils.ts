@@ -126,6 +126,36 @@ export function formatDuration(ms: number): string {
   return `${minutes}m`;
 }
 
+/**
+ * Format a duration in milliseconds as a clock-style string.
+ * Returns "H:MM:SS" or "M:SS" depending on duration.
+ * Used for precise time displays (recording timers, session durations).
+ */
+export function formatDurationClock(ms: number): string {
+  const totalSeconds = Math.floor(ms / 1000);
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+
+  if (hours > 0) {
+    return `${hours}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+  }
+  return `${minutes}:${seconds.toString().padStart(2, '0')}`;
+}
+
+/**
+ * Format a duration in milliseconds as a short clock-style string.
+ * Returns "M:SS" (no hours). Returns empty string for null/zero.
+ * Used for compact displays (history session list).
+ */
+export function formatDurationShort(ms: number | null): string {
+  if (!ms) return '';
+  const totalSeconds = Math.floor(ms / 1000);
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${minutes}:${seconds.toString().padStart(2, '0')}`;
+}
+
 // ============================================================================
 // Audio Quality Utilities
 // ============================================================================

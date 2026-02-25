@@ -18,7 +18,7 @@ import {
   getEngagementStatus,
   getResponseTimeStatus,
 } from '../../types';
-import { formatLocalDateTime, getAudioQualityLevel } from '../../utils';
+import { formatLocalDateTime, getAudioQualityLevel, formatDurationClock } from '../../utils';
 
 type ReviewTab = 'transcript' | 'soap' | 'insights';
 
@@ -73,18 +73,8 @@ interface ReviewModeProps {
   autoSyncEnabled: boolean;
 }
 
-// Format duration as mm:ss or h:mm:ss
-const formatDuration = (ms: number): string => {
-  const totalSeconds = Math.floor(ms / 1000);
-  const hours = Math.floor(totalSeconds / 3600);
-  const minutes = Math.floor((totalSeconds % 3600) / 60);
-  const seconds = totalSeconds % 60;
-
-  if (hours > 0) {
-    return `${hours}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
-  }
-  return `${minutes}:${seconds.toString().padStart(2, '0')}`;
-};
+// Format duration as mm:ss or h:mm:ss (uses shared utility)
+const formatDuration = formatDurationClock;
 
 // Get quality badge from audio quality (thin wrapper over shared utility)
 const getQualityBadge = (quality: AudioQualitySnapshot | null): { label: string; className: string } => {
@@ -166,9 +156,13 @@ export const ReviewMode = memo(function ReviewMode({
 
   const handleCopyTranscript = useCallback(async () => {
     if (!editedTranscript) return;
-    await writeText(editedTranscript);
-    setCopySuccess(true);
-    setTimeout(() => setCopySuccess(false), 2000);
+    try {
+      await writeText(editedTranscript);
+      setCopySuccess(true);
+      setTimeout(() => setCopySuccess(false), 2000);
+    } catch (e) {
+      console.error('Failed to copy transcript:', e);
+    }
   }, [editedTranscript]);
 
   // Get active patient's SOAP note content (safe bounds check)
@@ -178,9 +172,13 @@ export const ReviewMode = memo(function ReviewMode({
 
   const handleCopySoap = useCallback(async () => {
     if (!activeSoapContent) return;
-    await writeText(activeSoapContent);
-    setSoapCopySuccess(true);
-    setTimeout(() => setSoapCopySuccess(false), 2000);
+    try {
+      await writeText(activeSoapContent);
+      setSoapCopySuccess(true);
+      setTimeout(() => setSoapCopySuccess(false), 2000);
+    } catch (e) {
+      console.error('Failed to copy SOAP note:', e);
+    }
   }, [activeSoapContent]);
 
   // Open vision picker: fetch thumbnails and show grid
@@ -308,7 +306,7 @@ export const ReviewMode = memo(function ReviewMode({
                       min="1"
                       max="10"
                       value={soapOptions.detail_level}
-                      onChange={(e) => onSoapDetailLevelChange(parseInt(e.target.value))}
+                      onChange={(e) => onSoapDetailLevelChange(Number(e.target.value) || 5)}
                       className="detail-slider"
                       aria-label="SOAP note detail level"
                     />

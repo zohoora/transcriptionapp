@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { getCurrentWindow } from '@tauri-apps/api/window';
@@ -15,7 +15,7 @@ import {
   EditNameDialog,
   MergeConfirmDialog,
 } from './cleanup';
-import { formatDateForApi, formatLocalTime, formatLocalDateTime } from '../utils';
+import { formatDateForApi, formatLocalTime, formatLocalDateTime, formatDurationShort } from '../utils';
 import type {
   LocalArchiveSummary,
   LocalArchiveDetails,
@@ -46,13 +46,8 @@ function formatTime(dateString: string): string {
   return formatLocalTime(dateString);
 }
 
-function formatDuration(ms: number | null): string {
-  if (!ms) return '';
-  const totalSeconds = Math.floor(ms / 1000);
-  const minutes = Math.floor(totalSeconds / 60);
-  const seconds = totalSeconds % 60;
-  return `${minutes}:${seconds.toString().padStart(2, '0')}`;
-}
+// Format duration as M:SS (uses shared utility)
+const formatDuration = formatDurationShort;
 
 const HistoryWindow: React.FC = () => {
   const { authState, isLoading: authLoading, login } = useAuth();
@@ -550,6 +545,10 @@ const HistoryWindow: React.FC = () => {
   }, [selectedDate, selectedIds]);
 
   // Listen for split_complete from SplitWindow
+  // Store callback in ref to keep listener stable (avoid re-subscription on callback identity change)
+  const afterCleanupOpRef = useRef(afterCleanupOp);
+  afterCleanupOpRef.current = afterCleanupOp;
+
   useEffect(() => {
     let mounted = true;
     let cleanup: (() => void) | undefined;
@@ -557,7 +556,7 @@ const HistoryWindow: React.FC = () => {
     const setup = async () => {
       const unlisten = await listen('split_complete', () => {
         if (mounted) {
-          afterCleanupOp('Session split into two');
+          afterCleanupOpRef.current('Session split into two');
         }
       });
 
@@ -575,7 +574,7 @@ const HistoryWindow: React.FC = () => {
       mounted = false;
       cleanup?.();
     };
-  }, [afterCleanupOp]);
+  }, []);
 
   // SOAP regeneration for selected sessions
   const handleRegenSoap = useCallback(async () => {

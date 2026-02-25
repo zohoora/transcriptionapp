@@ -65,6 +65,7 @@ export interface Settings {
   llm_api_key: string;
   llm_client_id: string;
   soap_model: string;
+  soap_model_fast: string;
   fast_model: string;
   // Medplum EMR settings
   medplum_server_url: string;
@@ -108,13 +109,13 @@ export interface Settings {
   encounter_detection_model: string;
   encounter_detection_nothink: boolean;
   // Presence sensor settings (mmWave encounter detection)
-  encounter_detection_mode: string;  // "sensor" | "llm" | "shadow"
+  encounter_detection_mode: EncounterDetectionMode;
   presence_sensor_port: string;
   presence_absence_threshold_secs: number;
   presence_debounce_secs: number;
   presence_csv_log_enabled: boolean;
   // Shadow mode settings (dual detection comparison)
-  shadow_active_method: string;  // "llm" | "sensor"
+  shadow_active_method: ShadowActiveMethod;
   shadow_csv_log_enabled: boolean;
   // Native STT shadow (Apple SFSpeechRecognizer comparison)
   native_stt_shadow_enabled: boolean;
@@ -672,6 +673,12 @@ export interface LocalArchiveDetails {
 
 /** Charting mode: session-based or continuous all-day */
 export type ChartingMode = 'session' | 'continuous';
+
+/** How encounters are detected in continuous mode */
+export type EncounterDetectionMode = 'llm' | 'sensor' | 'shadow';
+
+/** Which detection method is "active" in shadow mode */
+export type ShadowActiveMethod = 'llm' | 'sensor';
 
 /** Stats for the continuous mode monitoring dashboard */
 export interface ContinuousModeStats {

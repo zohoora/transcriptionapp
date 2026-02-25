@@ -55,26 +55,6 @@ pub async fn start_session(
 
     // Load config - always uses remote Whisper server, no local model needed
     let config = Config::load_or_default();
-    let model_path = config.get_model_path().unwrap_or_default(); // Fallback path for local model (unused with remote transcription)
-
-    // Create pipeline config
-    let diarization_model_path = if config.diarization_enabled {
-        config.get_diarization_model_path().ok()
-    } else {
-        None
-    };
-
-    let enhancement_model_path = if config.enhancement_enabled {
-        config.get_enhancement_model_path().ok()
-    } else {
-        None
-    };
-
-    let yamnet_model_path = if config.biomarkers_enabled {
-        config.get_yamnet_model_path().ok()
-    } else {
-        None
-    };
 
     // Generate audio file path for recording
     let audio_output_path = {
@@ -106,34 +86,14 @@ pub async fn start_session(
     };
     let device_name_for_log = device_id_for_config.clone();
 
-    let pipeline_config = PipelineConfig {
-        device_id: device_id_for_config,
-        model_path,
-        language: config.language.clone(),
-        vad_threshold: config.vad_threshold,
-        silence_to_flush_ms: config.silence_to_flush_ms,
-        max_utterance_ms: config.max_utterance_ms,
-        diarization_enabled: config.diarization_enabled,
-        diarization_model_path,
-        speaker_similarity_threshold: config.speaker_similarity_threshold,
-        max_speakers: config.max_speakers,
-        enhancement_enabled: config.enhancement_enabled,
-        enhancement_model_path,
-        biomarkers_enabled: config.biomarkers_enabled,
-        yamnet_model_path,
+    let pipeline_config = PipelineConfig::from_config(
+        &config,
+        device_id_for_config,
         audio_output_path,
-        preprocessing_enabled: config.preprocessing_enabled,
-        preprocessing_highpass_hz: config.preprocessing_highpass_hz,
-        preprocessing_agc_target_rms: config.preprocessing_agc_target_rms,
-        whisper_server_url: config.whisper_server_url.clone(),
-        whisper_server_model: config.whisper_server_model.clone(),
-        stt_alias: config.stt_alias.clone(),
-        stt_postprocess: config.stt_postprocess,
         initial_audio_buffer,
-        auto_end_enabled: config.auto_end_enabled,
-        auto_end_silence_ms: config.auto_end_silence_ms,
-        native_stt_shadow_enabled: config.native_stt_shadow_enabled,
-    };
+        config.auto_end_enabled,
+        config.auto_end_silence_ms,
+    );
 
     // Create message channel
     let (tx, mut rx) = mpsc::channel::<PipelineMessage>(32);
