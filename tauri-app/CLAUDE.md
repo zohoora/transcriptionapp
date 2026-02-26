@@ -54,7 +54,9 @@ Rust Backend
 ├── local_archive.rs   # Local session storage
 ├── continuous_mode.rs # Continuous charting mode (end-of-day)
 ├── presence_sensor.rs # mmWave presence sensor (SEN0395 via serial)
-├── screenshot.rs      # Screen capture (in-memory JPEG)
+├── screenshot.rs      # Screen capture (in-memory JPEG, blank detection, permission check)
+├── patient_name_tracker.rs # Vision-based patient name extraction + majority-vote tracker
+├── encounter_detection.rs  # Encounter detection prompts/parsing + clinical content check
 ├── debug_storage.rs   # Debug storage (dev only)
 ├── permissions.rs     # macOS permission checks
 ├── ollama.rs          # Re-exports from llm_client.rs (backward compat)
@@ -128,6 +130,7 @@ cd src-tauri && cargo test       # Rust
 | Modify session cleanup (history) | `commands/archive.rs`, `HistoryWindow.tsx`, `components/cleanup/` (CleanupActionBar, DeleteConfirmDialog, EditNameDialog, MergeConfirmDialog, SplitView), `SplitWindow.tsx` (standalone split window) |
 | Modify shadow mode | `shadow_log.rs`, `continuous_mode.rs` (shadow observer task), `config.rs` (`shadow_active_method`, `shadow_csv_log_enabled`) |
 | Modify native STT shadow | `native_stt.rs` (FFI client), `native_stt_shadow.rs` (accumulator + CSV), `pipeline.rs` (utterance fork + drain), `commands/session.rs` (archive shadow transcript) |
+| Modify screen capture / vision | `screenshot.rs` (capture, permission check, blank detection), `patient_name_tracker.rs` (name extraction), `continuous_mode.rs` (screenshot task), `commands/screenshot.rs` |
 | Add session-scoped state | `useSessionLifecycle.ts` (add reset call to `resetAllSessionState`) |
 
 ## IPC Commands (90 total across 16 modules)
@@ -199,6 +202,8 @@ Idle → Preparing → Recording → Stopping → Completed
 | Audio quality shared util | `getAudioQualityLevel()` in utils.ts — shared across RecordingMode, ReviewMode, ContinuousMode |
 | Force-split constants | Named constants in continuous_mode.rs: `FORCE_CHECK_WORD_THRESHOLD` (5K), `FORCE_SPLIT_WORD_THRESHOLD` (8K), `FORCE_SPLIT_CONSECUTIVE_LIMIT` (3), `ABSOLUTE_WORD_CAP` (15K) |
 | Presence sensor auto-detect | `auto_detect_port()` in presence_sensor.rs scans USB-serial devices when configured port fails |
+| Screen recording permission | Use `CGPreflightScreenCaptureAccess()` (not 1x1 pixel capture) — old check always passed even without permission. `is_blank_capture()` heuristic detects blanked-out window content |
+| SOAP JSON repair | Pipeline: `fix_json_newlines` → `remove_leading_commas` → `remove_trailing_commas` → `fix_truncated_json` → filter empty strings |
 
 ## Features
 
@@ -233,7 +238,7 @@ Idle → Preparing → Recording → Stopping → Completed
 
 Source of truth: `src-tauri/src/config.rs` (Rust) / `src/types/index.ts` (TypeScript).
 
-Key settings groups: STT Router (whisper_server_url, stt_alias=`"medical-streaming"`, stt_postprocess=true), Audio (VAD, diarization, enhancement), LLM Router (soap_model=`"soap-model-fast"`, soap_model_fast=`"soap-model-fast"`, fast_model=`"fast-model"`), Medplum (OAuth, auto_sync), Auto-detection (auto_start, auto_end_silence_ms=180000), SOAP (detail_level 1-10, format, custom_instructions), MIIS, Screen Capture, Continuous Mode (charting_mode, encounter_check_interval_secs=120, encounter_silence_trigger_secs=45, encounter_merge_enabled, encounter_detection_model=`"faster"`, encounter_detection_nothink=true), Presence Sensor (encounter_detection_mode=`"hybrid"`, presence_sensor_port, presence_absence_threshold_secs=180, presence_debounce_secs=10, presence_csv_log_enabled=true), Shadow Mode (shadow_active_method=`"sensor"`, shadow_csv_log_enabled=true), Hybrid Detection (hybrid_confirm_window_secs=180, hybrid_min_words_for_sensor_split=500), Native STT Shadow (native_stt_shadow_enabled=true), Debug.
+Key settings groups: STT Router (whisper_server_url, stt_alias=`"medical-streaming"`, stt_postprocess=true), Audio (VAD, diarization, enhancement), LLM Router (soap_model=`"soap-model-fast"`, soap_model_fast=`"soap-model-fast"`, fast_model=`"fast-model"`), Medplum (OAuth, auto_sync), Auto-detection (auto_start, auto_end_silence_ms=180000), SOAP (detail_level 1-10, format, custom_instructions), MIIS, Screen Capture, Continuous Mode (charting_mode, encounter_check_interval_secs=120, encounter_silence_trigger_secs=45, encounter_merge_enabled, encounter_detection_model=`"faster"`, encounter_detection_nothink=true), Presence Sensor (encounter_detection_mode=`"hybrid"`, presence_sensor_port, presence_absence_threshold_secs=180, presence_debounce_secs=10, presence_csv_log_enabled=true), Shadow Mode (shadow_active_method=`"sensor"`, shadow_csv_log_enabled=true), Hybrid Detection (hybrid_confirm_window_secs=180, hybrid_min_words_for_sensor_split=500), Native STT Shadow (native_stt_shadow_enabled=true), Screen Capture (screen_capture_enabled, screen_capture_interval_secs=60, requires Screen Recording permission), Debug.
 
 ## File Locations
 
@@ -343,6 +348,8 @@ Key settings groups: STT Router (whisper_server_url, stt_alias=`"medical-streami
 | Auto-detection runs during continuous | Verify `isContinuousMode` guard in App.tsx listening effect |
 | Presence sensor "Device or resource busy" | Another process (e.g., `mmwave_logger.py`) holds the serial port — kill it or stop it before starting continuous mode |
 | Encounter detection not splitting | Check activity logs for `consecutive_no_split` count; force-split fires at 8K words + 3 non-splits, absolute cap at 15K words |
+| Screenshots blank / vision always NOT_FOUND | Screen Recording permission not granted — macOS blanks other apps' windows. Toggle off/on in System Settings → Privacy & Security → Screen Recording. Rebuilds may invalidate old permission |
+| Vision name extraction 0 successes | Check activity logs for "Vision name extraction failed" (connection) vs "Vision did not find a patient name" (blank captures). If all NOT_FOUND, likely screen recording permission issue |
 
 ## E2E Integration Tests
 
