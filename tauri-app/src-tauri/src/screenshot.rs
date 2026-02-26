@@ -401,6 +401,11 @@ extern "C" {
     fn CGEventCreate(source: *const std::ffi::c_void) -> *mut std::ffi::c_void;
     fn CGEventGetLocation(event: *const std::ffi::c_void) -> core_graphics::display::CGPoint;
     fn CFRelease(cf: *const std::ffi::c_void);
+
+    /// macOS 10.15+ — returns true if screen capture is permitted without triggering a prompt.
+    fn CGPreflightScreenCaptureAccess() -> bool;
+    /// macOS 10.15+ — triggers the system prompt if not yet determined, returns current status.
+    fn CGRequestScreenCaptureAccess() -> bool;
 }
 
 /// Fallback for non-macOS — screen capture not supported
@@ -456,16 +461,80 @@ fn save_jpeg_resized(raw: &RawImage, path: &Path, max_edge: u32) -> Result<(u32,
     Ok((new_w, new_h))
 }
 
+/// Check if captured RGBA image data is mostly blank (black or near-uniform).
+///
+/// Without screen recording permission, macOS captures return real images but
+/// with other apps' windows blanked out — only your own app and the desktop
+/// wallpaper are visible. This function samples pixels across the image and
+/// checks if the non-own-app content is predominantly black/dark, which
+/// indicates the capture is useless for vision analysis.
+///
+/// Returns true if the capture appears blank (likely no screen recording permission).
+pub fn is_blank_capture(data: &[u8], width: u32, height: u32) -> bool {
+    if data.is_empty() || width == 0 || height == 0 {
+        return true;
+    }
+
+    // Sample a grid of pixels across the image (skip edges where our own app UI might be)
+    // Focus on the left 2/3 of the image (EMR would be there, our sidebar is on the right)
+    let sample_cols = 8;
+    let sample_rows = 6;
+    let check_width = (width * 2 / 3).max(1);
+    let col_step = check_width / sample_cols;
+    let row_step = height / sample_rows;
+
+    let mut dark_count = 0u32;
+    let mut total_samples = 0u32;
+    // Threshold: pixel is "dark" if R+G+B < 30 (essentially black)
+    let dark_threshold: u16 = 30;
+
+    for row in 1..sample_rows {
+        for col in 1..sample_cols {
+            let x = (col * col_step).min(width - 1) as usize;
+            let y = (row * row_step).min(height - 1) as usize;
+            let offset = (y * width as usize + x) * 4;
+            if offset + 2 < data.len() {
+                let r = data[offset] as u16;
+                let g = data[offset + 1] as u16;
+                let b = data[offset + 2] as u16;
+                total_samples += 1;
+                if r + g + b < dark_threshold {
+                    dark_count += 1;
+                }
+            }
+        }
+    }
+
+    if total_samples == 0 {
+        return true;
+    }
+
+    // If >80% of sampled pixels are dark, the capture is likely blank
+    let dark_ratio = dark_count as f64 / total_samples as f64;
+    dark_ratio > 0.80
+}
+
 /// Capture the screen and return a resized JPEG as a base64-encoded string.
 ///
 /// Used by continuous mode for vision-based patient name extraction.
 /// No temp files are written — the image stays in memory.
-pub fn capture_to_base64(max_edge: u32) -> Result<String, String> {
+/// Result of a screen capture with content validation.
+pub struct CaptureResult {
+    /// Base64-encoded JPEG image data
+    pub base64: String,
+    /// True if the capture appears blank (mostly black) — likely no screen recording permission
+    pub likely_blank: bool,
+}
+
+pub fn capture_to_base64(max_edge: u32) -> Result<CaptureResult, String> {
     use base64::Engine;
     use image::{ImageBuffer, Rgba, codecs::jpeg::JpegEncoder, imageops::FilterType};
     use std::io::Cursor;
 
     let raw = capture_screen()?;
+
+    // Check if the raw capture is blank before resizing (cheaper on full-res RGBA data)
+    let likely_blank = is_blank_capture(&raw.data, raw.width, raw.height);
 
     let img: ImageBuffer<Rgba<u8>, _> = ImageBuffer::from_raw(raw.width, raw.height, raw.data.clone())
         .ok_or("Failed to create image buffer")?;
@@ -492,11 +561,14 @@ pub fn capture_to_base64(max_edge: u32) -> Result<String, String> {
         .map_err(|e| format!("JPEG encode failed: {}", e))?;
 
     debug!(
-        "Screen capture to base64: {}x{} → {}x{}, {} bytes JPEG",
-        raw.width, raw.height, new_w, new_h, buf.len()
+        "Screen capture to base64: {}x{} → {}x{}, {} bytes JPEG, blank={}",
+        raw.width, raw.height, new_w, new_h, buf.len(), likely_blank
     );
 
-    Ok(base64::engine::general_purpose::STANDARD.encode(&buf))
+    Ok(CaptureResult {
+        base64: base64::engine::general_purpose::STANDARD.encode(&buf),
+        likely_blank,
+    })
 }
 
 /// Select evenly-spaced thumbnail screenshots from the captured list.
@@ -601,18 +673,22 @@ pub fn stitch_thumbnails_to_base64(paths: &[PathBuf]) -> Result<String, String> 
 }
 
 /// Check if screen recording permission is granted (macOS).
-/// Attempts a minimal capture — if it returns null, permission is not granted.
+///
+/// Uses `CGPreflightScreenCaptureAccess` (macOS 10.15+) which reliably reports
+/// whether the app has screen recording permission. The previous approach
+/// (capturing a 1x1 pixel) was unreliable — macOS returns a valid image even
+/// without permission, but blanks out other apps' window content.
 #[cfg(target_os = "macos")]
 pub fn check_screen_recording_permission() -> bool {
-    use core_graphics::display::{CGDisplay, CGPoint, CGRect, CGSize};
+    unsafe { CGPreflightScreenCaptureAccess() }
+}
 
-    // Capture a 1x1 pixel area — if permission is denied, this returns None
-    let bounds = CGRect {
-        origin: CGPoint { x: 0.0, y: 0.0 },
-        size: CGSize { width: 1.0, height: 1.0 },
-    };
-
-    CGDisplay::screenshot(bounds, 0, 0, 0).is_some()
+/// Request screen recording permission (macOS 10.15+).
+/// Triggers the system prompt if permission is not yet determined.
+/// Returns current permission status.
+#[cfg(target_os = "macos")]
+pub fn request_screen_recording_permission() -> bool {
+    unsafe { CGRequestScreenCaptureAccess() }
 }
 
 #[cfg(not(target_os = "macos"))]
@@ -657,5 +733,55 @@ mod tests {
         // Should not panic
         state.stop();
         assert!(!state.is_running());
+    }
+
+    #[test]
+    fn test_is_blank_capture_all_black() {
+        // 10x10 image, all black (RGBA = 0,0,0,255)
+        let mut data = vec![0u8; 10 * 10 * 4];
+        for i in (0..data.len()).step_by(4) {
+            data[i + 3] = 255; // alpha
+        }
+        assert!(is_blank_capture(&data, 10, 10));
+    }
+
+    #[test]
+    fn test_is_blank_capture_colorful() {
+        // 10x10 image with varied colors — not blank
+        let mut data = vec![0u8; 10 * 10 * 4];
+        for i in (0..data.len()).step_by(4) {
+            data[i] = ((i / 4) * 25 % 256) as u8;     // R
+            data[i + 1] = ((i / 4) * 50 % 256) as u8;  // G
+            data[i + 2] = ((i / 4) * 75 % 256) as u8;  // B
+            data[i + 3] = 255;                            // A
+        }
+        assert!(!is_blank_capture(&data, 10, 10));
+    }
+
+    #[test]
+    fn test_is_blank_capture_empty() {
+        assert!(is_blank_capture(&[], 0, 0));
+    }
+
+    #[test]
+    fn test_is_blank_capture_mostly_dark_with_bright_corner() {
+        // 20x20 image, mostly black but top-right 1/3 has bright pixels (like our sidebar)
+        let w = 20u32;
+        let h = 20u32;
+        let mut data = vec![0u8; (w * h * 4) as usize];
+        for y in 0..h {
+            for x in 0..w {
+                let offset = ((y * w + x) * 4) as usize;
+                if x > w * 2 / 3 {
+                    // Right side bright (simulating own app sidebar)
+                    data[offset] = 200;
+                    data[offset + 1] = 200;
+                    data[offset + 2] = 200;
+                }
+                data[offset + 3] = 255;
+            }
+        }
+        // Left 2/3 is all black → should detect as blank since we sample left 2/3
+        assert!(is_blank_capture(&data, w, h));
     }
 }

@@ -1808,8 +1808,8 @@ pub async fn run_continuous_mode(
                 })
                 .await;
 
-                let image_base64 = match capture_result {
-                    Ok(Ok(b64)) => b64,
+                let capture = match capture_result {
+                    Ok(Ok(c)) => c,
                     Ok(Err(e)) => {
                         debug!("Screenshot capture failed (may not have permission): {}", e);
                         continue;
@@ -1819,6 +1819,14 @@ pub async fn run_continuous_mode(
                         continue;
                     }
                 };
+
+                // Skip vision call if the capture is blank (no screen recording permission)
+                if capture.likely_blank {
+                    warn!("Screenshot appears blank — screen recording permission likely not granted. Skipping vision analysis. Grant permission in System Settings → Privacy & Security → Screen Recording.");
+                    continue;
+                }
+
+                let image_base64 = capture.base64;
 
                 // Save screenshot to disk for debugging (only when debug storage is enabled)
                 if debug_storage_for_screenshot {

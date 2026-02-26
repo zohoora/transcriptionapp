@@ -277,9 +277,14 @@ pub fn run() {
                     std::thread::sleep(std::time::Duration::from_secs(2));
                 }
 
-                // 2. Screen Recording permission (no request API — trigger via 1x1 capture)
+                // 2. Screen Recording permission (CGPreflightScreenCaptureAccess / CGRequestScreenCaptureAccess)
                 let screen_ok = screenshot::check_screen_recording_permission();
                 info!("Startup permission check — Screen Recording: {}", screen_ok);
+                if !screen_ok {
+                    warn!("Screen Recording permission not granted — screen captures will show blank content for other apps. Grant permission in System Settings → Privacy & Security → Screen Recording.");
+                    // Trigger the system prompt so the user sees it
+                    let _ = screenshot::request_screen_recording_permission();
+                }
 
                 // 3. Speech Recognition permission
                 let speech_status = native_stt::check_speech_recognition_permission();
