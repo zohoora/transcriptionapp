@@ -6,13 +6,26 @@
 use serde::{Deserialize, Serialize};
 
 /// Word count forcing encounter check regardless of buffer age.
-pub const FORCE_CHECK_WORD_THRESHOLD: usize = 5000;
+pub const FORCE_CHECK_WORD_THRESHOLD: usize = 3000;
 /// Force-split when buffer exceeds this AND consecutive_no_split >= limit.
-pub const FORCE_SPLIT_WORD_THRESHOLD: usize = 8000;
+pub const FORCE_SPLIT_WORD_THRESHOLD: usize = 5000;
 /// Consecutive non-split detection cycles before force-split (at FORCE_SPLIT_WORD_THRESHOLD).
 pub const FORCE_SPLIT_CONSECUTIVE_LIMIT: u32 = 3;
 /// Unconditional force-split -- hard safety valve, no counter needed.
-pub const ABSOLUTE_WORD_CAP: usize = 15_000;
+pub const ABSOLUTE_WORD_CAP: usize = 10_000;
+
+/// Optional context signals for encounter detection.
+/// Provides real-time signals from vision (chart switch) and sensor (departure)
+/// to augment the LLM prompt with high-confidence evidence.
+#[derive(Debug, Clone, Default)]
+pub struct EncounterDetectionContext {
+    /// Current patient name from vision tracker (majority vote so far)
+    pub current_patient_name: Option<String>,
+    /// New patient name detected by vision (different chart on screen)
+    pub new_patient_name: Option<String>,
+    /// Whether the presence sensor detected someone left the room
+    pub sensor_departed: bool,
+}
 
 /// Result of encounter detection
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -25,8 +38,12 @@ pub struct EncounterDetectionResult {
     pub confidence: Option<f64>,
 }
 
-/// Build the encounter detection prompt
-pub fn build_encounter_detection_prompt(formatted_segments: &str) -> (String, String) {
+/// Build the encounter detection prompt.
+/// Accepts optional context signals from vision and sensor to improve accuracy.
+pub fn build_encounter_detection_prompt(
+    formatted_segments: &str,
+    context: Option<&EncounterDetectionContext>,
+) -> (String, String) {
     let system = r#"You MUST respond in English with ONLY a JSON object. No other text, no explanations, no markdown.
 
 You are analyzing a continuous transcript from a medical office where the microphone records all day.
@@ -38,11 +55,20 @@ Signs of a transition or completed encounter:
 - A greeting or introduction of a DIFFERENT patient after clinical discussion
 - A clear shift from one patient's clinical topics to another's
 - Extended non-clinical gap (scheduling, staff chat) after substantive clinical content
+- IN-ROOM PIVOT: the doctor transitions from one family member or companion to another without anyone leaving (e.g., "Okay, now let's talk about your husband's knee" or addressing a different person by name)
+- CHART SWITCH: the clinical discussion shifts to a different patient — different medications, conditions, or medical history than earlier in the transcript
+- The doctor begins taking a new history, asking "what brings you in today?" or similar intake questions after already having a substantive clinical discussion with someone else
+
+Examples of in-room transitions:
+- After discussing Mrs. Smith's diabetes, the doctor says "Now, Mr. Smith, how has your blood pressure been?" — this is a transition between two encounters
+- The doctor finishes discussing a child's ear infection with the mother, then asks the mother about her own back pain — this is a transition
+- The doctor says "Let me pull up your chart" after already having a full discussion about a different patient's condition — likely a transition
 
 This is NOT a transition:
 - Brief pauses, phone calls, or sidebar conversations DURING an ongoing patient visit
 - The very beginning of the first encounter (no prior encounter to split from)
 - Short exchanges or greetings with no substantive clinical content yet
+- Discussion of multiple body parts or conditions for the SAME patient (one visit can cover many topics)
 
 If you find a transition point or completed encounter, return:
 {"complete": true, "end_segment_index": <last segment index of the CONCLUDED encounter>, "confidence": <0.0-1.0>}
@@ -52,9 +78,34 @@ If the current discussion is still one ongoing encounter with no transition, ret
 
 Respond with ONLY the JSON object."#;
 
+    // Build context section if signals are available
+    let context_section = if let Some(ctx) = context {
+        let mut parts = Vec::new();
+        // Vision-detected chart switch — strong signal
+        if let (Some(current), Some(new)) = (&ctx.current_patient_name, &ctx.new_patient_name) {
+            if current != new {
+                parts.push(format!(
+                    "IMPORTANT: The EMR screen now shows patient '{}' instead of '{}'. This strongly suggests a patient transition has occurred.",
+                    new, current
+                ));
+            }
+        }
+        // Sensor departure — moderate signal
+        if ctx.sensor_departed {
+            parts.push("CONTEXT: The presence sensor detected someone left the room.".to_string());
+        }
+        if parts.is_empty() {
+            String::new()
+        } else {
+            format!("\n\nReal-time context signals:\n{}", parts.join("\n"))
+        }
+    } else {
+        String::new()
+    };
+
     let user = format!(
-        "Transcript (segments numbered with speaker labels):\n{}",
-        formatted_segments
+        "Transcript (segments numbered with speaker labels):\n{}{}",
+        formatted_segments, context_section
     );
 
     (system.to_string(), user)
@@ -330,14 +381,14 @@ mod tests {
 
     #[test]
     fn test_detection_prompt_requires_english() {
-        let (system, _) = build_encounter_detection_prompt("test transcript");
+        let (system, _) = build_encounter_detection_prompt("test transcript", None);
         assert!(system.contains("MUST respond in English"), "Prompt should require English response");
         assert!(system.contains("ONLY a JSON object"), "Prompt should require JSON only");
     }
 
     #[test]
     fn test_detection_prompt_transition_framing() {
-        let (system, _) = build_encounter_detection_prompt("test transcript");
+        let (system, _) = build_encounter_detection_prompt("test transcript", None);
         assert!(
             system.to_lowercase().contains("transition"),
             "Prompt should use transition-based framing"
@@ -350,6 +401,56 @@ mod tests {
             !system.contains("when in doubt"),
             "Prompt should not have 'when in doubt' bias"
         );
+    }
+
+    #[test]
+    fn test_detection_prompt_in_room_transitions() {
+        let (system, _) = build_encounter_detection_prompt("test transcript", None);
+        assert!(
+            system.contains("IN-ROOM PIVOT"),
+            "Prompt should mention in-room pivot transitions"
+        );
+        assert!(
+            system.contains("CHART SWITCH"),
+            "Prompt should mention chart switch transitions"
+        );
+    }
+
+    #[test]
+    fn test_detection_prompt_with_context_chart_switch() {
+        let ctx = EncounterDetectionContext {
+            current_patient_name: Some("John Smith".to_string()),
+            new_patient_name: Some("Jane Smith".to_string()),
+            sensor_departed: false,
+        };
+        let (_, user) = build_encounter_detection_prompt("test transcript", Some(&ctx));
+        assert!(user.contains("Jane Smith"), "User prompt should mention new patient name");
+        assert!(user.contains("John Smith"), "User prompt should mention current patient name");
+        assert!(user.contains("IMPORTANT"), "Chart switch should be marked IMPORTANT");
+    }
+
+    #[test]
+    fn test_detection_prompt_with_context_sensor_departed() {
+        let ctx = EncounterDetectionContext {
+            current_patient_name: None,
+            new_patient_name: None,
+            sensor_departed: true,
+        };
+        let (_, user) = build_encounter_detection_prompt("test transcript", Some(&ctx));
+        assert!(user.contains("presence sensor"), "User prompt should mention sensor departure");
+    }
+
+    #[test]
+    fn test_detection_prompt_with_no_context_signals() {
+        let ctx = EncounterDetectionContext {
+            current_patient_name: Some("John Smith".to_string()),
+            new_patient_name: None,
+            sensor_departed: false,
+        };
+        let (_, user) = build_encounter_detection_prompt("test transcript", Some(&ctx));
+        // No chart switch (new_patient_name is None), no sensor — no context section
+        assert!(!user.contains("IMPORTANT"), "No chart switch signal should be present");
+        assert!(!user.contains("presence sensor"), "No sensor signal should be present");
     }
 
     // ── Clinical content check tests ─────────────────────────────

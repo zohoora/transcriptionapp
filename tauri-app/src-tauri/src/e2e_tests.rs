@@ -306,7 +306,7 @@ Speaker 1: Take care. We'll see you soon.";
             .unwrap();
 
         let (system_prompt, user_prompt) =
-            build_encounter_detection_prompt(FIXTURE_CONTINUOUS_SEGMENTS);
+            build_encounter_detection_prompt(FIXTURE_CONTINUOUS_SEGMENTS, None);
 
         // Prepend /nothink to match production (disables Qwen3 thinking mode)
         let system_prompt = format!("/nothink\n{}", system_prompt);
@@ -357,7 +357,7 @@ Speaker 1: Take care. We'll see you soon.";
             .expect("Failed to create detection LLM client");
 
         let (system_prompt, user_prompt) =
-            build_encounter_detection_prompt(FIXTURE_CONTINUOUS_SEGMENTS);
+            build_encounter_detection_prompt(FIXTURE_CONTINUOUS_SEGMENTS, None);
         let system_prompt = format!("/nothink\n{}", system_prompt);
 
         let response = rt.block_on(detection_client.generate(
@@ -754,7 +754,7 @@ Speaker 1: Take care. We'll see you soon.";
             .unwrap();
 
         let (system_prompt, user_prompt) =
-            build_encounter_detection_prompt(FIXTURE_CONTINUOUS_SEGMENTS);
+            build_encounter_detection_prompt(FIXTURE_CONTINUOUS_SEGMENTS, None);
 
         // Prepend /nothink to match production hybrid detection model config
         let system_prompt = format!("/nothink\n{}", system_prompt);

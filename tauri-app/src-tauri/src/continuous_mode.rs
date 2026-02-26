@@ -26,7 +26,8 @@ use crate::pipeline::{start_pipeline, PipelineConfig, PipelineMessage};
 // Re-export submodule types for backward compatibility
 pub use crate::transcript_buffer::{BufferedSegment, TranscriptBuffer};
 pub use crate::encounter_detection::{
-    EncounterDetectionResult, build_encounter_detection_prompt, parse_encounter_detection,
+    EncounterDetectionResult, EncounterDetectionContext,
+    build_encounter_detection_prompt, parse_encounter_detection,
     ClinicalContentCheckResult, build_clinical_content_check_prompt, parse_clinical_content_check,
     FORCE_CHECK_WORD_THRESHOLD, FORCE_SPLIT_WORD_THRESHOLD, FORCE_SPLIT_CONSECUTIVE_LIMIT, ABSOLUTE_WORD_CAP,
 };
@@ -108,6 +109,12 @@ pub struct ContinuousModeHandle {
     pub sensor_state_rx: Mutex<Option<tokio::sync::watch::Receiver<crate::presence_sensor::PresenceState>>>,
     /// Presence sensor status receiver (None when in LLM detection mode)
     pub sensor_status_rx: Mutex<Option<tokio::sync::watch::Receiver<crate::presence_sensor::SensorStatus>>>,
+    /// Vision-triggered name change: wakes detection loop when chart switch detected
+    pub vision_name_change_trigger: Arc<tokio::sync::Notify>,
+    /// Vision-detected new patient name (set by screenshot task, read by detection loop)
+    pub vision_new_name: Arc<Mutex<Option<String>>>,
+    /// Vision-detected previous patient name (set by screenshot task on change)
+    pub vision_old_name: Arc<Mutex<Option<String>>>,
     /// Shadow mode: accumulated shadow decisions for the current encounter
     pub shadow_decisions: Arc<Mutex<Vec<crate::shadow_log::ShadowDecisionSummary>>>,
     /// Shadow mode: most recent shadow decision (for dashboard display)
@@ -131,6 +138,9 @@ impl ContinuousModeHandle {
             encounter_notes: Arc::new(Mutex::new(String::new())),
             sensor_state_rx: Mutex::new(None),
             sensor_status_rx: Mutex::new(None),
+            vision_name_change_trigger: Arc::new(tokio::sync::Notify::new()),
+            vision_new_name: Arc::new(Mutex::new(None)),
+            vision_old_name: Arc::new(Mutex::new(None)),
             shadow_decisions: Arc::new(Mutex::new(Vec::new())),
             last_shadow_decision: Arc::new(Mutex::new(None)),
         }
@@ -728,7 +738,7 @@ pub async fn run_continuous_mode(
                     let confidence;
                     if let Some(ref client) = shadow_llm_client {
                         let (filtered, _) = crate::encounter_experiment::strip_hallucinations(&formatted, 5);
-                        let (system_prompt, user_prompt) = build_encounter_detection_prompt(&filtered);
+                        let (system_prompt, user_prompt) = build_encounter_detection_prompt(&filtered, None);
                         let system_prompt = if shadow_detection_nothink {
                             format!("/nothink\n{}", system_prompt)
                         } else {
@@ -868,6 +878,11 @@ pub async fn run_continuous_mode(
     // Clone manual trigger for the detector task
     let manual_trigger_rx = handle.encounter_manual_trigger.clone();
 
+    // Clone vision name change trigger for the detector task
+    let vision_trigger_rx = handle.vision_name_change_trigger.clone();
+    let vision_new_name_for_detector = handle.vision_new_name.clone();
+    let vision_old_name_for_detector = handle.vision_old_name.clone();
+
     // Clone biomarker reset flag for the detector task
     let reset_bio_flag = reset_bio_for_detector;
 
@@ -910,21 +925,26 @@ pub async fn run_continuous_mode(
             hybrid_sensor_timeout_triggered = false;
 
             // Wait for trigger based on detection mode
-            let (manual_triggered, sensor_triggered) = if is_hybrid_mode && sensor_available {
-                // Hybrid mode with sensor: timer + silence + manual + sensor state changes
+            // Returns (manual_triggered, sensor_triggered, vision_triggered)
+            let (manual_triggered, sensor_triggered, vision_triggered) = if is_hybrid_mode && sensor_available {
+                // Hybrid mode with sensor: timer + silence + manual + sensor + vision name change
                 let sensor_rx = hybrid_sensor_rx.as_mut().unwrap();
                 tokio::select! {
                     _ = tokio::time::sleep(tokio::time::Duration::from_secs(check_interval as u64)) => {
                         // Regular timer — handles back-to-back encounters without physical departure
-                        (false, false)
+                        (false, false, false)
                     }
                     _ = silence_trigger_rx.notified() => {
                         info!("Hybrid: silence gap detected — triggering encounter check");
-                        (false, false)
+                        (false, false, false)
                     }
                     _ = manual_trigger_rx.notified() => {
                         info!("Manual new patient trigger received");
-                        (true, false)
+                        (true, false, false)
+                    }
+                    _ = vision_trigger_rx.notified() => {
+                        info!("Hybrid: vision detected patient name change — accelerating LLM check");
+                        (false, false, true)
                     }
                     result = sensor_rx.changed() => {
                         match result {
@@ -937,7 +957,7 @@ pub async fn run_continuous_mode(
                                      crate::presence_sensor::PresenceState::Absent) => {
                                         sensor_absent_since = Some(Utc::now());
                                         info!("Hybrid: sensor detected departure (Present→Absent), accelerating LLM check");
-                                        (false, true) // sensor_triggered → accelerate LLM check (NOT force-split)
+                                        (false, true, false) // sensor_triggered → accelerate LLM check (NOT force-split)
                                     }
                                     (_, crate::presence_sensor::PresenceState::Present) => {
                                         if sensor_absent_since.is_some() {
@@ -964,45 +984,55 @@ pub async fn run_continuous_mode(
                     }
                 }
             } else if is_hybrid_mode {
-                // Hybrid mode without sensor (sensor failed/disconnected): pure LLM fallback
-                let manual = tokio::select! {
-                    _ = tokio::time::sleep(tokio::time::Duration::from_secs(check_interval as u64)) => false,
+                // Hybrid mode without sensor (sensor failed/disconnected): pure LLM fallback + vision
+                tokio::select! {
+                    _ = tokio::time::sleep(tokio::time::Duration::from_secs(check_interval as u64)) => {
+                        (false, false, false)
+                    }
                     _ = silence_trigger_rx.notified() => {
                         info!("Hybrid (LLM fallback): silence gap detected — triggering encounter check");
-                        false
+                        (false, false, false)
                     }
                     _ = manual_trigger_rx.notified() => {
                         info!("Manual new patient trigger received");
-                        true
+                        (true, false, false)
                     }
-                };
-                (manual, false)
+                    _ = vision_trigger_rx.notified() => {
+                        info!("Hybrid (LLM fallback): vision detected patient name change — accelerating LLM check");
+                        (false, false, true)
+                    }
+                }
             } else if effective_sensor_mode {
                 // Pure sensor mode: wait for sensor absence threshold OR manual trigger
                 tokio::select! {
                     _ = sensor_trigger_for_detector.notified() => {
                         info!("Sensor: absence threshold reached — triggering encounter split");
-                        (false, true)
+                        (false, true, false)
                     }
                     _ = manual_trigger_rx.notified() => {
                         info!("Manual new patient trigger received");
-                        (true, false)
+                        (true, false, false)
                     }
                 }
             } else {
-                // LLM / Shadow mode: wait for timer, silence, or manual trigger
-                let manual = tokio::select! {
-                    _ = tokio::time::sleep(tokio::time::Duration::from_secs(check_interval as u64)) => false,
+                // LLM / Shadow mode: wait for timer, silence, vision, or manual trigger
+                tokio::select! {
+                    _ = tokio::time::sleep(tokio::time::Duration::from_secs(check_interval as u64)) => {
+                        (false, false, false)
+                    }
                     _ = silence_trigger_rx.notified() => {
                         info!("Silence gap detected — triggering encounter check");
-                        false
+                        (false, false, false)
                     }
                     _ = manual_trigger_rx.notified() => {
                         info!("Manual new patient trigger received");
-                        true
+                        (true, false, false)
                     }
-                };
-                (manual, false)
+                    _ = vision_trigger_rx.notified() => {
+                        info!("Vision detected patient name change — accelerating LLM check");
+                        (false, false, true)
+                    }
+                }
             };
             let manual_triggered = manual_triggered;
 
@@ -1028,6 +1058,14 @@ pub async fn run_continuous_mode(
                 }
                 info!("{}: bypassing minimum duration/word count guards ({} words)",
                     if sensor_triggered { "Sensor trigger" } else { "Manual trigger" }, word_count);
+            } else if vision_triggered {
+                // Vision trigger: bypass duration guard but require minimum words
+                // (doctor may open a chart before speaking)
+                if is_empty || word_count < 100 {
+                    debug!("Vision trigger: buffer too small (word_count={}), skipping", word_count);
+                    continue;
+                }
+                info!("Vision trigger: bypassing minimum duration guard ({} words)", word_count);
             } else {
                 if is_empty || word_count < 100 {
                     debug!("Skipping detection: word_count={} (minimum 100)", word_count);
@@ -1077,7 +1115,25 @@ pub async fn run_continuous_mode(
             } else if let Some(ref client) = llm_client {
                 // Strip hallucinated repetitions (e.g. STT "fractured" loop) before LLM call
                 let (filtered_formatted, _) = strip_hallucinations(&formatted, 5);
-                let (system_prompt, user_prompt) = build_encounter_detection_prompt(&filtered_formatted);
+                // Build detection context from available signals (vision name change, sensor state)
+                let detection_context = {
+                    let mut ctx = EncounterDetectionContext::default();
+                    if sensor_triggered {
+                        ctx.sensor_departed = true;
+                    } else if sensor_absent_since.is_some() {
+                        ctx.sensor_departed = true;
+                    }
+                    // Populate vision name context (set by screenshot task on chart switch)
+                    if vision_triggered {
+                        ctx.current_patient_name = vision_old_name_for_detector.lock().ok().and_then(|n| n.clone());
+                        ctx.new_patient_name = vision_new_name_for_detector.lock().ok().and_then(|n| n.clone());
+                    }
+                    ctx
+                };
+                let (system_prompt, user_prompt) = build_encounter_detection_prompt(
+                    &filtered_formatted,
+                    Some(&detection_context),
+                );
                 // Prepend /nothink for Qwen3 models to disable thinking mode (improves detection accuracy)
                 let system_prompt = if detection_nothink {
                     format!("/nothink\n{}", system_prompt)
@@ -1359,6 +1415,8 @@ pub async fn run_continuous_mode(
                                                     "hybrid_sensor_timeout".to_string()
                                                 } else if sensor_triggered {
                                                     "hybrid_sensor_confirmed".to_string()
+                                                } else if vision_triggered {
+                                                    "hybrid_vision".to_string()
                                                 } else if force_split {
                                                     "hybrid_force".to_string()
                                                 } else {
@@ -1366,6 +1424,8 @@ pub async fn run_continuous_mode(
                                                 }
                                             } else if sensor_triggered {
                                                 "sensor".to_string()
+                                            } else if vision_triggered {
+                                                "vision_llm".to_string()
                                             } else {
                                                 "llm".to_string()
                                             }
@@ -1443,6 +1503,10 @@ pub async fn run_continuous_mode(
                         } else {
                             warn!("Name tracker lock poisoned, tracker not reset for next encounter");
                         }
+
+                        // Clear vision trigger names (consumed)
+                        if let Ok(mut n) = vision_new_name_for_detector.lock() { *n = None; }
+                        if let Ok(mut o) = vision_old_name_for_detector.lock() { *o = None; }
 
                         // Read encounter notes AND clear atomically (SOAP generation needs them)
                         let notes_text = match encounter_notes_for_detector.lock() {
@@ -1775,6 +1839,9 @@ pub async fn run_continuous_mode(
     let screenshot_task = if config.screen_capture_enabled {
         let stop_for_screenshot = handle.stop_flag.clone();
         let name_tracker_for_screenshot = handle.name_tracker.clone();
+        let vision_trigger_for_screenshot = handle.vision_name_change_trigger.clone();
+        let vision_new_name_for_screenshot = handle.vision_new_name.clone();
+        let vision_old_name_for_screenshot = handle.vision_old_name.clone();
         let debug_storage_for_screenshot = config.debug_storage_enabled;
         let screenshot_interval = config.screen_capture_interval_secs.max(30) as u64; // Clamp minimum 30s
         let llm_client_for_screenshot = if !config.llm_router_url.is_empty() {
@@ -1893,7 +1960,22 @@ pub async fn run_continuous_mode(
                         if let Some(name) = parse_patient_name(&response) {
                             info!("Vision extracted patient name: {}", name);
                             if let Ok(mut tracker) = name_tracker_for_screenshot.lock() {
-                                tracker.record(&name);
+                                let (changed, old_name, new_name) = tracker.record_and_check_change(&name);
+                                if changed {
+                                    info!(
+                                        "Vision detected patient name change: {:?} → {:?} — accelerating detection",
+                                        old_name, new_name
+                                    );
+                                    // Store names for the detection loop to read
+                                    if let Ok(mut n) = vision_new_name_for_screenshot.lock() {
+                                        *n = new_name;
+                                    }
+                                    if let Ok(mut o) = vision_old_name_for_screenshot.lock() {
+                                        *o = old_name;
+                                    }
+                                    // Wake the detection loop
+                                    vision_trigger_for_screenshot.notify_one();
+                                }
                             } else {
                                 warn!("Name tracker lock poisoned, patient name vote dropped: {}", name);
                             }
@@ -2084,7 +2166,7 @@ mod tests {
 
     #[test]
     fn test_detection_prompt_no_premature_bias() {
-        let (system, _) = build_encounter_detection_prompt("test transcript");
+        let (system, _) = build_encounter_detection_prompt("test transcript", None);
         assert!(
             !system.contains("better to wait"),
             "Prompt should not have 'better to wait' bias"

@@ -187,7 +187,7 @@ fn default_native_stt_shadow_enabled() -> bool {
 }
 
 fn default_hybrid_confirm_window_secs() -> u64 {
-    180 // 3 minutes — sensor timeout before force-split
+    75 // ~1 min — faster split after sensor departure. Merge system catches false positives.
 }
 
 fn default_hybrid_min_words_for_sensor_split() -> usize {
@@ -223,11 +223,11 @@ fn default_encounter_merge_enabled() -> bool {
 }
 
 fn default_encounter_detection_model() -> String {
-    "faster".to_string() // Qwen3-1.7B — smaller models resist over-splitting
+    "fast-model".to_string() // ~7B model — 1.7B was insufficient (1.6% detection rate)
 }
 
 fn default_encounter_detection_nothink() -> bool {
-    true // Disable Qwen3 thinking mode for detection (improves accuracy)
+    false // Allow thinking for better reasoning with fast-model (~7B)
 }
 
 fn default_stt_alias() -> String {
@@ -1655,7 +1655,7 @@ mod tests {
     fn test_hybrid_defaults() {
         let config = Config::default();
         assert_eq!(config.encounter_detection_mode, EncounterDetectionMode::Hybrid);
-        assert_eq!(config.hybrid_confirm_window_secs, 180);
+        assert_eq!(config.hybrid_confirm_window_secs, 75);
         assert_eq!(config.hybrid_min_words_for_sensor_split, 500);
     }
 

@@ -37,6 +37,20 @@ impl PatientNameTracker {
             .map(|(name, _)| name.clone())
     }
 
+    /// Record a vote and check if the majority name changed.
+    /// Returns (changed, old_majority, new_majority).
+    /// `changed` is true only when both old and new majorities exist and differ.
+    pub fn record_and_check_change(&mut self, name: &str) -> (bool, Option<String>, Option<String>) {
+        let prev = self.majority_name();
+        self.record(name);
+        let current = self.majority_name();
+        let changed = match (&prev, &current) {
+            (Some(old), Some(new)) => old != new,
+            _ => false,
+        };
+        (changed, prev, current)
+    }
+
     /// Clear all votes for a new encounter period
     pub fn reset(&mut self) {
         self.votes.clear();
@@ -165,5 +179,66 @@ mod tests {
         assert!(!user.is_empty());
         assert!(system.contains("patient"));
         assert!(user.contains("NOT_FOUND"));
+    }
+
+    #[test]
+    fn test_record_and_check_change_no_change() {
+        let mut tracker = PatientNameTracker::new();
+        let (changed, old, new) = tracker.record_and_check_change("John Smith");
+        assert!(!changed, "First record should not be a change (no previous majority)");
+        assert_eq!(old, None);
+        assert_eq!(new, Some("John Smith".to_string()));
+    }
+
+    #[test]
+    fn test_record_and_check_change_same_name() {
+        let mut tracker = PatientNameTracker::new();
+        tracker.record("John Smith");
+        let (changed, old, new) = tracker.record_and_check_change("John Smith");
+        assert!(!changed, "Same name should not trigger change");
+        assert_eq!(old, Some("John Smith".to_string()));
+        assert_eq!(new, Some("John Smith".to_string()));
+    }
+
+    #[test]
+    fn test_record_and_check_change_new_majority() {
+        // Use record_and_check_change for every vote to track exactly when change occurs
+        let mut tracker = PatientNameTracker::new();
+        // First: establish John as sole majority
+        let (changed, _, _) = tracker.record_and_check_change("John Smith");
+        assert!(!changed, "First vote can't be a change");
+        assert_eq!(tracker.majority_name(), Some("John Smith".to_string()));
+
+        // Strengthen John's majority
+        let (changed, _, _) = tracker.record_and_check_change("John Smith");
+        assert!(!changed, "Same name shouldn't trigger change");
+
+        // Now add Jane votes one at a time — at some point majority flips
+        // John=2, Jane=0 → John=2, Jane=1 → John=2, Jane=2 (tie) → John=2, Jane=3 (flip!)
+        let mut saw_change = false;
+        for _ in 0..5 {
+            let (changed, old, new) = tracker.record_and_check_change("Jane Smith");
+            if changed {
+                saw_change = true;
+                assert_eq!(old, Some("John Smith".to_string()));
+                assert_eq!(new, Some("Jane Smith".to_string()));
+                break;
+            }
+        }
+        assert!(saw_change, "Majority should eventually change from John to Jane");
+        assert_eq!(tracker.majority_name(), Some("Jane Smith".to_string()));
+    }
+
+    #[test]
+    fn test_record_and_check_change_after_reset() {
+        let mut tracker = PatientNameTracker::new();
+        tracker.record("John Smith");
+        tracker.record("John Smith");
+        tracker.reset();
+        // After reset, no previous majority
+        let (changed, old, new) = tracker.record_and_check_change("Jane Smith");
+        assert!(!changed, "After reset, no previous majority to compare against");
+        assert_eq!(old, None);
+        assert_eq!(new, Some("Jane Smith".to_string()));
     }
 }

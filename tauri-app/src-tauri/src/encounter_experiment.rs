@@ -286,7 +286,7 @@ pub fn build_detection_prompt(
     match strategy {
         DetectionStrategy::Baseline => {
             // Use the production prompt directly
-            build_encounter_detection_prompt(&segments)
+            build_encounter_detection_prompt(&segments, None)
         }
         DetectionStrategy::Conservative => {
             let system = r#"You are analyzing a continuous transcript from a medical office.

@@ -139,12 +139,13 @@ impl TranscriptBuffer {
             .join("\n")
     }
 
-    /// Format segments for LLM detection, truncated to ~3000 words.
-    /// Keeps first ~1500 words (encounter start) + last ~1500 words (encounter end)
-    /// with a separator, so the small detection model doesn't get overwhelmed.
+    /// Format segments for LLM detection, truncated to ~1500 words.
+    /// Asymmetric split: 500 head words (context) + 1000 tail words (transition zone).
+    /// Transitions happen near the end of the buffer, so we weight the tail heavily.
     pub fn format_for_detection_truncated(&self) -> String {
-        const MAX_WORDS: usize = 3000;
-        const HALF: usize = MAX_WORDS / 2;
+        const MAX_WORDS: usize = 1500;
+        const HEAD_WORDS: usize = 500;
+        const TAIL_WORDS: usize = 1000;
 
         let lines: Vec<String> = self.segments
             .iter()
@@ -164,23 +165,23 @@ impl TranscriptBuffer {
             return lines.join("\n");
         }
 
-        // Find the line index where first HALF words end
+        // Find the line index where first HEAD_WORDS words end
         let mut head_words = 0;
         let mut head_end = 0;
         for (i, &wc) in word_counts.iter().enumerate() {
             head_words += wc;
-            if head_words >= HALF {
+            if head_words >= HEAD_WORDS {
                 head_end = i + 1;
                 break;
             }
         }
 
-        // Find the line index where last HALF words start
+        // Find the line index where last TAIL_WORDS words start
         let mut tail_words = 0;
         let mut tail_start = lines.len();
         for (i, &wc) in word_counts.iter().enumerate().rev() {
             tail_words += wc;
-            if tail_words >= HALF {
+            if tail_words >= TAIL_WORDS {
                 tail_start = i;
                 break;
             }
@@ -312,7 +313,7 @@ mod tests {
 
     #[test]
     fn test_format_for_detection_truncated_small_buffer() {
-        // Under 3000 words -- should return everything, same as format_for_detection
+        // Under 1500 words -- should return everything, same as format_for_detection
         let mut buffer = TranscriptBuffer::new();
         buffer.push("Hello doctor".to_string(), 1000, Some("Speaker 1".to_string()), 0);
         buffer.push("How are you today".to_string(), 2000, Some("Speaker 2".to_string()), 0);
@@ -324,26 +325,46 @@ mod tests {
 
     #[test]
     fn test_format_for_detection_truncated_large_buffer() {
-        // Create a buffer with >3000 words to trigger truncation
+        // Create a buffer with >1500 words to trigger truncation
         let mut buffer = TranscriptBuffer::new();
-        // Each segment: ~50 words, so 80 segments = ~4000 words
-        for i in 0..80 {
+        // Each segment: ~50 words, so 40 segments = ~2000 words
+        for i in 0..40 {
             let text = (0..50).map(|w| format!("word{}seg{}", w, i)).collect::<Vec<_>>().join(" ");
             buffer.push(text, i * 1000, Some(format!("Speaker {}", i % 3)), 0);
         }
 
         let total_words = buffer.word_count();
-        assert!(total_words > 3000, "Buffer should have >3000 words, got {}", total_words);
+        assert!(total_words > 1500, "Buffer should have >1500 words, got {}", total_words);
 
         let truncated = buffer.format_for_detection_truncated();
         assert!(truncated.contains("segments omitted for brevity"));
 
         // Should contain first segment and last segment
         assert!(truncated.contains("[0]"));
-        assert!(truncated.contains(&format!("[{}]", 79)));
+        assert!(truncated.contains(&format!("[{}]", 39)));
 
         // Truncated should be shorter than full
         let full = buffer.format_for_detection();
         assert!(truncated.len() < full.len(), "Truncated ({}) should be shorter than full ({})", truncated.len(), full.len());
+    }
+
+    #[test]
+    fn test_format_for_detection_truncated_asymmetric() {
+        // Verify the tail is larger than the head (asymmetric 500/1000 split)
+        let mut buffer = TranscriptBuffer::new();
+        // 60 segments * 50 words = ~3000 words, well above 1500 threshold
+        for i in 0..60 {
+            let text = (0..50).map(|w| format!("word{}seg{}", w, i)).collect::<Vec<_>>().join(" ");
+            buffer.push(text, i * 1000, Some(format!("Speaker {}", i % 3)), 0);
+        }
+
+        let truncated = buffer.format_for_detection_truncated();
+        let parts: Vec<&str> = truncated.split("segments omitted for brevity").collect();
+        assert_eq!(parts.len(), 2, "Should have head and tail parts separated by omission marker");
+
+        // Tail (after omission) should be significantly larger than head (before omission)
+        let head_words = parts[0].split_whitespace().count();
+        let tail_words = parts[1].split_whitespace().count();
+        assert!(tail_words > head_words, "Tail ({} words) should be larger than head ({} words)", tail_words, head_words);
     }
 }
