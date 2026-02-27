@@ -30,6 +30,8 @@ fn print_usage(program: &str) {
     eprintln!("  --patient NAME      Known patient name for P3/M1 strategies");
     eprintln!("  --merge-only        Only run merge experiments (skip detection)");
     eprintln!("  --detect-only       Only run detection experiments (skip merge)");
+    eprintln!("  --pairwise          Run pairwise detection on adjacent encounters (should split)");
+    eprintln!("  --accumulation N,N  Words of next encounter to simulate (default: 200,500,0=full)");
     eprintln!("  --model ALIAS       LLM model alias to use (default: config fast_model)");
     eprintln!("  --help              Show this help");
     eprintln!();
@@ -48,6 +50,7 @@ fn print_usage(program: &str) {
     eprintln!("Examples:");
     eprintln!("  {} p1 p3 --threshold 0.9", program);
     eprintln!("  {} --merge-only --patient 'Buckland, Deborah Ann'", program);
+    eprintln!("  {} --pairwise --date 2026/02/26 --model fast-model", program);
 }
 
 fn parse_detection_strategy(s: &str) -> Option<DetectionStrategy> {
@@ -80,6 +83,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut nothink = false;
     let mut merge_only = false;
     let mut detect_only = false;
+    let mut pairwise = false;
+    let mut accumulation_words: Vec<usize> = Vec::new(); // Words of next encounter to include
     let mut strategies: Vec<DetectionStrategy> = Vec::new();
 
     let mut i = 1;
@@ -116,6 +121,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             "--nothink" => nothink = true,
             "--merge-only" => merge_only = true,
             "--detect-only" => detect_only = true,
+            "--pairwise" => pairwise = true,
+            "--accumulation" => {
+                i += 1;
+                if i < args.len() {
+                    // Parse comma-separated word counts, e.g., "200,500,1000"
+                    for val in args[i].split(',') {
+                        if let Ok(n) = val.trim().parse::<usize>() {
+                            accumulation_words.push(n);
+                        }
+                    }
+                }
+            }
             s => {
                 if let Some(strategy) = parse_detection_strategy(s) {
                     strategies.push(strategy);
@@ -236,7 +253,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // ========================================================================
     // Mode A: Detection experiments on combined transcript
     // ========================================================================
-    if !merge_only {
+    if !merge_only && !pairwise {
         println!("\n{}", "=".repeat(80));
         println!("MODE A: DETECTION ON COMBINED TRANSCRIPT");
         println!("(Correct answer: complete=false — the full transcript is one encounter)");
@@ -357,9 +374,149 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     // ========================================================================
+    // Mode B: Pairwise detection on adjacent encounters
+    // ========================================================================
+    if pairwise && transcripts.len() >= 2 {
+        println!("\n{}", "=".repeat(80));
+        println!("MODE B: PAIRWISE DETECTION ON ADJACENT ENCOUNTER PAIRS");
+        println!("(Simulates production detection at different accumulation points)");
+        println!("{}", "=".repeat(80));
+
+        // Load patient names for display
+        let patient_names = load_patient_names(&archive_path);
+
+        // Filter to continuous-mode encounters only (have encounter_number)
+        let continuous_transcripts: Vec<_> = transcripts
+            .iter()
+            .filter(|(_, _, _, enc)| enc.is_some())
+            .collect();
+
+        // Default accumulation points: simulate check at 200w, 500w, and full
+        let accum_points = if accumulation_words.is_empty() {
+            vec![200, 500, 0] // 0 = full
+        } else {
+            accumulation_words.clone()
+        };
+
+        if continuous_transcripts.len() < 2 {
+            println!("\nNeed at least 2 continuous-mode encounters for pairwise testing.");
+        } else {
+            let strategy = strategies.first().copied().unwrap_or(DetectionStrategy::Baseline);
+            println!("\nUsing strategy: {}", strategy.name());
+            println!(
+                "Testing {} adjacent pairs at {} accumulation points...\n",
+                continuous_transcripts.len() - 1,
+                accum_points.len(),
+            );
+
+            for pair_idx in 0..continuous_transcripts.len() - 1 {
+                let (id_a, text_a, wc_a, enc_a) = continuous_transcripts[pair_idx];
+                let (id_b, text_b, wc_b, enc_b) = continuous_transcripts[pair_idx + 1];
+
+                let name_a = patient_names.get(id_a).map(|s| s.as_str()).unwrap_or("unknown");
+                let name_b = patient_names.get(id_b).map(|s| s.as_str()).unwrap_or("unknown");
+
+                let same_patient = name_a == name_b;
+                let expected_label = if same_patient {
+                    "complete=false (same patient)"
+                } else {
+                    "complete=true (different patients)"
+                };
+
+                println!(
+                    "═══ Pair {}: enc#{} ({}, {}w) → enc#{} ({}, {}w) ═══",
+                    pair_idx + 1,
+                    enc_a.unwrap_or(0),
+                    name_a,
+                    wc_a,
+                    enc_b.unwrap_or(0),
+                    name_b,
+                    wc_b,
+                );
+                println!("  Expected: {}", expected_label);
+
+                for &accum in &accum_points {
+                    // Simulate buffer state: full previous encounter + first N words of next
+                    let next_fragment = if accum == 0 || accum >= *wc_b {
+                        text_b.clone()
+                    } else {
+                        extract_head(text_b, accum)
+                    };
+                    let next_words = next_fragment.split_whitespace().count();
+
+                    let accum_label = if accum == 0 || accum >= *wc_b {
+                        format!("full ({}w)", next_words)
+                    } else {
+                        format!("{}w", next_words)
+                    };
+
+                    let combined = format!("{}\n\n{}", text_a, next_fragment);
+                    let combined_words = combined.split_whitespace().count();
+
+                    // Format and truncate like production
+                    let formatted = format_transcript_as_segments(&combined);
+                    let truncated = truncate_segments_for_detection(&formatted);
+                    let truncated_words = truncated.split_whitespace().count();
+
+                    print!(
+                        "  @{}: {}w combined → ~{}w truncated",
+                        accum_label, combined_words, truncated_words,
+                    );
+
+                    let exp_config = ExperimentConfig {
+                        detection_strategy: Some(strategy),
+                        merge_strategy: None,
+                        confidence_threshold: threshold,
+                        hallucination_filter: false,
+                        patient_name: patient_name.clone(),
+                        nothink,
+                    };
+
+                    match run_detection_experiment(
+                        &client,
+                        &model,
+                        &truncated,
+                        &exp_config,
+                    )
+                    .await
+                    {
+                        Ok(result) => {
+                            let correct = if same_patient {
+                                !result.detected_complete
+                            } else {
+                                result.detected_complete
+                            };
+                            let verdict = if correct { "OK" } else { "MISS" };
+
+                            println!(
+                                " → complete={}, conf={:.2}, {}ms [{}]",
+                                result.detected_complete,
+                                result.confidence,
+                                result.generation_time_ms,
+                                verdict,
+                            );
+
+                            if let Err(e) = save_detection_result(&result) {
+                                eprintln!("    Failed to save: {}", e);
+                            }
+
+                            all_detection_results.push(result);
+                        }
+                        Err(e) => {
+                            println!();
+                            eprintln!("    ERROR: {}", e);
+                        }
+                    }
+                }
+                println!();
+            }
+        }
+    }
+
+    // ========================================================================
     // Mode C: Merge experiments on archived encounter pairs
     // ========================================================================
-    if !detect_only && transcripts.len() >= 2 {
+    if !detect_only && !pairwise && transcripts.len() >= 2 {
         println!("\n{}", "=".repeat(80));
         println!("MODE C: MERGE CHECK ON ARCHIVED ENCOUNTER PAIRS");
         println!("(Correct answer: same_encounter=true for all pairs)");

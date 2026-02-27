@@ -950,6 +950,95 @@ pub fn extract_head(text: &str, max_words: usize) -> String {
     }
 }
 
+/// Truncate formatted segments using the same 500-head + 1000-tail algorithm
+/// as the production `TranscriptBuffer::format_for_detection_truncated()`.
+///
+/// Input: newline-separated formatted segments (e.g., "[0] (Speaker 1): text")
+/// Output: truncated text with omission marker if over 1500 words
+pub fn truncate_segments_for_detection(formatted: &str) -> String {
+    const MAX_WORDS: usize = 1500;
+    const HEAD_WORDS: usize = 500;
+    const TAIL_WORDS: usize = 1000;
+
+    let lines: Vec<&str> = formatted.lines().filter(|l| !l.trim().is_empty()).collect();
+    let word_counts: Vec<usize> = lines.iter().map(|l| l.split_whitespace().count()).collect();
+    let total_words: usize = word_counts.iter().sum();
+
+    if total_words <= MAX_WORDS {
+        return lines.join("\n");
+    }
+
+    // Find head end (first HEAD_WORDS words)
+    let mut head_words = 0;
+    let mut head_end = 0;
+    for (i, &wc) in word_counts.iter().enumerate() {
+        head_words += wc;
+        if head_words >= HEAD_WORDS {
+            head_end = i + 1;
+            break;
+        }
+    }
+
+    // Find tail start (last TAIL_WORDS words)
+    let mut tail_words = 0;
+    let mut tail_start = lines.len();
+    for (i, &wc) in word_counts.iter().enumerate().rev() {
+        tail_words += wc;
+        if tail_words >= TAIL_WORDS {
+            tail_start = i;
+            break;
+        }
+    }
+
+    // No overlap
+    if tail_start <= head_end {
+        return lines.join("\n");
+    }
+
+    let skipped = tail_start - head_end;
+    let head: String = lines[..head_end].join("\n");
+    let tail: String = lines[tail_start..].join("\n");
+    format!(
+        "{}\n\n[... {} segments omitted for brevity ...]\n\n{}",
+        head, skipped, tail
+    )
+}
+
+/// Load patient names from metadata files for a given archive date.
+/// Returns a map of session_id -> patient_name.
+pub fn load_patient_names(
+    date_path: &std::path::Path,
+) -> std::collections::HashMap<String, String> {
+    let mut names = std::collections::HashMap::new();
+
+    if let Ok(entries) = fs::read_dir(date_path) {
+        for entry in entries.flatten() {
+            let session_dir = entry.path();
+            if !session_dir.is_dir() {
+                continue;
+            }
+            let session_id = session_dir
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or("")
+                .to_string();
+
+            let metadata_path = session_dir.join("metadata.json");
+            if let Ok(content) = fs::read_to_string(&metadata_path) {
+                if let Ok(value) = serde_json::from_str::<serde_json::Value>(&content) {
+                    if let Some(name) = value.get("patient_name").and_then(|n| n.as_str()) {
+                        if !name.is_empty() {
+                            names.insert(session_id, name.to_string());
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    names
+}
+
 // ============================================================================
 // Tests
 // ============================================================================
