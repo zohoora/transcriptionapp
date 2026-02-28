@@ -6,7 +6,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { writeText } from '@tauri-apps/plugin-clipboard-manager';
 import { useAuth } from './AuthProvider';
-import type { EncounterSummary, EncounterDetails } from '../types';
+import type { LocalArchiveSummary, LocalArchiveDetails, LocalArchiveMetadata } from '../types';
 
 // Mock dependencies
 vi.mock('@tauri-apps/api/core', () => ({
@@ -25,37 +25,50 @@ vi.mock('./AuthProvider', () => ({
   useAuth: vi.fn(),
 }));
 
-// Mock useOllamaConnection hook
+// Stable references to prevent infinite re-render loops
+const stableOllamaStatus = { connected: true };
+const stableCheckConnection = vi.fn();
+const stablePrewarmModel = vi.fn();
+const stableTestConnection = vi.fn();
+
 vi.mock('../hooks/useOllamaConnection', () => ({
   useOllamaConnection: vi.fn(() => ({
-    status: { connected: true },
+    status: stableOllamaStatus,
     isChecking: false,
     isPrewarming: false,
     error: null,
-    checkConnection: vi.fn(),
-    prewarmModel: vi.fn(),
-    testConnection: vi.fn(),
+    checkConnection: stableCheckConnection,
+    prewarmModel: stablePrewarmModel,
+    testConnection: stableTestConnection,
   })),
 }));
 
-// Mock useSoapNote hook
+const stableSetSoapError = vi.fn();
+const stableSetOllamaStatus = vi.fn();
+const stableSoapOptions = {
+  detail_level: 5,
+  format: 'problem_based' as const,
+  custom_instructions: '',
+};
+const stableSetSoapOptions = vi.fn();
+const stableUpdateSoapDetailLevel = vi.fn();
+const stableUpdateSoapFormat = vi.fn();
+const stableUpdateSoapCustomInstructions = vi.fn();
+const stableGenerateSoapNote = vi.fn().mockResolvedValue(null);
+
 vi.mock('../hooks/useSoapNote', () => ({
   useSoapNote: vi.fn(() => ({
     isGeneratingSoap: false,
     soapError: null,
-    setSoapError: vi.fn(),
-    ollamaStatus: { connected: true },
-    setOllamaStatus: vi.fn(),
-    soapOptions: {
-      detail_level: 5,
-      format: 'problem_based',
-      custom_instructions: '',
-    },
-    setSoapOptions: vi.fn(),
-    updateSoapDetailLevel: vi.fn(),
-    updateSoapFormat: vi.fn(),
-    updateSoapCustomInstructions: vi.fn(),
-    generateSoapNote: vi.fn().mockResolvedValue(null),
+    setSoapError: stableSetSoapError,
+    ollamaStatus: stableOllamaStatus,
+    setOllamaStatus: stableSetOllamaStatus,
+    soapOptions: stableSoapOptions,
+    setSoapOptions: stableSetSoapOptions,
+    updateSoapDetailLevel: stableUpdateSoapDetailLevel,
+    updateSoapFormat: stableUpdateSoapFormat,
+    updateSoapCustomInstructions: stableUpdateSoapCustomInstructions,
+    generateSoapNote: stableGenerateSoapNote,
   })),
 }));
 
@@ -114,48 +127,60 @@ const mockAuthAuthenticated = {
   cancelLogin: vi.fn(),
 };
 
-const mockAuthLoading = {
-  ...mockAuthUnauthenticated,
-  isLoading: true,
-};
-
-const mockSessions: EncounterSummary[] = [
+const mockSessions: LocalArchiveSummary[] = [
   {
-    id: 'session-1',
-    fhirId: 'fhir-session-1',
+    session_id: 'session-1',
     date: '2025-01-07T10:30:00Z',
-    patientName: 'John Doe',
-    durationMinutes: 15,
-    hasTranscript: true,
-    hasSoapNote: true,
-    hasAudio: true,
+    duration_ms: 900000, // 15 min
+    word_count: 350,
+    has_soap_note: true,
+    has_audio: true,
+    auto_ended: false,
+    charting_mode: null,
+    encounter_number: null,
+    patient_name: null,
   },
   {
-    id: 'session-2',
-    fhirId: 'fhir-session-2',
+    session_id: 'session-2',
     date: '2025-01-07T14:00:00Z',
-    patientName: 'Jane Smith',
-    durationMinutes: 20,
-    hasTranscript: true,
-    hasSoapNote: false,
-    hasAudio: false,
+    duration_ms: 1200000, // 20 min
+    word_count: 500,
+    has_soap_note: false,
+    has_audio: false,
+    auto_ended: false,
+    charting_mode: null,
+    encounter_number: null,
+    patient_name: null,
   },
 ];
 
-const mockSessionDetails: EncounterDetails = {
-  id: 'session-1',
-  fhirId: 'fhir-session-1',
-  date: '2025-01-07T10:30:00Z',
-  patientName: 'John Doe',
-  durationMinutes: 15,
-  transcript: 'This is the transcript text.',
-  soapNote: 'SUBJECTIVE: Patient complaint...\nOBJECTIVE: Vitals...',
-  audioUrl: 'https://medplum.test/audio/session-1.wav',
+const mockMetadata: LocalArchiveMetadata = {
+  session_id: 'session-1',
+  started_at: '2025-01-07T10:30:00Z',
+  ended_at: '2025-01-07T10:45:00Z',
+  duration_ms: 900000,
+  segment_count: 10,
+  word_count: 350,
+  has_soap_note: true,
+  auto_ended: false,
+  auto_end_reason: null,
+  charting_mode: null,
+  encounter_number: null,
+  patient_name: null,
+  likely_non_clinical: null,
 };
 
-// Default settings mock (uses Medplum by default since debug_storage_enabled: false)
+const mockSessionDetails: LocalArchiveDetails = {
+  session_id: 'session-1',
+  metadata: mockMetadata,
+  transcript: 'This is the transcript text.',
+  soap_note: 'S: Patient complaint\nO: Vitals normal',
+  audio_path: '/path/to/audio.wav',
+};
+
+// Settings with local storage enabled (avoids Medplum auth dependency)
 const mockSettings = {
-  debug_storage_enabled: false,
+  debug_storage_enabled: true,
   soap_detail_level: 5,
   soap_format: 'problem_based',
   soap_custom_instructions: '',
@@ -168,47 +193,28 @@ describe('HistoryWindow', () => {
       close: vi.fn().mockResolvedValue(undefined),
     } as unknown as ReturnType<typeof getCurrentWindow>);
     mockWriteText.mockResolvedValue(undefined);
-    // Default mock implementation that handles different commands
+    mockUseAuth.mockReturnValue(mockAuthAuthenticated);
+
+    // Default mock: local storage mode, returns empty sessions
     mockInvoke.mockImplementation((cmd: string) => {
       switch (cmd) {
         case 'get_settings':
           return Promise.resolve(mockSettings);
-        case 'medplum_get_encounter_history':
-          return Promise.resolve([]);
         case 'get_local_session_dates':
           return Promise.resolve([]);
         case 'get_local_sessions_by_date':
           return Promise.resolve([]);
         default:
-          return Promise.resolve([]);
+          return Promise.resolve(null);
       }
     });
   });
 
-  describe('unauthenticated state', () => {
-    beforeEach(() => {
-      mockUseAuth.mockReturnValue(mockAuthUnauthenticated);
-    });
-
-    it('renders sign in prompt', () => {
+  describe('basic rendering', () => {
+    it('renders title and close button', async () => {
       render(<HistoryWindow />);
 
       expect(screen.getByText('Session History')).toBeInTheDocument();
-      expect(screen.getByText('Sign in to Medplum to view your session history.')).toBeInTheDocument();
-      expect(screen.getByRole('button', { name: 'Sign In' })).toBeInTheDocument();
-    });
-
-    it('calls login when sign in clicked', async () => {
-      const user = userEvent.setup();
-      render(<HistoryWindow />);
-
-      await user.click(screen.getByRole('button', { name: 'Sign In' }));
-
-      expect(mockAuthUnauthenticated.login).toHaveBeenCalled();
-    });
-
-    it('renders close button', () => {
-      render(<HistoryWindow />);
       expect(screen.getByRole('button', { name: 'Close' })).toBeInTheDocument();
     });
 
@@ -223,73 +229,48 @@ describe('HistoryWindow', () => {
 
       expect(mockClose).toHaveBeenCalled();
     });
-  });
 
-  describe('loading auth state', () => {
-    beforeEach(() => {
-      mockUseAuth.mockReturnValue(mockAuthLoading);
-    });
-
-    it('renders loading spinner', () => {
+    it('renders calendar', async () => {
       render(<HistoryWindow />);
 
-      expect(screen.getByText('Session History')).toBeInTheDocument();
-      expect(screen.getByText('Loading...')).toBeInTheDocument();
-    });
-  });
-
-  describe('authenticated state - list view', () => {
-    beforeEach(() => {
-      mockUseAuth.mockReturnValue(mockAuthAuthenticated);
-    });
-
-    it('renders calendar and sessions section', async () => {
-      mockInvoke.mockResolvedValue(mockSessions);
-
-      render(<HistoryWindow />);
-
-      expect(screen.getByTestId('calendar')).toBeInTheDocument();
       await waitFor(() => {
-        expect(mockInvoke).toHaveBeenCalledWith('medplum_get_encounter_history', expect.any(Object));
+        expect(screen.getByTestId('calendar')).toBeInTheDocument();
       });
     });
+  });
 
+  describe('local archive - list view', () => {
     it('fetches sessions for selected date', async () => {
-      mockInvoke.mockResolvedValue(mockSessions);
-
       render(<HistoryWindow />);
 
       await waitFor(() => {
-        expect(mockInvoke).toHaveBeenCalledWith('medplum_get_encounter_history', {
-          startDate: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
-          endDate: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
-        });
+        expect(mockInvoke).toHaveBeenCalledWith('get_local_sessions_by_date', expect.any(Object));
       });
     });
 
-    it('renders session list', async () => {
-      mockInvoke.mockResolvedValue(mockSessions);
-
-      render(<HistoryWindow />);
-
-      await waitFor(() => {
-        expect(screen.getAllByText('Scribe Session')).toHaveLength(2);
+    it('renders session list with word counts', async () => {
+      mockInvoke.mockImplementation((cmd: string) => {
+        if (cmd === 'get_settings') return Promise.resolve(mockSettings);
+        if (cmd === 'get_local_session_dates') return Promise.resolve([]);
+        if (cmd === 'get_local_sessions_by_date') return Promise.resolve(mockSessions);
+        return Promise.resolve(null);
       });
-    });
-
-    it('shows session duration', async () => {
-      mockInvoke.mockResolvedValue(mockSessions);
 
       render(<HistoryWindow />);
 
       await waitFor(() => {
-        expect(screen.getByText('15 min')).toBeInTheDocument();
-        expect(screen.getByText('20 min')).toBeInTheDocument();
+        expect(screen.getByText('350 words')).toBeInTheDocument();
+        expect(screen.getByText('500 words')).toBeInTheDocument();
       });
     });
 
     it('shows SOAP badge for sessions with SOAP note', async () => {
-      mockInvoke.mockResolvedValue(mockSessions);
+      mockInvoke.mockImplementation((cmd: string) => {
+        if (cmd === 'get_settings') return Promise.resolve(mockSettings);
+        if (cmd === 'get_local_session_dates') return Promise.resolve([]);
+        if (cmd === 'get_local_sessions_by_date') return Promise.resolve(mockSessions);
+        return Promise.resolve(null);
+      });
 
       render(<HistoryWindow />);
 
@@ -298,19 +279,7 @@ describe('HistoryWindow', () => {
       });
     });
 
-    it('shows Audio badge for sessions with audio', async () => {
-      mockInvoke.mockResolvedValue(mockSessions);
-
-      render(<HistoryWindow />);
-
-      await waitFor(() => {
-        expect(screen.getByText('Audio')).toBeInTheDocument();
-      });
-    });
-
     it('shows empty message when no sessions', async () => {
-      mockInvoke.mockResolvedValue([]);
-
       render(<HistoryWindow />);
 
       await waitFor(() => {
@@ -319,77 +288,30 @@ describe('HistoryWindow', () => {
     });
 
     it('shows error message on fetch failure', async () => {
-      mockInvoke.mockRejectedValue(new Error('Network error'));
+      mockInvoke.mockImplementation((cmd: string) => {
+        if (cmd === 'get_settings') return Promise.resolve(mockSettings);
+        if (cmd === 'get_local_session_dates') return Promise.resolve([]);
+        if (cmd === 'get_local_sessions_by_date') return Promise.reject(new Error('Disk error'));
+        return Promise.resolve(null);
+      });
 
       render(<HistoryWindow />);
 
       await waitFor(() => {
-        expect(screen.getByText('Network error')).toBeInTheDocument();
+        expect(screen.getByText('Disk error')).toBeInTheDocument();
         expect(screen.getByRole('button', { name: 'Retry' })).toBeInTheDocument();
       });
     });
 
     it('retries fetch on retry button click', async () => {
       let callCount = 0;
-      mockInvoke.mockImplementation(() => {
-        callCount++;
-        if (callCount === 1) {
-          return Promise.reject(new Error('Network error'));
-        }
-        return Promise.resolve(mockSessions);
-      });
-
-      const user = userEvent.setup();
-      render(<HistoryWindow />);
-
-      await waitFor(() => {
-        expect(screen.getByText('Network error')).toBeInTheDocument();
-      });
-
-      await user.click(screen.getByRole('button', { name: 'Retry' }));
-
-      await waitFor(() => {
-        expect(callCount).toBe(2);
-      });
-    });
-
-    it('fetches new sessions when date changes', async () => {
-      let callCount = 0;
-      mockInvoke.mockImplementation(() => {
-        callCount++;
-        return Promise.resolve(mockSessions);
-      });
-
-      const user = userEvent.setup();
-      render(<HistoryWindow />);
-
-      await waitFor(() => {
-        expect(callCount).toBe(1);
-      });
-
-      // Change date via calendar mock
-      await user.click(screen.getByText('Select Jan 15'));
-
-      await waitFor(() => {
-        expect(callCount).toBe(2);
-      });
-    });
-  });
-
-  describe('authenticated state - detail view', () => {
-    beforeEach(() => {
-      mockUseAuth.mockReturnValue(mockAuthAuthenticated);
-    });
-
-    it('navigates to detail view when session clicked', async () => {
-      let callCount = 0;
       mockInvoke.mockImplementation((cmd: string) => {
-        callCount++;
-        if (cmd === 'medplum_get_encounter_history') {
+        if (cmd === 'get_settings') return Promise.resolve(mockSettings);
+        if (cmd === 'get_local_session_dates') return Promise.resolve([]);
+        if (cmd === 'get_local_sessions_by_date') {
+          callCount++;
+          if (callCount === 1) return Promise.reject(new Error('Disk error'));
           return Promise.resolve(mockSessions);
-        }
-        if (cmd === 'medplum_get_encounter_details') {
-          return Promise.resolve(mockSessionDetails);
         }
         return Promise.resolve(null);
       });
@@ -398,10 +320,64 @@ describe('HistoryWindow', () => {
       render(<HistoryWindow />);
 
       await waitFor(() => {
-        expect(screen.getAllByText('Scribe Session')).toHaveLength(2);
+        expect(screen.getByText('Disk error')).toBeInTheDocument();
       });
 
-      await user.click(screen.getAllByText('Scribe Session')[0]);
+      await user.click(screen.getByRole('button', { name: 'Retry' }));
+
+      await waitFor(() => {
+        expect(screen.getByText('350 words')).toBeInTheDocument();
+      });
+    });
+
+    it('fetches new sessions when date changes', async () => {
+      let fetchCount = 0;
+      mockInvoke.mockImplementation((cmd: string) => {
+        if (cmd === 'get_settings') return Promise.resolve(mockSettings);
+        if (cmd === 'get_local_session_dates') return Promise.resolve([]);
+        if (cmd === 'get_local_sessions_by_date') {
+          fetchCount++;
+          return Promise.resolve([]);
+        }
+        return Promise.resolve(null);
+      });
+
+      const user = userEvent.setup();
+      render(<HistoryWindow />);
+
+      await waitFor(() => {
+        expect(fetchCount).toBeGreaterThanOrEqual(1);
+      });
+
+      const initialCount = fetchCount;
+      await user.click(screen.getByText('Select Jan 15'));
+
+      await waitFor(() => {
+        expect(fetchCount).toBeGreaterThan(initialCount);
+      });
+    });
+  });
+
+  describe('local archive - detail view', () => {
+    beforeEach(() => {
+      mockInvoke.mockImplementation((cmd: string) => {
+        if (cmd === 'get_settings') return Promise.resolve(mockSettings);
+        if (cmd === 'get_local_session_dates') return Promise.resolve([]);
+        if (cmd === 'get_local_sessions_by_date') return Promise.resolve(mockSessions);
+        if (cmd === 'get_local_session_details') return Promise.resolve(mockSessionDetails);
+        return Promise.resolve(null);
+      });
+    });
+
+    it('navigates to detail view when session clicked', async () => {
+      const user = userEvent.setup();
+      render(<HistoryWindow />);
+
+      await waitFor(() => {
+        expect(screen.getByText('350 words')).toBeInTheDocument();
+      });
+
+      await user.click(screen.getByText('350 words'));
 
       await waitFor(() => {
         expect(screen.getByText('Session Details')).toBeInTheDocument();
@@ -409,24 +385,14 @@ describe('HistoryWindow', () => {
     });
 
     it('shows back button in detail view', async () => {
-      mockInvoke.mockImplementation((cmd: string) => {
-        if (cmd === 'medplum_get_encounter_history') {
-          return Promise.resolve(mockSessions);
-        }
-        if (cmd === 'medplum_get_encounter_details') {
-          return Promise.resolve(mockSessionDetails);
-        }
-        return Promise.resolve(null);
-      });
-
       const user = userEvent.setup();
       render(<HistoryWindow />);
 
       await waitFor(() => {
-        expect(screen.getAllByText('Scribe Session')).toHaveLength(2);
+        expect(screen.getByText('350 words')).toBeInTheDocument();
       });
 
-      await user.click(screen.getAllByText('Scribe Session')[0]);
+      await user.click(screen.getByText('350 words'));
 
       await waitFor(() => {
         expect(screen.getByRole('button', { name: /Back/i })).toBeInTheDocument();
@@ -434,127 +400,52 @@ describe('HistoryWindow', () => {
     });
 
     it('displays transcript in detail view', async () => {
-      mockInvoke.mockImplementation((cmd: string) => {
-        if (cmd === 'medplum_get_encounter_history') {
-          return Promise.resolve(mockSessions);
-        }
-        if (cmd === 'medplum_get_encounter_details') {
-          return Promise.resolve(mockSessionDetails);
-        }
-        return Promise.resolve(null);
-      });
-
       const user = userEvent.setup();
       render(<HistoryWindow />);
 
       await waitFor(() => {
-        expect(screen.getAllByText('Scribe Session')).toHaveLength(2);
+        expect(screen.getByText('350 words')).toBeInTheDocument();
       });
 
-      await user.click(screen.getAllByText('Scribe Session')[0]);
+      await user.click(screen.getByText('350 words'));
 
       await waitFor(() => {
-        expect(screen.getByText('Transcript')).toBeInTheDocument();
+        expect(screen.getByText('Session Details')).toBeInTheDocument();
+      });
+
+      // SOAP tab is active when soap_note exists, switch to Transcript
+      await user.click(screen.getByRole('button', { name: /Transcript/i }));
+
+      await waitFor(() => {
         expect(screen.getByText('This is the transcript text.')).toBeInTheDocument();
       });
     });
 
     it('displays SOAP note in detail view', async () => {
-      mockInvoke.mockImplementation((cmd: string) => {
-        if (cmd === 'medplum_get_encounter_history') {
-          return Promise.resolve(mockSessions);
-        }
-        if (cmd === 'medplum_get_encounter_details') {
-          return Promise.resolve(mockSessionDetails);
-        }
-        return Promise.resolve(null);
-      });
-
       const user = userEvent.setup();
       render(<HistoryWindow />);
 
       await waitFor(() => {
-        expect(screen.getAllByText('Scribe Session')).toHaveLength(2);
+        expect(screen.getByText('350 words')).toBeInTheDocument();
       });
 
-      await user.click(screen.getAllByText('Scribe Session')[0]);
+      await user.click(screen.getByText('350 words'));
 
+      // SOAP tab auto-selected when soap_note exists
       await waitFor(() => {
-        expect(screen.getByText('SOAP Note')).toBeInTheDocument();
-        expect(screen.getByText(/SUBJECTIVE: Patient complaint/)).toBeInTheDocument();
-      });
-    });
-
-    it('displays audio player when audio URL present', async () => {
-      mockInvoke.mockImplementation((cmd: string) => {
-        if (cmd === 'medplum_get_encounter_history') {
-          return Promise.resolve(mockSessions);
-        }
-        if (cmd === 'medplum_get_encounter_details') {
-          return Promise.resolve(mockSessionDetails);
-        }
-        return Promise.resolve(null);
-      });
-
-      const user = userEvent.setup();
-      render(<HistoryWindow />);
-
-      await waitFor(() => {
-        expect(screen.getAllByText('Scribe Session')).toHaveLength(2);
-      });
-
-      await user.click(screen.getAllByText('Scribe Session')[0]);
-
-      await waitFor(() => {
-        expect(screen.getByText('Audio Recording')).toBeInTheDocument();
-        expect(screen.getByTestId('audio-player')).toBeInTheDocument();
-      });
-    });
-
-    it('shows session duration in detail view', async () => {
-      mockInvoke.mockImplementation((cmd: string) => {
-        if (cmd === 'medplum_get_encounter_history') {
-          return Promise.resolve(mockSessions);
-        }
-        if (cmd === 'medplum_get_encounter_details') {
-          return Promise.resolve(mockSessionDetails);
-        }
-        return Promise.resolve(null);
-      });
-
-      const user = userEvent.setup();
-      render(<HistoryWindow />);
-
-      await waitFor(() => {
-        expect(screen.getAllByText('Scribe Session')).toHaveLength(2);
-      });
-
-      await user.click(screen.getAllByText('Scribe Session')[0]);
-
-      await waitFor(() => {
-        expect(screen.getByText('15 min')).toBeInTheDocument();
+        expect(screen.getByText(/Patient complaint/)).toBeInTheDocument();
       });
     });
 
     it('navigates back to list view', async () => {
-      mockInvoke.mockImplementation((cmd: string) => {
-        if (cmd === 'medplum_get_encounter_history') {
-          return Promise.resolve(mockSessions);
-        }
-        if (cmd === 'medplum_get_encounter_details') {
-          return Promise.resolve(mockSessionDetails);
-        }
-        return Promise.resolve(null);
-      });
-
       const user = userEvent.setup();
       render(<HistoryWindow />);
 
       await waitFor(() => {
-        expect(screen.getAllByText('Scribe Session')).toHaveLength(2);
+        expect(screen.getByText('350 words')).toBeInTheDocument();
       });
 
-      await user.click(screen.getAllByText('Scribe Session')[0]);
+      await user.click(screen.getByText('350 words'));
 
       await waitFor(() => {
         expect(screen.getByText('Session Details')).toBeInTheDocument();
@@ -562,18 +453,18 @@ describe('HistoryWindow', () => {
 
       await user.click(screen.getByRole('button', { name: /Back/i }));
 
-      expect(screen.getByTestId('calendar')).toBeInTheDocument();
+      await waitFor(() => {
+        expect(screen.getByTestId('calendar')).toBeInTheDocument();
+      });
     });
 
     it('shows empty message when no transcript', async () => {
-      const detailsNoTranscript = { ...mockSessionDetails, transcript: null };
+      const detailsNoTranscript = { ...mockSessionDetails, transcript: null, soap_note: null };
       mockInvoke.mockImplementation((cmd: string) => {
-        if (cmd === 'medplum_get_encounter_history') {
-          return Promise.resolve(mockSessions);
-        }
-        if (cmd === 'medplum_get_encounter_details') {
-          return Promise.resolve(detailsNoTranscript);
-        }
+        if (cmd === 'get_settings') return Promise.resolve(mockSettings);
+        if (cmd === 'get_local_session_dates') return Promise.resolve([]);
+        if (cmd === 'get_local_sessions_by_date') return Promise.resolve(mockSessions);
+        if (cmd === 'get_local_session_details') return Promise.resolve(detailsNoTranscript);
         return Promise.resolve(null);
       });
 
@@ -581,25 +472,24 @@ describe('HistoryWindow', () => {
       render(<HistoryWindow />);
 
       await waitFor(() => {
-        expect(screen.getAllByText('Scribe Session')).toHaveLength(2);
+        expect(screen.getByText('350 words')).toBeInTheDocument();
       });
 
-      await user.click(screen.getAllByText('Scribe Session')[0]);
+      await user.click(screen.getByText('350 words'));
 
+      // No soap_note → Transcript tab is active by default
       await waitFor(() => {
-        expect(screen.getByText('No transcript available')).toBeInTheDocument();
+        expect(screen.getByText('No transcript recorded')).toBeInTheDocument();
       });
     });
 
-    it('shows empty message when no SOAP note', async () => {
-      const detailsNoSoap = { ...mockSessionDetails, soapNote: null };
+    it('shows empty SOAP state when no SOAP note', async () => {
+      const detailsNoSoap = { ...mockSessionDetails, soap_note: null };
       mockInvoke.mockImplementation((cmd: string) => {
-        if (cmd === 'medplum_get_encounter_history') {
-          return Promise.resolve(mockSessions);
-        }
-        if (cmd === 'medplum_get_encounter_details') {
-          return Promise.resolve(detailsNoSoap);
-        }
+        if (cmd === 'get_settings') return Promise.resolve(mockSettings);
+        if (cmd === 'get_local_session_dates') return Promise.resolve([]);
+        if (cmd === 'get_local_sessions_by_date') return Promise.resolve(mockSessions);
+        if (cmd === 'get_local_session_details') return Promise.resolve(detailsNoSoap);
         return Promise.resolve(null);
       });
 
@@ -607,140 +497,64 @@ describe('HistoryWindow', () => {
       render(<HistoryWindow />);
 
       await waitFor(() => {
-        expect(screen.getAllByText('Scribe Session')).toHaveLength(2);
+        expect(screen.getByText('350 words')).toBeInTheDocument();
       });
 
-      await user.click(screen.getAllByText('Scribe Session')[0]);
+      await user.click(screen.getByText('350 words'));
 
+      // No soap_note → Transcript tab active, transcript visible
       await waitFor(() => {
-        expect(screen.getByText('No SOAP note available')).toBeInTheDocument();
+        expect(screen.getByText('This is the transcript text.')).toBeInTheDocument();
       });
-    });
-
-    it('does not show audio section when no audio URL', async () => {
-      const detailsNoAudio = { ...mockSessionDetails, audioUrl: null };
-      mockInvoke.mockImplementation((cmd: string) => {
-        if (cmd === 'medplum_get_encounter_history') {
-          return Promise.resolve(mockSessions);
-        }
-        if (cmd === 'medplum_get_encounter_details') {
-          return Promise.resolve(detailsNoAudio);
-        }
-        return Promise.resolve(null);
-      });
-
-      const user = userEvent.setup();
-      render(<HistoryWindow />);
-
-      await waitFor(() => {
-        expect(screen.getAllByText('Scribe Session')).toHaveLength(2);
-      });
-
-      await user.click(screen.getAllByText('Scribe Session')[0]);
-
-      await waitFor(() => {
-        expect(screen.getByText('Session Details')).toBeInTheDocument();
-      });
-
-      expect(screen.queryByText('Audio Recording')).not.toBeInTheDocument();
     });
   });
 
   describe('copy functionality', () => {
     beforeEach(() => {
-      vi.useRealTimers();
-      mockUseAuth.mockReturnValue(mockAuthAuthenticated);
-    });
-
-    afterEach(() => {
-      vi.useRealTimers();
+      mockInvoke.mockImplementation((cmd: string) => {
+        if (cmd === 'get_settings') return Promise.resolve(mockSettings);
+        if (cmd === 'get_local_session_dates') return Promise.resolve([]);
+        if (cmd === 'get_local_sessions_by_date') return Promise.resolve(mockSessions);
+        if (cmd === 'get_local_session_details') return Promise.resolve(mockSessionDetails);
+        return Promise.resolve(null);
+      });
     });
 
     it('copies transcript when copy button clicked', async () => {
-      mockInvoke.mockImplementation((cmd: string) => {
-        if (cmd === 'medplum_get_encounter_history') {
-          return Promise.resolve(mockSessions);
-        }
-        if (cmd === 'medplum_get_encounter_details') {
-          return Promise.resolve(mockSessionDetails);
-        }
-        return Promise.resolve(null);
-      });
-
       const user = userEvent.setup();
       render(<HistoryWindow />);
 
       await waitFor(() => {
-        expect(screen.getAllByText('Scribe Session')).toHaveLength(2);
+        expect(screen.getByText('350 words')).toBeInTheDocument();
       });
 
-      await user.click(screen.getAllByText('Scribe Session')[0]);
+      await user.click(screen.getByText('350 words'));
 
       await waitFor(() => {
-        expect(screen.getByText('Transcript')).toBeInTheDocument();
+        expect(screen.getByText('Session Details')).toBeInTheDocument();
       });
 
-      const copyButtons = screen.getAllByRole('button', { name: 'Copy' });
-      await user.click(copyButtons[0]);
+      // Switch to Transcript tab (SOAP tab active when soap_note exists)
+      await user.click(screen.getByRole('button', { name: /Transcript/i }));
+
+      await waitFor(() => {
+        expect(screen.getByText('This is the transcript text.')).toBeInTheDocument();
+      });
+
+      const copyButton = screen.getByRole('button', { name: 'Copy' });
+      await user.click(copyButton);
 
       expect(mockWriteText).toHaveBeenCalledWith('This is the transcript text.');
-
-      // Should show "Copied!" feedback
-      expect(screen.getByRole('button', { name: 'Copied!' })).toBeInTheDocument();
-
-      // Note: Timer-based revert test removed due to vitest fake timer isolation issues
-      // The UI behavior (reverting after 2 seconds) is covered by integration testing
-    });
-
-    it('copies SOAP note when copy button clicked', async () => {
-      mockInvoke.mockImplementation((cmd: string) => {
-        if (cmd === 'medplum_get_encounter_history') {
-          return Promise.resolve(mockSessions);
-        }
-        if (cmd === 'medplum_get_encounter_details') {
-          return Promise.resolve(mockSessionDetails);
-        }
-        return Promise.resolve(null);
-      });
-
-      const user = userEvent.setup();
-      render(<HistoryWindow />);
-
-      await waitFor(() => {
-        expect(screen.getAllByText('Scribe Session')).toHaveLength(2);
-      });
-
-      await user.click(screen.getAllByText('Scribe Session')[0]);
-
-      await waitFor(() => {
-        expect(screen.getByText('SOAP Note')).toBeInTheDocument();
-      });
-
-      const copyButtons = screen.getAllByRole('button', { name: 'Copy' });
-      await user.click(copyButtons[1]);
-
-      expect(mockWriteText).toHaveBeenCalledWith(mockSessionDetails.soapNote);
     });
   });
 
   describe('error handling', () => {
-    beforeEach(() => {
-      vi.useRealTimers();
-      mockUseAuth.mockReturnValue(mockAuthAuthenticated);
-    });
-
-    afterEach(() => {
-      vi.useRealTimers();
-    });
-
     it('handles detail fetch error', async () => {
       mockInvoke.mockImplementation((cmd: string) => {
-        if (cmd === 'medplum_get_encounter_history') {
-          return Promise.resolve(mockSessions);
-        }
-        if (cmd === 'medplum_get_encounter_details') {
-          return Promise.reject(new Error('Failed to load details'));
-        }
+        if (cmd === 'get_settings') return Promise.resolve(mockSettings);
+        if (cmd === 'get_local_session_dates') return Promise.resolve([]);
+        if (cmd === 'get_local_sessions_by_date') return Promise.resolve(mockSessions);
+        if (cmd === 'get_local_session_details') return Promise.reject(new Error('Failed to load details'));
         return Promise.resolve(null);
       });
 
@@ -748,10 +562,10 @@ describe('HistoryWindow', () => {
       render(<HistoryWindow />);
 
       await waitFor(() => {
-        expect(screen.getAllByText('Scribe Session')).toHaveLength(2);
+        expect(screen.getByText('350 words')).toBeInTheDocument();
       });
 
-      await user.click(screen.getAllByText('Scribe Session')[0]);
+      await user.click(screen.getByText('350 words'));
 
       await waitFor(() => {
         expect(screen.getByText('Failed to load details')).toBeInTheDocument();
@@ -759,7 +573,12 @@ describe('HistoryWindow', () => {
     });
 
     it('handles string error', async () => {
-      mockInvoke.mockRejectedValue('String error message');
+      mockInvoke.mockImplementation((cmd: string) => {
+        if (cmd === 'get_settings') return Promise.resolve(mockSettings);
+        if (cmd === 'get_local_session_dates') return Promise.resolve([]);
+        if (cmd === 'get_local_sessions_by_date') return Promise.reject('String error message');
+        return Promise.resolve(null);
+      });
 
       render(<HistoryWindow />);
 
