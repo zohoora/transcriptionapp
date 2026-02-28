@@ -2,6 +2,7 @@ import { memo, useState, useCallback } from 'react';
 import type { AudioQualitySnapshot, BiomarkerUpdate, SilenceWarningPayload } from '../../types';
 import type { ChatMessage } from '../../hooks/useClinicalChat';
 import type { MiisSuggestion } from '../../hooks/useMiisImages';
+import type { AiImage } from '../../hooks/useAiImages';
 import { getAudioQualityLevel } from '../../utils';
 import { ClinicalChat, MarkdownContent } from '../ClinicalChat';
 import { ImageSuggestions } from '../ImageSuggestions';
@@ -55,6 +56,12 @@ interface RecordingModeProps {
   onMiisClick: (imageId: number) => void;
   onMiisDismiss: (imageId: number) => void;
   miisGetImageUrl: (path: string) => string;
+  // AI-generated images
+  aiImages?: AiImage[];
+  aiLoading?: boolean;
+  aiError?: string | null;
+  onAiDismiss?: (index: number) => void;
+  imageSource?: 'miis' | 'ai' | 'off';
 
   // Auto-end toggle
   autoEndEnabled: boolean;
@@ -96,6 +103,11 @@ export const RecordingMode = memo(function RecordingMode({
   onMiisClick,
   onMiisDismiss,
   miisGetImageUrl,
+  aiImages,
+  aiLoading,
+  aiError,
+  onAiDismiss,
+  imageSource = 'miis',
   autoEndEnabled,
   onAutoEndToggle,
   onStop,
@@ -188,7 +200,7 @@ export const RecordingMode = memo(function RecordingMode({
         </div>
       )}
 
-      {/* MIIS Image Suggestions */}
+      {/* Image Suggestions (MIIS or AI) */}
       {miisEnabled && (
         <ImageSuggestions
           suggestions={miisSuggestions}
@@ -198,6 +210,11 @@ export const RecordingMode = memo(function RecordingMode({
           onImpression={onMiisImpression}
           onClickImage={onMiisClick}
           onDismiss={onMiisDismiss}
+          aiImages={aiImages}
+          aiLoading={aiLoading}
+          aiError={aiError}
+          onAiDismiss={onAiDismiss}
+          imageSource={imageSource}
         />
       )}
 

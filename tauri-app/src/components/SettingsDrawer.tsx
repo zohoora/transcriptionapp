@@ -487,27 +487,30 @@ export const SettingsDrawer = memo(function SettingsDrawer({
                 <span className="settings-hint">End recording automatically after 3 minutes of silence (with countdown warning at 1 minute)</span>
               </div>
 
-              {/* MIIS (Medical Illustration Image Server) Settings */}
+              {/* Medical Illustration Settings */}
               <div className="settings-divider" />
               <div className="settings-section-title">Medical Illustrations</div>
 
               <div className="settings-group">
-                <div className="settings-row">
-                  <span className="settings-label" style={{ marginBottom: 0 }}>Show Relevant Images</span>
-                  <label className="toggle-switch">
-                    <input
-                      type="checkbox"
-                      checked={pendingSettings.miis_enabled}
-                      onChange={(e) => onSettingsChange({ ...pendingSettings, miis_enabled: e.target.checked })}
-                      aria-label="Show relevant medical illustrations during recording"
-                    />
-                    <span className="toggle-slider"></span>
-                  </label>
-                </div>
-                <span className="settings-hint">Display relevant anatomical diagrams and illustrations based on the conversation</span>
+                <label className="settings-label" htmlFor="image-source">Image Source</label>
+                <select
+                  id="image-source"
+                  className="settings-input"
+                  value={pendingSettings.image_source}
+                  onChange={(e) => onSettingsChange({
+                    ...pendingSettings,
+                    image_source: e.target.value,
+                    miis_enabled: e.target.value === 'miis',
+                  })}
+                >
+                  <option value="off">Off</option>
+                  <option value="miis">MIIS Library</option>
+                  <option value="ai">AI Generated</option>
+                </select>
+                <span className="settings-hint">Show relevant anatomical diagrams during recording</span>
               </div>
 
-              {pendingSettings.miis_enabled && (
+              {pendingSettings.image_source === 'miis' && (
                 <div className="settings-group">
                   <label className="settings-label" htmlFor="miis-server-url">Image Server URL</label>
                   <input
@@ -518,6 +521,21 @@ export const SettingsDrawer = memo(function SettingsDrawer({
                     onChange={(e) => onSettingsChange({ ...pendingSettings, miis_server_url: e.target.value })}
                     placeholder="http://172.16.100.45:7843"
                   />
+                </div>
+              )}
+
+              {pendingSettings.image_source === 'ai' && (
+                <div className="settings-group">
+                  <label className="settings-label" htmlFor="gemini-api-key">Gemini API Key</label>
+                  <input
+                    id="gemini-api-key"
+                    type="password"
+                    className="settings-input"
+                    value={pendingSettings.gemini_api_key}
+                    onChange={(e) => onSettingsChange({ ...pendingSettings, gemini_api_key: e.target.value })}
+                    placeholder="Enter your Gemini API key"
+                  />
+                  <span className="settings-hint">Required for AI-generated medical illustrations (~$0.04/image)</span>
                 </div>
               )}
 

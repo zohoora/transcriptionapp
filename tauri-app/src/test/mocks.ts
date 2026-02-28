@@ -98,6 +98,9 @@ export const mockSettings: Settings = {
   // MIIS
   miis_enabled: false,
   miis_server_url: 'http://localhost:7843',
+  // AI image generation
+  image_source: 'off',
+  gemini_api_key: '',
   // Screen capture
   screen_capture_enabled: false,
   screen_capture_interval_secs: 60,

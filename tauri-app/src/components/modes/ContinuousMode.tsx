@@ -15,6 +15,7 @@ import { memo, useState, useEffect, useRef, useCallback } from 'react';
 import type { ContinuousModeStats, AudioQualitySnapshot, BiomarkerUpdate } from '../../types';
 import type { PatientTrends } from '../../hooks/usePatientBiomarkers';
 import type { MiisSuggestion } from '../../hooks/useMiisImages';
+import type { AiImage } from '../../hooks/useAiImages';
 import { getAudioQualityLevel } from '../../utils';
 import { MarkdownContent } from '../ClinicalChat';
 import { ImageSuggestions } from '../ImageSuggestions';
@@ -54,6 +55,12 @@ interface ContinuousModeProps {
   onMiisClick: (imageId: number) => void;
   onMiisDismiss: (imageId: number) => void;
   miisGetImageUrl: (path: string) => string;
+  // AI-generated images
+  aiImages?: AiImage[];
+  aiLoading?: boolean;
+  aiError?: string | null;
+  onAiDismiss?: (index: number) => void;
+  imageSource?: 'miis' | 'ai' | 'off';
   /** Start continuous mode */
   onStart: () => void;
   /** Stop continuous mode */
@@ -141,6 +148,11 @@ export const ContinuousMode = memo(function ContinuousMode({
   onMiisClick,
   onMiisDismiss,
   miisGetImageUrl,
+  aiImages,
+  aiLoading,
+  aiError,
+  onAiDismiss,
+  imageSource = 'miis',
   onStart,
   onStop,
   onNewPatient,
@@ -368,7 +380,7 @@ export const ContinuousMode = memo(function ContinuousMode({
         </div>
       )}
 
-      {/* MIIS Image Suggestions */}
+      {/* Image Suggestions (MIIS or AI) */}
       {miisEnabled && (
         <ImageSuggestions
           suggestions={miisSuggestions}
@@ -378,6 +390,11 @@ export const ContinuousMode = memo(function ContinuousMode({
           onImpression={onMiisImpression}
           onClickImage={onMiisClick}
           onDismiss={onMiisDismiss}
+          aiImages={aiImages}
+          aiLoading={aiLoading}
+          aiError={aiError}
+          onAiDismiss={onAiDismiss}
+          imageSource={imageSource}
         />
       )}
 

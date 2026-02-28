@@ -94,6 +94,9 @@ export interface Settings {
   // MIIS (Medical Illustration Image Server)
   miis_enabled: boolean;
   miis_server_url: string;
+  // AI image generation
+  image_source: string; // "off" | "miis" | "ai"
+  gemini_api_key: string;
   // Screen capture
   screen_capture_enabled: boolean;
   screen_capture_interval_secs: number;

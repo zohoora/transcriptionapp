@@ -24,6 +24,7 @@ import {
   useSessionLifecycle,
   usePredictiveHint,
   useMiisImages,
+  useAiImages,
   useScreenCapture,
   useContinuousModeOrchestrator,
   useConnectionTests,
@@ -307,11 +308,14 @@ function App() {
   const {
     hint: predictiveHint,
     concepts: imageConcepts,
+    imagePrompt,
     isLoading: predictiveHintLoading,
   } = usePredictiveHint({
     transcript: transcript.finalized_text,
     isRecording: uiMode === 'recording',
   });
+
+  const imageSource = (settings?.image_source ?? 'off') as 'off' | 'miis' | 'ai';
 
   // MIIS image suggestions (uses concepts from predictive hints)
   const {
@@ -325,8 +329,20 @@ function App() {
   } = useMiisImages({
     sessionId: status.session_id ?? null,
     concepts: imageConcepts,
-    enabled: settings?.miis_enabled ?? false,
+    enabled: imageSource === 'miis',
     serverUrl: settings?.miis_server_url ?? '',
+  });
+
+  // AI-generated image suggestions (uses image_prompt from predictive hints)
+  const {
+    images: aiImages,
+    isLoading: aiLoading,
+    error: aiError,
+    dismissImage: aiDismiss,
+  } = useAiImages({
+    imagePrompt,
+    enabled: imageSource === 'ai',
+    sessionId: status.session_id ?? null,
   });
 
   // Screen capture tied to recording lifecycle
@@ -626,7 +642,7 @@ function App() {
             biomarkerTrends={continuous.biomarkerTrends}
             encounterNotes={continuous.encounterNotes}
             onEncounterNotesChange={continuous.onEncounterNotesChange}
-            // MIIS image suggestions
+            // Image suggestions (MIIS or AI)
             miisSuggestions={continuous.miisSuggestions}
             miisLoading={continuous.miisLoading}
             miisError={continuous.miisError}
@@ -635,6 +651,11 @@ function App() {
             onMiisClick={continuous.onMiisClick}
             onMiisDismiss={continuous.onMiisDismiss}
             miisGetImageUrl={continuous.miisGetImageUrl}
+            aiImages={continuous.aiImages}
+            aiLoading={continuous.aiLoading}
+            aiError={continuous.aiError}
+            onAiDismiss={continuous.onAiDismiss}
+            imageSource={continuous.imageSource}
             onStart={continuous.onStart}
             onStop={continuous.onStop}
             onNewPatient={continuous.onNewPatient}
@@ -683,15 +704,20 @@ function App() {
             onChatClear={clearChat}
             predictiveHint={predictiveHint}
             predictiveHintLoading={predictiveHintLoading}
-            // MIIS image suggestions
+            // Image suggestions (MIIS or AI)
             miisSuggestions={miisSuggestions}
             miisLoading={miisLoading}
             miisError={miisError}
-            miisEnabled={settings?.miis_enabled ?? false}
+            miisEnabled={imageSource !== 'off'}
             onMiisImpression={miisRecordImpression}
             onMiisClick={miisRecordClick}
             onMiisDismiss={miisRecordDismiss}
             miisGetImageUrl={miisGetImageUrl}
+            aiImages={aiImages}
+            aiLoading={aiLoading}
+            aiError={aiError}
+            onAiDismiss={aiDismiss}
+            imageSource={imageSource}
             autoEndEnabled={pendingSettings?.auto_end_enabled ?? true}
             onAutoEndToggle={handleAutoEndToggle}
             onStop={handleStop}

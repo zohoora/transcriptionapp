@@ -45,6 +45,7 @@ pub mod diarization;
 pub mod local_archive;
 pub mod enhancement;
 pub mod listening;
+pub mod gemini_client;
 pub mod llm_client;
 pub mod mcp;
 pub mod medplum;
@@ -379,6 +380,7 @@ pub fn run() {
             // MIIS (Medical Illustration Image Server) commands
             commands::miis_suggest,
             commands::miis_send_usage,
+            commands::generate_ai_image,
             // Screen capture commands
             commands::check_screen_recording_permission,
             commands::open_screen_recording_settings,

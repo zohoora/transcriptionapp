@@ -17,6 +17,7 @@ export interface ImageConcept {
 interface PredictiveHintResponse {
   hint: string;
   concepts: ImageConcept[];
+  image_prompt: string | null;
 }
 
 interface UsePredictiveHintOptions {
@@ -29,6 +30,8 @@ interface UsePredictiveHintResult {
   hint: string;
   /** Medical concepts for MIIS image search */
   concepts: ImageConcept[];
+  /** Image generation prompt from LLM (null if no image needed) */
+  imagePrompt: string | null;
   /** Whether a hint is being generated */
   isLoading: boolean;
   /** Timestamp of last update */
@@ -46,6 +49,7 @@ export function usePredictiveHint({
 }: UsePredictiveHintOptions): UsePredictiveHintResult {
   const [hint, setHint] = useState('');
   const [concepts, setConcepts] = useState<ImageConcept[]>([]);
+  const [imagePrompt, setImagePrompt] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [lastUpdated, setLastUpdated] = useState<number | null>(null);
 
@@ -101,6 +105,7 @@ export function usePredictiveHint({
           console.log('Image concepts received:', result.concepts.map(c => c.text).join(', '));
           setConcepts(result.concepts);
         }
+        setImagePrompt(result.image_prompt ?? null);
         setLastUpdated(Date.now());
         lastGeneratedRef.current = text;
       }
@@ -142,6 +147,7 @@ export function usePredictiveHint({
       // Clear state when not recording
       setHint('');
       setConcepts([]);
+      setImagePrompt(null);
       setLastUpdated(null);
       lastGeneratedRef.current = '';
       if (timeoutRef.current) {
@@ -158,6 +164,7 @@ export function usePredictiveHint({
   return {
     hint,
     concepts,
+    imagePrompt,
     isLoading,
     lastUpdated,
   };

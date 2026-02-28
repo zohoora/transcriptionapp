@@ -14,10 +14,12 @@ import { useState, useEffect, useCallback } from 'react';
 import type { Settings, ContinuousModeStats, AudioQualitySnapshot, BiomarkerUpdate } from '../types';
 import type { PatientTrends } from './usePatientBiomarkers';
 import type { MiisSuggestion } from './useMiisImages';
+import type { AiImage } from './useAiImages';
 import { useContinuousMode } from './useContinuousMode';
 import { usePatientBiomarkers } from './usePatientBiomarkers';
 import { usePredictiveHint } from './usePredictiveHint';
 import { useMiisImages } from './useMiisImages';
+import { useAiImages } from './useAiImages';
 
 // ============================================================================
 // Types
@@ -51,6 +53,12 @@ export interface ContinuousModeOrchestratorResult {
   onMiisClick: (imageId: number) => void;
   onMiisDismiss: (imageId: number) => void;
   miisGetImageUrl: (path: string) => string;
+  // AI-generated images
+  aiImages: AiImage[];
+  aiLoading: boolean;
+  aiError: string | null;
+  onAiDismiss: (index: number) => void;
+  imageSource: 'miis' | 'ai' | 'off';
   onStart: () => void;
   onStop: () => void;
   onNewPatient: () => void;
@@ -89,6 +97,7 @@ export function useContinuousModeOrchestrator({
   const {
     hint: predictiveHint,
     concepts: continuousImageConcepts,
+    imagePrompt: continuousImagePrompt,
     isLoading: predictiveHintLoading,
   } = usePredictiveHint({
     transcript: liveTranscript,
@@ -117,8 +126,22 @@ export function useContinuousModeOrchestrator({
   } = useMiisImages({
     sessionId: continuousMiisSessionId,
     concepts: continuousImageConcepts,
-    enabled: settings?.miis_enabled ?? false,
+    enabled: (settings?.image_source ?? 'off') === 'miis',
     serverUrl: settings?.miis_server_url ?? '',
+  });
+
+  const continuousImageSource = (settings?.image_source ?? 'off') as 'off' | 'miis' | 'ai';
+
+  // AI-generated image suggestions for continuous mode
+  const {
+    images: aiImages,
+    isLoading: aiLoading,
+    error: aiError,
+    dismissImage: aiDismiss,
+  } = useAiImages({
+    imagePrompt: continuousImagePrompt,
+    enabled: continuousImageSource === 'ai',
+    sessionId: continuousMiisSessionId,
   });
 
   // Wrap "New Patient" to immediately reset frontend state before backend processes
@@ -146,11 +169,16 @@ export function useContinuousModeOrchestrator({
     miisSuggestions,
     miisLoading,
     miisError,
-    miisEnabled: settings?.miis_enabled ?? false,
+    miisEnabled: continuousImageSource !== 'off',
     onMiisImpression: miisRecordImpression,
     onMiisClick: miisRecordClick,
     onMiisDismiss: miisRecordDismiss,
     miisGetImageUrl,
+    aiImages,
+    aiLoading,
+    aiError,
+    onAiDismiss: aiDismiss,
+    imageSource: continuousImageSource,
     onStart: start,
     onStop: stop,
     onNewPatient: handleNewPatient,

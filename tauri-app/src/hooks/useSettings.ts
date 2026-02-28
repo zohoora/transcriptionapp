@@ -35,6 +35,9 @@ export interface PendingSettings {
   // MIIS (Medical Illustration Image Server) settings
   miis_enabled: boolean;
   miis_server_url: string;
+  // AI image generation
+  image_source: string;
+  gemini_api_key: string;
   // Screen capture settings
   screen_capture_enabled: boolean;
   screen_capture_interval_secs: number;
@@ -113,6 +116,8 @@ export function useSettings(): UseSettingsResult {
     auto_end_enabled: s.auto_end_enabled,
     miis_enabled: s.miis_enabled,
     miis_server_url: s.miis_server_url,
+    image_source: s.image_source,
+    gemini_api_key: s.gemini_api_key,
     screen_capture_enabled: s.screen_capture_enabled,
     screen_capture_interval_secs: s.screen_capture_interval_secs,
     charting_mode: s.charting_mode,
@@ -186,6 +191,8 @@ export function useSettings(): UseSettingsResult {
         auto_end_enabled: pendingSettings.auto_end_enabled,
         miis_enabled: pendingSettings.miis_enabled,
         miis_server_url: pendingSettings.miis_server_url,
+        image_source: pendingSettings.image_source,
+        gemini_api_key: pendingSettings.gemini_api_key,
         screen_capture_enabled: pendingSettings.screen_capture_enabled,
         screen_capture_interval_secs: pendingSettings.screen_capture_interval_secs,
         charting_mode: pendingSettings.charting_mode,
@@ -242,6 +249,8 @@ export function useSettings(): UseSettingsResult {
       [settings.auto_end_enabled, pendingSettings.auto_end_enabled],
       [settings.miis_enabled, pendingSettings.miis_enabled],
       [settings.miis_server_url, pendingSettings.miis_server_url],
+      [settings.image_source, pendingSettings.image_source],
+      [settings.gemini_api_key, pendingSettings.gemini_api_key],
       [settings.screen_capture_enabled, pendingSettings.screen_capture_enabled],
       [settings.screen_capture_interval_secs, pendingSettings.screen_capture_interval_secs],
       [settings.charting_mode, pendingSettings.charting_mode],

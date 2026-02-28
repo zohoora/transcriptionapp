@@ -297,6 +297,9 @@ pub struct PredictiveHintResponse {
     pub hint: String,
     /// Medical concepts for MIIS image search (de-identified)
     pub concepts: Vec<ImageConcept>,
+    /// Optional image generation prompt for AI-generated medical illustrations
+    #[serde(default)]
+    pub image_prompt: Option<String>,
 }
 
 /// A medical concept for MIIS image search
@@ -315,6 +318,7 @@ pub async fn generate_predictive_hint(transcript: String) -> Result<PredictiveHi
     let empty_response = PredictiveHintResponse {
         hint: String::new(),
         concepts: Vec::new(),
+        image_prompt: None,
     };
 
     if transcript.trim().is_empty() || transcript.split_whitespace().count() < 20 {
@@ -329,13 +333,14 @@ pub async fn generate_predictive_hint(transcript: String) -> Result<PredictiveHi
         &config.soap_model,
     )?;
 
-    let system_prompt = r#"You are a clinical assistant analyzing a medical transcript. Provide TWO things:
+    let system_prompt = r#"You are a clinical assistant analyzing a medical transcript. Provide THREE things:
 
 1. HINT: A brief clinical fact the physician might need right now (max 60 chars, shorthand style)
 2. CONCEPTS: 1-5 medical image search terms for relevant anatomical diagrams or illustrations
+3. IMAGE_PROMPT: If the conversation involves a specific anatomical structure, condition, or procedure that a patient would benefit from seeing illustrated, provide a detailed image generation prompt. Otherwise, return null.
 
 Respond ONLY with this JSON format:
-{"hint":"brief clinical fact here","concepts":[{"text":"anatomy term","weight":0.9},{"text":"condition","weight":0.7}]}
+{"hint":"brief clinical fact here","concepts":[{"text":"anatomy term","weight":0.9},{"text":"condition","weight":0.7}],"image_prompt":"detailed medical illustration prompt or null"}
 
 RULES for hint:
 - Maximum 60 characters
@@ -353,6 +358,15 @@ RULES for concepts:
 - BAD examples: "iron metabolism pathway", "ferritin levels reference ranges", "McMurray test positioning"
 
 If no relevant image concepts, return empty array: "concepts":[]
+
+RULES for image_prompt:
+- Style must include: "medical illustration, anatomical diagram, labeled, clean white background"
+- Be anatomically specific: "anterior view of right knee showing torn ACL"
+- Include view angle, relevant structures, and any pathology discussed
+- Do NOT generate for: lab values, medications, general wellness, psychological topics
+- Do NOT repeat the same subject within a session
+- Maximum one image_prompt per response
+- Return null when no image would help the patient understand their condition
 "#;
 
     // Truncate transcript if too long (keep last ~2000 words for context)
@@ -393,6 +407,7 @@ If no relevant image concepts, return empty array: "concepts":[]
             Ok(PredictiveHintResponse {
                 hint: cleaned,
                 concepts: Vec::new(),
+                image_prompt: None,
             })
         }
         Err(e) => {
@@ -528,6 +543,7 @@ fn parse_hint_response(response: &str) -> Option<PredictiveHintResponse> {
             struct RawResponse {
                 hint: Option<String>,
                 concepts: Option<Vec<RawConcept>>,
+                image_prompt: Option<String>,
             }
 
             #[derive(Deserialize)]
@@ -554,7 +570,11 @@ fn parse_hint_response(response: &str) -> Option<PredictiveHintResponse> {
                     .take(5) // Max 5 concepts
                     .collect();
 
-                return Some(PredictiveHintResponse { hint, concepts });
+                // Filter out "null" string from image_prompt
+                let image_prompt = raw.image_prompt
+                    .filter(|p| !p.trim().is_empty() && p.trim() != "null");
+
+                return Some(PredictiveHintResponse { hint, concepts, image_prompt });
             }
         }
     }

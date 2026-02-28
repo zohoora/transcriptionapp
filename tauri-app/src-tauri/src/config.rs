@@ -135,6 +135,11 @@ pub struct Settings {
     pub miis_enabled: bool,
     #[serde(default = "default_miis_server_url")]
     pub miis_server_url: String,
+    // AI image generation settings
+    #[serde(default = "default_image_source")]
+    pub image_source: String,
+    #[serde(default)]
+    pub gemini_api_key: String,
     // Screen capture settings
     #[serde(default)]
     pub screen_capture_enabled: bool,
@@ -256,6 +261,10 @@ fn default_screen_capture_interval_secs() -> u32 {
 
 fn default_miis_server_url() -> String {
     "http://10.241.15.154:7843".to_string()
+}
+
+fn default_image_source() -> String {
+    "off".to_string()
 }
 
 fn default_auto_end_enabled() -> bool {
@@ -381,6 +390,8 @@ impl Default for Settings {
             debug_storage_enabled: default_debug_storage_enabled(),
             miis_enabled: false,
             miis_server_url: default_miis_server_url(),
+            image_source: default_image_source(),
+            gemini_api_key: String::new(),
             screen_capture_enabled: false,
             screen_capture_interval_secs: default_screen_capture_interval_secs(),
             charting_mode: default_charting_mode(),
@@ -715,6 +726,12 @@ impl Config {
             }
         };
         config.clamp_values();
+
+        // Migrate miis_enabled → image_source for backward compatibility
+        if config.miis_enabled && config.image_source == "off" {
+            config.image_source = "miis".to_string();
+        }
+
         config
     }
 
@@ -752,6 +769,11 @@ impl Config {
 
         // Hybrid: min words 100-5000
         self.hybrid_min_words_for_sensor_split = self.hybrid_min_words_for_sensor_split.clamp(100, 5000);
+
+        // image_source must be "off", "miis", or "ai"
+        if !["off", "miis", "ai"].contains(&self.image_source.as_str()) {
+            self.image_source = "off".to_string();
+        }
     }
 
     /// Load config from file (with clamping for safety)
@@ -976,6 +998,8 @@ mod tests {
             debug_storage_enabled: true,
             miis_enabled: false,
             miis_server_url: "http://172.16.100.45:7843".to_string(),
+            image_source: "off".to_string(),
+            gemini_api_key: String::new(),
             screen_capture_enabled: false,
             screen_capture_interval_secs: 30,
             charting_mode: ChartingMode::Session,
@@ -1102,6 +1126,8 @@ mod tests {
             debug_storage_enabled: true,
             miis_enabled: false,
             miis_server_url: default_miis_server_url(),
+            image_source: default_image_source(),
+            gemini_api_key: String::new(),
             screen_capture_enabled: false,
             screen_capture_interval_secs: 30,
             charting_mode: default_charting_mode(),

@@ -40,6 +40,9 @@ export type { ImageConcept } from './usePredictiveHint';
 export { useMiisImages } from './useMiisImages';
 export type { MiisSuggestion } from './useMiisImages';
 
+export { useAiImages } from './useAiImages';
+export type { AiImage } from './useAiImages';
+
 export { useScreenCapture } from './useScreenCapture';
 
 export { useContinuousMode } from './useContinuousMode';
