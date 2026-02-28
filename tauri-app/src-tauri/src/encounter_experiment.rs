@@ -180,6 +180,9 @@ pub struct MergeStepResult {
 pub struct HallucinationReport {
     /// Each entry: (word, original_count, position_in_text)
     pub repetitions: Vec<HallucinationEntry>,
+    /// Multi-word phrase repetitions (phase 2)
+    #[serde(default)]
+    pub phrase_repetitions: Vec<PhraseHallucinationEntry>,
     pub original_word_count: usize,
     pub cleaned_word_count: usize,
 }
@@ -191,29 +194,63 @@ pub struct HallucinationEntry {
     pub position: usize,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PhraseHallucinationEntry {
+    pub phrase: String,
+    pub ngram_size: usize,
+    pub original_count: usize,
+    pub position: usize,
+}
+
 // ============================================================================
 // Hallucination Filter
 // ============================================================================
 
-/// Detect and truncate consecutive word repetitions in transcript text.
+/// Two-phase hallucination detection and truncation:
+/// Phase 1: Single-word consecutive repetitions (e.g., "fractured" ×6000)
+/// Phase 2: Multi-word phrase loops (e.g., 20-word phrase ×75)
 ///
 /// Returns (cleaned_text, hallucination_report).
-///
-/// For the Buckland case: strips ~6000 "fractured" repetitions, reducing
-/// encounter 1 from 7,315 to ~1,200 words.
 pub fn strip_hallucinations(text: &str, max_consecutive: usize) -> (String, HallucinationReport) {
-    let words: Vec<&str> = text.split_whitespace().collect();
-    let original_word_count = words.len();
+    let original_word_count = text.split_whitespace().count();
 
-    if words.is_empty() {
+    if original_word_count == 0 {
         return (
             String::new(),
             HallucinationReport {
                 repetitions: Vec::new(),
+                phrase_repetitions: Vec::new(),
                 original_word_count: 0,
                 cleaned_word_count: 0,
             },
         );
+    }
+
+    // Phase 1: Strip single-word repetitions
+    let (phase1_text, single_reps) = strip_single_word_hallucinations(text, max_consecutive);
+
+    // Phase 2: Strip multi-word phrase loops
+    let (cleaned_text, phrase_reps) = strip_phrase_hallucinations(&phase1_text, max_consecutive);
+
+    let cleaned_word_count = cleaned_text.split_whitespace().count();
+
+    (
+        cleaned_text,
+        HallucinationReport {
+            repetitions: single_reps,
+            phrase_repetitions: phrase_reps,
+            original_word_count,
+            cleaned_word_count,
+        },
+    )
+}
+
+/// Phase 1: Detect and truncate consecutive single-word repetitions.
+fn strip_single_word_hallucinations(text: &str, max_consecutive: usize) -> (String, Vec<HallucinationEntry>) {
+    let words: Vec<&str> = text.split_whitespace().collect();
+
+    if words.is_empty() {
+        return (String::new(), Vec::new());
     }
 
     let mut result_words: Vec<&str> = Vec::with_capacity(words.len());
@@ -252,17 +289,89 @@ pub fn strip_hallucinations(text: &str, max_consecutive: usize) -> (String, Hall
         i += run_length;
     }
 
-    let cleaned_word_count = result_words.len();
-    let cleaned_text = result_words.join(" ");
+    (result_words.join(" "), repetitions)
+}
 
-    (
-        cleaned_text,
-        HallucinationReport {
-            repetitions,
-            original_word_count,
-            cleaned_word_count,
-        },
-    )
+/// Phase 2: Detect and truncate consecutive multi-word phrase (n-gram) loops.
+///
+/// Scans for n-grams of sizes 3-15 words. For each size (largest first),
+/// finds runs of consecutive identical n-grams. If a phrase repeats more than
+/// `max_consecutive` times in a row, truncates to `max_consecutive` occurrences.
+fn strip_phrase_hallucinations(text: &str, max_consecutive: usize) -> (String, Vec<PhraseHallucinationEntry>) {
+    let words: Vec<&str> = text.split_whitespace().collect();
+    let mut phrase_reps: Vec<PhraseHallucinationEntry> = Vec::new();
+
+    if words.len() < 6 {
+        // Need at least 2× the minimum n-gram (3) to detect a repeat
+        return (text.to_string(), phrase_reps);
+    }
+
+    // Work with owned words so we can mutate across passes
+    let mut current_words: Vec<String> = words.iter().map(|w| w.to_string()).collect();
+
+    // Scan from largest n-gram to smallest to catch broad patterns first.
+    // Range 3-25 covers real-world STT loops (e.g., 20-word phrase ×75).
+    for ngram_size in (3..=25).rev() {
+        if current_words.len() < ngram_size * 2 {
+            continue;
+        }
+
+        let mut result: Vec<String> = Vec::with_capacity(current_words.len());
+        let mut i = 0;
+
+        while i < current_words.len() {
+            if i + ngram_size > current_words.len() {
+                // Not enough words left for an n-gram — copy remainder
+                result.extend_from_slice(&current_words[i..]);
+                break;
+            }
+
+            // Build the n-gram at position i (lowercased for comparison)
+            let ngram: Vec<String> = current_words[i..i + ngram_size]
+                .iter()
+                .map(|w| w.to_lowercase())
+                .collect();
+
+            // Count consecutive identical n-grams
+            let mut run_count = 1;
+            let mut pos = i + ngram_size;
+            while pos + ngram_size <= current_words.len() {
+                let next_ngram: Vec<String> = current_words[pos..pos + ngram_size]
+                    .iter()
+                    .map(|w| w.to_lowercase())
+                    .collect();
+                if next_ngram == ngram {
+                    run_count += 1;
+                    pos += ngram_size;
+                } else {
+                    break;
+                }
+            }
+
+            if run_count > max_consecutive {
+                // Truncate: keep only max_consecutive occurrences
+                for _ in 0..max_consecutive {
+                    result.extend_from_slice(&current_words[i..i + ngram_size]);
+                }
+                phrase_reps.push(PhraseHallucinationEntry {
+                    phrase: ngram.join(" "),
+                    ngram_size,
+                    original_count: run_count,
+                    position: i,
+                });
+                i += run_count * ngram_size;
+            } else {
+                // Not a hallucination — emit one word and advance by one
+                // (sliding window, not jumping by n-gram size)
+                result.push(current_words[i].clone());
+                i += 1;
+            }
+        }
+
+        current_words = result;
+    }
+
+    (current_words.join(" "), phrase_reps)
 }
 
 // ============================================================================
@@ -1137,6 +1246,124 @@ mod tests {
         assert_eq!(report.repetitions[0].word, "fractured");
         assert_eq!(report.repetitions[0].original_count, 6000);
         assert!(cleaned.ends_with("kneecap and is recovering"));
+    }
+
+    // ---- Phrase hallucination filter tests ----
+
+    #[test]
+    fn test_strip_phrase_hallucinations_basic() {
+        // 3-word phrase repeated 8 times (exceeds max_consecutive=5)
+        let phrase = "the patient said";
+        let mut words: Vec<&str> = vec!["hello"];
+        for _ in 0..8 {
+            words.extend_from_slice(&["the", "patient", "said"]);
+        }
+        words.push("goodbye");
+        let text = words.join(" ");
+
+        let (cleaned, report) = strip_hallucinations(&text, 5);
+
+        // Should truncate 8 occurrences to 5
+        assert_eq!(
+            cleaned.matches(phrase).count(),
+            5,
+            "Should have exactly 5 instances of phrase, got: {}",
+            cleaned
+        );
+        assert!(cleaned.starts_with("hello"));
+        assert!(cleaned.ends_with("goodbye"));
+        assert_eq!(report.phrase_repetitions.len(), 1);
+        assert_eq!(report.phrase_repetitions[0].ngram_size, 3);
+        assert_eq!(report.phrase_repetitions[0].original_count, 8);
+    }
+
+    #[test]
+    fn test_strip_phrase_hallucinations_no_repetitions() {
+        let text = "the patient came in for a follow up appointment and was discharged home";
+        let (cleaned, report) = strip_hallucinations(text, 5);
+
+        assert_eq!(cleaned, text);
+        assert!(report.phrase_repetitions.is_empty());
+    }
+
+    #[test]
+    fn test_strip_phrase_hallucinations_within_threshold() {
+        // 3-word phrase repeated 4 times (under max_consecutive=5)
+        let mut words: Vec<&str> = Vec::new();
+        for _ in 0..4 {
+            words.extend_from_slice(&["the", "patient", "said"]);
+        }
+        let text = words.join(" ");
+        let (cleaned, report) = strip_hallucinations(&text, 5);
+
+        assert_eq!(cleaned, text);
+        assert!(report.phrase_repetitions.is_empty());
+    }
+
+    #[test]
+    fn test_strip_phrase_hallucinations_large_ngram() {
+        // Simulate the Feb 27 bug: 20-word phrase repeated 75 times
+        let phrase_words = vec![
+            "so", "we", "will", "continue", "to", "monitor", "your", "blood",
+            "pressure", "and", "adjust", "the", "medication", "as", "needed",
+            "please", "follow", "up", "in", "two",
+        ];
+        let mut words: Vec<&str> = vec!["Doctor", "says"];
+        for _ in 0..75 {
+            words.extend_from_slice(&phrase_words);
+        }
+        words.extend_from_slice(&["weeks", "from", "now"]);
+
+        let text = words.join(" ");
+        let original_wc = text.split_whitespace().count();
+        assert_eq!(original_wc, 2 + 75 * 20 + 3); // 1505 words
+
+        let (cleaned, report) = strip_hallucinations(&text, 5);
+
+        // Should truncate 75 occurrences to 5
+        let cleaned_wc = cleaned.split_whitespace().count();
+        assert_eq!(cleaned_wc, 2 + 5 * 20 + 3); // 105 words
+        assert!(cleaned.starts_with("Doctor says"));
+        assert!(cleaned.ends_with("weeks from now"));
+        assert_eq!(report.phrase_repetitions.len(), 1);
+        assert_eq!(report.phrase_repetitions[0].original_count, 75);
+    }
+
+    #[test]
+    fn test_strip_phrase_hallucinations_combined_with_single_word() {
+        // Both single-word AND phrase hallucinations in the same text
+        let mut words: Vec<&str> = vec!["start"];
+        // Single-word loop: "okay" x 10
+        for _ in 0..10 {
+            words.push("okay");
+        }
+        words.push("middle");
+        // Phrase loop: "see you soon" x 8
+        for _ in 0..8 {
+            words.extend_from_slice(&["see", "you", "soon"]);
+        }
+        words.push("end");
+        let text = words.join(" ");
+
+        let (cleaned, report) = strip_hallucinations(&text, 5);
+
+        // Single-word: 10 → 5
+        assert_eq!(report.repetitions.len(), 1);
+        assert_eq!(report.repetitions[0].word, "okay");
+        // Phrase: 8 → 5
+        assert_eq!(report.phrase_repetitions.len(), 1);
+        assert_eq!(report.phrase_repetitions[0].phrase, "see you soon");
+        assert!(cleaned.starts_with("start"));
+        assert!(cleaned.ends_with("end"));
+    }
+
+    #[test]
+    fn test_strip_phrase_hallucinations_short_text_no_crash() {
+        // Text too short for any phrase detection
+        let text = "hi there";
+        let (cleaned, report) = strip_hallucinations(text, 5);
+        assert_eq!(cleaned, text);
+        assert!(report.phrase_repetitions.is_empty());
     }
 
     // ---- Prompt builder tests ----

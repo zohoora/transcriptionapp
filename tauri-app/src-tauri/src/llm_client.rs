@@ -1590,12 +1590,41 @@ fn remove_trailing_commas(json: &str) -> String {
     result
 }
 
-/// Fix truncated JSON by adding missing closing brackets
+/// Fix truncated JSON by closing unclosed strings and adding missing closing brackets
 /// LLMs sometimes get cut off before completing the JSON structure
 fn fix_truncated_json(json: &str) -> String {
-    // Count unmatched brackets
-    let mut brace_count = 0;  // {}
-    let mut bracket_count = 0; // []
+    // Phase 1: Close unclosed strings
+    // Count unescaped quotes to detect if we're mid-string
+    let mut quote_count = 0u64;
+    let mut escape_next = false;
+    for ch in json.chars() {
+        if escape_next {
+            escape_next = false;
+            continue;
+        }
+        match ch {
+            '\\' => escape_next = true,
+            '"' => quote_count += 1,
+            _ => {}
+        }
+    }
+
+    let json = if quote_count % 2 != 0 {
+        // Odd quote count means unclosed string — close it
+        let mut fixed = json.to_string();
+        // Strip trailing backslash if present (incomplete escape sequence)
+        if fixed.ends_with('\\') {
+            fixed.pop();
+        }
+        fixed.push('"');
+        fixed
+    } else {
+        json.to_string()
+    };
+
+    // Phase 2: Count unmatched brackets
+    let mut brace_count = 0i32;  // {}
+    let mut bracket_count = 0i32; // []
     let mut in_string = false;
     let mut escape_next = false;
 
@@ -1712,6 +1741,26 @@ fn parse_and_format_soap_json(response: &str) -> String {
             if let Some(soap) = try_parse_text_soap(&cleaned) {
                 info!("Successfully parsed SOAP from text format");
                 format_soap_as_text(&soap)
+            } else if cleaned.trim_start().starts_with('{') || cleaned.contains("\"subjective\"") {
+                // Last resort: result looks like raw/broken JSON — try aggressive repair
+                warn!("Fallback result appears to be raw JSON, attempting aggressive repair");
+                let repaired = fix_truncated_json(&remove_trailing_commas(&remove_leading_commas(&fix_json_newlines(&cleaned))));
+                match serde_json::from_str::<SoapJsonResponse>(&repaired) {
+                    Ok(soap) => {
+                        let soap = SoapJsonResponse {
+                            subjective: soap.subjective.into_iter().filter(|s| !s.trim().is_empty()).collect(),
+                            objective: soap.objective.into_iter().filter(|s| !s.trim().is_empty()).collect(),
+                            assessment: soap.assessment.into_iter().filter(|s| !s.trim().is_empty()).collect(),
+                            plan: soap.plan.into_iter().filter(|s| !s.trim().is_empty()).collect(),
+                        };
+                        info!("Aggressive JSON repair succeeded");
+                        format_soap_as_text(&soap)
+                    }
+                    Err(e2) => {
+                        warn!("Aggressive JSON repair also failed: {}. Returning placeholder.", e2);
+                        "S:\n- [SOAP generation produced malformed output — review transcript directly]\n\nO:\n- [See transcript]\n\nA:\n- [See transcript]\n\nP:\n- [See transcript]".to_string()
+                    }
+                }
             } else {
                 // Return cleaned text as last resort
                 cleaned
@@ -2345,5 +2394,48 @@ mod tests {
         assert!(result.contains("Patient reports headache"));
         // Empty strings should be filtered out — only real items produce bullets
         assert_eq!(result.matches("•").count(), 4); // one per non-empty item across all sections
+    }
+
+    #[test]
+    fn test_fix_truncated_json_unclosed_string() {
+        // LLM truncated mid-string-value
+        let input = r#"{"subjective":["Patient reports hea"#;
+        let fixed = fix_truncated_json(input);
+        // Should close the string, then close the array and object
+        assert!(fixed.ends_with("]}"), "Should end with ]}} got: {}", fixed);
+        assert!(serde_json::from_str::<serde_json::Value>(&fixed).is_ok(),
+            "Should produce valid JSON, got: {}", fixed);
+    }
+
+    #[test]
+    fn test_fix_truncated_json_unclosed_string_trailing_backslash() {
+        // LLM truncated mid-escape-sequence
+        let input = r#"{"subjective":["Patient said \"hel\"#;
+        let fixed = fix_truncated_json(input);
+        assert!(serde_json::from_str::<serde_json::Value>(&fixed).is_ok(),
+            "Should produce valid JSON, got: {}", fixed);
+    }
+
+    #[test]
+    fn test_fix_truncated_json_closed_string_still_works() {
+        // Already-valid string but missing brackets
+        let input = r#"{"subjective":["item1","item2"}"#;
+        let fixed = fix_truncated_json(input);
+        assert!(serde_json::from_str::<serde_json::Value>(&fixed).is_ok(),
+            "Should produce valid JSON, got: {}", fixed);
+    }
+
+    #[test]
+    fn test_parse_and_format_soap_json_raw_json_fallback() {
+        // Broken JSON that looks like SOAP structure — should get placeholder, not raw JSON
+        let broken = r#"{"subjective":["Patient reports headache","#;
+        let result = parse_and_format_soap_json(broken);
+        // Should not contain raw JSON braces
+        assert!(!result.starts_with('{'), "Should not return raw JSON, got: {}", result);
+        // Should either repair successfully or return placeholder
+        assert!(
+            result.contains("Patient reports headache") || result.contains("malformed output"),
+            "Should either repair or return placeholder, got: {}", result
+        );
     }
 }

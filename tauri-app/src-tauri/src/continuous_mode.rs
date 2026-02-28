@@ -919,6 +919,7 @@ pub async fn run_continuous_mode(
         let mut prev_encounter_session_id: Option<String> = None;
         let mut prev_encounter_text: Option<String> = None;
         let mut prev_encounter_date: Option<DateTime<Utc>> = None;
+        let mut prev_encounter_is_clinical: bool = true;
 
         loop {
             // Reset per-iteration hybrid tracking
@@ -1049,6 +1050,27 @@ pub async fn run_continuous_mode(
                 (buffer.format_for_detection_truncated(), buffer.word_count(), buffer.is_empty(), buffer.first_timestamp())
             };
 
+            // Pre-compute hallucination-cleaned word count for large buffers.
+            // This prevents STT phrase loops from inflating word counts and triggering
+            // premature force-splits. Only runs when buffer is large enough to matter.
+            let (filtered_formatted, hallucination_report) = if word_count > FORCE_CHECK_WORD_THRESHOLD {
+                let (filtered, report) = strip_hallucinations(&formatted, 5);
+                if !report.repetitions.is_empty() || !report.phrase_repetitions.is_empty() {
+                    info!(
+                        "Hallucination filter: {} → {} words ({} single-word, {} phrase repetitions stripped)",
+                        report.original_word_count, report.cleaned_word_count,
+                        report.repetitions.len(), report.phrase_repetitions.len()
+                    );
+                }
+                (Some(filtered), Some(report))
+            } else {
+                (None, None)
+            };
+            let cleaned_word_count = hallucination_report
+                .as_ref()
+                .map(|r| r.cleaned_word_count)
+                .unwrap_or(word_count);
+
             // Manual or sensor trigger: skip minimum guards, but still need >0 words
             if manual_triggered || sensor_triggered {
                 if is_empty {
@@ -1113,8 +1135,11 @@ pub async fn run_continuous_mode(
                     confidence: Some(1.0),
                 })
             } else if let Some(ref client) = llm_client {
-                // Strip hallucinated repetitions (e.g. STT "fractured" loop) before LLM call
-                let (filtered_formatted, _) = strip_hallucinations(&formatted, 5);
+                // Reuse pre-computed hallucination-filtered text if available, otherwise filter now
+                let filtered_for_llm = filtered_formatted.clone().unwrap_or_else(|| {
+                    let (filtered, _) = strip_hallucinations(&formatted, 5);
+                    filtered
+                });
                 // Build detection context from available signals (vision name change, sensor state)
                 let detection_context = {
                     let mut ctx = EncounterDetectionContext::default();
@@ -1131,7 +1156,7 @@ pub async fn run_continuous_mode(
                     ctx
                 };
                 let (system_prompt, user_prompt) = build_encounter_detection_prompt(
-                    &filtered_formatted,
+                    &filtered_for_llm,
                     Some(&detection_context),
                 );
                 // Prepend /nothink for Qwen3 models to disable thinking mode (improves detection accuracy)
@@ -1196,9 +1221,10 @@ pub async fn run_continuous_mode(
             let mut force_split = false;
             let mut detection_result = detection_result;
 
-            // Absolute word cap: unconditional force-split at 15K words
-            if word_count > ABSOLUTE_WORD_CAP && !manual_triggered && !sensor_triggered {
-                warn!("ABSOLUTE WORD CAP: force-splitting at {} words", word_count);
+            // Absolute word cap: unconditional force-split at 15K cleaned words
+            // Uses cleaned_word_count so STT phrase loops don't trigger premature splits
+            if cleaned_word_count > ABSOLUTE_WORD_CAP && !manual_triggered && !sensor_triggered {
+                warn!("ABSOLUTE WORD CAP: force-splitting at {} cleaned words (raw: {})", cleaned_word_count, word_count);
                 let last_idx = buffer_for_detector.lock().ok().and_then(|b| b.last_index());
                 consecutive_no_split = 0;
                 force_split = true;
@@ -1219,17 +1245,17 @@ pub async fn run_continuous_mode(
                 if is_negative {
                     consecutive_no_split += 1;
                     info!(
-                        "Detection non-split: result={}, consecutive_no_split={}, word_count={}",
+                        "Detection non-split: result={}, consecutive_no_split={}, cleaned_word_count={}, raw_word_count={}",
                         if detection_result.is_none() { "error/timeout" } else { "complete=false" },
-                        consecutive_no_split, word_count
+                        consecutive_no_split, cleaned_word_count, word_count
                     );
-                    // Graduated force-split
-                    if word_count > FORCE_SPLIT_WORD_THRESHOLD
+                    // Graduated force-split (uses cleaned word count to avoid STT loop inflation)
+                    if cleaned_word_count > FORCE_SPLIT_WORD_THRESHOLD
                         && consecutive_no_split >= FORCE_SPLIT_CONSECUTIVE_LIMIT
                     {
                         warn!(
-                            "Force-splitting: {} consecutive non-splits with {} words",
-                            consecutive_no_split, word_count
+                            "Force-splitting: {} consecutive non-splits with {} cleaned words (raw: {})",
+                            consecutive_no_split, cleaned_word_count, word_count
                         );
                         let last_idx = buffer_for_detector.lock().ok().and_then(|b| b.last_index());
                         consecutive_no_split = 0;
@@ -1275,13 +1301,19 @@ pub async fn run_continuous_mode(
             // Process detection result
             if let Some(result) = detection_result {
                 if result.complete {
-                    // Confidence gate: require >= 0.7 to proceed (skip for forced splits)
+                    // Confidence gate: dynamic threshold based on buffer age
+                    // Short encounters (<20 min) get a higher bar (0.85) to reduce false splits
+                    // on natural pauses. Longer encounters use 0.7 (established threshold).
                     let confidence = result.confidence.unwrap_or(0.0);
-                    if confidence < 0.7 && !force_split {
+                    let buffer_age_mins = first_ts
+                        .map(|t| (Utc::now() - t).num_minutes())
+                        .unwrap_or(0);
+                    let confidence_threshold = if buffer_age_mins < 20 { 0.85 } else { 0.7 };
+                    if confidence < confidence_threshold && !force_split {
                         consecutive_no_split += 1;
                         info!(
-                            "Confidence gate rejected: confidence={:.2}, word_count={}, consecutive_no_split={}",
-                            confidence, word_count, consecutive_no_split
+                            "Confidence gate rejected: confidence={:.2}, threshold={:.2}, buffer_age_mins={}, word_count={}, consecutive_no_split={}",
+                            confidence, confidence_threshold, buffer_age_mins, word_count, consecutive_no_split
                         );
                         // Return to recording state and continue
                         if let Ok(mut state) = state_for_detector.lock() {
@@ -1554,6 +1586,7 @@ pub async fn run_continuous_mode(
                         }));
 
                         // Two-pass clinical content check: flag non-clinical encounters
+                        let mut is_clinical = true;
                         if let Some(ref client) = llm_client {
                             let (cc_system, cc_user) = build_clinical_content_check_prompt(&encounter_text);
                             let cc_future = client.generate(&fast_model, &cc_system, &cc_user, "clinical_content_check");
@@ -1562,6 +1595,7 @@ pub async fn run_continuous_mode(
                                     match parse_clinical_content_check(&cc_response) {
                                         Ok(cc_result) => {
                                             if !cc_result.clinical {
+                                                is_clinical = false;
                                                 info!(
                                                     "Encounter #{} flagged as non-clinical: {:?}",
                                                     encounter_number, cc_result.reason
@@ -1608,7 +1642,10 @@ pub async fn run_continuous_mode(
                         }
 
                         // Generate SOAP note (with 120s timeout — SOAP is heavier than detection)
-                        if let Some(ref client) = llm_client {
+                        // Skip SOAP for non-clinical encounters to prevent hallucinated clinical content
+                        if !is_clinical {
+                            info!("Skipping SOAP for non-clinical encounter #{}", encounter_number);
+                        } else if let Some(ref client) = llm_client {
                             // Strip hallucinated repetitions before SOAP generation
                             let (filtered_encounter_text, _) = strip_hallucinations(&encounter_text, 5);
                             // Build SOAP options with encounter notes from clinician (uses pre-cloned notes_text)
@@ -1745,8 +1782,10 @@ pub async fn run_continuous_mode(
                                                         ) {
                                                             warn!("Failed to merge encounters: {}", e);
                                                         } else {
-                                                            // Regenerate SOAP for the merged encounter
-                                                            if let Some(ref client) = llm_client {
+                                                            // Regenerate SOAP for the merged encounter (only if at least one is clinical)
+                                                            if !(is_clinical || prev_encounter_is_clinical) {
+                                                                info!("Skipping SOAP regeneration for merged non-clinical encounters");
+                                                            } else if let Some(ref client) = llm_client {
                                                                 let (filtered_merged, _) = strip_hallucinations(&merged_text, 5);
                                                                 let merge_notes = encounter_notes_for_detector
                                                                     .lock()
@@ -1820,6 +1859,7 @@ pub async fn run_continuous_mode(
                         prev_encounter_session_id = Some(session_id.clone());
                         prev_encounter_text = Some(encounter_text);
                         prev_encounter_date = Some(Utc::now());
+                        prev_encounter_is_clinical = is_clinical;
                     }
                 }
             }
@@ -2067,6 +2107,9 @@ pub async fn run_continuous_mode(
                 warn!("Failed to archive final buffer: {}", e);
             } else {
                 // Generate SOAP note for the flushed buffer (the orphaned encounter fix)
+                // NOTE: No clinical content check here — this is a rare shutdown-time flush
+                // where no LLM call is available for classification. Generating SOAP unconditionally
+                // is acceptable since the buffer likely contains real clinical audio.
                 if let Some(ref client) = flush_llm_client {
                     let flush_notes = handle.encounter_notes
                         .lock()
