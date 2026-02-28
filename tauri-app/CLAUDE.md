@@ -200,16 +200,19 @@ Idle → Preparing → Recording → Stopping → Completed
 | Settings validation after update | `clamp_values()` called after `update_from_settings()` in config.rs — safety net for user-edited JSON |
 | Encounter notes: clone before clear | In continuous mode detector, clone accumulated notes before clearing buffer to avoid data loss |
 | Audio quality shared util | `getAudioQualityLevel()` in utils.ts — shared across RecordingMode, ReviewMode, ContinuousMode |
-| Force-split constants | Named constants in continuous_mode.rs: `FORCE_CHECK_WORD_THRESHOLD` (5K), `FORCE_SPLIT_WORD_THRESHOLD` (8K), `FORCE_SPLIT_CONSECUTIVE_LIMIT` (3), `ABSOLUTE_WORD_CAP` (15K) |
+| Force-split constants | Named constants in encounter_detection.rs: `FORCE_CHECK_WORD_THRESHOLD` (3K), `FORCE_SPLIT_WORD_THRESHOLD` (5K), `FORCE_SPLIT_CONSECUTIVE_LIMIT` (3), `ABSOLUTE_WORD_CAP` (15K). Force-split uses hallucination-cleaned word count to avoid STT loop inflation |
 | Presence sensor auto-detect | `auto_detect_port()` in presence_sensor.rs scans USB-serial devices when configured port fails |
 | Screen recording permission | Use `CGPreflightScreenCaptureAccess()` (not 1x1 pixel capture) — old check always passed even without permission. `is_blank_capture()` heuristic detects blanked-out window content |
-| SOAP JSON repair | Pipeline: `fix_json_newlines` → `remove_leading_commas` → `remove_trailing_commas` → `fix_truncated_json` → filter empty strings |
+| SOAP JSON repair | Pipeline: `fix_json_newlines` → `remove_leading_commas` → `remove_trailing_commas` → `fix_truncated_json` (closes unclosed strings + missing brackets) → filter empty strings. Raw-JSON fallback returns structured placeholder instead of broken JSON |
+| Hallucination filter | Two-phase: single-word repetitions then n-gram phrase loops (sizes 3-25). `strip_hallucinations()` in encounter_experiment.rs |
+| SOAP suppression | Non-clinical encounters (`likely_non_clinical=true`) skip SOAP generation entirely. Transcript still archived |
+| Confidence gate | Dynamic threshold: 0.85 for encounters <20 min (reduces false splits), 0.7 for 20+ min |
 
 ## Features
 
 | Feature | Summary | Detail |
 |---------|---------|--------|
-| **SOAP Generation** | Multi-patient auto-detect, adaptive model selection (<5K words → fast model), auto-copy to clipboard, problem-based or comprehensive format, detail level 1-10 | `llm_client.rs`, ADR 0009/0012 |
+| **SOAP Generation** | Multi-patient auto-detect, always uses `soap-model-fast` alias, auto-copy to clipboard, problem-based or comprehensive format, detail level 1-10 | `llm_client.rs`, ADR 0009/0012 |
 | **Transcription** | STT Router WebSocket streaming via aliases (`stt_alias`), all 3 modes use streaming, audio preprocessing (DC removal, 80Hz HPF, AGC) | `whisper_server.rs`, ADR 0020 |
 | **Auto-Session Detection** | VAD → optimistic recording → parallel greeting check → confirm/discard. Optional speaker verification (`auto_start_require_enrolled`) | `listening.rs`, ADR 0011/0016 |
 | **Medplum EMR** | OAuth 2.0 + PKCE via `fabricscribe://` deep link, auto-sync transcript + audio on complete, SOAP auto-added to encounter | `medplum.rs`, ADR 0008 |
@@ -238,7 +241,7 @@ Idle → Preparing → Recording → Stopping → Completed
 
 Source of truth: `src-tauri/src/config.rs` (Rust) / `src/types/index.ts` (TypeScript).
 
-Key settings groups: STT Router (whisper_server_url, stt_alias=`"medical-streaming"`, stt_postprocess=true), Audio (VAD, diarization, enhancement), LLM Router (soap_model=`"soap-model-fast"`, soap_model_fast=`"soap-model-fast"`, fast_model=`"fast-model"`), Medplum (OAuth, auto_sync), Auto-detection (auto_start, auto_end_silence_ms=180000), SOAP (detail_level 1-10, format, custom_instructions), MIIS, Screen Capture, Continuous Mode (charting_mode, encounter_check_interval_secs=120, encounter_silence_trigger_secs=45, encounter_merge_enabled, encounter_detection_model=`"faster"`, encounter_detection_nothink=true), Presence Sensor (encounter_detection_mode=`"hybrid"`, presence_sensor_port, presence_absence_threshold_secs=180, presence_debounce_secs=10, presence_csv_log_enabled=true), Shadow Mode (shadow_active_method=`"sensor"`, shadow_csv_log_enabled=true), Hybrid Detection (hybrid_confirm_window_secs=180, hybrid_min_words_for_sensor_split=500), Native STT Shadow (native_stt_shadow_enabled=true), Screen Capture (screen_capture_enabled, screen_capture_interval_secs=60, requires Screen Recording permission), Debug.
+Key settings groups: STT Router (whisper_server_url, stt_alias=`"medical-streaming"`, stt_postprocess=true), Audio (VAD, diarization, enhancement), LLM Router (soap_model=`"soap-model-fast"`, soap_model_fast=`"soap-model-fast"`, fast_model=`"fast-model"`), Medplum (OAuth, auto_sync), Auto-detection (auto_start, auto_end_silence_ms=180000), SOAP (detail_level 1-10, format, custom_instructions), MIIS, Screen Capture, Continuous Mode (charting_mode, encounter_check_interval_secs=120, encounter_silence_trigger_secs=45, encounter_merge_enabled, encounter_detection_model=`"fast-model"`, encounter_detection_nothink=false), Presence Sensor (encounter_detection_mode=`"hybrid"`, presence_sensor_port, presence_absence_threshold_secs=180, presence_debounce_secs=10, presence_csv_log_enabled=true), Shadow Mode (shadow_active_method=`"sensor"`, shadow_csv_log_enabled=true), Hybrid Detection (hybrid_confirm_window_secs=180, hybrid_min_words_for_sensor_split=500), Native STT Shadow (native_stt_shadow_enabled=true), Screen Capture (screen_capture_enabled, screen_capture_interval_secs=60, requires Screen Recording permission), Debug.
 
 ## File Locations
 
@@ -385,7 +388,7 @@ cargo test e2e_layer2_hybrid -- --ignored --nocapture
 | Layer | What it Tests | Services Required |
 |-------|--------------|-------------------|
 | 1 | STT Router health, alias, WebSocket streaming | STT Router |
-| 2 | SOAP generation, encounter detection (faster + /nothink), hybrid model + merge + hallucination filter | LLM Router |
+| 2 | SOAP generation, encounter detection (fast-model), hybrid model + merge + hallucination filter | LLM Router |
 | 3 | Archive save/retrieve, continuous mode metadata | Filesystem only |
 | 4 | Session mode: Audio → STT → SOAP → Archive → History | STT + LLM Router |
 | 5 | Continuous mode: Audio → STT → Detection → SOAP → Archive → History | STT + LLM Router |
@@ -394,11 +397,13 @@ cargo test e2e_layer2_hybrid -- --ignored --nocapture
 ### Hybrid Model Configuration
 
 E2E tests use the production model configuration:
-- **Detection**: `faster` (Qwen3-1.7B) + `/nothink` — smaller model resists over-splitting
+- **Detection**: `fast-model` (~7B) — default encounter detection model
 - **Merge**: `fast-model` (~7B) + patient name (M1 strategy) — better semantic understanding
 - **SOAP**: `soap-model-fast` — dedicated SOAP generation model
+- **Vision**: `vision-model` (hard-coded, not configurable) — patient name extraction from screenshots
+- **Clinical chat**: `clinical-assistant` (hard-coded, not configurable) — router must handle tool execution
 
-Config fields in `config.rs`: `encounter_detection_model` (default "faster"), `encounter_detection_nothink` (default true)
+Config fields in `config.rs`: `encounter_detection_model` (default "fast-model"), `encounter_detection_nothink` (default false)
 
 ### Troubleshooting E2E Failures
 
@@ -421,7 +426,7 @@ cd src-tauri
 
 # Encounter detection experiments (replays archived transcripts)
 cargo run --bin encounter_experiment_cli
-cargo run --bin encounter_experiment_cli -- --model faster --nothink
+cargo run --bin encounter_experiment_cli -- --model fast-model
 cargo run --bin encounter_experiment_cli -- --detect-only p0 p3
 
 # Vision SOAP experiments
