@@ -264,7 +264,7 @@ fn default_miis_server_url() -> String {
 }
 
 fn default_image_source() -> String {
-    "off".to_string()
+    "ai".to_string()
 }
 
 fn default_auto_end_enabled() -> bool {
@@ -728,7 +728,9 @@ impl Config {
         config.clamp_values();
 
         // Migrate miis_enabled → image_source for backward compatibility
-        if config.miis_enabled && config.image_source == "off" {
+        // If user had miis_enabled=true and no explicit image_source in their config,
+        // serde default gives "ai" — override to "miis" to preserve their preference
+        if config.miis_enabled && config.image_source == "ai" {
             config.image_source = "miis".to_string();
         }
 
