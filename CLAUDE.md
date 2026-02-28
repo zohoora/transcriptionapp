@@ -29,7 +29,7 @@ cd tauri-app && npx tsc --noEmit          # Frontend
 cd tauri-app/src-tauri && cargo check     # Backend
 
 # Tests
-cd tauri-app && pnpm test:run             # Frontend (Vitest, 414 tests)
+cd tauri-app && pnpm test:run             # Frontend (Vitest, 434 tests)
 cd tauri-app/src-tauri && cargo test      # Backend (567 tests, 32 E2E ignored)
 
 # E2E (requires live STT + LLM Router)
