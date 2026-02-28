@@ -204,7 +204,7 @@ Idle → Preparing → Recording → Stopping → Completed
 | Settings validation after update | `clamp_values()` called after `update_from_settings()` in config.rs — safety net for user-edited JSON |
 | Encounter notes: clone before clear | In continuous mode detector, clone accumulated notes before clearing buffer to avoid data loss |
 | Audio quality shared util | `getAudioQualityLevel()` in utils.ts — shared across RecordingMode, ReviewMode, ContinuousMode |
-| Force-split constants | Named constants in encounter_detection.rs: `FORCE_CHECK_WORD_THRESHOLD` (3K), `FORCE_SPLIT_WORD_THRESHOLD` (5K), `FORCE_SPLIT_CONSECUTIVE_LIMIT` (3), `ABSOLUTE_WORD_CAP` (15K). Force-split uses hallucination-cleaned word count to avoid STT loop inflation |
+| Force-split constants | Named constants in encounter_detection.rs: `FORCE_CHECK_WORD_THRESHOLD` (3K), `FORCE_SPLIT_WORD_THRESHOLD` (5K), `FORCE_SPLIT_CONSECUTIVE_LIMIT` (3), `ABSOLUTE_WORD_CAP` (10K). Force-split uses hallucination-cleaned word count to avoid STT loop inflation |
 | Presence sensor auto-detect | `auto_detect_port()` in presence_sensor.rs scans USB-serial devices when configured port fails |
 | Screen recording permission | Use `CGPreflightScreenCaptureAccess()` (not 1x1 pixel capture) — old check always passed even without permission. `is_blank_capture()` heuristic detects blanked-out window content |
 | SOAP JSON repair | Pipeline: `fix_json_newlines` → `remove_leading_commas` → `remove_trailing_commas` → `fix_truncated_json` (closes unclosed strings + missing brackets) → filter empty strings. Raw-JSON fallback returns structured placeholder instead of broken JSON |
@@ -329,6 +329,9 @@ Key settings groups: STT Router (whisper_server_url, stt_alias=`"medical-streami
 - `useAiImages` - AI-generated medical images via Gemini API
 - `useContinuousMode` - Continuous charting mode state and controls
 - `usePatientBiomarkers` - Patient-focused biomarker trending for continuous mode
+- `useOllamaConnection` - LLM router connection status and model listing
+- `useConnectionTests` - Pre-flight connectivity tests for STT/LLM/Medplum services
+- `useContinuousModeOrchestrator` - Coordinates continuous mode lifecycle across hooks
 - `useScreenCapture` - Periodic screenshot capture during recording
 - `useChecklist` - Pre-flight system checks
 - `useDevices` - Audio input device enumeration
