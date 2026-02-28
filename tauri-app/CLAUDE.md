@@ -31,6 +31,7 @@ Rust Backend
 │   ├── speaker_profiles.rs # Speaker enrollment CRUD
 │   ├── clinical_chat.rs   # Clinical assistant chat proxy
 │   ├── miis.rs            # Medical illustration proxy
+│   ├── images.rs          # AI image generation (Gemini)
 │   ├── screenshot.rs      # Screen capture commands
 │   ├── continuous.rs      # Continuous charting mode commands
 │   ├── archive.rs         # Local session history commands
@@ -64,6 +65,7 @@ Rust Backend
 ├── native_stt.rs      # Apple SFSpeechRecognizer FFI client
 ├── native_stt_shadow.rs # Native STT shadow accumulator + CSV logger
 ├── shadow_log.rs      # Shadow mode CSV logging (dual detection comparison)
+├── gemini_client.rs   # Google Gemini API client (image generation)
 ├── encounter_experiment.rs # Encounter detection experiment CLI support
 ├── vision_experiment.rs    # Vision SOAP experiment CLI support
 ├── diarization/       # Speaker detection (ONNX embeddings, clustering)
@@ -124,6 +126,7 @@ cd src-tauri && cargo test       # Rust
 | Modify auto-end detection | `pipeline.rs` (silence tracking), `config.rs` (settings), `useSessionState.ts` |
 | Modify SOAP options | `useSoapNote.ts` (hook), `llm_client.rs` (prompt building), `local_archive.rs` (metadata) |
 | Modify MIIS integration | `commands/miis.rs`, `useMiisImages.ts`, `ImageSuggestions.tsx`, `usePredictiveHint.ts` |
+| Modify AI images | `gemini_client.rs`, `commands/images.rs`, `useAiImages.ts`, `usePredictiveHint.ts`, `ImageSuggestions.tsx` |
 | Modify continuous mode | `continuous_mode.rs`, `commands/continuous.rs`, `useContinuousMode.ts`, `ContinuousMode.tsx` |
 | Modify presence sensor | `presence_sensor.rs`, `config.rs` (sensor fields), `commands/continuous.rs`, `SettingsDrawer.tsx`, `ContinuousMode.tsx` |
 | Modify patient biomarkers | `usePatientBiomarkers.ts`, `PatientPulse.tsx`, `PatientVoiceMonitor.tsx` |
@@ -133,7 +136,7 @@ cd src-tauri && cargo test       # Rust
 | Modify screen capture / vision | `screenshot.rs` (capture, permission check, blank detection), `patient_name_tracker.rs` (name extraction), `continuous_mode.rs` (screenshot task), `commands/screenshot.rs` |
 | Add session-scoped state | `useSessionLifecycle.ts` (add reset call to `resetAllSessionState`) |
 
-## IPC Commands (90 total across 16 modules)
+## IPC Commands (91 total across 17 modules)
 
 | Module | Commands | Source |
 |--------|----------|--------|
@@ -150,6 +153,7 @@ cd src-tauri && cargo test       # Rust
 | Archive (12) | `get_local_session_dates`, `get_local_sessions_by_date`, `get_local_session_details`, `save_local_soap_note`, `read_local_audio_file`, `delete_local_session`, `split_local_session`, `merge_local_sessions`, `update_session_patient_name`, `renumber_local_encounters`, `get_session_transcript_lines`, `suggest_split_points` | `commands/archive.rs` |
 | Clinical Chat (1) | `clinical_chat_send` | `commands/clinical_chat.rs` |
 | MIIS (2) | `miis_suggest`, `miis_send_usage` | `commands/miis.rs` |
+| Images (1) | `generate_ai_image` | `commands/images.rs` |
 | Screenshot (7) | `check_screen_recording_permission`, `open_screen_recording_settings`, `start/stop_screen_capture`, `get_screen_capture_status`, `get_screenshot_paths`, `get_screenshot_thumbnails` | `commands/screenshot.rs` |
 | Continuous (6) | `start/stop_continuous_mode`, `get_continuous_mode_status`, `trigger_new_patient`, `set_continuous_encounter_notes`, `list_serial_ports` | `commands/continuous.rs` |
 
@@ -222,6 +226,7 @@ Idle → Preparing → Recording → Stopping → Completed
 | **Auto-End Silence** | VAD silence → `SilenceWarning` countdown → auto-stop. Config: `auto_end_silence_ms` (default 180s). User can cancel via `reset_silence_timer` | `pipeline.rs`, ADR 0015 |
 | **MCP Server** | Port 7101, JSON-RPC 2.0. Tools: `agent_identity`, `health_check`, `get_status`, `get_logs` | `mcp/` |
 | **MIIS Images** | LLM extracts concepts every 30s → MIIS returns ranked images. Backend proxies through Rust (CORS). Server needs embedder enabled | `commands/miis.rs`, ADR 0018 |
+| **AI Images** | Gemini API generates medical illustrations from LLM-produced image prompts (piggybacks on predictive hint). Cost guardrails: 45s cooldown, 8/session cap, 6 visible FIFO, prompt dedup. Config: `image_source=ai`, `gemini_api_key` | `gemini_client.rs`, `commands/images.rs`, `useAiImages.ts` |
 | **Continuous Mode** | All-day recording, LLM or sensor-based encounter detection, auto-SOAP per encounter. Vision-based patient name extraction via `vision-model` alias + `PatientNameTracker` majority-vote | `continuous_mode.rs`, ADR 0019 |
 | **Presence Sensor** | DFRobot SEN0395 24GHz mmWave via USB-UART. Debounced presence state → absence threshold → encounter split. CSV logging, auto-detect port, graceful fallback to LLM on failure | `presence_sensor.rs` |
 | **Hybrid Detection** | Sensor early-warning + LLM confirmation. Sensor Present→Absent accelerates LLM check (~30s vs ~8 min). Sensor timeout force-splits after `hybrid_confirm_window_secs`. Graceful LLM-only fallback when sensor unavailable. Handles back-to-back encounters (phone calls, two patients) via regular LLM timer. Config: `encounter_detection_mode="hybrid"` | `continuous_mode.rs`, `config.rs` |
@@ -241,7 +246,7 @@ Idle → Preparing → Recording → Stopping → Completed
 
 Source of truth: `src-tauri/src/config.rs` (Rust) / `src/types/index.ts` (TypeScript).
 
-Key settings groups: STT Router (whisper_server_url, stt_alias=`"medical-streaming"`, stt_postprocess=true), Audio (VAD, diarization, enhancement), LLM Router (soap_model=`"soap-model-fast"`, soap_model_fast=`"soap-model-fast"`, fast_model=`"fast-model"`), Medplum (OAuth, auto_sync), Auto-detection (auto_start, auto_end_silence_ms=180000), SOAP (detail_level 1-10, format, custom_instructions), MIIS, Screen Capture, Continuous Mode (charting_mode, encounter_check_interval_secs=120, encounter_silence_trigger_secs=45, encounter_merge_enabled, encounter_detection_model=`"fast-model"`, encounter_detection_nothink=false), Presence Sensor (encounter_detection_mode=`"hybrid"`, presence_sensor_port, presence_absence_threshold_secs=180, presence_debounce_secs=10, presence_csv_log_enabled=true), Shadow Mode (shadow_active_method=`"sensor"`, shadow_csv_log_enabled=true), Hybrid Detection (hybrid_confirm_window_secs=180, hybrid_min_words_for_sensor_split=500), Native STT Shadow (native_stt_shadow_enabled=true), Screen Capture (screen_capture_enabled, screen_capture_interval_secs=60, requires Screen Recording permission), Debug.
+Key settings groups: STT Router (whisper_server_url, stt_alias=`"medical-streaming"`, stt_postprocess=true), Audio (VAD, diarization, enhancement), LLM Router (soap_model=`"soap-model-fast"`, soap_model_fast=`"soap-model-fast"`, fast_model=`"fast-model"`), Medplum (OAuth, auto_sync), Auto-detection (auto_start, auto_end_silence_ms=180000), SOAP (detail_level 1-10, format, custom_instructions), Images (image_source=`"off"`|`"miis"`|`"ai"`, gemini_api_key), MIIS, Screen Capture, Continuous Mode (charting_mode, encounter_check_interval_secs=120, encounter_silence_trigger_secs=45, encounter_merge_enabled, encounter_detection_model=`"fast-model"`, encounter_detection_nothink=false), Presence Sensor (encounter_detection_mode=`"hybrid"`, presence_sensor_port, presence_absence_threshold_secs=180, presence_debounce_secs=10, presence_csv_log_enabled=true), Shadow Mode (shadow_active_method=`"sensor"`, shadow_csv_log_enabled=true), Hybrid Detection (hybrid_confirm_window_secs=180, hybrid_min_words_for_sensor_split=500), Native STT Shadow (native_stt_shadow_enabled=true), Screen Capture (screen_capture_enabled, screen_capture_interval_secs=60, requires Screen Recording permission), Debug.
 
 ## File Locations
 
@@ -266,6 +271,7 @@ Key settings groups: STT Router (whisper_server_url, stt_alias=`"medical-streami
 | LLM Router | `http://10.241.15.154:8080` | SOAP generation, encounter detection, vision-based patient name extraction (`vision-model` alias) |
 | Medplum | `http://10.241.15.154:8103` | EMR/FHIR |
 | MIIS | `http://10.241.15.154:7843` | Medical illustration images |
+| Gemini | `https://generativelanguage.googleapis.com` | AI image generation (`gemini-3.1-flash-image-preview`) |
 
 ## Frontend Structure
 
@@ -320,6 +326,7 @@ Key settings groups: STT Router (whisper_server_url, stt_alias=`"medical-streami
 - `useClinicalChat` - Clinical assistant chat during recording
 - `usePredictiveHint` - LLM hints + concept extraction during recording
 - `useMiisImages` - Medical illustration suggestions from MIIS server
+- `useAiImages` - AI-generated medical images via Gemini API
 - `useContinuousMode` - Continuous charting mode state and controls
 - `usePatientBiomarkers` - Patient-focused biomarker trending for continuous mode
 - `useScreenCapture` - Periodic screenshot capture during recording
