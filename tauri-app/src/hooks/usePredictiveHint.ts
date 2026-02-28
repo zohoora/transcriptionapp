@@ -144,20 +144,11 @@ export function usePredictiveHint({
         }
       };
     } else {
-      // Clear state when not recording
       setHint('');
       setConcepts([]);
       setImagePrompt(null);
       setLastUpdated(null);
       lastGeneratedRef.current = '';
-      if (timeoutRef.current) {
-        clearTimeout(timeoutRef.current);
-        timeoutRef.current = null;
-      }
-      if (intervalRef.current) {
-        clearInterval(intervalRef.current);
-        intervalRef.current = null;
-      }
     }
   }, [isRecording, generateHint]);
 

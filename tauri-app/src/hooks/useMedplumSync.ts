@@ -3,12 +3,6 @@ import { invoke } from '@tauri-apps/api/core';
 import type { AuthState, SoapNote, SyncResult, SyncedEncounter, MultiPatientSoapResult, MultiPatientSyncResult, PatientSyncInfo } from '../types';
 import { formatErrorMessage } from '../utils';
 
-/** Format a SoapNote to plain text for Medplum */
-function formatSoapNote(soapNote: SoapNote): string {
-  // SOAP note content is now a single text block from the LLM
-  return soapNote.content;
-}
-
 export interface UseMedplumSyncResult {
   medplumConnected: boolean;
   medplumError: string | null;
@@ -72,7 +66,7 @@ export function useMedplumSync(): UseMedplumSyncResult {
       try {
         const audioFilePath = await invoke<string | null>('get_audio_file_path');
 
-        const soapText = soapNote ? formatSoapNote(soapNote) : null;
+        const soapText = soapNote ? soapNote.content : null;
 
         const result = await invoke<SyncResult>('medplum_quick_sync', {
           transcript,
@@ -174,7 +168,7 @@ export function useMedplumSync(): UseMedplumSyncResult {
       setSyncError(null);
 
       try {
-        const soapText = formatSoapNote(soapNote);
+        const soapText = soapNote.content;
 
         const success = await invoke<boolean>('medplum_add_soap_to_encounter', {
           encounterFhirId: syncedEncounter.encounterFhirId,

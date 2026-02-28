@@ -80,18 +80,7 @@ export function useContinuousMode(): UseContinuousModeResult {
           setEncounterNotesState('');
           break;
         case 'encounter_detected':
-          // Clear notes for the new encounter (backend also clears)
           setEncounterNotesState('');
-          break;
-        case 'soap_generated':
-          break;
-        case 'soap_failed':
-          // SOAP failure for a specific encounter — don't set global error
-          break;
-        case 'checking':
-          break;
-        case 'encounter_merged':
-          // Encounters were merged retrospectively — stats will refresh via polling
           break;
         case 'error':
           setError(payload.error || 'Unknown error');

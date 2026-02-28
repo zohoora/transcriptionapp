@@ -810,7 +810,7 @@ impl LLMClient {
             speaker_context.map(|c| c.speakers.len()).unwrap_or(0)
         );
 
-        let system_prompt = build_simple_multi_patient_prompt(&opts);
+        let system_prompt = build_simple_soap_prompt(&opts);
         let session_notes = if opts.session_notes.trim().is_empty() { None } else { Some(opts.session_notes.as_str()) };
         let user_content = build_soap_user_content(&prepared_transcript, audio_events, session_notes, speaker_context);
 
@@ -1142,7 +1142,8 @@ Rules:
 - Do not repeat information"#.to_string()
 }
 
-/// Build a simple system prompt for SOAP note generation (JSON output required)
+/// Build system prompt for SOAP note generation (JSON output required).
+/// Used by both single-patient and multi-patient SOAP generation.
 fn build_simple_soap_prompt(options: &SoapOptions) -> String {
     let detail_instruction = match options.detail_level {
         1..=3 => format!(
@@ -1197,66 +1198,6 @@ Rules:
 - PLAN SECTION: Include ONLY treatments, tests, and follow-ups the doctor actually mentioned. Do NOT add recommendations, monitoring suggestions, or instructions not stated in the transcript.
 - PROCEDURES: Put descriptions of any procedures in the Plan section. Do NOT include them in the Objective section.
 - CLINICIAN NOTES: If provided, incorporate clinician observations into the appropriate SOAP sections (usually Objective for physical observations, Subjective for reported symptoms).
-- {detail_instruction}
-- {format_instruction}{custom_section}"#
-    )
-}
-
-/// Build a simple system prompt for multi-patient SOAP note generation (JSON output required)
-fn build_simple_multi_patient_prompt(options: &SoapOptions) -> String {
-    let detail_instruction = match options.detail_level {
-        1..=3 => format!(
-            "DETAIL LEVEL: {}/10 - Be BRIEF. Use short phrases, 1-2 items per section. Omit minor details.",
-            options.detail_level
-        ),
-        4..=6 => format!(
-            "DETAIL LEVEL: {}/10 - Use STANDARD clinical detail. Include key findings and relevant history.",
-            options.detail_level
-        ),
-        7..=10 => format!(
-            "DETAIL LEVEL: {}/10 - Be THOROUGH. Include all findings, measurements, pertinent negatives, and clinical reasoning.",
-            options.detail_level
-        ),
-        _ => format!(
-            "DETAIL LEVEL: {}/10 - Use standard clinical detail.",
-            options.detail_level
-        ),
-    };
-
-    let format_instruction = match options.format {
-        SoapFormat::ProblemBased => "ORGANIZATION: If multiple medical problems are discussed, organize by problem - label each problem (e.g., 'Problem 1: Hypertension') and include its relevant S/O/A/P items grouped together.",
-        SoapFormat::Comprehensive => "ORGANIZATION: Create a single unified SOAP note covering all problems together in each section.",
-    };
-
-    let custom_section = if options.custom_instructions.trim().is_empty() {
-        String::new()
-    } else {
-        format!("\n\nAdditional instructions: {}", options.custom_instructions.trim())
-    };
-
-    format!(
-        r#"You are a medical scribe that outputs ONLY valid JSON. Extract clinical information from transcripts into SOAP notes.
-
-The transcript is from speech-to-text and may contain errors. Interpret medical terms correctly:
-- "human blade 1c" or "h b a 1 c" → HbA1c (hemoglobin A1c)
-- "ekg" or "e k g" → EKG/ECG
-- Homophones and phonetic errors are common - use clinical context
-
-RESPOND WITH ONLY THIS JSON STRUCTURE - NO OTHER TEXT:
-{{"subjective":["item"],"objective":["item"],"assessment":["item"],"plan":["item"]}}
-
-Rules:
-- Your entire response must be valid JSON - nothing else
-- Use simple string arrays, no nested objects
-- Do NOT use newlines inside JSON strings - keep each array item as a single line
-- Use empty arrays [] for sections with no information
-- Use correct medical terminology
-- Do NOT use any markdown formatting (no **, no __, no #, no backticks) - output plain text only
-- Do NOT include specific patient names or healthcare provider names - use "patient" or "the physician/provider" instead
-- Do NOT hallucinate or embellish - only include what was explicitly stated
-- PLAN SECTION: Include ONLY treatments, tests, and follow-ups the doctor actually mentioned. Do NOT add recommendations, monitoring suggestions, or instructions not stated in the transcript.
-- PROCEDURES: Put descriptions of any procedures in the Plan section. Do NOT include them in the Objective section.
-- CLINICIAN NOTES: If provided, incorporate clinician observations into the appropriate SOAP sections (usually Objective for physical observations, Subjected for reported symptoms).
 - {detail_instruction}
 - {format_instruction}{custom_section}"#
     )

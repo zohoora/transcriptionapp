@@ -82,7 +82,7 @@ export const RecordingMode = memo(function RecordingMode({
   biomarkers,
   transcriptText,
   draftText,
-  whisperMode,
+  whisperMode: _whisperMode,
   whisperModel,
   sessionNotes,
   onSessionNotesChange,
@@ -336,7 +336,7 @@ export const RecordingMode = memo(function RecordingMode({
 
       {/* Model indicator */}
       <div className="model-indicator">
-        {whisperMode === 'remote' ? '🌐' : '💻'} {whisperModel}
+        {whisperModel}
       </div>
     </div>
   );

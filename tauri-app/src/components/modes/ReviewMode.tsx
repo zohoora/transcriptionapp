@@ -105,7 +105,7 @@ export const ReviewMode = memo(function ReviewMode({
   onSoapFormatChange,
   onSoapCustomInstructionsChange,
   biomarkers,
-  whisperMode,
+  whisperMode: _whisperMode,
   whisperModel,
   authState,
   isSyncing,
@@ -210,8 +210,8 @@ export const ReviewMode = memo(function ReviewMode({
         <span className="summary-label">Complete</span>
         <span className="summary-duration">{formatDuration(elapsedMs)}</span>
         <span className={`summary-quality ${qualityBadge.className}`}>{qualityBadge.label}</span>
-        <span className="summary-model" title={`Transcription: ${whisperMode === 'remote' ? 'Remote' : 'Local'}`}>
-          {whisperMode === 'remote' ? '🌐' : '💻'} {whisperModel}
+        <span className="summary-model" title="Transcription model">
+          {whisperModel}
         </span>
       </div>
 

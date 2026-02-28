@@ -272,16 +272,10 @@ describe('RecordingMode', () => {
   });
 
   describe('model indicator', () => {
-    it('shows remote model indicator', () => {
-      render(<RecordingMode {...defaultProps} whisperMode="remote" whisperModel="large-v3-turbo" />);
+    it('shows model name', () => {
+      render(<RecordingMode {...defaultProps} whisperModel="large-v3-turbo" />);
 
-      expect(screen.getByText(/🌐 large-v3-turbo/)).toBeInTheDocument();
-    });
-
-    it('shows local model indicator', () => {
-      render(<RecordingMode {...defaultProps} whisperMode="local" whisperModel="small" />);
-
-      expect(screen.getByText(/💻 small/)).toBeInTheDocument();
+      expect(screen.getByText('large-v3-turbo')).toBeInTheDocument();
     });
   });
 

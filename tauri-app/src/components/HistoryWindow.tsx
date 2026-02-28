@@ -42,11 +42,7 @@ function formatDateForDisplay(date: Date): string {
   });
 }
 
-function formatTime(dateString: string): string {
-  return formatLocalTime(dateString);
-}
-
-// Format duration as M:SS (uses shared utility)
+const formatTime = formatLocalTime;
 const formatDuration = formatDurationShort;
 
 const HistoryWindow: React.FC = () => {

@@ -245,7 +245,6 @@ fn run_audio_checks(config: &Config) -> Vec<CheckResult> {
                     }),
                 }
             } else {
-                let _default_count = devices.iter().filter(|d| d.is_default).count();
                 CheckResult {
                     id: "audio_devices".to_string(),
                     name: "Audio Input Devices".to_string(),

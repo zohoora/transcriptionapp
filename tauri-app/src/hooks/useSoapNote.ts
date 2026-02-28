@@ -39,14 +39,6 @@ import type { CoughEvent, OllamaStatus, SoapNote, SoapOptions, SoapFormat, Multi
 import { DEFAULT_SOAP_OPTIONS } from '../types';
 import { formatErrorMessage } from '../utils';
 
-/** Audio event to pass to SOAP generation (matches Rust AudioEvent) */
-export interface AudioEvent {
-  timestamp_ms: number;
-  duration_ms: number;
-  confidence: number;
-  label: string;
-}
-
 export interface UseSoapNoteResult {
   isGeneratingSoap: boolean;
   soapError: string | null;
@@ -145,22 +137,11 @@ export function useSoapNote(): UseSoapNoteResult {
     setSoapError(null);
 
     try {
-      // Convert CoughEvent to AudioEvent format expected by backend
-      const events = audioEvents?.map(e => ({
-        timestamp_ms: e.timestamp_ms,
-        duration_ms: e.duration_ms,
-        confidence: e.confidence,
-        label: e.label,
-      }));
-
-      // Use provided options or current state
       const finalOptions = options || soapOptions;
 
-      // Use auto-detect command which returns MultiPatientSoapResult
-      // Pass sessionId for debug storage correlation
       const result = await invoke<MultiPatientSoapResult>('generate_soap_note_auto_detect', {
         transcript,
-        audioEvents: events,
+        audioEvents: audioEvents,
         options: finalOptions,
         sessionId: sessionId || null,
       });
@@ -211,20 +192,11 @@ export function useSoapNote(): UseSoapNoteResult {
     setSoapError(null);
 
     try {
-      // Convert CoughEvent to AudioEvent format expected by backend
-      const events = audioEvents?.map(e => ({
-        timestamp_ms: e.timestamp_ms,
-        duration_ms: e.duration_ms,
-        confidence: e.confidence,
-        label: e.label,
-      }));
-
-      // Use provided options or current state
       const finalOptions = options || soapOptions;
 
       const result = await invoke<SoapNote>('generate_soap_note', {
         transcript,
-        audioEvents: events,
+        audioEvents: audioEvents,
         options: finalOptions,
         sessionId: sessionId || null,
       });
@@ -269,18 +241,11 @@ export function useSoapNote(): UseSoapNoteResult {
     setSoapError(null);
 
     try {
-      const events = audioEvents?.map(e => ({
-        timestamp_ms: e.timestamp_ms,
-        duration_ms: e.duration_ms,
-        confidence: e.confidence,
-        label: e.label,
-      }));
-
       const finalOptions = options || soapOptions;
 
       const result = await invoke<SoapNote>('generate_vision_soap_note', {
         transcript,
-        audioEvents: events,
+        audioEvents: audioEvents,
         options: finalOptions,
         sessionId: sessionId || null,
         imagePath: imagePath || null,

@@ -29,21 +29,14 @@ import {
   useContinuousModeOrchestrator,
   useConnectionTests,
 } from './hooks';
-import type { Settings, ChartingMode } from './types';
+import type { ChartingMode } from './types';
 
 // UI Mode type
 type UIMode = 'ready' | 'recording' | 'review';
 
-// Helper to get the current whisper model name based on mode
-function getWhisperModelName(
-  whisperMode: 'local' | 'remote' | undefined,
-  whisperServerModel: string | undefined,
-  localModel: string | undefined
-): string {
-  if (whisperMode === 'remote') {
-    return whisperServerModel || 'unknown';
-  }
-  return localModel || 'unknown';
+// Get the current whisper model name (always remote mode)
+function getWhisperModelName(whisperServerModel: string | undefined): string {
+  return whisperServerModel || 'unknown';
 }
 
 function App() {
@@ -197,7 +190,7 @@ function App() {
   // Auto-detection from hook
   const {
     isListening,
-    isPendingConfirmation: _isPendingConfirmation, // Available for future UI indicators
+    isPendingConfirmation: _isPendingConfirmation,
     listeningStatus,
     error: listeningError,
     startListening,
@@ -211,49 +204,28 @@ function App() {
     }
   );
 
-  // Handle auto-start toggle - updates settings and saves immediately
-  const handleAutoStartToggle = useCallback(async (enabled: boolean) => {
+  // Toggle a boolean setting immediately (updates UI + persists to backend)
+  const toggleSetting = useCallback(async (key: 'auto_start_enabled' | 'auto_end_enabled', enabled: boolean) => {
     if (!settings || !pendingSettings) return;
 
-    // Update pending settings first (for UI)
-    const newPendingSettings = { ...pendingSettings, auto_start_enabled: enabled };
-    setPendingSettings(newPendingSettings);
-
-    // Build full settings object and save directly (avoids async state issue)
-    const fullSettings: Settings = {
-      ...settings,
-      auto_start_enabled: enabled,
-    };
+    setPendingSettings({ ...pendingSettings, [key]: enabled });
 
     try {
-      await invoke('set_settings', { settings: fullSettings });
-      console.log(`Auto-start ${enabled ? 'enabled' : 'disabled'} and saved`);
+      await invoke('set_settings', { settings: { ...settings, [key]: enabled } });
     } catch (e) {
-      console.error('Failed to save auto-start setting:', e);
+      console.error(`Failed to save ${key} setting:`, e);
     }
   }, [settings, pendingSettings, setPendingSettings]);
 
-  // Handle auto-end toggle - updates settings and saves immediately
-  const handleAutoEndToggle = useCallback(async (enabled: boolean) => {
-    if (!settings || !pendingSettings) return;
+  const handleAutoStartToggle = useCallback(
+    (enabled: boolean) => toggleSetting('auto_start_enabled', enabled),
+    [toggleSetting]
+  );
 
-    // Update pending settings first (for UI)
-    const newPendingSettings = { ...pendingSettings, auto_end_enabled: enabled };
-    setPendingSettings(newPendingSettings);
-
-    // Build full settings object and save directly (avoids async state issue)
-    const fullSettings: Settings = {
-      ...settings,
-      auto_end_enabled: enabled,
-    };
-
-    try {
-      await invoke('set_settings', { settings: fullSettings });
-      console.log(`Auto-end ${enabled ? 'enabled' : 'disabled'} and saved`);
-    } catch (e) {
-      console.error('Failed to save auto-end setting:', e);
-    }
-  }, [settings, pendingSettings, setPendingSettings]);
+  const handleAutoEndToggle = useCallback(
+    (enabled: boolean) => toggleSetting('auto_end_enabled', enabled),
+    [toggleSetting]
+  );
 
   // Permission error state
   const [permissionError, setPermissionError] = useState<string | null>(null);
@@ -281,8 +253,6 @@ function App() {
   const handleDismissSync = useCallback(() => {
     setSyncDismissed(true);
   }, []);
-
-  // Note: Local Whisper models removed - using remote server only
 
   // UI state
   const [showSettings, setShowSettings] = useState(false);
@@ -691,8 +661,8 @@ function App() {
             biomarkers={biomarkers}
             transcriptText={transcript.finalized_text}
             draftText={transcript.draft_text}
-            whisperMode={pendingSettings?.whisper_mode || 'local'}
-            whisperModel={getWhisperModelName(pendingSettings?.whisper_mode, pendingSettings?.whisper_server_model, pendingSettings?.model)}
+            whisperMode={pendingSettings?.whisper_mode || 'remote'}
+            whisperModel={getWhisperModelName(pendingSettings?.whisper_server_model)}
             sessionNotes={sessionNotes}
             onSessionNotesChange={setSessionNotes}
             isStopping={isStopping}
@@ -742,8 +712,8 @@ function App() {
             onSoapFormatChange={updateSoapFormat}
             onSoapCustomInstructionsChange={updateSoapCustomInstructions}
             biomarkers={biomarkers}
-            whisperMode={pendingSettings?.whisper_mode || 'local'}
-            whisperModel={getWhisperModelName(pendingSettings?.whisper_mode, pendingSettings?.whisper_server_model, pendingSettings?.model)}
+            whisperMode={pendingSettings?.whisper_mode || 'remote'}
+            whisperModel={getWhisperModelName(pendingSettings?.whisper_server_model)}
             onGenerateVisionSoap={handleGenerateVisionSoap}
             screenshotCount={screenshotCount}
             authState={authState}

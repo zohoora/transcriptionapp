@@ -116,10 +116,8 @@ exports[`App Snapshots > renders completed state correctly 1`] = `
       </span>
       <span
         class="summary-model"
-        title="Transcription: Remote"
+        title="Transcription model"
       >
-        🌐
-         
         large-v3-turbo
       </span>
     </div>
@@ -846,8 +844,6 @@ exports[`App Snapshots > renders recording state correctly 1`] = `
     <div
       class="model-indicator"
     >
-      🌐
-       
       large-v3-turbo
     </div>
   </div>
@@ -1070,8 +1066,6 @@ exports[`App Snapshots > renders stopping state correctly 1`] = `
     <div
       class="model-indicator"
     >
-      🌐
-       
       large-v3-turbo
     </div>
   </div>
@@ -1309,8 +1303,6 @@ This is the second paragraph.
     <div
       class="model-indicator"
     >
-      🌐
-       
       large-v3-turbo
     </div>
   </div>
