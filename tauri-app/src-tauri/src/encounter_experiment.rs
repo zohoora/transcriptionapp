@@ -1366,6 +1366,49 @@ mod tests {
         assert!(report.phrase_repetitions.is_empty());
     }
 
+    #[test]
+    fn test_strip_phrase_hallucinations_3word_loop_with_speaker_label() {
+        // Exact pattern from March 2 clinic: "Speaker 3: At what time?" repeated 2048 times
+        // The speaker label at the start shouldn't prevent n-gram detection of the loop
+        let mut text = String::from("Speaker 3:");
+        for _ in 0..100 {
+            text.push_str(" At what time?");
+        }
+        let (cleaned, report) = strip_hallucinations(&text, 5);
+        // Should truncate to ~5 repetitions of the 3-word phrase + speaker label
+        assert!(report.phrase_repetitions.len() > 0, "Should detect phrase repetitions");
+        let cleaned_words: Vec<&str> = cleaned.split_whitespace().collect();
+        // 2 words (Speaker 3:) + 5 * 3 (five repetitions of "At what time?") = 17
+        assert!(cleaned_words.len() <= 20, "Should truncate to roughly 17 words, got {}", cleaned_words.len());
+    }
+
+    #[test]
+    fn test_strip_phrase_hallucinations_5word_loop_with_prefix() {
+        // Pattern from March 2: "...It was just a little bit of congestion, a little bit of congestion, ..."
+        let mut text = String::from("It was just");
+        for _ in 0..100 {
+            text.push_str(" a little bit of congestion,");
+        }
+        let (cleaned, report) = strip_hallucinations(&text, 5);
+        assert!(report.phrase_repetitions.len() > 0, "Should detect phrase repetitions");
+        let cleaned_words: Vec<&str> = cleaned.split_whitespace().collect();
+        // "It was just" (3 words) + 5 * 5 words = 28
+        assert!(cleaned_words.len() <= 30, "Should truncate loop, got {}", cleaned_words.len());
+    }
+
+    #[test]
+    fn test_strip_phrase_hallucinations_multi_segment_with_speaker_labels() {
+        // If multiple segments each have speaker labels interspersed in the loop,
+        // the filter should still catch intra-segment loops
+        let text = "Speaker 3: At what time? At what time? At what time? At what time? At what time? At what time? At what time? At what time? At what time? At what time? \
+                    Speaker 3: At what time? At what time? At what time? At what time? At what time? At what time? At what time? At what time? At what time? At what time?";
+        let (cleaned, report) = strip_hallucinations(text, 5);
+        assert!(report.phrase_repetitions.len() > 0, "Should detect phrase repetitions even with speaker labels");
+        let cleaned_words: Vec<&str> = cleaned.split_whitespace().collect();
+        // Each segment: 2 (Speaker 3:) + 5 kept * 3 = 17 per segment, × 2 = 34
+        assert!(cleaned_words.len() <= 40, "Should truncate each segment's loop, got {}", cleaned_words.len());
+    }
+
     // ---- Prompt builder tests ----
 
     #[test]

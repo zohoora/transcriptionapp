@@ -239,9 +239,9 @@ pnpm soak:test         # Interactive
 
 | Category | Framework | Count |
 |----------|-----------|-------|
-| Unit Tests (Frontend) | Vitest | 414 tests |
-| Unit Tests (Rust) | cargo test | 475 tests |
-| E2E Integration (Rust) | cargo test (ignored) | 28 tests |
+| Unit Tests (Frontend) | Vitest | 433 tests |
+| Unit Tests (Rust) | cargo test | 574 tests |
+| E2E Integration (Rust) | cargo test (ignored) | 32 tests |
 | Snapshot Tests | Vitest | 7 snapshots |
 | Accessibility Tests | vitest-axe | 12 tests |
 | Contract Tests | Vitest | 24 tests |

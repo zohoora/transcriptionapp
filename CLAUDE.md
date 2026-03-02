@@ -29,8 +29,8 @@ cd tauri-app && npx tsc --noEmit          # Frontend
 cd tauri-app/src-tauri && cargo check     # Backend
 
 # Tests
-cd tauri-app && pnpm test:run             # Frontend (Vitest, 434 passing + 6 skipped)
-cd tauri-app/src-tauri && cargo test      # Backend (567 tests, 32 E2E ignored)
+cd tauri-app && pnpm test:run             # Frontend (Vitest, 433 passing + 6 skipped)
+cd tauri-app/src-tauri && cargo test      # Backend (574 tests, 32 E2E ignored)
 
 # E2E (requires live STT + LLM Router)
 cd tauri-app/src-tauri && cargo test e2e_ -- --ignored --nocapture

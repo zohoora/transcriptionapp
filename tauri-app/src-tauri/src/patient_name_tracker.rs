@@ -12,12 +12,15 @@ use std::collections::HashMap;
 pub struct PatientNameTracker {
     /// Name -> count of screenshots where this name was extracted
     votes: HashMap<String, u32>,
+    /// Last encounter's majority name (set during reset, used for stale screenshot detection)
+    previous_name: Option<String>,
 }
 
 impl PatientNameTracker {
     pub fn new() -> Self {
         Self {
             votes: HashMap::new(),
+            previous_name: None,
         }
     }
 
@@ -51,9 +54,15 @@ impl PatientNameTracker {
         (changed, prev, current)
     }
 
-    /// Clear all votes for a new encounter period
+    /// Clear all votes for a new encounter period, storing outgoing majority name
     pub fn reset(&mut self) {
+        self.previous_name = self.majority_name();
         self.votes.clear();
+    }
+
+    /// Returns the previous encounter's majority name (set during reset)
+    pub fn previous_name(&self) -> Option<&str> {
+        self.previous_name.as_deref()
     }
 }
 
@@ -179,6 +188,36 @@ mod tests {
         assert!(!user.is_empty());
         assert!(system.contains("patient"));
         assert!(user.contains("NOT_FOUND"));
+    }
+
+    #[test]
+    fn test_reset_stores_previous_name() {
+        let mut tracker = PatientNameTracker::new();
+        tracker.record("John Smith");
+        tracker.record("John Smith");
+        assert_eq!(tracker.previous_name(), None); // No previous before first reset
+        tracker.reset();
+        assert_eq!(tracker.previous_name(), Some("John Smith"));
+        assert_eq!(tracker.majority_name(), None); // Votes cleared
+    }
+
+    #[test]
+    fn test_previous_name_updates_on_reset() {
+        let mut tracker = PatientNameTracker::new();
+        tracker.record("John Smith");
+        tracker.reset();
+        assert_eq!(tracker.previous_name(), Some("John Smith"));
+        tracker.record("Jane Doe");
+        tracker.record("Jane Doe");
+        tracker.reset();
+        assert_eq!(tracker.previous_name(), Some("Jane Doe"));
+    }
+
+    #[test]
+    fn test_previous_name_none_when_no_votes() {
+        let mut tracker = PatientNameTracker::new();
+        tracker.reset(); // Reset with no votes
+        assert_eq!(tracker.previous_name(), None);
     }
 
     #[test]

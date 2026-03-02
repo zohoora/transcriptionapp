@@ -638,6 +638,7 @@ export interface LocalArchiveSummary {
   charting_mode: ChartingMode | null;
   encounter_number: number | null;
   patient_name: string | null;
+  likely_non_clinical: boolean | null;
 }
 
 /** Metadata for an archived session */

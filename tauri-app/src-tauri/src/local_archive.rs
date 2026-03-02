@@ -156,6 +156,8 @@ pub struct ArchiveSummary {
     pub encounter_number: Option<u32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub patient_name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub likely_non_clinical: Option<bool>,
 }
 
 /// Detailed archived session (for detail view)
@@ -416,6 +418,7 @@ pub fn list_sessions_by_date(date_str: &str) -> Result<Vec<ArchiveSummary>, Stri
             charting_mode: metadata.charting_mode,
             encounter_number: metadata.encounter_number,
             patient_name: metadata.patient_name,
+            likely_non_clinical: metadata.likely_non_clinical,
         });
     }
 
@@ -1024,6 +1027,7 @@ mod tests {
             charting_mode: None,
             encounter_number: None,
             patient_name: None,
+            likely_non_clinical: None,
         };
 
         let json = serde_json::to_string(&summary).unwrap();

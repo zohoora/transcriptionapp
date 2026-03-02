@@ -139,6 +139,7 @@ const mockSessions: LocalArchiveSummary[] = [
     charting_mode: null,
     encounter_number: null,
     patient_name: null,
+    likely_non_clinical: null,
   },
   {
     session_id: 'session-2',
@@ -151,6 +152,7 @@ const mockSessions: LocalArchiveSummary[] = [
     charting_mode: null,
     encounter_number: null,
     patient_name: null,
+    likely_non_clinical: null,
   },
 ];
 
@@ -369,7 +371,7 @@ describe('HistoryWindow', () => {
       });
     });
 
-    it('navigates to detail view when session clicked', async () => {
+    it('shows detail in right pane when session clicked', async () => {
       const user = userEvent.setup();
       render(<HistoryWindow />);
 
@@ -379,12 +381,14 @@ describe('HistoryWindow', () => {
 
       await user.click(screen.getByText('350 words'));
 
+      // Detail appears in right pane alongside list (calendar still visible)
       await waitFor(() => {
-        expect(screen.getByText('Session Details')).toBeInTheDocument();
+        expect(screen.getByText(/Patient complaint/)).toBeInTheDocument();
       });
+      expect(screen.getByTestId('calendar')).toBeInTheDocument();
     });
 
-    it('shows back button in detail view', async () => {
+    it('list remains visible when detail is shown', async () => {
       const user = userEvent.setup();
       render(<HistoryWindow />);
 
@@ -394,9 +398,11 @@ describe('HistoryWindow', () => {
 
       await user.click(screen.getByText('350 words'));
 
+      // Both session list items and detail are visible
       await waitFor(() => {
-        expect(screen.getByRole('button', { name: /Back/i })).toBeInTheDocument();
+        expect(screen.getByText(/Patient complaint/)).toBeInTheDocument();
       });
+      expect(screen.getByText('500 words')).toBeInTheDocument();
     });
 
     it('displays transcript in detail view', async () => {
@@ -409,11 +415,11 @@ describe('HistoryWindow', () => {
 
       await user.click(screen.getByText('350 words'));
 
+      // SOAP tab is active when soap_note exists, switch to Transcript
       await waitFor(() => {
-        expect(screen.getByText('Session Details')).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: /Transcript/i })).toBeInTheDocument();
       });
 
-      // SOAP tab is active when soap_note exists, switch to Transcript
       await user.click(screen.getByRole('button', { name: /Transcript/i }));
 
       await waitFor(() => {
@@ -437,24 +443,11 @@ describe('HistoryWindow', () => {
       });
     });
 
-    it('navigates back to list view', async () => {
-      const user = userEvent.setup();
+    it('shows empty state when no session selected', async () => {
       render(<HistoryWindow />);
 
       await waitFor(() => {
-        expect(screen.getByText('350 words')).toBeInTheDocument();
-      });
-
-      await user.click(screen.getByText('350 words'));
-
-      await waitFor(() => {
-        expect(screen.getByText('Session Details')).toBeInTheDocument();
-      });
-
-      await user.click(screen.getByRole('button', { name: /Back/i }));
-
-      await waitFor(() => {
-        expect(screen.getByTestId('calendar')).toBeInTheDocument();
+        expect(screen.getByText('Select a session to view details')).toBeInTheDocument();
       });
     });
 
@@ -530,11 +523,12 @@ describe('HistoryWindow', () => {
 
       await user.click(screen.getByText('350 words'));
 
+      // Detail appears in right pane — SOAP tab active when soap_note exists
       await waitFor(() => {
-        expect(screen.getByText('Session Details')).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: /Transcript/i })).toBeInTheDocument();
       });
 
-      // Switch to Transcript tab (SOAP tab active when soap_note exists)
+      // Switch to Transcript tab
       await user.click(screen.getByRole('button', { name: /Transcript/i }));
 
       await waitFor(() => {

@@ -13,6 +13,12 @@ pub const FORCE_SPLIT_WORD_THRESHOLD: usize = 5000;
 pub const FORCE_SPLIT_CONSECUTIVE_LIMIT: u32 = 3;
 /// Unconditional force-split -- hard safety valve, no counter needed.
 pub const ABSOLUTE_WORD_CAP: usize = 10_000;
+/// Minimum word count for clinical content check + SOAP generation.
+/// Encounters below this threshold are treated as non-clinical (still archived with transcript).
+pub const MIN_WORDS_FOR_CLINICAL_CHECK: usize = 100;
+/// Grace period (seconds) after encounter split during which screenshot votes matching the
+/// previous encounter's patient name are suppressed (stale screenshot detection).
+pub const SCREENSHOT_STALE_GRACE_SECS: i64 = 90;
 
 /// Optional context signals for encounter detection.
 /// Provides real-time signals from vision (chart switch) and sensor (departure)
@@ -376,6 +382,15 @@ mod tests {
             FORCE_SPLIT_WORD_THRESHOLD < ABSOLUTE_WORD_CAP,
             "FORCE_SPLIT ({}) must be less than ABSOLUTE_WORD_CAP ({})",
             FORCE_SPLIT_WORD_THRESHOLD, ABSOLUTE_WORD_CAP
+        );
+    }
+
+    #[test]
+    fn test_min_words_below_force_check() {
+        assert!(
+            MIN_WORDS_FOR_CLINICAL_CHECK < FORCE_CHECK_WORD_THRESHOLD,
+            "MIN_WORDS_FOR_CLINICAL_CHECK ({}) must be less than FORCE_CHECK_WORD_THRESHOLD ({})",
+            MIN_WORDS_FOR_CLINICAL_CHECK, FORCE_CHECK_WORD_THRESHOLD
         );
     }
 

@@ -554,9 +554,9 @@ function App() {
       const historyWindow = new WebviewWindow('history', {
         url: 'history.html',
         title: 'Session History',
-        width: 500,
-        height: 700,
-        minWidth: 400,
+        width: 1000,
+        height: 750,
+        minWidth: 700,
         minHeight: 500,
         resizable: true,
       });

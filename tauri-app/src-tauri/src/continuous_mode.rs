@@ -30,6 +30,7 @@ pub use crate::encounter_detection::{
     build_encounter_detection_prompt, parse_encounter_detection,
     ClinicalContentCheckResult, build_clinical_content_check_prompt, parse_clinical_content_check,
     FORCE_CHECK_WORD_THRESHOLD, FORCE_SPLIT_WORD_THRESHOLD, FORCE_SPLIT_CONSECUTIVE_LIMIT, ABSOLUTE_WORD_CAP,
+    MIN_WORDS_FOR_CLINICAL_CHECK, SCREENSHOT_STALE_GRACE_SECS,
 };
 pub use crate::encounter_merge::{MergeCheckResult, build_encounter_merge_prompt, parse_merge_check};
 pub use crate::patient_name_tracker::PatientNameTracker;
@@ -119,6 +120,8 @@ pub struct ContinuousModeHandle {
     pub shadow_decisions: Arc<Mutex<Vec<crate::shadow_log::ShadowDecisionSummary>>>,
     /// Shadow mode: most recent shadow decision (for dashboard display)
     pub last_shadow_decision: Arc<Mutex<Option<crate::shadow_log::ShadowDecision>>>,
+    /// Timestamp of last encounter split (for stale screenshot detection)
+    pub last_split_time: Arc<Mutex<DateTime<Utc>>>,
 }
 
 impl ContinuousModeHandle {
@@ -143,6 +146,7 @@ impl ContinuousModeHandle {
             vision_old_name: Arc::new(Mutex::new(None)),
             shadow_decisions: Arc::new(Mutex::new(Vec::new())),
             last_shadow_decision: Arc::new(Mutex::new(None)),
+            last_split_time: Arc::new(Mutex::new(Utc::now())),
         }
     }
 
@@ -833,6 +837,7 @@ pub async fn run_continuous_mode(
     let last_patient_name_for_detector = handle.last_encounter_patient_name.clone();
     let last_error_for_detector = handle.last_error.clone();
     let name_tracker_for_detector = handle.name_tracker.clone();
+    let last_split_time_for_detector = handle.last_split_time.clone();
     let app_for_detector = app.clone();
     let check_interval = config.encounter_check_interval_secs;
 
@@ -1536,6 +1541,11 @@ pub async fn run_continuous_mode(
                             warn!("Name tracker lock poisoned, tracker not reset for next encounter");
                         }
 
+                        // Record split timestamp (for stale screenshot detection)
+                        if let Ok(mut t) = last_split_time_for_detector.lock() {
+                            *t = Utc::now();
+                        }
+
                         // Clear vision trigger names (consumed)
                         if let Ok(mut n) = vision_new_name_for_detector.lock() { *n = None; }
                         if let Ok(mut o) = vision_old_name_for_detector.lock() { *o = None; }
@@ -1587,7 +1597,33 @@ pub async fn run_continuous_mode(
 
                         // Two-pass clinical content check: flag non-clinical encounters
                         let mut is_clinical = true;
-                        if let Some(ref client) = llm_client {
+                        if encounter_word_count < MIN_WORDS_FOR_CLINICAL_CHECK {
+                            is_clinical = false;
+                            info!(
+                                "Encounter #{} too small for clinical analysis ({} words < {} threshold) — treating as non-clinical",
+                                encounter_number, encounter_word_count, MIN_WORDS_FOR_CLINICAL_CHECK
+                            );
+                            // Update metadata with non-clinical flag (same pattern as LLM clinical check below)
+                            if let Ok(archive_dir) = local_archive::get_archive_dir() {
+                                let now = Utc::now();
+                                let nc_meta_path = archive_dir
+                                    .join(format!("{:04}", now.year()))
+                                    .join(format!("{:02}", now.month()))
+                                    .join(format!("{:02}", now.day()))
+                                    .join(&session_id)
+                                    .join("metadata.json");
+                                if nc_meta_path.exists() {
+                                    if let Ok(content) = std::fs::read_to_string(&nc_meta_path) {
+                                        if let Ok(mut metadata) = serde_json::from_str::<local_archive::ArchiveMetadata>(&content) {
+                                            metadata.likely_non_clinical = Some(true);
+                                            if let Ok(json) = serde_json::to_string_pretty(&metadata) {
+                                                let _ = std::fs::write(&nc_meta_path, json);
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        } else if let Some(ref client) = llm_client {
                             let (cc_system, cc_user) = build_clinical_content_check_prompt(&encounter_text);
                             let cc_future = client.generate(&fast_model, &cc_system, &cc_user, "clinical_content_check");
                             match tokio::time::timeout(tokio::time::Duration::from_secs(30), cc_future).await {
@@ -1818,6 +1854,25 @@ pub async fn run_continuous_mode(
                                                                             Some(soap_detail_level),
                                                                             Some(&soap_format),
                                                                         );
+                                                                        // Clear non-clinical flag on keeper — merged encounter contains clinical content
+                                                                        if prev_encounter_is_clinical != is_clinical {
+                                                                            if let Ok(archive_dir) = local_archive::get_archive_dir() {
+                                                                                let merge_meta_path = archive_dir
+                                                                                    .join(format!("{:04}", prev_date.year()))
+                                                                                    .join(format!("{:02}", prev_date.month()))
+                                                                                    .join(format!("{:02}", prev_date.day()))
+                                                                                    .join(prev_id)
+                                                                                    .join("metadata.json");
+                                                                                if let Ok(content) = std::fs::read_to_string(&merge_meta_path) {
+                                                                                    if let Ok(mut metadata) = serde_json::from_str::<local_archive::ArchiveMetadata>(&content) {
+                                                                                        metadata.likely_non_clinical = None;
+                                                                                        if let Ok(json) = serde_json::to_string_pretty(&metadata) {
+                                                                                            let _ = std::fs::write(&merge_meta_path, json);
+                                                                                        }
+                                                                                    }
+                                                                                }
+                                                                            }
+                                                                        }
                                                                         info!("Regenerated SOAP for merged encounter {}", prev_id);
                                                                     }
                                                                     Ok(Err(e)) => warn!("Failed to regenerate SOAP after merge: {}", e),
@@ -1835,6 +1890,8 @@ pub async fn run_continuous_mode(
 
                                                             // Update prev tracking to the merged encounter
                                                             prev_encounter_text = Some(merged_text);
+                                                            // Merged encounter is clinical if either component was
+                                                            prev_encounter_is_clinical = is_clinical || prev_encounter_is_clinical;
                                                             // prev_encounter_session_id and prev_encounter_date stay the same (A)
                                                             continue; // Skip updating prev to current since we merged
                                                         }
@@ -1879,6 +1936,7 @@ pub async fn run_continuous_mode(
     let screenshot_task = if config.screen_capture_enabled {
         let stop_for_screenshot = handle.stop_flag.clone();
         let name_tracker_for_screenshot = handle.name_tracker.clone();
+        let last_split_time_for_screenshot = handle.last_split_time.clone();
         let vision_trigger_for_screenshot = handle.vision_name_change_trigger.clone();
         let vision_new_name_for_screenshot = handle.vision_new_name.clone();
         let vision_old_name_for_screenshot = handle.vision_old_name.clone();
@@ -1999,6 +2057,32 @@ pub async fn run_continuous_mode(
                     Ok(Ok(response)) => {
                         if let Some(name) = parse_patient_name(&response) {
                             info!("Vision extracted patient name: {}", name);
+
+                            // Stale screenshot detection: suppress votes that match previous
+                            // encounter's patient name within grace period after split
+                            let is_stale = if let Ok(split_time) = last_split_time_for_screenshot.lock() {
+                                let secs_since_split = (Utc::now() - *split_time).num_seconds();
+                                if secs_since_split < SCREENSHOT_STALE_GRACE_SECS {
+                                    if let Ok(tracker) = name_tracker_for_screenshot.lock() {
+                                        tracker.previous_name() == Some(name.as_str())
+                                    } else {
+                                        false
+                                    }
+                                } else {
+                                    false
+                                }
+                            } else {
+                                false
+                            };
+
+                            if is_stale {
+                                info!(
+                                    "Skipping stale screenshot vote '{}' — matches previous encounter name and within {}s grace period",
+                                    name, SCREENSHOT_STALE_GRACE_SECS
+                                );
+                                continue;
+                            }
+
                             if let Ok(mut tracker) = name_tracker_for_screenshot.lock() {
                                 let (changed, old_name, new_name) = tracker.record_and_check_change(&name);
                                 if changed {

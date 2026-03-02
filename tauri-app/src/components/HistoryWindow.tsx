@@ -28,7 +28,6 @@ import type {
 } from '../types';
 import { DETAIL_LEVEL_LABELS } from '../types';
 
-type View = 'list' | 'detail';
 type DetailTab = 'transcript' | 'soap' | 'insights';
 type DataSource = 'local' | 'medplum';
 type CleanupDialog = 'none' | 'delete' | 'merge' | 'editName';
@@ -68,7 +67,8 @@ const HistoryWindow: React.FC = () => {
   const [selectedSession, setSelectedSession] = useState<LocalArchiveDetails | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [view, setView] = useState<View>('list');
+  const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
+  const [detailLoading, setDetailLoading] = useState(false);
   const [datesWithSessions, setDatesWithSessions] = useState<Set<string>>(new Set());
 
   // Data source based on debug_storage_enabled setting
@@ -220,6 +220,7 @@ const HistoryWindow: React.FC = () => {
           charting_mode: null,
           encounter_number: null,
           patient_name: null,
+          likely_non_clinical: null,
         }));
         setSessions(converted);
       }
@@ -242,8 +243,8 @@ const HistoryWindow: React.FC = () => {
 
   // Fetch session details from local archive or Medplum
   const fetchSessionDetails = async (session: LocalArchiveSummary) => {
-    setLoading(true);
-    setError(null);
+    setSelectedSessionId(session.session_id);
+    setDetailLoading(true);
 
     try {
       let details: LocalArchiveDetails;
@@ -328,11 +329,11 @@ const HistoryWindow: React.FC = () => {
         setActiveTab('transcript');
       }
 
-      setView('detail');
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
+      setSelectedSessionId(null);
     } finally {
-      setLoading(false);
+      setDetailLoading(false);
     }
   };
 
@@ -388,13 +389,29 @@ const HistoryWindow: React.FC = () => {
     }
   }, [editedTranscript, soapOptions, selectedSession, selectedDate, dataSource, authState.is_authenticated, generateSoapNote]);
 
-  const handleBackToList = () => {
-    setView('list');
+  const clearSelection = useCallback(() => {
+    setSelectedSessionId(null);
     setSelectedSession(null);
     setIsEditing(false);
     setSoapResult(null);
     setSoapError(null);
-  };
+  }, []);
+
+  // Clear selection when date changes
+  useEffect(() => {
+    clearSelection();
+  }, [selectedDate, clearSelection]);
+
+  // Escape key clears selection
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && selectedSessionId) {
+        clearSelection();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [selectedSessionId, clearSelection]);
 
   const handleCopy = async (text: string, field: string) => {
     try {
@@ -448,6 +465,7 @@ const HistoryWindow: React.FC = () => {
   const afterCleanupOp = useCallback(async (message: string) => {
     setCleanupDialog('none');
     setSelectedIds(new Set());
+    clearSelection();
     setCleanupMessage(message);
     setTimeout(() => setCleanupMessage(null), 3000);
 
@@ -467,7 +485,7 @@ const HistoryWindow: React.FC = () => {
     } catch (e) {
       console.error('Failed to refresh dates:', e);
     }
-  }, [selectedDate, fetchSessions]);
+  }, [selectedDate, fetchSessions, clearSelection]);
 
   // Delete operation
   const handleDeleteConfirm = useCallback(async () => {
@@ -618,357 +636,151 @@ const HistoryWindow: React.FC = () => {
   const activeSoapContent = soapResult?.notes[activePatient]?.content ?? null;
   const isMultiPatient = (soapResult?.notes.length ?? 0) > 1;
 
-  // Detail view
-  if (view === 'detail' && selectedSession) {
-    return (
-      <div className="history-window">
-        <div className="history-header">
-          <button className="back-btn" onClick={handleBackToList}>
-            &#8592; Back
+  return (
+    <div className="history-window">
+      {/* Shared header */}
+      <div className="history-header">
+        <h1>Session History</h1>
+        {canCleanup && sessions.length > 0 && (
+          <button
+            className={`cleanup-toggle-btn ${isCleanupMode ? 'active' : ''}`}
+            onClick={toggleCleanupMode}
+            aria-label={isCleanupMode ? 'Exit cleanup mode' : 'Enter cleanup mode'}
+            title={isCleanupMode ? 'Exit cleanup mode' : 'Manage sessions'}
+          >
+            &#9998;
           </button>
-          <h1>Session Details</h1>
-          <button className="close-btn" onClick={handleClose} aria-label="Close">
-            &times;
-          </button>
-        </div>
+        )}
+        <button className="close-btn" onClick={handleClose} aria-label="Close">
+          &times;
+        </button>
+      </div>
 
-        <div className="history-content detail-content">
-          {/* Session Summary Bar */}
-          <div className="session-summary">
-            <span className="summary-time">{formatTime(selectedSession.metadata.started_at)}</span>
-            {selectedSession.metadata.duration_ms && (
-              <span className="summary-duration">{formatDuration(selectedSession.metadata.duration_ms)}</span>
-            )}
-            <span className="summary-words">{selectedSession.metadata.word_count} words</span>
-            {selectedSession.metadata.charting_mode === 'continuous' && (
-              <span className="summary-badge charted">
-                Auto-charted{selectedSession.metadata.encounter_number != null ? ` #${selectedSession.metadata.encounter_number}` : ''}{selectedSession.metadata.patient_name ? ` \u2014 ${selectedSession.metadata.patient_name}` : ''}
-              </span>
-            )}
-            {selectedSession.metadata.auto_ended && (
-              <span className="summary-badge auto">Auto-ended</span>
+      {/* Two-pane body */}
+      <div className="history-split-pane">
+
+        {/* LEFT PANE — calendar + session list */}
+        <div className="history-left-pane">
+          {/* Success message */}
+          {cleanupMessage && (
+            <div className="cleanup-success-message">{cleanupMessage}</div>
+          )}
+
+          <div className="calendar-with-today">
+            <Calendar
+              selectedDate={selectedDate}
+              onDateSelect={setSelectedDate}
+              datesWithSessions={Array.from(datesWithSessions)}
+            />
+            {selectedDate.toDateString() !== new Date().toDateString() && (
+              <button
+                className="btn-today"
+                onClick={() => setSelectedDate(new Date())}
+              >
+                Today
+              </button>
             )}
           </div>
 
-          {/* Tab Navigation */}
-          <div className="review-tabs">
-            <button
-              className={`review-tab ${activeTab === 'transcript' ? 'active' : ''}`}
-              onClick={() => setActiveTab('transcript')}
-            >
-              Transcript
-              {isModified && <span className="tab-badge">edited</span>}
-            </button>
-            <button
-              className={`review-tab ${activeTab === 'soap' ? 'active' : ''}`}
-              onClick={() => setActiveTab('soap')}
-              disabled={!hasTranscript}
-            >
-              SOAP
-              {soapResult && <span className="tab-badge done">✓</span>}
-            </button>
-            <button
-              className={`review-tab ${activeTab === 'insights' ? 'active' : ''}`}
-              onClick={() => setActiveTab('insights')}
-            >
-              Insights
-            </button>
-          </div>
+          <div className="sessions-section">
+            <h2 className="sessions-date-header">
+              {formatDateForDisplay(selectedDate)}
+            </h2>
 
-          {/* Tab Content */}
-          <div className="review-tab-content">
-            {/* Transcript Tab */}
-            {activeTab === 'transcript' && (
-              <div className="tab-panel transcript-panel">
-                <div className="panel-header">
-                  <div className="panel-actions">
-                    {hasTranscript && (
-                      <>
-                        <button
-                          className={`btn-small ${isEditing ? 'active' : ''}`}
-                          onClick={() => setIsEditing(!isEditing)}
-                        >
-                          {isEditing ? 'Done' : 'Edit'}
-                        </button>
-                        <button
-                          className={`btn-small copy-btn ${copySuccess === 'transcript' ? 'success' : ''}`}
-                          onClick={() => handleCopy(editedTranscript, 'transcript')}
-                        >
-                          {copySuccess === 'transcript' ? 'Copied!' : 'Copy'}
-                        </button>
-                      </>
-                    )}
-                  </div>
-                </div>
-
-                <div className="panel-body">
-                  {hasTranscript ? (
-                    isEditing ? (
-                      <textarea
-                        className="transcript-editor"
-                        value={editedTranscript}
-                        onChange={(e) => setEditedTranscript(e.target.value)}
-                        placeholder="Edit transcript..."
-                      />
-                    ) : (
-                      <div className="transcript-display">
-                        {editedTranscript.split('\n\n').map((paragraph, i) => (
-                          <p key={i}>{paragraph}</p>
-                        ))}
-                      </div>
-                    )
-                  ) : (
-                    <div className="panel-empty">No transcript recorded</div>
-                  )}
-                </div>
+            {loading ? (
+              <div className="sessions-loading">
+                <div className="spinner" />
               </div>
-            )}
-
-            {/* SOAP Tab */}
-            {activeTab === 'soap' && (
-              <div className="tab-panel soap-panel">
-                {/* SOAP Options */}
-                {!isGeneratingSoap && (
-                  <div className="soap-options">
-                    {/* Detail Level Slider */}
-                    <div className="soap-option-row">
-                      <label className="soap-option-label">
-                        Detail: {DETAIL_LEVEL_LABELS[soapOptions.detail_level]?.name || 'Standard'}
-                      </label>
-                      <div className="soap-detail-slider">
-                        <input
-                          type="range"
-                          min="1"
-                          max="10"
-                          value={soapOptions.detail_level}
-                          onChange={(e) => updateSoapDetailLevel(parseInt(e.target.value))}
-                          className="detail-slider"
-                          aria-label="SOAP note detail level"
-                        />
-                        <span className="detail-value">{soapOptions.detail_level}</span>
-                      </div>
-                    </div>
-
-                    {/* Format Toggle */}
-                    <div className="soap-option-row">
-                      <label className="soap-option-label">Format</label>
-                      <div className="soap-format-toggle">
-                        <button
-                          className={`format-btn ${soapOptions.format === 'problem_based' ? 'active' : ''}`}
-                          onClick={() => updateSoapFormat('problem_based')}
-                        >
-                          Problem
-                        </button>
-                        <button
-                          className={`format-btn ${soapOptions.format === 'comprehensive' ? 'active' : ''}`}
-                          onClick={() => updateSoapFormat('comprehensive')}
-                        >
-                          Comprehensive
-                        </button>
-                      </div>
-                    </div>
-
-                    {/* Custom Instructions */}
-                    <div className="soap-option-row custom-instructions">
-                      <button
-                        className="custom-instructions-toggle"
-                        onClick={() => setCustomInstructionsExpanded(!customInstructionsExpanded)}
-                      >
-                        <span className={`chevron-small ${customInstructionsExpanded ? '' : 'collapsed'}`}>&#9660;</span>
-                        Custom Instructions
-                        {soapOptions.custom_instructions.trim() && (
-                          <span className="custom-badge">Active</span>
-                        )}
-                      </button>
-                      {customInstructionsExpanded && (
-                        <textarea
-                          className="custom-instructions-input"
-                          value={soapOptions.custom_instructions}
-                          onChange={(e) => updateSoapCustomInstructions(e.target.value)}
-                          placeholder="Add specific instructions..."
-                          rows={3}
-                        />
-                      )}
-                    </div>
-                  </div>
-                )}
-
-                {/* Generate Button */}
-                {!soapResult && !isGeneratingSoap && !soapError && (
-                  <button
-                    className="btn-generate"
-                    onClick={handleGenerateSoap}
-                    disabled={!llmConnected || !hasTranscript}
+            ) : error && !selectedSession ? (
+              <div className="sessions-error">
+                <p>{error}</p>
+                <button onClick={fetchSessions}>Retry</button>
+              </div>
+            ) : sessions.length === 0 ? (
+              <div className="sessions-empty">
+                <p>No sessions recorded on this date</p>
+              </div>
+            ) : (
+              <div className="sessions-list">
+                {[...sessions].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()).map((session) => (
+                  <div
+                    key={session.session_id}
+                    className={`session-item${isCleanupMode && selectedIds.has(session.session_id) ? ' selected' : ''}${!isCleanupMode && selectedSessionId === session.session_id ? ' active' : ''}`}
                   >
-                    {!hasTranscript ? 'No transcript' : llmConnected ? 'Generate SOAP Note' : 'LLM not connected'}
-                  </button>
-                )}
-
-                {/* Loading State */}
-                {isGeneratingSoap && (
-                  <div className="soap-loading">
-                    <div className="spinner-small" />
-                    <span>Generating SOAP note...</span>
-                  </div>
-                )}
-
-                {/* Error State */}
-                {soapError && (
-                  <div className="soap-error">
-                    <span>{soapError}</span>
-                    <button className="btn-retry-small" onClick={handleGenerateSoap}>
-                      Retry
+                    {isCleanupMode && (
+                      <label className="cleanup-checkbox" onClick={(e) => e.stopPropagation()}>
+                        <input
+                          type="checkbox"
+                          checked={selectedIds.has(session.session_id)}
+                          onChange={() => toggleSessionSelection(session.session_id)}
+                        />
+                      </label>
+                    )}
+                    <button
+                      className="session-item-body"
+                      onClick={() => {
+                        if (isCleanupMode) {
+                          toggleSessionSelection(session.session_id);
+                        } else {
+                          fetchSessionDetails(session);
+                        }
+                      }}
+                    >
+                      <div className="session-info">
+                        <span className="session-time">{formatTime(session.date)}</span>
+                        <span className="session-name">
+                          {session.charting_mode === 'continuous' && session.encounter_number != null
+                            ? `Encounter #${session.encounter_number}${session.patient_name ? ` \u2014 ${session.patient_name}` : ''}`
+                            : session.word_count > 0
+                              ? `${session.word_count} words`
+                              : 'Scribe Session'}
+                        </span>
+                      </div>
+                      <div className="session-meta">
+                        {session.duration_ms && (
+                          <span className="session-duration">
+                            {formatDuration(session.duration_ms)}
+                          </span>
+                        )}
+                        <div className="session-badges">
+                          {session.likely_non_clinical && (
+                            <span className="badge non-clinical-badge">Non-clinical</span>
+                          )}
+                          {session.charting_mode === 'continuous' && (
+                            <span className="badge charted-badge">Auto-charted</span>
+                          )}
+                          {session.has_soap_note && (
+                            <span className="badge soap-badge">SOAP</span>
+                          )}
+                          {session.has_audio && (
+                            <span className="badge audio-badge">Audio</span>
+                          )}
+                          {session.auto_ended && (
+                            <span className="badge auto-badge">Auto</span>
+                          )}
+                        </div>
+                      </div>
                     </button>
                   </div>
-                )}
-
-                {/* SOAP Display */}
-                {soapResult && activeSoapContent && (
-                  <div className="soap-display">
-                    <div className="soap-header">
-                      <span className="soap-timestamp">
-                        {soapResult.model_used !== 'archived'
-                          ? `Generated ${formatLocalDateTime(soapResult.generated_at)}`
-                          : 'Previously generated'}
-                      </span>
-                      <div className="soap-actions">
-                        <button
-                          className={`btn-small copy-btn ${copySuccess === 'soap' ? 'success' : ''}`}
-                          onClick={() => handleCopy(activeSoapContent, 'soap')}
-                        >
-                          {copySuccess === 'soap' ? 'Copied!' : 'Copy'}
-                        </button>
-                        <button
-                          className="btn-small"
-                          onClick={handleGenerateSoap}
-                          disabled={isGeneratingSoap || !llmConnected}
-                        >
-                          Regenerate
-                        </button>
-                      </div>
-                    </div>
-
-                    {/* Multi-patient info and tabs */}
-                    {isMultiPatient && (
-                      <div className="multi-patient-soap">
-                        <div className="patient-info">
-                          <span className="physician-label">
-                            Physician: {soapResult.physician_speaker || 'Not identified'}
-                          </span>
-                          <span className="patient-count">
-                            {soapResult.notes.length} patients detected
-                          </span>
-                        </div>
-                        <div className="patient-tabs">
-                          {soapResult.notes.map((note, i) => (
-                            <button
-                              key={i}
-                              className={`patient-tab ${activePatient === i ? 'active' : ''}`}
-                              onClick={() => setActivePatient(i)}
-                            >
-                              {note.patient_label}
-                              <span className="speaker-id">({note.speaker_id})</span>
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-
-                    <div className="soap-content">
-                      <pre className="soap-text-content">{activeSoapContent}</pre>
-                    </div>
-
-                    {soapResult.model_used !== 'archived' && (
-                      <div className="soap-meta">
-                        <span className="soap-model">Model: {soapResult.model_used}</span>
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* Insights Tab */}
-            {activeTab === 'insights' && (
-              <div className="tab-panel insights-panel">
-                {/* Session Info */}
-                <div className="insight-card">
-                  <div className="insight-card-header">Session Info</div>
-                  <div className="insight-card-body">
-                    <div className="insight-metric">
-                      <span className="metric-label">Started</span>
-                      <span className="metric-value">{formatLocalDateTime(selectedSession.metadata.started_at)}</span>
-                    </div>
-                    {selectedSession.metadata.ended_at && (
-                      <div className="insight-metric">
-                        <span className="metric-label">Ended</span>
-                        <span className="metric-value">{formatLocalDateTime(selectedSession.metadata.ended_at)}</span>
-                      </div>
-                    )}
-                    <div className="insight-metric">
-                      <span className="metric-label">Duration</span>
-                      <span className="metric-value">{formatDuration(selectedSession.metadata.duration_ms)}</span>
-                    </div>
-                    <div className="insight-metric">
-                      <span className="metric-label">Words</span>
-                      <span className="metric-value">{selectedSession.metadata.word_count}</span>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Storage Info */}
-                <div className="insight-card">
-                  <div className="insight-card-header">Storage</div>
-                  <div className="insight-card-body">
-                    <div className="insight-metric">
-                      <span className="metric-label">Transcript</span>
-                      <span className="metric-value">{selectedSession.transcript ? '✓ Saved' : '✗ None'}</span>
-                    </div>
-                    <div className="insight-metric">
-                      <span className="metric-label">SOAP Note</span>
-                      <span className="metric-value">{selectedSession.metadata.has_soap_note ? '✓ Saved' : '✗ None'}</span>
-                    </div>
-                    <div className="insight-metric">
-                      <span className="metric-label">Audio</span>
-                      <span className="metric-value">{selectedSession.audio_path ? '✓ Saved' : '✗ None'}</span>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Auto-end Info */}
-                {selectedSession.metadata.auto_ended && (
-                  <div className="insight-card">
-                    <div className="insight-card-header">Auto-End</div>
-                    <div className="insight-card-body">
-                      <div className="insight-metric">
-                        <span className="metric-label">Reason</span>
-                        <span className="metric-value">{selectedSession.metadata.auto_end_reason || 'Silence detected'}</span>
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {/* Audio Player */}
-                {selectedSession.audio_path && (
-                  <div className="insight-card">
-                    <div className="insight-card-header">Audio Recording</div>
-                    <div className="insight-card-body audio-player-container">
-                      <AudioPlayer
-                        audioUrl={
-                          dataSource === 'medplum'
-                            ? selectedSession.audio_path // Medplum provides a URL
-                            : `file://${selectedSession.audio_path}` // Local file path
-                        }
-                      />
-                    </div>
-                  </div>
-                )}
+                ))}
               </div>
             )}
           </div>
 
+          {/* Cleanup action bar */}
+          {isCleanupMode && (
+            <CleanupActionBar
+              selectedCount={selectedIds.size}
+              onMerge={() => setCleanupDialog('merge')}
+              onDelete={() => setCleanupDialog('delete')}
+              onEditName={() => setCleanupDialog('editName')}
+              onSplit={openSplitWindow}
+              onRegenSoap={handleRegenSoap}
+            />
+          )}
+
           {/* Data source and auth status footer */}
-          {!authLoading && (
+          {!authLoading && !isCleanupMode && (
             <div className="history-footer">
               <span className="data-source-indicator">
                 {dataSource === 'local' ? '💾 Local Storage' : '☁️ Medplum'}
@@ -986,164 +798,359 @@ const HistoryWindow: React.FC = () => {
             </div>
           )}
         </div>
-      </div>
-    );
-  }
 
-  // List view
-  return (
-    <div className="history-window">
-      <div className="history-header">
-        <button className="close-btn" onClick={handleClose} aria-label="Close">
-          &times;
-        </button>
-        <h1>Session History</h1>
-        {canCleanup && sessions.length > 0 && (
-          <button
-            className={`cleanup-toggle-btn ${isCleanupMode ? 'active' : ''}`}
-            onClick={toggleCleanupMode}
-            aria-label={isCleanupMode ? 'Exit cleanup mode' : 'Enter cleanup mode'}
-            title={isCleanupMode ? 'Exit cleanup mode' : 'Manage sessions'}
-          >
-            &#9998;
-          </button>
-        )}
-      </div>
-
-      <div className="history-content">
-        {/* Success message */}
-        {cleanupMessage && (
-          <div className="cleanup-success-message">{cleanupMessage}</div>
-        )}
-
-        <div className="calendar-with-today">
-          <Calendar
-            selectedDate={selectedDate}
-            onDateSelect={setSelectedDate}
-            datesWithSessions={Array.from(datesWithSessions)}
-          />
-          {selectedDate.toDateString() !== new Date().toDateString() && (
-            <button
-              className="btn-today"
-              onClick={() => setSelectedDate(new Date())}
-            >
-              Today
-            </button>
-          )}
-        </div>
-
-        <div className="sessions-section">
-          <h2 className="sessions-date-header">
-            {formatDateForDisplay(selectedDate)}
-          </h2>
-
-          {loading ? (
-            <div className="sessions-loading">
+        {/* RIGHT PANE — session details */}
+        <div className="history-right-pane">
+          {detailLoading ? (
+            <div className="detail-empty-state">
               <div className="spinner" />
             </div>
-          ) : error ? (
-            <div className="sessions-error">
-              <p>{error}</p>
-              <button onClick={fetchSessions}>Retry</button>
-            </div>
-          ) : sessions.length === 0 ? (
-            <div className="sessions-empty">
-              <p>No sessions recorded on this date</p>
-            </div>
-          ) : (
-            <div className="sessions-list">
-              {[...sessions].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()).map((session) => (
-                <div
-                  key={session.session_id}
-                  className={`session-item ${isCleanupMode && selectedIds.has(session.session_id) ? 'selected' : ''}`}
+          ) : selectedSession ? (
+            <div className="detail-content">
+              {/* Session Summary Bar */}
+              <div className="session-summary">
+                <span className="summary-time">{formatTime(selectedSession.metadata.started_at)}</span>
+                {selectedSession.metadata.duration_ms && (
+                  <span className="summary-duration">{formatDuration(selectedSession.metadata.duration_ms)}</span>
+                )}
+                <span className="summary-words">{selectedSession.metadata.word_count} words</span>
+                {selectedSession.metadata.likely_non_clinical && (
+                  <span className="summary-badge non-clinical">Non-clinical</span>
+                )}
+                {selectedSession.metadata.charting_mode === 'continuous' && (
+                  <span className="summary-badge charted">
+                    Auto-charted{selectedSession.metadata.encounter_number != null ? ` #${selectedSession.metadata.encounter_number}` : ''}{selectedSession.metadata.patient_name ? ` \u2014 ${selectedSession.metadata.patient_name}` : ''}
+                  </span>
+                )}
+                {selectedSession.metadata.auto_ended && (
+                  <span className="summary-badge auto">Auto-ended</span>
+                )}
+              </div>
+
+              {/* Tab Navigation */}
+              <div className="review-tabs">
+                <button
+                  className={`review-tab ${activeTab === 'transcript' ? 'active' : ''}`}
+                  onClick={() => setActiveTab('transcript')}
                 >
-                  {isCleanupMode && (
-                    <label className="cleanup-checkbox" onClick={(e) => e.stopPropagation()}>
-                      <input
-                        type="checkbox"
-                        checked={selectedIds.has(session.session_id)}
-                        onChange={() => toggleSessionSelection(session.session_id)}
-                      />
-                    </label>
-                  )}
-                  <button
-                    className="session-item-body"
-                    onClick={() => {
-                      if (isCleanupMode) {
-                        toggleSessionSelection(session.session_id);
-                      } else {
-                        fetchSessionDetails(session);
-                      }
-                    }}
-                  >
-                    <div className="session-info">
-                      <span className="session-time">{formatTime(session.date)}</span>
-                      <span className="session-name">
-                        {session.charting_mode === 'continuous' && session.encounter_number != null
-                          ? `Encounter #${session.encounter_number}${session.patient_name ? ` \u2014 ${session.patient_name}` : ''}`
-                          : session.word_count > 0
-                            ? `${session.word_count} words`
-                            : 'Scribe Session'}
-                      </span>
-                    </div>
-                    <div className="session-meta">
-                      {session.duration_ms && (
-                        <span className="session-duration">
-                          {formatDuration(session.duration_ms)}
-                        </span>
-                      )}
-                      <div className="session-badges">
-                        {session.charting_mode === 'continuous' && (
-                          <span className="badge charted-badge">Auto-charted</span>
-                        )}
-                        {session.has_soap_note && (
-                          <span className="badge soap-badge">SOAP</span>
-                        )}
-                        {session.has_audio && (
-                          <span className="badge audio-badge">Audio</span>
-                        )}
-                        {session.auto_ended && (
-                          <span className="badge auto-badge">Auto</span>
+                  Transcript
+                  {isModified && <span className="tab-badge">edited</span>}
+                </button>
+                <button
+                  className={`review-tab ${activeTab === 'soap' ? 'active' : ''}`}
+                  onClick={() => setActiveTab('soap')}
+                  disabled={!hasTranscript}
+                >
+                  SOAP
+                  {soapResult && <span className="tab-badge done">✓</span>}
+                </button>
+                <button
+                  className={`review-tab ${activeTab === 'insights' ? 'active' : ''}`}
+                  onClick={() => setActiveTab('insights')}
+                >
+                  Insights
+                </button>
+              </div>
+
+              {/* Tab Content */}
+              <div className="review-tab-content">
+                {/* Transcript Tab */}
+                {activeTab === 'transcript' && (
+                  <div className="tab-panel transcript-panel">
+                    <div className="panel-header">
+                      <div className="panel-actions">
+                        {hasTranscript && (
+                          <>
+                            <button
+                              className={`btn-small ${isEditing ? 'active' : ''}`}
+                              onClick={() => setIsEditing(!isEditing)}
+                            >
+                              {isEditing ? 'Done' : 'Edit'}
+                            </button>
+                            <button
+                              className={`btn-small copy-btn ${copySuccess === 'transcript' ? 'success' : ''}`}
+                              onClick={() => handleCopy(editedTranscript, 'transcript')}
+                            >
+                              {copySuccess === 'transcript' ? 'Copied!' : 'Copy'}
+                            </button>
+                          </>
                         )}
                       </div>
                     </div>
-                  </button>
-                </div>
-              ))}
+
+                    <div className="panel-body">
+                      {hasTranscript ? (
+                        isEditing ? (
+                          <textarea
+                            className="transcript-editor"
+                            value={editedTranscript}
+                            onChange={(e) => setEditedTranscript(e.target.value)}
+                            placeholder="Edit transcript..."
+                          />
+                        ) : (
+                          <div className="transcript-display">
+                            {editedTranscript.split('\n\n').map((paragraph, i) => (
+                              <p key={i}>{paragraph}</p>
+                            ))}
+                          </div>
+                        )
+                      ) : (
+                        <div className="panel-empty">No transcript recorded</div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* SOAP Tab */}
+                {activeTab === 'soap' && (
+                  <div className="tab-panel soap-panel">
+                    {/* SOAP Options */}
+                    {!isGeneratingSoap && (
+                      <div className="soap-options">
+                        {/* Detail Level Slider */}
+                        <div className="soap-option-row">
+                          <label className="soap-option-label">
+                            Detail: {DETAIL_LEVEL_LABELS[soapOptions.detail_level]?.name || 'Standard'}
+                          </label>
+                          <div className="soap-detail-slider">
+                            <input
+                              type="range"
+                              min="1"
+                              max="10"
+                              value={soapOptions.detail_level}
+                              onChange={(e) => updateSoapDetailLevel(parseInt(e.target.value))}
+                              className="detail-slider"
+                              aria-label="SOAP note detail level"
+                            />
+                            <span className="detail-value">{soapOptions.detail_level}</span>
+                          </div>
+                        </div>
+
+                        {/* Format Toggle */}
+                        <div className="soap-option-row">
+                          <label className="soap-option-label">Format</label>
+                          <div className="soap-format-toggle">
+                            <button
+                              className={`format-btn ${soapOptions.format === 'problem_based' ? 'active' : ''}`}
+                              onClick={() => updateSoapFormat('problem_based')}
+                            >
+                              Problem
+                            </button>
+                            <button
+                              className={`format-btn ${soapOptions.format === 'comprehensive' ? 'active' : ''}`}
+                              onClick={() => updateSoapFormat('comprehensive')}
+                            >
+                              Comprehensive
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Custom Instructions */}
+                        <div className="soap-option-row custom-instructions">
+                          <button
+                            className="custom-instructions-toggle"
+                            onClick={() => setCustomInstructionsExpanded(!customInstructionsExpanded)}
+                          >
+                            <span className={`chevron-small ${customInstructionsExpanded ? '' : 'collapsed'}`}>&#9660;</span>
+                            Custom Instructions
+                            {soapOptions.custom_instructions.trim() && (
+                              <span className="custom-badge">Active</span>
+                            )}
+                          </button>
+                          {customInstructionsExpanded && (
+                            <textarea
+                              className="custom-instructions-input"
+                              value={soapOptions.custom_instructions}
+                              onChange={(e) => updateSoapCustomInstructions(e.target.value)}
+                              placeholder="Add specific instructions..."
+                              rows={3}
+                            />
+                          )}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Generate Button */}
+                    {!soapResult && !isGeneratingSoap && !soapError && (
+                      <button
+                        className="btn-generate"
+                        onClick={handleGenerateSoap}
+                        disabled={!llmConnected || !hasTranscript}
+                      >
+                        {!hasTranscript ? 'No transcript' : llmConnected ? 'Generate SOAP Note' : 'LLM not connected'}
+                      </button>
+                    )}
+
+                    {/* Loading State */}
+                    {isGeneratingSoap && (
+                      <div className="soap-loading">
+                        <div className="spinner-small" />
+                        <span>Generating SOAP note...</span>
+                      </div>
+                    )}
+
+                    {/* Error State */}
+                    {soapError && (
+                      <div className="soap-error">
+                        <span>{soapError}</span>
+                        <button className="btn-retry-small" onClick={handleGenerateSoap}>
+                          Retry
+                        </button>
+                      </div>
+                    )}
+
+                    {/* SOAP Display */}
+                    {soapResult && activeSoapContent && (
+                      <div className="soap-display">
+                        <div className="soap-header">
+                          <span className="soap-timestamp">
+                            {soapResult.model_used !== 'archived'
+                              ? `Generated ${formatLocalDateTime(soapResult.generated_at)}`
+                              : 'Previously generated'}
+                          </span>
+                          <div className="soap-actions">
+                            <button
+                              className={`btn-small copy-btn ${copySuccess === 'soap' ? 'success' : ''}`}
+                              onClick={() => handleCopy(activeSoapContent, 'soap')}
+                            >
+                              {copySuccess === 'soap' ? 'Copied!' : 'Copy'}
+                            </button>
+                            <button
+                              className="btn-small"
+                              onClick={handleGenerateSoap}
+                              disabled={isGeneratingSoap || !llmConnected}
+                            >
+                              Regenerate
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Multi-patient info and tabs */}
+                        {isMultiPatient && (
+                          <div className="multi-patient-soap">
+                            <div className="patient-info">
+                              <span className="physician-label">
+                                Physician: {soapResult.physician_speaker || 'Not identified'}
+                              </span>
+                              <span className="patient-count">
+                                {soapResult.notes.length} patients detected
+                              </span>
+                            </div>
+                            <div className="patient-tabs">
+                              {soapResult.notes.map((note, i) => (
+                                <button
+                                  key={i}
+                                  className={`patient-tab ${activePatient === i ? 'active' : ''}`}
+                                  onClick={() => setActivePatient(i)}
+                                >
+                                  {note.patient_label}
+                                  <span className="speaker-id">({note.speaker_id})</span>
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        <div className="soap-content">
+                          <pre className="soap-text-content">{activeSoapContent}</pre>
+                        </div>
+
+                        {soapResult.model_used !== 'archived' && (
+                          <div className="soap-meta">
+                            <span className="soap-model">Model: {soapResult.model_used}</span>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Insights Tab */}
+                {activeTab === 'insights' && (
+                  <div className="tab-panel insights-panel">
+                    {/* Session Info */}
+                    <div className="insight-card">
+                      <div className="insight-card-header">Session Info</div>
+                      <div className="insight-card-body">
+                        <div className="insight-metric">
+                          <span className="metric-label">Started</span>
+                          <span className="metric-value">{formatLocalDateTime(selectedSession.metadata.started_at)}</span>
+                        </div>
+                        {selectedSession.metadata.ended_at && (
+                          <div className="insight-metric">
+                            <span className="metric-label">Ended</span>
+                            <span className="metric-value">{formatLocalDateTime(selectedSession.metadata.ended_at)}</span>
+                          </div>
+                        )}
+                        <div className="insight-metric">
+                          <span className="metric-label">Duration</span>
+                          <span className="metric-value">{formatDuration(selectedSession.metadata.duration_ms)}</span>
+                        </div>
+                        <div className="insight-metric">
+                          <span className="metric-label">Words</span>
+                          <span className="metric-value">{selectedSession.metadata.word_count}</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Storage Info */}
+                    <div className="insight-card">
+                      <div className="insight-card-header">Storage</div>
+                      <div className="insight-card-body">
+                        <div className="insight-metric">
+                          <span className="metric-label">Transcript</span>
+                          <span className="metric-value">{selectedSession.transcript ? '✓ Saved' : '✗ None'}</span>
+                        </div>
+                        <div className="insight-metric">
+                          <span className="metric-label">SOAP Note</span>
+                          <span className="metric-value">{selectedSession.metadata.has_soap_note ? '✓ Saved' : '✗ None'}</span>
+                        </div>
+                        <div className="insight-metric">
+                          <span className="metric-label">Audio</span>
+                          <span className="metric-value">{selectedSession.audio_path ? '✓ Saved' : '✗ None'}</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Auto-end Info */}
+                    {selectedSession.metadata.auto_ended && (
+                      <div className="insight-card">
+                        <div className="insight-card-header">Auto-End</div>
+                        <div className="insight-card-body">
+                          <div className="insight-metric">
+                            <span className="metric-label">Reason</span>
+                            <span className="metric-value">{selectedSession.metadata.auto_end_reason || 'Silence detected'}</span>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Audio Player */}
+                    {selectedSession.audio_path && (
+                      <div className="insight-card">
+                        <div className="insight-card-header">Audio Recording</div>
+                        <div className="insight-card-body audio-player-container">
+                          <AudioPlayer
+                            audioUrl={
+                              dataSource === 'medplum'
+                                ? selectedSession.audio_path // Medplum provides a URL
+                                : `file://${selectedSession.audio_path}` // Local file path
+                            }
+                          />
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+          ) : (
+            <div className="detail-empty-state">
+              <span className="empty-icon">&#128203;</span>
+              <span>Select a session to view details</span>
             </div>
           )}
         </div>
-
-        {/* Cleanup action bar */}
-        {isCleanupMode && (
-          <CleanupActionBar
-            selectedCount={selectedIds.size}
-            onMerge={() => setCleanupDialog('merge')}
-            onDelete={() => setCleanupDialog('delete')}
-            onEditName={() => setCleanupDialog('editName')}
-            onSplit={openSplitWindow}
-            onRegenSoap={handleRegenSoap}
-          />
-        )}
-
-        {/* Data source and auth status footer */}
-        {!authLoading && !isCleanupMode && (
-          <div className="history-footer">
-            <span className="data-source-indicator">
-              {dataSource === 'local' ? '💾 Local Storage' : '☁️ Medplum'}
-            </span>
-            {dataSource === 'medplum' && !authState.is_authenticated && (
-              <button className="auth-status not-authenticated" onClick={login}>
-                Sign in to view history
-              </button>
-            )}
-            {dataSource === 'local' && authState.is_authenticated && (
-              <span className="auth-status authenticated">
-                ☁️ Also synced to Medplum
-              </span>
-            )}
-          </div>
-        )}
       </div>
 
       {/* Cleanup dialogs */}
@@ -1168,7 +1175,6 @@ const HistoryWindow: React.FC = () => {
           onCancel={() => setCleanupDialog('none')}
         />
       )}
-      {/* Split is now handled in a separate window via openSplitWindow */}
     </div>
   );
 };

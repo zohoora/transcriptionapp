@@ -216,7 +216,7 @@ fn default_presence_absence_threshold_secs() -> u64 {
 }
 
 fn default_presence_debounce_secs() -> u64 {
-    10
+    15 // 15s — prevents false splits from brief departures (patient shifting, doctor stepping to desk)
 }
 
 fn default_presence_csv_log_enabled() -> bool {
@@ -1530,14 +1530,14 @@ mod tests {
         assert_eq!(config.encounter_detection_mode, EncounterDetectionMode::Hybrid);
         assert!(config.presence_sensor_port.is_empty());
         assert_eq!(config.presence_absence_threshold_secs, 180);
-        assert_eq!(config.presence_debounce_secs, 10);
+        assert_eq!(config.presence_debounce_secs, 15);
         assert!(config.presence_csv_log_enabled);
 
         let settings = Settings::default();
         assert_eq!(settings.encounter_detection_mode, EncounterDetectionMode::Hybrid);
         assert!(settings.presence_sensor_port.is_empty());
         assert_eq!(settings.presence_absence_threshold_secs, 180);
-        assert_eq!(settings.presence_debounce_secs, 10);
+        assert_eq!(settings.presence_debounce_secs, 15);
         assert!(settings.presence_csv_log_enabled);
     }
 
@@ -1585,7 +1585,7 @@ mod tests {
         assert_eq!(config.encounter_detection_mode, EncounterDetectionMode::Hybrid);
         assert!(config.presence_sensor_port.is_empty());
         assert_eq!(config.presence_absence_threshold_secs, 180);
-        assert_eq!(config.presence_debounce_secs, 10);
+        assert_eq!(config.presence_debounce_secs, 15);
         assert!(config.presence_csv_log_enabled);
     }
 
