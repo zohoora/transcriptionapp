@@ -439,11 +439,12 @@ pub async fn run_continuous_mode(
     // Start presence sensor if in sensor, shadow, or hybrid detection mode
     let is_shadow_mode = config.encounter_detection_mode == EncounterDetectionMode::Shadow;
     let is_hybrid_mode = config.encounter_detection_mode == EncounterDetectionMode::Hybrid;
-    let shadow_active_method = config.shadow_active_method.clone();
-    let use_sensor_mode = (config.encounter_detection_mode == EncounterDetectionMode::Sensor
-        || (is_shadow_mode && !config.presence_sensor_port.is_empty())
-        || (is_hybrid_mode && !config.presence_sensor_port.is_empty()))
-        && !config.presence_sensor_port.is_empty();
+    let shadow_active_method = config.shadow_active_method;
+    let needs_sensor = matches!(
+        config.encounter_detection_mode,
+        EncounterDetectionMode::Sensor | EncounterDetectionMode::Shadow | EncounterDetectionMode::Hybrid
+    );
+    let use_sensor_mode = needs_sensor && !config.presence_sensor_port.is_empty();
     let mut sensor_handle: Option<crate::presence_sensor::PresenceSensor> = None;
     let sensor_absence_trigger: Arc<tokio::sync::Notify>;
     // Shadow sensor observer uses watch channel for state transitions (not Notify)
@@ -571,7 +572,7 @@ pub async fn run_continuous_mode(
     // Spawn shadow observer task (if shadow mode is active)
     let shadow_task: Option<tokio::task::JoinHandle<()>> = if is_shadow_mode {
         let shadow_method = if shadow_active_method == ShadowActiveMethod::Sensor { "llm" } else { "sensor" };
-        let active_method = shadow_active_method.clone();
+        let active_method = shadow_active_method;
         info!("Shadow mode: active={}, shadow={}", active_method, shadow_method);
 
         // Initialize shadow CSV logger
@@ -896,8 +897,6 @@ pub async fn run_continuous_mode(
 
     // Clone shadow state for detector task
     let handle_shadow_decisions = handle.shadow_decisions.clone();
-    let is_shadow_mode = is_shadow_mode;
-    let shadow_active_method = shadow_active_method.clone();
 
     // Clone native STT shadow accumulator for detector task (encounter boundary drain)
     let stt_shadow_accumulator = native_stt_accumulator_for_detector;

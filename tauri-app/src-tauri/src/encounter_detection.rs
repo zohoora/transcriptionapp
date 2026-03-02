@@ -3,7 +3,7 @@
 //! Provides the LLM prompt construction and response parsing for detecting
 //! transition points between patient encounters in a continuous transcript.
 
-use serde::{Deserialize, Serialize};
+use serde::{de::DeserializeOwned, Deserialize, Serialize};
 
 /// Word count forcing encounter check regardless of buffer age.
 pub const FORCE_CHECK_WORD_THRESHOLD: usize = 3000;
@@ -191,27 +191,40 @@ pub(crate) fn extract_first_json_object(text: &str) -> Option<String> {
     None
 }
 
-/// Parse the encounter detection response from the LLM
-pub fn parse_encounter_detection(response: &str) -> Result<EncounterDetectionResult, String> {
+/// Parse a JSON response from the LLM, handling think tags, code fences, and wrapper objects.
+///
+/// Two-pass strategy:
+/// 1. Try extracting the outermost JSON object from the cleaned text
+/// 2. If that fails, look for a fallback key prefix (e.g. `{"complete"`) and try the inner object
+///
+/// Used by encounter detection, clinical content check, and merge check parsers.
+pub(crate) fn parse_llm_json_response<T: DeserializeOwned>(
+    response: &str,
+    fallback_key_prefix: &str,
+    error_context: &str,
+) -> Result<T, String> {
     let cleaned = strip_think_tags(response);
 
-    // Try outermost braces first
     if let Some(json_str) = extract_first_json_object(&cleaned) {
-        if let Ok(result) = serde_json::from_str::<EncounterDetectionResult>(&json_str) {
+        if let Ok(result) = serde_json::from_str::<T>(&json_str) {
             return Ok(result);
         }
     }
 
-    // Fallback: model may wrap JSON in {return {...}} -- find inner {"complete" object
-    if let Some(inner_start) = cleaned.find("{\"complete\"") {
+    if let Some(inner_start) = cleaned.find(fallback_key_prefix) {
         if let Some(json_str) = extract_first_json_object(&cleaned[inner_start..]) {
-            if let Ok(result) = serde_json::from_str::<EncounterDetectionResult>(&json_str) {
+            if let Ok(result) = serde_json::from_str::<T>(&json_str) {
                 return Ok(result);
             }
         }
     }
 
-    Err(format!("Failed to parse encounter detection response: (raw: {})", response))
+    Err(format!("Failed to parse {} response: (raw: {})", error_context, response))
+}
+
+/// Parse the encounter detection response from the LLM
+pub fn parse_encounter_detection(response: &str) -> Result<EncounterDetectionResult, String> {
+    parse_llm_json_response(response, "{\"complete\"", "encounter detection")
 }
 
 // ============================================================================
@@ -263,24 +276,7 @@ Respond with ONLY the JSON object."#;
 
 /// Parse the clinical content check response from the LLM
 pub fn parse_clinical_content_check(response: &str) -> Result<ClinicalContentCheckResult, String> {
-    let cleaned = strip_think_tags(response);
-
-    if let Some(json_str) = extract_first_json_object(&cleaned) {
-        if let Ok(result) = serde_json::from_str::<ClinicalContentCheckResult>(&json_str) {
-            return Ok(result);
-        }
-    }
-
-    // Fallback: try to find {"clinical" in the text
-    if let Some(inner_start) = cleaned.find("{\"clinical\"") {
-        if let Some(json_str) = extract_first_json_object(&cleaned[inner_start..]) {
-            if let Ok(result) = serde_json::from_str::<ClinicalContentCheckResult>(&json_str) {
-                return Ok(result);
-            }
-        }
-    }
-
-    Err(format!("Failed to parse clinical content check response: (raw: {})", response))
+    parse_llm_json_response(response, "{\"clinical\"", "clinical content check")
 }
 
 #[cfg(test)]

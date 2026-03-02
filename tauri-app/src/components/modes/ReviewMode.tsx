@@ -73,9 +73,6 @@ interface ReviewModeProps {
   autoSyncEnabled: boolean;
 }
 
-// Format duration as mm:ss or h:mm:ss (uses shared utility)
-const formatDuration = formatDurationClock;
-
 // Get quality badge from audio quality (thin wrapper over shared utility)
 const getQualityBadge = (quality: AudioQualitySnapshot | null): { label: string; className: string } => {
   if (!quality) return { label: 'Unknown', className: 'quality-unknown' };
@@ -208,7 +205,7 @@ export const ReviewMode = memo(function ReviewMode({
       <div className="session-summary">
         <span className="summary-check">&#10003;</span>
         <span className="summary-label">Complete</span>
-        <span className="summary-duration">{formatDuration(elapsedMs)}</span>
+        <span className="summary-duration">{formatDurationClock(elapsedMs)}</span>
         <span className={`summary-quality ${qualityBadge.className}`}>{qualityBadge.label}</span>
         <span className="summary-model" title="Transcription model">
           {whisperModel}

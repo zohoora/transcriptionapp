@@ -41,9 +41,6 @@ function formatDateForDisplay(date: Date): string {
   });
 }
 
-const formatTime = formatLocalTime;
-const formatDuration = formatDurationShort;
-
 const HistoryWindow: React.FC = () => {
   const { authState, isLoading: authLoading, login } = useAuth();
 
@@ -727,7 +724,7 @@ const HistoryWindow: React.FC = () => {
                       }}
                     >
                       <div className="session-info">
-                        <span className="session-time">{formatTime(session.date)}</span>
+                        <span className="session-time">{formatLocalTime(session.date)}</span>
                         <span className="session-name">
                           {session.charting_mode === 'continuous' && session.encounter_number != null
                             ? `Encounter #${session.encounter_number}${session.patient_name ? ` \u2014 ${session.patient_name}` : ''}`
@@ -739,7 +736,7 @@ const HistoryWindow: React.FC = () => {
                       <div className="session-meta">
                         {session.duration_ms && (
                           <span className="session-duration">
-                            {formatDuration(session.duration_ms)}
+                            {formatDurationShort(session.duration_ms)}
                           </span>
                         )}
                         <div className="session-badges">
@@ -809,9 +806,9 @@ const HistoryWindow: React.FC = () => {
             <div className="detail-content">
               {/* Session Summary Bar */}
               <div className="session-summary">
-                <span className="summary-time">{formatTime(selectedSession.metadata.started_at)}</span>
+                <span className="summary-time">{formatLocalTime(selectedSession.metadata.started_at)}</span>
                 {selectedSession.metadata.duration_ms && (
-                  <span className="summary-duration">{formatDuration(selectedSession.metadata.duration_ms)}</span>
+                  <span className="summary-duration">{formatDurationShort(selectedSession.metadata.duration_ms)}</span>
                 )}
                 <span className="summary-words">{selectedSession.metadata.word_count} words</span>
                 {selectedSession.metadata.likely_non_clinical && (
@@ -1084,7 +1081,7 @@ const HistoryWindow: React.FC = () => {
                         )}
                         <div className="insight-metric">
                           <span className="metric-label">Duration</span>
-                          <span className="metric-value">{formatDuration(selectedSession.metadata.duration_ms)}</span>
+                          <span className="metric-value">{formatDurationShort(selectedSession.metadata.duration_ms)}</span>
                         </div>
                         <div className="insight-metric">
                           <span className="metric-label">Words</span>

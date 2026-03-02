@@ -6,7 +6,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::encounter_detection::{strip_think_tags, extract_first_json_object};
+use crate::encounter_detection::parse_llm_json_response;
 
 /// Result of encounter merge check
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -68,25 +68,7 @@ Return ONLY the JSON object, nothing else."#,
 
 /// Parse the merge check response from the LLM
 pub fn parse_merge_check(response: &str) -> Result<MergeCheckResult, String> {
-    let cleaned = strip_think_tags(response);
-
-    // Try outermost braces first
-    if let Some(json_str) = extract_first_json_object(&cleaned) {
-        if let Ok(result) = serde_json::from_str::<MergeCheckResult>(&json_str) {
-            return Ok(result);
-        }
-    }
-
-    // Fallback: look for {"same_encounter" inside wrapper
-    if let Some(inner_start) = cleaned.find("{\"same_encounter\"") {
-        if let Some(json_str) = extract_first_json_object(&cleaned[inner_start..]) {
-            if let Ok(result) = serde_json::from_str::<MergeCheckResult>(&json_str) {
-                return Ok(result);
-            }
-        }
-    }
-
-    Err(format!("Failed to parse merge check response: (raw: {})", response))
+    parse_llm_json_response(response, "{\"same_encounter\"", "merge check")
 }
 
 #[cfg(test)]

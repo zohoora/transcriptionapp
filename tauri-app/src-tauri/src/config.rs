@@ -650,11 +650,6 @@ impl std::ops::DerefMut for Config {
     }
 }
 
-#[allow(dead_code)]
-fn default_max_speakers() -> usize {
-    10
-}
-
 fn default_similarity_threshold() -> f32 {
     0.5
 }

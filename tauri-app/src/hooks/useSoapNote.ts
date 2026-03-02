@@ -118,14 +118,12 @@ export function useSoapNote(): UseSoapNoteResult {
     setSoapOptions(prev => ({ ...prev, custom_instructions: instructions }));
   }, []);
 
-  // Generate multi-patient SOAP notes with auto-detection
-  // The LLM identifies physician and patients from the transcript
-  const generateSoapNote = useCallback(async (
+  // Shared guard/loading/error wrapper for all SOAP generation methods.
+  // Prevents concurrent calls, manages loading state, and handles errors.
+  async function withSoapGuard<T>(
     transcript: string,
-    audioEvents?: CoughEvent[],
-    options?: SoapOptions,
-    sessionId?: string
-  ): Promise<MultiPatientSoapResult | null> => {
+    generate: () => Promise<T>,
+  ): Promise<T | null> {
     if (!transcript.trim()) return null;
     if (generationInFlight.current) {
       console.warn('SOAP generation already in progress, skipping duplicate call');
@@ -137,33 +135,7 @@ export function useSoapNote(): UseSoapNoteResult {
     setSoapError(null);
 
     try {
-      const finalOptions = options || soapOptions;
-
-      const result = await invoke<MultiPatientSoapResult>('generate_soap_note_auto_detect', {
-        transcript,
-        audioEvents: audioEvents,
-        options: finalOptions,
-        sessionId: sessionId || null,
-      });
-
-      // Auto-copy SOAP note to clipboard
-      if (result && result.notes.length > 0) {
-        try {
-          // Combine all patient notes (usually just one)
-          const clipboardContent = result.notes
-            .map(note => note.content)
-            .join('\n\n---\n\n');
-          await writeText(clipboardContent);
-          console.log('SOAP note copied to clipboard');
-        } catch (clipErr) {
-          console.warn('Failed to copy SOAP note to clipboard:', clipErr);
-        }
-
-        // Persist SOAP options to settings for future sessions
-        await persistSoapOptions(finalOptions);
-      }
-
-      return result;
+      return await generate();
     } catch (e) {
       console.error('Failed to generate SOAP note:', e);
       setSoapError(formatErrorMessage(e));
@@ -172,6 +144,45 @@ export function useSoapNote(): UseSoapNoteResult {
       generationInFlight.current = false;
       setIsGeneratingSoap(false);
     }
+  }
+
+  // Auto-copy SOAP text to clipboard (best-effort, non-blocking on failure)
+  async function copyToClipboard(text: string): Promise<void> {
+    try {
+      await writeText(text);
+      console.log('SOAP note copied to clipboard');
+    } catch (clipErr) {
+      console.warn('Failed to copy SOAP note to clipboard:', clipErr);
+    }
+  }
+
+  // Generate multi-patient SOAP notes with auto-detection
+  const generateSoapNote = useCallback(async (
+    transcript: string,
+    audioEvents?: CoughEvent[],
+    options?: SoapOptions,
+    sessionId?: string
+  ): Promise<MultiPatientSoapResult | null> => {
+    return withSoapGuard(transcript, async () => {
+      const finalOptions = options || soapOptions;
+
+      const result = await invoke<MultiPatientSoapResult>('generate_soap_note_auto_detect', {
+        transcript,
+        audioEvents,
+        options: finalOptions,
+        sessionId: sessionId || null,
+      });
+
+      if (result && result.notes.length > 0) {
+        const clipboardContent = result.notes
+          .map(note => note.content)
+          .join('\n\n---\n\n');
+        await copyToClipboard(clipboardContent);
+        await persistSoapOptions(finalOptions);
+      }
+
+      return result;
+    });
   }, [soapOptions, persistSoapOptions]);
 
   // Legacy single-patient SOAP note generation (for backward compatibility)
@@ -181,45 +192,22 @@ export function useSoapNote(): UseSoapNoteResult {
     options?: SoapOptions,
     sessionId?: string
   ): Promise<SoapNote | null> => {
-    if (!transcript.trim()) return null;
-    if (generationInFlight.current) {
-      console.warn('SOAP generation already in progress, skipping duplicate call');
-      return null;
-    }
-
-    generationInFlight.current = true;
-    setIsGeneratingSoap(true);
-    setSoapError(null);
-
-    try {
+    return withSoapGuard(transcript, async () => {
       const finalOptions = options || soapOptions;
 
       const result = await invoke<SoapNote>('generate_soap_note', {
         transcript,
-        audioEvents: audioEvents,
+        audioEvents,
         options: finalOptions,
         sessionId: sessionId || null,
       });
 
-      // Auto-copy SOAP note to clipboard
       if (result && result.content) {
-        try {
-          await writeText(result.content);
-          console.log('SOAP note copied to clipboard');
-        } catch (clipErr) {
-          console.warn('Failed to copy SOAP note to clipboard:', clipErr);
-        }
+        await copyToClipboard(result.content);
       }
 
       return result;
-    } catch (e) {
-      console.error('Failed to generate SOAP note:', e);
-      setSoapError(formatErrorMessage(e));
-      return null;
-    } finally {
-      generationInFlight.current = false;
-      setIsGeneratingSoap(false);
-    }
+    });
   }, [soapOptions]);
 
   // Vision SOAP note generation (experimental — uses transcript + screenshots)
@@ -230,46 +218,23 @@ export function useSoapNote(): UseSoapNoteResult {
     sessionId?: string,
     imagePath?: string
   ): Promise<SoapNote | null> => {
-    if (!transcript.trim()) return null;
-    if (generationInFlight.current) {
-      console.warn('SOAP generation already in progress, skipping duplicate call');
-      return null;
-    }
-
-    generationInFlight.current = true;
-    setIsGeneratingSoap(true);
-    setSoapError(null);
-
-    try {
+    return withSoapGuard(transcript, async () => {
       const finalOptions = options || soapOptions;
 
       const result = await invoke<SoapNote>('generate_vision_soap_note', {
         transcript,
-        audioEvents: audioEvents,
+        audioEvents,
         options: finalOptions,
         sessionId: sessionId || null,
         imagePath: imagePath || null,
       });
 
-      // Auto-copy to clipboard
       if (result && result.content) {
-        try {
-          await writeText(result.content);
-          console.log('Vision SOAP note copied to clipboard');
-        } catch (clipErr) {
-          console.warn('Failed to copy vision SOAP note to clipboard:', clipErr);
-        }
+        await copyToClipboard(result.content);
       }
 
       return result;
-    } catch (e) {
-      console.error('Failed to generate vision SOAP note:', e);
-      setSoapError(formatErrorMessage(e));
-      return null;
-    } finally {
-      generationInFlight.current = false;
-      setIsGeneratingSoap(false);
-    }
+    });
   }, [soapOptions]);
 
   return {
