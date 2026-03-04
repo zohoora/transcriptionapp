@@ -31,6 +31,8 @@ pub struct EncounterDetectionContext {
     pub new_patient_name: Option<String>,
     /// Whether the presence sensor detected someone left the room
     pub sensor_departed: bool,
+    /// Whether the presence sensor confirms someone is still in the room
+    pub sensor_present: bool,
 }
 
 /// Result of encounter detection
@@ -99,6 +101,10 @@ Respond with ONLY the JSON object."#;
         // Sensor departure — moderate signal
         if ctx.sensor_departed {
             parts.push("CONTEXT: The presence sensor detected someone left the room.".to_string());
+        }
+        // Sensor still present — suppress false splits from topic changes within a visit
+        if ctx.sensor_present && !ctx.sensor_departed {
+            parts.push("CONTEXT: The presence sensor confirms someone is still in the room. Topic changes or pauses within the same visit are NOT transitions. Only split if there is strong evidence of a different patient (new name, new history intake, greeting a new person).".to_string());
         }
         if parts.is_empty() {
             String::new()
@@ -433,6 +439,7 @@ mod tests {
             current_patient_name: Some("John Smith".to_string()),
             new_patient_name: Some("Jane Smith".to_string()),
             sensor_departed: false,
+            sensor_present: false,
         };
         let (_, user) = build_encounter_detection_prompt("test transcript", Some(&ctx));
         assert!(user.contains("Jane Smith"), "User prompt should mention new patient name");
@@ -446,9 +453,23 @@ mod tests {
             current_patient_name: None,
             new_patient_name: None,
             sensor_departed: true,
+            sensor_present: false,
         };
         let (_, user) = build_encounter_detection_prompt("test transcript", Some(&ctx));
         assert!(user.contains("presence sensor"), "User prompt should mention sensor departure");
+    }
+
+    #[test]
+    fn test_detection_prompt_with_sensor_present() {
+        let ctx = EncounterDetectionContext {
+            current_patient_name: None,
+            new_patient_name: None,
+            sensor_departed: false,
+            sensor_present: true,
+        };
+        let (_, user) = build_encounter_detection_prompt("test transcript", Some(&ctx));
+        assert!(user.contains("still in the room"), "User prompt should mention sensor presence");
+        assert!(user.contains("NOT transitions"), "Should discourage splitting on topic changes");
     }
 
     #[test]
@@ -457,6 +478,7 @@ mod tests {
             current_patient_name: Some("John Smith".to_string()),
             new_patient_name: None,
             sensor_departed: false,
+            sensor_present: false,
         };
         let (_, user) = build_encounter_detection_prompt("test transcript", Some(&ctx));
         // No chart switch (new_patient_name is None), no sensor — no context section

@@ -66,9 +66,24 @@ impl PatientNameTracker {
     }
 }
 
-/// Normalize a patient name: trim whitespace, collapse multiple spaces, title-case
+/// Normalize a patient name: handle "Last, First" → "First Last" format,
+/// trim whitespace, collapse multiple spaces, title-case.
 fn normalize_patient_name(name: &str) -> String {
-    name.split_whitespace()
+    // Handle "Surname, Given Middle" → "Given Middle Surname" format
+    let reordered = if let Some((before_comma, after_comma)) = name.split_once(',') {
+        let surname = before_comma.trim();
+        let given = after_comma.trim();
+        if !surname.is_empty() && !given.is_empty() {
+            format!("{} {}", given, surname)
+        } else {
+            name.to_string()
+        }
+    } else {
+        name.to_string()
+    };
+
+    reordered
+        .split_whitespace()
         .map(|word| {
             let mut chars = word.chars();
             match chars.next() {
@@ -146,6 +161,29 @@ mod tests {
         let mut tracker = PatientNameTracker::new();
         tracker.record("  john   SMITH  ");
         assert_eq!(tracker.majority_name(), Some("John Smith".to_string()));
+    }
+
+    #[test]
+    fn test_comma_format_normalization() {
+        // "Surname, Given" and "Given Surname" should normalize to the same string
+        let mut tracker = PatientNameTracker::new();
+        tracker.record("Zamorano Sanchez, Claudia Marcela");
+        tracker.record("Claudia Marcela Zamorano Sanchez");
+        // Both should be counted as the same name
+        assert_eq!(
+            tracker.majority_name(),
+            Some("Claudia Marcela Zamorano Sanchez".to_string())
+        );
+    }
+
+    #[test]
+    fn test_comma_format_no_false_change() {
+        // The exact scenario from the clinic: vision returns same name in different formats
+        let mut tracker = PatientNameTracker::new();
+        let (changed, _, _) = tracker.record_and_check_change("Claudia Marcela Zamorano Sanchez");
+        assert!(!changed);
+        let (changed, _, _) = tracker.record_and_check_change("Zamorano Sanchez, Claudia Marcela");
+        assert!(!changed, "Same name in comma format should NOT trigger a change");
     }
 
     #[test]

@@ -1152,6 +1152,10 @@ pub async fn run_continuous_mode(
                     } else if sensor_absent_since.is_some() {
                         ctx.sensor_departed = true;
                     }
+                    // Tell LLM when sensor confirms someone is still present (suppresses false splits)
+                    if sensor_available && !ctx.sensor_departed {
+                        ctx.sensor_present = true;
+                    }
                     // Populate vision name context (set by screenshot task on chart switch)
                     if vision_triggered {
                         ctx.current_patient_name = vision_old_name_for_detector.lock().ok().and_then(|n| n.clone());

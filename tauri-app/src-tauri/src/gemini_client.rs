@@ -10,7 +10,7 @@ use tracing::info;
 
 const GEMINI_ENDPOINT: &str = "https://generativelanguage.googleapis.com/v1beta/models";
 const DEFAULT_MODEL: &str = "gemini-3.1-flash-image-preview";
-const DEFAULT_TIMEOUT: Duration = Duration::from_secs(15);
+const DEFAULT_TIMEOUT: Duration = Duration::from_secs(45);
 
 pub struct GeminiClient {
     client: reqwest::Client,
