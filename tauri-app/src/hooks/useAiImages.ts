@@ -3,7 +3,7 @@ import { invoke } from '@tauri-apps/api/core';
 
 const COOLDOWN_MS = 45000; // 45 seconds between generations
 const SESSION_CAP = 8; // Max images per session
-const MAX_VISIBLE = 6; // Max images shown at once
+const MAX_VISIBLE = 1; // Show only the latest image
 
 export interface AiImage {
   base64: string;

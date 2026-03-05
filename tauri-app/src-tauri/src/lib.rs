@@ -53,6 +53,7 @@ pub mod models;
 pub mod ollama;
 pub mod permissions;
 mod pipeline;
+pub mod pipeline_log;
 pub mod presence_sensor;
 pub mod preprocessing;
 pub mod screenshot;

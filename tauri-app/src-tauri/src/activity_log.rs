@@ -58,6 +58,7 @@ pub fn init_logging() -> Result<(), Box<dyn std::error::Error>> {
     LOG_GUARD.set(guard).ok();
 
     // File layer - JSON format for structured logging with explicit UTC timestamps
+    // IMPORTANT: Filter to info+ to avoid TRACE/DEBUG floods from hyper, tokio, etc.
     let file_layer = fmt::layer()
         .json()
         .with_timer(UtcTime::rfc_3339())
@@ -65,7 +66,8 @@ pub fn init_logging() -> Result<(), Box<dyn std::error::Error>> {
         .with_target(true)
         .with_thread_ids(true)
         .with_file(true)
-        .with_line_number(true);
+        .with_line_number(true)
+        .with_filter(EnvFilter::new("info"));
 
     // Console layer - human-readable format
     let console_layer = fmt::layer()

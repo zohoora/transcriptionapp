@@ -15,6 +15,7 @@ use chrono::{DateTime, Datelike, Utc};
 use serde::{Deserialize, Serialize};
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
+use std::time::Instant;
 use tokio::sync::mpsc;
 use tracing::{debug, error, info, warn};
 
@@ -728,10 +729,10 @@ pub async fn run_continuous_mode(
                         break;
                     }
 
-                    // Read buffer state (non-destructive, truncated for small model)
+                    // Read buffer state (non-destructive, full transcript for detection)
                     let (formatted, word_count, last_segment) = buffer_for_shadow
                         .lock()
-                        .map(|b| (b.format_for_detection_truncated(), b.word_count(), b.last_index()))
+                        .map(|b| (b.format_for_detection(), b.word_count(), b.last_index()))
                         .unwrap_or_else(|_| (String::new(), 0, None));
 
                     if word_count < 100 {
@@ -752,7 +753,7 @@ pub async fn run_continuous_mode(
                         let llm_future = client.generate(
                             &shadow_detection_model, &system_prompt, &user_prompt, "shadow_encounter_detection"
                         );
-                        match tokio::time::timeout(tokio::time::Duration::from_secs(60), llm_future).await {
+                        match tokio::time::timeout(tokio::time::Duration::from_secs(90), llm_future).await {
                             Ok(Ok(response)) => {
                                 match parse_encounter_detection(&response) {
                                     Ok(result) => {
@@ -774,7 +775,7 @@ pub async fn run_continuous_mode(
                                 continue;
                             }
                             Err(_) => {
-                                debug!("Shadow LLM: detection timed out after 60s");
+                                debug!("Shadow LLM: detection timed out after 90s");
                                 continue;
                             }
                         }
@@ -900,6 +901,12 @@ pub async fn run_continuous_mode(
 
     // Clone native STT shadow accumulator for detector task (encounter boundary drain)
     let stt_shadow_accumulator = native_stt_accumulator_for_detector;
+
+    // Pipeline replay logger — writes JSONL to each session's archive folder
+    let pipeline_logger = Arc::new(Mutex::new(crate::pipeline_log::PipelineLogger::new()));
+    let logger_for_detector = Arc::clone(&pipeline_logger);
+    let logger_for_screenshot = Arc::clone(&pipeline_logger);
+    let logger_for_flush = Arc::clone(&pipeline_logger);
 
     // Hybrid mode config
     let hybrid_confirm_window_secs = config.hybrid_confirm_window_secs;
@@ -1051,7 +1058,7 @@ pub async fn run_continuous_mode(
                     Ok(b) => b,
                     Err(_) => continue,
                 };
-                (buffer.format_for_detection_truncated(), buffer.word_count(), buffer.is_empty(), buffer.first_timestamp())
+                (buffer.format_for_detection(), buffer.word_count(), buffer.is_empty(), buffer.first_timestamp())
             };
 
             // Pre-compute hallucination-cleaned word count for large buffers.
@@ -1065,6 +1072,17 @@ pub async fn run_continuous_mode(
                         report.original_word_count, report.cleaned_word_count,
                         report.repetitions.len(), report.phrase_repetitions.len()
                     );
+                    if let Ok(mut logger) = logger_for_detector.lock() {
+                        logger.log_hallucination_filter(serde_json::json!({
+                            "call_site": "detection",
+                            "original_words": report.original_word_count,
+                            "cleaned_words": report.cleaned_word_count,
+                            "single_word_reps": report.repetitions.iter()
+                                .map(|r| &r.word).collect::<Vec<_>>(),
+                            "phrase_reps": report.phrase_repetitions.iter()
+                                .map(|r| &r.phrase).collect::<Vec<_>>(),
+                        }));
+                    }
                 }
                 (Some(filtered), Some(report))
             } else {
@@ -1133,6 +1151,13 @@ pub async fn run_continuous_mode(
                 let last_idx = buffer_for_detector.lock().ok().and_then(|b| b.last_index());
                 let source = if sensor_triggered { "Sensor" } else { "Manual" };
                 info!("{} trigger: forcing encounter split (last_index={:?})", source, last_idx);
+                if let Ok(mut logger) = logger_for_detector.lock() {
+                    logger.log_split_trigger(serde_json::json!({
+                        "trigger": source.to_lowercase(),
+                        "word_count": word_count,
+                        "cleaned_word_count": cleaned_word_count,
+                    }));
+                }
                 Some(EncounterDetectionResult {
                     complete: true,
                     end_segment_index: last_idx,
@@ -1173,19 +1198,54 @@ pub async fn run_continuous_mode(
                 } else {
                     system_prompt
                 };
+                let detect_start = Instant::now();
                 let llm_future = client.generate(&detection_model, &system_prompt, &user_prompt, "encounter_detection");
-                match tokio::time::timeout(tokio::time::Duration::from_secs(60), llm_future).await {
+                let detect_ctx = serde_json::json!({
+                    "word_count": word_count,
+                    "cleaned_word_count": cleaned_word_count,
+                    "sensor_present": detection_context.sensor_present,
+                    "sensor_departed": detection_context.sensor_departed,
+                    "vision_triggered": vision_triggered,
+                    "current_patient_name": detection_context.current_patient_name,
+                    "new_patient_name": detection_context.new_patient_name,
+                    "nothink": detection_nothink,
+                    "consecutive_no_split": consecutive_no_split,
+                });
+                match tokio::time::timeout(tokio::time::Duration::from_secs(90), llm_future).await {
                     Ok(Ok(response)) => {
+                        let latency = detect_start.elapsed().as_millis() as u64;
                         match parse_encounter_detection(&response) {
                             Ok(result) => {
                                 info!(
                                     "Detection result: complete={}, confidence={:?}, end_segment_index={:?}, word_count={}",
                                     result.complete, result.confidence, result.end_segment_index, word_count
                                 );
+                                // Clear any previous error on successful detection
+                                if let Ok(mut err) = last_error_for_detector.lock() {
+                                    *err = None;
+                                }
+                                if let Ok(mut logger) = logger_for_detector.lock() {
+                                    let mut ctx = detect_ctx.clone();
+                                    ctx["parsed_complete"] = serde_json::json!(result.complete);
+                                    ctx["parsed_confidence"] = serde_json::json!(result.confidence);
+                                    ctx["parsed_end_segment_index"] = serde_json::json!(result.end_segment_index);
+                                    logger.log_detection(
+                                        &detection_model, &system_prompt, &user_prompt,
+                                        Some(&response), latency, true, None, ctx,
+                                    );
+                                }
                                 Some(result)
                             }
                             Err(e) => {
                                 warn!("Failed to parse encounter detection: {}", e);
+                                if let Ok(mut logger) = logger_for_detector.lock() {
+                                    let mut ctx = detect_ctx.clone();
+                                    ctx["parse_error"] = serde_json::json!(true);
+                                    logger.log_detection(
+                                        &detection_model, &system_prompt, &user_prompt,
+                                        Some(&response), latency, false, Some(&e), ctx,
+                                    );
+                                }
                                 if let Ok(mut err) = last_error_for_detector.lock() {
                                     *err = Some(e);
                                 } else {
@@ -1196,7 +1256,16 @@ pub async fn run_continuous_mode(
                         }
                     }
                     Ok(Err(e)) => {
+                        let latency = detect_start.elapsed().as_millis() as u64;
                         warn!("Encounter detection LLM call failed: {}", e);
+                        if let Ok(mut logger) = logger_for_detector.lock() {
+                            let mut ctx = detect_ctx.clone();
+                            ctx["llm_error"] = serde_json::json!(true);
+                            logger.log_detection(
+                                &detection_model, &system_prompt, &user_prompt,
+                                None, latency, false, Some(&e.to_string()), ctx,
+                            );
+                        }
                         if let Ok(mut err) = last_error_for_detector.lock() {
                             *err = Some(e);
                         } else {
@@ -1209,7 +1278,16 @@ pub async fn run_continuous_mode(
                         None
                     }
                     Err(_elapsed) => {
-                        warn!("Encounter detection LLM call timed out after 60s");
+                        let latency = detect_start.elapsed().as_millis() as u64;
+                        warn!("Encounter detection LLM call timed out after 90s");
+                        if let Ok(mut logger) = logger_for_detector.lock() {
+                            let mut ctx = detect_ctx.clone();
+                            ctx["timeout"] = serde_json::json!(true);
+                            logger.log_detection(
+                                &detection_model, &system_prompt, &user_prompt,
+                                None, latency, false, Some("timeout_90s"), ctx,
+                            );
+                        }
                         if let Ok(mut err) = last_error_for_detector.lock() {
                             *err = Some("Encounter detection timed out".to_string());
                         } else {
@@ -1229,10 +1307,23 @@ pub async fn run_continuous_mode(
             let mut force_split = false;
             let mut detection_result = detection_result;
 
-            // Absolute word cap: unconditional force-split at 15K cleaned words
-            // Uses cleaned_word_count so STT phrase loops don't trigger premature splits
-            if cleaned_word_count > ABSOLUTE_WORD_CAP && !manual_triggered && !sensor_triggered {
-                warn!("ABSOLUTE WORD CAP: force-splitting at {} cleaned words (raw: {})", cleaned_word_count, word_count);
+            // Effective word count for force-split: max(cleaned, raw/2).
+            // When the hallucination filter strips heavily (e.g. 4652→1537), raw/2 ensures
+            // the force-split thresholds still engage for genuinely long encounters.
+            let effective_word_count = cleaned_word_count.max(word_count / 2);
+
+            // Absolute word cap: unconditional force-split at ABSOLUTE_WORD_CAP effective words
+            if effective_word_count > ABSOLUTE_WORD_CAP && !manual_triggered && !sensor_triggered {
+                warn!("ABSOLUTE WORD CAP: force-splitting at {} effective words (cleaned: {}, raw: {})", effective_word_count, cleaned_word_count, word_count);
+                if let Ok(mut logger) = logger_for_detector.lock() {
+                    logger.log_split_trigger(serde_json::json!({
+                        "trigger": "absolute_word_cap",
+                        "effective_word_count": effective_word_count,
+                        "cleaned_word_count": cleaned_word_count,
+                        "raw_word_count": word_count,
+                        "cap": ABSOLUTE_WORD_CAP,
+                    }));
+                }
                 let last_idx = buffer_for_detector.lock().ok().and_then(|b| b.last_index());
                 consecutive_no_split = 0;
                 force_split = true;
@@ -1257,14 +1348,23 @@ pub async fn run_continuous_mode(
                         if detection_result.is_none() { "error/timeout" } else { "complete=false" },
                         consecutive_no_split, cleaned_word_count, word_count
                     );
-                    // Graduated force-split (uses cleaned word count to avoid STT loop inflation)
-                    if cleaned_word_count > FORCE_SPLIT_WORD_THRESHOLD
+                    // Graduated force-split (uses effective word count: max(cleaned, raw/2))
+                    if effective_word_count > FORCE_SPLIT_WORD_THRESHOLD
                         && consecutive_no_split >= FORCE_SPLIT_CONSECUTIVE_LIMIT
                     {
                         warn!(
-                            "Force-splitting: {} consecutive non-splits with {} cleaned words (raw: {})",
-                            consecutive_no_split, cleaned_word_count, word_count
+                            "Force-splitting: {} consecutive non-splits with {} effective words (cleaned: {}, raw: {})",
+                            consecutive_no_split, effective_word_count, cleaned_word_count, word_count
                         );
+                        if let Ok(mut logger) = logger_for_detector.lock() {
+                            logger.log_split_trigger(serde_json::json!({
+                                "trigger": "graduated_force_split",
+                                "consecutive_no_split": consecutive_no_split,
+                                "effective_word_count": effective_word_count,
+                                "cleaned_word_count": cleaned_word_count,
+                                "raw_word_count": word_count,
+                            }));
+                        }
                         let last_idx = buffer_for_detector.lock().ok().and_then(|b| b.last_index());
                         consecutive_no_split = 0;
                         force_split = true;
@@ -1292,6 +1392,15 @@ pub async fn run_continuous_mode(
                             elapsed, hybrid_confirm_window_secs,
                             word_count, hybrid_min_words_for_sensor_split
                         );
+                        if let Ok(mut logger) = logger_for_detector.lock() {
+                            logger.log_split_trigger(serde_json::json!({
+                                "trigger": "hybrid_sensor_timeout",
+                                "absence_secs": elapsed,
+                                "confirm_window_secs": hybrid_confirm_window_secs,
+                                "word_count": word_count,
+                                "min_words": hybrid_min_words_for_sensor_split,
+                            }));
+                        }
                         let last_idx = buffer_for_detector.lock().ok().and_then(|b| b.last_index());
                         force_split = true;
                         hybrid_sensor_timeout_triggered = true;
@@ -1323,6 +1432,16 @@ pub async fn run_continuous_mode(
                             "Confidence gate rejected: confidence={:.2}, threshold={:.2}, buffer_age_mins={}, word_count={}, consecutive_no_split={}",
                             confidence, confidence_threshold, buffer_age_mins, word_count, consecutive_no_split
                         );
+                        if let Ok(mut logger) = logger_for_detector.lock() {
+                            logger.log_confidence_gate(serde_json::json!({
+                                "confidence": confidence,
+                                "threshold": confidence_threshold,
+                                "buffer_age_mins": buffer_age_mins,
+                                "word_count": word_count,
+                                "consecutive_no_split": consecutive_no_split,
+                                "rejected": true,
+                            }));
+                        }
                         // Return to recording state and continue
                         if let Ok(mut state) = state_for_detector.lock() {
                             if *state == ContinuousState::Checking {
@@ -1384,6 +1503,13 @@ pub async fn run_continuous_mode(
                             encounter_start, // actual encounter start time for duration calc
                         ) {
                             warn!("Failed to archive encounter: {}", e);
+                        }
+
+                        // Set pipeline logger to write to this session's archive folder
+                        if let Ok(session_dir) = local_archive::get_session_archive_dir(&session_id, &Utc::now()) {
+                            if let Ok(mut logger) = logger_for_detector.lock() {
+                                logger.set_session(&session_dir);
+                            }
                         }
 
                         // Drain native STT shadow accumulator for this encounter
@@ -1628,11 +1754,25 @@ pub async fn run_continuous_mode(
                             }
                         } else if let Some(ref client) = llm_client {
                             let (cc_system, cc_user) = build_clinical_content_check_prompt(&encounter_text);
+                            let cc_start = Instant::now();
                             let cc_future = client.generate(&fast_model, &cc_system, &cc_user, "clinical_content_check");
                             match tokio::time::timeout(tokio::time::Duration::from_secs(30), cc_future).await {
                                 Ok(Ok(cc_response)) => {
+                                    let cc_latency = cc_start.elapsed().as_millis() as u64;
                                     match parse_clinical_content_check(&cc_response) {
                                         Ok(cc_result) => {
+                                            if let Ok(mut logger) = logger_for_detector.lock() {
+                                                logger.log_clinical_check(
+                                                    &fast_model, &cc_system, &cc_user,
+                                                    Some(&cc_response), cc_latency, true, None,
+                                                    serde_json::json!({
+                                                        "encounter_number": encounter_number,
+                                                        "word_count": encounter_word_count,
+                                                        "is_clinical": cc_result.clinical,
+                                                        "reason": cc_result.reason,
+                                                    }),
+                                                );
+                                            }
                                             if !cc_result.clinical {
                                                 is_clinical = false;
                                                 info!(
@@ -1667,14 +1807,37 @@ pub async fn run_continuous_mode(
                                             }
                                         }
                                         Err(e) => {
+                                            if let Ok(mut logger) = logger_for_detector.lock() {
+                                                logger.log_clinical_check(
+                                                    &fast_model, &cc_system, &cc_user,
+                                                    Some(&cc_response), cc_latency, false, Some(&e),
+                                                    serde_json::json!({"encounter_number": encounter_number, "parse_error": true}),
+                                                );
+                                            }
                                             warn!("Failed to parse clinical content check: {}", e);
                                         }
                                     }
                                 }
                                 Ok(Err(e)) => {
+                                    let cc_latency = cc_start.elapsed().as_millis() as u64;
+                                    if let Ok(mut logger) = logger_for_detector.lock() {
+                                        logger.log_clinical_check(
+                                            &fast_model, &cc_system, &cc_user,
+                                            None, cc_latency, false, Some(&e.to_string()),
+                                            serde_json::json!({"encounter_number": encounter_number, "llm_error": true}),
+                                        );
+                                    }
                                     warn!("Clinical content check LLM call failed: {}", e);
                                 }
                                 Err(_) => {
+                                    let cc_latency = cc_start.elapsed().as_millis() as u64;
+                                    if let Ok(mut logger) = logger_for_detector.lock() {
+                                        logger.log_clinical_check(
+                                            &fast_model, &cc_system, &cc_user,
+                                            None, cc_latency, false, Some("timeout_30s"),
+                                            serde_json::json!({"encounter_number": encounter_number, "timeout": true}),
+                                        );
+                                    }
                                     warn!("Clinical content check timed out (30s)");
                                 }
                             }
@@ -1686,15 +1849,30 @@ pub async fn run_continuous_mode(
                             info!("Skipping SOAP for non-clinical encounter #{}", encounter_number);
                         } else if let Some(ref client) = llm_client {
                             // Strip hallucinated repetitions before SOAP generation
-                            let (filtered_encounter_text, _) = strip_hallucinations(&encounter_text, 5);
+                            let (filtered_encounter_text, soap_filter_report) = strip_hallucinations(&encounter_text, 5);
+                            if !soap_filter_report.repetitions.is_empty() || !soap_filter_report.phrase_repetitions.is_empty() {
+                                if let Ok(mut logger) = logger_for_detector.lock() {
+                                    logger.log_hallucination_filter(serde_json::json!({
+                                        "call_site": "soap_prep",
+                                        "original_words": soap_filter_report.original_word_count,
+                                        "cleaned_words": soap_filter_report.cleaned_word_count,
+                                        "single_word_reps": soap_filter_report.repetitions.iter()
+                                            .map(|r| &r.word).collect::<Vec<_>>(),
+                                        "phrase_reps": soap_filter_report.phrase_repetitions.iter()
+                                            .map(|r| &r.phrase).collect::<Vec<_>>(),
+                                    }));
+                                }
+                            }
                             // Build SOAP options with encounter notes from clinician (uses pre-cloned notes_text)
                             let soap_opts = crate::llm_client::SoapOptions {
                                 detail_level: soap_detail_level,
                                 format: if soap_format == "comprehensive" { crate::llm_client::SoapFormat::Comprehensive } else { crate::llm_client::SoapFormat::ProblemBased },
-                                session_notes: notes_text,
+                                session_notes: notes_text.clone(),
                                 ..Default::default()
                             };
                             info!("Generating SOAP for encounter #{}", encounter_number);
+                            let soap_system_prompt = crate::llm_client::build_simple_soap_prompt(&soap_opts);
+                            let soap_start = Instant::now();
                             let soap_future = client.generate_multi_patient_soap_note(
                                 &soap_model,
                                 &filtered_encounter_text,
@@ -1704,6 +1882,7 @@ pub async fn run_continuous_mode(
                             );
                             match tokio::time::timeout(tokio::time::Duration::from_secs(120), soap_future).await {
                                 Ok(Ok(soap_result)) => {
+                                    let soap_latency = soap_start.elapsed().as_millis() as u64;
                                     // Save SOAP to archive
                                     let soap_content = &soap_result.notes
                                         .iter()
@@ -1722,6 +1901,21 @@ pub async fn run_continuous_mode(
                                         warn!("Failed to save SOAP for encounter: {}", e);
                                     }
 
+                                    if let Ok(mut logger) = logger_for_detector.lock() {
+                                        logger.log_soap(
+                                            &soap_model, &soap_system_prompt, "",
+                                            Some(soap_content), soap_latency, true, None,
+                                            serde_json::json!({
+                                                "encounter_number": encounter_number,
+                                                "word_count": encounter_word_count,
+                                                "detail_level": soap_detail_level,
+                                                "format": soap_format,
+                                                "has_notes": !notes_text.is_empty(),
+                                                "response_chars": soap_content.len(),
+                                            }),
+                                        );
+                                    }
+
                                     let _ = app_for_detector.emit("continuous_mode_event", serde_json::json!({
                                         "type": "soap_generated",
                                         "session_id": session_id
@@ -1730,7 +1924,14 @@ pub async fn run_continuous_mode(
 
                                 }
                                 Ok(Err(e)) => {
+                                    let soap_latency = soap_start.elapsed().as_millis() as u64;
                                     warn!("Failed to generate SOAP for encounter: {}", e);
+                                    if let Ok(mut logger) = logger_for_detector.lock() {
+                                        logger.log_soap(
+                                            &soap_model, &soap_system_prompt, "", None, soap_latency, false, Some(&e.to_string()),
+                                            serde_json::json!({"encounter_number": encounter_number, "llm_error": true}),
+                                        );
+                                    }
                                     if let Ok(mut err) = last_error_for_detector.lock() {
                                         *err = Some(format!("SOAP generation failed: {}", e));
                                     } else {
@@ -1743,7 +1944,14 @@ pub async fn run_continuous_mode(
                                     }));
                                 }
                                 Err(_elapsed) => {
+                                    let soap_latency = soap_start.elapsed().as_millis() as u64;
                                     warn!("SOAP generation timed out after 120s for encounter #{}", encounter_number);
+                                    if let Ok(mut logger) = logger_for_detector.lock() {
+                                        logger.log_soap(
+                                            &soap_model, &soap_system_prompt, "", None, soap_latency, false, Some("timeout_120s"),
+                                            serde_json::json!({"encounter_number": encounter_number, "timeout": true}),
+                                        );
+                                    }
                                     if let Ok(mut err) = last_error_for_detector.lock() {
                                         *err = Some("SOAP generation timed out".to_string());
                                     } else {
@@ -1793,11 +2001,33 @@ pub async fn run_continuous_mode(
                                         &filtered_curr_head,
                                         merge_patient_name.as_deref(),
                                     );
+                                    let merge_ctx = serde_json::json!({
+                                        "prev_session_id": prev_id,
+                                        "curr_session_id": session_id,
+                                        "patient_name": merge_patient_name,
+                                        "prev_tail_words": filtered_prev_tail.split_whitespace().count(),
+                                        "curr_head_words": filtered_curr_head.split_whitespace().count(),
+                                    });
+                                    let merge_start = Instant::now();
                                     let merge_future = client.generate(&fast_model, &merge_system, &merge_user, "encounter_merge");
                                     match tokio::time::timeout(tokio::time::Duration::from_secs(60), merge_future).await {
                                         Ok(Ok(merge_response)) => {
+                                            let merge_latency = merge_start.elapsed().as_millis() as u64;
                                             match parse_merge_check(&merge_response) {
                                                 Ok(merge_result) => {
+                                                    if let Ok(mut logger) = logger_for_detector.lock() {
+                                                        logger.log_merge_check(
+                                                            &fast_model, &merge_system, &merge_user,
+                                                            Some(&merge_response), merge_latency, true, None,
+                                                            serde_json::json!({
+                                                                "prev_session_id": prev_id,
+                                                                "curr_session_id": session_id,
+                                                                "patient_name": merge_patient_name,
+                                                                "same_encounter": merge_result.same_encounter,
+                                                                "reason": format!("{:?}", merge_result.reason),
+                                                            }),
+                                                        );
+                                                    }
                                                     if merge_result.same_encounter {
                                                         info!(
                                                             "Merge check: encounters are the same visit (reason: {:?}). Merging {} into {}",
@@ -1826,6 +2056,13 @@ pub async fn run_continuous_mode(
                                                                 info!("Skipping SOAP regeneration for merged non-clinical encounters");
                                                             } else if let Some(ref client) = llm_client {
                                                                 let (filtered_merged, _) = strip_hallucinations(&merged_text, 5);
+                                                                if let Ok(mut logger) = logger_for_detector.lock() {
+                                                                    logger.log_hallucination_filter(serde_json::json!({
+                                                                        "stage": "merge_soap_prep",
+                                                                        "original_words": merged_text.split_whitespace().count(),
+                                                                        "filtered_words": filtered_merged.split_whitespace().count(),
+                                                                    }));
+                                                                }
                                                                 let merge_notes = encounter_notes_for_detector
                                                                     .lock()
                                                                     .map(|n| n.clone())
@@ -1836,6 +2073,8 @@ pub async fn run_continuous_mode(
                                                                     session_notes: merge_notes,
                                                                     ..Default::default()
                                                                 };
+                                                                let merge_soap_system_prompt = crate::llm_client::build_simple_soap_prompt(&merge_soap_opts);
+                                                                let merge_soap_start = Instant::now();
                                                                 let soap_future = client.generate_multi_patient_soap_note(
                                                                     &soap_model,
                                                                     &filtered_merged,
@@ -1845,11 +2084,26 @@ pub async fn run_continuous_mode(
                                                                 );
                                                                 match tokio::time::timeout(tokio::time::Duration::from_secs(120), soap_future).await {
                                                                     Ok(Ok(soap_result)) => {
+                                                                        let merge_soap_latency = merge_soap_start.elapsed().as_millis() as u64;
                                                                         let soap_content = &soap_result.notes
                                                                             .iter()
                                                                             .map(|n| n.content.clone())
                                                                             .collect::<Vec<_>>()
                                                                             .join("\n\n---\n\n");
+                                                                        if let Ok(mut logger) = logger_for_detector.lock() {
+                                                                            logger.log_soap(
+                                                                                &soap_model, &merge_soap_system_prompt, "",
+                                                                                Some(soap_content), merge_soap_latency, true, None,
+                                                                                serde_json::json!({
+                                                                                    "stage": "merge_soap_regen",
+                                                                                    "merged_into": prev_id,
+                                                                                    "merged_word_count": merged_wc,
+                                                                                    "detail_level": soap_detail_level,
+                                                                                    "format": soap_format,
+                                                                                    "response_chars": soap_content.len(),
+                                                                                }),
+                                                                            );
+                                                                        }
                                                                         let _ = local_archive::add_soap_note(
                                                                             prev_id,
                                                                             prev_date,
@@ -1878,8 +2132,28 @@ pub async fn run_continuous_mode(
                                                                         }
                                                                         info!("Regenerated SOAP for merged encounter {}", prev_id);
                                                                     }
-                                                                    Ok(Err(e)) => warn!("Failed to regenerate SOAP after merge: {}", e),
-                                                                    Err(_) => warn!("SOAP regeneration timed out after merge"),
+                                                                    Ok(Err(e)) => {
+                                                                        let merge_soap_latency = merge_soap_start.elapsed().as_millis() as u64;
+                                                                        if let Ok(mut logger) = logger_for_detector.lock() {
+                                                                            logger.log_soap(
+                                                                                &soap_model, &merge_soap_system_prompt, "", None, merge_soap_latency, false,
+                                                                                Some(&e.to_string()),
+                                                                                serde_json::json!({"stage": "merge_soap_regen", "llm_error": true}),
+                                                                            );
+                                                                        }
+                                                                        warn!("Failed to regenerate SOAP after merge: {}", e);
+                                                                    }
+                                                                    Err(_) => {
+                                                                        let merge_soap_latency = merge_soap_start.elapsed().as_millis() as u64;
+                                                                        if let Ok(mut logger) = logger_for_detector.lock() {
+                                                                            logger.log_soap(
+                                                                                &soap_model, &merge_soap_system_prompt, "", None, merge_soap_latency, false,
+                                                                                Some("timeout_120s"),
+                                                                                serde_json::json!({"stage": "merge_soap_regen", "timeout": true}),
+                                                                            );
+                                                                        }
+                                                                        warn!("SOAP regeneration timed out after merge");
+                                                                    }
                                                                 }
                                                             }
 
@@ -1905,11 +2179,41 @@ pub async fn run_continuous_mode(
                                                         );
                                                     }
                                                 }
-                                                Err(e) => warn!("Failed to parse merge check: {}", e),
+                                                Err(e) => {
+                                                    if let Ok(mut logger) = logger_for_detector.lock() {
+                                                        logger.log_merge_check(
+                                                            &fast_model, &merge_system, &merge_user,
+                                                            Some(&merge_response), merge_latency, false,
+                                                            Some(&format!("parse_error: {}", e)),
+                                                            merge_ctx.clone(),
+                                                        );
+                                                    }
+                                                    warn!("Failed to parse merge check: {}", e);
+                                                }
                                             }
                                         }
-                                        Ok(Err(e)) => warn!("Merge check LLM call failed: {}", e),
-                                        Err(_) => warn!("Merge check timed out after 60s"),
+                                        Ok(Err(e)) => {
+                                            let merge_latency = merge_start.elapsed().as_millis() as u64;
+                                            if let Ok(mut logger) = logger_for_detector.lock() {
+                                                logger.log_merge_check(
+                                                    &fast_model, &merge_system, &merge_user,
+                                                    None, merge_latency, false, Some(&e.to_string()),
+                                                    merge_ctx.clone(),
+                                                );
+                                            }
+                                            warn!("Merge check LLM call failed: {}", e);
+                                        }
+                                        Err(_) => {
+                                            let merge_latency = merge_start.elapsed().as_millis() as u64;
+                                            if let Ok(mut logger) = logger_for_detector.lock() {
+                                                logger.log_merge_check(
+                                                    &fast_model, &merge_system, &merge_user,
+                                                    None, merge_latency, false, Some("timeout_60s"),
+                                                    merge_ctx.clone(),
+                                                );
+                                            }
+                                            warn!("Merge check timed out after 60s");
+                                        }
                                     }
                                 }
                             }
@@ -2031,6 +2335,8 @@ pub async fn run_continuous_mode(
                 };
 
                 let (system_prompt, user_text) = build_patient_name_prompt();
+                let system_prompt_log = system_prompt.clone();
+                let user_text_log = user_text.clone();
                 let content_parts = vec![
                     crate::llm_client::ContentPart::Text { text: user_text },
                     crate::llm_client::ContentPart::ImageUrl {
@@ -2040,6 +2346,7 @@ pub async fn run_continuous_mode(
                     },
                 ];
 
+                let vision_start = Instant::now();
                 let vision_future = client.generate_vision(
                     "vision-model",
                     &system_prompt,
@@ -2058,7 +2365,9 @@ pub async fn run_continuous_mode(
                 .await
                 {
                     Ok(Ok(response)) => {
-                        if let Some(name) = parse_patient_name(&response) {
+                        let vision_latency = vision_start.elapsed().as_millis() as u64;
+                        let parsed_name = parse_patient_name(&response);
+                        if let Some(ref name) = parsed_name {
                             info!("Vision extracted patient name: {}", name);
 
                             // Stale screenshot detection: suppress votes that match previous
@@ -2078,6 +2387,18 @@ pub async fn run_continuous_mode(
                                 false
                             };
 
+                            if let Ok(mut logger) = logger_for_screenshot.lock() {
+                                logger.log_vision(
+                                    "vision-model", &system_prompt_log, &user_text_log,
+                                    Some(&response), vision_latency, true, None,
+                                    serde_json::json!({
+                                        "parsed_name": name,
+                                        "screenshot_blank": false,
+                                        "is_stale": is_stale,
+                                    }),
+                                );
+                            }
+
                             if is_stale {
                                 info!(
                                     "Skipping stale screenshot vote '{}' — matches previous encounter name and within {}s grace period",
@@ -2087,7 +2408,7 @@ pub async fn run_continuous_mode(
                             }
 
                             if let Ok(mut tracker) = name_tracker_for_screenshot.lock() {
-                                let (changed, old_name, new_name) = tracker.record_and_check_change(&name);
+                                let (changed, old_name, new_name) = tracker.record_and_check_change(name);
                                 if changed {
                                     info!(
                                         "Vision detected patient name change: {:?} → {:?} — accelerating detection",
@@ -2107,13 +2428,40 @@ pub async fn run_continuous_mode(
                                 warn!("Name tracker lock poisoned, patient name vote dropped: {}", name);
                             }
                         } else {
+                            if let Ok(mut logger) = logger_for_screenshot.lock() {
+                                logger.log_vision(
+                                    "vision-model", &system_prompt_log, &user_text_log,
+                                    Some(&response), vision_latency, true, None,
+                                    serde_json::json!({
+                                        "parsed_name": serde_json::Value::Null,
+                                        "screenshot_blank": false,
+                                        "not_found": true,
+                                    }),
+                                );
+                            }
                             debug!("Vision did not find a patient name on screen");
                         }
                     }
                     Ok(Err(e)) => {
+                        let vision_latency = vision_start.elapsed().as_millis() as u64;
+                        if let Ok(mut logger) = logger_for_screenshot.lock() {
+                            logger.log_vision(
+                                "vision-model", &system_prompt_log, &user_text_log,
+                                None, vision_latency, false, Some(&e.to_string()),
+                                serde_json::json!({"llm_error": true}),
+                            );
+                        }
                         debug!("Vision name extraction failed: {}", e);
                     }
                     Err(_) => {
+                        let vision_latency = vision_start.elapsed().as_millis() as u64;
+                        if let Ok(mut logger) = logger_for_screenshot.lock() {
+                            logger.log_vision(
+                                "vision-model", &system_prompt_log, &user_text_log,
+                                None, vision_latency, false, Some("timeout_30s"),
+                                serde_json::json!({"timeout": true}),
+                            );
+                        }
                         debug!("Vision name extraction timed out after 30s");
                     }
                 }
@@ -2179,6 +2527,13 @@ pub async fn run_continuous_mode(
         // Strip hallucinations before word count check and SOAP generation
         let (filtered_text, _) = strip_hallucinations(&text, 5);
         let word_count = filtered_text.split_whitespace().count();
+        if let Ok(mut logger) = logger_for_flush.lock() {
+            logger.log_hallucination_filter(serde_json::json!({
+                "stage": "flush_on_stop",
+                "original_words": text.split_whitespace().count(),
+                "filtered_words": word_count,
+            }));
+        }
         if word_count > 100 {
             info!("Flushing remaining buffer ({} words after filtering) as final session", word_count);
             let session_id = uuid::Uuid::new_v4().to_string();
@@ -2193,6 +2548,13 @@ pub async fn run_continuous_mode(
             ) {
                 warn!("Failed to archive final buffer: {}", e);
             } else {
+                // Point logger to flush session's archive folder
+                if let Ok(flush_session_dir) = local_archive::get_session_archive_dir(&session_id, &Utc::now()) {
+                    if let Ok(mut logger) = logger_for_flush.lock() {
+                        logger.set_session(&flush_session_dir);
+                    }
+                }
+
                 // Generate SOAP note for the flushed buffer (the orphaned encounter fix)
                 // NOTE: No clinical content check here — this is a rare shutdown-time flush
                 // where no LLM call is available for classification. Generating SOAP unconditionally
@@ -2209,6 +2571,8 @@ pub async fn run_continuous_mode(
                         ..Default::default()
                     };
                     info!("Generating SOAP for flushed buffer ({} words)", word_count);
+                    let flush_soap_system_prompt = crate::llm_client::build_simple_soap_prompt(&flush_soap_opts);
+                    let flush_soap_start = Instant::now();
                     let soap_future = client.generate_multi_patient_soap_note(
                         &flush_soap_model,
                         &filtered_text,
@@ -2218,11 +2582,25 @@ pub async fn run_continuous_mode(
                     );
                     match tokio::time::timeout(tokio::time::Duration::from_secs(120), soap_future).await {
                         Ok(Ok(soap_result)) => {
+                            let flush_soap_latency = flush_soap_start.elapsed().as_millis() as u64;
                             let soap_content = &soap_result.notes
                                 .iter()
                                 .map(|n| n.content.clone())
                                 .collect::<Vec<_>>()
                                 .join("\n\n---\n\n");
+                            if let Ok(mut logger) = logger_for_flush.lock() {
+                                logger.log_soap(
+                                    &flush_soap_model, &flush_soap_system_prompt, "",
+                                    Some(soap_content), flush_soap_latency, true, None,
+                                    serde_json::json!({
+                                        "stage": "flush_on_stop",
+                                        "word_count": word_count,
+                                        "detail_level": flush_soap_detail_level,
+                                        "format": flush_soap_format,
+                                        "response_chars": soap_content.len(),
+                                    }),
+                                );
+                            }
                             let now = Utc::now();
                             if let Err(e) = local_archive::add_soap_note(
                                 &session_id,
@@ -2238,13 +2616,28 @@ pub async fn run_continuous_mode(
                                     "type": "soap_generated",
                                     "session_id": session_id
                                 }));
-
                             }
                         }
                         Ok(Err(e)) => {
+                            let flush_soap_latency = flush_soap_start.elapsed().as_millis() as u64;
+                            if let Ok(mut logger) = logger_for_flush.lock() {
+                                logger.log_soap(
+                                    &flush_soap_model, &flush_soap_system_prompt, "", None, flush_soap_latency, false,
+                                    Some(&e.to_string()),
+                                    serde_json::json!({"stage": "flush_on_stop", "llm_error": true}),
+                                );
+                            }
                             warn!("Failed to generate SOAP for flushed buffer: {}", e);
                         }
                         Err(_) => {
+                            let flush_soap_latency = flush_soap_start.elapsed().as_millis() as u64;
+                            if let Ok(mut logger) = logger_for_flush.lock() {
+                                logger.log_soap(
+                                    &flush_soap_model, &flush_soap_system_prompt, "", None, flush_soap_latency, false,
+                                    Some("timeout_120s"),
+                                    serde_json::json!({"stage": "flush_on_stop", "timeout": true}),
+                                );
+                            }
                             warn!("SOAP generation timed out for flushed buffer");
                         }
                     }

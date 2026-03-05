@@ -122,21 +122,15 @@ export const ImageSuggestions = memo(function ImageSuggestions({
             </div>
           )}
 
-          <div style={{
-            display: 'flex',
-            gap: '8px',
-            overflowX: 'auto',
-            paddingBottom: '4px',
-          }}>
-            {activeImages.map((img, index) => (
+          {activeImages.length > 0 && (() => {
+            const img = activeImages[activeImages.length - 1];
+            const index = activeImages.length - 1;
+            return (
               <div
-                key={img.timestamp}
                 onClick={() => setExpandedAiImage(img)}
                 style={{
                   position: 'relative',
-                  flexShrink: 0,
-                  width: '80px',
-                  height: '80px',
+                  width: '200px',
                   borderRadius: '6px',
                   overflow: 'hidden',
                   cursor: 'pointer',
@@ -145,7 +139,7 @@ export const ImageSuggestions = memo(function ImageSuggestions({
                   transition: 'transform 0.15s, box-shadow 0.15s',
                 }}
                 onMouseEnter={e => {
-                  e.currentTarget.style.transform = 'scale(1.05)';
+                  e.currentTarget.style.transform = 'scale(1.02)';
                   e.currentTarget.style.boxShadow = '0 2px 8px rgba(0,0,0,0.15)';
                 }}
                 onMouseLeave={e => {
@@ -158,8 +152,9 @@ export const ImageSuggestions = memo(function ImageSuggestions({
                   alt="AI-generated medical illustration"
                   style={{
                     width: '100%',
-                    height: '100%',
-                    objectFit: 'cover',
+                    height: 'auto',
+                    objectFit: 'contain',
+                    display: 'block',
                   }}
                 />
                 <button
@@ -169,16 +164,16 @@ export const ImageSuggestions = memo(function ImageSuggestions({
                   }}
                   style={{
                     position: 'absolute',
-                    top: '2px',
-                    right: '2px',
-                    width: '18px',
-                    height: '18px',
+                    top: '4px',
+                    right: '4px',
+                    width: '22px',
+                    height: '22px',
                     borderRadius: '50%',
                     border: 'none',
                     backgroundColor: 'rgba(0,0,0,0.5)',
                     color: '#fff',
-                    fontSize: '12px',
-                    lineHeight: '16px',
+                    fontSize: '14px',
+                    lineHeight: '20px',
                     cursor: 'pointer',
                     display: 'flex',
                     alignItems: 'center',
@@ -193,88 +188,61 @@ export const ImageSuggestions = memo(function ImageSuggestions({
                   ×
                 </button>
               </div>
-            ))}
-          </div>
+            );
+          })()}
         </div>
 
-        {/* Expanded AI image modal */}
+        {/* Expanded AI image — near-fullscreen overlay */}
         {expandedAiImage && (
           <div
             onClick={handleCloseExpanded}
             style={{
               position: 'fixed',
               top: 0, left: 0, right: 0, bottom: 0,
-              backgroundColor: 'rgba(0,0,0,0.8)',
+              backgroundColor: 'rgba(0,0,0,0.9)',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
               zIndex: 9999,
-              padding: '20px',
+              cursor: 'pointer',
             }}
           >
-            <div
+            <img
+              src={`data:image/png;base64,${expandedAiImage.base64}`}
+              alt="AI-generated medical illustration"
               onClick={e => e.stopPropagation()}
               style={{
-                maxWidth: '90vw',
-                maxHeight: '90vh',
-                backgroundColor: '#fff',
-                borderRadius: '8px',
-                overflow: 'hidden',
-                boxShadow: '0 4px 20px rgba(0,0,0,0.3)',
+                maxWidth: '95vw',
+                maxHeight: '95vh',
+                objectFit: 'contain',
+                cursor: 'default',
               }}
-            >
-              <div style={{
-                padding: '12px 16px',
-                borderBottom: '1px solid #eee',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-              }}>
-                <h3 style={{
-                  margin: 0,
-                  fontSize: '16px',
-                  fontWeight: 600,
-                  color: '#333',
-                }}>
-                  AI Medical Illustration
-                </h3>
-                <button
-                  onClick={handleCloseExpanded}
-                  style={{
-                    width: '32px',
-                    height: '32px',
-                    borderRadius: '50%',
-                    border: 'none',
-                    backgroundColor: '#f0f0f0',
-                    color: '#666',
-                    fontSize: '20px',
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                  }}
-                >
-                  ×
-                </button>
-              </div>
-              <div style={{
-                padding: '16px',
+            />
+            <button
+              onClick={handleCloseExpanded}
+              style={{
+                position: 'fixed',
+                top: '12px',
+                right: '12px',
+                width: '36px',
+                height: '36px',
+                borderRadius: '50%',
+                border: 'none',
+                backgroundColor: 'rgba(255,255,255,0.2)',
+                color: '#fff',
+                fontSize: '22px',
+                cursor: 'pointer',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                backgroundColor: '#f9f9f9',
-              }}>
-                <img
-                  src={`data:image/png;base64,${expandedAiImage.base64}`}
-                  alt="AI-generated medical illustration"
-                  style={{
-                    maxWidth: '100%',
-                    maxHeight: 'calc(90vh - 100px)',
-                    objectFit: 'contain',
-                  }}
-                />
-              </div>
-            </div>
+                transition: 'background-color 0.15s',
+              }}
+              onMouseEnter={e => { e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.4)'; }}
+              onMouseLeave={e => { e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.2)'; }}
+              title="Close"
+            >
+              ×
+            </button>
           </div>
         )}
       </>

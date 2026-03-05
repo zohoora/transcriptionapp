@@ -1144,7 +1144,7 @@ Rules:
 
 /// Build system prompt for SOAP note generation (JSON output required).
 /// Used by both single-patient and multi-patient SOAP generation.
-fn build_simple_soap_prompt(options: &SoapOptions) -> String {
+pub fn build_simple_soap_prompt(options: &SoapOptions) -> String {
     let detail_instruction = match options.detail_level {
         1..=3 => format!(
             "DETAIL LEVEL: {}/10 - Be BRIEF. Use short phrases, 1-2 items per section. Omit minor details.",
@@ -1938,7 +1938,7 @@ fn format_soap_as_text(soap: &SoapJsonResponse) -> String {
 }
 
 /// Build user content for SOAP generation
-fn build_soap_user_content(
+pub fn build_soap_user_content(
     transcript: &str,
     audio_events: Option<&[AudioEvent]>,
     session_notes: Option<&str>,
