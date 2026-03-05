@@ -88,13 +88,23 @@ Respond with ONLY the JSON object."#;
     // Build context section if signals are available
     let context_section = if let Some(ctx) = context {
         let mut parts = Vec::new();
-        // Sensor departure — moderate signal
+        // Sensor departure — soft signal, not a split trigger on its own
         if ctx.sensor_departed {
-            parts.push("CONTEXT: The presence sensor detected someone left the room.".to_string());
+            parts.push(
+                "CONTEXT: The presence sensor detected possible movement away from the room. \
+                Note: brief departures during medical visits are common (hand washing, supplies, \
+                injection preparation, bathroom). Evaluate the TRANSCRIPT CONTENT to determine \
+                if the encounter has actually concluded — a sensor departure alone is not sufficient.".to_string()
+            );
         }
-        // Sensor still present — suppress false splits from topic changes within a visit
+        // Sensor still present — use original production prompt (proven reliable)
         if ctx.sensor_present && !ctx.sensor_departed {
-            parts.push("CONTEXT: The presence sensor confirms someone is still in the room. Topic changes or pauses within the same visit are NOT transitions. Only split if there is strong evidence of a different patient (new name, new history intake, greeting a new person).".to_string());
+            parts.push(
+                "CONTEXT: The presence sensor confirms someone is still in the room. \
+                Topic changes or pauses within the same visit are NOT transitions. \
+                Only split if there is strong evidence of a different patient \
+                (new name, new history intake, greeting a new person).".to_string()
+            );
         }
         if parts.is_empty() {
             String::new()
@@ -441,7 +451,7 @@ mod tests {
         };
         let (_, user) = build_encounter_detection_prompt("test transcript", Some(&ctx));
         assert!(user.contains("still in the room"), "User prompt should mention sensor presence");
-        assert!(user.contains("NOT transitions"), "Should discourage splitting on topic changes");
+        assert!(user.contains("NOT transitions"), "Should mention topic changes are not transitions");
     }
 
     #[test]

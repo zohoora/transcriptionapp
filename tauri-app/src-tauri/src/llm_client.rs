@@ -262,6 +262,10 @@ pub struct GreetingResult {
     pub detected_phrase: Option<String>,
 }
 
+/// Sentinel substring in the placeholder returned when all SOAP JSON parsers fail.
+/// Used by the retry logic to detect malformed output.
+const MALFORMED_SOAP_SENTINEL: &str = "SOAP generation produced malformed output";
+
 /// SOAP note format style
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
@@ -271,6 +275,13 @@ pub enum SoapFormat {
     ProblemBased,
     /// Single unified SOAP covering all problems together
     Comprehensive,
+}
+
+impl SoapFormat {
+    /// Convert a config string to SoapFormat (defaults to ProblemBased for unknown values)
+    pub fn from_config_str(s: &str) -> Self {
+        if s == "comprehensive" { SoapFormat::Comprehensive } else { SoapFormat::ProblemBased }
+    }
 }
 
 /// Options for SOAP note generation
@@ -388,6 +399,37 @@ impl LLMClient {
             client_id: client_id.to_string(),
             fast_model: fast_model.to_string(),
         })
+    }
+
+    /// Parse SOAP JSON response, retrying the LLM call once if the result is the malformed placeholder.
+    /// Transient truncation from the LLM usually succeeds on retry.
+    async fn parse_soap_with_retry(
+        &self,
+        model: &str,
+        system_prompt: &str,
+        user_content: &str,
+        initial_response: &str,
+    ) -> String {
+        let content = parse_and_format_soap_json(initial_response);
+        if !content.contains(MALFORMED_SOAP_SENTINEL) {
+            return content;
+        }
+        warn!("SOAP parse returned malformed placeholder, retrying LLM call once");
+        match self.generate(model, system_prompt, user_content, tasks::SOAP_NOTE).await {
+            Ok(retry_response) => {
+                let retry_content = parse_and_format_soap_json(&retry_response);
+                if retry_content.contains(MALFORMED_SOAP_SENTINEL) {
+                    warn!("SOAP retry also produced malformed output, using placeholder");
+                } else {
+                    info!("SOAP retry succeeded ({} chars)", retry_content.len());
+                }
+                retry_content
+            }
+            Err(e) => {
+                warn!("SOAP retry LLM call failed: {}", e);
+                content
+            }
+        }
     }
 
     /// Build authentication headers for requests
@@ -771,9 +813,7 @@ impl LLMClient {
         let user_content = build_soap_user_content(&prepared_transcript, audio_events, session_notes, speaker_context);
 
         let response = self.generate(model, &system_prompt, &user_content, tasks::SOAP_NOTE).await?;
-
-        // Parse JSON response and format as bullet-point text
-        let content = parse_and_format_soap_json(&response);
+        let content = self.parse_soap_with_retry(model, &system_prompt, &user_content, &response).await;
 
         info!("Successfully generated SOAP note ({} chars)", content.len());
         Ok(SoapNote {
@@ -815,9 +855,7 @@ impl LLMClient {
         let user_content = build_soap_user_content(&prepared_transcript, audio_events, session_notes, speaker_context);
 
         let response = self.generate(model, &system_prompt, &user_content, tasks::SOAP_NOTE).await?;
-
-        // Parse JSON response and format as bullet-point text
-        let content = parse_and_format_soap_json(&response);
+        let content = self.parse_soap_with_retry(model, &system_prompt, &user_content, &response).await;
 
         info!("Successfully generated multi-patient SOAP note ({} chars)", content.len());
         Ok(MultiPatientSoapResult {
@@ -1699,7 +1737,7 @@ fn parse_and_format_soap_json(response: &str) -> String {
                     }
                     Err(e2) => {
                         warn!("Aggressive JSON repair also failed: {}. Returning placeholder.", e2);
-                        "S:\n- [SOAP generation produced malformed output — review transcript directly]\n\nO:\n- [See transcript]\n\nA:\n- [See transcript]\n\nP:\n- [See transcript]".to_string()
+                        format!("S:\n- [{} — review transcript directly]\n\nO:\n- [See transcript]\n\nA:\n- [See transcript]\n\nP:\n- [See transcript]", MALFORMED_SOAP_SENTINEL)
                     }
                 }
             } else {

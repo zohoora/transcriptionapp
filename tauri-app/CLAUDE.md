@@ -205,19 +205,22 @@ Idle → Preparing → Recording → Stopping → Completed
 | Settings validation after update | `clamp_values()` called after `update_from_settings()` in config.rs — safety net for user-edited JSON |
 | Encounter notes: clone before clear | In continuous mode detector, clone accumulated notes before clearing buffer to avoid data loss |
 | Audio quality shared util | `getAudioQualityLevel()` in utils.ts — shared across RecordingMode, ReviewMode, ContinuousMode |
-| Force-split constants | Named constants in encounter_detection.rs: `FORCE_CHECK_WORD_THRESHOLD` (3K), `FORCE_SPLIT_WORD_THRESHOLD` (5K), `FORCE_SPLIT_CONSECUTIVE_LIMIT` (3), `ABSOLUTE_WORD_CAP` (10K). Force-split uses hallucination-cleaned word count to avoid STT loop inflation |
+| Force-split constants | Named constants in encounter_detection.rs: `FORCE_CHECK_WORD_THRESHOLD` (3K), `FORCE_SPLIT_WORD_THRESHOLD` (5K), `FORCE_SPLIT_CONSECUTIVE_LIMIT` (3), `ABSOLUTE_WORD_CAP` (10K). Both FORCE_CHECK and FORCE_SPLIT use `cleaned_word_count` (hallucination-stripped) to avoid STT phrase loops inflating past thresholds |
 | Presence sensor auto-detect | `auto_detect_port()` in presence_sensor.rs scans USB-serial devices when configured port fails |
 | Screen recording permission | Use `CGPreflightScreenCaptureAccess()` (not 1x1 pixel capture) — old check always passed even without permission. `is_blank_capture()` heuristic detects blanked-out window content |
 | SOAP JSON repair | Pipeline: `fix_json_newlines` → `remove_leading_commas` → `remove_trailing_commas` → `fix_truncated_json` (closes unclosed strings + missing brackets) → filter empty strings. Raw-JSON fallback returns structured placeholder instead of broken JSON |
 | Hallucination filter | Two-phase: single-word repetitions then n-gram phrase loops (sizes 3-25). `strip_hallucinations()` in encounter_experiment.rs |
 | SOAP suppression | Non-clinical encounters (`likely_non_clinical=true`) skip SOAP generation entirely. Transcript still archived |
-| Confidence gate | Dynamic threshold: 0.85 for encounters <20 min (reduces false splits), 0.7 for 20+ min |
+| Confidence gate | Dynamic base threshold: 0.85 for encounters <20 min, 0.7 for 20+ min. `merge_back_count` escalation: each merge-back adds +0.05 (capped at 0.99), reset when split sticks. Prevents repeated false splits on long sessions |
+| SOAP retry | `parse_soap_with_retry()` in llm_client.rs: if SOAP parse returns malformed placeholder (`MALFORMED_SOAP_SENTINEL`), retries the LLM call once before giving up |
+| Orphaned SOAP recovery | On continuous mode stop, scans today's sessions for `has_soap_note == false` and regenerates SOAP. Skips non-clinical encounters. Uses existing flush LLM client |
+| Sensor prompt design | sensor_departed: V2_soft framing lists common false departures, directs LLM to evaluate transcript content. sensor_present: conservative "NOT transitions" framing, proven in production |
 
 ## Features
 
 | Feature | Summary | Detail |
 |---------|---------|--------|
-| **SOAP Generation** | Multi-patient auto-detect, always uses `soap-model-fast` alias, auto-copy to clipboard, problem-based or comprehensive format, detail level 1-10 | `llm_client.rs`, ADR 0009/0012 |
+| **SOAP Generation** | Multi-patient auto-detect, always uses `soap-model-fast` alias, auto-copy to clipboard, problem-based or comprehensive format, detail level 1-10. Malformed output triggers one LLM retry via `parse_soap_with_retry()`. Orphaned SOAP recovery on continuous mode stop | `llm_client.rs`, ADR 0009/0012 |
 | **Transcription** | STT Router WebSocket streaming via aliases (`stt_alias`), all 3 modes use streaming, audio preprocessing (DC removal, 80Hz HPF, AGC) | `whisper_server.rs`, ADR 0020 |
 | **Auto-Session Detection** | VAD → optimistic recording → parallel greeting check → confirm/discard. Optional speaker verification (`auto_start_require_enrolled`) | `listening.rs`, ADR 0011/0016 |
 | **Medplum EMR** | OAuth 2.0 + PKCE via `fabricscribe://` deep link, auto-sync transcript + audio on complete, SOAP auto-added to encounter | `medplum.rs`, ADR 0008 |
@@ -230,7 +233,7 @@ Idle → Preparing → Recording → Stopping → Completed
 | **AI Images** | Gemini API generates medical illustrations from LLM-produced image prompts (piggybacks on predictive hint). **Default image source.** Cost guardrails: 45s cooldown, 8/session cap, 1 visible (latest only), prompt dedup. Config: `image_source=ai` (default), `gemini_api_key`. Requires Gemini API key to function | `gemini_client.rs`, `commands/images.rs`, `useAiImages.ts` |
 | **Continuous Mode** | All-day recording, LLM or sensor-based encounter detection, auto-SOAP per encounter. Vision-based patient name extraction via `vision-model` alias + `PatientNameTracker` majority-vote | `continuous_mode.rs`, ADR 0019 |
 | **Presence Sensor** | DFRobot SEN0395 24GHz mmWave via USB-UART. Debounced presence state → absence threshold → encounter split. CSV logging, auto-detect port, graceful fallback to LLM on failure | `presence_sensor.rs` |
-| **Hybrid Detection** | Sensor early-warning + LLM confirmation. Sensor Present→Absent accelerates LLM check (~30s vs ~8 min). Sensor timeout force-splits after `hybrid_confirm_window_secs`. Graceful LLM-only fallback when sensor unavailable. Handles back-to-back encounters (phone calls, two patients) via regular LLM timer. Config: `encounter_detection_mode="hybrid"` | `continuous_mode.rs`, `config.rs` |
+| **Hybrid Detection** | Sensor early-warning + LLM confirmation. Sensor Present→Absent accelerates LLM check (~30s vs ~8 min). Sensor timeout force-splits after `hybrid_confirm_window_secs` (default 180s). Sensor-departed prompt (V2_soft) lists common false departures. Graceful LLM-only fallback when sensor unavailable. Handles back-to-back encounters via regular LLM timer. Config: `encounter_detection_mode="hybrid"` | `continuous_mode.rs`, `config.rs` |
 | **Shadow Mode** | Dual detection comparison — runs sensor and LLM concurrently, logs decisions to CSV for accuracy analysis. Config: `encounter_detection_mode="shadow"`, `shadow_active_method` | `shadow_log.rs`, `continuous_mode.rs` |
 | **Session Cleanup** | History window tools: delete, split, merge sessions, rename patients, renumber encounters. Split opens in separate resizable window with LLM-suggested split point (`suggest_split_points` via `fast-model`) | `commands/archive.rs`, `components/cleanup/`, `SplitWindow.tsx` |
 | **Native STT Shadow** | Runs Apple SFSpeechRecognizer in parallel with STT Router for quality comparison. Each utterance forked to native STT on background thread; accumulates and saves as `shadow_transcript.txt` in archive. Segment-level CSV logging for WER analysis. Config: `native_stt_shadow_enabled` | `native_stt.rs`, `native_stt_shadow.rs`, `pipeline.rs` |
@@ -361,7 +364,7 @@ Key settings groups: STT Router (whisper_server_url, stt_alias=`"medical-streami
 | Can't switch charting mode | Stop continuous recording before switching from continuous to session mode |
 | Auto-detection runs during continuous | Verify `isContinuousMode` guard in App.tsx listening effect |
 | Presence sensor "Device or resource busy" | Another process (e.g., `mmwave_logger.py`) holds the serial port — kill it or stop it before starting continuous mode |
-| Encounter detection not splitting | Check activity logs for `consecutive_no_split` count; force-split fires at 8K words + 3 non-splits, absolute cap at 10K words |
+| Encounter detection not splitting | Check activity logs for `consecutive_no_split` count; force-split fires at 5K cleaned words + 3 consecutive non-splits, absolute cap at 10K cleaned words. FORCE_CHECK (3K cleaned words) triggers check even below timer interval |
 | Screenshots blank / vision always NOT_FOUND | Screen Recording permission not granted — macOS blanks other apps' windows. Toggle off/on in System Settings → Privacy & Security → Screen Recording. Rebuilds may invalidate old permission |
 | Vision name extraction 0 successes | Check activity logs for "Vision name extraction failed" (connection) vs "Vision did not find a patient name" (blank captures). If all NOT_FOUND, likely screen recording permission issue |
 

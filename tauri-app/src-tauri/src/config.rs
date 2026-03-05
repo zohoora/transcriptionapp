@@ -192,7 +192,7 @@ fn default_native_stt_shadow_enabled() -> bool {
 }
 
 fn default_hybrid_confirm_window_secs() -> u64 {
-    75 // ~1 min — faster split after sensor departure. Merge system catches false positives.
+    180 // 3 min — allows recovery from brief sensor departures (hand wash, supplies, injections)
 }
 
 fn default_hybrid_min_words_for_sensor_split() -> usize {
@@ -1678,7 +1678,7 @@ mod tests {
     fn test_hybrid_defaults() {
         let config = Config::default();
         assert_eq!(config.encounter_detection_mode, EncounterDetectionMode::Hybrid);
-        assert_eq!(config.hybrid_confirm_window_secs, 75);
+        assert_eq!(config.hybrid_confirm_window_secs, 180);
         assert_eq!(config.hybrid_min_words_for_sensor_split, 500);
     }
 
