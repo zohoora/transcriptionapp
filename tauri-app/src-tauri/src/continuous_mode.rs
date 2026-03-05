@@ -11,7 +11,7 @@
 //!                                              ↓
 //!                                        Complete? → Extract → SOAP → Archive
 
-use chrono::{DateTime, Datelike, Utc};
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
@@ -890,7 +890,7 @@ pub async fn run_continuous_mode(
     let vision_new_name_for_detector = handle.vision_new_name.clone();
     let vision_old_name_for_detector = handle.vision_old_name.clone();
 
-    // Clone biomarker reset flag for the detector task
+    // Biomarker reset flag for the detector task
     let reset_bio_flag = reset_bio_for_detector;
 
     // Clone sensor trigger for detector task
@@ -899,7 +899,7 @@ pub async fn run_continuous_mode(
     // Clone shadow state for detector task
     let handle_shadow_decisions = handle.shadow_decisions.clone();
 
-    // Clone native STT shadow accumulator for detector task (encounter boundary drain)
+    // Native STT shadow accumulator for detector task (encounter boundary drain)
     let stt_shadow_accumulator = native_stt_accumulator_for_detector;
 
     // Pipeline replay logger — writes JSONL to each session's archive folder
@@ -1046,7 +1046,6 @@ pub async fn run_continuous_mode(
                     }
                 }
             };
-            let manual_triggered = manual_triggered;
 
             if stop_for_detector.load(Ordering::Relaxed) {
                 break;
@@ -1531,14 +1530,8 @@ pub async fn run_continuous_mode(
                                         .join("\n");
 
                                     // Save to archive directory
-                                    if let Ok(archive_dir) = local_archive::get_archive_dir() {
-                                        let now_shadow = Utc::now();
-                                        let shadow_path = archive_dir
-                                            .join(format!("{:04}", now_shadow.year()))
-                                            .join(format!("{:02}", now_shadow.month()))
-                                            .join(format!("{:02}", now_shadow.day()))
-                                            .join(&session_id)
-                                            .join("shadow_transcript.txt");
+                                    if let Ok(session_dir) = local_archive::get_session_archive_dir(&session_id, &Utc::now()) {
+                                        let shadow_path = session_dir.join("shadow_transcript.txt");
                                         if let Err(e) = std::fs::write(&shadow_path, &shadow_text) {
                                             warn!("Failed to save shadow transcript: {}", e);
                                         } else {
@@ -1558,15 +1551,8 @@ pub async fn run_continuous_mode(
                         };
 
                         // Update archive metadata with continuous mode info
-                        if let Ok(archive_dir) = local_archive::get_archive_dir() {
-                            let now = Utc::now();
-                            let date_path = archive_dir
-                                .join(format!("{:04}", now.year()))
-                                .join(format!("{:02}", now.month()))
-                                .join(format!("{:02}", now.day()))
-                                .join(&session_id)
-                                .join("metadata.json");
-
+                        if let Ok(session_dir) = local_archive::get_session_archive_dir(&session_id, &Utc::now()) {
+                            let date_path = session_dir.join("metadata.json");
                             if date_path.exists() {
                                 if let Ok(content) = std::fs::read_to_string(&date_path) {
                                     if let Ok(mut metadata) = serde_json::from_str::<local_archive::ArchiveMetadata>(&content) {
@@ -1732,26 +1718,6 @@ pub async fn run_continuous_mode(
                                 "Encounter #{} too small for clinical analysis ({} words < {} threshold) — treating as non-clinical",
                                 encounter_number, encounter_word_count, MIN_WORDS_FOR_CLINICAL_CHECK
                             );
-                            // Update metadata with non-clinical flag (same pattern as LLM clinical check below)
-                            if let Ok(archive_dir) = local_archive::get_archive_dir() {
-                                let now = Utc::now();
-                                let nc_meta_path = archive_dir
-                                    .join(format!("{:04}", now.year()))
-                                    .join(format!("{:02}", now.month()))
-                                    .join(format!("{:02}", now.day()))
-                                    .join(&session_id)
-                                    .join("metadata.json");
-                                if nc_meta_path.exists() {
-                                    if let Ok(content) = std::fs::read_to_string(&nc_meta_path) {
-                                        if let Ok(mut metadata) = serde_json::from_str::<local_archive::ArchiveMetadata>(&content) {
-                                            metadata.likely_non_clinical = Some(true);
-                                            if let Ok(json) = serde_json::to_string_pretty(&metadata) {
-                                                let _ = std::fs::write(&nc_meta_path, json);
-                                            }
-                                        }
-                                    }
-                                }
-                            }
                         } else if let Some(ref client) = llm_client {
                             let (cc_system, cc_user) = build_clinical_content_check_prompt(&encounter_text);
                             let cc_start = Instant::now();
@@ -1779,26 +1745,6 @@ pub async fn run_continuous_mode(
                                                     "Encounter #{} flagged as non-clinical: {:?}",
                                                     encounter_number, cc_result.reason
                                                 );
-                                                // Update metadata with non-clinical flag
-                                                if let Ok(archive_dir) = local_archive::get_archive_dir() {
-                                                    let now = Utc::now();
-                                                    let nc_meta_path = archive_dir
-                                                        .join(format!("{:04}", now.year()))
-                                                        .join(format!("{:02}", now.month()))
-                                                        .join(format!("{:02}", now.day()))
-                                                        .join(&session_id)
-                                                        .join("metadata.json");
-                                                    if nc_meta_path.exists() {
-                                                        if let Ok(content) = std::fs::read_to_string(&nc_meta_path) {
-                                                            if let Ok(mut metadata) = serde_json::from_str::<local_archive::ArchiveMetadata>(&content) {
-                                                                metadata.likely_non_clinical = Some(true);
-                                                                if let Ok(json) = serde_json::to_string_pretty(&metadata) {
-                                                                    let _ = std::fs::write(&nc_meta_path, json);
-                                                                }
-                                                            }
-                                                        }
-                                                    }
-                                                }
                                             } else {
                                                 info!(
                                                     "Encounter #{} confirmed clinical: {:?}",
@@ -1839,6 +1785,23 @@ pub async fn run_continuous_mode(
                                         );
                                     }
                                     warn!("Clinical content check timed out (30s)");
+                                }
+                            }
+                        }
+
+                        // Update metadata with non-clinical flag (single path for both word-count and LLM checks)
+                        if !is_clinical {
+                            if let Ok(session_dir) = local_archive::get_session_archive_dir(&session_id, &Utc::now()) {
+                                let nc_meta_path = session_dir.join("metadata.json");
+                                if nc_meta_path.exists() {
+                                    if let Ok(content) = std::fs::read_to_string(&nc_meta_path) {
+                                        if let Ok(mut metadata) = serde_json::from_str::<local_archive::ArchiveMetadata>(&content) {
+                                            metadata.likely_non_clinical = Some(true);
+                                            if let Ok(json) = serde_json::to_string_pretty(&metadata) {
+                                                let _ = std::fs::write(&nc_meta_path, json);
+                                            }
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -2113,13 +2076,8 @@ pub async fn run_continuous_mode(
                                                                         );
                                                                         // Clear non-clinical flag on keeper — merged encounter contains clinical content
                                                                         if prev_encounter_is_clinical != is_clinical {
-                                                                            if let Ok(archive_dir) = local_archive::get_archive_dir() {
-                                                                                let merge_meta_path = archive_dir
-                                                                                    .join(format!("{:04}", prev_date.year()))
-                                                                                    .join(format!("{:02}", prev_date.month()))
-                                                                                    .join(format!("{:02}", prev_date.day()))
-                                                                                    .join(prev_id)
-                                                                                    .join("metadata.json");
+                                                                            if let Ok(session_dir) = local_archive::get_session_archive_dir(prev_id, prev_date) {
+                                                                                let merge_meta_path = session_dir.join("metadata.json");
                                                                                 if let Ok(content) = std::fs::read_to_string(&merge_meta_path) {
                                                                                     if let Ok(mut metadata) = serde_json::from_str::<local_archive::ArchiveMetadata>(&content) {
                                                                                         metadata.likely_non_clinical = None;
