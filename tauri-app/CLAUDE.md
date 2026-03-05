@@ -66,6 +66,7 @@ Rust Backend
 ├── native_stt_shadow.rs # Native STT shadow accumulator + CSV logger
 ├── shadow_log.rs      # Shadow mode CSV logging (dual detection comparison)
 ├── gemini_client.rs   # Google Gemini API client (image generation)
+├── pipeline_log.rs    # Pipeline replay JSONL logger (detection, SOAP, screenshot events)
 ├── encounter_experiment.rs # Encounter detection experiment CLI support
 ├── vision_experiment.rs    # Vision SOAP experiment CLI support
 ├── diarization/       # Speaker detection (ONNX embeddings, clustering)
@@ -226,7 +227,7 @@ Idle → Preparing → Recording → Stopping → Completed
 | **Auto-End Silence** | VAD silence → `SilenceWarning` countdown → auto-stop. Config: `auto_end_silence_ms` (default 180s). User can cancel via `reset_silence_timer` | `pipeline.rs`, ADR 0015 |
 | **MCP Server** | Port 7101, JSON-RPC 2.0. Tools: `agent_identity`, `health_check`, `get_status`, `get_logs` | `mcp/` |
 | **MIIS Images** | LLM extracts concepts every 30s → MIIS returns ranked images. Backend proxies through Rust (CORS). Server needs embedder enabled | `commands/miis.rs`, ADR 0018 |
-| **AI Images** | Gemini API generates medical illustrations from LLM-produced image prompts (piggybacks on predictive hint). **Default image source.** Cost guardrails: 45s cooldown, 8/session cap, 6 visible FIFO, prompt dedup. Config: `image_source=ai` (default), `gemini_api_key`. Requires Gemini API key to function | `gemini_client.rs`, `commands/images.rs`, `useAiImages.ts` |
+| **AI Images** | Gemini API generates medical illustrations from LLM-produced image prompts (piggybacks on predictive hint). **Default image source.** Cost guardrails: 45s cooldown, 8/session cap, 1 visible (latest only), prompt dedup. Config: `image_source=ai` (default), `gemini_api_key`. Requires Gemini API key to function | `gemini_client.rs`, `commands/images.rs`, `useAiImages.ts` |
 | **Continuous Mode** | All-day recording, LLM or sensor-based encounter detection, auto-SOAP per encounter. Vision-based patient name extraction via `vision-model` alias + `PatientNameTracker` majority-vote | `continuous_mode.rs`, ADR 0019 |
 | **Presence Sensor** | DFRobot SEN0395 24GHz mmWave via USB-UART. Debounced presence state → absence threshold → encounter split. CSV logging, auto-detect port, graceful fallback to LLM on failure | `presence_sensor.rs` |
 | **Hybrid Detection** | Sensor early-warning + LLM confirmation. Sensor Present→Absent accelerates LLM check (~30s vs ~8 min). Sensor timeout force-splits after `hybrid_confirm_window_secs`. Graceful LLM-only fallback when sensor unavailable. Handles back-to-back encounters (phone calls, two patients) via regular LLM timer. Config: `encounter_detection_mode="hybrid"` | `continuous_mode.rs`, `config.rs` |
@@ -246,7 +247,7 @@ Idle → Preparing → Recording → Stopping → Completed
 
 Source of truth: `src-tauri/src/config.rs` (Rust) / `src/types/index.ts` (TypeScript).
 
-Key settings groups: STT Router (whisper_server_url, stt_alias=`"medical-streaming"`, stt_postprocess=true), Audio (VAD, diarization, enhancement), LLM Router (soap_model=`"soap-model-fast"`, soap_model_fast=`"soap-model-fast"`, fast_model=`"fast-model"`), Medplum (OAuth, auto_sync), Auto-detection (auto_start, auto_end_silence_ms=180000), SOAP (detail_level 1-10, format, custom_instructions), Images (image_source=`"ai"` (default)|`"miis"`|`"off"`, gemini_api_key), MIIS, Screen Capture, Continuous Mode (charting_mode, encounter_check_interval_secs=120, encounter_silence_trigger_secs=45, encounter_merge_enabled, encounter_detection_model=`"fast-model"`, encounter_detection_nothink=false), Presence Sensor (encounter_detection_mode=`"hybrid"`, presence_sensor_port, presence_absence_threshold_secs=180, presence_debounce_secs=15, presence_csv_log_enabled=true), Shadow Mode (shadow_active_method=`"sensor"`, shadow_csv_log_enabled=true), Hybrid Detection (hybrid_confirm_window_secs=180, hybrid_min_words_for_sensor_split=500), Native STT Shadow (native_stt_shadow_enabled=true), Screen Capture (screen_capture_enabled, screen_capture_interval_secs=60, requires Screen Recording permission), Debug.
+Key settings groups: STT Router (whisper_server_url, stt_alias=`"medical-streaming"`, stt_postprocess=true), Audio (VAD, diarization, enhancement), LLM Router (soap_model=`"soap-model-fast"`, soap_model_fast=`"soap-model-fast"`, fast_model=`"fast-model"`), Medplum (OAuth, auto_sync), Auto-detection (auto_start, auto_end_silence_ms=180000), SOAP (detail_level 1-10, format, custom_instructions), Images (image_source=`"ai"` (default)|`"miis"`|`"off"`, gemini_api_key), MIIS, Screen Capture, Continuous Mode (charting_mode, encounter_check_interval_secs=120, encounter_silence_trigger_secs=45, encounter_merge_enabled, encounter_detection_model=`"fast-model"`, encounter_detection_nothink=false), Presence Sensor (encounter_detection_mode=`"hybrid"`, presence_sensor_port, presence_absence_threshold_secs=180, presence_debounce_secs=15, presence_csv_log_enabled=true), Shadow Mode (shadow_active_method=`"sensor"`, shadow_csv_log_enabled=true), Hybrid Detection (hybrid_confirm_window_secs=180, hybrid_min_words_for_sensor_split=500), Native STT Shadow (native_stt_shadow_enabled=true), Screen Capture (screen_capture_enabled, screen_capture_interval_secs=30, requires Screen Recording permission), Debug.
 
 ## File Locations
 
@@ -360,7 +361,7 @@ Key settings groups: STT Router (whisper_server_url, stt_alias=`"medical-streami
 | Can't switch charting mode | Stop continuous recording before switching from continuous to session mode |
 | Auto-detection runs during continuous | Verify `isContinuousMode` guard in App.tsx listening effect |
 | Presence sensor "Device or resource busy" | Another process (e.g., `mmwave_logger.py`) holds the serial port — kill it or stop it before starting continuous mode |
-| Encounter detection not splitting | Check activity logs for `consecutive_no_split` count; force-split fires at 8K words + 3 non-splits, absolute cap at 15K words |
+| Encounter detection not splitting | Check activity logs for `consecutive_no_split` count; force-split fires at 8K words + 3 non-splits, absolute cap at 10K words |
 | Screenshots blank / vision always NOT_FOUND | Screen Recording permission not granted — macOS blanks other apps' windows. Toggle off/on in System Settings → Privacy & Security → Screen Recording. Rebuilds may invalidate old permission |
 | Vision name extraction 0 successes | Check activity logs for "Vision name extraction failed" (connection) vs "Vision did not find a patient name" (blank captures). If all NOT_FOUND, likely screen recording permission issue |
 
