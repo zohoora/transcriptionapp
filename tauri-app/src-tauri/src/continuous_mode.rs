@@ -886,9 +886,10 @@ pub async fn run_continuous_mode(
     let manual_trigger_rx = handle.encounter_manual_trigger.clone();
 
     // Clone vision name change trigger for the detector task
-    let vision_trigger_rx = handle.vision_name_change_trigger.clone();
-    let vision_new_name_for_detector = handle.vision_new_name.clone();
-    let vision_old_name_for_detector = handle.vision_old_name.clone();
+    // Vision trigger is no longer used for detection decisions — EMR chart name is
+    // unreliable (doctor may open family members, not open chart, or vision may parse
+    // the same name differently). Vision still extracts names for metadata labeling.
+    let _vision_trigger_rx = handle.vision_name_change_trigger.clone();
 
     // Biomarker reset flag for the detector task
     let reset_bio_flag = reset_bio_for_detector;
@@ -937,26 +938,22 @@ pub async fn run_continuous_mode(
             hybrid_sensor_timeout_triggered = false;
 
             // Wait for trigger based on detection mode
-            // Returns (manual_triggered, sensor_triggered, vision_triggered)
-            let (manual_triggered, sensor_triggered, vision_triggered) = if is_hybrid_mode && sensor_available {
-                // Hybrid mode with sensor: timer + silence + manual + sensor + vision name change
+            // Returns (manual_triggered, sensor_triggered)
+            let (manual_triggered, sensor_triggered) = if is_hybrid_mode && sensor_available {
+                // Hybrid mode with sensor: timer + silence + manual + sensor
                 let sensor_rx = hybrid_sensor_rx.as_mut().unwrap();
                 tokio::select! {
                     _ = tokio::time::sleep(tokio::time::Duration::from_secs(check_interval as u64)) => {
                         // Regular timer — handles back-to-back encounters without physical departure
-                        (false, false, false)
+                        (false, false)
                     }
                     _ = silence_trigger_rx.notified() => {
                         info!("Hybrid: silence gap detected — triggering encounter check");
-                        (false, false, false)
+                        (false, false)
                     }
                     _ = manual_trigger_rx.notified() => {
                         info!("Manual new patient trigger received");
-                        (true, false, false)
-                    }
-                    _ = vision_trigger_rx.notified() => {
-                        info!("Hybrid: vision detected patient name change — accelerating LLM check");
-                        (false, false, true)
+                        (true, false)
                     }
                     result = sensor_rx.changed() => {
                         match result {
@@ -969,7 +966,7 @@ pub async fn run_continuous_mode(
                                      crate::presence_sensor::PresenceState::Absent) => {
                                         sensor_absent_since = Some(Utc::now());
                                         info!("Hybrid: sensor detected departure (Present→Absent), accelerating LLM check");
-                                        (false, true, false) // sensor_triggered → accelerate LLM check (NOT force-split)
+                                        (false, true) // sensor_triggered → accelerate LLM check (NOT force-split)
                                     }
                                     (_, crate::presence_sensor::PresenceState::Present) => {
                                         if sensor_absent_since.is_some() {
@@ -996,22 +993,18 @@ pub async fn run_continuous_mode(
                     }
                 }
             } else if is_hybrid_mode {
-                // Hybrid mode without sensor (sensor failed/disconnected): pure LLM fallback + vision
+                // Hybrid mode without sensor (sensor failed/disconnected): pure LLM fallback
                 tokio::select! {
                     _ = tokio::time::sleep(tokio::time::Duration::from_secs(check_interval as u64)) => {
-                        (false, false, false)
+                        (false, false)
                     }
                     _ = silence_trigger_rx.notified() => {
                         info!("Hybrid (LLM fallback): silence gap detected — triggering encounter check");
-                        (false, false, false)
+                        (false, false)
                     }
                     _ = manual_trigger_rx.notified() => {
                         info!("Manual new patient trigger received");
-                        (true, false, false)
-                    }
-                    _ = vision_trigger_rx.notified() => {
-                        info!("Hybrid (LLM fallback): vision detected patient name change — accelerating LLM check");
-                        (false, false, true)
+                        (true, false)
                     }
                 }
             } else if effective_sensor_mode {
@@ -1019,30 +1012,26 @@ pub async fn run_continuous_mode(
                 tokio::select! {
                     _ = sensor_trigger_for_detector.notified() => {
                         info!("Sensor: absence threshold reached — triggering encounter split");
-                        (false, true, false)
+                        (false, true)
                     }
                     _ = manual_trigger_rx.notified() => {
                         info!("Manual new patient trigger received");
-                        (true, false, false)
+                        (true, false)
                     }
                 }
             } else {
-                // LLM / Shadow mode: wait for timer, silence, vision, or manual trigger
+                // LLM / Shadow mode: wait for timer, silence, or manual trigger
                 tokio::select! {
                     _ = tokio::time::sleep(tokio::time::Duration::from_secs(check_interval as u64)) => {
-                        (false, false, false)
+                        (false, false)
                     }
                     _ = silence_trigger_rx.notified() => {
                         info!("Silence gap detected — triggering encounter check");
-                        (false, false, false)
+                        (false, false)
                     }
                     _ = manual_trigger_rx.notified() => {
                         info!("Manual new patient trigger received");
-                        (true, false, false)
-                    }
-                    _ = vision_trigger_rx.notified() => {
-                        info!("Vision detected patient name change — accelerating LLM check");
-                        (false, false, true)
+                        (true, false)
                     }
                 }
             };
@@ -1101,14 +1090,6 @@ pub async fn run_continuous_mode(
                 }
                 info!("{}: bypassing minimum duration/word count guards ({} words)",
                     if sensor_triggered { "Sensor trigger" } else { "Manual trigger" }, word_count);
-            } else if vision_triggered {
-                // Vision trigger: bypass duration guard but require minimum words
-                // (doctor may open a chart before speaking)
-                if is_empty || word_count < 100 {
-                    debug!("Vision trigger: buffer too small (word_count={}), skipping", word_count);
-                    continue;
-                }
-                info!("Vision trigger: bypassing minimum duration guard ({} words)", word_count);
             } else {
                 if is_empty || word_count < 100 {
                     debug!("Skipping detection: word_count={} (minimum 100)", word_count);
@@ -1180,11 +1161,6 @@ pub async fn run_continuous_mode(
                     if sensor_available && !ctx.sensor_departed {
                         ctx.sensor_present = true;
                     }
-                    // Populate vision name context (set by screenshot task on chart switch)
-                    if vision_triggered {
-                        ctx.current_patient_name = vision_old_name_for_detector.lock().ok().and_then(|n| n.clone());
-                        ctx.new_patient_name = vision_new_name_for_detector.lock().ok().and_then(|n| n.clone());
-                    }
                     ctx
                 };
                 let (system_prompt, user_prompt) = build_encounter_detection_prompt(
@@ -1204,9 +1180,6 @@ pub async fn run_continuous_mode(
                     "cleaned_word_count": cleaned_word_count,
                     "sensor_present": detection_context.sensor_present,
                     "sensor_departed": detection_context.sensor_departed,
-                    "vision_triggered": vision_triggered,
-                    "current_patient_name": detection_context.current_patient_name,
-                    "new_patient_name": detection_context.new_patient_name,
                     "nothink": detection_nothink,
                     "consecutive_no_split": consecutive_no_split,
                 });
@@ -1567,8 +1540,6 @@ pub async fn run_continuous_mode(
                                                     "hybrid_sensor_timeout".to_string()
                                                 } else if sensor_triggered {
                                                     "hybrid_sensor_confirmed".to_string()
-                                                } else if vision_triggered {
-                                                    "hybrid_vision".to_string()
                                                 } else if force_split {
                                                     "hybrid_force".to_string()
                                                 } else {
@@ -1576,8 +1547,6 @@ pub async fn run_continuous_mode(
                                                 }
                                             } else if sensor_triggered {
                                                 "sensor".to_string()
-                                            } else if vision_triggered {
-                                                "vision_llm".to_string()
                                             } else {
                                                 "llm".to_string()
                                             }
@@ -1660,10 +1629,6 @@ pub async fn run_continuous_mode(
                         if let Ok(mut t) = last_split_time_for_detector.lock() {
                             *t = Utc::now();
                         }
-
-                        // Clear vision trigger names (consumed)
-                        if let Ok(mut n) = vision_new_name_for_detector.lock() { *n = None; }
-                        if let Ok(mut o) = vision_old_name_for_detector.lock() { *o = None; }
 
                         // Read encounter notes AND clear atomically (SOAP generation needs them)
                         let notes_text = match encounter_notes_for_detector.lock() {

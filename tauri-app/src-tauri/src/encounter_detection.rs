@@ -21,14 +21,13 @@ pub const MIN_WORDS_FOR_CLINICAL_CHECK: usize = 100;
 pub const SCREENSHOT_STALE_GRACE_SECS: i64 = 90;
 
 /// Optional context signals for encounter detection.
-/// Provides real-time signals from vision (chart switch) and sensor (departure)
-/// to augment the LLM prompt with high-confidence evidence.
+/// Provides real-time signals from sensor (departure/presence) to augment
+/// the LLM prompt. Vision-extracted patient names are used only for metadata
+/// labeling, NOT for split decisions (EMR chart name is unreliable — doctor
+/// may open family members, not open chart, or vision may parse same name
+/// differently).
 #[derive(Debug, Clone, Default)]
 pub struct EncounterDetectionContext {
-    /// Current patient name from vision tracker (majority vote so far)
-    pub current_patient_name: Option<String>,
-    /// New patient name detected by vision (different chart on screen)
-    pub new_patient_name: Option<String>,
     /// Whether the presence sensor detected someone left the room
     pub sensor_departed: bool,
     /// Whether the presence sensor confirms someone is still in the room
@@ -89,15 +88,6 @@ Respond with ONLY the JSON object."#;
     // Build context section if signals are available
     let context_section = if let Some(ctx) = context {
         let mut parts = Vec::new();
-        // Vision-detected chart switch — strong signal
-        if let (Some(current), Some(new)) = (&ctx.current_patient_name, &ctx.new_patient_name) {
-            if current != new {
-                parts.push(format!(
-                    "IMPORTANT: The EMR screen now shows patient '{}' instead of '{}'. This strongly suggests a patient transition has occurred.",
-                    new, current
-                ));
-            }
-        }
         // Sensor departure — moderate signal
         if ctx.sensor_departed {
             parts.push("CONTEXT: The presence sensor detected someone left the room.".to_string());
@@ -434,24 +424,8 @@ mod tests {
     }
 
     #[test]
-    fn test_detection_prompt_with_context_chart_switch() {
-        let ctx = EncounterDetectionContext {
-            current_patient_name: Some("John Smith".to_string()),
-            new_patient_name: Some("Jane Smith".to_string()),
-            sensor_departed: false,
-            sensor_present: false,
-        };
-        let (_, user) = build_encounter_detection_prompt("test transcript", Some(&ctx));
-        assert!(user.contains("Jane Smith"), "User prompt should mention new patient name");
-        assert!(user.contains("John Smith"), "User prompt should mention current patient name");
-        assert!(user.contains("IMPORTANT"), "Chart switch should be marked IMPORTANT");
-    }
-
-    #[test]
     fn test_detection_prompt_with_context_sensor_departed() {
         let ctx = EncounterDetectionContext {
-            current_patient_name: None,
-            new_patient_name: None,
             sensor_departed: true,
             sensor_present: false,
         };
@@ -462,8 +436,6 @@ mod tests {
     #[test]
     fn test_detection_prompt_with_sensor_present() {
         let ctx = EncounterDetectionContext {
-            current_patient_name: None,
-            new_patient_name: None,
             sensor_departed: false,
             sensor_present: true,
         };
@@ -475,14 +447,11 @@ mod tests {
     #[test]
     fn test_detection_prompt_with_no_context_signals() {
         let ctx = EncounterDetectionContext {
-            current_patient_name: Some("John Smith".to_string()),
-            new_patient_name: None,
             sensor_departed: false,
             sensor_present: false,
         };
         let (_, user) = build_encounter_detection_prompt("test transcript", Some(&ctx));
-        // No chart switch (new_patient_name is None), no sensor — no context section
-        assert!(!user.contains("IMPORTANT"), "No chart switch signal should be present");
+        // No sensor signals — no context section
         assert!(!user.contains("presence sensor"), "No sensor signal should be present");
     }
 

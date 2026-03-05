@@ -2,7 +2,7 @@
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
   "description": "Default capabilities for the transcription app",
-  "windows": ["main", "history", "split"],
+  "windows": ["main", "history", "split", "image-viewer"],
   "permissions": [
     "core:default",
     "core:event:default",

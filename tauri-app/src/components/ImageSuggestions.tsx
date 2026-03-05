@@ -1,4 +1,6 @@
 import { memo, useState, useCallback, useEffect, useRef } from 'react';
+import { WebviewWindow } from '@tauri-apps/api/webviewWindow';
+import { emitTo } from '@tauri-apps/api/event';
 import type { MiisSuggestion } from '../hooks/useMiisImages';
 import type { AiImage } from '../hooks/useAiImages';
 
@@ -37,7 +39,6 @@ export const ImageSuggestions = memo(function ImageSuggestions({
   imageSource = 'miis',
 }: ImageSuggestionsProps) {
   const [expandedImage, setExpandedImage] = useState<MiisSuggestion | null>(null);
-  const [expandedAiImage, setExpandedAiImage] = useState<AiImage | null>(null);
   const [dismissedIds, setDismissedIds] = useState<Set<number>>(new Set());
   const impressionTracked = useRef<Set<number>>(new Set());
 
@@ -67,7 +68,44 @@ export const ImageSuggestions = memo(function ImageSuggestions({
 
   const handleCloseExpanded = useCallback(() => {
     setExpandedImage(null);
-    setExpandedAiImage(null);
+  }, []);
+
+  // Open AI image in a separate resizable window
+  const openAiImageWindow = useCallback(async (img: AiImage) => {
+    try {
+      const existing = await WebviewWindow.getByLabel('image-viewer');
+      if (existing) {
+        await existing.close();
+      }
+
+      const viewer = new WebviewWindow('image-viewer', {
+        url: 'image-viewer.html',
+        title: 'Medical Illustration',
+        width: 800,
+        height: 700,
+        minWidth: 300,
+        minHeight: 250,
+        resizable: true,
+      });
+
+      // Send image data after window loads
+      viewer.once('tauri://webview-created', async () => {
+        // Small delay to let React mount
+        setTimeout(async () => {
+          try {
+            await emitTo('image-viewer', 'image_viewer_data', { base64: img.base64 });
+          } catch (e) {
+            console.error('Failed to send image data:', e);
+          }
+        }, 300);
+      });
+
+      viewer.once('tauri://error', (e) => {
+        console.error('Failed to open image viewer:', e);
+      });
+    } catch (e) {
+      console.error('Error opening image viewer:', e);
+    }
   }, []);
 
   // AI image rendering path
@@ -127,7 +165,7 @@ export const ImageSuggestions = memo(function ImageSuggestions({
             const index = activeImages.length - 1;
             return (
               <div
-                onClick={() => setExpandedAiImage(img)}
+                onClick={() => openAiImageWindow(img)}
                 style={{
                   position: 'relative',
                   width: '200px',
@@ -192,59 +230,6 @@ export const ImageSuggestions = memo(function ImageSuggestions({
           })()}
         </div>
 
-        {/* Expanded AI image — near-fullscreen overlay */}
-        {expandedAiImage && (
-          <div
-            onClick={handleCloseExpanded}
-            style={{
-              position: 'fixed',
-              top: 0, left: 0, right: 0, bottom: 0,
-              backgroundColor: 'rgba(0,0,0,0.9)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              zIndex: 9999,
-              cursor: 'pointer',
-            }}
-          >
-            <img
-              src={`data:image/png;base64,${expandedAiImage.base64}`}
-              alt="AI-generated medical illustration"
-              onClick={e => e.stopPropagation()}
-              style={{
-                maxWidth: '95vw',
-                maxHeight: '95vh',
-                objectFit: 'contain',
-                cursor: 'default',
-              }}
-            />
-            <button
-              onClick={handleCloseExpanded}
-              style={{
-                position: 'fixed',
-                top: '12px',
-                right: '12px',
-                width: '36px',
-                height: '36px',
-                borderRadius: '50%',
-                border: 'none',
-                backgroundColor: 'rgba(255,255,255,0.2)',
-                color: '#fff',
-                fontSize: '22px',
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                transition: 'background-color 0.15s',
-              }}
-              onMouseEnter={e => { e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.4)'; }}
-              onMouseLeave={e => { e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.2)'; }}
-              title="Close"
-            >
-              ×
-            </button>
-          </div>
-        )}
       </>
     );
   }

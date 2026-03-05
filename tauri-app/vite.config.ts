@@ -27,6 +27,7 @@ export default defineConfig({
         main: resolve(__dirname, 'index.html'),
         history: resolve(__dirname, 'history.html'),
         split: resolve(__dirname, 'split.html'),
+        'image-viewer': resolve(__dirname, 'image-viewer.html'),
       },
     },
   },
