@@ -57,7 +57,7 @@ Rust Backend
 ├── presence_sensor.rs # mmWave presence sensor (SEN0395 via serial)
 ├── screenshot.rs      # Screen capture (in-memory JPEG, blank detection, permission check)
 ├── patient_name_tracker.rs # Vision-based patient name extraction + majority-vote tracker
-├── encounter_detection.rs  # Encounter detection prompts/parsing + clinical content check
+├── encounter_detection.rs  # Encounter detection prompts/parsing + clinical content check + retrospective multi-patient check
 ├── debug_storage.rs   # Debug storage (dev only)
 ├── permissions.rs     # macOS permission checks
 ├── ollama.rs          # Re-exports from llm_client.rs (backward compat)
@@ -128,7 +128,7 @@ cd src-tauri && cargo test       # Rust
 | Modify SOAP options | `useSoapNote.ts` (hook), `llm_client.rs` (prompt building), `local_archive.rs` (metadata) |
 | Modify MIIS integration | `commands/miis.rs`, `useMiisImages.ts`, `ImageSuggestions.tsx`, `usePredictiveHint.ts` |
 | Modify AI images | `gemini_client.rs`, `commands/images.rs`, `useAiImages.ts`, `usePredictiveHint.ts`, `ImageSuggestions.tsx` |
-| Modify continuous mode | `continuous_mode.rs`, `commands/continuous.rs`, `useContinuousMode.ts`, `ContinuousMode.tsx` |
+| Modify continuous mode | `continuous_mode.rs`, `encounter_detection.rs` (detection prompts + retrospective check), `commands/continuous.rs`, `useContinuousMode.ts`, `ContinuousMode.tsx` |
 | Modify presence sensor | `presence_sensor.rs`, `config.rs` (sensor fields), `commands/continuous.rs`, `SettingsDrawer.tsx`, `ContinuousMode.tsx` |
 | Modify patient biomarkers | `usePatientBiomarkers.ts`, `PatientPulse.tsx`, `PatientVoiceMonitor.tsx` |
 | Modify session cleanup (history) | `commands/archive.rs`, `HistoryWindow.tsx`, `components/cleanup/` (CleanupActionBar, DeleteConfirmDialog, EditNameDialog, MergeConfirmDialog, SplitView), `SplitWindow.tsx` (standalone split window) |
@@ -169,7 +169,7 @@ cd src-tauri && cargo test       # Rust
 | `listening_event` | Auto-detection status (includes `speaker_not_verified`) |
 | `silence_warning` | Auto-end countdown (silence_ms, remaining_ms) |
 | `session_auto_end` | Session auto-ended due to silence |
-| `continuous_mode_event` | Continuous mode status changes (started, encounter_detected, soap_generated, encounter_merged, sensor_status, shadow_decision, etc.) |
+| `continuous_mode_event` | Continuous mode status changes (started, encounter_detected, soap_generated, encounter_merged, sensor_status, shadow_decision, retrospective_split, etc.) |
 | `continuous_transcript_preview` | Live transcript preview in continuous mode (separate from `transcript_update`) |
 | `deep-link` | OAuth callback URL received via single-instance plugin |
 
@@ -205,7 +205,7 @@ Idle → Preparing → Recording → Stopping → Completed
 | Settings validation after update | `clamp_values()` called after `update_from_settings()` in config.rs — safety net for user-edited JSON |
 | Encounter notes: clone before clear | In continuous mode detector, clone accumulated notes before clearing buffer to avoid data loss |
 | Audio quality shared util | `getAudioQualityLevel()` in utils.ts — shared across RecordingMode, ReviewMode, ContinuousMode |
-| Force-split constants | Named constants in encounter_detection.rs: `FORCE_CHECK_WORD_THRESHOLD` (3K), `FORCE_SPLIT_WORD_THRESHOLD` (5K), `FORCE_SPLIT_CONSECUTIVE_LIMIT` (3), `ABSOLUTE_WORD_CAP` (10K). Both FORCE_CHECK and FORCE_SPLIT use `cleaned_word_count` (hallucination-stripped) to avoid STT phrase loops inflating past thresholds |
+| Force-split constants | Named constants in encounter_detection.rs: `FORCE_CHECK_WORD_THRESHOLD` (3K), `FORCE_SPLIT_WORD_THRESHOLD` (5K), `FORCE_SPLIT_CONSECUTIVE_LIMIT` (3), `ABSOLUTE_WORD_CAP` (10K). Both FORCE_CHECK and FORCE_SPLIT use `cleaned_word_count` (hallucination-stripped) to avoid STT phrase loops inflating past thresholds. Retrospective: `MULTI_PATIENT_CHECK_WORD_THRESHOLD` (2500), `MULTI_PATIENT_SPLIT_MIN_WORDS` (500) |
 | Presence sensor auto-detect | `auto_detect_port()` in presence_sensor.rs scans USB-serial devices when configured port fails |
 | Screen recording permission | Use `CGPreflightScreenCaptureAccess()` (not 1x1 pixel capture) — old check always passed even without permission. `is_blank_capture()` heuristic detects blanked-out window content |
 | SOAP JSON repair | Pipeline: `fix_json_newlines` → `remove_leading_commas` → `remove_trailing_commas` → `fix_truncated_json` (closes unclosed strings + missing brackets) → filter empty strings. Raw-JSON fallback returns structured placeholder instead of broken JSON |
@@ -215,6 +215,7 @@ Idle → Preparing → Recording → Stopping → Completed
 | SOAP retry | `parse_soap_with_retry()` in llm_client.rs: if SOAP parse returns malformed placeholder (`MALFORMED_SOAP_SENTINEL`), retries the LLM call once before giving up |
 | Orphaned SOAP recovery | On continuous mode stop, scans today's sessions for `has_soap_note == false` and regenerates SOAP. Skips non-clinical encounters. Uses existing flush LLM client |
 | Sensor prompt design | sensor_departed: V2_soft framing lists common false departures, directs LLM to evaluate transcript content. sensor_present: conservative "NOT transitions" framing, proven in production |
+| Retrospective multi-patient check | After merge-back, if merged transcript >= 2500 words: (1) `MULTI_PATIENT_CHECK_PROMPT` detects multiple patients (distinguishes companions from separate visits), (2) `MULTI_PATIENT_SPLIT_PROMPT` finds boundary via name transitions, (3) size gate requires both halves >= 500 words. Auto-splits and regenerates SOAP for both halves. Constants in `encounter_detection.rs`, logic in `continuous_mode.rs` |
 
 ## Features
 
@@ -231,7 +232,7 @@ Idle → Preparing → Recording → Stopping → Completed
 | **MCP Server** | Port 7101, JSON-RPC 2.0. Tools: `agent_identity`, `health_check`, `get_status`, `get_logs` | `mcp/` |
 | **MIIS Images** | LLM extracts concepts every 30s → MIIS returns ranked images. Backend proxies through Rust (CORS). Server needs embedder enabled | `commands/miis.rs`, ADR 0018 |
 | **AI Images** | Gemini API generates medical illustrations from LLM-produced image prompts (piggybacks on predictive hint). **Default image source.** Cost guardrails: 45s cooldown, 8/session cap, 1 visible (latest only), prompt dedup. Config: `image_source=ai` (default), `gemini_api_key`. Requires Gemini API key to function | `gemini_client.rs`, `commands/images.rs`, `useAiImages.ts` |
-| **Continuous Mode** | All-day recording, LLM or sensor-based encounter detection, auto-SOAP per encounter. Vision-based patient name extraction via `vision-model` alias + `PatientNameTracker` majority-vote | `continuous_mode.rs`, ADR 0019 |
+| **Continuous Mode** | All-day recording, LLM or sensor-based encounter detection, auto-SOAP per encounter. Vision-based patient name extraction via `vision-model` alias + `PatientNameTracker` majority-vote. Retrospective multi-patient check auto-splits incorrectly merged encounters (couples, family visits) | `continuous_mode.rs`, `encounter_detection.rs`, ADR 0019 |
 | **Presence Sensor** | DFRobot SEN0395 24GHz mmWave via USB-UART. Debounced presence state → absence threshold → encounter split. CSV logging, auto-detect port, graceful fallback to LLM on failure | `presence_sensor.rs` |
 | **Hybrid Detection** | Sensor early-warning + LLM confirmation. Sensor Present→Absent accelerates LLM check (~30s vs ~8 min). Sensor timeout force-splits after `hybrid_confirm_window_secs` (default 180s). Sensor-departed prompt (V2_soft) lists common false departures. Graceful LLM-only fallback when sensor unavailable. Handles back-to-back encounters via regular LLM timer. Config: `encounter_detection_mode="hybrid"` | `continuous_mode.rs`, `config.rs` |
 | **Shadow Mode** | Dual detection comparison — runs sensor and LLM concurrently, logs decisions to CSV for accuracy analysis. Config: `encounter_detection_mode="shadow"`, `shadow_active_method` | `shadow_log.rs`, `continuous_mode.rs` |

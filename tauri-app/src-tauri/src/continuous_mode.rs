@@ -32,6 +32,9 @@ pub use crate::encounter_detection::{
     ClinicalContentCheckResult, build_clinical_content_check_prompt, parse_clinical_content_check,
     FORCE_CHECK_WORD_THRESHOLD, FORCE_SPLIT_WORD_THRESHOLD, FORCE_SPLIT_CONSECUTIVE_LIMIT, ABSOLUTE_WORD_CAP,
     MIN_WORDS_FOR_CLINICAL_CHECK, SCREENSHOT_STALE_GRACE_SECS,
+    MULTI_PATIENT_CHECK_WORD_THRESHOLD, MULTI_PATIENT_SPLIT_MIN_WORDS,
+    MULTI_PATIENT_CHECK_PROMPT, MULTI_PATIENT_SPLIT_PROMPT,
+    parse_multi_patient_check,
 };
 pub use crate::encounter_merge::{MergeCheckResult, build_encounter_merge_prompt, parse_merge_check};
 pub use crate::patient_name_tracker::PatientNameTracker;
@@ -378,6 +381,7 @@ pub async fn run_continuous_mode(
                             segment.text.clone(),
                             segment.end_ms,
                             segment.speaker_id.clone(),
+                            segment.speaker_confidence,
                             pipeline_generation,
                         );
                     } else {
@@ -1479,8 +1483,12 @@ pub async fn run_continuous_mode(
                             let text: String = drained
                                 .iter()
                                 .map(|s| {
-                                    if let Some(ref spk) = s.speaker_id {
-                                        format!("{}: {}", spk, s.text)
+                                    if s.speaker_id.is_some() {
+                                        let label = crate::transcript_buffer::format_speaker_label(
+                                            s.speaker_id.as_deref(),
+                                            s.speaker_confidence,
+                                        );
+                                        format!("{}: {}", label, s.text)
                                     } else {
                                         s.text.clone()
                                     }
@@ -2013,6 +2021,11 @@ pub async fn run_continuous_mode(
                                                             .map(|s| (Utc::now() - s).num_milliseconds().max(0) as u64)
                                                             .unwrap_or(0);
 
+                                                        // Get patient name from current vision tracker for merged encounter
+                                                        let merge_vision_name = name_tracker_for_detector
+                                                            .lock()
+                                                            .ok()
+                                                            .and_then(|t| t.majority_name());
                                                         if let Err(e) = local_archive::merge_encounters(
                                                             prev_id,
                                                             &session_id,
@@ -2020,6 +2033,7 @@ pub async fn run_continuous_mode(
                                                             &merged_text,
                                                             merged_wc,
                                                             merged_duration,
+                                                            merge_vision_name.as_deref(),
                                                         ) {
                                                             warn!("Failed to merge encounters: {}", e);
                                                         } else {
@@ -2135,6 +2149,195 @@ pub async fn run_continuous_mode(
                                                             // Escalate confidence threshold for next detection
                                                             merge_back_count += 1;
                                                             info!("Merge-back #{}: next confidence threshold escalated by +{:.2}", merge_back_count, merge_back_count as f64 * 0.05);
+
+                                                            // ── Retrospective multi-patient check ──
+                                                            // After merge-back produces a large transcript, check if it
+                                                            // contains multiple distinct patients. If so, auto-split.
+                                                            if merged_wc >= MULTI_PATIENT_CHECK_WORD_THRESHOLD {
+                                                                if let Some(ref client) = llm_client {
+                                                                    let date_str = prev_date.format("%Y-%m-%d").to_string();
+                                                                    info!(
+                                                                        "Retrospective multi-patient check on {} ({} words)",
+                                                                        prev_id, merged_wc
+                                                                    );
+
+                                                                    // Step 1: multi-patient gate
+                                                                    let mp_user = format!("Review this transcript:\n\n{}", merged_text);
+                                                                    let mp_future = client.generate(
+                                                                        &fast_model, MULTI_PATIENT_CHECK_PROMPT, &mp_user, "multi_patient_check",
+                                                                    );
+                                                                    let mp_result = tokio::time::timeout(
+                                                                        tokio::time::Duration::from_secs(30), mp_future,
+                                                                    ).await;
+
+                                                                    let has_multiple = match mp_result {
+                                                                        Ok(Ok(resp)) => {
+                                                                            match parse_multi_patient_check(&resp) {
+                                                                                Ok(r) => {
+                                                                                    info!("Multi-patient check: multiple={}, conf={:?}, reason={:?}",
+                                                                                        r.multiple_patients, r.confidence, r.reason);
+                                                                                    r.multiple_patients
+                                                                                }
+                                                                                Err(e) => { warn!("Failed to parse multi-patient check: {}", e); false }
+                                                                            }
+                                                                        }
+                                                                        Ok(Err(e)) => { warn!("Multi-patient check LLM error: {}", e); false }
+                                                                        Err(_) => { warn!("Multi-patient check timed out"); false }
+                                                                    };
+
+                                                                    // Step 2: find split boundary
+                                                                    if has_multiple {
+                                                                        match local_archive::get_transcript_lines(prev_id, &date_str) {
+                                                                            Ok(lines) if lines.len() >= 2 => {
+                                                                                let numbered: String = lines.iter().enumerate()
+                                                                                    .map(|(i, l)| format!("{}: {}", i + 1, l))
+                                                                                    .collect::<Vec<_>>()
+                                                                                    .join("\n");
+                                                                                let split_user = format!(
+                                                                                    "Here is the transcript with numbered lines:\n\n{}", numbered
+                                                                                );
+                                                                                let split_future = client.generate(
+                                                                                    &fast_model, MULTI_PATIENT_SPLIT_PROMPT, &split_user, "multi_patient_split",
+                                                                                );
+                                                                                let split_result = tokio::time::timeout(
+                                                                                    tokio::time::Duration::from_secs(30), split_future,
+                                                                                ).await;
+
+                                                                                if let Ok(Ok(split_resp)) = split_result {
+                                                                                    // Parse using the same structure as SuggestedSplit
+                                                                                    #[derive(serde::Deserialize)]
+                                                                                    struct SplitSuggestion { line_index: Option<usize>, confidence: Option<f64>, reason: Option<String> }
+                                                                                    let cleaned = crate::encounter_detection::strip_think_tags(&split_resp);
+                                                                                    if let Some(json_str) = crate::encounter_detection::extract_first_json_object(&cleaned) {
+                                                                                        if let Ok(suggestion) = serde_json::from_str::<SplitSuggestion>(&json_str) {
+                                                                                            if let Some(split_line) = suggestion.line_index {
+                                                                                                if split_line > 0 && split_line < lines.len() {
+                                                                                                    // Step 3: size gate
+                                                                                                    let first_words: usize = lines[..split_line].iter()
+                                                                                                        .map(|l| l.split_whitespace().count()).sum();
+                                                                                                    let second_words: usize = lines[split_line..].iter()
+                                                                                                        .map(|l| l.split_whitespace().count()).sum();
+
+                                                                                                    info!(
+                                                                                                        "Multi-patient split suggestion: line {}/{} ({}w / {}w), conf={:?}, reason={:?}",
+                                                                                                        split_line, lines.len(), first_words, second_words,
+                                                                                                        suggestion.confidence, suggestion.reason
+                                                                                                    );
+
+                                                                                                    if first_words >= MULTI_PATIENT_SPLIT_MIN_WORDS
+                                                                                                        && second_words >= MULTI_PATIENT_SPLIT_MIN_WORDS
+                                                                                                    {
+                                                                                                        info!(
+                                                                                                            "Size gate passed — auto-splitting {} at line {}",
+                                                                                                            prev_id, split_line
+                                                                                                        );
+                                                                                                        match local_archive::split_session(prev_id, &date_str, split_line) {
+                                                                                                            Ok(new_session_id) => {
+                                                                                                                info!(
+                                                                                                                    "Retrospective split created new session {} from {}",
+                                                                                                                    new_session_id, prev_id
+                                                                                                                );
+                                                                                                                encounter_number += 1;
+
+                                                                                                                // Regenerate SOAP for both halves
+                                                                                                                for (regen_id, regen_words) in [
+                                                                                                                    (prev_id.to_string(), first_words),
+                                                                                                                    (new_session_id.clone(), second_words),
+                                                                                                                ] {
+                                                                                                                    if regen_words < MIN_WORDS_FOR_CLINICAL_CHECK {
+                                                                                                                        continue;
+                                                                                                                    }
+                                                                                                                    if let Ok(details) = local_archive::get_session(&regen_id, &date_str) {
+                                                                                                                        if let Some(ref transcript) = details.transcript {
+                                                                                                                            let (filtered, _) = strip_hallucinations(transcript, 5);
+                                                                                                                            let regen_notes = encounter_notes_for_detector
+                                                                                                                                .lock()
+                                                                                                                                .map(|n| n.clone())
+                                                                                                                                .unwrap_or_default();
+                                                                                                                            let regen_opts = crate::llm_client::SoapOptions {
+                                                                                                                                detail_level: soap_detail_level,
+                                                                                                                                format: crate::llm_client::SoapFormat::from_config_str(&soap_format),
+                                                                                                                                session_notes: regen_notes,
+                                                                                                                                ..Default::default()
+                                                                                                                            };
+                                                                                                                            let regen_future = client.generate_multi_patient_soap_note(
+                                                                                                                                &soap_model, &filtered, None, Some(&regen_opts), None,
+                                                                                                                            );
+                                                                                                                            match tokio::time::timeout(
+                                                                                                                                tokio::time::Duration::from_secs(120), regen_future,
+                                                                                                                            ).await {
+                                                                                                                                Ok(Ok(soap_result)) => {
+                                                                                                                                    let soap_content = soap_result.notes.iter()
+                                                                                                                                        .map(|n| n.content.clone())
+                                                                                                                                        .collect::<Vec<_>>()
+                                                                                                                                        .join("\n\n---\n\n");
+                                                                                                                                    let _ = local_archive::add_soap_note(
+                                                                                                                                        &regen_id, prev_date,
+                                                                                                                                        &soap_content,
+                                                                                                                                        Some(soap_detail_level),
+                                                                                                                                        Some(&soap_format),
+                                                                                                                                    );
+                                                                                                                                    info!(
+                                                                                                                                        "Regenerated SOAP for retrospective split session {} ({} chars)",
+                                                                                                                                        regen_id, soap_content.len()
+                                                                                                                                    );
+                                                                                                                                }
+                                                                                                                                Ok(Err(e)) => warn!("SOAP regen failed for {}: {}", regen_id, e),
+                                                                                                                                Err(_) => warn!("SOAP regen timed out for {}", regen_id),
+                                                                                                                            }
+                                                                                                                        }
+                                                                                                                    }
+                                                                                                                }
+
+                                                                                                                // Update prev tracking to the first half
+                                                                                                                let first_text = lines[..split_line].join("\n");
+                                                                                                                prev_encounter_text = Some(first_text);
+                                                                                                                prev_encounter_is_clinical = is_clinical || prev_encounter_is_clinical;
+
+                                                                                                                if let Ok(mut logger) = logger_for_detector.lock() {
+                                                                                                                    logger.log_event("retrospective_split", serde_json::json!({
+                                                                                                                        "original_session": prev_id,
+                                                                                                                        "new_session": new_session_id,
+                                                                                                                        "split_line": split_line,
+                                                                                                                        "first_words": first_words,
+                                                                                                                        "second_words": second_words,
+                                                                                                                        "reason": suggestion.reason,
+                                                                                                                    }));
+                                                                                                                }
+
+                                                                                                                let _ = app_for_detector.emit("continuous_mode_event", serde_json::json!({
+                                                                                                                    "type": "retrospective_split",
+                                                                                                                    "original_session_id": prev_id,
+                                                                                                                    "new_session_id": new_session_id,
+                                                                                                                    "split_line": split_line,
+                                                                                                                }));
+
+                                                                                                                continue; // Skip normal prev update
+                                                                                                            }
+                                                                                                            Err(e) => warn!("Retrospective split failed: {}", e),
+                                                                                                        }
+                                                                                                    } else {
+                                                                                                        info!(
+                                                                                                            "Size gate blocked: {}w / {}w (min {}w per half)",
+                                                                                                            first_words, second_words, MULTI_PATIENT_SPLIT_MIN_WORDS
+                                                                                                        );
+                                                                                                    }
+                                                                                                }
+                                                                                            }
+                                                                                        }
+                                                                                    }
+                                                                                } else if let Ok(Err(e)) = split_result {
+                                                                                    warn!("Multi-patient split LLM error: {}", e);
+                                                                                } else {
+                                                                                    warn!("Multi-patient split timed out");
+                                                                                }
+                                                                            }
+                                                                            Ok(_) => {} // empty or single-line transcript
+                                                                            Err(e) => warn!("Failed to load transcript lines for multi-patient check: {}", e),
+                                                                        }
+                                                                    }
+                                                                }
+                                                            }
 
                                                             // Update prev tracking to the merged encounter
                                                             prev_encounter_text = Some(merged_text);
@@ -2778,6 +2981,7 @@ pub async fn run_continuous_mode(
                                                                 &merged_text,
                                                                 merged_wc,
                                                                 0, // Unknown duration for flush
+                                                                None, // No vision tracker at flush time
                                                             ) {
                                                                 warn!("Failed to merge flushed encounter: {}", e);
                                                             } else {

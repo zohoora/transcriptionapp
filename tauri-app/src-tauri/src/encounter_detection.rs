@@ -19,6 +19,10 @@ pub const MIN_WORDS_FOR_CLINICAL_CHECK: usize = 100;
 /// Grace period (seconds) after encounter split during which screenshot votes matching the
 /// previous encounter's patient name are suppressed (stale screenshot detection).
 pub const SCREENSHOT_STALE_GRACE_SECS: i64 = 90;
+/// Minimum merged word count to trigger retrospective multi-patient check after merge-back.
+pub const MULTI_PATIENT_CHECK_WORD_THRESHOLD: usize = 2500;
+/// Minimum words per half for a retrospective split to be accepted (size gate).
+pub const MULTI_PATIENT_SPLIT_MIN_WORDS: usize = 500;
 
 /// Optional context signals for encounter detection.
 /// Provides real-time signals from sensor (departure/presence) to augment
@@ -285,6 +289,67 @@ pub fn parse_clinical_content_check(response: &str) -> Result<ClinicalContentChe
     parse_llm_json_response(response, "{\"clinical\"", "clinical content check")
 }
 
+// ============================================================================
+// Retrospective Multi-Patient Check (post-merge)
+// ============================================================================
+
+/// Result of multi-patient check
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MultiPatientCheckResult {
+    pub multiple_patients: bool,
+    #[serde(default)]
+    pub confidence: Option<f64>,
+    #[serde(default)]
+    pub reason: Option<String>,
+}
+
+/// System prompt for multi-patient detection (gate check after merge-back).
+pub const MULTI_PATIENT_CHECK_PROMPT: &str = r#"You MUST respond in English with ONLY a JSON object. No other text.
+
+You are reviewing a clinical transcript to determine if the DOCTOR conducted separate clinical visits with DIFFERENT patients in this recording.
+
+IMPORTANT DISTINCTION:
+- A companion/partner/family member who ACCOMPANIES a patient and provides context about that patient's health is NOT a separate patient visit, even if they speak extensively. They are part of the same visit.
+- A separate patient visit means the doctor conducts a distinct clinical assessment: separate history-taking, separate physical findings, separate treatment plan for a DIFFERENT individual.
+
+Multiple patients = the doctor addresses different individuals as patients at different points, with separate clinical assessments (e.g., "Lynn, your blood work shows..." then later "Jim, your thyroid levels...").
+
+Single patient = one person receives clinical assessment, even if others speak, provide history, ask questions, or discuss their own concerns in passing.
+
+Return: {"multiple_patients": true/false, "confidence": <0.0-1.0>, "reason": "<brief explanation>"}
+Respond with ONLY the JSON."#;
+
+/// Parse the multi-patient check response from the LLM
+pub fn parse_multi_patient_check(response: &str) -> Result<MultiPatientCheckResult, String> {
+    parse_llm_json_response(response, "{\"multiple_patients\"", "multi-patient check")
+}
+
+/// System prompt for enhanced split-point detection (used after multi-patient check confirms
+/// multiple patients). Unlike the standard split prompt which looks for farewell markers,
+/// this prompt focuses on NAME TRANSITIONS — critical for family visits where the doctor
+/// switches patients without a formal goodbye.
+pub const MULTI_PATIENT_SPLIT_PROMPT: &str = r#"You MUST respond in English with ONLY a JSON object. No other text.
+
+You are analyzing a clinical transcript that was recorded continuously in a medical office.
+This transcript has been confirmed to contain MULTIPLE DISTINCT patient encounters.
+
+Your task: find the line where the FIRST patient's encounter ends and the SECOND patient's encounter begins.
+
+Look for:
+- A different patient name being introduced or addressed
+- The doctor beginning a new clinical assessment for a different person
+- Someone saying "next patient" or introducing another person by name
+- A shift from one person's medical issues to another person's medical issues
+
+IMPORTANT: In family visits, the transition may be subtle — no formal farewell, just a name switch ("Mercedes is next", "how about Jim's labs"). Focus on WHICH PATIENT is being clinically assessed, not conversational flow.
+
+Return the LINE NUMBER of the LAST line of the FIRST patient's encounter.
+
+Return a JSON object (or empty object {} if no clear boundary):
+{"line_index": <line number>, "confidence": <0.0-1.0>, "reason": "<brief explanation>"}
+
+Respond with ONLY the JSON."#;
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -512,5 +577,38 @@ mod tests {
         assert!(system.contains("clinical patient encounter"));
         assert!(user.contains("headache"));
         assert!(!user.contains("words omitted"));
+    }
+
+    // ── Multi-patient check tests ─────────────────────────────
+
+    #[test]
+    fn test_parse_multi_patient_check_true() {
+        let response = r#"{"multiple_patients": true, "confidence": 0.95, "reason": "Two separate assessments"}"#;
+        let result = parse_multi_patient_check(response).unwrap();
+        assert!(result.multiple_patients);
+        assert!((result.confidence.unwrap() - 0.95).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_parse_multi_patient_check_false() {
+        let response = r#"{"multiple_patients": false, "confidence": 0.9, "reason": "Single patient"}"#;
+        let result = parse_multi_patient_check(response).unwrap();
+        assert!(!result.multiple_patients);
+    }
+
+    #[test]
+    fn test_parse_multi_patient_check_with_think_tags() {
+        let response = r#"<think>reviewing</think>{"multiple_patients": true, "confidence": 0.8, "reason": "Lynn and Jim"}"#;
+        let result = parse_multi_patient_check(response).unwrap();
+        assert!(result.multiple_patients);
+    }
+
+    #[test]
+    fn test_multi_patient_constants() {
+        assert!(
+            MULTI_PATIENT_SPLIT_MIN_WORDS < MULTI_PATIENT_CHECK_WORD_THRESHOLD,
+            "Min split words ({}) must be less than check threshold ({})",
+            MULTI_PATIENT_SPLIT_MIN_WORDS, MULTI_PATIENT_CHECK_WORD_THRESHOLD
+        );
     }
 }

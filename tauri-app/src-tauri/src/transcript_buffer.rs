@@ -19,6 +19,8 @@ pub struct BufferedSegment {
     pub text: String,
     /// Speaker ID from diarization
     pub speaker_id: Option<String>,
+    /// Speaker confidence from diarization (0.0-1.0 cosine similarity)
+    pub speaker_confidence: Option<f32>,
     /// Pipeline generation that produced this segment (prevents stale data across restarts)
     pub generation: u64,
 }
@@ -27,6 +29,16 @@ pub struct BufferedSegment {
 /// ~5000 segments = 8 hours at ~10 segments/minute. Prevents unbounded growth
 /// if encounter detection fails or is misconfigured.
 pub const MAX_BUFFER_SEGMENTS: usize = 5000;
+
+/// Format a speaker label with optional confidence percentage.
+/// e.g. "Speaker 1 (87%)" or just "Speaker 1" if no confidence, or "Unknown" if no speaker.
+pub fn format_speaker_label(speaker_id: Option<&str>, confidence: Option<f32>) -> String {
+    match (speaker_id, confidence) {
+        (Some(spk), Some(conf)) => format!("{} ({:.0}%)", spk, conf * 100.0),
+        (Some(spk), None) => spk.to_string(),
+        _ => "Unknown".to_string(),
+    }
+}
 
 /// Thread-safe transcript buffer for continuous mode.
 /// Accumulates segments and allows the encounter detector to drain completed encounters.
@@ -54,7 +66,7 @@ impl TranscriptBuffer {
 
     /// Add a new segment to the buffer, tagged with the given generation.
     /// Segments from stale generations are silently dropped.
-    pub fn push(&mut self, text: String, timestamp_ms: u64, speaker_id: Option<String>, generation: u64) {
+    pub fn push(&mut self, text: String, timestamp_ms: u64, speaker_id: Option<String>, speaker_confidence: Option<f32>, generation: u64) {
         if generation < self.current_generation {
             return; // Stale segment from a previous pipeline instance
         }
@@ -64,6 +76,7 @@ impl TranscriptBuffer {
             started_at: Utc::now(),
             text,
             speaker_id,
+            speaker_confidence,
             generation,
         };
         self.next_index += 1;
@@ -109,13 +122,14 @@ impl TranscriptBuffer {
             .join(" ")
     }
 
-    /// Get full text with speaker labels for display (e.g. "Speaker 1: text\n")
+    /// Get full text with speaker labels and confidence for display
     pub fn full_text_with_speakers(&self) -> String {
         self.segments
             .iter()
             .map(|s| {
-                if let Some(ref spk) = s.speaker_id {
-                    format!("{}: {}", spk, s.text)
+                if s.speaker_id.is_some() {
+                    let label = format_speaker_label(s.speaker_id.as_deref(), s.speaker_confidence);
+                    format!("{}: {}", label, s.text)
                 } else {
                     s.text.clone()
                 }
@@ -124,16 +138,13 @@ impl TranscriptBuffer {
             .join("\n")
     }
 
-    /// Format segments for the encounter detector prompt (numbered)
+    /// Format segments for the encounter detector prompt (numbered, with speaker confidence)
     pub fn format_for_detection(&self) -> String {
         self.segments
             .iter()
             .map(|s| {
-                let speaker = s
-                    .speaker_id
-                    .as_deref()
-                    .unwrap_or("Unknown");
-                format!("[{}] ({}): {}", s.index, speaker, s.text)
+                let speaker_label = format_speaker_label(s.speaker_id.as_deref(), s.speaker_confidence);
+                format!("[{}] ({}): {}", s.index, speaker_label, s.text)
             })
             .collect::<Vec<_>>()
             .join("\n")
@@ -174,8 +185,8 @@ mod tests {
     #[test]
     fn test_transcript_buffer_push_and_read() {
         let mut buffer = TranscriptBuffer::new();
-        buffer.push("Hello doctor".to_string(), 1000, Some("Speaker 1".to_string()), 0);
-        buffer.push("How are you?".to_string(), 2000, Some("Speaker 2".to_string()), 0);
+        buffer.push("Hello doctor".to_string(), 1000, Some("Speaker 1".to_string()), Some(0.87), 0);
+        buffer.push("How are you?".to_string(), 2000, Some("Speaker 2".to_string()), Some(0.65), 0);
 
         assert_eq!(buffer.word_count(), 5);
         assert_eq!(buffer.first_index(), Some(0));
@@ -186,8 +197,8 @@ mod tests {
     #[test]
     fn test_transcript_buffer_full_text() {
         let mut buffer = TranscriptBuffer::new();
-        buffer.push("Hello".to_string(), 1000, None, 0);
-        buffer.push("World".to_string(), 2000, None, 0);
+        buffer.push("Hello".to_string(), 1000, None, None, 0);
+        buffer.push("World".to_string(), 2000, None, None, 0);
 
         assert_eq!(buffer.full_text(), "Hello World");
     }
@@ -195,9 +206,9 @@ mod tests {
     #[test]
     fn test_transcript_buffer_drain_through() {
         let mut buffer = TranscriptBuffer::new();
-        buffer.push("A".to_string(), 1000, None, 0);
-        buffer.push("B".to_string(), 2000, None, 0);
-        buffer.push("C".to_string(), 3000, None, 0);
+        buffer.push("A".to_string(), 1000, None, None, 0);
+        buffer.push("B".to_string(), 2000, None, None, 0);
+        buffer.push("C".to_string(), 3000, None, None, 0);
 
         let drained = buffer.drain_through(1);
         assert_eq!(drained.len(), 2);
@@ -212,9 +223,9 @@ mod tests {
     #[test]
     fn test_transcript_buffer_get_text_since() {
         let mut buffer = TranscriptBuffer::new();
-        buffer.push("First".to_string(), 1000, None, 0);
-        buffer.push("Second".to_string(), 2000, None, 0);
-        buffer.push("Third".to_string(), 3000, None, 0);
+        buffer.push("First".to_string(), 1000, None, None, 0);
+        buffer.push("Second".to_string(), 2000, None, None, 0);
+        buffer.push("Third".to_string(), 3000, None, None, 0);
 
         let text = buffer.get_text_since(0);
         assert_eq!(text, "Second Third");
@@ -223,31 +234,40 @@ mod tests {
     #[test]
     fn test_transcript_buffer_format_for_detection() {
         let mut buffer = TranscriptBuffer::new();
-        buffer.push("Hello".to_string(), 1000, Some("Dr. Smith".to_string()), 0);
-        buffer.push("Hi there".to_string(), 2000, None, 0);
+        buffer.push("Hello".to_string(), 1000, Some("Dr. Smith".to_string()), Some(0.92), 0);
+        buffer.push("Hi there".to_string(), 2000, None, None, 0);
 
         let formatted = buffer.format_for_detection();
-        assert!(formatted.contains("[0] (Dr. Smith): Hello"));
+        assert!(formatted.contains("[0] (Dr. Smith (92%)): Hello"));
         assert!(formatted.contains("[1] (Unknown): Hi there"));
+    }
+
+    #[test]
+    fn test_transcript_buffer_format_for_detection_no_confidence() {
+        let mut buffer = TranscriptBuffer::new();
+        buffer.push("Hello".to_string(), 1000, Some("Speaker 1".to_string()), None, 0);
+
+        let formatted = buffer.format_for_detection();
+        assert!(formatted.contains("[0] (Speaker 1): Hello"));
     }
 
     #[test]
     fn test_transcript_buffer_full_text_with_speakers() {
         let mut buffer = TranscriptBuffer::new();
-        buffer.push("Hello doctor".to_string(), 1000, Some("Speaker 1".to_string()), 0);
-        buffer.push("How are you?".to_string(), 2000, Some("Speaker 2".to_string()), 0);
-        buffer.push("ambient noise".to_string(), 3000, None, 0);
+        buffer.push("Hello doctor".to_string(), 1000, Some("Speaker 1".to_string()), Some(0.87), 0);
+        buffer.push("How are you?".to_string(), 2000, Some("Speaker 2".to_string()), None, 0);
+        buffer.push("ambient noise".to_string(), 3000, None, None, 0);
 
         let text = buffer.full_text_with_speakers();
-        assert_eq!(text, "Speaker 1: Hello doctor\nSpeaker 2: How are you?\nambient noise");
+        assert_eq!(text, "Speaker 1 (87%): Hello doctor\nSpeaker 2: How are you?\nambient noise");
     }
 
     #[test]
     fn test_transcript_buffer_stale_generation_rejected() {
         let mut buffer = TranscriptBuffer::new();
         buffer.set_generation(2);
-        buffer.push("old".to_string(), 1000, None, 1); // stale
-        buffer.push("current".to_string(), 2000, None, 2); // current
+        buffer.push("old".to_string(), 1000, None, None, 1); // stale
+        buffer.push("current".to_string(), 2000, None, None, 2); // current
         assert_eq!(buffer.word_count(), 1);
         assert_eq!(buffer.full_text(), "current");
     }

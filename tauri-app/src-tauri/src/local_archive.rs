@@ -268,8 +268,24 @@ pub fn add_soap_note(
             .map_err(|e| format!("Failed to create session directory: {}", e))?;
     }
 
-    // Save SOAP note
+    // Don't overwrite a good SOAP note with a malformed placeholder
     let soap_path = session_dir.join("soap_note.txt");
+    if soap_content.contains("SOAP generation produced malformed output") {
+        if soap_path.exists() {
+            if let Ok(existing) = fs::read_to_string(&soap_path) {
+                if !existing.contains("SOAP generation produced malformed output") {
+                    warn!(
+                        session_id = %session_id,
+                        "Refusing to overwrite good SOAP ({} chars) with malformed placeholder",
+                        existing.len()
+                    );
+                    return Ok(());
+                }
+            }
+        }
+    }
+
+    // Save SOAP note
     let mut file = File::create(&soap_path)
         .map_err(|e| format!("Failed to create SOAP note file: {}", e))?;
     file.write_all(soap_content.as_bytes())
@@ -510,6 +526,7 @@ pub fn merge_encounters(
     merged_transcript: &str,
     merged_word_count: usize,
     merged_duration_ms: u64,
+    patient_name: Option<&str>,
 ) -> Result<(), String> {
     validate_session_id(session_a_id)?;
     validate_session_id(session_b_id)?;
@@ -539,6 +556,14 @@ pub fn merge_encounters(
         metadata.word_count = merged_word_count;
         metadata.duration_ms = Some(merged_duration_ms);
         metadata.has_soap_note = false; // SOAP is stale after merge
+
+        // Update patient name from merged encounter's vision tracker if keeper has no name
+        // or if the merged encounter has a name (more recent, likely more accurate)
+        if let Some(name) = patient_name {
+            if !name.is_empty() {
+                metadata.patient_name = Some(name.to_string());
+            }
+        }
 
         let json = serde_json::to_string_pretty(&metadata)
             .map_err(|e| format!("Failed to serialize metadata: {}", e))?;
@@ -1053,6 +1078,7 @@ mod tests {
             "merged text",
             10,
             5000,
+            None,
         );
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("does not exist"));
@@ -1130,11 +1156,11 @@ mod tests {
     fn test_merge_encounters_rejects_traversal() {
         let now = Utc::now();
         // Session A has traversal
-        let result = merge_encounters("../escape", "valid-id", &now, "text", 10, 5000);
+        let result = merge_encounters("../escape", "valid-id", &now, "text", 10, 5000, None);
         assert!(result.is_err());
 
         // Session B has traversal
-        let result = merge_encounters("valid-id", "foo/bar", &now, "text", 10, 5000);
+        let result = merge_encounters("valid-id", "foo/bar", &now, "text", 10, 5000, None);
         assert!(result.is_err());
     }
 
