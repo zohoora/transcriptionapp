@@ -2749,10 +2749,14 @@ pub async fn run_continuous_mode(
                                         }),
                                     );
                                 }
-                                let now = Utc::now();
+                                // Use session's original date, not Utc::now() — if SOAP generation
+                                // crosses midnight, Utc::now() would save to the wrong date directory
+                                let soap_date = chrono::DateTime::parse_from_rfc3339(&summary.date)
+                                    .map(|dt| dt.with_timezone(&Utc))
+                                    .unwrap_or_else(|_| Utc::now());
                                 if let Err(e) = local_archive::add_soap_note(
                                     &summary.session_id,
-                                    &now,
+                                    &soap_date,
                                     soap_content,
                                     Some(flush_soap_detail_level),
                                     Some(&flush_soap_format),

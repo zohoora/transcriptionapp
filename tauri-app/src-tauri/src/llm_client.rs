@@ -623,11 +623,15 @@ impl LLMClient {
             content: ChatMessageContent::Text(user_content.to_string()),
         });
 
+        // SOAP generation needs explicit max_tokens to avoid output truncation
+        // on large transcripts (router/model defaults may be too low)
+        let max_tokens = if task == tasks::SOAP_NOTE { Some(4096) } else { None };
+
         let request = ChatCompletionRequest {
             model: model.to_string(),
             messages,
             stream: false,
-            max_tokens: None,
+            max_tokens,
             temperature: None,
             repetition_penalty: None,
             repetition_context_size: None,
