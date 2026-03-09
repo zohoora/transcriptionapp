@@ -376,6 +376,7 @@ pub async fn run_continuous_mode(
                     if let Ok(mut buffer) = buffer_for_consumer.lock() {
                         buffer.push(
                             segment.text.clone(),
+                            segment.start_ms,
                             segment.end_ms,
                             segment.speaker_id.clone(),
                             segment.speaker_confidence,

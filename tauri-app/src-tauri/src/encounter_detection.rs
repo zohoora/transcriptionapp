@@ -61,25 +61,9 @@ You are analyzing a continuous transcript from a medical office where the microp
 
 Your task: determine if there is a TRANSITION POINT where one patient encounter ends and another begins, or where a patient encounter has clearly concluded.
 
-Signs of a transition or completed encounter:
-- Farewell, wrap-up, or discharge instructions ("we'll see you in X weeks", "take care")
-- A greeting or introduction of a DIFFERENT patient after clinical discussion
-- A clear shift from one patient's clinical topics to another's
-- Extended non-clinical gap (scheduling, staff chat) after substantive clinical content
-- IN-ROOM PIVOT: the doctor transitions from one family member or companion to another without anyone leaving (e.g., "Okay, now let's talk about your husband's knee" or addressing a different person by name)
-- CHART SWITCH: the clinical discussion shifts to a different patient — different medications, conditions, or medical history than earlier in the transcript
-- The doctor begins taking a new history, asking "what brings you in today?" or similar intake questions after already having a substantive clinical discussion with someone else
+A completed encounter typically includes a clinical discussion and a concluding plan (e.g., medication changes, follow-up timing, referrals, or instructions). A short transcript that contains only vitals, greetings, or brief exchanges — with no clinical discussion or plan — is likely a pre-visit assessment still in progress, not a completed encounter. A nurse or medical assistant may see the patient before the doctor arrives to take vitals or ask initial questions — this is part of the same encounter, not a separate visit.
 
-Examples of in-room transitions:
-- After discussing Mrs. Smith's diabetes, the doctor says "Now, Mr. Smith, how has your blood pressure been?" — this is a transition between two encounters
-- The doctor finishes discussing a child's ear infection with the mother, then asks the mother about her own back pain — this is a transition
-- The doctor says "Let me pull up your chart" after already having a full discussion about a different patient's condition — likely a transition
-
-This is NOT a transition:
-- Brief pauses, phone calls, or sidebar conversations DURING an ongoing patient visit
-- The very beginning of the first encounter (no prior encounter to split from)
-- Short exchanges or greetings with no substantive clinical content yet
-- Discussion of multiple body parts or conditions for the SAME patient (one visit can cover many topics)
+Each segment includes elapsed time (MM:SS) from the start of the recording. Large gaps between timestamps may indicate silence, examination, or the room being empty between patients.
 
 If you find a transition point or completed encounter, return:
 {"complete": true, "end_segment_index": <last segment index of the CONCLUDED encounter>, "confidence": <0.0-1.0>}
@@ -486,15 +470,15 @@ mod tests {
     }
 
     #[test]
-    fn test_detection_prompt_in_room_transitions() {
+    fn test_detection_prompt_core_framing() {
         let (system, _) = build_encounter_detection_prompt("test transcript", None);
         assert!(
-            system.contains("IN-ROOM PIVOT"),
-            "Prompt should mention in-room pivot transitions"
+            system.contains("pre-visit assessment"),
+            "Prompt should mention pre-visit assessment"
         );
         assert!(
-            system.contains("CHART SWITCH"),
-            "Prompt should mention chart switch transitions"
+            system.contains("concluding plan"),
+            "Prompt should mention concluding plan"
         );
     }
 
@@ -610,5 +594,12 @@ mod tests {
             "Min split words ({}) must be less than check threshold ({})",
             MULTI_PATIENT_SPLIT_MIN_WORDS, MULTI_PATIENT_CHECK_WORD_THRESHOLD
         );
+    }
+
+    #[test]
+    fn test_detection_prompt_mentions_elapsed_time() {
+        let (system, _user) = build_encounter_detection_prompt("test transcript", None);
+        assert!(system.contains("elapsed time"));
+        assert!(system.contains("Large gaps between timestamps"));
     }
 }
