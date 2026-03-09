@@ -27,10 +27,19 @@ fn select_soap_model(config: &Config, word_count: usize) -> &str {
 }
 
 /// Check LLM router status and list available models
+///
+/// Optional URL/key overrides allow testing pending settings without persisting them.
 #[tauri::command]
-pub async fn check_ollama_status() -> LLMStatus {
+pub async fn check_ollama_status(
+    url: Option<String>,
+    api_key: Option<String>,
+    client_id: Option<String>,
+) -> LLMStatus {
     let config = Config::load_or_default();
-    let client = match LLMClient::new(&config.llm_router_url, &config.llm_api_key, &config.llm_client_id, &config.fast_model) {
+    let url = url.unwrap_or_else(|| config.llm_router_url.clone());
+    let api_key = api_key.unwrap_or_else(|| config.llm_api_key.clone());
+    let client_id = client_id.unwrap_or_else(|| config.llm_client_id.clone());
+    let client = match LLMClient::new(&url, &api_key, &client_id, &config.fast_model) {
         Ok(c) => c,
         Err(e) => {
             return LLMStatus {

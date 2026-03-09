@@ -81,33 +81,25 @@ export function useOllamaConnection(): UseOllamaConnectionResult {
     }
   }, [status?.connected, prewarmModel]);
 
-  // Test connection with specific settings (saves temporarily to test)
+  // Test connection with specific settings (passes URL directly, does not persist)
   const testConnection = useCallback(
     async (
       routerUrl: string,
       apiKey: string,
       clientId: string,
-      soapModel: string,
-      fastModel: string,
-      currentSettings: Settings
+      _soapModel: string,
+      _fastModel: string,
+      _currentSettings: Settings
     ): Promise<boolean> => {
       setIsChecking(true);
       setError(null);
 
       try {
-        // Temporarily save settings to test the connection
-        const testSettings: Settings = {
-          ...currentSettings,
-          llm_router_url: routerUrl,
-          llm_api_key: apiKey,
-          llm_client_id: clientId,
-          soap_model: soapModel,
-          fast_model: fastModel,
-        };
-        await invoke('set_settings', { settings: testSettings });
-
-        // Check status with new settings
-        const result = await invoke<LLMStatus>('check_ollama_status');
+        const result = await invoke<LLMStatus>('check_ollama_status', {
+          url: routerUrl,
+          apiKey,
+          clientId,
+        });
         setStatus(result);
 
         if (!result.connected && result.error) {

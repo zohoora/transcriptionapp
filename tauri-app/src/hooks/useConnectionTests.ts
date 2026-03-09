@@ -50,15 +50,15 @@ export interface ConnectionTestsResult {
 // ============================================================================
 
 export function useConnectionTests({
-  settings,
+  settings: _settings,
   pendingSettings,
   setOllamaStatus,
   setOllamaModels,
   setMedplumConnected,
   setMedplumError,
 }: ConnectionTestsConfig): ConnectionTestsResult {
-  // Ollama connection from hook
-  const { status: ollamaConnectionStatus, checkConnection: checkOllamaConnection } = useOllamaConnection();
+  // Ollama connection from hook (initial status check on mount)
+  const { status: ollamaConnectionStatus } = useOllamaConnection();
 
   // Whisper server state (owned by this hook)
   const [whisperServerStatus, setWhisperServerStatus] = useState<WhisperServerStatus | null>(null);
@@ -103,41 +103,33 @@ export function useConnectionTests({
     };
   }, [setMedplumConnected, setMedplumError]);
 
-  // Test LLM Router connection
+  // Test LLM Router connection (passes pending URL directly, does not persist)
   const handleTestLLM = useCallback(async () => {
-    if (!pendingSettings || !settings) return;
+    if (!pendingSettings) return;
     try {
-      await invoke('set_settings', {
-        settings: {
-          ...settings,
-          llm_router_url: pendingSettings.llm_router_url,
-          llm_api_key: pendingSettings.llm_api_key,
-          llm_client_id: pendingSettings.llm_client_id,
-          soap_model: pendingSettings.soap_model,
-          fast_model: pendingSettings.fast_model,
-        },
+      const status = await invoke<OllamaStatus>('check_ollama_status', {
+        url: pendingSettings.llm_router_url,
+        apiKey: pendingSettings.llm_api_key,
+        clientId: pendingSettings.llm_client_id,
       });
-      await checkOllamaConnection();
+      setOllamaStatus(status);
+      if (status.connected) {
+        setOllamaModels(status.available_models);
+      }
     } catch (e) {
       console.error('Failed to test LLM router:', e);
       setOllamaStatus({ connected: false, available_models: [], error: String(e) });
     }
-  }, [settings, pendingSettings, checkOllamaConnection, setOllamaStatus]);
+  }, [pendingSettings, setOllamaStatus, setOllamaModels]);
 
-  // Test Medplum connection
+  // Test Medplum connection (passes pending URL directly, does not persist)
   const handleTestMedplum = useCallback(async () => {
-    if (!pendingSettings || !settings) return;
+    if (!pendingSettings) return;
     setMedplumError(null);
     try {
-      const testSettings: Settings = {
-        ...settings,
-        medplum_server_url: pendingSettings.medplum_server_url,
-        medplum_client_id: pendingSettings.medplum_client_id,
-        medplum_auto_sync: pendingSettings.medplum_auto_sync,
-      };
-      await invoke('set_settings', { settings: testSettings });
-
-      const result = await invoke<boolean>('medplum_check_connection');
+      const result = await invoke<boolean>('medplum_check_connection', {
+        url: pendingSettings.medplum_server_url,
+      });
       setMedplumConnected(result);
       if (!result) {
         setMedplumError('Could not connect to server');
@@ -147,21 +139,15 @@ export function useConnectionTests({
       setMedplumConnected(false);
       setMedplumError(String(e));
     }
-  }, [settings, pendingSettings, setMedplumConnected, setMedplumError]);
+  }, [pendingSettings, setMedplumConnected, setMedplumError]);
 
-  // Test Whisper Server connection
+  // Test Whisper Server connection (passes pending URL directly, does not persist)
   const handleTestWhisperServer = useCallback(async () => {
-    if (!pendingSettings || !settings) return;
+    if (!pendingSettings) return;
     try {
-      await invoke('set_settings', {
-        settings: {
-          ...settings,
-          whisper_server_url: pendingSettings.whisper_server_url,
-          whisper_server_model: pendingSettings.whisper_server_model,
-        },
+      const status = await invoke<WhisperServerStatus>('check_whisper_server_status', {
+        url: pendingSettings.whisper_server_url,
       });
-
-      const status = await invoke<WhisperServerStatus>('check_whisper_server_status');
       setWhisperServerStatus(status);
       if (status.connected) {
         setWhisperServerModels(status.available_models);
@@ -170,7 +156,7 @@ export function useConnectionTests({
       console.error('Failed to test Whisper server:', e);
       setWhisperServerStatus({ connected: false, available_models: [], error: String(e) });
     }
-  }, [settings, pendingSettings]);
+  }, [pendingSettings]);
 
   return {
     whisperServerStatus,

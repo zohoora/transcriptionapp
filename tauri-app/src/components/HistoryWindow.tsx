@@ -21,7 +21,6 @@ import type {
   LocalArchiveDetails,
   LocalArchiveMetadata,
   MultiPatientSoapResult,
-  Settings,
   EncounterSummary,
   EncounterDetails,
   SoapOptions,
@@ -68,8 +67,9 @@ const HistoryWindow: React.FC = () => {
   const [detailLoading, setDetailLoading] = useState(false);
   const [datesWithSessions, setDatesWithSessions] = useState<Set<string>>(new Set());
 
-  // Data source based on debug_storage_enabled setting
-  const [dataSource, setDataSource] = useState<DataSource>('local');
+  // Data source — local archive is production storage, always the default
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const [dataSource, _setDataSource] = useState<DataSource>('local');
   const [settingsLoaded, setSettingsLoaded] = useState(false);
 
   // Global SOAP defaults (from settings, used as fallback for historical sessions)
@@ -109,27 +109,9 @@ const HistoryWindow: React.FC = () => {
   // LLM connection status from hook
   const llmConnected = ollamaStatus?.connected ?? false;
 
-  // Load settings to determine data source (SOAP options handled by hook)
+  // Local archive is production storage — always ready
   useEffect(() => {
-    const loadSettings = async () => {
-      try {
-        const settings = await invoke<Settings>('get_settings');
-        // If debug storage is disabled, use Medplum (when authenticated)
-        // If debug storage is enabled, use local archive
-        if (settings.debug_storage_enabled) {
-          setDataSource('local');
-        } else {
-          setDataSource('medplum');
-        }
-      } catch (e) {
-        console.error('Failed to load settings:', e);
-        // Default to local on error
-        setDataSource('local');
-      } finally {
-        setSettingsLoaded(true);
-      }
-    };
-    loadSettings();
+    setSettingsLoaded(true);
   }, []);
 
   // Sync globalSoapDefaults with hook's soapOptions (for session metadata fallback)

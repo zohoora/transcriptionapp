@@ -1007,11 +1007,29 @@ pub async fn medplum_multi_patient_quick_sync(
 }
 
 /// Check if Medplum server is reachable (doesn't require authentication)
+///
+/// Optional URL override allows testing pending settings without persisting them.
 #[tauri::command]
 pub async fn medplum_check_connection(
     medplum_state: State<'_, SharedMedplumClient>,
+    url: Option<String>,
 ) -> Result<bool, String> {
     let config = Config::load_or_default();
+
+    // If a URL override is provided, do a direct connectivity check without
+    // touching the shared client (avoids persisting pending settings)
+    if let Some(ref test_url) = url {
+        if test_url.is_empty() {
+            return Ok(false);
+        }
+        let check_url = format!("{}/.well-known/openid-configuration", test_url.trim_end_matches('/'));
+        let client = reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(10))
+            .build()
+            .map_err(|e| format!("HTTP client error: {}", e))?;
+        return Ok(client.get(&check_url).send().await.map(|r| r.status().is_success()).unwrap_or(false));
+    }
+
     if config.medplum_server_url.is_empty() {
         return Ok(false);
     }

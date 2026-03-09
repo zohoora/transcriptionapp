@@ -126,7 +126,7 @@ describe('useOllamaConnection', () => {
     expect(result.current.error).toBeNull();
   });
 
-  it('tests connection with new settings', async () => {
+  it('tests connection with new settings without persisting', async () => {
     mockInvoke.mockImplementation((cmd: string) => {
       if (cmd === 'check_ollama_status') {
         return Promise.resolve({
@@ -134,9 +134,6 @@ describe('useOllamaConnection', () => {
           available_models: ['gpt-4'],
           error: null,
         });
-      }
-      if (cmd === 'set_settings') {
-        return Promise.resolve(undefined);
       }
       return Promise.resolve(undefined);
     });
@@ -160,15 +157,13 @@ describe('useOllamaConnection', () => {
     });
 
     expect(testResult!).toBe(true);
-    expect(mockInvoke).toHaveBeenCalledWith('set_settings', {
-      settings: expect.objectContaining({
-        llm_router_url: 'http://newrouter:8080',
-        llm_api_key: 'new-api-key',
-        llm_client_id: 'clinic-002',
-        soap_model: 'claude-3-opus',
-        fast_model: 'claude-3-haiku',
-      }),
+    // Should pass URL overrides directly, NOT call set_settings
+    expect(mockInvoke).toHaveBeenCalledWith('check_ollama_status', {
+      url: 'http://newrouter:8080',
+      apiKey: 'new-api-key',
+      clientId: 'clinic-002',
     });
+    expect(mockInvoke).not.toHaveBeenCalledWith('set_settings', expect.anything());
   });
 
   it('handles test connection failure', async () => {
@@ -211,14 +206,7 @@ describe('useOllamaConnection', () => {
   it('handles test connection exception', async () => {
     mockInvoke.mockImplementation((cmd: string) => {
       if (cmd === 'check_ollama_status') {
-        return Promise.resolve({
-          connected: true,
-          available_models: ['gpt-4'],
-          error: null,
-        });
-      }
-      if (cmd === 'set_settings') {
-        return Promise.reject(new Error('Failed to save'));
+        return Promise.reject(new Error('Network error'));
       }
       return Promise.resolve(undefined);
     });
@@ -242,7 +230,7 @@ describe('useOllamaConnection', () => {
     });
 
     expect(testResult!).toBe(false);
-    expect(result.current.error).toBe('Failed to save');
+    expect(result.current.error).toBe('Network error');
   });
 
   it('prewarms model', async () => {

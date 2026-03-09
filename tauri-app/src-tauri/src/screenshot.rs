@@ -145,9 +145,21 @@ impl ScreenCaptureState {
         self.screenshots.lock().map(|ss| ss.clone()).unwrap_or_default()
     }
 
-    /// Get the number of captured screenshots
+    /// Get the number of captured screenshots (counts only unique captures, not file variants)
     pub fn screenshot_count(&self) -> usize {
-        self.screenshots.lock().map(|ss| ss.len()).unwrap_or(0)
+        self.screenshots
+            .lock()
+            .map(|ss| {
+                ss.iter()
+                    .filter(|p| {
+                        p.file_name()
+                            .and_then(|n| n.to_str())
+                            .map(|n| n.ends_with("-thumb.jpg"))
+                            .unwrap_or(false)
+                    })
+                    .count()
+            })
+            .unwrap_or(0)
     }
 }
 
