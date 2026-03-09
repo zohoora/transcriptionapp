@@ -7,12 +7,14 @@ use serde::{de::DeserializeOwned, Deserialize, Serialize};
 
 /// Word count forcing encounter check regardless of buffer age.
 pub const FORCE_CHECK_WORD_THRESHOLD: usize = 3000;
-/// Force-split when buffer exceeds this AND consecutive_no_split >= limit.
+/// Force-split when buffer exceeds this AND consecutive LLM failures >= limit.
+/// Only counts LLM errors/timeouts, not confident "no split" responses.
 pub const FORCE_SPLIT_WORD_THRESHOLD: usize = 5000;
-/// Consecutive non-split detection cycles before force-split (at FORCE_SPLIT_WORD_THRESHOLD).
+/// Consecutive LLM failure cycles before force-split (at FORCE_SPLIT_WORD_THRESHOLD).
 pub const FORCE_SPLIT_CONSECUTIVE_LIMIT: u32 = 3;
 /// Unconditional force-split -- hard safety valve, no counter needed.
-pub const ABSOLUTE_WORD_CAP: usize = 10_000;
+/// Set high enough for ~5 hour single-patient sessions (~70 words/min).
+pub const ABSOLUTE_WORD_CAP: usize = 25_000;
 /// Minimum word count for clinical content check + SOAP generation.
 /// Encounters below this threshold are treated as non-clinical (still archived with transcript).
 pub const MIN_WORDS_FOR_CLINICAL_CHECK: usize = 100;

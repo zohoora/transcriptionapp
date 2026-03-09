@@ -933,7 +933,7 @@ pub async fn run_continuous_mode(
 
     let detector_task = tokio::spawn(async move {
         let mut encounter_number: u32 = 0;
-        let mut consecutive_no_split: u32 = 0;
+        let mut consecutive_llm_failures: u32 = 0;
         // Tracks how many times a split was merged back into the previous encounter.
         // Each merge-back escalates the confidence threshold by +0.05, making
         // repeated false-positive splits on long sessions increasingly unlikely.
@@ -1204,7 +1204,7 @@ pub async fn run_continuous_mode(
                     "sensor_present": detection_context.sensor_present,
                     "sensor_departed": detection_context.sensor_departed,
                     "nothink": detection_nothink,
-                    "consecutive_no_split": consecutive_no_split,
+                    "consecutive_llm_failures": consecutive_llm_failures,
                 });
                 match tokio::time::timeout(tokio::time::Duration::from_secs(90), llm_future).await {
                     Ok(Ok(response)) => {
@@ -1320,7 +1320,7 @@ pub async fn run_continuous_mode(
                     }));
                 }
                 let last_idx = buffer_for_detector.lock().ok().and_then(|b| b.last_index());
-                consecutive_no_split = 0;
+                consecutive_llm_failures = 0;
                 force_split = true;
                 detection_result = Some(EncounterDetectionResult {
                     complete: true,
@@ -1329,48 +1329,58 @@ pub async fn run_continuous_mode(
                 });
             }
 
-            // Track consecutive no-split outcomes
+            // Track consecutive LLM failures for graduated force-split.
+            // Only LLM errors/timeouts count — a confident "no split" from the LLM
+            // is the system working correctly (e.g., long single-patient session),
+            // not a sign of failure that warrants overriding the LLM.
             if !force_split && !manual_triggered && !sensor_triggered {
-                let is_negative = match &detection_result {
-                    None => true,                    // LLM failure/timeout
-                    Some(r) if !r.complete => true,  // LLM said no — THE BUG FIX
-                    _ => false,                      // complete=true — resolved by confidence gate below
-                };
-                if is_negative {
-                    consecutive_no_split += 1;
-                    info!(
-                        "Detection non-split: result={}, consecutive_no_split={}, cleaned_word_count={}, raw_word_count={}",
-                        if detection_result.is_none() { "error/timeout" } else { "complete=false" },
-                        consecutive_no_split, cleaned_word_count, word_count
-                    );
-                    // Graduated force-split (uses effective word count: max(cleaned, raw/2))
-                    if effective_word_count > FORCE_SPLIT_WORD_THRESHOLD
-                        && consecutive_no_split >= FORCE_SPLIT_CONSECUTIVE_LIMIT
-                    {
-                        warn!(
-                            "Force-splitting: {} consecutive non-splits with {} effective words (cleaned: {}, raw: {})",
-                            consecutive_no_split, effective_word_count, cleaned_word_count, word_count
+                match &detection_result {
+                    None => {
+                        // LLM error/timeout — increment failure counter
+                        consecutive_llm_failures += 1;
+                        info!(
+                            "Detection LLM failure: consecutive_llm_failures={}, cleaned_word_count={}, raw_word_count={}",
+                            consecutive_llm_failures, cleaned_word_count, word_count
                         );
-                        if let Ok(mut logger) = logger_for_detector.lock() {
-                            logger.log_split_trigger(serde_json::json!({
-                                "trigger": "graduated_force_split",
-                                "consecutive_no_split": consecutive_no_split,
-                                "effective_word_count": effective_word_count,
-                                "cleaned_word_count": cleaned_word_count,
-                                "raw_word_count": word_count,
-                            }));
+                        // Graduated force-split: only on repeated LLM failures
+                        if effective_word_count > FORCE_SPLIT_WORD_THRESHOLD
+                            && consecutive_llm_failures >= FORCE_SPLIT_CONSECUTIVE_LIMIT
+                        {
+                            warn!(
+                                "Force-splitting: {} consecutive LLM failures with {} effective words (cleaned: {}, raw: {})",
+                                consecutive_llm_failures, effective_word_count, cleaned_word_count, word_count
+                            );
+                            if let Ok(mut logger) = logger_for_detector.lock() {
+                                logger.log_split_trigger(serde_json::json!({
+                                    "trigger": "graduated_force_split",
+                                    "consecutive_llm_failures": consecutive_llm_failures,
+                                    "effective_word_count": effective_word_count,
+                                    "cleaned_word_count": cleaned_word_count,
+                                    "raw_word_count": word_count,
+                                }));
+                            }
+                            let last_idx = buffer_for_detector.lock().ok().and_then(|b| b.last_index());
+                            consecutive_llm_failures = 0;
+                            force_split = true;
+                            detection_result = Some(EncounterDetectionResult {
+                                complete: true,
+                                end_segment_index: last_idx,
+                                confidence: Some(1.0),
+                            });
                         }
-                        let last_idx = buffer_for_detector.lock().ok().and_then(|b| b.last_index());
-                        consecutive_no_split = 0;
-                        force_split = true;
-                        detection_result = Some(EncounterDetectionResult {
-                            complete: true,
-                            end_segment_index: last_idx,
-                            confidence: Some(1.0),
-                        });
+                    }
+                    Some(r) if !r.complete => {
+                        // LLM confidently said "no split" — reset failure counter
+                        info!(
+                            "Detection non-split: complete=false, cleaned_word_count={}, raw_word_count={}",
+                            cleaned_word_count, word_count
+                        );
+                        consecutive_llm_failures = 0;
+                    }
+                    Some(_) => {
+                        // complete=true — handled by confidence gate below; don't touch counter
                     }
                 }
-                // NOTE: Don't reset counter on complete=true here — confidence gate may reject
             }
 
             // Hybrid sensor timeout force-split: sensor has been absent for > confirm_window
@@ -1400,7 +1410,7 @@ pub async fn run_continuous_mode(
                         force_split = true;
                         hybrid_sensor_timeout_triggered = true;
                         sensor_absent_since = None;
-                        consecutive_no_split = 0;
+                        consecutive_llm_failures = 0;
                         detection_result = Some(EncounterDetectionResult {
                             complete: true,
                             end_segment_index: last_idx,
@@ -1425,10 +1435,11 @@ pub async fn run_continuous_mode(
                     let base_threshold = if buffer_age_mins < 20 { 0.85 } else { 0.7 };
                     let confidence_threshold = (base_threshold + merge_back_count as f64 * 0.05).min(0.99);
                     if confidence < confidence_threshold && !force_split {
-                        consecutive_no_split += 1;
+                        // Don't increment consecutive_llm_failures here — the LLM is working,
+                        // just returning low-confidence results. Only LLM failures drive force-split.
                         info!(
-                            "Confidence gate rejected: confidence={:.2}, threshold={:.2} (base={:.2}, merge_backs={}), buffer_age_mins={}, word_count={}, consecutive_no_split={}",
-                            confidence, confidence_threshold, base_threshold, merge_back_count, buffer_age_mins, word_count, consecutive_no_split
+                            "Confidence gate rejected: confidence={:.2}, threshold={:.2} (base={:.2}, merge_backs={}), buffer_age_mins={}, word_count={}, consecutive_llm_failures={}",
+                            confidence, confidence_threshold, base_threshold, merge_back_count, buffer_age_mins, word_count, consecutive_llm_failures
                         );
                         if let Ok(mut logger) = logger_for_detector.lock() {
                             logger.log_confidence_gate(serde_json::json!({
@@ -1438,7 +1449,7 @@ pub async fn run_continuous_mode(
                                 "merge_back_count": merge_back_count,
                                 "buffer_age_mins": buffer_age_mins,
                                 "word_count": word_count,
-                                "consecutive_no_split": consecutive_no_split,
+                                "consecutive_llm_failures": consecutive_llm_failures,
                                 "rejected": true,
                             }));
                         }
@@ -1454,7 +1465,7 @@ pub async fn run_continuous_mode(
                     }
 
                     if let Some(end_index) = result.end_segment_index {
-                        consecutive_no_split = 0;
+                        consecutive_llm_failures = 0;
                         encounter_number += 1;
                         // Clear hybrid sensor tracking on successful split
                         if is_hybrid_mode {
