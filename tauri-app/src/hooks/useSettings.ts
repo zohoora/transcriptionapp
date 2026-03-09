@@ -56,8 +56,6 @@ export interface PendingSettings {
   // Shadow mode settings
   shadow_active_method: ShadowActiveMethod;
   shadow_csv_log_enabled: boolean;
-  // Native STT shadow (Apple Speech)
-  native_stt_shadow_enabled: boolean;
   // Hybrid detection settings
   hybrid_confirm_window_secs: number;
   hybrid_min_words_for_sensor_split: number;
@@ -131,7 +129,6 @@ export function useSettings(): UseSettingsResult {
     presence_csv_log_enabled: s.presence_csv_log_enabled,
     shadow_active_method: s.shadow_active_method,
     shadow_csv_log_enabled: s.shadow_csv_log_enabled,
-    native_stt_shadow_enabled: s.native_stt_shadow_enabled,
     hybrid_confirm_window_secs: s.hybrid_confirm_window_secs,
     hybrid_min_words_for_sensor_split: s.hybrid_min_words_for_sensor_split,
   }), []);
@@ -207,7 +204,6 @@ export function useSettings(): UseSettingsResult {
         presence_csv_log_enabled: pendingSettings.presence_csv_log_enabled,
         shadow_active_method: pendingSettings.shadow_active_method,
         shadow_csv_log_enabled: pendingSettings.shadow_csv_log_enabled,
-        native_stt_shadow_enabled: pendingSettings.native_stt_shadow_enabled,
         hybrid_confirm_window_secs: pendingSettings.hybrid_confirm_window_secs,
         hybrid_min_words_for_sensor_split: pendingSettings.hybrid_min_words_for_sensor_split,
       };
@@ -264,7 +260,6 @@ export function useSettings(): UseSettingsResult {
       [settings.presence_csv_log_enabled, pendingSettings.presence_csv_log_enabled],
       [settings.shadow_active_method, pendingSettings.shadow_active_method],
       [settings.shadow_csv_log_enabled, pendingSettings.shadow_csv_log_enabled],
-      [settings.native_stt_shadow_enabled, pendingSettings.native_stt_shadow_enabled],
       [settings.hybrid_confirm_window_secs, pendingSettings.hybrid_confirm_window_secs],
       [settings.hybrid_min_words_for_sensor_split, pendingSettings.hybrid_min_words_for_sensor_split],
     ];

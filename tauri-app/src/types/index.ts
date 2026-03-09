@@ -120,8 +120,6 @@ export interface Settings {
   // Shadow mode settings (dual detection comparison)
   shadow_active_method: ShadowActiveMethod;
   shadow_csv_log_enabled: boolean;
-  // Native STT shadow (Apple SFSpeechRecognizer comparison)
-  native_stt_shadow_enabled: boolean;
   // Hybrid detection settings (sensor accelerates LLM confirmation)
   hybrid_confirm_window_secs: number;
   hybrid_min_words_for_sensor_split: number;

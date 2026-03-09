@@ -327,9 +327,6 @@ pub async fn run_continuous_mode(
     // Clone the biomarker reset flag so the detector task can trigger resets on encounter boundaries
     let reset_bio_for_detector = pipeline_handle.reset_biomarkers_flag();
 
-    // Get native STT shadow accumulator for draining at encounter boundaries
-    let native_stt_accumulator_for_detector = pipeline_handle.native_stt_accumulator();
-
     // Pipeline started successfully — now set state and emit event
     if let Ok(mut state) = handle.state.lock() {
         *state = ContinuousState::Recording;
@@ -453,9 +450,6 @@ pub async fn run_continuous_mode(
                 }
                 // Ignore auto-end messages in continuous mode
                 PipelineMessage::AutoEndSilence { .. } | PipelineMessage::SilenceWarning { .. } => {}
-                // Shadow native STT transcript — ignore in continuous mode consumer
-                // (shadow accumulator is managed by pipeline thread, saved during encounter archival)
-                PipelineMessage::NativeSttShadowTranscript { .. } => {}
             }
         }
     });
@@ -923,9 +917,6 @@ pub async fn run_continuous_mode(
 
     // Clone shadow state for detector task
     let handle_shadow_decisions = handle.shadow_decisions.clone();
-
-    // Native STT shadow accumulator for detector task (encounter boundary drain)
-    let stt_shadow_accumulator = native_stt_accumulator_for_detector;
 
     // Pipeline replay logger — writes JSONL to each session's archive folder
     let pipeline_logger = Arc::new(Mutex::new(crate::pipeline_log::PipelineLogger::new()));
@@ -1524,45 +1515,6 @@ pub async fn run_continuous_mode(
                             }
                         }
 
-                        // Drain native STT shadow accumulator for this encounter
-                        let has_shadow_transcript = if let Some(ref accumulator) = stt_shadow_accumulator {
-                            if let Ok(mut acc) = accumulator.lock() {
-                                let drained = acc.drain_through(encounter_last_timestamp_ms);
-                                if !drained.is_empty() {
-                                    // Format as plain text transcript
-                                    let shadow_text: String = drained
-                                        .iter()
-                                        .map(|s| {
-                                            if let Some(ref spk) = s.speaker_id {
-                                                format!("{}: {}", spk, s.native_text)
-                                            } else {
-                                                s.native_text.clone()
-                                            }
-                                        })
-                                        .collect::<Vec<_>>()
-                                        .join("\n");
-
-                                    // Save to archive directory
-                                    if let Ok(session_dir) = local_archive::get_session_archive_dir(&session_id, &Utc::now()) {
-                                        let shadow_path = session_dir.join("shadow_transcript.txt");
-                                        if let Err(e) = std::fs::write(&shadow_path, &shadow_text) {
-                                            warn!("Failed to save shadow transcript: {}", e);
-                                        } else {
-                                            info!("Shadow transcript saved ({} segments, {} chars)", drained.len(), shadow_text.len());
-                                        }
-                                    }
-                                    true
-                                } else {
-                                    false
-                                }
-                            } else {
-                                warn!("Native STT shadow accumulator lock poisoned");
-                                false
-                            }
-                        } else {
-                            false
-                        };
-
                         // Update archive metadata with continuous mode info
                         if let Ok(session_dir) = local_archive::get_session_archive_dir(&session_id, &Utc::now()) {
                             let date_path = session_dir.join("metadata.json");
@@ -1596,10 +1548,6 @@ pub async fn run_continuous_mode(
                                             metadata.patient_name = tracker.majority_name();
                                         } else {
                                             warn!("Name tracker lock poisoned, patient name not written to metadata");
-                                        }
-                                        // Record whether shadow transcript was saved
-                                        if has_shadow_transcript {
-                                            metadata.has_shadow_transcript = Some(true);
                                         }
                                         // Add shadow comparison data if in shadow mode
                                         if is_shadow_mode {

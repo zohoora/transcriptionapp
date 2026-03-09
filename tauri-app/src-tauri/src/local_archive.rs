@@ -106,9 +106,6 @@ pub struct ArchiveMetadata {
     /// Shadow mode comparison data (dual detection method analysis)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub shadow_comparison: Option<crate::shadow_log::ShadowEncounterComparison>,
-    /// Whether a shadow native STT transcript exists for this session
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub has_shadow_transcript: Option<bool>,
     /// Flagged as likely non-clinical by two-pass content check
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub likely_non_clinical: Option<bool>,
@@ -134,7 +131,6 @@ impl ArchiveMetadata {
             patient_name: None,
             detection_method: None,
             shadow_comparison: None,
-            has_shadow_transcript: None,
             likely_non_clinical: None,
         }
     }
@@ -168,7 +164,6 @@ pub struct ArchiveDetails {
     pub transcript: Option<String>,
     pub soap_note: Option<String>,
     pub audio_path: Option<String>,
-    pub shadow_transcript: Option<String>,
 }
 
 /// Archive a completed session
@@ -496,22 +491,12 @@ pub fn get_session(session_id: &str, date_str: &str) -> Result<ArchiveDetails, S
         None
     };
 
-    // Load shadow transcript if exists
-    let shadow_transcript_path = session_dir.join("shadow_transcript.txt");
-    let shadow_transcript = if shadow_transcript_path.exists() {
-        Some(fs::read_to_string(&shadow_transcript_path)
-            .map_err(|e| format!("Failed to read shadow transcript: {}", e))?)
-    } else {
-        None
-    };
-
     Ok(ArchiveDetails {
         session_id: session_id.to_string(),
         metadata,
         transcript,
         soap_note,
         audio_path,
-        shadow_transcript,
     })
 }
 
@@ -717,7 +702,6 @@ pub fn split_session(session_id: &str, date_str: &str, split_line: usize) -> Res
         patient_name: original_meta.patient_name.clone(),
         detection_method: original_meta.detection_method.clone(),
         shadow_comparison: None,
-        has_shadow_transcript: None,
         likely_non_clinical: original_meta.likely_non_clinical,
     };
     let new_meta_json = serde_json::to_string_pretty(&new_meta)

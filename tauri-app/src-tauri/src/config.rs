@@ -177,18 +177,11 @@ pub struct Settings {
     pub shadow_active_method: ShadowActiveMethod,
     #[serde(default = "default_shadow_csv_log_enabled")]
     pub shadow_csv_log_enabled: bool,
-    // Native STT shadow (Apple SFSpeechRecognizer comparison)
-    #[serde(default = "default_native_stt_shadow_enabled")]
-    pub native_stt_shadow_enabled: bool,
     // Hybrid detection settings (sensor accelerates LLM confirmation)
     #[serde(default = "default_hybrid_confirm_window_secs")]
     pub hybrid_confirm_window_secs: u64,
     #[serde(default = "default_hybrid_min_words_for_sensor_split")]
     pub hybrid_min_words_for_sensor_split: usize,
-}
-
-fn default_native_stt_shadow_enabled() -> bool {
-    true // Enabled for continuous mode shadow transcript comparison
 }
 
 fn default_hybrid_confirm_window_secs() -> u64 {
@@ -408,7 +401,6 @@ impl Default for Settings {
             presence_csv_log_enabled: default_presence_csv_log_enabled(),
             shadow_active_method: default_shadow_active_method(),
             shadow_csv_log_enabled: default_shadow_csv_log_enabled(),
-            native_stt_shadow_enabled: default_native_stt_shadow_enabled(),
             hybrid_confirm_window_secs: default_hybrid_confirm_window_secs(),
             hybrid_min_words_for_sensor_split: default_hybrid_min_words_for_sensor_split(),
         }
@@ -1013,7 +1005,6 @@ mod tests {
             presence_csv_log_enabled: default_presence_csv_log_enabled(),
             shadow_active_method: default_shadow_active_method(),
             shadow_csv_log_enabled: default_shadow_csv_log_enabled(),
-            native_stt_shadow_enabled: default_native_stt_shadow_enabled(),
             hybrid_confirm_window_secs: default_hybrid_confirm_window_secs(),
             hybrid_min_words_for_sensor_split: default_hybrid_min_words_for_sensor_split(),
             stt_alias: "medical-streaming".to_string(),
@@ -1141,7 +1132,6 @@ mod tests {
             presence_csv_log_enabled: default_presence_csv_log_enabled(),
             shadow_active_method: default_shadow_active_method(),
             shadow_csv_log_enabled: default_shadow_csv_log_enabled(),
-            native_stt_shadow_enabled: default_native_stt_shadow_enabled(),
             hybrid_confirm_window_secs: default_hybrid_confirm_window_secs(),
             hybrid_min_words_for_sensor_split: default_hybrid_min_words_for_sensor_split(),
             stt_alias: default_stt_alias(),

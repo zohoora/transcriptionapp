@@ -282,20 +282,6 @@ export const SettingsDrawer = memo(function SettingsDrawer({
                 )}
               </div>
 
-              {/* Native STT Shadow (Apple Speech) */}
-              <div className="settings-group">
-                <div className="settings-row">
-                  <label>
-                    <input
-                      type="checkbox"
-                      checked={pendingSettings.native_stt_shadow_enabled}
-                      onChange={(e) => onSettingsChange({ ...pendingSettings, native_stt_shadow_enabled: e.target.checked })}
-                    />
-                    {' '}Shadow native STT (Apple Speech)
-                  </label>
-                </div>
-              </div>
-
               {/* Whisper Server Settings (remote only mode) */}
               <div className="settings-group">
                 <label className="settings-label" htmlFor="whisper-server-url">Whisper Server URL</label>

@@ -57,8 +57,6 @@ pub mod pipeline_log;
 pub mod presence_sensor;
 pub mod preprocessing;
 pub mod screenshot;
-pub mod native_stt;
-pub mod native_stt_shadow;
 pub mod shadow_log;
 pub mod speaker_profiles;
 #[cfg(test)]
@@ -288,12 +286,6 @@ pub fn run() {
                     let _ = screenshot::request_screen_recording_permission();
                 }
 
-                // 3. Speech Recognition permission
-                let speech_status = native_stt::check_speech_recognition_permission();
-                info!("Startup permission check — Speech Recognition: {}", speech_status);
-                if speech_status == native_stt::SpeechAuthStatus::NotDetermined {
-                    native_stt::request_speech_recognition_permission();
-                }
             });
 
             info!("App setup complete");
