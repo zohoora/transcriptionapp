@@ -346,10 +346,10 @@ pub async fn generate_predictive_hint(transcript: String) -> Result<PredictiveHi
 
 1. HINT: A brief clinical fact the physician might need right now (max 60 chars, shorthand style)
 2. CONCEPTS: 1-5 medical image search terms for relevant anatomical diagrams or illustrations
-3. IMAGE_PROMPT: If the conversation involves a specific anatomical structure, condition, or procedure that a patient would benefit from seeing illustrated, provide a detailed image generation prompt. Otherwise, return null.
+3. IMAGE_PROMPT: If an image or infographic would be helpful right now in patient communication, provide a detailed image generation prompt. Otherwise, return null.
 
 Respond ONLY with this JSON format:
-{"hint":"brief clinical fact here","concepts":[{"text":"anatomy term","weight":0.9},{"text":"condition","weight":0.7}],"image_prompt":"detailed medical illustration prompt or null"}
+{"hint":"brief clinical fact here","concepts":[{"text":"anatomy term","weight":0.9},{"text":"condition","weight":0.7}],"image_prompt":"detailed image generation prompt or null"}
 
 RULES for hint:
 - Maximum 60 characters
@@ -369,13 +369,14 @@ RULES for concepts:
 If no relevant image concepts, return empty array: "concepts":[]
 
 RULES for image_prompt:
-- Style must include: "medical illustration, anatomical diagram, labeled, clean white background"
-- Be anatomically specific: "anterior view of right knee showing torn ACL"
-- Include view angle, relevant structures, and any pathology discussed
-- Do NOT generate for: lab values, medications, general wellness, psychological topics
+- Generate an image prompt when a visual would help the patient understand their condition, treatment, or next steps
+- This includes: anatomy, disease processes, medication mechanisms, treatment comparisons, procedure explanations, lifestyle infographics, screening timelines, or any visual that aids patient education
+- Style: "clean, professional medical illustration, labeled, white background"
+- Be specific: include relevant structures, pathology, or data being discussed
+- Do NOT include patient names or PII in the prompt
 - Do NOT repeat the same subject within a session
 - Maximum one image_prompt per response
-- Return null when no image would help the patient understand their condition
+- Return null when no visual would meaningfully aid the conversation
 "#;
 
     // Truncate transcript if too long (keep last ~2000 words for context)
