@@ -64,6 +64,11 @@ impl PatientNameTracker {
     pub fn previous_name(&self) -> Option<&str> {
         self.previous_name.as_deref()
     }
+
+    /// Returns a reference to the votes map (for replay bundle snapshots)
+    pub fn votes(&self) -> &std::collections::HashMap<String, u32> {
+        &self.votes
+    }
 }
 
 /// Normalize a patient name: handle "Last, First" → "First Last" format,

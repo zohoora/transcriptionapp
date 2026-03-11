@@ -189,6 +189,11 @@ impl TranscriptBuffer {
         self.segments.is_empty()
     }
 
+    /// Number of segments currently in the buffer
+    pub fn segment_count(&self) -> usize {
+        self.segments.len()
+    }
+
     /// Get the timestamp of the first segment
     pub fn first_timestamp(&self) -> Option<DateTime<Utc>> {
         self.segments.first().map(|s| s.started_at)

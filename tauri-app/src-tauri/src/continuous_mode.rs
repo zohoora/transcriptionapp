@@ -345,6 +345,16 @@ pub async fn run_continuous_mode(
         warn!("Buffer lock poisoned while setting generation");
     }
 
+    // Segment timeline logger — writes per-segment JSONL (created early for consumer task)
+    let segment_logger = Arc::new(Mutex::new(crate::segment_log::SegmentLogger::new()));
+    let segment_logger_for_consumer = Arc::clone(&segment_logger);
+
+    // Replay bundle builder — accumulates data per encounter (created early for consumer task)
+    let replay_bundle = Arc::new(Mutex::new(
+        crate::replay_bundle::ReplayBundleBuilder::new(config.replay_snapshot()),
+    ));
+    let bundle_for_consumer = Arc::clone(&replay_bundle);
+
     // Clone handles for the segment consumer task
     let buffer_for_consumer = handle.transcript_buffer.clone();
     let stop_for_consumer = handle.stop_flag.clone();
@@ -373,7 +383,7 @@ pub async fn run_continuous_mode(
                         warn!("Silence tracking lock poisoned, silence state may be stale");
                     }
 
-                    if let Ok(mut buffer) = buffer_for_consumer.lock() {
+                    let (seg_index, seg_wc, buf_wc) = if let Ok(mut buffer) = buffer_for_consumer.lock() {
                         buffer.push(
                             segment.text.clone(),
                             segment.start_ms,
@@ -382,8 +392,33 @@ pub async fn run_continuous_mode(
                             segment.speaker_confidence,
                             pipeline_generation,
                         );
+                        let idx = buffer.last_index().unwrap_or(0);
+                        let wc = segment.text.split_whitespace().count();
+                        let bwc = buffer.word_count();
+                        (idx, wc, bwc)
                     } else {
                         warn!("Buffer lock poisoned, segment dropped: {}", segment.text);
+                        continue;
+                    };
+
+                    // Log segment to segment timeline and replay bundle
+                    if let Ok(mut sl) = segment_logger_for_consumer.lock() {
+                        sl.log_segment(
+                            seg_index, segment.start_ms, segment.end_ms,
+                            &segment.text, segment.speaker_id.as_deref(),
+                            segment.speaker_confidence, seg_wc, buf_wc,
+                        );
+                    }
+                    if let Ok(mut bundle) = bundle_for_consumer.lock() {
+                        bundle.add_segment(crate::replay_bundle::ReplaySegment {
+                            ts: Utc::now().to_rfc3339(),
+                            index: seg_index,
+                            start_ms: segment.start_ms,
+                            end_ms: segment.end_ms,
+                            text: segment.text.clone(),
+                            speaker_id: segment.speaker_id.clone(),
+                            speaker_confidence: segment.speaker_confidence,
+                        });
                     }
 
                     // Emit transcript preview for live monitoring view (with speaker labels)
@@ -925,6 +960,27 @@ pub async fn run_continuous_mode(
     let logger_for_screenshot = Arc::clone(&pipeline_logger);
     let logger_for_flush = Arc::clone(&pipeline_logger);
 
+    // Segment logger clones for detector and flush (Arc created before consumer task)
+    let segment_logger_for_detector = Arc::clone(&segment_logger);
+
+
+    // Day-level orchestration logger
+    let day_logger = Arc::new(crate::day_log::DayLogger::new());
+    let day_logger_for_detector = Arc::clone(&day_logger);
+    let day_logger_for_flush = Arc::clone(&day_logger);
+    // Log continuous mode start with config snapshot
+    if let Some(ref dl) = *day_logger {
+        dl.log(crate::day_log::DayEvent::ContinuousModeStarted {
+            ts: Utc::now().to_rfc3339(),
+            config: config.replay_snapshot(),
+        });
+    }
+
+    // Replay bundle clones for detector, screenshot, flush (Arc created before consumer task)
+    let bundle_for_detector = Arc::clone(&replay_bundle);
+    let bundle_for_screenshot = Arc::clone(&replay_bundle);
+
+
     // Hybrid mode config
     let hybrid_confirm_window_secs = config.hybrid_confirm_window_secs;
     let hybrid_min_words_for_sensor_split = config.hybrid_min_words_for_sensor_split;
@@ -981,6 +1037,16 @@ pub async fn run_continuous_mode(
                                 let new_state = *sensor_rx.borrow_and_update();
                                 let old_state = prev_sensor_state;
                                 prev_sensor_state = new_state;
+                                // Log sensor transitions to replay bundle
+                                if old_state != new_state {
+                                    if let Ok(mut bundle) = bundle_for_detector.lock() {
+                                        bundle.add_sensor_transition(crate::replay_bundle::SensorTransition {
+                                            ts: Utc::now().to_rfc3339(),
+                                            from: old_state.as_str().to_string(),
+                                            to: new_state.as_str().to_string(),
+                                        });
+                                    }
+                                }
                                 match (old_state, new_state) {
                                     (crate::presence_sensor::PresenceState::Present,
                                      crate::presence_sensor::PresenceState::Absent) => {
@@ -1061,12 +1127,14 @@ pub async fn run_continuous_mode(
             }
 
             // Check if buffer has enough content to analyze
-            let (formatted, word_count, is_empty, first_ts) = {
+            let (formatted, word_count, is_empty, first_ts, first_seg_idx, last_seg_idx) = {
                 let buffer = match buffer_for_detector.lock() {
                     Ok(b) => b,
                     Err(_) => continue,
                 };
-                (buffer.format_for_detection(), buffer.word_count(), buffer.is_empty(), buffer.first_timestamp())
+                let first_idx = buffer.first_index().unwrap_or(0);
+                let last_idx = buffer.last_index().unwrap_or(0);
+                (buffer.format_for_detection(), buffer.word_count(), buffer.is_empty(), buffer.first_timestamp(), first_idx, last_idx)
             };
 
             // Pre-compute hallucination-cleaned word count for large buffers.
@@ -1180,8 +1248,10 @@ pub async fn run_continuous_mode(
                     } else if sensor_absent_since.is_some() {
                         ctx.sensor_departed = true;
                     }
-                    // Tell LLM when sensor confirms someone is still present (suppresses false splits)
-                    if sensor_available && !ctx.sensor_departed {
+                    // Tell LLM when sensor confirms someone is still present (suppresses false splits).
+                    // Require actual Present state — if sensor connected to wrong device and never
+                    // received valid data, prev_sensor_state stays Unknown and we don't inject context.
+                    if sensor_available && !ctx.sensor_departed && prev_sensor_state == crate::presence_sensor::PresenceState::Present {
                         ctx.sensor_present = true;
                     }
                     ctx
@@ -1206,6 +1276,14 @@ pub async fn run_continuous_mode(
                     "nothink": detection_nothink,
                     "consecutive_llm_failures": consecutive_llm_failures,
                 });
+                // Pre-compute replay bundle fields shared across all detection outcomes
+                let replay_buffer_age = first_ts
+                    .map(|t| (Utc::now() - t).num_seconds() as f64).unwrap_or(0.0);
+                let replay_sensor_absent = sensor_absent_since.map(|t| t.to_rfc3339());
+                let replay_sensor_ctx = crate::replay_bundle::SensorContext::new(
+                    detection_context.sensor_departed, detection_context.sensor_present,
+                );
+
                 match tokio::time::timeout(tokio::time::Duration::from_secs(90), llm_future).await {
                     Ok(Ok(response)) => {
                         let latency = detect_start.elapsed().as_millis() as u64;
@@ -1229,6 +1307,21 @@ pub async fn run_continuous_mode(
                                         Some(&response), latency, true, None, ctx,
                                     );
                                 }
+                                // Add detection check to replay bundle
+                                if let Ok(mut bundle) = bundle_for_detector.lock() {
+                                    let mut check = crate::replay_bundle::DetectionCheck::new(
+                                        (first_seg_idx, last_seg_idx), word_count, cleaned_word_count,
+                                        replay_sensor_ctx.clone(), system_prompt.clone(), user_prompt.clone(),
+                                        latency, consecutive_llm_failures, merge_back_count,
+                                        replay_buffer_age, replay_sensor_absent.clone(),
+                                    );
+                                    check.response_raw = Some(response.clone());
+                                    check.parsed_complete = Some(result.complete);
+                                    check.parsed_confidence = result.confidence;
+                                    check.parsed_end_index = result.end_segment_index;
+                                    check.success = true;
+                                    bundle.add_detection_check(check);
+                                }
                                 Some(result)
                             }
                             Err(e) => {
@@ -1240,6 +1333,17 @@ pub async fn run_continuous_mode(
                                         &detection_model, &system_prompt, &user_prompt,
                                         Some(&response), latency, false, Some(&e), ctx,
                                     );
+                                }
+                                if let Ok(mut bundle) = bundle_for_detector.lock() {
+                                    let mut check = crate::replay_bundle::DetectionCheck::new(
+                                        (first_seg_idx, last_seg_idx), word_count, cleaned_word_count,
+                                        replay_sensor_ctx.clone(), system_prompt.clone(), user_prompt.clone(),
+                                        latency, consecutive_llm_failures, merge_back_count,
+                                        replay_buffer_age, replay_sensor_absent.clone(),
+                                    );
+                                    check.response_raw = Some(response.clone());
+                                    check.error = Some(e.clone());
+                                    bundle.add_detection_check(check);
                                 }
                                 if let Ok(mut err) = last_error_for_detector.lock() {
                                     *err = Some(e);
@@ -1260,6 +1364,16 @@ pub async fn run_continuous_mode(
                                 &detection_model, &system_prompt, &user_prompt,
                                 None, latency, false, Some(&e.to_string()), ctx,
                             );
+                        }
+                        if let Ok(mut bundle) = bundle_for_detector.lock() {
+                            let mut check = crate::replay_bundle::DetectionCheck::new(
+                                (first_seg_idx, last_seg_idx), word_count, cleaned_word_count,
+                                replay_sensor_ctx.clone(), system_prompt.clone(), user_prompt.clone(),
+                                latency, consecutive_llm_failures, merge_back_count,
+                                replay_buffer_age, replay_sensor_absent.clone(),
+                            );
+                            check.error = Some(e.to_string());
+                            bundle.add_detection_check(check);
                         }
                         if let Ok(mut err) = last_error_for_detector.lock() {
                             *err = Some(e);
@@ -1282,6 +1396,16 @@ pub async fn run_continuous_mode(
                                 &detection_model, &system_prompt, &user_prompt,
                                 None, latency, false, Some("timeout_90s"), ctx,
                             );
+                        }
+                        if let Ok(mut bundle) = bundle_for_detector.lock() {
+                            let mut check = crate::replay_bundle::DetectionCheck::new(
+                                (first_seg_idx, last_seg_idx), word_count, cleaned_word_count,
+                                replay_sensor_ctx, system_prompt.clone(), user_prompt.clone(),
+                                latency, consecutive_llm_failures, merge_back_count,
+                                replay_buffer_age, replay_sensor_absent,
+                            );
+                            check.error = Some("timeout_90s".to_string());
+                            bundle.add_detection_check(check);
                         }
                         if let Ok(mut err) = last_error_for_detector.lock() {
                             *err = Some("Encounter detection timed out".to_string());
@@ -1520,11 +1644,49 @@ pub async fn run_continuous_mode(
                             warn!("Failed to archive encounter: {}", e);
                         }
 
-                        // Set pipeline logger to write to this session's archive folder
+                        // Set pipeline logger and segment logger to write to this session's archive folder
                         if let Ok(session_dir) = local_archive::get_session_archive_dir(&session_id, &Utc::now()) {
                             if let Ok(mut logger) = logger_for_detector.lock() {
                                 logger.set_session(&session_dir);
                             }
+                            if let Ok(mut sl) = segment_logger_for_detector.lock() {
+                                sl.set_session(&session_dir);
+                            }
+                        }
+
+                        // Compute detection method string for logging
+                        let detection_method_str = if manual_triggered {
+                            "manual"
+                        } else if is_hybrid_mode {
+                            if hybrid_sensor_timeout_triggered { "hybrid_sensor_timeout" }
+                            else if sensor_triggered { "hybrid_sensor_confirmed" }
+                            else if force_split { "hybrid_force" }
+                            else { "hybrid_llm" }
+                        } else if sensor_triggered { "sensor" }
+                        else if force_split { "force_split" }
+                        else { "llm" };
+
+                        // Set split decision on replay bundle
+                        if let Ok(mut bundle) = bundle_for_detector.lock() {
+                            bundle.set_split_decision(crate::replay_bundle::SplitDecision {
+                                ts: Utc::now().to_rfc3339(),
+                                trigger: detection_method_str.to_string(),
+                                word_count: encounter_word_count,
+                                cleaned_word_count,
+                                end_segment_index: result.end_segment_index,
+                            });
+                        }
+
+                        // Log encounter split to day log
+                        if let Some(ref dl) = *day_logger_for_detector {
+                            dl.log(crate::day_log::DayEvent::EncounterSplit {
+                                ts: Utc::now().to_rfc3339(),
+                                session_id: session_id.clone(),
+                                encounter_number,
+                                trigger: detection_method_str.to_string(),
+                                word_count: encounter_word_count,
+                                detection_method: detection_method_str.to_string(),
+                            });
                         }
 
                         // Update archive metadata with continuous mode info
@@ -1535,26 +1697,8 @@ pub async fn run_continuous_mode(
                                     if let Ok(mut metadata) = serde_json::from_str::<local_archive::ArchiveMetadata>(&content) {
                                         metadata.charting_mode = Some("continuous".to_string());
                                         metadata.encounter_number = Some(encounter_number);
-                                        // Record how this encounter was detected
-                                        metadata.detection_method = Some(
-                                            if manual_triggered {
-                                                "manual".to_string()
-                                            } else if is_hybrid_mode {
-                                                if hybrid_sensor_timeout_triggered {
-                                                    "hybrid_sensor_timeout".to_string()
-                                                } else if sensor_triggered {
-                                                    "hybrid_sensor_confirmed".to_string()
-                                                } else if force_split {
-                                                    "hybrid_force".to_string()
-                                                } else {
-                                                    "hybrid_llm".to_string()
-                                                }
-                                            } else if sensor_triggered {
-                                                "sensor".to_string()
-                                            } else {
-                                                "llm".to_string()
-                                            }
-                                        );
+                                        // Record how this encounter was detected (reuse pre-computed value)
+                                        metadata.detection_method = Some(detection_method_str.to_string());
                                         // Add patient name from vision extraction (majority vote)
                                         if let Ok(tracker) = name_tracker_for_detector.lock() {
                                             metadata.patient_name = tracker.majority_name();
@@ -1771,6 +1915,24 @@ pub async fn run_continuous_mode(
                             }
                         }
 
+                        // Log clinical check result to replay bundle + day log
+                        if let Ok(mut bundle) = bundle_for_detector.lock() {
+                            bundle.set_clinical_check(crate::replay_bundle::ClinicalCheck {
+                                ts: Utc::now().to_rfc3339(),
+                                is_clinical,
+                                latency_ms: 0, // Clinical check latency already logged via pipeline_logger
+                                success: true,
+                                error: None,
+                            });
+                        }
+                        if let Some(ref dl) = *day_logger_for_detector {
+                            dl.log(crate::day_log::DayEvent::ClinicalCheckResult {
+                                ts: Utc::now().to_rfc3339(),
+                                session_id: session_id.clone(),
+                                is_clinical,
+                            });
+                        }
+
                         // Generate SOAP note (with 120s timeout — SOAP is heavier than detection)
                         // Skip SOAP for non-clinical encounters to prevent hallucinated clinical content
                         if !is_clinical {
@@ -1850,6 +2012,24 @@ pub async fn run_continuous_mode(
                                     }));
                                     info!("SOAP generated for encounter #{}", encounter_number);
 
+                                    // Log SOAP result to replay bundle + day log
+                                    if let Ok(mut bundle) = bundle_for_detector.lock() {
+                                        bundle.set_soap_result(crate::replay_bundle::SoapResult {
+                                            ts: Utc::now().to_rfc3339(),
+                                            latency_ms: soap_latency,
+                                            success: true,
+                                            word_count: encounter_word_count,
+                                            error: None,
+                                        });
+                                    }
+                                    if let Some(ref dl) = *day_logger_for_detector {
+                                        dl.log(crate::day_log::DayEvent::SoapGenerated {
+                                            ts: Utc::now().to_rfc3339(),
+                                            session_id: session_id.clone(),
+                                            latency_ms: soap_latency,
+                                            success: true,
+                                        });
+                                    }
                                 }
                                 Ok(Err(e)) => {
                                     let soap_latency = soap_start.elapsed().as_millis() as u64;
@@ -1859,6 +2039,13 @@ pub async fn run_continuous_mode(
                                             &soap_model, &soap_system_prompt, "", None, soap_latency, false, Some(&e.to_string()),
                                             serde_json::json!({"encounter_number": encounter_number, "llm_error": true}),
                                         );
+                                    }
+                                    if let Ok(mut bundle) = bundle_for_detector.lock() {
+                                        bundle.set_soap_result(crate::replay_bundle::SoapResult {
+                                            ts: Utc::now().to_rfc3339(), latency_ms: soap_latency,
+                                            success: false, word_count: encounter_word_count,
+                                            error: Some(e.to_string()),
+                                        });
                                     }
                                     if let Ok(mut err) = last_error_for_detector.lock() {
                                         *err = Some(format!("SOAP generation failed: {}", e));
@@ -1879,6 +2066,13 @@ pub async fn run_continuous_mode(
                                             &soap_model, &soap_system_prompt, "", None, soap_latency, false, Some("timeout_120s"),
                                             serde_json::json!({"encounter_number": encounter_number, "timeout": true}),
                                         );
+                                    }
+                                    if let Ok(mut bundle) = bundle_for_detector.lock() {
+                                        bundle.set_soap_result(crate::replay_bundle::SoapResult {
+                                            ts: Utc::now().to_rfc3339(), latency_ms: soap_latency,
+                                            success: false, word_count: encounter_word_count,
+                                            error: Some("timeout_120s".to_string()),
+                                        });
                                     }
                                     if let Ok(mut err) = last_error_for_detector.lock() {
                                         *err = Some("SOAP generation timed out".to_string());
@@ -1924,6 +2118,175 @@ pub async fn run_continuous_mode(
                             if let (Some(ref prev_id), Some(ref prev_text), Some(ref prev_date)) =
                                 (&prev_encounter_session_id, &prev_encounter_text, &prev_encounter_date)
                             {
+                                // ── Small-orphan auto-merge gate ──────────────────────────
+                                // If the new encounter is very short (<500 words) and the
+                                // sensor confirms someone was present, it's almost certainly
+                                // a post-procedure tail (aftercare, scheduling) that was
+                                // incorrectly split. Auto-merge without asking the LLM.
+                                // Requires sensor data — without it we can't distinguish a
+                                // short clinical tail from background noise / non-patient chatter.
+                                const SMALL_ORPHAN_WORD_THRESHOLD: usize = 500;
+                                let sensor_confirmed_present = sensor_available
+                                    && prev_sensor_state == crate::presence_sensor::PresenceState::Present;
+
+                                if encounter_word_count < SMALL_ORPHAN_WORD_THRESHOLD && sensor_confirmed_present {
+                                    info!(
+                                        "Small-orphan auto-merge: encounter {} has {} words with sensor present — merging into {} without LLM check",
+                                        session_id, encounter_word_count, prev_id
+                                    );
+                                    if let Ok(mut logger) = logger_for_detector.lock() {
+                                        logger.log_merge_check(
+                                            "auto_merge_small_orphan", "", "",
+                                            Some(&format!("{{\"same_encounter\": true, \"reason\": \"small orphan ({} words) with sensor present\"}}", encounter_word_count)),
+                                            0, true, None,
+                                            serde_json::json!({
+                                                "prev_session_id": prev_id,
+                                                "curr_session_id": session_id,
+                                                "encounter_word_count": encounter_word_count,
+                                                "sensor_state": format!("{:?}", prev_sensor_state),
+                                                "gate": "small_orphan_auto_merge",
+                                            }),
+                                        );
+                                    }
+
+                                    // Log merge check to replay bundle
+                                    if let Ok(mut bundle) = bundle_for_detector.lock() {
+                                        bundle.set_merge_check(crate::replay_bundle::MergeCheck {
+                                            ts: Utc::now().to_rfc3339(),
+                                            prev_session_id: prev_id.clone(),
+                                            prev_tail_excerpt: String::new(),
+                                            curr_head_excerpt: String::new(),
+                                            patient_name: None,
+                                            prompt_system: String::new(),
+                                            prompt_user: String::new(),
+                                            response_raw: None,
+                                            parsed_same_encounter: Some(true),
+                                            parsed_reason: Some(format!("small orphan ({} words) with sensor present", encounter_word_count)),
+                                            latency_ms: 0,
+                                            success: true,
+                                            auto_merge_gate: Some("small_orphan_auto_merge".to_string()),
+                                        });
+                                    }
+                                    if let Some(ref dl) = *day_logger_for_detector {
+                                        dl.log(crate::day_log::DayEvent::EncounterMerged {
+                                            ts: Utc::now().to_rfc3339(),
+                                            new_session_id: session_id.clone(),
+                                            prev_session_id: prev_id.clone(),
+                                            reason: "small_orphan_auto_merge".to_string(),
+                                            gate_type: Some("small_orphan".to_string()),
+                                        });
+                                    }
+
+                                    // Perform the merge (same logic as LLM-confirmed merge below)
+                                    let merged_text = format!("{}\n{}", prev_text, encounter_text);
+                                    let merged_wc = merged_text.split_whitespace().count();
+                                    let merged_duration = encounter_start
+                                        .map(|s| (Utc::now() - s).num_milliseconds().max(0) as u64)
+                                        .unwrap_or(0);
+                                    let merge_vision_name = name_tracker_for_detector
+                                        .lock()
+                                        .ok()
+                                        .and_then(|t| t.majority_name());
+                                    if let Err(e) = local_archive::merge_encounters(
+                                        prev_id,
+                                        &session_id,
+                                        prev_date,
+                                        &merged_text,
+                                        merged_wc,
+                                        merged_duration,
+                                        merge_vision_name.as_deref(),
+                                    ) {
+                                        warn!("Failed to auto-merge small orphan: {}", e);
+                                    } else {
+                                        // Regenerate SOAP for the merged encounter
+                                        if !(is_clinical || prev_encounter_is_clinical) {
+                                            info!("Skipping SOAP regeneration for auto-merged non-clinical encounters");
+                                        } else if let Some(ref client) = llm_client {
+                                            let (filtered_merged, _) = strip_hallucinations(&merged_text, 5);
+                                            let merge_notes = encounter_notes_for_detector
+                                                .lock()
+                                                .map(|n| n.clone())
+                                                .unwrap_or_default();
+                                            let merge_soap_opts = crate::llm_client::SoapOptions {
+                                                detail_level: soap_detail_level,
+                                                format: crate::llm_client::SoapFormat::from_config_str(&soap_format),
+                                                session_notes: merge_notes,
+                                                ..Default::default()
+                                            };
+                                            let merge_soap_system_prompt = crate::llm_client::build_simple_soap_prompt(&merge_soap_opts);
+                                            let soap_future = client.generate_multi_patient_soap_note(
+                                                &soap_model,
+                                                &filtered_merged,
+                                                None,
+                                                Some(&merge_soap_opts),
+                                                None,
+                                            );
+                                            match tokio::time::timeout(tokio::time::Duration::from_secs(120), soap_future).await {
+                                                Ok(Ok(soap_result)) => {
+                                                    let soap_content = &soap_result.notes
+                                                        .iter()
+                                                        .map(|n| n.content.clone())
+                                                        .collect::<Vec<_>>()
+                                                        .join("\n\n---\n\n");
+                                                    if let Ok(mut logger) = logger_for_detector.lock() {
+                                                        logger.log_soap(
+                                                            &soap_model, &merge_soap_system_prompt, "",
+                                                            Some(soap_content), 0, true, None,
+                                                            serde_json::json!({
+                                                                "stage": "auto_merge_soap_regen",
+                                                                "merged_into": prev_id,
+                                                                "merged_word_count": merged_wc,
+                                                            }),
+                                                        );
+                                                    }
+                                                    let _ = local_archive::add_soap_note(
+                                                        prev_id,
+                                                        prev_date,
+                                                        soap_content,
+                                                        Some(soap_detail_level),
+                                                        Some(&soap_format),
+                                                    );
+                                                    // Clear non-clinical flag if needed
+                                                    if prev_encounter_is_clinical != is_clinical {
+                                                        if let Ok(session_dir) = local_archive::get_session_archive_dir(prev_id, prev_date) {
+                                                            let merge_meta_path = session_dir.join("metadata.json");
+                                                            if let Ok(content) = std::fs::read_to_string(&merge_meta_path) {
+                                                                if let Ok(mut metadata) = serde_json::from_str::<local_archive::ArchiveMetadata>(&content) {
+                                                                    metadata.likely_non_clinical = None;
+                                                                    if let Ok(json) = serde_json::to_string_pretty(&metadata) {
+                                                                        let _ = std::fs::write(&merge_meta_path, json);
+                                                                    }
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                    info!("Regenerated SOAP for auto-merged encounter {}", prev_id);
+                                                }
+                                                Ok(Err(e)) => warn!("Auto-merge SOAP generation failed: {}", e),
+                                                Err(_) => warn!("Auto-merge SOAP generation timed out"),
+                                            }
+                                        }
+
+                                        merge_back_count += 1;
+                                        encounter_number -= 1;
+                                        info!("Auto-merge complete (merge_back_count now {}, encounter_number now {})", merge_back_count, encounter_number);
+
+                                        // Emit merge event to frontend
+                                        let _ = app_for_detector.emit("continuous_mode_event", serde_json::json!({
+                                            "type": "encounter_merged",
+                                            "kept_session_id": prev_id,
+                                            "removed_session_id": session_id,
+                                            "reason": format!("small orphan ({} words) with sensor present", encounter_word_count),
+                                        }));
+
+                                        // Update prev tracking to the merged encounter
+                                        prev_encounter_text = Some(merged_text);
+                                        prev_encounter_is_clinical = is_clinical || prev_encounter_is_clinical;
+                                        continue; // Skip updating prev to current since we merged
+                                    }
+                                }
+
+                                // ── LLM merge check (normal path) ────────────────────────
                                 let prev_tail = tail_words(prev_text, MERGE_EXCERPT_WORDS);
                                 let curr_head = head_words(&encounter_text, MERGE_EXCERPT_WORDS);
 
@@ -1968,7 +2331,33 @@ pub async fn run_continuous_mode(
                                                             }),
                                                         );
                                                     }
+                                                    if let Ok(mut bundle) = bundle_for_detector.lock() {
+                                                        bundle.set_merge_check(crate::replay_bundle::MergeCheck {
+                                                            ts: Utc::now().to_rfc3339(),
+                                                            prev_session_id: prev_id.clone(),
+                                                            prev_tail_excerpt: filtered_prev_tail.clone(),
+                                                            curr_head_excerpt: filtered_curr_head.clone(),
+                                                            patient_name: merge_patient_name.clone(),
+                                                            prompt_system: merge_system.clone(),
+                                                            prompt_user: merge_user.clone(),
+                                                            response_raw: Some(merge_response.clone()),
+                                                            parsed_same_encounter: Some(merge_result.same_encounter),
+                                                            parsed_reason: merge_result.reason.as_ref().map(|r| format!("{:?}", r)),
+                                                            latency_ms: merge_latency,
+                                                            success: true,
+                                                            auto_merge_gate: None,
+                                                        });
+                                                    }
                                                     if merge_result.same_encounter {
+                                                        if let Some(ref dl) = *day_logger_for_detector {
+                                                            dl.log(crate::day_log::DayEvent::EncounterMerged {
+                                                                ts: Utc::now().to_rfc3339(),
+                                                                new_session_id: session_id.clone(),
+                                                                prev_session_id: prev_id.clone(),
+                                                                reason: format!("{:?}", merge_result.reason),
+                                                                gate_type: None,
+                                                            });
+                                                        }
                                                         info!(
                                                             "Merge check: encounters are the same visit (reason: {:?}). Merging {} into {}",
                                                             merge_result.reason, session_id, prev_id
@@ -2359,6 +2748,44 @@ pub async fn run_continuous_mode(
                             merge_back_count = 0;
                         }
 
+                        // Finalize replay bundle for this encounter
+                        // Lock name tracker once, extract all needed state
+                        let (tracker_majority, tracker_votes, tracker_unique) = name_tracker_for_detector
+                            .lock()
+                            .map(|t| {
+                                let majority = t.majority_name();
+                                let votes: usize = t.votes().values().map(|v| *v as usize).sum();
+                                let unique: Vec<String> = t.votes().keys().cloned().collect();
+                                (majority, votes, unique)
+                            })
+                            .unwrap_or_default();
+                        if let Ok(mut bundle) = bundle_for_detector.lock() {
+                            bundle.set_name_tracker(crate::replay_bundle::NameTrackerState {
+                                majority_name: tracker_majority.clone(),
+                                vote_count: tracker_votes,
+                                unique_names: tracker_unique,
+                            });
+                            let trigger = bundle.split_decision_trigger();
+                            bundle.set_outcome(crate::replay_bundle::Outcome {
+                                session_id: session_id.clone(),
+                                encounter_number,
+                                word_count: encounter_word_count,
+                                is_clinical,
+                                was_merged: false,
+                                merged_into: None,
+                                patient_name: tracker_majority,
+                                detection_method: trigger,
+                            });
+                            // Write replay_bundle.json and reset for next encounter
+                            if let Ok(session_dir) = local_archive::get_session_archive_dir(&session_id, &Utc::now()) {
+                                bundle.build_and_reset(&session_dir);
+                            }
+                        }
+                        // Reset segment logger for next encounter
+                        if let Ok(mut sl) = segment_logger_for_detector.lock() {
+                            sl.clear_session();
+                        }
+
                         // Update prev encounter tracking for next iteration
                         prev_encounter_session_id = Some(session_id.clone());
                         prev_encounter_text = Some(encounter_text);
@@ -2538,6 +2965,15 @@ pub async fn run_continuous_mode(
                                     }),
                                 );
                             }
+                            if let Ok(mut bundle) = bundle_for_screenshot.lock() {
+                                bundle.add_vision_result(crate::replay_bundle::VisionResult {
+                                    ts: Utc::now().to_rfc3339(),
+                                    parsed_name: Some(name.clone()),
+                                    is_stale,
+                                    is_blank: false,
+                                    latency_ms: vision_latency,
+                                });
+                            }
 
                             if is_stale {
                                 info!(
@@ -2579,6 +3015,9 @@ pub async fn run_continuous_mode(
                                     }),
                                 );
                             }
+                            if let Ok(mut bundle) = bundle_for_screenshot.lock() {
+                                bundle.add_vision_result(crate::replay_bundle::VisionResult::failed(vision_latency));
+                            }
                             debug!("Vision did not find a patient name on screen");
                         }
                     }
@@ -2591,6 +3030,9 @@ pub async fn run_continuous_mode(
                                 serde_json::json!({"llm_error": true}),
                             );
                         }
+                        if let Ok(mut bundle) = bundle_for_screenshot.lock() {
+                            bundle.add_vision_result(crate::replay_bundle::VisionResult::failed(vision_latency));
+                        }
                         debug!("Vision name extraction failed: {}", e);
                     }
                     Err(_) => {
@@ -2601,6 +3043,9 @@ pub async fn run_continuous_mode(
                                 None, vision_latency, false, Some("timeout_30s"),
                                 serde_json::json!({"timeout": true}),
                             );
+                        }
+                        if let Ok(mut bundle) = bundle_for_screenshot.lock() {
+                            bundle.add_vision_result(crate::replay_bundle::VisionResult::failed(vision_latency));
                         }
                         debug!("Vision name extraction timed out after 30s");
                     }
@@ -3076,6 +3521,15 @@ pub async fn run_continuous_mode(
                 }
             }
         }
+    }
+
+    // Log continuous mode stopped event
+    if let Some(ref dl) = *day_logger_for_flush {
+        dl.log(crate::day_log::DayEvent::ContinuousModeStopped {
+            ts: Utc::now().to_rfc3339(),
+            total_encounters: handle.encounters_detected.load(Ordering::Relaxed),
+            flush_session_id: None,
+        });
     }
 
     // Set state to idle

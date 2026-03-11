@@ -878,6 +878,32 @@ impl Config {
         // Clamp values to safe ranges after applying settings
         self.clamp_values();
     }
+
+    /// Snapshot of pipeline-relevant config fields for replay bundle logging.
+    /// Captures all settings that affect encounter detection, merge, sensor, and SOAP behavior.
+    pub fn replay_snapshot(&self) -> serde_json::Value {
+        serde_json::json!({
+            "encounter_detection_mode": self.encounter_detection_mode.to_string(),
+            "encounter_detection_model": self.encounter_detection_model,
+            "encounter_detection_nothink": self.encounter_detection_nothink,
+            "encounter_check_interval_secs": self.encounter_check_interval_secs,
+            "encounter_silence_trigger_secs": self.encounter_silence_trigger_secs,
+            "encounter_merge_enabled": self.encounter_merge_enabled,
+            "hybrid_confirm_window_secs": self.hybrid_confirm_window_secs,
+            "hybrid_min_words_for_sensor_split": self.hybrid_min_words_for_sensor_split,
+            "presence_sensor_port": self.presence_sensor_port,
+            "presence_absence_threshold_secs": self.presence_absence_threshold_secs,
+            "presence_debounce_secs": self.presence_debounce_secs,
+            "soap_model": self.soap_model,
+            "soap_model_fast": self.soap_model_fast,
+            "soap_detail_level": self.soap_detail_level,
+            "soap_format": self.soap_format,
+            "screen_capture_enabled": self.screen_capture_enabled,
+            "screen_capture_interval_secs": self.screen_capture_interval_secs,
+            "fast_model": self.fast_model,
+            "shadow_active_method": self.shadow_active_method.to_string(),
+        })
+    }
 }
 
 #[cfg(test)]

@@ -65,6 +65,10 @@ Rust Backend
 ├── shadow_log.rs      # Shadow mode CSV logging (dual detection comparison)
 ├── gemini_client.rs   # Google Gemini API client (image generation)
 ├── pipeline_log.rs    # Pipeline replay JSONL logger (detection, SOAP, screenshot events)
+├── segment_log.rs     # Per-segment JSONL timeline logger (continuous mode)
+├── replay_bundle.rs   # Self-contained encounter replay test case builder
+├── day_log.rs         # Day-level orchestration JSONL logger
+├── transcript_buffer.rs # Timestamped transcript segment buffer (continuous mode)
 ├── encounter_experiment.rs # Encounter detection experiment CLI support
 ├── vision_experiment.rs    # Vision SOAP experiment CLI support
 ├── diarization/       # Speaker detection (ONNX embeddings, clustering)
@@ -132,6 +136,7 @@ cd src-tauri && cargo test       # Rust
 | Modify session cleanup (history) | `commands/archive.rs`, `HistoryWindow.tsx`, `components/cleanup/` (CleanupActionBar, DeleteConfirmDialog, EditNameDialog, MergeConfirmDialog, SplitView), `SplitWindow.tsx` (standalone split window) |
 | Modify shadow mode | `shadow_log.rs`, `continuous_mode.rs` (shadow observer task), `config.rs` (`shadow_active_method`, `shadow_csv_log_enabled`) |
 | Modify screen capture / vision | `screenshot.rs` (capture, permission check, blank detection), `patient_name_tracker.rs` (name extraction), `continuous_mode.rs` (screenshot task), `commands/screenshot.rs` |
+| Modify replay logging | `segment_log.rs` (per-segment JSONL), `replay_bundle.rs` (encounter test case), `day_log.rs` (day-level events), `continuous_mode.rs` (integration points), `config.rs` (`replay_snapshot()`) |
 | Add session-scoped state | `useSessionLifecycle.ts` (add reset call to `resetAllSessionState`) |
 
 ## IPC Commands (91 total across 17 modules)
@@ -213,6 +218,10 @@ Idle → Preparing → Recording → Stopping → Completed
 | Orphaned SOAP recovery | On continuous mode stop, scans today's sessions for `has_soap_note == false` and regenerates SOAP. Skips non-clinical encounters. Uses existing flush LLM client |
 | Sensor prompt design | sensor_departed: V2_soft framing lists common false departures, directs LLM to evaluate transcript content. sensor_present: conservative "NOT transitions" framing, proven in production |
 | Retrospective multi-patient check | After merge-back, if merged transcript >= 2500 words: (1) `MULTI_PATIENT_CHECK_PROMPT` detects multiple patients (distinguishes companions from separate visits), (2) `MULTI_PATIENT_SPLIT_PROMPT` finds boundary via name transitions, (3) size gate requires both halves >= 500 words. Auto-splits and regenerates SOAP for both halves. Constants in `encounter_detection.rs`, logic in `continuous_mode.rs` |
+| Replay logging architecture | Three tiers: `SegmentLogger` (per-segment JSONL, buffers before session dir exists, holds open file handle), `ReplayBundleBuilder` (accumulator pattern, `build_and_reset()` uses `std::mem::take()` for zero-copy write+reset), `DayLogger` (day-level JSONL, immediate writes). All created in continuous mode setup, wired at 12+ integration points. Schema version field for forward compatibility |
+| DetectionCheck construction | Use `DetectionCheck::new()` constructor for common fields (sensor context, prompts, loop state), then set result-specific fields (`success`, `response_raw`, `parsed_*`, `error`). Avoids 4x copy-paste at LLM call outcomes |
+| Replay bundle lifecycle | Created with `config.replay_snapshot()` at continuous mode start → `add_segment/detection_check/vision_result/sensor_transition` during encounter → `set_split_decision/clinical_check/merge_check/soap_result/name_tracker/outcome` at encounter end → `build_and_reset()` writes JSON and clears for next encounter |
+| Config replay snapshot | `config.replay_snapshot()` returns `serde_json::Value` with 20 pipeline-relevant fields (detection mode/model/timing, merge, sensor, SOAP, screen capture). Logged in both `day_log.jsonl` config event and `replay_bundle.json` |
 
 ## Features
 
@@ -235,6 +244,7 @@ Idle → Preparing → Recording → Stopping → Completed
 | **Shadow Mode** | Dual detection comparison — runs sensor and LLM concurrently, logs decisions to CSV for accuracy analysis. Config: `encounter_detection_mode="shadow"`, `shadow_active_method` | `shadow_log.rs`, `continuous_mode.rs` |
 | **Session Cleanup** | History window tools: delete, split, merge sessions, rename patients, renumber encounters. Split opens in separate resizable window with LLM-suggested split point (`suggest_split_points` via `fast-model`) | `commands/archive.rs`, `components/cleanup/`, `SplitWindow.tsx` |
 | **Vision Experiments** | CLI + IPC tools for comparing vision-based SOAP strategies across archived sessions | `vision_experiment.rs`, `commands/ollama.rs` |
+| **Simulation Replay Logging** | Three-tier structured logging for offline replay and regression testing: per-segment JSONL timeline (`segments.jsonl`), self-contained encounter test case (`replay_bundle.json` — all LLM prompts/responses, sensor transitions, vision results, split decisions), day-level orchestration events (`day_log.jsonl`). Config snapshot via `replay_snapshot()`. ~0.5-3MB/day | `segment_log.rs`, `replay_bundle.rs`, `day_log.rs`, `config.rs` |
 
 ### Continuous Mode Lifecycle Notes
 - `started` event emitted only after pipeline successfully starts
@@ -258,6 +268,9 @@ Key settings groups: STT Router (whisper_server_url, stt_alias=`"medical-streami
 | `~/.transcriptionapp/speaker_profiles.json` | Enrolled speaker voice profiles |
 | `~/.transcriptionapp/medplum_auth.json` | OAuth tokens |
 | `~/.transcriptionapp/archive/` | Local session archive (`YYYY/MM/DD/session_id/`) |
+| `~/.transcriptionapp/archive/YYYY/MM/DD/day_log.jsonl` | Day-level orchestration events (config snapshot, splits, merges, SOAP results) |
+| `~/.transcriptionapp/archive/YYYY/MM/DD/session_id/segments.jsonl` | Per-segment timeline (timestamp, text, speaker, word counts) |
+| `~/.transcriptionapp/archive/YYYY/MM/DD/session_id/replay_bundle.json` | Self-contained encounter test case (all LLM calls, decisions, outcomes) |
 | `~/.transcriptionapp/logs/` | Activity logs (daily rotation, PHI-safe) |
 | `~/.transcriptionapp/debug/` | Debug storage (dev only) |
 | `~/.transcriptionapp/mmwave/` | Presence sensor CSV logs (daily rotation) |
