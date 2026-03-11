@@ -84,7 +84,10 @@ Respond with ONLY the JSON object."#;
                 "CONTEXT: The presence sensor detected possible movement away from the room. \
                 Note: brief departures during medical visits are common (hand washing, supplies, \
                 injection preparation, bathroom). Evaluate the TRANSCRIPT CONTENT to determine \
-                if the encounter has actually concluded — a sensor departure alone is not sufficient.".to_string()
+                if the encounter has actually concluded — a sensor departure alone is not sufficient. \
+                IMPORTANT: Transcript timestamps are more reliable than the sensor. If segments \
+                show continuous or very recent speech (no large time gap), the encounter is likely \
+                still active regardless of the sensor signal.".to_string()
             );
         }
         // Sensor still present — use original production prompt (proven reliable)
