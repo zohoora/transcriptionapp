@@ -221,6 +221,46 @@ export function createInvokeMock(responses: Record<string, unknown>) {
   });
 }
 
+// Standard mock for App-level integration tests.
+// Handles all commands invoked during App initialization.
+// Unknown commands resolve to undefined (permissive) to prevent cascade
+// failures when new IPC commands are added.
+export function createStandardMock(overrides: Record<string, unknown> = {}) {
+  return (command: string) => {
+    const responses: Record<string, unknown> = {
+      list_input_devices: mockDevices,
+      get_settings: mockSettings,
+      start_session: undefined,
+      stop_session: undefined,
+      reset_session: undefined,
+      set_settings: mockSettings,
+      run_checklist: {
+        checks: [
+          { name: 'Audio Device', status: 'pass', message: 'OK' },
+          { name: 'Model', status: 'pass', message: 'OK' },
+        ],
+        all_passed: true,
+        can_start: true,
+        summary: 'All checks passed',
+      },
+      check_model_status: { available: true, path: '/models/model.bin', error: null },
+      check_microphone_permission: { status: 'authorized', authorized: true, message: 'OK' },
+      open_microphone_settings: undefined,
+      medplum_try_restore_session: undefined,
+      check_ollama_status: { connected: false, available_models: [], error: null },
+      medplum_check_connection: false,
+      start_listening: undefined,
+      stop_listening: undefined,
+      get_listening_status: { is_listening: false, speech_detected: false, speech_duration_ms: 0, analyzing: false },
+      ...overrides,
+    };
+    if (command in responses) {
+      return Promise.resolve(responses[command]);
+    }
+    return Promise.resolve(undefined);
+  };
+}
+
 // Helper to create listen mock with event callbacks
 type EventCallback = (event: { payload: unknown }) => void;
 type EventListeners = Map<string, EventCallback[]>;

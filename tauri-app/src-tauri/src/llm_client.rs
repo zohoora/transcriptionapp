@@ -2610,4 +2610,60 @@ mod tests {
             "Should either repair or return placeholder, got: {}", result
         );
     }
+
+    // ========================================================================
+    // format_for_archive tests
+    // ========================================================================
+
+    fn make_soap_result(notes: Vec<(&str, &str)>) -> MultiPatientSoapResult {
+        MultiPatientSoapResult {
+            notes: notes.into_iter().map(|(label, content)| PatientSoapNote {
+                patient_label: label.to_string(),
+                content: content.to_string(),
+                speaker_id: String::new(),
+            }).collect(),
+            physician_speaker: None,
+            generated_at: "2026-01-01T00:00:00Z".to_string(),
+            model_used: "test-model".to_string(),
+        }
+    }
+
+    #[test]
+    fn test_format_for_archive_single_patient() {
+        let result = make_soap_result(vec![("Patient 1", "S: Headache\nO: Normal\nA: Migraine\nP: Rest")]);
+        let formatted = result.format_for_archive();
+        // Single patient: bare content, no header
+        assert_eq!(formatted, "S: Headache\nO: Normal\nA: Migraine\nP: Rest");
+        assert!(!formatted.contains("==="));
+    }
+
+    #[test]
+    fn test_format_for_archive_two_patients() {
+        let result = make_soap_result(vec![
+            ("Patient 1", "S: Headache"),
+            ("Patient 2", "S: Back pain"),
+        ]);
+        let formatted = result.format_for_archive();
+        assert!(formatted.contains("=== Patient 1 ===\nS: Headache"));
+        assert!(formatted.contains("=== Patient 2 ===\nS: Back pain"));
+        assert!(formatted.contains("\n\n---\n\n"));
+    }
+
+    #[test]
+    fn test_format_for_archive_three_patients() {
+        let result = make_soap_result(vec![
+            ("Patient 1", "content1"),
+            ("Patient 2", "content2"),
+            ("Patient 3", "content3"),
+        ]);
+        let formatted = result.format_for_archive();
+        // Should have 2 separators for 3 patients
+        assert_eq!(formatted.matches("\n\n---\n\n").count(), 2);
+    }
+
+    #[test]
+    fn test_format_for_archive_empty_notes() {
+        let result = make_soap_result(vec![]);
+        assert_eq!(result.format_for_archive(), "");
+    }
 }

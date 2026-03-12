@@ -51,6 +51,112 @@ pub struct EncounterDetectionResult {
     pub confidence: Option<f64>,
 }
 
+/// Outcome of applying decision logic to a raw LLM detection result.
+/// Pure function output — no side effects, no logging.
+#[derive(Debug, Clone, PartialEq)]
+pub enum DetectionOutcome {
+    /// LLM says split and confidence meets threshold
+    Split {
+        end_segment_index: Option<u64>,
+        confidence: f64,
+        trigger: String,
+    },
+    /// LLM says split but confidence below threshold
+    BelowThreshold {
+        confidence: f64,
+        threshold: f64,
+    },
+    /// LLM says no split (complete=false)
+    NoSplit,
+    /// No detection result available (LLM error/timeout)
+    NoResult,
+    /// Force-split triggered (absolute cap, graduated, or manual)
+    ForceSplit {
+        trigger: String,
+    },
+}
+
+/// Input context for detection evaluation.
+#[derive(Debug, Clone)]
+pub struct DetectionEvalContext {
+    pub detection_result: Option<EncounterDetectionResult>,
+    pub buffer_age_mins: i64,
+    pub merge_back_count: usize,
+    pub word_count: usize,
+    pub cleaned_word_count: usize,
+    pub consecutive_llm_failures: u32,
+    pub manual_triggered: bool,
+    pub force_split: bool,
+}
+
+/// Evaluate a detection result against thresholds and force-split rules.
+/// Pure function: no side effects, no logging, no locks.
+/// Returns the decision and updated consecutive_llm_failures count.
+pub fn evaluate_detection(ctx: &DetectionEvalContext) -> (DetectionOutcome, u32) {
+    use crate::continuous_mode::calculate_confidence_threshold;
+
+    let effective_word_count = ctx.cleaned_word_count.max(ctx.word_count / 2);
+    let mut failures = ctx.consecutive_llm_failures;
+
+    // 1. Absolute word cap — unconditional force-split
+    if effective_word_count > ABSOLUTE_WORD_CAP {
+        return (DetectionOutcome::ForceSplit { trigger: "absolute_word_cap".into() }, failures);
+    }
+
+    // 2. Manual trigger — always split
+    if ctx.manual_triggered {
+        let end_idx = ctx.detection_result.as_ref().and_then(|r| r.end_segment_index);
+        return (DetectionOutcome::Split {
+            end_segment_index: end_idx,
+            confidence: 1.0,
+            trigger: "manual".into(),
+        }, failures);
+    }
+
+    // 3. No detection result (LLM error/timeout)
+    let result = match &ctx.detection_result {
+        Some(r) => r,
+        None => {
+            failures += 1;
+            // Graduated force-split on repeated LLM failures
+            if effective_word_count > FORCE_SPLIT_WORD_THRESHOLD
+                && failures >= FORCE_SPLIT_CONSECUTIVE_LIMIT
+            {
+                return (DetectionOutcome::ForceSplit { trigger: "graduated_llm_failure".into() }, failures);
+            }
+            return (DetectionOutcome::NoResult, failures);
+        }
+    };
+
+    // 4. LLM says not complete — reset failure counter
+    if !result.complete {
+        return (DetectionOutcome::NoSplit, 0);
+    }
+
+    // 5. LLM says complete — apply confidence gate
+    let confidence = result.confidence.unwrap_or(0.0);
+
+    // Force-split bypasses confidence gate
+    if ctx.force_split {
+        return (DetectionOutcome::Split {
+            end_segment_index: result.end_segment_index,
+            confidence,
+            trigger: "force_split".into(),
+        }, failures);
+    }
+
+    let threshold = calculate_confidence_threshold(ctx.buffer_age_mins, ctx.merge_back_count);
+    if confidence < threshold {
+        return (DetectionOutcome::BelowThreshold { confidence, threshold }, failures);
+    }
+
+    (DetectionOutcome::Split {
+        end_segment_index: result.end_segment_index,
+        confidence,
+        trigger: "llm".into(),
+    }, 0) // Reset failures on successful split
+}
+
 /// Build the encounter detection prompt.
 /// Accepts optional context signals from vision and sensor to improve accuracy.
 pub fn build_encounter_detection_prompt(
@@ -732,5 +838,138 @@ mod tests {
             "New detect threshold ({}) should be lower than old check threshold ({})",
             MULTI_PATIENT_DETECT_WORD_THRESHOLD, MULTI_PATIENT_CHECK_WORD_THRESHOLD
         );
+    }
+
+    // ========================================================================
+    // evaluate_detection tests
+    // ========================================================================
+
+    fn make_ctx(result: Option<EncounterDetectionResult>) -> DetectionEvalContext {
+        DetectionEvalContext {
+            detection_result: result,
+            buffer_age_mins: 10,
+            merge_back_count: 0,
+            word_count: 1000,
+            cleaned_word_count: 1000,
+            consecutive_llm_failures: 0,
+            manual_triggered: false,
+            force_split: false,
+        }
+    }
+
+    fn make_detection(complete: bool, confidence: f64) -> EncounterDetectionResult {
+        EncounterDetectionResult {
+            complete,
+            end_segment_index: Some(42),
+            confidence: Some(confidence),
+        }
+    }
+
+    #[test]
+    fn test_eval_high_confidence_short_encounter_splits() {
+        let ctx = make_ctx(Some(make_detection(true, 0.95)));
+        let (outcome, failures) = evaluate_detection(&ctx);
+        assert!(matches!(outcome, DetectionOutcome::Split { confidence, .. } if confidence == 0.95));
+        assert_eq!(failures, 0);
+    }
+
+    #[test]
+    fn test_eval_low_confidence_short_encounter_rejected() {
+        let ctx = make_ctx(Some(make_detection(true, 0.5)));
+        let (outcome, _) = evaluate_detection(&ctx);
+        assert!(matches!(outcome, DetectionOutcome::BelowThreshold { confidence, threshold }
+            if confidence == 0.5 && (threshold - 0.85).abs() < f64::EPSILON));
+    }
+
+    #[test]
+    fn test_eval_confidence_075_long_encounter_splits() {
+        let mut ctx = make_ctx(Some(make_detection(true, 0.75)));
+        ctx.buffer_age_mins = 25; // threshold drops to 0.7
+        let (outcome, _) = evaluate_detection(&ctx);
+        assert!(matches!(outcome, DetectionOutcome::Split { .. }));
+    }
+
+    #[test]
+    fn test_eval_not_complete_returns_nosplit_resets_failures() {
+        let mut ctx = make_ctx(Some(make_detection(false, 0.0)));
+        ctx.consecutive_llm_failures = 5;
+        let (outcome, failures) = evaluate_detection(&ctx);
+        assert_eq!(outcome, DetectionOutcome::NoSplit);
+        assert_eq!(failures, 0);
+    }
+
+    #[test]
+    fn test_eval_no_result_increments_failures() {
+        let mut ctx = make_ctx(None);
+        ctx.consecutive_llm_failures = 1;
+        let (outcome, failures) = evaluate_detection(&ctx);
+        assert_eq!(outcome, DetectionOutcome::NoResult);
+        assert_eq!(failures, 2);
+    }
+
+    #[test]
+    fn test_eval_absolute_word_cap_force_splits() {
+        let mut ctx = make_ctx(None);
+        ctx.cleaned_word_count = ABSOLUTE_WORD_CAP + 1;
+        let (outcome, _) = evaluate_detection(&ctx);
+        assert!(matches!(outcome, DetectionOutcome::ForceSplit { trigger } if trigger == "absolute_word_cap"));
+    }
+
+    #[test]
+    fn test_eval_graduated_force_split() {
+        let mut ctx = make_ctx(None);
+        ctx.cleaned_word_count = FORCE_SPLIT_WORD_THRESHOLD + 1;
+        ctx.consecutive_llm_failures = FORCE_SPLIT_CONSECUTIVE_LIMIT - 1; // will be incremented to limit
+        let (outcome, failures) = evaluate_detection(&ctx);
+        assert!(matches!(outcome, DetectionOutcome::ForceSplit { trigger } if trigger == "graduated_llm_failure"));
+        assert_eq!(failures, FORCE_SPLIT_CONSECUTIVE_LIMIT);
+    }
+
+    #[test]
+    fn test_eval_graduated_not_enough_failures() {
+        let mut ctx = make_ctx(None);
+        ctx.cleaned_word_count = FORCE_SPLIT_WORD_THRESHOLD + 1;
+        ctx.consecutive_llm_failures = 0; // 0 + 1 = 1, below limit of 3
+        let (outcome, failures) = evaluate_detection(&ctx);
+        assert_eq!(outcome, DetectionOutcome::NoResult);
+        assert_eq!(failures, 1);
+    }
+
+    #[test]
+    fn test_eval_manual_trigger_bypasses_confidence() {
+        let mut ctx = make_ctx(Some(make_detection(true, 0.1))); // very low confidence
+        ctx.manual_triggered = true;
+        let (outcome, _) = evaluate_detection(&ctx);
+        assert!(matches!(outcome, DetectionOutcome::Split { trigger, .. } if trigger == "manual"));
+    }
+
+    #[test]
+    fn test_eval_merge_back_escalation_raises_threshold() {
+        let mut ctx = make_ctx(Some(make_detection(true, 0.90)));
+        ctx.merge_back_count = 2; // threshold = 0.85 + 0.10 = 0.95
+        let (outcome, _) = evaluate_detection(&ctx);
+        // 0.90 < 0.95 → rejected
+        assert!(matches!(outcome, DetectionOutcome::BelowThreshold { .. }));
+    }
+
+    #[test]
+    fn test_eval_force_split_flag_bypasses_confidence() {
+        let mut ctx = make_ctx(Some(make_detection(true, 0.1)));
+        ctx.force_split = true;
+        let (outcome, _) = evaluate_detection(&ctx);
+        assert!(matches!(outcome, DetectionOutcome::Split { trigger, .. } if trigger == "force_split"));
+    }
+
+    #[test]
+    fn test_eval_effective_word_count_uses_max() {
+        // cleaned=100, raw=600 → effective = max(100, 300) = 300
+        // Below FORCE_SPLIT threshold, so no force split
+        let mut ctx = make_ctx(None);
+        ctx.cleaned_word_count = 100;
+        ctx.word_count = 600;
+        ctx.consecutive_llm_failures = 10;
+        let (outcome, _) = evaluate_detection(&ctx);
+        // effective=300 < 5000, so no graduated force split despite many failures
+        assert_eq!(outcome, DetectionOutcome::NoResult);
     }
 }

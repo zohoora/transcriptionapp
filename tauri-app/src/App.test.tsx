@@ -18,52 +18,13 @@ import {
   mockAudioQualityNoisy,
   mockAudioQualityDropout,
   createListenMock,
+  createStandardMock,
 } from './test/mocks';
 
 // Type the mocks
 const mockInvoke = vi.mocked(invoke);
 const mockListen = vi.mocked(listen);
 const mockWriteText = vi.mocked(writeText);
-
-// Helper to create standard mock implementation
-function createStandardMock(overrides: Record<string, unknown> = {}) {
-  return (command: string) => {
-    const responses: Record<string, unknown> = {
-      list_input_devices: mockDevices,
-      get_settings: mockSettings,
-      start_session: undefined,
-      stop_session: undefined,
-      reset_session: undefined,
-      set_settings: mockSettings,
-      // Checklist commands
-      run_checklist: {
-        checks: [
-          { name: 'Audio Device', status: 'pass', message: 'OK' },
-          { name: 'Model', status: 'pass', message: 'OK' },
-        ],
-        all_passed: true,
-        can_start: true,
-        summary: 'All checks passed',
-      },
-      check_model_status: { available: true, path: '/models/model.bin', error: null },
-      check_microphone_permission: { status: 'authorized', authorized: true, message: 'OK' },
-      open_microphone_settings: undefined,
-      // Medplum/Ollama commands used on init
-      medplum_try_restore_session: undefined,
-      check_ollama_status: { connected: false, available_models: [], error: null },
-      medplum_check_connection: false,
-      // Listening commands
-      start_listening: undefined,
-      stop_listening: undefined,
-      get_listening_status: { is_listening: false, speech_detected: false, speech_duration_ms: 0, analyzing: false },
-      ...overrides,
-    };
-    if (command in responses) {
-      return Promise.resolve(responses[command]);
-    }
-    return Promise.reject(new Error(`Unknown command: ${command}`));
-  };
-}
 
 // Helper to wait for the app to finish loading (checklist running completes)
 async function waitForAppReady() {

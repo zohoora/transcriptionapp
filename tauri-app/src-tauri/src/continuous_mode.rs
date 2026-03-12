@@ -60,6 +60,16 @@ fn head_words(text: &str, n: usize) -> String {
     if words.len() > n { words[..n].join(" ") } else { text.to_string() }
 }
 
+/// Calculate the dynamic confidence threshold for encounter detection.
+///
+/// Short encounters (<20 min) use a higher base threshold (0.85) to reduce
+/// false splits on natural pauses. Longer encounters use 0.7.
+/// Each prior merge-back raises the bar by +0.05 (capped at 0.99).
+pub fn calculate_confidence_threshold(buffer_age_mins: i64, merge_back_count: usize) -> f64 {
+    let base_threshold = if buffer_age_mins < 20 { 0.85 } else { 0.7 };
+    (base_threshold + merge_back_count as f64 * 0.05).min(0.99)
+}
+
 // ============================================================================
 // Continuous Mode State
 // ============================================================================
@@ -1555,10 +1565,8 @@ pub async fn run_continuous_mode(
                     let buffer_age_mins = first_ts
                         .map(|t| (Utc::now() - t).num_minutes())
                         .unwrap_or(0);
-                    // Post-merge-back escalation: each merge-back raises the bar by +0.05,
-                    // making repeated false-positive splits on long sessions increasingly unlikely.
-                    let base_threshold = if buffer_age_mins < 20 { 0.85 } else { 0.7 };
-                    let confidence_threshold = (base_threshold + merge_back_count as f64 * 0.05).min(0.99);
+                    let confidence_threshold = calculate_confidence_threshold(buffer_age_mins, merge_back_count as usize);
+                    let base_threshold = if buffer_age_mins < 20 { 0.85 } else { 0.7 }; // for log message
                     if confidence < confidence_threshold && !force_split {
                         // Don't increment consecutive_llm_failures here — the LLM is working,
                         // just returning low-confidence results. Only LLM failures drive force-split.
@@ -3582,6 +3590,115 @@ pub async fn run_continuous_mode(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // ========================================================================
+    // Pure function tests: tail_words, head_words, calculate_confidence_threshold
+    // ========================================================================
+
+    #[test]
+    fn test_tail_words_empty_string() {
+        assert_eq!(tail_words("", 5), "");
+    }
+
+    #[test]
+    fn test_tail_words_fewer_than_n() {
+        assert_eq!(tail_words("hello world", 5), "hello world");
+    }
+
+    #[test]
+    fn test_tail_words_exact_n() {
+        assert_eq!(tail_words("one two three", 3), "one two three");
+    }
+
+    #[test]
+    fn test_tail_words_more_than_n() {
+        assert_eq!(tail_words("alpha beta gamma delta epsilon", 3), "gamma delta epsilon");
+    }
+
+    #[test]
+    fn test_tail_words_multiple_whitespace() {
+        // split_whitespace normalizes whitespace
+        assert_eq!(tail_words("a  b   c    d", 2), "c d");
+    }
+
+    #[test]
+    fn test_head_words_empty_string() {
+        assert_eq!(head_words("", 5), "");
+    }
+
+    #[test]
+    fn test_head_words_fewer_than_n() {
+        assert_eq!(head_words("hello world", 5), "hello world");
+    }
+
+    #[test]
+    fn test_head_words_exact_n() {
+        assert_eq!(head_words("one two three", 3), "one two three");
+    }
+
+    #[test]
+    fn test_head_words_more_than_n() {
+        assert_eq!(head_words("alpha beta gamma delta epsilon", 3), "alpha beta gamma");
+    }
+
+    #[test]
+    fn test_head_words_multiple_whitespace() {
+        assert_eq!(head_words("a  b   c    d", 2), "a b");
+    }
+
+    #[test]
+    fn test_confidence_threshold_short_encounter_no_merges() {
+        assert!((calculate_confidence_threshold(0, 0) - 0.85).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn test_confidence_threshold_boundary_19_min() {
+        assert!((calculate_confidence_threshold(19, 0) - 0.85).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn test_confidence_threshold_boundary_20_min() {
+        assert!((calculate_confidence_threshold(20, 0) - 0.7).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn test_confidence_threshold_long_encounter() {
+        assert!((calculate_confidence_threshold(60, 0) - 0.7).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn test_confidence_threshold_one_mergeback_short() {
+        assert!((calculate_confidence_threshold(10, 1) - 0.90).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn test_confidence_threshold_one_mergeback_long() {
+        assert!((calculate_confidence_threshold(25, 1) - 0.75).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn test_confidence_threshold_cap_at_099() {
+        // 3 merge-backs on short: 0.85 + 0.15 = 1.0, capped at 0.99
+        assert!((calculate_confidence_threshold(10, 3) - 0.99).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn test_confidence_threshold_many_mergebacks_cap() {
+        // 10 merge-backs on long: 0.7 + 0.5 = 1.2, capped at 0.99
+        assert!((calculate_confidence_threshold(30, 10) - 0.99).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn test_confidence_threshold_negative_age() {
+        // Negative minutes (clock skew) still < 20, so base = 0.85
+        assert!((calculate_confidence_threshold(-5, 0) - 0.85).abs() < f64::EPSILON);
+    }
+
+    // ========================================================================
+    // Existing tests: validate decision-logic invariants by reconstructing
+    // production branching logic inline. They verify that the expected
+    // boolean/numeric relationships hold for hybrid detection state machine.
+    // ========================================================================
 
     #[test]
     fn test_continuous_mode_handle_stats() {

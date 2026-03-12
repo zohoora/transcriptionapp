@@ -1702,4 +1702,60 @@ mod tests {
     fn test_hybrid_mode_display() {
         assert_eq!(EncounterDetectionMode::Hybrid.to_string(), "hybrid");
     }
+
+    // ========================================================================
+    // replay_snapshot tests
+    // ========================================================================
+
+    #[test]
+    fn test_replay_snapshot_returns_object() {
+        let config = Config::default();
+        let snapshot = config.replay_snapshot();
+        assert!(snapshot.is_object(), "replay_snapshot should return a JSON object");
+    }
+
+    #[test]
+    fn test_replay_snapshot_contains_expected_keys() {
+        let config = Config::default();
+        let snapshot = config.replay_snapshot();
+        let obj = snapshot.as_object().unwrap();
+        let expected_keys = vec![
+            "encounter_detection_mode",
+            "encounter_detection_model",
+            "encounter_detection_nothink",
+            "encounter_check_interval_secs",
+            "encounter_silence_trigger_secs",
+            "encounter_merge_enabled",
+            "hybrid_confirm_window_secs",
+            "hybrid_min_words_for_sensor_split",
+            "presence_sensor_port",
+            "presence_absence_threshold_secs",
+            "presence_debounce_secs",
+            "soap_model",
+            "soap_model_fast",
+            "soap_detail_level",
+            "soap_format",
+            "screen_capture_enabled",
+            "screen_capture_interval_secs",
+            "fast_model",
+            "shadow_active_method",
+        ];
+        for key in &expected_keys {
+            assert!(obj.contains_key(*key), "snapshot missing key: {}", key);
+        }
+    }
+
+    #[test]
+    fn test_replay_snapshot_reflects_config_values() {
+        let mut config = Config::default();
+        config.encounter_detection_model = "custom-model".to_string();
+        config.soap_detail_level = 8;
+        config.encounter_check_interval_secs = 90;
+
+        let snapshot = config.replay_snapshot();
+        let obj = snapshot.as_object().unwrap();
+        assert_eq!(obj["encounter_detection_model"], "custom-model");
+        assert_eq!(obj["soap_detail_level"], 8);
+        assert_eq!(obj["encounter_check_interval_secs"], 90);
+    }
 }

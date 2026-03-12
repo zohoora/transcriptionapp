@@ -824,3 +824,39 @@ pub async fn list_vision_experiment_strategies() -> Vec<(String, String)> {
         .map(|s| (s.id().to_string(), s.name().to_string()))
         .collect()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_select_soap_model_returns_config_soap_model() {
+        let config = Config::default();
+        let result = select_soap_model(&config, 100);
+        assert_eq!(result, &config.soap_model);
+    }
+
+    #[test]
+    fn test_select_soap_model_ignores_word_count() {
+        let config = Config::default();
+        let small = select_soap_model(&config, 50);
+        let large = select_soap_model(&config, 10_000);
+        assert_eq!(small, large);
+    }
+
+    #[test]
+    fn test_select_soap_model_custom_value() {
+        let mut config = Config::default();
+        config.soap_model = "my-custom-model".to_string();
+        assert_eq!(select_soap_model(&config, 500), "my-custom-model");
+    }
+
+    #[test]
+    fn test_select_soap_model_ignores_soap_model_fast() {
+        let mut config = Config::default();
+        config.soap_model = "primary-model".to_string();
+        config.soap_model_fast = "fast-model".to_string();
+        // Should return soap_model, not soap_model_fast
+        assert_eq!(select_soap_model(&config, 200), "primary-model");
+    }
+}
