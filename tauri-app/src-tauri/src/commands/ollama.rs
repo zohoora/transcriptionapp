@@ -224,6 +224,15 @@ pub async fn generate_soap_note_auto_detect(
 
     // Select appropriate model based on transcript length
     let selected_model = select_soap_model(&config, word_count);
+
+    // Run multi-patient detection if transcript is long enough
+    let multi_patient_detection = if word_count >= crate::encounter_detection::MULTI_PATIENT_DETECT_WORD_THRESHOLD {
+        info!("Running multi-patient detection for session-mode SOAP ({} words)", word_count);
+        client.run_multi_patient_detection(&config.fast_model, &transcript).await
+    } else {
+        None
+    };
+
     let start_time = std::time::Instant::now();
 
     match client
@@ -233,6 +242,7 @@ pub async fn generate_soap_note_auto_detect(
             audio_events.as_deref(),
             options.as_ref(),
             ctx.as_ref(),
+            multi_patient_detection.as_ref(),
         )
         .await
     {

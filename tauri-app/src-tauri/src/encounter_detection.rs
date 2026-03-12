@@ -313,6 +313,74 @@ pub fn parse_multi_patient_check(response: &str) -> Result<MultiPatientCheckResu
     parse_llm_json_response(response, "{\"multiple_patients\"", "multi-patient check")
 }
 
+// ============================================================================
+// Per-Patient Multi-Patient Detection (transcript-only, handles interleaved care)
+// ============================================================================
+
+/// Minimum word count for multi-patient detection.
+/// Lower than MULTI_PATIENT_CHECK_WORD_THRESHOLD (2500) because short couples visits
+/// (~10 min = ~1500 words) should still be detected.
+pub const MULTI_PATIENT_DETECT_WORD_THRESHOLD: usize = 500;
+
+/// Minimum confidence for multi-patient detection to be acted upon.
+/// Matches existing detection gates in the codebase.
+pub const MULTI_PATIENT_DETECT_MIN_CONFIDENCE: f64 = 0.7;
+
+/// Maximum words to send in the detection prompt (head + tail sampling).
+/// Mirrors the truncation strategy in `build_clinical_content_check_prompt`.
+pub const MULTI_PATIENT_DETECT_MAX_WORDS: usize = 3000;
+
+/// System prompt for per-patient multi-patient detection.
+/// Unlike MULTI_PATIENT_CHECK_PROMPT (binary yes/no), this returns structured patient
+/// data (count, labels, summaries) needed to generate per-patient SOAP notes.
+/// Handles interleaved/interwoven care where the doctor goes back and forth.
+pub const MULTI_PATIENT_DETECT_PROMPT: &str = r#"You MUST respond in English with ONLY a JSON object. No other text.
+
+You are reviewing a clinical transcript to determine if the DOCTOR conducted separate clinical assessments for DIFFERENT patients in this recording.
+
+IMPORTANT DISTINCTION:
+- A companion/partner/family member who ACCOMPANIES a patient and provides context is NOT a separate patient, UNLESS the doctor also conducts a clinical assessment (history, exam, treatment plan) for them.
+- Couples and family members are often seen together — the doctor may go back and forth between patients in the same visit. The conversation may be interwoven.
+- A separate patient means the doctor conducts a distinct clinical assessment for a DIFFERENT individual: their own symptoms, their own examination, their own treatment plan.
+
+Return:
+{"patient_count": <number>, "patients": [{"label": "<name or identifier>", "summary": "<1 sentence: what they were seen for>"}], "confidence": <0.0-1.0>, "reasoning": "<brief explanation>"}
+
+If only one patient was clinically assessed, return patient_count: 1 with that patient's info.
+
+Respond with ONLY the JSON."#;
+
+/// A single detected patient from multi-patient detection.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DetectedPatient {
+    /// Label for this patient (e.g., name or "Patient 1")
+    pub label: String,
+    /// One-sentence summary of what they were seen for
+    #[serde(default)]
+    pub summary: String,
+}
+
+/// Result of per-patient multi-patient detection.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MultiPatientDetectionResult {
+    /// Number of patients detected
+    pub patient_count: u32,
+    /// Detected patients with labels and summaries
+    #[serde(default)]
+    pub patients: Vec<DetectedPatient>,
+    /// Detection confidence (0.0-1.0)
+    #[serde(default)]
+    pub confidence: Option<f64>,
+    /// Brief reasoning from the LLM
+    #[serde(default)]
+    pub reasoning: Option<String>,
+}
+
+/// Parse the multi-patient detection response from the LLM
+pub fn parse_multi_patient_detection(response: &str) -> Result<MultiPatientDetectionResult, String> {
+    parse_llm_json_response(response, "{\"patient_count\"", "multi-patient detection")
+}
+
 /// System prompt for enhanced split-point detection (used after multi-patient check confirms
 /// multiple patients). Unlike the standard split prompt which looks for farewell markers,
 /// this prompt focuses on NAME TRANSITIONS — critical for family visits where the doctor
@@ -606,5 +674,63 @@ mod tests {
         let (system, _user) = build_encounter_detection_prompt("test transcript", None);
         assert!(system.contains("elapsed time"));
         assert!(system.contains("Large gaps between timestamps"));
+    }
+
+    // ── Per-patient multi-patient detection tests ────────────────
+
+    #[test]
+    fn test_parse_multi_patient_detection_single() {
+        let response = r#"{"patient_count": 1, "patients": [{"label": "Patient 1", "summary": "Follow-up for hypertension"}], "confidence": 0.95, "reasoning": "Only one patient assessed"}"#;
+        let result = parse_multi_patient_detection(response).unwrap();
+        assert_eq!(result.patient_count, 1);
+        assert_eq!(result.patients.len(), 1);
+        assert_eq!(result.patients[0].label, "Patient 1");
+        assert!((result.confidence.unwrap() - 0.95).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_parse_multi_patient_detection_multiple() {
+        let response = r#"{"patient_count": 2, "patients": [{"label": "Lynn", "summary": "Diabetes follow-up"}, {"label": "Jim", "summary": "Thyroid management"}], "confidence": 0.9, "reasoning": "Two separate clinical assessments"}"#;
+        let result = parse_multi_patient_detection(response).unwrap();
+        assert_eq!(result.patient_count, 2);
+        assert_eq!(result.patients.len(), 2);
+        assert_eq!(result.patients[0].label, "Lynn");
+        assert_eq!(result.patients[1].label, "Jim");
+        assert!((result.confidence.unwrap() - 0.9).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_parse_multi_patient_detection_with_think_tags() {
+        let response = r#"<think>analyzing the transcript</think>{"patient_count": 2, "patients": [{"label": "A", "summary": "X"}, {"label": "B", "summary": "Y"}], "confidence": 0.85, "reasoning": "two patients"}"#;
+        let result = parse_multi_patient_detection(response).unwrap();
+        assert_eq!(result.patient_count, 2);
+        assert_eq!(result.patients.len(), 2);
+    }
+
+    #[test]
+    fn test_parse_multi_patient_detection_low_confidence() {
+        let response = r#"{"patient_count": 2, "patients": [{"label": "A", "summary": "X"}, {"label": "B", "summary": "Y"}], "confidence": 0.4, "reasoning": "uncertain"}"#;
+        let result = parse_multi_patient_detection(response).unwrap();
+        assert_eq!(result.patient_count, 2);
+        // Confidence below 0.7 threshold — caller should treat as single-patient
+        assert!(result.confidence.unwrap() < 0.7);
+    }
+
+    #[test]
+    fn test_parse_multi_patient_detection_no_patients_array() {
+        // Graceful handling when patients array is missing
+        let response = r#"{"patient_count": 1, "confidence": 0.9, "reasoning": "single patient"}"#;
+        let result = parse_multi_patient_detection(response).unwrap();
+        assert_eq!(result.patient_count, 1);
+        assert!(result.patients.is_empty());
+    }
+
+    #[test]
+    fn test_multi_patient_detect_threshold() {
+        assert!(
+            MULTI_PATIENT_DETECT_WORD_THRESHOLD < MULTI_PATIENT_CHECK_WORD_THRESHOLD,
+            "New detect threshold ({}) should be lower than old check threshold ({})",
+            MULTI_PATIENT_DETECT_WORD_THRESHOLD, MULTI_PATIENT_CHECK_WORD_THRESHOLD
+        );
     }
 }

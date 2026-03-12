@@ -109,6 +109,9 @@ pub struct ArchiveMetadata {
     /// Flagged as likely non-clinical by two-pass content check
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub likely_non_clinical: Option<bool>,
+    /// Number of patients detected in this encounter (>1 for couples/family visits)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub patient_count: Option<u32>,
 }
 
 impl ArchiveMetadata {
@@ -132,6 +135,7 @@ impl ArchiveMetadata {
             detection_method: None,
             shadow_comparison: None,
             likely_non_clinical: None,
+            patient_count: None,
         }
     }
 }
@@ -309,6 +313,79 @@ pub fn add_soap_note(
         detail_level = ?detail_level,
         format = ?format,
         "SOAP note added to archive"
+    );
+
+    Ok(())
+}
+
+/// Save per-patient SOAP files alongside the combined soap_note.txt.
+/// Called when multi-patient detection produces N>1 notes.
+/// Writes: soap_patient_1.txt, soap_patient_2.txt, ..., patient_labels.json
+/// Updates metadata.json with patient_count.
+pub fn save_multi_patient_soap(
+    session_id: &str,
+    date: &DateTime<Utc>,
+    notes: &[crate::llm_client::PatientSoapNote],
+) -> Result<(), String> {
+    if notes.len() <= 1 {
+        return Ok(()); // Nothing to do for single-patient
+    }
+
+    validate_session_id(session_id)?;
+    let session_dir = get_session_archive_dir(session_id, date)?;
+
+    if !session_dir.exists() {
+        fs::create_dir_all(&session_dir)
+            .map_err(|e| format!("Failed to create session directory: {}", e))?;
+    }
+
+    // Write per-patient SOAP files
+    for (i, note) in notes.iter().enumerate() {
+        let filename = format!("soap_patient_{}.txt", i + 1);
+        let path = session_dir.join(&filename);
+        fs::write(&path, &note.content)
+            .map_err(|e| format!("Failed to write {}: {}", filename, e))?;
+        info!(
+            session_id = %session_id,
+            patient = %note.patient_label,
+            file = %filename,
+            "Per-patient SOAP file written"
+        );
+    }
+
+    // Write patient_labels.json metadata
+    let labels: Vec<serde_json::Value> = notes.iter().enumerate().map(|(i, note)| {
+        serde_json::json!({
+            "index": i + 1,
+            "label": note.patient_label,
+        })
+    }).collect();
+    let labels_path = session_dir.join("patient_labels.json");
+    let labels_json = serde_json::to_string_pretty(&labels)
+        .map_err(|e| format!("Failed to serialize patient labels: {}", e))?;
+    fs::write(&labels_path, labels_json)
+        .map_err(|e| format!("Failed to write patient_labels.json: {}", e))?;
+
+    // Update metadata with patient_count
+    let metadata_path = session_dir.join("metadata.json");
+    if metadata_path.exists() {
+        let content = fs::read_to_string(&metadata_path)
+            .map_err(|e| format!("Failed to read metadata: {}", e))?;
+        let mut metadata: ArchiveMetadata = serde_json::from_str(&content)
+            .map_err(|e| format!("Failed to parse metadata: {}", e))?;
+
+        metadata.patient_count = Some(notes.len() as u32);
+
+        let metadata_json = serde_json::to_string_pretty(&metadata)
+            .map_err(|e| format!("Failed to serialize metadata: {}", e))?;
+        fs::write(&metadata_path, metadata_json)
+            .map_err(|e| format!("Failed to write metadata: {}", e))?;
+    }
+
+    info!(
+        session_id = %session_id,
+        patient_count = notes.len(),
+        "Multi-patient SOAP files saved to archive"
     );
 
     Ok(())
@@ -703,6 +780,7 @@ pub fn split_session(session_id: &str, date_str: &str, split_line: usize) -> Res
         detection_method: original_meta.detection_method.clone(),
         shadow_comparison: None,
         likely_non_clinical: original_meta.likely_non_clinical,
+        patient_count: None,
     };
     let new_meta_json = serde_json::to_string_pretty(&new_meta)
         .map_err(|e| format!("Failed to serialize new metadata: {}", e))?;

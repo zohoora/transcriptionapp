@@ -58,6 +58,7 @@ Rust Backend
 ├── screenshot.rs      # Screen capture (in-memory JPEG, blank detection, permission check)
 ├── patient_name_tracker.rs # Vision-based patient name extraction + majority-vote tracker
 ├── encounter_detection.rs  # Encounter detection prompts/parsing + clinical content check + retrospective multi-patient check
+├── encounter_merge.rs # Encounter merge prompts/parsing (M1 name-aware strategy)
 ├── debug_storage.rs   # Debug storage (dev only)
 ├── permissions.rs     # macOS permission checks
 ├── ollama.rs          # Re-exports from llm_client.rs (backward compat)
@@ -78,7 +79,7 @@ Rust Backend
 ├── preprocessing.rs   # DC removal, high-pass filter, AGC
 ├── command_tests.rs   # Unit tests for commands
 ├── pipeline_tests.rs  # Unit tests for pipeline
-├── e2e_tests.rs       # Integration tests (6 layers, #[ignore])
+├── e2e_tests.rs       # Integration tests (5 layers, #[ignore])
 ├── soak_tests.rs      # Long-running stability tests
 └── stress_tests.rs    # Load/stress tests
 ```
@@ -130,7 +131,7 @@ cd src-tauri && cargo test       # Rust
 | Modify SOAP options | `useSoapNote.ts` (hook), `llm_client.rs` (prompt building), `local_archive.rs` (metadata) |
 | Modify MIIS integration | `commands/miis.rs`, `useMiisImages.ts`, `ImageSuggestions.tsx`, `usePredictiveHint.ts` |
 | Modify AI images | `gemini_client.rs`, `commands/images.rs`, `useAiImages.ts`, `usePredictiveHint.ts`, `ImageSuggestions.tsx` |
-| Modify continuous mode | `continuous_mode.rs`, `encounter_detection.rs` (detection prompts + retrospective check), `commands/continuous.rs`, `useContinuousMode.ts`, `ContinuousMode.tsx` |
+| Modify continuous mode | `continuous_mode.rs`, `encounter_detection.rs` (detection prompts + retrospective check), `encounter_merge.rs` (merge prompts), `commands/continuous.rs`, `useContinuousMode.ts`, `ContinuousMode.tsx` |
 | Modify presence sensor | `presence_sensor.rs`, `config.rs` (sensor fields), `commands/continuous.rs`, `SettingsDrawer.tsx`, `ContinuousMode.tsx` |
 | Modify patient biomarkers | `usePatientBiomarkers.ts`, `PatientPulse.tsx`, `PatientVoiceMonitor.tsx` |
 | Modify session cleanup (history) | `commands/archive.rs`, `HistoryWindow.tsx`, `components/cleanup/` (CleanupActionBar, DeleteConfirmDialog, EditNameDialog, MergeConfirmDialog, SplitView), `SplitWindow.tsx` (standalone split window) |
@@ -207,7 +208,7 @@ Idle → Preparing → Recording → Stopping → Completed
 | Settings validation after update | `clamp_values()` called after `update_from_settings()` in config.rs — safety net for user-edited JSON |
 | Encounter notes: clone before clear | In continuous mode detector, clone accumulated notes before clearing buffer to avoid data loss |
 | Audio quality shared util | `getAudioQualityLevel()` in utils.ts — shared across RecordingMode, ReviewMode, ContinuousMode |
-| Force-split constants | Named constants in encounter_detection.rs: `FORCE_CHECK_WORD_THRESHOLD` (3K), `FORCE_SPLIT_WORD_THRESHOLD` (5K), `FORCE_SPLIT_CONSECUTIVE_LIMIT` (3), `ABSOLUTE_WORD_CAP` (25K). Graduated force-split only counts consecutive LLM failures/timeouts (not confident "no split" responses). Both FORCE_CHECK and FORCE_SPLIT use `cleaned_word_count` (hallucination-stripped) to avoid STT phrase loops inflating past thresholds. Retrospective: `MULTI_PATIENT_CHECK_WORD_THRESHOLD` (2500), `MULTI_PATIENT_SPLIT_MIN_WORDS` (500) |
+| Force-split constants | Named constants in encounter_detection.rs: `FORCE_CHECK_WORD_THRESHOLD` (3K), `FORCE_SPLIT_WORD_THRESHOLD` (5K), `FORCE_SPLIT_CONSECUTIVE_LIMIT` (3), `ABSOLUTE_WORD_CAP` (25K). Graduated force-split only counts consecutive LLM failures/timeouts (not confident "no split" responses). Both FORCE_CHECK and FORCE_SPLIT use `cleaned_word_count` (hallucination-stripped) to avoid STT phrase loops inflating past thresholds. Retrospective: `MULTI_PATIENT_CHECK_WORD_THRESHOLD` (2500), `MULTI_PATIENT_SPLIT_MIN_WORDS` (500). Clinical content check: `MIN_WORDS_FOR_CLINICAL_CHECK` (100) — transcripts below this threshold skip the LLM clinical check |
 | Presence sensor auto-detect | `auto_detect_port()` in presence_sensor.rs scans USB-serial devices when configured port fails |
 | Screen recording permission | Use `CGPreflightScreenCaptureAccess()` (not 1x1 pixel capture) — old check always passed even without permission. `is_blank_capture()` heuristic detects blanked-out window content |
 | SOAP JSON repair | Pipeline: `fix_json_newlines` → `remove_leading_commas` → `remove_trailing_commas` → `fix_truncated_json` (closes unclosed strings + missing brackets) → filter empty strings. Raw-JSON fallback returns structured placeholder instead of broken JSON |
@@ -252,6 +253,7 @@ Idle → Preparing → Recording → Stopping → Completed
 - Listening mode disabled while continuous mode is active
 - Charting mode switch to "session" blocked while continuous recording is active
 - Transcript preview uses `continuous_transcript_preview` event (separate namespace from session)
+- Flush-on-stop: when continuous mode stops with buffered transcript (>100 words), the flush path now mirrors the normal encounter split pipeline — metadata enrichment (`charting_mode`, `encounter_number`, `detection_method="flush"`, `patient_name`), clinical content check (non-clinical transcripts skip SOAP), merge check (runs before SOAP to avoid wasted LLM calls), accurate `encounter_started_at` from `TranscriptBuffer.first_timestamp()`. Fail-open: LLM errors during clinical check → assume clinical
 
 ## Settings Schema
 

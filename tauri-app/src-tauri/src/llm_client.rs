@@ -9,6 +9,8 @@ use serde::{Deserialize, Serialize};
 use std::time::Duration;
 use tracing::{debug, error, info, warn};
 
+use crate::encounter_detection::MultiPatientDetectionResult;
+
 /// Default timeout for LLM API requests (2 minutes for generation)
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(120);
 
@@ -225,6 +227,24 @@ pub struct MultiPatientSoapResult {
     pub generated_at: String,
     /// Which LLM model was used
     pub model_used: String,
+}
+
+impl MultiPatientSoapResult {
+    /// Format SOAP notes for archive storage.
+    /// Single-patient: bare content. Multi-patient: `=== Patient Label ===` headers.
+    pub fn format_for_archive(&self) -> String {
+        if self.notes.len() > 1 {
+            self.notes.iter()
+                .map(|n| format!("=== {} ===\n{}", n.patient_label, n.content))
+                .collect::<Vec<_>>()
+                .join("\n\n---\n\n")
+        } else {
+            self.notes.iter()
+                .map(|n| n.content.clone())
+                .collect::<Vec<_>>()
+                .join("\n\n---\n\n")
+        }
+    }
 }
 
 /// Per-patient SOAP note with speaker identification
@@ -843,9 +863,22 @@ impl LLMClient {
         audio_events: Option<&[AudioEvent]>,
         options: Option<&SoapOptions>,
         speaker_context: Option<&SpeakerContext>,
+        multi_patient_detection: Option<&MultiPatientDetectionResult>,
     ) -> Result<MultiPatientSoapResult, String> {
         let prepared_transcript = Self::prepare_transcript(transcript)?;
         let opts = options.cloned().unwrap_or_default();
+
+        // Per-patient path: callers pass Some() only after confidence gating
+        if let Some(detection) = multi_patient_detection {
+            let word_count = prepared_transcript.split_whitespace().count();
+            info!(
+                "Generating {} per-patient SOAP notes with model {} ({} chars, {} words)",
+                detection.patient_count, model, prepared_transcript.len(), word_count,
+            );
+            return self.generate_per_patient_soap(model, &prepared_transcript, &opts, detection).await;
+        }
+
+        // Single-patient path (existing behavior)
         info!(
             "Generating multi-patient SOAP note with model {} for transcript of {} chars ({} words), {} speakers",
             model,
@@ -872,6 +905,124 @@ impl LLMClient {
             generated_at: Utc::now().to_rfc3339(),
             model_used: model.to_string(),
         })
+    }
+
+    /// Generate N concurrent per-patient SOAP notes from the full transcript.
+    async fn generate_per_patient_soap(
+        &self,
+        model: &str,
+        transcript: &str,
+        options: &SoapOptions,
+        detection: &MultiPatientDetectionResult,
+    ) -> Result<MultiPatientSoapResult, String> {
+        let system_prompt = build_per_patient_soap_prompt(options);
+        let all_patients_desc: String = detection.patients.iter()
+            .map(|p| format!("{}: {}", p.label, p.summary))
+            .collect::<Vec<_>>()
+            .join("; ");
+
+        // Build futures for concurrent generation
+        let futures: Vec<_> = detection.patients.iter().map(|patient| {
+            let user_content = build_per_patient_user_content(
+                transcript, &patient.label, &patient.summary, &all_patients_desc,
+            );
+            let sys = system_prompt.clone();
+            let mdl = model.to_string();
+            async move {
+                let response = self.generate(&mdl, &sys, &user_content, tasks::SOAP_NOTE).await?;
+                let content = self.parse_soap_with_retry(&mdl, &sys, &user_content, &response).await;
+                Ok::<PatientSoapNote, String>(PatientSoapNote {
+                    patient_label: patient.label.clone(),
+                    speaker_id: "All".to_string(),
+                    content,
+                })
+            }
+        }).collect();
+
+        let results = futures_util::future::join_all(futures).await;
+
+        let mut notes = Vec::new();
+        let mut errors = Vec::new();
+        for result in results {
+            match result {
+                Ok(note) => {
+                    info!("Per-patient SOAP generated for '{}' ({} chars)", note.patient_label, note.content.len());
+                    notes.push(note);
+                }
+                Err(e) => {
+                    warn!("Per-patient SOAP generation failed: {}", e);
+                    errors.push(e);
+                }
+            }
+        }
+
+        if notes.is_empty() {
+            return Err(format!("All per-patient SOAP generations failed: {}", errors.join("; ")));
+        }
+
+        info!("Successfully generated {}/{} per-patient SOAP notes", notes.len(), detection.patient_count);
+        Ok(MultiPatientSoapResult {
+            notes,
+            physician_speaker: None,
+            generated_at: Utc::now().to_rfc3339(),
+            model_used: model.to_string(),
+        })
+    }
+
+    /// Run multi-patient detection on a transcript.
+    /// Returns `Some(detection)` if multiple patients detected with sufficient confidence,
+    /// `None` otherwise (single patient, low confidence, or error).
+    pub async fn run_multi_patient_detection(
+        &self,
+        fast_model: &str,
+        transcript: &str,
+    ) -> Option<MultiPatientDetectionResult> {
+        use crate::encounter_detection::{
+            MULTI_PATIENT_DETECT_PROMPT, MULTI_PATIENT_DETECT_MIN_CONFIDENCE,
+            MULTI_PATIENT_DETECT_MAX_WORDS, parse_multi_patient_detection,
+        };
+
+        // Truncate transcript for detection (head + tail sampling)
+        let words: Vec<&str> = transcript.split_whitespace().collect();
+        let truncated = if words.len() > MULTI_PATIENT_DETECT_MAX_WORDS {
+            let half = MULTI_PATIENT_DETECT_MAX_WORDS / 2;
+            format!(
+                "{}\n[... {} words omitted ...]\n{}",
+                words[..half].join(" "),
+                words.len() - MULTI_PATIENT_DETECT_MAX_WORDS,
+                words[words.len() - half..].join(" ")
+            )
+        } else {
+            transcript.to_string()
+        };
+
+        let mp_user = format!("Transcript:\n\n{}", truncated);
+        match tokio::time::timeout(
+            tokio::time::Duration::from_secs(30),
+            self.generate(fast_model, MULTI_PATIENT_DETECT_PROMPT, &mp_user, "multi_patient_detect"),
+        ).await {
+            Ok(Ok(resp)) => {
+                match parse_multi_patient_detection(&resp) {
+                    Ok(detection) => {
+                        info!(
+                            "Multi-patient detection: count={}, conf={:?}, reasoning={:?}",
+                            detection.patient_count, detection.confidence, detection.reasoning
+                        );
+                        if detection.patient_count > 1
+                            && detection.confidence.unwrap_or(0.0) >= MULTI_PATIENT_DETECT_MIN_CONFIDENCE
+                            && detection.patients.len() > 1
+                        {
+                            Some(detection)
+                        } else {
+                            None
+                        }
+                    }
+                    Err(e) => { warn!("Failed to parse multi-patient detection: {}", e); None }
+                }
+            }
+            Ok(Err(e)) => { warn!("Multi-patient detection LLM error: {}", e); None }
+            Err(_) => { warn!("Multi-patient detection timed out"); None }
+        }
     }
 
     /// Timeout for greeting detection
@@ -2023,6 +2174,44 @@ pub fn build_soap_user_content(
     }
 
     content
+}
+
+/// Build a SOAP system prompt specialized for per-patient extraction from a multi-patient transcript.
+/// Extends `build_simple_soap_prompt` with multi-patient context.
+pub(crate) fn build_per_patient_soap_prompt(options: &SoapOptions) -> String {
+    let base = build_simple_soap_prompt(options);
+    format!(
+        "{}\n\n\
+        IMPORTANT CONTEXT: This transcript was recorded during a visit where MULTIPLE PATIENTS were seen together \
+        (e.g., a couple, family members). The conversation is interwoven — the doctor goes back and forth between patients \
+        throughout the visit. Clinical discussions for different patients may be interleaved.\n\n\
+        You are generating a SOAP note for ONE SPECIFIC PATIENT only. Focus exclusively on clinical content relevant to that patient:\n\
+        - Their symptoms, history, and concerns\n\
+        - The doctor's examination findings and clinical reasoning for that patient\n\
+        - Treatment plans, prescriptions, and follow-ups for that patient\n\
+        - Ignore clinical content that belongs to the other patient(s), even if it appears nearby",
+        base
+    )
+}
+
+/// Build user content for a per-patient SOAP note from a multi-patient transcript.
+pub(crate) fn build_per_patient_user_content(
+    transcript: &str,
+    patient_label: &str,
+    patient_summary: &str,
+    all_patients_desc: &str,
+) -> String {
+    format!(
+        "Generate a SOAP note for THIS PATIENT ONLY:\n\
+        Patient: {}\n\
+        Reason for visit: {}\n\n\
+        Other patients in this transcript (IGNORE their clinical content):\n\
+        {}\n\n\
+        The conversation below is interwoven — the doctor goes back and forth between patients. \
+        Extract ONLY the clinical content relevant to the patient identified above.\n\n\
+        TRANSCRIPT:\n{}",
+        patient_label, patient_summary, all_patients_desc, transcript
+    )
 }
 
 /// Format audio events for inclusion in the prompt

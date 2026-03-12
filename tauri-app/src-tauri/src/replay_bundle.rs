@@ -206,6 +206,9 @@ pub struct SoapResult {
     pub word_count: usize,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
+    /// Number of patients detected (>1 for per-patient SOAP generation)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub patient_count: Option<usize>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -590,6 +593,7 @@ mod tests {
             success: true,
             word_count: 1200,
             error: None,
+            patient_count: None,
         });
 
         // Set name tracker state

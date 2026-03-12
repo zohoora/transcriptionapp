@@ -35,6 +35,7 @@ pub use crate::encounter_detection::{
     MULTI_PATIENT_CHECK_WORD_THRESHOLD, MULTI_PATIENT_SPLIT_MIN_WORDS,
     MULTI_PATIENT_CHECK_PROMPT, MULTI_PATIENT_SPLIT_PROMPT,
     parse_multi_patient_check,
+    MULTI_PATIENT_DETECT_WORD_THRESHOLD,
 };
 pub use crate::encounter_merge::{MergeCheckResult, build_encounter_merge_prompt, parse_merge_check};
 pub use crate::patient_name_tracker::PatientNameTracker;
@@ -1938,6 +1939,30 @@ pub async fn run_continuous_mode(
                         if !is_clinical {
                             info!("Skipping SOAP for non-clinical encounter #{}", encounter_number);
                         } else if let Some(ref client) = llm_client {
+                            // ── Multi-patient detection ──────────────────────────
+                            // Run before SOAP to detect couples/family visits.
+                            // If multiple patients detected with high confidence,
+                            // generates per-patient SOAP notes from the full transcript.
+                            let multi_patient_detection = if encounter_word_count >= MULTI_PATIENT_DETECT_WORD_THRESHOLD {
+                                info!("Running multi-patient detection for encounter #{} ({} words)", encounter_number, encounter_word_count);
+                                let detection = client.run_multi_patient_detection(&fast_model, &encounter_text).await;
+                                if let Some(ref d) = detection {
+                                    if let Ok(mut logger) = logger_for_detector.lock() {
+                                        logger.log_event("multi_patient_detect", serde_json::json!({
+                                            "patient_count": d.patient_count,
+                                            "confidence": d.confidence,
+                                            "reasoning": d.reasoning,
+                                            "patients": d.patients.iter()
+                                                .map(|p| serde_json::json!({"label": p.label, "summary": p.summary}))
+                                                .collect::<Vec<_>>(),
+                                        }));
+                                    }
+                                }
+                                detection
+                            } else {
+                                None
+                            };
+
                             // Strip hallucinated repetitions before SOAP generation
                             let (filtered_encounter_text, soap_filter_report) = strip_hallucinations(&encounter_text, 5);
                             if !soap_filter_report.repetitions.is_empty() || !soap_filter_report.phrase_repetitions.is_empty() {
@@ -1969,32 +1994,38 @@ pub async fn run_continuous_mode(
                                 None, // No audio events in continuous mode
                                 Some(&soap_opts),
                                 None, // No speaker context
+                                multi_patient_detection.as_ref(),
                             );
                             match tokio::time::timeout(tokio::time::Duration::from_secs(120), soap_future).await {
                                 Ok(Ok(soap_result)) => {
                                     let soap_latency = soap_start.elapsed().as_millis() as u64;
-                                    // Save SOAP to archive
-                                    let soap_content = &soap_result.notes
-                                        .iter()
-                                        .map(|n| n.content.clone())
-                                        .collect::<Vec<_>>()
-                                        .join("\n\n---\n\n");
+                                    let soap_content = soap_result.format_for_archive();
 
                                     let now = Utc::now();
                                     if let Err(e) = local_archive::add_soap_note(
                                         &session_id,
                                         &now,
-                                        soap_content,
+                                        &soap_content,
                                         Some(soap_detail_level),
                                         Some(&soap_format),
                                     ) {
                                         warn!("Failed to save SOAP for encounter: {}", e);
                                     }
 
+                                    // Save per-patient files when multi-patient
+                                    if soap_result.notes.len() > 1 {
+                                        if let Err(e) = local_archive::save_multi_patient_soap(
+                                            &session_id, &now, &soap_result.notes,
+                                        ) {
+                                            warn!("Failed to save per-patient SOAP files: {}", e);
+                                        }
+                                    }
+
+                                    let patient_count = soap_result.notes.len();
                                     if let Ok(mut logger) = logger_for_detector.lock() {
                                         logger.log_soap(
                                             &soap_model, &soap_system_prompt, "",
-                                            Some(soap_content), soap_latency, true, None,
+                                            Some(&soap_content), soap_latency, true, None,
                                             serde_json::json!({
                                                 "encounter_number": encounter_number,
                                                 "word_count": encounter_word_count,
@@ -2002,15 +2033,17 @@ pub async fn run_continuous_mode(
                                                 "format": soap_format,
                                                 "has_notes": !notes_text.is_empty(),
                                                 "response_chars": soap_content.len(),
+                                                "patient_count": patient_count,
                                             }),
                                         );
                                     }
 
                                     let _ = app_for_detector.emit("continuous_mode_event", serde_json::json!({
                                         "type": "soap_generated",
-                                        "session_id": session_id
+                                        "session_id": session_id,
+                                        "patient_count": patient_count,
                                     }));
-                                    info!("SOAP generated for encounter #{}", encounter_number);
+                                    info!("SOAP generated for encounter #{} ({} patient notes)", encounter_number, patient_count);
 
                                     // Log SOAP result to replay bundle + day log
                                     if let Ok(mut bundle) = bundle_for_detector.lock() {
@@ -2020,6 +2053,7 @@ pub async fn run_continuous_mode(
                                             success: true,
                                             word_count: encounter_word_count,
                                             error: None,
+                                            patient_count: if patient_count > 1 { Some(patient_count) } else { None },
                                         });
                                     }
                                     if let Some(ref dl) = *day_logger_for_detector {
@@ -2045,6 +2079,7 @@ pub async fn run_continuous_mode(
                                             ts: Utc::now().to_rfc3339(), latency_ms: soap_latency,
                                             success: false, word_count: encounter_word_count,
                                             error: Some(e.to_string()),
+                                            patient_count: None,
                                         });
                                     }
                                     if let Ok(mut err) = last_error_for_detector.lock() {
@@ -2072,6 +2107,7 @@ pub async fn run_continuous_mode(
                                             ts: Utc::now().to_rfc3339(), latency_ms: soap_latency,
                                             success: false, word_count: encounter_word_count,
                                             error: Some("timeout_120s".to_string()),
+                                            patient_count: None,
                                         });
                                     }
                                     if let Ok(mut err) = last_error_for_detector.lock() {
@@ -2219,6 +2255,7 @@ pub async fn run_continuous_mode(
                                                 &filtered_merged,
                                                 None,
                                                 Some(&merge_soap_opts),
+                                                None,
                                                 None,
                                             );
                                             match tokio::time::timeout(tokio::time::Duration::from_secs(120), soap_future).await {
@@ -2416,6 +2453,7 @@ pub async fn run_continuous_mode(
                                                                     None,
                                                                     Some(&merge_soap_opts),
                                                                     None,
+                                                                    None,
                                                                 );
                                                                 match tokio::time::timeout(tokio::time::Duration::from_secs(120), soap_future).await {
                                                                     Ok(Ok(soap_result)) => {
@@ -2500,189 +2538,56 @@ pub async fn run_continuous_mode(
                                                             info!("Merge-back #{}: next confidence threshold escalated by +{:.2}", merge_back_count, merge_back_count as f64 * 0.05);
 
                                                             // ── Retrospective multi-patient check ──
-                                                            // After merge-back produces a large transcript, check if it
-                                                            // contains multiple distinct patients. If so, auto-split.
-                                                            if merged_wc >= MULTI_PATIENT_CHECK_WORD_THRESHOLD {
+                                                            // After merge-back, detect if merged transcript has multiple patients.
+                                                            // If so, regenerate SOAP with per-patient prompts (no archive splitting).
+                                                            if merged_wc >= MULTI_PATIENT_DETECT_WORD_THRESHOLD {
                                                                 if let Some(ref client) = llm_client {
-                                                                    let date_str = prev_date.format("%Y-%m-%d").to_string();
                                                                     info!(
-                                                                        "Retrospective multi-patient check on {} ({} words)",
+                                                                        "Retrospective multi-patient detect on {} ({} words)",
                                                                         prev_id, merged_wc
                                                                     );
-
-                                                                    // Step 1: multi-patient gate
-                                                                    let mp_user = format!("Review this transcript:\n\n{}", merged_text);
-                                                                    let mp_future = client.generate(
-                                                                        &fast_model, MULTI_PATIENT_CHECK_PROMPT, &mp_user, "multi_patient_check",
-                                                                    );
-                                                                    let mp_result = tokio::time::timeout(
-                                                                        tokio::time::Duration::from_secs(30), mp_future,
-                                                                    ).await;
-
-                                                                    let has_multiple = match mp_result {
-                                                                        Ok(Ok(resp)) => {
-                                                                            match parse_multi_patient_check(&resp) {
-                                                                                Ok(r) => {
-                                                                                    info!("Multi-patient check: multiple={}, conf={:?}, reason={:?}",
-                                                                                        r.multiple_patients, r.confidence, r.reason);
-                                                                                    r.multiple_patients
+                                                                    if let Some(detection) = client.run_multi_patient_detection(&fast_model, &merged_text).await {
+                                                                        info!("Retrospective: {} patients detected, regenerating per-patient SOAP for {}",
+                                                                            detection.patient_count, prev_id);
+                                                                        let (filtered, _) = strip_hallucinations(&merged_text, 5);
+                                                                        let regen_notes = encounter_notes_for_detector
+                                                                            .lock().map(|n| n.clone()).unwrap_or_default();
+                                                                        let regen_opts = crate::llm_client::SoapOptions {
+                                                                            detail_level: soap_detail_level,
+                                                                            format: crate::llm_client::SoapFormat::from_config_str(&soap_format),
+                                                                            session_notes: regen_notes,
+                                                                            ..Default::default()
+                                                                        };
+                                                                        let regen_future = client.generate_multi_patient_soap_note(
+                                                                            &soap_model, &filtered, None, Some(&regen_opts), None,
+                                                                            Some(&detection),
+                                                                        );
+                                                                        match tokio::time::timeout(tokio::time::Duration::from_secs(120), regen_future).await {
+                                                                            Ok(Ok(soap_result)) => {
+                                                                                let soap_content = soap_result.format_for_archive();
+                                                                                let _ = local_archive::add_soap_note(
+                                                                                    prev_id, prev_date, &soap_content,
+                                                                                    Some(soap_detail_level), Some(&soap_format),
+                                                                                );
+                                                                                if soap_result.notes.len() > 1 {
+                                                                                    let _ = local_archive::save_multi_patient_soap(
+                                                                                        prev_id, prev_date, &soap_result.notes,
+                                                                                    );
                                                                                 }
-                                                                                Err(e) => { warn!("Failed to parse multi-patient check: {}", e); false }
-                                                                            }
-                                                                        }
-                                                                        Ok(Err(e)) => { warn!("Multi-patient check LLM error: {}", e); false }
-                                                                        Err(_) => { warn!("Multi-patient check timed out"); false }
-                                                                    };
-
-                                                                    // Step 2: find split boundary
-                                                                    if has_multiple {
-                                                                        match local_archive::get_transcript_lines(prev_id, &date_str) {
-                                                                            Ok(lines) if lines.len() >= 2 => {
-                                                                                let numbered: String = lines.iter().enumerate()
-                                                                                    .map(|(i, l)| format!("{}: {}", i + 1, l))
-                                                                                    .collect::<Vec<_>>()
-                                                                                    .join("\n");
-                                                                                let split_user = format!(
-                                                                                    "Here is the transcript with numbered lines:\n\n{}", numbered
+                                                                                info!(
+                                                                                    "Retrospective per-patient SOAP regenerated for {} ({} notes, {} chars)",
+                                                                                    prev_id, soap_result.notes.len(), soap_content.len()
                                                                                 );
-                                                                                let split_future = client.generate(
-                                                                                    &fast_model, MULTI_PATIENT_SPLIT_PROMPT, &split_user, "multi_patient_split",
-                                                                                );
-                                                                                let split_result = tokio::time::timeout(
-                                                                                    tokio::time::Duration::from_secs(30), split_future,
-                                                                                ).await;
-
-                                                                                if let Ok(Ok(split_resp)) = split_result {
-                                                                                    // Parse using the same structure as SuggestedSplit
-                                                                                    #[derive(serde::Deserialize)]
-                                                                                    struct SplitSuggestion { line_index: Option<usize>, confidence: Option<f64>, reason: Option<String> }
-                                                                                    let cleaned = crate::encounter_detection::strip_think_tags(&split_resp);
-                                                                                    if let Some(json_str) = crate::encounter_detection::extract_first_json_object(&cleaned) {
-                                                                                        if let Ok(suggestion) = serde_json::from_str::<SplitSuggestion>(&json_str) {
-                                                                                            if let Some(split_line) = suggestion.line_index {
-                                                                                                if split_line > 0 && split_line < lines.len() {
-                                                                                                    // Step 3: size gate
-                                                                                                    let first_words: usize = lines[..split_line].iter()
-                                                                                                        .map(|l| l.split_whitespace().count()).sum();
-                                                                                                    let second_words: usize = lines[split_line..].iter()
-                                                                                                        .map(|l| l.split_whitespace().count()).sum();
-
-                                                                                                    info!(
-                                                                                                        "Multi-patient split suggestion: line {}/{} ({}w / {}w), conf={:?}, reason={:?}",
-                                                                                                        split_line, lines.len(), first_words, second_words,
-                                                                                                        suggestion.confidence, suggestion.reason
-                                                                                                    );
-
-                                                                                                    if first_words >= MULTI_PATIENT_SPLIT_MIN_WORDS
-                                                                                                        && second_words >= MULTI_PATIENT_SPLIT_MIN_WORDS
-                                                                                                    {
-                                                                                                        info!(
-                                                                                                            "Size gate passed — auto-splitting {} at line {}",
-                                                                                                            prev_id, split_line
-                                                                                                        );
-                                                                                                        match local_archive::split_session(prev_id, &date_str, split_line) {
-                                                                                                            Ok(new_session_id) => {
-                                                                                                                info!(
-                                                                                                                    "Retrospective split created new session {} from {}",
-                                                                                                                    new_session_id, prev_id
-                                                                                                                );
-                                                                                                                encounter_number += 1;
-
-                                                                                                                // Regenerate SOAP for both halves
-                                                                                                                for (regen_id, regen_words) in [
-                                                                                                                    (prev_id.to_string(), first_words),
-                                                                                                                    (new_session_id.clone(), second_words),
-                                                                                                                ] {
-                                                                                                                    if regen_words < MIN_WORDS_FOR_CLINICAL_CHECK {
-                                                                                                                        continue;
-                                                                                                                    }
-                                                                                                                    if let Ok(details) = local_archive::get_session(&regen_id, &date_str) {
-                                                                                                                        if let Some(ref transcript) = details.transcript {
-                                                                                                                            let (filtered, _) = strip_hallucinations(transcript, 5);
-                                                                                                                            let regen_notes = encounter_notes_for_detector
-                                                                                                                                .lock()
-                                                                                                                                .map(|n| n.clone())
-                                                                                                                                .unwrap_or_default();
-                                                                                                                            let regen_opts = crate::llm_client::SoapOptions {
-                                                                                                                                detail_level: soap_detail_level,
-                                                                                                                                format: crate::llm_client::SoapFormat::from_config_str(&soap_format),
-                                                                                                                                session_notes: regen_notes,
-                                                                                                                                ..Default::default()
-                                                                                                                            };
-                                                                                                                            let regen_future = client.generate_multi_patient_soap_note(
-                                                                                                                                &soap_model, &filtered, None, Some(&regen_opts), None,
-                                                                                                                            );
-                                                                                                                            match tokio::time::timeout(
-                                                                                                                                tokio::time::Duration::from_secs(120), regen_future,
-                                                                                                                            ).await {
-                                                                                                                                Ok(Ok(soap_result)) => {
-                                                                                                                                    let soap_content = soap_result.notes.iter()
-                                                                                                                                        .map(|n| n.content.clone())
-                                                                                                                                        .collect::<Vec<_>>()
-                                                                                                                                        .join("\n\n---\n\n");
-                                                                                                                                    let _ = local_archive::add_soap_note(
-                                                                                                                                        &regen_id, prev_date,
-                                                                                                                                        &soap_content,
-                                                                                                                                        Some(soap_detail_level),
-                                                                                                                                        Some(&soap_format),
-                                                                                                                                    );
-                                                                                                                                    info!(
-                                                                                                                                        "Regenerated SOAP for retrospective split session {} ({} chars)",
-                                                                                                                                        regen_id, soap_content.len()
-                                                                                                                                    );
-                                                                                                                                }
-                                                                                                                                Ok(Err(e)) => warn!("SOAP regen failed for {}: {}", regen_id, e),
-                                                                                                                                Err(_) => warn!("SOAP regen timed out for {}", regen_id),
-                                                                                                                            }
-                                                                                                                        }
-                                                                                                                    }
-                                                                                                                }
-
-                                                                                                                // Update prev tracking to the first half
-                                                                                                                let first_text = lines[..split_line].join("\n");
-                                                                                                                prev_encounter_text = Some(first_text);
-                                                                                                                prev_encounter_is_clinical = is_clinical || prev_encounter_is_clinical;
-
-                                                                                                                if let Ok(mut logger) = logger_for_detector.lock() {
-                                                                                                                    logger.log_event("retrospective_split", serde_json::json!({
-                                                                                                                        "original_session": prev_id,
-                                                                                                                        "new_session": new_session_id,
-                                                                                                                        "split_line": split_line,
-                                                                                                                        "first_words": first_words,
-                                                                                                                        "second_words": second_words,
-                                                                                                                        "reason": suggestion.reason,
-                                                                                                                    }));
-                                                                                                                }
-
-                                                                                                                let _ = app_for_detector.emit("continuous_mode_event", serde_json::json!({
-                                                                                                                    "type": "retrospective_split",
-                                                                                                                    "original_session_id": prev_id,
-                                                                                                                    "new_session_id": new_session_id,
-                                                                                                                    "split_line": split_line,
-                                                                                                                }));
-
-                                                                                                                continue; // Skip normal prev update
-                                                                                                            }
-                                                                                                            Err(e) => warn!("Retrospective split failed: {}", e),
-                                                                                                        }
-                                                                                                    } else {
-                                                                                                        info!(
-                                                                                                            "Size gate blocked: {}w / {}w (min {}w per half)",
-                                                                                                            first_words, second_words, MULTI_PATIENT_SPLIT_MIN_WORDS
-                                                                                                        );
-                                                                                                    }
-                                                                                                }
-                                                                                            }
-                                                                                        }
-                                                                                    }
-                                                                                } else if let Ok(Err(e)) = split_result {
-                                                                                    warn!("Multi-patient split LLM error: {}", e);
-                                                                                } else {
-                                                                                    warn!("Multi-patient split timed out");
+                                                                                if let Ok(mut logger) = logger_for_detector.lock() {
+                                                                                    logger.log_event("retrospective_multi_patient_soap", serde_json::json!({
+                                                                                        "session_id": prev_id,
+                                                                                        "patient_count": soap_result.notes.len(),
+                                                                                        "detection_confidence": detection.confidence,
+                                                                                    }));
                                                                                 }
                                                                             }
-                                                                            Ok(_) => {} // empty or single-line transcript
-                                                                            Err(e) => warn!("Failed to load transcript lines for multi-patient check: {}", e),
+                                                                            Ok(Err(e)) => warn!("Retrospective per-patient SOAP regen failed: {}", e),
+                                                                            Err(_) => warn!("Retrospective per-patient SOAP regen timed out"),
                                                                         }
                                                                     }
                                                                 }
@@ -3133,6 +3038,7 @@ pub async fn run_continuous_mode(
                             None,
                             Some(&orphan_soap_opts),
                             None,
+                            None,
                         );
                         match tokio::time::timeout(tokio::time::Duration::from_secs(120), soap_future).await {
                             Ok(Ok(soap_result)) => {
@@ -3198,14 +3104,15 @@ pub async fn run_continuous_mode(
     }
 
     // Flush remaining buffer as final encounter check
-    let remaining_text = {
+    let (remaining_text, flush_encounter_start) = {
         let buffer = handle.transcript_buffer.lock().unwrap_or_else(|e| e.into_inner());
         if !buffer.is_empty() {
-            Some(buffer.full_text_with_speakers())
+            (Some(buffer.full_text_with_speakers()), buffer.first_timestamp())
         } else {
-            None
+            (None, None)
         }
     };
+    let mut flush_session_id_for_log: Option<String> = None;
 
     if let Some(text) = remaining_text {
         // Strip hallucinations before word count check and SOAP generation
@@ -3228,7 +3135,7 @@ pub async fn run_continuous_mode(
                 None,
                 false,
                 Some("continuous_mode_stopped"),
-                None, // No encounter start time for flush
+                flush_encounter_start, // Actual encounter start time for accurate duration
             ) {
                 warn!("Failed to archive final buffer: {}", e);
             } else {
@@ -3239,105 +3146,136 @@ pub async fn run_continuous_mode(
                     }
                 }
 
-                // Generate SOAP note for the flushed buffer (the orphaned encounter fix)
-                // NOTE: No clinical content check here — this is a rare shutdown-time flush
-                // where no LLM call is available for classification. Generating SOAP unconditionally
-                // is acceptable since the buffer likely contains real clinical audio.
-                if let Some(ref client) = flush_llm_client {
-                    let flush_notes = handle.encounter_notes
-                        .lock()
-                        .map(|n| n.clone())
-                        .unwrap_or_default();
-                    let flush_soap_opts = crate::llm_client::SoapOptions {
-                        detail_level: flush_soap_detail_level,
-                        format: crate::llm_client::SoapFormat::from_config_str(&flush_soap_format),
-                        session_notes: flush_notes,
-                        ..Default::default()
-                    };
-                    info!("Generating SOAP for flushed buffer ({} words)", word_count);
-                    let flush_soap_system_prompt = crate::llm_client::build_simple_soap_prompt(&flush_soap_opts);
-                    let flush_soap_start = Instant::now();
-                    let soap_future = client.generate_multi_patient_soap_note(
-                        &flush_soap_model,
-                        &filtered_text,
-                        None,
-                        Some(&flush_soap_opts),
-                        None,
-                    );
-                    match tokio::time::timeout(tokio::time::Duration::from_secs(120), soap_future).await {
-                        Ok(Ok(soap_result)) => {
-                            let flush_soap_latency = flush_soap_start.elapsed().as_millis() as u64;
-                            let soap_content = &soap_result.notes
-                                .iter()
-                                .map(|n| n.content.clone())
-                                .collect::<Vec<_>>()
-                                .join("\n\n---\n\n");
-                            if let Ok(mut logger) = logger_for_flush.lock() {
-                                logger.log_soap(
-                                    &flush_soap_model, &flush_soap_system_prompt, "",
-                                    Some(soap_content), flush_soap_latency, true, None,
-                                    serde_json::json!({
-                                        "stage": "flush_on_stop",
-                                        "word_count": word_count,
-                                        "detail_level": flush_soap_detail_level,
-                                        "format": flush_soap_format,
-                                        "response_chars": soap_content.len(),
-                                    }),
-                                );
+                // Track session ID for day log
+                flush_session_id_for_log = Some(session_id.clone());
+
+                // Cache today's sessions (used for encounter number + merge check)
+                let flush_today_str = Utc::now().format("%Y-%m-%d").to_string();
+                let flush_today_sessions = local_archive::list_sessions_by_date(&flush_today_str).ok();
+
+                // Update archive metadata with continuous mode info (match normal encounter path)
+                let flush_encounter_number = flush_today_sessions.as_ref()
+                    .map(|s| s.len() as u32)
+                    .unwrap_or(1);
+                if let Ok(session_dir) = local_archive::get_session_archive_dir(&session_id, &Utc::now()) {
+                    let meta_path = session_dir.join("metadata.json");
+                    if meta_path.exists() {
+                        if let Ok(content) = std::fs::read_to_string(&meta_path) {
+                            if let Ok(mut metadata) = serde_json::from_str::<local_archive::ArchiveMetadata>(&content) {
+                                metadata.charting_mode = Some("continuous".to_string());
+                                metadata.encounter_number = Some(flush_encounter_number);
+                                metadata.detection_method = Some("flush".to_string());
+                                if let Ok(tracker) = handle.name_tracker.lock() {
+                                    metadata.patient_name = tracker.majority_name();
+                                } else {
+                                    warn!("Name tracker lock poisoned during flush metadata enrichment");
+                                }
+                                if let Ok(json) = serde_json::to_string_pretty(&metadata) {
+                                    let _ = std::fs::write(&meta_path, json);
+                                }
                             }
-                            let now = Utc::now();
-                            if let Err(e) = local_archive::add_soap_note(
-                                &session_id,
-                                &now,
-                                soap_content,
-                                Some(flush_soap_detail_level),
-                                Some(&flush_soap_format),
-                            ) {
-                                warn!("Failed to save SOAP for flushed buffer: {}", e);
-                            } else {
-                                info!("SOAP generated for flushed buffer");
-                                let _ = app.emit("continuous_mode_event", serde_json::json!({
-                                    "type": "soap_generated",
-                                    "session_id": session_id
-                                }));
-                            }
-                        }
-                        Ok(Err(e)) => {
-                            let flush_soap_latency = flush_soap_start.elapsed().as_millis() as u64;
-                            if let Ok(mut logger) = logger_for_flush.lock() {
-                                logger.log_soap(
-                                    &flush_soap_model, &flush_soap_system_prompt, "", None, flush_soap_latency, false,
-                                    Some(&e.to_string()),
-                                    serde_json::json!({"stage": "flush_on_stop", "llm_error": true}),
-                                );
-                            }
-                            warn!("Failed to generate SOAP for flushed buffer: {}", e);
-                        }
-                        Err(_) => {
-                            let flush_soap_latency = flush_soap_start.elapsed().as_millis() as u64;
-                            if let Ok(mut logger) = logger_for_flush.lock() {
-                                logger.log_soap(
-                                    &flush_soap_model, &flush_soap_system_prompt, "", None, flush_soap_latency, false,
-                                    Some("timeout_120s"),
-                                    serde_json::json!({"stage": "flush_on_stop", "timeout": true}),
-                                );
-                            }
-                            warn!("SOAP generation timed out for flushed buffer");
                         }
                     }
                 }
 
-                // ---- Flush merge check ----
-                // The detector task is aborted before it can merge-check the final encounter.
-                // Run a merge check here so the flushed buffer gets merged if it belongs to
-                // the same visit as the previous encounter.
+                // Clinical content check (match normal encounter path)
+                // Fail-open: LLM error/timeout assumes clinical
+                let mut is_clinical = true;
+                if word_count < MIN_WORDS_FOR_CLINICAL_CHECK {
+                    is_clinical = false;
+                    info!(
+                        "Flush encounter too small for clinical analysis ({} words < {} threshold) — treating as non-clinical",
+                        word_count, MIN_WORDS_FOR_CLINICAL_CHECK
+                    );
+                } else if let Some(ref client) = flush_llm_client {
+                    let (cc_system, cc_user) = build_clinical_content_check_prompt(&text);
+                    let cc_start = Instant::now();
+                    let cc_future = client.generate(&flush_fast_model, &cc_system, &cc_user, "clinical_content_check");
+                    match tokio::time::timeout(tokio::time::Duration::from_secs(30), cc_future).await {
+                        Ok(Ok(cc_response)) => {
+                            let cc_latency = cc_start.elapsed().as_millis() as u64;
+                            match parse_clinical_content_check(&cc_response) {
+                                Ok(cc_result) => {
+                                    if let Ok(mut logger) = logger_for_flush.lock() {
+                                        logger.log_clinical_check(
+                                            &flush_fast_model, &cc_system, &cc_user,
+                                            Some(&cc_response), cc_latency, true, None,
+                                            serde_json::json!({
+                                                "stage": "flush_on_stop",
+                                                "word_count": word_count,
+                                                "is_clinical": cc_result.clinical,
+                                                "reason": cc_result.reason,
+                                            }),
+                                        );
+                                    }
+                                    if !cc_result.clinical {
+                                        is_clinical = false;
+                                        info!("Flush encounter flagged as non-clinical: {:?}", cc_result.reason);
+                                    } else {
+                                        info!("Flush encounter confirmed clinical: {:?}", cc_result.reason);
+                                    }
+                                }
+                                Err(e) => {
+                                    if let Ok(mut logger) = logger_for_flush.lock() {
+                                        logger.log_clinical_check(
+                                            &flush_fast_model, &cc_system, &cc_user,
+                                            Some(&cc_response), cc_latency, false, Some(&e),
+                                            serde_json::json!({"stage": "flush_on_stop", "parse_error": true}),
+                                        );
+                                    }
+                                    warn!("Failed to parse flush clinical content check: {}", e);
+                                }
+                            }
+                        }
+                        Ok(Err(e)) => {
+                            let cc_latency = cc_start.elapsed().as_millis() as u64;
+                            if let Ok(mut logger) = logger_for_flush.lock() {
+                                logger.log_clinical_check(
+                                    &flush_fast_model, &cc_system, &cc_user,
+                                    None, cc_latency, false, Some(&e.to_string()),
+                                    serde_json::json!({"stage": "flush_on_stop", "llm_error": true}),
+                                );
+                            }
+                            warn!("Flush clinical content check LLM call failed: {}", e);
+                        }
+                        Err(_) => {
+                            let cc_latency = cc_start.elapsed().as_millis() as u64;
+                            if let Ok(mut logger) = logger_for_flush.lock() {
+                                logger.log_clinical_check(
+                                    &flush_fast_model, &cc_system, &cc_user,
+                                    None, cc_latency, false, Some("timeout_30s"),
+                                    serde_json::json!({"stage": "flush_on_stop", "timeout": true}),
+                                );
+                            }
+                            warn!("Flush clinical content check timed out (30s)");
+                        }
+                    }
+                }
+
+                // Update metadata with non-clinical flag
+                if !is_clinical {
+                    if let Ok(session_dir) = local_archive::get_session_archive_dir(&session_id, &Utc::now()) {
+                        let nc_meta_path = session_dir.join("metadata.json");
+                        if nc_meta_path.exists() {
+                            if let Ok(nc_content) = std::fs::read_to_string(&nc_meta_path) {
+                                if let Ok(mut metadata) = serde_json::from_str::<local_archive::ArchiveMetadata>(&nc_content) {
+                                    metadata.likely_non_clinical = Some(true);
+                                    if let Ok(json) = serde_json::to_string_pretty(&metadata) {
+                                        let _ = std::fs::write(&nc_meta_path, json);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // ---- Flush merge check (runs BEFORE SOAP to avoid wasted generation) ----
+                let mut flush_was_merged = false;
                 if merge_enabled {
                     if let Some(ref client) = flush_llm_client {
-                        let today_str = Utc::now().format("%Y-%m-%d").to_string();
-                        if let Ok(sessions) = local_archive::list_sessions_by_date(&today_str) {
-                            // Find the most recent session that isn't the one we just flushed
+                        if let Some(ref sessions) = flush_today_sessions {
                             if let Some(prev_summary) = sessions.iter().find(|s| s.session_id != session_id) {
-                                if let Ok(prev_details) = local_archive::get_session(&prev_summary.session_id, &today_str) {
+                                if let Ok(prev_details) = local_archive::get_session(&prev_summary.session_id, &flush_today_str) {
                                     if let Some(ref prev_transcript) = prev_details.transcript {
                                         let prev_tail = tail_words(prev_transcript, MERGE_EXCERPT_WORDS);
                                         let curr_head = head_words(&filtered_text, MERGE_EXCERPT_WORDS);
@@ -3380,7 +3318,8 @@ pub async fn run_continuous_mode(
                                                                 "Flush merge check: same visit (reason: {:?}). Merging {} into {}",
                                                                 merge_result.reason, session_id, prev_summary.session_id
                                                             );
-                                                            let merged_text = format!("{}\n{}", prev_transcript, text);
+                                                            let merged_text = format!("{}
+{}", prev_transcript, text);
                                                             let merged_wc = merged_text.split_whitespace().count();
                                                             let now = Utc::now();
                                                             if let Err(e) = local_archive::merge_encounters(
@@ -3394,75 +3333,78 @@ pub async fn run_continuous_mode(
                                                             ) {
                                                                 warn!("Failed to merge flushed encounter: {}", e);
                                                             } else {
-                                                                // Regenerate SOAP on the merged text
-                                                                let (filtered_merged, _) = strip_hallucinations(&merged_text, 5);
-                                                                let flush_merge_notes = handle.encounter_notes
-                                                                    .lock()
-                                                                    .map(|n| n.clone())
-                                                                    .unwrap_or_default();
-                                                                let merge_soap_opts = crate::llm_client::SoapOptions {
-                                                                    detail_level: flush_soap_detail_level,
-                                                                    format: crate::llm_client::SoapFormat::from_config_str(&flush_soap_format),
-                                                                    session_notes: flush_merge_notes,
-                                                                    ..Default::default()
-                                                                };
-                                                                let merge_soap_start = Instant::now();
-                                                                let soap_future = client.generate_multi_patient_soap_note(
-                                                                    &flush_soap_model,
-                                                                    &filtered_merged,
-                                                                    None,
-                                                                    Some(&merge_soap_opts),
-                                                                    None,
-                                                                );
-                                                                match tokio::time::timeout(tokio::time::Duration::from_secs(120), soap_future).await {
-                                                                    Ok(Ok(soap_result)) => {
-                                                                        let merge_soap_latency = merge_soap_start.elapsed().as_millis() as u64;
-                                                                        let soap_content = &soap_result.notes
-                                                                            .iter()
-                                                                            .map(|n| n.content.clone())
-                                                                            .collect::<Vec<_>>()
-                                                                            .join("\n\n---\n\n");
-                                                                        if let Ok(mut logger) = logger_for_flush.lock() {
-                                                                            logger.log_soap(
-                                                                                &flush_soap_model, "", "",
-                                                                                Some(soap_content), merge_soap_latency, true, None,
-                                                                                serde_json::json!({
-                                                                                    "stage": "flush_merge_soap_regen",
-                                                                                    "merged_into": prev_summary.session_id,
-                                                                                    "merged_word_count": merged_wc,
-                                                                                }),
+                                                                flush_was_merged = true;
+                                                                // Regenerate SOAP only if at least one encounter is clinical
+                                                                let prev_is_clinical = prev_summary.likely_non_clinical != Some(true);
+                                                                if is_clinical || prev_is_clinical {
+                                                                    let (filtered_merged, _) = strip_hallucinations(&merged_text, 5);
+                                                                    let flush_merge_notes = handle.encounter_notes
+                                                                        .lock()
+                                                                        .map(|n| n.clone())
+                                                                        .unwrap_or_default();
+                                                                    let merge_soap_opts = crate::llm_client::SoapOptions {
+                                                                        detail_level: flush_soap_detail_level,
+                                                                        format: crate::llm_client::SoapFormat::from_config_str(&flush_soap_format),
+                                                                        session_notes: flush_merge_notes,
+                                                                        ..Default::default()
+                                                                    };
+                                                                    let merge_soap_start = Instant::now();
+                                                                    let soap_future = client.generate_multi_patient_soap_note(
+                                                                        &flush_soap_model,
+                                                                        &filtered_merged,
+                                                                        None,
+                                                                        Some(&merge_soap_opts),
+                                                                        None,
+                                                                        None,
+                                                                    );
+                                                                    match tokio::time::timeout(tokio::time::Duration::from_secs(120), soap_future).await {
+                                                                        Ok(Ok(soap_result)) => {
+                                                                            let merge_soap_latency = merge_soap_start.elapsed().as_millis() as u64;
+                                                                            let soap_content = soap_result.format_for_archive();
+                                                                            if let Ok(mut logger) = logger_for_flush.lock() {
+                                                                                logger.log_soap(
+                                                                                    &flush_soap_model, "", "",
+                                                                                    Some(&soap_content), merge_soap_latency, true, None,
+                                                                                    serde_json::json!({
+                                                                                        "stage": "flush_merge_soap_regen",
+                                                                                        "merged_into": prev_summary.session_id,
+                                                                                        "merged_word_count": merged_wc,
+                                                                                    }),
+                                                                                );
+                                                                            }
+                                                                            let _ = local_archive::add_soap_note(
+                                                                                &prev_summary.session_id,
+                                                                                &now,
+                                                                                &soap_content,
+                                                                                Some(flush_soap_detail_level),
+                                                                                Some(&flush_soap_format),
                                                                             );
+                                                                            info!("Regenerated SOAP for flush-merged encounter {}", prev_summary.session_id);
                                                                         }
-                                                                        let _ = local_archive::add_soap_note(
-                                                                            &prev_summary.session_id,
-                                                                            &now,
-                                                                            soap_content,
-                                                                            Some(flush_soap_detail_level),
-                                                                            Some(&flush_soap_format),
-                                                                        );
-                                                                        info!("Regenerated SOAP for flush-merged encounter {}", prev_summary.session_id);
-                                                                    }
-                                                                    Ok(Err(e)) => {
-                                                                        let merge_soap_latency = merge_soap_start.elapsed().as_millis() as u64;
-                                                                        if let Ok(mut logger) = logger_for_flush.lock() {
-                                                                            logger.log_soap(
-                                                                                &flush_soap_model, "", "", None, merge_soap_latency, false,
-                                                                                Some(&e.to_string()),
-                                                                                serde_json::json!({"stage": "flush_merge_soap_regen", "llm_error": true}),
-                                                                            );
+                                                                        Ok(Err(e)) => {
+                                                                            let merge_soap_latency = merge_soap_start.elapsed().as_millis() as u64;
+                                                                            if let Ok(mut logger) = logger_for_flush.lock() {
+                                                                                logger.log_soap(
+                                                                                    &flush_soap_model, "", "", None, merge_soap_latency, false,
+                                                                                    Some(&e.to_string()),
+                                                                                    serde_json::json!({"stage": "flush_merge_soap_regen", "llm_error": true}),
+                                                                                );
+                                                                            }
+                                                                            warn!("Failed to regenerate SOAP after flush merge: {}", e);
                                                                         }
-                                                                        warn!("Failed to regenerate SOAP after flush merge: {}", e);
-                                                                    }
-                                                                    Err(_) => {
-                                                                        if let Ok(mut logger) = logger_for_flush.lock() {
-                                                                            logger.log_soap(
-                                                                                &flush_soap_model, "", "", None, 120_000, false,
-                                                                                Some("timeout_120s"),
-                                                                                serde_json::json!({"stage": "flush_merge_soap_regen", "timeout": true}),
-                                                                            );
+                                                                        Err(_) => {
+                                                                            if let Ok(mut logger) = logger_for_flush.lock() {
+                                                                                logger.log_soap(
+                                                                                    &flush_soap_model, "", "", None, 120_000, false,
+                                                                                    Some("timeout_120s"),
+                                                                                    serde_json::json!({"stage": "flush_merge_soap_regen", "timeout": true}),
+                                                                                );
+                                                                            }
+                                                                            warn!("SOAP regeneration timed out after flush merge");
                                                                         }
-                                                                        warn!("SOAP regeneration timed out after flush merge");
                                                                     }
+                                                                } else {
+                                                                    info!("Skipping SOAP regeneration for flush-merged non-clinical encounters");
                                                                 }
                                                                 let _ = app.emit("continuous_mode_event", serde_json::json!({
                                                                     "type": "encounter_merged",
@@ -3519,6 +3461,92 @@ pub async fn run_continuous_mode(
                         }
                     }
                 }
+
+                // Generate SOAP note (only if clinical AND not already merged)
+                if !is_clinical {
+                    info!("Skipping SOAP for non-clinical flush encounter");
+                } else if flush_was_merged {
+                    info!("Skipping SOAP for flush encounter — already merged into previous session");
+                } else if let Some(ref client) = flush_llm_client {
+                    let flush_notes = handle.encounter_notes
+                        .lock()
+                        .map(|n| n.clone())
+                        .unwrap_or_default();
+                    let flush_soap_opts = crate::llm_client::SoapOptions {
+                        detail_level: flush_soap_detail_level,
+                        format: crate::llm_client::SoapFormat::from_config_str(&flush_soap_format),
+                        session_notes: flush_notes,
+                        ..Default::default()
+                    };
+                    info!("Generating SOAP for flushed buffer ({} words)", word_count);
+                    let flush_soap_system_prompt = crate::llm_client::build_simple_soap_prompt(&flush_soap_opts);
+                    let flush_soap_start = Instant::now();
+                    let soap_future = client.generate_multi_patient_soap_note(
+                        &flush_soap_model,
+                        &filtered_text,
+                        None,
+                        Some(&flush_soap_opts),
+                        None,
+                        None,
+                    );
+                    match tokio::time::timeout(tokio::time::Duration::from_secs(120), soap_future).await {
+                        Ok(Ok(soap_result)) => {
+                            let flush_soap_latency = flush_soap_start.elapsed().as_millis() as u64;
+                            let soap_content = soap_result.format_for_archive();
+                            if let Ok(mut logger) = logger_for_flush.lock() {
+                                logger.log_soap(
+                                    &flush_soap_model, &flush_soap_system_prompt, "",
+                                    Some(&soap_content), flush_soap_latency, true, None,
+                                    serde_json::json!({
+                                        "stage": "flush_on_stop",
+                                        "word_count": word_count,
+                                        "detail_level": flush_soap_detail_level,
+                                        "format": flush_soap_format,
+                                        "response_chars": soap_content.len(),
+                                    }),
+                                );
+                            }
+                            let now = Utc::now();
+                            if let Err(e) = local_archive::add_soap_note(
+                                &session_id,
+                                &now,
+                                &soap_content,
+                                Some(flush_soap_detail_level),
+                                Some(&flush_soap_format),
+                            ) {
+                                warn!("Failed to save SOAP for flushed buffer: {}", e);
+                            } else {
+                                info!("SOAP generated for flushed buffer");
+                                let _ = app.emit("continuous_mode_event", serde_json::json!({
+                                    "type": "soap_generated",
+                                    "session_id": session_id
+                                }));
+                            }
+                        }
+                        Ok(Err(e)) => {
+                            let flush_soap_latency = flush_soap_start.elapsed().as_millis() as u64;
+                            if let Ok(mut logger) = logger_for_flush.lock() {
+                                logger.log_soap(
+                                    &flush_soap_model, &flush_soap_system_prompt, "", None, flush_soap_latency, false,
+                                    Some(&e.to_string()),
+                                    serde_json::json!({"stage": "flush_on_stop", "llm_error": true}),
+                                );
+                            }
+                            warn!("Failed to generate SOAP for flushed buffer: {}", e);
+                        }
+                        Err(_) => {
+                            let flush_soap_latency = flush_soap_start.elapsed().as_millis() as u64;
+                            if let Ok(mut logger) = logger_for_flush.lock() {
+                                logger.log_soap(
+                                    &flush_soap_model, &flush_soap_system_prompt, "", None, flush_soap_latency, false,
+                                    Some("timeout_120s"),
+                                    serde_json::json!({"stage": "flush_on_stop", "timeout": true}),
+                                );
+                            }
+                            warn!("SOAP generation timed out for flushed buffer");
+                        }
+                    }
+                }
             }
         }
     }
@@ -3528,7 +3556,7 @@ pub async fn run_continuous_mode(
         dl.log(crate::day_log::DayEvent::ContinuousModeStopped {
             ts: Utc::now().to_rfc3339(),
             total_encounters: handle.encounters_detected.load(Ordering::Relaxed),
-            flush_session_id: None,
+            flush_session_id: flush_session_id_for_log,
         });
     }
 

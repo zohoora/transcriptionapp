@@ -278,6 +278,7 @@ Speaker 1: Take care. We'll see you soon.";
             None,  // No audio events
             None,  // Default SOAP options
             None,  // No speaker context
+            None,  // No multi-patient detection
         )).expect("SOAP generation failed");
 
         assert!(!result.notes.is_empty(), "SOAP result has no patient notes");
@@ -377,14 +378,13 @@ Speaker 1: Take care. We'll see you soon.";
         let merge_client = LLMClient::new(llm_url, api_key, client_id, FAST_MODEL)
             .expect("Failed to create merge LLM client");
 
-        // Simulate two encounter excerpts from the same visit
-        let prev_tail = "Speaker 1: I'd like to start you on sumatriptan as needed and \
-            schedule a follow-up in two weeks. If the headaches get worse or you develop \
-            new symptoms, come back sooner.\n\
-            Speaker 2: Thank you doctor. I'll see you in two weeks then.";
-        let curr_head = "Speaker 1: Take care. We'll see you soon.\n\
-            Speaker 2: Thanks again doctor.\n\
-            Speaker 1: Now let me update the chart with your visit notes.";
+        // Simulate two encounter excerpts from the same visit (mid-encounter, not at farewell boundary)
+        let prev_tail = "Speaker 1: I'd like to start you on sumatriptan as needed for the \
+            migraines. Let's also check your blood pressure while you're here.\n\
+            Speaker 2: Okay, sounds good. I've been meaning to ask about that too.";
+        let curr_head = "Speaker 1: Your blood pressure is 142 over 88, which is a bit elevated. \
+            Have you been taking your lisinopril regularly?\n\
+            Speaker 2: I've been forgetting some days, to be honest.";
 
         let (merge_system, merge_user) = build_encounter_merge_prompt(
             prev_tail,
@@ -423,6 +423,83 @@ Speaker 1: Take care. We'll see you soon.";
         println!("  Detection: model={} + /nothink → complete=true", DETECTION_MODEL);
         println!("  Merge: model={} + patient name → same_encounter=true", FAST_MODEL);
         println!("  Hallucination filter → cleaned {} repetitions", report.repetitions.len());
+    }
+
+    /// Verify multi-patient detection and per-patient SOAP generation.
+    ///
+    /// Uses a couples-visit fixture transcript where two patients are seen together.
+    /// Verifies that detection identifies 2 patients and per-patient SOAP notes
+    /// are generated concurrently from the full transcript.
+    #[test]
+    #[ignore = "Requires live LLM Router"]
+    fn e2e_layer2_multi_patient_soap() {
+        let client = create_llm_client();
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+
+        // Couples-visit fixture: doctor sees both Lynn and Jim
+        let couples_transcript = r#"Doctor: Good morning Lynn, good morning Jim. Nice to see you both. Lynn, let's start with you. How have your blood sugars been?
+Lynn: They've been running a bit high, especially in the mornings. Around 180 fasting.
+Doctor: Okay, and are you still on metformin 1000 twice daily?
+Lynn: Yes, I haven't missed any doses.
+Doctor: Good. Your last A1c was 8.2, so we need to get that down. I'm going to add a low dose of glipizide, 5mg before breakfast. We'll recheck your A1c in three months.
+Lynn: Okay, sounds good.
+Doctor: Now Jim, how are you doing? How's the thyroid medication working?
+Jim: I feel much better actually. Less tired, not as cold all the time.
+Doctor: Great to hear. Your last TSH was 4.5, which is still a touch high. Let's increase your levothyroxine from 50 to 75 mcg.
+Jim: Alright.
+Doctor: And Jim, your blood pressure was 145 over 92 today. That's elevated. Are you taking the lisinopril?
+Jim: I've been forgetting sometimes, maybe taking it 4 or 5 days a week.
+Doctor: It's really important to take it daily. Your kidneys need that protection. Let's also add amlodipine 5mg to help get the pressure down. I want to see you both back in 6 weeks.
+Lynn: Thank you doctor.
+Jim: Thanks doc."#;
+
+        // Step 1: Run multi-patient detection
+        println!("Step 1: Running multi-patient detection...");
+        let config = Config::load_or_default();
+        let fast_model = if config.fast_model.is_empty() { FAST_MODEL } else { &config.fast_model };
+        let mp_user = format!("Transcript:\n\n{}", couples_transcript);
+        let detect_result = rt.block_on(async {
+            tokio::time::timeout(
+                tokio::time::Duration::from_secs(30),
+                client.generate(fast_model, crate::encounter_detection::MULTI_PATIENT_DETECT_PROMPT, &mp_user, "multi_patient_detect"),
+            ).await
+        });
+
+        let resp = detect_result.expect("Detection timed out").expect("Detection LLM error");
+        let detection = crate::encounter_detection::parse_multi_patient_detection(&resp)
+            .expect("Failed to parse detection");
+
+        println!("  Detected {} patient(s), confidence: {:?}", detection.patient_count, detection.confidence);
+        for p in &detection.patients {
+            println!("    → {}: {}", p.label, p.summary);
+        }
+        assert!(detection.patient_count >= 2, "Should detect at least 2 patients, got {}", detection.patient_count);
+        assert!(detection.patients.len() >= 2, "Should have at least 2 patient labels");
+        assert!(detection.confidence.unwrap_or(0.0) >= crate::encounter_detection::MULTI_PATIENT_DETECT_MIN_CONFIDENCE,
+            "Confidence should be >= {}", crate::encounter_detection::MULTI_PATIENT_DETECT_MIN_CONFIDENCE);
+
+        // Step 2: Generate per-patient SOAP notes
+        println!("Step 2: Generating per-patient SOAP notes...");
+        let soap_result = rt.block_on(client.generate_multi_patient_soap_note(
+            SOAP_MODEL,
+            couples_transcript,
+            None,
+            None,
+            None,
+            Some(&detection),
+        )).expect("Per-patient SOAP generation failed");
+
+        assert!(soap_result.notes.len() >= 2, "Should have at least 2 SOAP notes, got {}", soap_result.notes.len());
+        for note in &soap_result.notes {
+            println!("  SOAP for '{}': {} chars", note.patient_label, note.content.len());
+            assert!(!note.content.is_empty(), "SOAP note for '{}' is empty", note.patient_label);
+        }
+
+        println!("[PASS] Multi-patient SOAP: {} patients detected, {} notes generated",
+            detection.patient_count, soap_result.notes.len());
     }
 
     // ========================================================================
@@ -633,6 +710,7 @@ Speaker 1: Take care. We'll see you soon.";
             None,
             None,
             None,
+            None,
         )).expect("SOAP generation failed");
 
         assert!(!soap_result.notes.is_empty(), "No SOAP notes generated");
@@ -782,6 +860,7 @@ Speaker 1: Take care. We'll see you soon.";
         let soap_result = rt.block_on(llm_client.generate_multi_patient_soap_note(
             SOAP_MODEL,
             &transcript,
+            None,
             None,
             None,
             None,
