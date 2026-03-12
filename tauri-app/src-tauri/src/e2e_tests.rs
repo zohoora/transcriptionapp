@@ -15,7 +15,6 @@
 //! Layer 3: Local Archive       — Save and retrieve sessions with SOAP notes
 //! Layer 4: Session Mode E2E    — Audio → Transcript → SOAP → Archive → History
 //! Layer 5: Continuous Mode E2E — Audio → Transcript → Encounter Detection → SOAP → Archive
-//! Layer 6: Native STT Shadow   — Apple Speech client, accumulator, CSV, archive integration
 //! ```
 //!
 //! # Running
@@ -69,8 +68,8 @@ mod tests {
     /// Model for SOAP note generation
     const SOAP_MODEL: &str = "soap-model-fast";
 
-    /// Model for encounter detection (hybrid: smaller model resists over-splitting)
-    const DETECTION_MODEL: &str = "faster";
+    /// Model for encounter detection (must match config default: encounter_detection_model)
+    const DETECTION_MODEL: &str = "fast-model";
 
     /// Model for encounter merge and general fast tasks
     const FAST_MODEL: &str = "fast-model";

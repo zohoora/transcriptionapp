@@ -235,8 +235,8 @@ mod tests {
         }
 
         // Low noise shouldn't be detected as speech
-        // (though this depends on VAD sensitivity)
-        assert!(!pipeline.has_pending_utterances() || pipeline.pending_count() == 0);
+        assert!(!pipeline.has_pending_utterances());
+        assert_eq!(pipeline.pending_count(), 0);
     }
 
     /// Regression test: Ensure tail audio is captured when stop is called mid-speech

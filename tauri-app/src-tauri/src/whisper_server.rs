@@ -1017,7 +1017,7 @@ mod tests {
             "large-v3-turbo",
         ).expect("Failed to create client");
 
-        let result = client.transcribe_batch_blocking(&audio, "medical-batch", true, "en");
+        let result = client.transcribe_batch_blocking(&audio, "medical-streaming", true, "en");
 
         match result {
             Ok(text) => {

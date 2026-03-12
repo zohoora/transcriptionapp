@@ -59,7 +59,7 @@ mod tests {
     /// Simulates hours of audio processing to detect memory leaks
     /// and performance degradation.
     #[test]
-    #[ignore] // Run explicitly with --ignored
+    #[ignore = "Long-running stability test (60s+) — run with: cargo test --release soak_test_ -- --ignored"]
     fn soak_test_extended_vad_pipeline() {
         let duration = get_soak_duration();
         println!("\n=== VAD Pipeline Soak Test ===");
@@ -142,7 +142,7 @@ mod tests {
 
     /// Extended soak test for session management
     #[test]
-    #[ignore]
+    #[ignore = "Long-running stability test (60s+)"]
     fn soak_test_extended_session_management() {
         let duration = get_soak_duration();
         println!("\n=== Session Management Soak Test ===");
@@ -208,7 +208,7 @@ mod tests {
 
     /// Extended soak test for audio resampling
     #[test]
-    #[ignore]
+    #[ignore = "Long-running stability test (60s+)"]
     fn soak_test_extended_resampling() {
         let duration = get_soak_duration();
         println!("\n=== Audio Resampling Soak Test ===");
@@ -261,7 +261,7 @@ mod tests {
 
     /// Concurrent soak test with multiple threads
     #[test]
-    #[ignore]
+    #[ignore = "Long-running stability test (60s+)"]
     fn soak_test_concurrent_operations() {
         let duration = get_soak_duration();
         println!("\n=== Concurrent Operations Soak Test ===");
@@ -368,7 +368,7 @@ mod tests {
     /// - Performance degradation
     #[cfg(feature = "enhancement")]
     #[test]
-    #[ignore]
+    #[ignore = "Long-running stability test (60s+), requires enhancement feature + ORT_DYLIB_PATH"]
     fn soak_test_enhancement_streaming() {
         use crate::enhancement::{EnhancementConfig, EnhancementProvider};
         use std::path::PathBuf;
@@ -520,7 +520,7 @@ mod tests {
 
     /// Memory stress test - creates and destroys many objects
     #[test]
-    #[ignore]
+    #[ignore = "Long-running stability test (60s+)"]
     fn soak_test_memory_stress() {
         let duration = get_soak_duration();
         println!("\n=== Memory Stress Soak Test ===");

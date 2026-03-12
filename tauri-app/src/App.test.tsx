@@ -112,8 +112,7 @@ describe('App', () => {
 
   });
 
-  // Settings drawer is currently hidden (hideSettingsButton={true})
-  describe.skip('settings drawer', () => {
+  describe('settings drawer', () => {
     it('opens settings drawer when gear button is clicked', async () => {
       const user = userEvent.setup();
       mockInvoke.mockImplementation(createStandardMock());

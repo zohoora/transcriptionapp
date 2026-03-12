@@ -665,7 +665,7 @@ mod tests {
     /// Test downloading the tiny Whisper model
     /// This test is ignored by default as it downloads ~75MB
     #[test]
-    #[ignore]
+    #[ignore = "Downloads ~75MB Whisper model from network"]
     fn test_download_whisper_tiny() {
         let result = ensure_whisper_model(WhisperModel::Tiny);
         assert!(result.is_ok(), "Failed to download: {:?}", result.err());
@@ -679,7 +679,7 @@ mod tests {
     /// Test downloading the speaker embedding model
     /// This test is ignored by default as it downloads ~26MB
     #[test]
-    #[ignore]
+    #[ignore = "Downloads ~26MB speaker model from network"]
     fn test_download_speaker_model() {
         let result = ensure_speaker_model();
         assert!(result.is_ok(), "Failed to download: {:?}", result.err());
