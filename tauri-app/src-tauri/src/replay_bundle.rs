@@ -8,7 +8,7 @@
 //!
 //! Contains PHI — stored alongside existing PHI (transcript, SOAP) in the archive.
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::Path;
 use tracing::warn;
@@ -17,7 +17,7 @@ const BUNDLE_FILENAME: &str = "replay_bundle.json";
 const SCHEMA_VERSION: u32 = 1;
 
 /// Self-contained replay test case for an encounter.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct ReplayBundle {
     pub schema_version: u32,
     pub config: serde_json::Value,
@@ -39,7 +39,7 @@ pub struct ReplayBundle {
     pub outcome: Option<Outcome>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ReplaySegment {
     pub ts: String,
     pub index: u64,
@@ -52,14 +52,14 @@ pub struct ReplaySegment {
     pub speaker_confidence: Option<f32>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SensorTransition {
     pub ts: String,
     pub from: String,
     pub to: String,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct VisionResult {
     pub ts: String,
     pub parsed_name: Option<String>,
@@ -75,7 +75,7 @@ impl VisionResult {
     }
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DetectionCheck {
     pub ts: String,
     pub segment_range: (u64, u64),
@@ -95,7 +95,7 @@ pub struct DetectionCheck {
     pub loop_state: LoopState,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SensorContext {
     pub departed: bool,
     pub present: bool,
@@ -149,7 +149,7 @@ impl DetectionCheck {
     }
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LoopState {
     pub consecutive_failures: u32,
     pub merge_back_count: u32,
@@ -158,7 +158,7 @@ pub struct LoopState {
     pub sensor_absent_since: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SplitDecision {
     pub ts: String,
     pub trigger: String,
@@ -168,7 +168,7 @@ pub struct SplitDecision {
     pub end_segment_index: Option<u64>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ClinicalCheck {
     pub ts: String,
     pub is_clinical: bool,
@@ -178,7 +178,7 @@ pub struct ClinicalCheck {
     pub error: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MergeCheck {
     pub ts: String,
     pub prev_session_id: String,
@@ -198,7 +198,7 @@ pub struct MergeCheck {
     pub auto_merge_gate: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SoapResult {
     pub ts: String,
     pub latency_ms: u64,
@@ -211,14 +211,14 @@ pub struct SoapResult {
     pub patient_count: Option<usize>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NameTrackerState {
     pub majority_name: Option<String>,
     pub vote_count: usize,
     pub unique_names: Vec<String>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Outcome {
     pub session_id: String,
     pub encounter_number: u32,

@@ -143,6 +143,10 @@ path = "tools/vision_experiment_cli.rs"
 name = "encounter_experiment_cli"
 path = "tools/encounter_experiment_cli.rs"
 
+[[bin]]
+name = "detection_replay_cli"
+path = "tools/detection_replay_cli.rs"
+
 [[bench]]
 name = "audio_benchmarks"
 harness = false

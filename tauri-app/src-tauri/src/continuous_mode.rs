@@ -36,6 +36,8 @@ pub use crate::encounter_detection::{
     MULTI_PATIENT_CHECK_PROMPT, MULTI_PATIENT_SPLIT_PROMPT,
     parse_multi_patient_check,
     MULTI_PATIENT_DETECT_WORD_THRESHOLD,
+    DetectionEvalContext, DetectionOutcome, evaluate_detection,
+    TRIGGER_HYBRID_SENSOR_TIMEOUT,
 };
 pub use crate::encounter_merge::{MergeCheckResult, build_encounter_merge_prompt, parse_merge_check};
 pub use crate::patient_name_tracker::PatientNameTracker;
@@ -60,14 +62,25 @@ fn head_words(text: &str, n: usize) -> String {
     if words.len() > n { words[..n].join(" ") } else { text.to_string() }
 }
 
-/// Calculate the dynamic confidence threshold for encounter detection.
+/// Compute effective SOAP detail level based on transcript length.
 ///
-/// Short encounters (<20 min) use a higher base threshold (0.85) to reduce
-/// false splits on natural pauses. Longer encounters use 0.7.
-/// Each prior merge-back raises the bar by +0.05 (capped at 0.99).
-pub fn calculate_confidence_threshold(buffer_age_mins: i64, merge_back_count: usize) -> f64 {
-    let base_threshold = if buffer_age_mins < 20 { 0.85 } else { 0.7 };
-    (base_threshold + merge_back_count as f64 * 0.05).min(0.99)
+/// Short encounters use the clinician's configured level as-is.
+/// Longer transcripts automatically scale up so the LLM doesn't
+/// cherry-pick a handful of items from a dense, multi-topic session.
+/// The configured level acts as a floor — never reduces detail.
+pub fn effective_soap_detail_level(configured: u8, word_count: usize) -> u8 {
+    let word_based: u8 = match word_count {
+        0..=1499 => 3,
+        1500..=2999 => 4,
+        3000..=4999 => 5,
+        5000..=7999 => 6,
+        8000..=11999 => 7,
+        12000..=15999 => 8,
+        16000..=19999 => 9,
+        _ => 10,
+    };
+    // .min(10) guards against configured values that escaped config clamping
+    configured.max(word_based).min(10)
 }
 
 // ============================================================================
@@ -1010,9 +1023,6 @@ pub async fn run_continuous_mode(
         let mut sensor_absent_since: Option<DateTime<Utc>> = None;
         let mut prev_sensor_state = crate::presence_sensor::PresenceState::Unknown;
         let mut sensor_available = hybrid_sensor_rx.is_some();
-        // Tracks whether the current split was triggered by sensor timeout (for metadata)
-        // Initialized inside the loop on each iteration — declared here so it's available across the loop body
-        let mut hybrid_sensor_timeout_triggered;
 
         // Track previous encounter for retrospective merge checks
         let mut prev_encounter_session_id: Option<String> = None;
@@ -1021,9 +1031,6 @@ pub async fn run_continuous_mode(
         let mut prev_encounter_is_clinical: bool = true;
 
         loop {
-            // Reset per-iteration hybrid tracking
-            hybrid_sensor_timeout_triggered = false;
-
             // Wait for trigger based on detection mode
             // Returns (manual_triggered, sensor_triggered)
             let (manual_triggered, sensor_triggered) = if is_hybrid_mode && sensor_available {
@@ -1175,9 +1182,17 @@ pub async fn run_continuous_mode(
             } else {
                 (None, None)
             };
+            // Compute cleaned word count relative to the raw transcript word count.
+            // The hallucination report counts words in format_for_detection() output,
+            // which includes segment metadata ([index] (timestamp) (speaker label):)
+            // inflating the count by ~5 words per segment. We apply only the delta
+            // (words actually stripped) to the raw buffer word count.
             let cleaned_word_count = hallucination_report
                 .as_ref()
-                .map(|r| r.cleaned_word_count)
+                .map(|r| {
+                    let stripped = r.original_word_count.saturating_sub(r.cleaned_word_count);
+                    word_count.saturating_sub(stripped)
+                })
                 .unwrap_or(word_count);
 
             // Manual or sensor trigger: skip minimum guards, but still need >0 words
@@ -1431,174 +1446,98 @@ pub async fn run_continuous_mode(
                 None
             };
 
-            // Force-split safety valve: tracks consecutive non-split outcomes (both LLM
-            // failures AND negative results). Prevents unbounded buffer growth when the
-            // LLM consistently says "no encounter detected."
-            let mut force_split = false;
-            let mut detection_result = detection_result;
+            // Evaluate detection decision via pure function (single source of truth)
+            let buffer_age_mins = first_ts
+                .map(|t| (Utc::now() - t).num_minutes())
+                .unwrap_or(0);
+            let eval_ctx = DetectionEvalContext {
+                detection_result,
+                buffer_age_mins,
+                merge_back_count: merge_back_count as usize,
+                word_count,
+                cleaned_word_count,
+                consecutive_llm_failures,
+                manual_triggered,
+                sensor_triggered,
+                is_hybrid_mode,
+                sensor_absent_secs: sensor_absent_since.map(|t| (Utc::now() - t).num_seconds() as u64),
+                hybrid_confirm_window_secs,
+                hybrid_min_words_for_sensor_split,
+            };
+            let (outcome, new_failures) = evaluate_detection(&eval_ctx);
+            consecutive_llm_failures = new_failures;
 
-            // Effective word count for force-split: max(cleaned, raw/2).
-            // When the hallucination filter strips heavily (e.g. 4652→1537), raw/2 ensures
-            // the force-split thresholds still engage for genuinely long encounters.
-            let effective_word_count = cleaned_word_count.max(word_count / 2);
-
-            // Absolute word cap: unconditional force-split at ABSOLUTE_WORD_CAP effective words
-            if effective_word_count > ABSOLUTE_WORD_CAP && !manual_triggered && !sensor_triggered {
-                warn!("ABSOLUTE WORD CAP: force-splitting at {} effective words (cleaned: {}, raw: {})", effective_word_count, cleaned_word_count, word_count);
-                if let Ok(mut logger) = logger_for_detector.lock() {
-                    logger.log_split_trigger(serde_json::json!({
-                        "trigger": "absolute_word_cap",
-                        "effective_word_count": effective_word_count,
-                        "cleaned_word_count": cleaned_word_count,
-                        "raw_word_count": word_count,
-                        "cap": ABSOLUTE_WORD_CAP,
-                    }));
-                }
-                let last_idx = buffer_for_detector.lock().ok().and_then(|b| b.last_index());
-                consecutive_llm_failures = 0;
-                force_split = true;
-                detection_result = Some(EncounterDetectionResult {
-                    complete: true,
-                    end_segment_index: last_idx,
-                    confidence: Some(1.0),
-                });
-            }
-
-            // Track consecutive LLM failures for graduated force-split.
-            // Only LLM errors/timeouts count — a confident "no split" from the LLM
-            // is the system working correctly (e.g., long single-patient session),
-            // not a sign of failure that warrants overriding the LLM.
-            if !force_split && !manual_triggered && !sensor_triggered {
-                match &detection_result {
-                    None => {
-                        // LLM error/timeout — increment failure counter
-                        consecutive_llm_failures += 1;
-                        info!(
-                            "Detection LLM failure: consecutive_llm_failures={}, cleaned_word_count={}, raw_word_count={}",
-                            consecutive_llm_failures, cleaned_word_count, word_count
-                        );
-                        // Graduated force-split: only on repeated LLM failures
-                        if effective_word_count > FORCE_SPLIT_WORD_THRESHOLD
-                            && consecutive_llm_failures >= FORCE_SPLIT_CONSECUTIVE_LIMIT
-                        {
-                            warn!(
-                                "Force-splitting: {} consecutive LLM failures with {} effective words (cleaned: {}, raw: {})",
-                                consecutive_llm_failures, effective_word_count, cleaned_word_count, word_count
-                            );
-                            if let Ok(mut logger) = logger_for_detector.lock() {
-                                logger.log_split_trigger(serde_json::json!({
-                                    "trigger": "graduated_force_split",
-                                    "consecutive_llm_failures": consecutive_llm_failures,
-                                    "effective_word_count": effective_word_count,
-                                    "cleaned_word_count": cleaned_word_count,
-                                    "raw_word_count": word_count,
-                                }));
-                            }
-                            let last_idx = buffer_for_detector.lock().ok().and_then(|b| b.last_index());
-                            consecutive_llm_failures = 0;
-                            force_split = true;
-                            detection_result = Some(EncounterDetectionResult {
-                                complete: true,
-                                end_segment_index: last_idx,
-                                confidence: Some(1.0),
-                            });
-                        }
+            // Act on the decision — derive detection_method_str directly from outcome
+            let (end_index, detection_method_str) = match outcome {
+                DetectionOutcome::ForceSplit { ref trigger } => {
+                    let last_idx = buffer_for_detector.lock().ok().and_then(|b| b.last_index());
+                    warn!("Force-split triggered: {} (word_count={}, cleaned={})", trigger, word_count, cleaned_word_count);
+                    if let Ok(mut logger) = logger_for_detector.lock() {
+                        logger.log_split_trigger(serde_json::json!({
+                            "trigger": trigger,
+                            "word_count": word_count,
+                            "cleaned_word_count": cleaned_word_count,
+                        }));
                     }
-                    Some(r) if !r.complete => {
-                        // LLM confidently said "no split" — reset failure counter
-                        info!(
-                            "Detection non-split: complete=false, cleaned_word_count={}, raw_word_count={}",
-                            cleaned_word_count, word_count
-                        );
-                        consecutive_llm_failures = 0;
-                    }
-                    Some(_) => {
-                        // complete=true — handled by confidence gate below; don't touch counter
-                    }
-                }
-            }
-
-            // Hybrid sensor timeout force-split: sensor has been absent for > confirm_window
-            // and buffer has enough words. This catches cases where LLM keeps saying "no split"
-            // but the sensor correctly detected a departure.
-            if is_hybrid_mode && !force_split && !manual_triggered {
-                if let Some(absent_since) = sensor_absent_since {
-                    let elapsed = (Utc::now() - absent_since).num_seconds() as u64;
-                    if elapsed >= hybrid_confirm_window_secs
-                        && word_count >= hybrid_min_words_for_sensor_split
-                    {
-                        warn!(
-                            "Hybrid: sensor absence timeout ({}s >= {}s) with {} words >= {} — force-splitting",
-                            elapsed, hybrid_confirm_window_secs,
-                            word_count, hybrid_min_words_for_sensor_split
-                        );
-                        if let Ok(mut logger) = logger_for_detector.lock() {
-                            logger.log_split_trigger(serde_json::json!({
-                                "trigger": "hybrid_sensor_timeout",
-                                "absence_secs": elapsed,
-                                "confirm_window_secs": hybrid_confirm_window_secs,
-                                "word_count": word_count,
-                                "min_words": hybrid_min_words_for_sensor_split,
-                            }));
-                        }
-                        let last_idx = buffer_for_detector.lock().ok().and_then(|b| b.last_index());
-                        force_split = true;
-                        hybrid_sensor_timeout_triggered = true;
+                    if trigger == TRIGGER_HYBRID_SENSOR_TIMEOUT {
                         sensor_absent_since = None;
-                        consecutive_llm_failures = 0;
-                        detection_result = Some(EncounterDetectionResult {
-                            complete: true,
-                            end_segment_index: last_idx,
-                            confidence: Some(1.0),
-                        });
+                    }
+                    let method = if is_hybrid_mode {
+                        trigger.as_str() // "hybrid_sensor_timeout", "absolute_word_cap", etc.
+                    } else {
+                        trigger.as_str()
+                    };
+                    match last_idx {
+                        Some(idx) => (idx, method),
+                        None => continue,
                     }
                 }
-            }
-
-            // Process detection result
-            if let Some(result) = detection_result {
-                if result.complete {
-                    // Confidence gate: dynamic threshold based on buffer age
-                    // Short encounters (<20 min) get a higher bar (0.85) to reduce false splits
-                    // on natural pauses. Longer encounters use 0.7 (established threshold).
-                    let confidence = result.confidence.unwrap_or(0.0);
-                    let buffer_age_mins = first_ts
-                        .map(|t| (Utc::now() - t).num_minutes())
-                        .unwrap_or(0);
-                    let confidence_threshold = calculate_confidence_threshold(buffer_age_mins, merge_back_count as usize);
-                    let base_threshold = if buffer_age_mins < 20 { 0.85 } else { 0.7 }; // for log message
-                    if confidence < confidence_threshold && !force_split {
-                        // Don't increment consecutive_llm_failures here — the LLM is working,
-                        // just returning low-confidence results. Only LLM failures drive force-split.
-                        info!(
-                            "Confidence gate rejected: confidence={:.2}, threshold={:.2} (base={:.2}, merge_backs={}), buffer_age_mins={}, word_count={}, consecutive_llm_failures={}",
-                            confidence, confidence_threshold, base_threshold, merge_back_count, buffer_age_mins, word_count, consecutive_llm_failures
-                        );
-                        if let Ok(mut logger) = logger_for_detector.lock() {
-                            logger.log_confidence_gate(serde_json::json!({
-                                "confidence": confidence,
-                                "threshold": confidence_threshold,
-                                "base_threshold": base_threshold,
-                                "merge_back_count": merge_back_count,
-                                "buffer_age_mins": buffer_age_mins,
-                                "word_count": word_count,
-                                "consecutive_llm_failures": consecutive_llm_failures,
-                                "rejected": true,
-                            }));
-                        }
-                        // Return to recording state and continue
-                        if let Ok(mut state) = state_for_detector.lock() {
-                            if *state == ContinuousState::Checking {
-                                *state = ContinuousState::Recording;
-                            }
-                        } else {
-                            warn!("State lock poisoned while returning to recording state");
-                        }
-                        continue;
+                DetectionOutcome::Split { end_segment_index, confidence, ref trigger } => {
+                    info!("Detection split: trigger={}, confidence={:.2}", trigger, confidence);
+                    let method = if manual_triggered {
+                        "manual"
+                    } else if is_hybrid_mode {
+                        if sensor_triggered { "hybrid_sensor_confirmed" } else { "hybrid_llm" }
+                    } else if sensor_triggered {
+                        "sensor"
+                    } else {
+                        trigger.as_str() // "llm"
+                    };
+                    match end_segment_index {
+                        Some(idx) => (idx, method),
+                        None => continue,
                     }
+                }
+                DetectionOutcome::BelowThreshold { confidence, threshold } => {
+                    info!(
+                        "Confidence gate rejected: confidence={:.2}, threshold={:.2}, merge_backs={}, buffer_age_mins={}, word_count={}",
+                        confidence, threshold, merge_back_count, buffer_age_mins, word_count
+                    );
+                    if let Ok(mut logger) = logger_for_detector.lock() {
+                        logger.log_confidence_gate(serde_json::json!({
+                            "confidence": confidence,
+                            "threshold": threshold,
+                            "merge_back_count": merge_back_count,
+                            "buffer_age_mins": buffer_age_mins,
+                            "word_count": word_count,
+                            "consecutive_llm_failures": consecutive_llm_failures,
+                            "rejected": true,
+                        }));
+                    }
+                    continue;
+                }
+                DetectionOutcome::NoSplit => {
+                    info!("Detection: no split, word_count={}, cleaned={}", word_count, cleaned_word_count);
+                    continue;
+                }
+                DetectionOutcome::NoResult => {
+                    info!("Detection: no result (LLM error/timeout), consecutive_failures={}", consecutive_llm_failures);
+                    continue;
+                }
+            };
 
-                    if let Some(end_index) = result.end_segment_index {
-                        consecutive_llm_failures = 0;
+            // Split decided — extract encounter
+            {
                         encounter_number += 1;
                         // Clear hybrid sensor tracking on successful split
                         if is_hybrid_mode {
@@ -1663,18 +1602,6 @@ pub async fn run_continuous_mode(
                             }
                         }
 
-                        // Compute detection method string for logging
-                        let detection_method_str = if manual_triggered {
-                            "manual"
-                        } else if is_hybrid_mode {
-                            if hybrid_sensor_timeout_triggered { "hybrid_sensor_timeout" }
-                            else if sensor_triggered { "hybrid_sensor_confirmed" }
-                            else if force_split { "hybrid_force" }
-                            else { "hybrid_llm" }
-                        } else if sensor_triggered { "sensor" }
-                        else if force_split { "force_split" }
-                        else { "llm" };
-
                         // Set split decision on replay bundle
                         if let Ok(mut bundle) = bundle_for_detector.lock() {
                             bundle.set_split_decision(crate::replay_bundle::SplitDecision {
@@ -1682,7 +1609,7 @@ pub async fn run_continuous_mode(
                                 trigger: detection_method_str.to_string(),
                                 word_count: encounter_word_count,
                                 cleaned_word_count,
-                                end_segment_index: result.end_segment_index,
+                                end_segment_index: Some(end_index),
                             });
                         }
 
@@ -1987,8 +1914,12 @@ pub async fn run_continuous_mode(
                                 }
                             }
                             // Build SOAP options with encounter notes from clinician (uses pre-cloned notes_text)
+                            let effective_detail = effective_soap_detail_level(soap_detail_level, encounter_word_count);
+                            if effective_detail != soap_detail_level {
+                                info!("SOAP detail level scaled: {} → {} for {} words", soap_detail_level, effective_detail, encounter_word_count);
+                            }
                             let soap_opts = crate::llm_client::SoapOptions {
-                                detail_level: soap_detail_level,
+                                detail_level: effective_detail,
                                 format: crate::llm_client::SoapFormat::from_config_str(&soap_format),
                                 session_notes: notes_text.clone(),
                                 ..Default::default()
@@ -2014,7 +1945,7 @@ pub async fn run_continuous_mode(
                                         &session_id,
                                         &now,
                                         &soap_content,
-                                        Some(soap_detail_level),
+                                        Some(effective_detail),
                                         Some(&soap_format),
                                     ) {
                                         warn!("Failed to save SOAP for encounter: {}", e);
@@ -2037,7 +1968,7 @@ pub async fn run_continuous_mode(
                                             serde_json::json!({
                                                 "encounter_number": encounter_number,
                                                 "word_count": encounter_word_count,
-                                                "detail_level": soap_detail_level,
+                                                "detail_level": effective_detail,
                                                 "format": soap_format,
                                                 "has_notes": !notes_text.is_empty(),
                                                 "response_chars": soap_content.len(),
@@ -2251,8 +2182,9 @@ pub async fn run_continuous_mode(
                                                 .lock()
                                                 .map(|n| n.clone())
                                                 .unwrap_or_default();
+                                            let merge_wc = filtered_merged.split_whitespace().count();
                                             let merge_soap_opts = crate::llm_client::SoapOptions {
-                                                detail_level: soap_detail_level,
+                                                detail_level: effective_soap_detail_level(soap_detail_level, merge_wc),
                                                 format: crate::llm_client::SoapFormat::from_config_str(&soap_format),
                                                 session_notes: merge_notes,
                                                 ..Default::default()
@@ -2288,7 +2220,7 @@ pub async fn run_continuous_mode(
                                                         prev_id,
                                                         prev_date,
                                                         soap_content,
-                                                        Some(soap_detail_level),
+                                                        Some(merge_soap_opts.detail_level),
                                                         Some(&soap_format),
                                                     );
                                                     // Clear non-clinical flag if needed
@@ -2435,12 +2367,13 @@ pub async fn run_continuous_mode(
                                                             if !(is_clinical || prev_encounter_is_clinical) {
                                                                 info!("Skipping SOAP regeneration for merged non-clinical encounters");
                                                             } else if let Some(ref client) = llm_client {
-                                                                let (filtered_merged, _) = strip_hallucinations(&merged_text, 5);
+                                                                let (filtered_merged, filter_report) = strip_hallucinations(&merged_text, 5);
+                                                                let merge_back_wc = filter_report.cleaned_word_count;
                                                                 if let Ok(mut logger) = logger_for_detector.lock() {
                                                                     logger.log_hallucination_filter(serde_json::json!({
                                                                         "stage": "merge_soap_prep",
-                                                                        "original_words": merged_text.split_whitespace().count(),
-                                                                        "filtered_words": filtered_merged.split_whitespace().count(),
+                                                                        "original_words": filter_report.original_word_count,
+                                                                        "filtered_words": merge_back_wc,
                                                                     }));
                                                                 }
                                                                 let merge_notes = encounter_notes_for_detector
@@ -2448,7 +2381,7 @@ pub async fn run_continuous_mode(
                                                                     .map(|n| n.clone())
                                                                     .unwrap_or_default();
                                                                 let merge_soap_opts = crate::llm_client::SoapOptions {
-                                                                    detail_level: soap_detail_level,
+                                                                    detail_level: effective_soap_detail_level(soap_detail_level, merge_back_wc),
                                                                     format: crate::llm_client::SoapFormat::from_config_str(&soap_format),
                                                                     session_notes: merge_notes,
                                                                     ..Default::default()
@@ -2479,7 +2412,7 @@ pub async fn run_continuous_mode(
                                                                                     "stage": "merge_soap_regen",
                                                                                     "merged_into": prev_id,
                                                                                     "merged_word_count": merged_wc,
-                                                                                    "detail_level": soap_detail_level,
+                                                                                    "detail_level": merge_soap_opts.detail_level,
                                                                                     "format": soap_format,
                                                                                     "response_chars": soap_content.len(),
                                                                                 }),
@@ -2489,7 +2422,7 @@ pub async fn run_continuous_mode(
                                                                             prev_id,
                                                                             prev_date,
                                                                             soap_content,
-                                                                            Some(soap_detail_level),
+                                                                            Some(merge_soap_opts.detail_level),
                                                                             Some(&soap_format),
                                                                         );
                                                                         // Clear non-clinical flag on keeper — merged encounter contains clinical content
@@ -2561,7 +2494,7 @@ pub async fn run_continuous_mode(
                                                                         let regen_notes = encounter_notes_for_detector
                                                                             .lock().map(|n| n.clone()).unwrap_or_default();
                                                                         let regen_opts = crate::llm_client::SoapOptions {
-                                                                            detail_level: soap_detail_level,
+                                                                            detail_level: effective_soap_detail_level(soap_detail_level, merged_wc),
                                                                             format: crate::llm_client::SoapFormat::from_config_str(&soap_format),
                                                                             session_notes: regen_notes,
                                                                             ..Default::default()
@@ -2575,7 +2508,7 @@ pub async fn run_continuous_mode(
                                                                                 let soap_content = soap_result.format_for_archive();
                                                                                 let _ = local_archive::add_soap_note(
                                                                                     prev_id, prev_date, &soap_content,
-                                                                                    Some(soap_detail_level), Some(&soap_format),
+                                                                                    Some(regen_opts.detail_level), Some(&soap_format),
                                                                                 );
                                                                                 if soap_result.notes.len() > 1 {
                                                                                     let _ = local_archive::save_multi_patient_soap(
@@ -2704,8 +2637,6 @@ pub async fn run_continuous_mode(
                         prev_encounter_text = Some(encounter_text);
                         prev_encounter_date = Some(Utc::now());
                         prev_encounter_is_clinical = is_clinical;
-                    }
-                }
             }
 
             // Return to recording state
@@ -3034,7 +2965,7 @@ pub async fn run_continuous_mode(
                             continue;
                         }
                         let orphan_soap_opts = crate::llm_client::SoapOptions {
-                            detail_level: flush_soap_detail_level,
+                            detail_level: effective_soap_detail_level(flush_soap_detail_level, word_count),
                             format: crate::llm_client::SoapFormat::from_config_str(&flush_soap_format),
                             ..Default::default()
                         };
@@ -3350,8 +3281,9 @@ pub async fn run_continuous_mode(
                                                                         .lock()
                                                                         .map(|n| n.clone())
                                                                         .unwrap_or_default();
+                                                                    let flush_merge_wc = filtered_merged.split_whitespace().count();
                                                                     let merge_soap_opts = crate::llm_client::SoapOptions {
-                                                                        detail_level: flush_soap_detail_level,
+                                                                        detail_level: effective_soap_detail_level(flush_soap_detail_level, flush_merge_wc),
                                                                         format: crate::llm_client::SoapFormat::from_config_str(&flush_soap_format),
                                                                         session_notes: flush_merge_notes,
                                                                         ..Default::default()
@@ -3384,7 +3316,7 @@ pub async fn run_continuous_mode(
                                                                                 &prev_summary.session_id,
                                                                                 &now,
                                                                                 &soap_content,
-                                                                                Some(flush_soap_detail_level),
+                                                                                Some(merge_soap_opts.detail_level),
                                                                                 Some(&flush_soap_format),
                                                                             );
                                                                             info!("Regenerated SOAP for flush-merged encounter {}", prev_summary.session_id);
@@ -3481,7 +3413,7 @@ pub async fn run_continuous_mode(
                         .map(|n| n.clone())
                         .unwrap_or_default();
                     let flush_soap_opts = crate::llm_client::SoapOptions {
-                        detail_level: flush_soap_detail_level,
+                        detail_level: effective_soap_detail_level(flush_soap_detail_level, word_count),
                         format: crate::llm_client::SoapFormat::from_config_str(&flush_soap_format),
                         session_notes: flush_notes,
                         ..Default::default()
@@ -3592,7 +3524,7 @@ mod tests {
     use super::*;
 
     // ========================================================================
-    // Pure function tests: tail_words, head_words, calculate_confidence_threshold
+    // Pure function tests: tail_words, head_words
     // ========================================================================
 
     #[test]
@@ -3646,52 +3578,80 @@ mod tests {
         assert_eq!(head_words("a  b   c    d", 2), "a b");
     }
 
+    // ========================================================================
+    // Pure function tests: effective_soap_detail_level
+    // ========================================================================
+
     #[test]
-    fn test_confidence_threshold_short_encounter_no_merges() {
-        assert!((calculate_confidence_threshold(0, 0) - 0.85).abs() < f64::EPSILON);
+    fn test_effective_detail_short_encounter_uses_configured() {
+        // Short encounters (< 1500 words): configured level wins if >= 3
+        assert_eq!(effective_soap_detail_level(5, 500), 5);
+        assert_eq!(effective_soap_detail_level(3, 1000), 3);
+        assert_eq!(effective_soap_detail_level(8, 1499), 8);
     }
 
     #[test]
-    fn test_confidence_threshold_boundary_19_min() {
-        assert!((calculate_confidence_threshold(19, 0) - 0.85).abs() < f64::EPSILON);
+    fn test_effective_detail_scales_with_word_count() {
+        // Word-based level rises with transcript length
+        assert_eq!(effective_soap_detail_level(3, 1500), 4);  // 1500-2999 → 4
+        assert_eq!(effective_soap_detail_level(3, 3000), 5);  // 3000-4999 → 5
+        assert_eq!(effective_soap_detail_level(3, 5000), 6);  // 5000-7999 → 6
+        assert_eq!(effective_soap_detail_level(3, 8000), 7);  // 8000-11999 → 7
+        assert_eq!(effective_soap_detail_level(3, 12000), 8); // 12000-15999 → 8
+        assert_eq!(effective_soap_detail_level(3, 16000), 9); // 16000-19999 → 9
+        assert_eq!(effective_soap_detail_level(3, 20000), 10); // 20000+ → 10
     }
 
     #[test]
-    fn test_confidence_threshold_boundary_20_min() {
-        assert!((calculate_confidence_threshold(20, 0) - 0.7).abs() < f64::EPSILON);
+    fn test_effective_detail_configured_is_floor() {
+        // High configured level is never reduced by word count
+        assert_eq!(effective_soap_detail_level(8, 500), 8);
+        assert_eq!(effective_soap_detail_level(10, 1000), 10);
+        assert_eq!(effective_soap_detail_level(7, 3000), 7); // word-based=5, configured=7 wins
     }
 
     #[test]
-    fn test_confidence_threshold_long_encounter() {
-        assert!((calculate_confidence_threshold(60, 0) - 0.7).abs() < f64::EPSILON);
+    fn test_effective_detail_capped_at_10() {
+        assert_eq!(effective_soap_detail_level(10, 50000), 10);
+        assert_eq!(effective_soap_detail_level(3, 100000), 10);
     }
 
     #[test]
-    fn test_confidence_threshold_one_mergeback_short() {
-        assert!((calculate_confidence_threshold(10, 1) - 0.90).abs() < f64::EPSILON);
+    fn test_effective_detail_shirley_scenario() {
+        // 22K words at configured level 3 should scale to 10
+        assert_eq!(effective_soap_detail_level(3, 22000), 10);
     }
 
     #[test]
-    fn test_confidence_threshold_one_mergeback_long() {
-        assert!((calculate_confidence_threshold(25, 1) - 0.75).abs() < f64::EPSILON);
+    fn test_effective_detail_boundary_values() {
+        // Test exact boundary transitions
+        assert_eq!(effective_soap_detail_level(1, 1499), 3);  // just under 1500
+        assert_eq!(effective_soap_detail_level(1, 1500), 4);  // exactly 1500
+        assert_eq!(effective_soap_detail_level(1, 2999), 4);  // just under 3000
+        assert_eq!(effective_soap_detail_level(1, 3000), 5);  // exactly 3000
+        assert_eq!(effective_soap_detail_level(1, 19999), 9); // just under 20000
+        assert_eq!(effective_soap_detail_level(1, 20000), 10); // exactly 20000
     }
 
     #[test]
-    fn test_confidence_threshold_cap_at_099() {
-        // 3 merge-backs on short: 0.85 + 0.15 = 1.0, capped at 0.99
-        assert!((calculate_confidence_threshold(10, 3) - 0.99).abs() < f64::EPSILON);
+    fn test_effective_detail_zero_words() {
+        // Empty transcript — word-based = 3, configured wins if higher
+        assert_eq!(effective_soap_detail_level(5, 0), 5);
+        assert_eq!(effective_soap_detail_level(1, 0), 3);
     }
 
     #[test]
-    fn test_confidence_threshold_many_mergebacks_cap() {
-        // 10 merge-backs on long: 0.7 + 0.5 = 1.2, capped at 0.99
-        assert!((calculate_confidence_threshold(30, 10) - 0.99).abs() < f64::EPSILON);
+    fn test_effective_detail_configured_zero() {
+        // Zero configured (shouldn't happen after config clamping, but documents floor)
+        assert_eq!(effective_soap_detail_level(0, 0), 3);
+        assert_eq!(effective_soap_detail_level(0, 5000), 6);
     }
 
     #[test]
-    fn test_confidence_threshold_negative_age() {
-        // Negative minutes (clock skew) still < 20, so base = 0.85
-        assert!((calculate_confidence_threshold(-5, 0) - 0.85).abs() < f64::EPSILON);
+    fn test_effective_detail_configured_above_max() {
+        // Configured > 10 (hand-edited config) — .min(10) clamps it
+        assert_eq!(effective_soap_detail_level(12, 0), 10);
+        assert_eq!(effective_soap_detail_level(255, 500), 10);
     }
 
     // ========================================================================

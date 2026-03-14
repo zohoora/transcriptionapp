@@ -979,24 +979,10 @@ impl LLMClient {
     ) -> Option<MultiPatientDetectionResult> {
         use crate::encounter_detection::{
             MULTI_PATIENT_DETECT_PROMPT, MULTI_PATIENT_DETECT_MIN_CONFIDENCE,
-            MULTI_PATIENT_DETECT_MAX_WORDS, parse_multi_patient_detection,
+            parse_multi_patient_detection,
         };
 
-        // Truncate transcript for detection (head + tail sampling)
-        let words: Vec<&str> = transcript.split_whitespace().collect();
-        let truncated = if words.len() > MULTI_PATIENT_DETECT_MAX_WORDS {
-            let half = MULTI_PATIENT_DETECT_MAX_WORDS / 2;
-            format!(
-                "{}\n[... {} words omitted ...]\n{}",
-                words[..half].join(" "),
-                words.len() - MULTI_PATIENT_DETECT_MAX_WORDS,
-                words[words.len() - half..].join(" ")
-            )
-        } else {
-            transcript.to_string()
-        };
-
-        let mp_user = format!("Transcript:\n\n{}", truncated);
+        let mp_user = format!("Transcript:\n\n{}", transcript);
         match tokio::time::timeout(
             tokio::time::Duration::from_secs(30),
             self.generate(fast_model, MULTI_PATIENT_DETECT_PROMPT, &mp_user, "multi_patient_detect"),

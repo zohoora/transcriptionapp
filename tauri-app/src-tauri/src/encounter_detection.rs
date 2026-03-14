@@ -5,6 +5,16 @@
 
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 
+/// Calculate the dynamic confidence threshold for encounter detection.
+///
+/// Short encounters (<20 min) use a higher base threshold (0.85) to reduce
+/// false splits on natural pauses. Longer encounters use 0.7.
+/// Each prior merge-back raises the bar by +0.05 (capped at 0.99).
+pub fn calculate_confidence_threshold(buffer_age_mins: i64, merge_back_count: usize) -> f64 {
+    let base_threshold = if buffer_age_mins < 20 { 0.85 } else { 0.7 };
+    (base_threshold + merge_back_count as f64 * 0.05).min(0.99)
+}
+
 /// Word count forcing encounter check regardless of buffer age.
 pub const FORCE_CHECK_WORD_THRESHOLD: usize = 3000;
 /// Force-split when buffer exceeds this AND consecutive LLM failures >= limit.
@@ -51,6 +61,14 @@ pub struct EncounterDetectionResult {
     pub confidence: Option<f64>,
 }
 
+// Trigger string constants — used in evaluate_detection() and matched in continuous_mode.rs
+pub const TRIGGER_ABSOLUTE_WORD_CAP: &str = "absolute_word_cap";
+pub const TRIGGER_SENSOR: &str = "sensor";
+pub const TRIGGER_HYBRID_SENSOR_TIMEOUT: &str = "hybrid_sensor_timeout";
+pub const TRIGGER_MANUAL: &str = "manual";
+pub const TRIGGER_GRADUATED_LLM_FAILURE: &str = "graduated_llm_failure";
+pub const TRIGGER_LLM: &str = "llm";
+
 /// Outcome of applying decision logic to a raw LLM detection result.
 /// Pure function output — no side effects, no logging.
 #[derive(Debug, Clone, PartialEq)]
@@ -86,21 +104,46 @@ pub struct DetectionEvalContext {
     pub cleaned_word_count: usize,
     pub consecutive_llm_failures: u32,
     pub manual_triggered: bool,
-    pub force_split: bool,
+    /// Sensor-only mode: sensor triggered a split (non-hybrid)
+    pub sensor_triggered: bool,
+    /// True when detection_mode == "hybrid"
+    pub is_hybrid_mode: bool,
+    /// Seconds since sensor went absent (hybrid mode)
+    pub sensor_absent_secs: Option<u64>,
+    /// Config: hybrid confirm window (default 180)
+    pub hybrid_confirm_window_secs: u64,
+    /// Config: minimum words for sensor-triggered split (default 500)
+    pub hybrid_min_words_for_sensor_split: usize,
 }
 
 /// Evaluate a detection result against thresholds and force-split rules.
 /// Pure function: no side effects, no logging, no locks.
 /// Returns the decision and updated consecutive_llm_failures count.
 pub fn evaluate_detection(ctx: &DetectionEvalContext) -> (DetectionOutcome, u32) {
-    use crate::continuous_mode::calculate_confidence_threshold;
-
     let effective_word_count = ctx.cleaned_word_count.max(ctx.word_count / 2);
     let mut failures = ctx.consecutive_llm_failures;
 
     // 1. Absolute word cap — unconditional force-split
     if effective_word_count > ABSOLUTE_WORD_CAP {
-        return (DetectionOutcome::ForceSplit { trigger: "absolute_word_cap".into() }, failures);
+        return (DetectionOutcome::ForceSplit { trigger: TRIGGER_ABSOLUTE_WORD_CAP.into() }, failures);
+    }
+
+    // 1b. Sensor-only mode: sensor trigger acts as force-split
+    if ctx.sensor_triggered && !ctx.is_hybrid_mode {
+        return (DetectionOutcome::ForceSplit { trigger: TRIGGER_SENSOR.into() }, failures);
+    }
+
+    // 1c. Hybrid sensor timeout: sensor absent > confirm_window with enough words
+    if ctx.is_hybrid_mode && !ctx.manual_triggered {
+        if let Some(absent_secs) = ctx.sensor_absent_secs {
+            if absent_secs >= ctx.hybrid_confirm_window_secs
+                && ctx.word_count >= ctx.hybrid_min_words_for_sensor_split
+            {
+                return (DetectionOutcome::ForceSplit {
+                    trigger: TRIGGER_HYBRID_SENSOR_TIMEOUT.into(),
+                }, 0);
+            }
+        }
     }
 
     // 2. Manual trigger — always split
@@ -109,7 +152,7 @@ pub fn evaluate_detection(ctx: &DetectionEvalContext) -> (DetectionOutcome, u32)
         return (DetectionOutcome::Split {
             end_segment_index: end_idx,
             confidence: 1.0,
-            trigger: "manual".into(),
+            trigger: TRIGGER_MANUAL.into(),
         }, failures);
     }
 
@@ -122,7 +165,7 @@ pub fn evaluate_detection(ctx: &DetectionEvalContext) -> (DetectionOutcome, u32)
             if effective_word_count > FORCE_SPLIT_WORD_THRESHOLD
                 && failures >= FORCE_SPLIT_CONSECUTIVE_LIMIT
             {
-                return (DetectionOutcome::ForceSplit { trigger: "graduated_llm_failure".into() }, failures);
+                return (DetectionOutcome::ForceSplit { trigger: TRIGGER_GRADUATED_LLM_FAILURE.into() }, failures);
             }
             return (DetectionOutcome::NoResult, failures);
         }
@@ -136,15 +179,6 @@ pub fn evaluate_detection(ctx: &DetectionEvalContext) -> (DetectionOutcome, u32)
     // 5. LLM says complete — apply confidence gate
     let confidence = result.confidence.unwrap_or(0.0);
 
-    // Force-split bypasses confidence gate
-    if ctx.force_split {
-        return (DetectionOutcome::Split {
-            end_segment_index: result.end_segment_index,
-            confidence,
-            trigger: "force_split".into(),
-        }, failures);
-    }
-
     let threshold = calculate_confidence_threshold(ctx.buffer_age_mins, ctx.merge_back_count);
     if confidence < threshold {
         return (DetectionOutcome::BelowThreshold { confidence, threshold }, failures);
@@ -153,7 +187,7 @@ pub fn evaluate_detection(ctx: &DetectionEvalContext) -> (DetectionOutcome, u32)
     (DetectionOutcome::Split {
         end_segment_index: result.end_segment_index,
         confidence,
-        trigger: "llm".into(),
+        trigger: TRIGGER_LLM.into(),
     }, 0) // Reset failures on successful split
 }
 
@@ -431,10 +465,6 @@ pub const MULTI_PATIENT_DETECT_WORD_THRESHOLD: usize = 500;
 /// Minimum confidence for multi-patient detection to be acted upon.
 /// Matches existing detection gates in the codebase.
 pub const MULTI_PATIENT_DETECT_MIN_CONFIDENCE: f64 = 0.7;
-
-/// Maximum words to send in the detection prompt (head + tail sampling).
-/// Mirrors the truncation strategy in `build_clinical_content_check_prompt`.
-pub const MULTI_PATIENT_DETECT_MAX_WORDS: usize = 3000;
 
 /// System prompt for per-patient multi-patient detection.
 /// Unlike MULTI_PATIENT_CHECK_PROMPT (binary yes/no), this returns structured patient
@@ -853,7 +883,11 @@ mod tests {
             cleaned_word_count: 1000,
             consecutive_llm_failures: 0,
             manual_triggered: false,
-            force_split: false,
+            sensor_triggered: false,
+            is_hybrid_mode: false,
+            sensor_absent_secs: None,
+            hybrid_confirm_window_secs: 180,
+            hybrid_min_words_for_sensor_split: 500,
         }
     }
 
@@ -953,14 +987,6 @@ mod tests {
     }
 
     #[test]
-    fn test_eval_force_split_flag_bypasses_confidence() {
-        let mut ctx = make_ctx(Some(make_detection(true, 0.1)));
-        ctx.force_split = true;
-        let (outcome, _) = evaluate_detection(&ctx);
-        assert!(matches!(outcome, DetectionOutcome::Split { trigger, .. } if trigger == "force_split"));
-    }
-
-    #[test]
     fn test_eval_effective_word_count_uses_max() {
         // cleaned=100, raw=600 → effective = max(100, 300) = 300
         // Below FORCE_SPLIT threshold, so no force split
@@ -971,5 +997,123 @@ mod tests {
         let (outcome, _) = evaluate_detection(&ctx);
         // effective=300 < 5000, so no graduated force split despite many failures
         assert_eq!(outcome, DetectionOutcome::NoResult);
+    }
+
+    // ========================================================================
+    // Hybrid sensor + sensor-only mode tests
+    // ========================================================================
+
+    #[test]
+    fn test_eval_hybrid_sensor_timeout_triggers_force_split() {
+        let mut ctx = make_ctx(Some(make_detection(false, 0.0)));
+        ctx.is_hybrid_mode = true;
+        ctx.sensor_absent_secs = Some(200); // > 180 default
+        ctx.word_count = 600; // > 500 default
+        let (outcome, failures) = evaluate_detection(&ctx);
+        assert!(matches!(outcome, DetectionOutcome::ForceSplit { trigger } if trigger == "hybrid_sensor_timeout"));
+        assert_eq!(failures, 0);
+    }
+
+    #[test]
+    fn test_eval_hybrid_sensor_timeout_below_word_minimum() {
+        let mut ctx = make_ctx(Some(make_detection(false, 0.0)));
+        ctx.is_hybrid_mode = true;
+        ctx.sensor_absent_secs = Some(200);
+        ctx.word_count = 400; // < 500 default
+        let (outcome, _) = evaluate_detection(&ctx);
+        // Should fall through to normal LLM path (NoSplit since complete=false)
+        assert_eq!(outcome, DetectionOutcome::NoSplit);
+    }
+
+    #[test]
+    fn test_eval_hybrid_sensor_timeout_absence_too_short() {
+        let mut ctx = make_ctx(Some(make_detection(false, 0.0)));
+        ctx.is_hybrid_mode = true;
+        ctx.sensor_absent_secs = Some(100); // < 180 default
+        ctx.word_count = 1000;
+        let (outcome, _) = evaluate_detection(&ctx);
+        assert_eq!(outcome, DetectionOutcome::NoSplit);
+    }
+
+    #[test]
+    fn test_eval_hybrid_sensor_timeout_not_in_non_hybrid() {
+        let mut ctx = make_ctx(Some(make_detection(false, 0.0)));
+        ctx.is_hybrid_mode = false; // not hybrid
+        ctx.sensor_absent_secs = Some(200);
+        ctx.word_count = 1000;
+        let (outcome, _) = evaluate_detection(&ctx);
+        // Non-hybrid ignores sensor_absent_secs
+        assert_eq!(outcome, DetectionOutcome::NoSplit);
+    }
+
+    #[test]
+    fn test_eval_sensor_triggered_pure_sensor_mode() {
+        let mut ctx = make_ctx(None); // no LLM result
+        ctx.sensor_triggered = true;
+        ctx.is_hybrid_mode = false; // pure sensor
+        let (outcome, _) = evaluate_detection(&ctx);
+        assert!(matches!(outcome, DetectionOutcome::ForceSplit { trigger } if trigger == "sensor"));
+    }
+
+    #[test]
+    fn test_eval_hybrid_mode_without_sensor_absence_uses_llm() {
+        let mut ctx = make_ctx(Some(make_detection(true, 0.9)));
+        ctx.is_hybrid_mode = true;
+        ctx.sensor_absent_secs = None; // no sensor absence
+        let (outcome, _) = evaluate_detection(&ctx);
+        // Should proceed with normal LLM confidence gate → split
+        assert!(matches!(outcome, DetectionOutcome::Split { trigger, .. } if trigger == "llm"));
+    }
+
+    // ========================================================================
+    // calculate_confidence_threshold tests
+    // ========================================================================
+
+    #[test]
+    fn test_confidence_threshold_short_encounter_no_merges() {
+        assert!((calculate_confidence_threshold(0, 0) - 0.85).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn test_confidence_threshold_boundary_19_min() {
+        assert!((calculate_confidence_threshold(19, 0) - 0.85).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn test_confidence_threshold_boundary_20_min() {
+        assert!((calculate_confidence_threshold(20, 0) - 0.7).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn test_confidence_threshold_long_encounter() {
+        assert!((calculate_confidence_threshold(60, 0) - 0.7).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn test_confidence_threshold_one_mergeback_short() {
+        assert!((calculate_confidence_threshold(10, 1) - 0.90).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn test_confidence_threshold_one_mergeback_long() {
+        assert!((calculate_confidence_threshold(25, 1) - 0.75).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn test_confidence_threshold_cap_at_099() {
+        // 3 merge-backs on short: 0.85 + 0.15 = 1.0, capped at 0.99
+        assert!((calculate_confidence_threshold(10, 3) - 0.99).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn test_confidence_threshold_many_mergebacks_cap() {
+        // 10 merge-backs on long: 0.7 + 0.5 = 1.2, capped at 0.99
+        assert!((calculate_confidence_threshold(30, 10) - 0.99).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn test_confidence_threshold_negative_age() {
+        // Negative minutes (clock skew) still < 20, so base = 0.85
+        assert!((calculate_confidence_threshold(-5, 0) - 0.85).abs() < f64::EPSILON);
     }
 }
