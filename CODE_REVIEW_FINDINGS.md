@@ -302,7 +302,7 @@ A second round of fixes addressed 16 additional findings across backend and fron
 ### Impact on Original Findings
 
 - **Finding #7** (reset_session blocking): Further hardened — Pipeline `Drop` now uses `spawn_blocking` (I2)
-- **Finding #10** (archive timestamps): Still **OPEN** — `started_at` and `segment_count` remain unresolved
-- **Finding #16** (lint): Still **OPEN** — 2 errors (`no-useless-escape` in ClinicalChat.tsx) + 111 warnings
-- **Finding #17** (test stability): **Mostly resolved** — Rust tests now 421 passed / 0 failed; frontend 387 passed / 6 skipped
+- **Finding #10** (archive timestamps): **FIXED** — `started_at` now derived from `now - duration_ms` in session mode (was `Utc::now()`); continuous mode already used `encounter_started_at`. `segment_count` now passed from `session.segments().len()` (session mode) and `drained.len()` / `buffer.segment_count()` (continuous mode)
+- **Finding #16** (lint): **FIXED** — `no-useless-escape` errors in ClinicalChat.tsx fixed; `no-console` rule turned off (desktop app — console is primary debug output); `exhaustive-deps` false positives suppressed with explanations; `_isPendingConfirmation` unused var removed. 0 errors, 0 warnings
+- **Finding #17** (test stability): **Resolved** — Rust tests 670 passed / 0 failed (29 ignored); frontend 439 passed / 0 skipped
 - **Finding #18** (App.tsx size): Unchanged at ~921 lines (was ~840 at initial review)

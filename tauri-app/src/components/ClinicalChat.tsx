@@ -41,7 +41,7 @@ function parseMarkdown(text: string): string {
   html = html.replace(/^---$/gm, '<hr>');
 
   // Unordered lists (- item or * item)
-  html = html.replace(/^[\-\*] (.+)$/gm, '<li>$1</li>');
+  html = html.replace(/^[-*] (.+)$/gm, '<li>$1</li>');
 
   // Ordered lists (1. item)
   html = html.replace(/^\d+\. (.+)$/gm, '<li>$1</li>');

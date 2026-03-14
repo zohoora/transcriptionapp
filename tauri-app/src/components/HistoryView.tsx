@@ -64,6 +64,7 @@ export function HistoryView({ onClose, onSelectEncounter }: HistoryViewProps) {
 
   useEffect(() => {
     loadEncounters();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- loadEncounters depends on startDate/endDate which are already listed
   }, [startDate, endDate]);
 
   const loadEncounters = async () => {

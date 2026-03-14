@@ -190,7 +190,7 @@ function App() {
   // Auto-detection from hook
   const {
     isListening,
-    isPendingConfirmation: _isPendingConfirmation,
+    // isPendingConfirmation available but not currently used
     listeningStatus,
     error: listeningError,
     startListening,

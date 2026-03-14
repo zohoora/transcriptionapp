@@ -529,6 +529,7 @@ Jim: Thanks doc."#;
             false,   // Not auto-ended
             None,    // No auto-end reason
             None,    // No encounter start override
+            None,    // No segment count
         ).expect("Failed to save session to archive");
 
         assert!(session_dir.exists(), "Session directory not created");
@@ -600,6 +601,7 @@ Jim: Thanks doc."#;
             600_000,
             None,
             false,
+            None,
             None,
             None,
         ).expect("Failed to save session");
@@ -729,6 +731,7 @@ Jim: Thanks doc."#;
             300_000,
             None,
             false,
+            None,
             None,
             None,
         ).expect("Failed to save session");
@@ -885,6 +888,7 @@ Jim: Thanks doc."#;
             600_000, // 10 minutes
             None,
             false,
+            None,
             None,
             None,
         ).expect("Failed to save session");

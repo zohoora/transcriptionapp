@@ -1548,12 +1548,13 @@ pub async fn run_continuous_mode(
                         );
 
                         // Extract encounter segments from buffer
-                        let (encounter_text, encounter_word_count, encounter_start, _encounter_last_timestamp_ms) = {
+                        let (encounter_text, encounter_word_count, encounter_start, encounter_segment_count) = {
                             let mut buffer = match buffer_for_detector.lock() {
                                 Ok(b) => b,
                                 Err(_) => continue,
                             };
                             let drained = buffer.drain_through(end_index);
+                            let seg_count = drained.len();
                             let text: String = drained
                                 .iter()
                                 .map(|s| {
@@ -1571,8 +1572,7 @@ pub async fn run_continuous_mode(
                                 .join("\n");
                             let wc = text.split_whitespace().count();
                             let start = drained.first().map(|s| s.started_at);
-                            let last_ts_ms = drained.last().map(|s| s.timestamp_ms).unwrap_or(0);
-                            (text, wc, start, last_ts_ms)
+                            (text, wc, start, seg_count)
                         };
 
                         // Generate session ID for this encounter
@@ -1587,6 +1587,7 @@ pub async fn run_continuous_mode(
                             false,
                             None,
                             encounter_start, // actual encounter start time for duration calc
+                            Some(encounter_segment_count),
                         ) {
                             warn!("Failed to archive encounter: {}", e);
                         }
@@ -2421,12 +2422,12 @@ pub async fn run_continuous_mode(
     }
 
     // Flush remaining buffer as final encounter check
-    let (remaining_text, flush_encounter_start) = {
+    let (remaining_text, flush_encounter_start, flush_segment_count) = {
         let buffer = handle.transcript_buffer.lock().unwrap_or_else(|e| e.into_inner());
         if !buffer.is_empty() {
-            (Some(buffer.full_text_with_speakers()), buffer.first_timestamp())
+            (Some(buffer.full_text_with_speakers()), buffer.first_timestamp(), buffer.segment_count())
         } else {
-            (None, None)
+            (None, None, 0)
         }
     };
     let mut flush_session_id_for_log: Option<String> = None;
@@ -2453,6 +2454,7 @@ pub async fn run_continuous_mode(
                 false,
                 Some("continuous_mode_stopped"),
                 flush_encounter_start, // Actual encounter start time for accurate duration
+                Some(flush_segment_count),
             ) {
                 warn!("Failed to archive final buffer: {}", e);
             } else {

@@ -374,6 +374,7 @@ const HistoryWindow: React.FC = () => {
     setIsEditing(false);
     setSoapResult(null);
     setSoapError(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- useState setters are stable
   }, []);
 
   // Clear selection when date changes

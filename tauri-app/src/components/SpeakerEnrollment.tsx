@@ -64,6 +64,7 @@ export function SpeakerEnrollment() {
     return () => {
       stopRecording();
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- cleanup runs once on unmount; stopRecording uses refs
   }, []);
 
   const resetForm = useCallback(() => {
@@ -153,6 +154,7 @@ export function SpeakerEnrollment() {
       console.error('Failed to start recording:', err);
       setLocalError('Failed to access microphone. Please check permissions.');
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- stopRecording uses refs, not state; including it creates circular dep
   }, []);
 
   const stopRecording = useCallback(() => {

@@ -284,7 +284,8 @@ pub async fn start_session(
                             session.audio_file_path(),
                             auto_end_triggered,
                             if auto_end_triggered { Some("silence") } else { None },
-                            None, // session mode uses elapsed_ms directly
+                            None, // session mode — started_at derived from duration_ms
+                            Some(session.segments().len()),
                         ) {
                             Ok(_session_dir) => {}
                             Err(e) => {
@@ -413,7 +414,8 @@ pub async fn stop_session(
                     session.audio_file_path(),
                     false, // auto_ended - tracked separately via session_auto_end event
                     None,  // auto_end_reason
-                    None,  // session mode uses elapsed_ms directly
+                    None,  // session mode — started_at derived from duration_ms
+                    Some(session.segments().len()),
                 ) {
                     warn!("Failed to save session to local archive: {}", e);
                 }
@@ -453,7 +455,8 @@ pub async fn stop_session(
                 session.audio_file_path(),
                 false, // auto_ended
                 None,  // auto_end_reason
-                None,  // session mode uses elapsed_ms directly
+                None,  // session mode — started_at derived from duration_ms
+                Some(segment_count),
             ) {
                 warn!("Failed to save session to local archive: {}", e);
             }

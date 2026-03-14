@@ -128,6 +128,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
     }, timeUntilRefresh);
 
     return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- refreshAuth is stable; including it causes infinite re-renders
   }, [authState.token_expiry, authState.is_authenticated]);
 
   const checkAuthState = async () => {

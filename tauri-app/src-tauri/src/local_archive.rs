@@ -183,6 +183,7 @@ pub fn save_session(
     auto_ended: bool,
     auto_end_reason: Option<&str>,
     encounter_started_at: Option<DateTime<Utc>>,
+    segment_count: Option<usize>,
 ) -> Result<PathBuf, String> {
     validate_session_id(session_id)?;
     let now = Utc::now();
@@ -196,7 +197,12 @@ pub fn save_session(
         metadata.started_at = started.to_rfc3339();
         metadata.duration_ms = Some((now - started).num_milliseconds().max(0) as u64);
     } else {
+        // Derive started_at from duration for session mode (avoids defaulting to save time)
+        metadata.started_at = (now - chrono::Duration::milliseconds(duration_ms as i64)).to_rfc3339();
         metadata.duration_ms = Some(duration_ms);
+    }
+    if let Some(count) = segment_count {
+        metadata.segment_count = count;
     }
     metadata.ended_at = Some(now.to_rfc3339());
     metadata.word_count = word_count;
@@ -1202,7 +1208,7 @@ mod tests {
 
     #[test]
     fn test_save_session_rejects_traversal() {
-        let result = save_session("../escape", "text", 1000, None, false, None, None);
+        let result = save_session("../escape", "text", 1000, None, false, None, None, None);
         assert!(result.is_err());
         let err = result.unwrap_err();
         assert!(err.contains("'..'") || err.contains("path separators"));
