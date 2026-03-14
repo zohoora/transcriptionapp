@@ -168,11 +168,19 @@ fn build_eval_context(
     }
 }
 
-/// Determine actual outcome from the bundle's split_decision and outcome fields
+/// Determine actual outcome from the bundle's split_decision and outcome fields.
+///
+/// Intermediate checks that led to a split-then-merge-back are detected by
+/// merge_back_count increasing between consecutive checks.
 fn actual_outcome_str(bundle: &ReplayBundle, check_idx: usize, total_checks: usize) -> String {
-    // Only the last check in a bundle could have triggered a split
     if check_idx < total_checks - 1 {
-        // Intermediate check — was not the one that triggered the split
+        // Detect intermediate split→merge-back: if the NEXT check's merge_back_count
+        // is higher, this check triggered a split that was subsequently merged back.
+        let current_mbc = bundle.detection_checks[check_idx].loop_state.merge_back_count;
+        let next_mbc = bundle.detection_checks[check_idx + 1].loop_state.merge_back_count;
+        if next_mbc > current_mbc {
+            return "SplitMergedBack".to_string();
+        }
         return "NoSplit".to_string();
     }
     // Last check: did the bundle end in a split?
@@ -200,7 +208,9 @@ fn format_outcome(outcome: &DetectionOutcome) -> String {
     }
 }
 
-/// Check if replayed outcome matches actual
+/// Check if replayed outcome matches actual.
+/// "SplitMergedBack" counts as agreement with a Split replay — the detection
+/// logic correctly identified a split, and the merge-back was a separate decision.
 fn outcomes_agree(replayed: &DetectionOutcome, actual: &str) -> bool {
     match replayed {
         DetectionOutcome::Split { .. } | DetectionOutcome::ForceSplit { .. } => {
@@ -412,5 +422,296 @@ fn main() {
     if total_checks > 0 {
         let pct = matches as f64 / total_checks as f64 * 100.0;
         println!("Agreement: {:.1}%", pct);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use transcription_app_lib::replay_bundle::*;
+
+    /// Helper to create a minimal ReplayBundle with the given detection checks and split.
+    fn make_bundle(
+        checks: Vec<DetectionCheck>,
+        split: Option<SplitDecision>,
+    ) -> ReplayBundle {
+        ReplayBundle {
+            schema_version: 1,
+            config: serde_json::json!({
+                "encounter_detection_mode": "hybrid",
+                "hybrid_confirm_window_secs": 180,
+                "hybrid_min_words_for_sensor_split": 500,
+            }),
+            segments: vec![],
+            sensor_transitions: vec![],
+            vision_results: vec![],
+            detection_checks: checks,
+            split_decision: split,
+            clinical_check: None,
+            merge_check: None,
+            soap_result: None,
+            name_tracker: None,
+            outcome: None,
+        }
+    }
+
+    /// Helper to create a detection check with specific LLM response.
+    fn make_check(
+        complete: Option<bool>,
+        confidence: Option<f64>,
+        end_index: Option<u64>,
+        word_count: usize,
+        merge_back_count: u32,
+        buffer_age_secs: f64,
+        success: bool,
+    ) -> DetectionCheck {
+        let mut check = DetectionCheck::new(
+            (0, 100),
+            word_count,
+            word_count,
+            SensorContext::new(false, false),
+            String::new(),
+            String::new(),
+            500,
+            0,
+            merge_back_count,
+            buffer_age_secs,
+            None,
+        );
+        check.success = success;
+        check.parsed_complete = complete;
+        check.parsed_confidence = confidence;
+        check.parsed_end_index = end_index;
+        check
+    }
+
+    // ---- actual_outcome_str tests ----
+
+    #[test]
+    fn test_last_check_with_split_decision() {
+        let bundle = make_bundle(
+            vec![make_check(Some(true), Some(0.95), Some(50), 1000, 0, 600.0, true)],
+            Some(SplitDecision {
+                ts: "2026-03-12T10:00:00Z".into(),
+                trigger: "hybrid_llm".into(),
+                word_count: 1000,
+                cleaned_word_count: 1000,
+                end_segment_index: Some(50),
+            }),
+        );
+        assert_eq!(actual_outcome_str(&bundle, 0, 1), "Split(hybrid_llm)");
+    }
+
+    #[test]
+    fn test_intermediate_check_no_merge_back() {
+        let checks = vec![
+            make_check(None, None, None, 500, 0, 300.0, false), // LLM failed
+            make_check(Some(true), Some(0.95), Some(50), 1000, 0, 600.0, true),
+        ];
+        let bundle = make_bundle(checks, Some(SplitDecision {
+            ts: "2026-03-12T10:00:00Z".into(),
+            trigger: "hybrid_llm".into(),
+            word_count: 1000,
+            cleaned_word_count: 1000,
+            end_segment_index: Some(50),
+        }));
+        assert_eq!(actual_outcome_str(&bundle, 0, 2), "NoSplit");
+    }
+
+    #[test]
+    fn test_intermediate_check_with_merge_back() {
+        let checks = vec![
+            make_check(Some(true), Some(0.95), Some(30), 600, 0, 250.0, true), // split→merge-back
+            make_check(Some(true), Some(0.92), Some(80), 1500, 1, 900.0, true), // final split
+        ];
+        let bundle = make_bundle(checks, Some(SplitDecision {
+            ts: "2026-03-12T10:00:00Z".into(),
+            trigger: "hybrid_llm".into(),
+            word_count: 1500,
+            cleaned_word_count: 1500,
+            end_segment_index: Some(80),
+        }));
+        // Check 0 had merge_back_count=0, check 1 has merge_back_count=1 → SplitMergedBack
+        assert_eq!(actual_outcome_str(&bundle, 0, 2), "SplitMergedBack");
+    }
+
+    #[test]
+    fn test_multiple_merge_backs() {
+        let checks = vec![
+            make_check(Some(true), Some(0.95), Some(10), 400, 0, 200.0, true), // split→merge-back
+            make_check(Some(true), Some(0.92), Some(20), 500, 1, 300.0, true), // split→merge-back
+            make_check(Some(true), Some(0.95), Some(50), 1000, 2, 600.0, true), // final split
+        ];
+        let bundle = make_bundle(checks, Some(SplitDecision {
+            ts: "2026-03-12T10:00:00Z".into(),
+            trigger: "hybrid_llm".into(),
+            word_count: 1000,
+            cleaned_word_count: 1000,
+            end_segment_index: Some(50),
+        }));
+        assert_eq!(actual_outcome_str(&bundle, 0, 3), "SplitMergedBack");
+        assert_eq!(actual_outcome_str(&bundle, 1, 3), "SplitMergedBack");
+        assert_eq!(actual_outcome_str(&bundle, 2, 3), "Split(hybrid_llm)");
+    }
+
+    // ---- outcomes_agree tests ----
+
+    #[test]
+    fn test_split_agrees_with_split() {
+        let outcome = DetectionOutcome::Split {
+            end_segment_index: Some(50),
+            confidence: 0.95,
+            trigger: "llm".into(),
+        };
+        assert!(outcomes_agree(&outcome, "Split(hybrid_llm)"));
+        assert!(outcomes_agree(&outcome, "SplitMergedBack"));
+    }
+
+    #[test]
+    fn test_nosplit_agrees_with_nosplit() {
+        assert!(outcomes_agree(&DetectionOutcome::NoSplit, "NoSplit"));
+        assert!(outcomes_agree(&DetectionOutcome::NoResult, "NoSplit"));
+        assert!(outcomes_agree(
+            &DetectionOutcome::BelowThreshold { confidence: 0.5, threshold: 0.85 },
+            "NoSplit"
+        ));
+    }
+
+    #[test]
+    fn test_split_disagrees_with_nosplit() {
+        let outcome = DetectionOutcome::Split {
+            end_segment_index: Some(50),
+            confidence: 0.95,
+            trigger: "llm".into(),
+        };
+        assert!(!outcomes_agree(&outcome, "NoSplit"));
+    }
+
+    // ---- build_eval_context + evaluate_detection end-to-end tests ----
+
+    #[test]
+    fn test_normal_llm_split() {
+        let check = make_check(Some(true), Some(0.95), Some(50), 1000, 0, 600.0, true);
+        let config = serde_json::json!({"encounter_detection_mode": "hybrid"});
+        let overrides = Overrides::default();
+        let ctx = build_eval_context(&check, &config, &overrides);
+        let (outcome, _) = evaluate_detection(&ctx);
+        match outcome {
+            DetectionOutcome::Split { confidence, .. } => {
+                assert!((confidence - 0.95).abs() < 0.001);
+            }
+            other => panic!("Expected Split, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_below_threshold_with_merge_back() {
+        // merge_back_count=2 → threshold = 0.85 + 0.10 = 0.95
+        // confidence 0.92 < 0.95 → BelowThreshold
+        let check = make_check(Some(true), Some(0.92), Some(50), 1000, 2, 600.0, true);
+        let config = serde_json::json!({"encounter_detection_mode": "hybrid"});
+        let overrides = Overrides::default();
+        let ctx = build_eval_context(&check, &config, &overrides);
+        let (outcome, _) = evaluate_detection(&ctx);
+        match outcome {
+            DetectionOutcome::BelowThreshold { confidence, threshold } => {
+                assert!((confidence - 0.92).abs() < 0.001);
+                assert!((threshold - 0.95).abs() < 0.001);
+            }
+            other => panic!("Expected BelowThreshold, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_llm_failure_no_result() {
+        let check = make_check(None, None, None, 500, 0, 300.0, false);
+        let config = serde_json::json!({"encounter_detection_mode": "hybrid"});
+        let overrides = Overrides::default();
+        let ctx = build_eval_context(&check, &config, &overrides);
+        let (outcome, failures) = evaluate_detection(&ctx);
+        assert!(matches!(outcome, DetectionOutcome::NoResult));
+        assert_eq!(failures, 1); // Incremented from 0
+    }
+
+    #[test]
+    fn test_not_complete_returns_nosplit() {
+        let check = make_check(Some(false), None, None, 800, 0, 400.0, true);
+        let config = serde_json::json!({"encounter_detection_mode": "hybrid"});
+        let overrides = Overrides::default();
+        let ctx = build_eval_context(&check, &config, &overrides);
+        let (outcome, failures) = evaluate_detection(&ctx);
+        assert!(matches!(outcome, DetectionOutcome::NoSplit));
+        assert_eq!(failures, 0); // Reset on confident "no"
+    }
+
+    #[test]
+    fn test_absolute_word_cap_force_split() {
+        let check = make_check(Some(false), None, None, 26000, 0, 7200.0, true);
+        let config = serde_json::json!({"encounter_detection_mode": "hybrid"});
+        let overrides = Overrides::default();
+        let ctx = build_eval_context(&check, &config, &overrides);
+        let (outcome, _) = evaluate_detection(&ctx);
+        match outcome {
+            DetectionOutcome::ForceSplit { trigger } => {
+                assert_eq!(trigger, "absolute_word_cap");
+            }
+            other => panic!("Expected ForceSplit, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_hybrid_sensor_timeout_force_split() {
+        let absent_time = (chrono::Utc::now() - chrono::Duration::seconds(200)).to_rfc3339();
+        let mut check = make_check(Some(false), None, None, 800, 0, 600.0, true);
+        check.loop_state.sensor_absent_since = Some(absent_time);
+        let config = serde_json::json!({
+            "encounter_detection_mode": "hybrid",
+            "hybrid_confirm_window_secs": 180,
+            "hybrid_min_words_for_sensor_split": 500,
+        });
+        let overrides = Overrides::default();
+        let ctx = build_eval_context(&check, &config, &overrides);
+        let (outcome, _) = evaluate_detection(&ctx);
+        match outcome {
+            DetectionOutcome::ForceSplit { trigger } => {
+                assert_eq!(trigger, "hybrid_sensor_timeout");
+            }
+            other => panic!("Expected ForceSplit(hybrid_sensor_timeout), got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_override_changes_threshold() {
+        // Without override: merge_back=2 → threshold=0.95, confidence=0.93 → BelowThreshold
+        let check = make_check(Some(true), Some(0.93), Some(50), 1000, 2, 600.0, true);
+        let config = serde_json::json!({"encounter_detection_mode": "hybrid"});
+
+        let overrides_normal = Overrides::default();
+        let ctx = build_eval_context(&check, &config, &overrides_normal);
+        let (outcome, _) = evaluate_detection(&ctx);
+        assert!(matches!(outcome, DetectionOutcome::BelowThreshold { .. }));
+
+        // With override: reset merge_back_count=0 → threshold=0.85, confidence=0.93 → Split
+        let overrides_reset = Overrides { merge_back_count: Some(0), ..Default::default() };
+        let ctx = build_eval_context(&check, &config, &overrides_reset);
+        let (outcome, _) = evaluate_detection(&ctx);
+        assert!(matches!(outcome, DetectionOutcome::Split { .. }));
+    }
+
+    #[test]
+    fn test_long_buffer_lower_threshold() {
+        // buffer_age > 20 mins → base threshold 0.70 instead of 0.85
+        // confidence 0.75 should pass with 20+ min buffer but fail with <20 min
+        let check_long = make_check(Some(true), Some(0.75), Some(50), 1000, 0, 1500.0, true); // 25 mins
+        let config = serde_json::json!({"encounter_detection_mode": "hybrid"});
+        let overrides = Overrides::default();
+        let ctx = build_eval_context(&check_long, &config, &overrides);
+        let (outcome, _) = evaluate_detection(&ctx);
+        assert!(matches!(outcome, DetectionOutcome::Split { .. }));
+
+        let check_short = make_check(Some(true), Some(0.75), Some(50), 1000, 0, 600.0, true); // 10 mins
+        let ctx = build_eval_context(&check_short, &config, &overrides);
+        let (outcome, _) = evaluate_detection(&ctx);
+        assert!(matches!(outcome, DetectionOutcome::BelowThreshold { .. }));
     }
 }

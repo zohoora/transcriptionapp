@@ -60,6 +60,8 @@ pub mod replay_bundle;
 pub mod segment_log;
 pub mod day_log;
 pub mod screenshot;
+pub mod screenshot_task;
+pub mod encounter_pipeline;
 pub mod shadow_log;
 pub mod speaker_profiles;
 #[cfg(test)]

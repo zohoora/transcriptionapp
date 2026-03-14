@@ -1,0 +1,290 @@
+//! Screenshot-based patient name extraction task for continuous mode.
+//!
+//! Periodically captures the screen, sends it to a vision model for patient name
+//! extraction, and feeds votes into the PatientNameTracker. Runs as a spawned
+//! tokio task; all shared state is passed via Arc clones.
+
+use chrono::{DateTime, Utc};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
+use std::time::Instant;
+use tokio::sync::Notify;
+use tracing::{debug, info, warn};
+
+use crate::config::Config;
+use crate::encounter_detection::SCREENSHOT_STALE_GRACE_SECS;
+use crate::llm_client::{ContentPart, ImageUrlContent, LLMClient};
+use crate::patient_name_tracker::PatientNameTracker;
+use crate::pipeline_log::PipelineLogger;
+use crate::replay_bundle::{ReplayBundleBuilder, VisionResult};
+
+pub(crate) use crate::patient_name_tracker::{build_patient_name_prompt, parse_patient_name};
+
+/// All inputs needed by the screenshot task, gathered at spawn time.
+pub struct ScreenshotTaskConfig {
+    pub stop_flag: Arc<AtomicBool>,
+    pub name_tracker: Arc<Mutex<PatientNameTracker>>,
+    pub last_split_time: Arc<Mutex<DateTime<Utc>>>,
+    pub vision_trigger: Arc<Notify>,
+    pub vision_new_name: Arc<Mutex<Option<String>>>,
+    pub vision_old_name: Arc<Mutex<Option<String>>>,
+    pub debug_storage: bool,
+    pub screenshot_interval: u64,
+    pub llm_client: Option<LLMClient>,
+    pub pipeline_logger: Arc<Mutex<PipelineLogger>>,
+    pub replay_bundle: Arc<Mutex<ReplayBundleBuilder>>,
+}
+
+/// Runs the screenshot capture + vision extraction loop.
+/// Called via `tokio::spawn(run_screenshot_task(config))`.
+pub async fn run_screenshot_task(cfg: ScreenshotTaskConfig) {
+    info!(
+        "Screenshot name extraction task started (interval: {}s)",
+        cfg.screenshot_interval
+    );
+
+    loop {
+        tokio::time::sleep(tokio::time::Duration::from_secs(cfg.screenshot_interval)).await;
+
+        if cfg.stop_flag.load(Ordering::Relaxed) {
+            break;
+        }
+
+        // Capture screen (blocking CoreGraphics call)
+        let capture_result =
+            tokio::task::spawn_blocking(|| crate::screenshot::capture_to_base64(1150)).await;
+
+        let capture = match capture_result {
+            Ok(Ok(c)) => c,
+            Ok(Err(e)) => {
+                debug!("Screenshot capture failed (may not have permission): {}", e);
+                continue;
+            }
+            Err(e) => {
+                debug!("Screenshot capture task panicked: {}", e);
+                continue;
+            }
+        };
+
+        if capture.likely_blank {
+            warn!("Screenshot appears blank — screen recording permission likely not granted. Skipping vision analysis. Grant permission in System Settings → Privacy & Security → Screen Recording.");
+            continue;
+        }
+
+        let image_base64 = capture.base64;
+
+        // Save debug screenshot if enabled
+        if cfg.debug_storage {
+            save_debug_screenshot(&image_base64);
+        }
+
+        let client = match &cfg.llm_client {
+            Some(c) => c,
+            None => {
+                debug!("No LLM client for screenshot name extraction");
+                continue;
+            }
+        };
+
+        let (system_prompt, user_text) = build_patient_name_prompt();
+        let system_prompt_log = system_prompt.clone();
+        let user_text_log = user_text.clone();
+        let content_parts = vec![
+            ContentPart::Text { text: user_text },
+            ContentPart::ImageUrl {
+                image_url: ImageUrlContent {
+                    url: format!("data:image/jpeg;base64,{}", image_base64),
+                },
+            },
+        ];
+
+        let vision_start = Instant::now();
+        let vision_future = client.generate_vision(
+            "vision-model",
+            &system_prompt,
+            content_parts,
+            "patient_name_extraction",
+            Some(0.1),
+            Some(50),
+            None,
+            None,
+        );
+
+        match tokio::time::timeout(tokio::time::Duration::from_secs(30), vision_future).await {
+            Ok(Ok(response)) => {
+                let vision_latency = vision_start.elapsed().as_millis() as u64;
+                let parsed_name = parse_patient_name(&response);
+                if let Some(ref name) = parsed_name {
+                    info!("Vision extracted patient name: {}", name);
+
+                    let is_stale = check_stale_vote(
+                        name,
+                        &cfg.last_split_time,
+                        &cfg.name_tracker,
+                    );
+
+                    if let Ok(mut logger) = cfg.pipeline_logger.lock() {
+                        logger.log_vision(
+                            "vision-model",
+                            &system_prompt_log,
+                            &user_text_log,
+                            Some(&response),
+                            vision_latency,
+                            true,
+                            None,
+                            serde_json::json!({
+                                "parsed_name": name,
+                                "screenshot_blank": false,
+                                "is_stale": is_stale,
+                            }),
+                        );
+                    }
+                    if let Ok(mut bundle) = cfg.replay_bundle.lock() {
+                        bundle.add_vision_result(VisionResult {
+                            ts: Utc::now().to_rfc3339(),
+                            parsed_name: Some(name.clone()),
+                            is_stale,
+                            is_blank: false,
+                            latency_ms: vision_latency,
+                        });
+                    }
+
+                    if is_stale {
+                        info!(
+                            "Skipping stale screenshot vote '{}' — matches previous encounter name and within {}s grace period",
+                            name, SCREENSHOT_STALE_GRACE_SECS
+                        );
+                        continue;
+                    }
+
+                    if let Ok(mut tracker) = cfg.name_tracker.lock() {
+                        let (changed, old_name, new_name) =
+                            tracker.record_and_check_change(&name);
+                        if changed {
+                            info!(
+                                "Vision detected patient name change: {:?} → {:?} — accelerating detection",
+                                old_name, new_name
+                            );
+                            if let Ok(mut n) = cfg.vision_new_name.lock() {
+                                *n = new_name;
+                            }
+                            if let Ok(mut o) = cfg.vision_old_name.lock() {
+                                *o = old_name;
+                            }
+                            cfg.vision_trigger.notify_one();
+                        }
+                    } else {
+                        warn!(
+                            "Name tracker lock poisoned, patient name vote dropped: {}",
+                            name
+                        );
+                    }
+                } else {
+                    if let Ok(mut logger) = cfg.pipeline_logger.lock() {
+                        logger.log_vision(
+                            "vision-model",
+                            &system_prompt_log,
+                            &user_text_log,
+                            Some(&response),
+                            vision_latency,
+                            true,
+                            None,
+                            serde_json::json!({
+                                "parsed_name": serde_json::Value::Null,
+                                "screenshot_blank": false,
+                                "not_found": true,
+                            }),
+                        );
+                    }
+                    if let Ok(mut bundle) = cfg.replay_bundle.lock() {
+                        bundle.add_vision_result(VisionResult::failed(vision_latency));
+                    }
+                    debug!("Vision did not find a patient name on screen");
+                }
+            }
+            Ok(Err(e)) => {
+                let vision_latency = vision_start.elapsed().as_millis() as u64;
+                if let Ok(mut logger) = cfg.pipeline_logger.lock() {
+                    logger.log_vision(
+                        "vision-model",
+                        &system_prompt_log,
+                        &user_text_log,
+                        None,
+                        vision_latency,
+                        false,
+                        Some(&e.to_string()),
+                        serde_json::json!({"llm_error": true}),
+                    );
+                }
+                if let Ok(mut bundle) = cfg.replay_bundle.lock() {
+                    bundle.add_vision_result(VisionResult::failed(vision_latency));
+                }
+                debug!("Vision name extraction failed: {}", e);
+            }
+            Err(_) => {
+                let vision_latency = vision_start.elapsed().as_millis() as u64;
+                if let Ok(mut logger) = cfg.pipeline_logger.lock() {
+                    logger.log_vision(
+                        "vision-model",
+                        &system_prompt_log,
+                        &user_text_log,
+                        None,
+                        vision_latency,
+                        false,
+                        Some("timeout_30s"),
+                        serde_json::json!({"timeout": true}),
+                    );
+                }
+                if let Ok(mut bundle) = cfg.replay_bundle.lock() {
+                    bundle.add_vision_result(VisionResult::failed(vision_latency));
+                }
+                debug!("Vision name extraction timed out after 30s");
+            }
+        }
+    }
+
+    info!("Screenshot name extraction task stopped");
+}
+
+/// Check if a name vote is stale (matches previous encounter's name within grace period).
+fn check_stale_vote(
+    name: &str,
+    last_split_time: &Arc<Mutex<DateTime<Utc>>>,
+    name_tracker: &Arc<Mutex<PatientNameTracker>>,
+) -> bool {
+    if let Ok(split_time) = last_split_time.lock() {
+        let secs_since_split = (Utc::now() - *split_time).num_seconds();
+        if secs_since_split < SCREENSHOT_STALE_GRACE_SECS {
+            if let Ok(tracker) = name_tracker.lock() {
+                return tracker.previous_name() == Some(name);
+            }
+        }
+    }
+    false
+}
+
+/// Save a debug screenshot to disk.
+fn save_debug_screenshot(image_base64: &str) {
+    use base64::Engine;
+    if let Ok(config_dir) = Config::config_dir() {
+        let debug_dir = config_dir.join("debug").join("continuous-screenshots");
+        let _ = std::fs::create_dir_all(&debug_dir);
+        let timestamp = chrono::Local::now().format("%Y%m%d-%H%M%S");
+        let filename = debug_dir.join(format!("{}.jpg", timestamp));
+        match base64::engine::general_purpose::STANDARD.decode(image_base64) {
+            Ok(bytes) => {
+                if let Err(e) = std::fs::write(&filename, &bytes) {
+                    warn!("Failed to save debug screenshot: {}", e);
+                } else {
+                    debug!("Debug screenshot saved: {:?}", filename);
+                }
+            }
+            Err(e) => {
+                warn!(
+                    "Failed to decode screenshot base64 for debug save: {}",
+                    e
+                );
+            }
+        }
+    }
+}

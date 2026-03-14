@@ -41,7 +41,6 @@ pub use crate::encounter_detection::{
 };
 pub use crate::encounter_merge::{MergeCheckResult, build_encounter_merge_prompt, parse_merge_check};
 pub use crate::patient_name_tracker::PatientNameTracker;
-pub(crate) use crate::patient_name_tracker::{build_patient_name_prompt, parse_patient_name};
 
 // ============================================================================
 // Merge excerpt helpers
@@ -1549,7 +1548,7 @@ pub async fn run_continuous_mode(
                         );
 
                         // Extract encounter segments from buffer
-                        let (encounter_text, encounter_word_count, encounter_start, encounter_last_timestamp_ms) = {
+                        let (encounter_text, encounter_word_count, encounter_start, _encounter_last_timestamp_ms) = {
                             let mut buffer = match buffer_for_detector.lock() {
                                 Ok(b) => b,
                                 Err(_) => continue,
@@ -1755,100 +1754,22 @@ pub async fn run_continuous_mode(
                             "patient_name": encounter_patient_name
                         }));
 
-                        // Two-pass clinical content check: flag non-clinical encounters
-                        let mut is_clinical = true;
-                        if encounter_word_count < MIN_WORDS_FOR_CLINICAL_CHECK {
-                            is_clinical = false;
-                            info!(
-                                "Encounter #{} too small for clinical analysis ({} words < {} threshold) — treating as non-clinical",
-                                encounter_number, encounter_word_count, MIN_WORDS_FOR_CLINICAL_CHECK
-                            );
-                        } else if let Some(ref client) = llm_client {
-                            let (cc_system, cc_user) = build_clinical_content_check_prompt(&encounter_text);
-                            let cc_start = Instant::now();
-                            let cc_future = client.generate(&fast_model, &cc_system, &cc_user, "clinical_content_check");
-                            match tokio::time::timeout(tokio::time::Duration::from_secs(30), cc_future).await {
-                                Ok(Ok(cc_response)) => {
-                                    let cc_latency = cc_start.elapsed().as_millis() as u64;
-                                    match parse_clinical_content_check(&cc_response) {
-                                        Ok(cc_result) => {
-                                            if let Ok(mut logger) = logger_for_detector.lock() {
-                                                logger.log_clinical_check(
-                                                    &fast_model, &cc_system, &cc_user,
-                                                    Some(&cc_response), cc_latency, true, None,
-                                                    serde_json::json!({
-                                                        "encounter_number": encounter_number,
-                                                        "word_count": encounter_word_count,
-                                                        "is_clinical": cc_result.clinical,
-                                                        "reason": cc_result.reason,
-                                                    }),
-                                                );
-                                            }
-                                            if !cc_result.clinical {
-                                                is_clinical = false;
-                                                info!(
-                                                    "Encounter #{} flagged as non-clinical: {:?}",
-                                                    encounter_number, cc_result.reason
-                                                );
-                                            } else {
-                                                info!(
-                                                    "Encounter #{} confirmed clinical: {:?}",
-                                                    encounter_number, cc_result.reason
-                                                );
-                                            }
-                                        }
-                                        Err(e) => {
-                                            if let Ok(mut logger) = logger_for_detector.lock() {
-                                                logger.log_clinical_check(
-                                                    &fast_model, &cc_system, &cc_user,
-                                                    Some(&cc_response), cc_latency, false, Some(&e),
-                                                    serde_json::json!({"encounter_number": encounter_number, "parse_error": true}),
-                                                );
-                                            }
-                                            warn!("Failed to parse clinical content check: {}", e);
-                                        }
-                                    }
-                                }
-                                Ok(Err(e)) => {
-                                    let cc_latency = cc_start.elapsed().as_millis() as u64;
-                                    if let Ok(mut logger) = logger_for_detector.lock() {
-                                        logger.log_clinical_check(
-                                            &fast_model, &cc_system, &cc_user,
-                                            None, cc_latency, false, Some(&e.to_string()),
-                                            serde_json::json!({"encounter_number": encounter_number, "llm_error": true}),
-                                        );
-                                    }
-                                    warn!("Clinical content check LLM call failed: {}", e);
-                                }
-                                Err(_) => {
-                                    let cc_latency = cc_start.elapsed().as_millis() as u64;
-                                    if let Ok(mut logger) = logger_for_detector.lock() {
-                                        logger.log_clinical_check(
-                                            &fast_model, &cc_system, &cc_user,
-                                            None, cc_latency, false, Some("timeout_30s"),
-                                            serde_json::json!({"encounter_number": encounter_number, "timeout": true}),
-                                        );
-                                    }
-                                    warn!("Clinical content check timed out (30s)");
-                                }
-                            }
-                        }
+                        // Clinical content check: flag non-clinical encounters
+                        let is_clinical = if let Some(ref client) = llm_client {
+                            crate::encounter_pipeline::check_clinical_content(
+                                client, &fast_model, &encounter_text, encounter_word_count,
+                                &logger_for_detector,
+                                serde_json::json!({
+                                    "encounter_number": encounter_number,
+                                    "word_count": encounter_word_count,
+                                }),
+                            ).await
+                        } else {
+                            encounter_word_count >= MIN_WORDS_FOR_CLINICAL_CHECK
+                        };
 
-                        // Update metadata with non-clinical flag (single path for both word-count and LLM checks)
                         if !is_clinical {
-                            if let Ok(session_dir) = local_archive::get_session_archive_dir(&session_id, &Utc::now()) {
-                                let nc_meta_path = session_dir.join("metadata.json");
-                                if nc_meta_path.exists() {
-                                    if let Ok(content) = std::fs::read_to_string(&nc_meta_path) {
-                                        if let Ok(mut metadata) = serde_json::from_str::<local_archive::ArchiveMetadata>(&content) {
-                                            metadata.likely_non_clinical = Some(true);
-                                            if let Ok(json) = serde_json::to_string_pretty(&metadata) {
-                                                let _ = std::fs::write(&nc_meta_path, json);
-                                            }
-                                        }
-                                    }
-                                }
-                            }
+                            crate::encounter_pipeline::mark_non_clinical(&session_id);
                         }
 
                         // Log clinical check result to replay bundle + day log
@@ -2652,14 +2573,6 @@ pub async fn run_continuous_mode(
 
     // Spawn screenshot-based patient name extraction task (if screen capture enabled)
     let screenshot_task = if config.screen_capture_enabled {
-        let stop_for_screenshot = handle.stop_flag.clone();
-        let name_tracker_for_screenshot = handle.name_tracker.clone();
-        let last_split_time_for_screenshot = handle.last_split_time.clone();
-        let vision_trigger_for_screenshot = handle.vision_name_change_trigger.clone();
-        let vision_new_name_for_screenshot = handle.vision_new_name.clone();
-        let vision_old_name_for_screenshot = handle.vision_old_name.clone();
-        let debug_storage_for_screenshot = config.debug_storage_enabled;
-        let screenshot_interval = config.screen_capture_interval_secs.max(30) as u64; // Clamp minimum 30s
         let llm_client_for_screenshot = if !config.llm_router_url.is_empty() {
             LLMClient::new(
                 &config.llm_router_url,
@@ -2672,232 +2585,21 @@ pub async fn run_continuous_mode(
             None
         };
 
-        Some(tokio::spawn(async move {
-            info!(
-                "Screenshot name extraction task started (interval: {}s)",
-                screenshot_interval
-            );
-
-            loop {
-                tokio::time::sleep(tokio::time::Duration::from_secs(screenshot_interval)).await;
-
-                if stop_for_screenshot.load(Ordering::Relaxed) {
-                    break;
-                }
-
-                // Capture screen to base64 (runs on blocking thread since it uses CoreGraphics)
-                let capture_result = tokio::task::spawn_blocking(|| {
-                    crate::screenshot::capture_to_base64(1150)
-                })
-                .await;
-
-                let capture = match capture_result {
-                    Ok(Ok(c)) => c,
-                    Ok(Err(e)) => {
-                        debug!("Screenshot capture failed (may not have permission): {}", e);
-                        continue;
-                    }
-                    Err(e) => {
-                        debug!("Screenshot capture task panicked: {}", e);
-                        continue;
-                    }
-                };
-
-                // Skip vision call if the capture is blank (no screen recording permission)
-                if capture.likely_blank {
-                    warn!("Screenshot appears blank — screen recording permission likely not granted. Skipping vision analysis. Grant permission in System Settings → Privacy & Security → Screen Recording.");
-                    continue;
-                }
-
-                let image_base64 = capture.base64;
-
-                // Save screenshot to disk for debugging (only when debug storage is enabled)
-                if debug_storage_for_screenshot {
-                    use base64::Engine;
-                    if let Ok(config_dir) = Config::config_dir() {
-                        let debug_dir = config_dir
-                            .join("debug")
-                            .join("continuous-screenshots");
-                        let _ = std::fs::create_dir_all(&debug_dir);
-                        let timestamp = chrono::Local::now().format("%Y%m%d-%H%M%S");
-                        let filename = debug_dir.join(format!("{}.jpg", timestamp));
-                        match base64::engine::general_purpose::STANDARD.decode(&image_base64) {
-                            Ok(bytes) => {
-                                if let Err(e) = std::fs::write(&filename, &bytes) {
-                                    warn!("Failed to save debug screenshot: {}", e);
-                                } else {
-                                    debug!("Debug screenshot saved: {:?}", filename);
-                                }
-                            }
-                            Err(e) => {
-                                warn!("Failed to decode screenshot base64 for debug save: {}", e);
-                            }
-                        }
-                    }
-                }
-
-                // Send to vision model for name extraction
-                let client = match &llm_client_for_screenshot {
-                    Some(c) => c,
-                    None => {
-                        debug!("No LLM client for screenshot name extraction");
-                        continue;
-                    }
-                };
-
-                let (system_prompt, user_text) = build_patient_name_prompt();
-                let system_prompt_log = system_prompt.clone();
-                let user_text_log = user_text.clone();
-                let content_parts = vec![
-                    crate::llm_client::ContentPart::Text { text: user_text },
-                    crate::llm_client::ContentPart::ImageUrl {
-                        image_url: crate::llm_client::ImageUrlContent {
-                            url: format!("data:image/jpeg;base64,{}", image_base64),
-                        },
-                    },
-                ];
-
-                let vision_start = Instant::now();
-                let vision_future = client.generate_vision(
-                    "vision-model",
-                    &system_prompt,
-                    content_parts,
-                    "patient_name_extraction",
-                    Some(0.1), // Low temperature for factual extraction
-                    Some(50),  // Short max tokens — just a name
-                    None,
-                    None,
-                );
-
-                match tokio::time::timeout(
-                    tokio::time::Duration::from_secs(30),
-                    vision_future,
-                )
-                .await
-                {
-                    Ok(Ok(response)) => {
-                        let vision_latency = vision_start.elapsed().as_millis() as u64;
-                        let parsed_name = parse_patient_name(&response);
-                        if let Some(ref name) = parsed_name {
-                            info!("Vision extracted patient name: {}", name);
-
-                            // Stale screenshot detection: suppress votes that match previous
-                            // encounter's patient name within grace period after split
-                            let is_stale = if let Ok(split_time) = last_split_time_for_screenshot.lock() {
-                                let secs_since_split = (Utc::now() - *split_time).num_seconds();
-                                if secs_since_split < SCREENSHOT_STALE_GRACE_SECS {
-                                    if let Ok(tracker) = name_tracker_for_screenshot.lock() {
-                                        tracker.previous_name() == Some(name.as_str())
-                                    } else {
-                                        false
-                                    }
-                                } else {
-                                    false
-                                }
-                            } else {
-                                false
-                            };
-
-                            if let Ok(mut logger) = logger_for_screenshot.lock() {
-                                logger.log_vision(
-                                    "vision-model", &system_prompt_log, &user_text_log,
-                                    Some(&response), vision_latency, true, None,
-                                    serde_json::json!({
-                                        "parsed_name": name,
-                                        "screenshot_blank": false,
-                                        "is_stale": is_stale,
-                                    }),
-                                );
-                            }
-                            if let Ok(mut bundle) = bundle_for_screenshot.lock() {
-                                bundle.add_vision_result(crate::replay_bundle::VisionResult {
-                                    ts: Utc::now().to_rfc3339(),
-                                    parsed_name: Some(name.clone()),
-                                    is_stale,
-                                    is_blank: false,
-                                    latency_ms: vision_latency,
-                                });
-                            }
-
-                            if is_stale {
-                                info!(
-                                    "Skipping stale screenshot vote '{}' — matches previous encounter name and within {}s grace period",
-                                    name, SCREENSHOT_STALE_GRACE_SECS
-                                );
-                                continue;
-                            }
-
-                            if let Ok(mut tracker) = name_tracker_for_screenshot.lock() {
-                                let (changed, old_name, new_name) = tracker.record_and_check_change(name);
-                                if changed {
-                                    info!(
-                                        "Vision detected patient name change: {:?} → {:?} — accelerating detection",
-                                        old_name, new_name
-                                    );
-                                    // Store names for the detection loop to read
-                                    if let Ok(mut n) = vision_new_name_for_screenshot.lock() {
-                                        *n = new_name;
-                                    }
-                                    if let Ok(mut o) = vision_old_name_for_screenshot.lock() {
-                                        *o = old_name;
-                                    }
-                                    // Wake the detection loop
-                                    vision_trigger_for_screenshot.notify_one();
-                                }
-                            } else {
-                                warn!("Name tracker lock poisoned, patient name vote dropped: {}", name);
-                            }
-                        } else {
-                            if let Ok(mut logger) = logger_for_screenshot.lock() {
-                                logger.log_vision(
-                                    "vision-model", &system_prompt_log, &user_text_log,
-                                    Some(&response), vision_latency, true, None,
-                                    serde_json::json!({
-                                        "parsed_name": serde_json::Value::Null,
-                                        "screenshot_blank": false,
-                                        "not_found": true,
-                                    }),
-                                );
-                            }
-                            if let Ok(mut bundle) = bundle_for_screenshot.lock() {
-                                bundle.add_vision_result(crate::replay_bundle::VisionResult::failed(vision_latency));
-                            }
-                            debug!("Vision did not find a patient name on screen");
-                        }
-                    }
-                    Ok(Err(e)) => {
-                        let vision_latency = vision_start.elapsed().as_millis() as u64;
-                        if let Ok(mut logger) = logger_for_screenshot.lock() {
-                            logger.log_vision(
-                                "vision-model", &system_prompt_log, &user_text_log,
-                                None, vision_latency, false, Some(&e.to_string()),
-                                serde_json::json!({"llm_error": true}),
-                            );
-                        }
-                        if let Ok(mut bundle) = bundle_for_screenshot.lock() {
-                            bundle.add_vision_result(crate::replay_bundle::VisionResult::failed(vision_latency));
-                        }
-                        debug!("Vision name extraction failed: {}", e);
-                    }
-                    Err(_) => {
-                        let vision_latency = vision_start.elapsed().as_millis() as u64;
-                        if let Ok(mut logger) = logger_for_screenshot.lock() {
-                            logger.log_vision(
-                                "vision-model", &system_prompt_log, &user_text_log,
-                                None, vision_latency, false, Some("timeout_30s"),
-                                serde_json::json!({"timeout": true}),
-                            );
-                        }
-                        if let Ok(mut bundle) = bundle_for_screenshot.lock() {
-                            bundle.add_vision_result(crate::replay_bundle::VisionResult::failed(vision_latency));
-                        }
-                        debug!("Vision name extraction timed out after 30s");
-                    }
-                }
-            }
-
-            info!("Screenshot name extraction task stopped");
-        }))
+        Some(tokio::spawn(crate::screenshot_task::run_screenshot_task(
+            crate::screenshot_task::ScreenshotTaskConfig {
+                stop_flag: handle.stop_flag.clone(),
+                name_tracker: handle.name_tracker.clone(),
+                last_split_time: handle.last_split_time.clone(),
+                vision_trigger: handle.vision_name_change_trigger.clone(),
+                vision_new_name: handle.vision_new_name.clone(),
+                vision_old_name: handle.vision_old_name.clone(),
+                debug_storage: config.debug_storage_enabled,
+                screenshot_interval: config.screen_capture_interval_secs.max(30) as u64,
+                llm_client: llm_client_for_screenshot,
+                pipeline_logger: logger_for_screenshot.clone(),
+                replay_bundle: bundle_for_screenshot.clone(),
+            },
+        )))
     } else {
         None
     };
@@ -2943,103 +2645,15 @@ pub async fn run_continuous_mode(
     }
 
     // ---- Orphaned SOAP recovery ----
-    // When detector_task.abort() fires, any in-flight SOAP generation for an already-archived
-    // encounter is killed. Scan today's sessions for has_soap_note == false and regenerate.
     if let Some(ref client) = flush_llm_client {
-        let today_str = Utc::now().format("%Y-%m-%d").to_string();
-        if let Ok(sessions) = local_archive::list_sessions_by_date(&today_str) {
-            let orphaned: Vec<_> = sessions.iter()
-                .filter(|s| !s.has_soap_note && s.word_count > 100)
-                .filter(|s| s.likely_non_clinical != Some(true))
-                .collect();
-            if !orphaned.is_empty() {
-                info!("Found {} orphaned sessions without SOAP notes, recovering", orphaned.len());
-            }
-            for summary in orphaned {
-                if let Ok(details) = local_archive::get_session(&summary.session_id, &today_str) {
-                    if let Some(ref transcript) = details.transcript {
-                        let (filtered_text, _) = strip_hallucinations(transcript, 5);
-                        let word_count = filtered_text.split_whitespace().count();
-                        if word_count < 100 {
-                            info!("Orphaned session {} has only {} words after filtering, skipping SOAP", summary.session_id, word_count);
-                            continue;
-                        }
-                        let orphan_soap_opts = crate::llm_client::SoapOptions {
-                            detail_level: effective_soap_detail_level(flush_soap_detail_level, word_count),
-                            format: crate::llm_client::SoapFormat::from_config_str(&flush_soap_format),
-                            ..Default::default()
-                        };
-                        info!("Generating SOAP for orphaned session {} ({} words)", summary.session_id, word_count);
-                        let soap_start = std::time::Instant::now();
-                        let soap_future = client.generate_multi_patient_soap_note(
-                            &flush_soap_model,
-                            &filtered_text,
-                            None,
-                            Some(&orphan_soap_opts),
-                            None,
-                            None,
-                        );
-                        match tokio::time::timeout(tokio::time::Duration::from_secs(120), soap_future).await {
-                            Ok(Ok(soap_result)) => {
-                                let soap_latency = soap_start.elapsed().as_millis() as u64;
-                                let soap_content = &soap_result.notes
-                                    .iter()
-                                    .map(|n| n.content.clone())
-                                    .collect::<Vec<_>>()
-                                    .join("\n\n---\n\n");
-                                if let Ok(mut logger) = logger_for_flush.lock() {
-                                    logger.log_soap(
-                                        &flush_soap_model, "", "",
-                                        Some(soap_content), soap_latency, true, None,
-                                        serde_json::json!({
-                                            "stage": "orphaned_soap_recovery",
-                                            "session_id": summary.session_id,
-                                            "word_count": word_count,
-                                            "response_chars": soap_content.len(),
-                                        }),
-                                    );
-                                }
-                                // Use session's original date, not Utc::now() — if SOAP generation
-                                // crosses midnight, Utc::now() would save to the wrong date directory
-                                let soap_date = chrono::DateTime::parse_from_rfc3339(&summary.date)
-                                    .map(|dt| dt.with_timezone(&Utc))
-                                    .unwrap_or_else(|_| Utc::now());
-                                if let Err(e) = local_archive::add_soap_note(
-                                    &summary.session_id,
-                                    &soap_date,
-                                    soap_content,
-                                    Some(flush_soap_detail_level),
-                                    Some(&flush_soap_format),
-                                ) {
-                                    warn!("Failed to save recovered SOAP for {}: {}", summary.session_id, e);
-                                } else {
-                                    info!("Recovered SOAP for orphaned session {}", summary.session_id);
-                                    let _ = app.emit("continuous_mode_event", serde_json::json!({
-                                        "type": "soap_generated",
-                                        "session_id": summary.session_id,
-                                        "recovered": true,
-                                    }));
-                                }
-                            }
-                            Ok(Err(e)) => {
-                                let soap_latency = soap_start.elapsed().as_millis() as u64;
-                                if let Ok(mut logger) = logger_for_flush.lock() {
-                                    logger.log_soap(
-                                        &flush_soap_model, "", "", None, soap_latency, false,
-                                        Some(&e.to_string()),
-                                        serde_json::json!({"stage": "orphaned_soap_recovery", "session_id": summary.session_id}),
-                                    );
-                                }
-                                warn!("Failed to generate recovered SOAP for {}: {}", summary.session_id, e);
-                            }
-                            Err(_) => {
-                                warn!("SOAP generation timed out for orphaned session {}", summary.session_id);
-                            }
-                        }
-                    }
-                }
-            }
-        }
+        crate::encounter_pipeline::recover_orphaned_soap(
+            client,
+            &flush_soap_model,
+            flush_soap_detail_level,
+            &flush_soap_format,
+            &logger_for_flush,
+            &app,
+        ).await;
     }
 
     // Flush remaining buffer as final encounter check
@@ -3117,95 +2731,22 @@ pub async fn run_continuous_mode(
                     }
                 }
 
-                // Clinical content check (match normal encounter path)
-                // Fail-open: LLM error/timeout assumes clinical
-                let mut is_clinical = true;
-                if word_count < MIN_WORDS_FOR_CLINICAL_CHECK {
-                    is_clinical = false;
-                    info!(
-                        "Flush encounter too small for clinical analysis ({} words < {} threshold) — treating as non-clinical",
-                        word_count, MIN_WORDS_FOR_CLINICAL_CHECK
-                    );
-                } else if let Some(ref client) = flush_llm_client {
-                    let (cc_system, cc_user) = build_clinical_content_check_prompt(&text);
-                    let cc_start = Instant::now();
-                    let cc_future = client.generate(&flush_fast_model, &cc_system, &cc_user, "clinical_content_check");
-                    match tokio::time::timeout(tokio::time::Duration::from_secs(30), cc_future).await {
-                        Ok(Ok(cc_response)) => {
-                            let cc_latency = cc_start.elapsed().as_millis() as u64;
-                            match parse_clinical_content_check(&cc_response) {
-                                Ok(cc_result) => {
-                                    if let Ok(mut logger) = logger_for_flush.lock() {
-                                        logger.log_clinical_check(
-                                            &flush_fast_model, &cc_system, &cc_user,
-                                            Some(&cc_response), cc_latency, true, None,
-                                            serde_json::json!({
-                                                "stage": "flush_on_stop",
-                                                "word_count": word_count,
-                                                "is_clinical": cc_result.clinical,
-                                                "reason": cc_result.reason,
-                                            }),
-                                        );
-                                    }
-                                    if !cc_result.clinical {
-                                        is_clinical = false;
-                                        info!("Flush encounter flagged as non-clinical: {:?}", cc_result.reason);
-                                    } else {
-                                        info!("Flush encounter confirmed clinical: {:?}", cc_result.reason);
-                                    }
-                                }
-                                Err(e) => {
-                                    if let Ok(mut logger) = logger_for_flush.lock() {
-                                        logger.log_clinical_check(
-                                            &flush_fast_model, &cc_system, &cc_user,
-                                            Some(&cc_response), cc_latency, false, Some(&e),
-                                            serde_json::json!({"stage": "flush_on_stop", "parse_error": true}),
-                                        );
-                                    }
-                                    warn!("Failed to parse flush clinical content check: {}", e);
-                                }
-                            }
-                        }
-                        Ok(Err(e)) => {
-                            let cc_latency = cc_start.elapsed().as_millis() as u64;
-                            if let Ok(mut logger) = logger_for_flush.lock() {
-                                logger.log_clinical_check(
-                                    &flush_fast_model, &cc_system, &cc_user,
-                                    None, cc_latency, false, Some(&e.to_string()),
-                                    serde_json::json!({"stage": "flush_on_stop", "llm_error": true}),
-                                );
-                            }
-                            warn!("Flush clinical content check LLM call failed: {}", e);
-                        }
-                        Err(_) => {
-                            let cc_latency = cc_start.elapsed().as_millis() as u64;
-                            if let Ok(mut logger) = logger_for_flush.lock() {
-                                logger.log_clinical_check(
-                                    &flush_fast_model, &cc_system, &cc_user,
-                                    None, cc_latency, false, Some("timeout_30s"),
-                                    serde_json::json!({"stage": "flush_on_stop", "timeout": true}),
-                                );
-                            }
-                            warn!("Flush clinical content check timed out (30s)");
-                        }
-                    }
-                }
+                // Clinical content check (shared with detector path)
+                let is_clinical = if let Some(ref client) = flush_llm_client {
+                    crate::encounter_pipeline::check_clinical_content(
+                        client, &flush_fast_model, &text, word_count,
+                        &logger_for_flush,
+                        serde_json::json!({
+                            "stage": "flush_on_stop",
+                            "word_count": word_count,
+                        }),
+                    ).await
+                } else {
+                    word_count >= MIN_WORDS_FOR_CLINICAL_CHECK
+                };
 
-                // Update metadata with non-clinical flag
                 if !is_clinical {
-                    if let Ok(session_dir) = local_archive::get_session_archive_dir(&session_id, &Utc::now()) {
-                        let nc_meta_path = session_dir.join("metadata.json");
-                        if nc_meta_path.exists() {
-                            if let Ok(nc_content) = std::fs::read_to_string(&nc_meta_path) {
-                                if let Ok(mut metadata) = serde_json::from_str::<local_archive::ArchiveMetadata>(&nc_content) {
-                                    metadata.likely_non_clinical = Some(true);
-                                    if let Ok(json) = serde_json::to_string_pretty(&metadata) {
-                                        let _ = std::fs::write(&nc_meta_path, json);
-                                    }
-                                }
-                            }
-                        }
-                    }
+                    crate::encounter_pipeline::mark_non_clinical(&session_id);
                 }
 
                 // ---- Flush merge check (runs BEFORE SOAP to avoid wasted generation) ----
