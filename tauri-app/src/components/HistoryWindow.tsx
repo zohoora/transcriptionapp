@@ -77,6 +77,7 @@ const HistoryWindow: React.FC = () => {
     detail_level: 5,
     format: 'problem_based',
     custom_instructions: '',
+    session_custom_instructions: '',
   });
 
   // Detail view state
@@ -284,7 +285,8 @@ const HistoryWindow: React.FC = () => {
         setSoapOptions({
           detail_level: details.metadata.soap_detail_level ?? globalSoapDefaults.detail_level,
           format: details.metadata.soap_format ?? globalSoapDefaults.format,
-          custom_instructions: globalSoapDefaults.custom_instructions, // Custom instructions not stored per-session
+          custom_instructions: globalSoapDefaults.custom_instructions,
+          session_custom_instructions: '', // Per-session instructions are ephemeral, not stored
         });
       } else {
         // No saved options (old session or Medplum) - use global defaults

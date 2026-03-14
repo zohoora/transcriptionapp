@@ -42,6 +42,7 @@ describe('ReviewMode', () => {
     detail_level: 5,
     format: 'problem_based',
     custom_instructions: '',
+    session_custom_instructions: '',
   };
 
   const defaultProps = {

@@ -77,6 +77,7 @@ function App() {
     updateSoapDetailLevel,
     updateSoapFormat,
     updateSoapCustomInstructions,
+    updateSessionCustomInstructions,
   } = useSoapNote();
 
   // Medplum sync from hook
@@ -155,6 +156,7 @@ function App() {
     resetSyncState,
     clearChat,
     clearSoapError: () => setSoapError(null),
+    clearSessionCustomInstructions: () => updateSessionCustomInstructions(''),
   });
 
   // Derive charting mode from settings
@@ -256,7 +258,6 @@ function App() {
 
   // UI state
   const [showSettings, setShowSettings] = useState(false);
-  const [showBiomarkers, setShowBiomarkers] = useState(false);
 
   // Determine current UI mode based on session state
   const uiMode: UIMode = useMemo(() => {
@@ -409,9 +410,14 @@ function App() {
 
     const success = await saveSettings();
     if (success) {
+      // Sync custom instructions to useSoapNote so next SOAP generation picks them up
+      if (pendingSettings?.soap_custom_instructions !== undefined &&
+          pendingSettings.soap_custom_instructions !== soapOptions.custom_instructions) {
+        updateSoapCustomInstructions(pendingSettings.soap_custom_instructions);
+      }
       setShowSettings(false);
     }
-  }, [saveSettings, continuous.isActive, settings?.charting_mode, pendingSettings?.charting_mode]);
+  }, [saveSettings, continuous.isActive, settings?.charting_mode, pendingSettings?.charting_mode, pendingSettings?.soap_custom_instructions, soapOptions.custom_instructions, updateSoapCustomInstructions]);
 
   // Generate SOAP note (includes audio events like coughs, laughs for clinical context)
   // If already synced to Medplum, auto-add SOAP to the encounter
@@ -661,8 +667,8 @@ function App() {
             biomarkers={biomarkers}
             transcriptText={transcript.finalized_text}
             draftText={transcript.draft_text}
-            whisperMode={pendingSettings?.whisper_mode || 'remote'}
-            whisperModel={getWhisperModelName(pendingSettings?.whisper_server_model)}
+            whisperMode={'remote'}
+            whisperModel={getWhisperModelName(settings?.whisper_server_model)}
             sessionNotes={sessionNotes}
             onSessionNotesChange={setSessionNotes}
             isStopping={isStopping}
@@ -710,10 +716,10 @@ function App() {
             soapOptions={soapOptions}
             onSoapDetailLevelChange={updateSoapDetailLevel}
             onSoapFormatChange={updateSoapFormat}
-            onSoapCustomInstructionsChange={updateSoapCustomInstructions}
+            onSoapCustomInstructionsChange={updateSessionCustomInstructions}
             biomarkers={biomarkers}
-            whisperMode={pendingSettings?.whisper_mode || 'remote'}
-            whisperModel={getWhisperModelName(pendingSettings?.whisper_server_model)}
+            whisperMode={'remote'}
+            whisperModel={getWhisperModelName(settings?.whisper_server_model)}
             onGenerateVisionSoap={handleGenerateVisionSoap}
             screenshotCount={screenshotCount}
             authState={authState}
@@ -740,8 +746,6 @@ function App() {
         onSettingsChange={setPendingSettings}
         onSave={handleSaveSettings}
         devices={devices}
-        showBiomarkers={showBiomarkers}
-        onShowBiomarkersChange={setShowBiomarkers}
         whisperServerStatus={whisperServerStatus}
         whisperServerModels={whisperServerModels}
         onTestWhisperServer={handleTestWhisperServer}

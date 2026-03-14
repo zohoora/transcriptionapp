@@ -57,6 +57,7 @@ pub async fn generate_and_archive_soap(
     session_date: &DateTime<Utc>,
     soap_detail_level: u8,
     soap_format: &str,
+    soap_custom_instructions: &str,
     session_notes: String,
     word_count: usize,
     multi_patient_detection: Option<&MultiPatientDetectionResult>,
@@ -67,6 +68,7 @@ pub async fn generate_and_archive_soap(
     let soap_opts = SoapOptions {
         detail_level: effective_detail,
         format: SoapFormat::from_config_str(soap_format),
+        custom_instructions: soap_custom_instructions.to_string(),
         session_notes,
         ..Default::default()
     };
@@ -494,6 +496,7 @@ pub async fn recover_orphaned_soap(
     soap_model: &str,
     soap_detail_level: u8,
     soap_format: &str,
+    soap_custom_instructions: &str,
     logger: &Arc<Mutex<PipelineLogger>>,
     app: &tauri::AppHandle,
 ) {
@@ -555,6 +558,7 @@ pub async fn recover_orphaned_soap(
             &soap_date,
             soap_detail_level,
             soap_format,
+            soap_custom_instructions,
             String::new(),
             word_count,
             None,

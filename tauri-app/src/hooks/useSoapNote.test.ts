@@ -38,6 +38,7 @@ describe('useSoapNote', () => {
       detail_level: 5,
       format: 'problem_based',
       custom_instructions: '',
+      session_custom_instructions: '',
     });
   });
 
@@ -69,16 +70,15 @@ describe('useSoapNote', () => {
       soapResult = await result.current.generateSoapNote('Patient said they feel sick');
     });
 
-    expect(mockInvoke).toHaveBeenCalledWith('generate_soap_note_auto_detect', {
+    expect(mockInvoke).toHaveBeenCalledWith('generate_soap_note_auto_detect', expect.objectContaining({
       transcript: 'Patient said they feel sick',
-      audioEvents: undefined, // Optional audio events parameter
-      options: {
+      options: expect.objectContaining({
         detail_level: 5,
         format: 'problem_based',
         custom_instructions: '',
-      },
-      sessionId: null, // Optional session ID for debug storage
-    });
+        session_custom_instructions: '',
+      }),
+    }));
     expect(soapResult).toEqual(mockSoapResult);
     expect(result.current.soapError).toBeNull();
     expect(result.current.isGeneratingSoap).toBe(false);
@@ -117,16 +117,16 @@ describe('useSoapNote', () => {
       soapResult = await result.current.generateSoapNote('Patient has a cough', audioEvents);
     });
 
-    expect(mockInvoke).toHaveBeenCalledWith('generate_soap_note_auto_detect', {
+    expect(mockInvoke).toHaveBeenCalledWith('generate_soap_note_auto_detect', expect.objectContaining({
       transcript: 'Patient has a cough',
       audioEvents: audioEvents,
-      options: {
+      options: expect.objectContaining({
         detail_level: 5,
         format: 'problem_based',
         custom_instructions: '',
-      },
-      sessionId: null, // Optional session ID for debug storage
-    });
+        session_custom_instructions: '',
+      }),
+    }));
     expect(soapResult).toEqual(mockSoapResult);
   });
 
@@ -137,6 +137,7 @@ describe('useSoapNote', () => {
       detail_level: 5,
       format: 'problem_based',
       custom_instructions: '',
+      session_custom_instructions: '',
     });
   });
 

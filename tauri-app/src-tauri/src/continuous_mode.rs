@@ -938,12 +938,14 @@ pub async fn run_continuous_mode(
     let fast_model = config.fast_model.clone();
     let soap_detail_level = config.soap_detail_level;
     let soap_format = config.soap_format.clone();
+    let soap_custom_instructions = config.soap_custom_instructions.clone();
     let merge_enabled = config.encounter_merge_enabled;
     // Clone config values for flush-on-stop SOAP generation + merge check (outside detector task)
     let flush_fast_model = config.fast_model.clone();
     let flush_soap_model = config.soap_model_fast.clone();
     let flush_soap_detail_level = config.soap_detail_level;
     let flush_soap_format = config.soap_format.clone();
+    let flush_soap_custom_instructions = config.soap_custom_instructions.clone();
     let flush_llm_client = if !config.llm_router_url.is_empty() {
         LLMClient::new(
             &config.llm_router_url,
@@ -1839,7 +1841,7 @@ pub async fn run_continuous_mode(
                             let soap_outcome = crate::encounter_pipeline::generate_and_archive_soap(
                                 client, &soap_model, &filtered_encounter_text,
                                 &session_id, &soap_now,
-                                soap_detail_level, &soap_format,
+                                soap_detail_level, &soap_format, &soap_custom_instructions,
                                 notes_text.clone(), encounter_word_count,
                                 multi_patient_detection.as_ref(),
                                 &logger_for_detector,
@@ -2037,7 +2039,7 @@ pub async fn run_continuous_mode(
                                             let outcome = crate::encounter_pipeline::generate_and_archive_soap(
                                                 client, &soap_model, &filtered_merged,
                                                 prev_id, prev_date,
-                                                soap_detail_level, &soap_format,
+                                                soap_detail_level, &soap_format, &soap_custom_instructions,
                                                 merge_notes, merge_wc, None,
                                                 &logger_for_detector,
                                                 serde_json::json!({
@@ -2181,7 +2183,7 @@ pub async fn run_continuous_mode(
                                                 let merge_soap_outcome = crate::encounter_pipeline::generate_and_archive_soap(
                                                     client, &soap_model, &filtered_merged,
                                                     prev_id, prev_date,
-                                                    soap_detail_level, &soap_format,
+                                                    soap_detail_level, &soap_format, &soap_custom_instructions,
                                                     merge_notes, merge_back_wc, None,
                                                     &logger_for_detector,
                                                     serde_json::json!({
@@ -2234,7 +2236,7 @@ pub async fn run_continuous_mode(
                                                         let regen_outcome = crate::encounter_pipeline::generate_and_archive_soap(
                                                             client, &soap_model, &filtered,
                                                             prev_id, prev_date,
-                                                            soap_detail_level, &soap_format,
+                                                            soap_detail_level, &soap_format, &soap_custom_instructions,
                                                             regen_notes, merged_wc,
                                                             Some(&detection),
                                                             &logger_for_detector,
@@ -2416,6 +2418,7 @@ pub async fn run_continuous_mode(
             &flush_soap_model,
             flush_soap_detail_level,
             &flush_soap_format,
+            &flush_soap_custom_instructions,
             &logger_for_flush,
             &app,
         ).await;
@@ -2574,7 +2577,7 @@ pub async fn run_continuous_mode(
                                                     let outcome = crate::encounter_pipeline::generate_and_archive_soap(
                                                         client, &flush_soap_model, &filtered_merged,
                                                         &prev_summary.session_id, &now,
-                                                        flush_soap_detail_level, &flush_soap_format,
+                                                        flush_soap_detail_level, &flush_soap_format, &flush_soap_custom_instructions,
                                                         flush_merge_notes, flush_merge_wc, None,
                                                         &logger_for_flush,
                                                         serde_json::json!({
@@ -2622,7 +2625,7 @@ pub async fn run_continuous_mode(
                     let outcome = crate::encounter_pipeline::generate_and_archive_soap(
                         client, &flush_soap_model, &filtered_text,
                         &session_id, &Utc::now(),
-                        flush_soap_detail_level, &flush_soap_format,
+                        flush_soap_detail_level, &flush_soap_format, &flush_soap_custom_instructions,
                         flush_notes, word_count, None,
                         &logger_for_flush,
                         serde_json::json!({"stage": "flush_on_stop", "word_count": word_count}),

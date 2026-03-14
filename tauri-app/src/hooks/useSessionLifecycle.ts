@@ -38,6 +38,8 @@ export interface SessionLifecycleHandlers {
   clearChat: () => void;
   /** Clear stale SOAP error from previous session (from useSoapNote) */
   clearSoapError: () => void;
+  /** Clear session-level custom instructions (from useSoapNote) */
+  clearSessionCustomInstructions: () => void;
 }
 
 export interface UseSessionLifecycleResult {
@@ -83,6 +85,7 @@ export function useSessionLifecycle({
   resetSyncState,
   clearChat,
   clearSoapError,
+  clearSessionCustomInstructions,
 }: SessionLifecycleHandlers): UseSessionLifecycleResult {
   const [sessionNotes, setSessionNotes] = useState('');
   const autoStartPendingRef = useRef(false);
@@ -94,7 +97,8 @@ export function useSessionLifecycle({
     resetSyncState();
     clearChat();
     clearSoapError();
-  }, [resetSyncState, clearChat, clearSoapError]);
+    clearSessionCustomInstructions();
+  }, [resetSyncState, clearChat, clearSoapError, clearSessionCustomInstructions]);
 
   const startSession = useCallback(async (deviceId: string | null) => {
     autoStartPendingRef.current = false;

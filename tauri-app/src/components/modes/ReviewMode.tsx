@@ -330,24 +330,24 @@ export const ReviewMode = memo(function ReviewMode({
                   </div>
                 </div>
 
-                {/* Custom Instructions */}
+                {/* Session-Specific Instructions */}
                 <div className="soap-option-row custom-instructions">
                   <button
                     className="custom-instructions-toggle"
                     onClick={() => setCustomInstructionsExpanded(!customInstructionsExpanded)}
                   >
                     <span className={`chevron-small ${customInstructionsExpanded ? '' : 'collapsed'}`}>&#9660;</span>
-                    Custom Instructions
-                    {soapOptions.custom_instructions.trim() && (
+                    Session Instructions
+                    {soapOptions.session_custom_instructions.trim() && (
                       <span className="custom-badge">Active</span>
                     )}
                   </button>
                   {customInstructionsExpanded && (
                     <textarea
                       className="custom-instructions-input"
-                      value={soapOptions.custom_instructions}
+                      value={soapOptions.session_custom_instructions}
                       onChange={(e) => onSoapCustomInstructionsChange(e.target.value)}
-                      placeholder="Add specific instructions..."
+                      placeholder="Add session-specific instructions (override your personal instructions for this note)..."
                       rows={3}
                     />
                   )}

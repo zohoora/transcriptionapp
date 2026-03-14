@@ -210,7 +210,7 @@ exports[`App Snapshots > renders completed state correctly 1`] = `
               >
                 ▼
               </span>
-              Custom Instructions
+              Session Instructions
             </button>
           </div>
         </div>

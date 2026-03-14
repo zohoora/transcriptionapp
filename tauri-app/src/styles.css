@@ -1586,6 +1586,37 @@ body {
   color: var(--text-muted);
 }
 
+.settings-textarea {
+  width: 100%;
+  padding: 8px 12px;
+  font-size: 13px;
+  font-family: inherit;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  outline: none;
+  transition: border-color 0.15s ease;
+  resize: vertical;
+}
+
+.settings-textarea:focus {
+  border-color: var(--accent-blue);
+}
+
+.settings-textarea::placeholder {
+  color: var(--text-muted);
+}
+
+.settings-sub-header {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-muted);
+  margin: 0 0 8px 0;
+}
+
 .ollama-status-group {
   display: flex;
   justify-content: space-between;
@@ -1728,6 +1759,124 @@ body {
 
 .btn-cancel-login:hover {
   background: var(--bg-hover);
+}
+
+/* ============================================
+   Connection Status Bar (Zone 2)
+   ============================================ */
+
+.connection-status-bar {
+  display: flex;
+  justify-content: center;
+  gap: 24px;
+  padding: 10px 0;
+  margin: 8px 0;
+  border-top: 1px solid var(--border-color);
+  border-bottom: 1px solid var(--border-color);
+}
+
+.status-dot-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.status-dot-label {
+  font-size: 11px;
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+
+/* ============================================
+   Advanced Section (Zone 3)
+   ============================================ */
+
+.advanced-section {
+  margin: 8px 0;
+}
+
+.advanced-section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+  padding: 8px 0;
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  transition: color 0.15s ease;
+}
+
+.advanced-section-header:hover {
+  color: var(--text-primary);
+}
+
+.advanced-chevron {
+  font-size: 10px;
+}
+
+.advanced-section-content {
+  padding-top: 4px;
+}
+
+.advanced-sub-header {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin: 16px 0 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border-color);
+}
+
+.advanced-sub-header:first-child {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: none;
+}
+
+/* ============================================
+   Speaker Profiles Button (Zone 4)
+   ============================================ */
+
+.speaker-profiles-button {
+  width: 100%;
+  padding: 10px 16px;
+  font-size: 13px;
+  font-weight: 500;
+  background: var(--bg-hover);
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.15s ease;
+  margin-top: 4px;
+}
+
+.speaker-profiles-button:hover {
+  background: var(--border-color);
+}
+
+/* Back button for speaker profiles sub-view */
+.settings-back-button {
+  padding: 4px 8px;
+  font-size: 12px;
+  font-weight: 500;
+  background: none;
+  border: none;
+  color: var(--accent-blue, #3498db);
+  cursor: pointer;
+  transition: opacity 0.15s ease;
+}
+
+.settings-back-button:hover {
+  opacity: 0.8;
 }
 
 /* Sync Login Banner */

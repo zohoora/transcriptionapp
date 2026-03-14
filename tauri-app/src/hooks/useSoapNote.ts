@@ -58,6 +58,7 @@ export interface UseSoapNoteResult {
   updateSoapDetailLevel: (level: number) => void;
   updateSoapFormat: (format: SoapFormat) => void;
   updateSoapCustomInstructions: (instructions: string) => void;
+  updateSessionCustomInstructions: (instructions: string) => void;
 }
 
 export function useSoapNote(): UseSoapNoteResult {
@@ -80,6 +81,7 @@ export function useSoapNote(): UseSoapNoteResult {
           detail_level: settings.soap_detail_level ?? DEFAULT_SOAP_OPTIONS.detail_level,
           format: settings.soap_format ?? DEFAULT_SOAP_OPTIONS.format,
           custom_instructions: settings.soap_custom_instructions ?? DEFAULT_SOAP_OPTIONS.custom_instructions,
+          session_custom_instructions: '',
         });
       } catch (e) {
         console.warn('Failed to load SOAP settings, using defaults:', e);
@@ -88,7 +90,8 @@ export function useSoapNote(): UseSoapNoteResult {
     loadSoapSettings();
   }, []);
 
-  // Persist SOAP options to settings
+  // Persist SOAP options to settings (detail_level and format only —
+  // custom_instructions is managed by SettingsDrawer, not ReviewMode)
   const persistSoapOptions = useCallback(async (options: SoapOptions) => {
     try {
       const currentSettings = await invoke<Settings>('get_settings');
@@ -97,7 +100,6 @@ export function useSoapNote(): UseSoapNoteResult {
           ...currentSettings,
           soap_detail_level: options.detail_level,
           soap_format: options.format,
-          soap_custom_instructions: options.custom_instructions,
         },
       });
     } catch (e) {
@@ -116,6 +118,10 @@ export function useSoapNote(): UseSoapNoteResult {
 
   const updateSoapCustomInstructions = useCallback((instructions: string) => {
     setSoapOptions(prev => ({ ...prev, custom_instructions: instructions }));
+  }, []);
+
+  const updateSessionCustomInstructions = useCallback((instructions: string) => {
+    setSoapOptions(prev => ({ ...prev, session_custom_instructions: instructions }));
   }, []);
 
   // Shared guard/loading/error wrapper for all SOAP generation methods.
@@ -253,5 +259,6 @@ export function useSoapNote(): UseSoapNoteResult {
     updateSoapDetailLevel,
     updateSoapFormat,
     updateSoapCustomInstructions,
+    updateSessionCustomInstructions,
   };
 }

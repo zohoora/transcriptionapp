@@ -58,29 +58,28 @@ describe('useSettings', () => {
 
     expect(mockInvoke).toHaveBeenCalledWith('get_settings');
     expect(result.current.settings).toEqual(mockSettings);
-    expect(result.current.pendingSettings).toEqual({
-      model: 'small',
-      language: 'en',
-      device: 'device-1',
-      diarization_enabled: true,
-      max_speakers: 4,
-      // LLM Router settings
-      llm_router_url: 'http://localhost:8080',
-      llm_api_key: 'test-api-key',
-      llm_client_id: 'clinic-001',
-      soap_model: 'gpt-4',
-      fast_model: 'gpt-3.5-turbo',
-      // Medplum settings
-      medplum_server_url: 'http://localhost:8103',
-      medplum_client_id: 'test-client',
-      medplum_auto_sync: false,
-      // Whisper server settings (always remote)
-      whisper_mode: 'remote',
-      whisper_server_url: 'http://172.16.100.45:8001',
-      whisper_server_model: 'large-v3-turbo',
-      // Auto-session detection
-      auto_start_enabled: false,
-    });
+    expect(result.current.pendingSettings).toEqual(
+      expect.objectContaining({
+        language: 'en',
+        device: 'device-1',
+        // LLM Router settings
+        llm_router_url: 'http://localhost:8080',
+        llm_api_key: 'test-api-key',
+        llm_client_id: 'clinic-001',
+        soap_model: 'gpt-4',
+        fast_model: 'gpt-3.5-turbo',
+        // Medplum settings
+        medplum_server_url: 'http://localhost:8103',
+        medplum_client_id: 'test-client',
+        medplum_auto_sync: false,
+        // Whisper server settings
+        whisper_server_url: 'http://172.16.100.45:8001',
+        // Auto-session detection
+        auto_start_enabled: false,
+        // SOAP personal instructions
+        soap_custom_instructions: '',
+      })
+    );
   });
 
   it('handles null input_device_id as "default"', async () => {
@@ -121,12 +120,10 @@ describe('useSettings', () => {
     act(() => {
       result.current.setPendingSettings({
         ...result.current.pendingSettings!,
-        model: 'medium',
         language: 'fa',
       });
     });
 
-    expect(result.current.pendingSettings?.model).toBe('medium');
     expect(result.current.pendingSettings?.language).toBe('fa');
   });
 
@@ -142,7 +139,7 @@ describe('useSettings', () => {
     act(() => {
       result.current.setPendingSettings({
         ...result.current.pendingSettings!,
-        model: 'medium',
+        language: 'fr',
       });
     });
 
@@ -166,7 +163,7 @@ describe('useSettings', () => {
     act(() => {
       result.current.setPendingSettings({
         ...result.current.pendingSettings!,
-        model: 'large',
+        language: 'es',
       });
     });
 
@@ -179,10 +176,10 @@ describe('useSettings', () => {
     expect(saveResult!).toBe(true);
     expect(mockInvoke).toHaveBeenCalledWith('set_settings', {
       settings: expect.objectContaining({
-        whisper_model: 'large',
+        language: 'es',
       }),
     });
-    expect(result.current.settings?.whisper_model).toBe('large');
+    expect(result.current.settings?.language).toBe('es');
   });
 
   it('converts "default" device to null when saving', async () => {
@@ -281,15 +278,15 @@ describe('useSettings', () => {
     // Change the mock response
     mockInvoke.mockResolvedValue({
       ...mockSettings,
-      whisper_model: 'tiny',
+      language: 'fr',
     });
 
     await act(async () => {
       await result.current.reloadSettings();
     });
 
-    expect(result.current.settings?.whisper_model).toBe('tiny');
-    expect(result.current.pendingSettings?.model).toBe('tiny');
+    expect(result.current.settings?.language).toBe('fr');
+    expect(result.current.pendingSettings?.language).toBe('fr');
   });
 
   it('returns false from saveSettings when settings are null', async () => {

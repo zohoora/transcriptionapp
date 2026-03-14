@@ -313,9 +313,12 @@ pub struct SoapOptions {
     /// SOAP format style
     #[serde(default)]
     pub format: SoapFormat,
-    /// Custom instructions from the physician (persisted in settings)
+    /// Global personal instructions from the physician (persisted in settings)
     #[serde(default)]
     pub custom_instructions: String,
+    /// Per-session instructions from the physician (entered in ReviewMode, not persisted)
+    #[serde(default)]
+    pub session_custom_instructions: String,
     /// Session-specific notes from the clinician (entered during recording)
     #[serde(default)]
     pub session_notes: String,
@@ -331,6 +334,7 @@ impl Default for SoapOptions {
             detail_level: 5,
             format: SoapFormat::ProblemBased,
             custom_instructions: String::new(),
+            session_custom_instructions: String::new(),
             session_notes: String::new(),
         }
     }
@@ -1348,10 +1352,20 @@ pub fn build_simple_soap_prompt(options: &SoapOptions) -> String {
         SoapFormat::Comprehensive => "ORGANIZATION: Create a single unified SOAP note covering all problems together in each section.",
     };
 
-    let custom_section = if options.custom_instructions.trim().is_empty() {
-        String::new()
-    } else {
-        format!("\n\nAdditional instructions: {}", options.custom_instructions.trim())
+    let global_instr = options.custom_instructions.trim();
+    let session_instr = options.session_custom_instructions.trim();
+
+    let custom_section = match (global_instr.is_empty(), session_instr.is_empty()) {
+        (true, true) => String::new(),
+        (false, true) => format!(
+            "\n\nPhysician's standing instructions: {global_instr}"
+        ),
+        (true, false) => format!(
+            "\n\nSession-specific instructions: {session_instr}"
+        ),
+        (false, false) => format!(
+            "\n\nPhysician's standing instructions: {global_instr}\n\nSession-specific instructions (these take precedence over the standing instructions where they conflict): {session_instr}"
+        ),
     };
 
     format!(
@@ -2396,6 +2410,7 @@ mod tests {
         assert_eq!(opts.detail_level, 5);
         assert_eq!(opts.format, SoapFormat::ProblemBased);
         assert!(opts.custom_instructions.is_empty());
+        assert!(opts.session_custom_instructions.is_empty());
     }
 
     #[test]

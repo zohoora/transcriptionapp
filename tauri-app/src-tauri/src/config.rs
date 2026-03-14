@@ -898,6 +898,7 @@ impl Config {
             "soap_model_fast": self.soap_model_fast,
             "soap_detail_level": self.soap_detail_level,
             "soap_format": self.soap_format,
+            "soap_custom_instructions": self.soap_custom_instructions,
             "screen_capture_enabled": self.screen_capture_enabled,
             "screen_capture_interval_secs": self.screen_capture_interval_secs,
             "fast_model": self.fast_model,

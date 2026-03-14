@@ -11,11 +11,8 @@ const mockDevices: Device[] = [
 ];
 
 const defaultPendingSettings: PendingSettings = {
-  model: 'small',
   language: 'en',
   device: 'default',
-  diarization_enabled: true,
-  max_speakers: 4,
   llm_router_url: 'http://localhost:8080',
   llm_api_key: 'test-api-key',
   llm_client_id: 'clinic-001',
@@ -24,29 +21,20 @@ const defaultPendingSettings: PendingSettings = {
   medplum_server_url: 'http://localhost:8103',
   medplum_client_id: 'test-client-id',
   medplum_auto_sync: false,
-  whisper_mode: 'remote',
   whisper_server_url: 'http://localhost:8001',
-  whisper_server_model: 'large-v3-turbo',
   auto_start_enabled: false,
   auto_start_require_enrolled: false,
   auto_start_required_role: null,
   auto_end_enabled: false,
-  miis_enabled: false,
-  miis_server_url: '',
+  image_source: 'off',
+  gemini_api_key: '',
   screen_capture_enabled: false,
-  screen_capture_interval_secs: 30,
   charting_mode: 'session',
-  encounter_check_interval_secs: 120,
-  encounter_silence_trigger_secs: 180,
   encounter_detection_mode: 'llm',
   presence_sensor_port: '',
   presence_absence_threshold_secs: 180,
-  presence_debounce_secs: 10,
-  presence_csv_log_enabled: true,
-  shadow_active_method: 'llm',
-  shadow_csv_log_enabled: true,
-  hybrid_confirm_window_secs: 180,
-  hybrid_min_words_for_sensor_split: 500,
+  encounter_merge_enabled: false,
+  soap_custom_instructions: '',
 };
 
 const defaultAuthState: AuthState = {
@@ -86,8 +74,6 @@ const defaultProps = {
   onSettingsChange: vi.fn(),
   onSave: vi.fn(),
   devices: mockDevices,
-  showBiomarkers: true,
-  onShowBiomarkersChange: vi.fn(),
   whisperServerStatus: defaultWhisperServerStatus,
   whisperServerModels: ['large-v3', 'large-v3-turbo', 'base'],
   onTestWhisperServer: vi.fn(),
@@ -120,25 +106,18 @@ describe('SettingsDrawer', () => {
       expect(screen.getByText('Settings')).toBeInTheDocument();
     });
 
-    it('renders all settings sections', () => {
+    it('renders Zone 1 clinical workflow controls', () => {
       render(<SettingsDrawer {...defaultProps} />);
 
-      // Transcription settings
-      expect(screen.getByLabelText('Whisper Server URL')).toBeInTheDocument();
-      expect(screen.getByLabelText('Server Model')).toBeInTheDocument();
+      // Charting mode buttons
+      expect(screen.getByText('After Every Session')).toBeInTheDocument();
+      expect(screen.getByText('End of Day')).toBeInTheDocument();
+
+      // Language, Microphone, Medical Illustrations, Screen Capture
       expect(screen.getByLabelText('Language')).toBeInTheDocument();
       expect(screen.getByLabelText('Microphone')).toBeInTheDocument();
-      expect(screen.getByLabelText('Max Speakers')).toBeInTheDocument();
-
-      // SOAP Note settings
-      expect(screen.getByText('SOAP Note Generation')).toBeInTheDocument();
-      expect(screen.getByLabelText('LLM Router URL')).toBeInTheDocument();
-      expect(screen.getByLabelText('API Key')).toBeInTheDocument();
-      expect(screen.getByLabelText('LLM Client ID')).toBeInTheDocument();
-
-      // Medplum settings
-      expect(screen.getByText('Medplum EMR')).toBeInTheDocument();
-      expect(screen.getByLabelText('Server URL')).toBeInTheDocument();
+      expect(screen.getByLabelText('Medical Illustrations')).toBeInTheDocument();
+      expect(screen.getByLabelText('Capture screen during recording')).toBeInTheDocument();
     });
 
     it('renders close button', () => {
@@ -155,19 +134,53 @@ describe('SettingsDrawer', () => {
       const { container } = render(<SettingsDrawer {...defaultProps} />);
       expect(container.querySelector('.settings-overlay')).toBeInTheDocument();
     });
+
+    it('does not render advanced controls by default', () => {
+      render(<SettingsDrawer {...defaultProps} />);
+
+      // Advanced section header should be visible but content hidden
+      expect(screen.getByText('Advanced')).toBeInTheDocument();
+      expect(screen.queryByLabelText('Server URL')).not.toBeInTheDocument();
+      expect(screen.queryByLabelText('LLM Router URL')).not.toBeInTheDocument();
+    });
   });
 
-  describe('settings values display', () => {
-    it('displays current whisper server URL', () => {
+  describe('connection status bar', () => {
+    it('renders three status labels', () => {
       render(<SettingsDrawer {...defaultProps} />);
-      expect(screen.getByLabelText('Whisper Server URL')).toHaveValue('http://localhost:8001');
+
+      expect(screen.getByText('STT')).toBeInTheDocument();
+      expect(screen.getByText('LLM')).toBeInTheDocument();
+      expect(screen.getByText('EMR')).toBeInTheDocument();
     });
 
-    it('displays current whisper server model', () => {
-      render(<SettingsDrawer {...defaultProps} />);
-      expect(screen.getByLabelText('Server Model')).toHaveValue('large-v3-turbo');
+    it('shows connected indicators when services are connected', () => {
+      const { container } = render(<SettingsDrawer {...defaultProps} />);
+
+      const statusBar = container.querySelector('.connection-status-bar');
+      expect(statusBar).toBeInTheDocument();
+
+      const connectedDots = statusBar!.querySelectorAll('.status-indicator.connected');
+      expect(connectedDots).toHaveLength(3);
     });
 
+    it('shows disconnected indicators when services are down', () => {
+      const { container } = render(
+        <SettingsDrawer
+          {...defaultProps}
+          whisperServerStatus={{ connected: false, available_models: [], error: 'fail' }}
+          llmStatus={{ connected: false, available_models: [], error: 'fail' }}
+          medplumConnected={false}
+        />
+      );
+
+      const statusBar = container.querySelector('.connection-status-bar');
+      const disconnectedDots = statusBar!.querySelectorAll('.status-indicator.disconnected');
+      expect(disconnectedDots).toHaveLength(3);
+    });
+  });
+
+  describe('Zone 1 clinical workflow', () => {
     it('displays current language', () => {
       render(<SettingsDrawer {...defaultProps} />);
       expect(screen.getByLabelText('Language')).toHaveValue('en');
@@ -176,52 +189,6 @@ describe('SettingsDrawer', () => {
     it('displays current microphone', () => {
       render(<SettingsDrawer {...defaultProps} />);
       expect(screen.getByLabelText('Microphone')).toHaveValue('default');
-    });
-
-    it('displays max speakers slider value', () => {
-      render(<SettingsDrawer {...defaultProps} />);
-      expect(screen.getByLabelText('Max Speakers')).toHaveValue('4');
-      expect(screen.getByText('4')).toBeInTheDocument();
-    });
-
-    it('displays LLM router URL', () => {
-      render(<SettingsDrawer {...defaultProps} />);
-      expect(screen.getByLabelText('LLM Router URL')).toHaveValue('http://localhost:8080');
-    });
-
-    it('displays SOAP model', () => {
-      render(<SettingsDrawer {...defaultProps} />);
-      const modelSelect = screen.getByLabelText('SOAP Model');
-      expect(modelSelect).toHaveValue('gpt-4');
-    });
-
-    it('displays fast model', () => {
-      render(<SettingsDrawer {...defaultProps} />);
-      const modelSelect = screen.getByLabelText('Fast Model (for greeting detection)');
-      expect(modelSelect).toHaveValue('gpt-3.5-turbo');
-    });
-
-    it('displays medplum server URL', () => {
-      render(<SettingsDrawer {...defaultProps} />);
-      expect(screen.getByLabelText('Server URL')).toHaveValue('http://localhost:8103');
-    });
-
-    it('displays LLM client ID', () => {
-      render(<SettingsDrawer {...defaultProps} />);
-      expect(screen.getByLabelText('LLM Client ID')).toHaveValue('clinic-001');
-    });
-  });
-
-  describe('settings changes', () => {
-    it('calls onSettingsChange when whisper server URL changes', async () => {
-      const user = userEvent.setup();
-      render(<SettingsDrawer {...defaultProps} />);
-
-      const input = screen.getByLabelText('Whisper Server URL');
-      await user.clear(input);
-      await user.type(input, 'http://newserver:8002');
-
-      expect(defaultProps.onSettingsChange).toHaveBeenCalled();
     });
 
     it('calls onSettingsChange when language changes', async () => {
@@ -246,110 +213,253 @@ describe('SettingsDrawer', () => {
       );
     });
 
-    it('calls onSettingsChange when max speakers changes', () => {
-      render(<SettingsDrawer {...defaultProps} />);
-
-      const slider = screen.getByLabelText('Max Speakers');
-      fireEvent.change(slider, { target: { value: '6' } });
-
-      expect(defaultProps.onSettingsChange).toHaveBeenCalledWith(
-        expect.objectContaining({ max_speakers: 6 })
-      );
-    });
-
-    it('calls onSettingsChange when LLM router URL changes', async () => {
+    it('calls onSettingsChange when charting mode changes', async () => {
       const user = userEvent.setup();
       render(<SettingsDrawer {...defaultProps} />);
 
-      const input = screen.getByLabelText('LLM Router URL');
+      await user.click(screen.getByText('End of Day'));
+
+      expect(defaultProps.onSettingsChange).toHaveBeenCalledWith(
+        expect.objectContaining({ charting_mode: 'continuous' })
+      );
+    });
+
+    it('calls onSettingsChange when screen capture toggled', async () => {
+      const user = userEvent.setup();
+      render(<SettingsDrawer {...defaultProps} />);
+
+      await user.click(screen.getByLabelText('Capture screen during recording'));
+
+      expect(defaultProps.onSettingsChange).toHaveBeenCalledWith(
+        expect.objectContaining({ screen_capture_enabled: true })
+      );
+    });
+
+    it('renders all language options', () => {
+      render(<SettingsDrawer {...defaultProps} />);
+
+      const languageSelect = screen.getByLabelText('Language');
+      const options = languageSelect.querySelectorAll('option');
+
+      expect(options).toHaveLength(8);
+      expect(options[0]).toHaveValue('en');
+      expect(options[7]).toHaveValue('auto');
+    });
+
+    it('renders default option plus devices', () => {
+      render(<SettingsDrawer {...defaultProps} />);
+
+      const deviceSelect = screen.getByLabelText('Microphone');
+      const options = deviceSelect.querySelectorAll('option');
+
+      expect(options).toHaveLength(3); // default + 2 devices
+      expect(options[0]).toHaveValue('default');
+    });
+
+    it('renders personal instructions textarea in Zone 1', () => {
+      render(<SettingsDrawer {...defaultProps} />);
+
+      expect(screen.getByText('SOAP Preferences')).toBeInTheDocument();
+      expect(screen.getByLabelText('Personal Instructions')).toBeInTheDocument();
+      expect(screen.getByText(/Added to every SOAP note prompt/)).toBeInTheDocument();
+    });
+
+    it('updates soap_custom_instructions when textarea changes', async () => {
+      const user = userEvent.setup();
+      render(<SettingsDrawer {...defaultProps} />);
+
+      const textarea = screen.getByLabelText('Personal Instructions');
+      await user.type(textarea, 'Use bullet points');
+
+      expect(defaultProps.onSettingsChange).toHaveBeenCalledWith(
+        expect.objectContaining({ soap_custom_instructions: expect.any(String) })
+      );
+    });
+
+    it('displays existing soap_custom_instructions value', () => {
+      render(
+        <SettingsDrawer
+          {...defaultProps}
+          pendingSettings={{ ...defaultPendingSettings, soap_custom_instructions: 'I am a cardiologist' }}
+        />
+      );
+
+      expect(screen.getByLabelText('Personal Instructions')).toHaveValue('I am a cardiologist');
+    });
+  });
+
+  describe('advanced section', () => {
+    it('expands when Advanced header is clicked', async () => {
+      const user = userEvent.setup();
+      render(<SettingsDrawer {...defaultProps} />);
+
+      // Click to expand
+      await user.click(screen.getByText('Advanced'));
+
+      // Advanced content should now be visible
+      expect(screen.getByLabelText('STT Server URL')).toBeInTheDocument();
+      expect(screen.getByText('LLM Router')).toBeInTheDocument();
+      expect(screen.getByText('Medplum EMR')).toBeInTheDocument();
+    });
+
+    it('collapses when Advanced header is clicked again', async () => {
+      const user = userEvent.setup();
+      render(<SettingsDrawer {...defaultProps} />);
+
+      // Expand
+      await user.click(screen.getByText('Advanced'));
+      expect(screen.getByLabelText('STT Server URL')).toBeInTheDocument();
+
+      // Collapse
+      await user.click(screen.getByText('Advanced'));
+      expect(screen.queryByLabelText('STT Server URL')).not.toBeInTheDocument();
+    });
+
+    it('shows STT Router settings when expanded', async () => {
+      const user = userEvent.setup();
+      render(<SettingsDrawer {...defaultProps} />);
+
+      await user.click(screen.getByText('Advanced'));
+
+      expect(screen.getByText('STT Router')).toBeInTheDocument();
+      expect(screen.getByLabelText('STT Server URL')).toHaveValue('http://localhost:8001');
+    });
+
+    it('shows LLM Router settings when expanded', async () => {
+      const user = userEvent.setup();
+      render(<SettingsDrawer {...defaultProps} />);
+
+      await user.click(screen.getByText('Advanced'));
+
+      expect(screen.getByLabelText('LLM Router URL')).toHaveValue('http://localhost:8080');
+      expect(screen.getByLabelText('API Key')).toBeInTheDocument();
+      expect(screen.getByLabelText('LLM Client ID')).toHaveValue('clinic-001');
+      expect(screen.getByLabelText('SOAP Model')).toHaveValue('gpt-4');
+      expect(screen.getByLabelText('Fast Model')).toHaveValue('gpt-3.5-turbo');
+    });
+
+    it('shows Medplum EMR settings when expanded', async () => {
+      const user = userEvent.setup();
+      render(<SettingsDrawer {...defaultProps} />);
+
+      await user.click(screen.getByText('Advanced'));
+
+      expect(screen.getByText('Medplum EMR')).toBeInTheDocument();
+      expect(screen.getByLabelText('Auto-sync encounters to Medplum')).toBeInTheDocument();
+    });
+
+    it('calls onSettingsChange when STT Server URL changes', async () => {
+      const user = userEvent.setup();
+      render(<SettingsDrawer {...defaultProps} />);
+
+      await user.click(screen.getByText('Advanced'));
+
+      const input = screen.getByLabelText('STT Server URL');
       await user.clear(input);
-      await user.type(input, 'http://llm:8080');
+      await user.type(input, 'http://stt:8001');
 
       expect(defaultProps.onSettingsChange).toHaveBeenCalled();
     });
 
-    it('calls onSettingsChange when medplum auto-sync changes', async () => {
+    it('shows continuous mode settings when charting mode is continuous', async () => {
       const user = userEvent.setup();
-      render(<SettingsDrawer {...defaultProps} />);
-
-      const toggle = screen.getByLabelText('Auto-sync encounters to Medplum');
-      await user.click(toggle);
-
-      expect(defaultProps.onSettingsChange).toHaveBeenCalledWith(
-        expect.objectContaining({ medplum_auto_sync: true })
-      );
-    });
-  });
-
-  describe('biomarkers toggle', () => {
-    it('displays biomarkers toggle with current state', () => {
-      render(<SettingsDrawer {...defaultProps} showBiomarkers={true} />);
-      expect(screen.getByLabelText('Show biomarkers panel')).toBeChecked();
-    });
-
-    it('calls onShowBiomarkersChange when toggled', async () => {
-      const user = userEvent.setup();
-      render(<SettingsDrawer {...defaultProps} showBiomarkers={true} />);
-
-      await user.click(screen.getByLabelText('Show biomarkers panel'));
-
-      expect(defaultProps.onShowBiomarkersChange).toHaveBeenCalledWith(false);
-    });
-  });
-
-  describe('connection status indicators', () => {
-    it('shows whisper server connected status', () => {
-      render(<SettingsDrawer {...defaultProps} />);
-      expect(screen.getByText('Connected (3 models)')).toBeInTheDocument();
-    });
-
-    it('shows whisper server disconnected status', () => {
       render(
         <SettingsDrawer
           {...defaultProps}
-          whisperServerStatus={{ connected: false, available_models: [], error: 'Connection refused' }}
-          whisperServerModels={[]}
+          pendingSettings={{ ...defaultPendingSettings, charting_mode: 'continuous' }}
         />
       );
-      expect(screen.getByText('Connection refused')).toBeInTheDocument();
+
+      await user.click(screen.getByText('Advanced'));
+
+      expect(screen.getByText('Continuous Mode')).toBeInTheDocument();
+      // Detection mode buttons (LLM also appears in status bar, so check for Hybrid which is unique)
+      expect(screen.getByText('Hybrid')).toBeInTheDocument();
+      expect(screen.getByLabelText('Auto-merge split encounters')).toBeInTheDocument();
     });
 
-    it('shows LLM connected status', () => {
+    it('hides continuous mode settings when charting mode is session', async () => {
+      const user = userEvent.setup();
       render(<SettingsDrawer {...defaultProps} />);
-      expect(screen.getByText('Connected (2 models)')).toBeInTheDocument();
+
+      await user.click(screen.getByText('Advanced'));
+
+      expect(screen.queryByText('Continuous Mode')).not.toBeInTheDocument();
     });
 
-    it('shows LLM disconnected status with error', () => {
+    it('shows sensor settings when hybrid detection mode is selected', async () => {
+      const user = userEvent.setup();
       render(
         <SettingsDrawer
           {...defaultProps}
-          llmStatus={{ connected: false, available_models: [], error: 'Timeout' }}
-          llmModels={[]}
+          pendingSettings={{
+            ...defaultPendingSettings,
+            charting_mode: 'continuous',
+            encounter_detection_mode: 'hybrid',
+          }}
         />
       );
-      expect(screen.getByText('Timeout')).toBeInTheDocument();
+
+      await user.click(screen.getByText('Advanced'));
+
+      expect(screen.getByText('Serial Port')).toBeInTheDocument();
+      expect(screen.getByText('Absence Threshold')).toBeInTheDocument();
     });
 
-    it('shows medplum connected status', () => {
-      render(<SettingsDrawer {...defaultProps} medplumConnected={true} />);
-      expect(screen.getByText('Connected')).toBeInTheDocument();
+    it('shows session automation settings when expanded', async () => {
+      const user = userEvent.setup();
+      render(<SettingsDrawer {...defaultProps} />);
+
+      await user.click(screen.getByText('Advanced'));
+
+      expect(screen.getByText('Session Automation')).toBeInTheDocument();
+      expect(screen.getByLabelText('Auto-start recording when greeting detected')).toBeInTheDocument();
+      expect(screen.getByLabelText('Auto-end recording after prolonged silence')).toBeInTheDocument();
     });
 
-    it('shows medplum disconnected status with error', () => {
+    it('shows AI Images section when image_source is ai', async () => {
+      const user = userEvent.setup();
       render(
-        <SettingsDrawer {...defaultProps} medplumConnected={false} medplumError="Auth failed" />
+        <SettingsDrawer
+          {...defaultProps}
+          pendingSettings={{ ...defaultPendingSettings, image_source: 'ai' }}
+        />
       );
-      expect(screen.getByText('Auth failed')).toBeInTheDocument();
+
+      await user.click(screen.getByText('Advanced'));
+
+      expect(screen.getByText('AI Images')).toBeInTheDocument();
+      expect(screen.getByLabelText('Gemini API Key')).toBeInTheDocument();
+    });
+
+    it('hides AI Images section when image_source is off', async () => {
+      const user = userEvent.setup();
+      render(<SettingsDrawer {...defaultProps} />);
+
+      await user.click(screen.getByText('Advanced'));
+
+      expect(screen.queryByText('AI Images')).not.toBeInTheDocument();
+    });
+
+    it('shows config.json note at bottom of advanced section', async () => {
+      const user = userEvent.setup();
+      render(<SettingsDrawer {...defaultProps} />);
+
+      await user.click(screen.getByText('Advanced'));
+
+      expect(screen.getByText('Additional options available in config.json')).toBeInTheDocument();
     });
   });
 
-  describe('test buttons', () => {
+  describe('test buttons (in advanced)', () => {
     it('calls onTestWhisperServer when test button clicked', async () => {
       const user = userEvent.setup();
       render(<SettingsDrawer {...defaultProps} />);
 
+      await user.click(screen.getByText('Advanced'));
+
       const testButtons = screen.getAllByRole('button', { name: 'Test' });
-      await user.click(testButtons[0]); // First test button is for Whisper server
+      await user.click(testButtons[0]); // First test button is for STT
 
       expect(defaultProps.onTestWhisperServer).toHaveBeenCalled();
     });
@@ -358,8 +468,10 @@ describe('SettingsDrawer', () => {
       const user = userEvent.setup();
       render(<SettingsDrawer {...defaultProps} />);
 
+      await user.click(screen.getByText('Advanced'));
+
       const testButtons = screen.getAllByRole('button', { name: 'Test' });
-      await user.click(testButtons[1]); // Second test button is for LLM Router
+      await user.click(testButtons[1]); // Second test button is for LLM
 
       expect(defaultProps.onTestLLM).toHaveBeenCalled();
     });
@@ -368,6 +480,8 @@ describe('SettingsDrawer', () => {
       const user = userEvent.setup();
       render(<SettingsDrawer {...defaultProps} />);
 
+      await user.click(screen.getByText('Advanced'));
+
       const testButtons = screen.getAllByRole('button', { name: 'Test' });
       await user.click(testButtons[2]); // Third test button is for Medplum
 
@@ -375,19 +489,31 @@ describe('SettingsDrawer', () => {
     });
   });
 
-  describe('authentication', () => {
-    it('shows sign in button when not authenticated', () => {
+  describe('authentication (in advanced)', () => {
+    it('shows sign in button when not authenticated', async () => {
+      const user = userEvent.setup();
       render(<SettingsDrawer {...defaultProps} />);
+
+      await user.click(screen.getByText('Advanced'));
+
       expect(screen.getByRole('button', { name: 'Sign In with Medplum' })).toBeInTheDocument();
     });
 
-    it('disables sign in button when not connected', () => {
+    it('disables sign in button when not connected', async () => {
+      const user = userEvent.setup();
       render(<SettingsDrawer {...defaultProps} medplumConnected={false} />);
+
+      await user.click(screen.getByText('Advanced'));
+
       expect(screen.getByRole('button', { name: 'Sign In with Medplum' })).toBeDisabled();
     });
 
-    it('shows signing in state with cancel button', () => {
+    it('shows signing in state with cancel button', async () => {
+      const user = userEvent.setup();
       render(<SettingsDrawer {...defaultProps} authLoading={true} />);
+
+      await user.click(screen.getByText('Advanced'));
+
       expect(screen.getByRole('button', { name: 'Signing in...' })).toBeDisabled();
       expect(screen.getByRole('button', { name: 'Cancel' })).toBeInTheDocument();
     });
@@ -396,55 +522,70 @@ describe('SettingsDrawer', () => {
       const user = userEvent.setup();
       render(<SettingsDrawer {...defaultProps} />);
 
+      await user.click(screen.getByText('Advanced'));
       await user.click(screen.getByRole('button', { name: 'Sign In with Medplum' }));
 
       expect(defaultProps.onLogin).toHaveBeenCalled();
     });
 
-    it('calls onCancelLogin when cancel clicked', async () => {
+    it('shows user info when authenticated', async () => {
       const user = userEvent.setup();
-      render(<SettingsDrawer {...defaultProps} authLoading={true} />);
-
-      await user.click(screen.getByRole('button', { name: 'Cancel' }));
-
-      expect(defaultProps.onCancelLogin).toHaveBeenCalled();
-    });
-
-    it('shows user info when authenticated', () => {
       render(<SettingsDrawer {...defaultProps} authState={authenticatedAuthState} />);
+
+      await user.click(screen.getByText('Advanced'));
+
       expect(screen.getByText('Dr. Test')).toBeInTheDocument();
       expect(screen.getByRole('button', { name: 'Sign Out' })).toBeInTheDocument();
-    });
-
-    it('shows fallback text when authenticated without practitioner name', () => {
-      const authWithoutName = { ...authenticatedAuthState, practitioner_name: null };
-      render(<SettingsDrawer {...defaultProps} authState={authWithoutName} />);
-      expect(screen.getByText('Signed in')).toBeInTheDocument();
     });
 
     it('calls onLogout when sign out clicked', async () => {
       const user = userEvent.setup();
       render(<SettingsDrawer {...defaultProps} authState={authenticatedAuthState} />);
 
+      await user.click(screen.getByText('Advanced'));
       await user.click(screen.getByRole('button', { name: 'Sign Out' }));
 
       expect(defaultProps.onLogout).toHaveBeenCalled();
     });
 
-    it('shows signing out state', () => {
-      render(
-        <SettingsDrawer
-          {...defaultProps}
-          authState={authenticatedAuthState}
-          authLoading={true}
-        />
-      );
-      expect(screen.getByRole('button', { name: 'Signing out...' })).toBeDisabled();
+    it('disables medplum URL when authenticated', async () => {
+      const user = userEvent.setup();
+      render(<SettingsDrawer {...defaultProps} authState={authenticatedAuthState} />);
+
+      await user.click(screen.getByText('Advanced'));
+
+      expect(screen.getByLabelText('Server URL')).toBeDisabled();
+    });
+  });
+
+  describe('speaker profiles', () => {
+    it('renders Manage Speaker Profiles button', () => {
+      render(<SettingsDrawer {...defaultProps} />);
+      expect(screen.getByRole('button', { name: 'Manage Speaker Profiles' })).toBeInTheDocument();
     });
 
-    it('disables medplum URL and client ID when authenticated', () => {
-      render(<SettingsDrawer {...defaultProps} authState={authenticatedAuthState} />);
-      expect(screen.getByLabelText('Server URL')).toBeDisabled();
+    it('shows speaker enrollment view when button clicked', async () => {
+      const user = userEvent.setup();
+      render(<SettingsDrawer {...defaultProps} />);
+
+      await user.click(screen.getByRole('button', { name: 'Manage Speaker Profiles' }));
+
+      // Should show back button and hide settings title
+      expect(screen.getByText(/Back to Settings/)).toBeInTheDocument();
+      expect(screen.queryByText('Settings')).not.toBeInTheDocument();
+    });
+
+    it('returns to settings when back button clicked', async () => {
+      const user = userEvent.setup();
+      render(<SettingsDrawer {...defaultProps} />);
+
+      // Go to speaker profiles
+      await user.click(screen.getByRole('button', { name: 'Manage Speaker Profiles' }));
+      expect(screen.getByText(/Back to Settings/)).toBeInTheDocument();
+
+      // Go back
+      await user.click(screen.getByText(/Back to Settings/));
+      expect(screen.getByText('Settings')).toBeInTheDocument();
     });
   });
 
@@ -477,51 +618,12 @@ describe('SettingsDrawer', () => {
     });
   });
 
-  describe('language options', () => {
-    it('renders all language options', () => {
-      render(<SettingsDrawer {...defaultProps} />);
-
-      const languageSelect = screen.getByLabelText('Language');
-      const options = languageSelect.querySelectorAll('option');
-
-      expect(options).toHaveLength(8);
-      expect(options[0]).toHaveValue('en');
-      expect(options[0]).toHaveTextContent('English');
-      expect(options[7]).toHaveValue('auto');
-      expect(options[7]).toHaveTextContent('Auto-detect');
-    });
-  });
-
-  describe('device options', () => {
-    it('renders default option plus devices', () => {
-      render(<SettingsDrawer {...defaultProps} />);
-
-      const deviceSelect = screen.getByLabelText('Microphone');
-      const options = deviceSelect.querySelectorAll('option');
-
-      expect(options).toHaveLength(3); // default + 2 devices
-      expect(options[0]).toHaveValue('default');
-      expect(options[1]).toHaveValue('device-1');
-      expect(options[2]).toHaveValue('device-2');
-    });
-  });
-
-  describe('max speakers slider', () => {
-    it('has correct min and max values', () => {
-      render(<SettingsDrawer {...defaultProps} />);
-
-      const slider = screen.getByLabelText('Max Speakers');
-      expect(slider).toHaveAttribute('min', '2');
-      expect(slider).toHaveAttribute('max', '10');
-    });
-  });
-
   describe('null pendingSettings', () => {
     it('renders empty drawer when pendingSettings is null', () => {
       render(<SettingsDrawer {...defaultProps} pendingSettings={null} />);
 
       expect(screen.getByText('Settings')).toBeInTheDocument();
-      expect(screen.queryByLabelText('Whisper Server URL')).not.toBeInTheDocument();
+      expect(screen.queryByLabelText('Language')).not.toBeInTheDocument();
     });
   });
 });

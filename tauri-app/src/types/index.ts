@@ -316,8 +316,10 @@ export interface SoapOptions {
   detail_level: number;
   /** SOAP format style */
   format: SoapFormat;
-  /** Custom instructions from the physician (persisted in settings) */
+  /** Global personal instructions from the physician (persisted in settings) */
   custom_instructions: string;
+  /** Per-session instructions from the physician (entered in ReviewMode, not persisted) */
+  session_custom_instructions: string;
   /** Session-specific notes from the clinician (entered during recording) */
   session_notes?: string;
 }
@@ -327,6 +329,7 @@ export const DEFAULT_SOAP_OPTIONS: SoapOptions = {
   detail_level: 5,
   format: 'problem_based',
   custom_instructions: '',
+  session_custom_instructions: '',
 };
 
 /** Detail level labels for display */

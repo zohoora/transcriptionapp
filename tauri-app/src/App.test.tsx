@@ -90,10 +90,10 @@ describe('App', () => {
 
       await waitFor(() => {
         expect(screen.getByText('Settings')).toBeInTheDocument();
-        // Check for key settings labels
-        expect(screen.getByText('Server Model')).toBeInTheDocument();
+        // Check for key Zone 1 settings labels
         expect(screen.getByText('Language')).toBeInTheDocument();
         expect(screen.getByText('Microphone')).toBeInTheDocument();
+        expect(screen.getByText('Medical Illustrations')).toBeInTheDocument();
       });
     });
 

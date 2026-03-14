@@ -1,4 +1,4 @@
-import { memo } from 'react';
+import { memo, useState } from 'react';
 import type { Device, LLMStatus, AuthState, WhisperServerStatus, SpeakerRole } from '../types';
 import { SPEAKER_ROLE_LABELS } from '../types';
 import type { PendingSettings } from '../hooks/useSettings';
@@ -24,10 +24,6 @@ interface SettingsDrawerProps {
   onSave: () => void;
   devices: Device[];
 
-  // Biomarkers toggle
-  showBiomarkers: boolean;
-  onShowBiomarkersChange: (show: boolean) => void;
-
   // Whisper server settings
   whisperServerStatus: WhisperServerStatus | null;
   whisperServerModels: string[];
@@ -52,7 +48,11 @@ interface SettingsDrawerProps {
 }
 
 /**
- * Settings drawer for configuring transcription, SOAP generation, and EMR sync.
+ * Settings drawer with 4-zone layout:
+ * Zone 1: Clinical Workflow (5 controls, always visible)
+ * Zone 2: Connection Status (3 dots)
+ * Zone 3: Advanced (collapsed by default)
+ * Zone 4: Speaker Profiles (sub-view)
  */
 export const SettingsDrawer = memo(function SettingsDrawer({
   isOpen,
@@ -61,8 +61,6 @@ export const SettingsDrawer = memo(function SettingsDrawer({
   onSettingsChange,
   onSave,
   devices,
-  showBiomarkers,
-  onShowBiomarkersChange,
   whisperServerStatus,
   whisperServerModels,
   onTestWhisperServer,
@@ -78,7 +76,32 @@ export const SettingsDrawer = memo(function SettingsDrawer({
   onLogout,
   onCancelLogin,
 }: SettingsDrawerProps) {
+  const [showAdvanced, setShowAdvanced] = useState(false);
+  const [showSpeakerProfiles, setShowSpeakerProfiles] = useState(false);
+
   if (!isOpen) return null;
+
+  // Speaker Profiles sub-view replaces drawer content
+  if (showSpeakerProfiles) {
+    return (
+      <>
+        <div className="settings-overlay" onClick={onClose} />
+        <div className="settings-drawer">
+          <div className="settings-drawer-header">
+            <button className="settings-back-button" onClick={() => setShowSpeakerProfiles(false)}>
+              &larr; Back to Settings
+            </button>
+            <button className="close-btn" onClick={onClose}>
+              &times;
+            </button>
+          </div>
+          <div className="settings-drawer-content">
+            <SpeakerEnrollment />
+          </div>
+        </div>
+      </>
+    );
+  }
 
   return (
     <>
@@ -93,9 +116,8 @@ export const SettingsDrawer = memo(function SettingsDrawer({
         <div className="settings-drawer-content">
           {pendingSettings && (
             <>
-              {/* Charting Mode */}
+              {/* ── Zone 1: Clinical Workflow ── */}
               <div className="settings-section">
-                <h3>Charting Mode</h3>
                 <div className="settings-row">
                   <div className="charting-mode-toggle">
                     <button
@@ -112,647 +134,488 @@ export const SettingsDrawer = memo(function SettingsDrawer({
                     </button>
                   </div>
                 </div>
-                {pendingSettings.charting_mode === 'continuous' && (
-                  <>
-                    <p className="settings-hint">
-                      Records continuously. Encounters are auto-detected and SOAP notes generated automatically.
-                    </p>
-                    <div className="settings-row">
-                      <label>Encounter check interval</label>
-                      <div className="settings-slider-row">
-                        <input
-                          type="range"
-                          min="60"
-                          max="300"
-                          step="30"
-                          value={pendingSettings.encounter_check_interval_secs}
-                          onChange={(e) => onSettingsChange({ ...pendingSettings, encounter_check_interval_secs: Number(e.target.value) })}
-                        />
-                        <span className="settings-slider-value">
-                          {pendingSettings.encounter_check_interval_secs}s
+
+                <div className="settings-group">
+                  <label className="settings-label" htmlFor="language-select">Language</label>
+                  <select
+                    id="language-select"
+                    className="settings-select"
+                    value={pendingSettings.language}
+                    onChange={(e) => onSettingsChange({ ...pendingSettings, language: e.target.value })}
+                  >
+                    {LANGUAGES.map((l) => (
+                      <option key={l.value} value={l.value}>
+                        {l.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="settings-group">
+                  <label className="settings-label" htmlFor="microphone-select">Microphone</label>
+                  <select
+                    id="microphone-select"
+                    className="settings-select"
+                    value={pendingSettings.device}
+                    onChange={(e) => onSettingsChange({ ...pendingSettings, device: e.target.value })}
+                  >
+                    <option value="default">Default</option>
+                    {devices.map((d) => (
+                      <option key={d.id} value={d.id}>
+                        {d.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="settings-group">
+                  <label className="settings-label" htmlFor="image-source">Medical Illustrations</label>
+                  <select
+                    id="image-source"
+                    className="settings-select"
+                    value={pendingSettings.image_source}
+                    onChange={(e) => onSettingsChange({ ...pendingSettings, image_source: e.target.value })}
+                  >
+                    <option value="off">Off</option>
+                    <option value="ai">AI Generated</option>
+                  </select>
+                </div>
+
+                <div className="settings-group">
+                  <div className="settings-toggle">
+                    <span className="settings-label" style={{ marginBottom: 0 }}>Screen Capture</span>
+                    <label className="toggle-switch">
+                      <input
+                        type="checkbox"
+                        checked={pendingSettings.screen_capture_enabled}
+                        onChange={(e) => onSettingsChange({ ...pendingSettings, screen_capture_enabled: e.target.checked })}
+                        aria-label="Capture screen during recording"
+                      />
+                      <span className="toggle-slider"></span>
+                    </label>
+                  </div>
+                  <span className="settings-hint">Capture screen periodically during recording</span>
+                </div>
+
+                {/* ─ SOAP Preferences ─ */}
+                <div className="settings-divider" />
+                <h4 className="settings-sub-header">SOAP Preferences</h4>
+                <div className="settings-group">
+                  <label className="settings-label" htmlFor="soap-custom-instructions">Personal Instructions</label>
+                  <textarea
+                    id="soap-custom-instructions"
+                    className="settings-textarea"
+                    rows={4}
+                    value={pendingSettings.soap_custom_instructions}
+                    onChange={(e) => onSettingsChange({ ...pendingSettings, soap_custom_instructions: e.target.value })}
+                    placeholder="e.g., I am a family medicine physician. Use concise bullet points. Always include ICD-10 codes..."
+                  />
+                  <span className="settings-hint">Added to every SOAP note prompt. Describe your preferences, specialty context, or formatting rules.</span>
+                </div>
+              </div>
+
+              {/* ── Zone 2: Connection Status ── */}
+              <div className="connection-status-bar">
+                <div className="status-dot-item">
+                  <span className={`status-indicator ${whisperServerStatus?.connected ? 'connected' : 'disconnected'}`} />
+                  <span className="status-dot-label">STT</span>
+                </div>
+                <div className="status-dot-item">
+                  <span className={`status-indicator ${llmStatus?.connected ? 'connected' : 'disconnected'}`} />
+                  <span className="status-dot-label">LLM</span>
+                </div>
+                <div className="status-dot-item">
+                  <span className={`status-indicator ${medplumConnected ? 'connected' : 'disconnected'}`} />
+                  <span className="status-dot-label">EMR</span>
+                </div>
+              </div>
+
+              {/* ── Zone 3: Advanced ── */}
+              <div className="advanced-section">
+                <button
+                  className="advanced-section-header"
+                  onClick={() => setShowAdvanced(!showAdvanced)}
+                  aria-expanded={showAdvanced}
+                >
+                  <span>Advanced</span>
+                  <span className="advanced-chevron">{showAdvanced ? '\u25BE' : '\u25B8'}</span>
+                </button>
+
+                {showAdvanced && (
+                  <div className="advanced-section-content">
+                    {/* ─ STT Router ─ */}
+                    <h4 className="advanced-sub-header">STT Router</h4>
+                    <div className="settings-group">
+                      <label className="settings-label" htmlFor="whisper-server-url">STT Server URL</label>
+                      <input
+                        id="whisper-server-url"
+                        type="text"
+                        className="settings-input"
+                        value={pendingSettings.whisper_server_url}
+                        onChange={(e) => onSettingsChange({ ...pendingSettings, whisper_server_url: e.target.value })}
+                        placeholder="http://172.16.100.45:8001"
+                      />
+                    </div>
+                    <div className="settings-group ollama-status-group">
+                      <div className="ollama-status">
+                        <span className={`status-indicator ${whisperServerStatus?.connected ? 'connected' : 'disconnected'}`} />
+                        <span className="status-text">
+                          {whisperServerStatus?.connected
+                            ? `Connected (${whisperServerModels.length} models)`
+                            : whisperServerStatus?.error || 'Not connected'}
                         </span>
                       </div>
-                    </div>
-                    <div className="settings-row">
-                      <label>Silence trigger</label>
-                      <div className="settings-slider-row">
-                        <input
-                          type="range"
-                          min="30"
-                          max="300"
-                          step="15"
-                          value={pendingSettings.encounter_silence_trigger_secs}
-                          onChange={(e) => onSettingsChange({ ...pendingSettings, encounter_silence_trigger_secs: Number(e.target.value) })}
-                        />
-                        <span className="settings-slider-value">
-                          {pendingSettings.encounter_silence_trigger_secs}s
-                        </span>
-                      </div>
-                    </div>
-                    <div className="settings-row">
-                      <label>
-                        <input
-                          type="checkbox"
-                          checked={pendingSettings.encounter_merge_enabled}
-                          onChange={(e) => onSettingsChange({ ...pendingSettings, encounter_merge_enabled: e.target.checked })}
-                        />
-                        {' '}Auto-merge split encounters
-                      </label>
+                      <button className="btn-test" onClick={onTestWhisperServer}>
+                        Test
+                      </button>
                     </div>
 
-                    {/* Presence Sensor Settings */}
-                    <h4 style={{ marginTop: 12, marginBottom: 4, fontSize: 12, opacity: 0.7 }}>Encounter Detection</h4>
-                    <div className="settings-row">
-                      <div className="charting-mode-toggle">
-                        <button
-                          className={`charting-mode-btn ${pendingSettings.encounter_detection_mode === 'llm' ? 'active' : ''}`}
-                          onClick={() => onSettingsChange({ ...pendingSettings, encounter_detection_mode: 'llm' })}
-                        >
-                          LLM
-                        </button>
-                        <button
-                          className={`charting-mode-btn ${pendingSettings.encounter_detection_mode === 'sensor' ? 'active' : ''}`}
-                          onClick={() => onSettingsChange({ ...pendingSettings, encounter_detection_mode: 'sensor' })}
-                        >
-                          Sensor
-                        </button>
-                        <button
-                          className={`charting-mode-btn ${pendingSettings.encounter_detection_mode === 'hybrid' ? 'active' : ''}`}
-                          onClick={() => onSettingsChange({ ...pendingSettings, encounter_detection_mode: 'hybrid' })}
-                        >
-                          Hybrid
-                        </button>
-                        <button
-                          className={`charting-mode-btn ${pendingSettings.encounter_detection_mode === 'shadow' ? 'active' : ''}`}
-                          onClick={() => onSettingsChange({ ...pendingSettings, encounter_detection_mode: 'shadow' })}
-                          style={{ fontSize: 10 }}
-                        >
-                          Shadow
-                        </button>
+                    {/* ─ LLM Router ─ */}
+                    <h4 className="advanced-sub-header">LLM Router</h4>
+                    <div className="settings-group">
+                      <label className="settings-label" htmlFor="llm-router-url">LLM Router URL</label>
+                      <input
+                        id="llm-router-url"
+                        type="text"
+                        className="settings-input"
+                        value={pendingSettings.llm_router_url}
+                        onChange={(e) => onSettingsChange({ ...pendingSettings, llm_router_url: e.target.value })}
+                        placeholder="http://localhost:8080"
+                      />
+                    </div>
+                    <div className="settings-group">
+                      <label className="settings-label" htmlFor="llm-api-key">API Key</label>
+                      <input
+                        id="llm-api-key"
+                        type="password"
+                        className="settings-input"
+                        value={pendingSettings.llm_api_key}
+                        onChange={(e) => onSettingsChange({ ...pendingSettings, llm_api_key: e.target.value })}
+                        placeholder="Enter API key"
+                      />
+                    </div>
+                    <div className="settings-group">
+                      <label className="settings-label" htmlFor="llm-client-id">LLM Client ID</label>
+                      <input
+                        id="llm-client-id"
+                        type="text"
+                        className="settings-input"
+                        value={pendingSettings.llm_client_id}
+                        onChange={(e) => onSettingsChange({ ...pendingSettings, llm_client_id: e.target.value })}
+                        placeholder="clinic-001"
+                      />
+                    </div>
+                    <div className="settings-group">
+                      <label className="settings-label" htmlFor="soap-model">SOAP Model</label>
+                      <select
+                        id="soap-model"
+                        className="settings-select"
+                        value={pendingSettings.soap_model}
+                        onChange={(e) => onSettingsChange({ ...pendingSettings, soap_model: e.target.value })}
+                      >
+                        <option value={pendingSettings.soap_model}>{pendingSettings.soap_model}</option>
+                        {llmModels
+                          .filter((m) => m !== pendingSettings.soap_model)
+                          .map((m) => (
+                            <option key={m} value={m}>{m}</option>
+                          ))}
+                      </select>
+                    </div>
+                    <div className="settings-group">
+                      <label className="settings-label" htmlFor="fast-model">Fast Model</label>
+                      <select
+                        id="fast-model"
+                        className="settings-select"
+                        value={pendingSettings.fast_model}
+                        onChange={(e) => onSettingsChange({ ...pendingSettings, fast_model: e.target.value })}
+                      >
+                        <option value={pendingSettings.fast_model}>{pendingSettings.fast_model}</option>
+                        {llmModels
+                          .filter((m) => m !== pendingSettings.fast_model)
+                          .map((m) => (
+                            <option key={m} value={m}>{m}</option>
+                          ))}
+                      </select>
+                    </div>
+                    <div className="settings-group ollama-status-group">
+                      <div className="ollama-status">
+                        <span className={`status-indicator ${llmStatus?.connected ? 'connected' : 'disconnected'}`} />
+                        <span className="status-text">
+                          {llmStatus?.connected
+                            ? `Connected (${llmModels.length} models)`
+                            : llmStatus?.error || 'Not connected'}
+                        </span>
+                      </div>
+                      <button className="btn-test" onClick={onTestLLM}>
+                        Test
+                      </button>
+                    </div>
+
+                    {/* ─ Medplum EMR ─ */}
+                    <h4 className="advanced-sub-header">Medplum EMR</h4>
+                    <div className="settings-group">
+                      <label className="settings-label" htmlFor="medplum-url">Server URL</label>
+                      <input
+                        id="medplum-url"
+                        type="text"
+                        className="settings-input"
+                        value={pendingSettings.medplum_server_url}
+                        onChange={(e) => onSettingsChange({ ...pendingSettings, medplum_server_url: e.target.value })}
+                        placeholder="http://localhost:8103"
+                        disabled={authState.is_authenticated}
+                      />
+                    </div>
+                    <div className="settings-group">
+                      <label className="settings-label" htmlFor="medplum-client-id">Client ID</label>
+                      <input
+                        id="medplum-client-id"
+                        type="text"
+                        className="settings-input"
+                        value={pendingSettings.medplum_client_id}
+                        onChange={(e) => onSettingsChange({ ...pendingSettings, medplum_client_id: e.target.value })}
+                        placeholder="Enter client ID from Medplum"
+                        disabled={authState.is_authenticated}
+                      />
+                    </div>
+                    <div className="settings-group">
+                      <div className="settings-toggle">
+                        <span className="settings-label" style={{ marginBottom: 0 }}>Auto-sync encounters</span>
+                        <label className="toggle-switch">
+                          <input
+                            type="checkbox"
+                            checked={pendingSettings.medplum_auto_sync}
+                            onChange={(e) =>
+                              onSettingsChange({ ...pendingSettings, medplum_auto_sync: e.target.checked })
+                            }
+                            aria-label="Auto-sync encounters to Medplum"
+                          />
+                          <span className="toggle-slider"></span>
+                        </label>
                       </div>
                     </div>
-                    {pendingSettings.encounter_detection_mode === 'shadow' && (
-                      <>
-                        <div className="settings-row" style={{ marginTop: 4 }}>
-                          <label style={{ fontSize: 11, opacity: 0.7 }}>Active method</label>
-                          <div className="charting-mode-toggle" style={{ marginTop: 2 }}>
+                    <div className="settings-group ollama-status-group">
+                      <div className="ollama-status">
+                        <span className={`status-indicator ${medplumConnected ? 'connected' : 'disconnected'}`} />
+                        <span className="status-text">
+                          {medplumConnected
+                            ? 'Connected'
+                            : medplumError || 'Not connected'}
+                        </span>
+                      </div>
+                      <button className="btn-test" onClick={onTestMedplum}>
+                        Test
+                      </button>
+                    </div>
+                    <div className="settings-group medplum-auth-group">
+                      {authState.is_authenticated ? (
+                        <div className="medplum-auth-status">
+                          <div className="auth-user-info">
+                            <span className="status-indicator connected" />
+                            <span className="auth-user-name">
+                              {authState.practitioner_name || 'Signed in'}
+                            </span>
+                          </div>
+                          <button
+                            className="btn-signout"
+                            onClick={onLogout}
+                            disabled={authLoading}
+                          >
+                            {authLoading ? 'Signing out...' : 'Sign Out'}
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="medplum-login-actions">
+                          <button
+                            className="btn-signin"
+                            onClick={onLogin}
+                            disabled={authLoading || !medplumConnected}
+                            title={!medplumConnected ? 'Connect to server first' : ''}
+                          >
+                            {authLoading ? 'Signing in...' : 'Sign In with Medplum'}
+                          </button>
+                          {authLoading && (
                             <button
-                              className={`charting-mode-btn ${pendingSettings.shadow_active_method === 'llm' ? 'active' : ''}`}
-                              onClick={() => onSettingsChange({ ...pendingSettings, shadow_active_method: 'llm' })}
+                              className="btn-cancel-login"
+                              onClick={onCancelLogin}
+                            >
+                              Cancel
+                            </button>
+                          )}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* ─ Continuous Mode ─ */}
+                    {pendingSettings.charting_mode === 'continuous' && (
+                      <>
+                        <h4 className="advanced-sub-header">Continuous Mode</h4>
+                        <div className="settings-row">
+                          <label className="settings-label" style={{ marginBottom: 4 }}>Detection Mode</label>
+                          <div className="charting-mode-toggle">
+                            <button
+                              className={`charting-mode-btn ${pendingSettings.encounter_detection_mode === 'llm' ? 'active' : ''}`}
+                              onClick={() => onSettingsChange({ ...pendingSettings, encounter_detection_mode: 'llm' })}
                             >
                               LLM
                             </button>
                             <button
-                              className={`charting-mode-btn ${pendingSettings.shadow_active_method === 'sensor' ? 'active' : ''}`}
-                              onClick={() => onSettingsChange({ ...pendingSettings, shadow_active_method: 'sensor' })}
+                              className={`charting-mode-btn ${pendingSettings.encounter_detection_mode === 'hybrid' ? 'active' : ''}`}
+                              onClick={() => onSettingsChange({ ...pendingSettings, encounter_detection_mode: 'hybrid' })}
                             >
-                              Sensor
+                              Hybrid
                             </button>
                           </div>
                         </div>
-                        <div className="settings-row">
-                          <label>
-                            <input
-                              type="checkbox"
-                              checked={pendingSettings.shadow_csv_log_enabled}
-                              onChange={(e) => onSettingsChange({ ...pendingSettings, shadow_csv_log_enabled: e.target.checked })}
-                            />
-                            {' '}Log shadow decisions to CSV
-                          </label>
+                        {pendingSettings.encounter_detection_mode === 'hybrid' && (
+                          <>
+                            <div className="settings-group">
+                              <label className="settings-label">Serial Port</label>
+                              <input
+                                type="text"
+                                className="settings-input"
+                                value={pendingSettings.presence_sensor_port}
+                                onChange={(e) => onSettingsChange({ ...pendingSettings, presence_sensor_port: e.target.value })}
+                                placeholder="/dev/cu.usbserial-2110"
+                              />
+                            </div>
+                            <div className="settings-group">
+                              <label className="settings-label">Absence Threshold</label>
+                              <div className="settings-slider">
+                                <input
+                                  type="range"
+                                  min="10"
+                                  max="600"
+                                  step="10"
+                                  value={pendingSettings.presence_absence_threshold_secs}
+                                  onChange={(e) => onSettingsChange({ ...pendingSettings, presence_absence_threshold_secs: Number(e.target.value) })}
+                                />
+                                <span className="slider-value">{pendingSettings.presence_absence_threshold_secs}s</span>
+                              </div>
+                            </div>
+                          </>
+                        )}
+                        <div className="settings-group">
+                          <div className="settings-toggle">
+                            <span className="settings-label" style={{ marginBottom: 0 }}>Auto-merge encounters</span>
+                            <label className="toggle-switch">
+                              <input
+                                type="checkbox"
+                                checked={pendingSettings.encounter_merge_enabled}
+                                onChange={(e) => onSettingsChange({ ...pendingSettings, encounter_merge_enabled: e.target.checked })}
+                                aria-label="Auto-merge split encounters"
+                              />
+                              <span className="toggle-slider"></span>
+                            </label>
+                          </div>
                         </div>
                       </>
                     )}
-                    {(pendingSettings.encounter_detection_mode === 'sensor' || pendingSettings.encounter_detection_mode === 'shadow' || pendingSettings.encounter_detection_mode === 'hybrid') && (
-                      <>
-                        <div className="settings-row">
-                          <label>Serial port</label>
+
+                    {/* ─ Session Automation ─ */}
+                    <h4 className="advanced-sub-header">Session Automation</h4>
+                    <div className="settings-group">
+                      <div className="settings-toggle">
+                        <span className="settings-label" style={{ marginBottom: 0 }}>Auto-start on Greeting</span>
+                        <label className="toggle-switch">
                           <input
-                            type="text"
-                            value={pendingSettings.presence_sensor_port}
-                            onChange={(e) => onSettingsChange({ ...pendingSettings, presence_sensor_port: e.target.value })}
-                            placeholder="/dev/cu.usbserial-2110"
-                            style={{ width: '100%', fontSize: 11 }}
+                            type="checkbox"
+                            checked={pendingSettings.auto_start_enabled}
+                            onChange={(e) => onSettingsChange({ ...pendingSettings, auto_start_enabled: e.target.checked })}
+                            aria-label="Auto-start recording when greeting detected"
                           />
-                        </div>
-                        <div className="settings-row">
-                          <label>Absence threshold</label>
-                          <div className="settings-slider-row">
-                            <input
-                              type="range"
-                              min="10"
-                              max="600"
-                              step="10"
-                              value={pendingSettings.presence_absence_threshold_secs}
-                              onChange={(e) => onSettingsChange({ ...pendingSettings, presence_absence_threshold_secs: Number(e.target.value) })}
-                            />
-                            <span className="settings-slider-value">
-                              {pendingSettings.presence_absence_threshold_secs}s
-                            </span>
+                          <span className="toggle-slider"></span>
+                        </label>
+                      </div>
+                      <span className="settings-hint">Start recording automatically when speech with a greeting is detected</span>
+                    </div>
+                    {pendingSettings.auto_start_enabled && (
+                      <>
+                        <div className="settings-group settings-subgroup">
+                          <div className="settings-toggle">
+                            <span className="settings-label" style={{ marginBottom: 0 }}>Require Enrolled Speaker</span>
+                            <label className="toggle-switch">
+                              <input
+                                type="checkbox"
+                                checked={pendingSettings.auto_start_require_enrolled}
+                                onChange={(e) => onSettingsChange({ ...pendingSettings, auto_start_require_enrolled: e.target.checked })}
+                                aria-label="Only auto-start when speaker is enrolled"
+                              />
+                              <span className="toggle-slider"></span>
+                            </label>
                           </div>
+                          <span className="settings-hint">Only auto-start when the speaker's voice matches an enrolled profile</span>
                         </div>
-                        <div className="settings-row">
-                          <label>Debounce</label>
-                          <div className="settings-slider-row">
-                            <input
-                              type="range"
-                              min="1"
-                              max="60"
-                              step="1"
-                              value={pendingSettings.presence_debounce_secs}
-                              onChange={(e) => onSettingsChange({ ...pendingSettings, presence_debounce_secs: Number(e.target.value) })}
-                            />
-                            <span className="settings-slider-value">
-                              {pendingSettings.presence_debounce_secs}s
-                            </span>
+                        {pendingSettings.auto_start_require_enrolled && (
+                          <div className="settings-group settings-subgroup">
+                            <label className="settings-label" htmlFor="required-role">Required Role (optional)</label>
+                            <select
+                              id="required-role"
+                              className="settings-select"
+                              value={pendingSettings.auto_start_required_role || ''}
+                              onChange={(e) => onSettingsChange({
+                                ...pendingSettings,
+                                auto_start_required_role: e.target.value ? e.target.value as SpeakerRole : null
+                              })}
+                            >
+                              <option value="">Any enrolled speaker</option>
+                              {Object.entries(SPEAKER_ROLE_LABELS).map(([role, label]) => (
+                                <option key={role} value={role}>{label}</option>
+                              ))}
+                            </select>
                           </div>
-                        </div>
-                        <div className="settings-row">
-                          <label>
-                            <input
-                              type="checkbox"
-                              checked={pendingSettings.presence_csv_log_enabled}
-                              onChange={(e) => onSettingsChange({ ...pendingSettings, presence_csv_log_enabled: e.target.checked })}
-                            />
-                            {' '}Log sensor data to CSV
-                          </label>
+                        )}
+                      </>
+                    )}
+                    <div className="settings-group">
+                      <div className="settings-toggle">
+                        <span className="settings-label" style={{ marginBottom: 0 }}>Auto-end on Silence</span>
+                        <label className="toggle-switch">
+                          <input
+                            type="checkbox"
+                            checked={pendingSettings.auto_end_enabled}
+                            onChange={(e) => onSettingsChange({ ...pendingSettings, auto_end_enabled: e.target.checked })}
+                            aria-label="Auto-end recording after prolonged silence"
+                          />
+                          <span className="toggle-slider"></span>
+                        </label>
+                      </div>
+                      <span className="settings-hint">End recording after 3 minutes of silence</span>
+                    </div>
+
+                    {/* ─ AI Images ─ */}
+                    {pendingSettings.image_source === 'ai' && (
+                      <>
+                        <h4 className="advanced-sub-header">AI Images</h4>
+                        <div className="settings-group">
+                          <label className="settings-label" htmlFor="gemini-api-key">Gemini API Key</label>
+                          <input
+                            id="gemini-api-key"
+                            type="password"
+                            className="settings-input"
+                            value={pendingSettings.gemini_api_key}
+                            onChange={(e) => onSettingsChange({ ...pendingSettings, gemini_api_key: e.target.value })}
+                            placeholder="Enter your Gemini API key"
+                          />
+                          <span className="settings-hint">Required for AI-generated medical illustrations</span>
                         </div>
                       </>
                     )}
-                  </>
-                )}
-              </div>
 
-              {/* Whisper Server Settings (remote only mode) */}
-              <div className="settings-group">
-                <label className="settings-label" htmlFor="whisper-server-url">Whisper Server URL</label>
-                <input
-                  id="whisper-server-url"
-                  type="text"
-                  className="settings-input"
-                  value={pendingSettings.whisper_server_url}
-                  onChange={(e) => onSettingsChange({ ...pendingSettings, whisper_server_url: e.target.value })}
-                  placeholder="http://172.16.100.45:8001"
-                />
-              </div>
-
-              <div className="settings-group">
-                <label className="settings-label" htmlFor="whisper-server-model">Server Model</label>
-                <select
-                  id="whisper-server-model"
-                  className="settings-select"
-                  value={pendingSettings.whisper_server_model}
-                  onChange={(e) => onSettingsChange({ ...pendingSettings, whisper_server_model: e.target.value })}
-                >
-                  <option value={pendingSettings.whisper_server_model}>{pendingSettings.whisper_server_model}</option>
-                  {whisperServerModels
-                    .filter((m) => m !== pendingSettings.whisper_server_model)
-                    .map((m) => (
-                      <option key={m} value={m}>{m}</option>
-                    ))}
-                </select>
-              </div>
-
-              <div className="settings-group ollama-status-group">
-                <div className="ollama-status">
-                  <span className={`status-indicator ${whisperServerStatus?.connected ? 'connected' : 'disconnected'}`} />
-                  <span className="status-text">
-                    {whisperServerStatus?.connected
-                      ? `Connected (${whisperServerModels.length} models)`
-                      : whisperServerStatus?.error || 'Not connected'}
-                  </span>
-                </div>
-                <button className="btn-test" onClick={onTestWhisperServer}>
-                  Test
-                </button>
-              </div>
-
-              <div className="settings-group">
-                <label className="settings-label" htmlFor="language-select">Language</label>
-                <select
-                  id="language-select"
-                  className="settings-select"
-                  value={pendingSettings.language}
-                  onChange={(e) => onSettingsChange({ ...pendingSettings, language: e.target.value })}
-                >
-                  {LANGUAGES.map((l) => (
-                    <option key={l.value} value={l.value}>
-                      {l.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="settings-group">
-                <label className="settings-label" htmlFor="microphone-select">Microphone</label>
-                <select
-                  id="microphone-select"
-                  className="settings-select"
-                  value={pendingSettings.device}
-                  onChange={(e) => onSettingsChange({ ...pendingSettings, device: e.target.value })}
-                >
-                  <option value="default">Default</option>
-                  {devices.map((d) => (
-                    <option key={d.id} value={d.id}>
-                      {d.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="settings-group">
-                <label className="settings-label" htmlFor="max-speakers-slider">Max Speakers</label>
-                <div className="settings-slider">
-                  <input
-                    id="max-speakers-slider"
-                    type="range"
-                    min="2"
-                    max="10"
-                    value={pendingSettings.max_speakers}
-                    onChange={(e) =>
-                      onSettingsChange({ ...pendingSettings, max_speakers: Number(e.target.value) || 2 })
-                    }
-                  />
-                  <span className="slider-value">{pendingSettings.max_speakers}</span>
-                </div>
-              </div>
-
-              {/* Speaker Profiles (Enrollment) */}
-              <div className="settings-divider" />
-              <div className="settings-section-title">Speaker Profiles</div>
-              <div className="settings-group">
-                <SpeakerEnrollment />
-              </div>
-
-              <div className="settings-divider" />
-              <div className="settings-group">
-                <div className="settings-toggle">
-                  <span className="settings-label" style={{ marginBottom: 0 }}>Show Biomarkers</span>
-                  <label className="toggle-switch">
-                    <input
-                      type="checkbox"
-                      checked={showBiomarkers}
-                      onChange={(e) => onShowBiomarkersChange(e.target.checked)}
-                      aria-label="Show biomarkers panel"
-                    />
-                    <span className="toggle-slider"></span>
-                  </label>
-                </div>
-              </div>
-
-              <div className="settings-group">
-                <div className="settings-toggle">
-                  <span className="settings-label" style={{ marginBottom: 0 }}>Auto-start on Greeting</span>
-                  <label className="toggle-switch">
-                    <input
-                      type="checkbox"
-                      checked={pendingSettings.auto_start_enabled}
-                      onChange={(e) => onSettingsChange({ ...pendingSettings, auto_start_enabled: e.target.checked })}
-                      aria-label="Auto-start recording when greeting detected"
-                    />
-                    <span className="toggle-slider"></span>
-                  </label>
-                </div>
-                <span className="settings-hint">Start recording automatically when speech with a greeting is detected</span>
-              </div>
-
-              {/* Speaker verification options - only shown when auto-start is enabled */}
-              {pendingSettings.auto_start_enabled && (
-                <>
-                  <div className="settings-group settings-subgroup">
-                    <div className="settings-toggle">
-                      <span className="settings-label" style={{ marginBottom: 0 }}>Require Enrolled Speaker</span>
-                      <label className="toggle-switch">
-                        <input
-                          type="checkbox"
-                          checked={pendingSettings.auto_start_require_enrolled}
-                          onChange={(e) => onSettingsChange({ ...pendingSettings, auto_start_require_enrolled: e.target.checked })}
-                          aria-label="Only auto-start when speaker is enrolled"
-                        />
-                        <span className="toggle-slider"></span>
-                      </label>
-                    </div>
-                    <span className="settings-hint">Only auto-start when the speaker's voice matches an enrolled profile</span>
-                  </div>
-
-                  {pendingSettings.auto_start_require_enrolled && (
-                    <div className="settings-group settings-subgroup">
-                      <label className="settings-label" htmlFor="required-role">Required Role (optional)</label>
-                      <select
-                        id="required-role"
-                        className="settings-select"
-                        value={pendingSettings.auto_start_required_role || ''}
-                        onChange={(e) => onSettingsChange({
-                          ...pendingSettings,
-                          auto_start_required_role: e.target.value ? e.target.value as SpeakerRole : null
-                        })}
-                      >
-                        <option value="">Any enrolled speaker</option>
-                        {Object.entries(SPEAKER_ROLE_LABELS).map(([role, label]) => (
-                          <option key={role} value={role}>{label}</option>
-                        ))}
-                      </select>
-                      <span className="settings-hint">Optionally restrict auto-start to speakers with a specific role</span>
-                    </div>
-                  )}
-                </>
-              )}
-
-              <div className="settings-group">
-                <div className="settings-toggle">
-                  <span className="settings-label" style={{ marginBottom: 0 }}>Auto-end on Silence</span>
-                  <label className="toggle-switch">
-                    <input
-                      type="checkbox"
-                      checked={pendingSettings.auto_end_enabled}
-                      onChange={(e) => onSettingsChange({ ...pendingSettings, auto_end_enabled: e.target.checked })}
-                      aria-label="Auto-end recording after prolonged silence"
-                    />
-                    <span className="toggle-slider"></span>
-                  </label>
-                </div>
-                <span className="settings-hint">End recording automatically after 3 minutes of silence (with countdown warning at 1 minute)</span>
-              </div>
-
-              {/* Medical Illustration Settings */}
-              <div className="settings-divider" />
-              <div className="settings-section-title">Medical Illustrations</div>
-
-              <div className="settings-group">
-                <label className="settings-label" htmlFor="image-source">Image Source</label>
-                <select
-                  id="image-source"
-                  className="settings-input"
-                  value={pendingSettings.image_source}
-                  onChange={(e) => onSettingsChange({
-                    ...pendingSettings,
-                    image_source: e.target.value,
-                    miis_enabled: e.target.value === 'miis',
-                  })}
-                >
-                  <option value="off">Off</option>
-                  <option value="miis">MIIS Library</option>
-                  <option value="ai">AI Generated</option>
-                </select>
-                <span className="settings-hint">Show relevant anatomical diagrams during recording</span>
-              </div>
-
-              {pendingSettings.image_source === 'miis' && (
-                <div className="settings-group">
-                  <label className="settings-label" htmlFor="miis-server-url">Image Server URL</label>
-                  <input
-                    id="miis-server-url"
-                    type="text"
-                    className="settings-input"
-                    value={pendingSettings.miis_server_url}
-                    onChange={(e) => onSettingsChange({ ...pendingSettings, miis_server_url: e.target.value })}
-                    placeholder="http://172.16.100.45:7843"
-                  />
-                </div>
-              )}
-
-              {pendingSettings.image_source === 'ai' && (
-                <div className="settings-group">
-                  <label className="settings-label" htmlFor="gemini-api-key">Gemini API Key</label>
-                  <input
-                    id="gemini-api-key"
-                    type="password"
-                    className="settings-input"
-                    value={pendingSettings.gemini_api_key}
-                    onChange={(e) => onSettingsChange({ ...pendingSettings, gemini_api_key: e.target.value })}
-                    placeholder="Enter your Gemini API key"
-                  />
-                  <span className="settings-hint">Required for AI-generated medical illustrations (~$0.04/image)</span>
-                </div>
-              )}
-
-              {/* Screen Capture Settings */}
-              <div className="settings-divider" />
-              <div className="settings-section-title">Screen Capture</div>
-
-              <div className="settings-group">
-                <div className="settings-toggle">
-                  <span className="settings-label" style={{ marginBottom: 0 }}>Capture Screen During Recording</span>
-                  <label className="toggle-switch">
-                    <input
-                      type="checkbox"
-                      checked={pendingSettings.screen_capture_enabled}
-                      onChange={(e) => onSettingsChange({ ...pendingSettings, screen_capture_enabled: e.target.checked })}
-                      aria-label="Capture screenshots periodically during recording"
-                    />
-                    <span className="toggle-slider"></span>
-                  </label>
-                </div>
-                <span className="settings-hint">Periodically capture the screen during recording (requires Screen Recording permission)</span>
-              </div>
-
-              {pendingSettings.screen_capture_enabled && (
-                <div className="settings-group">
-                  <label className="settings-label" htmlFor="screen-capture-interval">Capture Interval</label>
-                  <div className="settings-slider">
-                    <input
-                      id="screen-capture-interval"
-                      type="range"
-                      min="10"
-                      max="60"
-                      step="5"
-                      value={pendingSettings.screen_capture_interval_secs}
-                      onChange={(e) =>
-                        onSettingsChange({ ...pendingSettings, screen_capture_interval_secs: Number(e.target.value) || 30 })
-                      }
-                    />
-                    <span className="slider-value">{pendingSettings.screen_capture_interval_secs}s</span>
-                  </div>
-                </div>
-              )}
-
-              {/* LLM Router / SOAP Note Settings */}
-              <div className="settings-divider" />
-              <div className="settings-section-title">SOAP Note Generation</div>
-
-              <div className="settings-group">
-                <label className="settings-label" htmlFor="llm-router-url">LLM Router URL</label>
-                <input
-                  id="llm-router-url"
-                  type="text"
-                  className="settings-input"
-                  value={pendingSettings.llm_router_url}
-                  onChange={(e) => onSettingsChange({ ...pendingSettings, llm_router_url: e.target.value })}
-                  placeholder="http://localhost:8080"
-                />
-              </div>
-
-              <div className="settings-group">
-                <label className="settings-label" htmlFor="llm-api-key">API Key</label>
-                <input
-                  id="llm-api-key"
-                  type="password"
-                  className="settings-input"
-                  value={pendingSettings.llm_api_key}
-                  onChange={(e) => onSettingsChange({ ...pendingSettings, llm_api_key: e.target.value })}
-                  placeholder="Enter API key"
-                />
-              </div>
-
-              <div className="settings-group">
-                <label className="settings-label" htmlFor="llm-client-id">LLM Client ID</label>
-                <input
-                  id="llm-client-id"
-                  type="text"
-                  className="settings-input"
-                  value={pendingSettings.llm_client_id}
-                  onChange={(e) => onSettingsChange({ ...pendingSettings, llm_client_id: e.target.value })}
-                  placeholder="clinic-001"
-                />
-              </div>
-
-              <div className="settings-group">
-                <label className="settings-label" htmlFor="soap-model">SOAP Model</label>
-                <select
-                  id="soap-model"
-                  className="settings-select"
-                  value={pendingSettings.soap_model}
-                  onChange={(e) => onSettingsChange({ ...pendingSettings, soap_model: e.target.value })}
-                >
-                  <option value={pendingSettings.soap_model}>{pendingSettings.soap_model}</option>
-                  {llmModels
-                    .filter((m) => m !== pendingSettings.soap_model)
-                    .map((m) => (
-                      <option key={m} value={m}>{m}</option>
-                    ))}
-                </select>
-              </div>
-
-              <div className="settings-group">
-                <label className="settings-label" htmlFor="fast-model">Fast Model (for greeting detection)</label>
-                <select
-                  id="fast-model"
-                  className="settings-select"
-                  value={pendingSettings.fast_model}
-                  onChange={(e) => onSettingsChange({ ...pendingSettings, fast_model: e.target.value })}
-                >
-                  <option value={pendingSettings.fast_model}>{pendingSettings.fast_model}</option>
-                  {llmModels
-                    .filter((m) => m !== pendingSettings.fast_model)
-                    .map((m) => (
-                      <option key={m} value={m}>{m}</option>
-                    ))}
-                </select>
-              </div>
-
-              <div className="settings-group ollama-status-group">
-                <div className="ollama-status">
-                  <span className={`status-indicator ${llmStatus?.connected ? 'connected' : 'disconnected'}`} />
-                  <span className="status-text">
-                    {llmStatus?.connected
-                      ? `Connected (${llmModels.length} models)`
-                      : llmStatus?.error || 'Not connected'}
-                  </span>
-                </div>
-                <button className="btn-test" onClick={onTestLLM}>
-                  Test
-                </button>
-              </div>
-
-              {/* Medplum EMR Settings */}
-              <div className="settings-divider" />
-              <div className="settings-section-title">Medplum EMR</div>
-
-              <div className="settings-group">
-                <label className="settings-label" htmlFor="medplum-url">Server URL</label>
-                <input
-                  id="medplum-url"
-                  type="text"
-                  className="settings-input"
-                  value={pendingSettings.medplum_server_url}
-                  onChange={(e) => onSettingsChange({ ...pendingSettings, medplum_server_url: e.target.value })}
-                  placeholder="http://localhost:8103"
-                  disabled={authState.is_authenticated}
-                />
-              </div>
-
-              <div className="settings-group">
-                <label className="settings-label" htmlFor="medplum-client-id">Client ID</label>
-                <input
-                  id="medplum-client-id"
-                  type="text"
-                  className="settings-input"
-                  value={pendingSettings.medplum_client_id}
-                  onChange={(e) => onSettingsChange({ ...pendingSettings, medplum_client_id: e.target.value })}
-                  placeholder="Enter client ID from Medplum"
-                  disabled={authState.is_authenticated}
-                />
-              </div>
-
-              <div className="settings-group">
-                <div className="settings-toggle">
-                  <span className="settings-label" style={{ marginBottom: 0 }}>Auto-sync encounters</span>
-                  <label className="toggle-switch">
-                    <input
-                      type="checkbox"
-                      checked={pendingSettings.medplum_auto_sync}
-                      onChange={(e) =>
-                        onSettingsChange({ ...pendingSettings, medplum_auto_sync: e.target.checked })
-                      }
-                      aria-label="Auto-sync encounters to Medplum"
-                    />
-                    <span className="toggle-slider"></span>
-                  </label>
-                </div>
-              </div>
-
-              <div className="settings-group ollama-status-group">
-                <div className="ollama-status">
-                  <span className={`status-indicator ${medplumConnected ? 'connected' : 'disconnected'}`} />
-                  <span className="status-text">
-                    {medplumConnected
-                      ? 'Connected'
-                      : medplumError || 'Not connected'}
-                  </span>
-                </div>
-                <button className="btn-test" onClick={onTestMedplum}>
-                  Test
-                </button>
-              </div>
-
-              {/* Medplum Authentication */}
-              <div className="settings-group medplum-auth-group">
-                {authState.is_authenticated ? (
-                  <div className="medplum-auth-status">
-                    <div className="auth-user-info">
-                      <span className="status-indicator connected" />
-                      <span className="auth-user-name">
-                        {authState.practitioner_name || 'Signed in'}
-                      </span>
-                    </div>
-                    <button
-                      className="btn-signout"
-                      onClick={onLogout}
-                      disabled={authLoading}
-                    >
-                      {authLoading ? 'Signing out...' : 'Sign Out'}
-                    </button>
-                  </div>
-                ) : (
-                  <div className="medplum-login-actions">
-                    <button
-                      className="btn-signin"
-                      onClick={onLogin}
-                      disabled={authLoading || !medplumConnected}
-                      title={!medplumConnected ? 'Connect to server first' : ''}
-                    >
-                      {authLoading ? 'Signing in...' : 'Sign In with Medplum'}
-                    </button>
-                    {authLoading && (
-                      <button
-                        className="btn-cancel-login"
-                        onClick={onCancelLogin}
-                      >
-                        Cancel
-                      </button>
-                    )}
+                    <p className="settings-hint" style={{ marginTop: 16, opacity: 0.5, fontSize: 10 }}>
+                      Additional options available in config.json
+                    </p>
                   </div>
                 )}
               </div>
+
+              {/* ── Zone 4: Speaker Profiles ── */}
+              <div className="settings-divider" />
+              <button
+                className="speaker-profiles-button"
+                onClick={() => setShowSpeakerProfiles(true)}
+              >
+                Manage Speaker Profiles
+              </button>
             </>
           )}
         </div>
