@@ -41,7 +41,7 @@ A real-time speech-to-text transcription desktop application built with Tauri, R
 - **Compact sidebar** - 300px width, designed for dual-monitor clinical workflows
 - **Light mode** - Clinical-friendly color scheme
 - **Collapsible sections** - Transcript, biomarkers, SOAP notes
-- **Settings drawer** - Slide-out configuration panel
+- **Settings drawer** - 4-zone minimalistic configuration: 5 clinical controls visible at first open, connection status bar, collapsible Advanced section for IT settings, speaker profile management as sub-view
 
 ## Requirements
 
@@ -99,10 +99,11 @@ tauri-app/
 │   │   ├── AudioPlayer.tsx
 │   │   ├── SpeakerEnrollment.tsx # Speaker voice enrollment
 │   │   ├── ClinicalChat.tsx      # Clinical assistant chat
-│   │   ├── ImageSuggestions.tsx   # MIIS medical illustrations
+│   │   ├── ImageSuggestions.tsx   # Medical illustrations (AI-generated or MIIS)
 │   │   ├── PatientPulse.tsx      # Glanceable biomarker summary
 │   │   ├── PatientVoiceMonitor.tsx # Patient voice metric trending
 │   │   ├── SyncStatusBar.tsx     # EMR sync status
+│   │   ├── SplitWindow.tsx       # Session split window (standalone)
 │   │   └── cleanup/             # Session cleanup tools
 │   │       ├── CleanupActionBar.tsx
 │   │       ├── DeleteConfirmDialog.tsx
@@ -129,6 +130,7 @@ tauri-app/
 │   │   │   ├── speaker_profiles.rs # Speaker enrollment CRUD
 │   │   │   ├── clinical_chat.rs  # Clinical assistant chat
 │   │   │   ├── miis.rs           # Medical illustration proxy
+│   │   │   ├── images.rs         # AI image generation (Gemini)
 │   │   │   ├── screenshot.rs     # Screen capture
 │   │   │   ├── continuous.rs     # Continuous charting mode
 │   │   │   ├── archive.rs        # Local session history
@@ -147,14 +149,25 @@ tauri-app/
 │   │   ├── ollama.rs             # Re-exports from llm_client.rs (backward compat)
 │   │   ├── medplum.rs            # Medplum FHIR client
 │   │   ├── continuous_mode.rs    # Continuous charting mode (end-of-day)
+│   │   ├── encounter_detection.rs # Encounter detection prompts/parsing
+│   │   ├── encounter_merge.rs   # Encounter merge prompts/parsing
+│   │   ├── encounter_pipeline.rs # Shared pipeline helpers (SOAP gen, merge checks)
+│   │   ├── screenshot_task.rs   # Screenshot capture task (continuous mode)
+│   │   ├── patient_name_tracker.rs # Vision-based patient name extraction
 │   │   ├── local_archive.rs      # Local session storage
 │   │   ├── speaker_profiles.rs   # Speaker enrollment storage
 │   │   ├── screenshot.rs         # Screen capture (in-memory JPEG)
 │   │   ├── whisper_server.rs     # STT Router client
+│   │   ├── gemini_client.rs      # Google Gemini API client (image generation)
 │   │   ├── debug_storage.rs      # Debug storage (dev only)
 │   │   ├── permissions.rs        # macOS permission checks
-│   │   ├── activity_log.rs       # Structured logging
+│   │   ├── activity_log.rs       # Structured PHI-safe logging
 │   │   ├── shadow_log.rs         # Shadow mode CSV logging
+│   │   ├── pipeline_log.rs       # Pipeline replay JSONL logger
+│   │   ├── segment_log.rs        # Per-segment JSONL timeline logger
+│   │   ├── replay_bundle.rs      # Encounter replay test case builder
+│   │   ├── day_log.rs            # Day-level orchestration JSONL logger
+│   │   ├── transcript_buffer.rs  # Timestamped transcript segment buffer
 │   │   ├── presence_sensor.rs    # mmWave presence sensor (serial)
 │   │   ├── preprocessing.rs      # Audio preprocessing (DC removal, high-pass, AGC)
 │   │   ├── diarization/          # Speaker detection
@@ -239,7 +252,7 @@ pnpm soak:test         # Interactive
 
 | Category | Framework | Count |
 |----------|-----------|-------|
-| Unit Tests (Frontend) | Vitest | 433 tests |
+| Unit Tests (Frontend) | Vitest | 437 tests |
 | Unit Tests (Rust) | cargo test | 574 tests |
 | E2E Integration (Rust) | cargo test (ignored) | 32 tests |
 | Snapshot Tests | Vitest | 7 snapshots |
@@ -260,8 +273,8 @@ Settings are stored in `~/.transcriptionapp/config.json`:
 {
   "language": "en",
   "input_device_id": null,
-  "diarization_enabled": false,
-  "max_speakers": 10,
+  "diarization_enabled": true,
+  "max_speakers": 4,
   "whisper_server_url": "http://10.241.15.154:8001",
   "stt_alias": "medical-streaming",
   "stt_postprocess": true,
@@ -278,7 +291,7 @@ Settings are stored in `~/.transcriptionapp/config.json`:
   "greeting_sensitivity": 0.7,
   "min_speech_duration_ms": 2000,
   "charting_mode": "session",
-  "encounter_detection_mode": "llm",
+  "encounter_detection_mode": "hybrid",
   "encounter_check_interval_secs": 120,
   "presence_sensor_port": "/dev/cu.usbserial-2110",
   "presence_absence_threshold_secs": 180,

@@ -124,10 +124,10 @@ ORT_DYLIB_PATH=$(./scripts/setup-ort.sh) \
 ```bash
 cd tauri-app
 
-# Frontend tests (387 tests)
+# Frontend tests (437 tests)
 pnpm test:run
 
-# Rust tests (421 unit + 10 E2E integration)
+# Rust tests (670 tests, 29 ignored)
 cd src-tauri
 ORT_DYLIB_PATH=$(../scripts/setup-ort.sh) cargo test
 

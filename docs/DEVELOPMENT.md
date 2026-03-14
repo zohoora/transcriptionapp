@@ -114,7 +114,7 @@ ORT_DYLIB_PATH=$(./scripts/setup-ort.sh) \
 
 ## Testing
 
-### Frontend Tests (387 tests)
+### Frontend Tests (437 tests)
 
 ```bash
 cd tauri-app
@@ -123,7 +123,7 @@ pnpm test              # Watch mode
 pnpm test:coverage     # With coverage
 ```
 
-### Rust Tests (421 unit + 10 E2E)
+### Rust Tests (670 tests, 29 ignored)
 
 ```bash
 cd tauri-app/src-tauri

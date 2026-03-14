@@ -117,12 +117,12 @@ refactor: extract audio resampling into separate module
 
 ## Testing
 
-We maintain comprehensive test coverage (439 frontend tests, 670 Rust tests). All PRs must pass tests.
+We maintain comprehensive test coverage (437 frontend tests, 670 Rust tests). All PRs must pass tests.
 
 ### Running Tests
 
 ```bash
-# Frontend tests (439 tests)
+# Frontend tests (437 tests)
 pnpm test:run
 
 # Rust tests with ONNX Runtime (670 tests)
@@ -289,7 +289,7 @@ proptest! {
 
 | Module | Purpose |
 |--------|---------|
-| `commands/` | Tauri IPC command handlers (16 submodules) |
+| `commands/` | Tauri IPC command handlers (17 submodules) |
 | `session` | Recording state machine (Idle→Preparing→Recording→Stopping→Completed) |
 | `pipeline` | Audio processing coordination (VAD, Whisper, diarization, enhancement) |
 | `audio` | Device enumeration, audio capture, resampling (rubato) |
@@ -311,7 +311,19 @@ proptest! {
 | `llm_client` | OpenAI-compatible LLM client for SOAP generation |
 | `ollama` | Re-exports from llm_client.rs (backward compat) |
 | `medplum` | Medplum FHIR client (OAuth, encounters, documents) |
+| `encounter_detection` | Encounter detection prompts/parsing + clinical content check |
+| `encounter_merge` | Encounter merge prompts/parsing (M1 name-aware strategy) |
+| `encounter_pipeline` | Shared pipeline helpers (SOAP generation, merge checks) |
+| `screenshot_task` | Screenshot capture task for continuous mode |
+| `patient_name_tracker` | Vision-based patient name extraction + majority-vote |
+| `presence_sensor` | mmWave presence sensor (SEN0395 via serial) |
+| `gemini_client` | Google Gemini API client (AI image generation) |
+| `shadow_log` | Shadow mode CSV logging (dual detection comparison) |
 | `activity_log` | Structured PHI-safe activity logging |
+| `pipeline_log` | Pipeline replay JSONL logger |
+| `segment_log` | Per-segment JSONL timeline logger (continuous mode) |
+| `replay_bundle` | Self-contained encounter replay test case builder |
+| `day_log` | Day-level orchestration JSONL logger |
 
 ### Frontend (React)
 
@@ -327,7 +339,7 @@ proptest! {
 | `ConversationDynamicsSection` | Turn-taking, overlap, response latency |
 | `PatientPulse` | Glanceable biomarker summary |
 | `PatientVoiceMonitor` | Patient-focused voice metric trending |
-| `SettingsDrawer` | Configuration panel |
+| `SettingsDrawer` | 4-zone settings panel (Clinical Workflow, Connection Status, Advanced, Speaker Profiles) |
 | `Header` | App title, history button, settings button |
 | `AuthProvider` | Medplum OAuth context |
 | `LoginScreen` | Medplum login UI |
@@ -335,7 +347,7 @@ proptest! {
 | `EncounterBar` | Active encounter display |
 | `SpeakerEnrollment` | Speaker voice enrollment |
 | `ClinicalChat` | Clinical assistant chat panel |
-| `ImageSuggestions` | MIIS medical illustration display |
+| `ImageSuggestions` | Medical illustration display (AI-generated via Gemini or MIIS server) |
 | `SyncStatusBar` | EMR sync status indicator |
 | `HistoryWindow` | Separate window for encounter history |
 | `HistoryView` | Encounter history list |

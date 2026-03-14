@@ -117,7 +117,7 @@ cd src-tauri && cargo test       # Rust
 
 | Task | Files to Modify |
 |------|-----------------|
-| Add new setting | `config.rs`, `types/index.ts`, `useSettings.ts`, `SettingsDrawer.tsx` |
+| Add new setting | `config.rs`, `types/index.ts`; if UI-visible: also `useSettings.ts` (PendingSettings), `SettingsDrawer.tsx` (Zone 1 or Zone 3 Advanced) |
 | Modify transcription | `pipeline.rs`, `whisper_server.rs` (STT Router streaming), `transcription.rs` (types) |
 | Change SOAP prompt | `llm_client.rs` (`build_multi_patient_soap_prompt()`) |
 | Modify LLM integration | `llm_client.rs`, `commands/ollama.rs`, `useOllamaConnection.ts` |
@@ -134,7 +134,7 @@ cd src-tauri && cargo test       # Rust
 | Modify MIIS integration | `commands/miis.rs`, `useMiisImages.ts`, `ImageSuggestions.tsx`, `usePredictiveHint.ts` |
 | Modify AI images | `gemini_client.rs`, `commands/images.rs`, `useAiImages.ts`, `usePredictiveHint.ts`, `ImageSuggestions.tsx` |
 | Modify continuous mode | `continuous_mode.rs`, `encounter_detection.rs` (detection prompts + retrospective check), `encounter_merge.rs` (merge prompts), `encounter_pipeline.rs` (shared SOAP generation + merge check helpers), `commands/continuous.rs`, `useContinuousMode.ts`, `ContinuousMode.tsx` |
-| Modify presence sensor | `presence_sensor.rs`, `config.rs` (sensor fields), `commands/continuous.rs`, `SettingsDrawer.tsx`, `ContinuousMode.tsx` |
+| Modify presence sensor | `presence_sensor.rs`, `config.rs` (sensor fields), `commands/continuous.rs`, `SettingsDrawer.tsx` (Zone 3 Advanced → Continuous Mode), `ContinuousMode.tsx` |
 | Modify patient biomarkers | `usePatientBiomarkers.ts`, `PatientPulse.tsx`, `PatientVoiceMonitor.tsx` |
 | Modify session cleanup (history) | `commands/archive.rs`, `HistoryWindow.tsx`, `components/cleanup/` (CleanupActionBar, DeleteConfirmDialog, EditNameDialog, MergeConfirmDialog, SplitView), `SplitWindow.tsx` (standalone split window) |
 | Modify shadow mode | `shadow_log.rs`, `continuous_mode.rs` (shadow observer task), `config.rs` (`shadow_active_method`, `shadow_csv_log_enabled`) |
@@ -306,7 +306,7 @@ Key settings groups: STT Router (whisper_server_url, stt_alias=`"medical-streami
 - `AuthProvider.tsx` - Medplum OAuth context provider
 - `LoginScreen.tsx` - OAuth login flow UI
 - `ErrorBoundary.tsx` - React error boundary with fallback UI
-- `SettingsDrawer.tsx` - Configuration panel
+- `SettingsDrawer.tsx` - 4-zone settings panel (Clinical Workflow → Connection Status → Advanced [collapsed] → Speaker Profiles [sub-view]). 5 visible controls at first open; IT/developer settings behind Advanced accordion. ~617 lines
 - `HistoryView.tsx` / `HistoryWindow.tsx` - Session archive browsing (Gmail-style split-pane: calendar+list left, detail right)
 - `Calendar.tsx` - Date picker for archive history
 - `PatientSearch.tsx` - Medplum patient search
@@ -316,7 +316,7 @@ Key settings groups: STT Router (whisper_server_url, stt_alias=`"medical-streami
 - `AudioQualitySection.tsx` - Mic level/SNR/clipping display
 - `SpeakerEnrollment.tsx` - Speaker voice enrollment UI
 - `ClinicalChat.tsx` - Clinical assistant chat panel
-- `ImageSuggestions.tsx` - MIIS medical illustration display
+- `ImageSuggestions.tsx` - Medical illustration display (AI-generated via Gemini or MIIS server)
 - `EncounterBar.tsx` - Active encounter status in continuous mode
 - `SyncStatusBar.tsx` - EMR sync status indicator
 - `ConversationDynamicsSection.tsx` - Turn-taking and engagement metrics
@@ -340,7 +340,7 @@ Key settings groups: STT Router (whisper_server_url, stt_alias=`"medical-streami
 - `useSessionState` - Recording state, transcript, biomarkers
 - `useSoapNote` - SOAP generation
 - `useMedplumSync` - EMR sync with encounter tracking
-- `useSettings` - Configuration management
+- `useSettings` - Configuration management (`PendingSettings` = 24 UI-editable fields, subset of full `Settings`; `diarization_enabled`/`whisper_mode` hardcoded in save, not in pending)
 - `useAutoDetection` - Listening mode
 - `useSpeakerProfiles` - Speaker enrollment CRUD operations
 - `useClinicalChat` - Clinical assistant chat during recording
@@ -476,7 +476,7 @@ cargo run --bin detection_replay_cli -- --all --override hybrid_confirm_window_s
 
 ## Adding New Features
 
-1. **Config**: Add field to `config.rs`, `types/index.ts`, `useSettings.ts`, `SettingsDrawer.tsx`
+1. **Config**: Add field to `config.rs`, `types/index.ts`. If UI-visible: also add to `PendingSettings` in `useSettings.ts` + `SettingsDrawer.tsx` (Zone 1 for clinical, Zone 3 Advanced for IT/infra). Config-only settings: edit `~/.transcriptionapp/config.json` directly
 2. **Model**: Add URL/download in `commands/models.rs`, check in `checklist.rs`
 3. **Command**: Add to `commands/*.rs`, register in `lib.rs`
 4. **Pipeline**: Add provider initialization in `pipeline.rs`
