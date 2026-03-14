@@ -1,0 +1,50 @@
+You are reviewing a technical strategy memo for an AI ambient scribe / continuous clinical documentation system.
+
+Important constraints:
+- You do NOT have the full codebase.
+- Treat the attached memo and any attached excerpts as the only admissible evidence.
+- Do NOT assume undocumented capabilities.
+- Do NOT fill gaps with generic ambient-AI advice unless you clearly label it as inference.
+- Be hard to impress. Your job is to find weak assumptions, hidden complexity, likely failure modes, and places where the memo overstates confidence.
+
+Primary document:
+- codex_edge_case_detection.md
+
+Supporting documents:
+- 01-system-map.md
+- 03-backend-analysis.md
+- 05-reliability-and-testing.md
+- 06-prioritized-roadmap.md
+- evidence_appendix.md
+
+What I want from you:
+1. Critique the memo’s core thesis.
+2. Identify which recommendations are genuinely strong vs merely plausible.
+3. Identify where the memo underestimates real-world messiness.
+4. Identify where the memo underestimates implementation complexity or operational burden.
+5. Identify where the memo is too conservative and may be leaving product advantage on the table.
+6. Propose a better prioritization if you disagree.
+7. Flag any recommendation that is likely to create more complexity than value.
+8. Evaluate whether the memo’s suggested build order is sound.
+9. Evaluate whether the hardware recommendations are realistic for actual clinical deployment.
+10. Point out anything important that is missing.
+
+Be specific and opinionated.
+
+Required output format:
+- Findings first, ordered by severity.
+- For each finding, include:
+  - claim being challenged
+  - why it may be wrong or incomplete
+  - what evidence in the attached material supports your critique
+  - whether you would change the recommendation
+- Then provide:
+  - Recommendations I agree with
+  - Recommendations I would downgrade
+  - Recommendations I would reject
+  - Recommendations I would add
+  - Revised build order
+- End with:
+  - What cannot be evaluated confidently without direct code access
+
+Do not praise the memo. Stress-test it.
