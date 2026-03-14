@@ -19,9 +19,10 @@ use std::path::PathBuf;
 use tracing::{info, warn};
 
 use crate::continuous_mode::{
-    build_encounter_detection_prompt, build_encounter_merge_prompt, parse_encounter_detection,
-    parse_merge_check, EncounterDetectionResult, MergeCheckResult,
+    build_encounter_detection_prompt, parse_encounter_detection,
+    EncounterDetectionResult, MergeCheckResult,
 };
+use crate::encounter_merge::{build_encounter_merge_prompt, parse_merge_check};
 use crate::llm_client::LLMClient;
 
 // ============================================================================

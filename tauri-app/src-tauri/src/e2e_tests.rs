@@ -43,9 +43,9 @@
 mod tests {
     use crate::config::Config;
     use crate::continuous_mode::{
-        build_encounter_detection_prompt, build_encounter_merge_prompt,
-        parse_encounter_detection, parse_merge_check,
+        build_encounter_detection_prompt, parse_encounter_detection,
     };
+    use crate::encounter_merge::{build_encounter_merge_prompt, parse_merge_check};
     use crate::encounter_experiment::strip_hallucinations;
     use crate::llm_client::LLMClient;
     use crate::local_archive;
