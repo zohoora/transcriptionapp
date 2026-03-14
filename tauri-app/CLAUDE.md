@@ -59,6 +59,8 @@ Rust Backend
 ├── patient_name_tracker.rs # Vision-based patient name extraction + majority-vote tracker
 ├── encounter_detection.rs  # Encounter detection prompts/parsing + clinical content check + retrospective multi-patient check
 ├── encounter_merge.rs # Encounter merge prompts/parsing (M1 name-aware strategy)
+├── encounter_pipeline.rs # Shared encounter pipeline helpers (SOAP generation, merge checks, clinical content check)
+├── screenshot_task.rs # Screenshot capture task for continuous mode (extracted from continuous_mode.rs)
 ├── debug_storage.rs   # Debug storage (dev only)
 ├── permissions.rs     # macOS permission checks
 ├── ollama.rs          # Re-exports from llm_client.rs (backward compat)
@@ -131,7 +133,7 @@ cd src-tauri && cargo test       # Rust
 | Modify SOAP options | `useSoapNote.ts` (hook), `llm_client.rs` (prompt building), `local_archive.rs` (metadata) |
 | Modify MIIS integration | `commands/miis.rs`, `useMiisImages.ts`, `ImageSuggestions.tsx`, `usePredictiveHint.ts` |
 | Modify AI images | `gemini_client.rs`, `commands/images.rs`, `useAiImages.ts`, `usePredictiveHint.ts`, `ImageSuggestions.tsx` |
-| Modify continuous mode | `continuous_mode.rs`, `encounter_detection.rs` (detection prompts + retrospective check), `encounter_merge.rs` (merge prompts), `commands/continuous.rs`, `useContinuousMode.ts`, `ContinuousMode.tsx` |
+| Modify continuous mode | `continuous_mode.rs`, `encounter_detection.rs` (detection prompts + retrospective check), `encounter_merge.rs` (merge prompts), `encounter_pipeline.rs` (shared SOAP generation + merge check helpers), `commands/continuous.rs`, `useContinuousMode.ts`, `ContinuousMode.tsx` |
 | Modify presence sensor | `presence_sensor.rs`, `config.rs` (sensor fields), `commands/continuous.rs`, `SettingsDrawer.tsx`, `ContinuousMode.tsx` |
 | Modify patient biomarkers | `usePatientBiomarkers.ts`, `PatientPulse.tsx`, `PatientVoiceMonitor.tsx` |
 | Modify session cleanup (history) | `commands/archive.rs`, `HistoryWindow.tsx`, `components/cleanup/` (CleanupActionBar, DeleteConfirmDialog, EditNameDialog, MergeConfirmDialog, SplitView), `SplitWindow.tsx` (standalone split window) |
@@ -245,7 +247,7 @@ Idle → Preparing → Recording → Stopping → Completed
 | **Shadow Mode** | Dual detection comparison — runs sensor and LLM concurrently, logs decisions to CSV for accuracy analysis. Config: `encounter_detection_mode="shadow"`, `shadow_active_method` | `shadow_log.rs`, `continuous_mode.rs` |
 | **Session Cleanup** | History window tools: delete, split, merge sessions, rename patients, renumber encounters. Split opens in separate resizable window with LLM-suggested split point (`suggest_split_points` via `fast-model`) | `commands/archive.rs`, `components/cleanup/`, `SplitWindow.tsx` |
 | **Vision Experiments** | CLI + IPC tools for comparing vision-based SOAP strategies across archived sessions | `vision_experiment.rs`, `commands/ollama.rs` |
-| **Simulation Replay Logging** | Three-tier structured logging for offline replay and regression testing: per-segment JSONL timeline (`segments.jsonl`), self-contained encounter test case (`replay_bundle.json` — all LLM prompts/responses, sensor transitions, vision results, split decisions), day-level orchestration events (`day_log.jsonl`). Config snapshot via `replay_snapshot()`. ~0.5-3MB/day | `segment_log.rs`, `replay_bundle.rs`, `day_log.rs`, `config.rs` |
+| **Simulation Replay Logging** | Three-tier structured logging for offline replay and regression testing: per-segment JSONL timeline (`segments.jsonl`), self-contained encounter test case (`replay_bundle.json` — all LLM prompts/responses, sensor transitions, vision results, split decisions), day-level orchestration events (`day_log.jsonl`). Config snapshot via `replay_snapshot()`. ~0.5-3MB/day. `detection_replay_cli` replays archived decisions through `evaluate_detection()` with `--override` for what-if parameter tuning | `segment_log.rs`, `replay_bundle.rs`, `day_log.rs`, `config.rs`, `tools/detection_replay_cli.rs` |
 
 ### Continuous Mode Lifecycle Notes
 - `started` event emitted only after pipeline successfully starts
@@ -254,6 +256,9 @@ Idle → Preparing → Recording → Stopping → Completed
 - Charting mode switch to "session" blocked while continuous recording is active
 - Transcript preview uses `continuous_transcript_preview` event (separate namespace from session)
 - Flush-on-stop: when continuous mode stops with buffered transcript (>100 words), the flush path now mirrors the normal encounter split pipeline — metadata enrichment (`charting_mode`, `encounter_number`, `detection_method="flush"`, `patient_name`), clinical content check (non-clinical transcripts skip SOAP), merge check (runs before SOAP to avoid wasted LLM calls), accurate `encounter_started_at` from `TranscriptBuffer.first_timestamp()`. Fail-open: LLM errors during clinical check → assume clinical
+- Shared pipeline helpers in `encounter_pipeline.rs`: SOAP generation (`generate_and_archive_soap()`), merge checks (`run_merge_check()`), clinical content checks, metadata enrichment — used by both the main detector loop and flush-on-stop path. Eliminates duplication across 8 call sites
+- Detection decisions are a single source of truth via `evaluate_detection()` pure function in `encounter_detection.rs` — called from production loop and replayable offline via `detection_replay_cli`
+- Screenshot task logic extracted to `screenshot_task.rs` — periodic capture, blank detection, vision name extraction, stale vote suppression
 
 ## Settings Schema
 
@@ -442,18 +447,24 @@ Config fields in `config.rs`: `encounter_detection_model` (default "fast-model")
 
 ### Experiment CLIs
 
-For deeper investigation of model accuracy:
+For deeper investigation of model accuracy and detection replay:
 
 ```bash
 cd src-tauri
 
-# Encounter detection experiments (replays archived transcripts)
+# Encounter detection experiments (replays archived transcripts through different prompts)
 cargo run --bin encounter_experiment_cli
 cargo run --bin encounter_experiment_cli -- --model fast-model
 cargo run --bin encounter_experiment_cli -- --detect-only p0 p3
 
 # Vision SOAP experiments
 cargo run --bin vision_experiment_cli
+
+# Detection replay (replays archived detection decisions through evaluate_detection())
+cargo run --bin detection_replay_cli -- ~/.transcriptionapp/archive/2026/03/12/
+cargo run --bin detection_replay_cli -- --all
+cargo run --bin detection_replay_cli -- --all --mismatches
+cargo run --bin detection_replay_cli -- --all --override hybrid_confirm_window_secs=120
 ```
 
 ## Testing Best Practices
