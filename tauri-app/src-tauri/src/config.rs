@@ -253,7 +253,7 @@ fn default_screen_capture_interval_secs() -> u32 {
 }
 
 fn default_miis_server_url() -> String {
-    "http://10.241.15.154:7843".to_string()
+    "http://100.119.83.76:7843".to_string()
 }
 
 fn default_image_source() -> String {
@@ -322,7 +322,7 @@ fn default_whisper_mode() -> String {
 }
 
 fn default_whisper_server_url() -> String {
-    "http://10.241.15.154:8001".to_string()
+    "http://100.119.83.76:8001".to_string()
 }
 
 fn default_whisper_server_model() -> String {
@@ -1243,14 +1243,14 @@ mod tests {
     fn test_whisper_server_defaults() {
         let config = Config::default();
         assert_eq!(config.whisper_mode, "remote");  // Always remote
-        assert_eq!(config.whisper_server_url, "http://10.241.15.154:8001");
+        assert_eq!(config.whisper_server_url, "http://100.119.83.76:8001");
         assert_eq!(config.whisper_server_model, "large-v3-turbo");
         assert_eq!(config.stt_alias, "medical-streaming");
         assert!(config.stt_postprocess);
 
         let settings = Settings::default();
         assert_eq!(settings.whisper_mode, "remote");  // Always remote
-        assert_eq!(settings.whisper_server_url, "http://10.241.15.154:8001");
+        assert_eq!(settings.whisper_server_url, "http://100.119.83.76:8001");
         assert_eq!(settings.whisper_server_model, "large-v3-turbo");
         assert_eq!(settings.stt_alias, "medical-streaming");
         assert!(settings.stt_postprocess);

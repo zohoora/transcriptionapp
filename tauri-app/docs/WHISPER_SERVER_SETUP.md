@@ -279,7 +279,7 @@ In `~/.transcriptionapp/config.json`:
 
 ```json
 {
-  "whisper_server_url": "http://10.241.15.154:8001",
+  "whisper_server_url": "http://100.119.83.76:8001",
   "stt_alias": "medical-streaming",
   "stt_postprocess": true
 }

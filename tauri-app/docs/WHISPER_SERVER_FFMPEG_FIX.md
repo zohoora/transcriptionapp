@@ -2,7 +2,7 @@
 
 ## Issue Summary
 
-The Whisper transcription server at `http://10.241.15.154:8001` is returning 500 errors when processing audio transcription requests due to a missing `ffmpeg` dependency.
+The Whisper transcription server at `http://100.119.83.76:8001` is returning 500 errors when processing audio transcription requests due to a missing `ffmpeg` dependency.
 
 ## Error Details
 
@@ -17,7 +17,7 @@ The faster-whisper/speaches server requires `ffmpeg` to decode incoming audio fi
 
 ## Current Server Status
 
-- **URL**: `http://10.241.15.154:8001`
+- **URL**: `http://100.119.83.76:8001`
 - **API**: OpenAI-compatible (`/v1/audio/transcriptions`, `/v1/models`)
 - **Model Available**: `large-v3-turbo`
 - **Health Check**: `/v1/models` endpoint responds correctly
@@ -114,7 +114,7 @@ After installing ffmpeg, verify the fix:
 3. **Test transcription endpoint:**
    ```bash
    # Create a test audio file (or use existing)
-   curl -X POST "http://10.241.15.154:8001/v1/audio/transcriptions" \
+   curl -X POST "http://100.119.83.76:8001/v1/audio/transcriptions" \
      -H "Content-Type: multipart/form-data" \
      -F "file=@test_audio.wav" \
      -F "model=large-v3-turbo" \
@@ -134,7 +134,7 @@ The transcription app is configured to use:
 
 | Setting | Value |
 |---------|-------|
-| `whisper_server_url` | `http://10.241.15.154:8001` |
+| `whisper_server_url` | `http://100.119.83.76:8001` |
 | `stt_alias` | `medical-streaming` |
 | `stt_postprocess` | `true` |
 

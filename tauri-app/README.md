@@ -275,7 +275,7 @@ Settings are stored in `~/.transcriptionapp/config.json`:
   "input_device_id": null,
   "diarization_enabled": true,
   "max_speakers": 4,
-  "whisper_server_url": "http://10.241.15.154:8001",
+  "whisper_server_url": "http://100.119.83.76:8001",
   "stt_alias": "medical-streaming",
   "stt_postprocess": true,
   "llm_router_url": "",

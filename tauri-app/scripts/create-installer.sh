@@ -85,17 +85,17 @@ cat > "$OUTPUT_DIR/config.json" << 'EOF'
   "preprocessing_enabled": false,
   "preprocessing_highpass_hz": 80,
   "preprocessing_agc_target_rms": 0.05,
-  "llm_router_url": "http://10.241.15.154:8080",
+  "llm_router_url": "http://100.119.83.76:8080",
   "llm_api_key": "ai-scribe-secret-key",
   "llm_client_id": "ai-scribe",
   "soap_model": "soap-model",
   "soap_model_fast": "soap-model",
   "fast_model": "fast-model",
-  "medplum_server_url": "http://10.241.15.154:8103",
+  "medplum_server_url": "http://100.119.83.76:8103",
   "medplum_client_id": "af1464aa-e00c-4940-a32e-18d878b7911c",
   "medplum_auto_sync": true,
   "whisper_mode": "remote",
-  "whisper_server_url": "http://10.241.15.154:8001",
+  "whisper_server_url": "http://100.119.83.76:8001",
   "whisper_server_model": "large-v3-turbo",
   "soap_detail_level": 5,
   "soap_format": "problem_based",
@@ -208,7 +208,7 @@ FIRST RUN:
 TROUBLESHOOTING:
 - If "damaged app" error: Run in Terminal: xattr -cr "/Applications/Transcription App.app"
 - If models not found: Check ~/.transcriptionapp/models/ has .onnx files
-- If transcription fails: Verify network access to 10.241.15.154
+- If transcription fails: Verify network access to 100.119.83.76
 README
 
 # 9. Calculate sizes

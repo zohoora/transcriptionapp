@@ -818,8 +818,8 @@ mod tests {
         assert_eq!(http_to_ws_url("http://localhost:8001"), "ws://localhost:8001");
         assert_eq!(http_to_ws_url("https://example.com"), "wss://example.com");
         assert_eq!(
-            http_to_ws_url("http://10.241.15.154:8001"),
-            "ws://10.241.15.154:8001"
+            http_to_ws_url("http://100.119.83.76:8001"),
+            "ws://100.119.83.76:8001"
         );
     }
 
@@ -955,7 +955,7 @@ mod tests {
     /// Integration test: sends real audio to the STT Router via WebSocket streaming.
     /// Run with: cargo test test_streaming_transcription_integration --ignored
     #[test]
-    #[ignore = "Requires live STT Router at 10.241.15.154:8001"]
+    #[ignore = "Requires live STT Router at 100.119.83.76:8001"]
     fn test_streaming_transcription_integration() {
         // Generate 2 seconds of silence (16kHz mono) — enough to trigger a response
         let sample_rate = 16000;
@@ -971,7 +971,7 @@ mod tests {
             .collect();
 
         let client = WhisperServerClient::new(
-            "http://10.241.15.154:8001",
+            "http://100.119.83.76:8001",
             "large-v3-turbo",
         ).expect("Failed to create client");
 
@@ -1002,7 +1002,7 @@ mod tests {
     /// Integration test: sends audio via batch HTTP endpoint.
     /// Run with: cargo test test_batch_transcription_integration --ignored
     #[test]
-    #[ignore = "Requires live STT Router at 10.241.15.154:8001"]
+    #[ignore = "Requires live STT Router at 100.119.83.76:8001"]
     fn test_batch_transcription_integration() {
         let sample_rate = 16000;
         let audio: Vec<f32> = (0..sample_rate * 2)
@@ -1013,7 +1013,7 @@ mod tests {
             .collect();
 
         let client = WhisperServerClient::new(
-            "http://10.241.15.154:8001",
+            "http://100.119.83.76:8001",
             "large-v3-turbo",
         ).expect("Failed to create client");
 

@@ -233,7 +233,7 @@ impl Default for PipelineConfig {
             preprocessing_enabled: true,
             preprocessing_highpass_hz: 80,
             preprocessing_agc_target_rms: 0.1,
-            whisper_server_url: "http://10.241.15.154:8001".to_string(),
+            whisper_server_url: "http://100.119.83.76:8001".to_string(),
             whisper_server_model: "large-v3-turbo".to_string(),
             stt_alias: "medical-streaming".to_string(),
             stt_postprocess: true,

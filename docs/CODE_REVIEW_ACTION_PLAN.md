@@ -92,7 +92,7 @@ All P0 findings have been verified against the actual codebase:
 
 - ~~`llm_api_key`~~: Now defaults to empty string
 - ~~`medplum_server_url`~~: Now defaults to empty string
-- `whisper_server_url`: Still defaults to a network IP (`10.241.15.154:8001`) -- the configured STT Router
+- `whisper_server_url`: Still defaults to a network IP (`100.119.83.76:8001`) -- the configured STT Router
 
 ---
 

@@ -37,7 +37,7 @@ Migrate all transcription modes from batch HTTP to **WebSocket streaming via STT
 
 | Setting | Default | Purpose |
 |---------|---------|---------|
-| `whisper_server_url` | `http://10.241.15.154:8001` | STT Router base URL |
+| `whisper_server_url` | `http://100.119.83.76:8001` | STT Router base URL |
 | `stt_alias` | `medical-streaming` | Named alias for model/pipeline selection |
 | `stt_postprocess` | `true` | Enable medical term post-processing |
 

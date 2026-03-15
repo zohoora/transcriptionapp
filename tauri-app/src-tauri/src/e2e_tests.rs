@@ -20,8 +20,8 @@
 //! # Running
 //!
 //! These tests require live services on the local network:
-//! - STT Router at http://10.241.15.154:8001
-//! - LLM Router at http://10.241.15.154:8080
+//! - STT Router at http://100.119.83.76:8001
+//! - LLM Router at http://100.119.83.76:8080
 //!
 //! ```bash
 //! # Run all E2E tests
@@ -57,10 +57,10 @@ mod tests {
     // ========================================================================
 
     /// STT Router URL (must be running for E2E tests)
-    const STT_ROUTER_URL: &str = "http://10.241.15.154:8001";
+    const STT_ROUTER_URL: &str = "http://100.119.83.76:8001";
 
     /// LLM Router URL (must be running for E2E tests)
-    const LLM_ROUTER_URL: &str = "http://10.241.15.154:8080";
+    const LLM_ROUTER_URL: &str = "http://100.119.83.76:8080";
 
     /// STT alias for streaming transcription
     const STT_ALIAS: &str = "medical-streaming";

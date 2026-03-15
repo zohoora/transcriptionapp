@@ -52,9 +52,9 @@ Run layers one at a time — concurrent WebSocket streams can overload the STT R
 
 | Layer | Failure Meaning | Fix |
 |-------|----------------|-----|
-| 1 - STT Router | STT Router down or unreachable | Check `http://10.241.15.154:8001/health` |
+| 1 - STT Router | STT Router down or unreachable | Check `http://100.119.83.76:8001/health` |
 | 1 - Streaming | WebSocket connection failed | Check STT Router logs, restart if needed |
-| 2 - SOAP empty | LLM Router down or model not loaded | Check `http://10.241.15.154:8080/health` |
+| 2 - SOAP empty | LLM Router down or model not loaded | Check `http://100.119.83.76:8080/health` |
 | 2 - Detection | Encounter detection model regression | Run `cargo run --bin encounter_experiment_cli` to investigate |
 | 3 - Archive | Disk permissions or path issue | Check `~/.transcriptionapp/archive/` is writable |
 | 4 - Session | Full pipeline failure | Diagnose from Layer 1-3 results first |

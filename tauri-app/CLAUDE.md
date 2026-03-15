@@ -287,10 +287,10 @@ Key settings groups: STT Router (whisper_server_url, stt_alias=`"medical-streami
 
 | Service | Default URL | Purpose |
 |---------|-------------|---------|
-| STT Router | `http://10.241.15.154:8001` | WebSocket streaming transcription (alias: `medical-streaming`) |
-| LLM Router | `http://10.241.15.154:8080` | SOAP generation, encounter detection, vision-based patient name extraction (`vision-model` alias) |
-| Medplum | `http://10.241.15.154:8103` | EMR/FHIR |
-| MIIS | `http://10.241.15.154:7843` | Medical illustration images |
+| STT Router | `http://100.119.83.76:8001` | WebSocket streaming transcription (alias: `medical-streaming`) |
+| LLM Router | `http://100.119.83.76:8080` | SOAP generation, encounter detection, vision-based patient name extraction (`vision-model` alias) |
+| Medplum | `http://100.119.83.76:8103` | EMR/FHIR |
+| MIIS | `http://100.119.83.76:7843` | Medical illustration images |
 | Gemini | `https://generativelanguage.googleapis.com` | AI image generation (`gemini-3.1-flash-image-preview`) |
 
 ## Frontend Structure
@@ -437,9 +437,9 @@ Config fields in `config.rs`: `encounter_detection_model` (default "fast-model")
 
 | Failure | Likely Cause | Fix |
 |---------|-------------|-----|
-| Layer 1 health check | STT Router down | Check `http://10.241.15.154:8001/health` |
+| Layer 1 health check | STT Router down | Check `http://100.119.83.76:8001/health` |
 | Layer 1 streaming "Connection reset" | Too many concurrent WebSocket connections | Run tests one layer at a time |
-| Layer 2 SOAP empty | LLM Router down or model not loaded | Check `http://10.241.15.154:8080/health` |
+| Layer 2 SOAP empty | LLM Router down or model not loaded | Check `http://100.119.83.76:8080/health` |
 | Layer 2 detection not complete | Model changed or prompt regression | Run encounter experiment CLI to compare |
 | Layer 2 merge says different | Patient name not in prompt or model regression | Check `build_encounter_merge_prompt()` |
 | Layer 3 archive failure | Disk permissions | Check `~/.transcriptionapp/archive/` writable |
