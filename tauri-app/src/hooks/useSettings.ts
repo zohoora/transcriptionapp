@@ -37,6 +37,7 @@ export interface PendingSettings {
   // Presence sensor settings (hybrid mode)
   encounter_detection_mode: EncounterDetectionMode;
   presence_sensor_port: string;
+  presence_sensor_url: string;
   presence_absence_threshold_secs: number;
   // Encounter merge
   encounter_merge_enabled: boolean;
@@ -96,6 +97,7 @@ export function useSettings(): UseSettingsResult {
     charting_mode: s.charting_mode,
     encounter_detection_mode: s.encounter_detection_mode,
     presence_sensor_port: s.presence_sensor_port,
+    presence_sensor_url: s.presence_sensor_url,
     presence_absence_threshold_secs: s.presence_absence_threshold_secs,
     encounter_merge_enabled: s.encounter_merge_enabled,
     soap_custom_instructions: s.soap_custom_instructions,
@@ -159,6 +161,7 @@ export function useSettings(): UseSettingsResult {
         encounter_merge_enabled: pendingSettings.encounter_merge_enabled,
         encounter_detection_mode: pendingSettings.encounter_detection_mode,
         presence_sensor_port: pendingSettings.presence_sensor_port,
+        presence_sensor_url: pendingSettings.presence_sensor_url,
         presence_absence_threshold_secs: pendingSettings.presence_absence_threshold_secs,
         soap_custom_instructions: pendingSettings.soap_custom_instructions,
       };
@@ -202,6 +205,7 @@ export function useSettings(): UseSettingsResult {
       [settings.encounter_merge_enabled, pendingSettings.encounter_merge_enabled],
       [settings.encounter_detection_mode, pendingSettings.encounter_detection_mode],
       [settings.presence_sensor_port, pendingSettings.presence_sensor_port],
+      [settings.presence_sensor_url, pendingSettings.presence_sensor_url],
       [settings.presence_absence_threshold_secs, pendingSettings.presence_absence_threshold_secs],
       [settings.soap_custom_instructions, pendingSettings.soap_custom_instructions],
     ];

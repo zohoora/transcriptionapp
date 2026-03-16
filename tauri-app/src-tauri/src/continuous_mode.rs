@@ -521,7 +521,8 @@ pub async fn run_continuous_mode(
         config.encounter_detection_mode,
         EncounterDetectionMode::Sensor | EncounterDetectionMode::Shadow | EncounterDetectionMode::Hybrid
     );
-    let use_sensor_mode = needs_sensor && !config.presence_sensor_port.is_empty();
+    let has_sensor_config = !config.presence_sensor_url.is_empty() || !config.presence_sensor_port.is_empty();
+    let use_sensor_mode = needs_sensor && has_sensor_config;
     let mut sensor_handle: Option<crate::presence_sensor::PresenceSensor> = None;
     let sensor_absence_trigger: Arc<tokio::sync::Notify>;
     // Shadow sensor observer uses watch channel for state transitions (not Notify)
@@ -530,12 +531,17 @@ pub async fn run_continuous_mode(
     let mut hybrid_sensor_state_rx: Option<tokio::sync::watch::Receiver<crate::presence_sensor::PresenceState>> = None;
 
     if use_sensor_mode {
-        // Auto-detect sensor port if configured port is missing or changed
-        let sensor_port = crate::presence_sensor::auto_detect_port(&config.presence_sensor_port)
-            .unwrap_or_default();
+        // Auto-detect serial port only when not using HTTP mode
+        let sensor_port = if config.presence_sensor_url.is_empty() {
+            crate::presence_sensor::auto_detect_port(&config.presence_sensor_port)
+                .unwrap_or_default()
+        } else {
+            String::new()
+        };
 
         let sensor_config = crate::presence_sensor::SensorConfig {
             port: sensor_port,
+            url: config.presence_sensor_url.clone(),
             debounce_secs: config.presence_debounce_secs,
             absence_threshold_secs: config.presence_absence_threshold_secs,
             csv_log_enabled: config.presence_csv_log_enabled,

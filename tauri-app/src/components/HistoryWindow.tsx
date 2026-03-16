@@ -274,6 +274,7 @@ const HistoryWindow: React.FC = () => {
           transcript: encDetails.transcript,
           soap_note: encDetails.soapNote,
           audio_path: encDetails.audioUrl, // This is a URL, not a local path
+          patientNotes: null,
         };
       }
 
@@ -300,14 +301,23 @@ const HistoryWindow: React.FC = () => {
         setSoapOptions(globalSoapDefaults);
       }
 
-      // If session has SOAP note, create a simple result to display it
+      // If session has SOAP note, create result for display
       if (details.soap_note) {
+        // Use per-patient notes when available (multi-patient encounter)
+        const notes = details.patientNotes && details.patientNotes.length > 1
+          ? details.patientNotes.map(pn => ({
+              speaker_id: `Patient ${pn.index}`,
+              patient_label: pn.label,
+              content: pn.content,
+            }))
+          : [{
+              speaker_id: 'Patient',
+              patient_label: 'Patient',
+              content: details.soap_note,
+            }];
+
         setSoapResult({
-          notes: [{
-            speaker_id: 'Patient',
-            patient_label: 'Patient',
-            content: details.soap_note,
-          }],
+          notes,
           physician_speaker: null,
           generated_at: details.metadata.ended_at || new Date().toISOString(),
           model_used: 'archived',

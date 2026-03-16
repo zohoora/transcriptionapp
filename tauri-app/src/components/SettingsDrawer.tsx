@@ -469,7 +469,17 @@ export const SettingsDrawer = memo(function SettingsDrawer({
                         {pendingSettings.encounter_detection_mode === 'hybrid' && (
                           <>
                             <div className="settings-group">
-                              <label className="settings-label">Serial Port</label>
+                              <label className="settings-label">Sensor URL (WiFi)</label>
+                              <input
+                                type="text"
+                                className="settings-input"
+                                value={pendingSettings.presence_sensor_url}
+                                onChange={(e) => onSettingsChange({ ...pendingSettings, presence_sensor_url: e.target.value })}
+                                placeholder="http://172.16.100.37"
+                              />
+                            </div>
+                            <div className="settings-group">
+                              <label className="settings-label">Serial Port (fallback)</label>
                               <input
                                 type="text"
                                 className="settings-input"

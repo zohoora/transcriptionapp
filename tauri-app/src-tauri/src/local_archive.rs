@@ -162,14 +162,27 @@ pub struct ArchiveSummary {
     pub has_feedback: Option<bool>,
 }
 
+/// A single patient's SOAP note within a multi-patient encounter
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ArchivedPatientNote {
+    pub index: u32,
+    pub label: String,
+    pub content: String,
+}
+
 /// Detailed archived session (for detail view)
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ArchiveDetails {
     pub session_id: String,
     pub metadata: ArchiveMetadata,
     pub transcript: Option<String>,
     pub soap_note: Option<String>,
     pub audio_path: Option<String>,
+    /// Per-patient SOAP notes (present when patient_count > 1)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub patient_notes: Option<Vec<ArchivedPatientNote>>,
 }
 
 /// User feedback on a session's SOAP note quality
@@ -614,12 +627,37 @@ pub fn get_session(session_id: &str, date_str: &str) -> Result<ArchiveDetails, S
         None
     };
 
+    // Load per-patient SOAP notes if patient_labels.json exists
+    let labels_path = session_dir.join("patient_labels.json");
+    let patient_notes = if labels_path.exists() {
+        let labels_json = fs::read_to_string(&labels_path)
+            .map_err(|e| format!("Failed to read patient_labels.json: {}", e))?;
+        let labels: Vec<serde_json::Value> = serde_json::from_str(&labels_json)
+            .map_err(|e| format!("Failed to parse patient_labels.json: {}", e))?;
+
+        let mut notes = Vec::new();
+        for label_entry in &labels {
+            let index = label_entry["index"].as_u64().unwrap_or(0) as u32;
+            let label = label_entry["label"].as_str().unwrap_or("Patient").to_string();
+            let patient_file = session_dir.join(format!("soap_patient_{}.txt", index));
+            if patient_file.exists() {
+                let content = fs::read_to_string(&patient_file)
+                    .map_err(|e| format!("Failed to read soap_patient_{}.txt: {}", index, e))?;
+                notes.push(ArchivedPatientNote { index, label, content });
+            }
+        }
+        if notes.is_empty() { None } else { Some(notes) }
+    } else {
+        None
+    };
+
     Ok(ArchiveDetails {
         session_id: session_id.to_string(),
         metadata,
         transcript,
         soap_note,
         audio_path,
+        patient_notes,
     })
 }
 

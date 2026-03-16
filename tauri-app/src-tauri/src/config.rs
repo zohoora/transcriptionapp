@@ -166,6 +166,8 @@ pub struct Settings {
     pub encounter_detection_mode: EncounterDetectionMode,
     #[serde(default)]
     pub presence_sensor_port: String,
+    #[serde(default)]
+    pub presence_sensor_url: String,
     #[serde(default = "default_presence_absence_threshold_secs")]
     pub presence_absence_threshold_secs: u64,
     #[serde(default = "default_presence_debounce_secs")]
@@ -396,6 +398,7 @@ impl Default for Settings {
             encounter_detection_nothink: default_encounter_detection_nothink(),
             encounter_detection_mode: default_encounter_detection_mode(),
             presence_sensor_port: String::new(),
+            presence_sensor_url: String::new(),
             presence_absence_threshold_secs: default_presence_absence_threshold_secs(),
             presence_debounce_secs: default_presence_debounce_secs(),
             presence_csv_log_enabled: default_presence_csv_log_enabled(),
@@ -563,11 +566,14 @@ impl Settings {
             });
         }
 
-        // Sensor-only mode requires a sensor port (shadow mode falls back to LLM gracefully)
-        if self.encounter_detection_mode == EncounterDetectionMode::Sensor && self.presence_sensor_port.is_empty() {
+        // Sensor-only mode requires a sensor URL or port (shadow/hybrid fall back to LLM gracefully)
+        if self.encounter_detection_mode == EncounterDetectionMode::Sensor
+            && self.presence_sensor_port.is_empty()
+            && self.presence_sensor_url.is_empty()
+        {
             errors.push(SettingsValidationError {
                 field: "presence_sensor_port".to_string(),
-                message: "Sensor mode requires a presence sensor port to be configured".to_string(),
+                message: "Sensor mode requires a presence sensor URL or serial port to be configured".to_string(),
             });
         }
 
@@ -892,6 +898,7 @@ impl Config {
             "hybrid_confirm_window_secs": self.hybrid_confirm_window_secs,
             "hybrid_min_words_for_sensor_split": self.hybrid_min_words_for_sensor_split,
             "presence_sensor_port": self.presence_sensor_port,
+            "presence_sensor_url": self.presence_sensor_url,
             "presence_absence_threshold_secs": self.presence_absence_threshold_secs,
             "presence_debounce_secs": self.presence_debounce_secs,
             "soap_model": self.soap_model,
@@ -1027,6 +1034,7 @@ mod tests {
             encounter_detection_nothink: default_encounter_detection_nothink(),
             encounter_detection_mode: default_encounter_detection_mode(),
             presence_sensor_port: String::new(),
+            presence_sensor_url: String::new(),
             presence_absence_threshold_secs: default_presence_absence_threshold_secs(),
             presence_debounce_secs: default_presence_debounce_secs(),
             presence_csv_log_enabled: default_presence_csv_log_enabled(),
@@ -1154,6 +1162,7 @@ mod tests {
             encounter_detection_nothink: default_encounter_detection_nothink(),
             encounter_detection_mode: default_encounter_detection_mode(),
             presence_sensor_port: String::new(),
+            presence_sensor_url: String::new(),
             presence_absence_threshold_secs: default_presence_absence_threshold_secs(),
             presence_debounce_secs: default_presence_debounce_secs(),
             presence_csv_log_enabled: default_presence_csv_log_enabled(),
@@ -1541,6 +1550,7 @@ mod tests {
         let config = Config::default();
         assert_eq!(config.encounter_detection_mode, EncounterDetectionMode::Hybrid);
         assert!(config.presence_sensor_port.is_empty());
+        assert!(config.presence_sensor_url.is_empty());
         assert_eq!(config.presence_absence_threshold_secs, 180);
         assert_eq!(config.presence_debounce_secs, 15);
         assert!(config.presence_csv_log_enabled);
@@ -1548,6 +1558,7 @@ mod tests {
         let settings = Settings::default();
         assert_eq!(settings.encounter_detection_mode, EncounterDetectionMode::Hybrid);
         assert!(settings.presence_sensor_port.is_empty());
+        assert!(settings.presence_sensor_url.is_empty());
         assert_eq!(settings.presence_absence_threshold_secs, 180);
         assert_eq!(settings.presence_debounce_secs, 15);
         assert!(settings.presence_csv_log_enabled);
@@ -1606,6 +1617,7 @@ mod tests {
         let mut config = Config::default();
         config.encounter_detection_mode = EncounterDetectionMode::Sensor;
         config.presence_sensor_port = "/dev/cu.usbserial-2110".to_string();
+        config.presence_sensor_url = "http://172.16.100.37".to_string();
         config.presence_absence_threshold_secs = 120;
         config.presence_debounce_secs = 15;
         config.presence_csv_log_enabled = false;
@@ -1613,6 +1625,7 @@ mod tests {
         let settings = config.to_settings();
         assert_eq!(settings.encounter_detection_mode, EncounterDetectionMode::Sensor);
         assert_eq!(settings.presence_sensor_port, "/dev/cu.usbserial-2110");
+        assert_eq!(settings.presence_sensor_url, "http://172.16.100.37");
         assert_eq!(settings.presence_absence_threshold_secs, 120);
         assert_eq!(settings.presence_debounce_secs, 15);
         assert!(!settings.presence_csv_log_enabled);
@@ -1621,6 +1634,7 @@ mod tests {
         config2.update_from_settings(&settings);
         assert_eq!(config2.encounter_detection_mode, EncounterDetectionMode::Sensor);
         assert_eq!(config2.presence_sensor_port, "/dev/cu.usbserial-2110");
+        assert_eq!(config2.presence_sensor_url, "http://172.16.100.37");
         assert_eq!(config2.presence_absence_threshold_secs, 120);
         assert_eq!(config2.presence_debounce_secs, 15);
         assert!(!config2.presence_csv_log_enabled);
@@ -1730,6 +1744,7 @@ mod tests {
             "hybrid_confirm_window_secs",
             "hybrid_min_words_for_sensor_split",
             "presence_sensor_port",
+            "presence_sensor_url",
             "presence_absence_threshold_secs",
             "presence_debounce_secs",
             "soap_model",

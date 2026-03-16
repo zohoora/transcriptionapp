@@ -76,6 +76,7 @@ mod tests {
             stt_postprocess: true,
             encounter_detection_mode: crate::config::EncounterDetectionMode::Llm,
             presence_sensor_port: String::new(),
+            presence_sensor_url: String::new(),
             presence_absence_threshold_secs: 90,
             presence_debounce_secs: 10,
             presence_csv_log_enabled: true,

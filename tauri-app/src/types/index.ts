@@ -114,6 +114,7 @@ export interface Settings {
   // Presence sensor settings (mmWave encounter detection)
   encounter_detection_mode: EncounterDetectionMode;
   presence_sensor_port: string;
+  presence_sensor_url: string;
   presence_absence_threshold_secs: number;
   presence_debounce_secs: number;
   presence_csv_log_enabled: boolean;
@@ -669,6 +670,13 @@ export interface LocalArchiveMetadata {
   likely_non_clinical: boolean | null;
 }
 
+/** A single patient's SOAP note within a multi-patient encounter */
+export interface ArchivedPatientNote {
+  index: number;
+  label: string;
+  content: string;
+}
+
 /** Detailed archived session (for detail view) */
 export interface LocalArchiveDetails {
   session_id: string;
@@ -676,6 +684,8 @@ export interface LocalArchiveDetails {
   transcript: string | null;
   soap_note: string | null;
   audio_path: string | null;
+  /** Per-patient SOAP notes (present when patient_count > 1) */
+  patientNotes: ArchivedPatientNote[] | null;
 }
 
 // ============================================================================

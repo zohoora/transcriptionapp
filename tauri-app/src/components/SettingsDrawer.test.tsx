@@ -32,6 +32,7 @@ const defaultPendingSettings: PendingSettings = {
   charting_mode: 'session',
   encounter_detection_mode: 'llm',
   presence_sensor_port: '',
+  presence_sensor_url: '',
   presence_absence_threshold_secs: 180,
   encounter_merge_enabled: false,
   soap_custom_instructions: '',
@@ -402,7 +403,8 @@ describe('SettingsDrawer', () => {
 
       await user.click(screen.getByText('Advanced'));
 
-      expect(screen.getByText('Serial Port')).toBeInTheDocument();
+      expect(screen.getByText('Sensor URL (WiFi)')).toBeInTheDocument();
+      expect(screen.getByText('Serial Port (fallback)')).toBeInTheDocument();
       expect(screen.getByText('Absence Threshold')).toBeInTheDocument();
     });
 

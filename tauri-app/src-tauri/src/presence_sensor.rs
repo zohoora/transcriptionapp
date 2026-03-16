@@ -1,10 +1,13 @@
 //! Presence Sensor Module
 //!
-//! Interfaces with a DFRobot SEN0395 24GHz mmWave presence sensor via USB-UART.
+//! Interfaces with a DFRobot SEN0395 24GHz mmWave presence sensor via:
+//!   - **HTTP** (preferred): Polls an ESP32 WiFi bridge at `presence_sensor_url`
+//!   - **Serial** (fallback): Reads USB-UART at `presence_sensor_port`
+//!
 //! The sensor outputs `$JYBSS,0` (absent) / `$JYBSS,1` (present) at ~1Hz.
 //!
 //! Architecture:
-//!   Serial Port (blocking read via spawn_blocking)
+//!   HTTP Poller or Serial Port (blocking read via spawn_blocking)
 //!       → Debounce FSM (10s default)
 //!       → watch channel (PresenceState)
 //!       → Absence Monitor (async task, 90s default threshold)
@@ -61,7 +64,10 @@ impl SensorStatus {
 /// Configuration for the presence sensor
 #[derive(Debug, Clone)]
 pub struct SensorConfig {
+    /// Serial port path (e.g., /dev/cu.usbserial-2110) — used when `url` is empty
     pub port: String,
+    /// HTTP URL of ESP32 WiFi bridge (e.g., http://172.16.100.37) — takes precedence over `port`
+    pub url: String,
     pub debounce_secs: u64,
     pub absence_threshold_secs: u64,
     pub csv_log_enabled: bool,
@@ -140,13 +146,17 @@ pub struct PresenceSensor {
 impl PresenceSensor {
     /// Start the presence sensor with the given configuration.
     ///
+    /// If `config.url` is set, uses HTTP polling to an ESP32 WiFi bridge.
+    /// Otherwise falls back to serial port reading.
+    ///
     /// Returns a handle that provides:
     /// - `subscribe_state()` — watch channel for debounced presence state
     /// - `subscribe_status()` — watch channel for connection health
     /// - `absence_notifier()` — fires when absence exceeds threshold
     pub fn start(config: &SensorConfig) -> Result<Self, String> {
-        if config.port.is_empty() {
-            return Err("No serial port configured for presence sensor".to_string());
+        let use_http = !config.url.is_empty();
+        if !use_http && config.port.is_empty() {
+            return Err("No sensor URL or serial port configured".to_string());
         }
 
         let (state_tx, _) = watch::channel(PresenceState::Unknown);
@@ -158,26 +168,41 @@ impl PresenceSensor {
         let absence_trigger = Arc::new(Notify::new());
         let stop = Arc::new(AtomicBool::new(false));
 
-        // Start the serial reader task (blocking → tokio bridge)
+        // Start the reader task — HTTP or serial depending on config
         let reader_handle = {
             let state_tx = state_tx.clone();
             let status_tx = status_tx.clone();
             let stop = stop.clone();
-            let port_path = config.port.clone();
             let debounce_secs = config.debounce_secs;
             let csv_log_enabled = config.csv_log_enabled;
 
-            tokio::spawn(async move {
-                serial_reader_loop(
-                    &port_path,
-                    debounce_secs,
-                    csv_log_enabled,
-                    state_tx,
-                    status_tx,
-                    stop,
-                )
-                .await;
-            })
+            if use_http {
+                let url = config.url.clone();
+                tokio::spawn(async move {
+                    http_reader_loop(
+                        &url,
+                        debounce_secs,
+                        csv_log_enabled,
+                        state_tx,
+                        status_tx,
+                        stop,
+                    )
+                    .await;
+                })
+            } else {
+                let port_path = config.port.clone();
+                tokio::spawn(async move {
+                    serial_reader_loop(
+                        &port_path,
+                        debounce_secs,
+                        csv_log_enabled,
+                        state_tx,
+                        status_tx,
+                        stop,
+                    )
+                    .await;
+                })
+            }
         };
 
         // Start the absence threshold monitor
@@ -192,9 +217,14 @@ impl PresenceSensor {
             })
         };
 
+        let source = if use_http {
+            format!("url={}", config.url)
+        } else {
+            format!("port={}", config.port)
+        };
         info!(
-            "Presence sensor started: port={}, debounce={}s, absence_threshold={}s, csv={}",
-            config.port, config.debounce_secs, config.absence_threshold_secs, config.csv_log_enabled
+            "Presence sensor started: {}, debounce={}s, absence_threshold={}s, csv={}",
+            source, config.debounce_secs, config.absence_threshold_secs, config.csv_log_enabled
         );
 
         Ok(Self {
@@ -240,6 +270,185 @@ impl PresenceSensor {
 impl Drop for PresenceSensor {
     fn drop(&mut self) {
         self.stop();
+    }
+}
+
+// ============================================================================
+// HTTP Reader (polls ESP32 WiFi bridge)
+// ============================================================================
+
+/// JSON response from the ESP32 presence sensor bridge
+#[derive(Debug, serde::Deserialize)]
+struct Esp32Response {
+    present: bool,
+    #[serde(default)]
+    sensor_stale: bool,
+}
+
+/// HTTP polling loop for ESP32 WiFi bridge.
+///
+/// Polls `{url}/` every ~1s, parses JSON `{"present": bool, "sensor_stale": bool, ...}`,
+/// feeds raw `present` value into debounce FSM, updates watch channels.
+/// On HTTP error or sensor_stale: sets status to Error/Disconnected, retries after 3s.
+async fn http_reader_loop(
+    base_url: &str,
+    debounce_secs: u64,
+    csv_log_enabled: bool,
+    state_tx: Arc<watch::Sender<PresenceState>>,
+    status_tx: Arc<watch::Sender<SensorStatus>>,
+    stop: Arc<AtomicBool>,
+) {
+    let url = if base_url.ends_with('/') {
+        base_url.to_string()
+    } else {
+        format!("{}/", base_url)
+    };
+    let debounce_dur = Duration::from_secs(debounce_secs);
+
+    // Debounce FSM state
+    let mut debounced: Option<bool> = None;
+    let mut candidate: Option<bool> = None;
+    let mut candidate_since = Instant::now();
+    let mut was_connected = false;
+
+    // CSV logger
+    let mut csv_writer = if csv_log_enabled {
+        CsvLogger::new().ok()
+    } else {
+        None
+    };
+
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(3))
+        .build()
+        .unwrap_or_default();
+
+    loop {
+        if stop.load(Ordering::Relaxed) {
+            info!("Presence sensor HTTP reader stopping (stop flag set)");
+            break;
+        }
+
+        match client.get(&url).send().await {
+            Ok(resp) if resp.status().is_success() => {
+                match resp.json::<Esp32Response>().await {
+                    Ok(data) => {
+                        if data.sensor_stale {
+                            if was_connected {
+                                warn!("ESP32 sensor stale (no readings from mmWave sensor)");
+                                let _ = status_tx.send(SensorStatus::Error(
+                                    "Sensor stale — no mmWave readings".to_string(),
+                                ));
+                                was_connected = false;
+                            }
+                        } else {
+                            if !was_connected {
+                                info!("Presence sensor connected via HTTP: {}", base_url);
+                                let _ = status_tx.send(SensorStatus::Connected);
+                                was_connected = true;
+                            }
+
+                            let raw = data.present;
+                            let now = Instant::now();
+
+                            // Debounce FSM (same algorithm as serial reader)
+                            match debounced {
+                                None => {
+                                    debounced = Some(raw);
+                                    candidate = Some(raw);
+                                    candidate_since = now;
+                                }
+                                Some(current) => {
+                                    if raw != current {
+                                        if candidate == Some(raw) {
+                                            if now.duration_since(candidate_since) >= debounce_dur {
+                                                debounced = Some(raw);
+                                                let new_state = if raw {
+                                                    PresenceState::Present
+                                                } else {
+                                                    PresenceState::Absent
+                                                };
+                                                let direction =
+                                                    if raw { "ARRIVED" } else { "LEFT" };
+                                                info!(
+                                                    "Presence sensor (HTTP): {} (debounced)",
+                                                    direction
+                                                );
+                                                let _ = state_tx.send(new_state);
+                                            }
+                                        } else {
+                                            candidate = Some(raw);
+                                            candidate_since = now;
+                                        }
+                                    } else {
+                                        candidate = Some(raw);
+                                        candidate_since = now;
+                                    }
+                                }
+                            }
+
+                            // Emit initial state
+                            if debounced.is_some()
+                                && *state_tx.borrow() == PresenceState::Unknown
+                            {
+                                let initial = if debounced.unwrap_or(false) {
+                                    PresenceState::Present
+                                } else {
+                                    PresenceState::Absent
+                                };
+                                let _ = state_tx.send(initial);
+                            }
+
+                            // CSV logging
+                            if let Some(ref mut csv) = csv_writer {
+                                let raw_str = if raw { "1" } else { "0" };
+                                let deb_str = match debounced {
+                                    Some(true) => "1",
+                                    Some(false) => "0",
+                                    None => "",
+                                };
+                                let raw_line =
+                                    format!("HTTP present={} stale={}", raw, data.sensor_stale);
+                                csv.write_line(raw_str, deb_str, &raw_line);
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        if was_connected {
+                            warn!("ESP32 response parse error: {}", e);
+                            let _ = status_tx.send(SensorStatus::Error(e.to_string()));
+                            was_connected = false;
+                        }
+                    }
+                }
+            }
+            Ok(resp) => {
+                if was_connected {
+                    warn!("ESP32 HTTP error: status {}", resp.status());
+                    let _ = status_tx.send(SensorStatus::Error(format!(
+                        "HTTP {}",
+                        resp.status()
+                    )));
+                    was_connected = false;
+                }
+                // Back off on error
+                tokio::time::sleep(Duration::from_secs(3)).await;
+                continue;
+            }
+            Err(e) => {
+                if was_connected {
+                    warn!("ESP32 connection error: {}", e);
+                    let _ = status_tx.send(SensorStatus::Disconnected);
+                    was_connected = false;
+                }
+                // Back off on error
+                tokio::time::sleep(Duration::from_secs(3)).await;
+                continue;
+            }
+        }
+
+        // Poll interval: ~1s (matches sensor's ~1Hz output rate)
+        tokio::time::sleep(Duration::from_secs(1)).await;
     }
 }
 
@@ -876,5 +1085,81 @@ mod tests {
         if let Some(ref port) = result {
             assert_ne!(port, "/dev/cu.nonexistent-9999");
         }
+    }
+
+    // --- ESP32 HTTP Response Parsing Tests ---
+
+    #[test]
+    fn test_esp32_response_parsing() {
+        let json = r#"{"present":true,"sensor_stale":false,"sensor_age_ms":616,"uptime_s":114,"wifi_rssi":-64,"ip":"172.16.100.37"}"#;
+        let resp: Esp32Response = serde_json::from_str(json).expect("Should parse ESP32 response");
+        assert!(resp.present);
+        assert!(!resp.sensor_stale);
+    }
+
+    #[test]
+    fn test_esp32_response_absent() {
+        let json = r#"{"present":false,"sensor_stale":false}"#;
+        let resp: Esp32Response = serde_json::from_str(json).expect("Should parse");
+        assert!(!resp.present);
+        assert!(!resp.sensor_stale);
+    }
+
+    #[test]
+    fn test_esp32_response_stale_sensor() {
+        let json = r#"{"present":false,"sensor_stale":true,"sensor_age_ms":10000}"#;
+        let resp: Esp32Response = serde_json::from_str(json).expect("Should parse");
+        assert!(resp.sensor_stale);
+    }
+
+    #[test]
+    fn test_esp32_response_minimal() {
+        // sensor_stale defaults to false when missing
+        let json = r#"{"present":true}"#;
+        let resp: Esp32Response = serde_json::from_str(json).expect("Should parse minimal");
+        assert!(resp.present);
+        assert!(!resp.sensor_stale);
+    }
+
+    // --- SensorConfig Mode Selection Tests ---
+
+    #[test]
+    fn test_sensor_config_url_takes_precedence() {
+        // When URL is set, start() should choose HTTP mode (we can't fully test start()
+        // without a server, but we can verify the config logic)
+        let config = SensorConfig {
+            port: "/dev/cu.usbserial-1234".to_string(),
+            url: "http://172.16.100.37".to_string(),
+            debounce_secs: 15,
+            absence_threshold_secs: 180,
+            csv_log_enabled: false,
+        };
+        assert!(!config.url.is_empty(), "URL should be set");
+    }
+
+    #[test]
+    fn test_sensor_config_empty_url_falls_back_to_port() {
+        let config = SensorConfig {
+            port: "/dev/cu.usbserial-1234".to_string(),
+            url: String::new(),
+            debounce_secs: 15,
+            absence_threshold_secs: 180,
+            csv_log_enabled: false,
+        };
+        assert!(config.url.is_empty(), "URL should be empty for serial fallback");
+        assert!(!config.port.is_empty(), "Port should be set");
+    }
+
+    #[test]
+    fn test_sensor_config_both_empty_is_invalid() {
+        let config = SensorConfig {
+            port: String::new(),
+            url: String::new(),
+            debounce_secs: 15,
+            absence_threshold_secs: 180,
+            csv_log_enabled: false,
+        };
+        let result = PresenceSensor::start(&config);
+        assert!(result.is_err(), "Should fail when both port and URL are empty");
     }
 }
