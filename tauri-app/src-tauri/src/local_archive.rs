@@ -173,7 +173,6 @@ pub struct ArchivedPatientNote {
 
 /// Detailed archived session (for detail view)
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
 pub struct ArchiveDetails {
     pub session_id: String,
     pub metadata: ArchiveMetadata,
@@ -181,7 +180,7 @@ pub struct ArchiveDetails {
     pub soap_note: Option<String>,
     pub audio_path: Option<String>,
     /// Per-patient SOAP notes (present when patient_count > 1)
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default, rename = "patientNotes", skip_serializing_if = "Option::is_none")]
     pub patient_notes: Option<Vec<ArchivedPatientNote>>,
 }
 
