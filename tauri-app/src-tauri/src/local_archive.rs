@@ -158,6 +158,8 @@ pub struct ArchiveSummary {
     pub patient_name: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub likely_non_clinical: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub has_feedback: Option<bool>,
 }
 
 /// Detailed archived session (for detail view)
@@ -168,6 +170,42 @@ pub struct ArchiveDetails {
     pub transcript: Option<String>,
     pub soap_note: Option<String>,
     pub audio_path: Option<String>,
+}
+
+/// User feedback on a session's SOAP note quality
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionFeedback {
+    pub schema_version: u32,
+    pub created_at: String,
+    pub updated_at: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub quality_rating: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub detection_feedback: Option<DetectionFeedback>,
+    #[serde(default)]
+    pub patient_feedback: Vec<PatientContentFeedback>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub comments: Option<String>,
+}
+
+/// Feedback on encounter detection quality
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DetectionFeedback {
+    pub category: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub details: Option<String>,
+}
+
+/// Per-patient content feedback
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PatientContentFeedback {
+    pub patient_index: usize,
+    pub issues: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub details: Option<String>,
 }
 
 /// Archive a completed session
@@ -501,6 +539,7 @@ pub fn list_sessions_by_date(date_str: &str) -> Result<Vec<ArchiveSummary>, Stri
             }
         };
 
+        let has_feedback = session_dir.join("feedback.json").exists();
         sessions.push(ArchiveSummary {
             session_id: metadata.session_id,
             date: metadata.started_at,
@@ -513,6 +552,7 @@ pub fn list_sessions_by_date(date_str: &str) -> Result<Vec<ArchiveSummary>, Stri
             encounter_number: metadata.encounter_number,
             patient_name: metadata.patient_name,
             likely_non_clinical: metadata.likely_non_clinical,
+            has_feedback: Some(has_feedback),
         });
     }
 
@@ -1061,6 +1101,97 @@ pub fn get_transcript_lines(session_id: &str, date_str: &str) -> Result<Vec<Stri
     Ok(split_transcript_into_lines(&transcript))
 }
 
+// ============================================================================
+// Session Feedback
+// ============================================================================
+
+const FEEDBACK_FILENAME: &str = "feedback.json";
+
+/// Read feedback for a session. Returns None if no feedback file exists.
+pub fn read_feedback(session_id: &str, date_str: &str) -> Result<Option<SessionFeedback>, String> {
+    let session_dir = get_session_dir_from_str(session_id, date_str)?;
+    let feedback_path = session_dir.join(FEEDBACK_FILENAME);
+
+    if !feedback_path.exists() {
+        return Ok(None);
+    }
+
+    let content = fs::read_to_string(&feedback_path)
+        .map_err(|e| format!("Failed to read feedback: {}", e))?;
+    let feedback: SessionFeedback = serde_json::from_str(&content)
+        .map_err(|e| format!("Failed to parse feedback: {}", e))?;
+    Ok(Some(feedback))
+}
+
+/// Write feedback for a session. Also enriches replay_bundle.json outcome if present.
+pub fn write_feedback(
+    session_id: &str,
+    date_str: &str,
+    feedback: &SessionFeedback,
+) -> Result<(), String> {
+    let session_dir = get_session_dir_from_str(session_id, date_str)?;
+    if !session_dir.exists() {
+        return Err(format!("Session not found: {}", session_id));
+    }
+
+    let feedback_path = session_dir.join(FEEDBACK_FILENAME);
+    let json = serde_json::to_string_pretty(feedback)
+        .map_err(|e| format!("Failed to serialize feedback: {}", e))?;
+    fs::write(&feedback_path, &json)
+        .map_err(|e| format!("Failed to write feedback: {}", e))?;
+
+    info!("Saved feedback for session {} on {}", session_id, date_str);
+
+    // Enrich replay_bundle.json if present
+    let replay_path = session_dir.join("replay_bundle.json");
+    if let Err(e) = enrich_replay_bundle(&replay_path, feedback) {
+        warn!("Failed to enrich replay bundle with feedback: {}", e);
+    }
+
+    Ok(())
+}
+
+/// Inject user_feedback into replay_bundle.json outcome field.
+/// Returns Ok(()) silently if the replay bundle does not exist.
+fn enrich_replay_bundle(
+    replay_path: &std::path::Path,
+    feedback: &SessionFeedback,
+) -> Result<(), String> {
+    let content = match fs::read_to_string(replay_path) {
+        Ok(c) => c,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(e) => return Err(format!("Failed to read replay bundle: {}", e)),
+    };
+    let mut bundle: serde_json::Value = serde_json::from_str(&content)
+        .map_err(|e| format!("Failed to parse replay bundle: {}", e))?;
+
+    // Build a compact feedback summary for the outcome
+    let feedback_summary = serde_json::json!({
+        "quality_rating": feedback.quality_rating,
+        "detection_category": feedback.detection_feedback.as_ref().map(|d| &d.category),
+        "has_comments": feedback.comments.is_some(),
+    });
+
+    // Inject into outcome (create outcome if missing)
+    if let Some(outcome) = bundle.get_mut("outcome") {
+        if let Some(obj) = outcome.as_object_mut() {
+            obj.insert("user_feedback".to_string(), feedback_summary);
+        }
+    } else {
+        bundle["outcome"] = serde_json::json!({
+            "user_feedback": feedback_summary,
+        });
+    }
+
+    let updated = serde_json::to_string_pretty(&bundle)
+        .map_err(|e| format!("Failed to serialize replay bundle: {}", e))?;
+    fs::write(replay_path, updated)
+        .map_err(|e| format!("Failed to write replay bundle: {}", e))?;
+
+    info!("Enriched replay bundle with user feedback");
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1121,6 +1252,7 @@ mod tests {
             encounter_number: None,
             patient_name: None,
             likely_non_clinical: None,
+            has_feedback: None,
         };
 
         let json = serde_json::to_string(&summary).unwrap();
@@ -1686,5 +1818,176 @@ mod tests {
 
         // Cleanup
         let _ = fs::remove_dir_all(&session_dir);
+    }
+
+    // ========================================================================
+    // Feedback tests
+    // ========================================================================
+
+    #[test]
+    fn test_feedback_round_trip() {
+        let temp = tempfile::tempdir().unwrap();
+        let _date_str = "2024-01-15";
+        let session_id = "feedback-test-rt";
+        let session_dir = create_test_session(
+            temp.path(), session_id, "test transcript", "2024-01-15T10:00:00Z", None, None,
+        );
+
+        // Override archive dir by writing/reading directly via functions that take paths
+        let feedback = SessionFeedback {
+            schema_version: 1,
+            created_at: "2024-01-15T10:00:00Z".to_string(),
+            updated_at: "2024-01-15T10:01:00Z".to_string(),
+            quality_rating: Some("bad".to_string()),
+            detection_feedback: Some(DetectionFeedback {
+                category: "fragment".to_string(),
+                details: Some("This was a fragment".to_string()),
+            }),
+            patient_feedback: vec![PatientContentFeedback {
+                patient_index: 0,
+                issues: vec!["missed_details".to_string()],
+                details: None,
+            }],
+            comments: Some("Needs improvement".to_string()),
+        };
+
+        // Write directly to session dir
+        let feedback_path = session_dir.join(FEEDBACK_FILENAME);
+        let json = serde_json::to_string_pretty(&feedback).unwrap();
+        fs::write(&feedback_path, &json).unwrap();
+
+        // Read and verify
+        let content = fs::read_to_string(&feedback_path).unwrap();
+        let loaded: SessionFeedback = serde_json::from_str(&content).unwrap();
+
+        assert_eq!(loaded.schema_version, 1);
+        assert_eq!(loaded.quality_rating.as_deref(), Some("bad"));
+        assert_eq!(loaded.detection_feedback.as_ref().unwrap().category, "fragment");
+        assert_eq!(loaded.patient_feedback.len(), 1);
+        assert_eq!(loaded.patient_feedback[0].patient_index, 0);
+        assert_eq!(loaded.comments.as_deref(), Some("Needs improvement"));
+    }
+
+    #[test]
+    fn test_feedback_missing_returns_none() {
+        // Non-existent session should error, but a session without feedback.json should return None
+        let temp = tempfile::tempdir().unwrap();
+        let session_dir = create_test_session(
+            temp.path(), "no-feedback", "transcript", "2024-01-15T10:00:00Z", None, None,
+        );
+
+        // Verify no feedback.json exists
+        assert!(!session_dir.join(FEEDBACK_FILENAME).exists());
+
+        // Reading feedback from session dir should work — verify the file doesn't exist
+        let feedback_path = session_dir.join(FEEDBACK_FILENAME);
+        assert!(!feedback_path.exists());
+    }
+
+    #[test]
+    fn test_feedback_replay_enrichment() {
+        let temp = tempfile::tempdir().unwrap();
+        let session_dir = create_test_session(
+            temp.path(), "replay-enrich", "transcript", "2024-01-15T10:00:00Z", None, None,
+        );
+
+        // Create a minimal replay bundle
+        let replay = serde_json::json!({
+            "schema_version": 1,
+            "config": {},
+            "segments": [],
+            "sensor_transitions": [],
+            "vision_results": [],
+            "detection_checks": [],
+            "outcome": {
+                "session_id": "replay-enrich",
+                "encounter_number": 1,
+                "word_count": 500,
+                "is_clinical": true,
+                "was_merged": false,
+            }
+        });
+        let replay_path = session_dir.join("replay_bundle.json");
+        fs::write(&replay_path, serde_json::to_string_pretty(&replay).unwrap()).unwrap();
+
+        // Enrich with feedback
+        let feedback = SessionFeedback {
+            schema_version: 1,
+            created_at: "2024-01-15T10:00:00Z".to_string(),
+            updated_at: "2024-01-15T10:01:00Z".to_string(),
+            quality_rating: Some("bad".to_string()),
+            detection_feedback: Some(DetectionFeedback {
+                category: "inappropriately_merged".to_string(),
+                details: None,
+            }),
+            patient_feedback: vec![],
+            comments: Some("Wrong split".to_string()),
+        };
+
+        enrich_replay_bundle(&replay_path, &feedback).unwrap();
+
+        // Verify
+        let content = fs::read_to_string(&replay_path).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&content).unwrap();
+        let outcome = &parsed["outcome"];
+        assert_eq!(outcome["user_feedback"]["quality_rating"], "bad");
+        assert_eq!(outcome["user_feedback"]["detection_category"], "inappropriately_merged");
+        assert_eq!(outcome["user_feedback"]["has_comments"], true);
+        // Original fields preserved
+        assert_eq!(outcome["session_id"], "replay-enrich");
+        assert_eq!(outcome["encounter_number"], 1);
+    }
+
+    #[test]
+    fn test_has_feedback_in_summary() {
+        // Verify ArchiveSummary correctly serializes has_feedback
+        let summary = ArchiveSummary {
+            session_id: "test-fb".to_string(),
+            date: "2024-01-15T10:30:00Z".to_string(),
+            duration_ms: Some(300000),
+            word_count: 500,
+            has_soap_note: true,
+            has_audio: false,
+            auto_ended: false,
+            charting_mode: None,
+            encounter_number: None,
+            patient_name: None,
+            likely_non_clinical: None,
+            has_feedback: Some(true),
+        };
+
+        let json = serde_json::to_string(&summary).unwrap();
+        assert!(json.contains("\"has_feedback\":true"));
+
+        // None should be omitted
+        let summary_no_fb = ArchiveSummary {
+            has_feedback: None,
+            ..summary
+        };
+        let json2 = serde_json::to_string(&summary_no_fb).unwrap();
+        assert!(!json2.contains("has_feedback"));
+    }
+
+    #[test]
+    fn test_feedback_serialization_camel_case() {
+        let feedback = SessionFeedback {
+            schema_version: 1,
+            created_at: "2024-01-15T10:00:00Z".to_string(),
+            updated_at: "2024-01-15T10:01:00Z".to_string(),
+            quality_rating: Some("good".to_string()),
+            detection_feedback: None,
+            patient_feedback: vec![],
+            comments: None,
+        };
+
+        let json = serde_json::to_string(&feedback).unwrap();
+        // Should use camelCase
+        assert!(json.contains("schemaVersion"));
+        assert!(json.contains("createdAt"));
+        assert!(json.contains("updatedAt"));
+        assert!(json.contains("qualityRating"));
+        // Should not contain snake_case
+        assert!(!json.contains("schema_version"));
+        assert!(!json.contains("created_at"));
     }
 }

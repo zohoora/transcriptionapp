@@ -140,6 +140,7 @@ const mockSessions: LocalArchiveSummary[] = [
     encounter_number: null,
     patient_name: null,
     likely_non_clinical: null,
+    has_feedback: null,
   },
   {
     session_id: 'session-2',
@@ -153,6 +154,7 @@ const mockSessions: LocalArchiveSummary[] = [
     encounter_number: null,
     patient_name: null,
     likely_non_clinical: null,
+    has_feedback: null,
   },
 ];
 

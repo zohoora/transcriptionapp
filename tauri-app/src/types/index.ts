@@ -640,6 +640,7 @@ export interface LocalArchiveSummary {
   encounter_number: number | null;
   patient_name: string | null;
   likely_non_clinical: boolean | null;
+  has_feedback: boolean | null;
 }
 
 /** Metadata for an archived session */
@@ -676,6 +677,66 @@ export interface LocalArchiveDetails {
   soap_note: string | null;
   audio_path: string | null;
 }
+
+// ============================================================================
+// Session Feedback Types
+// ============================================================================
+
+/** Detection feedback categories */
+export type DetectionFeedbackCategory =
+  | 'inappropriately_merged'
+  | 'fragment'
+  | 'wrong_nonclinical'
+  | 'wrong_clinical'
+  | 'other';
+
+/** Content issue types for per-patient feedback */
+export type ContentIssueType =
+  | 'missed_details'
+  | 'inaccurate'
+  | 'wrong_attribution'
+  | 'hallucinated';
+
+/** Detection feedback on encounter splitting quality */
+export interface DetectionFeedback {
+  category: DetectionFeedbackCategory;
+  details: string | null;
+}
+
+/** Per-patient content feedback */
+export interface PatientContentFeedback {
+  patientIndex: number;
+  issues: ContentIssueType[];
+  details: string | null;
+}
+
+/** User feedback on a session's SOAP note quality */
+export interface SessionFeedback {
+  schemaVersion: number;
+  createdAt: string;
+  updatedAt: string;
+  qualityRating: 'good' | 'bad' | null;
+  detectionFeedback: DetectionFeedback | null;
+  patientFeedback: PatientContentFeedback[];
+  comments: string | null;
+}
+
+/** Human-readable labels for detection feedback categories */
+export const DETECTION_FEEDBACK_LABELS: Record<DetectionFeedbackCategory, string> = {
+  inappropriately_merged: 'Merged different encounters',
+  fragment: 'Fragment of a larger encounter',
+  wrong_nonclinical: 'Wrongly marked non-clinical',
+  wrong_clinical: 'Wrongly marked clinical',
+  other: 'Other detection issue',
+};
+
+/** Human-readable labels for content issue types */
+export const CONTENT_ISSUE_LABELS: Record<ContentIssueType, string> = {
+  missed_details: 'Missed clinical details',
+  inaccurate: 'Inaccurate information',
+  wrong_attribution: 'Wrong patient attribution',
+  hallucinated: 'Hallucinated content',
+};
 
 // ============================================================================
 // Continuous Charting Mode Types

@@ -15,6 +15,7 @@ import {
   EditNameDialog,
   MergeConfirmDialog,
 } from './cleanup';
+import FeedbackPanel from './FeedbackPanel';
 import { formatDateForApi, formatLocalTime, formatLocalDateTime, formatDurationShort } from '../utils';
 import type {
   LocalArchiveSummary,
@@ -24,6 +25,7 @@ import type {
   EncounterSummary,
   EncounterDetails,
   SoapOptions,
+  SessionFeedback,
 } from '../types';
 import { DETAIL_LEVEL_LABELS } from '../types';
 
@@ -90,6 +92,9 @@ const HistoryWindow: React.FC = () => {
   const [soapResult, setSoapResult] = useState<MultiPatientSoapResult | null>(null);
   const [customInstructionsExpanded, setCustomInstructionsExpanded] = useState(false);
   const [activePatient, setActivePatient] = useState(0);
+
+  // Feedback state
+  const [feedback, setFeedback] = useState<SessionFeedback | null>(null);
 
   // Cleanup mode state
   const [isCleanupMode, setIsCleanupMode] = useState(false);
@@ -201,6 +206,7 @@ const HistoryWindow: React.FC = () => {
           encounter_number: null,
           patient_name: null,
           likely_non_clinical: null,
+          has_feedback: null,
         }));
         setSessions(converted);
       }
@@ -274,10 +280,11 @@ const HistoryWindow: React.FC = () => {
       setSelectedSession(details);
       setEditedTranscript(details.transcript || '');
 
-      // Reset SOAP state
+      // Reset SOAP and feedback state
       setSoapResult(null);
       setSoapError(null);
       setActivePatient(0);
+      setFeedback(null);
 
       // Load SOAP options from metadata if available, otherwise use global defaults
       if (details.metadata.soap_detail_level !== null || details.metadata.soap_format !== null) {
@@ -308,6 +315,18 @@ const HistoryWindow: React.FC = () => {
         setActiveTab('soap');
       } else {
         setActiveTab('transcript');
+      }
+
+      // Load feedback (local archive only)
+      if (dataSource === 'local') {
+        try {
+          const fb = await invoke<SessionFeedback | null>('get_session_feedback', {
+            sessionId: session.session_id, date: formatDateForApi(selectedDate),
+          });
+          setFeedback(fb);
+        } catch {
+          // Non-blocking — old sessions may not have feedback
+        }
       }
 
     } catch (e) {
@@ -740,6 +759,9 @@ const HistoryWindow: React.FC = () => {
                           {session.auto_ended && (
                             <span className="badge auto-badge">Auto</span>
                           )}
+                          {session.has_feedback && (
+                            <span className="badge feedback-badge">Reviewed</span>
+                          )}
                         </div>
                       </div>
                     </button>
@@ -1041,6 +1063,19 @@ const HistoryWindow: React.FC = () => {
                           <div className="soap-meta">
                             <span className="soap-model">Model: {soapResult.model_used}</span>
                           </div>
+                        )}
+
+                        {dataSource === 'local' && (
+                          <FeedbackPanel
+                            sessionId={selectedSession.session_id}
+                            date={formatDateForApi(selectedDate)}
+                            feedback={feedback}
+                            onFeedbackChange={setFeedback}
+                            isMultiPatient={isMultiPatient}
+                            activePatient={activePatient}
+                            patientCount={soapResult.notes.length}
+                            isContinuousMode={selectedSession.metadata.charting_mode === 'continuous'}
+                          />
                         )}
                       </div>
                     )}

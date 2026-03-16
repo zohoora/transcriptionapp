@@ -373,6 +373,8 @@ pub fn run() {
             commands::renumber_local_encounters,
             commands::get_session_transcript_lines,
             commands::suggest_split_points,
+            commands::get_session_feedback,
+            commands::save_session_feedback,
             // Clinical chat commands
             commands::clinical_chat_send,
             // MIIS (Medical Illustration Image Server) commands

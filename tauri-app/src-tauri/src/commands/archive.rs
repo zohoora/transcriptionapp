@@ -2,7 +2,7 @@
 
 use crate::config::Config;
 use crate::local_archive::{
-    self, ArchiveDetails, ArchiveSummary,
+    self, ArchiveDetails, ArchiveSummary, SessionFeedback,
 };
 use crate::ollama::LLMClient;
 use serde::Serialize;
@@ -138,6 +138,31 @@ pub fn read_local_audio_file(path: String) -> Result<Vec<u8>, String> {
 
     info!("Reading local audio file: {}", path);
     std::fs::read(&file_path).map_err(|e| format!("Failed to read audio file: {}", e))
+}
+
+// ============================================================================
+// Session Feedback Commands
+// ============================================================================
+
+/// Get feedback for a session
+#[tauri::command]
+pub fn get_session_feedback(
+    session_id: String,
+    date: String,
+) -> Result<Option<SessionFeedback>, String> {
+    info!("Getting feedback for session: {} on {}", session_id, date);
+    local_archive::read_feedback(&session_id, &date)
+}
+
+/// Save feedback for a session
+#[tauri::command]
+pub fn save_session_feedback(
+    session_id: String,
+    date: String,
+    feedback: SessionFeedback,
+) -> Result<(), String> {
+    info!("Saving feedback for session: {} on {}", session_id, date);
+    local_archive::write_feedback(&session_id, &date, &feedback)
 }
 
 // ============================================================================
