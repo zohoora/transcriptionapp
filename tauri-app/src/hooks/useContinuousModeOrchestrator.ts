@@ -104,15 +104,16 @@ export function useContinuousModeOrchestrator({
     isRecording: isActive && !isStopping,
   });
 
-  // Stable session ID for continuous mode MIIS (set on start, cleared on stop)
+  // Session ID for image hooks — changes per encounter so caps/dedup reset
+  const encounterCount = stats?.encounters_detected ?? 0;
   const [continuousMiisSessionId, setContinuousMiisSessionId] = useState<string | null>(null);
   useEffect(() => {
-    if (isActive && !continuousMiisSessionId) {
-      setContinuousMiisSessionId(`continuous-${Date.now()}`);
-    } else if (!isActive && continuousMiisSessionId) {
+    if (isActive) {
+      setContinuousMiisSessionId(`continuous-${Date.now()}-e${encounterCount}`);
+    } else {
       setContinuousMiisSessionId(null);
     }
-  }, [isActive, continuousMiisSessionId]);
+  }, [isActive, encounterCount]);
 
   // MIIS image suggestions for continuous mode
   const {
