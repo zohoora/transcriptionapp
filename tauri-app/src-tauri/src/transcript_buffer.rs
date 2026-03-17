@@ -42,6 +42,36 @@ pub fn format_speaker_label(speaker_id: Option<&str>, confidence: Option<f32>) -
     }
 }
 
+/// Format a slice of drained segments into the rich detection format:
+/// `[index] (MM:SS) (Speaker Label): text`
+///
+/// Standalone version of `TranscriptBuffer::format_for_detection()` that works
+/// on already-drained segments (e.g. for multi-patient detection after drain).
+pub fn format_segments_for_detection(segments: &[BufferedSegment]) -> String {
+    let first_start_ms = segments.first().map(|s| s.start_ms).unwrap_or(0);
+
+    segments
+        .iter()
+        .map(|s| {
+            let elapsed_ms = s.start_ms.saturating_sub(first_start_ms);
+            let total_secs = elapsed_ms / 1000;
+            let hours = total_secs / 3600;
+            let minutes = (total_secs % 3600) / 60;
+            let seconds = total_secs % 60;
+
+            let elapsed = if hours > 0 {
+                format!("{}:{:02}:{:02}", hours, minutes, seconds)
+            } else {
+                format!("{:02}:{:02}", minutes, seconds)
+            };
+
+            let speaker_label = format_speaker_label(s.speaker_id.as_deref(), s.speaker_confidence);
+            format!("[{}] ({}) ({}): {}", s.index, elapsed, speaker_label, s.text)
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
 /// Thread-safe transcript buffer for continuous mode.
 /// Accumulates segments and allows the encounter detector to drain completed encounters.
 pub struct TranscriptBuffer {
@@ -143,28 +173,7 @@ impl TranscriptBuffer {
 
     /// Format segments for the encounter detector prompt (numbered, with elapsed time and speaker confidence)
     pub fn format_for_detection(&self) -> String {
-        let first_start_ms = self.segments.first().map(|s| s.start_ms).unwrap_or(0);
-
-        self.segments
-            .iter()
-            .map(|s| {
-                let elapsed_ms = s.start_ms.saturating_sub(first_start_ms);
-                let total_secs = elapsed_ms / 1000;
-                let hours = total_secs / 3600;
-                let minutes = (total_secs % 3600) / 60;
-                let seconds = total_secs % 60;
-
-                let elapsed = if hours > 0 {
-                    format!("{}:{:02}:{:02}", hours, minutes, seconds)
-                } else {
-                    format!("{:02}:{:02}", minutes, seconds)
-                };
-
-                let speaker_label = format_speaker_label(s.speaker_id.as_deref(), s.speaker_confidence);
-                format!("[{}] ({}) ({}): {}", s.index, elapsed, speaker_label, s.text)
-            })
-            .collect::<Vec<_>>()
-            .join("\n")
+        format_segments_for_detection(&self.segments)
     }
 
     /// Total word count in the buffer

@@ -1034,6 +1034,7 @@ pub async fn run_continuous_mode(
         // Track previous encounter for retrospective merge checks
         let mut prev_encounter_session_id: Option<String> = None;
         let mut prev_encounter_text: Option<String> = None;
+        let mut prev_encounter_text_rich: Option<String> = None;
         let mut prev_encounter_date: Option<DateTime<Utc>> = None;
         let mut prev_encounter_is_clinical: bool = true;
 
@@ -1203,10 +1204,19 @@ pub async fn run_continuous_mode(
                 .unwrap_or(word_count);
 
             // Manual or sensor trigger: skip minimum guards, but still need >0 words
+            // In hybrid mode, sensor triggers still require minimum content so the LLM
+            // has enough transcript to make a meaningful split decision. Without this,
+            // sensor flicker during departures causes micro-splits on wrap-up dialogue.
+            const MIN_SENSOR_HYBRID_WORDS: usize = 500;
             if manual_triggered || sensor_triggered {
                 if is_empty {
                     info!("{}: buffer is empty, nothing to archive",
                         if sensor_triggered { "Sensor trigger" } else { "Manual trigger" });
+                    continue;
+                }
+                if sensor_triggered && is_hybrid_mode && word_count < MIN_SENSOR_HYBRID_WORDS {
+                    info!("Sensor trigger: only {} words (minimum {} in hybrid mode), deferring to LLM timer",
+                        word_count, MIN_SENSOR_HYBRID_WORDS);
                     continue;
                 }
                 info!("{}: bypassing minimum duration/word count guards ({} words)",
@@ -1556,7 +1566,7 @@ pub async fn run_continuous_mode(
                         );
 
                         // Extract encounter segments from buffer
-                        let (encounter_text, encounter_word_count, encounter_start, encounter_segment_count) = {
+                        let (encounter_text, encounter_text_rich, encounter_word_count, encounter_start, encounter_segment_count) = {
                             let mut buffer = match buffer_for_detector.lock() {
                                 Ok(b) => b,
                                 Err(_) => continue,
@@ -1578,9 +1588,10 @@ pub async fn run_continuous_mode(
                                 })
                                 .collect::<Vec<_>>()
                                 .join("\n");
+                            let text_rich = crate::transcript_buffer::format_segments_for_detection(&drained);
                             let wc = text.split_whitespace().count();
                             let start = drained.first().map(|s| s.started_at);
-                            (text, wc, start, seg_count)
+                            (text, text_rich, wc, start, seg_count)
                         };
 
                         // Generate session ID for this encounter
@@ -1808,20 +1819,37 @@ pub async fn run_continuous_mode(
                             // Run before SOAP to detect couples/family visits.
                             let multi_patient_detection = if encounter_word_count >= MULTI_PATIENT_DETECT_WORD_THRESHOLD {
                                 info!("Running multi-patient detection for encounter #{} ({} words)", encounter_number, encounter_word_count);
-                                let detection = client.run_multi_patient_detection(&fast_model, &encounter_text).await;
-                                if let Some(ref d) = detection {
-                                    if let Ok(mut logger) = logger_for_detector.lock() {
-                                        logger.log_event("multi_patient_detect", serde_json::json!({
+                                let outcome = client.run_multi_patient_detection(&fast_model, &encounter_text_rich).await;
+                                if let Ok(mut logger) = logger_for_detector.lock() {
+                                    let det_context = match &outcome.detection {
+                                        Some(d) => serde_json::json!({
                                             "patient_count": d.patient_count,
                                             "confidence": d.confidence,
                                             "reasoning": d.reasoning,
                                             "patients": d.patients.iter()
                                                 .map(|p| serde_json::json!({"label": p.label, "summary": p.summary}))
                                                 .collect::<Vec<_>>(),
-                                        }));
-                                    }
+                                            "word_count": encounter_word_count,
+                                        }),
+                                        None => serde_json::json!({
+                                            "patient_count": 1,
+                                            "word_count": encounter_word_count,
+                                            "accepted": false,
+                                        }),
+                                    };
+                                    logger.log_llm_call(
+                                        "multi_patient_detect",
+                                        &outcome.model,
+                                        &outcome.system_prompt,
+                                        &outcome.user_prompt,
+                                        outcome.response_raw.as_deref(),
+                                        outcome.latency_ms,
+                                        outcome.success,
+                                        outcome.error.as_deref(),
+                                        det_context,
+                                    );
                                 }
-                                detection
+                                outcome.detection
                             } else {
                                 None
                             };
@@ -1940,6 +1968,7 @@ pub async fn run_continuous_mode(
                                             );
                                             prev_encounter_session_id = Some(prev_summary.session_id.clone());
                                             prev_encounter_text = Some(transcript);
+                                            prev_encounter_text_rich = None; // Archive only has flat text
                                             prev_encounter_date = Some(Utc::now());
                                             prev_encounter_is_clinical = prev_summary.likely_non_clinical != Some(true);
                                         }
@@ -2013,6 +2042,10 @@ pub async fn run_continuous_mode(
 
                                     // Perform the merge (same logic as LLM-confirmed merge below)
                                     let merged_text = format!("{}\n{}", prev_text, encounter_text);
+                                    let merged_text_rich = match &prev_encounter_text_rich {
+                                        Some(prev_rich) => format!("{}\n{}", prev_rich, encounter_text_rich),
+                                        None => format!("{}\n{}", prev_text, encounter_text_rich),
+                                    };
                                     let merged_wc = merged_text.split_whitespace().count();
                                     let merged_duration = encounter_start
                                         .map(|s| (Utc::now() - s).num_milliseconds().max(0) as u64)
@@ -2087,6 +2120,7 @@ pub async fn run_continuous_mode(
 
                                         // Update prev tracking to the merged encounter
                                         prev_encounter_text = Some(merged_text);
+                                        prev_encounter_text_rich = Some(merged_text_rich);
                                         prev_encounter_is_clinical = is_clinical || prev_encounter_is_clinical;
                                         continue; // Skip updating prev to current since we merged
                                     }
@@ -2153,6 +2187,10 @@ pub async fn run_continuous_mode(
                                         );
 
                                         let merged_text = format!("{}\n{}", prev_text, encounter_text);
+                                        let merged_text_rich = match &prev_encounter_text_rich {
+                                            Some(prev_rich) => format!("{}\n{}", prev_rich, encounter_text_rich),
+                                            None => format!("{}\n{}", prev_text, encounter_text_rich),
+                                        };
                                         let merged_wc = merged_text.split_whitespace().count();
                                         let merged_duration = encounter_start
                                             .map(|s| (Utc::now() - s).num_milliseconds().max(0) as u64)
@@ -2233,7 +2271,44 @@ pub async fn run_continuous_mode(
                                             if merged_wc >= MULTI_PATIENT_DETECT_WORD_THRESHOLD {
                                                 if let Some(ref client) = llm_client {
                                                     info!("Retrospective multi-patient detect on {} ({} words)", prev_id, merged_wc);
-                                                    if let Some(detection) = client.run_multi_patient_detection(&fast_model, &merged_text).await {
+                                                    // Log to the surviving session's pipeline log
+                                                    let retro_outcome = client.run_multi_patient_detection(&fast_model, &merged_text_rich).await;
+                                                    if let Ok(mut logger) = logger_for_detector.lock() {
+                                                        // Point logger at surviving session dir so this entry is preserved
+                                                        if let Ok(prev_dir) = local_archive::get_session_archive_dir(prev_id, prev_date) {
+                                                            logger.set_session(&prev_dir);
+                                                        }
+                                                        let det_context = match &retro_outcome.detection {
+                                                            Some(d) => serde_json::json!({
+                                                                "stage": "retrospective",
+                                                                "patient_count": d.patient_count,
+                                                                "confidence": d.confidence,
+                                                                "reasoning": d.reasoning,
+                                                                "patients": d.patients.iter()
+                                                                    .map(|p| serde_json::json!({"label": p.label, "summary": p.summary}))
+                                                                    .collect::<Vec<_>>(),
+                                                                "word_count": merged_wc,
+                                                            }),
+                                                            None => serde_json::json!({
+                                                                "stage": "retrospective",
+                                                                "patient_count": 1,
+                                                                "word_count": merged_wc,
+                                                                "accepted": false,
+                                                            }),
+                                                        };
+                                                        logger.log_llm_call(
+                                                            "multi_patient_detect",
+                                                            &retro_outcome.model,
+                                                            &retro_outcome.system_prompt,
+                                                            &retro_outcome.user_prompt,
+                                                            retro_outcome.response_raw.as_deref(),
+                                                            retro_outcome.latency_ms,
+                                                            retro_outcome.success,
+                                                            retro_outcome.error.as_deref(),
+                                                            det_context,
+                                                        );
+                                                    }
+                                                    if let Some(detection) = retro_outcome.detection {
                                                         info!("Retrospective: {} patients detected, regenerating per-patient SOAP for {}",
                                                             detection.patient_count, prev_id);
                                                         let (filtered, _) = strip_hallucinations(&merged_text, 5);
@@ -2269,6 +2344,7 @@ pub async fn run_continuous_mode(
 
                                             // Update prev tracking to the merged encounter
                                             prev_encounter_text = Some(merged_text);
+                                            prev_encounter_text_rich = Some(merged_text_rich);
                                             prev_encounter_is_clinical = is_clinical || prev_encounter_is_clinical;
                                             continue; // Skip updating prev to current since we merged
                                         }
@@ -2329,6 +2405,7 @@ pub async fn run_continuous_mode(
                         // Update prev encounter tracking for next iteration
                         prev_encounter_session_id = Some(session_id.clone());
                         prev_encounter_text = Some(encounter_text);
+                        prev_encounter_text_rich = Some(encounter_text_rich);
                         prev_encounter_date = Some(Utc::now());
                         prev_encounter_is_clinical = is_clinical;
             }
@@ -2950,6 +3027,46 @@ mod tests {
                 "Failed for manual={manual}, sensor={sensor}, force={force}, hybrid={hybrid}, sensor_timeout={sensor_timeout}"
             );
         }
+    }
+
+    #[test]
+    fn test_hybrid_sensor_trigger_minimum_word_guard() {
+        // In hybrid mode, sensor triggers should be deferred if word count is below threshold.
+        // This prevents micro-splits on wrap-up dialogue when the sensor flickers during departures.
+        const MIN_SENSOR_HYBRID_WORDS: usize = 500;
+
+        // Case 1: sensor trigger with insufficient words in hybrid mode → defer
+        let sensor_triggered = true;
+        let is_hybrid_mode = true;
+        let word_count: usize = 120;
+        let should_defer = sensor_triggered && is_hybrid_mode && word_count < MIN_SENSOR_HYBRID_WORDS;
+        assert!(should_defer, "Should defer: sensor trigger with only {word_count} words in hybrid mode");
+
+        // Case 2: sensor trigger with sufficient words in hybrid mode → proceed
+        let word_count: usize = 600;
+        let should_defer = sensor_triggered && is_hybrid_mode && word_count < MIN_SENSOR_HYBRID_WORDS;
+        assert!(!should_defer, "Should proceed: sensor trigger with {word_count} words in hybrid mode");
+
+        // Case 3: sensor trigger in pure sensor mode → no minimum (not hybrid)
+        let is_hybrid_mode = false;
+        let word_count: usize = 50;
+        let should_defer = sensor_triggered && is_hybrid_mode && word_count < MIN_SENSOR_HYBRID_WORDS;
+        assert!(!should_defer, "Pure sensor mode should not apply hybrid minimum word guard");
+
+        // Case 4: manual trigger in hybrid mode → no minimum (manual always proceeds)
+        let manual_triggered = true;
+        let sensor_triggered = false;
+        let is_hybrid_mode = true;
+        let word_count: usize = 50;
+        let should_defer = sensor_triggered && is_hybrid_mode && word_count < MIN_SENSOR_HYBRID_WORDS;
+        assert!(!should_defer, "Manual trigger should not be subject to sensor word guard");
+        assert!(manual_triggered, "Manual trigger should proceed regardless");
+
+        // Case 5: word count exactly at threshold → proceed
+        let sensor_triggered = true;
+        let word_count: usize = 500;
+        let should_defer = sensor_triggered && is_hybrid_mode && word_count < MIN_SENSOR_HYBRID_WORDS;
+        assert!(!should_defer, "Should proceed at exactly the threshold");
     }
 
     #[test]

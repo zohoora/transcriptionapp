@@ -35,7 +35,7 @@ fn print_usage(program: &str) {
     eprintln!("  --all               Replay all bundles in ~/.transcriptionapp/archive/");
     eprintln!("  --override K=V      Override a DetectionEvalContext field for what-if analysis");
     eprintln!("                      Supported: hybrid_confirm_window_secs, hybrid_min_words_for_sensor_split,");
-    eprintln!("                                 merge_back_count");
+    eprintln!("                                 merge_back_count, min_sensor_hybrid_words");
     eprintln!("  --mismatches        Only show bundles where replayed decision differs from actual");
     eprintln!("  --help              Show this help");
     eprintln!();
@@ -52,6 +52,7 @@ struct Overrides {
     hybrid_confirm_window_secs: Option<u64>,
     hybrid_min_words_for_sensor_split: Option<usize>,
     merge_back_count: Option<usize>,
+    min_sensor_hybrid_words: Option<usize>,
 }
 
 fn parse_override(s: &str) -> Result<(String, String), String> {
@@ -168,6 +169,23 @@ fn build_eval_context(
     }
 }
 
+/// Check if a detection check would be skipped by the pre-check guard that prevents
+/// micro-splits from sensor flicker in hybrid mode. In production, sensor-triggered
+/// wakeups skip the LLM call entirely when word count is below the minimum.
+fn should_skip_precheck(
+    check: &transcription_app_lib::replay_bundle::DetectionCheck,
+    config: &serde_json::Value,
+    overrides: &Overrides,
+) -> bool {
+    let is_hybrid = config
+        .get("encounter_detection_mode")
+        .and_then(|v| v.as_str())
+        .unwrap_or("hybrid")
+        == "hybrid";
+    let min_words = overrides.min_sensor_hybrid_words.unwrap_or(500);
+    is_hybrid && check.sensor_context.departed && check.word_count < min_words
+}
+
 /// Determine actual outcome from the bundle's split_decision and outcome fields.
 ///
 /// Intermediate checks that led to a split-then-merge-back are detected by
@@ -271,6 +289,10 @@ fn main() {
                             overrides.merge_back_count =
                                 Some(value.parse().expect("Invalid usize value"));
                         }
+                        "min_sensor_hybrid_words" => {
+                            overrides.min_sensor_hybrid_words =
+                                Some(value.parse().expect("Invalid usize value"));
+                        }
                         _ => {
                             eprintln!("Unknown override key: {}", key);
                             std::process::exit(1);
@@ -323,6 +345,7 @@ fn main() {
     if overrides.hybrid_confirm_window_secs.is_some()
         || overrides.hybrid_min_words_for_sensor_split.is_some()
         || overrides.merge_back_count.is_some()
+        || overrides.min_sensor_hybrid_words.is_some()
     {
         eprintln!("Overrides active:");
         if let Some(v) = overrides.hybrid_confirm_window_secs {
@@ -333,6 +356,9 @@ fn main() {
         }
         if let Some(v) = overrides.merge_back_count {
             eprintln!("  merge_back_count = {}", v);
+        }
+        if let Some(v) = overrides.min_sensor_hybrid_words {
+            eprintln!("  min_sensor_hybrid_words = {}", v);
         }
         eprintln!();
     }
@@ -370,10 +396,24 @@ fn main() {
 
         for (idx, check) in bundle.detection_checks.iter().enumerate() {
             total_checks += 1;
-            let ctx = build_eval_context(check, &bundle.config, &overrides);
-            let (outcome, _new_failures) = evaluate_detection(&ctx);
             let actual = actual_outcome_str(&bundle, idx, num_checks);
-            let agree = outcomes_agree(&outcome, &actual);
+
+            // Pre-check guard: sensor-triggered checks in hybrid mode with
+            // insufficient words would now be skipped before evaluate_detection()
+            let (replayed_str, agree) =
+                if should_skip_precheck(check, &bundle.config, &overrides) {
+                    let min_words = overrides.min_sensor_hybrid_words.unwrap_or(500);
+                    let s = format!(
+                        "Skipped(sensor_precheck, {}w<{})",
+                        check.word_count, min_words
+                    );
+                    (s, actual == "NoSplit")
+                } else {
+                    let ctx = build_eval_context(check, &bundle.config, &overrides);
+                    let (outcome, _new_failures) = evaluate_detection(&ctx);
+                    let agree = outcomes_agree(&outcome, &actual);
+                    (format_outcome(&outcome), agree)
+                };
 
             if agree {
                 matches += 1;
@@ -388,7 +428,7 @@ fn main() {
                 idx + 1,
                 num_checks,
                 actual,
-                format_outcome(&outcome),
+                replayed_str,
                 symbol
             ));
         }
@@ -696,6 +736,87 @@ mod tests {
         let ctx = build_eval_context(&check, &config, &overrides_reset);
         let (outcome, _) = evaluate_detection(&ctx);
         assert!(matches!(outcome, DetectionOutcome::Split { .. }));
+    }
+
+    // ---- should_skip_precheck tests ----
+
+    fn make_sensor_check(
+        complete: Option<bool>,
+        confidence: Option<f64>,
+        end_index: Option<u64>,
+        word_count: usize,
+        merge_back_count: u32,
+        buffer_age_secs: f64,
+        success: bool,
+        departed: bool,
+    ) -> DetectionCheck {
+        let mut check = DetectionCheck::new(
+            (0, 100),
+            word_count,
+            word_count,
+            SensorContext::new(departed, !departed),
+            String::new(),
+            String::new(),
+            500,
+            0,
+            merge_back_count,
+            buffer_age_secs,
+            None,
+        );
+        check.success = success;
+        check.parsed_complete = complete;
+        check.parsed_confidence = confidence;
+        check.parsed_end_index = end_index;
+        check
+    }
+
+    #[test]
+    fn test_precheck_skips_sensor_departed_low_words_hybrid() {
+        let check = make_sensor_check(Some(true), Some(0.95), Some(50), 120, 0, 600.0, true, true);
+        let config = serde_json::json!({"encounter_detection_mode": "hybrid"});
+        let overrides = Overrides::default();
+        assert!(should_skip_precheck(&check, &config, &overrides));
+    }
+
+    #[test]
+    fn test_precheck_allows_sufficient_words() {
+        let check = make_sensor_check(Some(true), Some(0.95), Some(50), 600, 0, 600.0, true, true);
+        let config = serde_json::json!({"encounter_detection_mode": "hybrid"});
+        let overrides = Overrides::default();
+        assert!(!should_skip_precheck(&check, &config, &overrides));
+    }
+
+    #[test]
+    fn test_precheck_allows_non_hybrid_mode() {
+        let check = make_sensor_check(Some(true), Some(0.95), Some(50), 120, 0, 600.0, true, true);
+        let config = serde_json::json!({"encounter_detection_mode": "sensor"});
+        let overrides = Overrides::default();
+        assert!(!should_skip_precheck(&check, &config, &overrides));
+    }
+
+    #[test]
+    fn test_precheck_allows_sensor_not_departed() {
+        let check =
+            make_sensor_check(Some(true), Some(0.95), Some(50), 120, 0, 600.0, true, false);
+        let config = serde_json::json!({"encounter_detection_mode": "hybrid"});
+        let overrides = Overrides::default();
+        assert!(!should_skip_precheck(&check, &config, &overrides));
+    }
+
+    #[test]
+    fn test_precheck_override_changes_threshold() {
+        let check = make_sensor_check(Some(true), Some(0.95), Some(50), 300, 0, 600.0, true, true);
+        let config = serde_json::json!({"encounter_detection_mode": "hybrid"});
+
+        // Default 500: 300 words < 500 → skip
+        assert!(should_skip_precheck(&check, &config, &Overrides::default()));
+
+        // Override 200: 300 words >= 200 → allow
+        let overrides_low = Overrides {
+            min_sensor_hybrid_words: Some(200),
+            ..Default::default()
+        };
+        assert!(!should_skip_precheck(&check, &config, &overrides_low));
     }
 
     #[test]

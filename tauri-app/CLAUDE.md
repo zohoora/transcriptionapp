@@ -242,7 +242,7 @@ Idle → Preparing → Recording → Stopping → Completed
 | **MIIS Images** | LLM extracts concepts every 30s → MIIS returns ranked images. Backend proxies through Rust (CORS). Server needs embedder enabled | `commands/miis.rs`, ADR 0018 |
 | **AI Images** | Gemini API generates medical illustrations from LLM-produced image prompts (piggybacks on predictive hint). **Default image source.** Cost guardrails: 45s cooldown, 8/session cap, 1 visible (latest only), prompt dedup. Config: `image_source=ai` (default), `gemini_api_key`. Requires Gemini API key to function | `gemini_client.rs`, `commands/images.rs`, `useAiImages.ts` |
 | **Continuous Mode** | All-day recording, LLM or sensor-based encounter detection, auto-SOAP per encounter. Vision-based patient name extraction via `vision-model` alias + `PatientNameTracker` majority-vote. Retrospective multi-patient check auto-splits incorrectly merged encounters (couples, family visits) | `continuous_mode.rs`, `encounter_detection.rs`, ADR 0019 |
-| **Presence Sensor** | DFRobot SEN0395 24GHz mmWave via USB-UART. Debounced presence state → absence threshold → encounter split. CSV logging, auto-detect port, graceful fallback to LLM on failure | `presence_sensor.rs` |
+| **Presence Sensor** | ESP32 Multi-Sensor Bridge: mmWave (SEN0395 24GHz, UART), CO2/temp/humidity (SCD41, I2C), thermal camera (MLX90640 32x24, I2C). WiFi HTTP at `presence_sensor_url`. App currently polls `present` field only; CO2 and thermal data available for future integration. Debounced presence → absence threshold → encounter split. Graceful fallback to LLM on failure. Firmware: `~/projects/room6-sensor/` (PlatformIO). Docs: `~/Dropbox/ESP32 Presence Sensor/README.md` | `presence_sensor.rs` |
 | **Hybrid Detection** | Sensor early-warning + LLM confirmation. Sensor Present→Absent accelerates LLM check (~30s vs ~8 min). Sensor timeout force-splits after `hybrid_confirm_window_secs` (default 180s). Sensor-departed prompt (V2_soft) lists common false departures. Graceful LLM-only fallback when sensor unavailable. Handles back-to-back encounters via regular LLM timer. Config: `encounter_detection_mode="hybrid"` | `continuous_mode.rs`, `config.rs` |
 | **Shadow Mode** | Dual detection comparison — runs sensor and LLM concurrently, logs decisions to CSV for accuracy analysis. Config: `encounter_detection_mode="shadow"`, `shadow_active_method` | `shadow_log.rs`, `continuous_mode.rs` |
 | **Session Cleanup** | History window tools: delete, split, merge sessions, rename patients, renumber encounters. Split opens in separate resizable window with LLM-suggested split point (`suggest_split_points` via `fast-model`) | `commands/archive.rs`, `components/cleanup/`, `SplitWindow.tsx` |
@@ -282,6 +282,9 @@ Key settings groups: STT Router (whisper_server_url, stt_alias=`"medical-streami
 | `~/.transcriptionapp/debug/` | Debug storage (dev only) |
 | `~/.transcriptionapp/mmwave/` | Presence sensor CSV logs (daily rotation) |
 | `~/.transcriptionapp/shadow/` | Shadow mode CSV logs (dual detection comparison) |
+| `~/sensor-logs/` | Multi-sensor data logger — JSONL + thermal PNGs. `sensor_logger.py` polls ESP32 every 5s |
+| `~/sensor-logs/data/YYYY-MM-DD/sensor_log.jsonl` | All sensor data per poll (presence, CO2, temp, humidity, 768-float thermal frame) |
+| `~/sensor-logs/data/YYYY-MM-DD/thermal/*.png` | Thermal camera snapshots (iron colormap, every 30s) |
 
 ## External Services
 
@@ -292,6 +295,7 @@ Key settings groups: STT Router (whisper_server_url, stt_alias=`"medical-streami
 | Medplum | `http://100.119.83.76:8103` | EMR/FHIR |
 | MIIS | `http://100.119.83.76:7843` | Medical illustration images |
 | Gemini | `https://generativelanguage.googleapis.com` | AI image generation (`gemini-3.1-flash-image-preview`) |
+| ESP32 Sensor | `http://172.16.100.37` | Room presence (mmWave), CO2/temp/humidity (SCD41), thermal camera (MLX90640). Config: `presence_sensor_url` |
 
 ## Frontend Structure
 

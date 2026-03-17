@@ -11,6 +11,20 @@ use tracing::{debug, error, info, warn};
 
 use crate::encounter_detection::MultiPatientDetectionResult;
 
+/// Full outcome of a multi-patient detection LLM call, including the raw
+/// prompt/response for pipeline logging.
+pub struct MultiPatientDetectionOutcome {
+    /// `Some` if multiple patients detected with sufficient confidence.
+    pub detection: Option<MultiPatientDetectionResult>,
+    pub system_prompt: String,
+    pub user_prompt: String,
+    pub model: String,
+    pub response_raw: Option<String>,
+    pub latency_ms: u64,
+    pub success: bool,
+    pub error: Option<String>,
+}
+
 /// Default timeout for LLM API requests (2 minutes for generation)
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(120);
 
@@ -974,44 +988,64 @@ impl LLMClient {
     }
 
     /// Run multi-patient detection on a transcript.
-    /// Returns `Some(detection)` if multiple patients detected with sufficient confidence,
-    /// `None` otherwise (single patient, low confidence, or error).
+    /// Returns full outcome (detection result + LLM call details for logging).
+    /// `outcome.detection` is `Some` only if multiple patients detected with sufficient confidence.
     pub async fn run_multi_patient_detection(
         &self,
         fast_model: &str,
         transcript: &str,
-    ) -> Option<MultiPatientDetectionResult> {
+    ) -> MultiPatientDetectionOutcome {
         use crate::encounter_detection::{
             MULTI_PATIENT_DETECT_PROMPT, MULTI_PATIENT_DETECT_MIN_CONFIDENCE,
             parse_multi_patient_detection,
         };
 
-        let mp_user = format!("Transcript:\n\n{}", transcript);
-        match tokio::time::timeout(
+        let mp_user = format!("Transcript (segments numbered with speaker labels):\n{}", transcript);
+        let start = std::time::Instant::now();
+        let result = tokio::time::timeout(
             tokio::time::Duration::from_secs(30),
             self.generate(fast_model, MULTI_PATIENT_DETECT_PROMPT, &mp_user, "multi_patient_detect"),
-        ).await {
+        ).await;
+        let latency_ms = start.elapsed().as_millis() as u64;
+
+        let (detection, response_raw, success, error) = match result {
             Ok(Ok(resp)) => {
                 match parse_multi_patient_detection(&resp) {
-                    Ok(detection) => {
+                    Ok(det) => {
                         info!(
                             "Multi-patient detection: count={}, conf={:?}, reasoning={:?}",
-                            detection.patient_count, detection.confidence, detection.reasoning
+                            det.patient_count, det.confidence, det.reasoning
                         );
-                        if detection.patient_count > 1
-                            && detection.confidence.unwrap_or(0.0) >= MULTI_PATIENT_DETECT_MIN_CONFIDENCE
-                            && detection.patients.len() > 1
-                        {
-                            Some(detection)
-                        } else {
-                            None
-                        }
+                        let accepted = det.patient_count > 1
+                            && det.confidence.unwrap_or(0.0) >= MULTI_PATIENT_DETECT_MIN_CONFIDENCE
+                            && det.patients.len() > 1;
+                        (if accepted { Some(det) } else { None }, Some(resp), true, None)
                     }
-                    Err(e) => { warn!("Failed to parse multi-patient detection: {}", e); None }
+                    Err(e) => {
+                        warn!("Failed to parse multi-patient detection: {}", e);
+                        (None, Some(resp), false, Some(format!("Parse error: {}", e)))
+                    }
                 }
             }
-            Ok(Err(e)) => { warn!("Multi-patient detection LLM error: {}", e); None }
-            Err(_) => { warn!("Multi-patient detection timed out"); None }
+            Ok(Err(e)) => {
+                warn!("Multi-patient detection LLM error: {}", e);
+                (None, None, false, Some(e.to_string()))
+            }
+            Err(_) => {
+                warn!("Multi-patient detection timed out");
+                (None, None, false, Some("Timeout after 30s".to_string()))
+            }
+        };
+
+        MultiPatientDetectionOutcome {
+            detection,
+            system_prompt: MULTI_PATIENT_DETECT_PROMPT.to_string(),
+            user_prompt: mp_user,
+            model: fast_model.to_string(),
+            response_raw,
+            latency_ms,
+            success,
+            error,
         }
     }
 
