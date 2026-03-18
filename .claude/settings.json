@@ -26,6 +26,14 @@
           {
             "type": "command",
             "command": "for f in $CLAUDE_FILE_PATHS; do if [[ \"$f\" == *.ts ]] || [[ \"$f\" == *.tsx ]]; then cd tauri-app && npx eslint \"$f\" --max-warnings 0 2>/dev/null; fi; done"
+          },
+          {
+            "type": "command",
+            "command": "for f in $CLAUDE_FILE_PATHS; do if [[ \"$f\" == *.rs ]]; then cd tauri-app/src-tauri && cargo clippy --all-targets -- -D warnings 2>/dev/null; break; fi; done"
+          },
+          {
+            "type": "command",
+            "command": "for f in $CLAUDE_FILE_PATHS; do if [[ \"$f\" == *.ts ]] || [[ \"$f\" == *.tsx ]]; then cd tauri-app && npx tsc --noEmit 2>/dev/null; break; fi; done"
           }
         ]
       }

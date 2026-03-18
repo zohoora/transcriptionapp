@@ -54,7 +54,20 @@ Rust Backend
 ├── speaker_profiles.rs # Speaker enrollment storage
 ├── local_archive.rs   # Local session storage
 ├── continuous_mode.rs # Continuous charting mode (end-of-day)
-├── presence_sensor.rs # mmWave presence sensor (SEN0395 via serial)
+├── presence_sensor/   # Multi-sensor presence detection suite
+│   ├── mod.rs             # PresenceSensorSuite orchestrator, fusion task, public API
+│   ├── types.rs           # PresenceState, SensorType, SensorReading, FusedState, configs
+│   ├── sensor_source.rs   # SensorSource trait
+│   ├── sources/
+│   │   ├── esp32_http.rs  # HTTP poller — mmWave + CO2 + thermal from ESP32 WiFi bridge
+│   │   ├── serial.rs      # USB-UART mmWave (legacy), auto_detect_port(), parse_jybss()
+│   │   └── mock.rs        # Scripted timelines for testing
+│   ├── debounce.rs        # DebounceFsm — filters rapid toggles
+│   ├── thermal.rs         # Hot-pixel counting + flood-fill blob detection (pure functions)
+│   ├── co2.rs             # Rolling CO2 tracker, trend analysis, occupancy estimation
+│   ├── fusion.rs          # Sensor fusion engine (mmWave-only passthrough, multi-sensor deferred)
+│   ├── absence_monitor.rs # Absence threshold timer → triggers encounter split
+│   └── csv_logger.rs      # Daily-rotating mmWave CSV logs
 ├── screenshot.rs      # Screen capture (in-memory JPEG, blank detection, permission check)
 ├── patient_name_tracker.rs # Vision-based patient name extraction + majority-vote tracker
 ├── encounter_detection.rs  # Encounter detection prompts/parsing + clinical content check + retrospective multi-patient check
@@ -134,7 +147,7 @@ cd src-tauri && cargo test       # Rust
 | Modify MIIS integration | `commands/miis.rs`, `useMiisImages.ts`, `ImageSuggestions.tsx`, `usePredictiveHint.ts` |
 | Modify AI images | `gemini_client.rs`, `commands/images.rs`, `useAiImages.ts`, `usePredictiveHint.ts`, `ImageSuggestions.tsx` |
 | Modify continuous mode | `continuous_mode.rs`, `encounter_detection.rs` (detection prompts + retrospective check), `encounter_merge.rs` (merge prompts), `encounter_pipeline.rs` (shared SOAP generation + merge check helpers), `commands/continuous.rs`, `useContinuousMode.ts`, `ContinuousMode.tsx` |
-| Modify presence sensor | `presence_sensor.rs`, `config.rs` (sensor fields), `commands/continuous.rs`, `SettingsDrawer.tsx` (Zone 3 Advanced → Continuous Mode), `ContinuousMode.tsx` |
+| Modify presence sensor | `presence_sensor/` (module directory), `config.rs` (sensor fields), `commands/continuous.rs`, `SettingsDrawer.tsx` (Zone 3 Advanced → Continuous Mode), `ContinuousMode.tsx` |
 | Modify patient biomarkers | `usePatientBiomarkers.ts`, `PatientPulse.tsx`, `PatientVoiceMonitor.tsx` |
 | Modify session cleanup (history) | `commands/archive.rs`, `HistoryWindow.tsx`, `components/cleanup/` (CleanupActionBar, DeleteConfirmDialog, EditNameDialog, MergeConfirmDialog, SplitView), `SplitWindow.tsx` (standalone split window) |
 | Modify shadow mode | `shadow_log.rs`, `continuous_mode.rs` (shadow observer task), `config.rs` (`shadow_active_method`, `shadow_csv_log_enabled`) |
@@ -211,7 +224,7 @@ Idle → Preparing → Recording → Stopping → Completed
 | Encounter notes: clone before clear | In continuous mode detector, clone accumulated notes before clearing buffer to avoid data loss |
 | Audio quality shared util | `getAudioQualityLevel()` in utils.ts — shared across RecordingMode, ReviewMode, ContinuousMode |
 | Force-split constants | Named constants in encounter_detection.rs: `FORCE_CHECK_WORD_THRESHOLD` (3K), `FORCE_SPLIT_WORD_THRESHOLD` (5K), `FORCE_SPLIT_CONSECUTIVE_LIMIT` (3), `ABSOLUTE_WORD_CAP` (25K). Graduated force-split only counts consecutive LLM failures/timeouts (not confident "no split" responses). Both FORCE_CHECK and FORCE_SPLIT use `cleaned_word_count` (hallucination-stripped) to avoid STT phrase loops inflating past thresholds. Retrospective: `MULTI_PATIENT_CHECK_WORD_THRESHOLD` (2500), `MULTI_PATIENT_SPLIT_MIN_WORDS` (500). Clinical content check: `MIN_WORDS_FOR_CLINICAL_CHECK` (100) — transcripts below this threshold skip the LLM clinical check |
-| Presence sensor auto-detect | `auto_detect_port()` in presence_sensor.rs scans USB-serial devices when configured port fails |
+| Presence sensor auto-detect | `auto_detect_port()` in presence_sensor/sources/serial.rs scans USB-serial devices when configured port fails |
 | Screen recording permission | Use `CGPreflightScreenCaptureAccess()` (not 1x1 pixel capture) — old check always passed even without permission. `is_blank_capture()` heuristic detects blanked-out window content |
 | SOAP JSON repair | Pipeline: `fix_json_newlines` → `remove_leading_commas` → `remove_trailing_commas` → `fix_truncated_json` (closes unclosed strings + missing brackets) → filter empty strings. Raw-JSON fallback returns structured placeholder instead of broken JSON |
 | Hallucination filter | Two-phase: single-word repetitions then n-gram phrase loops (sizes 3-25). `strip_hallucinations()` in encounter_experiment.rs |
@@ -242,7 +255,7 @@ Idle → Preparing → Recording → Stopping → Completed
 | **MIIS Images** | LLM extracts concepts every 30s → MIIS returns ranked images. Backend proxies through Rust (CORS). Server needs embedder enabled | `commands/miis.rs`, ADR 0018 |
 | **AI Images** | Gemini API generates medical illustrations from LLM-produced image prompts (piggybacks on predictive hint). **Default image source.** Cost guardrails: 45s cooldown, 8/session cap, 1 visible (latest only), prompt dedup. Config: `image_source=ai` (default), `gemini_api_key`. Requires Gemini API key to function | `gemini_client.rs`, `commands/images.rs`, `useAiImages.ts` |
 | **Continuous Mode** | All-day recording, LLM or sensor-based encounter detection, auto-SOAP per encounter. Vision-based patient name extraction via `vision-model` alias + `PatientNameTracker` majority-vote. Retrospective multi-patient check auto-splits incorrectly merged encounters (couples, family visits) | `continuous_mode.rs`, `encounter_detection.rs`, ADR 0019 |
-| **Presence Sensor** | ESP32 Multi-Sensor Bridge: mmWave (SEN0395 24GHz, UART), CO2/temp/humidity (SCD41, I2C), thermal camera (MLX90640 32x24, I2C). WiFi HTTP at `presence_sensor_url`. App currently polls `present` field only; CO2 and thermal data available for future integration. Debounced presence → absence threshold → encounter split. Graceful fallback to LLM on failure. Firmware: `~/projects/room6-sensor/` (PlatformIO). Docs: `~/Dropbox/ESP32 Presence Sensor/README.md` | `presence_sensor.rs` |
+| **Presence Sensor** | ESP32 Multi-Sensor Bridge: mmWave (SEN0395 24GHz, UART), CO2/temp/humidity (SCD41, I2C), thermal camera (MLX90640 32x24, I2C). WiFi HTTP at `presence_sensor_url`. Module directory with `SensorSource` trait, `DebounceFsm`, thermal analysis, CO2 tracker, and fusion engine. Fusion currently mmWave-only passthrough; thermal + CO2 tracked for health/monitoring but don't influence presence decision (deferred to per-room calibration). Debounced presence → absence threshold → encounter split. Graceful fallback to LLM on failure. Config: `thermal_hot_pixel_threshold_c` (28°C), `co2_baseline_ppm` (420). Firmware: `~/projects/room6-sensor/` (PlatformIO) | `presence_sensor/` |
 | **Hybrid Detection** | Sensor early-warning + LLM confirmation. Sensor Present→Absent accelerates LLM check (~30s vs ~8 min). Sensor timeout force-splits after `hybrid_confirm_window_secs` (default 180s). Sensor-departed prompt (V2_soft) lists common false departures. Graceful LLM-only fallback when sensor unavailable. Handles back-to-back encounters via regular LLM timer. Config: `encounter_detection_mode="hybrid"` | `continuous_mode.rs`, `config.rs` |
 | **Shadow Mode** | Dual detection comparison — runs sensor and LLM concurrently, logs decisions to CSV for accuracy analysis. Config: `encounter_detection_mode="shadow"`, `shadow_active_method` | `shadow_log.rs`, `continuous_mode.rs` |
 | **Session Cleanup** | History window tools: delete, split, merge sessions, rename patients, renumber encounters. Split opens in separate resizable window with LLM-suggested split point (`suggest_split_points` via `fast-model`) | `commands/archive.rs`, `components/cleanup/`, `SplitWindow.tsx` |
@@ -264,7 +277,7 @@ Idle → Preparing → Recording → Stopping → Completed
 
 Source of truth: `src-tauri/src/config.rs` (Rust) / `src/types/index.ts` (TypeScript).
 
-Key settings groups: STT Router (whisper_server_url, stt_alias=`"medical-streaming"`, stt_postprocess=true), Audio (VAD, diarization, enhancement), LLM Router (soap_model=`"soap-model-fast"`, soap_model_fast=`"soap-model-fast"`, fast_model=`"fast-model"`), Medplum (OAuth, auto_sync), Auto-detection (auto_start, auto_end_silence_ms=180000), SOAP (detail_level 1-10, format, custom_instructions), Images (image_source=`"ai"` (default)|`"miis"`|`"off"`, gemini_api_key), MIIS, Screen Capture, Continuous Mode (charting_mode, encounter_check_interval_secs=120, encounter_silence_trigger_secs=45, encounter_merge_enabled, encounter_detection_model=`"fast-model"`, encounter_detection_nothink=false), Presence Sensor (encounter_detection_mode=`"hybrid"`, presence_sensor_port, presence_absence_threshold_secs=180, presence_debounce_secs=15, presence_csv_log_enabled=true), Shadow Mode (shadow_active_method=`"sensor"`, shadow_csv_log_enabled=true), Hybrid Detection (hybrid_confirm_window_secs=180, hybrid_min_words_for_sensor_split=500), Screen Capture (screen_capture_enabled, screen_capture_interval_secs=30, requires Screen Recording permission), Debug.
+Key settings groups: STT Router (whisper_server_url, stt_alias=`"medical-streaming"`, stt_postprocess=true), Audio (VAD, diarization, enhancement), LLM Router (soap_model=`"soap-model-fast"`, soap_model_fast=`"soap-model-fast"`, fast_model=`"fast-model"`), Medplum (OAuth, auto_sync), Auto-detection (auto_start, auto_end_silence_ms=180000), SOAP (detail_level 1-10, format, custom_instructions), Images (image_source=`"ai"` (default)|`"miis"`|`"off"`, gemini_api_key), MIIS, Screen Capture, Continuous Mode (charting_mode, encounter_check_interval_secs=120, encounter_silence_trigger_secs=45, encounter_merge_enabled, encounter_detection_model=`"fast-model"`, encounter_detection_nothink=false), Presence Sensor (encounter_detection_mode=`"hybrid"`, presence_sensor_port, presence_absence_threshold_secs=180, presence_debounce_secs=15, presence_csv_log_enabled=true, thermal_hot_pixel_threshold_c=28.0, co2_baseline_ppm=420.0), Shadow Mode (shadow_active_method=`"sensor"`, shadow_csv_log_enabled=true), Hybrid Detection (hybrid_confirm_window_secs=180, hybrid_min_words_for_sensor_split=500), Screen Capture (screen_capture_enabled, screen_capture_interval_secs=30, requires Screen Recording permission), Debug.
 
 ## File Locations
 

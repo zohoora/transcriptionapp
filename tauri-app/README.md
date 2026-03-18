@@ -168,7 +168,7 @@ tauri-app/
 │   │   ├── replay_bundle.rs      # Encounter replay test case builder
 │   │   ├── day_log.rs            # Day-level orchestration JSONL logger
 │   │   ├── transcript_buffer.rs  # Timestamped transcript segment buffer
-│   │   ├── presence_sensor.rs    # mmWave presence sensor (serial)
+│   │   ├── presence_sensor/      # Multi-sensor presence suite (mmWave + thermal + CO2)
 │   │   ├── preprocessing.rs      # Audio preprocessing (DC removal, high-pass, AGC)
 │   │   ├── diarization/          # Speaker detection
 │   │   │   ├── mod.rs            # Module exports

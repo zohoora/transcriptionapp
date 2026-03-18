@@ -117,15 +117,15 @@ refactor: extract audio resampling into separate module
 
 ## Testing
 
-We maintain comprehensive test coverage (437 frontend tests, 670 Rust tests). All PRs must pass tests.
+We maintain comprehensive test coverage (450 frontend tests, 733 Rust tests). All PRs must pass tests.
 
 ### Running Tests
 
 ```bash
-# Frontend tests (437 tests)
+# Frontend tests (450 tests)
 pnpm test:run
 
-# Rust tests with ONNX Runtime (670 tests)
+# Rust tests with ONNX Runtime (733 tests)
 cd src-tauri
 ORT_DYLIB_PATH=$(../scripts/setup-ort.sh) cargo test
 
@@ -316,7 +316,7 @@ proptest! {
 | `encounter_pipeline` | Shared pipeline helpers (SOAP generation, merge checks) |
 | `screenshot_task` | Screenshot capture task for continuous mode |
 | `patient_name_tracker` | Vision-based patient name extraction + majority-vote |
-| `presence_sensor` | mmWave presence sensor (SEN0395 via serial) |
+| `presence_sensor/` | Multi-sensor presence suite (mmWave + thermal + CO2, SensorSource trait, DebounceFsm, fusion engine) |
 | `gemini_client` | Google Gemini API client (AI image generation) |
 | `shadow_log` | Shadow mode CSV logging (dual detection comparison) |
 | `activity_log` | Structured PHI-safe activity logging |
