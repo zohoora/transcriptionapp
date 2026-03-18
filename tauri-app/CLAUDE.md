@@ -69,7 +69,7 @@ Rust Backend
 │   ├── absence_monitor.rs # Absence threshold timer → triggers encounter split
 │   └── csv_logger.rs      # Daily-rotating mmWave CSV logs
 ├── screenshot.rs      # Screen capture (in-memory JPEG, blank detection, permission check)
-├── patient_name_tracker.rs # Vision-based patient name extraction + majority-vote tracker
+├── patient_name_tracker.rs # Vision-based patient name extraction + recency-weighted vote tracker
 ├── encounter_detection.rs  # Encounter detection prompts/parsing + clinical content check + retrospective multi-patient check
 ├── encounter_merge.rs # Encounter merge prompts/parsing (M1 name-aware strategy)
 ├── encounter_pipeline.rs # Shared encounter pipeline helpers (SOAP generation, merge checks, clinical content check)
@@ -155,7 +155,7 @@ cd src-tauri && cargo test       # Rust
 | Modify replay logging | `segment_log.rs` (per-segment JSONL), `replay_bundle.rs` (encounter test case), `day_log.rs` (day-level events), `continuous_mode.rs` (integration points), `config.rs` (`replay_snapshot()`) |
 | Add session-scoped state | `useSessionLifecycle.ts` (add reset call to `resetAllSessionState`) |
 
-## IPC Commands (91 total across 17 modules)
+## IPC Commands (93 total across 17 modules)
 
 | Module | Commands | Source |
 |--------|----------|--------|
@@ -169,7 +169,7 @@ cd src-tauri && cargo test       # Rust
 | Permissions (3) | `check_microphone_permission`, `request_*`, `open_*_settings` | `commands/permissions.rs` |
 | Listening (3) | `start_listening`, `stop_listening`, `get_listening_status` | `commands/listening.rs` |
 | Speaker Profiles (6) | `list_speaker_profiles`, `get_speaker_profile`, `create_*`, `update_*`, `delete_*`, `reenroll_*` | `commands/speaker_profiles.rs` |
-| Archive (12) | `get_local_session_dates`, `get_local_sessions_by_date`, `get_local_session_details`, `save_local_soap_note`, `read_local_audio_file`, `delete_local_session`, `split_local_session`, `merge_local_sessions`, `update_session_patient_name`, `renumber_local_encounters`, `get_session_transcript_lines`, `suggest_split_points` | `commands/archive.rs` |
+| Archive (14) | `get_local_session_dates`, `get_local_sessions_by_date`, `get_local_session_details`, `save_local_soap_note`, `read_local_audio_file`, `delete_local_session`, `split_local_session`, `merge_local_sessions`, `update_session_patient_name`, `renumber_local_encounters`, `get_session_transcript_lines`, `suggest_split_points`, `get_session_feedback`, `save_session_feedback` | `commands/archive.rs` |
 | Clinical Chat (1) | `clinical_chat_send` | `commands/clinical_chat.rs` |
 | MIIS (2) | `miis_suggest`, `miis_send_usage` | `commands/miis.rs` |
 | Images (1) | `generate_ai_image` | `commands/images.rs` |
@@ -254,7 +254,7 @@ Idle → Preparing → Recording → Stopping → Completed
 | **MCP Server** | Port 7101, JSON-RPC 2.0. Tools: `agent_identity`, `health_check`, `get_status`, `get_logs` | `mcp/` |
 | **MIIS Images** | LLM extracts concepts every 30s → MIIS returns ranked images. Backend proxies through Rust (CORS). Server needs embedder enabled | `commands/miis.rs`, ADR 0018 |
 | **AI Images** | Gemini API generates medical illustrations from LLM-produced image prompts (piggybacks on predictive hint). **Default image source.** Cost guardrails: 45s cooldown, 8/session cap, 1 visible (latest only), prompt dedup. Config: `image_source=ai` (default), `gemini_api_key`. Requires Gemini API key to function | `gemini_client.rs`, `commands/images.rs`, `useAiImages.ts` |
-| **Continuous Mode** | All-day recording, LLM or sensor-based encounter detection, auto-SOAP per encounter. Vision-based patient name extraction via `vision-model` alias + `PatientNameTracker` majority-vote. Retrospective multi-patient check auto-splits incorrectly merged encounters (couples, family visits) | `continuous_mode.rs`, `encounter_detection.rs`, ADR 0019 |
+| **Continuous Mode** | All-day recording, LLM or sensor-based encounter detection, auto-SOAP per encounter. Vision-based patient name extraction via `vision-model` alias + `PatientNameTracker` recency-weighted voting (later screenshots count more — handles late chart opens). Retrospective multi-patient check auto-splits incorrectly merged encounters (couples, family visits) | `continuous_mode.rs`, `encounter_detection.rs`, ADR 0019 |
 | **Presence Sensor** | ESP32 Multi-Sensor Bridge: mmWave (SEN0395 24GHz, UART), CO2/temp/humidity (SCD41, I2C), thermal camera (MLX90640 32x24, I2C). WiFi HTTP at `presence_sensor_url`. Module directory with `SensorSource` trait, `DebounceFsm`, thermal analysis, CO2 tracker, and fusion engine. Fusion currently mmWave-only passthrough; thermal + CO2 tracked for health/monitoring but don't influence presence decision (deferred to per-room calibration). Debounced presence → absence threshold → encounter split. Graceful fallback to LLM on failure. Config: `thermal_hot_pixel_threshold_c` (28°C), `co2_baseline_ppm` (420). Firmware: `~/projects/room6-sensor/` (PlatformIO) | `presence_sensor/` |
 | **Hybrid Detection** | Sensor early-warning + LLM confirmation. Sensor Present→Absent accelerates LLM check (~30s vs ~8 min). Sensor timeout force-splits after `hybrid_confirm_window_secs` (default 180s). Sensor-departed prompt (V2_soft) lists common false departures. Graceful LLM-only fallback when sensor unavailable. Handles back-to-back encounters via regular LLM timer. Config: `encounter_detection_mode="hybrid"` | `continuous_mode.rs`, `config.rs` |
 | **Shadow Mode** | Dual detection comparison — runs sensor and LLM concurrently, logs decisions to CSV for accuracy analysis. Config: `encounter_detection_mode="shadow"`, `shadow_active_method` | `shadow_log.rs`, `continuous_mode.rs` |
@@ -323,7 +323,7 @@ Key settings groups: STT Router (whisper_server_url, stt_alias=`"medical-streami
 - `AuthProvider.tsx` - Medplum OAuth context provider
 - `LoginScreen.tsx` - OAuth login flow UI
 - `ErrorBoundary.tsx` - React error boundary with fallback UI
-- `SettingsDrawer.tsx` - 4-zone settings panel (Clinical Workflow → Connection Status → Advanced [collapsed] → Speaker Profiles [sub-view]). 5 visible controls at first open; IT/developer settings behind Advanced accordion. ~617 lines
+- `SettingsDrawer.tsx` - 4-zone settings panel (Clinical Workflow → Connection Status → Advanced [collapsed] → Speaker Profiles [sub-view]). 5 visible controls at first open; IT/developer settings behind Advanced accordion. ~643 lines
 - `HistoryView.tsx` / `HistoryWindow.tsx` - Session archive browsing (Gmail-style split-pane: calendar+list left, detail right)
 - `Calendar.tsx` - Date picker for archive history
 - `PatientSearch.tsx` - Medplum patient search
@@ -357,7 +357,7 @@ Key settings groups: STT Router (whisper_server_url, stt_alias=`"medical-streami
 - `useSessionState` - Recording state, transcript, biomarkers
 - `useSoapNote` - SOAP generation
 - `useMedplumSync` - EMR sync with encounter tracking
-- `useSettings` - Configuration management (`PendingSettings` = 24 UI-editable fields, subset of full `Settings`; `diarization_enabled`/`whisper_mode` hardcoded in save, not in pending)
+- `useSettings` - Configuration management (`PendingSettings` = 25 UI-editable fields, subset of full `Settings`; `diarization_enabled`/`whisper_mode` hardcoded in save, not in pending)
 - `useAutoDetection` - Listening mode
 - `useSpeakerProfiles` - Speaker enrollment CRUD operations
 - `useClinicalChat` - Clinical assistant chat during recording

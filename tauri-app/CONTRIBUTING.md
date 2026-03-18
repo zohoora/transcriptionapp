@@ -117,7 +117,7 @@ refactor: extract audio resampling into separate module
 
 ## Testing
 
-We maintain comprehensive test coverage (450 frontend tests, 733 Rust tests). All PRs must pass tests.
+We maintain comprehensive test coverage (450 frontend tests, 758 Rust tests). All PRs must pass tests.
 
 ### Running Tests
 
