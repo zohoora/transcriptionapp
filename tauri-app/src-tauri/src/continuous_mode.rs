@@ -2379,7 +2379,7 @@ pub async fn run_continuous_mode(
                             .lock()
                             .map(|t| {
                                 let majority = t.majority_name();
-                                let votes: usize = t.votes().values().map(|v| *v as usize).sum();
+                                let votes: usize = t.vote_count();
                                 let unique: Vec<String> = t.votes().keys().cloned().collect();
                                 (majority, votes, unique)
                             })

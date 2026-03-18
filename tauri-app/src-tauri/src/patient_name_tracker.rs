@@ -7,11 +7,14 @@
 use std::collections::HashMap;
 
 /// Tracks patient name votes from periodic screenshot analysis.
-/// Multiple screenshots are analyzed per encounter; majority vote determines
-/// the most likely patient name for labeling.
+/// Uses recency-weighted voting: later screenshots count more than earlier ones,
+/// since clinicians often open the patient chart after the encounter starts.
+/// The Nth screenshot gets weight N (linear ramp).
 pub struct PatientNameTracker {
-    /// Name -> count of screenshots where this name was extracted
-    votes: HashMap<String, u32>,
+    /// Name -> recency-weighted vote total (later screenshots count more)
+    votes: HashMap<String, u64>,
+    /// Incrementing sequence number — next vote gets this + 1 as its weight
+    vote_seq: u64,
     /// Last encounter's majority name (set during reset, used for stale screenshot detection)
     previous_name: Option<String>,
 }
@@ -20,24 +23,32 @@ impl PatientNameTracker {
     pub fn new() -> Self {
         Self {
             votes: HashMap::new(),
+            vote_seq: 0,
             previous_name: None,
         }
     }
 
-    /// Record a vote for a patient name (normalized: trimmed, title-cased)
+    /// Record a vote for a patient name (normalized: trimmed, title-cased).
+    /// Weight increases linearly: 1st screenshot = weight 1, 2nd = weight 2, etc.
     pub fn record(&mut self, name: &str) {
         let normalized = normalize_patient_name(name);
         if !normalized.is_empty() {
-            *self.votes.entry(normalized).or_insert(0) += 1;
+            self.vote_seq += 1;
+            *self.votes.entry(normalized).or_insert(0) += self.vote_seq;
         }
     }
 
-    /// Returns the name with the most votes, or None if no votes recorded
+    /// Returns the name with the highest recency-weighted total, or None if no votes recorded
     pub fn majority_name(&self) -> Option<String> {
         self.votes
             .iter()
-            .max_by_key(|(_, count)| *count)
+            .max_by_key(|(_, weight)| *weight)
             .map(|(name, _)| name.clone())
+    }
+
+    /// Returns the total number of screenshots analyzed (not the weighted total)
+    pub fn vote_count(&self) -> usize {
+        self.vote_seq as usize
     }
 
     /// Record a vote and check if the majority name changed.
@@ -58,6 +69,7 @@ impl PatientNameTracker {
     pub fn reset(&mut self) {
         self.previous_name = self.majority_name();
         self.votes.clear();
+        self.vote_seq = 0;
     }
 
     /// Returns the previous encounter's majority name (set during reset)
@@ -65,8 +77,8 @@ impl PatientNameTracker {
         self.previous_name.as_deref()
     }
 
-    /// Returns a reference to the votes map (for replay bundle snapshots)
-    pub fn votes(&self) -> &std::collections::HashMap<String, u32> {
+    /// Returns a reference to the weighted votes map (for replay bundle snapshots)
+    pub fn votes(&self) -> &std::collections::HashMap<String, u64> {
         &self.votes
     }
 }
@@ -138,10 +150,10 @@ mod tests {
     #[test]
     fn test_patient_name_tracker_majority() {
         let mut tracker = PatientNameTracker::new();
-        tracker.record("John Smith");
-        tracker.record("John Smith");
-        tracker.record("John Smith");
-        tracker.record("Jane Doe");
+        tracker.record("John Smith"); // weight 1
+        tracker.record("John Smith"); // weight 2
+        tracker.record("John Smith"); // weight 3 → total 6
+        tracker.record("Jane Doe"); // weight 4 → total 4
         assert_eq!(tracker.majority_name(), Some("John Smith".to_string()));
     }
 
@@ -159,6 +171,7 @@ mod tests {
         assert!(tracker.majority_name().is_some());
         tracker.reset();
         assert_eq!(tracker.majority_name(), None);
+        assert_eq!(tracker.vote_count(), 0); // sequence resets too
     }
 
     #[test]
@@ -172,9 +185,9 @@ mod tests {
     fn test_comma_format_normalization() {
         // "Surname, Given" and "Given Surname" should normalize to the same string
         let mut tracker = PatientNameTracker::new();
-        tracker.record("Zamorano Sanchez, Claudia Marcela");
-        tracker.record("Claudia Marcela Zamorano Sanchez");
-        // Both should be counted as the same name
+        tracker.record("Zamorano Sanchez, Claudia Marcela"); // weight 1
+        tracker.record("Claudia Marcela Zamorano Sanchez"); // weight 2
+        // Both should be counted as the same name (total weight 3)
         assert_eq!(
             tracker.majority_name(),
             Some("Claudia Marcela Zamorano Sanchez".to_string())
@@ -189,6 +202,51 @@ mod tests {
         assert!(!changed);
         let (changed, _, _) = tracker.record_and_check_change("Zamorano Sanchez, Claudia Marcela");
         assert!(!changed, "Same name in comma format should NOT trigger a change");
+    }
+
+    #[test]
+    fn test_recency_weighting_late_chart_open() {
+        // Scenario: chart opened at screenshot 5 of 8 (4-min encounter at 30s intervals)
+        // Old patient on screen for first 4 screenshots, correct patient for last 4
+        let mut tracker = PatientNameTracker::new();
+        tracker.record("Wrong Patient"); // weight 1
+        tracker.record("Wrong Patient"); // weight 2
+        tracker.record("Wrong Patient"); // weight 3
+        tracker.record("Wrong Patient"); // weight 4 → total 10
+        tracker.record("Correct Patient"); // weight 5
+        tracker.record("Correct Patient"); // weight 6
+        tracker.record("Correct Patient"); // weight 7
+        tracker.record("Correct Patient"); // weight 8 → total 26
+        // Correct patient wins despite equal screenshot count (26 vs 10)
+        assert_eq!(
+            tracker.majority_name(),
+            Some("Correct Patient".to_string())
+        );
+        assert_eq!(tracker.vote_count(), 8);
+    }
+
+    #[test]
+    fn test_recency_weighting_very_late_chart_open() {
+        // Extreme: chart opened at screenshot 7 of 8 — only last 2 screenshots correct
+        let mut tracker = PatientNameTracker::new();
+        for _ in 0..6 {
+            tracker.record("Wrong Patient"); // weights 1+2+3+4+5+6 = 21
+        }
+        tracker.record("Correct Patient"); // weight 7
+        tracker.record("Correct Patient"); // weight 8 → total 15
+        // Wrong patient still wins when chart opened very late (21 vs 15)
+        // This is expected — 2 screenshots isn't enough to overcome 6
+        assert_eq!(tracker.majority_name(), Some("Wrong Patient".to_string()));
+    }
+
+    #[test]
+    fn test_vote_count_tracks_screenshots() {
+        let mut tracker = PatientNameTracker::new();
+        assert_eq!(tracker.vote_count(), 0);
+        tracker.record("John Smith");
+        tracker.record("Jane Doe");
+        tracker.record("John Smith");
+        assert_eq!(tracker.vote_count(), 3);
     }
 
     #[test]
@@ -294,9 +352,11 @@ mod tests {
         // Strengthen John's majority
         let (changed, _, _) = tracker.record_and_check_change("John Smith");
         assert!(!changed, "Same name shouldn't trigger change");
+        // John: weight 1+2 = 3
 
-        // Now add Jane votes one at a time — at some point majority flips
-        // John=2, Jane=0 → John=2, Jane=1 → John=2, Jane=2 (tie) → John=2, Jane=3 (flip!)
+        // Now add Jane votes — with recency weighting, Jane's later votes carry more weight
+        // Jane vote 3: weight 3 → Jane=3, John=3 (tie or flip)
+        // Jane vote 4: weight 4 → Jane=7, John=3 (definite flip)
         let mut saw_change = false;
         for _ in 0..5 {
             let (changed, old, new) = tracker.record_and_check_change("Jane Smith");
