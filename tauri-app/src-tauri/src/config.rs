@@ -184,6 +184,19 @@ pub struct Settings {
     pub hybrid_confirm_window_secs: u64,
     #[serde(default = "default_hybrid_min_words_for_sensor_split")]
     pub hybrid_min_words_for_sensor_split: usize,
+    // Multi-sensor suite settings (thermal + CO2 analysis)
+    #[serde(default = "default_thermal_hot_pixel_threshold_c")]
+    pub thermal_hot_pixel_threshold_c: f32,
+    #[serde(default = "default_co2_baseline_ppm")]
+    pub co2_baseline_ppm: f32,
+}
+
+fn default_thermal_hot_pixel_threshold_c() -> f32 {
+    28.0 // Celsius — human body heat threshold for MLX90640
+}
+
+fn default_co2_baseline_ppm() -> f32 {
+    420.0 // Outdoor/empty room CO2 baseline
 }
 
 fn default_hybrid_confirm_window_secs() -> u64 {
@@ -406,6 +419,8 @@ impl Default for Settings {
             shadow_csv_log_enabled: default_shadow_csv_log_enabled(),
             hybrid_confirm_window_secs: default_hybrid_confirm_window_secs(),
             hybrid_min_words_for_sensor_split: default_hybrid_min_words_for_sensor_split(),
+            thermal_hot_pixel_threshold_c: default_thermal_hot_pixel_threshold_c(),
+            co2_baseline_ppm: default_co2_baseline_ppm(),
         }
     }
 }
@@ -765,6 +780,12 @@ impl Config {
         // Hybrid: min words 100-5000
         self.hybrid_min_words_for_sensor_split = self.hybrid_min_words_for_sensor_split.clamp(100, 5000);
 
+        // Thermal: hot pixel threshold 20-40°C
+        self.thermal_hot_pixel_threshold_c = self.thermal_hot_pixel_threshold_c.clamp(20.0, 40.0);
+
+        // CO2: baseline 300-600 ppm
+        self.co2_baseline_ppm = self.co2_baseline_ppm.clamp(300.0, 600.0);
+
         // image_source must be "off", "miis", or "ai"
         if !["off", "miis", "ai"].contains(&self.image_source.as_str()) {
             self.image_source = "off".to_string();
@@ -910,6 +931,8 @@ impl Config {
             "screen_capture_interval_secs": self.screen_capture_interval_secs,
             "fast_model": self.fast_model,
             "shadow_active_method": self.shadow_active_method.to_string(),
+            "thermal_hot_pixel_threshold_c": self.thermal_hot_pixel_threshold_c,
+            "co2_baseline_ppm": self.co2_baseline_ppm,
         })
     }
 }
@@ -1042,6 +1065,8 @@ mod tests {
             shadow_csv_log_enabled: default_shadow_csv_log_enabled(),
             hybrid_confirm_window_secs: default_hybrid_confirm_window_secs(),
             hybrid_min_words_for_sensor_split: default_hybrid_min_words_for_sensor_split(),
+            thermal_hot_pixel_threshold_c: default_thermal_hot_pixel_threshold_c(),
+            co2_baseline_ppm: default_co2_baseline_ppm(),
             stt_alias: "medical-streaming".to_string(),
             stt_postprocess: true,
         };
@@ -1170,6 +1195,8 @@ mod tests {
             shadow_csv_log_enabled: default_shadow_csv_log_enabled(),
             hybrid_confirm_window_secs: default_hybrid_confirm_window_secs(),
             hybrid_min_words_for_sensor_split: default_hybrid_min_words_for_sensor_split(),
+            thermal_hot_pixel_threshold_c: default_thermal_hot_pixel_threshold_c(),
+            co2_baseline_ppm: default_co2_baseline_ppm(),
             stt_alias: default_stt_alias(),
             stt_postprocess: default_stt_postprocess(),
         };

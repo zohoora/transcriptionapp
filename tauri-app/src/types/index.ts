@@ -124,6 +124,9 @@ export interface Settings {
   // Hybrid detection settings (sensor accelerates LLM confirmation)
   hybrid_confirm_window_secs: number;
   hybrid_min_words_for_sensor_split: number;
+  // Multi-sensor suite settings (thermal + CO2 analysis)
+  thermal_hot_pixel_threshold_c: number;
+  co2_baseline_ppm: number;
 }
 
 // Listening mode types (auto-session detection)

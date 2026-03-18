@@ -539,15 +539,24 @@ pub async fn run_continuous_mode(
             String::new()
         };
 
-        let sensor_config = crate::presence_sensor::SensorConfig {
+        let sensor_config = crate::presence_sensor::SuiteConfig {
             port: sensor_port,
             url: config.presence_sensor_url.clone(),
             debounce_secs: config.presence_debounce_secs,
             absence_threshold_secs: config.presence_absence_threshold_secs,
             csv_log_enabled: config.presence_csv_log_enabled,
+            thermal: crate::presence_sensor::ThermalConfig {
+                hot_pixel_threshold_c: config.thermal_hot_pixel_threshold_c,
+                ..Default::default()
+            },
+            co2: crate::presence_sensor::Co2Config {
+                baseline_ppm: config.co2_baseline_ppm,
+                ..Default::default()
+            },
+            fusion: crate::presence_sensor::FusionConfig::default(),
         };
 
-        match crate::presence_sensor::PresenceSensor::start(&sensor_config) {
+        match crate::presence_sensor::PresenceSensorSuite::start_suite(&sensor_config) {
             Ok(sensor) => {
                 info!("Presence sensor started for encounter detection");
                 sensor_absence_trigger = sensor.absence_notifier();
