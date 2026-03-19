@@ -1,33 +1,146 @@
 //! Archive command handlers for local session history
 
+use crate::commands::{SharedActivePhysician, SharedProfileClient};
 use crate::config::Config;
 use crate::local_archive::{
     self, ArchiveDetails, ArchiveSummary, SessionFeedback,
 };
 use crate::ollama::LLMClient;
+use crate::profile_client::ProfileClient;
 use serde::Serialize;
+use std::future::Future;
 use std::path::PathBuf;
+use tauri::State;
 use tracing::{info, warn};
 
-/// Get all dates that have archived sessions
+/// Clone the active physician ID and ProfileClient out of their locks,
+/// then run the provided async closure if both are available.
+/// The locks are released before any HTTP calls happen.
+fn spawn_sync<F, Fut>(
+    physician_arc: SharedActivePhysician,
+    client_arc: SharedProfileClient,
+    op_name: &'static str,
+    f: F,
+) where
+    F: FnOnce(String, ProfileClient) -> Fut + Send + 'static,
+    Fut: Future<Output = ()> + Send,
+{
+    tauri::async_runtime::spawn(async move {
+        let physician_id = physician_arc.read().await.as_ref().map(|p| p.id.clone());
+        let client = client_arc.read().await.clone();
+        if let (Some(phys_id), Some(client)) = (physician_id, client) {
+            f(phys_id, client).await;
+        } else {
+            warn!("Skipping server sync ({op_name}): no active physician or client");
+        }
+    });
+}
+
+/// Get all dates that have archived sessions.
+/// Tries local first, then merges with server dates.
 #[tauri::command]
-pub fn get_local_session_dates() -> Result<Vec<String>, String> {
+pub async fn get_local_session_dates(
+    active_physician: State<'_, SharedActivePhysician>,
+    profile_client: State<'_, SharedProfileClient>,
+) -> Result<Vec<String>, String> {
     info!("Getting local archive dates");
-    local_archive::list_session_dates()
+
+    // Start with local dates (fast path)
+    let local_dates = local_archive::list_session_dates().unwrap_or_default();
+
+    // Try to enrich with server dates (may include sessions from other machines)
+    let physician_id = active_physician.read().await.as_ref().map(|p| p.id.clone());
+    let client = profile_client.read().await.clone();
+    if let (Some(phys_id), Some(client)) = (physician_id, client) {
+        match client.get_session_dates(&phys_id, None, None).await {
+            Ok(mut server_dates) => {
+                // Merge: add any local dates not on server
+                let server_set: std::collections::HashSet<String> =
+                    server_dates.iter().cloned().collect();
+                for d in &local_dates {
+                    if !server_set.contains(d) {
+                        server_dates.push(d.clone());
+                    }
+                }
+                server_dates.sort();
+                server_dates.dedup();
+                return Ok(server_dates);
+            }
+            Err(e) => warn!("Server fetch failed, using local only: {e}"),
+        }
+    }
+
+    Ok(local_dates)
 }
 
-/// Get sessions for a specific date
+/// Get sessions for a specific date.
+/// Tries local first, then merges with server sessions.
 #[tauri::command]
-pub fn get_local_sessions_by_date(date: String) -> Result<Vec<ArchiveSummary>, String> {
+pub async fn get_local_sessions_by_date(
+    date: String,
+    active_physician: State<'_, SharedActivePhysician>,
+    profile_client: State<'_, SharedProfileClient>,
+) -> Result<Vec<ArchiveSummary>, String> {
     info!("Getting local sessions for date: {}", date);
-    local_archive::list_sessions_by_date(&date)
+
+    // Start with local sessions (fast path)
+    let local_sessions = local_archive::list_sessions_by_date(&date).unwrap_or_default();
+
+    // Try to enrich with server sessions (may include sessions from other machines)
+    let physician_id = active_physician.read().await.as_ref().map(|p| p.id.clone());
+    let client = profile_client.read().await.clone();
+    if let (Some(phys_id), Some(client)) = (physician_id, client) {
+        match client.get_sessions_by_date(&phys_id, &date).await {
+            Ok(mut server_sessions) => {
+                // Merge: add any local sessions not on server
+                let server_ids: std::collections::HashSet<String> =
+                    server_sessions.iter().map(|s| s.session_id.clone()).collect();
+                for local in &local_sessions {
+                    if !server_ids.contains(&local.session_id) {
+                        server_sessions.push(local.clone());
+                    }
+                }
+                if !server_sessions.is_empty() {
+                    return Ok(server_sessions);
+                }
+            }
+            Err(e) => warn!("Server fetch failed, using local only: {e}"),
+        }
+    }
+
+    Ok(local_sessions)
 }
 
-/// Get full details of an archived session
+/// Get full details of an archived session.
+/// Tries local first (fast path), then server if not found locally.
 #[tauri::command]
-pub fn get_local_session_details(session_id: String, date: String) -> Result<ArchiveDetails, String> {
+pub async fn get_local_session_details(
+    session_id: String,
+    date: String,
+    active_physician: State<'_, SharedActivePhysician>,
+    profile_client: State<'_, SharedProfileClient>,
+) -> Result<ArchiveDetails, String> {
     info!("Getting local session details: {} on {}", session_id, date);
-    local_archive::get_session(&session_id, &date)
+
+    // Try local first (fast path)
+    if let Ok(details) = local_archive::get_session(&session_id, &date) {
+        return Ok(details);
+    }
+
+    // Try server (session may exist on a different machine)
+    let physician_id = active_physician.read().await.as_ref().map(|p| p.id.clone());
+    let client = profile_client.read().await.clone();
+    if let (Some(phys_id), Some(client)) = (physician_id, client) {
+        match client.get_session(&phys_id, &session_id).await {
+            Ok(details) => return Ok(details),
+            Err(e) => warn!("Server fetch also failed: {e}"),
+        }
+    }
+
+    Err(format!(
+        "Session {} not found locally or on server",
+        session_id
+    ))
 }
 
 /// Save SOAP note to an archived session
@@ -38,6 +151,8 @@ pub fn save_local_soap_note(
     soap_content: String,
     detail_level: Option<u8>,
     format: Option<String>,
+    active_physician: State<'_, SharedActivePhysician>,
+    profile_client: State<'_, SharedProfileClient>,
 ) -> Result<(), String> {
     info!(
         "Saving SOAP note to local archive: {} (detail: {:?}, format: {:?})",
@@ -58,7 +173,28 @@ pub fn save_local_soap_note(
         &soap_content,
         detail_level,
         format.as_deref(),
-    )
+    )?;
+
+    // Best-effort server sync
+    let sid = session_id.clone();
+    let soap = soap_content.clone();
+    spawn_sync(
+        active_physician.inner().clone(),
+        profile_client.inner().clone(),
+        "update_soap",
+        move |phys_id, client| async move {
+            let body = serde_json::json!({
+                "content": soap,
+                "detail_level": detail_level,
+                "format": format,
+            });
+            if let Err(e) = client.update_soap(&phys_id, &sid, &body).await {
+                warn!("Server sync failed (update_soap): {e}");
+            }
+        },
+    );
+
+    Ok(())
 }
 
 // ============================================================================
@@ -67,9 +203,28 @@ pub fn save_local_soap_note(
 
 /// Delete a session from the local archive
 #[tauri::command]
-pub fn delete_local_session(session_id: String, date: String) -> Result<(), String> {
+pub fn delete_local_session(
+    session_id: String,
+    date: String,
+    active_physician: State<'_, SharedActivePhysician>,
+    profile_client: State<'_, SharedProfileClient>,
+) -> Result<(), String> {
     info!("Deleting local session: {} on {}", session_id, date);
-    local_archive::delete_session(&session_id, &date)
+    local_archive::delete_session(&session_id, &date)?;
+
+    let sid = session_id.clone();
+    spawn_sync(
+        active_physician.inner().clone(),
+        profile_client.inner().clone(),
+        "delete_session",
+        move |phys_id, client| async move {
+            if let Err(e) = client.delete_session(&phys_id, &sid).await {
+                warn!("Server sync failed (delete_session): {e}");
+            }
+        },
+    );
+
+    Ok(())
 }
 
 /// Split a session at a line boundary, returning the new session ID
@@ -78,9 +233,41 @@ pub fn split_local_session(
     session_id: String,
     date: String,
     split_line: usize,
+    active_physician: State<'_, SharedActivePhysician>,
+    profile_client: State<'_, SharedProfileClient>,
 ) -> Result<String, String> {
     info!("Splitting local session: {} at line {}", session_id, split_line);
-    local_archive::split_session(&session_id, &date, split_line)
+    let new_session_id = local_archive::split_session(&session_id, &date, split_line)?;
+
+    // Best-effort server sync: upload both halves
+    let original_sid = session_id.clone();
+    let new_sid = new_session_id.clone();
+    let date_clone = date.clone();
+    spawn_sync(
+        active_physician.inner().clone(),
+        profile_client.inner().clone(),
+        "split_session",
+        move |phys_id, client| async move {
+            // Upload updated original (first half)
+            if let Ok(details) = local_archive::get_session(&original_sid, &date_clone) {
+                if let Ok(body) = serde_json::to_value(&details) {
+                    if let Err(e) = client.upload_session(&phys_id, &original_sid, &body).await {
+                        warn!("Server sync failed (upload original half): {e}");
+                    }
+                }
+            }
+            // Upload new session (second half)
+            if let Ok(details) = local_archive::get_session(&new_sid, &date_clone) {
+                if let Ok(body) = serde_json::to_value(&details) {
+                    if let Err(e) = client.upload_session(&phys_id, &new_sid, &body).await {
+                        warn!("Server sync failed (upload new half): {e}");
+                    }
+                }
+            }
+        },
+    );
+
+    Ok(new_session_id)
 }
 
 /// Merge multiple sessions into one, returning the surviving session ID
@@ -88,9 +275,42 @@ pub fn split_local_session(
 pub fn merge_local_sessions(
     session_ids: Vec<String>,
     date: String,
+    active_physician: State<'_, SharedActivePhysician>,
+    profile_client: State<'_, SharedProfileClient>,
 ) -> Result<String, String> {
     info!("Merging {} local sessions on {}", session_ids.len(), date);
-    local_archive::merge_sessions(&session_ids, &date)
+    let surviving_id = local_archive::merge_sessions(&session_ids, &date)?;
+
+    let surv_id = surviving_id.clone();
+    let consumed_ids: Vec<String> = session_ids
+        .iter()
+        .filter(|id| **id != surviving_id)
+        .cloned()
+        .collect();
+    let date_clone = date.clone();
+    spawn_sync(
+        active_physician.inner().clone(),
+        profile_client.inner().clone(),
+        "merge_sessions",
+        move |phys_id, client| async move {
+            // Upload merged (surviving) session
+            if let Ok(details) = local_archive::get_session(&surv_id, &date_clone) {
+                if let Ok(body) = serde_json::to_value(&details) {
+                    if let Err(e) = client.upload_session(&phys_id, &surv_id, &body).await {
+                        warn!("Server sync failed (upload merged session): {e}");
+                    }
+                }
+            }
+            // Delete consumed sessions from server
+            for consumed_id in &consumed_ids {
+                if let Err(e) = client.delete_session(&phys_id, consumed_id).await {
+                    warn!("Server sync failed (delete consumed session {consumed_id}): {e}");
+                }
+            }
+        },
+    );
+
+    Ok(surviving_id)
 }
 
 /// Update the patient name for a session
@@ -99,16 +319,66 @@ pub fn update_session_patient_name(
     session_id: String,
     date: String,
     patient_name: String,
+    active_physician: State<'_, SharedActivePhysician>,
+    profile_client: State<'_, SharedProfileClient>,
 ) -> Result<(), String> {
     info!("Updating patient name for session: {}", session_id);
-    local_archive::update_patient_name(&session_id, &date, &patient_name)
+    local_archive::update_patient_name(&session_id, &date, &patient_name)?;
+
+    let sid = session_id.clone();
+    let name = patient_name.clone();
+    spawn_sync(
+        active_physician.inner().clone(),
+        profile_client.inner().clone(),
+        "update_patient_name",
+        move |phys_id, client| async move {
+            let body = serde_json::json!({ "patient_name": name });
+            if let Err(e) = client.update_metadata(&phys_id, &sid, &body).await {
+                warn!("Server sync failed (update_metadata patient_name): {e}");
+            }
+        },
+    );
+
+    Ok(())
 }
 
 /// Renumber encounter numbers for continuous mode sessions on a date
 #[tauri::command]
-pub fn renumber_local_encounters(date: String) -> Result<(), String> {
+pub fn renumber_local_encounters(
+    date: String,
+    active_physician: State<'_, SharedActivePhysician>,
+    profile_client: State<'_, SharedProfileClient>,
+) -> Result<(), String> {
     info!("Renumbering encounters for date: {}", date);
-    local_archive::renumber_encounters(&date)
+    local_archive::renumber_encounters(&date)?;
+
+    let date_clone = date.clone();
+    spawn_sync(
+        active_physician.inner().clone(),
+        profile_client.inner().clone(),
+        "renumber_encounters",
+        move |phys_id, client| async move {
+            // Re-read the sessions to get updated encounter numbers
+            if let Ok(sessions) = local_archive::list_sessions_by_date(&date_clone) {
+                for session in &sessions {
+                    if let Some(enc_num) = session.encounter_number {
+                        let body = serde_json::json!({ "encounter_number": enc_num });
+                        if let Err(e) = client
+                            .update_metadata(&phys_id, &session.session_id, &body)
+                            .await
+                        {
+                            warn!(
+                                "Server sync failed (renumber session {}): {e}",
+                                session.session_id
+                            );
+                        }
+                    }
+                }
+            }
+        },
+    );
+
+    Ok(())
 }
 
 /// Get transcript lines for split UI
@@ -160,9 +430,28 @@ pub fn save_session_feedback(
     session_id: String,
     date: String,
     feedback: SessionFeedback,
+    active_physician: State<'_, SharedActivePhysician>,
+    profile_client: State<'_, SharedProfileClient>,
 ) -> Result<(), String> {
     info!("Saving feedback for session: {} on {}", session_id, date);
-    local_archive::write_feedback(&session_id, &date, &feedback)
+    local_archive::write_feedback(&session_id, &date, &feedback)?;
+
+    let sid = session_id.clone();
+    let fb = feedback.clone();
+    spawn_sync(
+        active_physician.inner().clone(),
+        profile_client.inner().clone(),
+        "save_feedback",
+        move |phys_id, client| async move {
+            if let Ok(body) = serde_json::to_value(&fb) {
+                if let Err(e) = client.update_metadata(&phys_id, &sid, &body).await {
+                    warn!("Server sync failed (save_session_feedback): {e}");
+                }
+            }
+        },
+    );
+
+    Ok(())
 }
 
 // ============================================================================

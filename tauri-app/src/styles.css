@@ -467,6 +467,31 @@ body {
   margin-bottom: 8px;
 }
 
+/* Settings tier badges */
+.settings-tier-badge {
+  display: inline-block;
+  padding: 1px 6px;
+  border-radius: 3px;
+  font-size: 9px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-left: 6px;
+  vertical-align: middle;
+}
+
+.settings-tier-badge.room {
+  background: var(--bg-secondary, #2a2a2e);
+  color: var(--text-secondary, #a0a0a0);
+  border: 1px solid var(--border-color, #3a3a3e);
+}
+
+.settings-tier-badge.personal {
+  background: rgba(59, 130, 246, 0.15);
+  color: var(--accent-blue, #3b82f6);
+  border: 1px solid rgba(59, 130, 246, 0.3);
+}
+
 .settings-select {
   width: 100%;
   padding: 10px 12px;
@@ -7921,4 +7946,700 @@ button.review-section-header-left:focus {
   color: #dc2626;
   font-size: 13px;
   text-align: center;
+}
+
+/* =============================================================================
+   ROOM SETUP (Full-screen first-run configuration)
+   ============================================================================= */
+
+.room-setup-overlay {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100vh;
+  background: var(--bg-secondary);
+}
+
+.room-setup-card {
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  padding: 32px;
+  width: 100%;
+  max-width: 420px;
+  box-shadow: var(--shadow-md);
+}
+
+.room-setup-title {
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 4px;
+}
+
+.room-setup-subtitle {
+  font-size: 13px;
+  color: var(--text-secondary);
+  margin-bottom: 24px;
+}
+
+.room-setup-field {
+  margin-bottom: 20px;
+}
+
+.room-setup-label {
+  display: block;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-primary);
+  margin-bottom: 6px;
+}
+
+.room-setup-input {
+  width: 100%;
+  padding: 8px 12px;
+  font-size: 14px;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  outline: none;
+  transition: border-color 0.15s ease;
+}
+
+.room-setup-input:focus {
+  border-color: var(--accent-blue);
+}
+
+.room-setup-url-row {
+  display: flex;
+  gap: 8px;
+}
+
+.room-setup-url-row .room-setup-input {
+  flex: 1;
+}
+
+.room-setup-test-btn {
+  padding: 8px 16px;
+  font-size: 13px;
+  font-weight: 500;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.15s ease;
+}
+
+.room-setup-test-btn:hover:not(:disabled) {
+  background: var(--bg-hover);
+}
+
+.room-setup-test-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.room-setup-test-result {
+  display: block;
+  font-size: 12px;
+  margin-top: 6px;
+  font-weight: 500;
+}
+
+.room-setup-test-result.success {
+  color: #22c55e;
+}
+
+.room-setup-test-result.failure {
+  color: #dc2626;
+}
+
+.room-setup-error {
+  padding: 8px 12px;
+  margin-bottom: 16px;
+  font-size: 12px;
+  color: #dc2626;
+  background: rgba(220, 38, 38, 0.08);
+  border-radius: 6px;
+}
+
+.room-setup-save-btn {
+  width: 100%;
+  padding: 10px;
+  font-size: 14px;
+  font-weight: 600;
+  border: none;
+  border-radius: 8px;
+  background: var(--accent-blue);
+  color: #fff;
+  cursor: pointer;
+  transition: opacity 0.15s ease;
+}
+
+.room-setup-save-btn:hover:not(:disabled) {
+  opacity: 0.9;
+}
+
+.room-setup-save-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* =============================================================================
+   PHYSICIAN SELECT (Full-screen physician picker)
+   ============================================================================= */
+
+.physician-select-overlay {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100vh;
+  background: var(--bg-secondary);
+}
+
+.physician-select-card {
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  padding: 32px;
+  width: 100%;
+  max-width: 560px;
+  box-shadow: var(--shadow-md);
+}
+
+.physician-select-title {
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 4px;
+}
+
+.physician-select-subtitle {
+  font-size: 13px;
+  color: var(--text-secondary);
+  margin-bottom: 24px;
+}
+
+.physician-select-loading,
+.physician-select-empty {
+  padding: 40px 0;
+  text-align: center;
+  font-size: 14px;
+  color: var(--text-muted);
+}
+
+.physician-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 12px;
+}
+
+.physician-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 20px 12px;
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  background: var(--bg-primary);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  text-align: center;
+}
+
+.physician-card:hover {
+  background: var(--bg-hover);
+  border-color: var(--accent-blue);
+  box-shadow: var(--shadow-sm);
+}
+
+.physician-card-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.physician-card-specialty {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+/* =============================================================================
+   ACTIVE PHYSICIAN BADGE (Header)
+   ============================================================================= */
+
+.physician-badge {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 4px 3px 10px;
+  border-radius: 14px;
+  background: rgba(59, 130, 246, 0.1);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.physician-badge-name {
+  font-weight: 600;
+  color: var(--accent-blue);
+}
+
+.physician-badge-switch {
+  padding: 2px 8px;
+  font-size: 11px;
+  font-weight: 500;
+  border: none;
+  border-radius: 10px;
+  background: rgba(59, 130, 246, 0.15);
+  color: var(--accent-blue);
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.physician-badge-switch:hover {
+  background: rgba(59, 130, 246, 0.25);
+}
+
+/* =============================================================================
+   PHYSICIAN SELECT - Admin Link & Header Row
+   ============================================================================= */
+
+.physician-select-header-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 24px;
+}
+
+.physician-select-header-row .physician-select-title {
+  margin-bottom: 4px;
+}
+
+.physician-select-header-row .physician-select-subtitle {
+  margin-bottom: 0;
+}
+
+.physician-select-admin {
+  margin-top: 16px;
+  text-align: center;
+}
+
+.admin-link-btn {
+  padding: 8px 16px;
+  font-size: 13px;
+  font-weight: 500;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.admin-link-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+  border-color: var(--accent-blue);
+}
+
+/* =============================================================================
+   ADMIN PANEL (Standalone Window)
+   ============================================================================= */
+
+.admin-panel {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  background: var(--bg-secondary);
+}
+
+.admin-panel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px 24px;
+  background: var(--bg-primary);
+  border-bottom: 1px solid var(--border-color);
+}
+
+.admin-panel-header-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.admin-panel-header-left h1 {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin: 0;
+}
+
+.admin-panel-count {
+  font-size: 12px;
+  color: var(--text-muted);
+  padding: 2px 8px;
+  background: var(--bg-secondary);
+  border-radius: 10px;
+}
+
+.admin-panel-header-right {
+  display: flex;
+  gap: 8px;
+}
+
+.admin-tabs {
+  display: flex;
+  gap: 0;
+  padding: 0 24px;
+  border-bottom: 1px solid var(--border-color, #e5e7eb);
+  background: var(--bg-primary);
+}
+
+.admin-tab {
+  padding: 10px 20px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-secondary, #6b7280);
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  transition: color 0.15s, border-color 0.15s;
+}
+
+.admin-tab:hover {
+  color: var(--text-primary);
+}
+
+.admin-tab-active {
+  color: var(--text-primary);
+  border-bottom-color: var(--accent-color, #3b82f6);
+}
+
+.admin-tab-count {
+  font-size: 11px;
+  font-weight: 600;
+  background: var(--bg-tertiary, #f3f4f6);
+  color: var(--text-secondary, #6b7280);
+  padding: 1px 7px;
+  border-radius: 10px;
+}
+
+.admin-tab-active .admin-tab-count {
+  background: var(--accent-color, #3b82f6);
+  color: #fff;
+}
+
+.admin-panel-error {
+  padding: 10px 24px;
+  background: #fef2f2;
+  color: #dc2626;
+  font-size: 13px;
+  border-bottom: 1px solid #fecaca;
+}
+
+.admin-panel-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 20px 24px;
+}
+
+.admin-panel-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 60px 0;
+  font-size: 14px;
+  color: var(--text-muted);
+}
+
+.admin-panel-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 60px 0;
+  font-size: 14px;
+  color: var(--text-muted);
+}
+
+.admin-panel-actions {
+  margin-bottom: 16px;
+}
+
+/* Admin buttons */
+.admin-btn {
+  padding: 10px 18px;
+  font-size: 13px;
+  font-weight: 500;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  line-height: 1;
+}
+
+.admin-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.admin-btn-primary {
+  background: var(--accent-blue);
+  color: #fff;
+  border-color: var(--accent-blue);
+}
+
+.admin-btn-primary:hover:not(:disabled) {
+  background: #2563eb;
+}
+
+.admin-btn-secondary {
+  background: var(--bg-primary);
+  color: var(--text-secondary);
+}
+
+.admin-btn-secondary:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.admin-btn-close {
+  background: var(--bg-primary);
+  color: var(--text-muted);
+}
+
+.admin-btn-close:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.admin-btn-danger {
+  background: #fff;
+  color: #dc2626;
+  border-color: #fecaca;
+}
+
+.admin-btn-danger:hover:not(:disabled) {
+  background: #fef2f2;
+  border-color: #dc2626;
+}
+
+.admin-btn-edit {
+  background: var(--bg-primary);
+  color: var(--accent-blue);
+  border-color: rgba(59, 130, 246, 0.3);
+}
+
+.admin-btn-edit:hover:not(:disabled) {
+  background: rgba(59, 130, 246, 0.05);
+  border-color: var(--accent-blue);
+}
+
+.admin-btn-small {
+  padding: 6px 12px;
+  font-size: 12px;
+}
+
+/* Add form card */
+.admin-form-card {
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  padding: 20px;
+  margin-bottom: 16px;
+  box-shadow: var(--shadow-sm);
+}
+
+.admin-form-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 16px;
+}
+
+.admin-form-row {
+  margin-bottom: 12px;
+}
+
+.admin-form-label {
+  display: block;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  margin-bottom: 4px;
+}
+
+.admin-form-input {
+  width: 100%;
+  padding: 10px 12px;
+  font-size: 14px;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  outline: none;
+  transition: border-color 0.15s ease;
+}
+
+.admin-form-input:focus {
+  border-color: var(--accent-blue);
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.1);
+}
+
+.admin-form-error {
+  padding: 8px 12px;
+  margin-bottom: 12px;
+  font-size: 12px;
+  color: #dc2626;
+  background: #fef2f2;
+  border-radius: 6px;
+  border: 1px solid #fecaca;
+}
+
+.admin-form-buttons {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+/* Table */
+.admin-table-wrapper {
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  overflow: hidden;
+  box-shadow: var(--shadow-sm);
+}
+
+.admin-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.admin-table thead {
+  background: var(--bg-secondary);
+}
+
+.admin-table th {
+  padding: 10px 16px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  text-align: left;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.admin-table td {
+  padding: 14px 16px;
+  font-size: 14px;
+  color: var(--text-primary);
+  border-bottom: 1px solid var(--border-color);
+  vertical-align: middle;
+}
+
+.admin-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.admin-table tbody tr:hover {
+  background: var(--bg-hover);
+}
+
+.admin-table-edit-row {
+  background: rgba(59, 130, 246, 0.03);
+}
+
+.admin-table-edit-row:hover {
+  background: rgba(59, 130, 246, 0.03);
+}
+
+.admin-table-name {
+  font-weight: 500;
+}
+
+.admin-table-specialty {
+  color: var(--text-secondary);
+}
+
+.admin-table-date {
+  font-size: 12px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.admin-table-actions-col {
+  width: 180px;
+  text-align: right;
+}
+
+.admin-table-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.admin-table-input {
+  padding: 6px 10px;
+  font-size: 13px;
+}
+
+.admin-inline-error {
+  font-size: 11px;
+  color: #dc2626;
+  margin-right: 4px;
+}
+
+/* Delete confirmation dialog */
+.admin-dialog-overlay {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.4);
+  z-index: 1000;
+}
+
+.admin-dialog {
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  padding: 24px;
+  width: 100%;
+  max-width: 400px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+}
+
+.admin-dialog-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 8px;
+}
+
+.admin-dialog-message {
+  font-size: 14px;
+  color: var(--text-secondary);
+  margin-bottom: 20px;
+  line-height: 1.5;
+}
+
+.admin-dialog-buttons {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
 }

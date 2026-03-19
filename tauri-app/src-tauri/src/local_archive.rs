@@ -112,6 +112,15 @@ pub struct ArchiveMetadata {
     /// Number of patients detected in this encounter (>1 for couples/family visits)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub patient_count: Option<u32>,
+    /// Physician who created this session (multi-user)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub physician_id: Option<String>,
+    /// Physician display name (multi-user)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub physician_name: Option<String>,
+    /// Room where session was recorded (multi-user)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub room_name: Option<String>,
 }
 
 impl ArchiveMetadata {
@@ -136,6 +145,9 @@ impl ArchiveMetadata {
             shadow_comparison: None,
             likely_non_clinical: None,
             patient_count: None,
+            physician_id: None,
+            physician_name: None,
+            room_name: None,
         }
     }
 }
@@ -145,6 +157,8 @@ impl ArchiveMetadata {
 pub struct ArchiveSummary {
     pub session_id: String,
     pub date: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub started_at: Option<String>,
     pub duration_ms: Option<u64>,
     pub word_count: usize,
     pub has_soap_note: bool,
@@ -160,6 +174,10 @@ pub struct ArchiveSummary {
     pub likely_non_clinical: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub has_feedback: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub physician_name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub room_name: Option<String>,
 }
 
 /// A single patient's SOAP note within a multi-patient encounter
@@ -554,7 +572,8 @@ pub fn list_sessions_by_date(date_str: &str) -> Result<Vec<ArchiveSummary>, Stri
         let has_feedback = session_dir.join("feedback.json").exists();
         sessions.push(ArchiveSummary {
             session_id: metadata.session_id,
-            date: metadata.started_at,
+            date: date_str.to_string(),
+            started_at: Some(metadata.started_at),
             duration_ms: metadata.duration_ms,
             word_count: metadata.word_count,
             has_soap_note: metadata.has_soap_note,
@@ -565,11 +584,13 @@ pub fn list_sessions_by_date(date_str: &str) -> Result<Vec<ArchiveSummary>, Stri
             patient_name: metadata.patient_name,
             likely_non_clinical: metadata.likely_non_clinical,
             has_feedback: Some(has_feedback),
+            physician_name: metadata.physician_name,
+            room_name: metadata.room_name,
         });
     }
 
-    // Sort by date descending
-    sessions.sort_by(|a, b| b.date.cmp(&a.date));
+    // Sort by started_at ascending (earliest first)
+    sessions.sort_by(|a, b| a.started_at.cmp(&b.started_at));
 
     Ok(sessions)
 }
@@ -864,6 +885,9 @@ pub fn split_session(session_id: &str, date_str: &str, split_line: usize) -> Res
         shadow_comparison: None,
         likely_non_clinical: original_meta.likely_non_clinical,
         patient_count: None,
+        physician_id: original_meta.physician_id.clone(),
+        physician_name: original_meta.physician_name.clone(),
+        room_name: original_meta.room_name.clone(),
     };
     let new_meta_json = serde_json::to_string_pretty(&new_meta)
         .map_err(|e| format!("Failed to serialize new metadata: {}", e))?;
@@ -1290,6 +1314,8 @@ mod tests {
             patient_name: None,
             likely_non_clinical: None,
             has_feedback: None,
+            physician_name: None,
+            room_name: None,
         };
 
         let json = serde_json::to_string(&summary).unwrap();
@@ -1991,6 +2017,8 @@ mod tests {
             patient_name: None,
             likely_non_clinical: None,
             has_feedback: Some(true),
+            physician_name: None,
+            room_name: None,
         };
 
         let json = serde_json::to_string(&summary).unwrap();

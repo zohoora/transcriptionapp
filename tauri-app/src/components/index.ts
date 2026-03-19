@@ -16,3 +16,9 @@ export { default as LoginScreen } from './LoginScreen';
 export { default as PatientSearch } from './PatientSearch';
 export { default as EncounterBar } from './EncounterBar';
 export { default as HistoryView } from './HistoryView';
+
+// Multi-user / Room components
+export { RoomSetup } from './RoomSetup';
+export { PhysicianSelect } from './PhysicianSelect';
+export { ActivePhysicianBadge } from './ActivePhysicianBadge';
+export { default as AdminPanel } from './AdminPanel';

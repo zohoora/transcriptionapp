@@ -738,7 +738,7 @@ const HistoryWindow: React.FC = () => {
                       }}
                     >
                       <div className="session-info">
-                        <span className="session-time">{formatLocalTime(session.date)}</span>
+                        <span className="session-time">{formatLocalTime(session.started_at || session.date)}</span>
                         <span className="session-name">
                           {session.charting_mode === 'continuous' && session.encounter_number != null
                             ? `Encounter #${session.encounter_number}${session.patient_name ? ` \u2014 ${session.patient_name}` : ''}`

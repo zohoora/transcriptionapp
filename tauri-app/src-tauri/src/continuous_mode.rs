@@ -24,6 +24,180 @@ use crate::encounter_experiment::strip_hallucinations;
 use crate::llm_client::LLMClient;
 use crate::local_archive;
 use crate::pipeline::{start_pipeline, PipelineConfig, PipelineMessage};
+use crate::profile_client::ProfileClient;
+
+/// Context for syncing session data to the profile server.
+/// Threaded through continuous mode and session commands.
+#[derive(Clone)]
+pub struct ServerSyncContext {
+    pub physician_id: Option<String>,
+    pub physician_name: Option<String>,
+    pub room_name: Option<String>,
+    pub client: Option<ProfileClient>,
+}
+
+impl ServerSyncContext {
+    pub fn empty() -> Self {
+        Self {
+            physician_id: None,
+            physician_name: None,
+            room_name: None,
+            client: None,
+        }
+    }
+
+    /// Build from Tauri shared state locks. Acquires reads briefly, then drops.
+    pub async fn from_state(
+        active_physician: &crate::commands::SharedActivePhysician,
+        room_config_state: &crate::commands::SharedRoomConfig,
+        profile_client_state: &crate::commands::SharedProfileClient,
+    ) -> Self {
+        let physician = active_physician.read().await;
+        let room_config = room_config_state.read().await;
+        let client = profile_client_state.read().await;
+        Self {
+            physician_id: physician.as_ref().map(|p| p.id.clone()),
+            physician_name: physician.as_ref().map(|p| p.name.clone()),
+            room_name: room_config.as_ref().map(|rc| rc.room_name.clone()),
+            client: client.clone(),
+        }
+    }
+
+    /// Fire-and-forget: upload session metadata+transcript+auxiliary files to server.
+    /// Also schedules a delayed re-sync (30s) to catch late-written files
+    /// (SOAP generation events in pipeline_log, replay_bundle from build_and_reset).
+    pub fn sync_session(&self, session_id: &str, date: &str) {
+        let Some(ref phys_id) = self.physician_id else { return };
+        let Some(ref client) = self.client else { return };
+        let phys_id = phys_id.clone();
+        let client = client.clone();
+        let sid = session_id.to_string();
+        let date = date.to_string();
+
+        // Immediate sync: core data + whatever aux files exist now
+        let phys_id2 = phys_id.clone();
+        let client2 = client.clone();
+        let sid2 = sid.clone();
+        let date2 = date.clone();
+        tauri::async_runtime::spawn(async move {
+            // Upload core session data (metadata + transcript + SOAP)
+            if let Ok(details) = local_archive::get_session(&sid, &date) {
+                if let Ok(body) = serde_json::to_value(&details) {
+                    if let Err(e) = client.upload_session(&phys_id, &sid, &body).await {
+                        warn!("Server sync failed (upload_session {}): {e}", sid);
+                    }
+                }
+            }
+
+            Self::upload_aux_files(&client, &phys_id, &sid, &date).await;
+        });
+
+        // Delayed re-sync: catches late-written files (SOAP events, replay bundle)
+        tauri::async_runtime::spawn(async move {
+            tokio::time::sleep(std::time::Duration::from_secs(30)).await;
+            info!("Delayed re-sync for session {}", sid2);
+
+            // Re-upload SOAP (may have been generated after initial sync)
+            if let Ok(details) = local_archive::get_session(&sid2, &date2) {
+                if details.soap_note.is_some() {
+                    if let Ok(body) = serde_json::to_value(&details) {
+                        if let Err(e) = client2.upload_session(&phys_id2, &sid2, &body).await {
+                            warn!("Delayed re-sync failed (upload_session {}): {e}", sid2);
+                        }
+                    }
+                }
+            }
+
+            Self::upload_aux_files(&client2, &phys_id2, &sid2, &date2).await;
+        });
+    }
+
+    /// Upload auxiliary files (pipeline_log, replay_bundle, segments) and day_log.
+    async fn upload_aux_files(
+        client: &crate::profile_client::ProfileClient,
+        phys_id: &str,
+        session_id: &str,
+        date: &str,
+    ) {
+        if let Ok(session_dir) = Self::local_session_dir(session_id, date) {
+            for filename in &["pipeline_log.jsonl", "replay_bundle.json", "segments.jsonl"] {
+                let path = session_dir.join(filename);
+                if path.exists() {
+                    match std::fs::read(&path) {
+                        Ok(data) => {
+                            if let Err(e) = client.upload_session_file(phys_id, session_id, filename, data).await {
+                                warn!("Server sync failed ({} for {}): {e}", filename, session_id);
+                            }
+                        }
+                        Err(e) => warn!("Failed to read {}: {e}", path.display()),
+                    }
+                }
+            }
+        }
+
+        if let Ok(date_dir) = Self::local_date_dir(date) {
+            let day_log_path = date_dir.join("day_log.jsonl");
+            if day_log_path.exists() {
+                match std::fs::read(&day_log_path) {
+                    Ok(data) => {
+                        if let Err(e) = client.upload_day_log(phys_id, date, data).await {
+                            warn!("Server sync failed (day_log for {}): {e}", date);
+                        }
+                    }
+                    Err(e) => warn!("Failed to read day_log: {e}"),
+                }
+            }
+        }
+    }
+
+    /// Resolve the local session directory from session_id + date string.
+    fn local_session_dir(session_id: &str, date_str: &str) -> Result<std::path::PathBuf, String> {
+        let date_dir = Self::local_date_dir(date_str)?;
+        Ok(date_dir.join(session_id))
+    }
+
+    /// Resolve the local date directory from a date string.
+    fn local_date_dir(date_str: &str) -> Result<std::path::PathBuf, String> {
+        let date = chrono::NaiveDate::parse_from_str(date_str, "%Y-%m-%d")
+            .map_err(|e| format!("Invalid date: {e}"))?;
+        let home = dirs::home_dir().ok_or("No home dir")?;
+        Ok(home
+            .join(".transcriptionapp")
+            .join("archive")
+            .join(format!("{:04}", chrono::Datelike::year(&date)))
+            .join(format!("{:02}", chrono::Datelike::month(&date)))
+            .join(format!("{:02}", chrono::Datelike::day(&date))))
+    }
+
+    /// Fire-and-forget: upload SOAP note to server.
+    pub fn sync_soap(&self, session_id: &str, soap_content: &str, detail_level: u8, format: &str) {
+        let Some(ref phys_id) = self.physician_id else { return };
+        let Some(ref client) = self.client else { return };
+        let phys_id = phys_id.clone();
+        let client = client.clone();
+        let sid = session_id.to_string();
+        let soap = soap_content.to_string();
+        let dl = detail_level;
+        let fmt = format.to_string();
+        tauri::async_runtime::spawn(async move {
+            let body = serde_json::json!({
+                "content": soap,
+                "detail_level": dl,
+                "format": fmt,
+            });
+            if let Err(e) = client.update_soap(&phys_id, &sid, &body).await {
+                warn!("Server sync failed (update_soap {}): {e}", sid);
+            }
+        });
+    }
+
+    /// Enrich metadata with physician/room fields.
+    pub fn enrich_metadata(&self, metadata: &mut local_archive::ArchiveMetadata) {
+        metadata.physician_id = self.physician_id.clone();
+        metadata.physician_name = self.physician_name.clone();
+        metadata.room_name = self.room_name.clone();
+    }
+}
 // Re-export submodule types for backward compatibility
 pub use crate::transcript_buffer::{BufferedSegment, TranscriptBuffer};
 pub use crate::encounter_detection::{
@@ -299,6 +473,7 @@ pub async fn run_continuous_mode(
     app: tauri::AppHandle,
     handle: Arc<ContinuousModeHandle>,
     config: Config,
+    sync_ctx: ServerSyncContext,
 ) -> Result<(), String> {
     use tauri::Emitter;
 
@@ -1020,6 +1195,8 @@ pub async fn run_continuous_mode(
     let bundle_for_detector = Arc::clone(&replay_bundle);
     let bundle_for_screenshot = Arc::clone(&replay_bundle);
 
+    // Server sync context clone for detector task (fire-and-forget uploads)
+    let sync_ctx_for_detector = sync_ctx.clone();
 
     // Hybrid mode config
     let hybrid_confirm_window_secs = config.hybrid_confirm_window_secs;
@@ -1705,12 +1882,21 @@ pub async fn run_continuous_mode(
                                             });
                                         }
 
+                                        // Add physician/room context (multi-user)
+                                        sync_ctx_for_detector.enrich_metadata(&mut metadata);
+
                                         if let Ok(json) = serde_json::to_string_pretty(&metadata) {
                                             let _ = std::fs::write(&date_path, json);
                                         }
                                     }
                                 }
                             }
+                        }
+
+                        // Server sync: upload session to profile server
+                        {
+                            let today = Utc::now().format("%Y-%m-%d").to_string();
+                            sync_ctx_for_detector.sync_session(&session_id, &today);
                         }
 
                         // Clear shadow decisions for next encounter (if in shadow mode)
@@ -1896,7 +2082,7 @@ pub async fn run_continuous_mode(
                             ).await;
 
                             match soap_outcome {
-                                crate::encounter_pipeline::SoapGenerationOutcome::Success { ref result, latency_ms, .. } => {
+                                crate::encounter_pipeline::SoapGenerationOutcome::Success { ref result, ref content, latency_ms } => {
                                     let patient_count = result.notes.len();
                                     // Save per-patient files when multi-patient
                                     if patient_count > 1 {
@@ -1912,6 +2098,8 @@ pub async fn run_continuous_mode(
                                         "patient_count": patient_count,
                                     }));
                                     info!("SOAP generated for encounter #{} ({} patient notes)", encounter_number, patient_count);
+                                    // Server sync: upload SOAP
+                                    sync_ctx_for_detector.sync_soap(&session_id, content, soap_detail_level, &soap_format);
                                     if let Ok(mut bundle) = bundle_for_detector.lock() {
                                         bundle.set_soap_result(crate::replay_bundle::SoapResult {
                                             ts: Utc::now().to_rfc3339(),
@@ -2096,13 +2284,15 @@ pub async fn run_continuous_mode(
                                                     "merged_word_count": merged_wc,
                                                 }),
                                             ).await;
-                                            if let crate::encounter_pipeline::SoapGenerationOutcome::Success { .. } = outcome {
+                                            if let crate::encounter_pipeline::SoapGenerationOutcome::Success { ref content, .. } = outcome {
+                                                // Server sync: upload regenerated SOAP
+                                                sync_ctx_for_detector.sync_soap(prev_id, content, soap_detail_level, &soap_format);
                                                 // Clear non-clinical flag if needed
                                                 if prev_encounter_is_clinical != is_clinical {
                                                     if let Ok(session_dir) = local_archive::get_session_archive_dir(prev_id, prev_date) {
                                                         let merge_meta_path = session_dir.join("metadata.json");
-                                                        if let Ok(content) = std::fs::read_to_string(&merge_meta_path) {
-                                                            if let Ok(mut metadata) = serde_json::from_str::<local_archive::ArchiveMetadata>(&content) {
+                                                        if let Ok(file_content) = std::fs::read_to_string(&merge_meta_path) {
+                                                            if let Ok(mut metadata) = serde_json::from_str::<local_archive::ArchiveMetadata>(&file_content) {
                                                                 metadata.likely_non_clinical = None;
                                                                 if let Ok(json) = serde_json::to_string_pretty(&metadata) {
                                                                     let _ = std::fs::write(&merge_meta_path, json);
@@ -2245,13 +2435,15 @@ pub async fn run_continuous_mode(
                                                         "merged_word_count": merged_wc,
                                                     }),
                                                 ).await;
-                                                if let crate::encounter_pipeline::SoapGenerationOutcome::Success { .. } = merge_soap_outcome {
+                                                if let crate::encounter_pipeline::SoapGenerationOutcome::Success { ref content, .. } = merge_soap_outcome {
+                                                    // Server sync: upload regenerated SOAP
+                                                    sync_ctx_for_detector.sync_soap(prev_id, content, soap_detail_level, &soap_format);
                                                     // Clear non-clinical flag on keeper
                                                     if prev_encounter_is_clinical != is_clinical {
                                                         if let Ok(session_dir) = local_archive::get_session_archive_dir(prev_id, prev_date) {
                                                             let merge_meta_path = session_dir.join("metadata.json");
-                                                            if let Ok(content) = std::fs::read_to_string(&merge_meta_path) {
-                                                                if let Ok(mut metadata) = serde_json::from_str::<local_archive::ArchiveMetadata>(&content) {
+                                                            if let Ok(file_content) = std::fs::read_to_string(&merge_meta_path) {
+                                                                if let Ok(mut metadata) = serde_json::from_str::<local_archive::ArchiveMetadata>(&file_content) {
                                                                     metadata.likely_non_clinical = None;
                                                                     if let Ok(json) = serde_json::to_string_pretty(&metadata) {
                                                                         let _ = std::fs::write(&merge_meta_path, json);
@@ -2342,6 +2534,8 @@ pub async fn run_continuous_mode(
                                                                     prev_id, prev_date, &result.notes,
                                                                 );
                                                             }
+                                                            // Server sync: upload retrospective SOAP
+                                                            sync_ctx_for_detector.sync_soap(prev_id, content, soap_detail_level, &soap_format);
                                                             info!(
                                                                 "Retrospective per-patient SOAP regenerated for {} ({} notes, {} chars)",
                                                                 prev_id, result.notes.len(), content.len()
@@ -2563,6 +2757,12 @@ pub async fn run_continuous_mode(
                 // Track session ID for day log
                 flush_session_id_for_log = Some(session_id.clone());
 
+                // Server sync: upload flushed session
+                {
+                    let today = Utc::now().format("%Y-%m-%d").to_string();
+                    sync_ctx.sync_session(&session_id, &today);
+                }
+
                 // Cache today's sessions (used for encounter number + merge check)
                 let flush_today_str = Utc::now().format("%Y-%m-%d").to_string();
                 let flush_today_sessions = local_archive::list_sessions_by_date(&flush_today_str).ok();
@@ -2584,6 +2784,8 @@ pub async fn run_continuous_mode(
                                 } else {
                                     warn!("Name tracker lock poisoned during flush metadata enrichment");
                                 }
+                                // Add physician/room context (multi-user)
+                                sync_ctx.enrich_metadata(&mut metadata);
                                 if let Ok(json) = serde_json::to_string_pretty(&metadata) {
                                     let _ = std::fs::write(&meta_path, json);
                                 }
@@ -2678,7 +2880,8 @@ pub async fn run_continuous_mode(
                                                             "merged_word_count": merged_wc,
                                                         }),
                                                     ).await;
-                                                    if let crate::encounter_pipeline::SoapGenerationOutcome::Success { .. } = outcome {
+                                                    if let crate::encounter_pipeline::SoapGenerationOutcome::Success { ref content, .. } = outcome {
+                                                        sync_ctx.sync_soap(&prev_summary.session_id, content, flush_soap_detail_level, &flush_soap_format);
                                                         info!("Regenerated SOAP for flush-merged encounter {}", prev_summary.session_id);
                                                     }
                                                 } else {
@@ -2722,7 +2925,8 @@ pub async fn run_continuous_mode(
                         &logger_for_flush,
                         serde_json::json!({"stage": "flush_on_stop", "word_count": word_count}),
                     ).await;
-                    if let crate::encounter_pipeline::SoapGenerationOutcome::Success { .. } = outcome {
+                    if let crate::encounter_pipeline::SoapGenerationOutcome::Success { ref content, .. } = outcome {
+                        sync_ctx.sync_soap(&session_id, content, flush_soap_detail_level, &flush_soap_format);
                         info!("SOAP generated for flushed buffer");
                         let _ = app.emit("continuous_mode_event", serde_json::json!({
                             "type": "soap_generated",

@@ -1,9 +1,11 @@
 //! Session lifecycle commands (start, stop, reset)
 
 use super::listening::SharedListeningState;
+use super::physicians::{SharedActivePhysician, SharedProfileClient, SharedRoomConfig};
 use super::{emit_status_arc, emit_transcript_arc, SharedPipelineState, SharedSessionManager};
 use crate::activity_log;
 use crate::config::Config;
+use crate::continuous_mode::ServerSyncContext;
 use crate::debug_storage::DebugStorage;
 use crate::local_archive;
 use crate::pipeline::{start_pipeline, PipelineConfig, PipelineMessage};
@@ -20,6 +22,9 @@ pub async fn start_session(
     session_state: State<'_, SharedSessionManager>,
     pipeline_state: State<'_, SharedPipelineState>,
     listening_state: State<'_, SharedListeningState>,
+    active_physician: State<'_, SharedActivePhysician>,
+    room_config_state: State<'_, SharedRoomConfig>,
+    profile_client_state: State<'_, SharedProfileClient>,
     device_id: Option<String>,
 ) -> Result<(), String> {
     info!("Starting session with device: {:?}", device_id);
@@ -139,6 +144,11 @@ pub async fn start_session(
     let app_clone = app.clone();
     let session_clone = session_arc.clone();
     let pipeline_clone = pipeline_arc.clone();
+
+    // Build server sync context for session uploads
+    let sync_ctx = ServerSyncContext::from_state(
+        &active_physician, &room_config_state, &profile_client_state,
+    ).await;
 
     // Load config for archive/debug in the spawned task scope
     let debug_enabled_for_task = config.debug_storage_enabled;
@@ -287,7 +297,11 @@ pub async fn start_session(
                             None, // session mode — started_at derived from duration_ms
                             Some(session.segments().len()),
                         ) {
-                            Ok(_session_dir) => {}
+                            Ok(_session_dir) => {
+                                // Server sync: upload session
+                                let today = Utc::now().format("%Y-%m-%d").to_string();
+                                sync_ctx.sync_session(&session_id_for_task, &today);
+                            }
                             Err(e) => {
                                 warn!("Failed to archive auto-ended session: {}", e);
                             }
@@ -317,6 +331,9 @@ pub async fn stop_session(
     app: AppHandle,
     session_state: State<'_, SharedSessionManager>,
     pipeline_state: State<'_, SharedPipelineState>,
+    active_physician: State<'_, SharedActivePhysician>,
+    room_config_state: State<'_, SharedRoomConfig>,
+    profile_client_state: State<'_, SharedProfileClient>,
 ) -> Result<(), String> {
     info!("Stopping session");
 
@@ -363,6 +380,11 @@ pub async fn stop_session(
     let config = Config::load_or_default();
     let debug_enabled = config.debug_storage_enabled;
 
+    // Build server sync context for session uploads
+    let sync_ctx = ServerSyncContext::from_state(
+        &active_physician, &room_config_state, &profile_client_state,
+    ).await;
+
     if let Some(h) = handle {
         h.stop();
 
@@ -407,7 +429,7 @@ pub async fn stop_session(
                 }
 
                 // Save to local archive (always, for calendar history)
-                if let Err(e) = local_archive::save_session(
+                match local_archive::save_session(
                     &session_id_for_log,
                     &transcript.finalized_text,
                     status.elapsed_ms,
@@ -417,7 +439,13 @@ pub async fn stop_session(
                     None,  // session mode — started_at derived from duration_ms
                     Some(session.segments().len()),
                 ) {
-                    warn!("Failed to save session to local archive: {}", e);
+                    Ok(_) => {
+                        let today = Utc::now().format("%Y-%m-%d").to_string();
+                        sync_ctx.sync_session(&session_id_for_log, &today);
+                    }
+                    Err(e) => {
+                        warn!("Failed to save session to local archive: {}", e);
+                    }
                 }
             }
         });
@@ -448,7 +476,7 @@ pub async fn stop_session(
         // Save to local archive (always, for calendar history)
         {
             let session = session_arc.lock().map_err(|e| e.to_string())?;
-            if let Err(e) = local_archive::save_session(
+            match local_archive::save_session(
                 &session_id,
                 &transcript_text,
                 elapsed_ms,
@@ -458,7 +486,13 @@ pub async fn stop_session(
                 None,  // session mode — started_at derived from duration_ms
                 Some(segment_count),
             ) {
-                warn!("Failed to save session to local archive: {}", e);
+                Ok(_) => {
+                    let today = Utc::now().format("%Y-%m-%d").to_string();
+                    sync_ctx.sync_session(&session_id, &today);
+                }
+                Err(e) => {
+                    warn!("Failed to save session to local archive: {}", e);
+                }
             }
         }
 

@@ -56,3 +56,12 @@ export type { ContinuousModeOrchestratorConfig, ContinuousModeOrchestratorResult
 
 export { useConnectionTests } from './useConnectionTests';
 export type { ConnectionTestsConfig, ConnectionTestsResult } from './useConnectionTests';
+
+export { useRoomConfig } from './useRoomConfig';
+export type { RoomConfig, UseRoomConfigResult } from './useRoomConfig';
+
+export { usePhysicianProfiles } from './usePhysicianProfiles';
+export type { UsePhysicianProfilesResult } from './usePhysicianProfiles';
+
+export { useAdminPanel } from './useAdminPanel';
+export type { UseAdminPanelResult } from './useAdminPanel';

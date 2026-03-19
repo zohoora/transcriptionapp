@@ -1,9 +1,11 @@
 //! Speaker profile management commands for enrollment-based speaker recognition.
 
+use crate::commands::physicians::SharedProfileClient;
 use crate::config::Config;
 use crate::speaker_profiles::{SpeakerProfile, SpeakerProfileManager, SpeakerRole};
 use serde::{Deserialize, Serialize};
-use tracing::{error, info};
+use tauri::State;
+use tracing::{error, info, warn};
 
 #[cfg(feature = "diarization")]
 use crate::diarization::{DiarizationConfig, DiarizationProvider};
@@ -32,7 +34,7 @@ impl From<&SpeakerProfile> for SpeakerProfileInfo {
     }
 }
 
-fn role_to_string(role: &SpeakerRole) -> String {
+pub(crate) fn role_to_string(role: &SpeakerRole) -> String {
     match role {
         SpeakerRole::Physician => "physician".to_string(),
         SpeakerRole::Pa => "pa".to_string(),
@@ -43,7 +45,7 @@ fn role_to_string(role: &SpeakerRole) -> String {
     }
 }
 
-fn string_to_role(s: &str) -> SpeakerRole {
+pub(crate) fn string_to_role(s: &str) -> SpeakerRole {
     match s.to_lowercase().as_str() {
         "physician" => SpeakerRole::Physician,
         "pa" => SpeakerRole::Pa,
@@ -91,6 +93,7 @@ pub async fn create_speaker_profile(
     role: String,
     description: String,
     audio_samples: Vec<f32>,
+    profile_client: State<'_, SharedProfileClient>,
 ) -> Result<SpeakerProfileInfo, String> {
     // Validate input
     if name.trim().is_empty() {
@@ -122,11 +125,29 @@ pub async fn create_speaker_profile(
 
     let profile_info: SpeakerProfileInfo = (&profile).into();
 
-    // Save to storage
+    // Save to local storage
     let mut manager = SpeakerProfileManager::load().map_err(|e| e.to_string())?;
-    manager.add(profile).map_err(|e| e.to_string())?;
+    manager.add(profile.clone()).map_err(|e| e.to_string())?;
 
     info!("Created speaker profile: {} ({})", profile_info.name, profile_info.id);
+
+    // Best-effort server upload (fire-and-forget)
+    let client_arc = profile_client.inner().clone();
+    tauri::async_runtime::spawn(async move {
+        let client = client_arc.read().await.clone();
+        if let Some(client) = client {
+            let body = serde_json::json!({
+                "name": profile.name,
+                "role": role_to_string(&profile.role),
+                "description": profile.description,
+                "embedding": profile.embedding,
+            });
+            if let Err(e) = client.upload_speaker(&body).await {
+                warn!("Failed to upload speaker to server: {e}");
+            }
+        }
+    });
+
     Ok(profile_info)
 }
 
@@ -203,10 +224,26 @@ pub async fn reenroll_speaker_profile(
 
 /// Delete a speaker profile
 #[tauri::command]
-pub fn delete_speaker_profile(profile_id: String) -> Result<(), String> {
+pub async fn delete_speaker_profile(
+    profile_id: String,
+    profile_client: State<'_, SharedProfileClient>,
+) -> Result<(), String> {
     let mut manager = SpeakerProfileManager::load().map_err(|e| e.to_string())?;
     manager.delete(&profile_id).map_err(|e| e.to_string())?;
     info!("Deleted speaker profile: {}", profile_id);
+
+    // Best-effort server delete (fire-and-forget)
+    let client_arc = profile_client.inner().clone();
+    let id = profile_id.clone();
+    tauri::async_runtime::spawn(async move {
+        let client = client_arc.read().await.clone();
+        if let Some(client) = client {
+            if let Err(e) = client.delete_speaker(&id).await {
+                warn!("Failed to delete speaker from server: {e}");
+            }
+        }
+    });
+
     Ok(())
 }
 

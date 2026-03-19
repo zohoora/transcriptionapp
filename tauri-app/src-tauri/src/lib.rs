@@ -31,6 +31,7 @@
 
 pub mod activity_log;
 pub mod audio;
+pub mod audio_upload_queue;
 pub mod biomarkers;
 pub mod checklist;
 mod commands;
@@ -80,6 +81,9 @@ pub mod vad;
 pub mod encounter_experiment;
 pub mod vision_experiment;
 pub mod whisper_server;
+pub mod room_config;
+pub mod profile_client;
+pub mod physician_cache;
 
 use commands::PipelineState;
 use std::sync::{Arc, Mutex};
@@ -208,7 +212,7 @@ pub fn run() {
 
             // Initialize pipeline state (wrapped in Arc for sharing with async tasks)
             let pipeline_state = Arc::new(Mutex::new(PipelineState::default()));
-            app.manage(pipeline_state);
+            app.manage(pipeline_state.clone());
 
             // Initialize Medplum client state (lazy initialization)
             let medplum_client = commands::create_medplum_client();
@@ -224,7 +228,39 @@ pub fn run() {
 
             // Initialize continuous mode state
             let continuous_mode_state: commands::SharedContinuousModeState = Arc::new(Mutex::new(None));
-            app.manage(continuous_mode_state);
+            app.manage(continuous_mode_state.clone());
+
+            // Initialize room config
+            let room_config = room_config::RoomConfig::load().unwrap_or(None);
+            let profile_server_url = room_config.as_ref().map(|rc| rc.profile_server_url.clone());
+            let shared_room_config: commands::SharedRoomConfig = Arc::new(tokio::sync::RwLock::new(room_config));
+            app.manage(shared_room_config);
+
+            // Initialize profile client
+            let profile_client = profile_server_url.map(|url| profile_client::ProfileClient::new(&url));
+            let shared_profile_client: commands::SharedProfileClient = Arc::new(tokio::sync::RwLock::new(profile_client));
+            app.manage(shared_profile_client.clone());
+
+            // Initialize active physician
+            let shared_active_physician: commands::SharedActivePhysician = Arc::new(tokio::sync::RwLock::new(None));
+            app.manage(shared_active_physician);
+
+            // Audio upload queue — persists pending uploads across restarts
+            let audio_queue = Arc::new(tokio::sync::Mutex::new(
+                audio_upload_queue::AudioUploadQueue::load(),
+            ));
+            app.manage(audio_queue.clone());
+
+            // Spawn background audio upload task
+            let upload_client = shared_profile_client.clone();
+            let upload_pipeline = pipeline_state.clone();
+            let upload_continuous = continuous_mode_state.clone();
+            tauri::async_runtime::spawn(audio_upload_queue::audio_upload_task(
+                audio_queue,
+                upload_client,
+                upload_pipeline,
+                upload_continuous,
+            ));
 
             // Start MCP server on port 7101 for IT Admin Coordinator
             let mcp_session = session_manager.clone();
@@ -403,6 +439,24 @@ pub fn run() {
             commands::trigger_new_patient,
             commands::set_continuous_encounter_notes,
             commands::list_serial_ports,
+            // Physician selection and room config
+            commands::get_room_config,
+            commands::save_room_config,
+            commands::test_profile_server,
+            commands::get_physicians,
+            commands::select_physician,
+            commands::get_active_physician,
+            commands::deselect_physician,
+            commands::sync_speaker_profiles,
+            // Physician admin commands (CRUD)
+            commands::create_physician,
+            commands::update_physician,
+            commands::delete_physician,
+            // Room commands
+            commands::get_rooms,
+            commands::create_room,
+            commands::update_room,
+            commands::delete_room,
         ])
         .on_window_event(|window, event| {
             if let WindowEvent::CloseRequested { .. } = event {

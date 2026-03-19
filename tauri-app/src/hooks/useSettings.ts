@@ -168,6 +168,46 @@ export function useSettings(): UseSettingsResult {
 
       await invoke('set_settings', { settings: newSettings });
       setSettings(newSettings);
+
+      // Best-effort: sync physician-tier settings to profile server
+      // Only sync if physician-tier fields actually changed
+      const physicianTierChanged =
+        settings.language !== pendingSettings.language ||
+        settings.image_source !== pendingSettings.image_source ||
+        settings.gemini_api_key !== pendingSettings.gemini_api_key ||
+        settings.auto_start_enabled !== pendingSettings.auto_start_enabled ||
+        settings.auto_start_require_enrolled !== pendingSettings.auto_start_require_enrolled ||
+        settings.auto_start_required_role !== pendingSettings.auto_start_required_role ||
+        settings.auto_end_enabled !== pendingSettings.auto_end_enabled ||
+        settings.charting_mode !== pendingSettings.charting_mode ||
+        settings.encounter_merge_enabled !== pendingSettings.encounter_merge_enabled ||
+        settings.soap_custom_instructions !== pendingSettings.soap_custom_instructions;
+
+      if (physicianTierChanged) {
+        try {
+          const activePhysician = await invoke<{ id: string } | null>('get_active_physician');
+          if (activePhysician) {
+            await invoke('update_physician', {
+              physicianId: activePhysician.id,
+              updates: {
+                language: pendingSettings.language,
+                image_source: pendingSettings.image_source,
+                gemini_api_key: pendingSettings.gemini_api_key,
+                auto_start_enabled: pendingSettings.auto_start_enabled,
+                auto_start_require_enrolled: pendingSettings.auto_start_require_enrolled,
+                auto_start_required_role: pendingSettings.auto_start_required_role,
+                auto_end_enabled: pendingSettings.auto_end_enabled,
+                charting_mode: pendingSettings.charting_mode,
+                encounter_merge_enabled: pendingSettings.encounter_merge_enabled,
+                soap_custom_instructions: pendingSettings.soap_custom_instructions,
+              },
+            });
+          }
+        } catch (e) {
+          console.warn('Failed to sync physician settings to server:', e);
+        }
+      }
+
       return true;
     } catch (e) {
       console.error('Failed to save settings:', e);

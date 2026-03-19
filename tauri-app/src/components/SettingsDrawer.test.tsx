@@ -115,9 +115,9 @@ describe('SettingsDrawer', () => {
       expect(screen.getByText('End of Day')).toBeInTheDocument();
 
       // Language, Microphone, Medical Illustrations, Screen Capture
-      expect(screen.getByLabelText('Language')).toBeInTheDocument();
-      expect(screen.getByLabelText('Microphone')).toBeInTheDocument();
-      expect(screen.getByLabelText('Medical Illustrations')).toBeInTheDocument();
+      expect(screen.getByLabelText(/Language/)).toBeInTheDocument();
+      expect(screen.getByLabelText(/Microphone/)).toBeInTheDocument();
+      expect(screen.getByLabelText(/Medical Illustrations/)).toBeInTheDocument();
       expect(screen.getByLabelText('Capture screen during recording')).toBeInTheDocument();
     });
 
@@ -184,19 +184,19 @@ describe('SettingsDrawer', () => {
   describe('Zone 1 clinical workflow', () => {
     it('displays current language', () => {
       render(<SettingsDrawer {...defaultProps} />);
-      expect(screen.getByLabelText('Language')).toHaveValue('en');
+      expect(screen.getByLabelText(/Language/)).toHaveValue('en');
     });
 
     it('displays current microphone', () => {
       render(<SettingsDrawer {...defaultProps} />);
-      expect(screen.getByLabelText('Microphone')).toHaveValue('default');
+      expect(screen.getByLabelText(/Microphone/)).toHaveValue('default');
     });
 
     it('calls onSettingsChange when language changes', async () => {
       const user = userEvent.setup();
       render(<SettingsDrawer {...defaultProps} />);
 
-      await user.selectOptions(screen.getByLabelText('Language'), 'es');
+      await user.selectOptions(screen.getByLabelText(/Language/), 'es');
 
       expect(defaultProps.onSettingsChange).toHaveBeenCalledWith(
         expect.objectContaining({ language: 'es' })
@@ -207,7 +207,7 @@ describe('SettingsDrawer', () => {
       const user = userEvent.setup();
       render(<SettingsDrawer {...defaultProps} />);
 
-      await user.selectOptions(screen.getByLabelText('Microphone'), 'device-1');
+      await user.selectOptions(screen.getByLabelText(/Microphone/), 'device-1');
 
       expect(defaultProps.onSettingsChange).toHaveBeenCalledWith(
         expect.objectContaining({ device: 'device-1' })
@@ -239,7 +239,7 @@ describe('SettingsDrawer', () => {
     it('renders all language options', () => {
       render(<SettingsDrawer {...defaultProps} />);
 
-      const languageSelect = screen.getByLabelText('Language');
+      const languageSelect = screen.getByLabelText(/Language/);
       const options = languageSelect.querySelectorAll('option');
 
       expect(options).toHaveLength(8);
@@ -250,7 +250,7 @@ describe('SettingsDrawer', () => {
     it('renders default option plus devices', () => {
       render(<SettingsDrawer {...defaultProps} />);
 
-      const deviceSelect = screen.getByLabelText('Microphone');
+      const deviceSelect = screen.getByLabelText(/Microphone/);
       const options = deviceSelect.querySelectorAll('option');
 
       expect(options).toHaveLength(3); // default + 2 devices
@@ -261,7 +261,7 @@ describe('SettingsDrawer', () => {
       render(<SettingsDrawer {...defaultProps} />);
 
       expect(screen.getByText('SOAP Preferences')).toBeInTheDocument();
-      expect(screen.getByLabelText('Personal Instructions')).toBeInTheDocument();
+      expect(screen.getByLabelText(/Personal Instructions/)).toBeInTheDocument();
       expect(screen.getByText(/Added to every SOAP note prompt/)).toBeInTheDocument();
     });
 
@@ -269,7 +269,7 @@ describe('SettingsDrawer', () => {
       const user = userEvent.setup();
       render(<SettingsDrawer {...defaultProps} />);
 
-      const textarea = screen.getByLabelText('Personal Instructions');
+      const textarea = screen.getByLabelText(/Personal Instructions/);
       await user.type(textarea, 'Use bullet points');
 
       expect(defaultProps.onSettingsChange).toHaveBeenCalledWith(
@@ -285,7 +285,7 @@ describe('SettingsDrawer', () => {
         />
       );
 
-      expect(screen.getByLabelText('Personal Instructions')).toHaveValue('I am a cardiologist');
+      expect(screen.getByLabelText(/Personal Instructions/)).toHaveValue('I am a cardiologist');
     });
   });
 

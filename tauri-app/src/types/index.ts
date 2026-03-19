@@ -635,6 +635,7 @@ export interface SpeakerContext {
 export interface LocalArchiveSummary {
   session_id: string;
   date: string;
+  started_at?: string | null;
   duration_ms: number | null;
   word_count: number;
   has_soap_note: boolean;
@@ -645,6 +646,8 @@ export interface LocalArchiveSummary {
   patient_name: string | null;
   likely_non_clinical: boolean | null;
   has_feedback: boolean | null;
+  physician_name?: string | null;
+  room_name?: string | null;
 }
 
 /** Metadata for an archived session */
@@ -671,6 +674,9 @@ export interface LocalArchiveMetadata {
   patient_name: string | null;
   /** Flagged as likely non-clinical by two-pass content check */
   likely_non_clinical: boolean | null;
+  physician_id?: string | null;
+  physician_name?: string | null;
+  room_name?: string | null;
 }
 
 /** A single patient's SOAP note within a multi-patient encounter */
@@ -835,4 +841,49 @@ export interface SilenceWarningPayload {
   silence_ms: number;
   /** Milliseconds remaining until auto-end (0 = cancelled/speech detected) */
   remaining_ms: number;
+}
+
+// ============================================================================
+// Multi-User Architecture Types
+// ============================================================================
+
+/** Physician profile with per-physician settings overrides */
+export interface PhysicianProfile {
+  id: string;
+  name: string;
+  specialty?: string | null;
+  soap_detail_level?: number | null;
+  soap_format?: string | null;
+  soap_custom_instructions?: string | null;
+  charting_mode?: string | null;
+  language?: string | null;
+  image_source?: string | null;
+  auto_start_enabled?: boolean | null;
+  auto_end_enabled?: boolean | null;
+  auto_end_silence_ms?: number | null;
+  encounter_merge_enabled?: boolean | null;
+  encounter_check_interval_secs?: number | null;
+  encounter_silence_trigger_secs?: number | null;
+  medplum_auto_sync?: boolean | null;
+  diarization_enabled?: boolean | null;
+  max_speakers?: number | null;
+  created_at: string;
+  updated_at: string;
+}
+
+/** Room from profile service */
+export interface Room {
+  id: string;
+  name: string;
+  description?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+/** Room configuration for multi-user deployment */
+export interface RoomConfig {
+  room_name: string;
+  profile_server_url: string;
+  room_id?: string | null;
+  active_physician_id?: string | null;
 }

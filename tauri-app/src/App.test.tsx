@@ -90,10 +90,11 @@ describe('App', () => {
 
       await waitFor(() => {
         expect(screen.getByText('Settings')).toBeInTheDocument();
-        // Check for key Zone 1 settings labels
-        expect(screen.getByText('Language')).toBeInTheDocument();
-        expect(screen.getByText('Microphone')).toBeInTheDocument();
-        expect(screen.getByText('Medical Illustrations')).toBeInTheDocument();
+        // Check for key Zone 1 settings labels (use getAllByText since labels with TierBadge
+        // spans may match multiple elements, e.g. "Microphone" also appears in device names)
+        expect(screen.getAllByText(/Language/).length).toBeGreaterThan(0);
+        expect(screen.getAllByText(/Microphone/).length).toBeGreaterThan(0);
+        expect(screen.getAllByText(/Medical Illustrations/).length).toBeGreaterThan(0);
       });
     });
 
@@ -715,6 +716,9 @@ describe('App', () => {
         if (command === 'medplum_try_restore_session') return Promise.resolve(undefined);
         if (command === 'check_ollama_status') return Promise.resolve({ connected: false, available_models: [], error: null });
         if (command === 'medplum_check_connection') return Promise.resolve(false);
+        if (command === 'get_room_config') return Promise.resolve({ room_name: 'Test Room', profile_server_url: 'http://localhost:8090' });
+        if (command === 'get_physicians') return Promise.resolve([]);
+        if (command === 'get_active_physician') return Promise.resolve({ id: 'doc-1', name: 'Dr. Test', specialty: null, created_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-01T00:00:00Z' });
         return Promise.reject(new Error('Unknown command'));
       });
 

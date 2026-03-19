@@ -4,6 +4,10 @@ import { SPEAKER_ROLE_LABELS } from '../types';
 import type { PendingSettings } from '../hooks/useSettings';
 import { SpeakerEnrollment } from './SpeakerEnrollment';
 
+function TierBadge({ tier }: { tier: 'room' | 'personal' }) {
+  return <span className={`settings-tier-badge ${tier}`}>{tier}</span>;
+}
+
 // Supported languages
 const LANGUAGES = [
   { value: 'en', label: 'English' },
@@ -45,6 +49,11 @@ interface SettingsDrawerProps {
   onLogin: () => void;
   onLogout: () => void;
   onCancelLogin: () => void;
+
+  // Room config
+  roomName?: string | null;
+  profileServerUrl?: string | null;
+  onChangeRoom?: () => void;
 }
 
 /**
@@ -75,6 +84,9 @@ export const SettingsDrawer = memo(function SettingsDrawer({
   onLogin,
   onLogout,
   onCancelLogin,
+  roomName,
+  profileServerUrl,
+  onChangeRoom,
 }: SettingsDrawerProps) {
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [showSpeakerProfiles, setShowSpeakerProfiles] = useState(false);
@@ -136,7 +148,7 @@ export const SettingsDrawer = memo(function SettingsDrawer({
                 </div>
 
                 <div className="settings-group">
-                  <label className="settings-label" htmlFor="language-select">Language</label>
+                  <label className="settings-label" htmlFor="language-select">Language<TierBadge tier="personal" /></label>
                   <select
                     id="language-select"
                     className="settings-select"
@@ -152,7 +164,7 @@ export const SettingsDrawer = memo(function SettingsDrawer({
                 </div>
 
                 <div className="settings-group">
-                  <label className="settings-label" htmlFor="microphone-select">Microphone</label>
+                  <label className="settings-label" htmlFor="microphone-select">Microphone<TierBadge tier="room" /></label>
                   <select
                     id="microphone-select"
                     className="settings-select"
@@ -169,7 +181,7 @@ export const SettingsDrawer = memo(function SettingsDrawer({
                 </div>
 
                 <div className="settings-group">
-                  <label className="settings-label" htmlFor="image-source">Medical Illustrations</label>
+                  <label className="settings-label" htmlFor="image-source">Medical Illustrations<TierBadge tier="personal" /></label>
                   <select
                     id="image-source"
                     className="settings-select"
@@ -183,7 +195,7 @@ export const SettingsDrawer = memo(function SettingsDrawer({
 
                 <div className="settings-group">
                   <div className="settings-toggle">
-                    <span className="settings-label" style={{ marginBottom: 0 }}>Screen Capture</span>
+                    <span className="settings-label" style={{ marginBottom: 0 }}>Screen Capture<TierBadge tier="room" /></span>
                     <label className="toggle-switch">
                       <input
                         type="checkbox"
@@ -201,7 +213,7 @@ export const SettingsDrawer = memo(function SettingsDrawer({
                 <div className="settings-divider" />
                 <h4 className="settings-sub-header">SOAP Preferences</h4>
                 <div className="settings-group">
-                  <label className="settings-label" htmlFor="soap-custom-instructions">Personal Instructions</label>
+                  <label className="settings-label" htmlFor="soap-custom-instructions">Personal Instructions<TierBadge tier="personal" /></label>
                   <textarea
                     id="soap-custom-instructions"
                     className="settings-textarea"
@@ -450,7 +462,7 @@ export const SettingsDrawer = memo(function SettingsDrawer({
                       <>
                         <h4 className="advanced-sub-header">Continuous Mode</h4>
                         <div className="settings-row">
-                          <label className="settings-label" style={{ marginBottom: 4 }}>Detection Mode</label>
+                          <label className="settings-label" style={{ marginBottom: 4 }}>Detection Mode<TierBadge tier="room" /></label>
                           <div className="charting-mode-toggle">
                             <button
                               className={`charting-mode-btn ${pendingSettings.encounter_detection_mode === 'llm' ? 'active' : ''}`}
@@ -469,7 +481,7 @@ export const SettingsDrawer = memo(function SettingsDrawer({
                         {pendingSettings.encounter_detection_mode === 'hybrid' && (
                           <>
                             <div className="settings-group">
-                              <label className="settings-label">Sensor URL (WiFi)</label>
+                              <label className="settings-label">Sensor URL (WiFi)<TierBadge tier="room" /></label>
                               <input
                                 type="text"
                                 className="settings-input"
@@ -479,7 +491,7 @@ export const SettingsDrawer = memo(function SettingsDrawer({
                               />
                             </div>
                             <div className="settings-group">
-                              <label className="settings-label">Serial Port (fallback)</label>
+                              <label className="settings-label">Serial Port (fallback)<TierBadge tier="room" /></label>
                               <input
                                 type="text"
                                 className="settings-input"
@@ -489,7 +501,7 @@ export const SettingsDrawer = memo(function SettingsDrawer({
                               />
                             </div>
                             <div className="settings-group">
-                              <label className="settings-label">Absence Threshold</label>
+                              <label className="settings-label">Absence Threshold<TierBadge tier="room" /></label>
                               <div className="settings-slider">
                                 <input
                                   type="range"
@@ -506,7 +518,7 @@ export const SettingsDrawer = memo(function SettingsDrawer({
                         )}
                         <div className="settings-group">
                           <div className="settings-toggle">
-                            <span className="settings-label" style={{ marginBottom: 0 }}>Auto-merge encounters</span>
+                            <span className="settings-label" style={{ marginBottom: 0 }}>Auto-merge encounters<TierBadge tier="personal" /></span>
                             <label className="toggle-switch">
                               <input
                                 type="checkbox"
@@ -525,7 +537,7 @@ export const SettingsDrawer = memo(function SettingsDrawer({
                     <h4 className="advanced-sub-header">Session Automation</h4>
                     <div className="settings-group">
                       <div className="settings-toggle">
-                        <span className="settings-label" style={{ marginBottom: 0 }}>Auto-start on Greeting</span>
+                        <span className="settings-label" style={{ marginBottom: 0 }}>Auto-start on Greeting<TierBadge tier="personal" /></span>
                         <label className="toggle-switch">
                           <input
                             type="checkbox"
@@ -578,7 +590,7 @@ export const SettingsDrawer = memo(function SettingsDrawer({
                     )}
                     <div className="settings-group">
                       <div className="settings-toggle">
-                        <span className="settings-label" style={{ marginBottom: 0 }}>Auto-end on Silence</span>
+                        <span className="settings-label" style={{ marginBottom: 0 }}>Auto-end on Silence<TierBadge tier="personal" /></span>
                         <label className="toggle-switch">
                           <input
                             type="checkbox"
@@ -610,6 +622,26 @@ export const SettingsDrawer = memo(function SettingsDrawer({
                         </div>
                       </>
                     )}
+
+                    {/* ─ Room Configuration ─ */}
+                    <h4 className="advanced-sub-header">Room Configuration</h4>
+                    <div className="settings-group">
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <div>
+                          <div style={{ fontSize: 13, fontWeight: 500 }}>{roomName || 'Not configured'}</div>
+                          <div style={{ fontSize: 11, opacity: 0.5 }}>{profileServerUrl || ''}</div>
+                        </div>
+                        {onChangeRoom && (
+                          <button
+                            className="btn-outline"
+                            style={{ fontSize: 11, padding: '4px 10px' }}
+                            onClick={onChangeRoom}
+                          >
+                            Change
+                          </button>
+                        )}
+                      </div>
+                    </div>
 
                     <p className="settings-hint" style={{ marginTop: 16, opacity: 0.5, fontSize: 10 }}>
                       Additional options available in config.json

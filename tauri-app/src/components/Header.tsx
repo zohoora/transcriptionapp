@@ -1,4 +1,5 @@
 import { memo } from 'react';
+import { ActivePhysicianBadge } from './ActivePhysicianBadge';
 
 /** Sync status for the header indicator */
 export type SyncStatus = 'idle' | 'syncing' | 'success' | 'error';
@@ -15,6 +16,10 @@ interface HeaderProps {
   syncError?: string | null;
   /** Callback to dismiss sync status */
   onDismissSync?: () => void;
+  /** Active physician name (if selected) */
+  activePhysicianName?: string | null;
+  /** Callback to switch physician */
+  onSwitchPhysician?: () => void;
 }
 
 /**
@@ -30,12 +35,20 @@ export const Header = memo(function Header({
   syncStatus = 'idle',
   syncError,
   onDismissSync,
+  activePhysicianName,
+  onSwitchPhysician,
 }: HeaderProps) {
   return (
     <header className="header">
       <div className="header-left">
         <span className={`status-dot ${statusDotClass}`} />
         <span className="app-title">Scribe</span>
+        {activePhysicianName && onSwitchPhysician && (
+          <ActivePhysicianBadge
+            physicianName={activePhysicianName}
+            onSwitch={onSwitchPhysician}
+          />
+        )}
       </div>
 
       {/* Sync Status Indicator */}

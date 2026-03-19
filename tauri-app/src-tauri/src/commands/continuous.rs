@@ -1,7 +1,8 @@
 //! Commands for continuous charting mode (start/stop/status)
 
+use crate::commands::physicians::{SharedActivePhysician, SharedProfileClient, SharedRoomConfig};
 use crate::config::Config;
-use crate::continuous_mode::{ContinuousModeHandle, ContinuousModeStats};
+use crate::continuous_mode::{ContinuousModeHandle, ContinuousModeStats, ServerSyncContext};
 use std::sync::{Arc, Mutex};
 use tauri::{AppHandle, State};
 use tracing::{info, warn};
@@ -17,6 +18,9 @@ pub type SharedContinuousModeState = Arc<Mutex<Option<Arc<ContinuousModeHandle>>
 pub async fn start_continuous_mode(
     app: AppHandle,
     continuous_state: State<'_, SharedContinuousModeState>,
+    active_physician: State<'_, SharedActivePhysician>,
+    room_config_state: State<'_, SharedRoomConfig>,
+    profile_client_state: State<'_, SharedProfileClient>,
 ) -> Result<(), String> {
     info!("Starting continuous charting mode");
 
@@ -27,6 +31,11 @@ pub async fn start_continuous_mode(
             return Err("Continuous mode is already running".to_string());
         }
     }
+
+    // Build server sync context from current physician/room state
+    let sync_ctx = ServerSyncContext::from_state(
+        &active_physician, &room_config_state, &profile_client_state,
+    ).await;
 
     // Create handle
     let handle = Arc::new(ContinuousModeHandle::new());
@@ -49,6 +58,7 @@ pub async fn start_continuous_mode(
             app,
             handle_for_task,
             config,
+            sync_ctx,
         )
         .await
         {

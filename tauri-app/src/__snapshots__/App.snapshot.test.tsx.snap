@@ -18,6 +18,21 @@ exports[`App Snapshots > renders completed state correctly 1`] = `
       >
         Scribe
       </span>
+      <div
+        class="physician-badge"
+      >
+        <span
+          class="physician-badge-name"
+        >
+          Dr. Test
+        </span>
+        <button
+          aria-label="Switch physician"
+          class="physician-badge-switch"
+        >
+          Switch
+        </button>
+      </div>
     </div>
     <div
       class="header-buttons"
@@ -264,6 +279,21 @@ exports[`App Snapshots > renders error state correctly 1`] = `
       >
         Scribe
       </span>
+      <div
+        class="physician-badge"
+      >
+        <span
+          class="physician-badge-name"
+        >
+          Dr. Test
+        </span>
+        <button
+          aria-label="Switch physician"
+          class="physician-badge-switch"
+        >
+          Switch
+        </button>
+      </div>
     </div>
     <div
       class="header-buttons"
@@ -462,6 +492,21 @@ exports[`App Snapshots > renders idle state correctly 1`] = `
       >
         Scribe
       </span>
+      <div
+        class="physician-badge"
+      >
+        <span
+          class="physician-badge-name"
+        >
+          Dr. Test
+        </span>
+        <button
+          aria-label="Switch physician"
+          class="physician-badge-switch"
+        >
+          Switch
+        </button>
+      </div>
     </div>
     <div
       class="header-buttons"
@@ -647,6 +692,21 @@ exports[`App Snapshots > renders recording state correctly 1`] = `
       >
         Scribe
       </span>
+      <div
+        class="physician-badge"
+      >
+        <span
+          class="physician-badge-name"
+        >
+          Dr. Test
+        </span>
+        <button
+          aria-label="Switch physician"
+          class="physician-badge-switch"
+        >
+          Switch
+        </button>
+      </div>
     </div>
     <div
       class="header-buttons"
@@ -868,6 +928,21 @@ exports[`App Snapshots > renders stopping state correctly 1`] = `
       >
         Scribe
       </span>
+      <div
+        class="physician-badge"
+      >
+        <span
+          class="physician-badge-name"
+        >
+          Dr. Test
+        </span>
+        <button
+          aria-label="Switch physician"
+          class="physician-badge-switch"
+        >
+          Switch
+        </button>
+      </div>
     </div>
     <div
       class="header-buttons"
@@ -1090,6 +1165,21 @@ exports[`App Snapshots > renders with transcript correctly 1`] = `
       >
         Scribe
       </span>
+      <div
+        class="physician-badge"
+      >
+        <span
+          class="physician-badge-name"
+        >
+          Dr. Test
+        </span>
+        <button
+          aria-label="Switch physician"
+          class="physician-badge-switch"
+        >
+          Switch
+        </button>
+      </div>
     </div>
     <div
       class="header-buttons"

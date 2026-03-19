@@ -10,6 +10,8 @@ import {
   RecordingMode,
   ReviewMode,
   ContinuousMode,
+  RoomSetup,
+  PhysicianSelect,
 } from './components';
 import type { SyncStatus } from './components';
 import {
@@ -28,6 +30,8 @@ import {
   useScreenCapture,
   useContinuousModeOrchestrator,
   useConnectionTests,
+  useRoomConfig,
+  usePhysicianProfiles,
 } from './hooks';
 import type { ChartingMode } from './types';
 
@@ -40,6 +44,16 @@ function getWhisperModelName(whisperServerModel: string | undefined): string {
 }
 
 function App() {
+  // Room config and physician selection (startup gates)
+  const { roomConfig, loading: roomLoading, reload: reloadRoomConfig } = useRoomConfig();
+  const {
+    physicians,
+    activePhysician,
+    loading: physiciansLoading,
+    selectPhysician,
+    refresh: refreshPhysicians,
+  } = usePhysicianProfiles();
+
   // Medplum auth from context
   const { authState, login: medplumLogin, logout: medplumLogout, cancelLogin: medplumCancelLogin, isLoading: authLoading } = useAuth();
 
@@ -587,6 +601,58 @@ function App() {
     return '';
   }, [isRecording, isStopping, status.state, isIdle]);
 
+  // Allow user to return to physician selection or room setup
+  const [showPhysicianSelect, setShowPhysicianSelect] = useState(false);
+  const [showRoomSetup, setShowRoomSetup] = useState(false);
+
+  const handleSwitchPhysician = useCallback(() => {
+    setShowPhysicianSelect(true);
+    refreshPhysicians();
+  }, [refreshPhysicians]);
+
+  const handlePhysicianSelected = useCallback(async (id: string) => {
+    try {
+      await selectPhysician(id);
+      setShowPhysicianSelect(false);
+    } catch (e) {
+      console.error('Failed to select physician:', e);
+    }
+  }, [selectPhysician]);
+
+  const handleRoomSetupComplete = useCallback(() => {
+    // After room config is saved, reload config state and refresh physicians
+    reloadRoomConfig();
+    refreshPhysicians();
+    setShowRoomSetup(false);
+  }, [reloadRoomConfig, refreshPhysicians]);
+
+  const handleChangeRoom = useCallback(() => {
+    setShowRoomSetup(true);
+  }, []);
+
+  // --- Startup gates ---
+  // Gate 0: User clicked "Change Room" in settings → skip server URL step
+  if (showRoomSetup) {
+    return <RoomSetup onComplete={handleRoomSetupComplete} existingServerUrl={roomConfig?.profile_server_url} />;
+  }
+
+  // Gate 1: Room config not loaded yet → show RoomSetup
+  if (!roomLoading && !roomConfig) {
+    return <RoomSetup onComplete={handleRoomSetupComplete} />;
+  }
+
+  // Gate 2: No active physician OR user clicked "Switch" → show PhysicianSelect
+  if (showPhysicianSelect || (!roomLoading && !physiciansLoading && !activePhysician)) {
+    return (
+      <PhysicianSelect
+        physicians={physicians}
+        loading={physiciansLoading}
+        onSelect={handlePhysicianSelected}
+        onRefresh={refreshPhysicians}
+      />
+    );
+  }
+
   return (
     <div className={`sidebar mode-${uiMode}`}>
       {/* Header - always visible */}
@@ -599,6 +665,8 @@ function App() {
         syncStatus={syncStatus}
         syncError={syncError}
         onDismissSync={handleDismissSync}
+        activePhysicianName={activePhysician?.name}
+        onSwitchPhysician={handleSwitchPhysician}
       />
 
       {/* Mode-based content wrapped in ErrorBoundary */}
@@ -760,6 +828,9 @@ function App() {
         onLogin={medplumLogin}
         onLogout={medplumLogout}
         onCancelLogin={medplumCancelLogin}
+        roomName={roomConfig?.room_name}
+        profileServerUrl={roomConfig?.profile_server_url}
+        onChangeRoom={handleChangeRoom}
       />
     </div>
   );

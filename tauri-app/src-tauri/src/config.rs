@@ -612,6 +612,180 @@ impl Settings {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Phase C: Settings tier classification and physician-tier extraction
+// ---------------------------------------------------------------------------
+
+/// Classification tier for each settings field
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SettingsTier {
+    Infrastructure,
+    Room,
+    Physician,
+}
+
+/// Physician-tier settings overlay.
+///
+/// All fields are `Option` so that `None` means "use the room/infrastructure default".
+/// When serialized, absent fields are omitted entirely.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PhysicianSettings {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub soap_detail_level: Option<u8>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub soap_format: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub soap_custom_instructions: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub charting_mode: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub language: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub image_source: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub gemini_api_key: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub auto_start_enabled: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub auto_start_require_enrolled: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub auto_start_required_role: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub auto_end_enabled: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub auto_end_silence_ms: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub output_format: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub encounter_merge_enabled: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub encounter_check_interval_secs: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub encounter_silence_trigger_secs: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub medplum_auto_sync: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub diarization_enabled: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_speakers: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub medplum_practitioner_id: Option<String>,
+}
+
+impl From<&crate::profile_client::PhysicianProfile> for PhysicianSettings {
+    fn from(p: &crate::profile_client::PhysicianProfile) -> Self {
+        Self {
+            soap_detail_level: p.soap_detail_level,
+            soap_format: p.soap_format.clone(),
+            soap_custom_instructions: p.soap_custom_instructions.clone(),
+            charting_mode: p.charting_mode.clone(),
+            language: p.language.clone(),
+            image_source: p.image_source.clone(),
+            gemini_api_key: p.gemini_api_key.clone(),
+            auto_start_enabled: p.auto_start_enabled,
+            auto_start_require_enrolled: p.auto_start_require_enrolled,
+            auto_start_required_role: p.auto_start_required_role.clone(),
+            auto_end_enabled: p.auto_end_enabled,
+            auto_end_silence_ms: p.auto_end_silence_ms,
+            output_format: None,
+            encounter_merge_enabled: p.encounter_merge_enabled,
+            encounter_check_interval_secs: p.encounter_check_interval_secs,
+            encounter_silence_trigger_secs: p.encounter_silence_trigger_secs,
+            medplum_auto_sync: p.medplum_auto_sync,
+            diarization_enabled: p.diarization_enabled,
+            max_speakers: p.max_speakers,
+            medplum_practitioner_id: p.medplum_practitioner_id.clone(),
+        }
+    }
+}
+
+impl Settings {
+    /// Extract physician-tier settings from the current flat settings
+    pub fn physician(&self) -> PhysicianSettings {
+        PhysicianSettings {
+            soap_detail_level: Some(self.soap_detail_level),
+            soap_format: Some(self.soap_format.clone()),
+            soap_custom_instructions: if self.soap_custom_instructions.is_empty() { None } else { Some(self.soap_custom_instructions.clone()) },
+            charting_mode: Some(self.charting_mode.to_string()),
+            language: Some(self.language.clone()),
+            image_source: Some(self.image_source.clone()),
+            gemini_api_key: if self.gemini_api_key.is_empty() { None } else { Some(self.gemini_api_key.clone()) },
+            auto_start_enabled: Some(self.auto_start_enabled),
+            auto_start_require_enrolled: Some(self.auto_start_require_enrolled),
+            auto_start_required_role: self.auto_start_required_role.clone(),
+            auto_end_enabled: Some(self.auto_end_enabled),
+            auto_end_silence_ms: Some(self.auto_end_silence_ms),
+            output_format: Some(self.output_format.clone()),
+            encounter_merge_enabled: Some(self.encounter_merge_enabled),
+            encounter_check_interval_secs: Some(self.encounter_check_interval_secs),
+            encounter_silence_trigger_secs: Some(self.encounter_silence_trigger_secs),
+            medplum_auto_sync: Some(self.medplum_auto_sync),
+            diarization_enabled: Some(self.diarization_enabled),
+            max_speakers: Some(self.max_speakers),
+            medplum_practitioner_id: None,
+        }
+    }
+
+    /// Overlay physician settings onto the current settings (non-None fields win)
+    pub fn apply_physician(&mut self, phys: &PhysicianSettings) {
+        if let Some(v) = phys.soap_detail_level { self.soap_detail_level = v; }
+        if let Some(ref v) = phys.soap_format { self.soap_format = v.clone(); }
+        if let Some(ref v) = phys.soap_custom_instructions { self.soap_custom_instructions = v.clone(); }
+        if let Some(ref v) = phys.charting_mode {
+            if v == "continuous" { self.charting_mode = ChartingMode::Continuous; }
+            else { self.charting_mode = ChartingMode::Session; }
+        }
+        if let Some(ref v) = phys.language { self.language = v.clone(); }
+        if let Some(ref v) = phys.image_source { self.image_source = v.clone(); }
+        if let Some(ref v) = phys.gemini_api_key { self.gemini_api_key = v.clone(); }
+        if let Some(v) = phys.auto_start_enabled { self.auto_start_enabled = v; }
+        if let Some(v) = phys.auto_start_require_enrolled { self.auto_start_require_enrolled = v; }
+        if phys.auto_start_required_role.is_some() { self.auto_start_required_role = phys.auto_start_required_role.clone(); }
+        if let Some(v) = phys.auto_end_enabled { self.auto_end_enabled = v; }
+        if let Some(v) = phys.auto_end_silence_ms { self.auto_end_silence_ms = v; }
+        if let Some(ref v) = phys.output_format { self.output_format = v.clone(); }
+        if let Some(v) = phys.encounter_merge_enabled { self.encounter_merge_enabled = v; }
+        if let Some(v) = phys.encounter_check_interval_secs { self.encounter_check_interval_secs = v; }
+        if let Some(v) = phys.encounter_silence_trigger_secs { self.encounter_silence_trigger_secs = v; }
+        if let Some(v) = phys.medplum_auto_sync { self.medplum_auto_sync = v; }
+        if let Some(v) = phys.diarization_enabled { self.diarization_enabled = v; }
+        if let Some(v) = phys.max_speakers { self.max_speakers = v; }
+    }
+
+    /// Get the tier classification for each setting field name
+    pub fn tier_map() -> std::collections::HashMap<&'static str, SettingsTier> {
+        let mut m = std::collections::HashMap::new();
+        // Infrastructure
+        for field in &["llm_router_url", "llm_api_key", "llm_client_id", "soap_model", "soap_model_fast",
+                       "fast_model", "whisper_server_url", "whisper_server_model", "stt_alias", "stt_postprocess",
+                       "medplum_server_url", "medplum_client_id", "miis_server_url", "whisper_mode",
+                       "encounter_detection_model", "encounter_detection_nothink"] {
+            m.insert(*field, SettingsTier::Infrastructure);
+        }
+        // Room
+        for field in &["input_device_id", "encounter_detection_mode", "presence_sensor_port",
+                       "presence_sensor_url", "presence_absence_threshold_secs", "presence_debounce_secs",
+                       "thermal_hot_pixel_threshold_c", "co2_baseline_ppm", "hybrid_confirm_window_secs",
+                       "hybrid_min_words_for_sensor_split", "screen_capture_enabled", "screen_capture_interval_secs",
+                       "shadow_active_method", "shadow_csv_log_enabled", "presence_csv_log_enabled",
+                       "vad_threshold", "silence_to_flush_ms", "max_utterance_ms", "greeting_sensitivity",
+                       "min_speech_duration_ms", "whisper_model", "debug_storage_enabled"] {
+            m.insert(*field, SettingsTier::Room);
+        }
+        // Physician
+        for field in &["soap_custom_instructions", "soap_detail_level", "soap_format", "charting_mode",
+                       "language", "image_source", "gemini_api_key", "auto_start_enabled",
+                       "auto_start_require_enrolled", "auto_start_required_role", "auto_end_enabled",
+                       "auto_end_silence_ms", "output_format", "encounter_merge_enabled",
+                       "encounter_check_interval_secs", "encounter_silence_trigger_secs",
+                       "medplum_auto_sync", "diarization_enabled", "max_speakers"] {
+            m.insert(*field, SettingsTier::Physician);
+        }
+        m
+    }
+}
+
 /// Model availability status for the frontend
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ModelStatus {
