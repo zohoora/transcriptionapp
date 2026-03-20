@@ -42,32 +42,40 @@ jobs:
       - name: Install frontend dependencies
         run: pnpm install
 
-      - name: Install Tauri CLI
-        run: pnpm add -D @tauri-apps/cli
-
       - name: Build Tauri app
+        run: pnpm tauri build
+
+      - name: Create updater bundle and sign
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-        run: pnpm tauri build
+        run: |
+          BUNDLE_DIR="src-tauri/target/release/bundle/macos"
+          APP_NAME="Transcription App"
+
+          # Create .tar.gz from .app directory
+          tar -czf "${BUNDLE_DIR}/${APP_NAME}.app.tar.gz" -C "${BUNDLE_DIR}" "${APP_NAME}.app"
+          echo "Created tar.gz:"
+          ls -la "${BUNDLE_DIR}/${APP_NAME}.app.tar.gz"
+
+          # Sign the tar.gz with tauri signer
+          npx tauri signer sign \
+            "${BUNDLE_DIR}/${APP_NAME}.app.tar.gz" \
+            --private-key "$TAURI_SIGNING_PRIVATE_KEY" \
+            --password "$TAURI_SIGNING_PRIVATE_KEY_PASSWORD"
+
+          echo "Signature:"
+          cat "${BUNDLE_DIR}/${APP_NAME}.app.tar.gz.sig"
 
       - name: Generate latest.json
         run: |
-          BUNDLE_DIR="src-tauri/target/release/bundle"
-          TAR_GZ="${BUNDLE_DIR}/macos/Transcription App.app.tar.gz"
-          SIG_FILE="${TAR_GZ}.sig"
-
-          if [ ! -f "$SIG_FILE" ]; then
-            echo "ERROR: Signature file not found at ${SIG_FILE}"
-            ls -la "${BUNDLE_DIR}/macos/"
-            exit 1
-          fi
-
+          BUNDLE_DIR="src-tauri/target/release/bundle/macos"
+          SIG_FILE="${BUNDLE_DIR}/Transcription App.app.tar.gz.sig"
           VERSION="${GITHUB_REF_NAME#v}"
           SIGNATURE=$(cat "$SIG_FILE")
           TAR_NAME="Transcription.App_aarch64.app.tar.gz"
 
-          cat > latest.json << ENDJSON
+          cat > latest.json <<ENDJSON
           {
             "version": "${VERSION}",
             "notes": "Scribe ${GITHUB_REF_NAME}",
