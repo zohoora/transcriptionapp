@@ -67,8 +67,82 @@ pub struct Room {
     pub name: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
+    // Room-tier settings
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub encounter_detection_mode: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub presence_sensor_port: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub presence_sensor_url: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub presence_absence_threshold_secs: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub presence_debounce_secs: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub thermal_hot_pixel_threshold_c: Option<f32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub co2_baseline_ppm: Option<f32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hybrid_confirm_window_secs: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hybrid_min_words_for_sensor_split: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub screen_capture_enabled: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub screen_capture_interval_secs: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shadow_active_method: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shadow_csv_log_enabled: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub presence_csv_log_enabled: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub vad_threshold: Option<f32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub silence_to_flush_ms: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_utterance_ms: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub greeting_sensitivity: Option<f32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub min_speech_duration_ms: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub whisper_model: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub debug_storage_enabled: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub input_device_id: Option<String>,
     pub created_at: String,
     pub updated_at: String,
+}
+
+impl From<&Room> for crate::config::RoomOverlay {
+    fn from(r: &Room) -> Self {
+        Self {
+            encounter_detection_mode: r.encounter_detection_mode.clone(),
+            presence_sensor_port: r.presence_sensor_port.clone(),
+            presence_sensor_url: r.presence_sensor_url.clone(),
+            presence_absence_threshold_secs: r.presence_absence_threshold_secs,
+            presence_debounce_secs: r.presence_debounce_secs,
+            thermal_hot_pixel_threshold_c: r.thermal_hot_pixel_threshold_c,
+            co2_baseline_ppm: r.co2_baseline_ppm,
+            hybrid_confirm_window_secs: r.hybrid_confirm_window_secs,
+            hybrid_min_words_for_sensor_split: r.hybrid_min_words_for_sensor_split,
+            screen_capture_enabled: r.screen_capture_enabled,
+            screen_capture_interval_secs: r.screen_capture_interval_secs,
+            shadow_active_method: r.shadow_active_method.clone(),
+            shadow_csv_log_enabled: r.shadow_csv_log_enabled,
+            presence_csv_log_enabled: r.presence_csv_log_enabled,
+            vad_threshold: r.vad_threshold,
+            silence_to_flush_ms: r.silence_to_flush_ms,
+            max_utterance_ms: r.max_utterance_ms,
+            greeting_sensitivity: r.greeting_sensitivity,
+            min_speech_duration_ms: r.min_speech_duration_ms,
+            whisper_model: r.whisper_model.clone(),
+            debug_storage_enabled: r.debug_storage_enabled,
+            input_device_id: r.input_device_id.clone(),
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -107,6 +181,98 @@ impl ProfileClient {
             .await?;
         Ok(resp.status().is_success())
     }
+
+    // ── Infrastructure settings ─────────────────────────────────────
+
+    pub async fn get_infrastructure(&self) -> Result<crate::config::InfrastructureOverlay> {
+        let resp = self
+            .client
+            .get(format!("{}/infrastructure", self.base_url))
+            .send()
+            .await?;
+        if !resp.status().is_success() {
+            let status = resp.status();
+            let text = resp.text().await.unwrap_or_default();
+            anyhow::bail!("Get infrastructure failed: {} - {}", status, &text[..text.len().min(200)]);
+        }
+        let infra: crate::config::InfrastructureOverlay = resp.json().await?;
+        Ok(infra)
+    }
+
+    pub async fn update_infrastructure(
+        &self,
+        settings: &crate::config::InfrastructureOverlay,
+    ) -> Result<crate::config::InfrastructureOverlay> {
+        let resp = self
+            .client
+            .put(format!("{}/infrastructure", self.base_url))
+            .json(settings)
+            .send()
+            .await?;
+        if !resp.status().is_success() {
+            let status = resp.status();
+            let text = resp.text().await.unwrap_or_default();
+            anyhow::bail!(
+                "Update infrastructure failed: {} - {}",
+                status,
+                &text[..text.len().min(200)]
+            );
+        }
+        let infra: crate::config::InfrastructureOverlay = resp.json().await?;
+        Ok(infra)
+    }
+
+    pub async fn get_room(&self, room_id: &str) -> Result<Room> {
+        let resp = self
+            .client
+            .get(format!("{}/rooms/{}", self.base_url, room_id))
+            .send()
+            .await?;
+        if !resp.status().is_success() {
+            let status = resp.status();
+            let text = resp.text().await.unwrap_or_default();
+            anyhow::bail!("Get room failed: {} - {}", status, &text[..text.len().min(200)]);
+        }
+        let room: Room = resp.json().await?;
+        Ok(room)
+    }
+
+    /// Fetch infrastructure + room settings from server and merge into local config.
+    /// Returns true if any settings were merged.
+    pub async fn merge_server_settings(&self, room_id: Option<&str>) -> Result<bool> {
+        let mut config = crate::config::Config::load_or_default();
+        let mut merged = false;
+
+        // Run both fetches concurrently
+        let (infra_result, room_result) = tokio::join!(
+            self.get_infrastructure(),
+            async {
+                match room_id {
+                    Some(rid) => Some(self.get_room(rid).await),
+                    None => None,
+                }
+            }
+        );
+
+        if let Ok(infra) = infra_result {
+            config.settings.apply_infrastructure(&infra);
+            merged = true;
+        }
+
+        if let Some(Ok(room)) = room_result {
+            let room_overlay = crate::config::RoomOverlay::from(&room);
+            config.settings.apply_room(&room_overlay);
+            merged = true;
+        }
+
+        if merged {
+            config.save().map_err(|e| anyhow::anyhow!("Failed to save merged config: {e}"))?;
+        }
+
+        Ok(merged)
+    }
+
+    // ── Physicians ───────────────────────────────────────────────────
 
     pub async fn list_physicians(&self) -> Result<Vec<PhysicianProfile>> {
         let resp = self

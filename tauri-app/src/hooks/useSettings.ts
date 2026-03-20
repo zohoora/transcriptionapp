@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import type { Settings, SpeakerRole, ChartingMode, EncounterDetectionMode } from '../types';
+import type { Settings, SpeakerRole, ChartingMode, EncounterDetectionMode, InfrastructureOverlay, RoomOverlay } from '../types';
 
 /**
  * Pending settings that the user is editing before saving.
@@ -206,6 +206,64 @@ export function useSettings(): UseSettingsResult {
         } catch (e) {
           console.warn('Failed to sync physician settings to server:', e);
         }
+      }
+
+      // Best-effort: sync infra + room tier changes to server (parallel, non-blocking)
+      const syncPromises: Promise<unknown>[] = [];
+
+      // Infrastructure-tier: compare all PendingSettings fields that are infrastructure-tier
+      const infraTierChanged =
+        settings.llm_router_url !== pendingSettings.llm_router_url ||
+        settings.llm_api_key !== pendingSettings.llm_api_key ||
+        settings.llm_client_id !== pendingSettings.llm_client_id ||
+        settings.soap_model !== pendingSettings.soap_model ||
+        settings.fast_model !== pendingSettings.fast_model ||
+        settings.whisper_server_url !== pendingSettings.whisper_server_url ||
+        settings.medplum_server_url !== pendingSettings.medplum_server_url ||
+        settings.medplum_client_id !== pendingSettings.medplum_client_id;
+
+      if (infraTierChanged) {
+        const infraSettings: InfrastructureOverlay = {
+          llm_router_url: pendingSettings.llm_router_url || undefined,
+          llm_api_key: pendingSettings.llm_api_key || undefined,
+          llm_client_id: pendingSettings.llm_client_id || undefined,
+          soap_model: pendingSettings.soap_model || undefined,
+          fast_model: pendingSettings.fast_model || undefined,
+          whisper_server_url: pendingSettings.whisper_server_url || undefined,
+          medplum_server_url: pendingSettings.medplum_server_url || undefined,
+          medplum_client_id: pendingSettings.medplum_client_id || undefined,
+        };
+        syncPromises.push(
+          invoke('sync_infrastructure_settings', { settings: infraSettings })
+            .catch(e => console.warn('Failed to sync infrastructure settings to server:', e))
+        );
+      }
+
+      // Room-tier: compare all PendingSettings fields that are room-tier
+      const roomTierChanged =
+        settings.encounter_detection_mode !== pendingSettings.encounter_detection_mode ||
+        settings.presence_sensor_url !== pendingSettings.presence_sensor_url ||
+        settings.presence_sensor_port !== pendingSettings.presence_sensor_port ||
+        settings.presence_absence_threshold_secs !== pendingSettings.presence_absence_threshold_secs ||
+        settings.screen_capture_enabled !== pendingSettings.screen_capture_enabled;
+
+      if (roomTierChanged) {
+        const roomSettings: RoomOverlay = {
+          encounter_detection_mode: pendingSettings.encounter_detection_mode,
+          presence_sensor_url: pendingSettings.presence_sensor_url || undefined,
+          presence_sensor_port: pendingSettings.presence_sensor_port || undefined,
+          presence_absence_threshold_secs: pendingSettings.presence_absence_threshold_secs,
+          screen_capture_enabled: pendingSettings.screen_capture_enabled,
+        };
+        syncPromises.push(
+          invoke('sync_room_settings', { settings: roomSettings })
+            .catch(e => console.warn('Failed to sync room settings to server:', e))
+        );
+      }
+
+      // Fire all tier syncs in parallel (best-effort, don't block save result)
+      if (syncPromises.length > 0) {
+        Promise.allSettled(syncPromises);
       }
 
       return true;

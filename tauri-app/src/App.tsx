@@ -33,6 +33,7 @@ import {
   useRoomConfig,
   usePhysicianProfiles,
 } from './hooks';
+import { useAppUpdater } from './hooks/useAppUpdater';
 import type { ChartingMode } from './types';
 
 // UI Mode type
@@ -44,6 +45,9 @@ function getWhisperModelName(whisperServerModel: string | undefined): string {
 }
 
 function App() {
+  // Auto-updater (checks GitHub releases on startup)
+  const { status: updateStatus, installUpdate, dismissUpdate } = useAppUpdater();
+
   // Room config and physician selection (startup gates)
   const { roomConfig, loading: roomLoading, reload: reloadRoomConfig } = useRoomConfig();
   const {
@@ -668,6 +672,53 @@ function App() {
         activePhysicianName={activePhysician?.name}
         onSwitchPhysician={handleSwitchPhysician}
       />
+
+      {/* Update notification banner */}
+      {updateStatus.available && (
+        <div style={{
+          padding: '6px 12px',
+          background: '#1a73e8',
+          color: '#fff',
+          fontSize: '12px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: '8px',
+        }}>
+          <span>v{updateStatus.version} available</span>
+          <div style={{ display: 'flex', gap: '4px' }}>
+            <button
+              onClick={installUpdate}
+              disabled={updateStatus.downloading}
+              style={{
+                background: '#fff',
+                color: '#1a73e8',
+                border: 'none',
+                borderRadius: '4px',
+                padding: '2px 8px',
+                fontSize: '11px',
+                cursor: updateStatus.downloading ? 'wait' : 'pointer',
+              }}
+            >
+              {updateStatus.downloading ? 'Installing...' : 'Update'}
+            </button>
+            <button
+              onClick={dismissUpdate}
+              style={{
+                background: 'transparent',
+                color: '#fff',
+                border: '1px solid rgba(255,255,255,0.4)',
+                borderRadius: '4px',
+                padding: '2px 6px',
+                fontSize: '11px',
+                cursor: 'pointer',
+              }}
+            >
+              Later
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Mode-based content wrapped in ErrorBoundary */}
       <ErrorBoundary>

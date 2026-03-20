@@ -182,6 +182,8 @@ pub fn run() {
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_shell::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| {
             // When another instance tries to launch, focus the existing window
             // and emit any deep link URL to the frontend
@@ -233,11 +235,27 @@ pub fn run() {
             // Initialize room config
             let room_config = room_config::RoomConfig::load().unwrap_or(None);
             let profile_server_url = room_config.as_ref().map(|rc| rc.profile_server_url.clone());
+            let room_id_for_merge = room_config.as_ref().and_then(|rc| rc.room_id.clone());
             let shared_room_config: commands::SharedRoomConfig = Arc::new(tokio::sync::RwLock::new(room_config));
             app.manage(shared_room_config);
 
             // Initialize profile client
             let profile_client = profile_server_url.map(|url| profile_client::ProfileClient::new(&url));
+
+            // Startup settings merge: fire-and-forget async task to fetch infra + room
+            // settings from server. Non-blocking — app launches immediately with cached config.
+            if let Some(ref client) = profile_client {
+                let client = client.clone();
+                let room_id = room_id_for_merge;
+                tauri::async_runtime::spawn(async move {
+                    match client.merge_server_settings(room_id.as_deref()).await {
+                        Ok(true) => info!("Startup settings merge complete"),
+                        Ok(false) => info!("Startup settings merge: no changes from server"),
+                        Err(e) => warn!("Startup settings merge failed (using local config): {e}"),
+                    }
+                });
+            }
+
             let shared_profile_client: commands::SharedProfileClient = Arc::new(tokio::sync::RwLock::new(profile_client));
             app.manage(shared_profile_client.clone());
 
@@ -457,6 +475,9 @@ pub fn run() {
             commands::create_room,
             commands::update_room,
             commands::delete_room,
+            commands::sync_settings_from_server,
+            commands::sync_infrastructure_settings,
+            commands::sync_room_settings,
         ])
         .on_window_event(|window, event| {
             if let WindowEvent::CloseRequested { .. } = event {

@@ -129,6 +129,54 @@ export interface Settings {
   co2_baseline_ppm: number;
 }
 
+// ── Server-managed settings overlays ──────────────────────────────
+
+/** Infrastructure-tier settings (clinic-wide, managed on profile server) */
+export interface InfrastructureOverlay {
+  llm_router_url?: string;
+  llm_api_key?: string;
+  llm_client_id?: string;
+  soap_model?: string;
+  soap_model_fast?: string;
+  fast_model?: string;
+  whisper_server_url?: string;
+  whisper_server_model?: string;
+  stt_alias?: string;
+  stt_postprocess?: boolean;
+  medplum_server_url?: string;
+  medplum_client_id?: string;
+  miis_server_url?: string;
+  whisper_mode?: string;
+  encounter_detection_model?: string;
+  encounter_detection_nothink?: boolean;
+}
+
+/** Room-tier settings (per-room hardware/behavior, managed on profile server) */
+export interface RoomOverlay {
+  encounter_detection_mode?: string;
+  presence_sensor_port?: string;
+  presence_sensor_url?: string;
+  presence_absence_threshold_secs?: number;
+  presence_debounce_secs?: number;
+  thermal_hot_pixel_threshold_c?: number;
+  co2_baseline_ppm?: number;
+  hybrid_confirm_window_secs?: number;
+  hybrid_min_words_for_sensor_split?: number;
+  screen_capture_enabled?: boolean;
+  screen_capture_interval_secs?: number;
+  shadow_active_method?: string;
+  shadow_csv_log_enabled?: boolean;
+  presence_csv_log_enabled?: boolean;
+  vad_threshold?: number;
+  silence_to_flush_ms?: number;
+  max_utterance_ms?: number;
+  greeting_sensitivity?: number;
+  min_speech_duration_ms?: number;
+  whisper_model?: string;
+  debug_storage_enabled?: boolean;
+  input_device_id?: string;
+}
+
 // Listening mode types (auto-session detection)
 export interface ListeningStatus {
   is_listening: boolean;

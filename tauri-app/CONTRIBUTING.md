@@ -117,7 +117,7 @@ refactor: extract audio resampling into separate module
 
 ## Testing
 
-We maintain comprehensive test coverage (450 frontend tests, 758 Rust tests). All PRs must pass tests.
+We maintain comprehensive test coverage (450 frontend tests, 764 Rust tests). All PRs must pass tests.
 
 ### Running Tests
 
@@ -125,7 +125,7 @@ We maintain comprehensive test coverage (450 frontend tests, 758 Rust tests). Al
 # Frontend tests (450 tests)
 pnpm test:run
 
-# Rust tests with ONNX Runtime (733 tests)
+# Rust tests with ONNX Runtime (764 tests)
 cd src-tauri
 ORT_DYLIB_PATH=$(../scripts/setup-ort.sh) cargo test
 
@@ -289,7 +289,7 @@ proptest! {
 
 | Module | Purpose |
 |--------|---------|
-| `commands/` | Tauri IPC command handlers (17 submodules) |
+| `commands/` | Tauri IPC command handlers (18 submodules) |
 | `session` | Recording state machine (Idle→Preparing→Recording→Stopping→Completed) |
 | `pipeline` | Audio processing coordination (VAD, Whisper, diarization, enhancement) |
 | `audio` | Device enumeration, audio capture, resampling (rubato) |

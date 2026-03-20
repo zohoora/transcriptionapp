@@ -48,12 +48,15 @@ async fn main() {
         .expect("Failed to load rooms");
     let speakers = store::speakers::SpeakerManager::load(data_dir.join("speakers.json"))
         .expect("Failed to load speakers");
+    let infrastructure = store::infrastructure::InfrastructureStore::load(data_dir.join("infrastructure.json"))
+        .expect("Failed to load infrastructure settings");
     let sessions = store::sessions::SessionStore::new(data_dir.join("sessions"));
 
     let state = Arc::new(AppState {
         physicians: RwLock::new(physicians),
         rooms: RwLock::new(rooms),
         speakers: RwLock::new(speakers),
+        infrastructure: RwLock::new(infrastructure),
         sessions,
         data_dir: data_dir.clone(),
     });

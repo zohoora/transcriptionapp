@@ -108,6 +108,83 @@ pub struct UpdatePhysicianRequest {
     pub medplum_practitioner_id: Option<String>,
 }
 
+// ── Infrastructure ────────────────────────────────────────────────
+
+/// Clinic-wide infrastructure settings (singleton — one per deployment).
+/// All fields are `Option` so partial updates merge cleanly.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct InfrastructureSettings {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub llm_router_url: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub llm_api_key: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub llm_client_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub soap_model: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub soap_model_fast: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fast_model: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub whisper_server_url: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub whisper_server_model: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stt_alias: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stt_postprocess: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub medplum_server_url: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub medplum_client_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub miis_server_url: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub whisper_mode: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub encounter_detection_model: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub encounter_detection_nothink: Option<bool>,
+}
+
+/// Request body for partial update of infrastructure settings
+#[derive(Debug, Deserialize)]
+pub struct UpdateInfrastructureRequest {
+    #[serde(default)]
+    pub llm_router_url: Option<String>,
+    #[serde(default)]
+    pub llm_api_key: Option<String>,
+    #[serde(default)]
+    pub llm_client_id: Option<String>,
+    #[serde(default)]
+    pub soap_model: Option<String>,
+    #[serde(default)]
+    pub soap_model_fast: Option<String>,
+    #[serde(default)]
+    pub fast_model: Option<String>,
+    #[serde(default)]
+    pub whisper_server_url: Option<String>,
+    #[serde(default)]
+    pub whisper_server_model: Option<String>,
+    #[serde(default)]
+    pub stt_alias: Option<String>,
+    #[serde(default)]
+    pub stt_postprocess: Option<bool>,
+    #[serde(default)]
+    pub medplum_server_url: Option<String>,
+    #[serde(default)]
+    pub medplum_client_id: Option<String>,
+    #[serde(default)]
+    pub miis_server_url: Option<String>,
+    #[serde(default)]
+    pub whisper_mode: Option<String>,
+    #[serde(default)]
+    pub encounter_detection_model: Option<String>,
+    #[serde(default)]
+    pub encounter_detection_nothink: Option<bool>,
+}
+
 // ── Room ──────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -116,6 +193,53 @@ pub struct Room {
     pub name: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
+
+    // Room-tier settings (None = use infrastructure default)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub encounter_detection_mode: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub presence_sensor_port: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub presence_sensor_url: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub presence_absence_threshold_secs: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub presence_debounce_secs: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub thermal_hot_pixel_threshold_c: Option<f32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub co2_baseline_ppm: Option<f32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hybrid_confirm_window_secs: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hybrid_min_words_for_sensor_split: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub screen_capture_enabled: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub screen_capture_interval_secs: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shadow_active_method: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shadow_csv_log_enabled: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub presence_csv_log_enabled: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub vad_threshold: Option<f32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub silence_to_flush_ms: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_utterance_ms: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub greeting_sensitivity: Option<f32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub min_speech_duration_ms: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub whisper_model: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub debug_storage_enabled: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub input_device_id: Option<String>,
+
     pub created_at: String,
     pub updated_at: String,
 }
@@ -128,8 +252,55 @@ pub struct CreateRoomRequest {
 
 #[derive(Debug, Deserialize)]
 pub struct UpdateRoomRequest {
+    #[serde(default)]
     pub name: Option<String>,
+    #[serde(default)]
     pub description: Option<String>,
+    // Room-tier settings
+    #[serde(default)]
+    pub encounter_detection_mode: Option<String>,
+    #[serde(default)]
+    pub presence_sensor_port: Option<String>,
+    #[serde(default)]
+    pub presence_sensor_url: Option<String>,
+    #[serde(default)]
+    pub presence_absence_threshold_secs: Option<u64>,
+    #[serde(default)]
+    pub presence_debounce_secs: Option<u64>,
+    #[serde(default)]
+    pub thermal_hot_pixel_threshold_c: Option<f32>,
+    #[serde(default)]
+    pub co2_baseline_ppm: Option<f32>,
+    #[serde(default)]
+    pub hybrid_confirm_window_secs: Option<u64>,
+    #[serde(default)]
+    pub hybrid_min_words_for_sensor_split: Option<usize>,
+    #[serde(default)]
+    pub screen_capture_enabled: Option<bool>,
+    #[serde(default)]
+    pub screen_capture_interval_secs: Option<u32>,
+    #[serde(default)]
+    pub shadow_active_method: Option<String>,
+    #[serde(default)]
+    pub shadow_csv_log_enabled: Option<bool>,
+    #[serde(default)]
+    pub presence_csv_log_enabled: Option<bool>,
+    #[serde(default)]
+    pub vad_threshold: Option<f32>,
+    #[serde(default)]
+    pub silence_to_flush_ms: Option<u32>,
+    #[serde(default)]
+    pub max_utterance_ms: Option<u32>,
+    #[serde(default)]
+    pub greeting_sensitivity: Option<f32>,
+    #[serde(default)]
+    pub min_speech_duration_ms: Option<u32>,
+    #[serde(default)]
+    pub whisper_model: Option<String>,
+    #[serde(default)]
+    pub debug_storage_enabled: Option<bool>,
+    #[serde(default)]
+    pub input_device_id: Option<String>,
 }
 
 // ── Speaker ────────────────────────────────────────────────────────

@@ -21,7 +21,8 @@ A real-time speech-to-text transcription desktop application built with Tauri, R
 - **Audio recording** - WAV files synced to EMR
 - **Auto-session detection** - Automatically starts recording when a greeting is detected
 - **Session cleanup tools** - Delete, split, merge sessions, rename patients, renumber encounters
-- **Presence sensor** - mmWave radar (SEN0395) for hardware-based encounter detection
+- **Presence sensor** - ESP32 multi-sensor bridge (mmWave radar, thermal camera, CO2) for hardware-based encounter detection
+- **Multi-user support** - Room + physician profile system with centralized session storage on profile service
 - **Shadow mode** - Dual detection comparison (sensor vs LLM) with CSV logging
 - **Vision-based patient name** - Screenshot capture + vision LLM to extract patient name from EMR
 
@@ -52,6 +53,7 @@ A real-time speech-to-text transcription desktop application built with Tauri, R
 - STT Router (required, for speech-to-text via WebSocket streaming)
 - LLM Router (required, for SOAP note generation - OpenAI-compatible API)
 - Medplum server (optional, for EMR integration)
+- Profile service (optional, port 8090 — multi-user physician profiles and centralized session storage)
 
 ## Quick Start
 
@@ -252,8 +254,8 @@ pnpm soak:test         # Interactive
 
 | Category | Framework | Count |
 |----------|-----------|-------|
-| Unit Tests (Frontend) | Vitest | 437 tests |
-| Unit Tests (Rust) | cargo test | 574 tests |
+| Unit Tests (Frontend) | Vitest | 450 tests |
+| Unit Tests (Rust) | cargo test | 764 tests |
 | E2E Integration (Rust) | cargo test (ignored) | 32 tests |
 | Snapshot Tests | Vitest | 7 snapshots |
 | Accessibility Tests | vitest-axe | 12 tests |

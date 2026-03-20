@@ -32,7 +32,7 @@ pub async fn save_room_config(
     let config = RoomConfig {
         room_name,
         profile_server_url: profile_server_url.clone(),
-        room_id,
+        room_id: room_id.clone(),
         active_physician_id: None,
     };
     config
@@ -41,6 +41,20 @@ pub async fn save_room_config(
 
     // Update profile client
     let client = ProfileClient::new(&profile_server_url);
+
+    // Fire-and-forget: merge server settings if room is selected
+    if room_id.is_some() {
+        let merge_client = client.clone();
+        let merge_room_id = room_id.clone();
+        tokio::spawn(async move {
+            match merge_client.merge_server_settings(merge_room_id.as_deref()).await {
+                Ok(true) => info!("Room setup settings merge complete"),
+                Ok(false) => {}
+                Err(e) => warn!("Room setup settings merge failed: {e}"),
+            }
+        });
+    }
+
     *profile_client_state.write().await = Some(client);
     *room_config_state.write().await = Some(config);
 
@@ -452,5 +466,78 @@ pub async fn delete_room(
         .await
         .map_err(|e| CommandError::Other(format!("Failed to delete room: {e}")))?;
     info!(id = %room_id, "Room deleted");
+    Ok(())
+}
+
+/// Re-fetch server settings (infra + room) and merge into local config.
+/// Returns the merged settings for the frontend to reload.
+#[tauri::command]
+pub async fn sync_settings_from_server(
+    profile_client: State<'_, SharedProfileClient>,
+    room_config: State<'_, SharedRoomConfig>,
+) -> Result<crate::config::Settings, CommandError> {
+    let client = profile_client.read().await;
+    let client = client
+        .as_ref()
+        .ok_or_else(|| CommandError::Other("Profile server not configured".into()))?;
+
+    let room_id = {
+        let rc = room_config.read().await;
+        rc.as_ref().and_then(|rc| rc.room_id.clone())
+    };
+
+    client
+        .merge_server_settings(room_id.as_deref())
+        .await
+        .map_err(|e| CommandError::Other(format!("Settings merge failed: {e}")))?;
+
+    let config = crate::config::Config::load_or_default();
+    Ok(config.to_settings())
+}
+
+/// Push infrastructure-tier settings from local config to server
+#[tauri::command]
+pub async fn sync_infrastructure_settings(
+    settings: crate::config::InfrastructureOverlay,
+    profile_client: State<'_, SharedProfileClient>,
+) -> Result<(), CommandError> {
+    let client = profile_client.read().await;
+    let client = client
+        .as_ref()
+        .ok_or_else(|| CommandError::Other("Profile server not configured".into()))?;
+    client
+        .update_infrastructure(&settings)
+        .await
+        .map_err(|e| CommandError::Other(format!("Failed to sync infrastructure: {e}")))?;
+    info!("Infrastructure settings synced to server");
+    Ok(())
+}
+
+/// Push room-tier settings from local config to server
+#[tauri::command]
+pub async fn sync_room_settings(
+    settings: crate::config::RoomOverlay,
+    profile_client: State<'_, SharedProfileClient>,
+    room_config: State<'_, SharedRoomConfig>,
+) -> Result<(), CommandError> {
+    let client = profile_client.read().await;
+    let client = client
+        .as_ref()
+        .ok_or_else(|| CommandError::Other("Profile server not configured".into()))?;
+
+    let rc = room_config.read().await;
+    let room_id = rc
+        .as_ref()
+        .and_then(|rc| rc.room_id.clone())
+        .ok_or_else(|| CommandError::Other("No room ID configured".into()))?;
+
+    // Serialize the overlay as a JSON value for the generic update_room method
+    let updates = serde_json::to_value(&settings)
+        .map_err(|e| CommandError::Other(format!("Failed to serialize room settings: {e}")))?;
+    client
+        .update_room(&room_id, &updates)
+        .await
+        .map_err(|e| CommandError::Other(format!("Failed to sync room settings: {e}")))?;
+    info!(room_id = %room_id, "Room settings synced to server");
     Ok(())
 }

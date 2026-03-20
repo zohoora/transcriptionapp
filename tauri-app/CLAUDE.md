@@ -80,6 +80,10 @@ Rust Backend
 ├── activity_log.rs    # Structured PHI-safe activity logging
 ├── shadow_log.rs      # Shadow mode CSV logging (dual detection comparison)
 ├── gemini_client.rs   # Google Gemini API client (image generation)
+├── profile_client.rs    # HTTP client for profile service (physicians, sessions, speakers, rooms)
+├── room_config.rs       # Room config (room name, profile server URL, room ID)
+├── physician_cache.rs   # Local cache for physician list + settings
+├── audio_upload_queue.rs # Background audio upload queue for server sync
 ├── pipeline_log.rs    # Pipeline replay JSONL logger (detection, SOAP, screenshot events)
 ├── segment_log.rs     # Per-segment JSONL timeline logger (continuous mode)
 ├── replay_bundle.rs   # Self-contained encounter replay test case builder
@@ -154,8 +158,11 @@ cd src-tauri && cargo test       # Rust
 | Modify screen capture / vision | `screenshot.rs` (capture, permission check, blank detection), `patient_name_tracker.rs` (name extraction), `continuous_mode.rs` (screenshot task), `commands/screenshot.rs` |
 | Modify replay logging | `segment_log.rs` (per-segment JSONL), `replay_bundle.rs` (encounter test case), `day_log.rs` (day-level events), `continuous_mode.rs` (integration points), `config.rs` (`replay_snapshot()`) |
 | Add session-scoped state | `useSessionLifecycle.ts` (add reset call to `resetAllSessionState`) |
+| Modify physician/room management | `commands/physicians.rs`, `usePhysicianProfiles.ts`, `PhysicianSelect.tsx`, `AdminPanel.tsx` |
+| Modify room setup | `room_config.rs`, `commands/physicians.rs`, `useRoomConfig.ts`, `RoomSetup.tsx` |
+| Modify server session sync | `profile_client.rs`, `continuous_mode.rs` (ServerSyncContext), `commands/archive.rs` (server fallback) |
 
-## IPC Commands (93 total across 17 modules)
+## IPC Commands (108 total across 18 modules)
 
 | Module | Commands | Source |
 |--------|----------|--------|
@@ -163,7 +170,7 @@ cd src-tauri && cargo test       # Rust
 | Settings (2) | `get_settings`, `set_settings` | `commands/settings.rs` |
 | Audio (1) | `list_input_devices` | `commands/audio.rs` |
 | Models (12) | `check_model_status`, `ensure_models`, `download_*_model`, `get_whisper_models`, etc. | `commands/models.rs` |
-| LLM/SOAP (11) | `check_ollama_status`, `list_ollama_models`, `prewarm_ollama_model`, `generate_soap_note`, `generate_soap_note_auto_detect`, `generate_predictive_hint`, `generate_vision_soap_note`, `run_vision_experiments`, `get_vision_experiment_results`, `get_vision_experiment_report`, `list_vision_experiment_strategies` | `commands/ollama.rs` |
+| LLM/SOAP (6) | `check_ollama_status`, `list_ollama_models`, `prewarm_ollama_model`, `generate_soap_note`, `generate_soap_note_auto_detect`, `generate_predictive_hint` | `commands/ollama.rs` |
 | Medplum (17) | `medplum_*` — auth, patients, encounters, sync, history | `commands/medplum.rs` |
 | STT Router (2) | `check_whisper_server_status`, `list_whisper_server_models` | `commands/whisper_server.rs` |
 | Permissions (3) | `check_microphone_permission`, `request_*`, `open_*_settings` | `commands/permissions.rs` |
@@ -171,10 +178,11 @@ cd src-tauri && cargo test       # Rust
 | Speaker Profiles (6) | `list_speaker_profiles`, `get_speaker_profile`, `create_*`, `update_*`, `delete_*`, `reenroll_*` | `commands/speaker_profiles.rs` |
 | Archive (14) | `get_local_session_dates`, `get_local_sessions_by_date`, `get_local_session_details`, `save_local_soap_note`, `read_local_audio_file`, `delete_local_session`, `split_local_session`, `merge_local_sessions`, `update_session_patient_name`, `renumber_local_encounters`, `get_session_transcript_lines`, `suggest_split_points`, `get_session_feedback`, `save_session_feedback` | `commands/archive.rs` |
 | Clinical Chat (1) | `clinical_chat_send` | `commands/clinical_chat.rs` |
-| MIIS (2) | `miis_suggest`, `miis_send_usage` | `commands/miis.rs` |
-| Images (1) | `generate_ai_image` | `commands/images.rs` |
+| MIIS (3) | `miis_suggest`, `miis_send_usage`, `generate_ai_image` | `commands/miis.rs`, `commands/images.rs` |
 | Screenshot (7) | `check_screen_recording_permission`, `open_screen_recording_settings`, `start/stop_screen_capture`, `get_screen_capture_status`, `get_screenshot_paths`, `get_screenshot_thumbnails` | `commands/screenshot.rs` |
 | Continuous (6) | `start/stop_continuous_mode`, `get_continuous_mode_status`, `trigger_new_patient`, `set_continuous_encounter_notes`, `list_serial_ports` | `commands/continuous.rs` |
+| Vision (5) | `generate_vision_soap_note`, `run_vision_experiments`, `get_vision_experiment_results`, `get_vision_experiment_report`, `list_vision_experiment_strategies` | `commands/ollama.rs` |
+| Physicians (15) | `get_room_config`, `save_room_config`, `test_profile_server`, `get_physicians`, `select_physician`, `get_active_physician`, `deselect_physician`, `sync_speaker_profiles`, `create_physician`, `update_physician`, `delete_physician`, `get_rooms`, `create_room`, `update_room`, `delete_room` | `commands/physicians.rs` |
 
 ## Events (Backend → Frontend)
 
@@ -238,6 +246,9 @@ Idle → Preparing → Recording → Stopping → Completed
 | DetectionCheck construction | Use `DetectionCheck::new()` constructor for common fields (sensor context, prompts, loop state), then set result-specific fields (`success`, `response_raw`, `parsed_*`, `error`). Avoids 4x copy-paste at LLM call outcomes |
 | Replay bundle lifecycle | Created with `config.replay_snapshot()` at continuous mode start → `add_segment/detection_check/vision_result/sensor_transition` during encounter → `set_split_decision/clinical_check/merge_check/soap_result/name_tracker/outcome` at encounter end → `build_and_reset()` writes JSON and clears for next encounter |
 | Config replay snapshot | `config.replay_snapshot()` returns `serde_json::Value` with 20 pipeline-relevant fields (detection mode/model/timing, merge, sensor, SOAP, screen capture). Logged in both `day_log.jsonl` config event and `replay_bundle.json` |
+| Server sync fire-and-forget | `ServerSyncContext` in `continuous_mode.rs` — clones IDs+client, spawns async upload task. 30s delayed re-sync catches late-written aux files |
+| Hybrid history merge | `commands/archive.rs` — local sessions + server sessions merged by session_id (local wins), server fills gaps for cross-machine sessions |
+| Profile cache fallback | `physician_cache.rs` — server fetch with local JSON cache fallback. Cache updated on every successful server fetch |
 
 ## Features
 
@@ -261,6 +272,7 @@ Idle → Preparing → Recording → Stopping → Completed
 | **Session Cleanup** | History window tools: delete, split, merge sessions, rename patients, renumber encounters. Split opens in separate resizable window with LLM-suggested split point (`suggest_split_points` via `fast-model`) | `commands/archive.rs`, `components/cleanup/`, `SplitWindow.tsx` |
 | **Vision Experiments** | CLI + IPC tools for comparing vision-based SOAP strategies across archived sessions | `vision_experiment.rs`, `commands/ollama.rs` |
 | **Simulation Replay Logging** | Three-tier structured logging for offline replay and regression testing: per-segment JSONL timeline (`segments.jsonl`), self-contained encounter test case (`replay_bundle.json` — all LLM prompts/responses, sensor transitions, vision results, split decisions), day-level orchestration events (`day_log.jsonl`). Config snapshot via `replay_snapshot()`. ~0.5-3MB/day. `detection_replay_cli` replays archived decisions through `evaluate_detection()` with `--override` for what-if parameter tuning | `segment_log.rs`, `replay_bundle.rs`, `day_log.rs`, `config.rs`, `tools/detection_replay_cli.rs` |
+| **Multi-User** | Room + physician profile system. Passwordless physician selection (physical clinic security). Profile service on Mac Studio (:8090) stores physicians, rooms, speakers, and sessions. Server is source of truth — local archive is write-through cache. Settings merge: infrastructure (shared) → room (per-machine) → physician (roaming). Background audio upload, 30s delayed re-sync for late-written files. Offline resilience with cached profiles | `profile_client.rs`, `room_config.rs`, `physician_cache.rs`, `commands/physicians.rs` |
 
 ### Continuous Mode Lifecycle Notes
 - `started` event emitted only after pipeline successfully starts
@@ -278,6 +290,8 @@ Idle → Preparing → Recording → Stopping → Completed
 Source of truth: `src-tauri/src/config.rs` (Rust) / `src/types/index.ts` (TypeScript).
 
 Key settings groups: STT Router (whisper_server_url, stt_alias=`"medical-streaming"`, stt_postprocess=true), Audio (VAD, diarization, enhancement), LLM Router (soap_model=`"soap-model-fast"`, soap_model_fast=`"soap-model-fast"`, fast_model=`"fast-model"`), Medplum (OAuth, auto_sync), Auto-detection (auto_start, auto_end_silence_ms=180000), SOAP (detail_level 1-10, format, custom_instructions), Images (image_source=`"ai"` (default)|`"miis"`|`"off"`, gemini_api_key), MIIS, Screen Capture, Continuous Mode (charting_mode, encounter_check_interval_secs=120, encounter_silence_trigger_secs=45, encounter_merge_enabled, encounter_detection_model=`"fast-model"`, encounter_detection_nothink=false), Presence Sensor (encounter_detection_mode=`"hybrid"`, presence_sensor_port, presence_absence_threshold_secs=180, presence_debounce_secs=15, presence_csv_log_enabled=true, thermal_hot_pixel_threshold_c=28.0, co2_baseline_ppm=420.0), Shadow Mode (shadow_active_method=`"sensor"`, shadow_csv_log_enabled=true), Hybrid Detection (hybrid_confirm_window_secs=180, hybrid_min_words_for_sensor_split=500), Screen Capture (screen_capture_enabled, screen_capture_interval_secs=30, requires Screen Recording permission), Debug.
+
+Multi-user: profile_service_url (in room_config.json), active_physician_id.
 
 ## File Locations
 
@@ -298,6 +312,9 @@ Key settings groups: STT Router (whisper_server_url, stt_alias=`"medical-streami
 | `~/sensor-logs/` | Multi-sensor data logger — JSONL + thermal PNGs. `sensor_logger.py` polls ESP32 every 5s |
 | `~/sensor-logs/data/YYYY-MM-DD/sensor_log.jsonl` | All sensor data per poll (presence, CO2, temp, humidity, 768-float thermal frame) |
 | `~/sensor-logs/data/YYYY-MM-DD/thermal/*.png` | Thermal camera snapshots (iron colormap, every 30s) |
+| `~/.transcriptionapp/room_config.json` | Room config (room name, profile server URL, room ID) |
+| `~/.transcriptionapp/cache/physicians.json` | Cached physician list from server |
+| `~/.transcriptionapp/cache/physician_{id}.json` | Cached individual physician settings |
 
 ## External Services
 
@@ -309,6 +326,7 @@ Key settings groups: STT Router (whisper_server_url, stt_alias=`"medical-streami
 | MIIS | `http://100.119.83.76:7843` | Medical illustration images |
 | Gemini | `https://generativelanguage.googleapis.com` | AI image generation (`gemini-3.1-flash-image-preview`) |
 | ESP32 Sensor | `http://172.16.100.37` | Room presence (mmWave), CO2/temp/humidity (SCD41), thermal camera (MLX90640). Config: `presence_sensor_url` |
+| Profile Service | `http://100.119.83.76:8090` | Physician profiles, room config, centralized session storage, speaker enrollments |
 
 ## Frontend Structure
 
@@ -323,7 +341,7 @@ Key settings groups: STT Router (whisper_server_url, stt_alias=`"medical-streami
 - `AuthProvider.tsx` - Medplum OAuth context provider
 - `LoginScreen.tsx` - OAuth login flow UI
 - `ErrorBoundary.tsx` - React error boundary with fallback UI
-- `SettingsDrawer.tsx` - 4-zone settings panel (Clinical Workflow → Connection Status → Advanced [collapsed] → Speaker Profiles [sub-view]). 5 visible controls at first open; IT/developer settings behind Advanced accordion. ~643 lines
+- `SettingsDrawer.tsx` - 4-zone settings panel (Clinical Workflow → Connection Status → Advanced [collapsed] → Speaker Profiles [sub-view]). 5 visible controls at first open; IT/developer settings behind Advanced accordion. ~675 lines
 - `HistoryView.tsx` / `HistoryWindow.tsx` - Session archive browsing (Gmail-style split-pane: calendar+list left, detail right)
 - `Calendar.tsx` - Date picker for archive history
 - `PatientSearch.tsx` - Medplum patient search
@@ -338,6 +356,11 @@ Key settings groups: STT Router (whisper_server_url, stt_alias=`"medical-streami
 - `SyncStatusBar.tsx` - EMR sync status indicator
 - `ConversationDynamicsSection.tsx` - Turn-taking and engagement metrics
 - `BiomarkersSection.tsx` - Detailed biomarker display (legacy, PatientPulse preferred)
+- `ActivePhysicianBadge.tsx` - Shows current physician name in header with switch button
+- `PhysicianSelect.tsx` - Full-screen physician selection grid (touch-friendly)
+- `RoomSetup.tsx` - First-run room setup: room name, server URL, connectivity test
+- `RoomSelect.tsx` - Room selection for existing rooms
+- `AdminPanel.tsx` - Tabbed admin panel for physician + room CRUD management
 
 **Cleanup Components** (`src/components/cleanup/`):
 - `CleanupActionBar.tsx` - Toolbar with delete/split/merge/rename actions for session cleanup
@@ -373,6 +396,9 @@ Key settings groups: STT Router (whisper_server_url, stt_alias=`"medical-streami
 - `useChecklist` - Pre-flight system checks
 - `useDevices` - Audio input device enumeration
 - `useWhisperModels` - Whisper model download and management
+- `useRoomConfig` - Room config load/save, first-run detection
+- `usePhysicianProfiles` - Physician list fetch, select/deselect, cache status
+- `useAdminPanel` - Admin panel CRUD operations for physicians and rooms
 
 **Types**: `src/types/index.ts` - All TypeScript interfaces mirroring Rust structs, biomarker thresholds and status helpers
 
@@ -400,6 +426,9 @@ Key settings groups: STT Router (whisper_server_url, stt_alias=`"medical-streami
 | Encounter detection not splitting | Check activity logs for `consecutive_llm_failures` count; force-split fires at 5K cleaned words + 3 consecutive LLM failures (errors/timeouts only — confident "no split" responses don't count), absolute cap at 25K cleaned words. FORCE_CHECK (3K cleaned words) triggers check even below timer interval |
 | Screenshots blank / vision always NOT_FOUND | Screen Recording permission not granted — macOS blanks other apps' windows. Toggle off/on in System Settings → Privacy & Security → Screen Recording. Rebuilds may invalidate old permission |
 | Vision name extraction 0 successes | Check activity logs for "Vision name extraction failed" (connection) vs "Vision did not find a patient name" (blank captures). If all NOT_FOUND, likely screen recording permission issue |
+| Profile server unreachable | Check `http://100.119.83.76:8090/health`, verify Tailscale connection, falls back to cached profiles |
+| Physician switch blocked | Stop active recording or continuous mode before switching physicians |
+| History shows sessions from other machines | Expected — server returns all sessions for the physician across all rooms |
 
 ## E2E Integration Tests
 

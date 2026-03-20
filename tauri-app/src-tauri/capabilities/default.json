@@ -15,6 +15,8 @@
     "clipboard-manager:default",
     "clipboard-manager:allow-write-text",
     "shell:allow-open",
-    "deep-link:default"
+    "deep-link:default",
+    "updater:default",
+    "process:allow-restart"
   ]
 }

@@ -700,6 +700,94 @@ impl From<&crate::profile_client::PhysicianProfile> for PhysicianSettings {
     }
 }
 
+/// Infrastructure-tier settings overlay (clinic-wide shared settings).
+/// All fields `Option` — `None` means "no server value, keep local default".
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct InfrastructureOverlay {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub llm_router_url: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub llm_api_key: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub llm_client_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub soap_model: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub soap_model_fast: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fast_model: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub whisper_server_url: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub whisper_server_model: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stt_alias: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stt_postprocess: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub medplum_server_url: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub medplum_client_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub miis_server_url: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub whisper_mode: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub encounter_detection_model: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub encounter_detection_nothink: Option<bool>,
+}
+
+/// Room-tier settings overlay (per-room hardware/behavior).
+/// All fields `Option` — `None` means "no server value, keep local/infrastructure default".
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct RoomOverlay {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub encounter_detection_mode: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub presence_sensor_port: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub presence_sensor_url: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub presence_absence_threshold_secs: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub presence_debounce_secs: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub thermal_hot_pixel_threshold_c: Option<f32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub co2_baseline_ppm: Option<f32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hybrid_confirm_window_secs: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hybrid_min_words_for_sensor_split: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub screen_capture_enabled: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub screen_capture_interval_secs: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shadow_active_method: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shadow_csv_log_enabled: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub presence_csv_log_enabled: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub vad_threshold: Option<f32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub silence_to_flush_ms: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_utterance_ms: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub greeting_sensitivity: Option<f32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub min_speech_duration_ms: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub whisper_model: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub debug_storage_enabled: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub input_device_id: Option<String>,
+}
+
 impl Settings {
     /// Extract physician-tier settings from the current flat settings
     pub fn physician(&self) -> PhysicianSettings {
@@ -751,6 +839,114 @@ impl Settings {
         if let Some(v) = phys.medplum_auto_sync { self.medplum_auto_sync = v; }
         if let Some(v) = phys.diarization_enabled { self.diarization_enabled = v; }
         if let Some(v) = phys.max_speakers { self.max_speakers = v; }
+    }
+
+    /// Extract infrastructure-tier settings from current flat settings
+    pub fn infrastructure(&self) -> InfrastructureOverlay {
+        InfrastructureOverlay {
+            llm_router_url: if self.llm_router_url.is_empty() { None } else { Some(self.llm_router_url.clone()) },
+            llm_api_key: if self.llm_api_key.is_empty() { None } else { Some(self.llm_api_key.clone()) },
+            llm_client_id: Some(self.llm_client_id.clone()),
+            soap_model: Some(self.soap_model.clone()),
+            soap_model_fast: Some(self.soap_model_fast.clone()),
+            fast_model: Some(self.fast_model.clone()),
+            whisper_server_url: if self.whisper_server_url.is_empty() { None } else { Some(self.whisper_server_url.clone()) },
+            whisper_server_model: Some(self.whisper_server_model.clone()),
+            stt_alias: Some(self.stt_alias.clone()),
+            stt_postprocess: Some(self.stt_postprocess),
+            medplum_server_url: if self.medplum_server_url.is_empty() { None } else { Some(self.medplum_server_url.clone()) },
+            medplum_client_id: Some(self.medplum_client_id.clone()),
+            miis_server_url: if self.miis_server_url.is_empty() { None } else { Some(self.miis_server_url.clone()) },
+            whisper_mode: Some(self.whisper_mode.clone()),
+            encounter_detection_model: Some(self.encounter_detection_model.clone()),
+            encounter_detection_nothink: Some(self.encounter_detection_nothink),
+        }
+    }
+
+    /// Overlay infrastructure settings onto current settings (non-None fields win)
+    pub fn apply_infrastructure(&mut self, infra: &InfrastructureOverlay) {
+        if let Some(ref v) = infra.llm_router_url { self.llm_router_url = v.clone(); }
+        if let Some(ref v) = infra.llm_api_key { self.llm_api_key = v.clone(); }
+        if let Some(ref v) = infra.llm_client_id { self.llm_client_id = v.clone(); }
+        if let Some(ref v) = infra.soap_model { self.soap_model = v.clone(); }
+        if let Some(ref v) = infra.soap_model_fast { self.soap_model_fast = v.clone(); }
+        if let Some(ref v) = infra.fast_model { self.fast_model = v.clone(); }
+        if let Some(ref v) = infra.whisper_server_url { self.whisper_server_url = v.clone(); }
+        if let Some(ref v) = infra.whisper_server_model { self.whisper_server_model = v.clone(); }
+        if let Some(ref v) = infra.stt_alias { self.stt_alias = v.clone(); }
+        if let Some(v) = infra.stt_postprocess { self.stt_postprocess = v; }
+        if let Some(ref v) = infra.medplum_server_url { self.medplum_server_url = v.clone(); }
+        if let Some(ref v) = infra.medplum_client_id { self.medplum_client_id = v.clone(); }
+        if let Some(ref v) = infra.miis_server_url { self.miis_server_url = v.clone(); }
+        if let Some(ref v) = infra.whisper_mode { self.whisper_mode = v.clone(); }
+        if let Some(ref v) = infra.encounter_detection_model { self.encounter_detection_model = v.clone(); }
+        if let Some(v) = infra.encounter_detection_nothink { self.encounter_detection_nothink = v; }
+    }
+
+    /// Extract room-tier settings from current flat settings
+    pub fn room(&self) -> RoomOverlay {
+        RoomOverlay {
+            encounter_detection_mode: Some(self.encounter_detection_mode.to_string()),
+            presence_sensor_port: if self.presence_sensor_port.is_empty() { None } else { Some(self.presence_sensor_port.clone()) },
+            presence_sensor_url: if self.presence_sensor_url.is_empty() { None } else { Some(self.presence_sensor_url.clone()) },
+            presence_absence_threshold_secs: Some(self.presence_absence_threshold_secs),
+            presence_debounce_secs: Some(self.presence_debounce_secs),
+            thermal_hot_pixel_threshold_c: Some(self.thermal_hot_pixel_threshold_c),
+            co2_baseline_ppm: Some(self.co2_baseline_ppm),
+            hybrid_confirm_window_secs: Some(self.hybrid_confirm_window_secs),
+            hybrid_min_words_for_sensor_split: Some(self.hybrid_min_words_for_sensor_split),
+            screen_capture_enabled: Some(self.screen_capture_enabled),
+            screen_capture_interval_secs: Some(self.screen_capture_interval_secs),
+            shadow_active_method: Some(self.shadow_active_method.to_string()),
+            shadow_csv_log_enabled: Some(self.shadow_csv_log_enabled),
+            presence_csv_log_enabled: Some(self.presence_csv_log_enabled),
+            vad_threshold: Some(self.vad_threshold),
+            silence_to_flush_ms: Some(self.silence_to_flush_ms),
+            max_utterance_ms: Some(self.max_utterance_ms),
+            greeting_sensitivity: self.greeting_sensitivity,
+            min_speech_duration_ms: self.min_speech_duration_ms,
+            whisper_model: Some(self.whisper_model.clone()),
+            debug_storage_enabled: Some(self.debug_storage_enabled),
+            input_device_id: self.input_device_id.clone(),
+        }
+    }
+
+    /// Overlay room settings onto current settings (non-None fields win)
+    pub fn apply_room(&mut self, room: &RoomOverlay) {
+        if let Some(ref v) = room.encounter_detection_mode {
+            self.encounter_detection_mode = match v.as_str() {
+                "llm" => EncounterDetectionMode::Llm,
+                "sensor" => EncounterDetectionMode::Sensor,
+                "shadow" => EncounterDetectionMode::Shadow,
+                _ => EncounterDetectionMode::Hybrid,
+            };
+        }
+        if let Some(ref v) = room.presence_sensor_port { self.presence_sensor_port = v.clone(); }
+        if let Some(ref v) = room.presence_sensor_url { self.presence_sensor_url = v.clone(); }
+        if let Some(v) = room.presence_absence_threshold_secs { self.presence_absence_threshold_secs = v; }
+        if let Some(v) = room.presence_debounce_secs { self.presence_debounce_secs = v; }
+        if let Some(v) = room.thermal_hot_pixel_threshold_c { self.thermal_hot_pixel_threshold_c = v; }
+        if let Some(v) = room.co2_baseline_ppm { self.co2_baseline_ppm = v; }
+        if let Some(v) = room.hybrid_confirm_window_secs { self.hybrid_confirm_window_secs = v; }
+        if let Some(v) = room.hybrid_min_words_for_sensor_split { self.hybrid_min_words_for_sensor_split = v; }
+        if let Some(v) = room.screen_capture_enabled { self.screen_capture_enabled = v; }
+        if let Some(v) = room.screen_capture_interval_secs { self.screen_capture_interval_secs = v; }
+        if let Some(ref v) = room.shadow_active_method {
+            self.shadow_active_method = match v.as_str() {
+                "sensor" => ShadowActiveMethod::Sensor,
+                _ => ShadowActiveMethod::Llm,
+            };
+        }
+        if let Some(v) = room.shadow_csv_log_enabled { self.shadow_csv_log_enabled = v; }
+        if let Some(v) = room.presence_csv_log_enabled { self.presence_csv_log_enabled = v; }
+        if let Some(v) = room.vad_threshold { self.vad_threshold = v; }
+        if let Some(v) = room.silence_to_flush_ms { self.silence_to_flush_ms = v; }
+        if let Some(v) = room.max_utterance_ms { self.max_utterance_ms = v; }
+        if room.greeting_sensitivity.is_some() { self.greeting_sensitivity = room.greeting_sensitivity; }
+        if room.min_speech_duration_ms.is_some() { self.min_speech_duration_ms = room.min_speech_duration_ms; }
+        if let Some(ref v) = room.whisper_model { self.whisper_model = v.clone(); }
+        if let Some(v) = room.debug_storage_enabled { self.debug_storage_enabled = v; }
+        if room.input_device_id.is_some() { self.input_device_id = room.input_device_id.clone(); }
     }
 
     /// Get the tier classification for each setting field name

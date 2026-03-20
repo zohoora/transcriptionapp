@@ -1304,6 +1304,7 @@ mod tests {
         let summary = ArchiveSummary {
             session_id: "test-123".to_string(),
             date: "2024-01-15T10:30:00Z".to_string(),
+            started_at: Some("2024-01-15T10:30:00Z".to_string()),
             duration_ms: Some(300000),
             word_count: 500,
             has_soap_note: true,
@@ -2007,6 +2008,7 @@ mod tests {
         let summary = ArchiveSummary {
             session_id: "test-fb".to_string(),
             date: "2024-01-15T10:30:00Z".to_string(),
+            started_at: Some("2024-01-15T10:30:00Z".to_string()),
             duration_ms: Some(300000),
             word_count: 500,
             has_soap_note: true,

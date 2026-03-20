@@ -1,4 +1,5 @@
 pub mod health;
+pub mod infrastructure;
 pub mod physicians;
 pub mod rooms;
 pub mod sessions;
@@ -13,6 +14,8 @@ pub fn build_router(state: Arc<AppState>) -> Router {
     Router::new()
         // Health
         .route("/health", get(health::health))
+        // Infrastructure settings (singleton)
+        .route("/infrastructure", get(infrastructure::get).put(infrastructure::update))
         // Physicians
         .route("/physicians", get(physicians::list).post(physicians::create))
         .route(
