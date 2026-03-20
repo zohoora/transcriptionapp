@@ -42,18 +42,60 @@ jobs:
       - name: Install frontend dependencies
         run: pnpm install
 
-      - name: Set tag name
-        run: echo "TAG_NAME=${GITHUB_REF_NAME}" >> "$GITHUB_ENV"
+      - name: Install Tauri CLI
+        run: pnpm add -D @tauri-apps/cli
 
-      - name: Build and release
-        uses: tauri-apps/tauri-action@v0
+      - name: Build Tauri app
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-        with:
-          projectPath: tauri-app
-          tagName: ${{ env.TAG_NAME }}
-          releaseName: "Scribe ${{ env.TAG_NAME }}"
-          releaseDraft: false
-          prerelease: false
+        run: pnpm tauri build
+
+      - name: Generate latest.json
+        run: |
+          BUNDLE_DIR="src-tauri/target/release/bundle"
+          TAR_GZ="${BUNDLE_DIR}/macos/Transcription App.app.tar.gz"
+          SIG_FILE="${TAR_GZ}.sig"
+
+          if [ ! -f "$SIG_FILE" ]; then
+            echo "ERROR: Signature file not found at ${SIG_FILE}"
+            ls -la "${BUNDLE_DIR}/macos/"
+            exit 1
+          fi
+
+          VERSION="${GITHUB_REF_NAME#v}"
+          SIGNATURE=$(cat "$SIG_FILE")
+          TAR_NAME="Transcription.App_aarch64.app.tar.gz"
+
+          cat > latest.json << ENDJSON
+          {
+            "version": "${VERSION}",
+            "notes": "Scribe ${GITHUB_REF_NAME}",
+            "pub_date": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+            "platforms": {
+              "darwin-aarch64": {
+                "signature": "${SIGNATURE}",
+                "url": "https://github.com/zohoora/transcriptionapp/releases/download/${GITHUB_REF_NAME}/${TAR_NAME}"
+              }
+            }
+          }
+          ENDJSON
+
+          echo "Generated latest.json:"
+          cat latest.json
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          BUNDLE_DIR="src-tauri/target/release/bundle"
+          TAR_GZ="${BUNDLE_DIR}/macos/Transcription App.app.tar.gz"
+          DMG="${BUNDLE_DIR}/dmg/Transcription App_${GITHUB_REF_NAME#v}_aarch64.dmg"
+          TAR_NAME="Transcription.App_aarch64.app.tar.gz"
+
+          gh release create "${GITHUB_REF_NAME}" \
+            --title "Scribe ${GITHUB_REF_NAME}" \
+            --generate-notes \
+            "${TAR_GZ}#${TAR_NAME}" \
+            "${DMG}" \
+            latest.json
