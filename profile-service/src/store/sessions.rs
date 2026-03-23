@@ -33,6 +33,22 @@ fn validate_id(id: &str, label: &str) -> Result<(), ApiError> {
 /// Whitelist of allowed auxiliary file names for session-level uploads
 const ALLOWED_SESSION_FILES: &[&str] = &["pipeline_log.jsonl", "replay_bundle.json", "segments.jsonl"];
 
+/// Check if a filename is allowed for session file upload.
+/// Supports exact matches from ALLOWED_SESSION_FILES and screenshots/*.jpg pattern.
+fn is_allowed_session_file(filename: &str) -> bool {
+    if ALLOWED_SESSION_FILES.contains(&filename) {
+        return true;
+    }
+    // Allow screenshot files: screenshots/{name}.jpg with safe filename chars only
+    if let Some(rest) = filename.strip_prefix("screenshots/") {
+        return rest.ends_with(".jpg")
+            && !rest.contains("..")
+            && !rest.contains('/')
+            && rest.len() < 100;
+    }
+    false
+}
+
 pub struct SessionStore {
     base_dir: PathBuf,
 }
@@ -621,11 +637,16 @@ impl SessionStore {
         filename: &str,
         data: &[u8],
     ) -> Result<(), ApiError> {
-        if !ALLOWED_SESSION_FILES.contains(&filename) {
+        if !is_allowed_session_file(filename) {
             return Err(ApiError::BadRequest(format!("File not allowed: {filename}")));
         }
         let dir = self.find_session_dir(physician_id, session_id).await?;
-        tokio::fs::write(dir.join(filename), data)
+        let file_path = dir.join(filename);
+        // Create parent directories for subdirectory files (e.g., screenshots/)
+        if let Some(parent) = file_path.parent() {
+            let _ = tokio::fs::create_dir_all(parent).await;
+        }
+        tokio::fs::write(&file_path, data)
             .await
             .map_err(|e| ApiError::Internal(format!("Failed to write {filename}: {e}")))?;
         info!(physician_id, session_id, filename, bytes = data.len(), "Session file saved");
@@ -639,7 +660,7 @@ impl SessionStore {
         session_id: &str,
         filename: &str,
     ) -> Result<Vec<u8>, ApiError> {
-        if !ALLOWED_SESSION_FILES.contains(&filename) {
+        if !is_allowed_session_file(filename) {
             return Err(ApiError::BadRequest(format!("File not allowed: {filename}")));
         }
         let dir = self.find_session_dir(physician_id, session_id).await?;

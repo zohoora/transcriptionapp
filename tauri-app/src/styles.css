@@ -96,6 +96,14 @@ body {
   color: var(--text-primary);
 }
 
+.app-version {
+  font-size: 10px;
+  font-weight: 400;
+  color: var(--text-muted);
+  margin-left: 4px;
+  opacity: 0.6;
+}
+
 .settings-btn {
   background: transparent;
   border: none;
@@ -2741,6 +2749,36 @@ body {
   display: flex;
   align-items: center;
   gap: 4px;
+}
+
+.physician-bar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 4px 12px;
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border-color);
+  font-size: 12px;
+}
+
+.physician-bar-name {
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.physician-bar-switch {
+  background: transparent;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  padding: 1px 8px;
+  font-size: 11px;
+  color: var(--accent-color);
+  cursor: pointer;
+}
+
+.physician-bar-switch:hover {
+  background: var(--bg-hover);
 }
 
 .history-btn {

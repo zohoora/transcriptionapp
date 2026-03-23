@@ -98,6 +98,11 @@ pub fn build_router(state: Arc<AppState>) -> Router {
             "/physicians/:physician_id/sessions/:session_id/files/:filename",
             put(sessions::upload_session_file).get(sessions::download_session_file),
         )
+        // Session screenshot files (subdirectory)
+        .route(
+            "/physicians/:physician_id/sessions/:session_id/files/screenshots/:screenshot",
+            put(sessions::upload_screenshot).get(sessions::download_screenshot),
+        )
         // Day log per date
         .route(
             "/physicians/:physician_id/day-log/:date",

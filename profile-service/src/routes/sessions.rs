@@ -249,6 +249,31 @@ pub async fn download_session_file(
     Ok(axum::body::Bytes::from(data))
 }
 
+pub async fn upload_screenshot(
+    State(state): State<Arc<AppState>>,
+    Path((physician_id, session_id, screenshot)): Path<(String, String, String)>,
+    body: axum::body::Bytes,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    let filename = format!("screenshots/{screenshot}");
+    state
+        .sessions
+        .save_session_file(&physician_id, &session_id, &filename, &body)
+        .await?;
+    Ok(Json(serde_json::json!({ "ok": true })))
+}
+
+pub async fn download_screenshot(
+    State(state): State<Arc<AppState>>,
+    Path((physician_id, session_id, screenshot)): Path<(String, String, String)>,
+) -> Result<axum::body::Bytes, ApiError> {
+    let filename = format!("screenshots/{screenshot}");
+    let data = state
+        .sessions
+        .get_session_file(&physician_id, &session_id, &filename)
+        .await?;
+    Ok(axum::body::Bytes::from(data))
+}
+
 pub async fn upload_day_log(
     State(state): State<Arc<AppState>>,
     Path((physician_id, date)): Path<(String, String)>,

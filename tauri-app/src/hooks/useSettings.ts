@@ -173,7 +173,8 @@ export function useSettings(): UseSettingsResult {
         screen_capture_enabled: pendingSettings.screen_capture_enabled,
         charting_mode: pendingSettings.charting_mode,
         encounter_merge_enabled: pendingSettings.encounter_merge_enabled,
-        encounter_detection_mode: pendingSettings.encounter_detection_mode,
+        // Auto-derive: if sensors configured → hybrid, otherwise LLM-only
+        encounter_detection_mode: pendingSettings.sensor_connection_type !== 'none' ? 'hybrid' : 'llm',
         presence_sensor_port: pendingSettings.sensor_connection_type === 'usb' ? pendingSettings.presence_sensor_port : '',
         presence_sensor_url: pendingSettings.sensor_connection_type === 'wifi' ? pendingSettings.presence_sensor_url : '',
         presence_absence_threshold_secs: pendingSettings.presence_absence_threshold_secs,

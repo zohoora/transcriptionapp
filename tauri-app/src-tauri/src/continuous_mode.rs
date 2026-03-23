@@ -133,6 +133,26 @@ impl ServerSyncContext {
                     }
                 }
             }
+            // Upload screenshots
+            let screenshots_dir = session_dir.join("screenshots");
+            if screenshots_dir.is_dir() {
+                if let Ok(entries) = std::fs::read_dir(&screenshots_dir) {
+                    for entry in entries.flatten() {
+                        let path = entry.path();
+                        if path.extension().map_or(false, |e| e == "jpg") {
+                            let fname = format!("screenshots/{}", path.file_name().unwrap_or_default().to_string_lossy());
+                            match std::fs::read(&path) {
+                                Ok(data) => {
+                                    if let Err(e) = client.upload_session_file(phys_id, session_id, &fname, data).await {
+                                        warn!("Server sync failed ({} for {}): {e}", fname, session_id);
+                                    }
+                                }
+                                Err(e) => warn!("Failed to read screenshot {}: {e}", path.display()),
+                            }
+                        }
+                    }
+                }
+            }
         }
 
         if let Ok(date_dir) = Self::local_date_dir(date) {
@@ -342,6 +362,8 @@ pub struct ContinuousModeHandle {
     pub last_shadow_decision: Arc<Mutex<Option<crate::shadow_log::ShadowDecision>>>,
     /// Timestamp of last encounter split (for stale screenshot detection)
     pub last_split_time: Arc<Mutex<DateTime<Utc>>>,
+    /// Buffered screenshots for the current encounter (timestamp, JPEG bytes)
+    pub screenshot_buffer: Arc<Mutex<Vec<(String, Vec<u8>)>>>,
 }
 
 impl ContinuousModeHandle {
@@ -367,6 +389,7 @@ impl ContinuousModeHandle {
             shadow_decisions: Arc::new(Mutex::new(Vec::new())),
             last_shadow_decision: Arc::new(Mutex::new(None)),
             last_split_time: Arc::new(Mutex::new(Utc::now())),
+            screenshot_buffer: Arc::new(Mutex::new(Vec::new())),
         }
     }
 
@@ -1106,6 +1129,7 @@ pub async fn run_continuous_mode(
     let last_error_for_detector = handle.last_error.clone();
     let name_tracker_for_detector = handle.name_tracker.clone();
     let last_split_time_for_detector = handle.last_split_time.clone();
+    let screenshot_buffer_for_detector = handle.screenshot_buffer.clone();
     let app_for_detector = app.clone();
     let check_interval = config.encounter_check_interval_secs;
 
@@ -1805,6 +1829,10 @@ pub async fn run_continuous_mode(
                             if let Ok(mut sl) = segment_logger_for_detector.lock() {
                                 sl.set_session(&session_dir);
                             }
+                            // Flush buffered screenshots to session archive
+                            crate::screenshot_task::flush_screenshots_to_session(
+                                &screenshot_buffer_for_detector, &session_dir,
+                            );
                         }
 
                         // Set split decision on replay bundle
@@ -2648,6 +2676,7 @@ pub async fn run_continuous_mode(
                 llm_client: llm_client_for_screenshot,
                 pipeline_logger: logger_for_screenshot.clone(),
                 replay_bundle: bundle_for_screenshot.clone(),
+                screenshot_buffer: handle.screenshot_buffer.clone(),
             },
         )))
     } else {
@@ -2749,6 +2778,10 @@ pub async fn run_continuous_mode(
                     if let Ok(mut logger) = logger_for_flush.lock() {
                         logger.set_session(&flush_session_dir);
                     }
+                    // Flush remaining screenshots
+                    crate::screenshot_task::flush_screenshots_to_session(
+                        &handle.screenshot_buffer, &flush_session_dir,
+                    );
                 }
 
                 // Track session ID for day log

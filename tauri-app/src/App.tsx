@@ -86,7 +86,7 @@ function App() {
     soapError,
     ollamaStatus,
     setOllamaStatus,
-    ollamaModels,
+    ollamaModels: _ollamaModels,
     setOllamaModels,
     soapOptions,
     setSoapError,
@@ -100,9 +100,9 @@ function App() {
 
   // Medplum sync from hook
   const {
-    medplumConnected,
+    medplumConnected: _medplumConnected,
     setMedplumConnected,
-    medplumError,
+    medplumError: _medplumError,
     setMedplumError,
     isSyncing,
     syncError,
@@ -129,11 +129,9 @@ function App() {
 
   // Connection tests composite hook (LLM, Medplum init, Whisper server)
   const {
-    whisperServerStatus,
-    whisperServerModels,
-    handleTestLLM,
-    handleTestMedplum,
-    handleTestWhisperServer,
+    handleTestLLM: _handleTestLLM,
+    handleTestMedplum: _handleTestMedplum,
+    handleTestWhisperServer: _handleTestWhisperServer,
   } = useConnectionTests({
     settings,
     pendingSettings,
@@ -669,9 +667,15 @@ function App() {
         syncStatus={syncStatus}
         syncError={syncError}
         onDismissSync={handleDismissSync}
-        activePhysicianName={activePhysician?.name}
-        onSwitchPhysician={handleSwitchPhysician}
       />
+
+      {/* Physician bar */}
+      {activePhysician?.name && (
+        <div className="physician-bar">
+          <span className="physician-bar-name">{activePhysician.name}</span>
+          <button className="physician-bar-switch" onClick={handleSwitchPhysician}>Switch</button>
+        </div>
+      )}
 
       {/* Update notification banner */}
       {updateStatus.available && (
@@ -865,15 +869,6 @@ function App() {
         onSettingsChange={setPendingSettings}
         onSave={handleSaveSettings}
         devices={devices}
-        whisperServerStatus={whisperServerStatus}
-        whisperServerModels={whisperServerModels}
-        onTestWhisperServer={handleTestWhisperServer}
-        llmStatus={ollamaStatus}
-        llmModels={ollamaModels}
-        onTestLLM={handleTestLLM}
-        medplumConnected={medplumConnected}
-        medplumError={medplumError}
-        onTestMedplum={handleTestMedplum}
         authState={authState}
         authLoading={authLoading}
         onLogin={medplumLogin}

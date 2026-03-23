@@ -90,11 +90,8 @@ describe('App', () => {
 
       await waitFor(() => {
         expect(screen.getByText('Settings')).toBeInTheDocument();
-        // Check for key Zone 1 settings labels (use getAllByText since labels with TierBadge
-        // spans may match multiple elements, e.g. "Microphone" also appears in device names)
-        expect(screen.getAllByText(/Language/).length).toBeGreaterThan(0);
         expect(screen.getAllByText(/Microphone/).length).toBeGreaterThan(0);
-        expect(screen.getAllByText(/Medical Illustrations/).length).toBeGreaterThan(0);
+        expect(screen.getByText('SOAP Preferences')).toBeInTheDocument();
       });
     });
 
@@ -740,7 +737,7 @@ describe('App', () => {
       render(<App />);
 
       await waitFor(() => {
-        expect(screen.getByText('Scribe')).toBeInTheDocument();
+        expect(screen.getByText('AMI Assist')).toBeInTheDocument();
       });
     });
   });

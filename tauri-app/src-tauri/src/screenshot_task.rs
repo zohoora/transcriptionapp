@@ -33,6 +33,8 @@ pub struct ScreenshotTaskConfig {
     pub llm_client: Option<LLMClient>,
     pub pipeline_logger: Arc<Mutex<PipelineLogger>>,
     pub replay_bundle: Arc<Mutex<ReplayBundleBuilder>>,
+    /// Buffer for saving screenshots to session archive after encounter split
+    pub screenshot_buffer: Arc<Mutex<Vec<(String, Vec<u8>)>>>,
 }
 
 /// Runs the screenshot capture + vision extraction loop.
@@ -76,6 +78,14 @@ pub async fn run_screenshot_task(cfg: ScreenshotTaskConfig) {
         // Save debug screenshot if enabled
         if cfg.debug_storage {
             save_debug_screenshot(&image_base64);
+        }
+
+        // Buffer screenshot for session archive (decoded from base64 to raw JPEG)
+        if let Ok(jpeg_bytes) = base64_decode(&image_base64) {
+            let ts = Utc::now().to_rfc3339();
+            if let Ok(mut buf) = cfg.screenshot_buffer.lock() {
+                buf.push((ts, jpeg_bytes));
+            }
         }
 
         let client = match &cfg.llm_client {
@@ -287,4 +297,42 @@ fn save_debug_screenshot(image_base64: &str) {
             }
         }
     }
+}
+
+/// Decode base64-encoded image data to raw bytes.
+fn base64_decode(data: &str) -> Result<Vec<u8>, base64::DecodeError> {
+    use base64::Engine;
+    base64::engine::general_purpose::STANDARD.decode(data)
+}
+
+/// Flush buffered screenshots to a session's archive directory.
+/// Called after encounter split when the session_dir is known.
+pub fn flush_screenshots_to_session(
+    buffer: &Arc<Mutex<Vec<(String, Vec<u8>)>>>,
+    session_dir: &std::path::Path,
+) {
+    let screenshots = match buffer.lock() {
+        Ok(mut buf) => std::mem::take(&mut *buf),
+        Err(e) => {
+            warn!("Screenshot buffer lock poisoned: {e}");
+            return;
+        }
+    };
+    if screenshots.is_empty() {
+        return;
+    }
+    let dir = session_dir.join("screenshots");
+    if let Err(e) = std::fs::create_dir_all(&dir) {
+        warn!("Failed to create screenshots dir: {e}");
+        return;
+    }
+    for (i, (ts, jpeg)) in screenshots.iter().enumerate() {
+        // Use index + truncated timestamp for filename (avoids colons in filenames)
+        let safe_ts = ts.replace(':', "").replace('+', "").chars().take(15).collect::<String>();
+        let filename = format!("{:03}_{}.jpg", i, safe_ts);
+        if let Err(e) = std::fs::write(dir.join(&filename), jpeg) {
+            warn!("Failed to save screenshot {}: {e}", filename);
+        }
+    }
+    info!("Saved {} screenshots to {}", screenshots.len(), dir.display());
 }
