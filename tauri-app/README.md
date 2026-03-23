@@ -1,48 +1,49 @@
-# Transcription App
+# AMI Assist
 
-A real-time speech-to-text transcription desktop application built with Tauri, React, and Rust. Designed as a clinical ambient scribe for physicians, running as a compact sidebar alongside EMR systems.
+Ambient Medical Intelligence — a real-time speech-to-text transcription desktop application built with Tauri v2, React, and Rust. Designed as a clinical ambient scribe for physicians, running as a compact sidebar alongside EMR systems.
 
 ## Features
 
-### Core Transcription
-- **Real-time streaming transcription** - WebSocket streaming via STT Router with medical-optimized aliases
-- **Voice Activity Detection (VAD)** - Silero VAD for smart audio segmentation
-- **Speaker diarization** - ONNX-based speaker embeddings with online clustering
-- **Speech enhancement** - GTCRN denoising for cleaner audio (~2ms latency)
-- **Continuous charting mode** - Records all day, auto-detects encounters, generates SOAP
+### Core
+- **Continuous mode** (default) — records all day, auto-detects patient encounters, generates SOAP notes per encounter
+- **Real-time streaming transcription** via STT Router (WebSocket, medical-optimized aliases)
+- **Speaker diarization** — ONNX-based speaker embeddings with online clustering
+- **Speaker profile sync** — enrolled speaker profiles auto-sync across all rooms at startup
+- **Auto-update** — GitHub Releases with Ed25519 signing; rooms detect new versions on launch
 
-### Clinical Features
-- **SOAP note generation** - AI-powered clinical notes via OpenAI-compatible LLM router
-- **Multi-patient SOAP** - Supports up to 4 patients per visit with auto patient/physician detection
-- **Medplum EMR integration** - OAuth 2.0 + PKCE, FHIR resources
-- **Auto-sync to EMR** - Transcripts and audio automatically synced on session complete
-- **Multi-patient sync** - Creates separate encounters for each patient in multi-patient visits
-- **Encounter history** - Browse past sessions with calendar view
-- **Audio recording** - WAV files synced to EMR
-- **Auto-session detection** - Automatically starts recording when a greeting is detected
-- **Session cleanup tools** - Delete, split, merge sessions, rename patients, renumber encounters
-- **Presence sensor** - ESP32 multi-sensor bridge (mmWave radar, thermal camera, CO2) for hardware-based encounter detection
-- **Multi-user support** - Room + physician profile system with centralized session storage on profile service
-- **Shadow mode** - Dual detection comparison (sensor vs LLM) with CSV logging
-- **Vision-based patient name** - Screenshot capture + vision LLM to extract patient name from EMR
+### Clinical
+- **SOAP note generation** — AI-powered via OpenAI-compatible LLM router with explicit S/O/A/P section definitions
+- **Multi-patient SOAP** — supports up to 4 patients per visit with auto patient/physician detection
+- **AI medical illustrations** — Gemini-generated images from clinical concepts
+- **Vision-based patient name** — screenshot capture + vision LLM to extract patient name from EMR chart
+- **Screenshot archival** — all screenshots saved per encounter for replay and debugging
+- **Encounter history** — session browser with sort (time, encounter, patient, words, duration) and filter (clinical, SOAP status)
+- **Session cleanup tools** — delete, split, merge sessions, rename patients, renumber encounters
+
+### Multi-Room Clinic Deployment
+
+| Machine | Role | IP | User |
+|---------|------|----|------|
+| MacBook | Server (profile service :8090, STT :8001, LLM :8080, Medplum :8103) | 100.119.83.76 | arash |
+| iMac | Room 2 workstation | 100.74.186.113 | room2 (pw: 1278) |
+| Room 6 Mac | Room 6 workstation | local | backoffice |
+
+- **Profile service** — centralized physician profiles, room config, session storage, speaker enrollments
+- **Settings merge chain** — hard-coded defaults -> server infrastructure -> server room -> local config -> physician overlay
+- **Fire-and-forget sync** — sessions uploaded to server after each encounter, 30s delayed re-sync for late-written files
+- **Speaker profiles** — auto-synced bidirectionally at startup (name-based matching, server wins on newer `updated_at`)
+
+### Presence Sensor (Hybrid Detection)
+- **ESP32 multi-sensor bridge** — mmWave radar (SEN0395), thermal camera (MLX90640), CO2/temp/humidity (SCD41)
+- **Detection mode auto-derived** — if room has sensor configured (WiFi or USB), uses hybrid detection; otherwise LLM-only
+- **Sensor tuning** — absence threshold, debounce filter, hybrid confirm window, per-room calibration (thermal, CO2)
+- **Connection types** — WiFi (HTTP to ESP32), USB-UART (serial to mmWave), configured per room in admin panel
 
 ### Biomarker Analysis
-- **Vitality (prosody)** - Pitch variability analysis for affect detection
-- **Stability (neurological)** - CPP measurement for vocal control
-- **Cough detection** - YAMNet-based audio event classification
-- **Conversation dynamics** - Turn-taking, overlap, response latency metrics
-
-### Audio Quality Monitoring
-- **Real-time levels** - Peak, RMS, SNR monitoring
-- **Clipping detection** - Warns when audio is too loud
-- **Noise floor analysis** - Ambient noise level tracking
-- **Actionable suggestions** - "Move microphone closer", etc.
-
-### UI/UX
-- **Compact sidebar** - 300px width, designed for dual-monitor clinical workflows
-- **Light mode** - Clinical-friendly color scheme
-- **Collapsible sections** - Transcript, biomarkers, SOAP notes
-- **Settings drawer** - 4-zone minimalistic configuration: 5 clinical controls visible at first open, connection status bar, collapsible Advanced section for IT settings, speaker profile management as sub-view
+- **Vitality (prosody)** — pitch variability analysis for affect detection
+- **Stability (neurological)** — CPP measurement for vocal control
+- **Cough detection** — YAMNet-based audio event classification
+- **Conversation dynamics** — turn-taking, overlap, response latency metrics
 
 ## Requirements
 
@@ -50,10 +51,10 @@ A real-time speech-to-text transcription desktop application built with Tauri, R
 - Rust 1.70+
 - pnpm 10+
 - ONNX Runtime (for speaker diarization, enhancement, YAMNet)
-- STT Router (required, for speech-to-text via WebSocket streaming)
-- LLM Router (required, for SOAP note generation - OpenAI-compatible API)
-- Medplum server (optional, for EMR integration)
-- Profile service (optional, port 8090 — multi-user physician profiles and centralized session storage)
+- STT Router (required — speech-to-text via WebSocket streaming)
+- LLM Router (required — SOAP generation, encounter detection, vision)
+- Profile service (port 8090 — multi-user management, session storage)
+- Medplum server (optional — EMR integration)
 
 ## Quick Start
 
@@ -61,245 +62,46 @@ A real-time speech-to-text transcription desktop application built with Tauri, R
 # Install dependencies
 pnpm install
 
-# Set up ONNX Runtime
-./scripts/setup-ort.sh
-
-# Build the app (recommended over tauri dev)
+# Build the app
 pnpm tauri build --debug
 
-# Run with ONNX Runtime
-ORT_DYLIB_PATH=$(./scripts/setup-ort.sh) \
-  "src-tauri/target/debug/bundle/macos/Transcription App.app/Contents/MacOS/transcription-app"
+# Bundle ONNX Runtime
+./scripts/bundle-ort.sh "src-tauri/target/debug/bundle/macos/AMI Assist.app"
+
+# Launch
+open "src-tauri/target/debug/bundle/macos/AMI Assist.app"
 ```
 
-**Note**: Use debug build instead of `tauri dev` for proper deep link and OAuth handling.
+**Note**: Use `pnpm tauri build --debug` instead of `tauri dev` — deep links and single-instance plugin don't work in dev mode.
 
-## Project Structure
-
-```
-tauri-app/
-├── src/                          # React frontend
-│   ├── App.tsx                   # Main sidebar component
-│   ├── components/
-│   │   ├── modes/                # UI modes (Ready, Recording, Review, Continuous)
-│   │   │   ├── ReadyMode.tsx     # Pre-recording state
-│   │   │   ├── RecordingMode.tsx # Active recording
-│   │   │   ├── ReviewMode.tsx    # Post-recording review
-│   │   │   └── ContinuousMode.tsx # Continuous charting dashboard
-│   │   ├── AudioQualitySection.tsx
-│   │   ├── BiomarkersSection.tsx
-│   │   ├── ConversationDynamicsSection.tsx
-│   │   ├── SettingsDrawer.tsx
-│   │   ├── Header.tsx
-│   │   ├── AuthProvider.tsx      # Medplum OAuth context
-│   │   ├── LoginScreen.tsx
-│   │   ├── PatientSearch.tsx
-│   │   ├── EncounterBar.tsx
-│   │   ├── HistoryView.tsx       # Encounter history
-│   │   ├── HistoryWindow.tsx     # Separate history window
-│   │   ├── Calendar.tsx
-│   │   ├── AudioPlayer.tsx
-│   │   ├── SpeakerEnrollment.tsx # Speaker voice enrollment
-│   │   ├── ClinicalChat.tsx      # Clinical assistant chat
-│   │   ├── ImageSuggestions.tsx   # Medical illustrations (AI-generated or MIIS)
-│   │   ├── PatientPulse.tsx      # Glanceable biomarker summary
-│   │   ├── PatientVoiceMonitor.tsx # Patient voice metric trending
-│   │   ├── SyncStatusBar.tsx     # EMR sync status
-│   │   ├── SplitWindow.tsx       # Session split window (standalone)
-│   │   └── cleanup/             # Session cleanup tools
-│   │       ├── CleanupActionBar.tsx
-│   │       ├── DeleteConfirmDialog.tsx
-│   │       ├── EditNameDialog.tsx
-│   │       ├── MergeConfirmDialog.tsx
-│   │       └── SplitView.tsx
-│   ├── types/index.ts            # Shared TypeScript types
-│   ├── utils.ts                  # Date/time utilities
-│   ├── ErrorBoundary.tsx
-│   └── test/                     # Test mocks and utilities
-├── src-tauri/                    # Rust backend
-│   ├── src/
-│   │   ├── lib.rs                # Tauri plugin registration
-│   │   ├── main.rs               # Entry point
-│   │   ├── commands/             # IPC command handlers
-│   │   │   ├── mod.rs            # Re-exports, CommandError, PipelineState
-│   │   │   ├── session.rs        # Recording lifecycle + auto-end
-│   │   │   ├── settings.rs       # get/set settings
-│   │   │   ├── audio.rs          # Device enumeration
-│   │   │   ├── models.rs         # Model downloads
-│   │   │   ├── ollama.rs         # LLM router connection
-│   │   │   ├── medplum.rs        # EMR sync commands
-│   │   │   ├── listening.rs      # Auto-session detection
-│   │   │   ├── speaker_profiles.rs # Speaker enrollment CRUD
-│   │   │   ├── clinical_chat.rs  # Clinical assistant chat
-│   │   │   ├── miis.rs           # Medical illustration proxy
-│   │   │   ├── images.rs         # AI image generation (Gemini)
-│   │   │   ├── screenshot.rs     # Screen capture
-│   │   │   ├── continuous.rs     # Continuous charting mode
-│   │   │   ├── archive.rs        # Local session history
-│   │   │   ├── whisper_server.rs # STT Router status
-│   │   │   └── permissions.rs    # Microphone permissions
-│   │   ├── session.rs            # Recording state machine
-│   │   ├── pipeline.rs           # Audio processing pipeline
-│   │   ├── audio.rs              # Audio capture, resampling
-│   │   ├── vad.rs                # Voice Activity Detection
-│   │   ├── transcription.rs      # Segment/utterance types
-│   │   ├── config.rs             # Settings persistence
-│   │   ├── models.rs             # Model download management
-│   │   ├── checklist.rs          # Pre-flight checks
-│   │   ├── listening.rs          # Auto-session detection (VAD + greeting check)
-│   │   ├── llm_client.rs         # OpenAI-compatible LLM client
-│   │   ├── ollama.rs             # Re-exports from llm_client.rs (backward compat)
-│   │   ├── medplum.rs            # Medplum FHIR client
-│   │   ├── continuous_mode.rs    # Continuous charting mode (end-of-day)
-│   │   ├── encounter_detection.rs # Encounter detection prompts/parsing
-│   │   ├── encounter_merge.rs   # Encounter merge prompts/parsing
-│   │   ├── encounter_pipeline.rs # Shared pipeline helpers (SOAP gen, merge checks)
-│   │   ├── screenshot_task.rs   # Screenshot capture task (continuous mode)
-│   │   ├── patient_name_tracker.rs # Vision-based patient name extraction
-│   │   ├── local_archive.rs      # Local session storage
-│   │   ├── speaker_profiles.rs   # Speaker enrollment storage
-│   │   ├── screenshot.rs         # Screen capture (in-memory JPEG)
-│   │   ├── whisper_server.rs     # STT Router client
-│   │   ├── gemini_client.rs      # Google Gemini API client (image generation)
-│   │   ├── debug_storage.rs      # Debug storage (dev only)
-│   │   ├── permissions.rs        # macOS permission checks
-│   │   ├── activity_log.rs       # Structured PHI-safe logging
-│   │   ├── shadow_log.rs         # Shadow mode CSV logging
-│   │   ├── pipeline_log.rs       # Pipeline replay JSONL logger
-│   │   ├── segment_log.rs        # Per-segment JSONL timeline logger
-│   │   ├── replay_bundle.rs      # Encounter replay test case builder
-│   │   ├── day_log.rs            # Day-level orchestration JSONL logger
-│   │   ├── transcript_buffer.rs  # Timestamped transcript segment buffer
-│   │   ├── presence_sensor/      # Multi-sensor presence suite (mmWave + thermal + CO2)
-│   │   ├── preprocessing.rs      # Audio preprocessing (DC removal, high-pass, AGC)
-│   │   ├── diarization/          # Speaker detection
-│   │   │   ├── mod.rs            # Module exports
-│   │   │   ├── provider.rs       # ONNX embedding extraction
-│   │   │   ├── embedding.rs      # Embedding utilities
-│   │   │   ├── clustering.rs     # Online speaker clustering
-│   │   │   ├── config.rs         # Diarization settings
-│   │   │   └── mel.rs            # Mel spectrogram
-│   │   ├── enhancement/          # Speech denoising
-│   │   │   ├── mod.rs
-│   │   │   └── provider.rs       # GTCRN ONNX model
-│   │   ├── biomarkers/           # Vocal biomarker analysis
-│   │   │   ├── mod.rs            # Types and exports
-│   │   │   ├── config.rs         # Biomarker settings
-│   │   │   ├── thread.rs         # Sidecar processing thread
-│   │   │   ├── audio_quality.rs  # Real-time quality metrics
-│   │   │   ├── yamnet/           # Cough detection
-│   │   │   ├── voice_metrics/    # Vitality, stability
-│   │   │   │   ├── vitality.rs   # F0 pitch analysis
-│   │   │   │   └── stability.rs  # CPP cepstral analysis
-│   │   │   └── session_metrics/  # Turn-taking stats
-│   │   └── mcp/                  # MCP server on port 7101
-│   ├── benches/                  # Performance benchmarks
-│   └── Cargo.toml
-├── docs/
-│   └── adr/                      # Architecture Decision Records
-├── e2e/                          # End-to-end tests (WebDriver)
-├── tests/visual/                 # Visual regression tests (Playwright)
-├── CLAUDE.md                     # AI coder context
-├── CONTRIBUTING.md               # Contribution guidelines
-└── README.md                     # This file
-```
-
-## Testing
-
-### Frontend Tests
+## Release & Auto-Update
 
 ```bash
-pnpm test              # Watch mode
-pnpm test:run          # Run once
-pnpm test:coverage     # With coverage
-pnpm visual:test       # Visual regression (Playwright)
-pnpm mutation:test     # Mutation testing (Stryker)
+# Bump version in tauri.conf.json + package.json, then:
+git tag v0.4.0
+git push origin main --tags
+# GitHub Actions builds, signs, and publishes to Releases
+# All running rooms detect the update on next launch
 ```
 
-### Rust Tests
+The release workflow (`.github/workflows/release.yml`) builds the app, creates a signed `.tar.gz` bundle, generates `latest.json`, and uploads to GitHub Releases. The Tauri updater plugin checks this endpoint on launch.
 
-```bash
-cd src-tauri
+## Settings
 
-# Unit tests (needs ORT_DYLIB_PATH for ONNX tests)
-ORT_DYLIB_PATH=$(../scripts/setup-ort.sh) cargo test
+The app settings are simplified into a flat list:
 
-# Stress tests
-cargo test --release stress_test
+1. **Continuous Mode** toggle (on by default)
+2. **Microphone** selector
+3. **SOAP Preferences** — personal instructions per physician
+4. **Session Automation** — auto-start on greeting, auto-end on silence (session mode only)
+5. **Room** — current room name + change button
+6. **Speaker Profiles** — manage enrolled voices
 
-# Benchmarks
-cargo bench
-
-# Fuzz testing (nightly)
-cargo +nightly fuzz run fuzz_vad_config
-```
-
-### E2E Tests
-
-```bash
-pnpm tauri build       # Build first
-cargo install tauri-driver
-pnpm e2e
-```
-
-### Soak Tests
-
-```bash
-pnpm soak:quick        # 1 minute
-pnpm soak:1h           # 1 hour
-pnpm soak:test         # Interactive
-```
-
-## Test Coverage
-
-| Category | Framework | Count |
-|----------|-----------|-------|
-| Unit Tests (Frontend) | Vitest | 450 tests |
-| Unit Tests (Rust) | cargo test | 764 tests |
-| E2E Integration (Rust) | cargo test (ignored) | 32 tests |
-| Snapshot Tests | Vitest | 7 snapshots |
-| Accessibility Tests | vitest-axe | 12 tests |
-| Contract Tests | Vitest | 24 tests |
-| Property-based Tests | proptest | 17 tests |
-| Stress Tests | cargo test | 11 tests |
-| Pipeline Integration | cargo test | 10 tests |
-| Visual Regression | Playwright | 15+ tests |
-| E2E Tests | WebDriverIO | 20+ tests |
-| Soak Tests | cargo test | 5 tests |
+Infrastructure settings (STT/LLM URLs, API keys, model aliases) are managed centrally via the profile service and merged at startup. Sensor settings are configured per room in the admin panel.
 
 ## Configuration
 
-Settings are stored in `~/.transcriptionapp/config.json`:
-
-```json
-{
-  "language": "en",
-  "input_device_id": null,
-  "diarization_enabled": true,
-  "max_speakers": 4,
-  "whisper_server_url": "http://100.119.83.76:8001",
-  "stt_alias": "medical-streaming",
-  "stt_postprocess": true,
-  "llm_router_url": "",
-  "llm_api_key": "",
-  "llm_client_id": "ai-scribe",
-  "soap_model": "soap-model-fast",
-  "soap_model_fast": "soap-model-fast",
-  "fast_model": "fast-model",
-  "medplum_server_url": "",
-  "medplum_client_id": "af1464aa-e00c-4940-a32e-18d878b7911c",
-  "medplum_auto_sync": true,
-  "auto_start_enabled": false,
-  "greeting_sensitivity": 0.7,
-  "min_speech_duration_ms": 2000,
-  "charting_mode": "session",
-  "encounter_detection_mode": "hybrid",
-  "encounter_check_interval_secs": 120,
-  "presence_sensor_port": "/dev/cu.usbserial-2110",
-  "presence_absence_threshold_secs": 180,
-  "screen_capture_enabled": false
-}
-```
+Settings stored in `~/.transcriptionapp/config.json`. Room config in `~/.transcriptionapp/room_config.json`.
 
 ## File Locations
 
@@ -307,33 +109,50 @@ Settings are stored in `~/.transcriptionapp/config.json`:
 |------|----------|
 | All models | `~/.transcriptionapp/models/` |
 | Settings | `~/.transcriptionapp/config.json` |
+| Room config | `~/.transcriptionapp/room_config.json` |
 | Speaker profiles | `~/.transcriptionapp/speaker_profiles.json` |
-| Medplum auth | `~/.transcriptionapp/medplum_auth.json` |
-| Session archive | `~/.transcriptionapp/archive/` |
+| Session archive | `~/.transcriptionapp/archive/YYYY/MM/DD/session_id/` |
+| Screenshots | `~/.transcriptionapp/archive/.../session_id/screenshots/` |
 | Activity logs | `~/.transcriptionapp/logs/activity.log.*` |
-| Debug storage | `~/.transcriptionapp/debug/` |
-| mmWave sensor logs | `~/.transcriptionapp/mmwave/` |
-| Shadow mode logs | `~/.transcriptionapp/shadow/` |
+| Sensor CSV logs | `~/.transcriptionapp/mmwave/` |
+| Physician cache | `~/.transcriptionapp/cache/` |
+
+## Testing
+
+```bash
+# Frontend (~415 tests)
+pnpm test:run
+
+# Rust (~764 tests)
+cd src-tauri && cargo test
+
+# E2E (requires STT + LLM Router)
+cd src-tauri && cargo test e2e_ -- --ignored --nocapture
+
+# Preflight (verifies all services)
+./scripts/preflight.sh --full
+```
+
+## Building for Room 2 (iMac)
+
+The iMac has Rust, Node, and pnpm installed. To build directly:
+
+```bash
+ssh room2@100.74.186.113  # password: 1278
+export PATH="/usr/local/node/bin:$HOME/.cargo/bin:$PATH"
+cd ~/transcriptionapp/tauri-app
+git pull && pnpm install
+pnpm tauri build
+./scripts/bundle-ort.sh "src-tauri/target/release/bundle/macos/AMI Assist.app"
+cp -R "src-tauri/target/release/bundle/macos/AMI Assist.app" "/Applications/AMI Assist.app"
+open "/Applications/AMI Assist.app"
+```
+
+Or build on the MacBook (100.119.83.76) and copy the `.app` bundle to the iMac.
 
 ## Architecture
 
-See [docs/adr/](./docs/adr/) for Architecture Decision Records.
-
-## Documentation
-
-- **[CLAUDE.md](./CLAUDE.md)** - Comprehensive context for AI coders
-- **[CONTRIBUTING.md](./CONTRIBUTING.md)** - Development guidelines
-- **[docs/adr/](./docs/adr/)** - Architecture decisions
-
-## Common Issues
-
-1. **STT Router unreachable**: Verify `whisper_server_url` points to STT Router, check with `curl http://<ip>:8001/health`
-2. **ONNX tests failing**: Set `ORT_DYLIB_PATH` to ONNX Runtime library
-3. **Audio device errors**: Check microphone permissions (macOS: System Settings > Privacy)
-4. **OAuth opens new window**: Use `pnpm tauri build --debug` instead of `tauri dev`
-5. **Medplum auth fails**: Verify `medplum_client_id` matches your Medplum ClientApplication
-6. **E2E tests failing**: Ensure STT Router and LLM Router are running and API key is in config
-7. **Presence sensor "Device or resource busy"**: Another process (e.g., `mmwave_logger.py`) holds the serial port — stop it before starting continuous mode
+See [docs/adr/](./docs/adr/) for Architecture Decision Records, [CLAUDE.md](./CLAUDE.md) for detailed codebase context.
 
 ## License
 

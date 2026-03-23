@@ -1,6 +1,6 @@
 # Claude Code Context
 
-Clinical ambient scribe for physicians - real-time speech-to-text transcription desktop app.
+AMI Assist (Ambient Medical Intelligence) — clinical ambient scribe for physicians. Real-time speech-to-text transcription desktop app with automated encounter detection, SOAP generation, and multi-room clinic deployment.
 
 ## Tech Stack
 
@@ -110,10 +110,10 @@ Rust Backend
 pnpm tauri build --debug
 
 # Bundle ONNX Runtime (one-time after build)
-./scripts/bundle-ort.sh "src-tauri/target/debug/bundle/macos/Transcription App.app"
+./scripts/bundle-ort.sh "src-tauri/target/debug/bundle/macos/AMI Assist.app"
 
 # Run
-open "src-tauri/target/debug/bundle/macos/Transcription App.app"
+open "src-tauri/target/debug/bundle/macos/AMI Assist.app"
 
 # Verify
 npx tsc --noEmit                 # TypeScript typecheck
@@ -316,17 +316,25 @@ Multi-user: profile_service_url (in room_config.json), active_physician_id.
 | `~/.transcriptionapp/cache/physicians.json` | Cached physician list from server |
 | `~/.transcriptionapp/cache/physician_{id}.json` | Cached individual physician settings |
 
-## External Services
+## Clinic Deployment
 
-| Service | Default URL | Purpose |
-|---------|-------------|---------|
-| STT Router | `http://100.119.83.76:8001` | WebSocket streaming transcription (alias: `medical-streaming`) |
-| LLM Router | `http://100.119.83.76:8080` | SOAP generation, encounter detection, vision-based patient name extraction (`vision-model` alias) |
-| Medplum | `http://100.119.83.76:8103` | EMR/FHIR |
-| MIIS | `http://100.119.83.76:7843` | Medical illustration images |
-| Gemini | `https://generativelanguage.googleapis.com` | AI image generation (`gemini-3.1-flash-image-preview`) |
-| ESP32 Sensor | `http://172.16.100.37` | Room presence (mmWave), CO2/temp/humidity (SCD41), thermal camera (MLX90640). Config: `presence_sensor_url` |
-| Profile Service | `http://100.119.83.76:8090` | Physician profiles, room config, centralized session storage, speaker enrollments |
+| Machine | Role | IP (Tailscale) | User | Notes |
+|---------|------|----------------|------|-------|
+| MacBook | Server | 100.119.83.76 | arash | Runs all backend services |
+| iMac | Room 2 workstation | 100.74.186.113 | room2 (pw: 1278) | Has Node, Rust, pnpm installed |
+| This computer | Room 6 workstation | local | backoffice | Primary development machine |
+
+## External Services (all on MacBook 100.119.83.76)
+
+| Service | Port | Purpose |
+|---------|------|---------|
+| STT Router | 8001 | WebSocket streaming transcription (alias: `medical-streaming`) |
+| LLM Router | 8080 | SOAP generation, encounter detection, vision-based patient name extraction (`vision-model` alias) |
+| Profile Service | 8090 | Physician profiles, room config, centralized session storage, speaker enrollments |
+| Medplum | 8103 | EMR/FHIR |
+| MIIS | 7843 | Medical illustration images |
+| Gemini | (external) | AI image generation (`gemini-3.1-flash-image-preview`) via `generativelanguage.googleapis.com` |
+| ESP32 Sensor | (per-room) | Room presence (mmWave + thermal + CO2). Room 6: `http://172.16.100.37`. Configured per room in admin panel |
 
 ## Frontend Structure
 

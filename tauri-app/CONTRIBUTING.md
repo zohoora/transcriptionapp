@@ -1,6 +1,6 @@
-# Contributing to Transcription App
+# Contributing to AMI Assist
 
-Thank you for your interest in contributing! This document provides guidelines and instructions for contributing to the project.
+Guidelines and instructions for contributing to the project.
 
 ## Table of Contents
 
@@ -27,21 +27,20 @@ Thank you for your interest in contributing! This document provides guidelines a
 
 ```bash
 # Clone the repository
-git clone https://github.com/your-org/transcription-app.git
-cd transcription-app/tauri-app
+git clone https://github.com/zohoora/transcriptionapp.git
+cd transcriptionapp/tauri-app
 
 # Install frontend dependencies
 pnpm install
 
-# Set up ONNX Runtime
-./scripts/setup-ort.sh
-
 # Build debug app (RECOMMENDED over tauri dev)
 pnpm tauri build --debug
 
-# Run with ONNX Runtime
-ORT_DYLIB_PATH=$(./scripts/setup-ort.sh) \
-  "src-tauri/target/debug/bundle/macos/Transcription App.app/Contents/MacOS/transcription-app"
+# Bundle ONNX Runtime
+./scripts/bundle-ort.sh "src-tauri/target/debug/bundle/macos/AMI Assist.app"
+
+# Launch
+open "src-tauri/target/debug/bundle/macos/AMI Assist.app"
 ```
 
 **Why not `tauri dev`?**
@@ -117,17 +116,17 @@ refactor: extract audio resampling into separate module
 
 ## Testing
 
-We maintain comprehensive test coverage (450 frontend tests, 764 Rust tests). All PRs must pass tests.
+We maintain comprehensive test coverage (~415 frontend tests, ~764 Rust tests). All PRs must pass tests.
 
 ### Running Tests
 
 ```bash
-# Frontend tests (450 tests)
+# Frontend tests (~415 tests)
 pnpm test:run
 
-# Rust tests with ONNX Runtime (764 tests)
+# Rust tests (~764 tests)
 cd src-tauri
-ORT_DYLIB_PATH=$(../scripts/setup-ort.sh) cargo test
+cargo test
 
 # All tests with coverage
 pnpm test:coverage
@@ -339,8 +338,8 @@ proptest! {
 | `ConversationDynamicsSection` | Turn-taking, overlap, response latency |
 | `PatientPulse` | Glanceable biomarker summary |
 | `PatientVoiceMonitor` | Patient-focused voice metric trending |
-| `SettingsDrawer` | 4-zone settings panel (Clinical Workflow, Connection Status, Advanced, Speaker Profiles) |
-| `Header` | App title, history button, settings button |
+| `SettingsDrawer` | Flat settings panel (continuous mode, mic, SOAP prefs, session automation, room, speaker profiles) |
+| `Header` | AMI Assist title + version, history button, settings button |
 | `AuthProvider` | Medplum OAuth context |
 | `LoginScreen` | Medplum login UI |
 | `PatientSearch` | FHIR patient search |
@@ -402,8 +401,8 @@ When adding a new feature that requires models or external resources:
 
 ## Questions?
 
-- Open a [GitHub Discussion](https://github.com/your-org/transcription-app/discussions)
-- Check existing [Issues](https://github.com/your-org/transcription-app/issues)
+- Open a [GitHub Discussion](https://github.com/zohoora/transcriptionapp/discussions)
+- Check existing [Issues](https://github.com/zohoora/transcriptionapp/issues)
 - See [CLAUDE.md](./CLAUDE.md) for AI coder context
 
 Thank you for contributing!
