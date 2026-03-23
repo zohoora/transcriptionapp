@@ -720,8 +720,18 @@ pub fn merge_encounters(
             .map_err(|e| format!("Failed to parse metadata: {}", e))?;
 
         metadata.word_count = merged_word_count;
-        metadata.duration_ms = Some(merged_duration_ms);
         metadata.has_soap_note = false; // SOAP is stale after merge
+
+        // Recompute duration from the surviving encounter's started_at to now.
+        // The caller-provided merged_duration_ms was computed from the orphan's start time,
+        // which is wrong — the surviving encounter's actual start is earlier.
+        let now = Utc::now();
+        if let Ok(started) = chrono::DateTime::parse_from_rfc3339(&metadata.started_at) {
+            metadata.duration_ms = Some((now - started.with_timezone(&Utc)).num_milliseconds().max(0) as u64);
+        } else {
+            metadata.duration_ms = Some(merged_duration_ms); // fallback
+        }
+        metadata.ended_at = Some(now.to_rfc3339());
 
         // Update patient name from merged encounter's vision tracker if keeper has no name
         // or if the merged encounter has a name (more recent, likely more accurate)

@@ -1906,18 +1906,23 @@ pub async fn run_continuous_mode(
                             }
                         }
 
-                        // Extract patient name before resetting tracker
-                        let encounter_patient_name = name_tracker_for_detector
-                            .lock()
-                            .ok()
-                            .and_then(|t| t.majority_name());
-
-                        // Reset name tracker for next encounter
-                        if let Ok(mut tracker) = name_tracker_for_detector.lock() {
-                            tracker.reset();
-                        } else {
-                            warn!("Name tracker lock poisoned, tracker not reset for next encounter");
-                        }
+                        // Extract patient name and full tracker state before resetting.
+                        // The replay bundle needs this data too — capturing after reset
+                        // would see an empty tracker (was the cause of replay_bundle
+                        // always showing majority_name=None, vote_count=0).
+                        let (encounter_patient_name, tracker_snapshot) = match name_tracker_for_detector.lock() {
+                            Ok(mut tracker) => {
+                                let name = tracker.majority_name();
+                                let votes: usize = tracker.vote_count();
+                                let unique: Vec<String> = tracker.votes().keys().cloned().collect();
+                                tracker.reset();
+                                (name.clone(), (name, votes, unique))
+                            }
+                            Err(e) => {
+                                warn!("Name tracker lock poisoned: {}", e);
+                                (None, (None, 0, vec![]))
+                            }
+                        };
 
                         // Record split timestamp (for stale screenshot detection)
                         if let Ok(mut t) = last_split_time_for_detector.lock() {
@@ -2568,16 +2573,8 @@ pub async fn run_continuous_mode(
                         }
 
                         // Finalize replay bundle for this encounter
-                        // Lock name tracker once, extract all needed state
-                        let (tracker_majority, tracker_votes, tracker_unique) = name_tracker_for_detector
-                            .lock()
-                            .map(|t| {
-                                let majority = t.majority_name();
-                                let votes: usize = t.vote_count();
-                                let unique: Vec<String> = t.votes().keys().cloned().collect();
-                                (majority, votes, unique)
-                            })
-                            .unwrap_or_default();
+                        // Use tracker_snapshot captured before reset (not the now-empty tracker)
+                        let (tracker_majority, tracker_votes, tracker_unique) = tracker_snapshot;
                         if let Ok(mut bundle) = bundle_for_detector.lock() {
                             bundle.set_name_tracker(crate::replay_bundle::NameTrackerState {
                                 majority_name: tracker_majority.clone(),
