@@ -73,7 +73,7 @@ jobs:
           SIG_FILE="${BUNDLE_DIR}/Transcription App.app.tar.gz.sig"
           VERSION="${GITHUB_REF_NAME#v}"
           SIGNATURE=$(cat "$SIG_FILE")
-          TAR_NAME="Transcription.App_aarch64.app.tar.gz"
+          TAR_NAME="Transcription.App.app.tar.gz"
 
           cat > latest.json <<ENDJSON
           {
@@ -99,11 +99,10 @@ jobs:
           BUNDLE_DIR="src-tauri/target/release/bundle"
           TAR_GZ="${BUNDLE_DIR}/macos/Transcription App.app.tar.gz"
           DMG="${BUNDLE_DIR}/dmg/Transcription App_${GITHUB_REF_NAME#v}_aarch64.dmg"
-          TAR_NAME="Transcription.App_aarch64.app.tar.gz"
 
           gh release create "${GITHUB_REF_NAME}" \
             --title "Scribe ${GITHUB_REF_NAME}" \
             --generate-notes \
-            "${TAR_GZ}#${TAR_NAME}" \
+            "${TAR_GZ}" \
             "${DMG}" \
             latest.json

@@ -685,7 +685,7 @@ function App() {
           justifyContent: 'space-between',
           gap: '8px',
         }}>
-          <span>v{updateStatus.version} available</span>
+          <span>{updateStatus.error ? `Update failed: ${updateStatus.error}` : `v${updateStatus.version} available`}</span>
           <div style={{ display: 'flex', gap: '4px' }}>
             <button
               onClick={installUpdate}
@@ -700,7 +700,7 @@ function App() {
                 cursor: updateStatus.downloading ? 'wait' : 'pointer',
               }}
             >
-              {updateStatus.downloading ? 'Installing...' : 'Update'}
+              {updateStatus.downloading ? 'Installing...' : updateStatus.error ? 'Retry' : 'Update'}
             </button>
             <button
               onClick={dismissUpdate}
