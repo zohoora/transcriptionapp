@@ -31,9 +31,16 @@ const defaultPendingSettings: PendingSettings = {
   screen_capture_enabled: false,
   charting_mode: 'session',
   encounter_detection_mode: 'llm',
+  sensor_connection_type: 'none',
   presence_sensor_port: '',
   presence_sensor_url: '',
   presence_absence_threshold_secs: 180,
+  presence_debounce_secs: 15,
+  hybrid_confirm_window_secs: 180,
+  hybrid_min_words_for_sensor_split: 500,
+  thermal_hot_pixel_threshold_c: 28.0,
+  co2_baseline_ppm: 420.0,
+  presence_csv_log_enabled: true,
   encounter_merge_enabled: false,
   soap_custom_instructions: '',
 };
@@ -388,24 +395,25 @@ describe('SettingsDrawer', () => {
       expect(screen.queryByText('Continuous Mode')).not.toBeInTheDocument();
     });
 
-    it('shows sensor settings when hybrid detection mode is selected', async () => {
+    it('shows sensor settings in room configuration section', async () => {
       const user = userEvent.setup();
       render(
         <SettingsDrawer
           {...defaultProps}
           pendingSettings={{
             ...defaultPendingSettings,
-            charting_mode: 'continuous',
-            encounter_detection_mode: 'hybrid',
+            sensor_connection_type: 'wifi',
           }}
         />
       );
 
       await user.click(screen.getByText('Advanced'));
 
-      expect(screen.getByText('Sensor URL (WiFi)')).toBeInTheDocument();
-      expect(screen.getByText('Serial Port (fallback)')).toBeInTheDocument();
+      expect(screen.getByText('Presence Sensor')).toBeInTheDocument();
+      expect(screen.getByText('ESP32 URL')).toBeInTheDocument();
       expect(screen.getByText('Absence Threshold')).toBeInTheDocument();
+      expect(screen.getByText('Thermal Threshold')).toBeInTheDocument();
+      expect(screen.getByText('CO2 Baseline')).toBeInTheDocument();
     });
 
     it('shows session automation settings when expanded', async () => {

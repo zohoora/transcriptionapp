@@ -3126,6 +3126,24 @@ body {
   margin: 0;
 }
 
+.sessions-toolbar {
+  display: flex;
+  gap: 6px;
+  padding: 6px 0 4px;
+}
+
+.sessions-sort-select,
+.sessions-filter-select {
+  flex: 1;
+  font-size: 11px;
+  padding: 4px 6px;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  cursor: pointer;
+}
+
 .sessions-loading,
 .sessions-error,
 .sessions-empty {

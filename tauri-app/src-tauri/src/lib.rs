@@ -242,16 +242,25 @@ pub fn run() {
             // Initialize profile client
             let profile_client = profile_server_url.map(|url| profile_client::ProfileClient::new(&url));
 
-            // Startup settings merge: fire-and-forget async task to fetch infra + room
-            // settings from server. Non-blocking — app launches immediately with cached config.
+            // Startup settings merge + speaker profile sync: fire-and-forget async tasks.
+            // Non-blocking — app launches immediately with cached config and profiles.
             if let Some(ref client) = profile_client {
-                let client = client.clone();
+                // Settings merge
+                let client_settings = client.clone();
                 let room_id = room_id_for_merge;
                 tauri::async_runtime::spawn(async move {
-                    match client.merge_server_settings(room_id.as_deref()).await {
+                    match client_settings.merge_server_settings(room_id.as_deref()).await {
                         Ok(true) => info!("Startup settings merge complete"),
                         Ok(false) => info!("Startup settings merge: no changes from server"),
                         Err(e) => warn!("Startup settings merge failed (using local config): {e}"),
+                    }
+                });
+                // Speaker profile sync
+                let client_speakers = client.clone();
+                tauri::async_runtime::spawn(async move {
+                    match commands::physicians::do_sync_speaker_profiles(&client_speakers).await {
+                        Ok(msg) => info!("Startup speaker sync: {msg}"),
+                        Err(e) => warn!("Startup speaker sync failed: {e}"),
                     }
                 });
             }

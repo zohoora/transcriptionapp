@@ -101,6 +101,8 @@ pub async fn get_local_sessions_by_date(
                     }
                 }
                 if !server_sessions.is_empty() {
+                    // Re-sort merged list by started_at (server sessions may be unordered)
+                    server_sessions.sort_by(|a, b| a.started_at.cmp(&b.started_at));
                     return Ok(server_sessions);
                 }
             }

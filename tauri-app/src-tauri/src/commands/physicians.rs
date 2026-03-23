@@ -206,32 +206,40 @@ pub async fn deselect_physician(
     Ok(())
 }
 
-#[tauri::command]
-pub async fn sync_speaker_profiles(
-    profile_client: State<'_, SharedProfileClient>,
-) -> Result<String, CommandError> {
-    let client = profile_client.read().await;
-    let client = client
-        .as_ref()
-        .ok_or_else(|| CommandError::Other("Profile server not configured".into()))?;
-
+/// Sync speaker profiles between local storage and profile server.
+///
+/// Uses **name-based matching** (case-insensitive) instead of UUID matching,
+/// because local and server profiles have independently generated UUIDs.
+/// When a profile exists on both sides (same name), the one with the more
+/// recent `updated_at` wins. When a profile exists only on one side, it's
+/// copied to the other.
+///
+/// Can be called as a Tauri command or directly from startup code.
+pub async fn do_sync_speaker_profiles(
+    client: &crate::profile_client::ProfileClient,
+) -> Result<String, String> {
     // Fetch server profiles
     let server_profiles = client
         .list_speakers()
         .await
-        .map_err(|e| CommandError::Other(format!("Failed to fetch speakers: {e}")))?;
+        .map_err(|e| format!("Failed to fetch speakers: {e}"))?;
 
     // Load local profiles
     let mut local_manager = crate::speaker_profiles::SpeakerProfileManager::load()
-        .map_err(|e| CommandError::Other(format!("Failed to load local profiles: {e}")))?;
+        .map_err(|e| format!("Failed to load local profiles: {e}"))?;
     let local_profiles = local_manager.list().to_vec();
 
-    // Upload local-only profiles to server (profiles not found on server)
-    let server_ids: std::collections::HashSet<&str> =
-        server_profiles.iter().map(|p| p.id.as_str()).collect();
+    // Build name-based lookup (case-insensitive)
+    let server_by_name: std::collections::HashMap<String, &crate::profile_client::SpeakerProfile> =
+        server_profiles.iter().map(|p| (p.name.to_lowercase(), p)).collect();
+    let local_by_name: std::collections::HashMap<String, &crate::speaker_profiles::SpeakerProfile> =
+        local_profiles.iter().map(|p| (p.name.to_lowercase(), p)).collect();
+
+    // Upload local-only profiles to server (name not found on server)
     let mut uploaded = 0;
     for local_profile in &local_profiles {
-        if !server_ids.contains(local_profile.id.as_str()) {
+        let key = local_profile.name.to_lowercase();
+        if !server_by_name.contains_key(&key) {
             let body = serde_json::json!({
                 "name": local_profile.name,
                 "role": super::speaker_profiles::role_to_string(&local_profile.role),
@@ -239,19 +247,40 @@ pub async fn sync_speaker_profiles(
                 "embedding": local_profile.embedding,
             });
             if let Err(e) = client.upload_speaker(&body).await {
-                warn!("Failed to upload local speaker {} to server: {e}", local_profile.id);
+                warn!("Failed to upload local speaker '{}' to server: {e}", local_profile.name);
             } else {
                 uploaded += 1;
             }
         }
     }
 
-    // Merge server profiles into local storage (server wins on conflict by updated_at)
-    let local_ids: std::collections::HashSet<String> =
-        local_profiles.iter().map(|p| p.id.clone()).collect();
+    // Download server-only profiles to local (name not found locally)
     let mut added = 0;
+    // Update local profiles with newer server versions (same name, server has newer updated_at)
+    let mut updated = 0;
     for server_profile in &server_profiles {
-        if !local_ids.contains(&server_profile.id) {
+        let key = server_profile.name.to_lowercase();
+        if let Some(local_profile) = local_by_name.get(&key) {
+            // Both exist — update local if server has newer embedding
+            if server_profile.updated_at > local_profile.updated_at
+                && !server_profile.embedding.is_empty()
+            {
+                let role = super::speaker_profiles::string_to_role(&server_profile.role);
+                let replacement = crate::speaker_profiles::SpeakerProfile {
+                    id: local_profile.id.clone(), // keep local ID
+                    name: server_profile.name.clone(),
+                    role,
+                    description: server_profile.description.clone(),
+                    embedding: server_profile.embedding.clone(),
+                    created_at: local_profile.created_at, // keep original create time
+                    updated_at: server_profile.updated_at,
+                };
+                if local_manager.update(replacement).is_ok() {
+                    updated += 1;
+                }
+            }
+        } else {
+            // Server-only: add locally
             let role = super::speaker_profiles::string_to_role(&server_profile.role);
             let local = crate::speaker_profiles::SpeakerProfile {
                 id: server_profile.id.clone(),
@@ -263,23 +292,31 @@ pub async fn sync_speaker_profiles(
                 updated_at: server_profile.updated_at,
             };
             if let Err(e) = local_manager.add(local) {
-                warn!("Failed to add server speaker {} locally: {e}", server_profile.id);
+                warn!("Failed to add server speaker '{}' locally: {e}", server_profile.name);
             } else {
                 added += 1;
             }
         }
     }
 
-    let total = server_profiles.len();
-    info!(
-        total,
-        added,
-        uploaded,
-        "Speaker profile sync complete"
-    );
+    let total = local_manager.count();
+    info!(total, added, updated, uploaded, "Speaker profile sync complete");
     Ok(format!(
-        "Synced {total} profiles ({added} new from server, {uploaded} uploaded to server)"
+        "Synced {total} profiles ({added} new from server, {updated} updated, {uploaded} uploaded to server)"
     ))
+}
+
+#[tauri::command]
+pub async fn sync_speaker_profiles(
+    profile_client: State<'_, SharedProfileClient>,
+) -> Result<String, CommandError> {
+    let client = profile_client.read().await;
+    let client = client
+        .as_ref()
+        .ok_or_else(|| CommandError::Other("Profile server not configured".into()))?;
+    do_sync_speaker_profiles(client)
+        .await
+        .map_err(|e| CommandError::Other(e))
 }
 
 #[tauri::command]

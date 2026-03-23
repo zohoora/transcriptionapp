@@ -1413,6 +1413,12 @@ The transcript is from speech-to-text and may contain errors. Interpret medical 
 RESPOND WITH ONLY THIS JSON STRUCTURE - NO OTHER TEXT:
 {{"subjective":["item"],"objective":["item"],"assessment":["item"],"plan":["item"]}}
 
+SECTION DEFINITIONS:
+- SUBJECTIVE: What the patient reports — symptoms, complaints, history of present illness, past medical/surgical history, medication history, social history, family history, review of systems, and any information prefaced by "patient reports/states/denies/describes". Also include historical test results the patient or physician recounts from previous visits (e.g. "previous EKG showed...", "labs from September...").
+- OBJECTIVE: ONLY findings from TODAY'S encounter — vital signs measured today, physical examination findings observed by the clinician, point-of-care test results obtained today, and imaging/lab results reviewed for the first time today. If the physician did not perform an exam or obtain new results, use an empty array []. Do NOT put patient-reported information here. Do NOT put historical results, prior imaging, or previous lab values here — those go in Subjective.
+- ASSESSMENT: Clinical impressions, diagnoses, differential diagnoses, and the clinician's interpretation of the findings.
+- PLAN: Treatments ordered, prescriptions, referrals, follow-up instructions, procedures performed, patient education provided, and next steps — ONLY what the doctor actually stated. Do NOT add recommendations not mentioned in the transcript.
+
 Rules:
 - Your entire response must be valid JSON - nothing else
 - Use simple string arrays, no nested objects
@@ -1422,8 +1428,6 @@ Rules:
 - Do NOT use any markdown formatting (no **, no __, no #, no backticks) - output plain text only
 - Do NOT include specific patient names or healthcare provider names - use "patient" or "the physician/provider" instead
 - Do NOT hallucinate or embellish - only include what was explicitly stated
-- PLAN SECTION: Include ONLY treatments, tests, and follow-ups the doctor actually mentioned. Do NOT add recommendations, monitoring suggestions, or instructions not stated in the transcript.
-- PROCEDURES: Put descriptions of any procedures in the Plan section. Do NOT include them in the Objective section.
 - CLINICIAN NOTES: If provided, incorporate clinician observations into the appropriate SOAP sections (usually Objective for physical observations, Subjective for reported symptoms).
 - {detail_instruction}
 - {format_instruction}{custom_section}"#

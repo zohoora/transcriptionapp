@@ -38,6 +38,26 @@ const mockSettings = {
   auto_start_enabled: false,
   greeting_sensitivity: 0.7,
   min_speech_duration_ms: 2000,
+  // Sensor settings
+  encounter_detection_mode: 'llm' as const,
+  presence_sensor_port: '',
+  presence_sensor_url: '',
+  presence_absence_threshold_secs: 180,
+  presence_debounce_secs: 15,
+  presence_csv_log_enabled: true,
+  hybrid_confirm_window_secs: 180,
+  hybrid_min_words_for_sensor_split: 500,
+  thermal_hot_pixel_threshold_c: 28.0,
+  co2_baseline_ppm: 420.0,
+  // Other
+  encounter_merge_enabled: false,
+  charting_mode: 'session' as const,
+  screen_capture_enabled: false,
+  image_source: 'off',
+  gemini_api_key: '',
+  auto_start_require_enrolled: false,
+  auto_start_required_role: null,
+  auto_end_enabled: false,
 };
 
 describe('useSettings', () => {

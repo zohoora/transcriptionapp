@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { getCurrentWindow } from '@tauri-apps/api/window';
@@ -32,6 +32,9 @@ import { DETAIL_LEVEL_LABELS } from '../types';
 type DetailTab = 'transcript' | 'soap' | 'insights';
 type DataSource = 'local' | 'medplum';
 type CleanupDialog = 'none' | 'delete' | 'merge' | 'editName';
+type SortField = 'time' | 'encounter' | 'patient' | 'words' | 'duration';
+type SortDir = 'asc' | 'desc';
+type FilterMode = 'all' | 'clinical' | 'non-clinical' | 'soap' | 'no-soap';
 
 function formatDateForDisplay(date: Date): string {
   return date.toLocaleDateString('en-US', {
@@ -68,6 +71,11 @@ const HistoryWindow: React.FC = () => {
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [datesWithSessions, setDatesWithSessions] = useState<Set<string>>(new Set());
+
+  // Sort and filter
+  const [sortField, setSortField] = useState<SortField>('time');
+  const [sortDir, setSortDir] = useState<SortDir>('asc');
+  const [filterMode, setFilterMode] = useState<FilterMode>('all');
 
   // Data source — local archive is production storage, always the default
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -159,6 +167,38 @@ const HistoryWindow: React.FC = () => {
     };
     fetchDates();
   }, [settingsLoaded, dataSource, authState.is_authenticated]);
+
+  // Sorted and filtered sessions
+  const sortedSessions = useMemo(() => {
+    let filtered = sessions;
+    if (filterMode === 'clinical') filtered = sessions.filter(s => !s.likely_non_clinical);
+    else if (filterMode === 'non-clinical') filtered = sessions.filter(s => s.likely_non_clinical);
+    else if (filterMode === 'soap') filtered = sessions.filter(s => s.has_soap_note);
+    else if (filterMode === 'no-soap') filtered = sessions.filter(s => !s.has_soap_note);
+
+    const sorted = [...filtered].sort((a, b) => {
+      let cmp = 0;
+      switch (sortField) {
+        case 'time':
+          cmp = (a.started_at || '').localeCompare(b.started_at || '');
+          break;
+        case 'encounter':
+          cmp = (a.encounter_number ?? 999) - (b.encounter_number ?? 999);
+          break;
+        case 'patient':
+          cmp = (a.patient_name || '\uffff').localeCompare(b.patient_name || '\uffff');
+          break;
+        case 'words':
+          cmp = (a.word_count || 0) - (b.word_count || 0);
+          break;
+        case 'duration':
+          cmp = (a.duration_ms || 0) - (b.duration_ms || 0);
+          break;
+      }
+      return sortDir === 'desc' ? -cmp : cmp;
+    });
+    return sorted;
+  }, [sessions, sortField, sortDir, filterMode]);
 
   // Fetch sessions for selected date from local archive or Medplum
   const fetchSessions = useCallback(async () => {
@@ -698,6 +738,39 @@ const HistoryWindow: React.FC = () => {
               {formatDateForDisplay(selectedDate)}
             </h2>
 
+            {/* Sort & Filter controls */}
+            {sessions.length > 0 && (
+              <div className="sessions-toolbar">
+                <select
+                  className="sessions-sort-select"
+                  value={`${sortField}-${sortDir}`}
+                  onChange={(e) => {
+                    const [f, d] = e.target.value.split('-') as [SortField, SortDir];
+                    setSortField(f);
+                    setSortDir(d);
+                  }}
+                >
+                  <option value="time-asc">Oldest first</option>
+                  <option value="time-desc">Newest first</option>
+                  <option value="encounter-asc">Encounter #</option>
+                  <option value="patient-asc">Patient A-Z</option>
+                  <option value="words-desc">Most words</option>
+                  <option value="duration-desc">Longest</option>
+                </select>
+                <select
+                  className="sessions-filter-select"
+                  value={filterMode}
+                  onChange={(e) => setFilterMode(e.target.value as FilterMode)}
+                >
+                  <option value="all">All ({sessions.length})</option>
+                  <option value="clinical">Clinical</option>
+                  <option value="non-clinical">Non-clinical</option>
+                  <option value="soap">Has SOAP</option>
+                  <option value="no-soap">No SOAP</option>
+                </select>
+              </div>
+            )}
+
             {loading ? (
               <div className="sessions-loading">
                 <div className="spinner" />
@@ -713,7 +786,7 @@ const HistoryWindow: React.FC = () => {
               </div>
             ) : (
               <div className="sessions-list">
-                {[...sessions].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()).map((session) => (
+                {sortedSessions.map((session) => (
                   <div
                     key={session.session_id}
                     className={`session-item${isCleanupMode && selectedIds.has(session.session_id) ? ' selected' : ''}${!isCleanupMode && selectedSessionId === session.session_id ? ' active' : ''}`}

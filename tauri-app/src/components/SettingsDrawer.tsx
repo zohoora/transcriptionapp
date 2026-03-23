@@ -468,7 +468,7 @@ export const SettingsDrawer = memo(function SettingsDrawer({
                               className={`charting-mode-btn ${pendingSettings.encounter_detection_mode === 'llm' ? 'active' : ''}`}
                               onClick={() => onSettingsChange({ ...pendingSettings, encounter_detection_mode: 'llm' })}
                             >
-                              LLM
+                              LLM Only
                             </button>
                             <button
                               className={`charting-mode-btn ${pendingSettings.encounter_detection_mode === 'hybrid' ? 'active' : ''}`}
@@ -478,44 +478,6 @@ export const SettingsDrawer = memo(function SettingsDrawer({
                             </button>
                           </div>
                         </div>
-                        {pendingSettings.encounter_detection_mode === 'hybrid' && (
-                          <>
-                            <div className="settings-group">
-                              <label className="settings-label">Sensor URL (WiFi)<TierBadge tier="room" /></label>
-                              <input
-                                type="text"
-                                className="settings-input"
-                                value={pendingSettings.presence_sensor_url}
-                                onChange={(e) => onSettingsChange({ ...pendingSettings, presence_sensor_url: e.target.value })}
-                                placeholder="http://172.16.100.37"
-                              />
-                            </div>
-                            <div className="settings-group">
-                              <label className="settings-label">Serial Port (fallback)<TierBadge tier="room" /></label>
-                              <input
-                                type="text"
-                                className="settings-input"
-                                value={pendingSettings.presence_sensor_port}
-                                onChange={(e) => onSettingsChange({ ...pendingSettings, presence_sensor_port: e.target.value })}
-                                placeholder="/dev/cu.usbserial-2110"
-                              />
-                            </div>
-                            <div className="settings-group">
-                              <label className="settings-label">Absence Threshold<TierBadge tier="room" /></label>
-                              <div className="settings-slider">
-                                <input
-                                  type="range"
-                                  min="10"
-                                  max="600"
-                                  step="10"
-                                  value={pendingSettings.presence_absence_threshold_secs}
-                                  onChange={(e) => onSettingsChange({ ...pendingSettings, presence_absence_threshold_secs: Number(e.target.value) })}
-                                />
-                                <span className="slider-value">{pendingSettings.presence_absence_threshold_secs}s</span>
-                              </div>
-                            </div>
-                          </>
-                        )}
                         <div className="settings-group">
                           <div className="settings-toggle">
                             <span className="settings-label" style={{ marginBottom: 0 }}>Auto-merge encounters<TierBadge tier="personal" /></span>
@@ -642,6 +604,168 @@ export const SettingsDrawer = memo(function SettingsDrawer({
                         )}
                       </div>
                     </div>
+
+                    {/* ─ Presence Sensor (room hardware) ─ */}
+                    <h4 className="advanced-sub-header">Presence Sensor<TierBadge tier="room" /></h4>
+                    <div className="settings-row">
+                      <label className="settings-label" style={{ marginBottom: 4 }}>Connection</label>
+                      <div className="charting-mode-toggle">
+                        <button
+                          className={`charting-mode-btn ${pendingSettings.sensor_connection_type === 'wifi' ? 'active' : ''}`}
+                          onClick={() => onSettingsChange({ ...pendingSettings, sensor_connection_type: 'wifi' })}
+                        >
+                          WiFi
+                        </button>
+                        <button
+                          className={`charting-mode-btn ${pendingSettings.sensor_connection_type === 'usb' ? 'active' : ''}`}
+                          onClick={() => onSettingsChange({ ...pendingSettings, sensor_connection_type: 'usb' })}
+                        >
+                          USB
+                        </button>
+                        <button
+                          className={`charting-mode-btn ${pendingSettings.sensor_connection_type === 'none' ? 'active' : ''}`}
+                          onClick={() => onSettingsChange({ ...pendingSettings, sensor_connection_type: 'none' })}
+                        >
+                          None
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* WiFi: ESP32 URL */}
+                    {pendingSettings.sensor_connection_type === 'wifi' && (
+                      <div className="settings-group">
+                        <label className="settings-label">ESP32 URL</label>
+                        <input
+                          type="text"
+                          className="settings-input"
+                          value={pendingSettings.presence_sensor_url}
+                          onChange={(e) => onSettingsChange({ ...pendingSettings, presence_sensor_url: e.target.value })}
+                          placeholder="http://172.16.100.37"
+                        />
+                        <span className="settings-hint">HTTP endpoint for ESP32 sensor bridge (mmWave + thermal + CO2)</span>
+                      </div>
+                    )}
+
+                    {/* USB: Serial Port */}
+                    {pendingSettings.sensor_connection_type === 'usb' && (
+                      <div className="settings-group">
+                        <label className="settings-label">Serial Port</label>
+                        <input
+                          type="text"
+                          className="settings-input"
+                          value={pendingSettings.presence_sensor_port}
+                          onChange={(e) => onSettingsChange({ ...pendingSettings, presence_sensor_port: e.target.value })}
+                          placeholder="/dev/cu.usbserial-2110"
+                        />
+                        <span className="settings-hint">USB-UART path to mmWave sensor (auto-detects if left blank)</span>
+                      </div>
+                    )}
+
+                    {/* Sensor Tuning (WiFi or USB) */}
+                    {pendingSettings.sensor_connection_type !== 'none' && (
+                      <>
+                        <div className="settings-group">
+                          <label className="settings-label">Absence Threshold</label>
+                          <div className="settings-slider">
+                            <input
+                              type="range"
+                              min="10" max="600" step="10"
+                              value={pendingSettings.presence_absence_threshold_secs}
+                              onChange={(e) => onSettingsChange({ ...pendingSettings, presence_absence_threshold_secs: Number(e.target.value) })}
+                            />
+                            <span className="slider-value">{pendingSettings.presence_absence_threshold_secs}s</span>
+                          </div>
+                          <span className="settings-hint">How long the room must be empty before triggering a split</span>
+                        </div>
+                        <div className="settings-group">
+                          <label className="settings-label">Debounce Filter</label>
+                          <div className="settings-slider">
+                            <input
+                              type="range"
+                              min="5" max="60" step="5"
+                              value={pendingSettings.presence_debounce_secs}
+                              onChange={(e) => onSettingsChange({ ...pendingSettings, presence_debounce_secs: Number(e.target.value) })}
+                            />
+                            <span className="slider-value">{pendingSettings.presence_debounce_secs}s</span>
+                          </div>
+                          <span className="settings-hint">Filters rapid presence toggles (hand washing, injections)</span>
+                        </div>
+                        <div className="settings-group">
+                          <label className="settings-label">Hybrid Confirm Window</label>
+                          <div className="settings-slider">
+                            <input
+                              type="range"
+                              min="30" max="600" step="30"
+                              value={pendingSettings.hybrid_confirm_window_secs}
+                              onChange={(e) => onSettingsChange({ ...pendingSettings, hybrid_confirm_window_secs: Number(e.target.value) })}
+                            />
+                            <span className="slider-value">{pendingSettings.hybrid_confirm_window_secs}s</span>
+                          </div>
+                          <span className="settings-hint">Force-split after sustained absence even if LLM hasn't confirmed</span>
+                        </div>
+                        <div className="settings-group">
+                          <label className="settings-label">Min Words for Sensor Split</label>
+                          <div className="settings-slider">
+                            <input
+                              type="range"
+                              min="100" max="5000" step="100"
+                              value={pendingSettings.hybrid_min_words_for_sensor_split}
+                              onChange={(e) => onSettingsChange({ ...pendingSettings, hybrid_min_words_for_sensor_split: Number(e.target.value) })}
+                            />
+                            <span className="slider-value">{pendingSettings.hybrid_min_words_for_sensor_split}w</span>
+                          </div>
+                          <span className="settings-hint">Minimum transcript words before sensor timeout can force a split</span>
+                        </div>
+                        <div className="settings-group">
+                          <div className="settings-toggle">
+                            <span className="settings-label" style={{ marginBottom: 0 }}>CSV Logging</span>
+                            <label className="toggle-switch">
+                              <input
+                                type="checkbox"
+                                checked={pendingSettings.presence_csv_log_enabled}
+                                onChange={(e) => onSettingsChange({ ...pendingSettings, presence_csv_log_enabled: e.target.checked })}
+                                aria-label="Log sensor readings to CSV"
+                              />
+                              <span className="toggle-slider"></span>
+                            </label>
+                          </div>
+                          <span className="settings-hint">Log mmWave readings to daily CSV</span>
+                        </div>
+                      </>
+                    )}
+
+                    {/* Thermal & CO2 Calibration (WiFi only) */}
+                    {pendingSettings.sensor_connection_type === 'wifi' && (
+                      <>
+                        <label className="settings-label" style={{ marginTop: 8, fontSize: 11, opacity: 0.6 }}>Calibration</label>
+                        <div className="settings-group">
+                          <label className="settings-label">Thermal Threshold</label>
+                          <div className="settings-slider">
+                            <input
+                              type="range"
+                              min="20" max="40" step="0.5"
+                              value={pendingSettings.thermal_hot_pixel_threshold_c}
+                              onChange={(e) => onSettingsChange({ ...pendingSettings, thermal_hot_pixel_threshold_c: Number(e.target.value) })}
+                            />
+                            <span className="slider-value">{pendingSettings.thermal_hot_pixel_threshold_c}&deg;C</span>
+                          </div>
+                          <span className="settings-hint">Temperature above which a pixel counts as body heat</span>
+                        </div>
+                        <div className="settings-group">
+                          <label className="settings-label">CO2 Baseline</label>
+                          <div className="settings-slider">
+                            <input
+                              type="range"
+                              min="300" max="600" step="10"
+                              value={pendingSettings.co2_baseline_ppm}
+                              onChange={(e) => onSettingsChange({ ...pendingSettings, co2_baseline_ppm: Number(e.target.value) })}
+                            />
+                            <span className="slider-value">{pendingSettings.co2_baseline_ppm} ppm</span>
+                          </div>
+                          <span className="settings-hint">Empty room CO2 level (outdoor ~420 ppm)</span>
+                        </div>
+                      </>
+                    )}
 
                     <p className="settings-hint" style={{ marginTop: 16, opacity: 0.5, fontSize: 10 }}>
                       Additional options available in config.json

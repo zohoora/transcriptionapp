@@ -13,7 +13,7 @@ mod miis;
 mod models;
 mod ollama;
 mod permissions;
-mod physicians;
+pub(crate) mod physicians;
 mod screenshot;
 mod session;
 mod settings;

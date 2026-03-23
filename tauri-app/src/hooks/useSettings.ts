@@ -36,9 +36,16 @@ export interface PendingSettings {
   charting_mode: ChartingMode;
   // Presence sensor settings (hybrid mode)
   encounter_detection_mode: EncounterDetectionMode;
+  sensor_connection_type: 'wifi' | 'usb' | 'none';
   presence_sensor_port: string;
   presence_sensor_url: string;
   presence_absence_threshold_secs: number;
+  presence_debounce_secs: number;
+  hybrid_confirm_window_secs: number;
+  hybrid_min_words_for_sensor_split: number;
+  thermal_hot_pixel_threshold_c: number;
+  co2_baseline_ppm: number;
+  presence_csv_log_enabled: boolean;
   // Encounter merge
   encounter_merge_enabled: boolean;
   // SOAP personal instructions
@@ -96,9 +103,16 @@ export function useSettings(): UseSettingsResult {
     screen_capture_enabled: s.screen_capture_enabled,
     charting_mode: s.charting_mode,
     encounter_detection_mode: s.encounter_detection_mode,
+    sensor_connection_type: s.presence_sensor_url ? 'wifi' : s.presence_sensor_port ? 'usb' : 'none',
     presence_sensor_port: s.presence_sensor_port,
     presence_sensor_url: s.presence_sensor_url,
     presence_absence_threshold_secs: s.presence_absence_threshold_secs,
+    presence_debounce_secs: s.presence_debounce_secs,
+    hybrid_confirm_window_secs: s.hybrid_confirm_window_secs,
+    hybrid_min_words_for_sensor_split: s.hybrid_min_words_for_sensor_split,
+    thermal_hot_pixel_threshold_c: s.thermal_hot_pixel_threshold_c,
+    co2_baseline_ppm: s.co2_baseline_ppm,
+    presence_csv_log_enabled: s.presence_csv_log_enabled,
     encounter_merge_enabled: s.encounter_merge_enabled,
     soap_custom_instructions: s.soap_custom_instructions,
   }), []);
@@ -160,9 +174,15 @@ export function useSettings(): UseSettingsResult {
         charting_mode: pendingSettings.charting_mode,
         encounter_merge_enabled: pendingSettings.encounter_merge_enabled,
         encounter_detection_mode: pendingSettings.encounter_detection_mode,
-        presence_sensor_port: pendingSettings.presence_sensor_port,
-        presence_sensor_url: pendingSettings.presence_sensor_url,
+        presence_sensor_port: pendingSettings.sensor_connection_type === 'usb' ? pendingSettings.presence_sensor_port : '',
+        presence_sensor_url: pendingSettings.sensor_connection_type === 'wifi' ? pendingSettings.presence_sensor_url : '',
         presence_absence_threshold_secs: pendingSettings.presence_absence_threshold_secs,
+        presence_debounce_secs: pendingSettings.presence_debounce_secs,
+        hybrid_confirm_window_secs: pendingSettings.hybrid_confirm_window_secs,
+        hybrid_min_words_for_sensor_split: pendingSettings.hybrid_min_words_for_sensor_split,
+        thermal_hot_pixel_threshold_c: pendingSettings.thermal_hot_pixel_threshold_c,
+        co2_baseline_ppm: pendingSettings.co2_baseline_ppm,
+        presence_csv_log_enabled: pendingSettings.presence_csv_log_enabled,
         soap_custom_instructions: pendingSettings.soap_custom_instructions,
       };
 
@@ -240,19 +260,33 @@ export function useSettings(): UseSettingsResult {
       }
 
       // Room-tier: compare all PendingSettings fields that are room-tier
+      const effectiveUrl = pendingSettings.sensor_connection_type === 'wifi' ? pendingSettings.presence_sensor_url : '';
+      const effectivePort = pendingSettings.sensor_connection_type === 'usb' ? pendingSettings.presence_sensor_port : '';
       const roomTierChanged =
         settings.encounter_detection_mode !== pendingSettings.encounter_detection_mode ||
-        settings.presence_sensor_url !== pendingSettings.presence_sensor_url ||
-        settings.presence_sensor_port !== pendingSettings.presence_sensor_port ||
+        settings.presence_sensor_url !== effectiveUrl ||
+        settings.presence_sensor_port !== effectivePort ||
         settings.presence_absence_threshold_secs !== pendingSettings.presence_absence_threshold_secs ||
+        settings.presence_debounce_secs !== pendingSettings.presence_debounce_secs ||
+        settings.hybrid_confirm_window_secs !== pendingSettings.hybrid_confirm_window_secs ||
+        settings.hybrid_min_words_for_sensor_split !== pendingSettings.hybrid_min_words_for_sensor_split ||
+        settings.thermal_hot_pixel_threshold_c !== pendingSettings.thermal_hot_pixel_threshold_c ||
+        settings.co2_baseline_ppm !== pendingSettings.co2_baseline_ppm ||
+        settings.presence_csv_log_enabled !== pendingSettings.presence_csv_log_enabled ||
         settings.screen_capture_enabled !== pendingSettings.screen_capture_enabled;
 
       if (roomTierChanged) {
         const roomSettings: RoomOverlay = {
           encounter_detection_mode: pendingSettings.encounter_detection_mode,
-          presence_sensor_url: pendingSettings.presence_sensor_url || undefined,
-          presence_sensor_port: pendingSettings.presence_sensor_port || undefined,
+          presence_sensor_url: effectiveUrl || undefined,
+          presence_sensor_port: effectivePort || undefined,
           presence_absence_threshold_secs: pendingSettings.presence_absence_threshold_secs,
+          presence_debounce_secs: pendingSettings.presence_debounce_secs,
+          hybrid_confirm_window_secs: pendingSettings.hybrid_confirm_window_secs,
+          hybrid_min_words_for_sensor_split: pendingSettings.hybrid_min_words_for_sensor_split,
+          thermal_hot_pixel_threshold_c: pendingSettings.thermal_hot_pixel_threshold_c,
+          co2_baseline_ppm: pendingSettings.co2_baseline_ppm,
+          presence_csv_log_enabled: pendingSettings.presence_csv_log_enabled,
           screen_capture_enabled: pendingSettings.screen_capture_enabled,
         };
         syncPromises.push(
@@ -302,9 +336,15 @@ export function useSettings(): UseSettingsResult {
       [settings.charting_mode, pendingSettings.charting_mode],
       [settings.encounter_merge_enabled, pendingSettings.encounter_merge_enabled],
       [settings.encounter_detection_mode, pendingSettings.encounter_detection_mode],
-      [settings.presence_sensor_port, pendingSettings.presence_sensor_port],
-      [settings.presence_sensor_url, pendingSettings.presence_sensor_url],
+      [settings.presence_sensor_port, pendingSettings.sensor_connection_type === 'usb' ? pendingSettings.presence_sensor_port : ''],
+      [settings.presence_sensor_url, pendingSettings.sensor_connection_type === 'wifi' ? pendingSettings.presence_sensor_url : ''],
       [settings.presence_absence_threshold_secs, pendingSettings.presence_absence_threshold_secs],
+      [settings.presence_debounce_secs, pendingSettings.presence_debounce_secs],
+      [settings.hybrid_confirm_window_secs, pendingSettings.hybrid_confirm_window_secs],
+      [settings.hybrid_min_words_for_sensor_split, pendingSettings.hybrid_min_words_for_sensor_split],
+      [settings.thermal_hot_pixel_threshold_c, pendingSettings.thermal_hot_pixel_threshold_c],
+      [settings.co2_baseline_ppm, pendingSettings.co2_baseline_ppm],
+      [settings.presence_csv_log_enabled, pendingSettings.presence_csv_log_enabled],
       [settings.soap_custom_instructions, pendingSettings.soap_custom_instructions],
     ];
 
