@@ -2047,6 +2047,9 @@ pub async fn run_continuous_mode(
 
                         if !is_clinical {
                             crate::encounter_pipeline::mark_non_clinical(&session_id);
+                            // Sync non-clinical status to server (initial upload didn't have it)
+                            let today = Utc::now().format("%Y-%m-%d").to_string();
+                            sync_ctx_for_detector.sync_session(&session_id, &today);
                         }
 
                         // Log clinical check result to replay bundle + day log
@@ -2772,6 +2775,7 @@ pub async fn run_continuous_mode(
             &flush_soap_custom_instructions,
             &logger_for_flush,
             &app,
+            &sync_ctx,
         ).await;
     }
 
@@ -2826,12 +2830,6 @@ pub async fn run_continuous_mode(
                 // Track session ID for day log
                 flush_session_id_for_log = Some(session_id.clone());
 
-                // Server sync: upload flushed session
-                {
-                    let today = Utc::now().format("%Y-%m-%d").to_string();
-                    sync_ctx.sync_session(&session_id, &today);
-                }
-
                 // Cache today's sessions (used for encounter number + merge check)
                 let flush_today_str = Utc::now().format("%Y-%m-%d").to_string();
                 let flush_today_sessions = local_archive::list_sessions_by_date(&flush_today_str).ok();
@@ -2863,6 +2861,12 @@ pub async fn run_continuous_mode(
                     }
                 }
 
+                // Server sync: upload flushed session (after metadata enrichment so server gets full metadata)
+                {
+                    let today = Utc::now().format("%Y-%m-%d").to_string();
+                    sync_ctx.sync_session(&session_id, &today);
+                }
+
                 // Clinical content check (shared with detector path)
                 let is_clinical = if let Some(ref client) = flush_llm_client {
                     crate::encounter_pipeline::check_clinical_content(
@@ -2879,6 +2883,9 @@ pub async fn run_continuous_mode(
 
                 if !is_clinical {
                     crate::encounter_pipeline::mark_non_clinical(&session_id);
+                    // Re-sync so server gets the non-clinical flag
+                    let today = Utc::now().format("%Y-%m-%d").to_string();
+                    sync_ctx.sync_session(&session_id, &today);
                 }
 
                 // ---- Flush merge check (runs BEFORE SOAP to avoid wasted generation) ----

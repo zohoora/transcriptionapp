@@ -499,6 +499,7 @@ pub async fn recover_orphaned_soap(
     soap_custom_instructions: &str,
     logger: &Arc<Mutex<PipelineLogger>>,
     app: &tauri::AppHandle,
+    sync_ctx: &crate::continuous_mode::ServerSyncContext,
 ) {
     let today_str = Utc::now().format("%Y-%m-%d").to_string();
     let sessions = match local_archive::list_sessions_by_date(&today_str) {
@@ -577,6 +578,8 @@ pub async fn recover_orphaned_soap(
                     "Recovered SOAP for orphaned session {}",
                     summary.session_id
                 );
+                // Sync recovered SOAP to server
+                sync_ctx.sync_session(&summary.session_id, &today_str);
                 let _ = app.emit(
                     "continuous_mode_event",
                     serde_json::json!({
