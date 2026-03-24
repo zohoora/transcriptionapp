@@ -112,6 +112,35 @@ impl ServerSyncContext {
         });
     }
 
+    /// Fire-and-forget: delete a merged-away session from the server and re-upload the surviving session.
+    pub fn sync_merge(&self, deleted_session_id: &str, surviving_session_id: &str, date: &str) {
+        let Some(ref phys_id) = self.physician_id else { return };
+        let Some(ref client) = self.client else { return };
+        let phys_id = phys_id.clone();
+        let client = client.clone();
+        let deleted = deleted_session_id.to_string();
+        let surviving = surviving_session_id.to_string();
+        let date = date.to_string();
+
+        tauri::async_runtime::spawn(async move {
+            // Delete the merged-away session from server
+            if let Err(e) = client.delete_session(&phys_id, &deleted).await {
+                warn!("Server sync: failed to delete merged session {}: {e}", deleted);
+            } else {
+                info!("Server sync: deleted merged session {} from server", deleted);
+            }
+
+            // Re-upload the surviving (merged) session with updated data
+            if let Ok(details) = local_archive::get_session(&surviving, &date) {
+                if let Ok(body) = serde_json::to_value(&details) {
+                    if let Err(e) = client.upload_session(&phys_id, &surviving, &body).await {
+                        warn!("Server sync: failed to re-upload merged session {}: {e}", surviving);
+                    }
+                }
+            }
+        });
+    }
+
     /// Upload auxiliary files (pipeline_log, replay_bundle, segments) and day_log.
     async fn upload_aux_files(
         client: &crate::profile_client::ProfileClient,
@@ -2295,6 +2324,11 @@ pub async fn run_continuous_mode(
                                     ) {
                                         warn!("Failed to auto-merge small orphan: {}", e);
                                     } else {
+                                        // Sync merge to server: delete orphan, re-upload surviving session
+                                        {
+                                            let today = Utc::now().format("%Y-%m-%d").to_string();
+                                            sync_ctx_for_detector.sync_merge(&session_id, prev_id, &today);
+                                        }
                                         // Regenerate SOAP for the merged encounter
                                         if !(is_clinical || prev_encounter_is_clinical) {
                                             info!("Skipping SOAP regeneration for auto-merged non-clinical encounters");
@@ -2439,6 +2473,11 @@ pub async fn run_continuous_mode(
                                         ) {
                                             warn!("Failed to merge encounters: {}", e);
                                         } else {
+                                            // Sync merge to server: delete merged-away session, re-upload surviving
+                                            {
+                                                let today = Utc::now().format("%Y-%m-%d").to_string();
+                                                sync_ctx_for_detector.sync_merge(&session_id, prev_id, &today);
+                                            }
                                             // Regenerate SOAP for the merged encounter
                                             if !(is_clinical || prev_encounter_is_clinical) {
                                                 info!("Skipping SOAP regeneration for merged non-clinical encounters");
@@ -2888,6 +2927,11 @@ pub async fn run_continuous_mode(
                                             ) {
                                                 warn!("Failed to merge flushed encounter: {}", e);
                                             } else {
+                                                // Sync merge to server
+                                                {
+                                                    let today = Utc::now().format("%Y-%m-%d").to_string();
+                                                    sync_ctx.sync_merge(&session_id, &prev_summary.session_id, &today);
+                                                }
                                                 flush_was_merged = true;
                                                 // Regenerate SOAP only if at least one encounter is clinical
                                                 let prev_is_clinical = prev_summary.likely_non_clinical != Some(true);
