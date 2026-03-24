@@ -227,7 +227,9 @@ O section was used as a catch-all for patient-reported symptoms, historical resu
 
 ## Open Problems (as of Mar 24, 2026)
 
-1. **Back-to-back patients with no sensor gap** — the biggest unsolved failure mode. Sensor stays present, LLM sees topical continuity, split lands mid-conversation, merge reunifies. No current mechanism detects the patient boundary without a sensor signal or a clear name change in transcript.
+1. **Back-to-back patients with no sensor gap** — Sensor stays present, LLM sees topical continuity, split lands mid-conversation, merge reunifies. No current mechanism detects the patient boundary without a sensor signal or a clear name change in transcript. (Mar 24 AM: Phil→Jason)
+
+1b. **Same patient, radically different clinical topics** — When a single 42-minute visit covers two unrelated problems (e.g., knee OA + Ozempic, then lupus + chronic wounds), the LLM splits on the topic boundary because the content looks like two different patients. The merge fails because the tail of the first segment (Ozempic dosing) has zero overlap with the head of the second (lupus, rheumatologist referral). Sensor showed present throughout — no departure signal. This is the inverse of problem 1: the system OVER-splits a single patient instead of UNDER-splitting two patients. (Mar 24 PM: knee/Ozempic split from lupus/wound, same patient)
 
 2. **Vision is effectively non-functional** — EMR chart is not the foreground window during encounters. 230+ vision calls, 2 successes. The entire name extraction pipeline is a dead path in practice.
 
