@@ -242,6 +242,7 @@ Speaker 1: Take care. We'll see you soon.";
             &audio,
             STT_ALIAS,
             true,
+            "English",
             |_chunk| { chunk_count += 1; },
         );
 
@@ -678,6 +679,7 @@ Jim: Thanks doc."#;
             &audio,
             STT_ALIAS,
             true,
+            "English",
             |chunk| { chunks.push(chunk.to_string()); },
         ).expect("STT streaming failed");
 
@@ -811,6 +813,7 @@ Jim: Thanks doc."#;
             &audio,
             STT_ALIAS,
             true,
+            "English",
             |_chunk| {},
         ).expect("STT streaming failed");
 

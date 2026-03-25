@@ -141,6 +141,22 @@ pub fn set_continuous_encounter_notes(
     }
 }
 
+/// Set STT language dynamically (takes effect on the next utterance, no pipeline restart)
+#[tauri::command]
+pub fn set_stt_language(
+    language: String,
+    pipeline_state: State<'_, super::SharedPipelineState>,
+) -> Result<(), String> {
+    let stt_name = crate::config::iso_to_stt_language(&language).to_string();
+    let state = pipeline_state.lock().map_err(|e| e.to_string())?;
+    if let Some(ref handle) = state.handle {
+        handle.set_stt_language(stt_name);
+        Ok(())
+    } else {
+        Err("Pipeline is not running".to_string())
+    }
+}
+
 /// List available serial ports (for presence sensor configuration)
 ///
 /// Returns a list of port names (e.g. `/dev/cu.usbserial-2110`) that can be

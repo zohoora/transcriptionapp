@@ -472,6 +472,7 @@ pub fn run() {
             commands::trigger_new_patient,
             commands::set_continuous_encounter_notes,
             commands::list_serial_ports,
+            commands::set_stt_language,
             // Physician selection and room config
             commands::get_room_config,
             commands::save_room_config,

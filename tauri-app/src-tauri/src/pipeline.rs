@@ -41,7 +41,7 @@ const VAD_CHUNK_SIZE: usize = 512;
 fn transcribe_utterance(
     client: &WhisperServerClient,
     utterance: &Utterance,
-    _language: &str,
+    language: &str,
     stt_alias: &str,
     stt_postprocess: bool,
     tx: &tokio::sync::mpsc::Sender<PipelineMessage>,
@@ -52,6 +52,7 @@ fn transcribe_utterance(
         &utterance.audio,
         stt_alias,
         stt_postprocess,
+        language,
         |chunk_text| {
             // Emit partial transcript chunk to frontend
             let _ = tx_clone.blocking_send(PipelineMessage::TranscriptChunk {
@@ -253,6 +254,8 @@ pub struct PipelineHandle {
     reset_silence_flag: Arc<AtomicBool>,
     reset_biomarkers_flag: Arc<AtomicBool>,
     processor_handle: Option<std::thread::JoinHandle<()>>,
+    /// Shared STT language (English name, e.g. "English", "French"). Updated dynamically.
+    stt_language: Arc<std::sync::Mutex<String>>,
 }
 
 impl PipelineHandle {
@@ -273,6 +276,19 @@ impl PipelineHandle {
     pub fn reset_biomarkers(&self) {
         info!("Requesting biomarker reset");
         self.reset_biomarkers_flag.store(true, Ordering::SeqCst);
+    }
+
+    /// Set the STT language dynamically (takes effect on next utterance)
+    pub fn set_stt_language(&self, language: String) {
+        if let Ok(mut lang) = self.stt_language.lock() {
+            info!("STT language changed to: {}", language);
+            *lang = language;
+        }
+    }
+
+    /// Get the current STT language
+    pub fn stt_language(&self) -> Arc<std::sync::Mutex<String>> {
+        self.stt_language.clone()
     }
 
     /// Get a clone of the reset biomarkers flag (for external tasks to trigger resets)
@@ -330,9 +346,15 @@ pub fn start_pipeline(
     // Clone config for the processing thread
     let tx = message_tx;
 
+    // Shared STT language (can be changed at runtime without pipeline restart)
+    let stt_language = Arc::new(std::sync::Mutex::new(
+        crate::config::iso_to_stt_language(&config.language).to_string(),
+    ));
+    let stt_language_clone = stt_language.clone();
+
     // Spawn the processing thread - everything happens on this thread
     let processor_handle = std::thread::spawn(move || {
-        run_pipeline_thread(config, tx, stop_flag_clone, reset_silence_flag_clone, reset_biomarkers_flag_clone);
+        run_pipeline_thread(config, tx, stop_flag_clone, reset_silence_flag_clone, reset_biomarkers_flag_clone, stt_language_clone);
     });
 
     Ok(PipelineHandle {
@@ -340,6 +362,7 @@ pub fn start_pipeline(
         reset_silence_flag,
         reset_biomarkers_flag,
         processor_handle: Some(processor_handle),
+        stt_language,
     })
 }
 
@@ -350,8 +373,9 @@ fn run_pipeline_thread(
     stop_flag: Arc<AtomicBool>,
     reset_silence_flag: Arc<AtomicBool>,
     reset_biomarkers_flag: Arc<AtomicBool>,
+    stt_language: Arc<std::sync::Mutex<String>>,
 ) {
-    if let Err(e) = run_pipeline_thread_inner(&config, &tx, &stop_flag, &reset_silence_flag, &reset_biomarkers_flag) {
+    if let Err(e) = run_pipeline_thread_inner(&config, &tx, &stop_flag, &reset_silence_flag, &reset_biomarkers_flag, &stt_language) {
         let _ = tx.blocking_send(PipelineMessage::Error(e.to_string()));
     }
     let _ = tx.blocking_send(PipelineMessage::Stopped);
@@ -363,6 +387,7 @@ fn run_pipeline_thread_inner(
     stop_flag: &Arc<AtomicBool>,
     reset_silence_flag: &Arc<AtomicBool>,
     reset_biomarkers_flag: &Arc<AtomicBool>,
+    stt_language: &Arc<std::sync::Mutex<String>>,
 ) -> Result<()> {
     info!("Pipeline thread started");
     info!("Device: {:?}", config.device_id);
@@ -785,7 +810,7 @@ fn run_pipeline_thread_inner(
                 };
 
                 // Transcribe (using enhanced audio if available)
-                match transcribe_utterance(&whisper_client, &utterance, &config.language, &config.stt_alias, config.stt_postprocess, &tx) {
+                match transcribe_utterance(&whisper_client, &utterance, &stt_language.lock().unwrap_or_else(|e| e.into_inner()), &config.stt_alias, config.stt_postprocess, &tx) {
                     Ok(mut segment) => {
                         if !segment.text.is_empty() {
                             // Only run diarization if we have actual text
@@ -1052,7 +1077,7 @@ fn run_pipeline_thread_inner(
             };
 
             // Transcribe (using enhanced audio if available)
-            match transcribe_utterance(&whisper_client, &utterance, &config.language, &config.stt_alias, config.stt_postprocess, &tx) {
+            match transcribe_utterance(&whisper_client, &utterance, &stt_language.lock().unwrap_or_else(|e| e.into_inner()), &config.stt_alias, config.stt_postprocess, &tx) {
                 Ok(mut segment) => {
                     if !segment.text.is_empty() {
                         // Use original audio for diarization (speaker fingerprints)

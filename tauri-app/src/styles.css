@@ -9010,3 +9010,27 @@ button.review-section-header-left:focus {
   display: flex;
   align-items: center;
 }
+
+/* ── Language Selector ── */
+.language-selector {
+  display: flex;
+  justify-content: center;
+  margin: 8px 0;
+}
+
+.language-select {
+  font-size: 13px;
+  padding: 6px 12px;
+  border: 1px solid var(--border-color, #e0e0e0);
+  border-radius: 8px;
+  background: var(--bg-secondary, #f8f9fa);
+  color: var(--text-primary, #1a1a1a);
+  cursor: pointer;
+  min-width: 140px;
+  text-align: center;
+}
+
+.language-select:focus {
+  outline: none;
+  border-color: var(--accent-color, #1a73e8);
+}

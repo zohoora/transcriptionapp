@@ -21,6 +21,24 @@ import { MarkdownContent } from '../ClinicalChat';
 import { ImageSuggestions } from '../ImageSuggestions';
 import { PatientPulse } from '../PatientPulse';
 
+const ALL_LANGUAGES = [
+  { iso: 'en', name: 'English' }, { iso: 'fr', name: 'French' },
+  { iso: 'fa', name: 'Persian' }, { iso: 'es', name: 'Spanish' },
+  { iso: 'de', name: 'German' }, { iso: 'zh', name: 'Chinese' },
+  { iso: 'ar', name: 'Arabic' }, { iso: 'hi', name: 'Hindi' },
+  { iso: 'pt', name: 'Portuguese' }, { iso: 'it', name: 'Italian' },
+  { iso: 'ja', name: 'Japanese' }, { iso: 'ko', name: 'Korean' },
+  { iso: 'ru', name: 'Russian' }, { iso: 'nl', name: 'Dutch' },
+  { iso: 'pl', name: 'Polish' }, { iso: 'tr', name: 'Turkish' },
+  { iso: 'sv', name: 'Swedish' }, { iso: 'da', name: 'Danish' },
+  { iso: 'fi', name: 'Finnish' }, { iso: 'el', name: 'Greek' },
+  { iso: 'cs', name: 'Czech' }, { iso: 'ro', name: 'Romanian' },
+  { iso: 'hu', name: 'Hungarian' }, { iso: 'th', name: 'Thai' },
+  { iso: 'vi', name: 'Vietnamese' }, { iso: 'id', name: 'Indonesian' },
+  { iso: 'ms', name: 'Malay' }, { iso: 'tl', name: 'Filipino' },
+  { iso: 'mk', name: 'Macedonian' }, { iso: 'yue', name: 'Cantonese' },
+];
+
 interface ContinuousModeProps {
   /** Whether continuous mode is active */
   isActive: boolean;
@@ -61,6 +79,12 @@ interface ContinuousModeProps {
   aiError?: string | null;
   onAiDismiss?: (index: number) => void;
   imageSource?: 'miis' | 'ai' | 'off';
+  /** Current STT language (ISO code) */
+  sttLanguage: string;
+  /** Physician's preferred languages (ISO codes, ordered) */
+  preferredLanguages: string[];
+  /** Language change callback */
+  onLanguageChange: (iso: string) => void;
   /** Start continuous mode */
   onStart: () => void;
   /** Stop continuous mode */
@@ -153,6 +177,9 @@ export const ContinuousMode = memo(function ContinuousMode({
   aiError,
   onAiDismiss,
   imageSource = 'miis',
+  sttLanguage,
+  preferredLanguages,
+  onLanguageChange,
   onStart,
   onStop,
   onNewPatient,
@@ -215,6 +242,12 @@ export const ContinuousMode = memo(function ContinuousMode({
               {error}
             </div>
           )}
+
+          <LanguageSelector
+            value={sttLanguage}
+            preferred={preferredLanguages}
+            onChange={onLanguageChange}
+          />
 
           <button className="btn-primary continuous-start-btn" onClick={onStart}>
             Start Session
@@ -479,7 +512,8 @@ export const ContinuousMode = memo(function ContinuousMode({
         </div>
       )}
 
-      {/* Actions */}
+      {/* Language + Actions */}
+      <LanguageSelector value={sttLanguage} preferred={preferredLanguages} onChange={onLanguageChange} />
       <div className="continuous-actions">
         <button className="btn-secondary" onClick={onViewHistory}>
           View Today&apos;s Sessions
@@ -495,3 +529,33 @@ export const ContinuousMode = memo(function ContinuousMode({
     </div>
   );
 });
+
+function LanguageSelector({ value, preferred, onChange }: {
+  value: string;
+  preferred: string[];
+  onChange: (iso: string) => void;
+}) {
+  const preferredSet = new Set(preferred);
+  const preferredLangs = ALL_LANGUAGES.filter(l => preferredSet.has(l.iso));
+  const otherLangs = ALL_LANGUAGES.filter(l => !preferredSet.has(l.iso));
+
+  return (
+    <div className="language-selector">
+      <select
+        className="language-select"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+      >
+        {preferredLangs.map(l => (
+          <option key={l.iso} value={l.iso}>{l.name}</option>
+        ))}
+        {preferredLangs.length > 0 && otherLangs.length > 0 && (
+          <option disabled>──────</option>
+        )}
+        {otherLangs.map(l => (
+          <option key={l.iso} value={l.iso}>{l.name}</option>
+        ))}
+      </select>
+    </div>
+  );
+}

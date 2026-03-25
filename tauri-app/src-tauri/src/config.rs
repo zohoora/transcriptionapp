@@ -3,6 +3,43 @@ use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use tracing::debug;
 
+/// Map ISO 639-1 language code to the English name expected by the STT server (Qwen3-ASR).
+pub fn iso_to_stt_language(iso: &str) -> &str {
+    match iso {
+        "en" => "English",
+        "fr" => "French",
+        "fa" | "per" => "Persian",
+        "es" => "Spanish",
+        "de" => "German",
+        "zh" => "Chinese",
+        "ar" => "Arabic",
+        "hi" => "Hindi",
+        "pt" => "Portuguese",
+        "it" => "Italian",
+        "ja" => "Japanese",
+        "ko" => "Korean",
+        "ru" => "Russian",
+        "nl" => "Dutch",
+        "pl" => "Polish",
+        "tr" => "Turkish",
+        "sv" => "Swedish",
+        "da" => "Danish",
+        "fi" => "Finnish",
+        "el" => "Greek",
+        "cs" => "Czech",
+        "ro" => "Romanian",
+        "hu" => "Hungarian",
+        "th" => "Thai",
+        "vi" => "Vietnamese",
+        "id" => "Indonesian",
+        "ms" => "Malay",
+        "tl" => "Filipino",
+        "mk" => "Macedonian",
+        "yue" => "Cantonese",
+        _ => "English",
+    }
+}
+
 /// Charting mode: session-by-session or continuous all-day recording
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]

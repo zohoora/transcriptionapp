@@ -367,6 +367,7 @@ impl WhisperServerClient {
         audio: &[f32],
         alias: &str,
         postprocess: bool,
+        language: &str,
         mut on_chunk: impl FnMut(&str),
     ) -> Result<String, String> {
         if audio.is_empty() {
@@ -394,7 +395,7 @@ impl WhisperServerClient {
                 std::thread::sleep(backoff);
             }
 
-            match self.try_streaming_transcription(&ws_url, &wav_bytes, alias, postprocess, &mut on_chunk) {
+            match self.try_streaming_transcription(&ws_url, &wav_bytes, alias, postprocess, language, &mut on_chunk) {
                 Ok(text) => return Ok(text),
                 Err(e) => {
                     // Check if error is retryable (connection failures)
@@ -423,6 +424,7 @@ impl WhisperServerClient {
         wav_bytes: &[u8],
         alias: &str,
         postprocess: bool,
+        language: &str,
         on_chunk: &mut impl FnMut(&str),
     ) -> Result<String, String> {
         // Connect to WebSocket
@@ -431,15 +433,18 @@ impl WhisperServerClient {
 
         debug!("WebSocket connected to {}", ws_url);
 
-        // Step 1: Send configuration
-        let config = serde_json::json!({
+        // Step 1: Send configuration (language sent as English name per STT server spec)
+        let mut config = serde_json::json!({
             "alias": alias,
             "postprocess": postprocess,
         });
+        if !language.is_empty() {
+            config["language"] = serde_json::json!(language);
+        }
         ws.send(WsMessage::Text(config.to_string()))
             .map_err(|e| format!("Failed to send STT config: {}", e))?;
 
-        debug!("Sent streaming config: alias={}, postprocess={}", alias, postprocess);
+        debug!("Sent streaming config: alias={}, postprocess={}, language={}", alias, postprocess, language);
 
         // Step 2: Send audio as binary
         ws.send(WsMessage::Binary(wav_bytes.to_vec()))
@@ -980,6 +985,7 @@ mod tests {
             &audio,
             "medical-streaming",
             true,
+            "English",
             |chunk| {
                 println!("  chunk: {:?}", chunk);
                 chunks_received.push(chunk.to_string());

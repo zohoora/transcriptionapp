@@ -827,7 +827,8 @@ fn analyze_speech(
             audio,
             &config.stt_alias,
             config.stt_postprocess,
-            |_chunk| {}, // No real-time display needed for greeting detection
+            "English", // Greeting detection always in English
+            |_chunk| {},
         )
         .map_err(|e| format!("Transcription error: {}", e))?;
 

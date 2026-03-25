@@ -915,6 +915,7 @@ export interface PhysicianProfile {
   medplum_auto_sync?: boolean | null;
   diarization_enabled?: boolean | null;
   max_speakers?: number | null;
+  stt_languages?: string[] | null;
   created_at: string;
   updated_at: string;
 }
