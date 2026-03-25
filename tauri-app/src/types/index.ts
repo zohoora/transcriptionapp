@@ -933,6 +933,46 @@ export interface Room {
   updated_at: string;
 }
 
+// --- CO2 Calibration ---
+
+export interface CalibrationPhaseResult {
+  phase: string;
+  occupancy: number;
+  stableAvgPpm: number;
+  stableStdDev: number;
+  readingsCollected: number;
+  durationSecs: number;
+  wasSkipped: boolean;
+}
+
+export interface CalibrationResult {
+  baselinePpm: number;
+  ppmPerPerson: number;
+  recommendedWindowSecs: number;
+  riseRatePpmPerMin: number;
+  fallRatePpmPerMin: number;
+  phaseResults: CalibrationPhaseResult[];
+  calibratedAt: string;
+  roomId: string;
+  sensorUrl: string;
+}
+
+export interface CalibrationStatus {
+  phase: string;
+  currentCo2Ppm: number | null;
+  currentTempC: number | null;
+  currentHumidityPct: number | null;
+  mmwavePresent: boolean | null;
+  phaseElapsedSecs: number;
+  isStable: boolean;
+  rateOfChangePpmPerMin: number;
+  readingsInPhase: number;
+  sensorConnected: boolean;
+  result: CalibrationResult | null;
+  error: string | null;
+  sparkline: number[];
+}
+
 /** Room configuration for multi-user deployment */
 export interface RoomConfig {
   room_name: string;

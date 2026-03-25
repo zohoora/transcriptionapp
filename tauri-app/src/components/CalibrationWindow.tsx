@@ -2,44 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { getCurrentWindow } from '@tauri-apps/api/window';
-
-interface CalibrationStatus {
-  phase: string;
-  currentCo2Ppm: number | null;
-  currentTempC: number | null;
-  currentHumidityPct: number | null;
-  mmwavePresent: boolean | null;
-  phaseElapsedSecs: number;
-  isStable: boolean;
-  rateOfChangePpmPerMin: number;
-  readingsInPhase: number;
-  sensorConnected: boolean;
-  result: CalibrationResult | null;
-  error: string | null;
-  sparkline: number[];
-}
-
-interface PhaseResult {
-  phase: string;
-  occupancy: number;
-  stableAvgPpm: number;
-  stableStdDev: number;
-  readingsCollected: number;
-  durationSecs: number;
-  wasSkipped: boolean;
-}
-
-interface CalibrationResult {
-  baselinePpm: number;
-  ppmPerPerson: number;
-  recommendedWindowSecs: number;
-  riseRatePpmPerMin: number;
-  fallRatePpmPerMin: number;
-  phaseResults: PhaseResult[];
-  calibratedAt: string;
-  roomId: string;
-  sensorUrl: string;
-}
+import type { CalibrationStatus } from '../types';
 
 const PHASES = ['connecting', 'emptyRoom', 'onePerson', 'twoPeople', 'threePlus'];
 const PHASE_LABELS: Record<string, string> = {

@@ -147,52 +147,35 @@ fn compute_slope(readings: &[(f64, f32)]) -> f32 {
     ((n * sum_xy - sum_x * sum_y) / denom) as f32
 }
 
-fn is_stable(readings: &[PhaseReading], phase: CalibrationPhase) -> bool {
+/// Returns (is_stable, rate_of_change_ppm_per_min) from a single trailing-window pass.
+fn stability_metrics(readings: &[PhaseReading], phase: CalibrationPhase) -> (bool, f32) {
+    if readings.len() < 5 {
+        return (false, 0.0);
+    }
+    let elapsed = readings.last().unwrap().timestamp_secs - readings.first().unwrap().timestamp_secs;
     let min_secs = if phase == CalibrationPhase::EmptyRoom {
         MIN_EMPTY_ROOM_SECS
     } else {
         MIN_OCCUPIED_SECS
     };
-    if readings.is_empty() {
-        return false;
-    }
-    let elapsed = readings.last().unwrap().timestamp_secs - readings.first().unwrap().timestamp_secs;
-    if elapsed < min_secs {
-        return false;
-    }
-    // Use trailing window for stability check
-    let cutoff = readings.last().unwrap().timestamp_secs - STABILITY_WINDOW_SECS;
-    let trailing: Vec<(f64, f32)> = readings
-        .iter()
-        .filter(|r| r.timestamp_secs >= cutoff)
-        .map(|r| (r.timestamp_secs, r.co2_ppm))
-        .collect();
-    if trailing.len() < MIN_READINGS_FOR_STABILITY {
-        return false;
-    }
-    let slope_per_sec = compute_slope(&trailing);
-    let slope_per_min = slope_per_sec * 60.0;
-    slope_per_min.abs() < STABILITY_THRESHOLD_PPM_PER_MIN
-}
 
-fn rate_of_change(readings: &[PhaseReading]) -> f32 {
-    if readings.len() < 5 {
-        return 0.0;
-    }
     let cutoff = readings.last().unwrap().timestamp_secs - STABILITY_WINDOW_SECS;
     let trailing: Vec<(f64, f32)> = readings
         .iter()
         .filter(|r| r.timestamp_secs >= cutoff)
         .map(|r| (r.timestamp_secs, r.co2_ppm))
         .collect();
-    if trailing.len() < 5 {
-        return 0.0;
+
+    if trailing.len() < MIN_READINGS_FOR_STABILITY {
+        return (false, 0.0);
     }
-    compute_slope(&trailing) * 60.0
+
+    let slope_per_min = compute_slope(&trailing) * 60.0;
+    let stable = elapsed >= min_secs && slope_per_min.abs() < STABILITY_THRESHOLD_PPM_PER_MIN;
+    (stable, slope_per_min)
 }
 
 fn stable_average(readings: &[PhaseReading]) -> (f32, f32) {
-    // Average and std dev of last 60 seconds of readings
     if readings.is_empty() {
         return (0.0, 0.0);
     }
@@ -308,17 +291,19 @@ fn compute_results(
 }
 
 fn compute_transition_rate(readings: &[PhaseReading], rising: bool) -> f32 {
-    // Find the steepest 60-second window in the right direction
     if readings.len() < 60 {
         return 0.0;
     }
     let mut max_rate: f32 = 0.0;
+    let mut buf: Vec<(f64, f32)> = Vec::with_capacity(60);
     for window_start in 0..readings.len().saturating_sub(60) {
-        let window: Vec<(f64, f32)> = readings[window_start..window_start + 60]
-            .iter()
-            .map(|r| (r.timestamp_secs, r.co2_ppm))
-            .collect();
-        let slope_per_min = compute_slope(&window) * 60.0;
+        buf.clear();
+        buf.extend(
+            readings[window_start..window_start + 60]
+                .iter()
+                .map(|r| (r.timestamp_secs, r.co2_ppm)),
+        );
+        let slope_per_min = compute_slope(&buf) * 60.0;
         if rising && slope_per_min > max_rate {
             max_rate = slope_per_min;
         } else if !rising && slope_per_min < -max_rate.abs() {
@@ -328,7 +313,34 @@ fn compute_transition_rate(readings: &[PhaseReading], rising: bool) -> f32 {
     max_rate
 }
 
-// --- Main calibration loop ---
+fn build_status(
+    phase: CalibrationPhase,
+    is_stable: bool,
+    rate_of_change: f32,
+    last_response: &Option<Esp32Response>,
+    phase_readings: &[PhaseReading],
+    consecutive_failures: u32,
+    phase_start: &Instant,
+    result: &Option<CalibrationResult>,
+    sparkline: &VecDeque<f32>,
+    error: Option<String>,
+) -> CalibrationStatus {
+    CalibrationStatus {
+        phase,
+        current_co2_ppm: last_response.as_ref().and_then(|r| r.co2_ppm),
+        current_temp_c: last_response.as_ref().and_then(|r| r.temperature_c),
+        current_humidity_pct: last_response.as_ref().and_then(|r| r.humidity_pct),
+        mmwave_present: last_response.as_ref().map(|r| r.present),
+        phase_elapsed_secs: phase_start.elapsed().as_secs_f64(),
+        is_stable,
+        rate_of_change_ppm_per_min: rate_of_change,
+        readings_in_phase: phase_readings.len(),
+        sensor_connected: consecutive_failures < 5,
+        result: result.clone(),
+        error,
+        sparkline: sparkline.iter().copied().collect(),
+    }
+}
 
 pub async fn run_calibration(
     sensor_url: String,
@@ -350,10 +362,7 @@ pub async fn run_calibration(
     let calibration_start = Instant::now();
     let mut phase_start = Instant::now();
     let mut consecutive_failures: u32 = 0;
-    let mut last_mmwave: Option<bool> = None;
-    let mut last_co2: Option<f32> = None;
-    let mut last_temp: Option<f32> = None;
-    let mut last_humidity: Option<f32> = None;
+    let mut last_response: Option<Esp32Response> = None;
     let mut result: Option<CalibrationResult> = None;
 
     info!("CO2 calibration started for room {} (sensor: {})", room_id, sensor_url);
@@ -403,29 +412,14 @@ pub async fn run_calibration(
             info!("Calibration complete: {:?}", result);
         }
 
-        // Complete or Failed — just emit status
+        // Complete or Failed — emit and wait
         if matches!(phase, CalibrationPhase::Complete | CalibrationPhase::Failed) {
-            let status = CalibrationStatus {
-                phase,
-                current_co2_ppm: last_co2,
-                current_temp_c: last_temp,
-                current_humidity_pct: last_humidity,
-                mmwave_present: last_mmwave,
-                phase_elapsed_secs: phase_start.elapsed().as_secs_f64(),
-                is_stable: false,
-                rate_of_change_ppm_per_min: 0.0,
-                readings_in_phase: phase_readings.len(),
-                sensor_connected: consecutive_failures < 5,
-                result: result.clone(),
-                error: if phase == CalibrationPhase::Failed {
-                    Some("Sensor connection lost".to_string())
-                } else {
-                    None
-                },
-                sparkline: sparkline.iter().copied().collect(),
-            };
+            let status = build_status(
+                phase, false, 0.0, &last_response, &phase_readings, consecutive_failures,
+                &phase_start, &result, &sparkline,
+                if phase == CalibrationPhase::Failed { Some("Sensor connection lost".to_string()) } else { None },
+            );
             let _ = app.emit("calibration_update", &status);
-            // Keep emitting until stopped
             tokio::time::sleep(std::time::Duration::from_secs(1)).await;
             continue;
         }
@@ -436,30 +430,22 @@ pub async fn run_calibration(
             Ok(resp) if resp.status().is_success() => {
                 if let Ok(data) = resp.json::<Esp32Response>().await {
                     consecutive_failures = 0;
-                    last_mmwave = Some(data.present);
 
                     if let (Some(co2), Some(temp), Some(humidity)) =
                         (data.co2_ppm, data.temperature_c, data.humidity_pct)
                     {
-                        last_co2 = Some(co2);
-                        last_temp = Some(temp);
-                        last_humidity = Some(humidity);
-
-                        // Sparkline (last 120 readings)
                         sparkline.push_back(co2);
                         if sparkline.len() > 120 {
                             sparkline.pop_front();
                         }
 
-                        let ts = calibration_start.elapsed().as_secs_f64();
                         let reading = PhaseReading {
-                            timestamp_secs: ts,
+                            timestamp_secs: calibration_start.elapsed().as_secs_f64(),
                             co2_ppm: co2,
                             temperature_c: temp,
                             humidity_pct: humidity,
                         };
 
-                        // Transition from Connecting once we get a good reading
                         if phase == CalibrationPhase::Connecting {
                             phase = CalibrationPhase::EmptyRoom;
                             phase_start = Instant::now();
@@ -471,6 +457,7 @@ pub async fn run_calibration(
                         }
                         all_readings.push(reading);
                     }
+                    last_response = Some(data);
                 }
             }
             _ => {
@@ -482,28 +469,17 @@ pub async fn run_calibration(
             }
         }
 
-        // Emit status
-        let stable = is_stable(&phase_readings, phase);
-        let roc = rate_of_change(&phase_readings);
-        let status = CalibrationStatus {
-            phase,
-            current_co2_ppm: last_co2,
-            current_temp_c: last_temp,
-            current_humidity_pct: last_humidity,
-            mmwave_present: last_mmwave,
-            phase_elapsed_secs: phase_start.elapsed().as_secs_f64(),
-            is_stable: stable,
-            rate_of_change_ppm_per_min: roc,
-            readings_in_phase: phase_readings.len(),
-            sensor_connected: consecutive_failures < 5,
-            result: None,
-            error: if consecutive_failures >= 5 {
-                Some(format!("Sensor unreachable ({} failures)", consecutive_failures))
-            } else {
-                None
-            },
-            sparkline: sparkline.iter().copied().collect(),
+        // Emit status (single stability computation)
+        let (stable, roc) = stability_metrics(&phase_readings, phase);
+        let error = if consecutive_failures >= 5 {
+            Some(format!("Sensor unreachable ({} failures)", consecutive_failures))
+        } else {
+            None
         };
+        let status = build_status(
+            phase, stable, roc, &last_response, &phase_readings, consecutive_failures,
+            &phase_start, &None, &sparkline, error,
+        );
         let _ = app.emit("calibration_update", &status);
 
         tokio::time::sleep(std::time::Duration::from_secs(1)).await;
@@ -541,7 +517,7 @@ mod tests {
                 humidity_pct: 45.0,
             })
             .collect();
-        assert!(!is_stable(&readings, CalibrationPhase::OnePerson));
+        assert!(!stability_metrics(&readings, CalibrationPhase::OnePerson).0);
     }
 
     #[test]
@@ -554,8 +530,8 @@ mod tests {
                 humidity_pct: 45.0,
             })
             .collect();
-        assert!(is_stable(&readings, CalibrationPhase::EmptyRoom));
-        assert!(is_stable(&readings, CalibrationPhase::OnePerson));
+        assert!(stability_metrics(&readings, CalibrationPhase::EmptyRoom).0);
+        assert!(stability_metrics(&readings, CalibrationPhase::OnePerson).0);
     }
 
     #[test]

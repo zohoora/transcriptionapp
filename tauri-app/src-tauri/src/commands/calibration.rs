@@ -14,24 +14,18 @@ pub async fn start_co2_calibration(
     app: AppHandle,
     calibration_state: State<'_, SharedCalibrationState>,
 ) -> Result<(), String> {
-    {
-        let state = calibration_state.lock().map_err(|e| e.to_string())?;
-        if state.is_some() {
-            return Err("Calibration is already running".to_string());
-        }
-    }
-
     let stop_flag = Arc::new(std::sync::atomic::AtomicBool::new(false));
     let (command_tx, command_rx) = tokio::sync::mpsc::channel(16);
 
-    let handle = CalibrationHandle {
-        stop_flag: stop_flag.clone(),
-        command_tx,
-    };
-
     {
         let mut state = calibration_state.lock().map_err(|e| e.to_string())?;
-        *state = Some(handle);
+        if state.is_some() {
+            return Err("Calibration is already running".to_string());
+        }
+        *state = Some(CalibrationHandle {
+            stop_flag: stop_flag.clone(),
+            command_tx,
+        });
     }
 
     let calibration_state_for_cleanup = calibration_state.inner().clone();
