@@ -1,5 +1,6 @@
 import React, { useState, useCallback } from 'react';
 import { getCurrentWindow } from '@tauri-apps/api/window';
+import { WebviewWindow } from '@tauri-apps/api/webviewWindow';
 import { useAdminPanel } from '../hooks/useAdminPanel';
 import type { PhysicianProfile, Room } from '../types';
 
@@ -488,6 +489,23 @@ const AdminPanel: React.FC = () => {
                           <td className="admin-table-date">{formatDate(room.created_at)}</td>
                           <td className="admin-table-actions">
                             <button className="admin-btn admin-btn-small admin-btn-edit" onClick={() => handleStartRoomEdit(room)}>Edit</button>
+                            <button
+                              className="admin-btn admin-btn-small admin-btn-edit"
+                              onClick={() => {
+                                const sensorUrl = room.presence_sensor_url as string | undefined;
+                                if (!sensorUrl) return;
+                                new WebviewWindow('calibration', {
+                                  url: `calibration.html?roomId=${encodeURIComponent(room.id)}&sensorUrl=${encodeURIComponent(sensorUrl)}&roomName=${encodeURIComponent(room.name)}`,
+                                  title: `CO2 Calibration - ${room.name}`,
+                                  width: 500,
+                                  height: 700,
+                                });
+                              }}
+                              title={!room.presence_sensor_url ? 'No sensor configured for this room' : 'Calibrate CO2 sensor'}
+                              disabled={!room.presence_sensor_url}
+                            >
+                              Calibrate
+                            </button>
                             <button className="admin-btn admin-btn-small admin-btn-danger" onClick={() => setRoomDeleteTarget(room)}>Delete</button>
                           </td>
                         </tr>

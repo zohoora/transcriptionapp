@@ -924,6 +924,11 @@ export interface Room {
   id: string;
   name: string;
   description?: string | null;
+  presence_sensor_url?: string | null;
+  co2_baseline_ppm?: number | null;
+  co2_ppm_per_person?: number | null;
+  co2_window_secs?: number | null;
+  co2_calibrated_at?: string | null;
   created_at: string;
   updated_at: string;
 }

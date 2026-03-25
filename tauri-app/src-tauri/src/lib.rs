@@ -34,6 +34,7 @@ pub mod audio;
 pub mod audio_upload_queue;
 pub mod biomarkers;
 pub mod checklist;
+pub mod co2_calibration;
 mod commands;
 pub mod config;
 pub mod continuous_mode;
@@ -278,6 +279,11 @@ pub fn run() {
             ));
             app.manage(audio_queue.clone());
 
+            // CO2 calibration state
+            let calibration_state: commands::calibration::SharedCalibrationState =
+                Arc::new(std::sync::Mutex::new(None));
+            app.manage(calibration_state);
+
             // Spawn background audio upload task
             let upload_client = shared_profile_client.clone();
             let upload_pipeline = pipeline_state.clone();
@@ -487,6 +493,11 @@ pub fn run() {
             commands::sync_settings_from_server,
             commands::sync_infrastructure_settings,
             commands::sync_room_settings,
+            // CO2 calibration
+            commands::start_co2_calibration,
+            commands::stop_co2_calibration,
+            commands::advance_calibration_phase,
+            commands::get_calibration_status,
         ])
         .on_window_event(|window, event| {
             if let WindowEvent::CloseRequested { .. } = event {

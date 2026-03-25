@@ -29,6 +29,7 @@ export default defineConfig({
         split: resolve(__dirname, 'split.html'),
         'image-viewer': resolve(__dirname, 'image-viewer.html'),
         admin: resolve(__dirname, 'admin.html'),
+        calibration: resolve(__dirname, 'calibration.html'),
       },
     },
   },

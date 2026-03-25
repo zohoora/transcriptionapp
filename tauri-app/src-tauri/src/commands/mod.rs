@@ -4,6 +4,7 @@
 
 mod archive;
 mod audio;
+pub(crate) mod calibration;
 mod clinical_chat;
 mod continuous;
 mod listening;
@@ -23,6 +24,7 @@ mod whisper_server;
 // Re-export all commands for lib.rs registration
 pub use archive::*;
 pub use audio::*;
+pub use calibration::*;
 pub use clinical_chat::*;
 pub use continuous::*;
 pub use listening::*;
