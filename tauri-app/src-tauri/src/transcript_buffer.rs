@@ -203,6 +203,16 @@ impl TranscriptBuffer {
         self.segments.len()
     }
 
+    /// Word count of segments with index <= through_index (without draining).
+    /// Used to check minimum word floors before committing to a split.
+    pub fn word_count_through(&self, through_index: u64) -> usize {
+        self.segments
+            .iter()
+            .filter(|s| s.index <= through_index)
+            .map(|s| s.text.split_whitespace().count())
+            .sum()
+    }
+
     /// Get the timestamp of the first segment
     pub fn first_timestamp(&self) -> Option<DateTime<Utc>> {
         self.segments.first().map(|s| s.started_at)
@@ -351,6 +361,26 @@ mod tests {
     fn test_format_for_detection_empty_buffer() {
         let buffer = TranscriptBuffer::new();
         assert_eq!(buffer.format_for_detection(), "");
+    }
+
+    #[test]
+    fn test_word_count_through() {
+        let mut buffer = TranscriptBuffer::new();
+        buffer.push("Hello doctor how are you".to_string(), 0, 1000, None, None, 0); // 5 words, index 0
+        buffer.push("I have a headache".to_string(), 0, 2000, None, None, 0); // 4 words, index 1
+        buffer.push("Let me check".to_string(), 0, 3000, None, None, 0); // 3 words, index 2
+
+        assert_eq!(buffer.word_count_through(0), 5);
+        assert_eq!(buffer.word_count_through(1), 9);
+        assert_eq!(buffer.word_count_through(2), 12);
+        // Index beyond last — counts all segments
+        assert_eq!(buffer.word_count_through(100), 12);
+    }
+
+    #[test]
+    fn test_word_count_through_empty() {
+        let buffer = TranscriptBuffer::new();
+        assert_eq!(buffer.word_count_through(0), 0);
     }
 
     #[test]

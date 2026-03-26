@@ -57,6 +57,14 @@ const MERGE_EXCERPT_WORDS: usize = 500;
 /// are discarded as ambient noise (hallway chatter, STT hallucinations).
 const IDLE_ENCOUNTER_MAX_WORDS: usize = 200;
 
+/// Minimum word count for a split to be accepted. If the LLM's `end_segment_index`
+/// yields fewer words than this, the split is rejected and the buffer continues
+/// accumulating. This prevents false micro-splits (e.g. 30-word goodbye fragments)
+/// that leave the actual encounter content stranded in the next buffer.
+/// The existing sensor timeout force-split (which uses `last_index()`) is unaffected
+/// since it always archives the entire buffer.
+const MIN_SPLIT_WORD_FLOOR: usize = 100;
+
 /// Extract up to `n` words from the end of `text`.
 fn tail_words(text: &str, n: usize) -> String {
     let words: Vec<&str> = text.split_whitespace().collect();
@@ -1342,6 +1350,26 @@ pub async fn run_continuous_mode(
                 }
             };
 
+            // ── Minimum word floor ──
+            // Reject splits that produce micro-encounters (e.g. 30-word goodbye
+            // fragments). The sensor timeout force-split is exempt because it
+            // always uses last_index() (the entire buffer).
+            // ForceSplit outcomes already use last_index and archive everything,
+            // so only LLM-detected splits (DetectionOutcome::Split) need the check.
+            if matches!(outcome, DetectionOutcome::Split { .. }) {
+                let split_wc = buffer_for_detector.lock()
+                    .ok()
+                    .map(|b| b.word_count_through(end_index))
+                    .unwrap_or(0);
+                if split_wc < MIN_SPLIT_WORD_FLOOR {
+                    info!(
+                        "Split rejected: {} words at end_segment_index={} below {} word floor (total buffer: {} cleaned words). Waiting for sensor timeout or next check.",
+                        split_wc, end_index, MIN_SPLIT_WORD_FLOOR, cleaned_word_count
+                    );
+                    continue;
+                }
+            }
+
             // Split decided — extract encounter
             {
                         encounter_number += 1;
@@ -2116,6 +2144,106 @@ pub async fn run_continuous_mode(
                                         info!(
                                             "Merge check: different encounters (reason: {:?})",
                                             merge_outcome.reason
+                                        );
+                                    }
+                                }
+                            }
+                        }
+
+                        // ── Standalone multi-patient check for large encounters ──
+                        // Safety net: if the inline multi-patient detection (run before
+                        // SOAP at ≥500 words) missed a multi-patient encounter, this
+                        // second pass catches it for large encounters (≥2,500 words).
+                        // Runs after the merge check to avoid wasted work on encounters
+                        // that will be merged back.
+                        if is_clinical
+                            && encounter_word_count >= MULTI_PATIENT_CHECK_WORD_THRESHOLD
+                        {
+                            if let Some(ref client) = llm_client {
+                                info!(
+                                    "Standalone multi-patient check on encounter #{} ({} words)",
+                                    encounter_number, encounter_word_count
+                                );
+                                let mp_outcome = client
+                                    .run_multi_patient_detection(&fast_model, &encounter_text_rich)
+                                    .await;
+                                if let Ok(mut logger) = logger_for_detector.lock() {
+                                    let det_context = match &mp_outcome.detection {
+                                        Some(d) => serde_json::json!({
+                                            "stage": "standalone_multi_patient",
+                                            "patient_count": d.patient_count,
+                                            "confidence": d.confidence,
+                                            "word_count": encounter_word_count,
+                                        }),
+                                        None => serde_json::json!({
+                                            "stage": "standalone_multi_patient",
+                                            "patient_count": 1,
+                                            "word_count": encounter_word_count,
+                                        }),
+                                    };
+                                    logger.log_llm_call(
+                                        "multi_patient_detect",
+                                        &mp_outcome.model,
+                                        &mp_outcome.system_prompt,
+                                        &mp_outcome.user_prompt,
+                                        mp_outcome.response_raw.as_deref(),
+                                        mp_outcome.latency_ms,
+                                        mp_outcome.success,
+                                        mp_outcome.error.as_deref(),
+                                        det_context,
+                                    );
+                                }
+                                if let Some(detection) = mp_outcome.detection {
+                                    info!(
+                                        "Standalone check: {} patients detected in encounter #{}, regenerating per-patient SOAP",
+                                        detection.patient_count, encounter_number
+                                    );
+                                    let (filtered, _) = strip_hallucinations(&encounter_text, 5);
+                                    let soap_now = Utc::now();
+                                    let regen_outcome =
+                                        crate::encounter_pipeline::generate_and_archive_soap(
+                                            client,
+                                            &soap_model,
+                                            &filtered,
+                                            &session_id,
+                                            &soap_now,
+                                            soap_detail_level,
+                                            &soap_format,
+                                            &soap_custom_instructions,
+                                            notes_text.clone(),
+                                            encounter_word_count,
+                                            Some(&detection),
+                                            &logger_for_detector,
+                                            serde_json::json!({
+                                                "stage": "standalone_multi_patient_soap",
+                                                "session_id": session_id,
+                                                "encounter_number": encounter_number,
+                                                "detection_confidence": detection.confidence,
+                                            }),
+                                        )
+                                        .await;
+                                    if let crate::encounter_pipeline::SoapGenerationOutcome::Success {
+                                        ref result,
+                                        ref content,
+                                        ..
+                                    } = regen_outcome
+                                    {
+                                        if result.notes.len() > 1 {
+                                            let _ = local_archive::save_multi_patient_soap(
+                                                &session_id,
+                                                &soap_now,
+                                                &result.notes,
+                                            );
+                                        }
+                                        sync_ctx_for_detector.sync_soap(
+                                            &session_id,
+                                            content,
+                                            soap_detail_level,
+                                            &soap_format,
+                                        );
+                                        info!(
+                                            "Standalone multi-patient SOAP regenerated for encounter #{} ({} notes)",
+                                            encounter_number, result.notes.len()
                                         );
                                     }
                                 }
