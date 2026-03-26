@@ -69,6 +69,12 @@ pub enum DayEvent {
         session_id: String,
         split_into: Vec<String>,
     },
+    #[serde(rename = "idle_buffer_cleared")]
+    IdleBufferCleared {
+        ts: String,
+        word_count: usize,
+        buffer_age_secs: i64,
+    },
     #[serde(rename = "continuous_mode_stopped")]
     ContinuousModeStopped {
         ts: String,

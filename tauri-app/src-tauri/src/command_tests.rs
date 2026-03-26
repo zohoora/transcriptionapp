@@ -84,6 +84,7 @@ mod tests {
             shadow_csv_log_enabled: true,
             hybrid_confirm_window_secs: 180,
             hybrid_min_words_for_sensor_split: 500,
+            idle_encounter_timeout_secs: 900,
             thermal_hot_pixel_threshold_c: 28.0,
             co2_baseline_ppm: 420.0,
         };

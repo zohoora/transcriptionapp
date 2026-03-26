@@ -207,6 +207,11 @@ impl TranscriptBuffer {
     pub fn first_timestamp(&self) -> Option<DateTime<Utc>> {
         self.segments.first().map(|s| s.started_at)
     }
+
+    /// Remove all segments from the buffer.
+    pub fn clear(&mut self) {
+        self.segments.clear();
+    }
 }
 
 #[cfg(test)]
@@ -346,6 +351,21 @@ mod tests {
     fn test_format_for_detection_empty_buffer() {
         let buffer = TranscriptBuffer::new();
         assert_eq!(buffer.format_for_detection(), "");
+    }
+
+    #[test]
+    fn test_transcript_buffer_clear() {
+        let mut buffer = TranscriptBuffer::new();
+        buffer.push("Hello".to_string(), 0, 1000, None, None, 0);
+        buffer.push("World".to_string(), 0, 2000, None, None, 0);
+        assert_eq!(buffer.word_count(), 2);
+        assert!(!buffer.is_empty());
+
+        buffer.clear();
+        assert!(buffer.is_empty());
+        assert_eq!(buffer.word_count(), 0);
+        assert_eq!(buffer.first_index(), None);
+        assert_eq!(buffer.first_timestamp(), None);
     }
 
 }

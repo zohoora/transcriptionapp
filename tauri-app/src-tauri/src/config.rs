@@ -221,11 +221,20 @@ pub struct Settings {
     pub hybrid_confirm_window_secs: u64,
     #[serde(default = "default_hybrid_min_words_for_sensor_split")]
     pub hybrid_min_words_for_sensor_split: usize,
+    // Idle encounter timeout: auto-clear stale buffers with minimal content.
+    // After this many seconds with < IDLE_ENCOUNTER_MAX_WORDS, the buffer is
+    // discarded as ambient noise. 0 = disabled.
+    #[serde(default = "default_idle_encounter_timeout_secs")]
+    pub idle_encounter_timeout_secs: u32,
     // Multi-sensor suite settings (thermal + CO2 analysis)
     #[serde(default = "default_thermal_hot_pixel_threshold_c")]
     pub thermal_hot_pixel_threshold_c: f32,
     #[serde(default = "default_co2_baseline_ppm")]
     pub co2_baseline_ppm: f32,
+}
+
+fn default_idle_encounter_timeout_secs() -> u32 {
+    900 // 15 minutes — clear stale buffers accumulating ambient noise between encounters
 }
 
 fn default_thermal_hot_pixel_threshold_c() -> f32 {
@@ -456,6 +465,7 @@ impl Default for Settings {
             shadow_csv_log_enabled: default_shadow_csv_log_enabled(),
             hybrid_confirm_window_secs: default_hybrid_confirm_window_secs(),
             hybrid_min_words_for_sensor_split: default_hybrid_min_words_for_sensor_split(),
+            idle_encounter_timeout_secs: default_idle_encounter_timeout_secs(),
             thermal_hot_pixel_threshold_c: default_thermal_hot_pixel_threshold_c(),
             co2_baseline_ppm: default_co2_baseline_ppm(),
         }
@@ -798,6 +808,8 @@ pub struct RoomOverlay {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub hybrid_min_words_for_sensor_split: Option<usize>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub idle_encounter_timeout_secs: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub screen_capture_enabled: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub screen_capture_interval_secs: Option<u32>,
@@ -932,6 +944,7 @@ impl Settings {
             co2_baseline_ppm: Some(self.co2_baseline_ppm),
             hybrid_confirm_window_secs: Some(self.hybrid_confirm_window_secs),
             hybrid_min_words_for_sensor_split: Some(self.hybrid_min_words_for_sensor_split),
+            idle_encounter_timeout_secs: Some(self.idle_encounter_timeout_secs),
             screen_capture_enabled: Some(self.screen_capture_enabled),
             screen_capture_interval_secs: Some(self.screen_capture_interval_secs),
             shadow_active_method: Some(self.shadow_active_method.to_string()),
@@ -966,6 +979,7 @@ impl Settings {
         if let Some(v) = room.co2_baseline_ppm { self.co2_baseline_ppm = v; }
         if let Some(v) = room.hybrid_confirm_window_secs { self.hybrid_confirm_window_secs = v; }
         if let Some(v) = room.hybrid_min_words_for_sensor_split { self.hybrid_min_words_for_sensor_split = v; }
+        if let Some(v) = room.idle_encounter_timeout_secs { self.idle_encounter_timeout_secs = v; }
         if let Some(v) = room.screen_capture_enabled { self.screen_capture_enabled = v; }
         if let Some(v) = room.screen_capture_interval_secs { self.screen_capture_interval_secs = v; }
         if let Some(ref v) = room.shadow_active_method {
@@ -1187,6 +1201,11 @@ impl Config {
         // Hybrid: min words 100-5000
         self.hybrid_min_words_for_sensor_split = self.hybrid_min_words_for_sensor_split.clamp(100, 5000);
 
+        // Idle encounter timeout: 0 (disabled) or 300-3600 seconds (5 min - 1 hour)
+        if self.idle_encounter_timeout_secs > 0 {
+            self.idle_encounter_timeout_secs = self.idle_encounter_timeout_secs.clamp(300, 3600);
+        }
+
         // Thermal: hot pixel threshold 20-40°C
         self.thermal_hot_pixel_threshold_c = self.thermal_hot_pixel_threshold_c.clamp(20.0, 40.0);
 
@@ -1334,6 +1353,7 @@ impl Config {
             "soap_detail_level": self.soap_detail_level,
             "soap_format": self.soap_format,
             "soap_custom_instructions": self.soap_custom_instructions,
+            "idle_encounter_timeout_secs": self.idle_encounter_timeout_secs,
             "screen_capture_enabled": self.screen_capture_enabled,
             "screen_capture_interval_secs": self.screen_capture_interval_secs,
             "fast_model": self.fast_model,
@@ -1472,6 +1492,7 @@ mod tests {
             shadow_csv_log_enabled: default_shadow_csv_log_enabled(),
             hybrid_confirm_window_secs: default_hybrid_confirm_window_secs(),
             hybrid_min_words_for_sensor_split: default_hybrid_min_words_for_sensor_split(),
+            idle_encounter_timeout_secs: default_idle_encounter_timeout_secs(),
             thermal_hot_pixel_threshold_c: default_thermal_hot_pixel_threshold_c(),
             co2_baseline_ppm: default_co2_baseline_ppm(),
             stt_alias: "medical-streaming".to_string(),
@@ -1602,6 +1623,7 @@ mod tests {
             shadow_csv_log_enabled: default_shadow_csv_log_enabled(),
             hybrid_confirm_window_secs: default_hybrid_confirm_window_secs(),
             hybrid_min_words_for_sensor_split: default_hybrid_min_words_for_sensor_split(),
+            idle_encounter_timeout_secs: default_idle_encounter_timeout_secs(),
             thermal_hot_pixel_threshold_c: default_thermal_hot_pixel_threshold_c(),
             co2_baseline_ppm: default_co2_baseline_ppm(),
             stt_alias: default_stt_alias(),
@@ -2150,6 +2172,34 @@ mod tests {
     #[test]
     fn test_hybrid_mode_display() {
         assert_eq!(EncounterDetectionMode::Hybrid.to_string(), "hybrid");
+    }
+
+    #[test]
+    fn test_idle_encounter_timeout_clamping() {
+        let mut config = Config::default();
+
+        // Default is 900s (15 min)
+        assert_eq!(config.idle_encounter_timeout_secs, 900);
+
+        // 0 means disabled — should stay 0
+        config.idle_encounter_timeout_secs = 0;
+        config.clamp_values();
+        assert_eq!(config.idle_encounter_timeout_secs, 0);
+
+        // Below minimum (300s) — clamped up
+        config.idle_encounter_timeout_secs = 60;
+        config.clamp_values();
+        assert_eq!(config.idle_encounter_timeout_secs, 300);
+
+        // Above maximum (3600s) — clamped down
+        config.idle_encounter_timeout_secs = 7200;
+        config.clamp_values();
+        assert_eq!(config.idle_encounter_timeout_secs, 3600);
+
+        // Within range — unchanged
+        config.idle_encounter_timeout_secs = 900;
+        config.clamp_values();
+        assert_eq!(config.idle_encounter_timeout_secs, 900);
     }
 
     // ========================================================================

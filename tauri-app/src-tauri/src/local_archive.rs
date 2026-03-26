@@ -768,7 +768,7 @@ pub fn merge_encounters(
 }
 
 /// Resolve the date directory from a YYYY-MM-DD string.
-fn get_date_dir_from_str(date_str: &str) -> Result<PathBuf, String> {
+pub(crate) fn get_date_dir_from_str(date_str: &str) -> Result<PathBuf, String> {
     let date = NaiveDate::parse_from_str(date_str, "%Y-%m-%d")
         .map_err(|e| format!("Invalid date format: {}", e))?;
     let base = get_archive_dir()?;
@@ -779,7 +779,7 @@ fn get_date_dir_from_str(date_str: &str) -> Result<PathBuf, String> {
 }
 
 /// Resolve the session directory from session_id + date string.
-fn get_session_dir_from_str(session_id: &str, date_str: &str) -> Result<PathBuf, String> {
+pub(crate) fn get_session_dir_from_str(session_id: &str, date_str: &str) -> Result<PathBuf, String> {
     validate_session_id(session_id)?;
     let date_dir = get_date_dir_from_str(date_str)?;
     Ok(date_dir.join(session_id))

@@ -24,229 +24,8 @@ use crate::encounter_experiment::strip_hallucinations;
 use crate::llm_client::LLMClient;
 use crate::local_archive;
 use crate::pipeline::{start_pipeline, PipelineConfig, PipelineMessage};
-use crate::profile_client::ProfileClient;
+use crate::server_sync::ServerSyncContext;
 
-/// Context for syncing session data to the profile server.
-/// Threaded through continuous mode and session commands.
-#[derive(Clone)]
-pub struct ServerSyncContext {
-    pub physician_id: Option<String>,
-    pub physician_name: Option<String>,
-    pub room_name: Option<String>,
-    pub client: Option<ProfileClient>,
-}
-
-impl ServerSyncContext {
-    pub fn empty() -> Self {
-        Self {
-            physician_id: None,
-            physician_name: None,
-            room_name: None,
-            client: None,
-        }
-    }
-
-    /// Build from Tauri shared state locks. Acquires reads briefly, then drops.
-    pub async fn from_state(
-        active_physician: &crate::commands::SharedActivePhysician,
-        room_config_state: &crate::commands::SharedRoomConfig,
-        profile_client_state: &crate::commands::SharedProfileClient,
-    ) -> Self {
-        let physician = active_physician.read().await;
-        let room_config = room_config_state.read().await;
-        let client = profile_client_state.read().await;
-        Self {
-            physician_id: physician.as_ref().map(|p| p.id.clone()),
-            physician_name: physician.as_ref().map(|p| p.name.clone()),
-            room_name: room_config.as_ref().map(|rc| rc.room_name.clone()),
-            client: client.clone(),
-        }
-    }
-
-    /// Fire-and-forget: upload session metadata+transcript+auxiliary files to server.
-    /// Also schedules a delayed re-sync (30s) to catch late-written files
-    /// (SOAP generation events in pipeline_log, replay_bundle from build_and_reset).
-    pub fn sync_session(&self, session_id: &str, date: &str) {
-        let Some(ref phys_id) = self.physician_id else { return };
-        let Some(ref client) = self.client else { return };
-        let phys_id = phys_id.clone();
-        let client = client.clone();
-        let sid = session_id.to_string();
-        let date = date.to_string();
-
-        // Immediate sync: core data + whatever aux files exist now
-        let phys_id2 = phys_id.clone();
-        let client2 = client.clone();
-        let sid2 = sid.clone();
-        let date2 = date.clone();
-        tauri::async_runtime::spawn(async move {
-            // Upload core session data (metadata + transcript + SOAP)
-            if let Ok(details) = local_archive::get_session(&sid, &date) {
-                if let Ok(body) = serde_json::to_value(&details) {
-                    if let Err(e) = client.upload_session(&phys_id, &sid, &body).await {
-                        warn!("Server sync failed (upload_session {}): {e}", sid);
-                    }
-                }
-            }
-
-            Self::upload_aux_files(&client, &phys_id, &sid, &date).await;
-        });
-
-        // Delayed re-sync: catches late-written files (SOAP events, replay bundle)
-        tauri::async_runtime::spawn(async move {
-            tokio::time::sleep(std::time::Duration::from_secs(30)).await;
-            info!("Delayed re-sync for session {}", sid2);
-
-            // Re-upload SOAP (may have been generated after initial sync)
-            if let Ok(details) = local_archive::get_session(&sid2, &date2) {
-                if details.soap_note.is_some() {
-                    if let Ok(body) = serde_json::to_value(&details) {
-                        if let Err(e) = client2.upload_session(&phys_id2, &sid2, &body).await {
-                            warn!("Delayed re-sync failed (upload_session {}): {e}", sid2);
-                        }
-                    }
-                }
-            }
-
-            Self::upload_aux_files(&client2, &phys_id2, &sid2, &date2).await;
-        });
-    }
-
-    /// Fire-and-forget: delete a merged-away session from the server and re-upload the surviving session.
-    pub fn sync_merge(&self, deleted_session_id: &str, surviving_session_id: &str, date: &str) {
-        let Some(ref phys_id) = self.physician_id else { return };
-        let Some(ref client) = self.client else { return };
-        let phys_id = phys_id.clone();
-        let client = client.clone();
-        let deleted = deleted_session_id.to_string();
-        let surviving = surviving_session_id.to_string();
-        let date = date.to_string();
-
-        tauri::async_runtime::spawn(async move {
-            // Delete the merged-away session from server
-            if let Err(e) = client.delete_session(&phys_id, &deleted).await {
-                warn!("Server sync: failed to delete merged session {}: {e}", deleted);
-            } else {
-                info!("Server sync: deleted merged session {} from server", deleted);
-            }
-
-            // Re-upload the surviving (merged) session with updated data
-            if let Ok(details) = local_archive::get_session(&surviving, &date) {
-                if let Ok(body) = serde_json::to_value(&details) {
-                    if let Err(e) = client.upload_session(&phys_id, &surviving, &body).await {
-                        warn!("Server sync: failed to re-upload merged session {}: {e}", surviving);
-                    }
-                }
-            }
-        });
-    }
-
-    /// Upload auxiliary files (pipeline_log, replay_bundle, segments) and day_log.
-    async fn upload_aux_files(
-        client: &crate::profile_client::ProfileClient,
-        phys_id: &str,
-        session_id: &str,
-        date: &str,
-    ) {
-        if let Ok(session_dir) = Self::local_session_dir(session_id, date) {
-            for filename in &["pipeline_log.jsonl", "replay_bundle.json", "segments.jsonl"] {
-                let path = session_dir.join(filename);
-                if path.exists() {
-                    match std::fs::read(&path) {
-                        Ok(data) => {
-                            if let Err(e) = client.upload_session_file(phys_id, session_id, filename, data).await {
-                                warn!("Server sync failed ({} for {}): {e}", filename, session_id);
-                            }
-                        }
-                        Err(e) => warn!("Failed to read {}: {e}", path.display()),
-                    }
-                }
-            }
-            // Upload screenshots
-            let screenshots_dir = session_dir.join("screenshots");
-            if screenshots_dir.is_dir() {
-                if let Ok(entries) = std::fs::read_dir(&screenshots_dir) {
-                    for entry in entries.flatten() {
-                        let path = entry.path();
-                        if path.extension().map_or(false, |e| e == "jpg") {
-                            let fname = format!("screenshots/{}", path.file_name().unwrap_or_default().to_string_lossy());
-                            match std::fs::read(&path) {
-                                Ok(data) => {
-                                    if let Err(e) = client.upload_session_file(phys_id, session_id, &fname, data).await {
-                                        warn!("Server sync failed ({} for {}): {e}", fname, session_id);
-                                    }
-                                }
-                                Err(e) => warn!("Failed to read screenshot {}: {e}", path.display()),
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        if let Ok(date_dir) = Self::local_date_dir(date) {
-            let day_log_path = date_dir.join("day_log.jsonl");
-            if day_log_path.exists() {
-                match std::fs::read(&day_log_path) {
-                    Ok(data) => {
-                        if let Err(e) = client.upload_day_log(phys_id, date, data).await {
-                            warn!("Server sync failed (day_log for {}): {e}", date);
-                        }
-                    }
-                    Err(e) => warn!("Failed to read day_log: {e}"),
-                }
-            }
-        }
-    }
-
-    /// Resolve the local session directory from session_id + date string.
-    fn local_session_dir(session_id: &str, date_str: &str) -> Result<std::path::PathBuf, String> {
-        let date_dir = Self::local_date_dir(date_str)?;
-        Ok(date_dir.join(session_id))
-    }
-
-    /// Resolve the local date directory from a date string.
-    fn local_date_dir(date_str: &str) -> Result<std::path::PathBuf, String> {
-        let date = chrono::NaiveDate::parse_from_str(date_str, "%Y-%m-%d")
-            .map_err(|e| format!("Invalid date: {e}"))?;
-        let home = dirs::home_dir().ok_or("No home dir")?;
-        Ok(home
-            .join(".transcriptionapp")
-            .join("archive")
-            .join(format!("{:04}", chrono::Datelike::year(&date)))
-            .join(format!("{:02}", chrono::Datelike::month(&date)))
-            .join(format!("{:02}", chrono::Datelike::day(&date))))
-    }
-
-    /// Fire-and-forget: upload SOAP note to server.
-    pub fn sync_soap(&self, session_id: &str, soap_content: &str, detail_level: u8, format: &str) {
-        let Some(ref phys_id) = self.physician_id else { return };
-        let Some(ref client) = self.client else { return };
-        let phys_id = phys_id.clone();
-        let client = client.clone();
-        let sid = session_id.to_string();
-        let soap = soap_content.to_string();
-        let dl = detail_level;
-        let fmt = format.to_string();
-        tauri::async_runtime::spawn(async move {
-            let body = serde_json::json!({
-                "content": soap,
-                "detail_level": dl,
-                "format": fmt,
-            });
-            if let Err(e) = client.update_soap(&phys_id, &sid, &body).await {
-                warn!("Server sync failed (update_soap {}): {e}", sid);
-            }
-        });
-    }
-
-    /// Enrich metadata with physician/room fields.
-    pub fn enrich_metadata(&self, metadata: &mut local_archive::ArchiveMetadata) {
-        metadata.physician_id = self.physician_id.clone();
-        metadata.physician_name = self.physician_name.clone();
-        metadata.room_name = self.room_name.clone();
-    }
-}
 // Re-export submodule types for backward compatibility
 pub use crate::transcript_buffer::{BufferedSegment, TranscriptBuffer};
 pub use crate::encounter_detection::{
@@ -271,6 +50,11 @@ pub use crate::patient_name_tracker::PatientNameTracker;
 
 /// Number of words to extract from transcript tail/head for merge comparison
 const MERGE_EXCERPT_WORDS: usize = 500;
+
+/// Maximum word count for a buffer to be considered "idle" and auto-cleared.
+/// Buffers older than `idle_encounter_timeout_secs` with fewer words than this
+/// are discarded as ambient noise (hallway chatter, STT hallucinations).
+const IDLE_ENCOUNTER_MAX_WORDS: usize = 200;
 
 /// Extract up to `n` words from the end of `text`.
 fn tail_words(text: &str, n: usize) -> String {
@@ -890,259 +674,25 @@ pub async fn run_continuous_mode(
 
     // Spawn shadow observer task (if shadow mode is active)
     let shadow_task: Option<tokio::task::JoinHandle<()>> = if is_shadow_mode {
-        let shadow_method = if shadow_active_method == ShadowActiveMethod::Sensor { "llm" } else { "sensor" };
-        let active_method = shadow_active_method;
-        info!("Shadow mode: active={}, shadow={}", active_method, shadow_method);
-
-        // Initialize shadow CSV logger
-        let shadow_csv_logger: Option<Arc<Mutex<crate::shadow_log::ShadowCsvLogger>>> = if config.shadow_csv_log_enabled {
-            match crate::shadow_log::ShadowCsvLogger::new() {
-                Ok(logger) => Some(Arc::new(Mutex::new(logger))),
-                Err(e) => {
-                    warn!("Failed to create shadow CSV logger: {}", e);
-                    None
-                }
-            }
-        } else {
-            None
-        };
-
-        let shadow_decisions_for_task = handle.shadow_decisions.clone();
-        let last_shadow_for_task = handle.last_shadow_decision.clone();
-        let stop_for_shadow = handle.stop_flag.clone();
-        let app_for_shadow = app.clone();
-        let buffer_for_shadow = handle.transcript_buffer.clone();
-
-        if shadow_method == "sensor" {
-            // Active=LLM, Shadow=sensor — observe sensor state transitions
-            // Use watch channel (not Notify) so we only fire on Present→Absent transitions
-            if let Some(mut state_rx) = shadow_sensor_state_rx.take() {
-                Some(tokio::spawn(async move {
-                    info!("Shadow sensor observer started (watch-based)");
-                    let mut prev_state = crate::presence_sensor::PresenceState::Unknown;
-                    loop {
-                        if stop_for_shadow.load(Ordering::Relaxed) {
-                            break;
-                        }
-
-                        // Wait for next state change
-                        if state_rx.changed().await.is_err() {
-                            info!("Shadow sensor: watch channel closed");
-                            break;
-                        }
-
-                        if stop_for_shadow.load(Ordering::Relaxed) {
-                            break;
-                        }
-
-                        let new_state = *state_rx.borrow_and_update();
-
-                        // Determine shadow outcome based on state transition
-                        let outcome = match (prev_state, new_state) {
-                            (crate::presence_sensor::PresenceState::Present, crate::presence_sensor::PresenceState::Absent) => {
-                                // Present→Absent: this is an encounter boundary
-                                crate::shadow_log::ShadowOutcome::WouldSplit
-                            }
-                            (_, crate::presence_sensor::PresenceState::Present) => {
-                                // Any→Present: no split (patient arrived or still here)
-                                crate::shadow_log::ShadowOutcome::WouldNotSplit
-                            }
-                            _ => {
-                                // Unknown→Absent, Absent→Absent, etc: skip
-                                prev_state = new_state;
-                                continue;
-                            }
-                        };
-
-                        prev_state = new_state;
-
-                        // Read buffer state (non-destructive)
-                        let (word_count, last_segment) = buffer_for_shadow
-                            .lock()
-                            .map(|b| (b.word_count(), b.last_index()))
-                            .unwrap_or((0, None));
-
-                        let decision = crate::shadow_log::ShadowDecision {
-                            timestamp: Utc::now(),
-                            shadow_method: "sensor".to_string(),
-                            active_method: active_method.to_string(),
-                            outcome: outcome.clone(),
-                            confidence: Some(1.0),
-                            buffer_word_count: word_count,
-                            buffer_last_segment: last_segment,
-                        };
-
-                        let outcome_str = match outcome {
-                            crate::shadow_log::ShadowOutcome::WouldSplit => "would_split",
-                            crate::shadow_log::ShadowOutcome::WouldNotSplit => "would_not_split",
-                        };
-
-                        // Log to CSV
-                        if let Some(ref logger) = shadow_csv_logger {
-                            if let Ok(mut l) = logger.lock() {
-                                l.write_decision(&decision);
-                            }
-                        }
-
-                        // Store for encounter comparison
-                        let summary = crate::shadow_log::ShadowDecisionSummary::from(&decision);
-                        if let Ok(mut decisions) = shadow_decisions_for_task.lock() {
-                            decisions.push(summary);
-                        }
-                        if let Ok(mut last) = last_shadow_for_task.lock() {
-                            *last = Some(decision);
-                        }
-
-                        // Emit event for frontend
-                        let _ = app_for_shadow.emit("continuous_mode_event", serde_json::json!({
-                            "type": "shadow_decision",
-                            "shadow_method": "sensor",
-                            "outcome": outcome_str,
-                            "buffer_words": word_count,
-                            "sensor_state": new_state.as_str()
-                        }));
-
-                        info!("Shadow sensor: {} (state: {}, buffer {} words)", outcome_str, new_state.as_str(), word_count);
-                    }
-                    info!("Shadow sensor observer stopped");
-                }))
-            } else {
-                warn!("Shadow sensor observer: no sensor state receiver available (sensor failed to start)");
-                None
-            }
-        } else {
-            // Active=sensor, Shadow=LLM — run shadow LLM detection loop
-            let silence_trigger_for_shadow = silence_trigger_rx.clone();
-            let check_interval_shadow = config.encounter_check_interval_secs;
-            let shadow_detection_model = config.encounter_detection_model.clone();
-            let shadow_detection_nothink = config.encounter_detection_nothink;
-            let shadow_llm_client = if !config.llm_router_url.is_empty() {
-                LLMClient::new(
-                    &config.llm_router_url,
-                    &config.llm_api_key,
-                    &config.llm_client_id,
-                    &shadow_detection_model,
-                )
-                .ok()
-            } else {
-                None
-            };
-
-            Some(tokio::spawn(async move {
-                info!("Shadow LLM observer started");
-                loop {
-                    if stop_for_shadow.load(Ordering::Relaxed) {
-                        break;
-                    }
-
-                    // Wait for timer or silence trigger (same as active LLM detector)
-                    tokio::select! {
-                        _ = tokio::time::sleep(tokio::time::Duration::from_secs(check_interval_shadow as u64)) => {}
-                        _ = silence_trigger_for_shadow.notified() => {
-                            debug!("Shadow LLM: silence trigger received");
-                        }
-                    }
-
-                    if stop_for_shadow.load(Ordering::Relaxed) {
-                        break;
-                    }
-
-                    // Read buffer state (non-destructive, full transcript for detection)
-                    let (formatted, word_count, last_segment) = buffer_for_shadow
-                        .lock()
-                        .map(|b| (b.format_for_detection(), b.word_count(), b.last_index()))
-                        .unwrap_or_else(|_| (String::new(), 0, None));
-
-                    if word_count < 100 {
-                        continue; // Not enough text to analyze
-                    }
-
-                    // Call LLM for encounter detection
-                    let outcome;
-                    let confidence;
-                    if let Some(ref client) = shadow_llm_client {
-                        let (filtered, _) = crate::encounter_experiment::strip_hallucinations(&formatted, 5);
-                        let (system_prompt, user_prompt) = build_encounter_detection_prompt(&filtered, None);
-                        let system_prompt = if shadow_detection_nothink {
-                            format!("/nothink\n{}", system_prompt)
-                        } else {
-                            system_prompt
-                        };
-                        let llm_future = client.generate(
-                            &shadow_detection_model, &system_prompt, &user_prompt, "shadow_encounter_detection"
-                        );
-                        match tokio::time::timeout(tokio::time::Duration::from_secs(90), llm_future).await {
-                            Ok(Ok(response)) => {
-                                match parse_encounter_detection(&response) {
-                                    Ok(result) => {
-                                        if result.complete && result.confidence.unwrap_or(0.0) >= 0.7 {
-                                            outcome = crate::shadow_log::ShadowOutcome::WouldSplit;
-                                        } else {
-                                            outcome = crate::shadow_log::ShadowOutcome::WouldNotSplit;
-                                        }
-                                        confidence = result.confidence;
-                                    }
-                                    Err(e) => {
-                                        debug!("Shadow LLM: failed to parse detection: {}", e);
-                                        continue;
-                                    }
-                                }
-                            }
-                            Ok(Err(e)) => {
-                                debug!("Shadow LLM: detection call failed: {}", e);
-                                continue;
-                            }
-                            Err(_) => {
-                                debug!("Shadow LLM: detection timed out after 90s");
-                                continue;
-                            }
-                        }
-                    } else {
-                        continue; // No LLM client
-                    }
-
-                    let decision = crate::shadow_log::ShadowDecision {
-                        timestamp: Utc::now(),
-                        shadow_method: "llm".to_string(),
-                        active_method: active_method.to_string(),
-                        outcome,
-                        confidence,
-                        buffer_word_count: word_count,
-                        buffer_last_segment: last_segment,
-                    };
-
-                    // Log to CSV
-                    if let Some(ref logger) = shadow_csv_logger {
-                        if let Ok(mut l) = logger.lock() {
-                            l.write_decision(&decision);
-                        }
-                    }
-
-                    // Store for encounter comparison
-                    let outcome_str = decision.outcome.as_str().to_string();
-                    let summary = crate::shadow_log::ShadowDecisionSummary::from(&decision);
-                    if let Ok(mut decisions) = shadow_decisions_for_task.lock() {
-                        decisions.push(summary);
-                    }
-                    if let Ok(mut last) = last_shadow_for_task.lock() {
-                        *last = Some(decision);
-                    }
-
-                    // Emit event for frontend
-                    let _ = app_for_shadow.emit("continuous_mode_event", serde_json::json!({
-                        "type": "shadow_decision",
-                        "shadow_method": "llm",
-                        "outcome": outcome_str,
-                        "confidence": confidence,
-                        "buffer_words": word_count
-                    }));
-
-                    info!("Shadow LLM: {} (confidence={:?}, buffer {} words)",
-                        outcome_str, confidence, word_count);
-                }
-                info!("Shadow LLM observer stopped");
-            }))
-        }
+        crate::shadow_observer::spawn_shadow_observer(
+            crate::shadow_observer::ShadowObserverConfig {
+                active_method: shadow_active_method,
+                csv_log_enabled: config.shadow_csv_log_enabled,
+                detection_model: config.encounter_detection_model.clone(),
+                detection_nothink: config.encounter_detection_nothink,
+                check_interval_secs: config.encounter_check_interval_secs,
+                llm_router_url: config.llm_router_url.clone(),
+                llm_api_key: config.llm_api_key.clone(),
+                llm_client_id: config.llm_client_id.clone(),
+            },
+            handle.stop_flag.clone(),
+            handle.transcript_buffer.clone(),
+            handle.shadow_decisions.clone(),
+            handle.last_shadow_decision.clone(),
+            shadow_sensor_state_rx.take(),
+            silence_trigger_rx.clone(),
+            app.clone(),
+        )
     } else {
         None
     };
@@ -1161,6 +711,7 @@ pub async fn run_continuous_mode(
     let screenshot_buffer_for_detector = handle.screenshot_buffer.clone();
     let app_for_detector = app.clone();
     let check_interval = config.encounter_check_interval_secs;
+    let idle_timeout_secs = config.idle_encounter_timeout_secs;
 
     // Build LLM client for encounter detection (uses smaller model for better accuracy)
     let detection_model = config.encounter_detection_model.clone();
@@ -1401,6 +952,37 @@ pub async fn run_continuous_mode(
                 let last_idx = buffer.last_index().unwrap_or(0);
                 (buffer.format_for_detection(), buffer.word_count(), buffer.is_empty(), buffer.first_timestamp(), first_idx, last_idx)
             };
+
+            // Idle buffer detection: discard ambient noise that accumulates between encounters.
+            if idle_timeout_secs > 0 && !is_empty && !manual_triggered && !sensor_triggered {
+                if let Some(first_time) = first_ts {
+                    let buffer_age_secs = (Utc::now() - first_time).num_seconds();
+                    if buffer_age_secs > idle_timeout_secs as i64
+                        && word_count < IDLE_ENCOUNTER_MAX_WORDS
+                    {
+                        info!(
+                            "Idle buffer timeout: {} words over {}s (threshold: {}s / {} words) — clearing",
+                            word_count, buffer_age_secs, idle_timeout_secs, IDLE_ENCOUNTER_MAX_WORDS
+                        );
+                        if let Some(ref dl) = *day_logger_for_detector {
+                            dl.log(crate::day_log::DayEvent::IdleBufferCleared {
+                                ts: Utc::now().to_rfc3339(),
+                                word_count,
+                                buffer_age_secs,
+                            });
+                        }
+                        if let Ok(mut buffer) = buffer_for_detector.lock() {
+                            buffer.clear();
+                        }
+                        let _ = app_for_detector.emit("continuous_mode_event", serde_json::json!({
+                            "type": "idle_buffer_cleared",
+                            "word_count": word_count,
+                            "buffer_age_secs": buffer_age_secs,
+                        }));
+                        continue;
+                    }
+                }
+            }
 
             // Pre-compute hallucination-cleaned word count for large buffers.
             // This prevents STT phrase loops from inflating word counts and triggering
@@ -2333,46 +1915,18 @@ pub async fn run_continuous_mode(
                                             sync_ctx_for_detector.sync_merge(&session_id, prev_id, &today);
                                         }
                                         // Regenerate SOAP for the merged encounter
-                                        if !(is_clinical || prev_encounter_is_clinical) {
-                                            info!("Skipping SOAP regeneration for auto-merged non-clinical encounters");
-                                        } else if let Some(ref client) = llm_client {
-                                            let (filtered_merged, _) = strip_hallucinations(&merged_text, 5);
+                                        if let Some(ref client) = llm_client {
                                             let merge_notes = encounter_notes_for_detector
                                                 .lock()
                                                 .map(|n| n.clone())
                                                 .unwrap_or_default();
-                                            let merge_wc = filtered_merged.split_whitespace().count();
-                                            let outcome = crate::encounter_pipeline::generate_and_archive_soap(
-                                                client, &soap_model, &filtered_merged,
-                                                prev_id, prev_date,
-                                                soap_detail_level, &soap_format, &soap_custom_instructions,
-                                                merge_notes, merge_wc, None,
-                                                &logger_for_detector,
-                                                serde_json::json!({
-                                                    "stage": "auto_merge_soap_regen",
-                                                    "merged_into": prev_id,
-                                                    "merged_word_count": merged_wc,
-                                                }),
+                                            crate::encounter_pipeline::regen_soap_after_merge(
+                                                client, &merged_text, prev_id, prev_date,
+                                                &soap_model, soap_detail_level, &soap_format, &soap_custom_instructions,
+                                                merge_notes, prev_encounter_is_clinical, is_clinical,
+                                                &logger_for_detector, &sync_ctx_for_detector,
+                                                "auto_merge_soap_regen",
                                             ).await;
-                                            if let crate::encounter_pipeline::SoapGenerationOutcome::Success { ref content, .. } = outcome {
-                                                // Server sync: upload regenerated SOAP
-                                                sync_ctx_for_detector.sync_soap(prev_id, content, soap_detail_level, &soap_format);
-                                                // Clear non-clinical flag if needed
-                                                if prev_encounter_is_clinical != is_clinical {
-                                                    if let Ok(session_dir) = local_archive::get_session_archive_dir(prev_id, prev_date) {
-                                                        let merge_meta_path = session_dir.join("metadata.json");
-                                                        if let Ok(file_content) = std::fs::read_to_string(&merge_meta_path) {
-                                                            if let Ok(mut metadata) = serde_json::from_str::<local_archive::ArchiveMetadata>(&file_content) {
-                                                                metadata.likely_non_clinical = None;
-                                                                if let Ok(json) = serde_json::to_string_pretty(&metadata) {
-                                                                    let _ = std::fs::write(&merge_meta_path, json);
-                                                                }
-                                                            }
-                                                        }
-                                                    }
-                                                }
-                                                info!("Regenerated SOAP for auto-merged encounter {}", prev_id);
-                                            }
                                         }
 
                                         merge_back_count += 1;
@@ -2482,53 +2036,18 @@ pub async fn run_continuous_mode(
                                                 sync_ctx_for_detector.sync_merge(&session_id, prev_id, &today);
                                             }
                                             // Regenerate SOAP for the merged encounter
-                                            if !(is_clinical || prev_encounter_is_clinical) {
-                                                info!("Skipping SOAP regeneration for merged non-clinical encounters");
-                                            } else if let Some(ref client) = llm_client {
-                                                let (filtered_merged, filter_report) = strip_hallucinations(&merged_text, 5);
-                                                let merge_back_wc = filter_report.cleaned_word_count;
-                                                if let Ok(mut logger) = logger_for_detector.lock() {
-                                                    logger.log_hallucination_filter(serde_json::json!({
-                                                        "stage": "merge_soap_prep",
-                                                        "original_words": filter_report.original_word_count,
-                                                        "filtered_words": merge_back_wc,
-                                                    }));
-                                                }
+                                            if let Some(ref client) = llm_client {
                                                 let merge_notes = encounter_notes_for_detector
                                                     .lock()
                                                     .map(|n| n.clone())
                                                     .unwrap_or_default();
-                                                let merge_soap_outcome = crate::encounter_pipeline::generate_and_archive_soap(
-                                                    client, &soap_model, &filtered_merged,
-                                                    prev_id, prev_date,
-                                                    soap_detail_level, &soap_format, &soap_custom_instructions,
-                                                    merge_notes, merge_back_wc, None,
-                                                    &logger_for_detector,
-                                                    serde_json::json!({
-                                                        "stage": "merge_soap_regen",
-                                                        "merged_into": prev_id,
-                                                        "merged_word_count": merged_wc,
-                                                    }),
+                                                crate::encounter_pipeline::regen_soap_after_merge(
+                                                    client, &merged_text, prev_id, prev_date,
+                                                    &soap_model, soap_detail_level, &soap_format, &soap_custom_instructions,
+                                                    merge_notes, prev_encounter_is_clinical, is_clinical,
+                                                    &logger_for_detector, &sync_ctx_for_detector,
+                                                    "merge_soap_regen",
                                                 ).await;
-                                                if let crate::encounter_pipeline::SoapGenerationOutcome::Success { ref content, .. } = merge_soap_outcome {
-                                                    // Server sync: upload regenerated SOAP
-                                                    sync_ctx_for_detector.sync_soap(prev_id, content, soap_detail_level, &soap_format);
-                                                    // Clear non-clinical flag on keeper
-                                                    if prev_encounter_is_clinical != is_clinical {
-                                                        if let Ok(session_dir) = local_archive::get_session_archive_dir(prev_id, prev_date) {
-                                                            let merge_meta_path = session_dir.join("metadata.json");
-                                                            if let Ok(file_content) = std::fs::read_to_string(&merge_meta_path) {
-                                                                if let Ok(mut metadata) = serde_json::from_str::<local_archive::ArchiveMetadata>(&file_content) {
-                                                                    metadata.likely_non_clinical = None;
-                                                                    if let Ok(json) = serde_json::to_string_pretty(&metadata) {
-                                                                        let _ = std::fs::write(&merge_meta_path, json);
-                                                                    }
-                                                                }
-                                                            }
-                                                        }
-                                                    }
-                                                    info!("Regenerated SOAP for merged encounter {}", prev_id);
-                                                }
                                             }
 
                                             encounter_number -= 1;
@@ -2940,34 +2459,19 @@ pub async fn run_continuous_mode(
                                                     sync_ctx.sync_merge(&session_id, &prev_summary.session_id, &today);
                                                 }
                                                 flush_was_merged = true;
-                                                // Regenerate SOAP only if at least one encounter is clinical
+                                                // Regenerate SOAP for the merged encounter
                                                 let prev_is_clinical = prev_summary.likely_non_clinical != Some(true);
-                                                if is_clinical || prev_is_clinical {
-                                                    let (filtered_merged, _) = strip_hallucinations(&merged_text, 5);
-                                                    let flush_merge_notes = handle.encounter_notes
-                                                        .lock()
-                                                        .map(|n| n.clone())
-                                                        .unwrap_or_default();
-                                                    let flush_merge_wc = filtered_merged.split_whitespace().count();
-                                                    let outcome = crate::encounter_pipeline::generate_and_archive_soap(
-                                                        client, &flush_soap_model, &filtered_merged,
-                                                        &prev_summary.session_id, &now,
-                                                        flush_soap_detail_level, &flush_soap_format, &flush_soap_custom_instructions,
-                                                        flush_merge_notes, flush_merge_wc, None,
-                                                        &logger_for_flush,
-                                                        serde_json::json!({
-                                                            "stage": "flush_merge_soap_regen",
-                                                            "merged_into": prev_summary.session_id,
-                                                            "merged_word_count": merged_wc,
-                                                        }),
-                                                    ).await;
-                                                    if let crate::encounter_pipeline::SoapGenerationOutcome::Success { ref content, .. } = outcome {
-                                                        sync_ctx.sync_soap(&prev_summary.session_id, content, flush_soap_detail_level, &flush_soap_format);
-                                                        info!("Regenerated SOAP for flush-merged encounter {}", prev_summary.session_id);
-                                                    }
-                                                } else {
-                                                    info!("Skipping SOAP regeneration for flush-merged non-clinical encounters");
-                                                }
+                                                let flush_merge_notes = handle.encounter_notes
+                                                    .lock()
+                                                    .map(|n| n.clone())
+                                                    .unwrap_or_default();
+                                                crate::encounter_pipeline::regen_soap_after_merge(
+                                                    client, &merged_text, &prev_summary.session_id, &now,
+                                                    &flush_soap_model, flush_soap_detail_level, &flush_soap_format, &flush_soap_custom_instructions,
+                                                    flush_merge_notes, prev_is_clinical, is_clinical,
+                                                    &logger_for_flush, &sync_ctx,
+                                                    "flush_merge_soap_regen",
+                                                ).await;
                                                 let _ = app.emit("continuous_mode_event", serde_json::json!({
                                                     "type": "encounter_merged",
                                                     "merged_into_session_id": prev_summary.session_id,

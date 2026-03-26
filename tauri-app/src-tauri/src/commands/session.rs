@@ -5,7 +5,7 @@ use super::physicians::{SharedActivePhysician, SharedProfileClient, SharedRoomCo
 use super::{emit_status_arc, emit_transcript_arc, SharedPipelineState, SharedSessionManager};
 use crate::activity_log;
 use crate::config::Config;
-use crate::continuous_mode::ServerSyncContext;
+use crate::server_sync::ServerSyncContext;
 use crate::debug_storage::DebugStorage;
 use crate::local_archive;
 use crate::pipeline::{start_pipeline, PipelineConfig, PipelineMessage};

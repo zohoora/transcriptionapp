@@ -87,6 +87,8 @@ pub struct Room {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub hybrid_min_words_for_sensor_split: Option<usize>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub idle_encounter_timeout_secs: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub screen_capture_enabled: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub screen_capture_interval_secs: Option<u32>,
@@ -128,6 +130,7 @@ impl From<&Room> for crate::config::RoomOverlay {
             co2_baseline_ppm: r.co2_baseline_ppm,
             hybrid_confirm_window_secs: r.hybrid_confirm_window_secs,
             hybrid_min_words_for_sensor_split: r.hybrid_min_words_for_sensor_split,
+            idle_encounter_timeout_secs: r.idle_encounter_timeout_secs,
             screen_capture_enabled: r.screen_capture_enabled,
             screen_capture_interval_secs: r.screen_capture_interval_secs,
             shadow_active_method: r.shadow_active_method.clone(),

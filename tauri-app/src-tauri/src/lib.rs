@@ -60,6 +60,8 @@ pub mod presence_sensor;
 pub mod preprocessing;
 pub mod replay_bundle;
 pub mod segment_log;
+pub mod server_sync;
+pub mod shadow_observer;
 pub mod day_log;
 pub mod screenshot;
 pub mod screenshot_task;

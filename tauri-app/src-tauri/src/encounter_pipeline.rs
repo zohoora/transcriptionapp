@@ -499,7 +499,7 @@ pub async fn recover_orphaned_soap(
     soap_custom_instructions: &str,
     logger: &Arc<Mutex<PipelineLogger>>,
     app: &tauri::AppHandle,
-    sync_ctx: &crate::continuous_mode::ServerSyncContext,
+    sync_ctx: &crate::server_sync::ServerSyncContext,
 ) {
     let today_str = Utc::now().format("%Y-%m-%d").to_string();
     let sessions = match local_archive::list_sessions_by_date(&today_str) {
@@ -596,5 +596,104 @@ pub async fn recover_orphaned_soap(
                 );
             }
         }
+    }
+}
+
+// ── Merge-execute helpers ──────────────────────────────────────────────
+
+/// Clear the `likely_non_clinical` flag on a session's metadata.
+///
+/// Used after merging a clinical and non-clinical encounter — the merged
+/// result should not be flagged non-clinical.
+pub fn clear_non_clinical_flag(session_id: &str, session_date: &DateTime<Utc>) {
+    let session_dir = match local_archive::get_session_archive_dir(session_id, session_date) {
+        Ok(d) => d,
+        Err(e) => {
+            warn!("clear_non_clinical_flag: failed to resolve session dir for {}: {}", session_id, e);
+            return;
+        }
+    };
+    let meta_path = session_dir.join("metadata.json");
+    let content = match std::fs::read_to_string(&meta_path) {
+        Ok(c) => c,
+        Err(e) => {
+            warn!("clear_non_clinical_flag: failed to read metadata for {}: {}", session_id, e);
+            return;
+        }
+    };
+    match serde_json::from_str::<local_archive::ArchiveMetadata>(&content) {
+        Ok(mut metadata) => {
+            metadata.likely_non_clinical = None;
+            match serde_json::to_string_pretty(&metadata) {
+                Ok(json) => {
+                    if let Err(e) = std::fs::write(&meta_path, json) {
+                        warn!("clear_non_clinical_flag: failed to write metadata for {}: {}", session_id, e);
+                    }
+                }
+                Err(e) => warn!("clear_non_clinical_flag: failed to serialize metadata for {}: {}", session_id, e),
+            }
+        }
+        Err(e) => warn!("clear_non_clinical_flag: failed to parse metadata for {}: {}", session_id, e),
+    }
+}
+
+/// Regenerate SOAP for a surviving session after a merge.
+///
+/// Strips hallucinations from the merged text, generates a new SOAP note,
+/// syncs to server, and clears the non-clinical flag if clinical status
+/// differs between the merged encounters. Returns true if SOAP was generated.
+pub async fn regen_soap_after_merge(
+    client: &LLMClient,
+    merged_text: &str,
+    surviving_session_id: &str,
+    surviving_date: &DateTime<Utc>,
+    soap_model: &str,
+    soap_detail_level: u8,
+    soap_format: &str,
+    soap_custom_instructions: &str,
+    notes: String,
+    prev_is_clinical: bool,
+    curr_is_clinical: bool,
+    logger: &Arc<Mutex<PipelineLogger>>,
+    sync_ctx: &crate::server_sync::ServerSyncContext,
+    log_stage: &str,
+) -> bool {
+    if !(prev_is_clinical || curr_is_clinical) {
+        info!("Skipping SOAP regeneration for merged non-clinical encounters");
+        return false;
+    }
+
+    let (filtered_merged, _) = strip_hallucinations(merged_text, 5);
+    let filtered_wc = filtered_merged.split_whitespace().count();
+
+    let outcome = generate_and_archive_soap(
+        client,
+        soap_model,
+        &filtered_merged,
+        surviving_session_id,
+        surviving_date,
+        soap_detail_level,
+        soap_format,
+        soap_custom_instructions,
+        notes,
+        filtered_wc,
+        None,
+        logger,
+        serde_json::json!({
+            "stage": log_stage,
+            "merged_into": surviving_session_id,
+        }),
+    )
+    .await;
+
+    if let SoapGenerationOutcome::Success { ref content, .. } = outcome {
+        sync_ctx.sync_soap(surviving_session_id, content, soap_detail_level, soap_format);
+        if prev_is_clinical != curr_is_clinical {
+            clear_non_clinical_flag(surviving_session_id, surviving_date);
+        }
+        info!("Regenerated SOAP for merged encounter {}", surviving_session_id);
+        true
+    } else {
+        false
     }
 }

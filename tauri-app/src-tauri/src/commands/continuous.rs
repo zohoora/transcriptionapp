@@ -2,7 +2,8 @@
 
 use crate::commands::physicians::{SharedActivePhysician, SharedProfileClient, SharedRoomConfig};
 use crate::config::Config;
-use crate::continuous_mode::{ContinuousModeHandle, ContinuousModeStats, ServerSyncContext};
+use crate::continuous_mode::{ContinuousModeHandle, ContinuousModeStats};
+use crate::server_sync::ServerSyncContext;
 use std::sync::{Arc, Mutex};
 use tauri::{AppHandle, State};
 use tracing::{info, warn};
