@@ -1,5 +1,6 @@
 //! Archive command handlers for local session history
 
+use super::CommandError;
 use crate::commands::{SharedActivePhysician, SharedProfileClient};
 use crate::config::Config;
 use crate::local_archive::{
@@ -42,7 +43,7 @@ fn spawn_sync<F, Fut>(
 pub async fn get_local_session_dates(
     active_physician: State<'_, SharedActivePhysician>,
     profile_client: State<'_, SharedProfileClient>,
-) -> Result<Vec<String>, String> {
+) -> Result<Vec<String>, CommandError> {
     info!("Getting local archive dates");
 
     // Start with local dates (fast path)
@@ -80,7 +81,7 @@ pub async fn get_local_sessions_by_date(
     date: String,
     active_physician: State<'_, SharedActivePhysician>,
     profile_client: State<'_, SharedProfileClient>,
-) -> Result<Vec<ArchiveSummary>, String> {
+) -> Result<Vec<ArchiveSummary>, CommandError> {
     info!("Getting local sessions for date: {}", date);
 
     // Start with local sessions (fast path)
@@ -121,7 +122,7 @@ pub async fn get_local_session_details(
     date: String,
     active_physician: State<'_, SharedActivePhysician>,
     profile_client: State<'_, SharedProfileClient>,
-) -> Result<ArchiveDetails, String> {
+) -> Result<ArchiveDetails, CommandError> {
     info!("Getting local session details: {} on {}", session_id, date);
 
     // Try local first (fast path)
@@ -139,10 +140,10 @@ pub async fn get_local_session_details(
         }
     }
 
-    Err(format!(
+    Err(CommandError::NotFound(format!(
         "Session {} not found locally or on server",
         session_id
-    ))
+    )))
 }
 
 /// Save SOAP note to an archived session
@@ -155,7 +156,7 @@ pub fn save_local_soap_note(
     format: Option<String>,
     active_physician: State<'_, SharedActivePhysician>,
     profile_client: State<'_, SharedProfileClient>,
-) -> Result<(), String> {
+) -> Result<(), CommandError> {
     info!(
         "Saving SOAP note to local archive: {} (detail: {:?}, format: {:?})",
         session_id, detail_level, format
@@ -163,10 +164,10 @@ pub fn save_local_soap_note(
 
     // Parse date and convert to DateTime
     let naive_date = chrono::NaiveDate::parse_from_str(&date, "%Y-%m-%d")
-        .map_err(|e| format!("Invalid date format: {}", e))?;
+        .map_err(|e| CommandError::Validation(format!("Invalid date format: {}", e)))?;
     let datetime = naive_date
         .and_hms_opt(12, 0, 0)
-        .ok_or("Invalid time")?;
+        .ok_or_else(|| CommandError::Validation("Invalid time".into()))?;
     let utc_datetime = chrono::DateTime::<chrono::Utc>::from_naive_utc_and_offset(datetime, chrono::Utc);
 
     local_archive::add_soap_note(
@@ -210,7 +211,7 @@ pub fn delete_local_session(
     date: String,
     active_physician: State<'_, SharedActivePhysician>,
     profile_client: State<'_, SharedProfileClient>,
-) -> Result<(), String> {
+) -> Result<(), CommandError> {
     info!("Deleting local session: {} on {}", session_id, date);
     local_archive::delete_session(&session_id, &date)?;
 
@@ -237,7 +238,7 @@ pub fn split_local_session(
     split_line: usize,
     active_physician: State<'_, SharedActivePhysician>,
     profile_client: State<'_, SharedProfileClient>,
-) -> Result<String, String> {
+) -> Result<String, CommandError> {
     info!("Splitting local session: {} at line {}", session_id, split_line);
     let new_session_id = local_archive::split_session(&session_id, &date, split_line)?;
 
@@ -279,7 +280,7 @@ pub fn merge_local_sessions(
     date: String,
     active_physician: State<'_, SharedActivePhysician>,
     profile_client: State<'_, SharedProfileClient>,
-) -> Result<String, String> {
+) -> Result<String, CommandError> {
     info!("Merging {} local sessions on {}", session_ids.len(), date);
     let surviving_id = local_archive::merge_sessions(&session_ids, &date)?;
 
@@ -323,7 +324,7 @@ pub fn update_session_patient_name(
     patient_name: String,
     active_physician: State<'_, SharedActivePhysician>,
     profile_client: State<'_, SharedProfileClient>,
-) -> Result<(), String> {
+) -> Result<(), CommandError> {
     info!("Updating patient name for session: {}", session_id);
     local_archive::update_patient_name(&session_id, &date, &patient_name)?;
 
@@ -350,7 +351,7 @@ pub fn renumber_local_encounters(
     date: String,
     active_physician: State<'_, SharedActivePhysician>,
     profile_client: State<'_, SharedProfileClient>,
-) -> Result<(), String> {
+) -> Result<(), CommandError> {
     info!("Renumbering encounters for date: {}", date);
     local_archive::renumber_encounters(&date)?;
 
@@ -388,28 +389,32 @@ pub fn renumber_local_encounters(
 pub fn get_session_transcript_lines(
     session_id: String,
     date: String,
-) -> Result<Vec<String>, String> {
+) -> Result<Vec<String>, CommandError> {
     info!("Getting transcript lines for session: {}", session_id);
-    local_archive::get_transcript_lines(&session_id, &date)
+    Ok(local_archive::get_transcript_lines(&session_id, &date)?)
 }
 
 /// Read a local audio file and return its bytes
 /// Used by the history window's audio player for locally-archived sessions
 #[tauri::command]
-pub fn read_local_audio_file(path: String) -> Result<Vec<u8>, String> {
+pub fn read_local_audio_file(path: String) -> Result<Vec<u8>, CommandError> {
     let file_path = PathBuf::from(&path);
     if !file_path.exists() {
-        return Err(format!("Audio file not found: {}", path));
+        return Err(CommandError::NotFound(format!("Audio file: {}", path)));
     }
 
     // Validate the path is within the archive directory to prevent arbitrary file reads
-    let archive_dir = local_archive::get_archive_dir()?;
+    let archive_dir = local_archive::get_archive_dir()
+        .map_err(|e| CommandError::Io(e))?;
     if !file_path.starts_with(&archive_dir) {
-        return Err("Access denied: path is outside the archive directory".to_string());
+        return Err(CommandError::Validation(
+            "Access denied: path is outside the archive directory".into(),
+        ));
     }
 
     info!("Reading local audio file: {}", path);
-    std::fs::read(&file_path).map_err(|e| format!("Failed to read audio file: {}", e))
+    std::fs::read(&file_path)
+        .map_err(|e| CommandError::Io(format!("Failed to read audio file: {}", e)))
 }
 
 // ============================================================================
@@ -421,9 +426,9 @@ pub fn read_local_audio_file(path: String) -> Result<Vec<u8>, String> {
 pub fn get_session_feedback(
     session_id: String,
     date: String,
-) -> Result<Option<SessionFeedback>, String> {
+) -> Result<Option<SessionFeedback>, CommandError> {
     info!("Getting feedback for session: {} on {}", session_id, date);
-    local_archive::read_feedback(&session_id, &date)
+    Ok(local_archive::read_feedback(&session_id, &date)?)
 }
 
 /// Save feedback for a session
@@ -434,7 +439,7 @@ pub fn save_session_feedback(
     feedback: SessionFeedback,
     active_physician: State<'_, SharedActivePhysician>,
     profile_client: State<'_, SharedProfileClient>,
-) -> Result<(), String> {
+) -> Result<(), CommandError> {
     info!("Saving feedback for session: {} on {}", session_id, date);
     local_archive::write_feedback(&session_id, &date, &feedback)?;
 
@@ -565,7 +570,7 @@ pub fn build_split_user_prompt(lines: &[String]) -> String {
 pub async fn suggest_split_points(
     session_id: String,
     date: String,
-) -> Result<Vec<SuggestedSplit>, String> {
+) -> Result<Vec<SuggestedSplit>, CommandError> {
     info!("Suggesting split points for session: {} on {}", session_id, date);
 
     let lines = local_archive::get_transcript_lines(&session_id, &date)?;

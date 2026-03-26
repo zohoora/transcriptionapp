@@ -1,6 +1,7 @@
 //! Tauri commands for CO2 sensor calibration.
 
-use crate::co2_calibration::{CalibrationCommand, CalibrationHandle, CalibrationStatus};
+use super::CommandError;
+use crate::co2_calibration::{CalibrationCommand, CalibrationHandle};
 use std::sync::{Arc, Mutex};
 use tauri::{AppHandle, State};
 use tracing::info;
@@ -13,14 +14,16 @@ pub async fn start_co2_calibration(
     sensor_url: String,
     app: AppHandle,
     calibration_state: State<'_, SharedCalibrationState>,
-) -> Result<(), String> {
+) -> Result<(), CommandError> {
     let stop_flag = Arc::new(std::sync::atomic::AtomicBool::new(false));
     let (command_tx, command_rx) = tokio::sync::mpsc::channel(16);
 
     {
-        let mut state = calibration_state.lock().map_err(|e| e.to_string())?;
+        let mut state = calibration_state
+            .lock()
+            .map_err(|_| CommandError::lock_poisoned("calibration_state"))?;
         if state.is_some() {
-            return Err("Calibration is already running".to_string());
+            return Err(CommandError::AlreadyRunning("calibration".into()));
         }
         *state = Some(CalibrationHandle {
             stop_flag: stop_flag.clone(),
@@ -46,13 +49,15 @@ pub async fn start_co2_calibration(
 #[tauri::command]
 pub fn stop_co2_calibration(
     calibration_state: State<'_, SharedCalibrationState>,
-) -> Result<(), String> {
-    let state = calibration_state.lock().map_err(|e| e.to_string())?;
+) -> Result<(), CommandError> {
+    let state = calibration_state
+        .lock()
+        .map_err(|_| CommandError::lock_poisoned("calibration_state"))?;
     if let Some(ref handle) = *state {
         handle.stop();
         Ok(())
     } else {
-        Err("Calibration is not running".to_string())
+        Err(CommandError::NotRunning("calibration".into()))
     }
 }
 
@@ -60,23 +65,27 @@ pub fn stop_co2_calibration(
 pub async fn advance_calibration_phase(
     skip: bool,
     calibration_state: State<'_, SharedCalibrationState>,
-) -> Result<(), String> {
+) -> Result<(), CommandError> {
     let tx = {
-        let state = calibration_state.lock().map_err(|e| e.to_string())?;
+        let state = calibration_state
+            .lock()
+            .map_err(|_| CommandError::lock_poisoned("calibration_state"))?;
         match *state {
             Some(ref handle) => handle.command_tx.clone(),
-            None => return Err("Calibration is not running".to_string()),
+            None => return Err(CommandError::NotRunning("calibration".into())),
         }
     };
     tx.send(CalibrationCommand::Advance { skip })
         .await
-        .map_err(|_| "Failed to send command".to_string())
+        .map_err(|_| CommandError::Other("Failed to send command".into()))
 }
 
 #[tauri::command]
 pub fn get_calibration_status(
     calibration_state: State<'_, SharedCalibrationState>,
-) -> Result<Option<bool>, String> {
-    let state = calibration_state.lock().map_err(|e| e.to_string())?;
+) -> Result<Option<bool>, CommandError> {
+    let state = calibration_state
+        .lock()
+        .map_err(|_| CommandError::lock_poisoned("calibration_state"))?;
     Ok(Some(state.is_some()))
 }

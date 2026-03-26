@@ -70,7 +70,8 @@ pub async fn clinical_chat_send(
     llm_api_key: String,
     llm_client_id: String,
     messages: Vec<ChatMessage>,
-) -> Result<ClinicalChatResponse, String> {
+) -> Result<ClinicalChatResponse, super::CommandError> {
+    use super::CommandError;
     info!(
         "Clinical chat: sending {} messages to {}",
         messages.len(),
@@ -78,7 +79,9 @@ pub async fn clinical_chat_send(
     );
 
     if llm_router_url.is_empty() {
-        return Err("LLM Router URL is not configured".to_string());
+        return Err(CommandError::Config(
+            "LLM Router URL is not configured".into(),
+        ));
     }
 
     // Build headers
@@ -89,7 +92,7 @@ pub async fn clinical_chat_send(
         headers.insert(
             AUTHORIZATION,
             HeaderValue::from_str(&format!("Bearer {}", llm_api_key))
-                .map_err(|e| format!("Invalid API key: {}", e))?,
+                .map_err(|e| CommandError::Validation(format!("Invalid API key: {}", e)))?,
         );
     }
 
@@ -124,7 +127,7 @@ pub async fn clinical_chat_send(
         .connect_timeout(Duration::from_secs(30))
         .timeout(CHAT_TIMEOUT)
         .build()
-        .map_err(|e| format!("Failed to create HTTP client: {}", e))?;
+        .map_err(|e| CommandError::Network(format!("Failed to create HTTP client: {}", e)))?;
 
     let response = client
         .post(&url)
@@ -135,11 +138,14 @@ pub async fn clinical_chat_send(
         .map_err(|e| {
             error!("Clinical chat request failed: {}", e);
             if e.is_timeout() {
-                "Request timed out".to_string()
+                CommandError::Network("Request timed out".into())
             } else if e.is_connect() {
-                format!("Failed to connect to LLM router at {}: {}", llm_router_url, e)
+                CommandError::Network(format!(
+                    "Failed to connect to LLM router at {}: {}",
+                    llm_router_url, e
+                ))
             } else {
-                format!("Request failed: {}", e)
+                CommandError::Network(format!("Request failed: {}", e))
             }
         })?;
 
@@ -149,13 +155,16 @@ pub async fn clinical_chat_send(
     if !status.is_success() {
         let error_text = response.text().await.unwrap_or_default();
         error!("Clinical chat API error: {} - {}", status, error_text);
-        return Err(format!("API error: {} - {}", status, error_text));
+        return Err(CommandError::Network(format!(
+            "API error: {} - {}",
+            status, error_text
+        )));
     }
 
     let chat_response: ChatCompletionResponse = response
         .json()
         .await
-        .map_err(|e| format!("Failed to parse response: {}", e))?;
+        .map_err(|e| CommandError::Network(format!("Failed to parse response: {}", e)))?;
 
     let content = chat_response
         .choices

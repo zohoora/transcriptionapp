@@ -16,6 +16,7 @@ interface RoomSetupProps {
  */
 export function RoomSetup({ onComplete, existingServerUrl }: RoomSetupProps) {
   const [serverUrl, setServerUrl] = useState(existingServerUrl || 'http://100.119.83.76:8090');
+  const [apiKey, setApiKey] = useState('');
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<boolean | null>(null);
   // Skip step 1 if we already have a server URL (changing rooms, not first run)
@@ -41,12 +42,13 @@ export function RoomSetup({ onComplete, existingServerUrl }: RoomSetupProps) {
         roomName: 'Unconfigured',
         profileServerUrl: serverUrl,
         roomId: null,
+        profileApiKey: apiKey || null,
       });
     } catch (e) {
       console.error('Failed to save initial room config:', e);
     }
     setStep('room');
-  }, [serverUrl]);
+  }, [serverUrl, apiKey]);
 
   const handleRoomSelected = useCallback(async (room: Room) => {
     try {
@@ -54,12 +56,13 @@ export function RoomSetup({ onComplete, existingServerUrl }: RoomSetupProps) {
         roomName: room.name,
         profileServerUrl: serverUrl,
         roomId: room.id,
+        profileApiKey: apiKey || null,
       });
       onComplete();
     } catch (e) {
       console.error('Failed to save room config:', e);
     }
-  }, [serverUrl, onComplete]);
+  }, [serverUrl, apiKey, onComplete]);
 
   if (step === 'room') {
     return (
@@ -109,6 +112,20 @@ export function RoomSetup({ onComplete, existingServerUrl }: RoomSetupProps) {
               {testResult ? 'Connected successfully' : 'Connection failed'}
             </span>
           )}
+        </div>
+
+        <div className="room-setup-field">
+          <label className="room-setup-label" htmlFor="api-key">
+            API Key (optional)
+          </label>
+          <input
+            id="api-key"
+            type="password"
+            className="room-setup-input"
+            value={apiKey}
+            onChange={(e) => setApiKey(e.target.value)}
+            placeholder="Leave empty if not required"
+          />
         </div>
 
         <button

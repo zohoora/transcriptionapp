@@ -78,9 +78,10 @@ pub async fn miis_suggest(
     server_url: String,
     session_id: String,
     concepts: Vec<MiisConcept>,
-) -> Result<SuggestResponse, String> {
+) -> Result<SuggestResponse, super::CommandError> {
+    use super::CommandError;
     if server_url.is_empty() {
-        return Err("MIIS server URL not configured".to_string());
+        return Err(CommandError::Config("MIIS server URL not configured".into()));
     }
 
     if concepts.is_empty() {
@@ -135,19 +136,22 @@ pub async fn miis_suggest(
         .timeout(std::time::Duration::from_secs(5))
         .send()
         .await
-        .map_err(|e| format!("MIIS request failed: {}", e))?;
+        .map_err(|e| CommandError::Network(format!("MIIS request failed: {}", e)))?;
 
     if !response.status().is_success() {
         let status = response.status();
         let body = response.text().await.unwrap_or_default();
         warn!("MIIS suggest failed: {} - body: {}", status, body);
-        return Err(format!("MIIS server error: {} - {}", status, body));
+        return Err(CommandError::Network(format!(
+            "MIIS server error: {} - {}",
+            status, body
+        )));
     }
 
     let result: SuggestResponse = response
         .json()
         .await
-        .map_err(|e| format!("Failed to parse MIIS response: {}", e))?;
+        .map_err(|e| CommandError::Network(format!("Failed to parse MIIS response: {}", e)))?;
 
     info!(
         "MIIS returned {} suggestions (set_id: {})",
@@ -165,9 +169,10 @@ pub async fn miis_send_usage(
     session_id: String,
     suggestion_set_id: Option<String>,
     events: Vec<UsageEvent>,
-) -> Result<UsageResponse, String> {
+) -> Result<UsageResponse, super::CommandError> {
+    use super::CommandError;
     if server_url.is_empty() {
-        return Err("MIIS server URL not configured".to_string());
+        return Err(CommandError::Config("MIIS server URL not configured".into()));
     }
 
     if events.is_empty() {
@@ -202,18 +207,18 @@ pub async fn miis_send_usage(
         .timeout(std::time::Duration::from_secs(5))
         .send()
         .await
-        .map_err(|e| format!("MIIS usage request failed: {}", e))?;
+        .map_err(|e| CommandError::Network(format!("MIIS usage request failed: {}", e)))?;
 
     if !response.status().is_success() {
         let status = response.status();
         warn!("MIIS usage failed: {}", status);
-        return Err(format!("MIIS server error: {}", status));
+        return Err(CommandError::Network(format!("MIIS server error: {}", status)));
     }
 
     let result: UsageResponse = response
         .json()
         .await
-        .map_err(|e| format!("Failed to parse MIIS usage response: {}", e))?;
+        .map_err(|e| CommandError::Network(format!("Failed to parse MIIS usage response: {}", e)))?;
 
     debug!("MIIS usage: accepted={}, failed={}", result.accepted, result.failed);
 

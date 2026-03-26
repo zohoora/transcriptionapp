@@ -66,6 +66,7 @@ pub mod day_log;
 pub mod screenshot;
 pub mod screenshot_task;
 pub mod encounter_pipeline;
+pub mod continuous_mode_events;
 pub mod shadow_log;
 pub mod speaker_profiles;
 #[cfg(test)]
@@ -239,11 +240,12 @@ pub fn run() {
             let room_config = room_config::RoomConfig::load().unwrap_or(None);
             let profile_server_url = room_config.as_ref().map(|rc| rc.profile_server_url.clone());
             let room_id_for_merge = room_config.as_ref().and_then(|rc| rc.room_id.clone());
+            let profile_api_key = room_config.as_ref().and_then(|rc| rc.profile_api_key.clone());
             let shared_room_config: commands::SharedRoomConfig = Arc::new(tokio::sync::RwLock::new(room_config));
             app.manage(shared_room_config);
 
             // Initialize profile client
-            let profile_client = profile_server_url.map(|url| profile_client::ProfileClient::new(&url));
+            let profile_client = profile_server_url.map(|url| profile_client::ProfileClient::new(&url, profile_api_key));
 
             // Startup settings merge + speaker profile sync: fire-and-forget async tasks.
             // Non-blocking — app launches immediately with cached config and profiles.

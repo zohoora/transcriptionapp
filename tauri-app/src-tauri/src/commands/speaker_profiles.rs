@@ -1,5 +1,6 @@
 //! Speaker profile management commands for enrollment-based speaker recognition.
 
+use super::CommandError;
 use crate::commands::physicians::SharedProfileClient;
 use crate::config::Config;
 use crate::speaker_profiles::{SpeakerProfile, SpeakerProfileManager, SpeakerRole};
@@ -58,10 +59,10 @@ pub(crate) fn string_to_role(s: &str) -> SpeakerRole {
 
 /// List all speaker profiles
 #[tauri::command]
-pub fn list_speaker_profiles() -> Result<Vec<SpeakerProfileInfo>, String> {
+pub fn list_speaker_profiles() -> Result<Vec<SpeakerProfileInfo>, CommandError> {
     let manager = SpeakerProfileManager::load().map_err(|e| {
         error!("Failed to load speaker profiles: {}", e);
-        e.to_string()
+        CommandError::Io(e.to_string())
     })?;
 
     let profiles: Vec<SpeakerProfileInfo> = manager.list().iter().map(|p| p.into()).collect();
@@ -71,13 +72,14 @@ pub fn list_speaker_profiles() -> Result<Vec<SpeakerProfileInfo>, String> {
 
 /// Get a single speaker profile by ID
 #[tauri::command]
-pub fn get_speaker_profile(profile_id: String) -> Result<SpeakerProfileInfo, String> {
-    let manager = SpeakerProfileManager::load().map_err(|e| e.to_string())?;
+pub fn get_speaker_profile(profile_id: String) -> Result<SpeakerProfileInfo, CommandError> {
+    let manager = SpeakerProfileManager::load()
+        .map_err(|e| CommandError::Io(e.to_string()))?;
 
     manager
         .get(&profile_id)
         .map(|p| p.into())
-        .ok_or_else(|| format!("Speaker profile '{}' not found", profile_id))
+        .ok_or_else(|| CommandError::NotFound(format!("Speaker profile '{}'", profile_id)))
 }
 
 /// Create a new speaker profile from audio samples
@@ -94,14 +96,16 @@ pub async fn create_speaker_profile(
     description: String,
     audio_samples: Vec<f32>,
     profile_client: State<'_, SharedProfileClient>,
-) -> Result<SpeakerProfileInfo, String> {
+) -> Result<SpeakerProfileInfo, CommandError> {
     // Validate input
     if name.trim().is_empty() {
-        return Err("Name cannot be empty".to_string());
+        return Err(CommandError::Validation("Name cannot be empty".into()));
     }
 
     if audio_samples.len() < 16000 {
-        return Err("Audio sample too short. Please provide at least 1 second of audio.".to_string());
+        return Err(CommandError::Validation(
+            "Audio sample too short. Please provide at least 1 second of audio.".into(),
+        ));
     }
 
     if audio_samples.len() < 80000 {
@@ -126,8 +130,10 @@ pub async fn create_speaker_profile(
     let profile_info: SpeakerProfileInfo = (&profile).into();
 
     // Save to local storage
-    let mut manager = SpeakerProfileManager::load().map_err(|e| e.to_string())?;
-    manager.add(profile.clone()).map_err(|e| e.to_string())?;
+    let mut manager = SpeakerProfileManager::load()
+        .map_err(|e| CommandError::Io(e.to_string()))?;
+    manager.add(profile.clone())
+        .map_err(|e| CommandError::Io(e.to_string()))?;
 
     info!("Created speaker profile: {} ({})", profile_info.name, profile_info.id);
 
@@ -158,16 +164,17 @@ pub fn update_speaker_profile(
     name: String,
     role: String,
     description: String,
-) -> Result<SpeakerProfileInfo, String> {
+) -> Result<SpeakerProfileInfo, CommandError> {
     if name.trim().is_empty() {
-        return Err("Name cannot be empty".to_string());
+        return Err(CommandError::Validation("Name cannot be empty".into()));
     }
 
-    let mut manager = SpeakerProfileManager::load().map_err(|e| e.to_string())?;
+    let mut manager = SpeakerProfileManager::load()
+        .map_err(|e| CommandError::Io(e.to_string()))?;
 
     let existing = manager
         .get(&profile_id)
-        .ok_or_else(|| format!("Speaker profile '{}' not found", profile_id))?;
+        .ok_or_else(|| CommandError::NotFound(format!("Speaker profile '{}'", profile_id)))?;
 
     let updated = SpeakerProfile {
         id: existing.id.clone(),
@@ -180,7 +187,8 @@ pub fn update_speaker_profile(
     };
 
     let profile_info: SpeakerProfileInfo = (&updated).into();
-    manager.update(updated).map_err(|e| e.to_string())?;
+    manager.update(updated)
+        .map_err(|e| CommandError::Io(e.to_string()))?;
 
     info!("Updated speaker profile: {} ({})", profile_info.name, profile_info.id);
     Ok(profile_info)
@@ -191,19 +199,22 @@ pub fn update_speaker_profile(
 pub async fn reenroll_speaker_profile(
     profile_id: String,
     audio_samples: Vec<f32>,
-) -> Result<SpeakerProfileInfo, String> {
+) -> Result<SpeakerProfileInfo, CommandError> {
     if audio_samples.len() < 16000 {
-        return Err("Audio sample too short. Please provide at least 1 second of audio.".to_string());
+        return Err(CommandError::Validation(
+            "Audio sample too short. Please provide at least 1 second of audio.".into(),
+        ));
     }
 
     // Extract new embedding
     let embedding = extract_embedding_from_audio(&audio_samples)?;
 
-    let mut manager = SpeakerProfileManager::load().map_err(|e| e.to_string())?;
+    let mut manager = SpeakerProfileManager::load()
+        .map_err(|e| CommandError::Io(e.to_string()))?;
 
     let existing = manager
         .get(&profile_id)
-        .ok_or_else(|| format!("Speaker profile '{}' not found", profile_id))?;
+        .ok_or_else(|| CommandError::NotFound(format!("Speaker profile '{}'", profile_id)))?;
 
     let updated = SpeakerProfile {
         id: existing.id.clone(),
@@ -216,7 +227,8 @@ pub async fn reenroll_speaker_profile(
     };
 
     let profile_info: SpeakerProfileInfo = (&updated).into();
-    manager.update(updated).map_err(|e| e.to_string())?;
+    manager.update(updated)
+        .map_err(|e| CommandError::Io(e.to_string()))?;
 
     info!("Re-enrolled speaker profile: {} ({})", profile_info.name, profile_info.id);
     Ok(profile_info)
@@ -227,9 +239,11 @@ pub async fn reenroll_speaker_profile(
 pub async fn delete_speaker_profile(
     profile_id: String,
     profile_client: State<'_, SharedProfileClient>,
-) -> Result<(), String> {
-    let mut manager = SpeakerProfileManager::load().map_err(|e| e.to_string())?;
-    manager.delete(&profile_id).map_err(|e| e.to_string())?;
+) -> Result<(), CommandError> {
+    let mut manager = SpeakerProfileManager::load()
+        .map_err(|e| CommandError::Io(e.to_string()))?;
+    manager.delete(&profile_id)
+        .map_err(|e| CommandError::Io(e.to_string()))?;
     info!("Deleted speaker profile: {}", profile_id);
 
     // Best-effort server delete (fire-and-forget)
@@ -249,18 +263,18 @@ pub async fn delete_speaker_profile(
 
 /// Extract voice embedding from audio samples
 #[cfg(feature = "diarization")]
-fn extract_embedding_from_audio(audio: &[f32]) -> Result<Vec<f32>, String> {
+fn extract_embedding_from_audio(audio: &[f32]) -> Result<Vec<f32>, CommandError> {
     // Load config to get model path
     let config = Config::load_or_default();
     let model_path = config
         .get_diarization_model_path()
-        .map_err(|e| format!("Failed to get diarization model path: {}", e))?;
+        .map_err(|e| CommandError::Config(format!("Failed to get diarization model path: {}", e)))?;
 
     if !model_path.exists() {
-        return Err(format!(
-            "Speaker embedding model not found at {:?}. Please download it first.",
+        return Err(CommandError::NotFound(format!(
+            "Speaker embedding model at {:?}. Please download it first.",
             model_path
-        ));
+        )));
     }
 
     // Create diarization provider for embedding extraction
@@ -275,18 +289,20 @@ fn extract_embedding_from_audio(audio: &[f32]) -> Result<Vec<f32>, String> {
     };
 
     let mut provider = DiarizationProvider::new(diarization_config)
-        .map_err(|e| format!("Failed to initialize diarization provider: {}", e))?;
+        .map_err(|e| CommandError::Other(format!("Failed to initialize diarization provider: {}", e)))?;
 
     // Extract embedding
     provider
         .extract_embedding(audio)
-        .map_err(|e| format!("Failed to extract voice embedding: {}", e))
+        .map_err(|e| CommandError::Other(format!("Failed to extract voice embedding: {}", e)))
 }
 
 /// Stub when diarization feature is not enabled
 #[cfg(not(feature = "diarization"))]
-fn extract_embedding_from_audio(_audio: &[f32]) -> Result<Vec<f32>, String> {
-    Err("Speaker enrollment requires the diarization feature to be enabled".to_string())
+fn extract_embedding_from_audio(_audio: &[f32]) -> Result<Vec<f32>, CommandError> {
+    Err(CommandError::Other(
+        "Speaker enrollment requires the diarization feature to be enabled".into(),
+    ))
 }
 
 #[cfg(test)]

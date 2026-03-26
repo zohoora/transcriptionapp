@@ -1,5 +1,6 @@
 //! Commands for continuous charting mode (start/stop/status)
 
+use super::CommandError;
 use crate::commands::physicians::{SharedActivePhysician, SharedProfileClient, SharedRoomConfig};
 use crate::config::Config;
 use crate::continuous_mode::{ContinuousModeHandle, ContinuousModeStats};
@@ -22,14 +23,16 @@ pub async fn start_continuous_mode(
     active_physician: State<'_, SharedActivePhysician>,
     room_config_state: State<'_, SharedRoomConfig>,
     profile_client_state: State<'_, SharedProfileClient>,
-) -> Result<(), String> {
+) -> Result<(), CommandError> {
     info!("Starting continuous charting mode");
 
     // Check if already running
     {
-        let state = continuous_state.lock().map_err(|e| e.to_string())?;
+        let state = continuous_state
+            .lock()
+            .map_err(|_| CommandError::lock_poisoned("continuous_state"))?;
         if state.is_some() {
-            return Err("Continuous mode is already running".to_string());
+            return Err(CommandError::AlreadyRunning("continuous mode".into()));
         }
     }
 
@@ -43,7 +46,9 @@ pub async fn start_continuous_mode(
 
     // Store handle in shared state
     {
-        let mut state = continuous_state.lock().map_err(|e| e.to_string())?;
+        let mut state = continuous_state
+            .lock()
+            .map_err(|_| CommandError::lock_poisoned("continuous_state"))?;
         *state = Some(handle.clone());
     }
 
@@ -82,15 +87,17 @@ pub async fn start_continuous_mode(
 #[tauri::command]
 pub fn stop_continuous_mode(
     continuous_state: State<'_, SharedContinuousModeState>,
-) -> Result<(), String> {
+) -> Result<(), CommandError> {
     info!("Stopping continuous charting mode");
 
-    let state = continuous_state.lock().map_err(|e| e.to_string())?;
+    let state = continuous_state
+        .lock()
+        .map_err(|_| CommandError::lock_poisoned("continuous_state"))?;
     if let Some(ref handle) = *state {
         handle.stop();
         Ok(())
     } else {
-        Err("Continuous mode is not running".to_string())
+        Err(CommandError::NotRunning("continuous mode".into()))
     }
 }
 
@@ -98,8 +105,10 @@ pub fn stop_continuous_mode(
 #[tauri::command]
 pub fn get_continuous_mode_status(
     continuous_state: State<'_, SharedContinuousModeState>,
-) -> Result<ContinuousModeStats, String> {
-    let state = continuous_state.lock().map_err(|e| e.to_string())?;
+) -> Result<ContinuousModeStats, CommandError> {
+    let state = continuous_state
+        .lock()
+        .map_err(|_| CommandError::lock_poisoned("continuous_state"))?;
     if let Some(ref handle) = *state {
         Ok(handle.get_stats())
     } else {
@@ -130,15 +139,17 @@ pub fn get_continuous_mode_status(
 pub fn set_continuous_encounter_notes(
     notes: String,
     continuous_state: State<'_, SharedContinuousModeState>,
-) -> Result<(), String> {
-    let state = continuous_state.lock().map_err(|e| e.to_string())?;
+) -> Result<(), CommandError> {
+    let state = continuous_state
+        .lock()
+        .map_err(|_| CommandError::lock_poisoned("continuous_state"))?;
     if let Some(ref handle) = *state {
         if let Ok(mut encounter_notes) = handle.encounter_notes.lock() {
             *encounter_notes = notes;
         }
         Ok(())
     } else {
-        Err("Continuous mode is not running".to_string())
+        Err(CommandError::NotRunning("continuous mode".into()))
     }
 }
 
@@ -147,14 +158,16 @@ pub fn set_continuous_encounter_notes(
 pub fn set_stt_language(
     language: String,
     pipeline_state: State<'_, super::SharedPipelineState>,
-) -> Result<(), String> {
+) -> Result<(), CommandError> {
     let stt_name = crate::config::iso_to_stt_language(&language).to_string();
-    let state = pipeline_state.lock().map_err(|e| e.to_string())?;
+    let state = pipeline_state
+        .lock()
+        .map_err(|_| CommandError::lock_poisoned("pipeline_state"))?;
     if let Some(ref handle) = state.handle {
         handle.set_stt_language(stt_name);
         Ok(())
     } else {
-        Err("Pipeline is not running".to_string())
+        Err(CommandError::NotRunning("pipeline".into()))
     }
 }
 
@@ -163,8 +176,9 @@ pub fn set_stt_language(
 /// Returns a list of port names (e.g. `/dev/cu.usbserial-2110`) that can be
 /// used with the mmWave presence sensor.
 #[tauri::command]
-pub fn list_serial_ports() -> Result<Vec<String>, String> {
-    let ports = serialport::available_ports().map_err(|e| e.to_string())?;
+pub fn list_serial_ports() -> Result<Vec<String>, CommandError> {
+    let ports = serialport::available_ports()
+        .map_err(|e| CommandError::Io(e.to_string()))?;
     Ok(ports
         .into_iter()
         .map(|p| p.port_name)
@@ -179,13 +193,15 @@ pub fn list_serial_ports() -> Result<Vec<String>, String> {
 #[tauri::command]
 pub fn trigger_new_patient(
     continuous_state: State<'_, SharedContinuousModeState>,
-) -> Result<(), String> {
+) -> Result<(), CommandError> {
     info!("Manual new patient trigger received");
-    let state = continuous_state.lock().map_err(|e| e.to_string())?;
+    let state = continuous_state
+        .lock()
+        .map_err(|_| CommandError::lock_poisoned("continuous_state"))?;
     if let Some(ref handle) = *state {
         handle.encounter_manual_trigger.notify_one();
         Ok(())
     } else {
-        Err("Continuous mode is not running".to_string())
+        Err(CommandError::NotRunning("continuous mode".into()))
     }
 }

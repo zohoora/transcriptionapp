@@ -20,6 +20,7 @@ use tokio::sync::mpsc;
 use tracing::{debug, error, info, warn};
 
 use crate::config::{Config, EncounterDetectionMode, ShadowActiveMethod};
+use crate::continuous_mode_events::ContinuousModeEvent;
 use crate::encounter_experiment::strip_hallucinations;
 use crate::llm_client::LLMClient;
 use crate::local_archive;
@@ -348,10 +349,7 @@ pub async fn run_continuous_mode(
             } else {
                 warn!("State lock poisoned while setting error state");
             }
-            let _ = app.emit("continuous_mode_event", serde_json::json!({
-                "type": "error",
-                "error": e.to_string()
-            }));
+            ContinuousModeEvent::Error { error: e.to_string() }.emit(&app);
             return Err(e.to_string());
         }
     };
@@ -367,9 +365,7 @@ pub async fn run_continuous_mode(
     } else {
         warn!("State lock poisoned while setting recording state");
     }
-    let _ = app.emit("continuous_mode_event", serde_json::json!({
-        "type": "started"
-    }));
+    ContinuousModeEvent::Started.emit(&app);
 
     // Tag the buffer with this pipeline's generation so stale segments are rejected
     let pipeline_generation: u64 = 1; // Single pipeline per continuous mode run
@@ -581,11 +577,7 @@ pub async fn run_continuous_mode(
                 }
 
                 // Emit sensor status event
-                let _ = app.emit("continuous_mode_event", serde_json::json!({
-                    "type": "sensor_status",
-                    "connected": true,
-                    "state": "unknown"
-                }));
+                ContinuousModeEvent::SensorStatus { connected: true, state: "unknown".into() }.emit(&app);
 
                 // Get a dedicated state receiver for shadow sensor observer
                 shadow_sensor_state_rx = Some(sensor.subscribe_state());
@@ -597,10 +589,7 @@ pub async fn run_continuous_mode(
             }
             Err(e) => {
                 warn!("Failed to start presence sensor: {}. Falling back to LLM mode.", e);
-                let _ = app.emit("continuous_mode_event", serde_json::json!({
-                    "type": "error",
-                    "error": format!("Sensor failed to start: {}. Using LLM detection.", e)
-                }));
+                ContinuousModeEvent::Error { error: format!("Sensor failed to start: {}. Using LLM detection.", e) }.emit(&app);
                 // Fall back: create a dummy Notify that never fires
                 sensor_absence_trigger = Arc::new(tokio::sync::Notify::new());
             }
@@ -646,20 +635,12 @@ pub async fn run_continuous_mode(
                             crate::presence_sensor::PresenceState::Unknown => "unknown",
                         };
                         info!("Sensor state changed: {}", state_str);
-                        let _ = app_for_monitor.emit("continuous_mode_event", serde_json::json!({
-                            "type": "sensor_status",
-                            "connected": true,
-                            "state": state_str
-                        }));
+                        ContinuousModeEvent::SensorStatus { connected: true, state: state_str.into() }.emit(&app_for_monitor);
                     }
                     Ok(()) = status_rx.changed() => {
                         let status = status_rx.borrow_and_update().clone();
                         let connected = matches!(status, crate::presence_sensor::SensorStatus::Connected);
-                        let _ = app_for_monitor.emit("continuous_mode_event", serde_json::json!({
-                            "type": "sensor_status",
-                            "connected": connected,
-                            "state": "unknown"
-                        }));
+                        ContinuousModeEvent::SensorStatus { connected, state: "unknown".into() }.emit(&app_for_monitor);
                         if !connected {
                             warn!("Sensor disconnected: {:?}", status);
                         }
@@ -884,11 +865,7 @@ pub async fn run_continuous_mode(
                                 warn!("Hybrid: sensor watch channel closed — sensor disconnected. Falling back to LLM-only.");
                                 sensor_available = false;
                                 sensor_absent_since = None;
-                                let _ = app_for_detector.emit("continuous_mode_event", serde_json::json!({
-                                    "type": "sensor_status",
-                                    "connected": false,
-                                    "state": "unknown"
-                                }));
+                                ContinuousModeEvent::SensorStatus { connected: false, state: "unknown".into() }.emit(&app_for_detector);
                                 continue; // Re-enter loop; next iteration uses LLM-only path
                             }
                         }
@@ -974,11 +951,7 @@ pub async fn run_continuous_mode(
                         if let Ok(mut buffer) = buffer_for_detector.lock() {
                             buffer.clear();
                         }
-                        let _ = app_for_detector.emit("continuous_mode_event", serde_json::json!({
-                            "type": "idle_buffer_cleared",
-                            "word_count": word_count,
-                            "buffer_age_secs": buffer_age_secs,
-                        }));
+                        ContinuousModeEvent::IdleBufferCleared { word_count, buffer_age_secs }.emit(&app_for_detector);
                         continue;
                     }
                 }
@@ -1075,9 +1048,7 @@ pub async fn run_continuous_mode(
             } else {
                 warn!("State lock poisoned while setting checking state");
             }
-            let _ = app_for_detector.emit("continuous_mode_event", serde_json::json!({
-                "type": "checking"
-            }));
+            ContinuousModeEvent::Checking.emit(&app_for_detector);
 
             // Run encounter detection via LLM (with 60s timeout to prevent blocking)
             // Manual trigger or pure-sensor trigger: skip LLM — directly split
@@ -1244,10 +1215,7 @@ pub async fn run_continuous_mode(
                         } else {
                             warn!("Last error lock poisoned, error state not updated");
                         }
-                        let _ = app_for_detector.emit("continuous_mode_event", serde_json::json!({
-                            "type": "error",
-                            "error": "Encounter detection failed"
-                        }));
+                        ContinuousModeEvent::Error { error: "Encounter detection failed".into() }.emit(&app_for_detector);
                         None
                     }
                     Err(_elapsed) => {
@@ -1606,12 +1574,11 @@ pub async fn run_continuous_mode(
                         }
 
                         // Emit encounter detected event
-                        let _ = app_for_detector.emit("continuous_mode_event", serde_json::json!({
-                            "type": "encounter_detected",
-                            "session_id": session_id,
-                            "word_count": encounter_word_count,
-                            "patient_name": encounter_patient_name
-                        }));
+                        ContinuousModeEvent::EncounterDetected {
+                            session_id: session_id.clone(),
+                            word_count: encounter_word_count,
+                            patient_name: encounter_patient_name.clone(),
+                        }.emit(&app_for_detector);
 
                         // Clinical content check: flag non-clinical encounters
                         let is_clinical = if let Some(ref client) = llm_client {
@@ -1739,11 +1706,11 @@ pub async fn run_continuous_mode(
                                             warn!("Failed to save per-patient SOAP files: {}", e);
                                         }
                                     }
-                                    let _ = app_for_detector.emit("continuous_mode_event", serde_json::json!({
-                                        "type": "soap_generated",
-                                        "session_id": session_id,
-                                        "patient_count": patient_count,
-                                    }));
+                                    ContinuousModeEvent::SoapGenerated {
+                                        session_id: session_id.clone(),
+                                        patient_count: Some(patient_count),
+                                        recovered: None,
+                                    }.emit(&app_for_detector);
                                     info!("SOAP generated for encounter #{} ({} patient notes)", encounter_number, patient_count);
                                     // Server sync: upload SOAP
                                     sync_ctx_for_detector.sync_soap(&session_id, content, soap_detail_level, &soap_format);
@@ -1778,11 +1745,10 @@ pub async fn run_continuous_mode(
                                     } else {
                                         warn!("Last error lock poisoned, error state not updated");
                                     }
-                                    let _ = app_for_detector.emit("continuous_mode_event", serde_json::json!({
-                                        "type": "soap_failed",
-                                        "session_id": session_id,
-                                        "error": error,
-                                    }));
+                                    ContinuousModeEvent::SoapFailed {
+                                        session_id: session_id.clone(),
+                                        error: error.clone(),
+                                    }.emit(&app_for_detector);
                                     if let Some(ref dl) = *day_logger_for_detector {
                                         dl.log(crate::day_log::DayEvent::SoapGenerated {
                                             ts: Utc::now().to_rfc3339(),
@@ -1934,12 +1900,12 @@ pub async fn run_continuous_mode(
                                         info!("Auto-merge complete (merge_back_count now {}, encounter_number now {})", merge_back_count, encounter_number);
 
                                         // Emit merge event to frontend
-                                        let _ = app_for_detector.emit("continuous_mode_event", serde_json::json!({
-                                            "type": "encounter_merged",
-                                            "kept_session_id": prev_id,
-                                            "removed_session_id": session_id,
-                                            "reason": format!("small orphan ({} words) with sensor present", encounter_word_count),
-                                        }));
+                                        ContinuousModeEvent::EncounterMerged {
+                                            kept_session_id: Some(prev_id.clone()),
+                                            merged_into_session_id: None,
+                                            removed_session_id: session_id.clone(),
+                                            reason: Some(format!("small orphan ({} words) with sensor present", encounter_word_count)),
+                                        }.emit(&app_for_detector);
 
                                         // Update prev tracking to the merged encounter
                                         prev_encounter_text = Some(merged_text);
@@ -2052,11 +2018,12 @@ pub async fn run_continuous_mode(
 
                                             encounter_number -= 1;
 
-                                            let _ = app_for_detector.emit("continuous_mode_event", serde_json::json!({
-                                                "type": "encounter_merged",
-                                                "merged_into_session_id": prev_id,
-                                                "removed_session_id": session_id
-                                            }));
+                                            ContinuousModeEvent::EncounterMerged {
+                                                kept_session_id: None,
+                                                merged_into_session_id: Some(prev_id.clone()),
+                                                removed_session_id: session_id.clone(),
+                                                reason: None,
+                                            }.emit(&app_for_detector);
 
                                             // Escalate confidence threshold for next detection
                                             merge_back_count += 1;
@@ -2472,11 +2439,12 @@ pub async fn run_continuous_mode(
                                                     &logger_for_flush, &sync_ctx,
                                                     "flush_merge_soap_regen",
                                                 ).await;
-                                                let _ = app.emit("continuous_mode_event", serde_json::json!({
-                                                    "type": "encounter_merged",
-                                                    "merged_into_session_id": prev_summary.session_id,
-                                                    "removed_session_id": session_id
-                                                }));
+                                                ContinuousModeEvent::EncounterMerged {
+                                                    kept_session_id: None,
+                                                    merged_into_session_id: Some(prev_summary.session_id.clone()),
+                                                    removed_session_id: session_id.clone(),
+                                                    reason: None,
+                                                }.emit(&app);
                                             }
                                         } else if let Some(false) = merge_outcome.same_encounter {
                                             info!(
@@ -2513,10 +2481,11 @@ pub async fn run_continuous_mode(
                     if let crate::encounter_pipeline::SoapGenerationOutcome::Success { ref content, .. } = outcome {
                         sync_ctx.sync_soap(&session_id, content, flush_soap_detail_level, &flush_soap_format);
                         info!("SOAP generated for flushed buffer");
-                        let _ = app.emit("continuous_mode_event", serde_json::json!({
-                            "type": "soap_generated",
-                            "session_id": session_id
-                        }));
+                        ContinuousModeEvent::SoapGenerated {
+                            session_id: session_id.clone(),
+                            patient_count: None,
+                            recovered: None,
+                        }.emit(&app);
                     }
                 }
             }
@@ -2539,9 +2508,7 @@ pub async fn run_continuous_mode(
         warn!("State lock poisoned while setting idle state on shutdown");
     }
 
-    let _ = app.emit("continuous_mode_event", serde_json::json!({
-        "type": "stopped"
-    }));
+    ContinuousModeEvent::Stopped.emit(&app);
 
     info!("Continuous mode stopped");
     Ok(())

@@ -38,16 +38,21 @@ pub async fn check_whisper_server_status(url: Option<String>) -> WhisperServerSt
 
 /// List available models from the Whisper server
 #[tauri::command]
-pub async fn list_whisper_server_models() -> Result<Vec<String>, String> {
+pub async fn list_whisper_server_models() -> Result<Vec<String>, super::CommandError> {
     let config = Config::load_or_default();
 
     if config.whisper_server_url.is_empty() {
-        return Err("Whisper server URL is not configured".to_string());
+        return Err(super::CommandError::Config(
+            "Whisper server URL is not configured".into(),
+        ));
     }
 
-    let client =
-        WhisperServerClient::new(&config.whisper_server_url, &config.whisper_server_model)?;
+    let client = WhisperServerClient::new(&config.whisper_server_url, &config.whisper_server_model)
+        .map_err(|e| super::CommandError::Network(e))?;
 
-    client.list_models().await
+    client
+        .list_models()
+        .await
+        .map_err(|e| super::CommandError::Network(e))
 }
 

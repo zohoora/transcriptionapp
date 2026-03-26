@@ -2,7 +2,7 @@
 
 use super::listening::SharedListeningState;
 use super::physicians::{SharedActivePhysician, SharedProfileClient, SharedRoomConfig};
-use super::{emit_status_arc, emit_transcript_arc, SharedPipelineState, SharedSessionManager};
+use super::{emit_status_arc, emit_transcript_arc, CommandError, SharedPipelineState, SharedSessionManager};
 use crate::activity_log;
 use crate::config::Config;
 use crate::server_sync::ServerSyncContext;
@@ -26,7 +26,7 @@ pub async fn start_session(
     room_config_state: State<'_, SharedRoomConfig>,
     profile_client_state: State<'_, SharedProfileClient>,
     device_id: Option<String>,
-) -> Result<(), String> {
+) -> Result<(), CommandError> {
     info!("Starting session with device: {:?}", device_id);
 
     // Clone the Arcs for use in async context
@@ -37,7 +37,9 @@ pub async fn start_session(
     // This is used for optimistic recording - the buffer contains audio captured
     // before the greeting check completed
     let initial_audio_buffer = {
-        let mut listening = listening_state.lock().map_err(|e| e.to_string())?;
+        let mut listening = listening_state
+            .lock()
+            .map_err(|_| CommandError::lock_poisoned("listening_state"))?;
         listening.initial_audio_buffer.take()
     };
 
@@ -51,8 +53,10 @@ pub async fn start_session(
 
     // Transition to preparing
     {
-        let mut session = session_arc.lock().map_err(|e| e.to_string())?;
-        session.start_preparing().map_err(|e| e.to_string())?;
+        let mut session = session_arc
+            .lock()
+            .map_err(|_| CommandError::lock_poisoned("session_state"))?;
+        session.start_preparing()?;
     }
 
     // Emit initial status
@@ -79,7 +83,9 @@ pub async fn start_session(
 
     // Store audio path in session
     if let Some(ref path) = audio_output_path {
-        let mut session = session_arc.lock().map_err(|e| e.to_string())?;
+        let mut session = session_arc
+            .lock()
+            .map_err(|_| CommandError::lock_poisoned("session_state"))?;
         session.set_audio_file_path(path.clone());
     }
 
@@ -108,24 +114,30 @@ pub async fn start_session(
         Ok(h) => h,
         Err(e) => {
             error!("Failed to start pipeline: {}", e);
-            let mut session = session_arc.lock().map_err(|e| e.to_string())?;
+            let mut session = session_arc
+                .lock()
+                .map_err(|_| CommandError::lock_poisoned("session_state"))?;
             session.set_error(SessionError::AudioDeviceError(e.to_string()));
             drop(session);
             emit_status_arc(&app, &session_arc)?;
-            return Err(e.to_string());
+            return Err(CommandError::Io(e.to_string()));
         }
     };
 
     // Store the pipeline handle and get generation for this pipeline instance
     let expected_generation = {
-        let mut ps = pipeline_arc.lock().map_err(|e| e.to_string())?;
+        let mut ps = pipeline_arc
+            .lock()
+            .map_err(|_| CommandError::lock_poisoned("pipeline_state"))?;
         ps.handle = Some(handle);
         ps.next_generation()
     };
 
     // Transition to recording and get session ID for logging
     let session_id = {
-        let mut session = session_arc.lock().map_err(|e| e.to_string())?;
+        let mut session = session_arc
+            .lock()
+            .map_err(|_| CommandError::lock_poisoned("session_state"))?;
         session.start_recording("whisper");
         // Use the session's ID (generated in start_preparing) for log correlation
         session.session_id().unwrap_or("unknown").to_string()
@@ -334,7 +346,7 @@ pub async fn stop_session(
     active_physician: State<'_, SharedActivePhysician>,
     room_config_state: State<'_, SharedRoomConfig>,
     profile_client_state: State<'_, SharedProfileClient>,
-) -> Result<(), String> {
+) -> Result<(), CommandError> {
     info!("Stopping session");
 
     // Clone the Arcs for use in async context
@@ -343,7 +355,9 @@ pub async fn stop_session(
 
     // Get session info for logging before stopping
     let (session_id, elapsed_ms, segment_count) = {
-        let session = session_arc.lock().map_err(|e| e.to_string())?;
+        let session = session_arc
+            .lock()
+            .map_err(|_| CommandError::lock_poisoned("session_state"))?;
         let status = session.status();
         (
             // Reuse the session's ID for log correlation (same ID as start)
@@ -355,21 +369,27 @@ pub async fn stop_session(
 
     // Transition to stopping
     {
-        let mut session = session_arc.lock().map_err(|e| e.to_string())?;
-        session.start_stopping().map_err(|e| e.to_string())?;
+        let mut session = session_arc
+            .lock()
+            .map_err(|_| CommandError::lock_poisoned("session_state"))?;
+        session.start_stopping()?;
     }
 
     emit_status_arc(&app, &session_arc)?;
 
     // Stop the pipeline
     let handle = {
-        let mut ps = pipeline_arc.lock().map_err(|e| e.to_string())?;
+        let mut ps = pipeline_arc
+            .lock()
+            .map_err(|_| CommandError::lock_poisoned("pipeline_state"))?;
         ps.handle.take()
     };
 
     // Get audio file size if available
     let audio_file_size = {
-        let session = session_arc.lock().map_err(|e| e.to_string())?;
+        let session = session_arc
+            .lock()
+            .map_err(|_| CommandError::lock_poisoned("session_state"))?;
         session
             .audio_file_path()
             .and_then(|p| std::fs::metadata(p).ok())
@@ -452,7 +472,9 @@ pub async fn stop_session(
     } else {
         // No pipeline running, just complete
         let transcript_text = {
-            let mut session = session_arc.lock().map_err(|e| e.to_string())?;
+            let mut session = session_arc
+                .lock()
+                .map_err(|_| CommandError::lock_poisoned("session_state"))?;
             session.complete();
             session.transcript_update().finalized_text
         };
@@ -462,7 +484,9 @@ pub async fn stop_session(
 
         // Save to debug storage if enabled
         if debug_enabled {
-            let session = session_arc.lock().map_err(|e| e.to_string())?;
+            let session = session_arc
+                .lock()
+                .map_err(|_| CommandError::lock_poisoned("session_state"))?;
             if let Err(e) = save_session_to_debug_storage(
                 &session_id,
                 &session,
@@ -475,7 +499,9 @@ pub async fn stop_session(
 
         // Save to local archive (always, for calendar history)
         {
-            let session = session_arc.lock().map_err(|e| e.to_string())?;
+            let session = session_arc
+                .lock()
+                .map_err(|_| CommandError::lock_poisoned("session_state"))?;
             match local_archive::save_session(
                 &session_id,
                 &transcript_text,
@@ -564,7 +590,7 @@ pub fn reset_session(
     app: AppHandle,
     session_state: State<'_, SharedSessionManager>,
     pipeline_state: State<'_, SharedPipelineState>,
-) -> Result<(), String> {
+) -> Result<(), CommandError> {
     info!("Resetting session");
 
     // Generate session ID for logging
@@ -573,7 +599,9 @@ pub fn reset_session(
     // Stop any running pipeline and increment generation
     // The generation increment ensures any in-flight pipeline messages are discarded
     {
-        let mut ps = pipeline_state.lock().map_err(|e| e.to_string())?;
+        let mut ps = pipeline_state
+            .lock()
+            .map_err(|_| CommandError::lock_poisoned("pipeline_state"))?;
         // Increment generation first so receiver task will discard any pending messages
         ps.next_generation();
         if let Some(h) = ps.handle.take() {
@@ -588,7 +616,9 @@ pub fn reset_session(
 
     // Reset session
     {
-        let mut session = session_state.lock().map_err(|e| e.to_string())?;
+        let mut session = session_state
+            .lock()
+            .map_err(|_| CommandError::lock_poisoned("session_state"))?;
         session.reset();
     }
 
@@ -605,8 +635,10 @@ pub fn reset_session(
 #[tauri::command]
 pub fn get_audio_file_path(
     session_state: State<'_, SharedSessionManager>,
-) -> Result<Option<String>, String> {
-    let session = session_state.lock().map_err(|e| e.to_string())?;
+) -> Result<Option<String>, CommandError> {
+    let session = session_state
+        .lock()
+        .map_err(|_| CommandError::lock_poisoned("session_state"))?;
     Ok(session
         .audio_file_path()
         .map(|p| p.to_string_lossy().to_string()))
@@ -617,14 +649,16 @@ pub fn get_audio_file_path(
 #[tauri::command]
 pub fn reset_silence_timer(
     pipeline_state: State<'_, SharedPipelineState>,
-) -> Result<(), String> {
+) -> Result<(), CommandError> {
     info!("Resetting silence timer (user cancelled auto-end)");
 
-    let ps = pipeline_state.lock().map_err(|e| e.to_string())?;
+    let ps = pipeline_state
+        .lock()
+        .map_err(|_| CommandError::lock_poisoned("pipeline_state"))?;
     if let Some(ref handle) = ps.handle {
         handle.reset_silence_timer();
         Ok(())
     } else {
-        Err("No active recording session".to_string())
+        Err(CommandError::NotRunning("recording session".into()))
     }
 }

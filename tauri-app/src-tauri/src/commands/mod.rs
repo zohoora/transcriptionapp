@@ -51,6 +51,9 @@ use tokio::sync::RwLock;
 
 /// Structured error type for Tauri commands.
 /// Provides better context than raw String errors.
+///
+/// Serializes to a plain string via `Display`, so the frontend
+/// is unaffected by adding new variants.
 #[derive(Debug, thiserror::Error)]
 pub enum CommandError {
     #[error("Lock poisoned: {context}")]
@@ -59,8 +62,56 @@ pub enum CommandError {
     #[error("Session error: {0}")]
     Session(#[from] crate::session::SessionError),
 
+    #[error("IO error: {0}")]
+    Io(String),
+
+    #[error("Config error: {0}")]
+    Config(String),
+
+    #[error("Not running: {0}")]
+    NotRunning(String),
+
+    #[error("Already running: {0}")]
+    AlreadyRunning(String),
+
+    #[error("Not found: {0}")]
+    NotFound(String),
+
+    #[error("Network error: {0}")]
+    Network(String),
+
+    #[error("Validation error: {0}")]
+    Validation(String),
+
     #[error("{0}")]
     Other(String),
+}
+
+impl CommandError {
+    /// Convenience constructor for lock-poisoned errors.
+    pub fn lock_poisoned(context: &str) -> Self {
+        CommandError::LockPoisoned {
+            context: context.to_string(),
+        }
+    }
+}
+
+impl From<std::io::Error> for CommandError {
+    fn from(e: std::io::Error) -> Self {
+        CommandError::Io(e.to_string())
+    }
+}
+
+impl From<serde_json::Error> for CommandError {
+    fn from(e: serde_json::Error) -> Self {
+        CommandError::Config(e.to_string())
+    }
+}
+
+impl From<String> for CommandError {
+    fn from(s: String) -> Self {
+        CommandError::Other(s)
+    }
 }
 
 impl serde::Serialize for CommandError {
@@ -114,25 +165,30 @@ pub fn create_medplum_client() -> SharedMedplumClient {
 pub(crate) fn emit_status_arc(
     app: &AppHandle,
     session_state: &SharedSessionManager,
-) -> Result<(), String> {
+) -> Result<(), CommandError> {
     use tauri::Emitter;
     let status = {
-        let session = session_state.lock().map_err(|e| e.to_string())?;
+        let session = session_state
+            .lock()
+            .map_err(|_| CommandError::lock_poisoned("session_state"))?;
         session.status()
     };
-    app.emit("session_status", status).map_err(|e| e.to_string())
+    app.emit("session_status", status)
+        .map_err(|e| CommandError::Other(e.to_string()))
 }
 
 /// Helper to emit transcript update
 pub(crate) fn emit_transcript_arc(
     app: &AppHandle,
     session_state: &SharedSessionManager,
-) -> Result<(), String> {
+) -> Result<(), CommandError> {
     use tauri::Emitter;
     let transcript = {
-        let session = session_state.lock().map_err(|e| e.to_string())?;
+        let session = session_state
+            .lock()
+            .map_err(|_| CommandError::lock_poisoned("session_state"))?;
         session.transcript_update()
     };
     app.emit("transcript_update", transcript)
-        .map_err(|e| e.to_string())
+        .map_err(|e| CommandError::Other(e.to_string()))
 }

@@ -1,18 +1,7 @@
-mod error;
-mod routes;
-mod store;
-mod types;
-
 use std::net::SocketAddr;
 use std::path::PathBuf;
-use std::sync::Arc;
-use tokio::sync::RwLock;
-use tower_http::cors::{Any, CorsLayer};
-use tower_http::limit::RequestBodyLimitLayer;
 use tracing::info;
 use tracing_subscriber::EnvFilter;
-
-use store::AppState;
 
 fn default_data_dir() -> PathBuf {
     dirs::home_dir()
@@ -29,7 +18,7 @@ async fn main() {
         )
         .init();
 
-    // CLI args: --port PORT --data-dir PATH
+    // CLI args: --port PORT --data-dir PATH --api-key KEY
     let args: Vec<String> = std::env::args().collect();
     let port = find_arg(&args, "--port")
         .and_then(|s| s.parse::<u16>().ok())
@@ -38,38 +27,19 @@ async fn main() {
         .map(PathBuf::from)
         .unwrap_or_else(default_data_dir);
 
-    // Ensure data directory exists
-    std::fs::create_dir_all(&data_dir).expect("Failed to create data directory");
+    // API key: CLI arg takes precedence, then env var
+    let api_key = find_arg(&args, "--api-key")
+        .or_else(|| std::env::var("PROFILE_API_KEY").ok());
 
-    // Load stores
-    let physicians = store::physicians::PhysicianManager::load(data_dir.join("physicians.json"))
-        .expect("Failed to load physicians");
-    let rooms = store::rooms::RoomManager::load(data_dir.join("rooms.json"))
-        .expect("Failed to load rooms");
-    let speakers = store::speakers::SpeakerManager::load(data_dir.join("speakers.json"))
-        .expect("Failed to load speakers");
-    let infrastructure = store::infrastructure::InfrastructureStore::load(data_dir.join("infrastructure.json"))
-        .expect("Failed to load infrastructure settings");
-    let sessions = store::sessions::SessionStore::new(data_dir.join("sessions"));
+    if api_key.is_some() {
+        info!("API key authentication enabled");
+    } else {
+        info!("API key authentication disabled (no key configured)");
+    }
 
-    let state = Arc::new(AppState {
-        physicians: RwLock::new(physicians),
-        rooms: RwLock::new(rooms),
-        speakers: RwLock::new(speakers),
-        infrastructure: RwLock::new(infrastructure),
-        sessions,
-        data_dir: data_dir.clone(),
-    });
-
-    // Build router
-    let app = routes::build_router(state)
-        .layer(
-            CorsLayer::new()
-                .allow_origin(Any)
-                .allow_methods(Any)
-                .allow_headers(Any),
-        )
-        .layer(RequestBodyLimitLayer::new(500 * 1024 * 1024)); // 500 MB for audio
+    // Build state and app via library functions
+    let state = profile_service::create_app_state(&data_dir);
+    let app = profile_service::build_app(state, api_key);
 
     let addr = SocketAddr::from(([0, 0, 0, 0], port));
     info!("Profile service starting on {addr}");

@@ -1,5 +1,6 @@
 //! Model download and status commands
 
+use super::CommandError;
 use crate::checklist::{self, ChecklistResult};
 use crate::config::{Config, ModelStatus};
 use crate::models::{self, ModelInfo, WhisperModel, WhisperModelInfo};
@@ -47,7 +48,7 @@ pub fn get_model_info() -> Vec<ModelInfo> {
 }
 
 /// Generic helper for downloading models in a blocking task
-async fn download_model_async<F, E>(model_name: &str, download_fn: F) -> Result<String, String>
+async fn download_model_async<F, E>(model_name: &str, download_fn: F) -> Result<String, CommandError>
 where
     F: FnOnce() -> Result<std::path::PathBuf, E> + Send + 'static,
     E: std::fmt::Display + Send + 'static,
@@ -56,7 +57,7 @@ where
 
     let result = tokio::task::spawn_blocking(download_fn)
         .await
-        .map_err(|e| format!("Task failed: {}", e))?;
+        .map_err(|e| CommandError::Other(format!("Task failed: {}", e)))?;
 
     match result {
         Ok(path) => {
@@ -65,29 +66,29 @@ where
         }
         Err(e) => {
             error!("Failed to download {} model: {}", model_name, e);
-            Err(e.to_string())
+            Err(CommandError::Network(e.to_string()))
         }
     }
 }
 
 /// Download a Whisper model
 #[tauri::command]
-pub async fn download_whisper_model(model_name: String) -> Result<String, String> {
+pub async fn download_whisper_model(model_name: String) -> Result<String, CommandError> {
     let model = WhisperModel::from_name(&model_name)
-        .ok_or_else(|| format!("Invalid model name: {}", model_name))?;
+        .ok_or_else(|| CommandError::NotFound(format!("Invalid model name: {}", model_name)))?;
 
     download_model_async("Whisper", move || models::ensure_whisper_model(model)).await
 }
 
 /// Download the speaker embedding model for diarization
 #[tauri::command]
-pub async fn download_speaker_model() -> Result<String, String> {
+pub async fn download_speaker_model() -> Result<String, CommandError> {
     download_model_async("speaker", models::ensure_speaker_model).await
 }
 
 /// Ensure all required models are downloaded
 #[tauri::command]
-pub async fn ensure_models() -> Result<(), String> {
+pub async fn ensure_models() -> Result<(), CommandError> {
     let config = Config::load_or_default();
     let whisper_model = config.whisper_model.clone();
     let need_diarization = config.diarization_enabled;
@@ -102,7 +103,7 @@ pub async fn ensure_models() -> Result<(), String> {
         models::ensure_all_models(&whisper_model, need_diarization)
     })
     .await
-    .map_err(|e| format!("Task failed: {}", e))?;
+    .map_err(|e| CommandError::Other(format!("Task failed: {}", e)))?;
 
     match result {
         Ok(()) => {
@@ -111,7 +112,7 @@ pub async fn ensure_models() -> Result<(), String> {
         }
         Err(e) => {
             error!("Failed to ensure models: {}", e);
-            Err(e.to_string())
+            Err(CommandError::Network(e.to_string()))
         }
     }
 }
@@ -144,13 +145,13 @@ pub fn run_checklist() -> ChecklistResult {
 
 /// Download the speech enhancement model
 #[tauri::command]
-pub async fn download_enhancement_model() -> Result<String, String> {
+pub async fn download_enhancement_model() -> Result<String, CommandError> {
     download_model_async("enhancement", models::ensure_enhancement_model).await
 }
 
 /// Download the YAMNet audio classification model (for cough detection)
 #[tauri::command]
-pub async fn download_yamnet_model() -> Result<String, String> {
+pub async fn download_yamnet_model() -> Result<String, CommandError> {
     download_model_async("YAMNet", models::ensure_yamnet_model).await
 }
 
@@ -162,7 +163,7 @@ pub fn get_whisper_models() -> Vec<WhisperModelInfo> {
 
 /// Download a specific Whisper model by ID
 #[tauri::command]
-pub async fn download_whisper_model_by_id(model_id: String) -> Result<String, String> {
+pub async fn download_whisper_model_by_id(model_id: String) -> Result<String, CommandError> {
     let model_id_clone = model_id.clone();
     info!("Starting download for model: {}", model_id);
 
@@ -170,7 +171,7 @@ pub async fn download_whisper_model_by_id(model_id: String) -> Result<String, St
         models::download_whisper_model_by_id(&model_id_clone)
     })
     .await
-    .map_err(|e| format!("Task failed: {}", e))?;
+    .map_err(|e| CommandError::Other(format!("Task failed: {}", e)))?;
 
     match result {
         Ok(path) => {
@@ -179,21 +180,21 @@ pub async fn download_whisper_model_by_id(model_id: String) -> Result<String, St
         }
         Err(e) => {
             error!("Failed to download model {}: {}", model_id, e);
-            Err(e.to_string())
+            Err(CommandError::Network(e.to_string()))
         }
     }
 }
 
 /// Test a Whisper model to verify it's valid
 #[tauri::command]
-pub async fn test_whisper_model(model_id: String) -> Result<bool, String> {
+pub async fn test_whisper_model(model_id: String) -> Result<bool, CommandError> {
     let result = tokio::task::spawn_blocking(move || {
         models::test_whisper_model(&model_id)
     })
     .await
-    .map_err(|e| format!("Task failed: {}", e))?;
+    .map_err(|e| CommandError::Other(format!("Task failed: {}", e)))?;
 
-    result.map_err(|e| e.to_string())
+    result.map_err(|e| CommandError::Other(e.to_string()))
 }
 
 /// Check if a specific Whisper model is downloaded

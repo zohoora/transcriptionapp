@@ -1,5 +1,6 @@
 //! LLM Router / SOAP Note generation commands
 
+use super::{CommandError, SharedScreenCaptureState};
 use crate::activity_log;
 use crate::config::Config;
 use crate::debug_storage;
@@ -9,7 +10,6 @@ use crate::vision_experiment::{
     self, ExperimentParams, ExperimentResult, PromptStrategy,
     run_experiment, save_result, load_results, generate_summary_report,
 };
-use super::SharedScreenCaptureState;
 use base64::Engine;
 use serde::{Deserialize, Serialize};
 use tracing::{info, warn, error};
@@ -54,10 +54,11 @@ pub async fn check_ollama_status(
 
 /// List available models from LLM router
 #[tauri::command]
-pub async fn list_ollama_models() -> Result<Vec<String>, String> {
+pub async fn list_ollama_models() -> Result<Vec<String>, CommandError> {
     let config = Config::load_or_default();
-    let client = LLMClient::new(&config.llm_router_url, &config.llm_api_key, &config.llm_client_id, &config.fast_model)?;
-    client.list_models().await
+    let client = LLMClient::new(&config.llm_router_url, &config.llm_api_key, &config.llm_client_id, &config.fast_model)
+        .map_err(|e| CommandError::Network(e))?;
+    client.list_models().await.map_err(|e| CommandError::Network(e))
 }
 
 /// Pre-warm the LLM model to reduce latency on first request
@@ -65,11 +66,12 @@ pub async fn list_ollama_models() -> Result<Vec<String>, String> {
 /// This is especially useful for auto-session detection where speed is critical.
 /// Should be called on app startup or when LLM settings change.
 #[tauri::command]
-pub async fn prewarm_ollama_model() -> Result<(), String> {
+pub async fn prewarm_ollama_model() -> Result<(), CommandError> {
     let config = Config::load_or_default();
-    let client = LLMClient::new(&config.llm_router_url, &config.llm_api_key, &config.llm_client_id, &config.fast_model)?;
+    let client = LLMClient::new(&config.llm_router_url, &config.llm_api_key, &config.llm_client_id, &config.fast_model)
+        .map_err(|e| CommandError::Network(e))?;
     // Pre-warm the fast model (used for greeting detection)
-    client.prewarm_model(&config.fast_model).await
+    client.prewarm_model(&config.fast_model).await.map_err(|e| CommandError::Network(e))
 }
 
 /// Generate a SOAP note from the given transcript
@@ -87,7 +89,7 @@ pub async fn generate_soap_note(
     options: Option<SoapOptions>,
     session_id: Option<String>,
     speaker_context: Option<Vec<SpeakerInfo>>,
-) -> Result<SoapNote, String> {
+) -> Result<SoapNote, CommandError> {
     info!(
         "Generating SOAP note for transcript of {} chars, {} audio events, {} speakers, options: {:?}",
         transcript.len(),
@@ -97,11 +99,14 @@ pub async fn generate_soap_note(
     );
 
     if transcript.trim().is_empty() {
-        return Err("Cannot generate SOAP note from empty transcript".to_string());
+        return Err(CommandError::Validation(
+            "Cannot generate SOAP note from empty transcript".into(),
+        ));
     }
 
     let config = Config::load_or_default();
-    let client = LLMClient::new(&config.llm_router_url, &config.llm_api_key, &config.llm_client_id, &config.fast_model)?;
+    let client = LLMClient::new(&config.llm_router_url, &config.llm_api_key, &config.llm_client_id, &config.fast_model)
+        .map_err(|e| CommandError::Network(e))?;
 
     // Count words for logging and model selection
     let word_count = transcript.split_whitespace().count();
@@ -166,7 +171,7 @@ pub async fn generate_soap_note(
                 false,
                 Some(&e),
             );
-            Err(e)
+            Err(CommandError::Network(e))
         }
     }
 }
@@ -197,7 +202,7 @@ pub async fn generate_soap_note_auto_detect(
     options: Option<SoapOptions>,
     session_id: Option<String>,
     speaker_context: Option<Vec<SpeakerInfo>>,
-) -> Result<MultiPatientSoapResult, String> {
+) -> Result<MultiPatientSoapResult, CommandError> {
     info!(
         "Generating multi-patient SOAP note for transcript of {} chars, {} audio events, {} speakers",
         transcript.len(),
@@ -206,11 +211,14 @@ pub async fn generate_soap_note_auto_detect(
     );
 
     if transcript.trim().is_empty() {
-        return Err("Cannot generate SOAP note from empty transcript".to_string());
+        return Err(CommandError::Validation(
+            "Cannot generate SOAP note from empty transcript".into(),
+        ));
     }
 
     let config = Config::load_or_default();
-    let client = LLMClient::new(&config.llm_router_url, &config.llm_api_key, &config.llm_client_id, &config.fast_model)?;
+    let client = LLMClient::new(&config.llm_router_url, &config.llm_api_key, &config.llm_client_id, &config.fast_model)
+        .map_err(|e| CommandError::Network(e))?;
 
     // Count words for logging and model selection
     let word_count = transcript.split_whitespace().count();
@@ -304,7 +312,7 @@ pub async fn generate_soap_note_auto_detect(
                 false,
                 Some(&e),
             );
-            Err(e)
+            Err(CommandError::Network(e))
         }
     }
 }
@@ -333,7 +341,7 @@ pub struct ImageConcept {
 /// Generate a predictive hint and image concepts based on the current transcript
 /// Returns both a clinical hint and MIIS image search concepts
 #[tauri::command]
-pub async fn generate_predictive_hint(transcript: String) -> Result<PredictiveHintResponse, String> {
+pub async fn generate_predictive_hint(transcript: String) -> Result<PredictiveHintResponse, CommandError> {
     let empty_response = PredictiveHintResponse {
         hint: String::new(),
         concepts: Vec::new(),
@@ -350,7 +358,8 @@ pub async fn generate_predictive_hint(transcript: String) -> Result<PredictiveHi
         &config.llm_api_key,
         &config.llm_client_id,
         &config.soap_model,
-    )?;
+    )
+    .map_err(|e| CommandError::Network(e))?;
 
     let system_prompt = r#"You are a clinical assistant analyzing a medical transcript. Provide THREE things:
 
@@ -457,7 +466,7 @@ pub async fn generate_vision_soap_note(
     session_id: Option<String>,
     image_path: Option<String>,
     screenshot_state: tauri::State<'_, SharedScreenCaptureState>,
-) -> Result<SoapNote, String> {
+) -> Result<SoapNote, CommandError> {
     info!(
         "Generating vision SOAP note for transcript of {} chars, image_path: {:?}",
         transcript.len(),
@@ -465,34 +474,43 @@ pub async fn generate_vision_soap_note(
     );
 
     if transcript.trim().is_empty() {
-        return Err("Cannot generate vision SOAP note from empty transcript".to_string());
+        return Err(CommandError::Validation(
+            "Cannot generate vision SOAP note from empty transcript".into(),
+        ));
     }
 
     // Build base64 image: either from a user-selected path or the legacy stitch flow
     let image_base64 = if let Some(ref path) = image_path {
         // Single image mode: read and base64-encode the selected file
         let data = std::fs::read(path)
-            .map_err(|e| format!("Failed to read image at {:?}: {}", path, e))?;
+            .map_err(|e| CommandError::Io(format!("Failed to read image at {:?}: {}", path, e)))?;
         info!("Using single image for vision SOAP: {} ({} bytes)", path, data.len());
         base64::engine::general_purpose::STANDARD.encode(&data)
     } else {
         // Legacy stitch mode: select and stitch thumbnails
         let paths = {
-            let capture = screenshot_state.lock().map_err(|e| e.to_string())?;
+            let capture = screenshot_state
+                .lock()
+                .map_err(|_| CommandError::lock_poisoned("screenshot_state"))?;
             capture.screenshot_paths()
         };
 
         if paths.is_empty() {
-            return Err("No screenshots available for vision SOAP generation".to_string());
+            return Err(CommandError::NotFound(
+                "No screenshots available for vision SOAP generation".into(),
+            ));
         }
 
         let selected = screenshot::select_thumbnails(&paths, 3);
         if selected.is_empty() {
-            return Err("No thumbnail screenshots found".to_string());
+            return Err(CommandError::NotFound(
+                "No thumbnail screenshots found".into(),
+            ));
         }
 
         info!("Selected {} thumbnails for vision SOAP (legacy stitch)", selected.len());
-        screenshot::stitch_thumbnails_to_base64(&selected)?
+        screenshot::stitch_thumbnails_to_base64(&selected)
+            .map_err(|e| CommandError::Io(e))?
     };
 
     // Create LLM client and generate
@@ -502,7 +520,8 @@ pub async fn generate_vision_soap_note(
         &config.llm_api_key,
         &config.llm_client_id,
         &config.fast_model,
-    )?;
+    )
+    .map_err(|e| CommandError::Network(e))?;
 
     let start_time = std::time::Instant::now();
     let word_count = transcript.split_whitespace().count();
@@ -545,7 +564,7 @@ pub async fn generate_vision_soap_note(
                 false,
                 Some(&e),
             );
-            Err(e)
+            Err(CommandError::Network(e))
         }
     }
 }
@@ -655,7 +674,7 @@ pub struct ExperimentResultSummary {
 #[tauri::command]
 pub async fn run_vision_experiments(
     request: VisionExperimentRequest,
-) -> Result<VisionExperimentSummary, String> {
+) -> Result<VisionExperimentSummary, CommandError> {
     let strategy_count = if request.strategies.is_empty() {
         "all".to_string()
     } else {
@@ -674,11 +693,11 @@ pub async fn run_vision_experiments(
 
     // Load transcript
     let transcript = std::fs::read_to_string(&request.transcript_path)
-        .map_err(|e| format!("Failed to read transcript: {}", e))?;
+        .map_err(|e| CommandError::Io(format!("Failed to read transcript: {}", e)))?;
 
     // Load and encode image
     let image_data = std::fs::read(&request.image_path)
-        .map_err(|e| format!("Failed to read image: {}", e))?;
+        .map_err(|e| CommandError::Io(format!("Failed to read image: {}", e)))?;
     let image_base64 = base64::engine::general_purpose::STANDARD.encode(&image_data);
 
     // Create LLM client
@@ -688,7 +707,8 @@ pub async fn run_vision_experiments(
         &config.llm_api_key,
         &config.llm_client_id,
         &config.fast_model,
-    )?;
+    )
+    .map_err(|e| CommandError::Network(e))?;
 
     // Determine strategies to test
     let strategies: Vec<PromptStrategy> = if request.strategies.is_empty() {
@@ -805,14 +825,14 @@ pub async fn run_vision_experiments(
 
 /// Get all saved experiment results
 #[tauri::command]
-pub async fn get_vision_experiment_results() -> Result<Vec<ExperimentResult>, String> {
-    load_results()
+pub async fn get_vision_experiment_results() -> Result<Vec<ExperimentResult>, CommandError> {
+    load_results().map_err(|e| CommandError::Io(e))
 }
 
 /// Get the summary report for all experiments
 #[tauri::command]
-pub async fn get_vision_experiment_report() -> Result<String, String> {
-    let results = load_results()?;
+pub async fn get_vision_experiment_report() -> Result<String, CommandError> {
+    let results = load_results().map_err(|e| CommandError::Io(e))?;
     Ok(generate_summary_report(&results))
 }
 

@@ -980,4 +980,5 @@ export interface RoomConfig {
   profile_server_url: string;
   room_id?: string | null;
   active_physician_id?: string | null;
+  profile_api_key?: string | null;
 }

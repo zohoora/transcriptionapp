@@ -54,6 +54,7 @@ pub fn request_microphone_permission() -> bool {
 
 /// Open system settings to the microphone privacy section
 #[tauri::command]
-pub fn open_microphone_settings() -> Result<(), String> {
-    permissions::open_microphone_settings().map_err(|e| e.to_string())
+pub fn open_microphone_settings() -> Result<(), super::CommandError> {
+    permissions::open_microphone_settings()
+        .map_err(|e| super::CommandError::Io(e.to_string()))
 }

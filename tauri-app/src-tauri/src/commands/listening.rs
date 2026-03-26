@@ -1,5 +1,6 @@
 //! Tauri commands for listening mode (auto-session detection)
 
+use super::CommandError;
 use std::sync::{Arc, Mutex};
 
 use serde::{Deserialize, Serialize};
@@ -49,14 +50,16 @@ pub async fn start_listening(
     app: AppHandle,
     listening_state: State<'_, SharedListeningState>,
     device_id: Option<String>,
-) -> Result<(), String> {
+) -> Result<(), CommandError> {
     info!("Starting listening mode");
 
     // Check if already listening
     {
-        let state = listening_state.lock().map_err(|e| format!("Lock error: {}", e))?;
+        let state = listening_state
+            .lock()
+            .map_err(|_| CommandError::lock_poisoned("listening_state"))?;
         if state.handle.is_some() {
-            return Err("Already listening".to_string());
+            return Err(CommandError::AlreadyRunning("listening mode".into()));
         }
     }
 
@@ -165,11 +168,14 @@ pub async fn start_listening(
     };
 
     // Start listening
-    let handle = listening::start_listening(config, device_id, event_callback)?;
+    let handle = listening::start_listening(config, device_id, event_callback)
+        .map_err(|e| CommandError::Other(e))?;
 
     // Store handle
     {
-        let mut state = listening_state.lock().map_err(|e| format!("Lock error: {}", e))?;
+        let mut state = listening_state
+            .lock()
+            .map_err(|_| CommandError::lock_poisoned("listening_state"))?;
         state.handle = Some(handle);
         state.status.is_listening = true;
     }
@@ -181,10 +187,12 @@ pub async fn start_listening(
 #[tauri::command]
 pub fn stop_listening(
     listening_state: State<'_, SharedListeningState>,
-) -> Result<(), String> {
+) -> Result<(), CommandError> {
     info!("Stopping listening mode");
 
-    let mut state = listening_state.lock().map_err(|e| format!("Lock error: {}", e))?;
+    let mut state = listening_state
+        .lock()
+        .map_err(|_| CommandError::lock_poisoned("listening_state"))?;
 
     if let Some(handle) = state.handle.take() {
         handle.stop();
@@ -201,7 +209,9 @@ pub fn stop_listening(
 #[tauri::command]
 pub fn get_listening_status(
     listening_state: State<'_, SharedListeningState>,
-) -> Result<ListeningStatus, String> {
-    let state = listening_state.lock().map_err(|e| format!("Lock error: {}", e))?;
+) -> Result<ListeningStatus, CommandError> {
+    let state = listening_state
+        .lock()
+        .map_err(|_| CommandError::lock_poisoned("listening_state"))?;
     Ok(state.status.clone())
 }

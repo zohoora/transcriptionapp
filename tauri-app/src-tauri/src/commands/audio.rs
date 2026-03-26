@@ -1,12 +1,12 @@
 //! Audio device commands
 
-use super::Device;
+use super::{CommandError, Device};
 use crate::audio;
 use tracing::error;
 
 /// List available input devices
 #[tauri::command]
-pub fn list_input_devices() -> Result<Vec<Device>, String> {
+pub fn list_input_devices() -> Result<Vec<Device>, CommandError> {
     match audio::list_input_devices() {
         Ok(devices) => Ok(devices
             .into_iter()
@@ -18,7 +18,7 @@ pub fn list_input_devices() -> Result<Vec<Device>, String> {
             .collect()),
         Err(e) => {
             error!("Failed to list devices: {}", e);
-            Err(e.to_string())
+            Err(CommandError::Io(e.to_string()))
         }
     }
 }

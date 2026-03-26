@@ -1,5 +1,6 @@
 //! AI image generation command
 
+use super::CommandError;
 use serde::{Deserialize, Serialize};
 use tracing::info;
 
@@ -14,22 +15,28 @@ pub struct AiImageResponse {
 }
 
 #[tauri::command]
-pub async fn generate_ai_image(prompt: String) -> Result<AiImageResponse, String> {
+pub async fn generate_ai_image(prompt: String) -> Result<AiImageResponse, CommandError> {
     if prompt.trim().is_empty() {
-        return Err("Image prompt is empty".to_string());
+        return Err(CommandError::Validation("Image prompt is empty".into()));
     }
 
     let config = Config::load_or_default();
 
     if config.image_source != "ai" {
-        return Err("AI image generation is not enabled".to_string());
+        return Err(CommandError::Config(
+            "AI image generation is not enabled".into(),
+        ));
     }
 
-    let client = GeminiClient::new(&config.gemini_api_key)?;
+    let client = GeminiClient::new(&config.gemini_api_key)
+        .map_err(|e| CommandError::Config(e))?;
 
     info!("Generating AI image: prompt={} chars", prompt.len());
 
-    let image_base64 = client.generate_image(&prompt).await?;
+    let image_base64 = client
+        .generate_image(&prompt)
+        .await
+        .map_err(|e| CommandError::Network(e))?;
 
     info!("AI image generated: {} bytes base64", image_base64.len());
 

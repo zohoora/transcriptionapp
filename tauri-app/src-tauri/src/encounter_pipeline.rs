@@ -21,9 +21,8 @@ use crate::llm_client::{
 };
 use crate::local_archive;
 use crate::pipeline_log::PipelineLogger;
-use tauri::Emitter;
-
 use crate::continuous_mode::effective_soap_detail_level;
+use crate::continuous_mode_events::ContinuousModeEvent;
 
 // ── SOAP generation ──────────────────────────────────────────────────
 
@@ -469,16 +468,23 @@ pub async fn check_clinical_content(
 /// Update metadata.json to mark a session as non-clinical.
 pub fn mark_non_clinical(session_id: &str) {
     if let Ok(session_dir) = local_archive::get_session_archive_dir(session_id, &Utc::now()) {
-        let meta_path = session_dir.join("metadata.json");
-        if meta_path.exists() {
-            if let Ok(content) = std::fs::read_to_string(&meta_path) {
-                if let Ok(mut metadata) =
-                    serde_json::from_str::<local_archive::ArchiveMetadata>(&content)
-                {
-                    metadata.likely_non_clinical = Some(true);
-                    if let Ok(json) = serde_json::to_string_pretty(&metadata) {
-                        let _ = std::fs::write(&meta_path, json);
-                    }
+        mark_non_clinical_at(&session_dir);
+    }
+}
+
+/// Core implementation: mark a session as non-clinical given its directory path.
+///
+/// No-op if `metadata.json` does not exist or cannot be parsed.
+pub fn mark_non_clinical_at(session_dir: &std::path::Path) {
+    let meta_path = session_dir.join("metadata.json");
+    if meta_path.exists() {
+        if let Ok(content) = std::fs::read_to_string(&meta_path) {
+            if let Ok(mut metadata) =
+                serde_json::from_str::<local_archive::ArchiveMetadata>(&content)
+            {
+                metadata.likely_non_clinical = Some(true);
+                if let Ok(json) = serde_json::to_string_pretty(&metadata) {
+                    let _ = std::fs::write(&meta_path, json);
                 }
             }
         }
@@ -580,14 +586,11 @@ pub async fn recover_orphaned_soap(
                 );
                 // Sync recovered SOAP to server
                 sync_ctx.sync_session(&summary.session_id, &today_str);
-                let _ = app.emit(
-                    "continuous_mode_event",
-                    serde_json::json!({
-                        "type": "soap_generated",
-                        "session_id": summary.session_id,
-                        "recovered": true,
-                    }),
-                );
+                ContinuousModeEvent::SoapGenerated {
+                    session_id: summary.session_id.clone(),
+                    patient_count: None,
+                    recovered: Some(true),
+                }.emit(app);
             }
             SoapGenerationOutcome::Failed { ref error, .. } => {
                 warn!(
@@ -613,27 +616,30 @@ pub fn clear_non_clinical_flag(session_id: &str, session_date: &DateTime<Utc>) {
             return;
         }
     };
+    clear_non_clinical_flag_at(&session_dir);
+}
+
+/// Core implementation: clear the non-clinical flag given a session directory path.
+///
+/// No-op if `metadata.json` does not exist or cannot be parsed, or if
+/// `likely_non_clinical` is already `None`.
+pub fn clear_non_clinical_flag_at(session_dir: &std::path::Path) {
     let meta_path = session_dir.join("metadata.json");
     let content = match std::fs::read_to_string(&meta_path) {
         Ok(c) => c,
-        Err(e) => {
-            warn!("clear_non_clinical_flag: failed to read metadata for {}: {}", session_id, e);
-            return;
-        }
+        Err(_) => return,
     };
     match serde_json::from_str::<local_archive::ArchiveMetadata>(&content) {
         Ok(mut metadata) => {
             metadata.likely_non_clinical = None;
             match serde_json::to_string_pretty(&metadata) {
                 Ok(json) => {
-                    if let Err(e) = std::fs::write(&meta_path, json) {
-                        warn!("clear_non_clinical_flag: failed to write metadata for {}: {}", session_id, e);
-                    }
+                    let _ = std::fs::write(&meta_path, json);
                 }
-                Err(e) => warn!("clear_non_clinical_flag: failed to serialize metadata for {}: {}", session_id, e),
+                Err(e) => warn!("clear_non_clinical_flag_at: failed to serialize metadata: {}", e),
             }
         }
-        Err(e) => warn!("clear_non_clinical_flag: failed to parse metadata for {}: {}", session_id, e),
+        Err(e) => warn!("clear_non_clinical_flag_at: failed to parse metadata: {}", e),
     }
 }
 
@@ -695,5 +701,336 @@ pub async fn regen_soap_after_merge(
         true
     } else {
         false
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::continuous_mode_events::ContinuousModeEvent;
+
+    // ── Helper: write a minimal ArchiveMetadata JSON to a temp dir ──
+
+    fn write_metadata(dir: &std::path::Path, metadata: &local_archive::ArchiveMetadata) {
+        let json = serde_json::to_string_pretty(metadata).unwrap();
+        std::fs::write(dir.join("metadata.json"), json).unwrap();
+    }
+
+    fn read_metadata(dir: &std::path::Path) -> local_archive::ArchiveMetadata {
+        let content = std::fs::read_to_string(dir.join("metadata.json")).unwrap();
+        serde_json::from_str(&content).unwrap()
+    }
+
+    fn sample_metadata() -> local_archive::ArchiveMetadata {
+        local_archive::ArchiveMetadata {
+            session_id: "test-session".into(),
+            started_at: "2026-03-26T10:00:00Z".into(),
+            ended_at: Some("2026-03-26T10:15:00Z".into()),
+            duration_ms: Some(900_000),
+            segment_count: 50,
+            word_count: 500,
+            has_soap_note: true,
+            has_audio: false,
+            auto_ended: false,
+            auto_end_reason: None,
+            soap_detail_level: Some(5),
+            soap_format: Some("problem_based".into()),
+            charting_mode: Some("continuous".into()),
+            encounter_number: Some(3),
+            patient_name: Some("Jane Doe".into()),
+            detection_method: Some("llm".into()),
+            shadow_comparison: None,
+            likely_non_clinical: None,
+            patient_count: None,
+            physician_id: None,
+            physician_name: None,
+            room_name: None,
+        }
+    }
+
+    // ── mark_non_clinical_at tests ──
+
+    #[test]
+    fn mark_non_clinical_at_sets_flag() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut meta = sample_metadata();
+        meta.likely_non_clinical = None;
+        write_metadata(dir.path(), &meta);
+
+        mark_non_clinical_at(dir.path());
+
+        let result = read_metadata(dir.path());
+        assert_eq!(result.likely_non_clinical, Some(true));
+    }
+
+    #[test]
+    fn mark_non_clinical_at_noop_without_metadata() {
+        let dir = tempfile::tempdir().unwrap();
+        // No metadata.json — should not panic
+        mark_non_clinical_at(dir.path());
+        assert!(!dir.path().join("metadata.json").exists());
+    }
+
+    #[test]
+    fn mark_non_clinical_at_preserves_fields() {
+        let dir = tempfile::tempdir().unwrap();
+        let meta = sample_metadata();
+        write_metadata(dir.path(), &meta);
+
+        mark_non_clinical_at(dir.path());
+
+        let result = read_metadata(dir.path());
+        assert_eq!(result.patient_name, Some("Jane Doe".into()));
+        assert_eq!(result.encounter_number, Some(3));
+        assert_eq!(result.charting_mode, Some("continuous".into()));
+        assert_eq!(result.session_id, "test-session");
+        assert_eq!(result.word_count, 500);
+    }
+
+    #[test]
+    fn mark_non_clinical_at_idempotent() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut meta = sample_metadata();
+        meta.likely_non_clinical = Some(true);
+        write_metadata(dir.path(), &meta);
+
+        mark_non_clinical_at(dir.path());
+
+        let result = read_metadata(dir.path());
+        assert_eq!(result.likely_non_clinical, Some(true));
+    }
+
+    // ── clear_non_clinical_flag_at tests ──
+
+    #[test]
+    fn clear_non_clinical_flag_at_clears_flag() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut meta = sample_metadata();
+        meta.likely_non_clinical = Some(true);
+        write_metadata(dir.path(), &meta);
+
+        clear_non_clinical_flag_at(dir.path());
+
+        let result = read_metadata(dir.path());
+        assert_eq!(result.likely_non_clinical, None);
+    }
+
+    #[test]
+    fn clear_non_clinical_flag_at_noop_when_already_none() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut meta = sample_metadata();
+        meta.likely_non_clinical = None;
+        write_metadata(dir.path(), &meta);
+
+        clear_non_clinical_flag_at(dir.path());
+
+        let result = read_metadata(dir.path());
+        assert_eq!(result.likely_non_clinical, None);
+    }
+
+    #[test]
+    fn clear_non_clinical_flag_at_noop_without_metadata() {
+        let dir = tempfile::tempdir().unwrap();
+        // No metadata.json — should not panic
+        clear_non_clinical_flag_at(dir.path());
+        assert!(!dir.path().join("metadata.json").exists());
+    }
+
+    #[test]
+    fn clear_non_clinical_flag_at_preserves_fields() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut meta = sample_metadata();
+        meta.likely_non_clinical = Some(true);
+        write_metadata(dir.path(), &meta);
+
+        clear_non_clinical_flag_at(dir.path());
+
+        let result = read_metadata(dir.path());
+        assert_eq!(result.patient_name, Some("Jane Doe".into()));
+        assert_eq!(result.encounter_number, Some(3));
+        assert_eq!(result.charting_mode, Some("continuous".into()));
+        assert_eq!(result.session_id, "test-session");
+        assert_eq!(result.word_count, 500);
+    }
+
+    // ── Constant verification ──
+
+    #[test]
+    fn min_words_for_clinical_check_is_100() {
+        assert_eq!(MIN_WORDS_FOR_CLINICAL_CHECK, 100);
+    }
+
+    // ── Type construction tests ──
+
+    #[test]
+    fn soap_generation_outcome_success_fields() {
+        let result = crate::llm_client::MultiPatientSoapResult {
+            notes: vec![],
+            physician_speaker: None,
+            generated_at: "2026-03-26T10:00:00Z".into(),
+            model_used: "soap-model-fast".into(),
+        };
+        let outcome = SoapGenerationOutcome::Success {
+            result,
+            content: "test content".into(),
+            latency_ms: 1500,
+        };
+        match outcome {
+            SoapGenerationOutcome::Success { content, latency_ms, .. } => {
+                assert_eq!(content, "test content");
+                assert_eq!(latency_ms, 1500);
+            }
+            _ => panic!("Expected Success variant"),
+        }
+    }
+
+    #[test]
+    fn soap_generation_outcome_failed_fields() {
+        let outcome = SoapGenerationOutcome::Failed {
+            latency_ms: 120_000,
+            error: "timeout_120s".into(),
+        };
+        match outcome {
+            SoapGenerationOutcome::Failed { latency_ms, error } => {
+                assert_eq!(latency_ms, 120_000);
+                assert_eq!(error, "timeout_120s");
+            }
+            _ => panic!("Expected Failed variant"),
+        }
+    }
+
+    #[test]
+    fn merge_check_outcome_construction() {
+        let outcome = MergeCheckOutcome {
+            same_encounter: Some(true),
+            reason: Some("same patient".into()),
+            latency_ms: 800,
+            error: None,
+            prompt_system: "system".into(),
+            prompt_user: "user".into(),
+            response_raw: Some("raw".into()),
+        };
+        assert_eq!(outcome.same_encounter, Some(true));
+        assert_eq!(outcome.reason.as_deref(), Some("same patient"));
+        assert_eq!(outcome.latency_ms, 800);
+        assert!(outcome.error.is_none());
+    }
+
+    #[test]
+    fn merge_check_outcome_failed() {
+        let outcome = MergeCheckOutcome {
+            same_encounter: None,
+            reason: None,
+            latency_ms: 60_000,
+            error: Some("timeout_60s".into()),
+            prompt_system: "system".into(),
+            prompt_user: "user".into(),
+            response_raw: None,
+        };
+        assert!(outcome.same_encounter.is_none());
+        assert_eq!(outcome.error.as_deref(), Some("timeout_60s"));
+    }
+
+    // ── ContinuousModeEvent serialization tests (encounter_pipeline-specific variants) ──
+
+    #[test]
+    fn event_soap_generated_matches_inline_json() {
+        // Mirrors: json!({"type": "soap_generated", "session_id": ..., "patient_count": ...})
+        let event = ContinuousModeEvent::SoapGenerated {
+            session_id: "sess-001".into(),
+            patient_count: Some(2),
+            recovered: None,
+        };
+        let json: serde_json::Value = serde_json::to_value(&event).unwrap();
+        let expected = serde_json::json!({
+            "type": "soap_generated",
+            "session_id": "sess-001",
+            "patient_count": 2,
+        });
+        assert_eq!(json, expected);
+    }
+
+    #[test]
+    fn event_soap_generated_recovered_matches_inline_json() {
+        // Mirrors: json!({"type": "soap_generated", "session_id": ..., "recovered": true})
+        let event = ContinuousModeEvent::SoapGenerated {
+            session_id: "sess-orphan".into(),
+            patient_count: None,
+            recovered: Some(true),
+        };
+        let json: serde_json::Value = serde_json::to_value(&event).unwrap();
+        let expected = serde_json::json!({
+            "type": "soap_generated",
+            "session_id": "sess-orphan",
+            "recovered": true,
+        });
+        assert_eq!(json, expected);
+    }
+
+    #[test]
+    fn event_soap_failed_matches_inline_json() {
+        let event = ContinuousModeEvent::SoapFailed {
+            session_id: "sess-fail".into(),
+            error: "timeout_120s".into(),
+        };
+        let json: serde_json::Value = serde_json::to_value(&event).unwrap();
+        let expected = serde_json::json!({
+            "type": "soap_failed",
+            "session_id": "sess-fail",
+            "error": "timeout_120s",
+        });
+        assert_eq!(json, expected);
+    }
+
+    #[test]
+    fn event_encounter_merged_with_kept_matches_inline_json() {
+        let event = ContinuousModeEvent::EncounterMerged {
+            kept_session_id: Some("prev-123".into()),
+            merged_into_session_id: None,
+            removed_session_id: "curr-456".into(),
+            reason: Some("small orphan (150 words) with sensor present".into()),
+        };
+        let json: serde_json::Value = serde_json::to_value(&event).unwrap();
+        let expected = serde_json::json!({
+            "type": "encounter_merged",
+            "kept_session_id": "prev-123",
+            "removed_session_id": "curr-456",
+            "reason": "small orphan (150 words) with sensor present",
+        });
+        assert_eq!(json, expected);
+    }
+
+    #[test]
+    fn event_encounter_merged_with_merged_into_matches_inline_json() {
+        let event = ContinuousModeEvent::EncounterMerged {
+            kept_session_id: None,
+            merged_into_session_id: Some("prev-789".into()),
+            removed_session_id: "curr-012".into(),
+            reason: None,
+        };
+        let json: serde_json::Value = serde_json::to_value(&event).unwrap();
+        let expected = serde_json::json!({
+            "type": "encounter_merged",
+            "merged_into_session_id": "prev-789",
+            "removed_session_id": "curr-012",
+        });
+        assert_eq!(json, expected);
+    }
+
+    #[test]
+    fn event_encounter_detected_matches_inline_json() {
+        let event = ContinuousModeEvent::EncounterDetected {
+            session_id: "sess-new".into(),
+            word_count: 750,
+            patient_name: Some("John Smith".into()),
+        };
+        let json: serde_json::Value = serde_json::to_value(&event).unwrap();
+        let expected = serde_json::json!({
+            "type": "encounter_detected",
+            "session_id": "sess-new",
+            "word_count": 750,
+            "patient_name": "John Smith",
+        });
+        assert_eq!(json, expected);
     }
 }

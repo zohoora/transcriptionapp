@@ -26,6 +26,7 @@ pub async fn save_room_config(
     room_name: String,
     profile_server_url: String,
     room_id: Option<String>,
+    profile_api_key: Option<String>,
     room_config_state: State<'_, SharedRoomConfig>,
     profile_client_state: State<'_, SharedProfileClient>,
 ) -> Result<(), CommandError> {
@@ -34,13 +35,14 @@ pub async fn save_room_config(
         profile_server_url: profile_server_url.clone(),
         room_id: room_id.clone(),
         active_physician_id: None,
+        profile_api_key: profile_api_key.clone(),
     };
     config
         .save()
         .map_err(|e| CommandError::Other(format!("Failed to save room config: {e}")))?;
 
     // Update profile client
-    let client = ProfileClient::new(&profile_server_url);
+    let client = ProfileClient::new(&profile_server_url, profile_api_key);
 
     // Fire-and-forget: merge server settings if room is selected
     if room_id.is_some() {
@@ -64,7 +66,7 @@ pub async fn save_room_config(
 
 #[tauri::command]
 pub async fn test_profile_server(url: String) -> Result<bool, CommandError> {
-    let client = ProfileClient::new(&url);
+    let client = ProfileClient::new(&url, None);
     match client.health().await {
         Ok(healthy) => Ok(healthy),
         Err(e) => {
@@ -337,6 +339,7 @@ pub async fn create_physician(
     let resp = client
         .http_client()
         .post(&format!("{}/physicians", client.base_url()))
+        .headers(client.auth_headers())
         .json(&body)
         .send()
         .await
@@ -369,6 +372,7 @@ pub async fn update_physician(
     let resp = client
         .http_client()
         .put(&format!("{}/physicians/{}", client.base_url(), physician_id))
+        .headers(client.auth_headers())
         .json(&updates)
         .send()
         .await
@@ -414,6 +418,7 @@ pub async fn delete_physician(
     let resp = client
         .http_client()
         .delete(&format!("{}/physicians/{}", client.base_url(), physician_id))
+        .headers(client.auth_headers())
         .send()
         .await
         .map_err(|e| CommandError::Other(format!("Failed to delete physician: {e}")))?;

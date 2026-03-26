@@ -11,6 +11,8 @@ pub struct RoomConfig {
     pub room_id: Option<String>,
     #[serde(default)]
     pub active_physician_id: Option<String>,
+    #[serde(default)]
+    pub profile_api_key: Option<String>,
 }
 
 impl RoomConfig {

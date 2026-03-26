@@ -10,9 +10,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use tracing::{debug, info, warn};
 
-use tauri::Emitter;
-
 use crate::config::ShadowActiveMethod;
+use crate::continuous_mode_events::ContinuousModeEvent;
 use crate::encounter_detection::{build_encounter_detection_prompt, parse_encounter_detection};
 use crate::encounter_experiment::strip_hallucinations;
 use crate::llm_client::LLMClient;
@@ -140,16 +139,13 @@ pub fn spawn_shadow_observer(
                         *last = Some(decision);
                     }
 
-                    let _ = app_for_shadow.emit(
-                        "continuous_mode_event",
-                        serde_json::json!({
-                            "type": "shadow_decision",
-                            "shadow_method": "sensor",
-                            "outcome": outcome_str,
-                            "buffer_words": word_count,
-                            "sensor_state": new_state.as_str()
-                        }),
-                    );
+                    ContinuousModeEvent::ShadowDecision {
+                        shadow_method: "sensor".into(),
+                        outcome: outcome_str.into(),
+                        buffer_words: Some(word_count),
+                        sensor_state: Some(new_state.as_str().into()),
+                        confidence: None,
+                    }.emit(&app_for_shadow);
 
                     info!(
                         "Shadow sensor: {} (state: {}, buffer {} words)",
@@ -292,16 +288,13 @@ pub fn spawn_shadow_observer(
                     *last = Some(decision);
                 }
 
-                let _ = app_for_shadow.emit(
-                    "continuous_mode_event",
-                    serde_json::json!({
-                        "type": "shadow_decision",
-                        "shadow_method": "llm",
-                        "outcome": outcome_str,
-                        "confidence": confidence,
-                        "buffer_words": word_count
-                    }),
-                );
+                ContinuousModeEvent::ShadowDecision {
+                    shadow_method: "llm".into(),
+                    outcome: outcome_str.clone(),
+                    buffer_words: Some(word_count),
+                    sensor_state: None,
+                    confidence,
+                }.emit(&app_for_shadow);
 
                 info!(
                     "Shadow LLM: {} (confidence={:?}, buffer {} words)",
