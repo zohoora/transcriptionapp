@@ -38,7 +38,8 @@
       ],
     "macOS": {
       "entitlements": "./entitlements.plist",
-      "infoPlist": "./Info.plist"
+      "infoPlist": "./Info.plist",
+      "signingIdentity": "Developer ID Application: Arash Zohoor (F982984LCX)"
     }
   },
   "plugins": {
