@@ -1260,6 +1260,19 @@ pub async fn run_continuous_mode(
                 None
             };
 
+            // Re-check sensor state before evaluating — the sensor may have returned
+            // to Present during a long LLM call (race between select! branches).
+            if sensor_absent_since.is_some() {
+                if let Some(ref mut rx) = hybrid_sensor_rx {
+                    let current_sensor = *rx.borrow();
+                    if current_sensor == crate::presence_sensor::PresenceState::Present {
+                        info!("Hybrid: sensor returned to Present during LLM call — cancelling stale absence");
+                        sensor_absent_since = None;
+                        prev_sensor_state = current_sensor;
+                    }
+                }
+            }
+
             // Evaluate detection decision via pure function (single source of truth)
             let buffer_age_mins = first_ts
                 .map(|t| (Utc::now() - t).num_minutes())

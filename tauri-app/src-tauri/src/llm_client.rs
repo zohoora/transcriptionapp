@@ -25,8 +25,8 @@ pub struct MultiPatientDetectionOutcome {
     pub error: Option<String>,
 }
 
-/// Default timeout for LLM API requests (2 minutes for generation)
-const DEFAULT_TIMEOUT: Duration = Duration::from_secs(120);
+/// Default timeout for LLM API requests (5 minutes for long SOAP generation)
+const DEFAULT_TIMEOUT: Duration = Duration::from_secs(300);
 
 /// Default number of retry attempts for transient failures
 const DEFAULT_MAX_RETRIES: u32 = 3;
