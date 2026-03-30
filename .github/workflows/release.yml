@@ -72,6 +72,35 @@ jobs:
           APPLE_SIGNING_IDENTITY: "Developer ID Application: Arash Zohoor (F982984LCX)"
         run: pnpm tauri build
 
+      - name: Bundle ONNX Runtime
+        env:
+          APPLE_SIGNING_IDENTITY: "Developer ID Application: Arash Zohoor (F982984LCX)"
+        run: |
+          BUNDLE_DIR="src-tauri/target/release/bundle/macos"
+          APP_NAME="AMI Assist"
+          FRAMEWORKS_DIR="${BUNDLE_DIR}/${APP_NAME}.app/Contents/Frameworks"
+          mkdir -p "$FRAMEWORKS_DIR"
+
+          # Install ONNX Runtime via pip and copy the dylib
+          python3 -m venv /tmp/ort-venv
+          /tmp/ort-venv/bin/pip install onnxruntime
+          DYLIB=$(/usr/bin/find /tmp/ort-venv -name "libonnxruntime.*.dylib" | head -1)
+
+          if [ -z "$DYLIB" ]; then
+            echo "Error: ONNX Runtime dylib not found"
+            exit 1
+          fi
+
+          cp "$DYLIB" "$FRAMEWORKS_DIR/"
+          DYLIB_NAME=$(basename "$DYLIB")
+          echo "Bundled: $DYLIB_NAME"
+
+          # Re-sign dylib and app bundle
+          codesign --force --sign "$APPLE_SIGNING_IDENTITY" "$FRAMEWORKS_DIR/$DYLIB_NAME"
+          codesign --force --deep --sign "$APPLE_SIGNING_IDENTITY" "${BUNDLE_DIR}/${APP_NAME}.app"
+          codesign --verify --deep --strict "${BUNDLE_DIR}/${APP_NAME}.app"
+          echo "App bundle re-signed with ONNX Runtime"
+
       - name: Create updater bundle and sign
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
