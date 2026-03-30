@@ -3230,6 +3230,35 @@ body {
   border-color: var(--accent-blue);
 }
 
+/* Multi-patient sidebar grouping */
+.session-item.multi-patient-group {
+  border-left: 2px solid var(--accent-idle);
+  margin-left: 4px;
+}
+
+.session-item.multi-patient-group.group-first {
+  border-top-left-radius: 4px;
+  margin-top: 2px;
+}
+
+.session-item.multi-patient-group.group-last {
+  border-bottom-left-radius: 4px;
+  margin-bottom: 2px;
+}
+
+.session-item.multi-patient-group + .session-item.multi-patient-group {
+  margin-top: 0;
+}
+
+.shared-transcript-label {
+  font-size: 12px;
+  color: var(--text-tertiary);
+  padding: 6px 12px;
+  background: var(--bg-secondary);
+  border-radius: 4px;
+  margin-bottom: 8px;
+}
+
 .session-info {
   display: flex;
   flex-direction: column;
