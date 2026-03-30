@@ -271,6 +271,34 @@ function App() {
   // Permission error state
   const [permissionError, setPermissionError] = useState<string | null>(null);
 
+  // Check microphone permission on launch and request if not determined
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const permStatus = await checkMicrophonePermission();
+      if (cancelled) return;
+      if (permStatus.status === 'not_determined') {
+        // Trigger the system permission dialog
+        try {
+          await invoke('request_microphone_permission');
+        } catch (e) {
+          console.error('Failed to request microphone permission:', e);
+        }
+        // Re-check after a short delay to let the user respond
+        setTimeout(async () => {
+          if (cancelled) return;
+          const updated = await checkMicrophonePermission();
+          if (!updated.authorized) {
+            setPermissionError(updated.message);
+          }
+        }, 3000);
+      } else if (!permStatus.authorized) {
+        setPermissionError(permStatus.message);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [checkMicrophonePermission]);
+
   // Sync indicator dismissed state (for hiding after user dismisses)
   const [syncDismissed, setSyncDismissed] = useState(false);
 
