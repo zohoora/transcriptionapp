@@ -43,3 +43,12 @@ else
     echo "Error: Failed to copy dylib"
     exit 1
 fi
+
+# Re-sign after adding the dylib (required for Developer ID signed apps)
+SIGNING_IDENTITY=$(codesign -dv "$APP_BUNDLE" 2>&1 | grep "Authority=" | head -1 | sed 's/Authority=//')
+if [ -n "$SIGNING_IDENTITY" ] && [ "$SIGNING_IDENTITY" != "-" ]; then
+    echo "Re-signing with: $SIGNING_IDENTITY"
+    codesign --force --sign "$SIGNING_IDENTITY" "$FRAMEWORKS_DIR/$DYLIB_NAME"
+    codesign --force --deep --sign "$SIGNING_IDENTITY" "$APP_BUNDLE"
+    echo "App bundle re-signed successfully"
+fi
