@@ -2105,3 +2105,92 @@ mod tests {
         assert!(!json.contains("created_at"));
     }
 }
+
+// ============================================================================
+// Multi-Patient Operations
+// ============================================================================
+
+/// Helper: read metadata, apply a mutation, write back.
+fn update_metadata_field(
+    session_id: &str,
+    date_str: &str,
+    mutate: impl FnOnce(&mut ArchiveMetadata),
+) -> Result<(), String> {
+    let session_dir = get_session_dir_from_str(session_id, date_str)?;
+    let metadata_path = session_dir.join("metadata.json");
+    let content = fs::read_to_string(&metadata_path)
+        .map_err(|e| format!("Failed to read metadata: {}", e))?;
+    let mut metadata: ArchiveMetadata = serde_json::from_str(&content)
+        .map_err(|e| format!("Failed to parse metadata: {}", e))?;
+    mutate(&mut metadata);
+    let json = serde_json::to_string_pretty(&metadata)
+        .map_err(|e| format!("Failed to serialize metadata: {}", e))?;
+    fs::write(&metadata_path, json)
+        .map_err(|e| format!("Failed to write metadata: {}", e))?;
+    Ok(())
+}
+
+/// Delete a single patient's SOAP from a multi-patient session.
+/// If only one patient remains, reverts to single-patient format.
+/// If no patients remain, deletes the entire session.
+pub fn delete_patient_from_session(
+    session_id: &str,
+    date_str: &str,
+    patient_index: u32,
+) -> Result<(), String> {
+    let session_dir = get_session_dir_from_str(session_id, date_str)?;
+    if !session_dir.exists() {
+        return Err(format!("Session not found: {}", session_id));
+    }
+
+    let labels_path = session_dir.join("patient_labels.json");
+    if !labels_path.exists() {
+        return Err("Not a multi-patient session".to_string());
+    }
+
+    let labels_json = fs::read_to_string(&labels_path)
+        .map_err(|e| format!("Failed to read patient_labels.json: {}", e))?;
+    let mut labels: Vec<serde_json::Value> = serde_json::from_str(&labels_json)
+        .map_err(|e| format!("Failed to parse patient_labels.json: {}", e))?;
+
+    // Remove the patient's SOAP file
+    let soap_file = session_dir.join(format!("soap_patient_{}.txt", patient_index));
+    if soap_file.exists() {
+        fs::remove_file(&soap_file)
+            .map_err(|e| format!("Failed to delete patient SOAP: {}", e))?;
+    }
+
+    // Remove from labels
+    labels.retain(|l| l["index"].as_u64().unwrap_or(0) as u32 != patient_index);
+
+    if labels.is_empty() {
+        return delete_session(session_id, date_str);
+    }
+
+    if labels.len() == 1 {
+        // Revert to single-patient
+        let remaining_index = labels[0]["index"].as_u64().unwrap_or(1) as u32;
+        let remaining_soap = session_dir.join(format!("soap_patient_{}.txt", remaining_index));
+        let single_soap = session_dir.join("soap_note.txt");
+        if remaining_soap.exists() {
+            fs::rename(&remaining_soap, &single_soap)
+                .map_err(|e| format!("Failed to rename SOAP file: {}", e))?;
+        }
+        let _ = fs::remove_file(&labels_path);
+        update_metadata_field(session_id, date_str, |m| {
+            m.patient_count = None;
+        })?;
+    } else {
+        let updated_json = serde_json::to_string_pretty(&labels)
+            .map_err(|e| format!("Failed to serialize labels: {}", e))?;
+        fs::write(&labels_path, updated_json)
+            .map_err(|e| format!("Failed to write labels: {}", e))?;
+        let new_count = labels.len() as u32;
+        update_metadata_field(session_id, date_str, |m| {
+            m.patient_count = Some(new_count);
+        })?;
+    }
+
+    Ok(())
+}
+

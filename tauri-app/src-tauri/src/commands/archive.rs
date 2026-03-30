@@ -607,6 +607,17 @@ pub async fn suggest_split_points(
     Ok(suggestions)
 }
 
+/// Delete a single patient's SOAP from a multi-patient session
+#[tauri::command]
+pub async fn delete_patient_from_session(
+    session_id: String,
+    date: String,
+    patient_index: u32,
+) -> Result<(), CommandError> {
+    local_archive::delete_patient_from_session(&session_id, &date, patient_index)?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -642,15 +642,25 @@ const HistoryWindow: React.FC = () => {
     const dateStr = formatDateForApi(selectedDate);
     const ids = Array.from(selectedIds);
     try {
-      for (const id of ids) {
-        await invoke('delete_local_session', { sessionId: id, date: dateStr });
+      if (selectedPatientIndex !== null && selectedSession?.patientNotes && ids.length === 1) {
+        const archiveIndex = selectedSession.patientNotes[selectedPatientIndex]?.index ?? (selectedPatientIndex + 1);
+        await invoke('delete_patient_from_session', {
+          sessionId: ids[0],
+          date: dateStr,
+          patientIndex: archiveIndex,
+        });
+        await afterCleanupOp('Patient deleted');
+      } else {
+        for (const id of ids) {
+          await invoke('delete_local_session', { sessionId: id, date: dateStr });
+        }
+        await afterCleanupOp(`Deleted ${ids.length} session${ids.length > 1 ? 's' : ''}`);
       }
-      await afterCleanupOp(`Deleted ${ids.length} session${ids.length > 1 ? 's' : ''}`);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
       setCleanupDialog('none');
     }
-  }, [selectedDate, selectedIds, afterCleanupOp]);
+  }, [selectedDate, selectedIds, selectedPatientIndex, selectedSession, afterCleanupOp]);
 
   // Merge operation
   const handleMergeConfirm = useCallback(async () => {

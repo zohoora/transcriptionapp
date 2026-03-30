@@ -448,6 +448,7 @@ pub fn run() {
             commands::suggest_split_points,
             commands::get_session_feedback,
             commands::save_session_feedback,
+            commands::delete_patient_from_session,
             // Clinical chat commands
             commands::clinical_chat_send,
             // MIIS (Medical Illustration Image Server) commands
