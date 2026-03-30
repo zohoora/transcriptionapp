@@ -1009,6 +1009,11 @@ const HistoryWindow: React.FC = () => {
                     </div>
 
                     <div className="panel-body">
+                      {selectedPatientIndex !== null && isMultiPatient && (
+                        <div className="shared-transcript-label">
+                          Shared transcript ({soapResult?.notes.length} patients in this encounter)
+                        </div>
+                      )}
                       {hasTranscript ? (
                         isEditing ? (
                           <textarea
@@ -1156,7 +1161,7 @@ const HistoryWindow: React.FC = () => {
                         </div>
 
                         {/* Multi-patient info and tabs */}
-                        {isMultiPatient && (
+                        {isMultiPatient && selectedPatientIndex === null && (
                           <div className="multi-patient-soap">
                             <div className="patient-info">
                               <span className="physician-label">
@@ -1177,6 +1182,18 @@ const HistoryWindow: React.FC = () => {
                                   <span className="speaker-id">({note.speaker_id})</span>
                                 </button>
                               ))}
+                            </div>
+                          </div>
+                        )}
+                        {isMultiPatient && selectedPatientIndex !== null && (
+                          <div className="multi-patient-soap">
+                            <div className="patient-info">
+                              <span className="physician-label">
+                                Physician: {soapResult.physician_speaker || 'Not identified'}
+                              </span>
+                              <span className="patient-count">
+                                Patient {selectedPatientIndex + 1} of {soapResult.notes.length}
+                              </span>
                             </div>
                           </div>
                         )}
