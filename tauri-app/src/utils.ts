@@ -163,14 +163,14 @@ export function formatDurationShort(ms: number | null): string {
 import type { AudioQualitySnapshot, SpeakerBiomarkers } from './types';
 import { AUDIO_QUALITY_THRESHOLDS } from './types';
 
-export type AudioQualityLevel = 'good' | 'fair' | 'poor';
+export type AudioQualityLevel = 'good' | 'fair' | 'poor' | 'no_data';
 
 /**
  * Evaluate audio quality snapshot and return a level.
  * Used by RecordingMode, ContinuousMode, and ReviewMode.
  */
 export function getAudioQualityLevel(quality: AudioQualitySnapshot | null): AudioQualityLevel {
-  if (!quality) return 'good';
+  if (!quality) return 'no_data';
 
   const rmsOk = quality.rms_db >= AUDIO_QUALITY_THRESHOLDS.LEVEL_TOO_QUIET
              && quality.rms_db <= AUDIO_QUALITY_THRESHOLDS.LEVEL_TOO_HOT;

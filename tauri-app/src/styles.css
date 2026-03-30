@@ -4257,6 +4257,10 @@ body {
   background: var(--accent-recording);
 }
 
+.quality-indicator.no_data .quality-dot {
+  background: #999;
+}
+
 .quality-label {
   font-size: 13px;
   color: var(--text-secondary);

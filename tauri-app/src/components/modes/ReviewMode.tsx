@@ -78,7 +78,7 @@ const getQualityBadge = (quality: AudioQualitySnapshot | null): { label: string;
   if (!quality) return { label: 'Unknown', className: 'quality-unknown' };
 
   const level = getAudioQualityLevel(quality);
-  const labelMap = { good: 'Good', fair: 'Fair', poor: 'Poor' } as const;
+  const labelMap = { good: 'Good', fair: 'Fair', poor: 'Poor', no_data: 'No audio' } as const;
   return { label: labelMap[level], className: `quality-${level}` };
 };
 

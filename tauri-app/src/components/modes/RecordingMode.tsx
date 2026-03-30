@@ -236,7 +236,7 @@ export const RecordingMode = memo(function RecordingMode({
       >
         <span className="quality-dot" />
         <span className="quality-label">
-          {qualityLevel === 'good' ? 'Good audio' : qualityLevel === 'fair' ? 'Fair audio' : 'Poor audio'}
+          {qualityLevel === 'good' ? 'Good audio' : qualityLevel === 'fair' ? 'Fair audio' : qualityLevel === 'no_data' ? 'No audio' : 'Poor audio'}
         </span>
       </button>
 
