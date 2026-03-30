@@ -2194,3 +2194,35 @@ pub fn delete_patient_from_session(
     Ok(())
 }
 
+/// Rename a patient label in a multi-patient session.
+pub fn rename_patient_label(
+    session_id: &str,
+    date_str: &str,
+    patient_index: u32,
+    new_label: &str,
+) -> Result<(), String> {
+    let session_dir = get_session_dir_from_str(session_id, date_str)?;
+    let labels_path = session_dir.join("patient_labels.json");
+    if !labels_path.exists() {
+        return Err("Not a multi-patient session".to_string());
+    }
+
+    let labels_json = fs::read_to_string(&labels_path)
+        .map_err(|e| format!("Failed to read labels: {}", e))?;
+    let mut labels: Vec<serde_json::Value> = serde_json::from_str(&labels_json)
+        .map_err(|e| format!("Failed to parse labels: {}", e))?;
+
+    for entry in &mut labels {
+        if entry["index"].as_u64().unwrap_or(0) as u32 == patient_index {
+            entry["label"] = serde_json::json!(new_label);
+            break;
+        }
+    }
+
+    let updated = serde_json::to_string_pretty(&labels)
+        .map_err(|e| format!("Failed to serialize labels: {}", e))?;
+    fs::write(&labels_path, updated)
+        .map_err(|e| format!("Failed to write labels: {}", e))?;
+    Ok(())
+}
+

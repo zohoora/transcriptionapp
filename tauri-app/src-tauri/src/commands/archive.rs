@@ -618,6 +618,18 @@ pub async fn delete_patient_from_session(
     Ok(())
 }
 
+/// Rename a patient label in a multi-patient session
+#[tauri::command]
+pub async fn rename_patient_label(
+    session_id: String,
+    date: String,
+    patient_index: u32,
+    new_label: String,
+) -> Result<(), CommandError> {
+    local_archive::rename_patient_label(&session_id, &date, patient_index, &new_label)?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

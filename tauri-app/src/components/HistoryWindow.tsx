@@ -680,13 +680,23 @@ const HistoryWindow: React.FC = () => {
     const dateStr = formatDateForApi(selectedDate);
     const id = Array.from(selectedIds)[0];
     try {
-      await invoke('update_session_patient_name', { sessionId: id, date: dateStr, patientName: name });
+      if (selectedPatientIndex !== null && selectedSession?.patientNotes) {
+        const archiveIndex = selectedSession.patientNotes[selectedPatientIndex]?.index ?? (selectedPatientIndex + 1);
+        await invoke('rename_patient_label', {
+          sessionId: id,
+          date: dateStr,
+          patientIndex: archiveIndex,
+          newLabel: name,
+        });
+      } else {
+        await invoke('update_session_patient_name', { sessionId: id, date: dateStr, patientName: name });
+      }
       await afterCleanupOp('Patient name updated');
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
       setCleanupDialog('none');
     }
-  }, [selectedDate, selectedIds, afterCleanupOp]);
+  }, [selectedDate, selectedIds, selectedPatientIndex, selectedSession, afterCleanupOp]);
 
   // Open split window — passes context via URL query params
   const openSplitWindow = useCallback(async () => {
