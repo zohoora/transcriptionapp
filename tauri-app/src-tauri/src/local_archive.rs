@@ -178,6 +178,10 @@ pub struct ArchiveSummary {
     pub physician_name: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub room_name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub patient_count: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub patient_labels: Option<Vec<String>>,
 }
 
 /// A single patient's SOAP note within a multi-patient encounter
@@ -570,6 +574,33 @@ pub fn list_sessions_by_date(date_str: &str) -> Result<Vec<ArchiveSummary>, Stri
         };
 
         let has_feedback = session_dir.join("feedback.json").exists();
+
+        // Load patient labels for multi-patient sessions
+        let patient_count = metadata.patient_count;
+        let patient_labels = if patient_count.unwrap_or(0) > 1 {
+            let labels_path = session_dir.join("patient_labels.json");
+            if labels_path.exists() {
+                match fs::read_to_string(&labels_path) {
+                    Ok(json) => {
+                        match serde_json::from_str::<Vec<serde_json::Value>>(&json) {
+                            Ok(entries) => {
+                                let labels: Vec<String> = entries.iter()
+                                    .map(|e| e["label"].as_str().unwrap_or("Patient").to_string())
+                                    .collect();
+                                if labels.len() > 1 { Some(labels) } else { None }
+                            }
+                            Err(_) => None,
+                        }
+                    }
+                    Err(_) => None,
+                }
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
         sessions.push(ArchiveSummary {
             session_id: metadata.session_id,
             date: date_str.to_string(),
@@ -586,6 +617,8 @@ pub fn list_sessions_by_date(date_str: &str) -> Result<Vec<ArchiveSummary>, Stri
             has_feedback: Some(has_feedback),
             physician_name: metadata.physician_name,
             room_name: metadata.room_name,
+            patient_count,
+            patient_labels,
         });
     }
 
@@ -1327,6 +1360,8 @@ mod tests {
             has_feedback: None,
             physician_name: None,
             room_name: None,
+            patient_count: None,
+            patient_labels: None,
         };
 
         let json = serde_json::to_string(&summary).unwrap();
@@ -2031,6 +2066,8 @@ mod tests {
             has_feedback: Some(true),
             physician_name: None,
             room_name: None,
+            patient_count: None,
+            patient_labels: None,
         };
 
         let json = serde_json::to_string(&summary).unwrap();
