@@ -696,6 +696,8 @@ export interface LocalArchiveSummary {
   has_feedback: boolean | null;
   physician_name?: string | null;
   room_name?: string | null;
+  patient_count?: number | null;
+  patient_labels?: string[] | null;
 }
 
 /** Metadata for an archived session */
