@@ -45,7 +45,7 @@ else
 fi
 
 # Re-sign after adding the dylib (required for Developer ID signed apps)
-SIGNING_IDENTITY=$(codesign -dv "$APP_BUNDLE" 2>&1 | grep "Authority=" | head -1 | sed 's/Authority=//')
+SIGNING_IDENTITY=$(codesign -dvv "$APP_BUNDLE" 2>&1 | grep "^Authority=" | head -1 | sed 's/^Authority=//')
 if [ -n "$SIGNING_IDENTITY" ] && [ "$SIGNING_IDENTITY" != "-" ]; then
     echo "Re-signing with: $SIGNING_IDENTITY"
     codesign --force --sign "$SIGNING_IDENTITY" "$FRAMEWORKS_DIR/$DYLIB_NAME"
