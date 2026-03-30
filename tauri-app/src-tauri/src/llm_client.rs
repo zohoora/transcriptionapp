@@ -865,6 +865,51 @@ impl LLMClient {
         })
     }
 
+    /// Generate a SOAP note scoped to a single patient within a multi-patient transcript.
+    /// Uses `build_single_patient_soap_prompt` which appends a patient-scoping constraint
+    /// to the base SOAP system prompt.
+    ///
+    /// # Arguments
+    /// * `model` - LLM model name to use
+    /// * `transcript` - Full clinical transcript (may contain multiple patients)
+    /// * `patient_label` - The patient label to scope the note to (e.g. "Patient A")
+    /// * `audio_events` - Optional detected audio events
+    /// * `options` - SOAP generation options
+    /// * `speaker_context` - Optional speaker identification context
+    pub async fn generate_single_patient_soap_note(
+        &self,
+        model: &str,
+        transcript: &str,
+        patient_label: &str,
+        audio_events: Option<&[AudioEvent]>,
+        options: Option<&SoapOptions>,
+        speaker_context: Option<&SpeakerContext>,
+    ) -> Result<SoapNote, String> {
+        let prepared_transcript = Self::prepare_transcript(transcript)?;
+        let opts = options.cloned().unwrap_or_default();
+        info!(
+            "Generating single-patient SOAP note for \"{}\" with model {} ({} chars, {} words)",
+            patient_label,
+            model,
+            prepared_transcript.len(),
+            prepared_transcript.split_whitespace().count(),
+        );
+
+        let system_prompt = build_single_patient_soap_prompt(&opts, patient_label);
+        let session_notes = if opts.session_notes.trim().is_empty() { None } else { Some(opts.session_notes.as_str()) };
+        let user_content = build_soap_user_content(&prepared_transcript, audio_events, session_notes, speaker_context);
+
+        let response = self.generate(model, &system_prompt, &user_content, tasks::SOAP_NOTE).await?;
+        let content = self.parse_soap_with_retry(model, &system_prompt, &user_content, &response).await;
+
+        info!("Successfully generated single-patient SOAP note for \"{}\" ({} chars)", patient_label, content.len());
+        Ok(SoapNote {
+            content,
+            generated_at: Utc::now().to_rfc3339(),
+            model_used: model.to_string(),
+        })
+    }
+
     /// Generate multi-patient SOAP notes from a clinical transcript
     /// Returns a single combined note covering all patients
     ///
@@ -2229,6 +2274,19 @@ pub(crate) fn build_per_patient_soap_prompt(options: &SoapOptions) -> String {
         - Treatment plans, prescriptions, and follow-ups for that patient\n\
         - Ignore clinical content that belongs to the other patient(s), even if it appears nearby",
         base
+    )
+}
+
+/// Build a SOAP system prompt scoped to a single patient within a multi-patient transcript.
+/// Used when the physician regenerates SOAP for one specific patient (flattened sidebar entry).
+/// Appends a single-patient constraint to the base SOAP prompt.
+pub fn build_single_patient_soap_prompt(options: &SoapOptions, patient_label: &str) -> String {
+    let base = build_simple_soap_prompt(options);
+    format!(
+        "{}\n\nIMPORTANT: This transcript contains multiple patients. \
+         Generate a SOAP note ONLY for the patient identified as \"{}\". \
+         Ignore clinical content belonging to other patients in the transcript.",
+        base, patient_label
     )
 }
 

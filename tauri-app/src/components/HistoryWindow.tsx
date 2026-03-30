@@ -22,6 +22,7 @@ import type {
   LocalArchiveDetails,
   LocalArchiveMetadata,
   MultiPatientSoapResult,
+  SoapNote,
   EncounterSummary,
   EncounterDetails,
   SoapOptions,
@@ -423,7 +424,72 @@ const HistoryWindow: React.FC = () => {
   const handleGenerateSoap = useCallback(async () => {
     if (!editedTranscript.trim()) return;
 
-    // Use hook's generateSoapNote - handles LLM call, clipboard copy, settings persistence
+    // When viewing a specific patient in a flattened multi-patient session,
+    // regenerate only that patient's SOAP note using the single-patient prompt.
+    if (selectedPatientIndex !== null && soapResult && soapResult.notes.length > 1) {
+      const targetNote = soapResult.notes[selectedPatientIndex];
+      if (!targetNote) return;
+
+      setSoapError(null);
+      try {
+        const singleNote = await invoke<SoapNote>('generate_soap_note', {
+          transcript: editedTranscript,
+          audioEvents: null,
+          options: soapOptions,
+          sessionId: selectedSession?.session_id ?? null,
+          speakerContext: null,
+          patientLabel: targetNote.patient_label,
+        });
+
+        // Merge the regenerated note back into the existing multi-patient result
+        const updatedNotes = soapResult.notes.map((n, i) =>
+          i === selectedPatientIndex
+            ? { ...n, content: singleNote.content }
+            : n
+        );
+        const updatedResult: MultiPatientSoapResult = {
+          ...soapResult,
+          notes: updatedNotes,
+          generated_at: singleNote.generated_at,
+          model_used: singleNote.model_used,
+        };
+        setSoapResult(updatedResult);
+
+        // Copy regenerated note to clipboard
+        try {
+          await writeText(singleNote.content);
+        } catch {
+          // Non-blocking
+        }
+
+        // Save updated SOAP to archive
+        if (selectedSession && dataSource === 'local') {
+          const soapContent = updatedResult.notes.map(n =>
+            updatedResult.notes.length > 1
+              ? `=== ${n.patient_label} ===\n\n${n.content}`
+              : n.content
+          ).join('\n\n---\n\n');
+          try {
+            await invoke('save_local_soap_note', {
+              sessionId: selectedSession.session_id,
+              date: formatDateForApi(selectedDate),
+              soapContent,
+              detailLevel: soapOptions.detail_level,
+              format: soapOptions.format,
+            });
+          } catch (saveErr) {
+            console.error('Failed to save SOAP to archive:', saveErr);
+          }
+        }
+
+        setGlobalSoapDefaults(soapOptions);
+      } catch (e) {
+        setSoapError(e instanceof Error ? e.message : String(e));
+      }
+      return;
+    }
+
+    // Default path: full session SOAP regeneration (auto-detects patients)
     const result = await generateSoapNote(
       editedTranscript,
       undefined, // audioEvents
@@ -469,7 +535,7 @@ const HistoryWindow: React.FC = () => {
       // Update local global defaults after successful generation
       setGlobalSoapDefaults(soapOptions);
     }
-  }, [editedTranscript, soapOptions, selectedSession, selectedDate, dataSource, authState.is_authenticated, generateSoapNote]);
+  }, [editedTranscript, soapOptions, selectedSession, selectedDate, dataSource, authState.is_authenticated, generateSoapNote, selectedPatientIndex, soapResult, setSoapError]);
 
   const clearSelection = useCallback(() => {
     setSelectedSessionId(null);

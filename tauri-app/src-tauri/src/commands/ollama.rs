@@ -82,6 +82,8 @@ pub async fn prewarm_ollama_model() -> Result<(), CommandError> {
 /// * `options` - Optional SOAP generation options (detail level, format, custom instructions)
 /// * `session_id` - Optional session ID for debug storage correlation
 /// * `speaker_context` - Optional speaker identification context for better SOAP generation
+/// * `patient_label` - Optional patient label to scope the note to a single patient in a
+///   multi-patient transcript (used when regenerating SOAP for a flattened sidebar entry)
 #[tauri::command]
 pub async fn generate_soap_note(
     transcript: String,
@@ -89,12 +91,14 @@ pub async fn generate_soap_note(
     options: Option<SoapOptions>,
     session_id: Option<String>,
     speaker_context: Option<Vec<SpeakerInfo>>,
+    patient_label: Option<String>,
 ) -> Result<SoapNote, CommandError> {
     info!(
-        "Generating SOAP note for transcript of {} chars, {} audio events, {} speakers, options: {:?}",
+        "Generating SOAP note for transcript of {} chars, {} audio events, {} speakers, patient_label: {:?}, options: {:?}",
         transcript.len(),
         audio_events.as_ref().map(|e| e.len()).unwrap_or(0),
         speaker_context.as_ref().map(|s| s.len()).unwrap_or(0),
+        patient_label,
         options
     );
 
@@ -122,15 +126,27 @@ pub async fn generate_soap_note(
     let selected_model = select_soap_model(&config, word_count);
     let start_time = std::time::Instant::now();
 
-    match client
-        .generate_soap_note(
+    // When a patient_label is provided, scope the SOAP note to that patient only
+    let soap_result = if let Some(ref label) = patient_label {
+        client.generate_single_patient_soap_note(
+            selected_model,
+            &transcript,
+            label,
+            audio_events.as_deref(),
+            options.as_ref(),
+            ctx.as_ref(),
+        ).await
+    } else {
+        client.generate_soap_note(
             selected_model,
             &transcript,
             audio_events.as_deref(),
             options.as_ref(),
             ctx.as_ref(),
-        )
-        .await
+        ).await
+    };
+
+    match soap_result
     {
         Ok(soap_note) => {
             let generation_time_ms = start_time.elapsed().as_millis() as u64;
