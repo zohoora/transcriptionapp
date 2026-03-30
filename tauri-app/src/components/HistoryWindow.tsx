@@ -36,6 +36,14 @@ type SortField = 'time' | 'encounter' | 'patient' | 'words' | 'duration';
 type SortDir = 'asc' | 'desc';
 type FilterMode = 'all' | 'clinical' | 'non-clinical' | 'soap' | 'no-soap';
 
+/** A sidebar row — either a normal session or one patient from a multi-patient session */
+interface FlattenedSession extends LocalArchiveSummary {
+  patientIndex: number | null;
+  flattenedPatientName: string | null;
+  isGroupFirst: boolean;
+  isGroupLast: boolean;
+}
+
 function formatDateForDisplay(date: Date): string {
   return date.toLocaleDateString('en-US', {
     weekday: 'long',
@@ -69,6 +77,7 @@ const HistoryWindow: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
+  const [selectedPatientIndex, setSelectedPatientIndex] = useState<number | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [datesWithSessions, setDatesWithSessions] = useState<Set<string>>(new Set());
 
@@ -200,6 +209,28 @@ const HistoryWindow: React.FC = () => {
     return sorted;
   }, [sessions, sortField, sortDir, filterMode]);
 
+  const flattenedSessions: FlattenedSession[] = useMemo(() => {
+    return sortedSessions.flatMap((session): FlattenedSession[] => {
+      const labels = session.patient_labels;
+      if (labels && labels.length > 1) {
+        return labels.map((label, i) => ({
+          ...session,
+          patientIndex: i,
+          flattenedPatientName: label,
+          isGroupFirst: i === 0,
+          isGroupLast: i === labels.length - 1,
+        }));
+      }
+      return [{
+        ...session,
+        patientIndex: null,
+        flattenedPatientName: null,
+        isGroupFirst: false,
+        isGroupLast: false,
+      }];
+    });
+  }, [sortedSessions]);
+
   // Fetch sessions for selected date from local archive or Medplum
   const fetchSessions = useCallback(async () => {
     if (!settingsLoaded) return;
@@ -268,8 +299,9 @@ const HistoryWindow: React.FC = () => {
   }, [fetchSessions, settingsLoaded]);
 
   // Fetch session details from local archive or Medplum
-  const fetchSessionDetails = async (session: LocalArchiveSummary) => {
+  const fetchSessionDetails = async (session: LocalArchiveSummary, patientIndex?: number | null) => {
     setSelectedSessionId(session.session_id);
+    setSelectedPatientIndex(patientIndex ?? null);
     setDetailLoading(true);
 
     try {
@@ -324,7 +356,7 @@ const HistoryWindow: React.FC = () => {
       // Reset SOAP and feedback state
       setSoapResult(null);
       setSoapError(null);
-      setActivePatient(0);
+      setActivePatient(patientIndex ?? 0);
       setFeedback(null);
 
       // Load SOAP options from metadata if available, otherwise use global defaults
@@ -441,6 +473,7 @@ const HistoryWindow: React.FC = () => {
 
   const clearSelection = useCallback(() => {
     setSelectedSessionId(null);
+    setSelectedPatientIndex(null);
     setSelectedSession(null);
     setIsEditing(false);
     setSoapResult(null);
@@ -786,17 +819,25 @@ const HistoryWindow: React.FC = () => {
               </div>
             ) : (
               <div className="sessions-list">
-                {sortedSessions.map((session) => (
+                {flattenedSessions.map((entry) => {
+                  const multiPatientClasses = entry.patientIndex !== null
+                    ? ` multi-patient-group${entry.isGroupFirst ? ' group-first' : ''}${entry.isGroupLast ? ' group-last' : ''}`
+                    : '';
+                  const isActive = !isCleanupMode && selectedSessionId === entry.session_id && selectedPatientIndex === entry.patientIndex;
+                  const isSelected = isCleanupMode && selectedIds.has(entry.session_id);
+                  const entryKey = entry.patientIndex !== null ? `${entry.session_id}:${entry.patientIndex}` : entry.session_id;
+                  const displayName = entry.flattenedPatientName ?? entry.patient_name;
+                  return (
                   <div
-                    key={session.session_id}
-                    className={`session-item${isCleanupMode && selectedIds.has(session.session_id) ? ' selected' : ''}${!isCleanupMode && selectedSessionId === session.session_id ? ' active' : ''}`}
+                    key={entryKey}
+                    className={`session-item${isSelected ? ' selected' : ''}${isActive ? ' active' : ''}${multiPatientClasses}`}
                   >
                     {isCleanupMode && (
                       <label className="cleanup-checkbox" onClick={(e) => e.stopPropagation()}>
                         <input
                           type="checkbox"
-                          checked={selectedIds.has(session.session_id)}
-                          onChange={() => toggleSessionSelection(session.session_id)}
+                          checked={selectedIds.has(entry.session_id)}
+                          onChange={() => toggleSessionSelection(entry.session_id)}
                         />
                       </label>
                     )}
@@ -804,52 +845,54 @@ const HistoryWindow: React.FC = () => {
                       className="session-item-body"
                       onClick={() => {
                         if (isCleanupMode) {
-                          toggleSessionSelection(session.session_id);
+                          toggleSessionSelection(entry.session_id);
                         } else {
-                          fetchSessionDetails(session);
+                          setSelectedPatientIndex(entry.patientIndex);
+                          fetchSessionDetails(entry, entry.patientIndex);
                         }
                       }}
                     >
                       <div className="session-info">
-                        <span className="session-time">{formatLocalTime(session.started_at || session.date)}</span>
+                        <span className="session-time">{formatLocalTime(entry.started_at || entry.date)}</span>
                         <span className="session-name">
-                          {session.charting_mode === 'continuous' && session.encounter_number != null
-                            ? `Encounter #${session.encounter_number}${session.patient_name ? ` \u2014 ${session.patient_name}` : ''}`
-                            : session.word_count > 0
-                              ? `${session.word_count} words`
+                          {entry.charting_mode === 'continuous' && entry.encounter_number != null
+                            ? `Encounter #${entry.encounter_number}${displayName ? ` \u2014 ${displayName}` : ''}`
+                            : entry.word_count > 0
+                              ? `${entry.word_count} words`
                               : 'Scribe Session'}
                         </span>
                       </div>
                       <div className="session-meta">
-                        {session.duration_ms && (
+                        {entry.duration_ms && (
                           <span className="session-duration">
-                            {formatDurationShort(session.duration_ms)}
+                            {formatDurationShort(entry.duration_ms)}
                           </span>
                         )}
                         <div className="session-badges">
-                          {session.likely_non_clinical && (
+                          {entry.likely_non_clinical && (
                             <span className="badge non-clinical-badge">Non-clinical</span>
                           )}
-                          {session.charting_mode === 'continuous' && (
+                          {entry.charting_mode === 'continuous' && (
                             <span className="badge charted-badge">Auto-charted</span>
                           )}
-                          {session.has_soap_note && (
+                          {entry.has_soap_note && (
                             <span className="badge soap-badge">SOAP</span>
                           )}
-                          {session.has_audio && (
+                          {entry.has_audio && (
                             <span className="badge audio-badge">Audio</span>
                           )}
-                          {session.auto_ended && (
+                          {entry.auto_ended && (
                             <span className="badge auto-badge">Auto</span>
                           )}
-                          {session.has_feedback && (
+                          {entry.has_feedback && (
                             <span className="badge feedback-badge">Reviewed</span>
                           )}
                         </div>
                       </div>
                     </button>
                   </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>
