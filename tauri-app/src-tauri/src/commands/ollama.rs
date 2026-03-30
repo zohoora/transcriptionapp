@@ -861,6 +861,87 @@ pub async fn list_vision_experiment_strategies() -> Vec<(String, String)> {
         .collect()
 }
 
+/// Merge incorrectly split patients within the same session.
+///
+/// Calls the LLM to generate a single unified SOAP note from multiple patient notes
+/// that the physician has identified as being the same person, then updates the archive.
+#[tauri::command]
+pub async fn merge_patient_soaps(
+    session_id: String,
+    date: String,
+    merged_indices: Vec<u32>,
+    new_label: String,
+    transcript: String,
+    all_patients: Vec<serde_json::Value>, // [{index, label, content}]
+) -> Result<String, CommandError> {
+    if merged_indices.len() < 2 {
+        return Err(CommandError::Validation(
+            "Need at least 2 patients to merge".into(),
+        ));
+    }
+
+    let patient_data: Vec<(u32, String, String)> = all_patients
+        .iter()
+        .map(|p| {
+            (
+                p["index"].as_u64().unwrap_or(0) as u32,
+                p["label"].as_str().unwrap_or("Patient").to_string(),
+                p["content"].as_str().unwrap_or("").to_string(),
+            )
+        })
+        .collect();
+
+    let (system, user) = crate::llm_client::build_patient_merge_correction_prompt(
+        &transcript,
+        &patient_data,
+        &merged_indices,
+    );
+
+    // Get LLM client and model from config — follows the same pattern as generate_soap_note
+    let config = Config::load_or_default();
+    let word_count = transcript.split_whitespace().count();
+    let soap_model = select_soap_model(&config, word_count);
+    let client = LLMClient::new(
+        &config.llm_router_url,
+        &config.llm_api_key,
+        &config.llm_client_id,
+        &config.fast_model,
+    )
+    .map_err(|e| CommandError::Network(e))?;
+
+    info!(
+        session_id = %session_id,
+        merged_indices = ?merged_indices,
+        new_label = %new_label,
+        model = %soap_model,
+        "Generating merged patient SOAP note"
+    );
+
+    let merged_soap = client
+        .generate(soap_model, &system, &user, "patient_merge")
+        .await
+        .map_err(|e| CommandError::Other(format!("Patient merge SOAP generation failed: {}", e)))?;
+
+    // Save to archive
+    crate::local_archive::merge_patients_in_session(
+        &session_id,
+        &date,
+        &merged_indices,
+        &new_label,
+        &merged_soap,
+    )
+    .map_err(|e| CommandError::Other(e))?;
+
+    info!(
+        session_id = %session_id,
+        merged_patients = merged_indices.len(),
+        soap_length = merged_soap.len(),
+        "Patient merge complete"
+    );
+
+    Ok(merged_soap)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

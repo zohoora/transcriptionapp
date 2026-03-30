@@ -2310,6 +2310,54 @@ pub(crate) fn build_per_patient_user_content(
     )
 }
 
+/// Build a prompt for merging incorrectly split patients within one encounter.
+/// Used when the physician determines that the LLM's multi-patient detection was wrong
+/// and two or more detected "patients" are actually the same person.
+pub fn build_patient_merge_correction_prompt(
+    transcript: &str,
+    all_patient_labels: &[(u32, String, String)], // (index, label, soap_content)
+    merged_indices: &[u32],
+) -> (String, String) {
+    let mut context = String::new();
+    context.push_str("The following patients were detected in this encounter:\n\n");
+
+    for (idx, label, soap) in all_patient_labels {
+        let status = if merged_indices.contains(idx) {
+            "TO BE MERGED"
+        } else {
+            "correct, keep separate"
+        };
+        context.push_str(&format!(
+            "--- Patient {} ({}) [{}] ---\n{}\n\n",
+            idx, label, status, soap
+        ));
+    }
+
+    let merged_names: Vec<&str> = all_patient_labels
+        .iter()
+        .filter(|(idx, _, _)| merged_indices.contains(idx))
+        .map(|(_, label, _)| label.as_str())
+        .collect();
+
+    let system = format!(
+        "You are a medical scribe assistant. The physician has reviewed automatically detected \
+         patient notes from a multi-patient encounter and determined that the following patients \
+         are actually the SAME person and should be merged: {}.\n\n\
+         Generate a single unified SOAP note for this patient, incorporating clinical details \
+         from all the notes marked TO BE MERGED. Do not include content from patients marked \
+         as 'correct, keep separate'.",
+        merged_names.join(", ")
+    );
+
+    let user = format!(
+        "TRANSCRIPT:\n{}\n\nDETECTED PATIENTS AND THEIR CURRENT SOAP NOTES:\n{}\n\n\
+         Generate a single merged SOAP note for the patients marked TO BE MERGED.",
+        transcript, context
+    );
+
+    (system, user)
+}
+
 /// Format audio events for inclusion in the prompt
 fn format_audio_events(events: &[AudioEvent]) -> String {
     if events.is_empty() {

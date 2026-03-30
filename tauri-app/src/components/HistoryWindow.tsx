@@ -45,6 +45,25 @@ interface FlattenedSession extends LocalArchiveSummary {
   isGroupLast: boolean;
 }
 
+/** Build a unique key for a flattened sidebar entry */
+function entryKey(entry: FlattenedSession): string {
+  return entry.patientIndex !== null
+    ? `${entry.session_id}:p:${entry.patientIndex}`
+    : entry.session_id;
+}
+
+/** Extract the session ID from an entry key */
+function sessionIdFromKey(key: string): string {
+  const idx = key.indexOf(':p:');
+  return idx >= 0 ? key.substring(0, idx) : key;
+}
+
+/** Extract the patient index from an entry key, or null for single-patient entries */
+function patientIndexFromKey(key: string): number | null {
+  const idx = key.indexOf(':p:');
+  return idx >= 0 ? parseInt(key.substring(idx + 3), 10) : null;
+}
+
 function formatDateForDisplay(date: Date): string {
   return date.toLocaleDateString('en-US', {
     weekday: 'long',
@@ -594,22 +613,27 @@ const HistoryWindow: React.FC = () => {
     });
   }, []);
 
-  const toggleSessionSelection = useCallback((sessionId: string) => {
+  const toggleEntrySelection = useCallback((key: string) => {
     setSelectedIds(prev => {
       const next = new Set(prev);
-      if (next.has(sessionId)) {
-        next.delete(sessionId);
+      if (next.has(key)) {
+        next.delete(key);
       } else {
-        next.add(sessionId);
+        next.add(key);
       }
       return next;
     });
   }, []);
 
   // Get selected sessions in display order (for dialogs)
+  /** Unique session IDs derived from selected entry keys */
+  const selectedSessionIds = useMemo((): Set<string> => {
+    return new Set(Array.from(selectedIds).map(sessionIdFromKey));
+  }, [selectedIds]);
+
   const getSelectedSessions = useCallback((): LocalArchiveSummary[] => {
-    return sessions.filter(s => selectedIds.has(s.session_id));
-  }, [sessions, selectedIds]);
+    return sessions.filter(s => selectedSessionIds.has(s.session_id));
+  }, [sessions, selectedSessionIds]);
 
   // Post-operation: refresh list, renumber, clear selection, show message
   const afterCleanupOp = useCallback(async (message: string) => {
@@ -640,21 +664,22 @@ const HistoryWindow: React.FC = () => {
   // Delete operation
   const handleDeleteConfirm = useCallback(async () => {
     const dateStr = formatDateForApi(selectedDate);
-    const ids = Array.from(selectedIds);
+    const keys = Array.from(selectedIds);
     try {
-      if (selectedPatientIndex !== null && selectedSession?.patientNotes && ids.length === 1) {
+      if (selectedPatientIndex !== null && selectedSession?.patientNotes && keys.length === 1) {
         const archiveIndex = selectedSession.patientNotes[selectedPatientIndex]?.index ?? (selectedPatientIndex + 1);
         await invoke('delete_patient_from_session', {
-          sessionId: ids[0],
+          sessionId: sessionIdFromKey(keys[0]),
           date: dateStr,
           patientIndex: archiveIndex,
         });
         await afterCleanupOp('Patient deleted');
       } else {
-        for (const id of ids) {
+        const uniqueSessionIds = [...new Set(keys.map(sessionIdFromKey))];
+        for (const id of uniqueSessionIds) {
           await invoke('delete_local_session', { sessionId: id, date: dateStr });
         }
-        await afterCleanupOp(`Deleted ${ids.length} session${ids.length > 1 ? 's' : ''}`);
+        await afterCleanupOp(`Deleted ${uniqueSessionIds.length} session${uniqueSessionIds.length > 1 ? 's' : ''}`);
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -662,13 +687,83 @@ const HistoryWindow: React.FC = () => {
     }
   }, [selectedDate, selectedIds, selectedPatientIndex, selectedSession, afterCleanupOp]);
 
-  // Merge operation
+  /** Detect if current selection represents a same-session patient merge */
+  const isSameSessionPatientMerge = useMemo((): boolean => {
+    const keys = Array.from(selectedIds);
+    if (keys.length < 2) return false;
+    const sessionIds = keys.map(sessionIdFromKey);
+    const uniqueSessions = new Set(sessionIds);
+    // All keys must share the same session ID, and at least one must have a patient index
+    return uniqueSessions.size === 1 && keys.some(k => patientIndexFromKey(k) !== null);
+  }, [selectedIds]);
+
+  // Merge operation (handles both cross-session and same-session patient merge)
   const handleMergeConfirm = useCallback(async () => {
     const dateStr = formatDateForApi(selectedDate);
-    const ids = Array.from(selectedIds);
+    const keys = Array.from(selectedIds);
     try {
-      await invoke<string>('merge_local_sessions', { sessionIds: ids, date: dateStr });
-      await afterCleanupOp(`Merged ${ids.length} sessions`);
+      if (isSameSessionPatientMerge) {
+        // Same-session patient merge — handled by MergeConfirmDialog via merge_patient_soaps
+        // This path is only reached for cross-session merges
+        return;
+      }
+      const uniqueSessionIds = [...new Set(keys.map(sessionIdFromKey))];
+      await invoke<string>('merge_local_sessions', { sessionIds: uniqueSessionIds, date: dateStr });
+      await afterCleanupOp(`Merged ${uniqueSessionIds.length} sessions`);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+      setCleanupDialog('none');
+    }
+  }, [selectedDate, selectedIds, isSameSessionPatientMerge, afterCleanupOp]);
+
+  // Same-session patient merge confirm handler
+  const handlePatientMergeConfirm = useCallback(async (newLabel: string) => {
+    const dateStr = formatDateForApi(selectedDate);
+    const keys = Array.from(selectedIds);
+    const sessionId = sessionIdFromKey(keys[0]);
+
+    try {
+      // Fetch session details to get transcript and patient notes
+      const details = await invoke<LocalArchiveDetails>('get_local_session_details', {
+        sessionId,
+        date: dateStr,
+      });
+
+      if (!details.transcript?.trim()) {
+        throw new Error('Session has no transcript');
+      }
+      if (!details.patientNotes || details.patientNotes.length < 2) {
+        throw new Error('Session does not have multiple patient notes');
+      }
+
+      // Determine which archive patient indices are being merged
+      const mergedPatientIndices = keys
+        .map(k => patientIndexFromKey(k))
+        .filter((idx): idx is number => idx !== null);
+
+      const mergedArchiveIndices = mergedPatientIndices.map(
+        flatIdx => details.patientNotes![flatIdx]?.index ?? (flatIdx + 1)
+      );
+
+      // Build all_patients data for the LLM
+      const allPatients = details.patientNotes.map(pn => ({
+        index: pn.index,
+        label: pn.label,
+        content: pn.content,
+      }));
+
+      const mergedSoap = await invoke<string>('merge_patient_soaps', {
+        sessionId,
+        date: dateStr,
+        mergedIndices: mergedArchiveIndices,
+        newLabel: newLabel,
+        transcript: details.transcript,
+        allPatients,
+      });
+
+      if (mergedSoap) {
+        await afterCleanupOp('Patient notes merged');
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
       setCleanupDialog('none');
@@ -678,7 +773,8 @@ const HistoryWindow: React.FC = () => {
   // Edit name operation
   const handleEditNameConfirm = useCallback(async (name: string) => {
     const dateStr = formatDateForApi(selectedDate);
-    const id = Array.from(selectedIds)[0];
+    const key = Array.from(selectedIds)[0];
+    const id = sessionIdFromKey(key);
     try {
       if (selectedPatientIndex !== null && selectedSession?.patientNotes) {
         const archiveIndex = selectedSession.patientNotes[selectedPatientIndex]?.index ?? (selectedPatientIndex + 1);
@@ -701,8 +797,9 @@ const HistoryWindow: React.FC = () => {
   // Open split window — passes context via URL query params
   const openSplitWindow = useCallback(async () => {
     const dateStr = formatDateForApi(selectedDate);
-    const id = Array.from(selectedIds)[0];
-    if (!id) return;
+    const key = Array.from(selectedIds)[0];
+    if (!key) return;
+    const id = sessionIdFromKey(key);
 
     try {
       // Close existing split window if any
@@ -764,9 +861,9 @@ const HistoryWindow: React.FC = () => {
   // SOAP regeneration for selected sessions
   const handleRegenSoap = useCallback(async () => {
     const dateStr = formatDateForApi(selectedDate);
-    const ids = Array.from(selectedIds);
+    const uniqueIds = [...selectedSessionIds];
     let regenCount = 0;
-    for (const id of ids) {
+    for (const id of uniqueIds) {
       try {
         const details = await invoke<LocalArchiveDetails>('get_local_session_details', {
           sessionId: id,
@@ -795,7 +892,7 @@ const HistoryWindow: React.FC = () => {
       }
     }
     await afterCleanupOp(`Regenerated SOAP for ${regenCount} session${regenCount !== 1 ? 's' : ''}`);
-  }, [selectedDate, selectedIds, soapOptions, generateSoapNote, afterCleanupOp]);
+  }, [selectedDate, selectedSessionIds, soapOptions, generateSoapNote, afterCleanupOp]);
 
   // Cleanup mode only works with local data source
   const canCleanup = dataSource === 'local';
@@ -910,20 +1007,20 @@ const HistoryWindow: React.FC = () => {
                     ? ` multi-patient-group${entry.isGroupFirst ? ' group-first' : ''}${entry.isGroupLast ? ' group-last' : ''}`
                     : '';
                   const isActive = !isCleanupMode && selectedSessionId === entry.session_id && selectedPatientIndex === entry.patientIndex;
-                  const isSelected = isCleanupMode && selectedIds.has(entry.session_id);
-                  const entryKey = entry.patientIndex !== null ? `${entry.session_id}:${entry.patientIndex}` : entry.session_id;
+                  const ek = entryKey(entry);
+                  const isSelected = isCleanupMode && selectedIds.has(ek);
                   const displayName = entry.flattenedPatientName ?? entry.patient_name;
                   return (
                   <div
-                    key={entryKey}
+                    key={ek}
                     className={`session-item${isSelected ? ' selected' : ''}${isActive ? ' active' : ''}${multiPatientClasses}`}
                   >
                     {isCleanupMode && (
                       <label className="cleanup-checkbox" onClick={(e) => e.stopPropagation()}>
                         <input
                           type="checkbox"
-                          checked={selectedIds.has(entry.session_id)}
-                          onChange={() => toggleSessionSelection(entry.session_id)}
+                          checked={selectedIds.has(ek)}
+                          onChange={() => toggleEntrySelection(ek)}
                         />
                       </label>
                     )}
@@ -931,7 +1028,7 @@ const HistoryWindow: React.FC = () => {
                       className="session-item-body"
                       onClick={() => {
                         if (isCleanupMode) {
-                          toggleSessionSelection(entry.session_id);
+                          toggleEntrySelection(ek);
                         } else {
                           setSelectedPatientIndex(entry.patientIndex);
                           fetchSessionDetails(entry, entry.patientIndex);
@@ -1412,6 +1509,20 @@ const HistoryWindow: React.FC = () => {
           sessions={getSelectedSessions()}
           onConfirm={handleMergeConfirm}
           onCancel={() => setCleanupDialog('none')}
+          isSameSessionPatientMerge={isSameSessionPatientMerge}
+          selectedPatientNames={
+            isSameSessionPatientMerge
+              ? Array.from(selectedIds).map(k => {
+                  const pIdx = patientIndexFromKey(k);
+                  const sid = sessionIdFromKey(k);
+                  const session = sessions.find(s => s.session_id === sid);
+                  return pIdx !== null && session?.patient_labels?.[pIdx]
+                    ? session.patient_labels[pIdx]
+                    : `Patient ${(pIdx ?? 0) + 1}`;
+                })
+              : undefined
+          }
+          onPatientMergeConfirm={handlePatientMergeConfirm}
         />
       )}
       {cleanupDialog === 'editName' && selectedIds.size === 1 && (

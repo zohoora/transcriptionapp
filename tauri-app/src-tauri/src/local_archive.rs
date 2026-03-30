@@ -2226,3 +2226,88 @@ pub fn rename_patient_label(
     Ok(())
 }
 
+/// Merge multiple detected patients into one within the same session.
+/// Replaces the merged patients' SOAP files with a single regenerated one.
+/// Keeps remaining patients' SOAPs unchanged.
+pub fn merge_patients_in_session(
+    session_id: &str,
+    date_str: &str,
+    merged_indices: &[u32],
+    new_label: &str,
+    new_soap_content: &str,
+) -> Result<(), String> {
+    if merged_indices.len() < 2 {
+        return Err("Need at least 2 patients to merge".to_string());
+    }
+
+    let session_dir = get_session_dir_from_str(session_id, date_str)?;
+    let labels_path = session_dir.join("patient_labels.json");
+    if !labels_path.exists() {
+        return Err("Not a multi-patient session".to_string());
+    }
+
+    let labels_json = fs::read_to_string(&labels_path)
+        .map_err(|e| format!("Failed to read labels: {}", e))?;
+    let mut labels: Vec<serde_json::Value> = serde_json::from_str(&labels_json)
+        .map_err(|e| format!("Failed to parse labels: {}", e))?;
+
+    // Delete SOAP files for all merged patients
+    for &idx in merged_indices {
+        let soap_file = session_dir.join(format!("soap_patient_{}.txt", idx));
+        if soap_file.exists() {
+            let _ = fs::remove_file(&soap_file);
+        }
+    }
+
+    // Keep the first merged index as the survivor
+    let survivor_index = merged_indices[0];
+    labels.retain(|l| {
+        let idx = l["index"].as_u64().unwrap_or(0) as u32;
+        !merged_indices.contains(&idx) || idx == survivor_index
+    });
+
+    // Update survivor's label
+    for entry in &mut labels {
+        if entry["index"].as_u64().unwrap_or(0) as u32 == survivor_index {
+            entry["label"] = serde_json::json!(new_label);
+        }
+    }
+
+    // Write merged SOAP to survivor's file
+    let merged_soap_path = session_dir.join(format!("soap_patient_{}.txt", survivor_index));
+    fs::write(&merged_soap_path, new_soap_content)
+        .map_err(|e| format!("Failed to write merged SOAP: {}", e))?;
+
+    if labels.len() == 1 {
+        // Revert to single-patient format
+        let single_soap = session_dir.join("soap_note.txt");
+        fs::rename(&merged_soap_path, &single_soap)
+            .map_err(|e| format!("Failed to rename to single SOAP: {}", e))?;
+        let _ = fs::remove_file(&labels_path);
+        update_metadata_field(session_id, date_str, |m| {
+            m.patient_count = None;
+            m.patient_name = Some(new_label.to_string());
+        })?;
+    } else {
+        let new_count = labels.len() as u32;
+        let updated = serde_json::to_string_pretty(&labels)
+            .map_err(|e| format!("Failed to serialize labels: {}", e))?;
+        fs::write(&labels_path, updated)
+            .map_err(|e| format!("Failed to write labels: {}", e))?;
+        update_metadata_field(session_id, date_str, |m| {
+            m.patient_count = Some(new_count);
+        })?;
+    }
+
+    info!(
+        session_id = %session_id,
+        merged_indices = ?merged_indices,
+        survivor_index = survivor_index,
+        new_label = %new_label,
+        remaining_patients = labels.len(),
+        "Merged patients in session"
+    );
+
+    Ok(())
+}
+

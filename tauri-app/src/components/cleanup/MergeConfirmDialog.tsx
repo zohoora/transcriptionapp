@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import type { LocalArchiveSummary } from '../../types';
 import { formatLocalTime } from '../../utils';
 
@@ -6,14 +6,87 @@ interface MergeConfirmDialogProps {
   sessions: LocalArchiveSummary[];
   onConfirm: () => void;
   onCancel: () => void;
+  /** True when all selected entries are patients from the same encounter */
+  isSameSessionPatientMerge?: boolean;
+  /** Patient names being merged (only for same-session patient merge) */
+  selectedPatientNames?: string[];
+  /** Callback for same-session patient merge (receives the merged label) */
+  onPatientMergeConfirm?: (newLabel: string) => void;
 }
 
 const MergeConfirmDialog: React.FC<MergeConfirmDialogProps> = ({
   sessions,
   onConfirm,
   onCancel,
+  isSameSessionPatientMerge,
+  selectedPatientNames,
+  onPatientMergeConfirm,
 }) => {
-  // Sort chronologically for display
+  // For patient merge: editable merged name (default to first selected name)
+  const [mergedLabel, setMergedLabel] = useState(
+    selectedPatientNames?.[0] ?? 'Patient'
+  );
+  const [isMerging, setIsMerging] = useState(false);
+
+  // Same-session patient merge UI
+  if (isSameSessionPatientMerge && selectedPatientNames && onPatientMergeConfirm) {
+    const handlePatientMerge = async () => {
+      setIsMerging(true);
+      try {
+        await onPatientMergeConfirm(mergedLabel);
+      } finally {
+        setIsMerging(false);
+      }
+    };
+
+    return (
+      <div className="cleanup-dialog-overlay" onClick={onCancel}>
+        <div className="cleanup-dialog" onClick={(e) => e.stopPropagation()}>
+          <h3>Merge Patient Notes</h3>
+          <p className="cleanup-dialog-subtitle">
+            These patients were detected in the same encounter. Merging will combine
+            them into one patient note using AI to generate a unified SOAP note.
+          </p>
+          <ul className="cleanup-dialog-list">
+            {selectedPatientNames.map((name, i) => (
+              <li key={i}>
+                <span className="dialog-session-info">{name}</span>
+              </li>
+            ))}
+          </ul>
+          <div className="cleanup-dialog-field">
+            <label htmlFor="merged-label">Merged patient name:</label>
+            <input
+              id="merged-label"
+              type="text"
+              value={mergedLabel}
+              onChange={(e) => setMergedLabel(e.target.value)}
+              className="cleanup-dialog-input"
+              autoFocus
+            />
+          </div>
+          <p className="cleanup-dialog-warning">
+            A new SOAP note will be generated combining clinical content from all
+            selected patients. This corrects the AI's multi-patient detection.
+          </p>
+          <div className="cleanup-dialog-actions">
+            <button className="cleanup-dialog-btn cancel" onClick={onCancel} disabled={isMerging}>
+              Cancel
+            </button>
+            <button
+              className="cleanup-dialog-btn confirm"
+              onClick={handlePatientMerge}
+              disabled={isMerging || !mergedLabel.trim()}
+            >
+              {isMerging ? 'Merging...' : 'Merge Patient Notes'}
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Cross-session merge UI (existing behavior)
   const sorted = [...sessions].sort(
     (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()
   );
