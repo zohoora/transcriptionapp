@@ -153,22 +153,40 @@ pub fn set_continuous_encounter_notes(
     }
 }
 
-/// Set STT language dynamically (takes effect on the next utterance, no pipeline restart)
+/// Set STT language dynamically (takes effect on the next utterance, no pipeline restart).
+/// Checks both session-mode and continuous-mode pipelines.
 #[tauri::command]
 pub fn set_stt_language(
     language: String,
     pipeline_state: State<'_, super::SharedPipelineState>,
+    continuous_state: State<'_, SharedContinuousModeState>,
 ) -> Result<(), CommandError> {
     let stt_name = crate::config::iso_to_stt_language(&language).to_string();
-    let state = pipeline_state
-        .lock()
-        .map_err(|_| CommandError::lock_poisoned("pipeline_state"))?;
-    if let Some(ref handle) = state.handle {
-        handle.set_stt_language(stt_name);
-        Ok(())
-    } else {
-        Err(CommandError::NotRunning("pipeline".into()))
+
+    // Try session-mode pipeline first
+    if let Ok(state) = pipeline_state.lock() {
+        if let Some(ref handle) = state.handle {
+            handle.set_stt_language(stt_name);
+            return Ok(());
+        }
     }
+
+    // Try continuous-mode pipeline
+    if let Ok(state) = continuous_state.lock() {
+        if let Some(ref handle) = *state {
+            if let Ok(lang_opt) = handle.stt_language.lock() {
+                if let Some(ref lang) = *lang_opt {
+                    if let Ok(mut l) = lang.lock() {
+                        info!("STT language changed to: {} (continuous mode)", stt_name);
+                        *l = stt_name;
+                        return Ok(());
+                    }
+                }
+            }
+        }
+    }
+
+    Err(CommandError::NotRunning("pipeline".into()))
 }
 
 /// List available serial ports (for presence sensor configuration)

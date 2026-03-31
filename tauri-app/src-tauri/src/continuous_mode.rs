@@ -186,6 +186,8 @@ pub struct ContinuousModeHandle {
     pub last_split_time: Arc<Mutex<DateTime<Utc>>>,
     /// Buffered screenshots for the current encounter (timestamp, JPEG bytes)
     pub screenshot_buffer: Arc<Mutex<Vec<(String, Vec<u8>)>>>,
+    /// STT language mutex from the pipeline handle (for runtime language switching)
+    pub stt_language: Mutex<Option<Arc<std::sync::Mutex<String>>>>,
 }
 
 impl ContinuousModeHandle {
@@ -212,6 +214,7 @@ impl ContinuousModeHandle {
             last_shadow_decision: Arc::new(Mutex::new(None)),
             last_split_time: Arc::new(Mutex::new(Utc::now())),
             screenshot_buffer: Arc::new(Mutex::new(Vec::new())),
+            stt_language: Mutex::new(None),
         }
     }
 
@@ -363,6 +366,11 @@ pub async fn run_continuous_mode(
     };
 
     info!("Continuous mode pipeline started");
+
+    // Store the pipeline's stt_language Arc so runtime language changes can reach it
+    if let Ok(mut lang) = handle.stt_language.lock() {
+        *lang = Some(pipeline_handle.stt_language());
+    }
 
     // Clone the biomarker reset flag so the detector task can trigger resets on encounter boundaries
     let reset_bio_for_detector = pipeline_handle.reset_biomarkers_flag();
