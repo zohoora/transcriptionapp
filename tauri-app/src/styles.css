@@ -2944,9 +2944,21 @@ body {
   display: flex;
   flex-direction: column;
   border-right: 1px solid var(--border-color);
+  overflow: hidden;
+}
+
+.history-left-scroll {
+  flex: 1;
   overflow-y: auto;
   padding: 16px;
   gap: 16px;
+  display: flex;
+  flex-direction: column;
+}
+
+.history-left-bottom {
+  padding: 0 16px 16px;
+  flex-shrink: 0;
 }
 
 /* Right pane: session details */

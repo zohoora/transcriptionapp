@@ -1034,6 +1034,7 @@ const HistoryWindow: React.FC = () => {
 
         {/* LEFT PANE — calendar + session list */}
         <div className="history-left-pane">
+          <div className="history-left-scroll">
           {/* Success message */}
           {cleanupMessage && (
             <div className="cleanup-success-message">{cleanupMessage}</div>
@@ -1186,37 +1187,6 @@ const HistoryWindow: React.FC = () => {
             )}
           </div>
 
-          {/* Day Clinical Feedback */}
-          {sessions.length > 0 && !isCleanupMode && (
-            <FeedbackSection
-              title="Day Feedback"
-              systemPrompt={DAY_FEEDBACK_PROMPT}
-              cacheKey={`${formatDateForApi(selectedDate)}:${sessions.length}`}
-              llmConnected={llmConnected}
-              disabled={sessions.length === 0}
-              loadingText="Analyzing day..."
-              badge={<span className="clinical-feedback-count">({sessions.length} sessions)</span>}
-              extraClass="day-feedback"
-              getTranscript={async () => {
-                const dateStr = formatDateForApi(selectedDate);
-                const results = await Promise.allSettled(
-                  sessions.map(s =>
-                    invoke<LocalArchiveDetails>('get_local_session_details', {
-                      sessionId: s.session_id,
-                      date: dateStr,
-                    })
-                  )
-                );
-                const transcripts = results
-                  .filter((r): r is PromiseFulfilledResult<LocalArchiveDetails> => r.status === 'fulfilled')
-                  .map(r => r.value.transcript)
-                  .filter((t): t is string => !!t?.trim());
-                if (transcripts.length === 0) throw new Error('No transcripts available');
-                return transcripts.join('\n\n--- Next Session ---\n\n');
-              }}
-            />
-          )}
-
           {/* Cleanup action bar */}
           {isCleanupMode && (
             <CleanupActionBar
@@ -1245,6 +1215,40 @@ const HistoryWindow: React.FC = () => {
                   ☁️ Also synced to Medplum
                 </span>
               )}
+            </div>
+          )}
+          </div>{/* end history-left-scroll */}
+
+          {/* Day Clinical Feedback — pinned to bottom of sidebar */}
+          {sessions.length > 0 && !isCleanupMode && (
+            <div className="history-left-bottom">
+              <FeedbackSection
+                title="Day Feedback"
+                systemPrompt={DAY_FEEDBACK_PROMPT}
+                cacheKey={`${formatDateForApi(selectedDate)}:${sessions.length}`}
+                llmConnected={llmConnected}
+                disabled={sessions.length === 0}
+                loadingText="Analyzing day..."
+                badge={<span className="clinical-feedback-count">({sessions.length} sessions)</span>}
+                extraClass="day-feedback"
+                getTranscript={async () => {
+                  const dateStr = formatDateForApi(selectedDate);
+                  const results = await Promise.allSettled(
+                    sessions.map(s =>
+                      invoke<LocalArchiveDetails>('get_local_session_details', {
+                        sessionId: s.session_id,
+                        date: dateStr,
+                      })
+                    )
+                  );
+                  const transcripts = results
+                    .filter((r): r is PromiseFulfilledResult<LocalArchiveDetails> => r.status === 'fulfilled')
+                    .map(r => r.value.transcript)
+                    .filter((t): t is string => !!t?.trim());
+                  if (transcripts.length === 0) throw new Error('No transcripts available');
+                  return transcripts.join('\n\n--- Next Session ---\n\n');
+                }}
+              />
             </div>
           )}
         </div>
