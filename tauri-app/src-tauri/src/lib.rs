@@ -451,6 +451,7 @@ pub fn run() {
             commands::delete_patient_from_session,
             commands::rename_patient_label,
             commands::merge_patient_soaps,
+            commands::generate_clinical_feedback,
             // Clinical chat commands
             commands::clinical_chat_send,
             // MIIS (Medical Illustration Image Server) commands

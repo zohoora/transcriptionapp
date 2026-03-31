@@ -64,6 +64,170 @@ function patientIndexFromKey(key: string): number | null {
   return idx >= 0 ? parseInt(key.substring(idx + 3), 10) : null;
 }
 
+/** Collapsible LLM-generated clinical feedback section */
+const ClinicalFeedbackSection: React.FC<{
+  title: string;
+  systemPrompt: string;
+  transcript: string;
+  cacheKey: string;
+  llmConnected: boolean;
+}> = ({ title, systemPrompt, transcript, cacheKey, llmConnected }) => {
+  const [expanded, setExpanded] = useState(false);
+  const [feedback, setFeedback] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const cachedKeyRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (cachedKeyRef.current !== cacheKey) {
+      setFeedback(null);
+      setError(null);
+      setExpanded(false);
+      cachedKeyRef.current = cacheKey;
+    }
+  }, [cacheKey]);
+
+  const handleToggle = async () => {
+    const next = !expanded;
+    setExpanded(next);
+    if (next && feedback === null && !loading) {
+      setLoading(true);
+      setError(null);
+      try {
+        const result = await invoke<string>('generate_clinical_feedback', {
+          systemPrompt,
+          transcript,
+        });
+        setFeedback(result);
+      } catch (e) {
+        setError(e instanceof Error ? e.message : String(e));
+      } finally {
+        setLoading(false);
+      }
+    }
+  };
+
+  return (
+    <div className="clinical-feedback-section">
+      <button
+        className="clinical-feedback-header"
+        onClick={handleToggle}
+        disabled={!llmConnected || !transcript.trim()}
+      >
+        <span className={`chevron-small ${expanded ? '' : 'collapsed'}`}>&#x25BE;</span>
+        <span className="clinical-feedback-title">{title}</span>
+        {!llmConnected && <span className="clinical-feedback-hint">LLM offline</span>}
+      </button>
+      {expanded && (
+        <div className="clinical-feedback-body">
+          {loading && (
+            <div className="clinical-feedback-loading">Generating feedback...</div>
+          )}
+          {error && (
+            <div className="clinical-feedback-error">
+              <span>{error}</span>
+              <button className="clinical-feedback-retry" onClick={handleToggle}>Retry</button>
+            </div>
+          )}
+          {feedback && <p className="clinical-feedback-text">{feedback}</p>}
+        </div>
+      )}
+    </div>
+  );
+};
+
+/** Day-level clinical feedback — fetches all transcripts on expand */
+const DayFeedbackSection: React.FC<{
+  sessions: LocalArchiveSummary[];
+  selectedDate: Date;
+  llmConnected: boolean;
+}> = ({ sessions, selectedDate, llmConnected }) => {
+  const [expanded, setExpanded] = useState(false);
+  const [feedback, setFeedback] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const lastCacheKey = useRef('');
+
+  const cacheKey = `${formatDateForApi(selectedDate)}:${sessions.length}`;
+
+  useEffect(() => {
+    if (lastCacheKey.current !== cacheKey) {
+      setFeedback(null);
+      setError(null);
+      setExpanded(false);
+      lastCacheKey.current = cacheKey;
+    }
+  }, [cacheKey]);
+
+  const handleToggle = async () => {
+    const next = !expanded;
+    setExpanded(next);
+    if (next && feedback === null && !loading) {
+      setLoading(true);
+      setError(null);
+      try {
+        const dateStr = formatDateForApi(selectedDate);
+        const transcripts: string[] = [];
+        for (const session of sessions) {
+          try {
+            const details = await invoke<LocalArchiveDetails>('get_local_session_details', {
+              sessionId: session.session_id,
+              date: dateStr,
+            });
+            if (details.transcript?.trim()) {
+              transcripts.push(details.transcript);
+            }
+          } catch {
+            // Skip sessions that fail to load
+          }
+        }
+        if (transcripts.length === 0) {
+          setError('No transcripts available');
+          return;
+        }
+        const combined = transcripts.join('\n\n--- Next Session ---\n\n');
+        const result = await invoke<string>('generate_clinical_feedback', {
+          systemPrompt: "Imagine you are a very senior physician in Ontario, Canada and are an expert in the topics discussed. Review the day's sessions below. Give feedback on overall patterns, strengths, and areas for improvement. This can be longer and more detailed. Be honest and frank while kind and gentle.",
+          transcript: combined,
+        });
+        setFeedback(result);
+      } catch (e) {
+        setError(e instanceof Error ? e.message : String(e));
+      } finally {
+        setLoading(false);
+      }
+    }
+  };
+
+  return (
+    <div className="clinical-feedback-section day-feedback">
+      <button
+        className="clinical-feedback-header"
+        onClick={handleToggle}
+        disabled={!llmConnected || sessions.length === 0}
+      >
+        <span className={`chevron-small ${expanded ? '' : 'collapsed'}`}>&#x25BE;</span>
+        <span className="clinical-feedback-title">Day Feedback</span>
+        <span className="clinical-feedback-count">({sessions.length} sessions)</span>
+      </button>
+      {expanded && (
+        <div className="clinical-feedback-body">
+          {loading && (
+            <div className="clinical-feedback-loading">Analyzing day...</div>
+          )}
+          {error && (
+            <div className="clinical-feedback-error">
+              <span>{error}</span>
+              <button className="clinical-feedback-retry" onClick={handleToggle}>Retry</button>
+            </div>
+          )}
+          {feedback && <p className="clinical-feedback-text">{feedback}</p>}
+        </div>
+      )}
+    </div>
+  );
+};
+
 function formatDateForDisplay(date: Date): string {
   return date.toLocaleDateString('en-US', {
     weekday: 'long',
@@ -1072,6 +1236,15 @@ const HistoryWindow: React.FC = () => {
             )}
           </div>
 
+          {/* Day Clinical Feedback */}
+          {sessions.length > 0 && !isCleanupMode && (
+            <DayFeedbackSection
+              sessions={sessions}
+              selectedDate={selectedDate}
+              llmConnected={llmConnected}
+            />
+          )}
+
           {/* Cleanup action bar */}
           {isCleanupMode && (
             <CleanupActionBar
@@ -1381,6 +1554,17 @@ const HistoryWindow: React.FC = () => {
                           <div className="soap-meta">
                             <span className="soap-model">Model: {soapResult.model_used}</span>
                           </div>
+                        )}
+
+                        {/* Session Clinical Feedback */}
+                        {selectedSession.transcript && (
+                          <ClinicalFeedbackSection
+                            title="Session Feedback"
+                            systemPrompt="Imagine you are a very senior physician in Ontario, Canada and are an expert in the topics discussed. Give a short paragraph highlighting at least one good element of the session and one consideration for future improvement. Be honest and frank while kind and gentle. Do not be overly verbose."
+                            transcript={selectedSession.transcript}
+                            cacheKey={selectedSession.session_id}
+                            llmConnected={llmConnected}
+                          />
                         )}
 
                         {dataSource === 'local' && (

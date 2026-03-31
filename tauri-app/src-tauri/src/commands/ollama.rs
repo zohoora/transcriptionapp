@@ -942,6 +942,46 @@ pub async fn merge_patient_soaps(
     Ok(merged_soap)
 }
 
+/// Generate clinical feedback for a transcript (session or day-level).
+///
+/// Uses `fast-model` for lightweight analysis. The system prompt is provided
+/// by the frontend so session and day feedback can use different prompts.
+#[tauri::command]
+pub async fn generate_clinical_feedback(
+    system_prompt: String,
+    transcript: String,
+) -> Result<String, CommandError> {
+    if transcript.trim().is_empty() {
+        return Err(CommandError::Validation(
+            "Cannot generate feedback from empty transcript".into(),
+        ));
+    }
+
+    let config = Config::load_or_default();
+    let client = LLMClient::new(
+        &config.llm_router_url,
+        &config.llm_api_key,
+        &config.llm_client_id,
+        &config.fast_model,
+    )
+    .map_err(|e| CommandError::Network(e))?;
+
+    // Truncate to ~8000 words to prevent huge day payloads
+    let words: Vec<&str> = transcript.split_whitespace().collect();
+    let truncated = if words.len() > 8000 {
+        words[..8000].join(" ")
+    } else {
+        transcript
+    };
+
+    let response = client
+        .generate(&config.fast_model, &system_prompt, &truncated, "clinical_feedback")
+        .await
+        .map_err(|e| CommandError::Network(e))?;
+
+    Ok(response.trim().to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
