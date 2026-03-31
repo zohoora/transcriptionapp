@@ -193,6 +193,13 @@ pub struct ArchivedPatientNote {
     pub content: String,
 }
 
+/// Entry in patient_labels.json
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct PatientLabelEntry {
+    index: u32,
+    label: String,
+}
+
 /// Detailed archived session (for detail view)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ArchiveDetails {
@@ -432,11 +439,8 @@ pub fn save_multi_patient_soap(
     }
 
     // Write patient_labels.json metadata
-    let labels: Vec<serde_json::Value> = notes.iter().enumerate().map(|(i, note)| {
-        serde_json::json!({
-            "index": i + 1,
-            "label": note.patient_label,
-        })
+    let labels: Vec<PatientLabelEntry> = notes.iter().enumerate().map(|(i, note)| {
+        PatientLabelEntry { index: (i + 1) as u32, label: note.patient_label.clone() }
     }).collect();
     let labels_path = session_dir.join("patient_labels.json");
     let labels_json = serde_json::to_string_pretty(&labels)
@@ -582,10 +586,10 @@ pub fn list_sessions_by_date(date_str: &str) -> Result<Vec<ArchiveSummary>, Stri
             if labels_path.exists() {
                 match fs::read_to_string(&labels_path) {
                     Ok(json) => {
-                        match serde_json::from_str::<Vec<serde_json::Value>>(&json) {
+                        match serde_json::from_str::<Vec<PatientLabelEntry>>(&json) {
                             Ok(entries) => {
                                 let labels: Vec<String> = entries.iter()
-                                    .map(|e| e["label"].as_str().unwrap_or("Patient").to_string())
+                                    .map(|e| e.label.clone())
                                     .collect();
                                 if labels.len() > 1 { Some(labels) } else { None }
                             }
@@ -685,13 +689,13 @@ pub fn get_session(session_id: &str, date_str: &str) -> Result<ArchiveDetails, S
     let patient_notes = if labels_path.exists() {
         let labels_json = fs::read_to_string(&labels_path)
             .map_err(|e| format!("Failed to read patient_labels.json: {}", e))?;
-        let labels: Vec<serde_json::Value> = serde_json::from_str(&labels_json)
+        let labels: Vec<PatientLabelEntry> = serde_json::from_str(&labels_json)
             .map_err(|e| format!("Failed to parse patient_labels.json: {}", e))?;
 
         let mut notes = Vec::new();
         for label_entry in &labels {
-            let index = label_entry["index"].as_u64().unwrap_or(0) as u32;
-            let label = label_entry["label"].as_str().unwrap_or("Patient").to_string();
+            let index = label_entry.index;
+            let label = label_entry.label.clone();
             let patient_file = session_dir.join(format!("soap_patient_{}.txt", index));
             if patient_file.exists() {
                 let content = fs::read_to_string(&patient_file)
@@ -2150,7 +2154,7 @@ pub fn delete_patient_from_session(
 
     let labels_json = fs::read_to_string(&labels_path)
         .map_err(|e| format!("Failed to read patient_labels.json: {}", e))?;
-    let mut labels: Vec<serde_json::Value> = serde_json::from_str(&labels_json)
+    let mut labels: Vec<PatientLabelEntry> = serde_json::from_str(&labels_json)
         .map_err(|e| format!("Failed to parse patient_labels.json: {}", e))?;
 
     // Remove the patient's SOAP file
@@ -2161,7 +2165,7 @@ pub fn delete_patient_from_session(
     }
 
     // Remove from labels
-    labels.retain(|l| l["index"].as_u64().unwrap_or(0) as u32 != patient_index);
+    labels.retain(|l| l.index != patient_index);
 
     if labels.is_empty() {
         return delete_session(session_id, date_str);
@@ -2169,7 +2173,7 @@ pub fn delete_patient_from_session(
 
     if labels.len() == 1 {
         // Revert to single-patient
-        let remaining_index = labels[0]["index"].as_u64().unwrap_or(1) as u32;
+        let remaining_index = labels[0].index;
         let remaining_soap = session_dir.join(format!("soap_patient_{}.txt", remaining_index));
         let single_soap = session_dir.join("soap_note.txt");
         if remaining_soap.exists() {
@@ -2209,14 +2213,20 @@ pub fn rename_patient_label(
 
     let labels_json = fs::read_to_string(&labels_path)
         .map_err(|e| format!("Failed to read labels: {}", e))?;
-    let mut labels: Vec<serde_json::Value> = serde_json::from_str(&labels_json)
+    let mut labels: Vec<PatientLabelEntry> = serde_json::from_str(&labels_json)
         .map_err(|e| format!("Failed to parse labels: {}", e))?;
 
+    let mut found = false;
     for entry in &mut labels {
-        if entry["index"].as_u64().unwrap_or(0) as u32 == patient_index {
-            entry["label"] = serde_json::json!(new_label);
+        if entry.index == patient_index {
+            entry.label = new_label.to_string();
+            found = true;
             break;
         }
+    }
+
+    if !found {
+        return Err(format!("Patient index {} not found in session", patient_index));
     }
 
     let updated = serde_json::to_string_pretty(&labels)
@@ -2248,7 +2258,7 @@ pub fn merge_patients_in_session(
 
     let labels_json = fs::read_to_string(&labels_path)
         .map_err(|e| format!("Failed to read labels: {}", e))?;
-    let mut labels: Vec<serde_json::Value> = serde_json::from_str(&labels_json)
+    let mut labels: Vec<PatientLabelEntry> = serde_json::from_str(&labels_json)
         .map_err(|e| format!("Failed to parse labels: {}", e))?;
 
     // Delete SOAP files for all merged patients
@@ -2261,15 +2271,12 @@ pub fn merge_patients_in_session(
 
     // Keep the first merged index as the survivor
     let survivor_index = merged_indices[0];
-    labels.retain(|l| {
-        let idx = l["index"].as_u64().unwrap_or(0) as u32;
-        !merged_indices.contains(&idx) || idx == survivor_index
-    });
+    labels.retain(|l| !merged_indices.contains(&l.index) || l.index == survivor_index);
 
     // Update survivor's label
     for entry in &mut labels {
-        if entry["index"].as_u64().unwrap_or(0) as u32 == survivor_index {
-            entry["label"] = serde_json::json!(new_label);
+        if entry.index == survivor_index {
+            entry.label = new_label.to_string();
         }
     }
 

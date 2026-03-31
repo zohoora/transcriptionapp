@@ -73,6 +73,15 @@ function formatDateForDisplay(date: Date): string {
   });
 }
 
+/** Serialize multi-patient SOAP notes into a single string for archive storage */
+function serializeSoapNotes(notes: { patient_label: string; content: string }[]): string {
+  return notes.map(n =>
+    notes.length > 1
+      ? `=== ${n.patient_label} ===\n\n${n.content}`
+      : n.content
+  ).join('\n\n---\n\n');
+}
+
 const HistoryWindow: React.FC = () => {
   const { authState, isLoading: authLoading, login } = useAuth();
 
@@ -483,11 +492,7 @@ const HistoryWindow: React.FC = () => {
 
         // Save updated SOAP to archive
         if (selectedSession && dataSource === 'local') {
-          const soapContent = updatedResult.notes.map(n =>
-            updatedResult.notes.length > 1
-              ? `=== ${n.patient_label} ===\n\n${n.content}`
-              : n.content
-          ).join('\n\n---\n\n');
+          const soapContent = serializeSoapNotes(updatedResult.notes);
           try {
             await invoke('save_local_soap_note', {
               sessionId: selectedSession.session_id,
@@ -523,11 +528,7 @@ const HistoryWindow: React.FC = () => {
 
     // Save SOAP note to archive (hook doesn't know about session context)
     if (selectedSession) {
-      const soapContent = result.notes.map(n =>
-        result.notes.length > 1
-          ? `=== ${n.patient_label} ===\n\n${n.content}`
-          : n.content
-      ).join('\n\n---\n\n');
+      const soapContent = serializeSoapNotes(result.notes);
 
       try {
         if (dataSource === 'local') {
@@ -697,16 +698,11 @@ const HistoryWindow: React.FC = () => {
     return uniqueSessions.size === 1 && keys.some(k => patientIndexFromKey(k) !== null);
   }, [selectedIds]);
 
-  // Merge operation (handles both cross-session and same-session patient merge)
+  // Merge operation (cross-session merges only; same-session patient merges go through handlePatientMergeConfirm)
   const handleMergeConfirm = useCallback(async () => {
     const dateStr = formatDateForApi(selectedDate);
     const keys = Array.from(selectedIds);
     try {
-      if (isSameSessionPatientMerge) {
-        // Same-session patient merge — handled by MergeConfirmDialog via merge_patient_soaps
-        // This path is only reached for cross-session merges
-        return;
-      }
       const uniqueSessionIds = [...new Set(keys.map(sessionIdFromKey))];
       await invoke<string>('merge_local_sessions', { sessionIds: uniqueSessionIds, date: dateStr });
       await afterCleanupOp(`Merged ${uniqueSessionIds.length} sessions`);
@@ -714,7 +710,7 @@ const HistoryWindow: React.FC = () => {
       setError(e instanceof Error ? e.message : String(e));
       setCleanupDialog('none');
     }
-  }, [selectedDate, selectedIds, isSameSessionPatientMerge, afterCleanupOp]);
+  }, [selectedDate, selectedIds, afterCleanupOp]);
 
   // Same-session patient merge confirm handler
   const handlePatientMergeConfirm = useCallback(async (newLabel: string) => {
@@ -872,11 +868,7 @@ const HistoryWindow: React.FC = () => {
         if (details.transcript?.trim()) {
           const result = await generateSoapNote(details.transcript, undefined, soapOptions, id);
           if (result) {
-            const soapContent = result.notes.map(n =>
-              result.notes.length > 1
-                ? `=== ${n.patient_label} ===\n\n${n.content}`
-                : n.content
-            ).join('\n\n---\n\n');
+            const soapContent = serializeSoapNotes(result.notes);
             await invoke('save_local_soap_note', {
               sessionId: id,
               date: dateStr,
