@@ -188,7 +188,6 @@ export const ContinuousMode = memo(function ContinuousMode({
   onViewHistory,
   transcriptionStalled,
 }: ContinuousModeProps) {
-  const elapsedTime = useElapsedTime(isActive ? stats.recording_since : undefined);
   const encounterElapsed = useElapsedTime(stats.buffer_started_at ?? undefined, 10000);
 
   // Local UI toggle states
@@ -336,15 +335,17 @@ export const ContinuousMode = memo(function ContinuousMode({
         </div>
       )}
 
-      {/* Session timer + buffer word count */}
-      {elapsedTime && (
-        <div className="continuous-timer">
-          Session: {elapsedTime}
-          {stats.buffer_word_count > 0 && (
-            <span className="continuous-timer-words">{stats.buffer_word_count} words in buffer</span>
-          )}
-        </div>
-      )}
+      {/* Encounter timer + buffer word count */}
+      <div className="continuous-timer">
+        {stats.buffer_started_at && stats.buffer_word_count > 0 ? (
+          <>
+            Encounter: {encounterElapsed || '<1m'}
+            <span className="continuous-timer-words">{stats.buffer_word_count} words</span>
+          </>
+        ) : (
+          <span className="continuous-timer-waiting">Waiting for next patient...</span>
+        )}
+      </div>
 
       {/* Audio quality indicator */}
       <button
@@ -403,14 +404,6 @@ export const ContinuousMode = memo(function ContinuousMode({
       {/* Patient voice pulse indicator */}
       <PatientPulse biomarkers={biomarkers} trends={biomarkerTrends} />
 
-      {/* Current encounter info */}
-      <div className="continuous-encounter-info">
-        {stats.buffer_started_at && stats.buffer_word_count > 0 ? (
-          <span>Current encounter: {encounterElapsed || '<1m'} &middot; {stats.buffer_word_count} words</span>
-        ) : (
-          <span className="continuous-encounter-waiting">Waiting for next patient...</span>
-        )}
-      </div>
 
       {/* Predictive hint — "Pssst..." */}
       {(predictiveHint || predictiveHintLoading) && (

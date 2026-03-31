@@ -7045,6 +7045,11 @@ button.review-section-header-left:focus {
   font-size: 11px;
 }
 
+.continuous-timer-waiting {
+  color: var(--text-tertiary);
+  font-style: italic;
+}
+
 /* Stats grid */
 .continuous-stats {
   display: grid;
