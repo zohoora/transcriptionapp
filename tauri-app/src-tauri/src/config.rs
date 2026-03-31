@@ -221,6 +221,13 @@ pub struct Settings {
     pub hybrid_confirm_window_secs: u64,
     #[serde(default = "default_hybrid_min_words_for_sensor_split")]
     pub hybrid_min_words_for_sensor_split: usize,
+    // Sleep mode settings: suppress continuous mode during off-hours
+    #[serde(default = "default_sleep_mode_enabled")]
+    pub sleep_mode_enabled: bool,
+    #[serde(default = "default_sleep_start_hour")]
+    pub sleep_start_hour: u8,
+    #[serde(default = "default_sleep_end_hour")]
+    pub sleep_end_hour: u8,
     // Idle encounter timeout: auto-clear stale buffers with minimal content.
     // After this many seconds with < IDLE_ENCOUNTER_MAX_WORDS, the buffer is
     // discarded as ambient noise. 0 = disabled.
@@ -252,6 +259,10 @@ fn default_hybrid_confirm_window_secs() -> u64 {
 fn default_hybrid_min_words_for_sensor_split() -> usize {
     500 // Minimum words for sensor timeout to force-split
 }
+
+fn default_sleep_mode_enabled() -> bool { true }
+fn default_sleep_start_hour() -> u8 { 22 } // 10 PM EST
+fn default_sleep_end_hour() -> u8 { 6 }    // 6 AM EST
 
 fn default_shadow_active_method() -> ShadowActiveMethod {
     ShadowActiveMethod::Sensor
@@ -465,6 +476,9 @@ impl Default for Settings {
             shadow_csv_log_enabled: default_shadow_csv_log_enabled(),
             hybrid_confirm_window_secs: default_hybrid_confirm_window_secs(),
             hybrid_min_words_for_sensor_split: default_hybrid_min_words_for_sensor_split(),
+            sleep_mode_enabled: default_sleep_mode_enabled(),
+            sleep_start_hour: default_sleep_start_hour(),
+            sleep_end_hour: default_sleep_end_hour(),
             idle_encounter_timeout_secs: default_idle_encounter_timeout_secs(),
             thermal_hot_pixel_threshold_c: default_thermal_hot_pixel_threshold_c(),
             co2_baseline_ppm: default_co2_baseline_ppm(),
@@ -1201,6 +1215,10 @@ impl Config {
         // Hybrid: min words 100-5000
         self.hybrid_min_words_for_sensor_split = self.hybrid_min_words_for_sensor_split.clamp(100, 5000);
 
+        // Sleep mode: hours must be valid (0-23)
+        self.sleep_start_hour = self.sleep_start_hour.min(23);
+        self.sleep_end_hour = self.sleep_end_hour.min(23);
+
         // Idle encounter timeout: 0 (disabled) or 300-3600 seconds (5 min - 1 hour)
         if self.idle_encounter_timeout_secs > 0 {
             self.idle_encounter_timeout_secs = self.idle_encounter_timeout_secs.clamp(300, 3600);
@@ -1360,6 +1378,9 @@ impl Config {
             "shadow_active_method": self.shadow_active_method.to_string(),
             "thermal_hot_pixel_threshold_c": self.thermal_hot_pixel_threshold_c,
             "co2_baseline_ppm": self.co2_baseline_ppm,
+            "sleep_mode_enabled": self.sleep_mode_enabled,
+            "sleep_start_hour": self.sleep_start_hour,
+            "sleep_end_hour": self.sleep_end_hour,
         })
     }
 }
@@ -1492,6 +1513,9 @@ mod tests {
             shadow_csv_log_enabled: default_shadow_csv_log_enabled(),
             hybrid_confirm_window_secs: default_hybrid_confirm_window_secs(),
             hybrid_min_words_for_sensor_split: default_hybrid_min_words_for_sensor_split(),
+            sleep_mode_enabled: default_sleep_mode_enabled(),
+            sleep_start_hour: default_sleep_start_hour(),
+            sleep_end_hour: default_sleep_end_hour(),
             idle_encounter_timeout_secs: default_idle_encounter_timeout_secs(),
             thermal_hot_pixel_threshold_c: default_thermal_hot_pixel_threshold_c(),
             co2_baseline_ppm: default_co2_baseline_ppm(),
@@ -1623,6 +1647,9 @@ mod tests {
             shadow_csv_log_enabled: default_shadow_csv_log_enabled(),
             hybrid_confirm_window_secs: default_hybrid_confirm_window_secs(),
             hybrid_min_words_for_sensor_split: default_hybrid_min_words_for_sensor_split(),
+            sleep_mode_enabled: default_sleep_mode_enabled(),
+            sleep_start_hour: default_sleep_start_hour(),
+            sleep_end_hour: default_sleep_end_hour(),
             idle_encounter_timeout_secs: default_idle_encounter_timeout_secs(),
             thermal_hot_pixel_threshold_c: default_thermal_hot_pixel_threshold_c(),
             co2_baseline_ppm: default_co2_baseline_ppm(),
