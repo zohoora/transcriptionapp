@@ -16,12 +16,17 @@ use tracing::{info, warn};
 fn is_in_sleep_window(sleep_start: u8, sleep_end: u8) -> bool {
     let hour = chrono::Utc::now()
         .with_timezone(&chrono_tz::America::New_York)
-        .hour();
+        .hour() as u8;
+    is_hour_in_sleep_window(hour, sleep_start, sleep_end)
+}
+
+/// Pure function for testability — checks if a given hour falls within the sleep window.
+fn is_hour_in_sleep_window(hour: u8, sleep_start: u8, sleep_end: u8) -> bool {
     if sleep_start > sleep_end {
         // Crosses midnight: e.g., 22..6 means hours 22,23,0,1,2,3,4,5
-        hour >= sleep_start as u32 || hour < sleep_end as u32
+        hour >= sleep_start || hour < sleep_end
     } else {
-        hour >= sleep_start as u32 && hour < sleep_end as u32
+        hour >= sleep_start && hour < sleep_end
     }
 }
 
@@ -433,5 +438,46 @@ mod tests {
 
         set_stt_language_inner("ar".into(), &pipeline_state, &continuous_state).unwrap();
         assert_eq!(*lang_arc.lock().unwrap(), "ar");
+    }
+
+    // ── Sleep window tests ──
+
+    #[test]
+    fn test_sleep_window_crosses_midnight() {
+        // 22-6 window: hours 22,23,0,1,2,3,4,5 are in window
+        assert!(is_hour_in_sleep_window(22, 22, 6));
+        assert!(is_hour_in_sleep_window(23, 22, 6));
+        assert!(is_hour_in_sleep_window(0, 22, 6));
+        assert!(is_hour_in_sleep_window(3, 22, 6));
+        assert!(is_hour_in_sleep_window(5, 22, 6));
+        // 6 AM is wake time — not in window
+        assert!(!is_hour_in_sleep_window(6, 22, 6));
+        assert!(!is_hour_in_sleep_window(12, 22, 6));
+        assert!(!is_hour_in_sleep_window(21, 22, 6));
+    }
+
+    #[test]
+    fn test_sleep_window_same_day() {
+        // 1-5 window (doesn't cross midnight)
+        assert!(is_hour_in_sleep_window(1, 1, 5));
+        assert!(is_hour_in_sleep_window(4, 1, 5));
+        assert!(!is_hour_in_sleep_window(0, 1, 5));
+        assert!(!is_hour_in_sleep_window(5, 1, 5));
+        assert!(!is_hour_in_sleep_window(12, 1, 5));
+    }
+
+    #[test]
+    fn test_sleep_window_boundary_exact_hours() {
+        // Start hour is in window, end hour is not
+        assert!(is_hour_in_sleep_window(22, 22, 6)); // exactly at start
+        assert!(!is_hour_in_sleep_window(6, 22, 6)); // exactly at end (wake time)
+    }
+
+    #[test]
+    fn test_sleep_window_equal_hours_never_sleeps() {
+        // Same start and end = zero-length window
+        assert!(!is_hour_in_sleep_window(22, 22, 22));
+        assert!(!is_hour_in_sleep_window(0, 0, 0));
+        assert!(!is_hour_in_sleep_window(12, 6, 6));
     }
 }
