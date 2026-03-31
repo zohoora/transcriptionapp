@@ -35,6 +35,8 @@ pub struct ScreenshotTaskConfig {
     pub replay_bundle: Arc<Mutex<ReplayBundleBuilder>>,
     /// Buffer for saving screenshots to session archive after encounter split
     pub screenshot_buffer: Arc<Mutex<Vec<(String, Vec<u8>)>>>,
+    /// Transcript buffer used to gate captures: skip when no words are present
+    pub transcript_buffer: Arc<std::sync::Mutex<crate::transcript_buffer::TranscriptBuffer>>,
 }
 
 /// Runs the screenshot capture + vision extraction loop.
@@ -50,6 +52,15 @@ pub async fn run_screenshot_task(cfg: ScreenshotTaskConfig) {
 
         if cfg.stop_flag.load(Ordering::Relaxed) {
             break;
+        }
+
+        // Skip capture when no speech in buffer (no active encounter)
+        let buffer_words = cfg.transcript_buffer.lock()
+            .map(|b| b.word_count())
+            .unwrap_or(0);
+        if buffer_words == 0 {
+            debug!("Screenshot: no words in buffer, skipping capture");
+            continue;
         }
 
         // Capture screen (blocking CoreGraphics call)

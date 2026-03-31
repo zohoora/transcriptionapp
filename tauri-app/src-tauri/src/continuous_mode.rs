@@ -108,6 +108,7 @@ pub enum ContinuousState {
     Idle,
     Recording,
     Checking,
+    Sleeping,
     Error(String),
 }
 
@@ -117,6 +118,7 @@ impl ContinuousState {
             ContinuousState::Idle => "idle",
             ContinuousState::Recording => "recording",
             ContinuousState::Checking => "checking",
+            ContinuousState::Sleeping => "sleeping",
             ContinuousState::Error(_) => "error",
         }
     }
@@ -150,6 +152,11 @@ pub struct ContinuousModeStats {
     /// Last shadow decision outcome: "would_split" or "would_not_split"
     #[serde(skip_serializing_if = "Option::is_none")]
     pub last_shadow_outcome: Option<String>,
+    /// Whether continuous mode is currently in a scheduled sleep window
+    pub is_sleeping: bool,
+    /// ISO timestamp when sleep will end and recording resumes (None when not sleeping)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sleep_resume_at: Option<String>,
 }
 
 /// Handle to control the running continuous mode
@@ -306,6 +313,8 @@ impl ContinuousModeHandle {
             shadow_mode_active,
             shadow_method,
             last_shadow_outcome,
+            is_sleeping: false,
+            sleep_resume_at: None,
         }
     }
 }
@@ -2397,6 +2406,7 @@ pub async fn run_continuous_mode(
                 pipeline_logger: logger_for_screenshot.clone(),
                 replay_bundle: bundle_for_screenshot.clone(),
                 screenshot_buffer: handle.screenshot_buffer.clone(),
+                transcript_buffer: handle.transcript_buffer.clone(),
             },
         )))
     } else {
