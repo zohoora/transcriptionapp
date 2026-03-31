@@ -95,6 +95,10 @@ interface ContinuousModeProps {
   onViewHistory: () => void;
   /** Speech detected but no transcription being produced */
   transcriptionStalled?: boolean;
+  /** Whether the pipeline is currently in overnight sleep mode */
+  isSleeping?: boolean;
+  /** ISO timestamp when sleep mode will resume (null when not sleeping) */
+  sleepResumeAt?: string | null;
 }
 
 /**
@@ -187,6 +191,8 @@ export const ContinuousMode = memo(function ContinuousMode({
   onNewPatient,
   onViewHistory,
   transcriptionStalled,
+  isSleeping,
+  sleepResumeAt,
 }: ContinuousModeProps) {
   const encounterElapsed = useElapsedTime(stats.buffer_started_at ?? undefined, 10000);
 
@@ -266,6 +272,27 @@ export const ContinuousMode = memo(function ContinuousMode({
   // Active — show monitoring dashboard
   return (
     <div className="mode-content continuous-mode">
+      {isSleeping && (
+        <div className="continuous-sleep-mode">
+          <div className="sleep-mode-icon">🌙</div>
+          <div className="sleep-mode-title">Sleep Mode</div>
+          <div className="sleep-mode-subtitle">
+            Recording paused overnight.
+            {sleepResumeAt && ` Resumes at ${new Date(sleepResumeAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}.`}
+          </div>
+          <div className="continuous-actions">
+            <button className="continuous-stop-btn" onClick={onStop} disabled={isStopping}>
+              Stop
+            </button>
+            <button className="continuous-action-btn" onClick={onViewHistory}>
+              View Today&apos;s Sessions
+            </button>
+          </div>
+        </div>
+      )}
+
+      {!isSleeping && (
+      <>
       {/* Status header with pulsing indicator */}
       <div className="continuous-status-header">
         <span className={`continuous-dot ${isStopping ? 'stopping' : stats.state === 'checking' ? 'checking' : 'listening'}`} />
@@ -519,6 +546,8 @@ export const ContinuousMode = memo(function ContinuousMode({
           {isStopping ? 'Ending...' : 'End Session'}
         </button>
       </div>
+      </>
+      )}
     </div>
   );
 });

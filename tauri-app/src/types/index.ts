@@ -842,6 +842,10 @@ export interface ContinuousModeStats {
   shadow_method?: string;
   /** Last shadow decision: "would_split" or "would_not_split" */
   last_shadow_outcome?: string;
+  /** Whether the continuous mode pipeline is currently in sleep mode */
+  is_sleeping: boolean;
+  /** ISO timestamp when sleep mode will end (null when not sleeping) */
+  sleep_resume_at: string | null;
 }
 
 /** Event payloads emitted from continuous mode backend */
@@ -856,7 +860,9 @@ export type ContinuousModeEventType =
   | 'encounter_merged'
   | 'sensor_status'
   | 'transcription_stalled'
-  | 'shadow_decision';
+  | 'shadow_decision'
+  | 'sleep_started'
+  | 'sleep_ended';
 
 export interface ContinuousModeEvent {
   type: ContinuousModeEventType;
@@ -878,6 +884,8 @@ export interface ContinuousModeEvent {
   buffer_words?: number;
   /** LLM confidence for shadow decision */
   confidence?: number;
+  /** ISO timestamp when sleep mode will end (for sleep_started events) */
+  resume_at?: string;
 }
 
 /** Auto-end event payload */

@@ -813,6 +813,8 @@ function App() {
             onStop={continuous.onStop}
             onNewPatient={continuous.onNewPatient}
             transcriptionStalled={continuous.transcriptionStalled}
+            isSleeping={continuous.isSleeping}
+            sleepResumeAt={continuous.sleepResumeAt}
             onViewHistory={openHistoryWindow}
           />
         )}

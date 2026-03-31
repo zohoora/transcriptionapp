@@ -28,6 +28,10 @@ export interface UseContinuousModeResult {
   error: string | null;
   /** True when speech is detected but no transcription is being produced */
   transcriptionStalled: boolean;
+  /** Whether the pipeline is currently in overnight sleep mode */
+  isSleeping: boolean;
+  /** ISO timestamp when sleep mode will resume (null when not sleeping) */
+  sleepResumeAt: string | null;
 }
 
 const IDLE_STATS: ContinuousModeStats = {
@@ -40,6 +44,8 @@ const IDLE_STATS: ContinuousModeStats = {
   last_error: null,
   buffer_word_count: 0,
   buffer_started_at: null,
+  is_sleeping: false,
+  sleep_resume_at: null,
 };
 
 /**
@@ -57,6 +63,8 @@ export function useContinuousMode(): UseContinuousModeResult {
   const [encounterNotes, setEncounterNotesState] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [transcriptionStalled, setTranscriptionStalled] = useState(false);
+  const [isSleeping, setIsSleeping] = useState(false);
+  const [sleepResumeAt, setSleepResumeAt] = useState<string | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const notesDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -74,6 +82,8 @@ export function useContinuousMode(): UseContinuousModeResult {
           setIsActive(true);
           setError(null);
           setTranscriptionStalled(false);
+          setIsSleeping(false);
+          setSleepResumeAt(null);
           break;
         case 'stopped':
           setIsActive(false);
@@ -83,6 +93,8 @@ export function useContinuousMode(): UseContinuousModeResult {
           setAudioQuality(null);
           setEncounterNotesState('');
           setTranscriptionStalled(false);
+          setIsSleeping(false);
+          setSleepResumeAt(null);
           break;
         case 'encounter_detected':
           setEncounterNotesState('');
@@ -90,6 +102,14 @@ export function useContinuousMode(): UseContinuousModeResult {
           break;
         case 'transcription_stalled':
           setTranscriptionStalled(true);
+          break;
+        case 'sleep_started':
+          setIsSleeping(true);
+          setSleepResumeAt(payload.resume_at ?? null);
+          break;
+        case 'sleep_ended':
+          setIsSleeping(false);
+          setSleepResumeAt(null);
           break;
         case 'error':
           setError(payload.error || 'Unknown error');
@@ -255,5 +275,7 @@ export function useContinuousMode(): UseContinuousModeResult {
     triggerNewPatient,
     error,
     transcriptionStalled,
+    isSleeping,
+    sleepResumeAt,
   };
 }

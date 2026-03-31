@@ -7259,6 +7259,69 @@ button.review-section-header-left:focus {
   gap: 8px;
 }
 
+/* Sleep mode banner */
+.continuous-sleep-mode {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 32px 16px;
+  text-align: center;
+}
+
+.sleep-mode-icon {
+  font-size: 48px;
+}
+
+.sleep-mode-title {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.sleep-mode-subtitle {
+  font-size: 13px;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
+.continuous-stop-btn {
+  padding: 8px 16px;
+  font-size: 13px;
+  font-weight: 500;
+  background: #dc2626;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.continuous-stop-btn:hover:not(:disabled) {
+  background: #b91c1c;
+}
+
+.continuous-stop-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.continuous-action-btn {
+  padding: 8px 16px;
+  font-size: 13px;
+  font-weight: 500;
+  background: transparent;
+  color: var(--text-secondary);
+  border: 1px solid var(--border-color, #e2e8f0);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.continuous-action-btn:hover {
+  background: var(--bg-hover, rgba(0, 0, 0, 0.04));
+}
+
 .btn-danger {
   padding: 8px 16px;
   font-size: 13px;

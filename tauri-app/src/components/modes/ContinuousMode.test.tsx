@@ -24,6 +24,8 @@ const IDLE_STATS: ContinuousModeStats = {
   last_error: null,
   buffer_word_count: 0,
   buffer_started_at: null,
+  is_sleeping: false,
+  sleep_resume_at: null,
 };
 
 const ACTIVE_STATS: ContinuousModeStats = {
@@ -36,6 +38,8 @@ const ACTIVE_STATS: ContinuousModeStats = {
   last_error: null,
   buffer_word_count: 120,
   buffer_started_at: new Date(Date.now() - 300000).toISOString(), // 5 min ago
+  is_sleeping: false,
+  sleep_resume_at: null,
 };
 
 function makeDefaultProps(overrides: Partial<Parameters<typeof ContinuousMode>[0]> = {}) {
