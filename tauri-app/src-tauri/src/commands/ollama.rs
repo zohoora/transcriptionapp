@@ -967,9 +967,9 @@ pub async fn generate_clinical_feedback(
     .map_err(|e| CommandError::Network(e))?;
 
     // Truncate to ~8000 words to prevent huge day payloads
-    let words: Vec<&str> = transcript.split_whitespace().collect();
-    let truncated = if words.len() > 8000 {
-        words[..8000].join(" ")
+    let word_count = transcript.split_whitespace().count();
+    let truncated = if word_count > 8000 {
+        transcript.split_whitespace().take(8000).collect::<Vec<_>>().join(" ")
     } else {
         transcript
     };
