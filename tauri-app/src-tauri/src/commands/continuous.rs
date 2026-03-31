@@ -39,21 +39,23 @@ fn compute_resume_at(sleep_end: u8) -> String {
     let resume_date = if now_est.hour() < sleep_end as u32 {
         today
     } else {
-        today + chrono::Duration::days(1)
+        today.checked_add_signed(chrono::Duration::days(1)).unwrap_or(today)
     };
     let resume_naive = resume_date
         .and_hms_opt(sleep_end as u32, 0, 0)
         .unwrap();
-    let resume_est = chrono_tz::America::New_York
-        .from_local_datetime(&resume_naive)
-        .single()
-        .unwrap_or_else(|| {
-            // DST ambiguity fallback
+    let resume_est = match chrono_tz::America::New_York.from_local_datetime(&resume_naive) {
+        chrono::LocalResult::Single(dt) => dt,
+        chrono::LocalResult::Ambiguous(earliest, _) => earliest,
+        chrono::LocalResult::None => {
+            // Spring-forward gap: shift forward 1 hour
+            let shifted = resume_naive + chrono::Duration::hours(1);
             chrono_tz::America::New_York
-                .from_local_datetime(&resume_naive)
+                .from_local_datetime(&shifted)
                 .earliest()
-                .unwrap()
-        });
+                .unwrap_or_else(|| shifted.and_utc().with_timezone(&chrono_tz::America::New_York))
+        }
+    };
     resume_est.with_timezone(&chrono::Utc).to_rfc3339()
 }
 
@@ -132,16 +134,21 @@ pub async fn start_continuous_mode(
                 .emit(&app);
 
                 // Wait until sleep window ends or user stops
+                let mut sleep_poll_count: u32 = 0;
                 loop {
                     tokio::time::sleep(std::time::Duration::from_secs(30)).await;
                     if handle_for_task.user_stop_flag.load(Ordering::Relaxed) {
                         break;
                     }
-                    let cfg = Config::load_or_default();
-                    if !cfg.sleep_mode_enabled
-                        || !is_in_sleep_window(cfg.sleep_start_hour, cfg.sleep_end_hour)
-                    {
-                        break;
+                    sleep_poll_count += 1;
+                    // Reload config every 5 minutes to check for setting changes
+                    if sleep_poll_count % 10 == 0 {
+                        let cfg = Config::load_or_default();
+                        if !cfg.sleep_mode_enabled
+                            || !is_in_sleep_window(cfg.sleep_start_hour, cfg.sleep_end_hour)
+                        {
+                            break;
+                        }
                     }
                 }
 

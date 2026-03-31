@@ -168,7 +168,7 @@ pub struct ContinuousModeHandle {
     pub state: Arc<Mutex<ContinuousState>>,
     pub transcript_buffer: Arc<Mutex<TranscriptBuffer>>,
     pub encounters_detected: Arc<AtomicU32>,
-    pub recording_since: DateTime<Utc>,
+    pub recording_since: Arc<Mutex<DateTime<Utc>>>,
     pub last_encounter_at: Arc<Mutex<Option<DateTime<Utc>>>>,
     pub last_encounter_words: Arc<Mutex<Option<u32>>>,
     pub last_encounter_patient_name: Arc<Mutex<Option<String>>>,
@@ -210,7 +210,7 @@ impl ContinuousModeHandle {
             state: Arc::new(Mutex::new(ContinuousState::Idle)),
             transcript_buffer: Arc::new(Mutex::new(TranscriptBuffer::new())),
             encounters_detected: Arc::new(AtomicU32::new(0)),
-            recording_since: Utc::now(),
+            recording_since: Arc::new(Mutex::new(Utc::now())),
             last_encounter_at: Arc::new(Mutex::new(None)),
             last_encounter_words: Arc::new(Mutex::new(None)),
             last_encounter_patient_name: Arc::new(Mutex::new(None)),
@@ -244,6 +244,7 @@ impl ContinuousModeHandle {
             buf.clear();
         }
         self.encounters_detected.store(0, Ordering::Relaxed);
+        if let Ok(mut v) = self.recording_since.lock() { *v = Utc::now(); }
         if let Ok(mut v) = self.last_encounter_at.lock() { *v = None; }
         if let Ok(mut v) = self.last_encounter_words.lock() { *v = None; }
         if let Ok(mut v) = self.last_encounter_patient_name.lock() { *v = None; }
@@ -348,9 +349,15 @@ impl ContinuousModeHandle {
             .ok()
             .and_then(|v| v.clone());
 
+        let recording_since = self
+            .recording_since
+            .lock()
+            .map(|dt| dt.to_rfc3339())
+            .unwrap_or_default();
+
         ContinuousModeStats {
             state,
-            recording_since: self.recording_since.to_rfc3339(),
+            recording_since,
             encounters_detected: self.encounters_detected.load(Ordering::Relaxed),
             last_encounter_at: last_at,
             last_encounter_words: last_words,

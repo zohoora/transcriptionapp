@@ -822,7 +822,7 @@ export type ShadowActiveMethod = 'llm' | 'sensor';
 
 /** Stats for the continuous mode monitoring dashboard */
 export interface ContinuousModeStats {
-  state: 'idle' | 'recording' | 'checking' | 'error';
+  state: 'idle' | 'recording' | 'checking' | 'sleeping' | 'error';
   recording_since: string;
   encounters_detected: number;
   last_encounter_at: string | null;
