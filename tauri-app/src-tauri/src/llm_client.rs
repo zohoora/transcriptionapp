@@ -1437,18 +1437,18 @@ pub fn build_simple_soap_prompt(options: &SoapOptions) -> String {
     let custom_section = match (global_instr.is_empty(), session_instr.is_empty()) {
         (true, true) => String::new(),
         (false, true) => format!(
-            "\n\nPhysician's standing instructions: {global_instr}"
+            "\n\nCRITICAL - PHYSICIAN'S REQUIRED STYLE (you MUST follow these instructions exactly): {global_instr}"
         ),
         (true, false) => format!(
-            "\n\nSession-specific instructions: {session_instr}"
+            "\n\nCRITICAL - SESSION-SPECIFIC INSTRUCTIONS (you MUST follow these exactly): {session_instr}"
         ),
         (false, false) => format!(
-            "\n\nPhysician's standing instructions: {global_instr}\n\nSession-specific instructions (these take precedence over the standing instructions where they conflict): {session_instr}"
+            "\n\nCRITICAL - PHYSICIAN'S REQUIRED STYLE (you MUST follow these instructions exactly): {global_instr}\n\nSESSION-SPECIFIC INSTRUCTIONS (these take precedence where they conflict): {session_instr}"
         ),
     };
 
     format!(
-        r#"You are a medical scribe that outputs ONLY valid JSON. Extract clinical information from transcripts into SOAP notes.
+        r#"You are a medical scribe that outputs ONLY valid JSON. Extract clinical information from transcripts into SOAP notes.{custom_section}
 
 The transcript is from speech-to-text and may contain errors. Interpret medical terms correctly:
 - "human blade 1c" or "h b a 1 c" → HbA1c (hemoglobin A1c)
@@ -1475,7 +1475,7 @@ Rules:
 - Do NOT hallucinate or embellish - only include what was explicitly stated
 - CLINICIAN NOTES: If provided, incorporate clinician observations into the appropriate SOAP sections (usually Objective for physical observations, Subjective for reported symptoms).
 - {detail_instruction}
-- {format_instruction}{custom_section}"#
+- {format_instruction}"#
     )
 }
 
