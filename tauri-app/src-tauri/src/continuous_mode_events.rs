@@ -57,6 +57,10 @@ pub enum ContinuousModeEvent {
     TranscriptionStalled {
         speech_secs: u64,
     },
+    SleepStarted {
+        resume_at: String,
+    },
+    SleepEnded,
     ShadowDecision {
         shadow_method: String,
         outcome: String,
@@ -266,6 +270,24 @@ mod tests {
         assert_eq!(json["removed_session_id"], "curr-sess");
         assert!(json.get("reason").is_none());
         assert_eq!(json.as_object().unwrap().len(), 3);
+    }
+
+    #[test]
+    fn serialize_sleep_started() {
+        let event = ContinuousModeEvent::SleepStarted {
+            resume_at: "2026-04-01T10:00:00Z".into(),
+        };
+        let json: serde_json::Value = serde_json::to_value(&event).unwrap();
+        assert_eq!(json["type"], "sleep_started");
+        assert_eq!(json["resume_at"], "2026-04-01T10:00:00Z");
+    }
+
+    #[test]
+    fn serialize_sleep_ended() {
+        let event = ContinuousModeEvent::SleepEnded;
+        let json: serde_json::Value = serde_json::to_value(&event).unwrap();
+        assert_eq!(json["type"], "sleep_ended");
+        assert_eq!(json.as_object().unwrap().len(), 1);
     }
 
     #[test]

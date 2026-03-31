@@ -87,6 +87,9 @@ mod tests {
             idle_encounter_timeout_secs: 900,
             thermal_hot_pixel_threshold_c: 28.0,
             co2_baseline_ppm: 420.0,
+            sleep_mode_enabled: true,
+            sleep_start_hour: 22,
+            sleep_end_hour: 6,
         };
 
         // Serialize to JSON

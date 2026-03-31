@@ -128,6 +128,8 @@ pub fn get_continuous_mode_status(
             shadow_mode_active: None,
             shadow_method: None,
             last_shadow_outcome: None,
+            is_sleeping: false,
+            sleep_resume_at: None,
         })
     }
 }
