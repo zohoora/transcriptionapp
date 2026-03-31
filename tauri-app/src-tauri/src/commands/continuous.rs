@@ -153,16 +153,13 @@ pub fn set_continuous_encounter_notes(
     }
 }
 
-/// Set STT language dynamically (takes effect on the next utterance, no pipeline restart).
-/// Checks both session-mode and continuous-mode pipelines.
-#[tauri::command]
-pub fn set_stt_language(
-    language: String,
-    pipeline_state: State<'_, super::SharedPipelineState>,
-    continuous_state: State<'_, SharedContinuousModeState>,
+/// Core logic for setting STT language — checks both pipeline states.
+/// Extracted from the Tauri command for testability.
+pub(crate) fn set_stt_language_inner(
+    stt_name: String,
+    pipeline_state: &super::SharedPipelineState,
+    continuous_state: &SharedContinuousModeState,
 ) -> Result<(), CommandError> {
-    let stt_name = crate::config::iso_to_stt_language(&language).to_string();
-
     // Try session-mode pipeline first
     if let Ok(state) = pipeline_state.lock() {
         if let Some(ref handle) = state.handle {
@@ -187,6 +184,18 @@ pub fn set_stt_language(
     }
 
     Err(CommandError::NotRunning("pipeline".into()))
+}
+
+/// Set STT language dynamically (takes effect on the next utterance, no pipeline restart).
+/// Checks both session-mode and continuous-mode pipelines.
+#[tauri::command]
+pub fn set_stt_language(
+    language: String,
+    pipeline_state: State<'_, super::SharedPipelineState>,
+    continuous_state: State<'_, SharedContinuousModeState>,
+) -> Result<(), CommandError> {
+    let stt_name = crate::config::iso_to_stt_language(&language).to_string();
+    set_stt_language_inner(stt_name, &pipeline_state, &continuous_state)
 }
 
 /// List available serial ports (for presence sensor configuration)
@@ -221,5 +230,70 @@ pub fn trigger_new_patient(
         Ok(())
     } else {
         Err(CommandError::NotRunning("continuous mode".into()))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::commands::PipelineState;
+
+    #[test]
+    fn test_set_language_fails_when_no_pipeline_running() {
+        let pipeline_state: super::super::SharedPipelineState = Arc::new(Mutex::new(PipelineState::default()));
+        let continuous_state: SharedContinuousModeState = Arc::new(Mutex::new(None));
+
+        let result = set_stt_language_inner("en".into(), &pipeline_state, &continuous_state);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_set_language_reaches_continuous_mode_handle() {
+        let pipeline_state: super::super::SharedPipelineState = Arc::new(Mutex::new(PipelineState::default()));
+
+        // Create a ContinuousModeHandle with an stt_language mutex
+        let handle = ContinuousModeHandle::new();
+        let lang_arc = Arc::new(std::sync::Mutex::new("en".to_string()));
+        *handle.stt_language.lock().unwrap() = Some(lang_arc.clone());
+        let continuous_state: SharedContinuousModeState = Arc::new(Mutex::new(Some(Arc::new(handle))));
+
+        // Session-mode pipeline is not running — should fall through to continuous mode
+        let result = set_stt_language_inner("fa".into(), &pipeline_state, &continuous_state);
+        assert!(result.is_ok(), "Should succeed via continuous mode handle");
+
+        // Verify the language was actually changed
+        let current = lang_arc.lock().unwrap().clone();
+        assert_eq!(current, "fa");
+    }
+
+    #[test]
+    fn test_set_language_without_stt_language_populated() {
+        let pipeline_state: super::super::SharedPipelineState = Arc::new(Mutex::new(PipelineState::default()));
+
+        // Handle exists but stt_language not yet populated (pipeline not started)
+        let handle = ContinuousModeHandle::new();
+        let continuous_state: SharedContinuousModeState = Arc::new(Mutex::new(Some(Arc::new(handle))));
+
+        let result = set_stt_language_inner("fa".into(), &pipeline_state, &continuous_state);
+        assert!(result.is_err(), "Should fail when stt_language not populated");
+    }
+
+    #[test]
+    fn test_set_language_multiple_switches() {
+        let pipeline_state: super::super::SharedPipelineState = Arc::new(Mutex::new(PipelineState::default()));
+
+        let handle = ContinuousModeHandle::new();
+        let lang_arc = Arc::new(std::sync::Mutex::new("en".to_string()));
+        *handle.stt_language.lock().unwrap() = Some(lang_arc.clone());
+        let continuous_state: SharedContinuousModeState = Arc::new(Mutex::new(Some(Arc::new(handle))));
+
+        set_stt_language_inner("fa".into(), &pipeline_state, &continuous_state).unwrap();
+        assert_eq!(*lang_arc.lock().unwrap(), "fa");
+
+        set_stt_language_inner("en".into(), &pipeline_state, &continuous_state).unwrap();
+        assert_eq!(*lang_arc.lock().unwrap(), "en");
+
+        set_stt_language_inner("ar".into(), &pipeline_state, &continuous_state).unwrap();
+        assert_eq!(*lang_arc.lock().unwrap(), "ar");
     }
 }
