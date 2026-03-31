@@ -11,16 +11,29 @@ use serde::Serialize;
 use std::fs::OpenOptions;
 use std::io::Write;
 use std::path::PathBuf;
-use tracing::warn;
+use std::sync::Mutex;
+use tracing::{info, warn};
 
 const LOG_FILENAME: &str = "day_log.jsonl";
+
+/// Mutable inner state, protected by a Mutex to allow `log(&self)` from an `Arc<DayLogger>`.
+struct DayLoggerInner {
+    /// The date string for which `path` was computed (e.g. `"2026-03-31"`).
+    current_date: String,
+    /// Current log file path, recomputed on midnight rotation.
+    path: PathBuf,
+}
 
 /// Appends structured JSONL events to a day-level archive directory.
 /// Unlike `PipelineLogger` (per-session), this writes to a fixed path
 /// derived from today's date: `~/.transcriptionapp/archive/YYYY/MM/DD/day_log.jsonl`.
+///
+/// The file path rotates automatically at midnight: the first `log()` call after
+/// midnight recomputes the path and begins writing to the new day's file.
 pub struct DayLogger {
-    /// Today's log file path: ~/.transcriptionapp/archive/YYYY/MM/DD/day_log.jsonl
-    path: PathBuf,
+    /// Base archive directory: `~/.transcriptionapp/archive/`
+    archive_root: PathBuf,
+    inner: Mutex<DayLoggerInner>,
 }
 
 /// A typed day-level event.
@@ -91,10 +104,10 @@ impl DayLogger {
     /// directory cannot be created.
     pub fn new() -> Option<Self> {
         let home = dirs::home_dir()?;
+        let archive_root = home.join(".transcriptionapp").join("archive");
         let now = Local::now();
-        let date_path = home
-            .join(".transcriptionapp")
-            .join("archive")
+        let current_date = now.format("%Y-%m-%d").to_string();
+        let date_path = archive_root
             .join(now.format("%Y").to_string())
             .join(now.format("%m").to_string())
             .join(now.format("%d").to_string());
@@ -105,17 +118,80 @@ impl DayLogger {
         }
 
         Some(Self {
-            path: date_path.join(LOG_FILENAME),
+            archive_root,
+            inner: Mutex::new(DayLoggerInner {
+                current_date,
+                path: date_path.join(LOG_FILENAME),
+            }),
         })
     }
 
     /// Create a day logger with an explicit path (for testing).
+    /// Uses the path's parent as the archive root so rotation tests can work.
     #[cfg(test)]
     fn new_with_path(path: PathBuf) -> Self {
-        Self { path }
+        let archive_root = path.parent().unwrap_or(&path).to_path_buf();
+        // Use a sentinel date so tests can force rotation by passing a different date string.
+        let current_date = Local::now().format("%Y-%m-%d").to_string();
+        Self {
+            archive_root,
+            inner: Mutex::new(DayLoggerInner {
+                current_date,
+                path,
+            }),
+        }
+    }
+
+    /// Create a day logger rooted at `archive_root` with `current_date` pre-set to a
+    /// past date, so the next `log()` call will immediately trigger rotation.
+    /// Used to test midnight rotation without time manipulation.
+    #[cfg(test)]
+    fn new_for_rotation_test(archive_root: PathBuf, stale_date: &str) -> Self {
+        // Build a plausible (but stale) path so the inner state is consistent.
+        let parts: Vec<&str> = stale_date.splitn(3, '-').collect();
+        let stale_path = if parts.len() == 3 {
+            archive_root
+                .join(parts[0])
+                .join(parts[1])
+                .join(parts[2])
+                .join(LOG_FILENAME)
+        } else {
+            archive_root.join(LOG_FILENAME)
+        };
+        Self {
+            archive_root,
+            inner: Mutex::new(DayLoggerInner {
+                current_date: stale_date.to_string(),
+                path: stale_path,
+            }),
+        }
+    }
+
+    /// Recompute the log path for `date_str` (format: `"YYYY-MM-DD"`) and
+    /// ensure its directory exists.  Updates `inner` on success.
+    fn rotate_to_date(archive_root: &PathBuf, inner: &mut DayLoggerInner, date_str: &str) {
+        // Parse YYYY-MM-DD components.
+        let parts: Vec<&str> = date_str.splitn(3, '-').collect();
+        if parts.len() != 3 {
+            warn!("Day log: unexpected date format '{}', skipping rotation", date_str);
+            return;
+        }
+        let (year, month, day) = (parts[0], parts[1], parts[2]);
+        let date_path = archive_root.join(year).join(month).join(day);
+
+        if let Err(e) = std::fs::create_dir_all(&date_path) {
+            warn!("Day log: failed to create directory {} for rotation: {}", date_path.display(), e);
+            return;
+        }
+
+        inner.current_date = date_str.to_string();
+        inner.path = date_path.join(LOG_FILENAME);
+        info!("Day log rotated to {}", inner.path.display());
     }
 
     /// Append a day event to the log file.
+    /// Automatically rotates to a new file if the calendar date has changed since
+    /// the last write (midnight rotation).
     /// Never panics or blocks on I/O errors — logs a warning instead.
     pub fn log(&self, event: DayEvent) {
         let line = match serde_json::to_string(&event) {
@@ -126,10 +202,24 @@ impl DayLogger {
             }
         };
 
+        let mut inner = match self.inner.lock() {
+            Ok(g) => g,
+            Err(e) => {
+                warn!("Day log mutex poisoned: {}", e);
+                return;
+            }
+        };
+
+        // Check for midnight rotation.
+        let today = Local::now().format("%Y-%m-%d").to_string();
+        if today != inner.current_date {
+            Self::rotate_to_date(&self.archive_root, &mut inner, &today);
+        }
+
         if let Err(e) = OpenOptions::new()
             .create(true)
             .append(true)
-            .open(&self.path)
+            .open(&inner.path)
             .and_then(|mut f| writeln!(f, "{}", line))
         {
             warn!("Day log write failed: {}", e);
@@ -345,5 +435,52 @@ mod tests {
             ts: "2026-03-10T08:00:00Z".to_string(),
             config: serde_json::json!({}),
         });
+    }
+
+    #[test]
+    fn test_midnight_rotation_switches_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let archive_root = dir.path().to_path_buf();
+
+        // Initialise the logger with a stale date (yesterday) so the very first
+        // log() call sees a date mismatch and rotates.
+        let stale_date = "2026-03-30";
+        let logger = DayLogger::new_for_rotation_test(archive_root.clone(), stale_date);
+
+        // Write one event — this should trigger rotation to today's date.
+        logger.log(DayEvent::ContinuousModeStarted {
+            ts: "2026-03-31T00:00:01Z".to_string(),
+            config: serde_json::json!({"rotated": true}),
+        });
+
+        // The stale date directory should NOT have a log file (rotation happened before write).
+        let stale_parts: Vec<&str> = stale_date.splitn(3, '-').collect();
+        let stale_log = archive_root
+            .join(stale_parts[0])
+            .join(stale_parts[1])
+            .join(stale_parts[2])
+            .join(LOG_FILENAME);
+        assert!(!stale_log.exists(), "stale log file should not exist after rotation");
+
+        // Today's directory must contain the log file with our event.
+        let today = Local::now().format("%Y-%m-%d").to_string();
+        let today_parts: Vec<&str> = today.splitn(3, '-').collect();
+        let today_log = archive_root
+            .join(today_parts[0])
+            .join(today_parts[1])
+            .join(today_parts[2])
+            .join(LOG_FILENAME);
+        assert!(today_log.exists(), "today's log file should exist after rotation");
+
+        let content = fs::read_to_string(&today_log).unwrap();
+        let lines: Vec<&str> = content.trim().lines().collect();
+        assert_eq!(lines.len(), 1);
+        let entry: serde_json::Value = serde_json::from_str(lines[0]).unwrap();
+        assert_eq!(entry["event"], "continuous_mode_started");
+        assert_eq!(entry["config"]["rotated"], true);
+
+        // Verify internal state was updated.
+        let inner = logger.inner.lock().unwrap();
+        assert_eq!(inner.current_date, today);
     }
 }
