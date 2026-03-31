@@ -162,6 +162,9 @@ pub struct ContinuousModeStats {
 /// Handle to control the running continuous mode
 pub struct ContinuousModeHandle {
     pub stop_flag: Arc<AtomicBool>,
+    /// Outer stop flag — set by user to exit the sleep/restart loop entirely.
+    /// Distinguished from `stop_flag` which may be set by the sleep timer.
+    pub user_stop_flag: Arc<AtomicBool>,
     pub state: Arc<Mutex<ContinuousState>>,
     pub transcript_buffer: Arc<Mutex<TranscriptBuffer>>,
     pub encounters_detected: Arc<AtomicU32>,
@@ -195,12 +198,15 @@ pub struct ContinuousModeHandle {
     pub screenshot_buffer: Arc<Mutex<Vec<(String, Vec<u8>)>>>,
     /// STT language mutex from the pipeline handle (for runtime language switching)
     pub stt_language: Mutex<Option<Arc<std::sync::Mutex<String>>>>,
+    /// ISO timestamp when sleep will end (set when entering sleep, cleared on wake)
+    pub sleep_resume_at: Arc<Mutex<Option<String>>>,
 }
 
 impl ContinuousModeHandle {
     pub fn new() -> Self {
         Self {
             stop_flag: Arc::new(AtomicBool::new(false)),
+            user_stop_flag: Arc::new(AtomicBool::new(false)),
             state: Arc::new(Mutex::new(ContinuousState::Idle)),
             transcript_buffer: Arc::new(Mutex::new(TranscriptBuffer::new())),
             encounters_detected: Arc::new(AtomicU32::new(0)),
@@ -222,7 +228,39 @@ impl ContinuousModeHandle {
             last_split_time: Arc::new(Mutex::new(Utc::now())),
             screenshot_buffer: Arc::new(Mutex::new(Vec::new())),
             stt_language: Mutex::new(None),
+            sleep_resume_at: Arc::new(Mutex::new(None)),
         }
+    }
+
+    /// Reset handle state for a new run cycle (after sleep wake-up).
+    /// Clears the stop flag, transcript buffer, encounter state, and all per-encounter data
+    /// so the handle can be reused without creating a new one.
+    pub fn reset_for_new_run(&self) {
+        self.stop_flag.store(false, Ordering::Relaxed);
+        if let Ok(mut state) = self.state.lock() {
+            *state = ContinuousState::Idle;
+        }
+        if let Ok(mut buf) = self.transcript_buffer.lock() {
+            buf.clear();
+        }
+        self.encounters_detected.store(0, Ordering::Relaxed);
+        if let Ok(mut v) = self.last_encounter_at.lock() { *v = None; }
+        if let Ok(mut v) = self.last_encounter_words.lock() { *v = None; }
+        if let Ok(mut v) = self.last_encounter_patient_name.lock() { *v = None; }
+        if let Ok(mut v) = self.last_error.lock() { *v = None; }
+        if let Ok(mut v) = self.name_tracker.lock() { *v = PatientNameTracker::new(); }
+        if let Ok(mut v) = self.encounter_notes.lock() { v.clear(); }
+        if let Ok(mut v) = self.vision_new_name.lock() { *v = None; }
+        if let Ok(mut v) = self.vision_old_name.lock() { *v = None; }
+        if let Ok(mut v) = self.shadow_decisions.lock() { v.clear(); }
+        if let Ok(mut v) = self.last_shadow_decision.lock() { *v = None; }
+        if let Ok(mut v) = self.last_split_time.lock() { *v = Utc::now(); }
+        if let Ok(mut v) = self.screenshot_buffer.lock() { v.clear(); }
+        if let Ok(mut v) = self.stt_language.lock() { *v = None; }
+        if let Ok(mut v) = self.sleep_resume_at.lock() { *v = None; }
+        // sensor_state_rx and sensor_status_rx are set up by run_continuous_mode
+        if let Ok(mut v) = self.sensor_state_rx.lock() { *v = None; }
+        if let Ok(mut v) = self.sensor_status_rx.lock() { *v = None; }
     }
 
     pub fn stop(&self) {
@@ -298,6 +336,18 @@ impl ContinuousModeHandle {
             None => (None, None, None),
         };
 
+        let is_sleeping = self
+            .state
+            .lock()
+            .map(|s| *s == ContinuousState::Sleeping)
+            .unwrap_or(false);
+
+        let sleep_resume = self
+            .sleep_resume_at
+            .lock()
+            .ok()
+            .and_then(|v| v.clone());
+
         ContinuousModeStats {
             state,
             recording_since: self.recording_since.to_rfc3339(),
@@ -313,8 +363,8 @@ impl ContinuousModeHandle {
             shadow_mode_active,
             shadow_method,
             last_shadow_outcome,
-            is_sleeping: false,
-            sleep_resume_at: None,
+            is_sleeping,
+            sleep_resume_at: sleep_resume,
         }
     }
 }

@@ -3,11 +3,54 @@
 use super::CommandError;
 use crate::commands::physicians::{SharedActivePhysician, SharedProfileClient, SharedRoomConfig};
 use crate::config::Config;
-use crate::continuous_mode::{ContinuousModeHandle, ContinuousModeStats};
+use crate::continuous_mode::{ContinuousModeHandle, ContinuousModeStats, ContinuousState};
+use crate::continuous_mode_events::ContinuousModeEvent;
 use crate::server_sync::ServerSyncContext;
+use chrono::Timelike;
+use std::sync::atomic::Ordering;
 use std::sync::{Arc, Mutex};
 use tauri::{AppHandle, State};
 use tracing::{info, warn};
+
+/// Check if the current time falls within the sleep window (EST timezone).
+fn is_in_sleep_window(sleep_start: u8, sleep_end: u8) -> bool {
+    let hour = chrono::Utc::now()
+        .with_timezone(&chrono_tz::America::New_York)
+        .hour();
+    if sleep_start > sleep_end {
+        // Crosses midnight: e.g., 22..6 means hours 22,23,0,1,2,3,4,5
+        hour >= sleep_start as u32 || hour < sleep_end as u32
+    } else {
+        hour >= sleep_start as u32 && hour < sleep_end as u32
+    }
+}
+
+/// Compute the next wake-up time as an ISO 8601 string.
+fn compute_resume_at(sleep_end: u8) -> String {
+    use chrono::TimeZone;
+    let now_est = chrono::Utc::now().with_timezone(&chrono_tz::America::New_York);
+    let today = now_est.date_naive();
+    // If we're past midnight (early morning), resume is today; otherwise tomorrow
+    let resume_date = if now_est.hour() < sleep_end as u32 {
+        today
+    } else {
+        today + chrono::Duration::days(1)
+    };
+    let resume_naive = resume_date
+        .and_hms_opt(sleep_end as u32, 0, 0)
+        .unwrap();
+    let resume_est = chrono_tz::America::New_York
+        .from_local_datetime(&resume_naive)
+        .single()
+        .unwrap_or_else(|| {
+            // DST ambiguity fallback
+            chrono_tz::America::New_York
+                .from_local_datetime(&resume_naive)
+                .earliest()
+                .unwrap()
+        });
+    resume_est.with_timezone(&chrono::Utc).to_rfc3339()
+}
 
 /// Shared state for the continuous mode handle
 pub type SharedContinuousModeState = Arc<Mutex<Option<Arc<ContinuousModeHandle>>>>;
@@ -16,6 +59,8 @@ pub type SharedContinuousModeState = Arc<Mutex<Option<Arc<ContinuousModeHandle>>
 ///
 /// Starts the audio pipeline and encounter detector loop.
 /// Recording runs indefinitely until stop_continuous_mode is called.
+/// When sleep mode is enabled, automatically stops at sleep_start_hour (EST)
+/// and restarts at sleep_end_hour (EST).
 #[tauri::command]
 pub async fn start_continuous_mode(
     app: AppHandle,
@@ -41,7 +86,7 @@ pub async fn start_continuous_mode(
         &active_physician, &room_config_state, &profile_client_state,
     ).await;
 
-    // Create handle
+    // Create handle — persists across sleep/wake cycles
     let handle = Arc::new(ContinuousModeHandle::new());
 
     // Store handle in shared state
@@ -52,23 +97,112 @@ pub async fn start_continuous_mode(
         *state = Some(handle.clone());
     }
 
-    // Load config
-    let config = Config::load_or_default();
-
-    // Spawn the continuous mode loop
+    // Spawn the continuous mode loop with sleep scheduler
     let handle_for_task = handle.clone();
     let continuous_state_for_cleanup = continuous_state.inner().clone();
 
     tokio::spawn(async move {
-        if let Err(e) = crate::continuous_mode::run_continuous_mode(
-            app,
-            handle_for_task,
-            config,
-            sync_ctx,
-        )
-        .await
-        {
-            warn!("Continuous mode exited with error: {}", e);
+        loop {
+            // Reload config each cycle (picks up setting changes between sleep/wake)
+            let config = Config::load_or_default();
+
+            // Check if we're in the sleep window
+            if config.sleep_mode_enabled
+                && is_in_sleep_window(config.sleep_start_hour, config.sleep_end_hour)
+            {
+                let resume_at = compute_resume_at(config.sleep_end_hour);
+                info!("Entering sleep mode — will resume at {}", resume_at);
+
+                // Update handle state to Sleeping
+                if let Ok(mut state) = handle_for_task.state.lock() {
+                    *state = ContinuousState::Sleeping;
+                }
+                if let Ok(mut v) = handle_for_task.sleep_resume_at.lock() {
+                    *v = Some(resume_at.clone());
+                }
+
+                ContinuousModeEvent::SleepStarted {
+                    resume_at: resume_at.clone(),
+                }
+                .emit(&app);
+
+                // Wait until sleep window ends or user stops
+                loop {
+                    tokio::time::sleep(std::time::Duration::from_secs(30)).await;
+                    if handle_for_task.user_stop_flag.load(Ordering::Relaxed) {
+                        break;
+                    }
+                    let cfg = Config::load_or_default();
+                    if !cfg.sleep_mode_enabled
+                        || !is_in_sleep_window(cfg.sleep_start_hour, cfg.sleep_end_hour)
+                    {
+                        break;
+                    }
+                }
+
+                if handle_for_task.user_stop_flag.load(Ordering::Relaxed) {
+                    info!("User stopped during sleep mode");
+                    break;
+                }
+
+                info!("Sleep mode ended — resuming continuous mode");
+                ContinuousModeEvent::SleepEnded.emit(&app);
+            }
+
+            // Reset handle for a fresh run cycle
+            handle_for_task.reset_for_new_run();
+
+            // Spawn a sleep timer that will stop this run at sleep_start_hour
+            let sleep_timer_handle = if config.sleep_mode_enabled {
+                let stop_flag = handle_for_task.stop_flag.clone();
+                let sleep_start = config.sleep_start_hour;
+                let sleep_end = config.sleep_end_hour;
+                Some(tokio::spawn(async move {
+                    loop {
+                        tokio::time::sleep(std::time::Duration::from_secs(60)).await;
+                        if stop_flag.load(Ordering::Relaxed) {
+                            break; // Already stopped (user or other)
+                        }
+                        if is_in_sleep_window(sleep_start, sleep_end) {
+                            info!(
+                                "Sleep timer: entering sleep window, stopping pipeline"
+                            );
+                            stop_flag.store(true, Ordering::Relaxed);
+                            break;
+                        }
+                    }
+                }))
+            } else {
+                None
+            };
+
+            // Run continuous mode (blocks until stop)
+            let result = crate::continuous_mode::run_continuous_mode(
+                app.clone(),
+                handle_for_task.clone(),
+                config,
+                sync_ctx.clone(),
+            )
+            .await;
+
+            // Cancel sleep timer if still running
+            if let Some(h) = sleep_timer_handle {
+                h.abort();
+            }
+
+            if let Err(e) = &result {
+                warn!("Continuous mode exited with error: {}", e);
+                break; // Fatal error — exit entirely
+            }
+
+            // Check if this was a user-initiated stop
+            if handle_for_task.user_stop_flag.load(Ordering::Relaxed) {
+                info!("User stopped continuous mode");
+                break;
+            }
+
+            // Otherwise it was a sleep-triggered stop — loop back
+            info!("Sleep-triggered stop — will check sleep window");
         }
 
         // Clean up shared state when done
@@ -94,6 +228,8 @@ pub fn stop_continuous_mode(
         .lock()
         .map_err(|_| CommandError::lock_poisoned("continuous_state"))?;
     if let Some(ref handle) = *state {
+        // Set user_stop_flag first so the outer sleep loop knows to exit
+        handle.user_stop_flag.store(true, Ordering::Relaxed);
         handle.stop();
         Ok(())
     } else {
