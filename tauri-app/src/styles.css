@@ -7035,6 +7035,14 @@ button.review-section-header-left:focus {
 .continuous-timer {
   font-size: 12px;
   color: var(--text-secondary);
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+}
+
+.continuous-timer-words {
+  color: var(--text-tertiary);
+  font-size: 11px;
 }
 
 /* Stats grid */

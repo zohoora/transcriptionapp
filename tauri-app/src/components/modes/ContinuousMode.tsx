@@ -336,10 +336,13 @@ export const ContinuousMode = memo(function ContinuousMode({
         </div>
       )}
 
-      {/* Session length timer */}
+      {/* Session timer + buffer word count */}
       {elapsedTime && (
         <div className="continuous-timer">
           Session: {elapsedTime}
+          {stats.buffer_word_count > 0 && (
+            <span className="continuous-timer-words">{stats.buffer_word_count} words in buffer</span>
+          )}
         </div>
       )}
 
@@ -441,19 +444,6 @@ export const ContinuousMode = memo(function ContinuousMode({
         />
       )}
 
-      {/* Stats grid */}
-      <div className="continuous-stats">
-        <div className="continuous-stat">
-          <span className="continuous-stat-value">{stats.encounters_detected}</span>
-          <span className="continuous-stat-label">
-            encounter{stats.encounters_detected !== 1 ? 's' : ''} charted
-          </span>
-        </div>
-        <div className="continuous-stat">
-          <span className="continuous-stat-value">{stats.buffer_word_count}</span>
-          <span className="continuous-stat-label">words in buffer</span>
-        </div>
-      </div>
 
       {/* Last encounter summary */}
       {stats.last_encounter_at && (
