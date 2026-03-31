@@ -62,6 +62,7 @@ export interface ContinuousModeOrchestratorResult {
   onStart: () => void;
   onStop: () => void;
   onNewPatient: () => void;
+  transcriptionStalled: boolean;
 }
 
 // ============================================================================
@@ -84,6 +85,7 @@ export function useContinuousModeOrchestrator({
     stop,
     triggerNewPatient,
     error,
+    transcriptionStalled,
   } = useContinuousMode();
 
   // Patient biomarker trending (filters clinician voices, tracks trends)
@@ -183,5 +185,6 @@ export function useContinuousModeOrchestrator({
     onStart: start,
     onStop: stop,
     onNewPatient: handleNewPatient,
+    transcriptionStalled,
   };
 }

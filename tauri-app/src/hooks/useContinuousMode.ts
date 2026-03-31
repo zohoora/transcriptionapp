@@ -26,6 +26,8 @@ export interface UseContinuousModeResult {
   triggerNewPatient: () => Promise<void>;
   /** Error message if any */
   error: string | null;
+  /** True when speech is detected but no transcription is being produced */
+  transcriptionStalled: boolean;
 }
 
 const IDLE_STATS: ContinuousModeStats = {
@@ -54,6 +56,7 @@ export function useContinuousMode(): UseContinuousModeResult {
   const [audioQuality, setAudioQuality] = useState<AudioQualitySnapshot | null>(null);
   const [encounterNotes, setEncounterNotesState] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [transcriptionStalled, setTranscriptionStalled] = useState(false);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const notesDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -70,6 +73,7 @@ export function useContinuousMode(): UseContinuousModeResult {
         case 'started':
           setIsActive(true);
           setError(null);
+          setTranscriptionStalled(false);
           break;
         case 'stopped':
           setIsActive(false);
@@ -78,9 +82,14 @@ export function useContinuousMode(): UseContinuousModeResult {
           setLiveTranscript('');
           setAudioQuality(null);
           setEncounterNotesState('');
+          setTranscriptionStalled(false);
           break;
         case 'encounter_detected':
           setEncounterNotesState('');
+          setTranscriptionStalled(false);
+          break;
+        case 'transcription_stalled':
+          setTranscriptionStalled(true);
           break;
         case 'error':
           setError(payload.error || 'Unknown error');
@@ -245,5 +254,6 @@ export function useContinuousMode(): UseContinuousModeResult {
     stop,
     triggerNewPatient,
     error,
+    transcriptionStalled,
   };
 }

@@ -53,6 +53,10 @@ pub enum ContinuousModeEvent {
         #[serde(skip_serializing_if = "Option::is_none")]
         reason: Option<String>,
     },
+    /// Speech detected by VAD but no transcription segments produced
+    TranscriptionStalled {
+        speech_secs: u64,
+    },
     ShadowDecision {
         shadow_method: String,
         outcome: String,

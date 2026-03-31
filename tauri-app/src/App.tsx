@@ -812,6 +812,7 @@ function App() {
             onStart={continuous.onStart}
             onStop={continuous.onStop}
             onNewPatient={continuous.onNewPatient}
+            transcriptionStalled={continuous.transcriptionStalled}
             onViewHistory={openHistoryWindow}
           />
         )}

@@ -406,7 +406,14 @@ pub async fn run_continuous_mode(
     let silence_start_for_consumer = silence_start.clone();
 
     // Spawn segment consumer task
+    // Track speech-without-transcription to detect STT pipeline failures
+    const STALL_THRESHOLD_SECS: u64 = 30;
     let consumer_task = tokio::spawn(async move {
+        let mut cumulative_speech_secs: u64 = 0;
+        let mut last_speech_active = false;
+        let mut last_speech_start: Option<std::time::Instant> = None;
+        let mut stall_warned = false;
+
         while let Some(msg) = rx.recv().await {
             if stop_for_consumer.load(Ordering::Relaxed) {
                 break;
@@ -414,6 +421,13 @@ pub async fn run_continuous_mode(
 
             match msg {
                 PipelineMessage::Segment(segment) => {
+                    // Segment received — STT is working, reset stall tracking
+                    cumulative_speech_secs = 0;
+                    last_speech_start = None;
+                    if stall_warned {
+                        stall_warned = false;
+                    }
+
                     // Reset silence tracking on speech
                     if let Ok(mut s) = silence_start_for_consumer.lock() {
                         *s = None;
@@ -482,6 +496,14 @@ pub async fn run_continuous_mode(
                 }
                 PipelineMessage::Status { is_speech_active, .. } => {
                     if !is_speech_active {
+                        // Accumulate speech duration for stall detection
+                        if last_speech_active {
+                            if let Some(start) = last_speech_start.take() {
+                                cumulative_speech_secs += start.elapsed().as_secs();
+                            }
+                        }
+                        last_speech_active = false;
+
                         // Track silence start
                         let mut s = silence_start_for_consumer.lock().unwrap_or_else(|e| e.into_inner());
                         if s.is_none() {
@@ -495,6 +517,27 @@ pub async fn run_continuous_mode(
                             }
                         }
                     } else {
+                        // Speech active — track start time for stall detection
+                        if !last_speech_active {
+                            last_speech_start = Some(std::time::Instant::now());
+                        }
+                        last_speech_active = true;
+
+                        // Check for stall: speech detected but no transcription
+                        let active_secs = last_speech_start
+                            .map(|s| s.elapsed().as_secs())
+                            .unwrap_or(0);
+                        if cumulative_speech_secs + active_secs >= STALL_THRESHOLD_SECS && !stall_warned {
+                            warn!(
+                                "Transcription stalled: {}s of speech detected with no transcription output",
+                                cumulative_speech_secs + active_secs
+                            );
+                            ContinuousModeEvent::TranscriptionStalled {
+                                speech_secs: cumulative_speech_secs + active_secs,
+                            }.emit(&app_for_consumer);
+                            stall_warned = true;
+                        }
+
                         // Speech active — reset silence
                         let mut s = silence_start_for_consumer.lock().unwrap_or_else(|e| e.into_inner());
                         *s = None;

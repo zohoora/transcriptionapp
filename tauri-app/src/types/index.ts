@@ -855,6 +855,7 @@ export type ContinuousModeEventType =
   | 'stopped'
   | 'encounter_merged'
   | 'sensor_status'
+  | 'transcription_stalled'
   | 'shadow_decision';
 
 export interface ContinuousModeEvent {

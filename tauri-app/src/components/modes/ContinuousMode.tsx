@@ -93,6 +93,8 @@ interface ContinuousModeProps {
   onNewPatient: () => void;
   /** Open history window to view today's sessions */
   onViewHistory: () => void;
+  /** Speech detected but no transcription being produced */
+  transcriptionStalled?: boolean;
 }
 
 /**
@@ -184,6 +186,7 @@ export const ContinuousMode = memo(function ContinuousMode({
   onStop,
   onNewPatient,
   onViewHistory,
+  transcriptionStalled,
 }: ContinuousModeProps) {
   const elapsedTime = useElapsedTime(isActive ? stats.recording_since : undefined);
   const encounterElapsed = useElapsedTime(stats.buffer_started_at ?? undefined, 10000);
@@ -372,6 +375,13 @@ export const ContinuousMode = memo(function ContinuousMode({
         </div>
       )}
 
+      {/* Transcription stalled warning */}
+      {transcriptionStalled && (
+        <div className="transcription-stalled-warning">
+          Speech detected but transcription not working. Check STT server connection.
+        </div>
+      )}
+
       {/* New Patient button */}
       <button
         className="continuous-new-patient-btn"
@@ -384,7 +394,7 @@ export const ContinuousMode = memo(function ContinuousMode({
           <line x1="19" y1="8" x2="19" y2="14" />
           <line x1="22" y1="11" x2="16" y2="11" />
         </svg>
-        New Patient
+        End Previous / Start New
       </button>
 
       {/* Patient voice pulse indicator */}
