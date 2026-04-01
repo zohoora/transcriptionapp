@@ -3,6 +3,14 @@ import { render, screen, fireEvent } from '@testing-library/react';
 import { ContinuousMode } from './ContinuousMode';
 import type { ContinuousModeStats, AudioQualitySnapshot } from '../../types';
 
+// Mock Tauri APIs
+vi.mock('@tauri-apps/api/core', () => ({
+  invoke: vi.fn().mockResolvedValue(''),
+}));
+vi.mock('@tauri-apps/plugin-clipboard-manager', () => ({
+  writeText: vi.fn().mockResolvedValue(undefined),
+}));
+
 // Mock child components to isolate ContinuousMode
 vi.mock('../PatientPulse', () => ({
   PatientPulse: () => <div data-testid="patient-pulse" />,
@@ -18,9 +26,7 @@ const IDLE_STATS: ContinuousModeStats = {
   state: 'idle',
   recording_since: '',
   encounters_detected: 0,
-  last_encounter_at: null,
-  last_encounter_words: null,
-  last_encounter_patient_name: null,
+  recent_encounters: [],
   last_error: null,
   buffer_word_count: 0,
   buffer_started_at: null,
@@ -32,9 +38,13 @@ const ACTIVE_STATS: ContinuousModeStats = {
   state: 'recording',
   recording_since: new Date(Date.now() - 3600000).toISOString(), // 1 hour ago
   encounters_detected: 3,
-  last_encounter_at: new Date(Date.now() - 600000).toISOString(), // 10 min ago
-  last_encounter_words: 450,
-  last_encounter_patient_name: 'John Smith',
+  recent_encounters: [
+    {
+      sessionId: 'session-123',
+      time: new Date(Date.now() - 600000).toISOString(), // 10 min ago
+      patientName: 'John Smith',
+    },
+  ],
   last_error: null,
   buffer_word_count: 120,
   buffer_started_at: new Date(Date.now() - 300000).toISOString(), // 5 min ago
@@ -397,18 +407,17 @@ describe('ContinuousMode', () => {
     });
   });
 
-  describe('last encounter summary', () => {
-    it('shows last encounter info when available', () => {
+  describe('recent encounters list', () => {
+    it('shows recent encounters when available', () => {
       render(<ContinuousMode {...makeDefaultProps({ isActive: true, stats: ACTIVE_STATS })} />);
-      expect(screen.getByText('Last encounter')).toBeInTheDocument();
-      expect(screen.getByText(/450 words/)).toBeInTheDocument();
-      expect(screen.getByText(/John Smith/)).toBeInTheDocument();
+      expect(screen.getByText('Recent encounters')).toBeInTheDocument();
+      expect(screen.getByText('John Smith')).toBeInTheDocument();
     });
 
-    it('hides last encounter when last_encounter_at is null', () => {
-      const noLastEncounter = { ...ACTIVE_STATS, last_encounter_at: null };
-      render(<ContinuousMode {...makeDefaultProps({ isActive: true, stats: noLastEncounter })} />);
-      expect(screen.queryByText('Last encounter')).not.toBeInTheDocument();
+    it('hides recent encounters when list is empty', () => {
+      const noEncounters = { ...ACTIVE_STATS, recent_encounters: [] };
+      render(<ContinuousMode {...makeDefaultProps({ isActive: true, stats: noEncounters })} />);
+      expect(screen.queryByText('Recent encounters')).not.toBeInTheDocument();
     });
   });
 

@@ -820,14 +820,18 @@ export type EncounterDetectionMode = 'llm' | 'sensor' | 'shadow' | 'hybrid';
 /** Which detection method is "active" in shadow mode */
 export type ShadowActiveMethod = 'llm' | 'sensor';
 
+export interface RecentEncounter {
+  sessionId: string;
+  time: string;
+  patientName: string | null;
+}
+
 /** Stats for the continuous mode monitoring dashboard */
 export interface ContinuousModeStats {
   state: 'idle' | 'recording' | 'checking' | 'sleeping' | 'error';
   recording_since: string;
   encounters_detected: number;
-  last_encounter_at: string | null;
-  last_encounter_words: number | null;
-  last_encounter_patient_name: string | null;
+  recent_encounters: RecentEncounter[];
   last_error: string | null;
   buffer_word_count: number;
   /** ISO timestamp of the first segment in the current buffer (for "current encounter" display) */

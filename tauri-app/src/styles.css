@@ -7190,11 +7190,11 @@ button.review-section-header-left:focus {
   color: var(--text-secondary);
 }
 
-/* Last encounter */
-.continuous-last-encounter {
+/* Recent encounters list */
+.continuous-recent-encounters {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 2px;
 }
 
 .continuous-section-label {
@@ -7205,9 +7205,49 @@ button.review-section-header-left:focus {
   color: var(--text-muted);
 }
 
-.continuous-last-encounter-info {
-  font-size: 13px;
+.recent-encounter-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  background: none;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
   color: var(--text-secondary);
+  text-align: left;
+  width: 100%;
+}
+
+.recent-encounter-item:hover {
+  background: var(--bg-hover);
+}
+
+.recent-encounter-item:active {
+  background: var(--bg-active, var(--bg-hover));
+}
+
+.recent-encounter-time {
+  color: var(--text-tertiary);
+  min-width: 65px;
+}
+
+.recent-encounter-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.recent-encounter-copy {
+  font-size: 10px;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.recent-encounter-item:hover .recent-encounter-copy {
+  opacity: 0.6;
 }
 
 /* Transcript preview */

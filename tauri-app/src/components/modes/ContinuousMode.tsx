@@ -12,6 +12,8 @@
  * for each detected patient encounter.
  */
 import { memo, useState, useEffect, useRef, useCallback } from 'react';
+import { invoke } from '@tauri-apps/api/core';
+import { writeText } from '@tauri-apps/plugin-clipboard-manager';
 import type { ContinuousModeStats, AudioQualitySnapshot, BiomarkerUpdate } from '../../types';
 import type { PatientTrends } from '../../hooks/usePatientBiomarkers';
 import type { MiisSuggestion } from '../../hooks/useMiisImages';
@@ -465,19 +467,34 @@ export const ContinuousMode = memo(function ContinuousMode({
       )}
 
 
-      {/* Last encounter summary */}
-      {stats.last_encounter_at && (
-        <div className="continuous-last-encounter">
-          <span className="continuous-section-label">Last encounter</span>
-          <div className="continuous-last-encounter-info">
-            <span>{formatTime(stats.last_encounter_at)}</span>
-            {stats.last_encounter_words && (
-              <span> &middot; {stats.last_encounter_words} words</span>
-            )}
-            {stats.last_encounter_patient_name && (
-              <span> &mdash; {stats.last_encounter_patient_name}</span>
-            )}
-          </div>
+      {/* Recent encounters list */}
+      {stats.recent_encounters.length > 0 && (
+        <div className="continuous-recent-encounters">
+          <span className="continuous-section-label">Recent encounters</span>
+          {stats.recent_encounters.map((enc) => (
+            <button
+              key={enc.sessionId}
+              className="recent-encounter-item"
+              onClick={async () => {
+                try {
+                  const soap = await invoke<string>('get_session_soap_note', {
+                    sessionId: enc.sessionId,
+                    date: new Date(enc.time).toISOString().split('T')[0],
+                  });
+                  await writeText(soap);
+                } catch (e) {
+                  console.warn('Failed to copy SOAP:', e);
+                }
+              }}
+              title="Click to copy SOAP note"
+            >
+              <span className="recent-encounter-time">{formatTime(enc.time)}</span>
+              {enc.patientName && (
+                <span className="recent-encounter-name">{enc.patientName}</span>
+              )}
+              <span className="recent-encounter-copy">📋</span>
+            </button>
+          ))}
         </div>
       )}
 

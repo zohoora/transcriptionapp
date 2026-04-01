@@ -124,15 +124,22 @@ impl ContinuousState {
     }
 }
 
+/// Summary of a recent encounter for dashboard display
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RecentEncounter {
+    pub session_id: String,
+    pub time: String,          // ISO 8601
+    pub patient_name: Option<String>,
+}
+
 /// Stats for the frontend monitoring dashboard
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ContinuousModeStats {
     pub state: String,
     pub recording_since: String,
     pub encounters_detected: u32,
-    pub last_encounter_at: Option<String>,
-    pub last_encounter_words: Option<u32>,
-    pub last_encounter_patient_name: Option<String>,
+    pub recent_encounters: Vec<RecentEncounter>,
     pub last_error: Option<String>,
     pub buffer_word_count: usize,
     /// ISO timestamp of the first segment in the current buffer (for "current encounter" display)
@@ -169,9 +176,7 @@ pub struct ContinuousModeHandle {
     pub transcript_buffer: Arc<Mutex<TranscriptBuffer>>,
     pub encounters_detected: Arc<AtomicU32>,
     pub recording_since: Arc<Mutex<DateTime<Utc>>>,
-    pub last_encounter_at: Arc<Mutex<Option<DateTime<Utc>>>>,
-    pub last_encounter_words: Arc<Mutex<Option<u32>>>,
-    pub last_encounter_patient_name: Arc<Mutex<Option<String>>>,
+    pub recent_encounters: Arc<Mutex<Vec<RecentEncounter>>>,
     pub last_error: Arc<Mutex<Option<String>>>,
     pub name_tracker: Arc<Mutex<PatientNameTracker>>,
     /// Manual trigger for "New Patient" button — wakes the encounter detector immediately
@@ -211,9 +216,7 @@ impl ContinuousModeHandle {
             transcript_buffer: Arc::new(Mutex::new(TranscriptBuffer::new())),
             encounters_detected: Arc::new(AtomicU32::new(0)),
             recording_since: Arc::new(Mutex::new(Utc::now())),
-            last_encounter_at: Arc::new(Mutex::new(None)),
-            last_encounter_words: Arc::new(Mutex::new(None)),
-            last_encounter_patient_name: Arc::new(Mutex::new(None)),
+            recent_encounters: Arc::new(Mutex::new(Vec::new())),
             last_error: Arc::new(Mutex::new(None)),
             name_tracker: Arc::new(Mutex::new(PatientNameTracker::new())),
             encounter_manual_trigger: Arc::new(tokio::sync::Notify::new()),
@@ -245,9 +248,7 @@ impl ContinuousModeHandle {
         }
         self.encounters_detected.store(0, Ordering::Relaxed);
         if let Ok(mut v) = self.recording_since.lock() { *v = Utc::now(); }
-        if let Ok(mut v) = self.last_encounter_at.lock() { *v = None; }
-        if let Ok(mut v) = self.last_encounter_words.lock() { *v = None; }
-        if let Ok(mut v) = self.last_encounter_patient_name.lock() { *v = None; }
+        if let Ok(mut v) = self.recent_encounters.lock() { v.clear(); }
         if let Ok(mut v) = self.last_error.lock() { *v = None; }
         if let Ok(mut v) = self.name_tracker.lock() { *v = PatientNameTracker::new(); }
         if let Ok(mut v) = self.encounter_notes.lock() { v.clear(); }
@@ -285,23 +286,11 @@ impl ContinuousModeHandle {
             .ok()
             .and_then(|e| e.clone());
 
-        let last_at = self
-            .last_encounter_at
+        let recent_encounters = self
+            .recent_encounters
             .lock()
-            .ok()
-            .and_then(|t| t.map(|dt| dt.to_rfc3339()));
-
-        let last_words = self
-            .last_encounter_words
-            .lock()
-            .ok()
-            .and_then(|w| *w);
-
-        let last_patient = self
-            .last_encounter_patient_name
-            .lock()
-            .ok()
-            .and_then(|n| n.clone());
+            .map(|v| v.clone())
+            .unwrap_or_default();
 
         let (buffer_wc, buffer_started) = self
             .transcript_buffer
@@ -359,9 +348,7 @@ impl ContinuousModeHandle {
             state,
             recording_since,
             encounters_detected: self.encounters_detected.load(Ordering::Relaxed),
-            last_encounter_at: last_at,
-            last_encounter_words: last_words,
-            last_encounter_patient_name: last_patient,
+            recent_encounters,
             last_error: last_err,
             buffer_word_count: buffer_wc,
             buffer_started_at: buffer_started,
@@ -808,9 +795,7 @@ pub async fn run_continuous_mode(
     let stop_for_detector = handle.stop_flag.clone();
     let state_for_detector = handle.state.clone();
     let encounters_for_detector = handle.encounters_detected.clone();
-    let last_at_for_detector = handle.last_encounter_at.clone();
-    let last_words_for_detector = handle.last_encounter_words.clone();
-    let last_patient_name_for_detector = handle.last_encounter_patient_name.clone();
+    let recent_encounters_for_detector = handle.recent_encounters.clone();
     let last_error_for_detector = handle.last_error.clone();
     let name_tracker_for_detector = handle.name_tracker.clone();
     let last_split_time_for_detector = handle.last_split_time.clone();
@@ -1715,20 +1700,15 @@ pub async fn run_continuous_mode(
 
                         // Update stats
                         encounters_for_detector.fetch_add(1, Ordering::Relaxed);
-                        if let Ok(mut at) = last_at_for_detector.lock() {
-                            *at = Some(Utc::now());
+                        if let Ok(mut recent) = recent_encounters_for_detector.lock() {
+                            recent.insert(0, RecentEncounter {
+                                session_id: session_id.clone(),
+                                time: Utc::now().to_rfc3339(),
+                                patient_name: encounter_patient_name.clone(),
+                            });
+                            recent.truncate(3); // Keep only the 3 most recent
                         } else {
-                            warn!("Last encounter time lock poisoned, stats not updated");
-                        }
-                        if let Ok(mut words) = last_words_for_detector.lock() {
-                            *words = Some(encounter_word_count as u32);
-                        } else {
-                            warn!("Last encounter words lock poisoned, stats not updated");
-                        }
-                        if let Ok(mut name) = last_patient_name_for_detector.lock() {
-                            *name = encounter_patient_name.clone();
-                        } else {
-                            warn!("Last patient name lock poisoned, stats not updated");
+                            warn!("Recent encounters lock poisoned, stats not updated");
                         }
 
                         // Emit encounter detected event
@@ -2925,7 +2905,7 @@ mod tests {
         assert_eq!(stats.state, "idle");
         assert_eq!(stats.encounters_detected, 0);
         assert_eq!(stats.buffer_word_count, 0);
-        assert!(stats.last_encounter_at.is_none());
+        assert!(stats.recent_encounters.is_empty());
     }
 
     #[test]

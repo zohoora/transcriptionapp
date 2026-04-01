@@ -448,6 +448,7 @@ pub fn run() {
             commands::suggest_split_points,
             commands::get_session_feedback,
             commands::save_session_feedback,
+            commands::get_session_soap_note,
             commands::delete_patient_from_session,
             commands::rename_patient_label,
             commands::merge_patient_soaps,

@@ -607,6 +607,34 @@ pub async fn suggest_split_points(
     Ok(suggestions)
 }
 
+/// Get the SOAP note content for a session (for clipboard copy)
+#[tauri::command]
+pub async fn get_session_soap_note(
+    session_id: String,
+    date: String,
+) -> Result<String, CommandError> {
+    let details = local_archive::get_session(&session_id, &date)?;
+    // Check for per-patient notes first, then single SOAP
+    if let Some(notes) = details.patient_notes {
+        let combined = notes
+            .iter()
+            .map(|n| {
+                if notes.len() > 1 {
+                    format!("=== {} ===\n\n{}", n.label, n.content)
+                } else {
+                    n.content.clone()
+                }
+            })
+            .collect::<Vec<_>>()
+            .join("\n\n---\n\n");
+        Ok(combined)
+    } else if let Some(soap) = details.soap_note {
+        Ok(soap)
+    } else {
+        Err(CommandError::Validation("No SOAP note found".into()))
+    }
+}
+
 /// Delete a single patient's SOAP from a multi-patient session
 #[tauri::command]
 pub async fn delete_patient_from_session(
