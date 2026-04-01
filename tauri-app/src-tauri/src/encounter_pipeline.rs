@@ -83,19 +83,30 @@ pub async fn generate_and_archive_soap(
         multi_patient_detection,
     );
 
-    match tokio::time::timeout(tokio::time::Duration::from_secs(120), soap_future).await {
+    match tokio::time::timeout(tokio::time::Duration::from_secs(300), soap_future).await {
         Ok(Ok(soap_result)) => {
             let latency_ms = soap_start.elapsed().as_millis() as u64;
             let content = soap_result.format_for_archive();
 
-            if let Err(e) = local_archive::add_soap_note(
-                session_id,
-                session_date,
-                &content,
-                Some(effective_detail),
-                Some(soap_format),
-            ) {
-                warn!("Failed to save SOAP for session {}: {}", session_id, e);
+            // Save per-patient files when multi-patient detection found >1 patient
+            if soap_result.notes.len() > 1 {
+                if let Err(e) = local_archive::save_multi_patient_soap(
+                    session_id,
+                    session_date,
+                    &soap_result.notes,
+                ) {
+                    warn!("Failed to save multi-patient SOAP for session {}: {}", session_id, e);
+                }
+            } else {
+                if let Err(e) = local_archive::add_soap_note(
+                    session_id,
+                    session_date,
+                    &content,
+                    Some(effective_detail),
+                    Some(soap_format),
+                ) {
+                    warn!("Failed to save SOAP for session {}: {}", session_id, e);
+                }
             }
 
             if let Ok(mut l) = logger.lock() {
