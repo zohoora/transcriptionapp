@@ -1427,8 +1427,8 @@ pub fn build_simple_soap_prompt(options: &SoapOptions) -> String {
     };
 
     let format_instruction = match options.format {
-        SoapFormat::ProblemBased => "ORGANIZATION: If multiple medical problems are discussed, organize by problem - label each problem (e.g., 'Problem 1: Hypertension') and include its relevant S/O/A/P items grouped together.",
-        SoapFormat::Comprehensive => "ORGANIZATION: Create a single unified SOAP note covering all problems together in each section.",
+        SoapFormat::ProblemBased => "ORGANIZATION: If multiple medical problems are discussed, group items by problem. Prefix each bullet with the problem name in square brackets, e.g., '[Hypertension] Elevated BP reported at home' in Subjective, '[Hypertension] BP 150/90' in Objective, '[Hypertension] Uncontrolled, consider med adjustment' in Assessment, '[Hypertension] Increase amlodipine to 10mg' in Plan. Every item MUST have a [Problem] prefix. Problems with only one mention still get a prefix.",
+        SoapFormat::Comprehensive => "ORGANIZATION: Create a single unified SOAP note covering all problems together in each section. Do NOT prefix items with problem labels.",
     };
 
     let global_instr = options.custom_instructions.trim();
@@ -1458,6 +1458,8 @@ The transcript is from speech-to-text and may contain errors. Interpret medical 
 RESPOND WITH ONLY THIS JSON STRUCTURE - NO OTHER TEXT:
 {{"subjective":["item"],"objective":["item"],"assessment":["item"],"plan":["item"]}}
 
+{format_instruction}
+
 SECTION DEFINITIONS:
 - SUBJECTIVE: What the patient reports — symptoms, complaints, history of present illness, past medical/surgical history, medication history, social history, family history, review of systems, and any information prefaced by "patient reports/states/denies/describes". Also include historical test results the patient or physician recounts from previous visits (e.g. "previous EKG showed...", "labs from September...").
 - OBJECTIVE: ONLY findings from TODAY'S encounter — vital signs measured today, physical examination findings observed by the clinician, point-of-care test results obtained today, and imaging/lab results reviewed for the first time today. If the physician did not perform an exam or obtain new results, use an empty array []. Do NOT put patient-reported information here. Do NOT put historical results, prior imaging, or previous lab values here — those go in Subjective.
@@ -1474,8 +1476,7 @@ Rules:
 - Do NOT include specific patient names or healthcare provider names - use "patient" or "the physician/provider" instead
 - Do NOT hallucinate or embellish - only include what was explicitly stated
 - CLINICIAN NOTES: If provided, incorporate clinician observations into the appropriate SOAP sections (usually Objective for physical observations, Subjective for reported symptoms).
-- {detail_instruction}
-- {format_instruction}"#
+- {detail_instruction}"#
     )
 }
 
