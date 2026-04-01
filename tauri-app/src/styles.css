@@ -3284,6 +3284,116 @@ body {
   overflow: hidden;
 }
 
+/* Day Feedback button + modal */
+.day-feedback-btn {
+  width: 100%;
+  padding: 8px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-secondary);
+  background: none;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.day-feedback-btn:hover:not(:disabled) {
+  background: var(--bg-hover);
+}
+
+.day-feedback-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.day-feedback-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.day-feedback-modal {
+  background: var(--bg-primary, #fff);
+  border-radius: 12px;
+  width: 600px;
+  max-width: 90vw;
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+}
+
+.day-feedback-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.day-feedback-modal-header h3 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.day-feedback-close {
+  background: none;
+  border: none;
+  font-size: 24px;
+  cursor: pointer;
+  color: var(--text-secondary);
+  padding: 0 4px;
+  line-height: 1;
+}
+
+.day-feedback-close:hover {
+  color: var(--text-primary);
+}
+
+.day-feedback-modal-body {
+  padding: 20px;
+  overflow-y: auto;
+  flex: 1;
+}
+
+.day-feedback-modal-loading {
+  font-size: 14px;
+  color: var(--text-secondary);
+  font-style: italic;
+  padding: 20px 0;
+  text-align: center;
+}
+
+.day-feedback-modal-error {
+  color: #ef4444;
+  font-size: 13px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.day-feedback-modal-error button {
+  color: var(--accent-idle);
+  background: none;
+  border: none;
+  cursor: pointer;
+  text-decoration: underline;
+  font-size: 13px;
+}
+
+.day-feedback-modal-text {
+  font-size: 14px;
+  line-height: 1.7;
+  color: var(--text-primary);
+  white-space: pre-wrap;
+}
+
 .clinical-feedback-header {
   display: flex;
   align-items: center;

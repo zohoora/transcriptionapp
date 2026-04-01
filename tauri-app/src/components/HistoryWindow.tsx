@@ -70,9 +70,14 @@ const SESSION_FEEDBACK_PROMPT =
   "Be honest and frank while kind and gentle. Do not be overly verbose.";
 
 const DAY_FEEDBACK_PROMPT =
-  "Imagine you are a very senior physician in Ontario, Canada and are an expert in the topics discussed. " +
-  "Review the day's sessions below. Give feedback on overall patterns, strengths, and areas for improvement. " +
-  "This can be longer and more detailed. Be honest and frank while kind and gentle.";
+  "You are a very senior family physician and clinical educator in Ontario, Canada. " +
+  "You are reviewing a colleague's clinic day — the transcripts of all patient encounters from today are below. " +
+  "Provide constructive feedback structured as:\n" +
+  "1. STRENGTHS: What was done well today (clinical reasoning, communication, thoroughness, efficiency)\n" +
+  "2. CONSIDERATIONS: Areas where there may be room for improvement or reflection (missed opportunities, alternative approaches, documentation gaps)\n" +
+  "3. PATTERNS: Any recurring themes across sessions (positive or concerning)\n\n" +
+  "Be specific — reference particular encounters when possible. Be honest and direct while remaining respectful and collegial. " +
+  "Write as a mentor speaking to a peer, not a supervisor to a subordinate.";
 
 interface FeedbackSectionProps {
   title: string;
@@ -261,6 +266,65 @@ const HistoryWindow: React.FC = () => {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [cleanupDialog, setCleanupDialog] = useState<CleanupDialog>('none');
   const [cleanupMessage, setCleanupMessage] = useState<string | null>(null);
+
+  // Day feedback modal state
+  const [showDayFeedback, setShowDayFeedback] = useState(false);
+  const [dayFeedbackText, setDayFeedbackText] = useState<string | null>(null);
+  const [dayFeedbackLoading, setDayFeedbackLoading] = useState(false);
+  const [dayFeedbackError, setDayFeedbackError] = useState<string | null>(null);
+  const dayFeedbackCacheKey = useRef('');
+  const dayFeedbackInFlight = useRef(false);
+
+  // Reset day feedback cache when date or session count changes
+  useEffect(() => {
+    const key = `${formatDateForApi(selectedDate)}:${sessions.length}`;
+    if (dayFeedbackCacheKey.current !== key) {
+      dayFeedbackCacheKey.current = key;
+      setDayFeedbackText(null);
+      setDayFeedbackError(null);
+    }
+  }, [selectedDate, sessions.length]);
+
+  // Fetch day feedback when modal opens
+  useEffect(() => {
+    if (!showDayFeedback || dayFeedbackText !== null || dayFeedbackInFlight.current) return;
+    let cancelled = false;
+    dayFeedbackInFlight.current = true;
+    setDayFeedbackLoading(true);
+    setDayFeedbackError(null);
+
+    (async () => {
+      try {
+        const dateStr = formatDateForApi(selectedDate);
+        const results = await Promise.allSettled(
+          sessions.map(s =>
+            invoke<LocalArchiveDetails>('get_local_session_details', {
+              sessionId: s.session_id,
+              date: dateStr,
+            })
+          )
+        );
+        const transcripts = results
+          .filter((r): r is PromiseFulfilledResult<LocalArchiveDetails> => r.status === 'fulfilled')
+          .map(r => r.value.transcript)
+          .filter((t): t is string => !!t?.trim());
+        if (transcripts.length === 0) throw new Error('No transcripts available');
+        const combined = transcripts.join('\n\n--- Next Session ---\n\n');
+        const result = await invoke<string>('generate_clinical_feedback', {
+          systemPrompt: DAY_FEEDBACK_PROMPT,
+          transcript: combined,
+        });
+        if (!cancelled) setDayFeedbackText(result);
+      } catch (e) {
+        if (!cancelled) setDayFeedbackError(e instanceof Error ? e.message : String(e));
+      } finally {
+        if (!cancelled) setDayFeedbackLoading(false);
+        dayFeedbackInFlight.current = false;
+      }
+    })();
+
+    return () => { cancelled = true; };
+  }, [showDayFeedback, dayFeedbackText, selectedDate, sessions]);
 
   // LLM connection check - sync to SOAP hook
   const { status: ollamaConnectionStatus } = useOllamaConnection();
@@ -1219,36 +1283,16 @@ const HistoryWindow: React.FC = () => {
           )}
           </div>{/* end history-left-scroll */}
 
-          {/* Day Clinical Feedback — pinned to bottom of sidebar */}
+          {/* Day Feedback button — pinned to bottom of sidebar */}
           {sessions.length > 0 && !isCleanupMode && (
             <div className="history-left-bottom">
-              <FeedbackSection
-                title="Day Feedback"
-                systemPrompt={DAY_FEEDBACK_PROMPT}
-                cacheKey={`${formatDateForApi(selectedDate)}:${sessions.length}`}
-                llmConnected={llmConnected}
-                disabled={sessions.length === 0}
-                loadingText="Analyzing day..."
-                badge={<span className="clinical-feedback-count">({sessions.length} sessions)</span>}
-                extraClass="day-feedback"
-                getTranscript={async () => {
-                  const dateStr = formatDateForApi(selectedDate);
-                  const results = await Promise.allSettled(
-                    sessions.map(s =>
-                      invoke<LocalArchiveDetails>('get_local_session_details', {
-                        sessionId: s.session_id,
-                        date: dateStr,
-                      })
-                    )
-                  );
-                  const transcripts = results
-                    .filter((r): r is PromiseFulfilledResult<LocalArchiveDetails> => r.status === 'fulfilled')
-                    .map(r => r.value.transcript)
-                    .filter((t): t is string => !!t?.trim());
-                  if (transcripts.length === 0) throw new Error('No transcripts available');
-                  return transcripts.join('\n\n--- Next Session ---\n\n');
-                }}
-              />
+              <button
+                className="day-feedback-btn"
+                onClick={() => setShowDayFeedback(true)}
+                disabled={!llmConnected}
+              >
+                Day Feedback ({sessions.length} sessions)
+              </button>
             </div>
           )}
         </div>
@@ -1684,6 +1728,32 @@ const HistoryWindow: React.FC = () => {
           onConfirm={handleEditNameConfirm}
           onCancel={() => setCleanupDialog('none')}
         />
+      )}
+
+      {/* Day Feedback Modal */}
+      {showDayFeedback && (
+        <div className="day-feedback-overlay" onClick={() => setShowDayFeedback(false)}>
+          <div className="day-feedback-modal" onClick={e => e.stopPropagation()}>
+            <div className="day-feedback-modal-header">
+              <h3>Day Feedback</h3>
+              <button className="day-feedback-close" onClick={() => setShowDayFeedback(false)}>&times;</button>
+            </div>
+            <div className="day-feedback-modal-body">
+              {dayFeedbackLoading && (
+                <div className="day-feedback-modal-loading">Analyzing {sessions.length} sessions...</div>
+              )}
+              {dayFeedbackError && (
+                <div className="day-feedback-modal-error">
+                  {dayFeedbackError}
+                  <button onClick={() => { setDayFeedbackText(null); setDayFeedbackError(null); }}>Retry</button>
+                </div>
+              )}
+              {dayFeedbackText && (
+                <div className="day-feedback-modal-text">{dayFeedbackText}</div>
+              )}
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
