@@ -78,25 +78,24 @@ const SESSION_FEEDBACK_PROMPT =
   "- Do NOT use markdown headers (no #, ##). Plain text labels + bullets only.";
 
 const DAY_FEEDBACK_PROMPT =
-  "Review a family physician's clinic day in Ontario, Canada. All patient encounter transcripts from today are provided below, separated by '--- Next Session ---'.\n\n" +
-  "Output ONLY concise bullet points. No letters, greetings, signatures, or prose paragraphs.\n\n" +
-  "Format:\n\n" +
+  "/nothink\n" +
+  "Review a family physician's clinic day in Ontario, Canada. " +
+  "All patient encounter transcripts are below, separated by '--- Next Session ---'.\n\n" +
+  "Output concise bullet points ONLY.\n\n" +
   "STRENGTHS\n" +
-  "- [specific positive observation, referencing which patient/encounter]\n" +
-  "- [another strength]\n\n" +
+  "- [observation referencing specific patient/encounter]\n\n" +
   "AREAS FOR IMPROVEMENT\n" +
-  "- [specific actionable suggestion, referencing which patient/encounter]\n" +
-  "- [another suggestion]\n\n" +
+  "- [actionable suggestion referencing specific patient/encounter]\n\n" +
   "PATTERNS\n" +
-  "- [recurring theme observed across multiple sessions]\n\n" +
-  "Rules:\n" +
-  "- Each bullet must be 1-2 sentences max\n" +
-  "- Reference specific patients/encounters (e.g., 'In the wound care session...')\n" +
-  "- Focus on clinical reasoning, patient communication, and management decisions\n" +
-  "- Be honest and direct. Do not soften feedback with qualifiers.\n" +
-  "- Do NOT write a letter, greeting, sign-off, or any prose. Bullets only.\n" +
-  "- Do NOT use markdown headers (no #, ##). Use plain text labels followed by bullets.\n" +
-  "- Aim for 5-10 bullets per section";
+  "- [recurring theme across sessions]\n\n" +
+  "Constraints:\n" +
+  "- 1-2 sentences per bullet\n" +
+  "- Reference specific encounters\n" +
+  "- Focus on clinical reasoning, communication, management\n" +
+  "- Be direct. No hedging, no qualifiers, no filler\n" +
+  "- NO letters, greetings, signatures, headers, or prose\n" +
+  "- NO markdown (no #, **, etc). Plain text only\n" +
+  "- 5-8 bullets per section";
 
 interface FeedbackSectionProps {
   title: string;
