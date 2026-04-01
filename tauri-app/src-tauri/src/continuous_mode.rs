@@ -911,6 +911,9 @@ pub async fn run_continuous_mode(
         let mut sensor_absent_since: Option<DateTime<Utc>> = None;
         let mut prev_sensor_state = crate::presence_sensor::PresenceState::Unknown;
         let mut sensor_available = hybrid_sensor_rx.is_some();
+        // True when sensor has been continuously present since the last encounter split.
+        // Reset to false on any Present→Absent transition; set to true on split.
+        let mut sensor_continuous_present = false;
 
         // Track previous encounter for retrospective merge checks
         let mut prev_encounter_session_id: Option<String> = None;
@@ -958,6 +961,7 @@ pub async fn run_continuous_mode(
                                     (crate::presence_sensor::PresenceState::Present,
                                      crate::presence_sensor::PresenceState::Absent) => {
                                         sensor_absent_since = Some(Utc::now());
+                                        sensor_continuous_present = false;
                                         info!("Hybrid: sensor detected departure (Present→Absent), accelerating LLM check");
                                         (false, true) // sensor_triggered → accelerate LLM check (NOT force-split)
                                     }
@@ -1392,6 +1396,7 @@ pub async fn run_continuous_mode(
                 sensor_absent_secs: sensor_absent_since.map(|t| (Utc::now() - t).num_seconds() as u64),
                 hybrid_confirm_window_secs,
                 hybrid_min_words_for_sensor_split,
+                sensor_continuous_present,
             };
             let (outcome, new_failures) = evaluate_detection(&eval_ctx);
             consecutive_llm_failures = new_failures;
@@ -1491,6 +1496,10 @@ pub async fn run_continuous_mode(
                         // Clear hybrid sensor tracking on successful split
                         if is_hybrid_mode {
                             sensor_absent_since = None;
+                            // If sensor is currently present, mark continuous presence for next encounter.
+                            // This blocks LLM-only splits while the same person remains in the room.
+                            sensor_continuous_present = sensor_available
+                                && prev_sensor_state == crate::presence_sensor::PresenceState::Present;
                         }
                         info!(
                             "Encounter #{} detected (end_segment_index={})",

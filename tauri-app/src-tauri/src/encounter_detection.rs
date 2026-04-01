@@ -114,6 +114,9 @@ pub struct DetectionEvalContext {
     pub hybrid_confirm_window_secs: u64,
     /// Config: minimum words for sensor-triggered split (default 500)
     pub hybrid_min_words_for_sensor_split: usize,
+    /// True when sensor has been continuously present since the last encounter split
+    /// (no absent transitions). Indicates this is likely the same visit — block LLM-only splits.
+    pub sensor_continuous_present: bool,
 }
 
 /// Evaluate a detection result against thresholds and force-split rules.
@@ -179,7 +182,15 @@ pub fn evaluate_detection(ctx: &DetectionEvalContext) -> (DetectionOutcome, u32)
     // 5. LLM says complete — apply confidence gate
     let confidence = result.confidence.unwrap_or(0.0);
 
-    let threshold = calculate_confidence_threshold(ctx.buffer_age_mins, ctx.merge_back_count);
+    // When sensor confirms continuous presence since last split, block LLM-only splits.
+    // This prevents false splits during couples/family visits and phone calls where
+    // the physician discusses multiple patients without anyone leaving the room.
+    // Manual triggers and sensor-departure triggers bypass this gate.
+    let threshold = if ctx.sensor_continuous_present && !ctx.manual_triggered && !ctx.sensor_triggered {
+        0.99_f64.max(calculate_confidence_threshold(ctx.buffer_age_mins, ctx.merge_back_count))
+    } else {
+        calculate_confidence_threshold(ctx.buffer_age_mins, ctx.merge_back_count)
+    };
     if confidence < threshold {
         return (DetectionOutcome::BelowThreshold { confidence, threshold }, failures);
     }
@@ -235,8 +246,10 @@ Respond with ONLY the JSON object."#;
             parts.push(
                 "CONTEXT: The presence sensor confirms someone is still in the room. \
                 Topic changes or pauses within the same visit are NOT transitions. \
-                Only split if there is strong evidence of a different patient \
-                (new name, new history intake, greeting a new person).".to_string()
+                Discussing a different family member or patient who is part of the same visit/call is NOT a transition — \
+                couples visits, family visits, and phone calls to households often involve the physician addressing \
+                multiple people's medical issues in a single encounter. \
+                Only split if there is a clear farewell, departure, AND arrival of a completely unrelated new patient.".to_string()
             );
         }
         if parts.is_empty() {
@@ -888,6 +901,7 @@ mod tests {
             sensor_absent_secs: None,
             hybrid_confirm_window_secs: 180,
             hybrid_min_words_for_sensor_split: 500,
+            sensor_continuous_present: false,
         }
     }
 
@@ -1044,6 +1058,41 @@ mod tests {
         let (outcome, _) = evaluate_detection(&ctx);
         // Non-hybrid ignores sensor_absent_secs
         assert_eq!(outcome, DetectionOutcome::NoSplit);
+    }
+
+    #[test]
+    fn test_sensor_continuous_present_blocks_llm_split() {
+        // LLM says complete with 0.92 confidence — normally would split
+        let mut ctx = make_ctx(Some(make_detection(true, 0.92)));
+        ctx.sensor_continuous_present = true;
+        ctx.is_hybrid_mode = true;
+        let (outcome, _) = evaluate_detection(&ctx);
+        // Should be blocked — threshold raised to 0.99
+        assert!(matches!(outcome, DetectionOutcome::BelowThreshold { .. }),
+            "Should block LLM split when sensor is continuously present");
+    }
+
+    #[test]
+    fn test_sensor_continuous_present_allows_manual_split() {
+        let mut ctx = make_ctx(Some(make_detection(true, 0.92)));
+        ctx.sensor_continuous_present = true;
+        ctx.is_hybrid_mode = true;
+        ctx.manual_triggered = true;
+        let (outcome, _) = evaluate_detection(&ctx);
+        // Manual trigger should bypass the sensor gate
+        assert!(matches!(outcome, DetectionOutcome::Split { .. }),
+            "Manual trigger should bypass sensor-continuous-present gate");
+    }
+
+    #[test]
+    fn test_sensor_continuous_present_no_effect_when_false() {
+        let mut ctx = make_ctx(Some(make_detection(true, 0.92)));
+        ctx.sensor_continuous_present = false; // sensor went absent at some point
+        ctx.is_hybrid_mode = true;
+        let (outcome, _) = evaluate_detection(&ctx);
+        // Normal threshold (0.85) — 0.92 should pass
+        assert!(matches!(outcome, DetectionOutcome::Split { .. }),
+            "Should split normally when sensor is not continuously present");
     }
 
     #[test]

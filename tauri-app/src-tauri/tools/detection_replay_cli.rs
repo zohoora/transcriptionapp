@@ -166,6 +166,7 @@ fn build_eval_context(
         sensor_absent_secs,
         hybrid_confirm_window_secs,
         hybrid_min_words_for_sensor_split,
+        sensor_continuous_present: false, // replay doesn't track continuous presence yet
     }
 }
 
