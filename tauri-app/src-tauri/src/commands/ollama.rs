@@ -966,16 +966,8 @@ pub async fn generate_clinical_feedback(
     )
     .map_err(|e| CommandError::Network(e))?;
 
-    // Truncate to ~8000 words to prevent huge day payloads
-    let word_count = transcript.split_whitespace().count();
-    let truncated = if word_count > 8000 {
-        transcript.split_whitespace().take(8000).collect::<Vec<_>>().join(" ")
-    } else {
-        transcript
-    };
-
     let response = client
-        .generate(&config.fast_model, &system_prompt, &truncated, "clinical_feedback")
+        .generate(&config.fast_model, &system_prompt, &transcript, "clinical_feedback")
         .await
         .map_err(|e| CommandError::Network(e))?;
 

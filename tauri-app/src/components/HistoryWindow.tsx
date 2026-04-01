@@ -65,19 +65,38 @@ function patientIndexFromKey(key: string): number | null {
 }
 
 const SESSION_FEEDBACK_PROMPT =
-  "Imagine you are a very senior physician in Ontario, Canada and are an expert in the topics discussed. " +
-  "Give a short paragraph highlighting at least one good element of the session and one consideration for future improvement. " +
-  "Be honest and frank while kind and gentle. Do not be overly verbose.";
+  "Review this single patient encounter transcript from a family physician in Ontario, Canada.\n\n" +
+  "Output ONLY concise bullet points. No prose, no greetings, no sign-offs.\n\n" +
+  "Format:\n" +
+  "DONE WELL\n" +
+  "- [specific positive observation]\n\n" +
+  "CONSIDER\n" +
+  "- [specific actionable suggestion]\n\n" +
+  "Rules:\n" +
+  "- 1-3 bullets per section, 1-2 sentences each\n" +
+  "- Be direct and specific. No filler or qualifiers.\n" +
+  "- Do NOT use markdown headers (no #, ##). Plain text labels + bullets only.";
 
 const DAY_FEEDBACK_PROMPT =
-  "You are a very senior family physician and clinical educator in Ontario, Canada. " +
-  "You are reviewing a colleague's clinic day — the transcripts of all patient encounters from today are below. " +
-  "Provide constructive feedback structured as:\n" +
-  "1. STRENGTHS: What was done well today (clinical reasoning, communication, thoroughness, efficiency)\n" +
-  "2. CONSIDERATIONS: Areas where there may be room for improvement or reflection (missed opportunities, alternative approaches, documentation gaps)\n" +
-  "3. PATTERNS: Any recurring themes across sessions (positive or concerning)\n\n" +
-  "Be specific — reference particular encounters when possible. Be honest and direct while remaining respectful and collegial. " +
-  "Write as a mentor speaking to a peer, not a supervisor to a subordinate.";
+  "Review a family physician's clinic day in Ontario, Canada. All patient encounter transcripts from today are provided below, separated by '--- Next Session ---'.\n\n" +
+  "Output ONLY concise bullet points. No letters, greetings, signatures, or prose paragraphs.\n\n" +
+  "Format:\n\n" +
+  "STRENGTHS\n" +
+  "- [specific positive observation, referencing which patient/encounter]\n" +
+  "- [another strength]\n\n" +
+  "AREAS FOR IMPROVEMENT\n" +
+  "- [specific actionable suggestion, referencing which patient/encounter]\n" +
+  "- [another suggestion]\n\n" +
+  "PATTERNS\n" +
+  "- [recurring theme observed across multiple sessions]\n\n" +
+  "Rules:\n" +
+  "- Each bullet must be 1-2 sentences max\n" +
+  "- Reference specific patients/encounters (e.g., 'In the wound care session...')\n" +
+  "- Focus on clinical reasoning, patient communication, and management decisions\n" +
+  "- Be honest and direct. Do not soften feedback with qualifiers.\n" +
+  "- Do NOT write a letter, greeting, sign-off, or any prose. Bullets only.\n" +
+  "- Do NOT use markdown headers (no #, ##). Use plain text labels followed by bullets.\n" +
+  "- Aim for 5-10 bullets per section";
 
 interface FeedbackSectionProps {
   title: string;
