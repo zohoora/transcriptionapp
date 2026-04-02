@@ -162,7 +162,7 @@ cd src-tauri && cargo test       # Rust
 | Modify room setup | `room_config.rs`, `commands/physicians.rs`, `useRoomConfig.ts`, `RoomSetup.tsx` |
 | Modify server session sync | `profile_client.rs`, `continuous_mode.rs` (ServerSyncContext), `commands/archive.rs` (server fallback) |
 
-## IPC Commands (108 total across 18 modules)
+## IPC Commands (109 total across 18 modules)
 
 | Module | Commands | Source |
 |--------|----------|--------|
@@ -176,7 +176,7 @@ cd src-tauri && cargo test       # Rust
 | Permissions (3) | `check_microphone_permission`, `request_*`, `open_*_settings` | `commands/permissions.rs` |
 | Listening (3) | `start_listening`, `stop_listening`, `get_listening_status` | `commands/listening.rs` |
 | Speaker Profiles (6) | `list_speaker_profiles`, `get_speaker_profile`, `create_*`, `update_*`, `delete_*`, `reenroll_*` | `commands/speaker_profiles.rs` |
-| Archive (14) | `get_local_session_dates`, `get_local_sessions_by_date`, `get_local_session_details`, `save_local_soap_note`, `read_local_audio_file`, `delete_local_session`, `split_local_session`, `merge_local_sessions`, `update_session_patient_name`, `renumber_local_encounters`, `get_session_transcript_lines`, `suggest_split_points`, `get_session_feedback`, `save_session_feedback` | `commands/archive.rs` |
+| Archive (15) | `get_local_session_dates`, `get_local_sessions_by_date`, `get_local_session_details`, `save_local_soap_note`, `read_local_audio_file`, `delete_local_session`, `split_local_session`, `merge_local_sessions`, `update_session_patient_name`, `renumber_local_encounters`, `get_session_transcript_lines`, `suggest_split_points`, `get_session_feedback`, `save_session_feedback`, `get_session_soap_note` | `commands/archive.rs` |
 | Clinical Chat (1) | `clinical_chat_send` | `commands/clinical_chat.rs` |
 | MIIS (3) | `miis_suggest`, `miis_send_usage`, `generate_ai_image` | `commands/miis.rs`, `commands/images.rs` |
 | Screenshot (7) | `check_screen_recording_permission`, `open_screen_recording_settings`, `start/stop_screen_capture`, `get_screen_capture_status`, `get_screenshot_paths`, `get_screenshot_thumbnails` | `commands/screenshot.rs` |
@@ -195,7 +195,7 @@ cd src-tauri && cargo test       # Rust
 | `listening_event` | Auto-detection status (includes `speaker_not_verified`) |
 | `silence_warning` | Auto-end countdown (silence_ms, remaining_ms) |
 | `session_auto_end` | Session auto-ended due to silence |
-| `continuous_mode_event` | Continuous mode status changes (started, encounter_detected, soap_generated, encounter_merged, sensor_status, shadow_decision, retrospective_split, etc.) |
+| `continuous_mode_event` | Continuous mode status changes (started, encounter_detected, soap_generated, encounter_merged, sensor_status, shadow_decision, retrospective_split, sleep_started, sleep_ended, etc.) |
 | `continuous_transcript_preview` | Live transcript preview in continuous mode (separate from `transcript_update`) |
 | `deep-link` | OAuth callback URL received via single-instance plugin |
 
@@ -249,6 +249,12 @@ Idle → Preparing → Recording → Stopping → Completed
 | Server sync fire-and-forget | `ServerSyncContext` in `continuous_mode.rs` — clones IDs+client, spawns async upload task. 30s delayed re-sync catches late-written aux files |
 | Hybrid history merge | `commands/archive.rs` — local sessions + server sessions merged by session_id (local wins), server fills gaps for cross-machine sessions |
 | Profile cache fallback | `physician_cache.rs` — server fetch with local JSON cache fallback. Cache updated on every successful server fetch |
+| Gemini retry | `gemini_client.rs` — single retry with 2s backoff on network errors (DNS, connection, TLS). HTTP errors (4xx/5xx) are not retried |
+| Sensor-continuity gate | `sensor_continuous_present` in continuous_mode.rs — tracks unbroken sensor presence since last split. When true, `evaluate_detection()` raises LLM-only split threshold to 0.99. Prevents false splits during couples/family visits where sensor confirms room is occupied |
+| Recent encounters staleness | After encounter merge, `recent_encounters` list is updated via `retain()` to remove the merged-away session ID. Prevents click-to-copy from referencing deleted session directories |
+| Day log midnight rotation | `DayLogger` stores current date, checks on each `log()` call. Date change → close old file, open new under correct date dir. Same pattern as `csv_logger.rs` |
+| Sleep mode clean stop | Sleep scheduler sets inner handle's `stop_flag`, causing `run_continuous_mode` to proceed through normal cleanup. Outer loop detects sleep-triggered stop (vs user stop) and enters sleep wait. DST-safe via `chrono-tz::America::New_York` with `match chrono::LocalResult` for spring-forward gap handling |
+| Screenshot word-count gate | `screenshot_task.rs` checks `transcript_buffer.word_count()` at top of capture loop. Empty buffer → skip capture (no speech = empty room, no need for vision calls) |
 
 ## Features
 
@@ -264,10 +270,10 @@ Idle → Preparing → Recording → Stopping → Completed
 | **Auto-End Silence** | VAD silence → `SilenceWarning` countdown → auto-stop. Config: `auto_end_silence_ms` (default 180s). User can cancel via `reset_silence_timer` | `pipeline.rs`, ADR 0015 |
 | **MCP Server** | Port 7101, JSON-RPC 2.0. Tools: `agent_identity`, `health_check`, `get_status`, `get_logs` | `mcp/` |
 | **MIIS Images** | LLM extracts concepts every 30s → MIIS returns ranked images. Backend proxies through Rust (CORS). Server needs embedder enabled | `commands/miis.rs`, ADR 0018 |
-| **AI Images** | Gemini API generates medical illustrations from LLM-produced image prompts (piggybacks on predictive hint). **Default image source.** Cost guardrails: 45s cooldown, 8/session cap, 1 visible (latest only), prompt dedup. Config: `image_source=ai` (default), `gemini_api_key`. Requires Gemini API key to function | `gemini_client.rs`, `commands/images.rs`, `useAiImages.ts` |
-| **Continuous Mode** | All-day recording, LLM or sensor-based encounter detection, auto-SOAP per encounter. Vision-based patient name extraction via `vision-model` alias + `PatientNameTracker` recency-weighted voting (later screenshots count more — handles late chart opens). Retrospective multi-patient check auto-splits incorrectly merged encounters (couples, family visits) | `continuous_mode.rs`, `encounter_detection.rs`, ADR 0019 |
+| **AI Images** | Gemini API generates medical illustrations from LLM-produced image prompts (piggybacks on predictive hint). **Default image source.** Cost guardrails: 45s cooldown, 8/session cap, 1 visible (latest only), prompt dedup. Single retry on network errors (2s backoff). Config: `image_source=ai` (default), `gemini_api_key`. Requires Gemini API key to function | `gemini_client.rs`, `commands/images.rs`, `useAiImages.ts` |
+| **Continuous Mode** | All-day recording, LLM or sensor-based encounter detection, auto-SOAP per encounter. Sleep mode auto-pauses 10 PM–6 AM EST (clean stop + auto-restart, configurable). Vision-based patient name extraction via `vision-model` alias + `PatientNameTracker` recency-weighted voting (later screenshots count more — handles late chart opens). Screenshot capture gated on transcript word count (skips when buffer empty). Recent encounters list with click-to-copy SOAP; merged sessions auto-removed from list. Retrospective multi-patient check auto-splits incorrectly merged encounters (couples, family visits) | `continuous_mode.rs`, `encounter_detection.rs`, `commands/continuous.rs`, ADR 0019 |
 | **Presence Sensor** | ESP32 Multi-Sensor Bridge: mmWave (SEN0395 24GHz, UART), CO2/temp/humidity (SCD41, I2C), thermal camera (MLX90640 32x24, I2C). WiFi HTTP at `presence_sensor_url`. Module directory with `SensorSource` trait, `DebounceFsm`, thermal analysis, CO2 tracker, and fusion engine. Fusion currently mmWave-only passthrough; thermal + CO2 tracked for health/monitoring but don't influence presence decision (deferred to per-room calibration). Debounced presence → absence threshold → encounter split. Graceful fallback to LLM on failure. Config: `thermal_hot_pixel_threshold_c` (28°C), `co2_baseline_ppm` (420). Firmware: `~/projects/room6-sensor/` (PlatformIO) | `presence_sensor/` |
-| **Hybrid Detection** | Sensor early-warning + LLM confirmation. Sensor Present→Absent accelerates LLM check (~30s vs ~8 min). Sensor timeout force-splits after `hybrid_confirm_window_secs` (default 180s). Sensor-departed prompt (V2_soft) lists common false departures. Graceful LLM-only fallback when sensor unavailable. Handles back-to-back encounters via regular LLM timer. Config: `encounter_detection_mode="hybrid"` | `continuous_mode.rs`, `config.rs` |
+| **Hybrid Detection** | Sensor early-warning + LLM confirmation. Sensor Present→Absent accelerates LLM check (~30s vs ~8 min). Sensor timeout force-splits after `hybrid_confirm_window_secs` (default 180s). Sensor-continuity gate: when sensor shows unbroken presence since last split, LLM-only split confidence threshold raised to 0.99 (prevents false splits during couples/family visits). Sensor-departed prompt (V2_soft) lists common false departures. Graceful LLM-only fallback when sensor unavailable. Handles back-to-back encounters via regular LLM timer. Config: `encounter_detection_mode="hybrid"` | `continuous_mode.rs`, `encounter_detection.rs`, `config.rs` |
 | **Shadow Mode** | Dual detection comparison — runs sensor and LLM concurrently, logs decisions to CSV for accuracy analysis. Config: `encounter_detection_mode="shadow"`, `shadow_active_method` | `shadow_log.rs`, `continuous_mode.rs` |
 | **Session Cleanup** | History window tools: delete, split, merge sessions, rename patients, renumber encounters. Split opens in separate resizable window with LLM-suggested split point (`suggest_split_points` via `fast-model`) | `commands/archive.rs`, `components/cleanup/`, `SplitWindow.tsx` |
 | **Vision Experiments** | CLI + IPC tools for comparing vision-based SOAP strategies across archived sessions | `vision_experiment.rs`, `commands/ollama.rs` |
@@ -283,13 +289,17 @@ Idle → Preparing → Recording → Stopping → Completed
 - Flush-on-stop: when continuous mode stops with buffered transcript (>100 words), the flush path now mirrors the normal encounter split pipeline — metadata enrichment (`charting_mode`, `encounter_number`, `detection_method="flush"`, `patient_name`), clinical content check (non-clinical transcripts skip SOAP), merge check (runs before SOAP to avoid wasted LLM calls), accurate `encounter_started_at` from `TranscriptBuffer.first_timestamp()`. Fail-open: LLM errors during clinical check → assume clinical
 - Shared pipeline helpers in `encounter_pipeline.rs`: SOAP generation (`generate_and_archive_soap()`), merge checks (`run_merge_check()`), clinical content checks, metadata enrichment — used by both the main detector loop and flush-on-stop path. Eliminates duplication across 8 call sites
 - Detection decisions are a single source of truth via `evaluate_detection()` pure function in `encounter_detection.rs` — called from production loop and replayable offline via `detection_replay_cli`
-- Screenshot task logic extracted to `screenshot_task.rs` — periodic capture, blank detection, vision name extraction, stale vote suppression
+- Screenshot task logic extracted to `screenshot_task.rs` — periodic capture, blank detection, vision name extraction, stale vote suppression. Word-count gated: skips capture when transcript buffer is empty (no speech = no need for vision)
+- Sleep mode: outer loop in `commands/continuous.rs` wraps `run_continuous_mode`. At `sleep_start_hour` EST (default 22), stops pipeline cleanly. During sleep window, UI shows sleep banner. At `sleep_end_hour` EST (default 6), auto-starts fresh continuous mode run. Uses `chrono-tz::America::New_York` for DST-safe EST/EDT handling. User can stop during sleep (30s check interval)
+- Recent encounters: `recent_encounters` list (max 3) tracks last split sessions with click-to-copy SOAP. Merged sessions are removed from the list after merge to prevent stale session ID references
+- Day log midnight rotation: `DayLogger` checks date on each `log()` call; if `Local::now()` date differs from stored date, closes current file and opens new one under the correct date directory
+- Sensor-continuity gate: `sensor_continuous_present` bool tracks whether sensor has shown unbroken presence since last split. Set `true` after successful split when sensor is present; cleared on Present→Absent transition. When true, LLM-only splits require confidence ≥0.99 via `DetectionEvalContext`
 
 ## Settings Schema
 
 Source of truth: `src-tauri/src/config.rs` (Rust) / `src/types/index.ts` (TypeScript).
 
-Key settings groups: STT Router (whisper_server_url, stt_alias=`"medical-streaming"`, stt_postprocess=true), Audio (VAD, diarization, enhancement), LLM Router (soap_model=`"soap-model-fast"`, soap_model_fast=`"soap-model-fast"`, fast_model=`"fast-model"`), Medplum (OAuth, auto_sync), Auto-detection (auto_start, auto_end_silence_ms=180000), SOAP (detail_level 1-10, format, custom_instructions), Images (image_source=`"ai"` (default)|`"miis"`|`"off"`, gemini_api_key), MIIS, Screen Capture, Continuous Mode (charting_mode, encounter_check_interval_secs=120, encounter_silence_trigger_secs=45, encounter_merge_enabled, encounter_detection_model=`"fast-model"`, encounter_detection_nothink=false), Presence Sensor (encounter_detection_mode=`"hybrid"`, presence_sensor_port, presence_absence_threshold_secs=180, presence_debounce_secs=15, presence_csv_log_enabled=true, thermal_hot_pixel_threshold_c=28.0, co2_baseline_ppm=420.0), Shadow Mode (shadow_active_method=`"sensor"`, shadow_csv_log_enabled=true), Hybrid Detection (hybrid_confirm_window_secs=180, hybrid_min_words_for_sensor_split=500), Screen Capture (screen_capture_enabled, screen_capture_interval_secs=30, requires Screen Recording permission), Debug.
+Key settings groups: STT Router (whisper_server_url, stt_alias=`"medical-streaming"`, stt_postprocess=true), Audio (VAD, diarization, enhancement), LLM Router (soap_model=`"soap-model-fast"`, soap_model_fast=`"soap-model-fast"`, fast_model=`"fast-model"`), Medplum (OAuth, auto_sync), Auto-detection (auto_start, auto_end_silence_ms=180000), SOAP (detail_level 1-10, format, custom_instructions), Images (image_source=`"ai"` (default)|`"miis"`|`"off"`, gemini_api_key), MIIS, Screen Capture, Continuous Mode (charting_mode, encounter_check_interval_secs=120, encounter_silence_trigger_secs=45, encounter_merge_enabled, encounter_detection_model=`"fast-model"`, encounter_detection_nothink=false), Sleep Mode (sleep_mode_enabled=true, sleep_start_hour=22, sleep_end_hour=6 — hours in EST, clamped 0-23), Presence Sensor (encounter_detection_mode=`"hybrid"`, presence_sensor_port, presence_absence_threshold_secs=180, presence_debounce_secs=15, presence_csv_log_enabled=true, thermal_hot_pixel_threshold_c=28.0, co2_baseline_ppm=420.0), Shadow Mode (shadow_active_method=`"sensor"`, shadow_csv_log_enabled=true), Hybrid Detection (hybrid_confirm_window_secs=180, hybrid_min_words_for_sensor_split=500), Screen Capture (screen_capture_enabled, screen_capture_interval_secs=30, requires Screen Recording permission), Debug.
 
 Multi-user: profile_service_url (in room_config.json), active_physician_id.
 
@@ -437,6 +447,9 @@ Multi-user: profile_service_url (in room_config.json), active_physician_id.
 | Profile server unreachable | Check `http://100.119.83.76:8090/health`, verify Tailscale connection, falls back to cached profiles |
 | Physician switch blocked | Stop active recording or continuous mode before switching physicians |
 | History shows sessions from other machines | Expected — server returns all sessions for the physician across all rooms |
+| Recent encounter click doesn't copy SOAP | Session may have been merged — merged sessions are auto-removed from recent encounters list. If stale entries persist, they reference deleted session IDs |
+| Gemini image generation "error sending request" | Transient network error — client retries once with 2s backoff. If persistent, check internet connectivity and API key in config.json |
+| Continuous mode doesn't auto-stop at night | Check `sleep_mode_enabled: true` in config.json. Sleep window uses EST (America/New_York timezone). Verify `sleep_start_hour` and `sleep_end_hour` |
 
 ## E2E Integration Tests
 

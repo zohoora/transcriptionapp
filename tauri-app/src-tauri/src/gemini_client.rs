@@ -97,19 +97,20 @@ impl GeminiClient {
 
         info!("Gemini image generation: prompt={} chars", prompt.len());
 
-        let response = self
-            .client
-            .post(&url)
-            .header(CONTENT_TYPE, HeaderValue::from_static("application/json"))
-            .header(
-                "x-goog-api-key",
-                HeaderValue::from_str(&self.api_key)
-                    .map_err(|e| format!("Invalid API key header: {}", e))?,
-            )
-            .json(&body)
-            .send()
-            .await
-            .map_err(|e| format!("Gemini API request failed: {}", e))?;
+        let api_key_header = HeaderValue::from_str(&self.api_key)
+            .map_err(|e| format!("Invalid API key header: {}", e))?;
+
+        // Retry once on network errors (transient DNS/connection failures)
+        let response = match self.send_request(&url, &body, &api_key_header).await {
+            Ok(resp) => resp,
+            Err(first_err) => {
+                tracing::warn!("Gemini request failed, retrying once: {}", first_err);
+                tokio::time::sleep(Duration::from_secs(2)).await;
+                self.send_request(&url, &body, &api_key_header)
+                    .await
+                    .map_err(|e| format!("Gemini API request failed after retry: {}", e))?
+            }
+        };
 
         let status = response.status();
         if !status.is_success() {
@@ -130,6 +131,22 @@ impl GeminiClient {
 
         Self::extract_image_base64(&gemini_response)
             .ok_or_else(|| "Gemini response contained no image data".to_string())
+    }
+
+    async fn send_request(
+        &self,
+        url: &str,
+        body: &serde_json::Value,
+        api_key_header: &HeaderValue,
+    ) -> Result<reqwest::Response, String> {
+        self.client
+            .post(url)
+            .header(CONTENT_TYPE, HeaderValue::from_static("application/json"))
+            .header("x-goog-api-key", api_key_header.clone())
+            .json(body)
+            .send()
+            .await
+            .map_err(|e| format!("Gemini API request failed: {}", e))
     }
 }
 

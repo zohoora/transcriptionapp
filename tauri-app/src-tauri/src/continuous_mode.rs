@@ -2046,6 +2046,11 @@ pub async fn run_continuous_mode(
                                         encounter_number -= 1;
                                         info!("Auto-merge complete (merge_back_count now {}, encounter_number now {})", merge_back_count, encounter_number);
 
+                                        // Remove merged session from recent encounters list
+                                        if let Ok(mut recent) = recent_encounters_for_detector.lock() {
+                                            recent.retain(|e| e.session_id != session_id);
+                                        }
+
                                         // Emit merge event to frontend
                                         ContinuousModeEvent::EncounterMerged {
                                             kept_session_id: Some(prev_id.clone()),
@@ -2164,6 +2169,11 @@ pub async fn run_continuous_mode(
                                             }
 
                                             encounter_number -= 1;
+
+                                            // Remove merged session from recent encounters list
+                                            if let Ok(mut recent) = recent_encounters_for_detector.lock() {
+                                                recent.retain(|e| e.session_id != session_id);
+                                            }
 
                                             ContinuousModeEvent::EncounterMerged {
                                                 kept_session_id: None,

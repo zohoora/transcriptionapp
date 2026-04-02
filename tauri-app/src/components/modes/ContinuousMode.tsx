@@ -482,17 +482,21 @@ export const ContinuousMode = memo(function ContinuousMode({
                     date: new Date(enc.time).toISOString().split('T')[0],
                   });
                   await writeText(soap);
+                  // Brief visual feedback via the clipboard icon
+                  const btn = document.querySelector(`[data-encounter-id="${enc.sessionId}"] .recent-encounter-copy`);
+                  if (btn) { btn.textContent = '\u2705'; setTimeout(() => { btn.textContent = '\uD83D\uDCCB'; }, 1500); }
                 } catch (e) {
                   console.warn('Failed to copy SOAP:', e);
                 }
               }}
+              data-encounter-id={enc.sessionId}
               title="Click to copy SOAP note"
             >
               <span className="recent-encounter-time">{formatTime(enc.time)}</span>
               {enc.patientName && (
                 <span className="recent-encounter-name">{enc.patientName}</span>
               )}
-              <span className="recent-encounter-copy">📋</span>
+              <span className="recent-encounter-copy">{'\uD83D\uDCCB'}</span>
             </button>
           ))}
         </div>
