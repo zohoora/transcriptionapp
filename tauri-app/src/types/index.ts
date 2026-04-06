@@ -1120,6 +1120,16 @@ export interface BillingMonthSummary {
   capStatus: MonthlyCapStatus;
 }
 
+/** OHIP code search result from backend */
+export interface OhipCodeSearchResult {
+  code: string;
+  description: string;
+  feeCents: number;
+  category: string;
+  shadowPct: number;
+  basket: string;
+}
+
 /** FHO+ billing cap constants */
 export const BILLING_CAPS = {
   DAILY_HOURS: 14,

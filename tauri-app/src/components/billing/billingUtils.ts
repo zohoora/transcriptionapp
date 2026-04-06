@@ -114,3 +114,54 @@ export const OHIP_CODE_CRITERIA: Record<string, string> = {
   Q312: 'Indirect Patient Care: Charting, lab review, referral letters, care coordination. $80/hr ($20/15min)',
   Q313: 'Clinical Administration: Screening programs, EMR updates, QI initiatives. $80/hr ($20/15min)',
 };
+
+/** Exclusion group — codes within the same group cannot be billed together */
+interface ExclusionGroup {
+  name: string;
+  codes: string[];
+  reason: string;
+}
+
+const EXCLUSION_GROUPS: ExclusionGroup[] = [
+  { name: 'Core assessments', codes: ['A001A', 'A003A', 'A004A', 'A007A', 'A008A', 'A888A'], reason: 'Only one assessment code per encounter' },
+  { name: 'Periodic health visits', codes: ['K130A', 'K131A', 'K132A'], reason: 'One age-band periodic health visit per encounter' },
+  { name: 'Assessment vs periodic', codes: ['A001A', 'A003A', 'A004A', 'A007A', 'A008A', 'A888A', 'K130A', 'K131A', 'K132A'], reason: 'Assessment and periodic health visit are mutually exclusive' },
+  { name: 'Counselling codes', codes: ['K005A', 'K013A', 'K033A'], reason: 'One counselling code per encounter' },
+  { name: 'Prenatal codes', codes: ['P003A', 'P004A', 'P005A'], reason: 'One prenatal assessment type per encounter' },
+  { name: 'Prenatal vs assessment', codes: ['P003A', 'P004A', 'P005A', 'A001A', 'A003A', 'A004A', 'A007A', 'A008A', 'A888A'], reason: 'Prenatal assessment replaces standard assessment' },
+  { name: 'Malignant excision sizes', codes: ['R048A', 'R051A', 'R094A'], reason: 'One excision size category per lesion' },
+  { name: 'Benign excision sizes', codes: ['Z114A', 'Z119A'], reason: 'One excision size category per lesion' },
+  { name: 'Laceration repair sizes', codes: ['Z154A', 'Z160A', 'Z176A'], reason: 'One complexity level per wound' },
+  { name: 'Cryotherapy single/multiple', codes: ['Z108A', 'Z110A'], reason: 'Single vs multiple lesion — pick one' },
+  { name: 'Electrocoagulation single/multiple', codes: ['Z112A', 'Z113A'], reason: 'Single vs multiple lesion — pick one' },
+  { name: 'Epistaxis treatment', codes: ['Z314A', 'Z315A'], reason: 'Cautery vs packing — typically one per encounter' },
+  { name: 'Direct care time', codes: ['Q310', 'Q311'], reason: 'In-office vs remote — one setting per encounter' },
+];
+
+/** Check if a new code conflicts with any existing codes */
+export function findConflicts(existingCodes: string[], newCode: string): Array<{ code: string; reason: string }> {
+  const results: Array<{ code: string; reason: string }> = [];
+  for (const group of EXCLUSION_GROUPS) {
+    if (!group.codes.includes(newCode)) continue;
+    for (const existing of existingCodes) {
+      if (existing === newCode) continue;
+      if (group.codes.includes(existing) && !results.some(r => r.code === existing)) {
+        results.push({ code: existing, reason: group.reason });
+      }
+    }
+  }
+  return results;
+}
+
+/** Get all conflicts among a set of codes (returns map of code → conflicting codes) */
+export function findAllConflicts(codes: string[]): Map<string, Array<{ code: string; reason: string }>> {
+  const map = new Map<string, Array<{ code: string; reason: string }>>();
+  for (let i = 0; i < codes.length; i++) {
+    const others = codes.filter((_, j) => j !== i);
+    const conflicts = findConflicts(others, codes[i]);
+    if (conflicts.length > 0) {
+      map.set(codes[i], conflicts);
+    }
+  }
+  return map;
+}

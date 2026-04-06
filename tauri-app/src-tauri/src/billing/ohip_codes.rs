@@ -816,6 +816,136 @@ pub fn all_codes() -> &'static [OhipCode] {
     OHIP_CODES
 }
 
+// ── Exclusion groups (mutual exclusivity rules) ─────────────────────────
+
+/// Codes in the same exclusion group cannot be billed together in one encounter.
+#[derive(Debug, Clone)]
+pub struct ExclusionGroup {
+    pub name: &'static str,
+    pub codes: &'static [&'static str],
+    pub reason: &'static str,
+}
+
+/// OHIP billing exclusion rules for FHO+ family medicine.
+pub static EXCLUSION_GROUPS: &[ExclusionGroup] = &[
+    ExclusionGroup {
+        name: "Core assessments",
+        codes: &["A001A", "A003A", "A004A", "A007A", "A008A", "A888A"],
+        reason: "Only one assessment code per encounter",
+    },
+    ExclusionGroup {
+        name: "Periodic health visits",
+        codes: &["K130A", "K131A", "K132A"],
+        reason: "One age-band periodic health visit per encounter",
+    },
+    ExclusionGroup {
+        name: "Assessment vs periodic",
+        codes: &["A001A", "A003A", "A004A", "A007A", "A008A", "A888A", "K130A", "K131A", "K132A"],
+        reason: "Assessment and periodic health visit are mutually exclusive",
+    },
+    ExclusionGroup {
+        name: "Counselling codes",
+        codes: &["K005A", "K013A", "K033A"],
+        reason: "One counselling code per encounter",
+    },
+    ExclusionGroup {
+        name: "Prenatal codes",
+        codes: &["P003A", "P004A", "P005A"],
+        reason: "One prenatal assessment type per encounter",
+    },
+    ExclusionGroup {
+        name: "Prenatal vs assessment",
+        codes: &["P003A", "P004A", "P005A", "A001A", "A003A", "A004A", "A007A", "A008A", "A888A"],
+        reason: "Prenatal assessment replaces standard assessment",
+    },
+    ExclusionGroup {
+        name: "Malignant excision sizes",
+        codes: &["R048A", "R051A", "R094A"],
+        reason: "One excision size category per lesion",
+    },
+    ExclusionGroup {
+        name: "Benign excision sizes",
+        codes: &["Z114A", "Z119A"],
+        reason: "One excision size category per lesion",
+    },
+    ExclusionGroup {
+        name: "Laceration repair sizes",
+        codes: &["Z154A", "Z160A", "Z176A"],
+        reason: "One complexity level per wound",
+    },
+    ExclusionGroup {
+        name: "Cryotherapy single/multiple",
+        codes: &["Z108A", "Z110A"],
+        reason: "Single vs multiple lesion — pick one",
+    },
+    ExclusionGroup {
+        name: "Electrocoagulation single/multiple",
+        codes: &["Z112A", "Z113A"],
+        reason: "Single vs multiple lesion — pick one",
+    },
+    ExclusionGroup {
+        name: "Epistaxis treatment",
+        codes: &["Z314A", "Z315A"],
+        reason: "Cautery vs packing — typically one per encounter",
+    },
+    ExclusionGroup {
+        name: "Direct care time",
+        codes: &["Q310", "Q311"],
+        reason: "In-office vs remote — one setting per encounter",
+    },
+];
+
+/// Result of a conflict check.
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConflictResult {
+    pub conflicting_code: String,
+    pub group_name: String,
+    pub reason: String,
+}
+
+/// Check if adding `new_code` conflicts with any of the `existing_codes`.
+pub fn find_conflicts(existing_codes: &[&str], new_code: &str) -> Vec<ConflictResult> {
+    let mut results = Vec::new();
+    for group in EXCLUSION_GROUPS {
+        if !group.codes.contains(&new_code) {
+            continue;
+        }
+        for &existing in existing_codes {
+            if existing == new_code {
+                continue; // Don't conflict with self
+            }
+            if group.codes.contains(&existing) {
+                // Check we haven't already added this conflict from another group
+                if !results.iter().any(|r: &ConflictResult| r.conflicting_code == existing) {
+                    results.push(ConflictResult {
+                        conflicting_code: existing.to_string(),
+                        group_name: group.name.to_string(),
+                        reason: group.reason.to_string(),
+                    });
+                }
+            }
+        }
+    }
+    results
+}
+
+/// Check all codes in a list and return a map of code → conflicting codes.
+pub fn find_all_conflicts(codes: &[&str]) -> std::collections::HashMap<String, Vec<ConflictResult>> {
+    let mut map = std::collections::HashMap::new();
+    for (i, &code) in codes.iter().enumerate() {
+        let others: Vec<&str> = codes.iter().enumerate()
+            .filter(|(j, _)| *j != i)
+            .map(|(_, c)| *c)
+            .collect();
+        let conflicts = find_conflicts(&others, code);
+        if !conflicts.is_empty() {
+            map.insert(code.to_string(), conflicts);
+        }
+    }
+    map
+}
+
 // ── Tests ──────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
@@ -982,5 +1112,44 @@ mod tests {
         let q311 = get_code("Q311").unwrap();
         assert_eq!(q311.ffs_rate_cents, 1700); // $17/15min
         assert_eq!(q311.description, "Telephone Remote");
+    }
+
+    #[test]
+    fn test_find_conflicts_assessment_mutual_exclusion() {
+        let existing = vec!["A003A"];
+        let conflicts = find_conflicts(&existing, "A004A");
+        assert_eq!(conflicts.len(), 1);
+        assert_eq!(conflicts[0].conflicting_code, "A003A");
+    }
+
+    #[test]
+    fn test_find_conflicts_no_conflict() {
+        let existing = vec!["A003A"];
+        let conflicts = find_conflicts(&existing, "G365A"); // Pap smear doesn't conflict with assessment
+        assert!(conflicts.is_empty());
+    }
+
+    #[test]
+    fn test_find_conflicts_procedure_size() {
+        let existing = vec!["R048A"]; // small excision
+        let conflicts = find_conflicts(&existing, "R051A"); // medium excision
+        assert_eq!(conflicts.len(), 1);
+        assert!(conflicts[0].reason.contains("excision"));
+    }
+
+    #[test]
+    fn test_find_conflicts_self_no_conflict() {
+        let existing = vec!["A003A"];
+        let conflicts = find_conflicts(&existing, "A003A");
+        assert!(conflicts.is_empty());
+    }
+
+    #[test]
+    fn test_find_all_conflicts() {
+        let codes = vec!["A003A", "A004A", "G365A"];
+        let map = find_all_conflicts(&codes);
+        assert!(map.contains_key("A003A"));
+        assert!(map.contains_key("A004A"));
+        assert!(!map.contains_key("G365A")); // Pap smear has no conflicts here
     }
 }

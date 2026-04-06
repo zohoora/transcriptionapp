@@ -460,6 +460,7 @@ pub fn run() {
             commands::get_daily_billing_summary,
             commands::get_monthly_billing_summary,
             commands::export_billing_csv,
+            commands::search_ohip_codes,
             commands::read_local_audio_file,
             // Session cleanup commands (history window)
             commands::delete_local_session,

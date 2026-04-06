@@ -299,6 +299,59 @@ pub fn export_billing_csv(
     Ok(csv)
 }
 
+/// Search result for OHIP code lookup
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OhipCodeSearchResult {
+    pub code: String,
+    pub description: String,
+    pub fee_cents: u32,
+    pub category: String,
+    pub shadow_pct: u8,
+    pub basket: String,
+}
+
+/// Search OHIP codes by code prefix or description substring.
+#[tauri::command]
+pub fn search_ohip_codes(query: String) -> Vec<OhipCodeSearchResult> {
+    let query_lower = query.to_lowercase();
+    let mut results = Vec::new();
+
+    for ohip in crate::billing::ohip_codes::all_codes() {
+        let code_matches = ohip.code.to_lowercase().contains(&query_lower);
+        let desc_matches = ohip.description.to_lowercase().contains(&query_lower);
+
+        if code_matches || desc_matches {
+            results.push(OhipCodeSearchResult {
+                code: ohip.code.to_string(),
+                description: ohip.description.to_string(),
+                fee_cents: ohip.ffs_rate_cents,
+                category: match ohip.category {
+                    crate::billing::ohip_codes::CodeCategory::Assessment => "Assessment",
+                    crate::billing::ohip_codes::CodeCategory::Counselling => "Counselling",
+                    crate::billing::ohip_codes::CodeCategory::Procedure => "Procedure",
+                    crate::billing::ohip_codes::CodeCategory::ChronicDisease => "Chronic Disease",
+                    crate::billing::ohip_codes::CodeCategory::Screening => "Screening",
+                    crate::billing::ohip_codes::CodeCategory::Premium => "Premium",
+                    crate::billing::ohip_codes::CodeCategory::TimeBased => "Time-Based",
+                    crate::billing::ohip_codes::CodeCategory::Immunization => "Immunization",
+                }.to_string(),
+                shadow_pct: ohip.shadow_pct,
+                basket: match ohip.basket {
+                    crate::billing::ohip_codes::Basket::In => "in_basket",
+                    crate::billing::ohip_codes::Basket::Out => "out_of_basket",
+                }.to_string(),
+            });
+        }
+
+        if results.len() >= 15 {
+            break;
+        }
+    }
+
+    results
+}
+
 /// Escape a string for CSV output (quote if contains comma, newline, or quote)
 fn escape_csv(s: &str) -> String {
     if s.contains(',') || s.contains('\n') || s.contains('"') {
