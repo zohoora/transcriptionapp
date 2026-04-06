@@ -46,7 +46,7 @@ export interface UseSoapNoteResult {
   ollamaModels: string[];
   soapOptions: SoapOptions;
   /** Generate multi-patient SOAP notes with auto-detection */
-  generateSoapNote: (transcript: string, audioEvents?: CoughEvent[], options?: SoapOptions, sessionId?: string) => Promise<MultiPatientSoapResult | null>;
+  generateSoapNote: (transcript: string, audioEvents?: CoughEvent[], options?: SoapOptions, sessionId?: string, modelOverride?: string) => Promise<MultiPatientSoapResult | null>;
   /** Legacy: Generate single-patient SOAP note (for backward compatibility) */
   generateSingleSoapNote: (transcript: string, audioEvents?: CoughEvent[], options?: SoapOptions, sessionId?: string) => Promise<SoapNote | null>;
   /** Experimental: Generate vision SOAP note using transcript + screenshots */
@@ -167,7 +167,8 @@ export function useSoapNote(): UseSoapNoteResult {
     transcript: string,
     audioEvents?: CoughEvent[],
     options?: SoapOptions,
-    sessionId?: string
+    sessionId?: string,
+    modelOverride?: string
   ): Promise<MultiPatientSoapResult | null> => {
     return withSoapGuard(transcript, async () => {
       const finalOptions = options || soapOptions;
@@ -177,6 +178,7 @@ export function useSoapNote(): UseSoapNoteResult {
         audioEvents,
         options: finalOptions,
         sessionId: sessionId || null,
+        modelOverride: modelOverride || null,
       });
 
       if (result && result.notes.length > 0) {

@@ -92,13 +92,15 @@ pub async fn generate_soap_note(
     session_id: Option<String>,
     speaker_context: Option<Vec<SpeakerInfo>>,
     patient_label: Option<String>,
+    model_override: Option<String>,
 ) -> Result<SoapNote, CommandError> {
     info!(
-        "Generating SOAP note for transcript of {} chars, {} audio events, {} speakers, patient_label: {:?}, options: {:?}",
+        "Generating SOAP note for transcript of {} chars, {} audio events, {} speakers, patient_label: {:?}, model_override: {:?}, options: {:?}",
         transcript.len(),
         audio_events.as_ref().map(|e| e.len()).unwrap_or(0),
         speaker_context.as_ref().map(|s| s.len()).unwrap_or(0),
         patient_label,
+        model_override,
         options
     );
 
@@ -122,8 +124,9 @@ pub async fn generate_soap_note(
         ctx
     });
 
-    // Select appropriate model based on transcript length
-    let selected_model = select_soap_model(&config, word_count);
+    // Use model override if provided, otherwise select default
+    let default_model = select_soap_model(&config, word_count).to_string();
+    let selected_model = model_override.as_deref().unwrap_or(&default_model);
     let start_time = std::time::Instant::now();
 
     // When a patient_label is provided, scope the SOAP note to that patient only
@@ -218,6 +221,7 @@ pub async fn generate_soap_note_auto_detect(
     options: Option<SoapOptions>,
     session_id: Option<String>,
     speaker_context: Option<Vec<SpeakerInfo>>,
+    model_override: Option<String>,
 ) -> Result<MultiPatientSoapResult, CommandError> {
     info!(
         "Generating multi-patient SOAP note for transcript of {} chars, {} audio events, {} speakers",
@@ -264,8 +268,9 @@ pub async fn generate_soap_note_auto_detect(
         ctx
     });
 
-    // Select appropriate model based on transcript length
-    let selected_model = select_soap_model(&config, word_count);
+    // Use model override if provided, otherwise select default
+    let default_model = select_soap_model(&config, word_count).to_string();
+    let selected_model = model_override.as_deref().unwrap_or(&default_model);
 
     // Run multi-patient detection if transcript is long enough
     let multi_patient_detection = if word_count >= crate::encounter_detection::MULTI_PATIENT_DETECT_WORD_THRESHOLD {

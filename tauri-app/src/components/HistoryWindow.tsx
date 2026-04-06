@@ -282,7 +282,7 @@ const HistoryWindow: React.FC = () => {
   const [billingRecord, setBillingRecord] = useState<BillingRecord | null>(null);
   const [billingLoading, setBillingLoading] = useState(false);
   const [rightPaneMode, setRightPaneMode] = useState<RightPaneMode>('session');
-
+  const [showModelMenu, setShowModelMenu] = useState(false);
 
   // SOAP display state (result stored locally since hook doesn't track per-session)
   const [soapResult, setSoapResult] = useState<MultiPatientSoapResult | null>(null);
@@ -670,8 +670,8 @@ const HistoryWindow: React.FC = () => {
   // eslint-disable-next-line react-hooks/exhaustive-deps -- useState setters are stable
   }, [selectedDate, dataSource, globalSoapDefaults, setSoapOptions, setSoapError]);
 
-  // Generate SOAP note using shared hook
-  const handleGenerateSoap = useCallback(async () => {
+  // Generate SOAP note using shared hook (with optional model override)
+  const handleGenerateSoap = useCallback(async (modelOverride?: string) => {
     if (!editedTranscript.trim()) return;
 
     // When viewing a specific patient in a flattened multi-patient session,
@@ -689,6 +689,7 @@ const HistoryWindow: React.FC = () => {
           sessionId: selectedSession?.session_id ?? null,
           speakerContext: null,
           patientLabel: targetNote.patient_label,
+          modelOverride: modelOverride || null,
         });
 
         // Merge the regenerated note back into the existing multi-patient result
@@ -740,7 +741,8 @@ const HistoryWindow: React.FC = () => {
       editedTranscript,
       undefined, // audioEvents
       soapOptions,
-      selectedSession?.session_id
+      selectedSession?.session_id,
+      modelOverride
     );
 
     if (!result) return; // Hook handles error state
@@ -1592,7 +1594,7 @@ const HistoryWindow: React.FC = () => {
                     {!soapResult && !isGeneratingSoap && !soapError && (
                       <button
                         className="btn-generate"
-                        onClick={handleGenerateSoap}
+                        onClick={() => handleGenerateSoap()}
                         disabled={!llmConnected || !hasTranscript}
                       >
                         {!hasTranscript ? 'No transcript' : llmConnected ? 'Generate SOAP Note' : 'LLM not connected'}
@@ -1611,7 +1613,7 @@ const HistoryWindow: React.FC = () => {
                     {soapError && (
                       <div className="soap-error">
                         <span>{soapError}</span>
-                        <button className="btn-retry-small" onClick={handleGenerateSoap}>
+                        <button className="btn-retry-small" onClick={() => handleGenerateSoap()}>
                           Retry
                         </button>
                       </div>
@@ -1633,13 +1635,36 @@ const HistoryWindow: React.FC = () => {
                             >
                               {copySuccess === 'soap' ? 'Copied!' : 'Copy'}
                             </button>
-                            <button
-                              className="btn-small"
-                              onClick={handleGenerateSoap}
-                              disabled={isGeneratingSoap || !llmConnected}
-                            >
-                              Regenerate
-                            </button>
+                            <div className="soap-regen-group" style={{ position: 'relative' }}>
+                              <button
+                                className="btn-small"
+                                onClick={() => handleGenerateSoap()}
+                                disabled={isGeneratingSoap || !llmConnected}
+                              >
+                                Regenerate
+                              </button>
+                              <button
+                                className="btn-small soap-model-toggle"
+                                onClick={() => setShowModelMenu(prev => !prev)}
+                                disabled={isGeneratingSoap || !llmConnected}
+                                title="Choose model for regeneration"
+                              >
+                                &#9662;
+                              </button>
+                              {showModelMenu && (
+                                <div className="soap-model-menu">
+                                  <button onClick={() => { setShowModelMenu(false); handleGenerateSoap(); }}>
+                                    Default (soap-model-fast)
+                                  </button>
+                                  <button onClick={() => { setShowModelMenu(false); handleGenerateSoap('soap-alt'); }}>
+                                    Alt Model (soap-alt)
+                                  </button>
+                                  <button onClick={() => { setShowModelMenu(false); handleGenerateSoap('soap-alt-2'); }}>
+                                    Alt Model 2 (soap-alt-2)
+                                  </button>
+                                </div>
+                              )}
+                            </div>
                           </div>
                         </div>
 
