@@ -123,23 +123,21 @@ export const OHIP_CODE_CRITERIA: Record<string, string> = {
   Z169A: 'Toenail Removal: Partial or complete toenail removal (ingrown nail, onychocryptosis)',
   E502A: 'Tray Fee — Minor Procedure: Disposable supplies for minor office procedure',
   K030A: 'Diabetic Management Assessment: Active diabetes care visit — A1C review, med adjustment, foot exam (max 4/year)',
-  A900A: 'Telephone/Email Management: Brief phone/email patient management per call',
-  K022A: 'Abnormal Pap Counselling: Counselling for abnormal Papanicolaou smear result',
+  A900A: 'Complex House Call Assessment: Assessment for frail/housebound patients',
+  K022A: 'HIV Primary Care: Per unit, minimum 20 minutes, out-of-basket',
   // Time-based
   Q310: 'Direct Patient Care: In-person, video, or phone-from-office encounters. $80/hr ($20/15min)',
   Q311: 'Telephone Remote Care: Phone calls when physician is NOT in clinic. $68/hr ($17/15min)',
   Q312: 'Indirect Patient Care: Charting, lab review, referral letters, care coordination. $80/hr ($20/15min)',
   Q313: 'Clinical Administration: Screening programs, EMR updates, QI initiatives. $80/hr ($20/15min)',
-  // Telehealth / Virtual Care
-  B960A: 'Telephone Intermediate Assessment: Phone-based assessment, moderate complexity, 1-2 issues',
-  B961A: 'Telephone Minor Assessment: Phone-based single focused complaint, brief',
-  B962A: 'Telephone General/Complete Assessment: Phone-based comprehensive assessment, multi-system',
-  K083A: 'Telephone/Email Clinical Management: Per 15 min clinical management via phone or email',
-  K082A: 'Telehealth Consultation Fee: Telehealth-delivered consultation',
+  // Special Visit / House Call Premiums
+  B960A: 'Special Visit Premium — House Call Weekday Daytime: Premium for weekday daytime house call',
+  B961A: 'Special Visit Premium — House Call with Sacrifice of Office Hours: Premium for house call during office hours',
+  B962A: 'Special Visit Premium — House Call Evening: Premium for evening house call',
   // Mental Health
   K007A: 'Psychotherapy — Individual (half hour+): Individual psychotherapy session, 30+ minutes',
   K002A: 'Individual Psychotherapy (half hour): Individual psychotherapy session, ~30 minutes',
-  K197A: 'Prenatal Genetic Counselling: Genetic counselling for prenatal patients',
+  K197A: 'Individual Psychotherapy: Primarily psychiatric — verify applicability for GP use',
   // Hospital Visits
   C003A: 'Hospital Admission Assessment: Full admission assessment for hospitalized patient',
   C004A: 'Hospital Admission — Partial: Partial admission assessment (e.g., already assessed by other MD)',
@@ -166,7 +164,7 @@ export const OHIP_CODE_CRITERIA: Record<string, string> = {
   // Prenatal / Obstetric
   P001A: 'Prenatal Visit — First: Initial prenatal visit, complete OB history + baseline',
   P002A: 'Prenatal Visit — Subsequent: Follow-up prenatal visit',
-  P006A: 'Prenatal Global: Global fee covering all prenatal visits (mutually exclusive with P001A/P002A)',
+  P006A: 'Vaginal Delivery: Full labour and delivery — out-of-basket obstetric code',
   P007A: 'Postnatal Visit — General: Postnatal general assessment',
   P008A: 'Postnatal Visit — Subsequent: Follow-up postnatal visit',
   P009A: 'Prenatal Care — Late Transfer In: Prenatal care for late-transfer patient',
@@ -203,6 +201,15 @@ export const OHIP_CODE_CRITERIA: Record<string, string> = {
   // eConsult
   K998A: 'Physician-to-Physician Telephone Consultation: Phone consultation between physicians',
   K738A: 'eConsult — Specialist Seeking GP Input: Electronic consultation from specialist',
+  // Virtual Care Modality Indicators (required since Dec 2022)
+  K300A: 'Video Visit Modality Indicator: $0 tracking code, must accompany video visit billing',
+  K301A: 'Telephone Visit Modality Indicator: $0 tracking code, must accompany phone visit billing',
+  // Additional Commonly Billed Codes
+  K133A: 'Periodic Health Visit — Adults with IDD: Annual preventive health exam for adults with intellectual/developmental disabilities',
+  Q888A: 'Weekend Office Access Premium (FHO): Premium for weekend office access, cannot bill with A888A same day',
+  G375A: 'Intralesional Infiltration — 1-2 Lesions: Injection into 1-2 lesions',
+  G379A: 'Intravenous Administration — Child/Adult: IV administration procedure',
+  K015A: 'Counselling of Relatives — Terminally Ill Patient: Per unit counselling for family of terminally ill patient',
 };
 
 /** Exclusion group — codes within the same group cannot be billed together */
@@ -232,6 +239,10 @@ const EXCLUSION_GROUPS: ExclusionGroup[] = [
   { name: 'Hospital assessment types', codes: ['C003A', 'C004A'], reason: 'Full vs partial admission assessment' },
   { name: 'Palliative counselling', codes: ['K036A', 'K037A'], reason: 'Initial vs subsequent per visit' },
   { name: 'LTC assessment types', codes: ['A191A', 'A193A'], reason: 'Admission vs annual — different purposes but both comprehensive' },
+  { name: 'K013 standalone', codes: ['K013A', 'A001A', 'A003A', 'A004A', 'A007A', 'A008A'], reason: 'K013 counselling must be sole purpose of visit — cannot add to assessment' },
+  { name: 'FHO weekend access', codes: ['Q888A', 'A888A'], reason: 'Q888A and A888A cannot be billed same day' },
+  { name: 'Consultation types', codes: ['A005A', 'A006A', 'A905A'], reason: 'One consultation type per visit' },
+  { name: 'B960 visit premiums', codes: ['B960A', 'B961A', 'B962A'], reason: 'One house call premium type per visit' },
 ];
 
 /** Check if a new code conflicts with any existing codes */

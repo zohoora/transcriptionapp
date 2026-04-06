@@ -921,8 +921,8 @@ pub static OHIP_CODES: &[OhipCode] = &[
     },
     OhipCode {
         code: "A900A",
-        description: "Telephone/Email Management of Patient (per call)",
-        ffs_rate_cents: 1675, // $16.75
+        description: "Complex House Call Assessment — Frail/Housebound",
+        ffs_rate_cents: 6480, // $64.80
         basket: Basket::In,
         shadow_pct: 30,
         category: CodeCategory::Assessment,
@@ -931,63 +931,43 @@ pub static OHIP_CODES: &[OhipCode] = &[
     },
     OhipCode {
         code: "K022A",
-        description: "Papanicolaou Smear Counselling (abnormal result)",
-        ffs_rate_cents: 3525, // $35.25
+        description: "HIV Primary Care (per unit, min 20 min)",
+        ffs_rate_cents: 7010, // $70.10
         basket: Basket::Out,
         shadow_pct: 100,
         category: CodeCategory::Counselling,
         after_hours_eligible: false,
         max_per_year: None,
     },
-    // ── Telehealth / Virtual Care (in-basket, 30% shadow) ────────────────
+    // ── Special Visit / House Call Premiums (in-basket, 30% shadow) ────────
     OhipCode {
         code: "B960A",
-        description: "Telephone Intermediate Assessment",
-        ffs_rate_cents: 3514, // $35.14
+        description: "Special Visit Premium — House Call Weekday Daytime",
+        ffs_rate_cents: 3640, // $36.40
         basket: Basket::In,
         shadow_pct: 30,
-        category: CodeCategory::Assessment,
+        category: CodeCategory::Premium,
         after_hours_eligible: true,
         max_per_year: None,
     },
     OhipCode {
         code: "B961A",
-        description: "Telephone Minor Assessment",
-        ffs_rate_cents: 2292, // $22.92
+        description: "Special Visit Premium — House Call with Sacrifice of Office Hours",
+        ffs_rate_cents: 3640, // $36.40
         basket: Basket::In,
         shadow_pct: 30,
-        category: CodeCategory::Assessment,
+        category: CodeCategory::Premium,
         after_hours_eligible: true,
         max_per_year: None,
     },
     OhipCode {
         code: "B962A",
-        description: "Telephone General/Complete Assessment",
-        ffs_rate_cents: 8140, // $81.40
+        description: "Special Visit Premium — House Call Evening",
+        ffs_rate_cents: 3640, // $36.40
         basket: Basket::In,
         shadow_pct: 30,
-        category: CodeCategory::Assessment,
+        category: CodeCategory::Premium,
         after_hours_eligible: true,
-        max_per_year: None,
-    },
-    OhipCode {
-        code: "K083A",
-        description: "Telephone/Email Clinical Management (per 15 min)",
-        ffs_rate_cents: 2608, // $26.08
-        basket: Basket::In,
-        shadow_pct: 30,
-        category: CodeCategory::Counselling,
-        after_hours_eligible: false,
-        max_per_year: None,
-    },
-    OhipCode {
-        code: "K082A",
-        description: "Telehealth Consultation Fee",
-        ffs_rate_cents: 2608, // $26.08
-        basket: Basket::In,
-        shadow_pct: 30,
-        category: CodeCategory::Counselling,
-        after_hours_eligible: false,
         max_per_year: None,
     },
     // ── Mental Health (in-basket, 30% shadow) ────────────────────────────
@@ -1013,8 +993,8 @@ pub static OHIP_CODES: &[OhipCode] = &[
     },
     OhipCode {
         code: "K197A",
-        description: "Prenatal Genetic Counselling",
-        ffs_rate_cents: 6638, // $66.38
+        description: "Individual Psychotherapy (primarily psychiatric, verify for GP use)",
+        ffs_rate_cents: 8030, // $80.30
         basket: Basket::In,
         shadow_pct: 30,
         category: CodeCategory::Counselling,
@@ -1248,10 +1228,10 @@ pub static OHIP_CODES: &[OhipCode] = &[
     },
     OhipCode {
         code: "P006A",
-        description: "Prenatal Global (all visits)",
-        ffs_rate_cents: 42812, // $428.12
-        basket: Basket::In,
-        shadow_pct: 30,
+        description: "Vaginal Delivery — Full Labour and Delivery",
+        ffs_rate_cents: 42820, // $428.20
+        basket: Basket::Out,
+        shadow_pct: 100,
         category: CodeCategory::Assessment,
         after_hours_eligible: false,
         max_per_year: None,
@@ -1562,6 +1542,78 @@ pub static OHIP_CODES: &[OhipCode] = &[
         after_hours_eligible: false,
         max_per_year: None,
     },
+    // ── Virtual Care Modality Indicators (required since Dec 2022) ───────
+    OhipCode {
+        code: "K300A",
+        description: "Video Visit Modality Indicator",
+        ffs_rate_cents: 0,
+        basket: Basket::In,
+        shadow_pct: 30,
+        category: CodeCategory::Counselling,
+        after_hours_eligible: false,
+        max_per_year: None,
+    },
+    OhipCode {
+        code: "K301A",
+        description: "Telephone Visit Modality Indicator",
+        ffs_rate_cents: 0,
+        basket: Basket::In,
+        shadow_pct: 30,
+        category: CodeCategory::Counselling,
+        after_hours_eligible: false,
+        max_per_year: None,
+    },
+    // ── Additional Commonly Billed Codes ─────────────────────────────────
+    OhipCode {
+        code: "K133A",
+        description: "Periodic Health Visit — Adults with IDD",
+        ffs_rate_cents: 9135, // $91.35
+        basket: Basket::In,
+        shadow_pct: 30,
+        category: CodeCategory::Counselling,
+        after_hours_eligible: false,
+        max_per_year: None,
+    },
+    OhipCode {
+        code: "Q888A",
+        description: "Weekend Office Access Premium (FHO)",
+        ffs_rate_cents: 4455, // $44.55
+        basket: Basket::In,
+        shadow_pct: 30,
+        category: CodeCategory::Premium,
+        after_hours_eligible: false,
+        max_per_year: None,
+    },
+    OhipCode {
+        code: "G375A",
+        description: "Intralesional Infiltration — 1-2 Lesions",
+        ffs_rate_cents: 2250, // $22.50
+        basket: Basket::In,
+        shadow_pct: 50,
+        category: CodeCategory::Procedure,
+        after_hours_eligible: false,
+        max_per_year: None,
+    },
+    OhipCode {
+        code: "G379A",
+        description: "Intravenous Administration — Child/Adult",
+        ffs_rate_cents: 2250, // $22.50
+        basket: Basket::In,
+        shadow_pct: 50,
+        category: CodeCategory::Procedure,
+        after_hours_eligible: false,
+        max_per_year: None,
+    },
+    OhipCode {
+        code: "K015A",
+        description: "Counselling of Relatives — Terminally Ill Patient (per unit)",
+        ffs_rate_cents: 8000, // $80.00
+        basket: Basket::In,
+        shadow_pct: 30,
+        category: CodeCategory::Counselling,
+        after_hours_eligible: false,
+        max_per_year: None,
+    },
 ];
 
 // ── O(1) lookup map ────────────────────────────────────────────────────────
@@ -1699,6 +1751,26 @@ pub static EXCLUSION_GROUPS: &[ExclusionGroup] = &[
         codes: &["A191A", "A193A"],
         reason: "Admission vs annual — different purposes but both comprehensive",
     },
+    ExclusionGroup {
+        name: "K013 standalone",
+        codes: &["K013A", "A001A", "A003A", "A004A", "A007A", "A008A"],
+        reason: "K013 counselling must be sole purpose of visit — cannot add to assessment",
+    },
+    ExclusionGroup {
+        name: "FHO weekend access",
+        codes: &["Q888A", "A888A"],
+        reason: "Q888A and A888A cannot be billed same day",
+    },
+    ExclusionGroup {
+        name: "Consultation types",
+        codes: &["A005A", "A006A", "A905A"],
+        reason: "One consultation type per visit",
+    },
+    ExclusionGroup {
+        name: "B960 visit premiums",
+        codes: &["B960A", "B961A", "B962A"],
+        reason: "One house call premium type per visit",
+    },
 ];
 
 /// Result of a conflict check.
@@ -1780,22 +1852,22 @@ mod tests {
 
     #[test]
     fn test_code_count() {
-        // 89 original + 58 new (telehealth, mental health, hospital, LTC, house calls,
-        // prenatal/obstetric, palliative, geriatric, preventive bonuses, forms,
-        // additional procedures, eConsult) = 147
-        assert_eq!(all_codes().len(), 150);
+        // 150 original - 2 expired COVID codes (K082A, K083A) + 7 new
+        // (K300A, K301A, K133A, Q888A, G375A, G379A, K015A) = 155
+        assert_eq!(all_codes().len(), 155);
     }
 
     #[test]
     fn test_codes_by_category_assessment() {
         let assessments = codes_by_category(CodeCategory::Assessment);
         // Original 6 in-basket (A001A..A888A) + A900A + 3 out-of-basket prenatal (P003A, P004A, P005A)
-        // + 3 telehealth (B960A, B961A, B962A) + 2 consultation (C001A, C002A)
+        // + 2 consultation (C001A, C002A)
         // + 5 hospital (C003A, C004A, C009A, C010A, C012A) + 2 newborn (H003A, H004A)
         // + 5 LTC (A191A..A195A) + 3 house calls (A901A, A902A, A903A)
         // + 7 prenatal/postnatal (P001A, P002A, P006A, P007A, P008A, P009A, P018A)
-        // + 2 geriatric (K655A, K656A) + 3 consultations (A005A, A006A, A905A) = 42
-        assert_eq!(assessments.len(), 42);
+        // + 2 geriatric (K655A, K656A) + 3 consultations (A005A, A006A, A905A) = 39
+        // (B960A/B961A/B962A moved to Premium category)
+        assert_eq!(assessments.len(), 39);
         for a in &assessments {
             assert_eq!(a.category, CodeCategory::Assessment);
         }
