@@ -117,62 +117,62 @@ Analyze the provided SOAP note and transcript excerpt, then output a JSON object
 
 ## Valid Values
 
-### visitType
-- "minor_assessment" — Brief focused visit, single issue, <10 min (A001A)
-- "intermediate_assessment" — Moderate complexity, 10-20 min (A007A)
-- "general_assessment" — Comprehensive new patient workup, multi-system (A003A)
-- "general_reassessment" — Comprehensive follow-up, multi-system (A004A)
-- "mini_assessment" — Very brief, e.g. single Rx renewal, <5 min (A008A)
-- "prenatal_major" — First prenatal visit, comprehensive (P003A)
-- "prenatal_minor" — Follow-up prenatal visit (P004A)
-- "palliative_care" — Palliative care encounter (K023A)
-- "counselling" — Primarily counselling encounter (K005A/K013A)
-- "shared_appointment" — Group medical visit with multiple patients (K140-K144A)
-- "well_baby_visit" — Well-baby/child check (A007A)
-- "periodic_health_visit" — Annual physical/preventive health visit (K130-K132A)
+### visitType (pick ONE — the primary assessment type)
+- "minor_assessment" — Single focused complaint, brief history + targeted exam, <10 min. Examples: UTI symptom check, single Rx renewal with brief exam, wart assessment, single rash review (A001A)
+- "intermediate_assessment" — Moderate complexity, 1-2 issues addressed, 10-20 min. Standard follow-up visits, well-baby checks, routine chronic disease follow-up (A007A)
+- "general_assessment" — Comprehensive NEW patient workup OR annual complete exam. Multi-system history + full physical exam, typically 20-45 min. Must include multiple body systems examined (A003A)
+- "general_reassessment" — Comprehensive ESTABLISHED patient follow-up addressing multiple active problems. Multi-system review, typically 20-30 min. NOT a simple single-issue follow-up (A004A)
+- "mini_assessment" — Very brief encounter, <5 min. Single Rx renewal without exam, form signature, phone message relay (A008A)
+- "prenatal_major" — FIRST prenatal visit: complete obstetric history, baseline labs ordered, dating, risk assessment. Only use for initial pregnancy visit (P003A)
+- "prenatal_minor" — FOLLOW-UP prenatal visit: fundal height, FHR, BP check, routine monitoring. NOT the first visit (P004A)
+- "palliative_care" — Patient with terminal diagnosis receiving palliative/end-of-life care. Must involve symptom management for life-limiting illness (K023A)
+- "counselling" — Visit is PRIMARILY counselling/psychotherapy, not a physical assessment. Extended discussion of mental health, lifestyle, substance use. The main activity is talking, not examining (K005A/K013A)
+- "shared_appointment" — Multiple patients seen TOGETHER in a group visit for chronic disease education (diabetes, COPD, etc.). NOT a family visit where patients are seen separately (K140-K144A)
+- "well_baby_visit" — Well-baby or well-child preventive health check at standard intervals (2w, 1m, 2m, 4m, 6m, 9m, 12m, 18m, 24m). Developmental milestones + immunizations (A007A)
+- "periodic_health_visit" — Annual preventive health exam for adults (age-appropriate screening discussion, lifestyle counselling). NOT a visit triggered by a specific complaint (K130-K132A)
 
-### procedures (array, may be empty)
-- "pap_smear" — Pap smear collection (G365A)
-- "iud_insertion" — IUD insertion (G378A)
-- "iud_removal" — IUD removal (G552A)
-- "lesion_excision_small" — Malignant lesion excision <1cm (R048A)
-- "lesion_excision_medium" — Malignant lesion excision 1-2cm (R051A)
-- "lesion_excision_large" — Malignant lesion excision >2cm (R094A)
-- "abscess_drainage" — Incision and drainage of abscess (Z101A)
-- "skin_biopsy" — Skin punch/shave biopsy (Z104A)
-- "cryotherapy_single" — Cryotherapy for single lesion (Z108A)
-- "cryotherapy_multiple" — Cryotherapy for 2-5 lesions (Z110A)
-- "electrocoagulation_single" — Electrocoagulation single lesion (Z112A)
-- "electrocoagulation_multiple" — Electrocoagulation 2-5 lesions (Z113A)
-- "benign_excision_small" — Benign lesion excision <1cm (Z114A)
-- "benign_excision_medium" — Benign lesion excision 1-2cm (Z119A)
-- "laceration_repair_simple_small" — Simple laceration <5cm (Z154A)
-- "laceration_repair_simple_large" — Simple laceration 5-10cm (Z160A)
-- "laceration_repair_complex" — Complex laceration repair (Z176A)
-- "epistaxis_cautery" — Nasal cautery for nosebleed (Z314A)
-- "epistaxis_packing" — Anterior nasal packing (Z315A)
-- "sigmoidoscopy" — Flexible sigmoidoscopy (Z535A)
-- "anoscopy" — Anoscopy (Z543A)
-- "hemorrhoid_incision" — Thrombosed hemorrhoid incision (Z545A)
-- "corneal_foreign_body" — Corneal foreign body removal (Z847A)
-- "immunization" — Any vaccine administration (G538A/G840-G848A)
-- "injection_sole_reason" — Injection as the sole reason for visit
+### procedures (array — only include procedures ACTUALLY PERFORMED during this visit, not just discussed)
+- "pap_smear" — Pap smear/cervical cytology ACTUALLY COLLECTED during visit. Must involve speculum exam + sample collection (G365A)
+- "iud_insertion" — IUD physically INSERTED during this visit. Not just counselling about IUD (G378A)
+- "iud_removal" — IUD physically REMOVED during this visit (G552A)
+- "lesion_excision_small" — Excision of MALIGNANT/suspicious skin lesion <1cm with scalpel. Pathology sent. Not cryotherapy (R048A)
+- "lesion_excision_medium" — Excision of malignant/suspicious lesion 1-2cm (R051A)
+- "lesion_excision_large" — Excision of malignant/suspicious lesion >2cm (R094A)
+- "abscess_drainage" — Incision and drainage of abscess performed. Requires cutting, draining, packing (Z101A)
+- "skin_biopsy" — Punch biopsy or shave biopsy of skin lesion TAKEN for pathology. Must involve tissue sampling (Z104A)
+- "cryotherapy_single" — Liquid nitrogen applied to SINGLE skin lesion (wart, actinic keratosis). Actual freezing performed (Z108A)
+- "cryotherapy_multiple" — Liquid nitrogen applied to 2-5 lesions in same visit (Z110A)
+- "electrocoagulation_single" — Electrocautery/electrocoagulation of single lesion (Z112A)
+- "electrocoagulation_multiple" — Electrocautery of 2-5 lesions (Z113A)
+- "benign_excision_small" — Excision of BENIGN lesion (lipoma, cyst, skin tag) <1cm (Z114A)
+- "benign_excision_medium" — Excision of benign lesion 1-2cm (Z119A)
+- "laceration_repair_simple_small" — Suturing of simple wound/laceration <5cm. Must involve actual sutures/staples (Z154A)
+- "laceration_repair_simple_large" — Suturing of simple laceration 5-10cm (Z160A)
+- "laceration_repair_complex" — Complex laceration repair: deep tissue, layered closure, debridement (Z176A)
+- "epistaxis_cautery" — Silver nitrate or electrocautery applied to nasal blood vessel for active nosebleed (Z314A)
+- "epistaxis_packing" — Anterior nasal packing inserted for uncontrolled nosebleed (Z315A)
+- "sigmoidoscopy" — Flexible sigmoidoscopy PERFORMED in office (Z535A)
+- "anoscopy" — Anoscopy PERFORMED in office (Z543A)
+- "hemorrhoid_incision" — Thrombosed external hemorrhoid incised and drained (Z545A)
+- "corneal_foreign_body" — Foreign body REMOVED from cornea with slit lamp/needle (Z847A)
+- "immunization" — Any vaccine ADMINISTERED during visit (flu, pneumococcal, Td, HPV, etc.) (G538A)
+- "injection_sole_reason" — Injection (IM, SC, joint) was the ONLY reason for the visit — no other assessment performed (G373A)
 
-### conditions (array, may be empty)
-- "diabetes_management" — Active diabetes management discussion (Q040A)
-- "smoking_cessation" — Smoking cessation counselling (Q042A add-on)
-- "sti_management" — STI testing/treatment/counselling (K028A)
-- "chf_management" — CHF management and monitoring (Q050A)
-- "neurocognitive" — Neurocognitive/dementia assessment (K032A)
-- "home_care" — Home care application or supervision (K070A/K071A)
-- "smoking_cessation_follow_up" — Smoking cessation follow-up visit (K039A)
+### conditions (array — only include if SPECIFIC MANAGEMENT was done, not just mentioned in history)
+- "diabetes_management" — Active diabetes care: A1C review, medication adjustment, glucose log review, diabetic foot exam, or diet counselling for diabetes. Must involve treatment decisions, not just "has diabetes" in history (Q040A)
+- "smoking_cessation" — Active smoking cessation COUNSELLING provided: discussed quit date, NRT options, triggers, or started cessation medication. Not just "smoker" noted in history (Q042A)
+- "sti_management" — STI testing ORDERED/PERFORMED, STI treatment prescribed, or contact tracing discussed. Active STI workup, not just sexual history taking (K028A)
+- "chf_management" — Active CHF management: fluid status assessment, diuretic adjustment, weight monitoring, exercise counselling specifically for heart failure. Not just "has CHF" in history (Q050A)
+- "neurocognitive" — FORMAL cognitive assessment performed: MMSE, MoCA, clock drawing test, or structured dementia screening tool administered and scored. Takes 20+ min of dedicated testing. NOT general mental status observations, NOT memory complaints discussed without formal testing, NOT neurological exam for non-cognitive concerns (K032A)
+- "home_care" — Home care services APPLICATION submitted (CCAC/home care referral form) or active home care supervision visit (K070A/K071A)
+- "smoking_cessation_follow_up" — FOLLOW-UP visit specifically for smoking cessation progress. Patient previously started cessation program, this is a check-in on quit attempt (K039A)
 
 ### setting
-- "in_office" — Standard in-person office visit
-- "home_visit" — Home visit
-- "telephone_in_office" — Phone call, patient known to practice, in-office
-- "telephone_remote" — Phone call, remote/after-hours
-- "video" — Video/virtual visit
+- "in_office" — Standard in-person office visit (default if not specified)
+- "home_visit" — Physician traveled to patient's home for the visit
+- "telephone_in_office" — Phone call from the clinic/office to patient
+- "telephone_remote" — Phone call when physician is NOT physically in the clinic (e.g., from home, after hours)
+- "video" — Video/virtual visit via telemedicine platform
 
 ## Examples
 
@@ -205,6 +205,8 @@ SOAP: "S: Patient called after hours, anxious about chest tightness. O: History 
 ```json
 {"visitType":"counselling","procedures":[],"conditions":[],"setting":"telephone_remote","isNewPatient":false,"isAfterHours":true,"patientCount":null,"estimatedDurationMinutes":15,"confidence":0.85}
 ```
+
+IMPORTANT: Only include procedures that were PHYSICALLY PERFORMED, not just discussed or planned. Only include conditions where ACTIVE MANAGEMENT occurred during this visit, not conditions merely listed in the patient's medical history. When uncertain, leave the array empty rather than guessing.
 
 Respond ONLY with the JSON object. No explanations or commentary."#;
 

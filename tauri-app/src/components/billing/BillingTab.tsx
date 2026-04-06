@@ -2,7 +2,7 @@ import React, { useState, useCallback } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { writeText } from '@tauri-apps/plugin-clipboard-manager';
 import type { BillingRecord } from '../../types';
-import { formatCents, confidenceBadgeClass } from './billingUtils';
+import { formatCents, confidenceBadgeClass, OHIP_CODE_CRITERIA } from './billingUtils';
 
 interface BillingTabProps {
   record: BillingRecord | null;
@@ -142,8 +142,8 @@ export const BillingTab: React.FC<BillingTabProps> = ({
             <tbody>
               {record.codes.map((code, i) => (
                 <tr key={`${code.code}-${i}`} className="billing-code-row">
-                  <td className="billing-code-id">{code.code}</td>
-                  <td>{code.description}</td>
+                  <td className="billing-code-id" title={OHIP_CODE_CRITERIA[code.code] || code.description}>{code.code}</td>
+                  <td title={OHIP_CODE_CRITERIA[code.code] || ''}>{code.description}</td>
                   <td>{formatCents(code.feeCents)}</td>
                   <td>{code.category === 'in_basket' ? `${code.shadowPct}%` : '100%'}</td>
                   <td className="billing-amount">
@@ -181,7 +181,7 @@ export const BillingTab: React.FC<BillingTabProps> = ({
           <tbody>
             {record.timeEntries.map((te) => (
               <tr key={te.code} className="billing-code-row">
-                <td className="billing-code-id">{te.code}</td>
+                <td className="billing-code-id" title={OHIP_CODE_CRITERIA[te.code] || te.description}>{te.code}</td>
                 <td>{te.description}{te.autoCalculated ? ' (auto)' : ''}</td>
                 <td>{te.minutes}</td>
                 <td>{te.billableUnits}</td>

@@ -9519,6 +9519,10 @@ button.review-section-header-left:focus {
   font-weight: 600;
   color: var(--accent-blue, #3b82f6);
 }
+.billing-code-id[title],
+.billing-code-table td[title] {
+  cursor: help;
+}
 .billing-amount {
   font-weight: 600;
   text-align: right;
