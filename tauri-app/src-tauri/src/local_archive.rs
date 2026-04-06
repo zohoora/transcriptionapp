@@ -404,6 +404,7 @@ pub fn add_soap_note(
             if billing_path.exists() {
                 let _ = fs::remove_file(&billing_path);
             }
+            info!(session_id = %session_id, "Billing record invalidated: SOAP regenerated");
         }
 
         let metadata_json = serde_json::to_string_pretty(&metadata)
@@ -969,6 +970,7 @@ pub fn merge_encounters(
     let billing_path = a_dir.join("billing.json");
     if billing_path.exists() {
         let _ = fs::remove_file(&billing_path);
+        info!(session_a_id = %session_a_id, "Billing record invalidated: session merged");
     }
 
     // Step 4: Delete B's directory (only after A is safely updated)
@@ -1149,6 +1151,7 @@ pub fn split_session(session_id: &str, date_str: &str, split_line: usize) -> Res
     let billing_path = session_dir.join("billing.json");
     if billing_path.exists() {
         let _ = fs::remove_file(&billing_path);
+        info!(session_id = %session_id, "Billing record invalidated: session split");
     }
 
     info!(

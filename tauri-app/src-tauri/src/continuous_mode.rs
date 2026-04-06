@@ -1888,7 +1888,8 @@ pub async fn run_continuous_mode(
                                             .map(|s| (Utc::now() - s).num_milliseconds().max(0) as u64)
                                             .unwrap_or(0);
                                         let after_hours = crate::encounter_pipeline::is_after_hours(&soap_now);
-                                        if let Err(e) = crate::encounter_pipeline::extract_and_archive_billing(
+                                        let billing_start = std::time::Instant::now();
+                                        let billing_result = crate::encounter_pipeline::extract_and_archive_billing(
                                             client,
                                             &fast_model,
                                             content,
@@ -1899,8 +1900,57 @@ pub async fn run_continuous_mode(
                                             encounter_patient_name.as_deref(),
                                             after_hours,
                                             &logger_for_detector,
-                                        ).await {
-                                            warn!("Billing extraction failed for encounter #{}: {}", encounter_number, e);
+                                        ).await;
+                                        let billing_latency = billing_start.elapsed().as_millis() as u64;
+
+                                        match &billing_result {
+                                            Ok(record) => {
+                                                if let Some(ref dl) = *day_logger_for_detector {
+                                                    dl.log(crate::day_log::DayEvent::BillingExtracted {
+                                                        ts: Utc::now().to_rfc3339(),
+                                                        session_id: session_id.clone(),
+                                                        codes_count: record.codes.len() as u32,
+                                                        total_amount_cents: record.total_amount_cents,
+                                                        latency_ms: billing_latency,
+                                                        success: true,
+                                                    });
+                                                }
+                                                if let Ok(mut bundle) = bundle_for_detector.lock() {
+                                                    bundle.set_billing_result(crate::replay_bundle::BillingResult {
+                                                        ts: Utc::now().to_rfc3339(),
+                                                        latency_ms: billing_latency,
+                                                        success: true,
+                                                        codes_count: Some(record.codes.len()),
+                                                        total_amount_cents: Some(record.total_amount_cents),
+                                                        selected_codes: Some(record.codes.iter().map(|c| c.code.clone()).collect()),
+                                                        error: None,
+                                                    });
+                                                }
+                                            }
+                                            Err(e) => {
+                                                warn!("Billing extraction failed for encounter #{}: {}", encounter_number, e);
+                                                if let Some(ref dl) = *day_logger_for_detector {
+                                                    dl.log(crate::day_log::DayEvent::BillingExtracted {
+                                                        ts: Utc::now().to_rfc3339(),
+                                                        session_id: session_id.clone(),
+                                                        codes_count: 0,
+                                                        total_amount_cents: 0,
+                                                        latency_ms: billing_latency,
+                                                        success: false,
+                                                    });
+                                                }
+                                                if let Ok(mut bundle) = bundle_for_detector.lock() {
+                                                    bundle.set_billing_result(crate::replay_bundle::BillingResult {
+                                                        ts: Utc::now().to_rfc3339(),
+                                                        latency_ms: billing_latency,
+                                                        success: false,
+                                                        codes_count: None,
+                                                        total_amount_cents: None,
+                                                        selected_codes: None,
+                                                        error: Some(e.clone()),
+                                                    });
+                                                }
+                                            }
                                         }
                                     }
                                 }
@@ -2780,7 +2830,8 @@ pub async fn run_continuous_mode(
                                 .lock()
                                 .ok()
                                 .and_then(|t| t.majority_name());
-                            if let Err(e) = crate::encounter_pipeline::extract_and_archive_billing(
+                            let billing_start = std::time::Instant::now();
+                            let billing_result = crate::encounter_pipeline::extract_and_archive_billing(
                                 &client,
                                 &flush_fast_model,
                                 content,
@@ -2791,8 +2842,35 @@ pub async fn run_continuous_mode(
                                 flush_patient_name.as_deref(),
                                 flush_after_hours,
                                 &logger_for_flush,
-                            ).await {
-                                warn!("Billing extraction failed for flush encounter: {}", e);
+                            ).await;
+                            let billing_latency = billing_start.elapsed().as_millis() as u64;
+
+                            match &billing_result {
+                                Ok(record) => {
+                                    if let Some(ref dl) = *day_logger_for_flush {
+                                        dl.log(crate::day_log::DayEvent::BillingExtracted {
+                                            ts: Utc::now().to_rfc3339(),
+                                            session_id: session_id.clone(),
+                                            codes_count: record.codes.len() as u32,
+                                            total_amount_cents: record.total_amount_cents,
+                                            latency_ms: billing_latency,
+                                            success: true,
+                                        });
+                                    }
+                                }
+                                Err(e) => {
+                                    warn!("Billing extraction failed for flush encounter: {}", e);
+                                    if let Some(ref dl) = *day_logger_for_flush {
+                                        dl.log(crate::day_log::DayEvent::BillingExtracted {
+                                            ts: Utc::now().to_rfc3339(),
+                                            session_id: session_id.clone(),
+                                            codes_count: 0,
+                                            total_amount_cents: 0,
+                                            latency_ms: billing_latency,
+                                            success: false,
+                                        });
+                                    }
+                                }
                             }
                         }
                     }

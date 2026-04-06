@@ -310,6 +310,17 @@ pub async fn extract_and_archive_billing(
                 "session_id": session_id,
                 "codes_extracted": record.codes.len(),
                 "total_cents": record.total_amount_cents,
+                "total_shadow_cents": record.total_shadow_cents,
+                "total_oob_cents": record.total_out_of_basket_cents,
+                "total_time_cents": record.total_time_based_cents,
+                "after_hours": is_after_hours,
+                "clinical_features": serde_json::to_value(&features).unwrap_or_default(),
+                "selected_codes": record.codes.iter().map(|c| c.code.clone()).collect::<Vec<_>>(),
+                "time_entries": record.time_entries.iter().map(|t| serde_json::json!({
+                    "code": t.code,
+                    "minutes": t.minutes,
+                    "units": t.billable_units,
+                })).collect::<Vec<_>>(),
             }),
         );
     }

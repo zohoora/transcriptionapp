@@ -88,6 +88,21 @@ pub enum DayEvent {
         word_count: usize,
         buffer_age_secs: i64,
     },
+    #[serde(rename = "billing_extracted")]
+    BillingExtracted {
+        ts: String,
+        session_id: String,
+        codes_count: u32,
+        total_amount_cents: u32,
+        latency_ms: u64,
+        success: bool,
+    },
+    #[serde(rename = "billing_invalidated")]
+    BillingInvalidated {
+        ts: String,
+        session_id: String,
+        reason: String,
+    },
     #[serde(rename = "continuous_mode_stopped")]
     ContinuousModeStopped {
         ts: String,

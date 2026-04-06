@@ -9,13 +9,14 @@ use crate::config::Config;
 use crate::llm_client::LLMClient;
 use crate::local_archive;
 use chrono::{Datelike, Duration};
-use tracing::info;
+use tracing::{debug, info};
 
 #[tauri::command]
 pub fn get_session_billing(
     session_id: String,
     date: String,
 ) -> Result<Option<BillingRecord>, CommandError> {
+    debug!("Loading billing record: {} on {}", session_id, date);
     Ok(local_archive::get_billing_record(&session_id, &super::parse_date(&date)?)?)
 }
 
@@ -102,6 +103,7 @@ pub async fn extract_billing_codes(
 pub fn get_daily_billing_summary(
     date: String,
 ) -> Result<BillingDaySummary, CommandError> {
+    debug!("Loading daily billing summary for {}", date);
     let parsed_date = super::parse_date(&date)?;
 
     // list_sessions_by_date takes a &str date (YYYY-MM-DD)
@@ -160,6 +162,7 @@ pub fn get_daily_billing_summary(
 pub fn get_monthly_billing_summary(
     end_date: String,
 ) -> Result<BillingMonthSummary, CommandError> {
+    debug!("Loading monthly billing summary ending {}", end_date);
     let parsed_end = super::parse_date(&end_date)?;
 
     let mut daily_summaries = Vec::new();
@@ -234,6 +237,7 @@ pub fn export_billing_csv(
     start_date: String,
     end_date: String,
 ) -> Result<String, CommandError> {
+    info!("Exporting billing CSV from {} to {}", start_date, end_date);
     let start = super::parse_date(&start_date)?;
     let end = super::parse_date(&end_date)?;
 
@@ -314,6 +318,7 @@ pub struct OhipCodeSearchResult {
 /// Search OHIP codes by code prefix or description substring.
 #[tauri::command]
 pub fn search_ohip_codes(query: String) -> Vec<OhipCodeSearchResult> {
+    debug!("Searching OHIP codes: {}", query);
     let query_lower = query.to_lowercase();
     let mut results = Vec::new();
 

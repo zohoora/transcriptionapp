@@ -33,6 +33,8 @@ pub struct ReplayBundle {
     pub merge_check: Option<MergeCheck>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub soap_result: Option<SoapResult>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub billing_result: Option<BillingResult>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub name_tracker: Option<NameTrackerState>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -212,6 +214,21 @@ pub struct SoapResult {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BillingResult {
+    pub ts: String,
+    pub latency_ms: u64,
+    pub success: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub codes_count: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub total_amount_cents: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub selected_codes: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NameTrackerState {
     pub majority_name: Option<String>,
     pub vote_count: usize,
@@ -244,6 +261,7 @@ pub struct ReplayBundleBuilder {
     clinical_check: Option<ClinicalCheck>,
     merge_check: Option<MergeCheck>,
     soap_result: Option<SoapResult>,
+    billing_result: Option<BillingResult>,
     name_tracker: Option<NameTrackerState>,
     outcome: Option<Outcome>,
 }
@@ -260,6 +278,7 @@ impl ReplayBundleBuilder {
             clinical_check: None,
             merge_check: None,
             soap_result: None,
+            billing_result: None,
             name_tracker: None,
             outcome: None,
         }
@@ -297,6 +316,10 @@ impl ReplayBundleBuilder {
         self.soap_result = Some(result);
     }
 
+    pub fn set_billing_result(&mut self, result: BillingResult) {
+        self.billing_result = Some(result);
+    }
+
     pub fn set_name_tracker(&mut self, state: NameTrackerState) {
         self.name_tracker = Some(state);
     }
@@ -325,6 +348,7 @@ impl ReplayBundleBuilder {
             clinical_check: self.clinical_check.take(),
             merge_check: self.merge_check.take(),
             soap_result: self.soap_result.take(),
+            billing_result: self.billing_result.take(),
             name_tracker: self.name_tracker.take(),
             outcome: self.outcome.take(),
         };
