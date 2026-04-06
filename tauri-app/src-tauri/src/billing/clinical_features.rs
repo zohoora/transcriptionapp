@@ -244,13 +244,22 @@ pub fn parse_billing_extraction(response: &str) -> Result<ClinicalFeatures, Stri
 
     let json_str = &text[start..=end];
 
-    serde_json::from_str::<ClinicalFeatures>(json_str).map_err(|e| {
-        format!(
+    // Try strict parse first
+    match serde_json::from_str::<ClinicalFeatures>(json_str) {
+        Ok(features) => return Ok(features),
+        Err(_) => {}
+    }
+
+    // Fallback: use streaming deserializer to handle trailing content after valid JSON
+    let mut deserializer = serde_json::Deserializer::from_str(json_str);
+    match ClinicalFeatures::deserialize(&mut deserializer) {
+        Ok(features) => Ok(features),
+        Err(e) => Err(format!(
             "Failed to parse clinical features JSON: {}. Input: {}",
             e,
             &json_str[..json_str.len().min(200)]
-        )
-    })
+        )),
+    }
 }
 
 // ── Tests ──────────────────────────────────────────────────────────────────
@@ -340,6 +349,18 @@ mod tests {
         let result = parse_billing_extraction("{invalid json}");
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("Failed to parse"));
+    }
+
+    #[test]
+    fn test_parse_with_trailing_content() {
+        // LLM sometimes adds commentary after the JSON object
+        let response = r#"{"visitType":"intermediate_assessment","procedures":[],"conditions":["diabetes_management"],"setting":"telephone_remote","isNewPatient":false,"isAfterHours":false,"patientCount":null,"estimatedDurationMinutes":15,"confidence":0.9}
+
+This patient had a diabetes follow-up via phone."#;
+        let features = parse_billing_extraction(response).unwrap();
+        assert_eq!(features.visit_type, VisitType::IntermediateAssessment);
+        assert_eq!(features.conditions, vec![ConditionType::DiabetesManagement]);
+        assert_eq!(features.setting, EncounterSetting::TelephoneRemote);
     }
 
     #[test]
