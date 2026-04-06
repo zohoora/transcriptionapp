@@ -1194,6 +1194,37 @@ pub static OHIP_CODES: &[OhipCode] = &[
         after_hours_eligible: false,
         max_per_year: None,
     },
+    // ── Consultations (out-of-basket, 100% FFS) ────────────────────────
+    OhipCode {
+        code: "A005A",
+        description: "Consultation",
+        ffs_rate_cents: 9560, // $95.60
+        basket: Basket::Out,
+        shadow_pct: 100,
+        category: CodeCategory::Assessment,
+        after_hours_eligible: false,
+        max_per_year: None,
+    },
+    OhipCode {
+        code: "A006A",
+        description: "Repeat Consultation",
+        ffs_rate_cents: 4710, // $47.10
+        basket: Basket::Out,
+        shadow_pct: 100,
+        category: CodeCategory::Assessment,
+        after_hours_eligible: false,
+        max_per_year: None,
+    },
+    OhipCode {
+        code: "A905A",
+        description: "Limited Consultation",
+        ffs_rate_cents: 8015, // $80.15
+        basket: Basket::Out,
+        shadow_pct: 100,
+        category: CodeCategory::Assessment,
+        after_hours_eligible: false,
+        max_per_year: None,
+    },
     // ── Prenatal / Obstetric ─────────────────────────────────────────────
     OhipCode {
         code: "P001A",
@@ -1752,7 +1783,7 @@ mod tests {
         // 89 original + 58 new (telehealth, mental health, hospital, LTC, house calls,
         // prenatal/obstetric, palliative, geriatric, preventive bonuses, forms,
         // additional procedures, eConsult) = 147
-        assert_eq!(all_codes().len(), 147);
+        assert_eq!(all_codes().len(), 150);
     }
 
     #[test]
@@ -1763,8 +1794,8 @@ mod tests {
         // + 5 hospital (C003A, C004A, C009A, C010A, C012A) + 2 newborn (H003A, H004A)
         // + 5 LTC (A191A..A195A) + 3 house calls (A901A, A902A, A903A)
         // + 7 prenatal/postnatal (P001A, P002A, P006A, P007A, P008A, P009A, P018A)
-        // + 2 geriatric (K655A, K656A) = 39
-        assert_eq!(assessments.len(), 39);
+        // + 2 geriatric (K655A, K656A) + 3 consultations (A005A, A006A, A905A) = 42
+        assert_eq!(assessments.len(), 42);
         for a in &assessments {
             assert_eq!(a.category, CodeCategory::Assessment);
         }

@@ -148,6 +148,9 @@ export const OHIP_CODE_CRITERIA: Record<string, string> = {
   C012A: 'Hospital Discharge Day Management: Discharge planning and management on day of discharge',
   C001A: 'Family Practice Consultation: In-office consultation requested by another physician',
   C002A: 'Repeat Consultation: Follow-up consultation for previously consulted patient',
+  A005A: 'Consultation: Formal consultation requested by another physician — requires referral letter',
+  A006A: 'Repeat Consultation: Follow-up consultation for previously consulted patient',
+  A905A: 'Limited Consultation: Shorter consultation when full consultation not required',
   H003A: 'Newborn Hospital Care — First Day: Initial newborn assessment and care in hospital',
   H004A: 'Newborn Hospital Care — Subsequent: Follow-up newborn care in hospital, per day',
   // Long-Term Care
