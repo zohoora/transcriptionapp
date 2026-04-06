@@ -236,7 +236,7 @@ const HistoryWindow: React.FC = () => {
     setSoapOptions,
     updateSoapDetailLevel,
     updateSoapFormat,
-    updateSoapCustomInstructions,
+    updateSessionCustomInstructions,
     generateSoapNote,
   } = useSoapNote();
 
@@ -1565,24 +1565,24 @@ const HistoryWindow: React.FC = () => {
                           </div>
                         </div>
 
-                        {/* Custom Instructions */}
+                        {/* Session-specific additional context for SOAP regeneration */}
                         <div className="soap-option-row custom-instructions">
                           <button
                             className="custom-instructions-toggle"
                             onClick={() => setCustomInstructionsExpanded(!customInstructionsExpanded)}
                           >
                             <span className={`chevron-small ${customInstructionsExpanded ? '' : 'collapsed'}`}>&#9660;</span>
-                            Custom Instructions
-                            {soapOptions.custom_instructions.trim() && (
+                            Additional Context
+                            {soapOptions.session_custom_instructions.trim() && (
                               <span className="custom-badge">Active</span>
                             )}
                           </button>
                           {customInstructionsExpanded && (
                             <textarea
                               className="custom-instructions-input"
-                              value={soapOptions.custom_instructions}
-                              onChange={(e) => updateSoapCustomInstructions(e.target.value)}
-                              placeholder="Add specific instructions..."
+                              value={soapOptions.session_custom_instructions}
+                              onChange={(e) => updateSessionCustomInstructions(e.target.value)}
+                              placeholder="Add context for this encounter (e.g., epidural injection was performed, patient brought imaging results, etc.)"
                               rows={3}
                             />
                           )}
