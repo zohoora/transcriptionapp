@@ -5,11 +5,13 @@ use crate::billing::{
     calculate_daily_caps, calculate_monthly_caps,
 };
 use crate::commands::CommandError;
+use crate::commands::physicians::{SharedActivePhysician, SharedProfileClient};
 use crate::config::Config;
 use crate::llm_client::LLMClient;
 use crate::local_archive;
 use chrono::{Datelike, Duration};
-use tracing::{debug, info};
+use tauri::State;
+use tracing::{debug, info, warn};
 
 #[tauri::command]
 pub fn get_session_billing(
@@ -51,17 +53,41 @@ pub fn confirm_session_billing(
 
 /// Extract billing codes from a session's SOAP note via LLM + rule engine.
 /// Called on-demand from the billing tab "Extract Billing Codes" button.
+/// Tries local archive first, then server (session may be from another machine).
 #[tauri::command]
 pub async fn extract_billing_codes(
     session_id: String,
     date: String,
+    active_physician: State<'_, SharedActivePhysician>,
+    profile_client: State<'_, SharedProfileClient>,
 ) -> Result<BillingRecord, CommandError> {
     info!("Extracting billing codes for session: {}", session_id);
     let parsed_date = super::parse_date(&date)?;
 
-    // Load SOAP note
-    let details = local_archive::get_session(&session_id, &date)
-        .map_err(CommandError::Other)?;
+    // Load session details — try local first, then server
+    let details = match local_archive::get_session(&session_id, &date) {
+        Ok(d) => d,
+        Err(_) => {
+            // Try server (session may exist on a different machine)
+            let physician_id = active_physician.read().await.as_ref().map(|p| p.id.clone());
+            let client = profile_client.read().await.clone();
+            if let (Some(phys_id), Some(client)) = (physician_id, client) {
+                match client.get_session(&phys_id, &session_id).await {
+                    Ok(d) => d,
+                    Err(e) => {
+                        warn!("Server fetch also failed for billing extraction: {e}");
+                        return Err(CommandError::NotFound(
+                            format!("Session not found locally or on server: {}", session_id)
+                        ));
+                    }
+                }
+            } else {
+                return Err(CommandError::NotFound(
+                    format!("Session not found locally and no server configured: {}", session_id)
+                ));
+            }
+        }
+    };
     let soap = details.soap_note
         .ok_or_else(|| CommandError::NotFound("No SOAP note found for billing extraction".into()))?;
     let transcript = details.transcript
