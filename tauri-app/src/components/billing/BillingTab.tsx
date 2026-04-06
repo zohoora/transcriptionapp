@@ -135,7 +135,7 @@ export const BillingTab: React.FC<BillingTabProps> = ({
                 <th>Fee</th>
                 <th>Rate</th>
                 <th>Amount</th>
-                <th></th>
+                <th>Confidence</th>
                 <th></th>
               </tr>
             </thead>
