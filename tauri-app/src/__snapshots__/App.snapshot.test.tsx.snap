@@ -830,7 +830,7 @@ exports[`App Snapshots > renders recording state correctly 1`] = `
     </div>
     <button
       aria-label="Audio quality - tap for details"
-      class="quality-indicator good"
+      class="quality-indicator no_data"
     >
       <span
         class="quality-dot"
@@ -838,7 +838,7 @@ exports[`App Snapshots > renders recording state correctly 1`] = `
       <span
         class="quality-label"
       >
-        Good audio
+        No audio
       </span>
     </button>
     <button
@@ -861,6 +861,13 @@ exports[`App Snapshots > renders recording state correctly 1`] = `
       >
         ▼
       </span>
+    </button>
+    <button
+      class="handout-btn"
+      disabled=""
+      title="Generate a patient-friendly visit summary"
+    >
+      Patient Handout
     </button>
     <button
       aria-label="End session"
@@ -1067,7 +1074,7 @@ exports[`App Snapshots > renders stopping state correctly 1`] = `
     </div>
     <button
       aria-label="Audio quality - tap for details"
-      class="quality-indicator good"
+      class="quality-indicator no_data"
     >
       <span
         class="quality-dot"
@@ -1075,7 +1082,7 @@ exports[`App Snapshots > renders stopping state correctly 1`] = `
       <span
         class="quality-label"
       >
-        Good audio
+        No audio
       </span>
     </button>
     <button
@@ -1098,6 +1105,13 @@ exports[`App Snapshots > renders stopping state correctly 1`] = `
       >
         ▼
       </span>
+    </button>
+    <button
+      class="handout-btn"
+      disabled=""
+      title="Generate a patient-friendly visit summary"
+    >
+      Patient Handout
     </button>
     <button
       aria-label="Ending session..."
@@ -1305,7 +1319,7 @@ exports[`App Snapshots > renders with transcript correctly 1`] = `
     </div>
     <button
       aria-label="Audio quality - tap for details"
-      class="quality-indicator good"
+      class="quality-indicator no_data"
     >
       <span
         class="quality-dot"
@@ -1313,7 +1327,7 @@ exports[`App Snapshots > renders with transcript correctly 1`] = `
       <span
         class="quality-label"
       >
-        Good audio
+        No audio
       </span>
     </button>
     <button
@@ -1336,6 +1350,12 @@ exports[`App Snapshots > renders with transcript correctly 1`] = `
       >
         ▼
       </span>
+    </button>
+    <button
+      class="handout-btn"
+      title="Generate a patient-friendly visit summary"
+    >
+      Patient Handout
     </button>
     <button
       aria-label="End session"

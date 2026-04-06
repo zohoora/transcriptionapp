@@ -67,6 +67,10 @@ interface RecordingModeProps {
   autoEndEnabled: boolean;
   onAutoEndToggle: (enabled: boolean) => void;
 
+  // Patient handout
+  onGenerateHandout: () => void;
+  isGeneratingHandout: boolean;
+
   // Actions
   onStop: () => void;
   onCancelAutoEnd?: () => void;
@@ -108,6 +112,8 @@ export const RecordingMode = memo(function RecordingMode({
   aiError,
   onAiDismiss,
   imageSource = 'miis',
+  onGenerateHandout,
+  isGeneratingHandout,
   autoEndEnabled,
   onAutoEndToggle,
   onStop,
@@ -287,6 +293,16 @@ export const RecordingMode = memo(function RecordingMode({
           />
         </div>
       )}
+
+      {/* Patient Handout Button */}
+      <button
+        className="handout-btn"
+        onClick={onGenerateHandout}
+        disabled={isGeneratingHandout || isStopping || !transcriptText.trim()}
+        title="Generate a patient-friendly visit summary"
+      >
+        {isGeneratingHandout ? 'Generating...' : 'Patient Handout'}
+      </button>
 
       {/* End Session Button */}
       <button

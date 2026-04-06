@@ -145,11 +145,11 @@ export function formatDurationClock(ms: number): string {
 
 /**
  * Format a duration in milliseconds as a short clock-style string.
- * Returns "M:SS" (no hours). Returns empty string for null/zero.
- * Used for compact displays (history session list).
+ * Returns "M:SS" (no hours). Returns empty string for null/undefined.
+ * Zero ms returns "0:00". Used for compact displays (history session list).
  */
-export function formatDurationShort(ms: number | null): string {
-  if (!ms) return '';
+export function formatDurationShort(ms: number | null | undefined): string {
+  if (ms === null || ms === undefined) return '';
   const totalSeconds = Math.floor(ms / 1000);
   const minutes = Math.floor(totalSeconds / 60);
   const seconds = totalSeconds % 60;

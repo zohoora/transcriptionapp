@@ -30,6 +30,7 @@ export default defineConfig({
         'image-viewer': resolve(__dirname, 'image-viewer.html'),
         admin: resolve(__dirname, 'admin.html'),
         calibration: resolve(__dirname, 'calibration.html'),
+        'patient-handout': resolve(__dirname, 'patient-handout.html'),
       },
     },
   },

@@ -162,13 +162,7 @@ pub fn save_local_soap_note(
         session_id, detail_level, format
     );
 
-    // Parse date and convert to DateTime
-    let naive_date = chrono::NaiveDate::parse_from_str(&date, "%Y-%m-%d")
-        .map_err(|e| CommandError::Validation(format!("Invalid date format: {}", e)))?;
-    let datetime = naive_date
-        .and_hms_opt(12, 0, 0)
-        .ok_or_else(|| CommandError::Validation("Invalid time".into()))?;
-    let utc_datetime = chrono::DateTime::<chrono::Utc>::from_naive_utc_and_offset(datetime, chrono::Utc);
+    let utc_datetime = super::parse_date(&date)?;
 
     local_archive::add_soap_note(
         &session_id,
@@ -198,6 +192,26 @@ pub fn save_local_soap_note(
     );
 
     Ok(())
+}
+
+
+#[tauri::command]
+pub fn save_patient_handout(
+    session_id: String,
+    date: String,
+    content: String,
+) -> Result<(), CommandError> {
+    info!("Saving patient handout to local archive: {}", session_id);
+    local_archive::save_patient_handout(&session_id, &super::parse_date(&date)?, &content)?;
+    Ok(())
+}
+
+#[tauri::command]
+pub fn get_patient_handout(
+    session_id: String,
+    date: String,
+) -> Result<Option<String>, CommandError> {
+    Ok(local_archive::get_patient_handout(&session_id, &super::parse_date(&date)?)?)
 }
 
 // ============================================================================

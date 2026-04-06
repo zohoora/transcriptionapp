@@ -3,6 +3,7 @@
 //! This module re-exports all command handlers for registration in lib.rs.
 
 mod archive;
+mod billing;
 mod audio;
 pub(crate) mod calibration;
 mod clinical_chat;
@@ -23,6 +24,7 @@ mod whisper_server;
 
 // Re-export all commands for lib.rs registration
 pub use archive::*;
+pub use billing::*;
 pub use audio::*;
 pub use calibration::*;
 pub use clinical_chat::*;
@@ -159,6 +161,16 @@ pub type SharedMedplumClient = Arc<RwLock<Option<MedplumClient>>>;
 /// Create a shared Medplum client from config
 pub fn create_medplum_client() -> SharedMedplumClient {
     Arc::new(RwLock::new(None))
+}
+
+/// Parse a "YYYY-MM-DD" date string into a DateTime<Utc> (noon UTC).
+pub(crate) fn parse_date(date: &str) -> Result<chrono::DateTime<chrono::Utc>, CommandError> {
+    let naive_date = chrono::NaiveDate::parse_from_str(date, "%Y-%m-%d")
+        .map_err(|e| CommandError::Validation(format!("Invalid date format: {}", e)))?;
+    let datetime = naive_date
+        .and_hms_opt(12, 0, 0)
+        .ok_or_else(|| CommandError::Validation("Invalid time".into()))?;
+    Ok(chrono::DateTime::<chrono::Utc>::from_naive_utc_and_offset(datetime, chrono::Utc))
 }
 
 /// Helper to emit session status

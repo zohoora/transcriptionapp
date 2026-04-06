@@ -1,0 +1,313 @@
+//! Tauri commands for FHO+ billing management.
+
+use crate::billing::{
+    BillingDaySummary, BillingMonthSummary, BillingRecord,
+    calculate_daily_caps, calculate_monthly_caps,
+};
+use crate::commands::CommandError;
+use crate::config::Config;
+use crate::llm_client::LLMClient;
+use crate::local_archive;
+use chrono::{Datelike, Duration};
+use tracing::info;
+
+#[tauri::command]
+pub fn get_session_billing(
+    session_id: String,
+    date: String,
+) -> Result<Option<BillingRecord>, CommandError> {
+    Ok(local_archive::get_billing_record(&session_id, &super::parse_date(&date)?)?)
+}
+
+#[tauri::command]
+pub fn save_session_billing(
+    session_id: String,
+    date: String,
+    record: BillingRecord,
+) -> Result<(), CommandError> {
+    info!("Saving billing record for session: {}", session_id);
+    local_archive::save_billing_record(&session_id, &super::parse_date(&date)?, &record)?;
+    Ok(())
+}
+
+#[tauri::command]
+pub fn confirm_session_billing(
+    session_id: String,
+    date: String,
+) -> Result<BillingRecord, CommandError> {
+    info!("Confirming billing for session: {}", session_id);
+    let parsed_date = super::parse_date(&date)?;
+
+    let mut record = local_archive::get_billing_record(&session_id, &parsed_date)?
+        .ok_or_else(|| CommandError::NotFound("No billing record found".into()))?;
+
+    record.status = crate::billing::BillingStatus::Confirmed;
+    record.confirmed_at = Some(chrono::Utc::now().to_rfc3339());
+
+    local_archive::save_billing_record(&session_id, &parsed_date, &record)?;
+    Ok(record)
+}
+
+/// Extract billing codes from a session's SOAP note via LLM + rule engine.
+/// Called on-demand from the billing tab "Extract Billing Codes" button.
+#[tauri::command]
+pub async fn extract_billing_codes(
+    session_id: String,
+    date: String,
+) -> Result<BillingRecord, CommandError> {
+    info!("Extracting billing codes for session: {}", session_id);
+    let parsed_date = super::parse_date(&date)?;
+
+    // Load SOAP note
+    let details = local_archive::get_session(&session_id, &date)
+        .map_err(CommandError::Other)?;
+    let soap = details.soap_note
+        .ok_or_else(|| CommandError::NotFound("No SOAP note found for billing extraction".into()))?;
+    let transcript_excerpt = details.transcript
+        .as_deref()
+        .unwrap_or("")
+        .split_whitespace()
+        .take(1000)
+        .collect::<Vec<_>>()
+        .join(" ");
+
+    let config = Config::load_or_default();
+    let client = LLMClient::new(
+        &config.llm_router_url,
+        &config.llm_api_key,
+        &config.llm_client_id,
+        &config.fast_model,
+    ).map_err(|e| CommandError::Network(e))?;
+
+    let duration_ms = details.metadata.duration_ms.unwrap_or(0);
+    let after_hours = crate::encounter_pipeline::is_after_hours(&parsed_date);
+    let logger = std::sync::Arc::new(std::sync::Mutex::new(
+        crate::pipeline_log::PipelineLogger::new(),
+    ));
+
+    let record = crate::encounter_pipeline::extract_and_archive_billing(
+        &client,
+        &config.fast_model,
+        &soap,
+        &transcript_excerpt,
+        &session_id,
+        &parsed_date,
+        duration_ms,
+        details.metadata.patient_name.as_deref(),
+        after_hours,
+        &logger,
+    ).await
+    .map_err(CommandError::Other)?;
+
+    Ok(record)
+}
+
+#[tauri::command]
+pub fn get_daily_billing_summary(
+    date: String,
+) -> Result<BillingDaySummary, CommandError> {
+    let parsed_date = super::parse_date(&date)?;
+
+    // list_sessions_by_date takes a &str date (YYYY-MM-DD)
+    let sessions = local_archive::list_sessions_by_date(&date)
+        .map_err(CommandError::Other)?;
+
+    let mut records = Vec::new();
+    for summary in &sessions {
+        if let Ok(Some(record)) = local_archive::get_billing_record(&summary.session_id, &parsed_date) {
+            records.push(record);
+        }
+    }
+
+    let cap_status = calculate_daily_caps(&records);
+
+    let mut total_shadow = 0u32;
+    let mut total_oob = 0u32;
+    let mut total_time = 0u32;
+    let mut confirmed = 0u32;
+    let mut draft = 0u32;
+    let mut time_hours: std::collections::HashMap<String, f32> = std::collections::HashMap::new();
+    let mut total_time_hours = 0.0f32;
+
+    for r in &records {
+        total_shadow += r.total_shadow_cents;
+        total_oob += r.total_out_of_basket_cents;
+        total_time += r.total_time_based_cents;
+        match r.status {
+            crate::billing::BillingStatus::Confirmed => confirmed += 1,
+            crate::billing::BillingStatus::Draft => draft += 1,
+        }
+        for te in &r.time_entries {
+            let hours = te.minutes as f32 / 60.0;
+            *time_hours.entry(te.code.clone()).or_insert(0.0) += hours;
+            total_time_hours += hours;
+        }
+    }
+
+    Ok(BillingDaySummary {
+        date: date.clone(),
+        encounter_count: records.len() as u32,
+        total_shadow_cents: total_shadow,
+        total_out_of_basket_cents: total_oob,
+        total_time_based_cents: total_time,
+        total_amount_cents: total_shadow + total_oob + total_time,
+        time_hours_by_code: time_hours,
+        total_time_hours,
+        confirmed_count: confirmed,
+        draft_count: draft,
+        cap_status,
+        encounters: records,
+    })
+}
+
+#[tauri::command]
+pub fn get_monthly_billing_summary(
+    end_date: String,
+) -> Result<BillingMonthSummary, CommandError> {
+    let parsed_end = super::parse_date(&end_date)?;
+
+    let mut daily_summaries = Vec::new();
+
+    // Walk backwards 28 days
+    for day_offset in 0..28i64 {
+        let day = parsed_end - Duration::days(day_offset);
+        let date_str = format!("{:04}-{:02}-{:02}", day.year(), day.month(), day.day());
+
+        // Try to get daily summary -- silently skip if no sessions
+        match get_daily_billing_summary(date_str) {
+            Ok(summary) => daily_summaries.push(summary),
+            Err(_) => {} // No sessions that day, skip
+        }
+    }
+
+    // Reverse so earliest date is first
+    daily_summaries.reverse();
+
+    let cap_status = calculate_monthly_caps(&daily_summaries);
+
+    let mut total_shadow = 0u32;
+    let mut total_oob = 0u32;
+    let mut total_time = 0u32;
+    let mut total_hours = 0.0f32;
+    let mut hours_by_code: std::collections::HashMap<String, f32> = std::collections::HashMap::new();
+
+    for ds in &daily_summaries {
+        total_shadow += ds.total_shadow_cents;
+        total_oob += ds.total_out_of_basket_cents;
+        total_time += ds.total_time_based_cents;
+        total_hours += ds.total_time_hours;
+        for (code, hours) in &ds.time_hours_by_code {
+            *hours_by_code.entry(code.clone()).or_insert(0.0) += hours;
+        }
+    }
+
+    let indirect_admin_ratio = if total_hours > 0.0 {
+        let q312 = hours_by_code.get("Q312").copied().unwrap_or(0.0);
+        let q313 = hours_by_code.get("Q313").copied().unwrap_or(0.0);
+        (q312 + q313) / total_hours
+    } else {
+        0.0
+    };
+
+    let admin_ratio = if total_hours > 0.0 {
+        hours_by_code.get("Q313").copied().unwrap_or(0.0) / total_hours
+    } else {
+        0.0
+    };
+
+    let start_date = parsed_end - Duration::days(27);
+
+    Ok(BillingMonthSummary {
+        period_start: format!("{:04}-{:02}-{:02}", start_date.year(), start_date.month(), start_date.day()),
+        period_end: end_date,
+        daily_summaries,
+        total_shadow_cents: total_shadow,
+        total_out_of_basket_cents: total_oob,
+        total_time_based_cents: total_time,
+        total_amount_cents: total_shadow + total_oob + total_time,
+        total_hours,
+        hours_by_code,
+        indirect_admin_ratio,
+        admin_ratio,
+        cap_status,
+    })
+}
+
+#[tauri::command]
+pub fn export_billing_csv(
+    start_date: String,
+    end_date: String,
+) -> Result<String, CommandError> {
+    let start = super::parse_date(&start_date)?;
+    let end = super::parse_date(&end_date)?;
+
+    let mut csv = String::from("date,session_id,patient_name,encounter_number,code,description,fee,shadow_rate,billable_amount,category,time_minutes,status,confirmed_at\n");
+
+    let mut current = start;
+    while current <= end {
+        let date_str = format!("{:04}-{:02}-{:02}", current.year(), current.month(), current.day());
+
+        if let Ok(sessions) = local_archive::list_sessions_by_date(&date_str) {
+            for session in &sessions {
+                if let Ok(Some(record)) = local_archive::get_billing_record(&session.session_id, &current) {
+                    let patient = record.patient_name.as_deref().unwrap_or("");
+                    let status = match record.status {
+                        crate::billing::BillingStatus::Draft => "draft",
+                        crate::billing::BillingStatus::Confirmed => "confirmed",
+                    };
+                    let confirmed = record.confirmed_at.as_deref().unwrap_or("");
+                    let enc_num = session.encounter_number.map(|n| n.to_string()).unwrap_or_default();
+
+                    // Billing codes
+                    for code in &record.codes {
+                        csv.push_str(&format!(
+                            "{},{},{},{},{},{},{:.2},{},{:.2},{},,,{}\n",
+                            date_str,
+                            session.session_id,
+                            escape_csv(patient),
+                            enc_num,
+                            code.code,
+                            escape_csv(&code.description),
+                            code.fee_cents as f64 / 100.0,
+                            code.shadow_pct,
+                            code.billable_amount_cents as f64 / 100.0,
+                            code.category,
+                            status,
+                        ));
+                    }
+
+                    // Time entries
+                    for te in &record.time_entries {
+                        csv.push_str(&format!(
+                            "{},{},{},{},{},{},{:.2},,{:.2},time_based,{},{},{}\n",
+                            date_str,
+                            session.session_id,
+                            escape_csv(patient),
+                            enc_num,
+                            te.code,
+                            escape_csv(&te.description),
+                            te.rate_per_15min_cents as f64 / 100.0 * 4.0, // hourly rate
+                            te.billable_amount_cents as f64 / 100.0,
+                            te.minutes,
+                            status,
+                            confirmed,
+                        ));
+                    }
+                }
+            }
+        }
+
+        current = current + Duration::days(1);
+    }
+
+    Ok(csv)
+}
+
+/// Escape a string for CSV output (quote if contains comma, newline, or quote)
+fn escape_csv(s: &str) -> String {
+    if s.contains(',') || s.contains('\n') || s.contains('"') {
+        format!("\"{}\"", s.replace('"', "\"\""))
+    } else {
+        s.to_string()
+    }
+}

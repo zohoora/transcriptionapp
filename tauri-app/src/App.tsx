@@ -34,6 +34,8 @@ import {
   usePhysicianProfiles,
 } from './hooks';
 import { useAppUpdater } from './hooks/useAppUpdater';
+import { usePatientHandout } from './hooks/usePatientHandout';
+import { buildMergedSettings } from './hooks/useSettings';
 import type { ChartingMode } from './types';
 
 // UI Mode type
@@ -86,7 +88,6 @@ function App() {
     soapError,
     ollamaStatus,
     setOllamaStatus,
-    ollamaModels: _ollamaModels,
     setOllamaModels,
     soapOptions,
     setSoapError,
@@ -100,9 +101,7 @@ function App() {
 
   // Medplum sync from hook
   const {
-    medplumConnected: _medplumConnected,
     setMedplumConnected,
-    medplumError: _medplumError,
     setMedplumError,
     isSyncing,
     syncError,
@@ -128,11 +127,8 @@ function App() {
   const { devices } = useDevices();
 
   // Connection tests composite hook (LLM, Medplum init, Whisper server)
-  const {
-    handleTestLLM: _handleTestLLM,
-    handleTestMedplum: _handleTestMedplum,
-    handleTestWhisperServer: _handleTestWhisperServer,
-  } = useConnectionTests({
+  // Tests run on mount; we only need the side effects (setOllamaStatus, etc.)
+  useConnectionTests({
     settings,
     pendingSettings,
     setOllamaStatus,
@@ -206,6 +202,9 @@ function App() {
   // usePredictiveHint, useMiisImages, and related state)
   const continuous = useContinuousModeOrchestrator({ settings });
 
+  // Patient handout generation
+  const { isGenerating: isGeneratingHandout, generateHandout } = usePatientHandout();
+
   // Auto-detection callbacks — delegate to lifecycle hook for coordinated resets
   const handleAutoStartRecording = useCallback(async () => {
     console.log('Auto-detection: Starting recording immediately (optimistic)');
@@ -246,13 +245,16 @@ function App() {
   );
 
   // Toggle a boolean setting immediately (updates UI + persists to backend)
+  // Merges pendingSettings into the backend shape before applying the toggle,
+  // so unsaved drawer changes are not reverted.
   const toggleSetting = useCallback(async (key: 'auto_start_enabled' | 'auto_end_enabled', enabled: boolean) => {
     if (!settings || !pendingSettings) return;
 
     setPendingSettings({ ...pendingSettings, [key]: enabled });
 
     try {
-      await invoke('set_settings', { settings: { ...settings, [key]: enabled } });
+      const merged = { ...buildMergedSettings(settings, pendingSettings), [key]: enabled };
+      await invoke('set_settings', { settings: merged });
     } catch (e) {
       console.error(`Failed to save ${key} setting:`, e);
     }
@@ -575,6 +577,19 @@ function App() {
     soapOptions,
   ]);
 
+  // Generate patient-friendly visit summary handout
+  const handleGenerateHandout = useCallback(async () => {
+    const currentTranscript = isContinuousMode
+      ? continuous.liveTranscript
+      : transcript.finalized_text;
+
+    if (!currentTranscript?.trim()) return;
+
+    const sessionId = status.session_id || `handout-${Date.now()}`;
+    const date = new Date().toISOString();
+    await generateHandout(currentTranscript, sessionId, date);
+  }, [isContinuousMode, continuous.liveTranscript, transcript.finalized_text, status.session_id, generateHandout]);
+
   // Screen capture screenshot count for UI
   const [screenshotCount, setScreenshotCount] = useState(0);
   useEffect(() => {
@@ -812,6 +827,8 @@ function App() {
             onStart={continuous.onStart}
             onStop={continuous.onStop}
             onNewPatient={continuous.onNewPatient}
+            onGenerateHandout={handleGenerateHandout}
+            isGeneratingHandout={isGeneratingHandout}
             transcriptionStalled={continuous.transcriptionStalled}
             isSleeping={continuous.isSleeping}
             sleepResumeAt={continuous.sleepResumeAt}
@@ -874,6 +891,8 @@ function App() {
             aiError={aiError}
             onAiDismiss={aiDismiss}
             imageSource={imageSource}
+            onGenerateHandout={handleGenerateHandout}
+            isGeneratingHandout={isGeneratingHandout}
             autoEndEnabled={pendingSettings?.auto_end_enabled ?? true}
             onAutoEndToggle={handleAutoEndToggle}
             onStop={handleStop}

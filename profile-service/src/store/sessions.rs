@@ -3,7 +3,8 @@ use crate::types::{
     ArchiveDetails, ArchiveMetadata, ArchiveSummary, ArchivedPatientNote, SessionFeedback,
 };
 use chrono::{Datelike, NaiveDate};
-use std::path::PathBuf;
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
 use tracing::info;
 use uuid::Uuid;
 
@@ -31,7 +32,7 @@ fn validate_id(id: &str, label: &str) -> Result<(), ApiError> {
 }
 
 /// Whitelist of allowed auxiliary file names for session-level uploads
-const ALLOWED_SESSION_FILES: &[&str] = &["pipeline_log.jsonl", "replay_bundle.json", "segments.jsonl"];
+const ALLOWED_SESSION_FILES: &[&str] = &["pipeline_log.jsonl", "replay_bundle.json", "segments.jsonl", "billing.json"];
 
 /// Check if a filename is allowed for session file upload.
 /// Supports exact matches from ALLOWED_SESSION_FILES and screenshots/*.jpg pattern.
@@ -51,11 +52,15 @@ fn is_allowed_session_file(filename: &str) -> bool {
 
 pub struct SessionStore {
     base_dir: PathBuf,
+    session_cache: tokio::sync::RwLock<HashMap<(String, String), PathBuf>>,
 }
 
 impl SessionStore {
     pub fn new(base_dir: PathBuf) -> Self {
-        Self { base_dir }
+        Self {
+            base_dir,
+            session_cache: tokio::sync::RwLock::new(HashMap::new()),
+        }
     }
 
     /// sessions/{physician_id}/{YYYY}/{MM}/{DD}/{session_id}/
@@ -111,16 +116,21 @@ impl SessionStore {
             .map_err(|e| ApiError::Internal(format!("Failed to serialize metadata: {e}")))?;
         atomic_write(&dir.join("metadata.json"), &meta_json).await?;
 
-        // Write transcript
-        tokio::fs::write(dir.join("transcript.txt"), transcript)
-            .await
-            .map_err(|e| ApiError::Internal(format!("Failed to write transcript: {e}")))?;
+        // Write transcript atomically
+        atomic_write(&dir.join("transcript.txt"), transcript.as_bytes()).await?;
 
-        // Write SOAP if provided
+        // Write SOAP if provided (atomically)
         if let Some(soap) = soap_note {
-            tokio::fs::write(dir.join("soap_note.txt"), soap)
-                .await
-                .map_err(|e| ApiError::Internal(format!("Failed to write SOAP: {e}")))?;
+            atomic_write(&dir.join("soap_note.txt"), soap.as_bytes()).await?;
+        }
+
+        // Cache this session path
+        {
+            let mut cache = self.session_cache.write().await;
+            cache.insert(
+                (physician_id.to_string(), session_id.to_string()),
+                dir.clone(),
+            );
         }
 
         info!(physician_id, session_id, "Session uploaded");
@@ -138,9 +148,7 @@ impl SessionStore {
     ) -> Result<(), ApiError> {
         let dir = self.find_session_dir(physician_id, session_id).await?;
 
-        tokio::fs::write(dir.join("soap_note.txt"), content)
-            .await
-            .map_err(|e| ApiError::Internal(format!("Failed to write SOAP: {e}")))?;
+        atomic_write(&dir.join("soap_note.txt"), content.as_bytes()).await?;
 
         // Update metadata
         if let Ok(mut meta) = self.read_metadata(&dir).await {
@@ -257,6 +265,13 @@ impl SessionStore {
         tokio::fs::remove_dir_all(&dir)
             .await
             .map_err(|e| ApiError::Internal(format!("Failed to delete session: {e}")))?;
+
+        // Invalidate cache
+        {
+            let mut cache = self.session_cache.write().await;
+            cache.remove(&(physician_id.to_string(), session_id.to_string()));
+        }
+
         info!(physician_id, session_id, "Session deleted");
         Ok(())
     }
@@ -302,13 +317,17 @@ impl SessionStore {
             )));
         }
 
+        // Backup original transcript before modifying
+        let backup_path = dir.join("transcript.txt.bak");
+        tokio::fs::copy(&transcript_path, &backup_path)
+            .await
+            .map_err(|e| ApiError::Internal(format!("Failed to backup transcript: {e}")))?;
+
         let first_half = lines[..split_line].join("\n");
         let second_half = lines[split_line..].join("\n");
 
-        // Update original session
-        tokio::fs::write(&transcript_path, &first_half)
-            .await
-            .map_err(|e| ApiError::Internal(format!("Failed to write first half: {e}")))?;
+        // Update original session atomically
+        atomic_write(&transcript_path, first_half.as_bytes()).await?;
         let mut first_meta = meta.clone();
         first_meta.word_count = first_half.split_whitespace().count();
         first_meta.has_soap_note = false;
@@ -323,9 +342,7 @@ impl SessionStore {
             .await
             .map_err(|e| ApiError::Internal(format!("Failed to create new session dir: {e}")))?;
 
-        tokio::fs::write(new_dir.join("transcript.txt"), &second_half)
-            .await
-            .map_err(|e| ApiError::Internal(format!("Failed to write second half: {e}")))?;
+        atomic_write(&new_dir.join("transcript.txt"), second_half.as_bytes()).await?;
 
         let mut second_meta = meta;
         second_meta.session_id = new_id.clone();
@@ -336,6 +353,16 @@ impl SessionStore {
             second_meta.encounter_number = Some(enc + 1);
         }
         self.write_metadata(&new_dir, &second_meta).await?;
+
+        // Split succeeded — remove backup and update cache
+        let _ = tokio::fs::remove_file(&backup_path).await;
+        {
+            let mut cache = self.session_cache.write().await;
+            cache.insert(
+                (physician_id.to_string(), new_id.clone()),
+                new_dir,
+            );
+        }
 
         info!(
             physician_id,
@@ -386,11 +413,23 @@ impl SessionStore {
             .await
             .unwrap_or_default();
 
-        // Merge into first session
+        // Backup both transcripts before modifying
+        let backup_a = dir_a.join("transcript.txt.bak");
+        if dir_a.join("transcript.txt").exists() {
+            tokio::fs::copy(dir_a.join("transcript.txt"), &backup_a)
+                .await
+                .map_err(|e| ApiError::Internal(format!("Failed to backup transcript A: {e}")))?;
+        }
+        let backup_b = dir_b.join("transcript.txt.bak");
+        if dir_b.join("transcript.txt").exists() {
+            tokio::fs::copy(dir_b.join("transcript.txt"), &backup_b)
+                .await
+                .map_err(|e| ApiError::Internal(format!("Failed to backup transcript B: {e}")))?;
+        }
+
+        // Merge into first session atomically
         let merged_transcript = format!("{}\n{}", transcript_a.trim(), transcript_b.trim());
-        tokio::fs::write(dir_a.join("transcript.txt"), &merged_transcript)
-            .await
-            .map_err(|e| ApiError::Internal(format!("Failed to write merged transcript: {e}")))?;
+        atomic_write(&dir_a.join("transcript.txt"), merged_transcript.as_bytes()).await?;
 
         let mut merged_meta = meta_a;
         merged_meta.word_count = merged_transcript.split_whitespace().count();
@@ -400,6 +439,13 @@ impl SessionStore {
 
         // Delete second session
         let _ = tokio::fs::remove_dir_all(&dir_b).await;
+
+        // Merge succeeded — remove backup and update cache
+        let _ = tokio::fs::remove_file(&backup_a).await;
+        {
+            let mut cache = self.session_cache.write().await;
+            cache.remove(&(physician_id.to_string(), session_ids[1].clone()));
+        }
 
         info!(
             physician_id,
@@ -578,6 +624,7 @@ impl SessionStore {
                     has_feedback: Some(has_feedback),
                     physician_name: meta.physician_name,
                     room_name: meta.room_name,
+                    has_billing_record: meta.has_billing_record,
                 });
             }
         }
@@ -713,7 +760,8 @@ impl SessionStore {
 
     // ── Helpers ────────────────────────────────────────────────────
 
-    /// Find session directory by scanning date directories (session_id is unique)
+    /// Find session directory by scanning date directories (session_id is unique).
+    /// Results are cached in memory to avoid repeated directory walks.
     async fn find_session_dir(
         &self,
         physician_id: &str,
@@ -721,6 +769,19 @@ impl SessionStore {
     ) -> Result<PathBuf, ApiError> {
         validate_id(physician_id, "Physician ID")?;
         validate_id(session_id, "Session ID")?;
+
+        let cache_key = (physician_id.to_string(), session_id.to_string());
+
+        // Check cache first
+        {
+            let cache = self.session_cache.read().await;
+            if let Some(cached) = cache.get(&cache_key) {
+                if cached.exists() {
+                    return Ok(cached.clone());
+                }
+                // Cached path no longer valid — fall through to walk
+            }
+        }
 
         let phys_dir = self.base_dir.join(physician_id);
         if !phys_dir.exists() {
@@ -759,10 +820,19 @@ impl SessionStore {
                     }
                     let candidate = day_path.join(session_id);
                     if candidate.exists() && candidate.is_dir() {
+                        // Cache the result
+                        let mut cache = self.session_cache.write().await;
+                        cache.insert(cache_key, candidate.clone());
                         return Ok(candidate);
                     }
                 }
             }
+        }
+
+        // Remove stale entry if it was cached but not found on disk
+        {
+            let mut cache = self.session_cache.write().await;
+            cache.remove(&cache_key);
         }
 
         Err(ApiError::NotFound(format!(
@@ -834,14 +904,19 @@ async fn read_optional_file(path: &PathBuf) -> Option<String> {
     tokio::fs::read_to_string(path).await.ok()
 }
 
-/// Atomic write: temp file + rename
-async fn atomic_write(path: &PathBuf, content: &str) -> Result<(), ApiError> {
-    let temp_path = path.with_extension("tmp");
-    tokio::fs::write(&temp_path, content)
+/// Atomic write: write to a unique temp file, then rename into place.
+/// Accepts any content that implements `AsRef<[u8]>` (covers both `&str` and `&[u8]`).
+async fn atomic_write(path: impl AsRef<Path>, content: impl AsRef<[u8]>) -> Result<(), ApiError> {
+    let path = path.as_ref();
+    let tmp_path = path.with_extension(format!("{}.tmp", Uuid::new_v4()));
+    tokio::fs::write(&tmp_path, content)
         .await
         .map_err(|e| ApiError::Internal(format!("Failed to write temp file: {e}")))?;
-    tokio::fs::rename(&temp_path, path)
+    tokio::fs::rename(&tmp_path, path)
         .await
-        .map_err(|e| ApiError::Internal(format!("Failed to rename: {e}")))?;
+        .map_err(|e| {
+            let _ = std::fs::remove_file(&tmp_path);
+            ApiError::Internal(format!("Failed to rename: {e}"))
+        })?;
     Ok(())
 }

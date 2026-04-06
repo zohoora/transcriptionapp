@@ -11,7 +11,7 @@
 //! - soap_note.txt - Generated SOAP note (if available)
 //! - audio.wav - Recorded audio (if available)
 
-use chrono::{DateTime, Datelike, NaiveDate, Utc};
+use chrono::{DateTime, Datelike, Local, NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
 use std::fs::{self, File};
 use std::io::Write;
@@ -121,6 +121,12 @@ pub struct ArchiveMetadata {
     /// Room where session was recorded (multi-user)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub room_name: Option<String>,
+    /// Whether a patient handout has been generated for this session
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub has_patient_handout: Option<bool>,
+    /// Whether billing codes have been extracted for this session
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub has_billing_record: Option<bool>,
 }
 
 impl ArchiveMetadata {
@@ -148,6 +154,8 @@ impl ArchiveMetadata {
             physician_id: None,
             physician_name: None,
             room_name: None,
+            has_patient_handout: None,
+            has_billing_record: None,
         }
     }
 }
@@ -182,6 +190,8 @@ pub struct ArchiveSummary {
     pub patient_count: Option<u32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub patient_labels: Option<Vec<String>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub has_billing_record: Option<bool>,
 }
 
 /// A single patient's SOAP note within a multi-patient encounter
@@ -387,6 +397,15 @@ pub fn add_soap_note(
         metadata.soap_detail_level = detail_level;
         metadata.soap_format = format.map(|s| s.to_string());
 
+        // Invalidate stale billing when SOAP changes (needs re-extraction)
+        if metadata.has_billing_record == Some(true) {
+            metadata.has_billing_record = None;
+            let billing_path = session_dir.join("billing.json");
+            if billing_path.exists() {
+                let _ = fs::remove_file(&billing_path);
+            }
+        }
+
         let metadata_json = serde_json::to_string_pretty(&metadata)
             .map_err(|e| format!("Failed to serialize metadata: {}", e))?;
         fs::write(&metadata_path, metadata_json)
@@ -401,6 +420,161 @@ pub fn add_soap_note(
     );
 
     Ok(())
+}
+
+/// Save a patient handout to an archived session.
+/// Writes `patient_handout.txt` and updates metadata to set `has_patient_handout`.
+pub fn save_patient_handout(
+    session_id: &str,
+    date: &DateTime<Utc>,
+    content: &str,
+) -> Result<(), String> {
+    validate_session_id(session_id)?;
+    let session_dir = get_session_archive_dir(session_id, date)?;
+
+    if !session_dir.exists() {
+        fs::create_dir_all(&session_dir)
+            .map_err(|e| format!("Failed to create session directory: {}", e))?;
+    }
+
+    // Save handout file
+    let handout_path = session_dir.join("patient_handout.txt");
+    let mut file = File::create(&handout_path)
+        .map_err(|e| format!("Failed to create patient handout file: {}", e))?;
+    file.write_all(content.as_bytes())
+        .map_err(|e| format!("Failed to write patient handout: {}", e))?;
+
+    // Update metadata
+    let metadata_path = session_dir.join("metadata.json");
+    if metadata_path.exists() {
+        let meta_content = fs::read_to_string(&metadata_path)
+            .map_err(|e| format!("Failed to read metadata: {}", e))?;
+        let mut metadata: ArchiveMetadata = serde_json::from_str(&meta_content)
+            .map_err(|e| format!("Failed to parse metadata: {}", e))?;
+
+        metadata.has_patient_handout = Some(true);
+
+        let metadata_json = serde_json::to_string_pretty(&metadata)
+            .map_err(|e| format!("Failed to serialize metadata: {}", e))?;
+        fs::write(&metadata_path, metadata_json)
+            .map_err(|e| format!("Failed to write metadata: {}", e))?;
+    }
+
+    info!(
+        session_id = %session_id,
+        "Patient handout saved to archive"
+    );
+
+    Ok(())
+}
+
+/// Read a patient handout from an archived session.
+/// Returns `Ok(None)` if the file does not exist.
+pub fn get_patient_handout(
+    session_id: &str,
+    date: &DateTime<Utc>,
+) -> Result<Option<String>, String> {
+    validate_session_id(session_id)?;
+    let session_dir = get_session_archive_dir(session_id, date)?;
+    let handout_path = session_dir.join("patient_handout.txt");
+
+    if !handout_path.exists() {
+        return Ok(None);
+    }
+
+    let content = fs::read_to_string(&handout_path)
+        .map_err(|e| format!("Failed to read patient handout: {}", e))?;
+    Ok(Some(content))
+}
+
+/// Read a patient handout by session ID only (scans today's date directory).
+/// Used when the exact date is unknown (e.g., mid-session SOAP generation).
+/// Returns None if no handout exists or if the session dir can't be found.
+pub fn get_patient_handout_by_id(session_id: &str) -> Option<String> {
+    if validate_session_id(session_id).is_err() {
+        return None;
+    }
+    let base = get_archive_dir().ok()?;
+    let today = Local::now();
+    let day_dir = base
+        .join(format!("{:04}", today.year()))
+        .join(format!("{:02}", today.month()))
+        .join(format!("{:02}", today.day()));
+    let handout_path = day_dir.join(session_id).join("patient_handout.txt");
+    if handout_path.exists() {
+        fs::read_to_string(&handout_path).ok()
+    } else {
+        None
+    }
+}
+
+/// Save billing record to an archived session.
+/// Writes `billing.json` and updates metadata to set `has_billing_record`.
+pub fn save_billing_record(
+    session_id: &str,
+    date: &DateTime<Utc>,
+    record: &crate::billing::BillingRecord,
+) -> Result<(), String> {
+    validate_session_id(session_id)?;
+    let session_dir = get_session_archive_dir(session_id, date)?;
+
+    if !session_dir.exists() {
+        fs::create_dir_all(&session_dir)
+            .map_err(|e| format!("Failed to create session directory: {}", e))?;
+    }
+
+    // Save billing file
+    let billing_path = session_dir.join("billing.json");
+    let json = serde_json::to_string_pretty(record)
+        .map_err(|e| format!("Failed to serialize billing record: {}", e))?;
+    let mut file = File::create(&billing_path)
+        .map_err(|e| format!("Failed to create billing file: {}", e))?;
+    file.write_all(json.as_bytes())
+        .map_err(|e| format!("Failed to write billing file: {}", e))?;
+
+    // Update metadata
+    let metadata_path = session_dir.join("metadata.json");
+    if metadata_path.exists() {
+        let meta_content = fs::read_to_string(&metadata_path)
+            .map_err(|e| format!("Failed to read metadata: {}", e))?;
+        let mut metadata: ArchiveMetadata = serde_json::from_str(&meta_content)
+            .map_err(|e| format!("Failed to parse metadata: {}", e))?;
+
+        metadata.has_billing_record = Some(true);
+
+        let metadata_json = serde_json::to_string_pretty(&metadata)
+            .map_err(|e| format!("Failed to serialize metadata: {}", e))?;
+        fs::write(&metadata_path, metadata_json)
+            .map_err(|e| format!("Failed to write metadata: {}", e))?;
+    }
+
+    info!(
+        session_id = %session_id,
+        "Billing record saved to archive"
+    );
+
+    Ok(())
+}
+
+/// Read a billing record from an archived session.
+/// Returns `Ok(None)` if the file does not exist.
+pub fn get_billing_record(
+    session_id: &str,
+    date: &DateTime<Utc>,
+) -> Result<Option<crate::billing::BillingRecord>, String> {
+    validate_session_id(session_id)?;
+    let session_dir = get_session_archive_dir(session_id, date)?;
+    let billing_path = session_dir.join("billing.json");
+
+    if !billing_path.exists() {
+        return Ok(None);
+    }
+
+    let content = fs::read_to_string(&billing_path)
+        .map_err(|e| format!("Failed to read billing record: {}", e))?;
+    let record: crate::billing::BillingRecord = serde_json::from_str(&content)
+        .map_err(|e| format!("Failed to parse billing record: {}", e))?;
+    Ok(Some(record))
 }
 
 /// Save per-patient SOAP files alongside the combined soap_note.txt.
@@ -457,6 +631,7 @@ pub fn save_multi_patient_soap(
             .map_err(|e| format!("Failed to parse metadata: {}", e))?;
 
         metadata.patient_count = Some(notes.len() as u32);
+        metadata.has_soap_note = true;
 
         let metadata_json = serde_json::to_string_pretty(&metadata)
             .map_err(|e| format!("Failed to serialize metadata: {}", e))?;
@@ -623,6 +798,7 @@ pub fn list_sessions_by_date(date_str: &str) -> Result<Vec<ArchiveSummary>, Stri
             room_name: metadata.room_name,
             patient_count,
             patient_labels,
+            has_billing_record: metadata.has_billing_record,
         });
     }
 
@@ -758,6 +934,7 @@ pub fn merge_encounters(
 
         metadata.word_count = merged_word_count;
         metadata.has_soap_note = false; // SOAP is stale after merge
+        metadata.has_billing_record = None; // billing is stale after merge
 
         // Recompute duration from the surviving encounter's started_at to now.
         // The caller-provided merged_duration_ms was computed from the orphan's start time,
@@ -784,10 +961,14 @@ pub fn merge_encounters(
             .map_err(|e| format!("Failed to write metadata: {}", e))?;
     }
 
-    // Step 3: Delete A's stale SOAP note (will be regenerated)
+    // Step 3: Delete A's stale SOAP note and billing (will be regenerated)
     let soap_path = a_dir.join("soap_note.txt");
     if soap_path.exists() {
         let _ = fs::remove_file(&soap_path);
+    }
+    let billing_path = a_dir.join("billing.json");
+    if billing_path.exists() {
+        let _ = fs::remove_file(&billing_path);
     }
 
     // Step 4: Delete B's directory (only after A is safely updated)
@@ -935,6 +1116,8 @@ pub fn split_session(session_id: &str, date_str: &str, split_line: usize) -> Res
         physician_id: original_meta.physician_id.clone(),
         physician_name: original_meta.physician_name.clone(),
         room_name: original_meta.room_name.clone(),
+        has_patient_handout: None,
+        has_billing_record: None,
     };
     let new_meta_json = serde_json::to_string_pretty(&new_meta)
         .map_err(|e| format!("Failed to serialize new metadata: {}", e))?;
@@ -950,6 +1133,7 @@ pub fn split_session(session_id: &str, date_str: &str, split_line: usize) -> Res
     original_meta.has_soap_note = false;
     original_meta.soap_detail_level = None;
     original_meta.soap_format = None;
+    original_meta.has_billing_record = None;
 
     let updated_meta_json = serde_json::to_string_pretty(&original_meta)
         .map_err(|e| format!("Failed to serialize updated metadata: {}", e))?;
@@ -960,6 +1144,11 @@ pub fn split_session(session_id: &str, date_str: &str, split_line: usize) -> Res
     let soap_path = session_dir.join("soap_note.txt");
     if soap_path.exists() {
         let _ = fs::remove_file(&soap_path);
+    }
+    // Delete stale billing from original
+    let billing_path = session_dir.join("billing.json");
+    if billing_path.exists() {
+        let _ = fs::remove_file(&billing_path);
     }
 
     info!(
@@ -1024,7 +1213,9 @@ pub fn merge_sessions(session_ids: &[String], date_str: &str) -> Result<String, 
 
     // Calculate merged stats
     let merged_word_count = merged_transcript.split_whitespace().count();
-    let merged_started = sessions.first().map(|(_, m, _)| m.started_at.clone()).unwrap();
+    // Safety: sessions.len() >= 2 is checked at the top of merge_sessions
+    let merged_started = sessions.first().map(|(_, m, _)| m.started_at.clone())
+        .ok_or_else(|| "No sessions to merge (empty list)".to_string())?;
     let merged_ended = sessions.last().and_then(|(_, m, _)| m.ended_at.clone());
     let merged_duration: Option<u64> = {
         let total: u64 = sessions.iter().filter_map(|(_, m, _)| m.duration_ms).sum();
@@ -1366,6 +1557,7 @@ mod tests {
             room_name: None,
             patient_count: None,
             patient_labels: None,
+            has_billing_record: None,
         };
 
         let json = serde_json::to_string(&summary).unwrap();
@@ -2072,6 +2264,7 @@ mod tests {
             room_name: None,
             patient_count: None,
             patient_labels: None,
+            has_billing_record: None,
         };
 
         let json = serde_json::to_string(&summary).unwrap();

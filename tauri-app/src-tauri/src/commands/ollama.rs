@@ -232,6 +232,24 @@ pub async fn generate_soap_note_auto_detect(
         ));
     }
 
+    // Check for a patient handout to include as SOAP context.
+    // Read directly from the session archive dir to avoid date-path mismatch.
+    let transcript = if let Some(ref sid) = session_id {
+        let handout = crate::local_archive::get_patient_handout_by_id(sid);
+        match handout {
+            Some(content) => {
+                info!("Including patient handout in SOAP context for session {}", sid);
+                format!(
+                    "{}\n\n--- PATIENT HANDOUT (provided to patient during visit, edited by clinician) ---\n{}\n--- END HANDOUT ---",
+                    transcript, content
+                )
+            }
+            None => transcript,
+        }
+    } else {
+        transcript
+    };
+
     let config = Config::load_or_default();
     let client = LLMClient::new(&config.llm_router_url, &config.llm_api_key, &config.llm_client_id, &config.fast_model)
         .map_err(|e| CommandError::Network(e))?;
@@ -330,6 +348,60 @@ pub async fn generate_soap_note_auto_detect(
             );
             Err(CommandError::Network(e))
         }
+    }
+}
+
+/// Generate a plain-language patient handout from a transcript
+///
+/// Uses the SOAP model to produce a warm, jargon-free visit summary
+/// that the patient can take home.
+#[tauri::command]
+pub async fn generate_patient_handout(
+    transcript: String,
+) -> Result<String, CommandError> {
+    info!(
+        "Generating patient handout for transcript of {} chars",
+        transcript.len()
+    );
+
+    if transcript.trim().is_empty() {
+        return Err(CommandError::Validation(
+            "Cannot generate patient handout from empty transcript".into(),
+        ));
+    }
+
+    let config = Config::load_or_default();
+    let client = LLMClient::new(
+        &config.llm_router_url,
+        &config.llm_api_key,
+        &config.llm_client_id,
+        &config.soap_model,
+    )
+    .map_err(|e| CommandError::Network(e))?;
+
+    let system_prompt = crate::llm_client::build_patient_handout_prompt();
+
+    // 90-second timeout for handout generation
+    let result = tokio::time::timeout(
+        std::time::Duration::from_secs(90),
+        client.generate(
+            &config.soap_model,
+            &system_prompt,
+            &transcript,
+            "patient_handout",
+        ),
+    )
+    .await;
+
+    match result {
+        Ok(Ok(text)) => {
+            info!("Patient handout generated successfully ({} chars)", text.len());
+            Ok(text)
+        }
+        Ok(Err(e)) => Err(CommandError::Network(e)),
+        Err(_) => Err(CommandError::Network(
+            "Patient handout generation timed out after 90 seconds".to_string(),
+        )),
     }
 }
 

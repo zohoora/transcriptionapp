@@ -32,6 +32,7 @@
 pub mod activity_log;
 pub mod audio;
 pub mod audio_upload_queue;
+pub mod billing;
 pub mod biomarkers;
 pub mod checklist;
 pub mod co2_calibration;
@@ -101,8 +102,30 @@ const APP_VERSION: &str = env!("CARGO_PKG_VERSION");
 /// Timeout for graceful pipeline shutdown on window close
 const SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(3);
 
-/// Set up ONNX Runtime path from bundled location if not already set
-/// This allows the app to work without requiring ORT_DYLIB_PATH to be set externally
+/// Recursively search a directory for a file matching `libonnxruntime.*.dylib`.
+/// Returns the first match found, or `None`.
+fn find_ort_dylib_recursive(dir: &std::path::Path) -> Option<std::path::PathBuf> {
+    let entries = std::fs::read_dir(dir).ok()?;
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            if let Some(found) = find_ort_dylib_recursive(&path) {
+                return Some(found);
+            }
+        } else if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+            if name.starts_with("libonnxruntime.") && name.ends_with(".dylib") {
+                return Some(path);
+            }
+        }
+    }
+    None
+}
+
+/// Set up ONNX Runtime path from bundled location if not already set.
+/// This allows the app to work without requiring ORT_DYLIB_PATH to be set externally.
+///
+/// SAFETY: Uses `std::env::set_var` (unsafe in Rust 2024+). This function runs
+/// during single-threaded startup before any other threads are spawned.
 fn setup_bundled_ort() {
     // If ORT_DYLIB_PATH is already set, use it
     if std::env::var("ORT_DYLIB_PATH").is_ok() {
@@ -125,7 +148,7 @@ fn setup_bundled_ort() {
                             if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
                                 if name.starts_with("libonnxruntime.") && name.ends_with(".dylib") {
                                     let path_str = path.to_string_lossy().to_string();
-                                    std::env::set_var("ORT_DYLIB_PATH", &path_str);
+                                    unsafe { std::env::set_var("ORT_DYLIB_PATH", &path_str) };
                                     eprintln!("Using bundled ONNX Runtime: {}", path_str);
                                     return;
                                 }
@@ -141,22 +164,11 @@ fn setup_bundled_ort() {
     let home = dirs::home_dir().unwrap_or_default();
     let venv_path = home.join(".transcriptionapp/ort-venv");
     if venv_path.exists() {
-        // Find the dylib in the venv
-        if let Ok(output) = std::process::Command::new("find")
-            .args([
-                venv_path.to_string_lossy().as_ref(),
-                "-name",
-                "libonnxruntime.*.dylib",
-            ])
-            .output()
-        {
-            if let Ok(path) = String::from_utf8(output.stdout) {
-                let path = path.trim();
-                if !path.is_empty() && std::path::Path::new(path).exists() {
-                    std::env::set_var("ORT_DYLIB_PATH", path);
-                    eprintln!("Using ORT from venv: {}", path);
-                }
-            }
+        // Walk the venv directory tree to find the dylib (native Rust, no shell-out)
+        if let Some(found) = find_ort_dylib_recursive(&venv_path) {
+            let path_str = found.to_string_lossy().to_string();
+            unsafe { std::env::set_var("ORT_DYLIB_PATH", &path_str) };
+            eprintln!("Using ORT from venv: {}", path_str);
         }
     }
 }
@@ -395,6 +407,7 @@ pub fn run() {
             commands::prewarm_ollama_model,
             commands::generate_soap_note,
             commands::generate_soap_note_auto_detect,
+            commands::generate_patient_handout,
             commands::generate_predictive_hint,
             // Medplum EMR commands
             commands::medplum_get_auth_state,
@@ -437,6 +450,16 @@ pub fn run() {
             commands::get_local_sessions_by_date,
             commands::get_local_session_details,
             commands::save_local_soap_note,
+            commands::save_patient_handout,
+            commands::get_patient_handout,
+            // Billing commands
+            commands::get_session_billing,
+            commands::save_session_billing,
+            commands::confirm_session_billing,
+            commands::extract_billing_codes,
+            commands::get_daily_billing_summary,
+            commands::get_monthly_billing_summary,
+            commands::export_billing_csv,
             commands::read_local_audio_file,
             // Session cleanup commands (history window)
             commands::delete_local_session,
@@ -480,6 +503,7 @@ pub fn run() {
             commands::get_continuous_mode_status,
             commands::trigger_new_patient,
             commands::set_continuous_encounter_notes,
+            commands::get_current_encounter_transcript,
             commands::list_serial_ports,
             commands::set_stt_language,
             // Physician selection and room config

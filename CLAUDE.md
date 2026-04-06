@@ -13,11 +13,13 @@ transcriptionapp/
 │   ├── CONTRIBUTING.md     # Development workflow
 │   └── README.md           # App-level docs
 ├── profile-service/        # Standalone axum REST API for multi-user management
-│   └── src/                # Physician profiles, rooms, sessions, speaker enrollments
+│   ├── src/                # Physician profiles, rooms, sessions, speaker enrollments
+│   └── CLAUDE.md           # Profile service architecture and patterns
+├── esp32-presence/         # ESP32 sensor firmware (PlatformIO)
 ├── .github/workflows/      # CI + Release (auto-update via GitHub Releases)
 ├── docs/                   # Historical review documents, benchmarks, plans
 │   └── *.md                # Code review docs (ADRs live in tauri-app/docs/adr/)
-├── scripts/                # Build and preflight scripts
+├── scripts/                # Data export and sensor logging scripts
 └── CODE_REVIEW_FINDINGS.md # Review findings tracker
 ```
 
@@ -55,8 +57,8 @@ cd tauri-app && npx tsc --noEmit          # Frontend
 cd tauri-app/src-tauri && cargo check     # Backend
 
 # Tests
-cd tauri-app && pnpm test:run             # Frontend (Vitest, ~415 passing)
-cd tauri-app/src-tauri && cargo test      # Backend (~764 tests, ~29 ignored)
+cd tauri-app && pnpm test:run             # Frontend (Vitest, ~552 passing)
+cd tauri-app/src-tauri && cargo test      # Backend (~802 tests, ~29 ignored)
 
 # E2E (requires live STT + LLM Router)
 cd tauri-app/src-tauri && cargo test e2e_ -- --ignored --nocapture
@@ -65,9 +67,13 @@ cd tauri-app/src-tauri && cargo test e2e_ -- --ignored --nocapture
 ./scripts/preflight.sh                    # Quick (~10s)
 ./scripts/preflight.sh --full             # Full (~30s)
 
+# Profile service
+cd profile-service && cargo check          # Type check
+cd profile-service && cargo test           # Tests
+
 # Release (triggers auto-update for all rooms)
-# Bump version in tauri.conf.json + package.json, then:
-git tag v0.4.0
+# Bump version in tauri.conf.json + package.json + Cargo.toml, then:
+git tag v0.9.4
 git push origin main --tags
 ```
 

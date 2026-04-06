@@ -140,13 +140,6 @@ export const ReviewMode = memo(function ReviewMode({
     }
   }, [isGeneratingSoap]);
 
-  // Reset activePatient when soapResult changes and index is out of bounds
-  useEffect(() => {
-    if (soapResult && activePatient >= soapResult.notes.length) {
-      setActivePatient(0);
-    }
-  }, [soapResult, activePatient]);
-
   const qualityBadge = getQualityBadge(audioQuality);
   const hasTranscript = editedTranscript.trim().length > 0;
   const isModified = editedTranscript !== originalTranscript;

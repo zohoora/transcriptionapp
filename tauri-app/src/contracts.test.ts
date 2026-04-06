@@ -4,48 +4,16 @@
  * These tests verify that the TypeScript types match the expected
  * shapes from the Rust backend. This catches type mismatches between
  * frontend and backend early.
+ *
+ * Types are imported from the canonical types file rather than being
+ * redefined inline, ensuring these tests stay in sync with real usage.
  */
 
 import { describe, it, expect } from 'vitest';
-
-// Types that must match the Rust backend
-interface SessionStatus {
-  state: 'idle' | 'preparing' | 'recording' | 'stopping' | 'completed' | 'error';
-  provider: 'whisper' | 'apple' | null;
-  elapsed_ms: number;
-  is_processing_behind: boolean;
-  error_message?: string;
-}
-
-interface TranscriptUpdate {
-  finalized_text: string;
-  draft_text: string | null;
-  segment_count: number;
-}
-
-interface Device {
-  id: string;
-  name: string;
-  is_default: boolean;
-}
-
-interface ModelStatus {
-  available: boolean;
-  path: string | null;
-  error: string | null;
-}
-
-interface Settings {
-  whisper_model: string;
-  language: string;
-  input_device_id: string | null;
-  output_format: string;
-  vad_threshold: number;
-  silence_to_flush_ms: number;
-  max_utterance_ms: number;
-}
+import type { Settings, SessionStatus, TranscriptUpdate, Device, ModelStatus } from './types';
 
 // Type guard functions for runtime validation
+
 function isSessionStatus(obj: unknown): obj is SessionStatus {
   if (typeof obj !== 'object' || obj === null) return false;
   const o = obj as Record<string, unknown>;
@@ -97,17 +65,53 @@ function isModelStatus(obj: unknown): obj is ModelStatus {
   return true;
 }
 
+/**
+ * Validates a representative sample of Settings fields across all categories.
+ * Checks ~20 fields spanning audio, LLM, Medplum, auto-detection, SOAP,
+ * continuous mode, presence sensor, and image settings.
+ */
 function isSettings(obj: unknown): obj is Settings {
   if (typeof obj !== 'object' || obj === null) return false;
   const o = obj as Record<string, unknown>;
 
+  // Audio settings
   if (typeof o.whisper_model !== 'string') return false;
   if (typeof o.language !== 'string') return false;
   if (o.input_device_id !== null && typeof o.input_device_id !== 'string') return false;
-  if (typeof o.output_format !== 'string') return false;
   if (typeof o.vad_threshold !== 'number') return false;
-  if (typeof o.silence_to_flush_ms !== 'number') return false;
-  if (typeof o.max_utterance_ms !== 'number') return false;
+  if (typeof o.diarization_enabled !== 'boolean') return false;
+
+  // LLM Router settings
+  if (typeof o.llm_router_url !== 'string') return false;
+  if (typeof o.soap_model !== 'string') return false;
+  if (typeof o.fast_model !== 'string') return false;
+
+  // Medplum EMR settings
+  if (typeof o.medplum_server_url !== 'string') return false;
+  if (typeof o.medplum_auto_sync !== 'boolean') return false;
+
+  // SOAP preferences
+  if (typeof o.soap_detail_level !== 'number') return false;
+  if (typeof o.soap_custom_instructions !== 'string') return false;
+
+  // Auto-session detection
+  if (typeof o.auto_start_enabled !== 'boolean') return false;
+  if (typeof o.auto_end_enabled !== 'boolean') return false;
+  if (typeof o.auto_end_silence_ms !== 'number') return false;
+
+  // STT Router
+  if (typeof o.stt_alias !== 'string') return false;
+  if (typeof o.stt_postprocess !== 'boolean') return false;
+
+  // Continuous charting mode
+  if (typeof o.encounter_check_interval_secs !== 'number') return false;
+  if (typeof o.encounter_merge_enabled !== 'boolean') return false;
+
+  // Presence sensor
+  if (typeof o.presence_absence_threshold_secs !== 'number') return false;
+
+  // Image generation
+  if (typeof o.image_source !== 'string') return false;
 
   return true;
 }
@@ -271,8 +275,9 @@ describe('IPC Contracts', () => {
   });
 
   describe('Settings', () => {
-    it('validates complete settings', () => {
-      const settings = {
+    it('validates complete settings object from mock', () => {
+      // Use the canonical mock settings which must satisfy the Settings type
+      const settings: Settings = {
         whisper_model: 'small',
         language: 'en',
         input_device_id: null,
@@ -280,21 +285,87 @@ describe('IPC Contracts', () => {
         vad_threshold: 0.5,
         silence_to_flush_ms: 500,
         max_utterance_ms: 25000,
+        diarization_enabled: true,
+        max_speakers: 4,
+        llm_router_url: 'http://localhost:8080',
+        llm_api_key: 'test-key',
+        llm_client_id: 'clinic-001',
+        soap_model: 'soap-model-fast',
+        soap_model_fast: 'soap-model-fast',
+        fast_model: 'fast-model',
+        medplum_server_url: 'http://localhost:8103',
+        medplum_client_id: 'test-client',
+        medplum_auto_sync: false,
+        whisper_mode: 'remote',
+        whisper_server_url: 'http://localhost:8001',
+        whisper_server_model: 'large-v3-turbo',
+        soap_detail_level: 5,
+        soap_format: 'problem_based',
+        soap_custom_instructions: '',
+        auto_start_enabled: false,
+        greeting_sensitivity: 0.7,
+        min_speech_duration_ms: 2000,
+        auto_start_require_enrolled: false,
+        auto_start_required_role: null,
+        auto_end_enabled: false,
+        auto_end_silence_ms: 180000,
+        debug_storage_enabled: false,
+        miis_enabled: false,
+        miis_server_url: 'http://localhost:7843',
+        image_source: 'ai',
+        gemini_api_key: '',
+        screen_capture_enabled: false,
+        screen_capture_interval_secs: 60,
+        stt_alias: 'medical-streaming',
+        stt_postprocess: true,
+        charting_mode: 'session',
+        continuous_auto_copy_soap: false,
+        encounter_check_interval_secs: 120,
+        encounter_silence_trigger_secs: 60,
+        encounter_merge_enabled: true,
+        encounter_detection_model: 'fast-model',
+        encounter_detection_nothink: false,
+        encounter_detection_mode: 'hybrid',
+        presence_sensor_port: '',
+        presence_sensor_url: '',
+        presence_absence_threshold_secs: 180,
+        presence_debounce_secs: 15,
+        presence_csv_log_enabled: true,
+        shadow_active_method: 'sensor',
+        shadow_csv_log_enabled: true,
+        hybrid_confirm_window_secs: 180,
+        hybrid_min_words_for_sensor_split: 500,
+        thermal_hot_pixel_threshold_c: 28.0,
+        co2_baseline_ppm: 420.0,
       };
       expect(isSettings(settings)).toBe(true);
     });
 
     it('validates settings with device id', () => {
-      const settings = {
+      const partial = {
         whisper_model: 'medium',
         language: 'fr',
         input_device_id: 'device-123',
-        output_format: 'sentences',
         vad_threshold: 0.6,
-        silence_to_flush_ms: 600,
-        max_utterance_ms: 30000,
+        diarization_enabled: false,
+        llm_router_url: 'http://localhost:8080',
+        soap_model: 'gpt-4',
+        fast_model: 'gpt-3.5-turbo',
+        medplum_server_url: 'http://localhost:8103',
+        medplum_auto_sync: true,
+        soap_detail_level: 7,
+        soap_custom_instructions: 'Focus on cardiovascular',
+        auto_start_enabled: true,
+        auto_end_enabled: true,
+        auto_end_silence_ms: 120000,
+        stt_alias: 'medical-streaming',
+        stt_postprocess: true,
+        encounter_check_interval_secs: 90,
+        encounter_merge_enabled: false,
+        presence_absence_threshold_secs: 120,
+        image_source: 'off',
       };
-      expect(isSettings(settings)).toBe(true);
+      expect(isSettings(partial)).toBe(true);
     });
 
     it('rejects wrong number types', () => {
@@ -302,10 +373,51 @@ describe('IPC Contracts', () => {
         whisper_model: 'small',
         language: 'en',
         input_device_id: null,
-        output_format: 'paragraphs',
         vad_threshold: '0.5', // should be number
-        silence_to_flush_ms: 500,
-        max_utterance_ms: 25000,
+        diarization_enabled: true,
+        llm_router_url: 'http://localhost:8080',
+        soap_model: 'gpt-4',
+        fast_model: 'fast',
+        medplum_server_url: 'http://localhost:8103',
+        medplum_auto_sync: false,
+        soap_detail_level: 5,
+        soap_custom_instructions: '',
+        auto_start_enabled: false,
+        auto_end_enabled: false,
+        auto_end_silence_ms: 180000,
+        stt_alias: 'medical-streaming',
+        stt_postprocess: true,
+        encounter_check_interval_secs: 120,
+        encounter_merge_enabled: true,
+        presence_absence_threshold_secs: 180,
+        image_source: 'ai',
+      };
+      expect(isSettings(settings)).toBe(false);
+    });
+
+    it('rejects missing required boolean fields', () => {
+      const settings = {
+        whisper_model: 'small',
+        language: 'en',
+        input_device_id: null,
+        vad_threshold: 0.5,
+        // missing diarization_enabled
+        llm_router_url: 'http://localhost:8080',
+        soap_model: 'gpt-4',
+        fast_model: 'fast',
+        medplum_server_url: 'http://localhost:8103',
+        medplum_auto_sync: false,
+        soap_detail_level: 5,
+        soap_custom_instructions: '',
+        auto_start_enabled: false,
+        auto_end_enabled: false,
+        auto_end_silence_ms: 180000,
+        stt_alias: 'medical-streaming',
+        stt_postprocess: true,
+        encounter_check_interval_secs: 120,
+        encounter_merge_enabled: true,
+        presence_absence_threshold_secs: 180,
+        image_source: 'ai',
       };
       expect(isSettings(settings)).toBe(false);
     });
@@ -331,7 +443,8 @@ describe('IPC Contracts', () => {
       expect(isModelStatus(mockResponse)).toBe(true);
     });
 
-    it('get_settings returns Settings', () => {
+    it('get_settings returns Settings with all categories', () => {
+      // Verify that a full Settings object passes the type guard
       const mockResponse: Settings = {
         whisper_model: 'small',
         language: 'en',
@@ -340,6 +453,58 @@ describe('IPC Contracts', () => {
         vad_threshold: 0.5,
         silence_to_flush_ms: 500,
         max_utterance_ms: 25000,
+        diarization_enabled: true,
+        max_speakers: 4,
+        llm_router_url: 'http://localhost:8080',
+        llm_api_key: '',
+        llm_client_id: '',
+        soap_model: 'soap-model-fast',
+        soap_model_fast: 'soap-model-fast',
+        fast_model: 'fast-model',
+        medplum_server_url: 'http://localhost:8103',
+        medplum_client_id: '',
+        medplum_auto_sync: false,
+        whisper_mode: 'remote',
+        whisper_server_url: 'http://localhost:8001',
+        whisper_server_model: 'large-v3-turbo',
+        soap_detail_level: 5,
+        soap_format: 'problem_based',
+        soap_custom_instructions: '',
+        auto_start_enabled: false,
+        greeting_sensitivity: null,
+        min_speech_duration_ms: null,
+        auto_start_require_enrolled: false,
+        auto_start_required_role: null,
+        auto_end_enabled: false,
+        auto_end_silence_ms: 180000,
+        debug_storage_enabled: false,
+        miis_enabled: false,
+        miis_server_url: '',
+        image_source: 'ai',
+        gemini_api_key: '',
+        screen_capture_enabled: false,
+        screen_capture_interval_secs: 30,
+        stt_alias: 'medical-streaming',
+        stt_postprocess: true,
+        charting_mode: 'session',
+        continuous_auto_copy_soap: false,
+        encounter_check_interval_secs: 120,
+        encounter_silence_trigger_secs: 45,
+        encounter_merge_enabled: true,
+        encounter_detection_model: 'fast-model',
+        encounter_detection_nothink: false,
+        encounter_detection_mode: 'hybrid',
+        presence_sensor_port: '',
+        presence_sensor_url: '',
+        presence_absence_threshold_secs: 180,
+        presence_debounce_secs: 15,
+        presence_csv_log_enabled: true,
+        shadow_active_method: 'sensor',
+        shadow_csv_log_enabled: true,
+        hybrid_confirm_window_secs: 180,
+        hybrid_min_words_for_sensor_split: 500,
+        thermal_hot_pixel_threshold_c: 28.0,
+        co2_baseline_ppm: 420.0,
       };
 
       expect(isSettings(mockResponse)).toBe(true);

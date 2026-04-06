@@ -301,6 +301,29 @@ pub fn set_continuous_encounter_notes(
     }
 }
 
+/// Get the current encounter transcript from continuous mode.
+///
+/// Returns the plain text content of the transcript buffer (text segments
+/// joined together without speaker labels or timestamps). Returns an empty
+/// string if continuous mode is not active.
+#[tauri::command]
+pub fn get_current_encounter_transcript(
+    continuous_state: State<'_, SharedContinuousModeState>,
+) -> Result<String, CommandError> {
+    let state = continuous_state
+        .lock()
+        .map_err(|_| CommandError::lock_poisoned("continuous_state"))?;
+    if let Some(ref handle) = *state {
+        let buffer = handle
+            .transcript_buffer
+            .lock()
+            .map_err(|_| CommandError::lock_poisoned("transcript_buffer"))?;
+        Ok(buffer.full_text())
+    } else {
+        Ok(String::new())
+    }
+}
+
 /// Core logic for setting STT language — checks both pipeline states.
 /// Extracted from the Tauri command for testability.
 pub(crate) fn set_stt_language_inner(

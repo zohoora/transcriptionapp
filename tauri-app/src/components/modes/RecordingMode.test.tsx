@@ -137,12 +137,12 @@ describe('RecordingMode', () => {
       expect(screen.getByText('Poor audio')).toBeInTheDocument();
     });
 
-    it('defaults to good when no audio quality data', () => {
+    it('defaults to no_data when no audio quality data', () => {
       render(<RecordingMode {...defaultProps} audioQuality={null} />);
 
       const qualityIndicator = document.querySelector('.quality-indicator');
-      expect(qualityIndicator).toHaveClass('good');
-      expect(screen.getByText('Good audio')).toBeInTheDocument();
+      expect(qualityIndicator).toHaveClass('no_data');
+      expect(screen.getByText('No audio')).toBeInTheDocument();
     });
   });
 

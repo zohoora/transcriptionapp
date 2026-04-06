@@ -168,9 +168,18 @@ pub struct ContinuousModeStats {
 
 /// Handle to control the running continuous mode
 pub struct ContinuousModeHandle {
+    /// Inner stop flag: set by `handle.stop()` or the sleep scheduler to stop
+    /// the `run_continuous_mode` loop. Cleared by `reset_for_new_run()` when
+    /// the outer sleep/restart loop starts a fresh run.
+    ///
+    /// Contract: code that wants to pause for sleep MUST only set `stop_flag`
+    /// (not `user_stop_flag`). Code that wants a full user-initiated stop MUST
+    /// call `handle.stop()`, which sets both flags.
     pub stop_flag: Arc<AtomicBool>,
-    /// Outer stop flag — set by user to exit the sleep/restart loop entirely.
-    /// Distinguished from `stop_flag` which may be set by the sleep timer.
+    /// Outer stop flag: set only by an explicit user stop action. NOT cleared
+    /// on sleep restart. The outer loop in `commands/continuous.rs` checks this
+    /// to distinguish a user-stop (exit entirely) from a sleep-stop (pause and
+    /// restart later).
     pub user_stop_flag: Arc<AtomicBool>,
     pub state: Arc<Mutex<ContinuousState>>,
     pub transcript_buffer: Arc<Mutex<TranscriptBuffer>>,
@@ -927,7 +936,11 @@ pub async fn run_continuous_mode(
             // Returns (manual_triggered, sensor_triggered)
             let (manual_triggered, sensor_triggered) = if is_hybrid_mode && sensor_available {
                 // Hybrid mode with sensor: timer + silence + manual + sensor
-                let sensor_rx = hybrid_sensor_rx.as_mut().unwrap();
+                let Some(sensor_rx) = hybrid_sensor_rx.as_mut() else {
+                    warn!("Hybrid mode active but sensor receiver is None — falling back to timer-only");
+                    sensor_available = false;
+                    continue;
+                };
                 tokio::select! {
                     _ = tokio::time::sleep(tokio::time::Duration::from_secs(check_interval as u64)) => {
                         // Regular timer — handles back-to-back encounters without physical departure
@@ -1845,14 +1858,6 @@ pub async fn run_continuous_mode(
                             match soap_outcome {
                                 crate::encounter_pipeline::SoapGenerationOutcome::Success { ref result, ref content, latency_ms } => {
                                     let patient_count = result.notes.len();
-                                    // Save per-patient files when multi-patient
-                                    if patient_count > 1 {
-                                        if let Err(e) = local_archive::save_multi_patient_soap(
-                                            &session_id, &soap_now, &result.notes,
-                                        ) {
-                                            warn!("Failed to save per-patient SOAP files: {}", e);
-                                        }
-                                    }
                                     ContinuousModeEvent::SoapGenerated {
                                         session_id: session_id.clone(),
                                         patient_count: Some(patient_count),
@@ -1875,6 +1880,33 @@ pub async fn run_continuous_mode(
                                             session_id: session_id.clone(),
                                             latency_ms, success: true,
                                         });
+                                    }
+
+                                    // Billing extraction (fail-open)
+                                    {
+                                        let transcript_excerpt = filtered_encounter_text
+                                            .split_whitespace()
+                                            .take(1000)
+                                            .collect::<Vec<_>>()
+                                            .join(" ");
+                                        let encounter_duration_ms = encounter_start
+                                            .map(|s| (Utc::now() - s).num_milliseconds().max(0) as u64)
+                                            .unwrap_or(0);
+                                        let after_hours = crate::encounter_pipeline::is_after_hours(&soap_now);
+                                        if let Err(e) = crate::encounter_pipeline::extract_and_archive_billing(
+                                            client,
+                                            &fast_model,
+                                            content,
+                                            &transcript_excerpt,
+                                            &session_id,
+                                            &soap_now,
+                                            encounter_duration_ms,
+                                            encounter_patient_name.as_deref(),
+                                            after_hours,
+                                            &logger_for_detector,
+                                        ).await {
+                                            warn!("Billing extraction failed for encounter #{}: {}", encounter_number, e);
+                                        }
                                     }
                                 }
                                 crate::encounter_pipeline::SoapGenerationOutcome::Failed { latency_ms, ref error } => {
@@ -2247,11 +2279,6 @@ pub async fn run_continuous_mode(
                                                             }),
                                                         ).await;
                                                         if let crate::encounter_pipeline::SoapGenerationOutcome::Success { ref result, ref content, .. } = regen_outcome {
-                                                            if result.notes.len() > 1 {
-                                                                let _ = local_archive::save_multi_patient_soap(
-                                                                    prev_id, prev_date, &result.notes,
-                                                                );
-                                                            }
                                                             // Server sync: upload retrospective SOAP
                                                             sync_ctx_for_detector.sync_soap(prev_id, content, soap_detail_level, &soap_format);
                                                             info!(
@@ -2357,13 +2384,6 @@ pub async fn run_continuous_mode(
                                         ..
                                     } = regen_outcome
                                     {
-                                        if result.notes.len() > 1 {
-                                            let _ = local_archive::save_multi_patient_soap(
-                                                &session_id,
-                                                &soap_now,
-                                                &result.notes,
-                                            );
-                                        }
                                         sync_ctx_for_detector.sync_soap(
                                             &session_id,
                                             content,
@@ -2520,6 +2540,15 @@ pub async fn run_continuous_mode(
             &logger_for_flush,
             &app,
             &sync_ctx,
+        ).await;
+    }
+
+    // ---- Orphaned billing recovery ----
+    if let Some(ref client) = flush_llm_client {
+        crate::encounter_pipeline::recover_orphaned_billing(
+            client,
+            &flush_fast_model,
+            &logger_for_flush,
         ).await;
     }
 
@@ -2744,6 +2773,38 @@ pub async fn run_continuous_mode(
                             patient_count: None,
                             recovered: None,
                         }.emit(&app);
+
+                        // Billing extraction (fail-open)
+                        {
+                            let billing_transcript_excerpt = filtered_text
+                                .split_whitespace()
+                                .take(1000)
+                                .collect::<Vec<_>>()
+                                .join(" ");
+                            let flush_duration_ms = flush_encounter_start
+                                .map(|s| (Utc::now() - s).num_milliseconds().max(0) as u64)
+                                .unwrap_or(0);
+                            let flush_now = Utc::now();
+                            let flush_after_hours = crate::encounter_pipeline::is_after_hours(&flush_now);
+                            let flush_patient_name = handle.name_tracker
+                                .lock()
+                                .ok()
+                                .and_then(|t| t.majority_name());
+                            if let Err(e) = crate::encounter_pipeline::extract_and_archive_billing(
+                                &client,
+                                &flush_fast_model,
+                                content,
+                                &billing_transcript_excerpt,
+                                &session_id,
+                                &flush_now,
+                                flush_duration_ms,
+                                flush_patient_name.as_deref(),
+                                flush_after_hours,
+                                &logger_for_flush,
+                            ).await {
+                                warn!("Billing extraction failed for flush encounter: {}", e);
+                            }
+                        }
                     }
                 }
             }

@@ -74,6 +74,10 @@ Rust Backend
 ├── encounter_merge.rs # Encounter merge prompts/parsing (M1 name-aware strategy)
 ├── encounter_pipeline.rs # Shared encounter pipeline helpers (SOAP generation, merge checks, clinical content check)
 ├── screenshot_task.rs # Screenshot capture task for continuous mode (extracted from continuous_mode.rs)
+├── continuous_mode_events.rs # Typed event emission for continuous mode
+├── server_sync.rs     # ServerSyncContext — fire-and-forget session upload to profile server
+├── shadow_observer.rs # Shadow mode observer task (sensor-side for dual detection comparison)
+├── co2_calibration.rs # CO2 sensor baseline calibration tool
 ├── debug_storage.rs   # Debug storage (dev only)
 ├── permissions.rs     # macOS permission checks
 ├── ollama.rs          # Re-exports from llm_client.rs (backward compat)
@@ -134,7 +138,7 @@ cd src-tauri && cargo test       # Rust
 
 | Task | Files to Modify |
 |------|-----------------|
-| Add new setting | `config.rs`, `types/index.ts`; if UI-visible: also `useSettings.ts` (PendingSettings), `SettingsDrawer.tsx` (Zone 1 or Zone 3 Advanced) |
+| Add new setting | `config.rs`, `types/index.ts`; if UI-visible: also `useSettings.ts` (PendingSettings + `buildMergedSettings()`), `SettingsDrawer.tsx` (Zone 1 or Zone 3 Advanced) |
 | Modify transcription | `pipeline.rs`, `whisper_server.rs` (STT Router streaming), `transcription.rs` (types) |
 | Change SOAP prompt | `llm_client.rs` (`build_multi_patient_soap_prompt()`) |
 | Modify LLM integration | `llm_client.rs`, `commands/ollama.rs`, `useOllamaConnection.ts` |
@@ -161,8 +165,9 @@ cd src-tauri && cargo test       # Rust
 | Modify physician/room management | `commands/physicians.rs`, `usePhysicianProfiles.ts`, `PhysicianSelect.tsx`, `AdminPanel.tsx` |
 | Modify room setup | `room_config.rs`, `commands/physicians.rs`, `useRoomConfig.ts`, `RoomSetup.tsx` |
 | Modify server session sync | `profile_client.rs`, `continuous_mode.rs` (ServerSyncContext), `commands/archive.rs` (server fallback) |
+| Modify patient handout | `llm_client.rs` (`build_patient_handout_prompt()`), `commands/ollama.rs` (`generate_patient_handout`), `commands/archive.rs` (`save_patient_handout`, `get_patient_handout`), `local_archive.rs`, `usePatientHandout.ts`, `PatientHandoutEditor.tsx` |
 
-## IPC Commands (109 total across 18 modules)
+## IPC Commands (~136 total across 20 modules)
 
 | Module | Commands | Source |
 |--------|----------|--------|
@@ -176,13 +181,15 @@ cd src-tauri && cargo test       # Rust
 | Permissions (3) | `check_microphone_permission`, `request_*`, `open_*_settings` | `commands/permissions.rs` |
 | Listening (3) | `start_listening`, `stop_listening`, `get_listening_status` | `commands/listening.rs` |
 | Speaker Profiles (6) | `list_speaker_profiles`, `get_speaker_profile`, `create_*`, `update_*`, `delete_*`, `reenroll_*` | `commands/speaker_profiles.rs` |
-| Archive (15) | `get_local_session_dates`, `get_local_sessions_by_date`, `get_local_session_details`, `save_local_soap_note`, `read_local_audio_file`, `delete_local_session`, `split_local_session`, `merge_local_sessions`, `update_session_patient_name`, `renumber_local_encounters`, `get_session_transcript_lines`, `suggest_split_points`, `get_session_feedback`, `save_session_feedback`, `get_session_soap_note` | `commands/archive.rs` |
+| Archive (19) | `get_local_session_dates`, `get_local_sessions_by_date`, `get_local_session_details`, `save_local_soap_note`, `read_local_audio_file`, `delete_local_session`, `split_local_session`, `merge_local_sessions`, `update_session_patient_name`, `renumber_local_encounters`, `get_session_transcript_lines`, `suggest_split_points`, `get_session_feedback`, `save_session_feedback`, `get_session_soap_note`, `delete_patient_from_session`, `rename_patient_label`, `merge_patient_soaps`, `generate_clinical_feedback` | `commands/archive.rs` |
 | Clinical Chat (1) | `clinical_chat_send` | `commands/clinical_chat.rs` |
 | MIIS (3) | `miis_suggest`, `miis_send_usage`, `generate_ai_image` | `commands/miis.rs`, `commands/images.rs` |
 | Screenshot (7) | `check_screen_recording_permission`, `open_screen_recording_settings`, `start/stop_screen_capture`, `get_screen_capture_status`, `get_screenshot_paths`, `get_screenshot_thumbnails` | `commands/screenshot.rs` |
-| Continuous (6) | `start/stop_continuous_mode`, `get_continuous_mode_status`, `trigger_new_patient`, `set_continuous_encounter_notes`, `list_serial_ports` | `commands/continuous.rs` |
+| Continuous (7) | `start/stop_continuous_mode`, `get_continuous_mode_status`, `trigger_new_patient`, `set_continuous_encounter_notes`, `list_serial_ports`, `set_stt_language` | `commands/continuous.rs` |
 | Vision (5) | `generate_vision_soap_note`, `run_vision_experiments`, `get_vision_experiment_results`, `get_vision_experiment_report`, `list_vision_experiment_strategies` | `commands/ollama.rs` |
-| Physicians (15) | `get_room_config`, `save_room_config`, `test_profile_server`, `get_physicians`, `select_physician`, `get_active_physician`, `deselect_physician`, `sync_speaker_profiles`, `create_physician`, `update_physician`, `delete_physician`, `get_rooms`, `create_room`, `update_room`, `delete_room` | `commands/physicians.rs` |
+| Physicians (18) | `get_room_config`, `save_room_config`, `test_profile_server`, `get_physicians`, `select_physician`, `get_active_physician`, `deselect_physician`, `sync_speaker_profiles`, `create_physician`, `update_physician`, `delete_physician`, `get_rooms`, `create_room`, `update_room`, `delete_room`, `sync_settings_from_server`, `sync_infrastructure_settings`, `sync_room_settings` | `commands/physicians.rs` |
+| Calibration (4) | `start_co2_calibration`, `stop_co2_calibration`, `advance_calibration_phase`, `get_calibration_status` | `commands/calibration.rs` |
+| Patient Handout (3) | `generate_patient_handout`, `save_patient_handout`, `get_patient_handout` | `commands/ollama.rs`, `commands/archive.rs` |
 
 ## Events (Backend → Frontend)
 
@@ -197,6 +204,7 @@ cd src-tauri && cargo test       # Rust
 | `session_auto_end` | Session auto-ended due to silence |
 | `continuous_mode_event` | Continuous mode status changes (started, encounter_detected, soap_generated, encounter_merged, sensor_status, shadow_decision, retrospective_split, sleep_started, sleep_ended, etc.) |
 | `continuous_transcript_preview` | Live transcript preview in continuous mode (separate from `transcript_update`) |
+| `calibration_update` | CO2 sensor calibration progress events |
 | `deep-link` | OAuth callback URL received via single-instance plugin |
 
 ## Session States
@@ -226,7 +234,7 @@ Idle → Preparing → Recording → Stopping → Completed
 | Functional setState | Use `prev => !prev` pattern in `useCallback` to avoid stale closures |
 | Vec batch cleanup | Use `drain(..excess)` not `remove(0)` in loop |
 | Path traversal prevention | `validate_session_id()` in local_archive.rs, `validate_fhir_id()` in medplum.rs — reject `..` and non-alphanumeric IDs |
-| Error body truncation | `truncate_error_body()` in medplum.rs — prevents huge HTML error pages from flooding logs |
+| Error body truncation | `truncate_error_body()` in llm_client.rs and medplum.rs — caps HTTP error bodies at 200 chars, uses `ceil_char_boundary()` for UTF-8 safety. Prevents PHI leakage through proxy error pages that echo request bodies |
 | Token refresh locking | `get_valid_token()` in medplum.rs — double-check locking pattern to avoid concurrent refresh races |
 | Settings validation after update | `clamp_values()` called after `update_from_settings()` in config.rs — safety net for user-edited JSON |
 | Encounter notes: clone before clear | In continuous mode detector, clone accumulated notes before clearing buffer to avoid data loss |
@@ -255,12 +263,23 @@ Idle → Preparing → Recording → Stopping → Completed
 | Day log midnight rotation | `DayLogger` stores current date, checks on each `log()` call. Date change → close old file, open new under correct date dir. Same pattern as `csv_logger.rs` |
 | Sleep mode clean stop | Sleep scheduler sets inner handle's `stop_flag`, causing `run_continuous_mode` to proceed through normal cleanup. Outer loop detects sleep-triggered stop (vs user stop) and enters sleep wait. DST-safe via `chrono-tz::America::New_York` with `match chrono::LocalResult` for spring-forward gap handling |
 | Screenshot word-count gate | `screenshot_task.rs` checks `transcript_buffer.word_count()` at top of capture loop. Empty buffer → skip capture (no speech = empty room, no need for vision calls) |
+| Settings merge helper | `buildMergedSettings()` in useSettings.ts — single source of truth for converting `PendingSettings` → full `Settings`. Used by both `saveSettings` and `toggleSetting` in App.tsx |
+| SOAP timeout constant | `SOAP_GENERATION_TIMEOUT_SECS` (300) and `SOAP_TIMEOUT_ERROR` ("timeout_300s") in encounter_pipeline.rs — avoids magic numbers and string allocation in timeout path |
+| Sensor receiver safety | In continuous_mode.rs detector loop, `hybrid_sensor_rx.as_mut()` uses `let Some(...) else { degrade }` pattern instead of `unwrap()` — graceful fallback to timer-only detection |
+| Stop flag contract | `ContinuousModeHandle` has two stop flags: `stop_flag` (inner, cleared by sleep restart) and `user_stop_flag` (outer, never cleared). Sleep MUST only set `stop_flag`; full stop MUST use `handle.stop()` which sets both. Documented on the struct fields |
+| Profile service atomic writes | `atomic_write()` in profile-service sessions.rs — writes to UUID-suffixed temp file then renames. Used for transcript.txt, soap_note.txt, metadata.json. Prevents truncated files from mid-write crashes |
+| Profile service session cache | `SessionStore.session_cache` — in-memory `HashMap<(physician_id, session_id), PathBuf>` avoids O(N) directory walks. Populated on lookup, invalidated on delete/split/merge |
+| Profile service input validation | `validate()` methods on Create/UpdatePhysicianRequest and Create/UpdateRoomRequest — caps name at 500 chars, instructions at 10K, etc. |
+| Archive date parsing | `parse_archive_date()` in commands/archive.rs — shared helper for "YYYY-MM-DD" → `DateTime<Utc>` conversion. Used by save_local_soap_note, save_patient_handout, get_patient_handout |
+| Patient handout save-then-load | `usePatientHandout` saves handout to archive first, then opens editor window which loads from backend on mount. Avoids event delivery race condition between window creation and React mount |
+| Patient handout in SOAP context | `generate_soap_note_auto_detect` checks for `patient_handout.txt` via `get_patient_handout_by_id()` and includes it in the LLM prompt. Uses local date for path construction |
 
 ## Features
 
 | Feature | Summary | Detail |
 |---------|---------|--------|
-| **SOAP Generation** | Multi-patient auto-detect, always uses `soap-model-fast` alias, auto-copy to clipboard, problem-based or comprehensive format, detail level 1-10. Malformed output triggers one LLM retry via `parse_soap_with_retry()`. Orphaned SOAP recovery on continuous mode stop | `llm_client.rs`, ADR 0009/0012 |
+| **SOAP Generation** | Multi-patient auto-detect, always uses `soap-model-fast` alias, auto-copy to clipboard, problem-based or comprehensive format, detail level 1-10. Malformed output triggers one LLM retry via `parse_soap_with_retry()`. Orphaned SOAP recovery on continuous mode stop. If a patient handout exists, it is included in the SOAP prompt as context | `llm_client.rs`, ADR 0009/0012 |
+| **Patient Handout** | Mid-session patient-friendly visit summary. "Patient Handout" button in RecordingMode and ContinuousMode generates plain-language handout (5th-8th grade reading level) via `soap-model-fast`. Opens standalone editor window (Save/Print/Copy/Close). Saved as `patient_handout.txt` in session archive. Included in SOAP generation context. Viewable in History window "Handout" tab. Does not alter encounter detection | `llm_client.rs`, `commands/ollama.rs`, `commands/archive.rs`, `PatientHandoutEditor.tsx`, `usePatientHandout.ts` |
 | **Transcription** | STT Router WebSocket streaming via aliases (`stt_alias`), all 3 modes use streaming, audio preprocessing (DC removal, 80Hz HPF, AGC) | `whisper_server.rs`, ADR 0020 |
 | **Auto-Session Detection** | VAD → optimistic recording → parallel greeting check → confirm/discard. Optional speaker verification (`auto_start_require_enrolled`) | `listening.rs`, ADR 0011/0016 |
 | **Medplum EMR** | OAuth 2.0 + PKCE via `fabricscribe://` deep link, auto-sync transcript + audio on complete, SOAP auto-added to encounter | `medplum.rs`, ADR 0008 |
@@ -315,6 +334,7 @@ Multi-user: profile_service_url (in room_config.json), active_physician_id.
 | `~/.transcriptionapp/archive/YYYY/MM/DD/day_log.jsonl` | Day-level orchestration events (config snapshot, splits, merges, SOAP results) |
 | `~/.transcriptionapp/archive/YYYY/MM/DD/session_id/segments.jsonl` | Per-segment timeline (timestamp, text, speaker, word counts) |
 | `~/.transcriptionapp/archive/YYYY/MM/DD/session_id/replay_bundle.json` | Self-contained encounter test case (all LLM calls, decisions, outcomes) |
+| `~/.transcriptionapp/archive/YYYY/MM/DD/session_id/patient_handout.txt` | Patient-facing visit summary (optional, only if clinician generated one) |
 | `~/.transcriptionapp/logs/` | Activity logs (daily rotation, PHI-safe) |
 | `~/.transcriptionapp/debug/` | Debug storage (dev only) |
 | `~/.transcriptionapp/mmwave/` | Presence sensor CSV logs (daily rotation) |
@@ -379,6 +399,10 @@ Multi-user: profile_service_url (in room_config.json), active_physician_id.
 - `RoomSetup.tsx` - First-run room setup: room name, server URL, connectivity test
 - `RoomSelect.tsx` - Room selection for existing rooms
 - `AdminPanel.tsx` - Tabbed admin panel for physician + room CRUD management
+- `CalibrationWindow.tsx` - CO2 sensor calibration window (standalone)
+- `FeedbackPanel.tsx` - Session feedback/rating UI
+- `ImageViewerWindow.tsx` - Full-screen image viewer (standalone window)
+- `PatientHandoutEditor.tsx` - Patient handout editor (standalone window — Save/Print/Copy/Close)
 
 **Cleanup Components** (`src/components/cleanup/`):
 - `CleanupActionBar.tsx` - Toolbar with delete/split/merge/rename actions for session cleanup
@@ -398,7 +422,7 @@ Multi-user: profile_service_url (in room_config.json), active_physician_id.
 - `useSessionState` - Recording state, transcript, biomarkers
 - `useSoapNote` - SOAP generation
 - `useMedplumSync` - EMR sync with encounter tracking
-- `useSettings` - Configuration management (`PendingSettings` = 25 UI-editable fields, subset of full `Settings`; `diarization_enabled`/`whisper_mode` hardcoded in save, not in pending)
+- `useSettings` - Configuration management (`PendingSettings` = 25 UI-editable fields, subset of full `Settings`; `diarization_enabled`/`whisper_mode` hardcoded in save, not in pending). Exports `buildMergedSettings()` shared helper for PendingSettings→Settings conversion
 - `useAutoDetection` - Listening mode
 - `useSpeakerProfiles` - Speaker enrollment CRUD operations
 - `useClinicalChat` - Clinical assistant chat during recording
@@ -417,6 +441,8 @@ Multi-user: profile_service_url (in room_config.json), active_physician_id.
 - `useRoomConfig` - Room config load/save, first-run detection
 - `usePhysicianProfiles` - Physician list fetch, select/deselect, cache status
 - `useAdminPanel` - Admin panel CRUD operations for physicians and rooms
+- `useAppUpdater` - GitHub Releases auto-update check + install
+- `usePatientHandout` - Generate patient handout via LLM, save to archive, open editor window
 
 **Types**: `src/types/index.ts` - All TypeScript interfaces mirroring Rust structs, biomarker thresholds and status helpers
 
@@ -543,7 +569,7 @@ cargo run --bin detection_replay_cli -- --all --override hybrid_confirm_window_s
 
 ## Adding New Features
 
-1. **Config**: Add field to `config.rs`, `types/index.ts`. If UI-visible: also add to `PendingSettings` in `useSettings.ts` + `SettingsDrawer.tsx` (Zone 1 for clinical, Zone 3 Advanced for IT/infra). Config-only settings: edit `~/.transcriptionapp/config.json` directly
+1. **Config**: Add field to `config.rs`, `types/index.ts`. If UI-visible: also add to `PendingSettings` in `useSettings.ts` + `buildMergedSettings()` + `SettingsDrawer.tsx` (Zone 1 for clinical, Zone 3 Advanced for IT/infra). Config-only settings: edit `~/.transcriptionapp/config.json` directly
 2. **Model**: Add URL/download in `commands/models.rs`, check in `checklist.rs`
 3. **Command**: Add to `commands/*.rs`, register in `lib.rs`
 4. **Pipeline**: Add provider initialization in `pipeline.rs`

@@ -93,6 +93,10 @@ interface ContinuousModeProps {
   onStop: () => void;
   /** Trigger manual new patient encounter split */
   onNewPatient: () => void;
+  /** Generate a patient-friendly visit summary handout */
+  onGenerateHandout: () => void;
+  /** Whether handout generation is in progress */
+  isGeneratingHandout: boolean;
   /** Open history window to view today's sessions */
   onViewHistory: () => void;
   /** Speech detected but no transcription being produced */
@@ -191,6 +195,8 @@ export const ContinuousMode = memo(function ContinuousMode({
   onStart,
   onStop,
   onNewPatient,
+  onGenerateHandout,
+  isGeneratingHandout,
   onViewHistory,
   transcriptionStalled,
   isSleeping,
@@ -202,6 +208,7 @@ export const ContinuousMode = memo(function ContinuousMode({
   const [showTranscript, setShowTranscript] = useState(false);
   const [showDetails, setShowDetails] = useState(false);
   const [showNotes, setShowNotes] = useState(false);
+  const [copiedEncounterId, setCopiedEncounterId] = useState<string | null>(null);
 
   // 2-second cooldown guard to prevent double-clicks on "New Patient"
   const newPatientCooldownRef = useRef(false);
@@ -415,6 +422,17 @@ export const ContinuousMode = memo(function ContinuousMode({
         </div>
       )}
 
+      {/* Patient Handout button (only when encounter has content) */}
+      {isActive && stats.buffer_word_count > 0 && (
+        <button
+          className="handout-btn"
+          onClick={onGenerateHandout}
+          disabled={isGeneratingHandout}
+        >
+          {isGeneratingHandout ? 'Generating...' : 'Patient Handout'}
+        </button>
+      )}
+
       {/* New Patient button */}
       <button
         className="continuous-new-patient-btn"
@@ -482,21 +500,19 @@ export const ContinuousMode = memo(function ContinuousMode({
                     date: new Date(enc.time).toISOString().split('T')[0],
                   });
                   await writeText(soap);
-                  // Brief visual feedback via the clipboard icon
-                  const btn = document.querySelector(`[data-encounter-id="${enc.sessionId}"] .recent-encounter-copy`);
-                  if (btn) { btn.textContent = '\u2705'; setTimeout(() => { btn.textContent = '\uD83D\uDCCB'; }, 1500); }
+                  setCopiedEncounterId(enc.sessionId);
+                  setTimeout(() => setCopiedEncounterId(null), 1500);
                 } catch (e) {
                   console.warn('Failed to copy SOAP:', e);
                 }
               }}
-              data-encounter-id={enc.sessionId}
               title="Click to copy SOAP note"
             >
               <span className="recent-encounter-time">{formatTime(enc.time)}</span>
               {enc.patientName && (
                 <span className="recent-encounter-name">{enc.patientName}</span>
               )}
-              <span className="recent-encounter-copy">{'\uD83D\uDCCB'}</span>
+              <span className="recent-encounter-copy">{copiedEncounterId === enc.sessionId ? '\u2705' : '\uD83D\uDCCB'}</span>
             </button>
           ))}
         </div>

@@ -26,6 +26,8 @@ export interface UseContinuousModeResult {
   triggerNewPatient: () => Promise<void>;
   /** Error message if any */
   error: string | null;
+  /** Event-driven session ID that changes synchronously on encounter_detected */
+  encounterSessionId: string;
   /** True when speech is detected but no transcription is being produced */
   transcriptionStalled: boolean;
   /** Whether the pipeline is currently in overnight sleep mode */
@@ -60,11 +62,18 @@ export function useContinuousMode(): UseContinuousModeResult {
   const [audioQuality, setAudioQuality] = useState<AudioQualitySnapshot | null>(null);
   const [encounterNotes, setEncounterNotesState] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [encounterSessionId, setEncounterSessionId] = useState<string>(`continuous-${Date.now()}`);
   const [transcriptionStalled, setTranscriptionStalled] = useState(false);
   const [isSleeping, setIsSleeping] = useState(false);
   const [sleepResumeAt, setSleepResumeAt] = useState<string | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const notesDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isActiveRef = useRef(isActive);
+
+  // Keep isActiveRef in sync with isActive state
+  useEffect(() => {
+    isActiveRef.current = isActive;
+  }, [isActive]);
 
   // Listen to continuous mode events from backend
   useEffect(() => {
@@ -79,6 +88,7 @@ export function useContinuousMode(): UseContinuousModeResult {
         case 'started':
           setIsActive(true);
           setError(null);
+          setEncounterSessionId(`continuous-${Date.now()}`);
           setTranscriptionStalled(false);
           setIsSleeping(false);
           setSleepResumeAt(null);
@@ -96,6 +106,7 @@ export function useContinuousMode(): UseContinuousModeResult {
           break;
         case 'encounter_detected':
           setEncounterNotesState('');
+          setEncounterSessionId(`continuous-${Date.now()}`);
           setTranscriptionStalled(false);
           break;
         case 'transcription_stalled':
@@ -129,15 +140,17 @@ export function useContinuousMode(): UseContinuousModeResult {
     };
   }, []);
 
-  // Listen to transcript updates for live preview
+  // Listen to transcript updates for live preview.
+  // Registered once (not gated on isActive) so the listener is never torn down
+  // and re-registered on active-state transitions, which would drop events.
   useEffect(() => {
-    if (!isActive) return;
-
     let unlisten: UnlistenFn | null = null;
     let mounted = true;
 
     listen<TranscriptUpdate>('continuous_transcript_preview', (event) => {
-      if (mounted) setLiveTranscript(event.payload.finalized_text || '');
+      if (mounted && isActiveRef.current) {
+        setLiveTranscript(event.payload.finalized_text || '');
+      }
     }).then((fn) => {
       if (mounted) {
         unlisten = fn;
@@ -150,7 +163,7 @@ export function useContinuousMode(): UseContinuousModeResult {
       mounted = false;
       if (unlisten) unlisten();
     };
-  }, [isActive]);
+  }, []);
 
   // Poll for stats while active
   useEffect(() => {
@@ -272,6 +285,7 @@ export function useContinuousMode(): UseContinuousModeResult {
     stop,
     triggerNewPatient,
     error,
+    encounterSessionId,
     transcriptionStalled,
     isSleeping,
     sleepResumeAt,

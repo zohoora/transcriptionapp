@@ -216,16 +216,22 @@ describe('useContinuousMode', () => {
       expect(result.current.liveTranscript).toBe('Hello doctor');
     });
 
-    it('does not subscribe to transcript when not active', async () => {
+    it('subscribes to transcript unconditionally but ignores events when not active', async () => {
       const useContinuousMode = await loadHook();
-      renderHook(() => useContinuousMode());
+      const { result } = renderHook(() => useContinuousMode());
 
       await waitFor(() => {
         expect(listeners['continuous_mode_event']).toBeDefined();
       });
 
-      // Should NOT have subscribed to transcript preview
-      expect(listeners['continuous_transcript_preview']).toBeUndefined();
+      // Listener is registered unconditionally to avoid dropping events during transitions
+      expect(listeners['continuous_transcript_preview']).toBeDefined();
+
+      // But events are ignored when not active
+      act(() => {
+        emitEvent('continuous_transcript_preview', { finalized_text: 'Should be ignored' });
+      });
+      expect(result.current.liveTranscript).toBe('');
     });
   });
 

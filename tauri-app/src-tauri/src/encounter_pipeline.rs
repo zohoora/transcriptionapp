@@ -5,7 +5,7 @@
 //! non-clinical metadata updates, SOAP generation, merge checks, and
 //! orphaned SOAP recovery.
 
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, Datelike, Utc};
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 use tracing::{info, warn};
@@ -38,9 +38,14 @@ pub enum SoapGenerationOutcome {
     Failed { latency_ms: u64, error: String },
 }
 
+/// Timeout for SOAP generation LLM calls (seconds).
+const SOAP_GENERATION_TIMEOUT_SECS: u64 = 300;
+/// Error string for SOAP timeout (avoids allocation in the timeout path).
+const SOAP_TIMEOUT_ERROR: &str = "timeout_300s";
+
 /// Generate a SOAP note, archive it, and log the result.
 ///
-/// Handles the full LLM call → 120s timeout → archive → pipeline log pattern
+/// Handles the full LLM call → timeout → archive → pipeline log pattern
 /// shared across primary SOAP, merge SOAP regen, flush SOAP, and orphaned
 /// recovery. Callers handle site-specific side effects (replay bundle, day log,
 /// frontend events, error state) by matching on the returned outcome.
@@ -83,7 +88,7 @@ pub async fn generate_and_archive_soap(
         multi_patient_detection,
     );
 
-    match tokio::time::timeout(tokio::time::Duration::from_secs(300), soap_future).await {
+    match tokio::time::timeout(tokio::time::Duration::from_secs(SOAP_GENERATION_TIMEOUT_SECS), soap_future).await {
         Ok(Ok(soap_result)) => {
             let latency_ms = soap_start.elapsed().as_millis() as u64;
             let content = soap_result.format_for_archive();
@@ -179,16 +184,242 @@ pub async fn generate_and_archive_soap(
                     None,
                     latency_ms,
                     false,
-                    Some("timeout_120s"),
+                    Some(SOAP_TIMEOUT_ERROR),
                     meta,
                 );
             }
-            warn!("SOAP generation timed out (120s)");
+            warn!("SOAP generation timed out ({}s)", SOAP_GENERATION_TIMEOUT_SECS);
             SoapGenerationOutcome::Failed {
                 latency_ms,
-                error: "timeout_120s".to_string(),
+                error: SOAP_TIMEOUT_ERROR.to_string(),
             }
         }
+    }
+}
+
+// ── Billing extraction ─────────────────────────────────────────────
+
+/// Timeout for billing extraction LLM calls (seconds).
+const BILLING_EXTRACTION_TIMEOUT_SECS: u64 = 60;
+
+/// Extract billing codes from a completed SOAP note and save to archive.
+///
+/// Uses a two-stage approach:
+/// 1. LLM extracts clinical features (constrained enums) from the SOAP content
+/// 2. Deterministic rule engine maps features to OHIP billing codes
+///
+/// Fail-open: billing extraction errors are logged but never block encounter processing.
+pub async fn extract_and_archive_billing(
+    client: &LLMClient,
+    model: &str,
+    soap_content: &str,
+    transcript_excerpt: &str,
+    session_id: &str,
+    session_date: &DateTime<Utc>,
+    duration_ms: u64,
+    patient_name: Option<&str>,
+    is_after_hours: bool,
+    logger: &Arc<Mutex<PipelineLogger>>,
+) -> Result<crate::billing::BillingRecord, String> {
+    use crate::billing::clinical_features::{build_billing_extraction_prompt, parse_billing_extraction};
+    use crate::billing::rule_engine::map_features_to_billing;
+
+    // Build prompt
+    let (system_prompt, user_prompt) = build_billing_extraction_prompt(soap_content, transcript_excerpt);
+
+    // Call LLM with timeout
+    let start = Instant::now();
+    let result = tokio::time::timeout(
+        tokio::time::Duration::from_secs(BILLING_EXTRACTION_TIMEOUT_SECS),
+        client.generate(model, &system_prompt, &user_prompt, "billing_extraction"),
+    )
+    .await;
+
+    let latency_ms = start.elapsed().as_millis() as u64;
+
+    let response = match result {
+        Ok(Ok(resp)) => resp,
+        Ok(Err(e)) => {
+            warn!("Billing extraction LLM failed for {}: {}", session_id, e);
+            if let Ok(mut l) = logger.lock() {
+                l.log_llm_call(
+                    "billing_extraction",
+                    model,
+                    &system_prompt,
+                    &user_prompt,
+                    None,
+                    latency_ms,
+                    false,
+                    Some(&e.to_string()),
+                    serde_json::json!({"session_id": session_id, "error": "llm_error"}),
+                );
+            }
+            return Err(format!("LLM error: {}", e));
+        }
+        Err(_) => {
+            warn!("Billing extraction timed out for {} ({}s)", session_id, BILLING_EXTRACTION_TIMEOUT_SECS);
+            if let Ok(mut l) = logger.lock() {
+                l.log_llm_call(
+                    "billing_extraction",
+                    model,
+                    &system_prompt,
+                    &user_prompt,
+                    None,
+                    latency_ms,
+                    false,
+                    Some("timeout"),
+                    serde_json::json!({"session_id": session_id, "error": "timeout"}),
+                );
+            }
+            return Err("Billing extraction timed out".to_string());
+        }
+    };
+
+    // Parse clinical features from LLM response
+    let mut features = parse_billing_extraction(&response)?;
+
+    // Override after-hours from caller (more reliable than LLM)
+    features.is_after_hours = is_after_hours;
+
+    // Map features to billing codes via deterministic rule engine
+    let date_str = format!("{:04}-{:02}-{:02}", session_date.year(), session_date.month(), session_date.day());
+    let mut record = map_features_to_billing(
+        &features,
+        session_id,
+        &date_str,
+        duration_ms,
+        patient_name,
+    );
+    record.extraction_model = Some(model.to_string());
+
+    // Save to archive
+    local_archive::save_billing_record(session_id, session_date, &record)?;
+
+    // Log success
+    if let Ok(mut l) = logger.lock() {
+        l.log_llm_call(
+            "billing_extraction",
+            model,
+            &system_prompt,
+            &user_prompt,
+            Some(&response),
+            latency_ms,
+            true,
+            None,
+            serde_json::json!({
+                "session_id": session_id,
+                "codes_extracted": record.codes.len(),
+                "total_cents": record.total_amount_cents,
+            }),
+        );
+    }
+
+    info!(
+        session_id = %session_id,
+        codes = record.codes.len(),
+        total_cents = record.total_amount_cents,
+        "Billing codes extracted and archived"
+    );
+
+    Ok(record)
+}
+
+/// Determine if a session started during after-hours (Ontario EST/EDT).
+///
+/// After-hours = weekends all day, weekdays before 8 AM or after 5 PM Eastern.
+pub fn is_after_hours(started_at: &DateTime<Utc>) -> bool {
+    use chrono::Timelike;
+    let eastern = started_at.with_timezone(&chrono_tz::America::New_York);
+    let hour = eastern.hour();
+    let weekday = eastern.weekday();
+    matches!(weekday, chrono::Weekday::Sat | chrono::Weekday::Sun)
+        || hour < 8
+        || hour >= 17
+}
+
+// ── Orphaned billing recovery ──────────────────────────────────────
+
+/// Recover sessions that have SOAP but no billing record.
+///
+/// Mirrors the `recover_orphaned_soap` pattern. Called on continuous mode stop.
+pub async fn recover_orphaned_billing(
+    client: &LLMClient,
+    model: &str,
+    logger: &Arc<Mutex<PipelineLogger>>,
+) {
+    let today_str = Utc::now().format("%Y-%m-%d").to_string();
+    let sessions = match local_archive::list_sessions_by_date(&today_str) {
+        Ok(s) => s,
+        Err(_) => return,
+    };
+
+    let orphaned: Vec<_> = sessions
+        .iter()
+        .filter(|s| s.has_soap_note)
+        .filter(|s| s.likely_non_clinical != Some(true))
+        .collect();
+
+    // Check each session for missing billing
+    let mut recovered = 0;
+    for summary in orphaned {
+        let details = match local_archive::get_session(&summary.session_id, &today_str) {
+            Ok(d) => d,
+            Err(_) => continue,
+        };
+
+        // Parse the date for billing record lookup (summary.date is "YYYY-MM-DD")
+        let session_date = chrono::NaiveDate::parse_from_str(&summary.date, "%Y-%m-%d")
+            .ok()
+            .and_then(|d| d.and_hms_opt(12, 0, 0))
+            .map(|dt| DateTime::<Utc>::from_naive_utc_and_offset(dt, Utc))
+            .unwrap_or_else(Utc::now);
+
+        // Skip if billing already exists
+        if let Ok(Some(_)) = local_archive::get_billing_record(&summary.session_id, &session_date) {
+            continue;
+        }
+
+        let soap = match details.soap_note {
+            Some(ref s) => s.clone(),
+            None => continue,
+        };
+
+        let transcript_excerpt = details.transcript
+            .as_deref()
+            .unwrap_or("")
+            .split_whitespace()
+            .take(1000)
+            .collect::<Vec<_>>()
+            .join(" ");
+
+        let duration_ms = summary.duration_ms.unwrap_or(0);
+        let after_hours = is_after_hours(&session_date);
+
+        info!(
+            "Recovering billing for session {} (has SOAP but no billing)",
+            summary.session_id
+        );
+
+        if let Err(e) = extract_and_archive_billing(
+            client,
+            model,
+            &soap,
+            &transcript_excerpt,
+            &summary.session_id,
+            &session_date,
+            duration_ms,
+            summary.patient_name.as_deref(),
+            after_hours,
+            logger,
+        ).await {
+            warn!("Failed to recover billing for {}: {}", summary.session_id, e);
+        } else {
+            recovered += 1;
+        }
+    }
+
+    if recovered > 0 {
+        info!("Recovered billing for {} orphaned sessions", recovered);
     }
 }
 
@@ -756,6 +987,8 @@ mod tests {
             physician_id: None,
             physician_name: None,
             room_name: None,
+            has_patient_handout: None,
+            has_billing_record: None,
         }
     }
 

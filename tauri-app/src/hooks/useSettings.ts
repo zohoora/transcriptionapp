@@ -52,6 +52,50 @@ export interface PendingSettings {
   soap_custom_instructions: string;
 }
 
+/**
+ * Merge pending UI settings into a full Settings object for backend persistence.
+ * Derives computed fields (diarization_enabled, whisper_mode, encounter_detection_mode, etc.).
+ */
+export function buildMergedSettings(settings: Settings, pending: PendingSettings): Settings {
+  return {
+    ...settings,
+    language: pending.language,
+    input_device_id: pending.device === 'default' ? null : pending.device,
+    diarization_enabled: true,
+    llm_router_url: pending.llm_router_url,
+    llm_api_key: pending.llm_api_key,
+    llm_client_id: pending.llm_client_id,
+    soap_model: pending.soap_model,
+    fast_model: pending.fast_model,
+    medplum_server_url: pending.medplum_server_url,
+    medplum_client_id: pending.medplum_client_id,
+    medplum_auto_sync: pending.medplum_auto_sync,
+    whisper_mode: 'remote',
+    whisper_server_url: pending.whisper_server_url,
+    auto_start_enabled: pending.auto_start_enabled,
+    auto_start_require_enrolled: pending.auto_start_require_enrolled,
+    auto_start_required_role: pending.auto_start_required_role,
+    auto_end_enabled: pending.auto_end_enabled,
+    miis_enabled: pending.image_source === 'miis',
+    image_source: pending.image_source,
+    gemini_api_key: pending.gemini_api_key,
+    screen_capture_enabled: pending.screen_capture_enabled,
+    charting_mode: pending.charting_mode,
+    encounter_merge_enabled: pending.encounter_merge_enabled,
+    encounter_detection_mode: pending.sensor_connection_type !== 'none' ? 'hybrid' : 'llm',
+    presence_sensor_port: pending.sensor_connection_type === 'usb' ? pending.presence_sensor_port : '',
+    presence_sensor_url: pending.sensor_connection_type === 'wifi' ? pending.presence_sensor_url : '',
+    presence_absence_threshold_secs: pending.presence_absence_threshold_secs,
+    presence_debounce_secs: pending.presence_debounce_secs,
+    hybrid_confirm_window_secs: pending.hybrid_confirm_window_secs,
+    hybrid_min_words_for_sensor_split: pending.hybrid_min_words_for_sensor_split,
+    thermal_hot_pixel_threshold_c: pending.thermal_hot_pixel_threshold_c,
+    co2_baseline_ppm: pending.co2_baseline_ppm,
+    presence_csv_log_enabled: pending.presence_csv_log_enabled,
+    soap_custom_instructions: pending.soap_custom_instructions,
+  };
+}
+
 export interface UseSettingsResult {
   // Settings state
   settings: Settings | null;
@@ -148,44 +192,7 @@ export function useSettings(): UseSettingsResult {
     setError(null);
 
     try {
-      const newSettings: Settings = {
-        ...settings,
-        language: pendingSettings.language,
-        input_device_id: pendingSettings.device === 'default' ? null : pendingSettings.device,
-        diarization_enabled: true, // Always enabled - speaker detection is always on
-        llm_router_url: pendingSettings.llm_router_url,
-        llm_api_key: pendingSettings.llm_api_key,
-        llm_client_id: pendingSettings.llm_client_id,
-        soap_model: pendingSettings.soap_model,
-        fast_model: pendingSettings.fast_model,
-        medplum_server_url: pendingSettings.medplum_server_url,
-        medplum_client_id: pendingSettings.medplum_client_id,
-        medplum_auto_sync: pendingSettings.medplum_auto_sync,
-        whisper_mode: 'remote',  // Always remote - local mode removed
-        whisper_server_url: pendingSettings.whisper_server_url,
-        auto_start_enabled: pendingSettings.auto_start_enabled,
-        auto_start_require_enrolled: pendingSettings.auto_start_require_enrolled,
-        auto_start_required_role: pendingSettings.auto_start_required_role,
-        auto_end_enabled: pendingSettings.auto_end_enabled,
-        miis_enabled: pendingSettings.image_source === 'miis', // Derive from image_source
-        image_source: pendingSettings.image_source,
-        gemini_api_key: pendingSettings.gemini_api_key,
-        screen_capture_enabled: pendingSettings.screen_capture_enabled,
-        charting_mode: pendingSettings.charting_mode,
-        encounter_merge_enabled: pendingSettings.encounter_merge_enabled,
-        // Auto-derive: if sensors configured → hybrid, otherwise LLM-only
-        encounter_detection_mode: pendingSettings.sensor_connection_type !== 'none' ? 'hybrid' : 'llm',
-        presence_sensor_port: pendingSettings.sensor_connection_type === 'usb' ? pendingSettings.presence_sensor_port : '',
-        presence_sensor_url: pendingSettings.sensor_connection_type === 'wifi' ? pendingSettings.presence_sensor_url : '',
-        presence_absence_threshold_secs: pendingSettings.presence_absence_threshold_secs,
-        presence_debounce_secs: pendingSettings.presence_debounce_secs,
-        hybrid_confirm_window_secs: pendingSettings.hybrid_confirm_window_secs,
-        hybrid_min_words_for_sensor_split: pendingSettings.hybrid_min_words_for_sensor_split,
-        thermal_hot_pixel_threshold_c: pendingSettings.thermal_hot_pixel_threshold_c,
-        co2_baseline_ppm: pendingSettings.co2_baseline_ppm,
-        presence_csv_log_enabled: pendingSettings.presence_csv_log_enabled,
-        soap_custom_instructions: pendingSettings.soap_custom_instructions,
-      };
+      const newSettings = buildMergedSettings(settings, pendingSettings);
 
       await invoke('set_settings', { settings: newSettings });
       setSettings(newSettings);
@@ -336,7 +343,7 @@ export function useSettings(): UseSettingsResult {
       [settings.screen_capture_enabled, pendingSettings.screen_capture_enabled],
       [settings.charting_mode, pendingSettings.charting_mode],
       [settings.encounter_merge_enabled, pendingSettings.encounter_merge_enabled],
-      [settings.encounter_detection_mode, pendingSettings.encounter_detection_mode],
+      [settings.encounter_detection_mode, pendingSettings.sensor_connection_type !== 'none' ? 'hybrid' : 'llm'],
       [settings.presence_sensor_port, pendingSettings.sensor_connection_type === 'usb' ? pendingSettings.presence_sensor_port : ''],
       [settings.presence_sensor_url, pendingSettings.sensor_connection_type === 'wifi' ? pendingSettings.presence_sensor_url : ''],
       [settings.presence_absence_threshold_secs, pendingSettings.presence_absence_threshold_secs],

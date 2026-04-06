@@ -24,6 +24,7 @@ pub async fn create(
     State(state): State<Arc<AppState>>,
     Json(req): Json<CreateRoomRequest>,
 ) -> Result<Json<Room>, ApiError> {
+    req.validate()?;
     let mut mgr = state.rooms.write().await;
     Ok(Json(mgr.create(req)?))
 }
@@ -33,6 +34,7 @@ pub async fn update(
     Path(id): Path<String>,
     Json(req): Json<UpdateRoomRequest>,
 ) -> Result<Json<Room>, ApiError> {
+    req.validate()?;
     let mut mgr = state.rooms.write().await;
     Ok(Json(mgr.update(&id, req)?))
 }

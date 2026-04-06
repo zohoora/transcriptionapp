@@ -10,7 +10,7 @@
  * - continuousMiisSessionId state + useEffect (stable session ID)
  * - handleNewPatient callback (resets biomarkers before triggerNewPatient)
  */
-import { useState, useEffect, useCallback } from 'react';
+import { useCallback } from 'react';
 import type { Settings, ContinuousModeStats, AudioQualitySnapshot, BiomarkerUpdate } from '../types';
 import type { PatientTrends } from './usePatientBiomarkers';
 import type { MiisSuggestion } from './useMiisImages';
@@ -87,6 +87,7 @@ export function useContinuousModeOrchestrator({
     stop,
     triggerNewPatient,
     error,
+    encounterSessionId,
     transcriptionStalled,
     isSleeping,
     sleepResumeAt,
@@ -110,16 +111,8 @@ export function useContinuousModeOrchestrator({
     isRecording: isActive && !isStopping,
   });
 
-  // Session ID for image hooks — changes per encounter so caps/dedup reset
-  const encounterCount = stats?.encounters_detected ?? 0;
-  const [continuousMiisSessionId, setContinuousMiisSessionId] = useState<string | null>(null);
-  useEffect(() => {
-    if (isActive) {
-      setContinuousMiisSessionId(`continuous-${Date.now()}-e${encounterCount}`);
-    } else {
-      setContinuousMiisSessionId(null);
-    }
-  }, [isActive, encounterCount]);
+  // Session ID for image hooks — driven by encounter_detected events (no poll lag)
+  const continuousMiisSessionId = isActive ? encounterSessionId : null;
 
   // MIIS image suggestions for continuous mode
   const {

@@ -155,18 +155,9 @@ describe('ContinuousMode', () => {
       expect(screen.getByText('Ending... finalizing notes')).toBeInTheDocument();
     });
 
-    it('shows stats grid with encounter count and buffer words', () => {
+    it('shows encounter timer with buffer word count', () => {
       render(<ContinuousMode {...makeDefaultProps({ isActive: true, stats: ACTIVE_STATS })} />);
-      expect(screen.getByText('3')).toBeInTheDocument();
-      expect(screen.getByText('encounters charted')).toBeInTheDocument();
-      expect(screen.getByText('120')).toBeInTheDocument();
-      expect(screen.getByText('words in buffer')).toBeInTheDocument();
-    });
-
-    it('shows singular "encounter" when count is 1', () => {
-      const oneEncounter = { ...ACTIVE_STATS, encounters_detected: 1 };
-      render(<ContinuousMode {...makeDefaultProps({ isActive: true, stats: oneEncounter })} />);
-      expect(screen.getByText('encounter charted')).toBeInTheDocument();
+      expect(screen.getByText(/120 words/)).toBeInTheDocument();
     });
 
     it('shows buffer info with current encounter', () => {
@@ -196,13 +187,13 @@ describe('ContinuousMode', () => {
     it('fires onNewPatient callback', () => {
       const onNewPatient = vi.fn();
       render(<ContinuousMode {...makeDefaultProps({ isActive: true, stats: ACTIVE_STATS, onNewPatient })} />);
-      fireEvent.click(screen.getByText('New Patient'));
+      fireEvent.click(screen.getByText('End Previous / Start New'));
       expect(onNewPatient).toHaveBeenCalledTimes(1);
     });
 
     it('is disabled when stopping', () => {
       render(<ContinuousMode {...makeDefaultProps({ isActive: true, isStopping: true, stats: ACTIVE_STATS })} />);
-      const btn = screen.getByText('New Patient').closest('button')!;
+      const btn = screen.getByText('End Previous / Start New').closest('button')!;
       expect(btn).toBeDisabled();
     });
 
@@ -211,16 +202,16 @@ describe('ContinuousMode', () => {
       const onNewPatient = vi.fn();
       render(<ContinuousMode {...makeDefaultProps({ isActive: true, stats: ACTIVE_STATS, onNewPatient })} />);
 
-      fireEvent.click(screen.getByText('New Patient'));
+      fireEvent.click(screen.getByText('End Previous / Start New'));
       expect(onNewPatient).toHaveBeenCalledTimes(1);
 
       // Second click within 2s should be ignored (cooldown via ref)
-      fireEvent.click(screen.getByText('New Patient'));
+      fireEvent.click(screen.getByText('End Previous / Start New'));
       expect(onNewPatient).toHaveBeenCalledTimes(1);
 
       // After 2s cooldown, should work again
       vi.advanceTimersByTime(2000);
-      fireEvent.click(screen.getByText('New Patient'));
+      fireEvent.click(screen.getByText('End Previous / Start New'));
       expect(onNewPatient).toHaveBeenCalledTimes(2);
       vi.useRealTimers();
     });

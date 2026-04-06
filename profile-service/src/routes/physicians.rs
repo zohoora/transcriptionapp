@@ -24,6 +24,7 @@ pub async fn create(
     State(state): State<Arc<AppState>>,
     Json(req): Json<CreatePhysicianRequest>,
 ) -> Result<Json<PhysicianProfile>, ApiError> {
+    req.validate()?;
     let mut mgr = state.physicians.write().await;
     Ok(Json(mgr.create(req)?))
 }
@@ -33,6 +34,7 @@ pub async fn update(
     Path(id): Path<String>,
     Json(req): Json<UpdatePhysicianRequest>,
 ) -> Result<Json<PhysicianProfile>, ApiError> {
+    req.validate()?;
     let mut mgr = state.physicians.write().await;
     Ok(Json(mgr.update(&id, req)?))
 }

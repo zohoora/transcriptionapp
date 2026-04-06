@@ -16,6 +16,7 @@ import {
   MergeConfirmDialog,
 } from './cleanup';
 import FeedbackPanel from './FeedbackPanel';
+import { BillingTab, DailySummaryView, MonthlySummaryView } from './billing';
 import { formatDateForApi, formatLocalTime, formatLocalDateTime, formatDurationShort } from '../utils';
 import type {
   LocalArchiveSummary,
@@ -27,10 +28,12 @@ import type {
   EncounterDetails,
   SoapOptions,
   SessionFeedback,
+  BillingRecord,
 } from '../types';
 import { DETAIL_LEVEL_LABELS } from '../types';
 
-type DetailTab = 'transcript' | 'soap' | 'insights';
+type DetailTab = 'transcript' | 'soap' | 'handout' | 'billing' | 'insights';
+type RightPaneMode = 'session' | 'daily_billing' | 'monthly_billing';
 type DataSource = 'local' | 'medplum';
 type CleanupDialog = 'none' | 'delete' | 'merge' | 'editName';
 type SortField = 'time' | 'encounter' | 'patient' | 'words' | 'duration';
@@ -271,6 +274,16 @@ const HistoryWindow: React.FC = () => {
   const [editedTranscript, setEditedTranscript] = useState('');
   const [copySuccess, setCopySuccess] = useState<string | null>(null);
 
+  // Patient handout state
+  const [handoutContent, setHandoutContent] = useState<string | null>(null);
+  const [handoutLoading, setHandoutLoading] = useState(false);
+
+  // Billing state
+  const [billingRecord, setBillingRecord] = useState<BillingRecord | null>(null);
+  const [billingLoading, setBillingLoading] = useState(false);
+  const [rightPaneMode, setRightPaneMode] = useState<RightPaneMode>('session');
+
+
   // SOAP display state (result stored locally since hook doesn't track per-session)
   const [soapResult, setSoapResult] = useState<MultiPatientSoapResult | null>(null);
   const [customInstructionsExpanded, setCustomInstructionsExpanded] = useState(false);
@@ -314,20 +327,30 @@ const HistoryWindow: React.FC = () => {
     (async () => {
       try {
         const dateStr = formatDateForApi(selectedDate);
-        const results = await Promise.allSettled(
-          sessions.map(s =>
-            invoke<LocalArchiveDetails>('get_local_session_details', {
-              sessionId: s.session_id,
-              date: dateStr,
-            })
-          )
-        );
-        const transcripts = results
-          .filter((r): r is PromiseFulfilledResult<LocalArchiveDetails> => r.status === 'fulfilled')
-          .map(r => r.value.transcript)
-          .filter((t): t is string => !!t?.trim());
+        // Fetch transcripts in batches of 5 to avoid overwhelming IPC
+        const batchSize = 5;
+        const transcripts: string[] = [];
+        for (let i = 0; i < sessions.length; i += batchSize) {
+          if (cancelled) break;
+          const batch = sessions.slice(i, i + batchSize);
+          const results = await Promise.allSettled(
+            batch.map(s => invoke<LocalArchiveDetails>('get_local_session_details', { sessionId: s.session_id, date: dateStr }))
+          );
+          for (const r of results) {
+            if (r.status === 'fulfilled' && r.value) {
+              const t = (r.value as LocalArchiveDetails).transcript;
+              if (t?.trim()) transcripts.push(t);
+            }
+          }
+        }
+        if (cancelled) return;
         if (transcripts.length === 0) throw new Error('No transcripts available');
-        const combined = transcripts.join('\n\n--- Next Session ---\n\n');
+        let combined = transcripts.join('\n\n--- Next Session ---\n\n');
+        // Cap at ~15000 words to avoid overwhelming LLM
+        const words = combined.split(/\s+/).length;
+        if (words > 15000) {
+          combined = combined.split(/\s+/).slice(0, 15000).join(' ') + '\n[truncated]';
+        }
         const result = await invoke<string>('generate_clinical_feedback', {
           systemPrompt: DAY_FEEDBACK_PROMPT,
           transcript: combined,
@@ -341,7 +364,7 @@ const HistoryWindow: React.FC = () => {
       }
     })();
 
-    return () => { cancelled = true; };
+    return () => { cancelled = true; dayFeedbackInFlight.current = false; };
   }, [showDayFeedback, dayFeedbackText, selectedDate, sessions]);
 
   // LLM connection check - sync to SOAP hook
@@ -524,10 +547,12 @@ const HistoryWindow: React.FC = () => {
   }, [fetchSessions, settingsLoaded]);
 
   // Fetch session details from local archive or Medplum
-  const fetchSessionDetails = async (session: LocalArchiveSummary, patientIndex?: number | null) => {
+  const fetchSessionDetails = useCallback(async (session: LocalArchiveSummary, patientIndex?: number | null) => {
     setSelectedSessionId(session.session_id);
     setSelectedPatientIndex(patientIndex ?? null);
+    setBillingRecord(null);
     setDetailLoading(true);
+    setRightPaneMode('session');
 
     try {
       let details: LocalArchiveDetails;
@@ -642,7 +667,8 @@ const HistoryWindow: React.FC = () => {
     } finally {
       setDetailLoading(false);
     }
-  };
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- useState setters are stable
+  }, [selectedDate, dataSource, globalSoapDefaults, setSoapOptions, setSoapError]);
 
   // Generate SOAP note using shared hook
   const handleGenerateSoap = useCallback(async () => {
@@ -760,13 +786,47 @@ const HistoryWindow: React.FC = () => {
     setIsEditing(false);
     setSoapResult(null);
     setSoapError(null);
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- useState setters are stable
+    setHandoutContent(null);
+    setBillingRecord(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- all omitted deps are stable (useState setters or useCallback-wrapped functions)
   }, []);
 
   // Clear selection when date changes
   useEffect(() => {
     clearSelection();
   }, [selectedDate, clearSelection]);
+
+  // Load handout content when handout tab is selected
+  useEffect(() => {
+    if (activeTab !== 'handout' || !selectedSession) return;
+    let cancelled = false;
+    setHandoutLoading(true);
+    invoke<string | null>('get_patient_handout', {
+      sessionId: selectedSession.session_id,
+      date: formatDateForApi(selectedDate),
+    }).then(content => {
+      if (!cancelled) setHandoutContent(content);
+    }).catch(e => console.error('Failed to load handout:', e))
+      .finally(() => { if (!cancelled) setHandoutLoading(false); });
+    return () => { cancelled = true; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- session_id is the meaningful dependency
+  }, [activeTab, selectedSession?.session_id, selectedDate]);
+
+  // Load billing data when billing tab selected
+  useEffect(() => {
+    if (activeTab !== 'billing' || !selectedSession) return;
+    let cancelled = false;
+    setBillingLoading(true);
+    invoke<BillingRecord | null>('get_session_billing', {
+      sessionId: selectedSession.session_id,
+      date: formatDateForApi(selectedDate),
+    }).then(record => {
+      if (!cancelled) setBillingRecord(record);
+    }).catch(e => console.error('Failed to load billing:', e))
+      .finally(() => { if (!cancelled) setBillingLoading(false); });
+    return () => { cancelled = true; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- session_id is the meaningful dependency
+  }, [activeTab, selectedSession?.session_id, selectedDate]);
 
   // Escape key clears selection
   useEffect(() => {
@@ -1088,7 +1148,8 @@ const HistoryWindow: React.FC = () => {
   // Derived values
   const hasTranscript = editedTranscript.trim().length > 0;
   const isModified = selectedSession?.transcript !== editedTranscript;
-  const activeSoapContent = soapResult?.notes[activePatient]?.content ?? null;
+  const safeActivePatient = soapResult && activePatient < soapResult.notes.length ? activePatient : 0;
+  const activeSoapContent = soapResult?.notes[safeActivePatient]?.content ?? null;
   const isMultiPatient = (soapResult?.notes.length ?? 0) > 1;
 
   return (
@@ -1301,9 +1362,23 @@ const HistoryWindow: React.FC = () => {
           )}
           </div>{/* end history-left-scroll */}
 
-          {/* Day Feedback button — pinned to bottom of sidebar */}
+          {/* Day Feedback + Billing buttons — pinned to bottom of sidebar */}
           {sessions.length > 0 && !isCleanupMode && (
             <div className="history-left-bottom">
+              <div className="billing-view-buttons">
+                <button
+                  className={`btn-small ${rightPaneMode === 'daily_billing' ? 'active' : ''}`}
+                  onClick={() => setRightPaneMode(rightPaneMode === 'daily_billing' ? 'session' : 'daily_billing')}
+                >
+                  Daily Billing
+                </button>
+                <button
+                  className={`btn-small ${rightPaneMode === 'monthly_billing' ? 'active' : ''}`}
+                  onClick={() => setRightPaneMode(rightPaneMode === 'monthly_billing' ? 'session' : 'monthly_billing')}
+                >
+                  Monthly
+                </button>
+              </div>
               <button
                 className="day-feedback-btn"
                 onClick={() => setShowDayFeedback(true)}
@@ -1315,9 +1390,13 @@ const HistoryWindow: React.FC = () => {
           )}
         </div>
 
-        {/* RIGHT PANE — session details */}
+        {/* RIGHT PANE — session details or billing summaries */}
         <div className="history-right-pane">
-          {detailLoading ? (
+          {rightPaneMode === 'daily_billing' ? (
+            <DailySummaryView date={formatDateForApi(selectedDate)} />
+          ) : rightPaneMode === 'monthly_billing' ? (
+            <MonthlySummaryView endDate={formatDateForApi(selectedDate)} />
+          ) : detailLoading ? (
             <div className="detail-empty-state">
               <div className="spinner" />
             </div>
@@ -1360,6 +1439,24 @@ const HistoryWindow: React.FC = () => {
                   SOAP
                   {soapResult && <span className="tab-badge done">✓</span>}
                 </button>
+                {selectedSession?.metadata?.has_patient_handout && (
+                  <button
+                    className={`review-tab ${activeTab === 'handout' ? 'active' : ''}`}
+                    onClick={() => setActiveTab('handout')}
+                  >
+                    Handout
+                  </button>
+                )}
+                {selectedSession?.metadata?.has_soap_note && (
+                  <button
+                    className={`review-tab ${activeTab === 'billing' ? 'active' : ''}`}
+                    onClick={() => setActiveTab('billing')}
+                  >
+                    Billing
+                    {billingRecord?.status === 'confirmed' && <span className="tab-badge" style={{color: 'var(--accent-idle, #22c55e)'}}>✓</span>}
+                    {billingRecord?.status === 'draft' && <span className="tab-badge">draft</span>}
+                  </button>
+                )}
                 <button
                   className={`review-tab ${activeTab === 'insights' ? 'active' : ''}`}
                   onClick={() => setActiveTab('insights')}
@@ -1621,6 +1718,47 @@ const HistoryWindow: React.FC = () => {
                       </div>
                     )}
                   </div>
+                )}
+
+                {/* Handout Tab */}
+                {activeTab === 'handout' && (
+                  <div className="tab-panel handout-panel">
+                    {handoutLoading ? (
+                      <div className="loading-text">Loading handout...</div>
+                    ) : handoutContent ? (
+                      <>
+                        <div className="handout-content" style={{ whiteSpace: 'pre-wrap', fontFamily: 'Georgia, serif', lineHeight: 1.6 }}>
+                          {handoutContent}
+                        </div>
+                        <div className="handout-actions" style={{ marginTop: 8, display: 'flex', gap: 8 }}>
+                          <button
+                            className="btn-small"
+                            onClick={async () => {
+                              await writeText(handoutContent);
+                              setCopySuccess('handout');
+                              setTimeout(() => setCopySuccess(null), 1500);
+                            }}
+                          >
+                            {copySuccess === 'handout' ? 'Copied!' : 'Copy'}
+                          </button>
+                        </div>
+                      </>
+                    ) : (
+                      <div className="empty-state">No handout available</div>
+                    )}
+                  </div>
+                )}
+
+                {/* Billing Tab */}
+                {activeTab === 'billing' && (
+                  <BillingTab
+                    record={billingRecord}
+                    loading={billingLoading}
+                    sessionId={selectedSession?.session_id || ''}
+                    date={formatDateForApi(selectedDate)}
+                    durationMs={selectedSession?.metadata?.duration_ms ?? null}
+                    onRecordChange={setBillingRecord}
+                  />
                 )}
 
                 {/* Insights Tab */}

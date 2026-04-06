@@ -572,7 +572,7 @@ export interface EncounterDetails extends EncounterSummary {
   sessionInfo: string | null;
 }
 
-export interface SyncStatus {
+export interface MedplumSyncState {
   encounterSynced: boolean;
   transcriptSynced: boolean;
   soapNoteSynced: boolean;
@@ -580,9 +580,12 @@ export interface SyncStatus {
   lastSyncTime: string | null;
 }
 
+/** @deprecated Use MedplumSyncState instead. Kept for backward compatibility. */
+export type SyncStatus = MedplumSyncState;
+
 export interface SyncResult {
   success: boolean;
-  status: SyncStatus;
+  status: MedplumSyncState;
   error: string | null;
   /** Local encounter UUID for log correlation */
   encounterId?: string;
@@ -698,6 +701,7 @@ export interface LocalArchiveSummary {
   room_name?: string | null;
   patient_count?: number | null;
   patient_labels?: string[] | null;
+  has_billing_record?: boolean;
 }
 
 /** Metadata for an archived session */
@@ -724,6 +728,9 @@ export interface LocalArchiveMetadata {
   patient_name: string | null;
   /** Flagged as likely non-clinical by two-pass content check */
   likely_non_clinical: boolean | null;
+  /** Whether a patient handout has been saved for this session */
+  has_patient_handout?: boolean;
+  has_billing_record?: boolean;
   physician_id?: string | null;
   physician_name?: string | null;
   room_name?: string | null;
@@ -996,4 +1003,151 @@ export interface RoomConfig {
   room_id?: string | null;
   active_physician_id?: string | null;
   profile_api_key?: string | null;
+}
+
+// ============================================================================
+// FHO+ Billing Types (Ontario OHIP)
+// ============================================================================
+
+/** Billing category for FHO+ model */
+export type BillingCategory = 'in_basket' | 'out_of_basket';
+
+/** Time-based billing code identifier */
+export type TimeCode = 'Q310' | 'Q311' | 'Q312' | 'Q313';
+
+/** Billing record status lifecycle */
+export type BillingStatus = 'draft' | 'confirmed';
+
+/** Confidence level for auto-extracted billing codes */
+export type BillingConfidence = 'high' | 'medium' | 'low';
+
+/** Warning level for cap indicators */
+export type CapWarningLevel = 'normal' | 'warning' | 'critical' | 'exceeded';
+
+/** A single extracted OHIP billing code */
+export interface BillingCode {
+  code: string;
+  description: string;
+  feeCents: number;
+  category: BillingCategory;
+  shadowPct: number;
+  billableAmountCents: number;
+  confidence: BillingConfidence;
+  autoExtracted: boolean;
+  afterHours: boolean;
+  afterHoursPremiumCents: number;
+}
+
+/** Time-based billing entry (Q310-Q313) */
+export interface TimeEntry {
+  code: string;
+  description: string;
+  ratePer15minCents: number;
+  minutes: number;
+  billableUnits: number;
+  billableAmountCents: number;
+  autoCalculated: boolean;
+}
+
+/** Complete billing record for a single encounter */
+export interface BillingRecord {
+  sessionId: string;
+  date: string;
+  patientName: string | null;
+  status: BillingStatus;
+  codes: BillingCode[];
+  timeEntries: TimeEntry[];
+  totalShadowCents: number;
+  totalOutOfBasketCents: number;
+  totalTimeBasedCents: number;
+  totalAmountCents: number;
+  confirmedAt: string | null;
+  notes: string | null;
+  extractionModel: string | null;
+  extractedAt: string | null;
+}
+
+/** Daily cap tracking */
+export interface DailyCapStatus {
+  hoursUsed: number;
+  hoursLimit: number;
+  percentage: number;
+  warningLevel: CapWarningLevel;
+}
+
+/** Monthly (28-day) cap tracking */
+export interface MonthlyCapStatus {
+  hoursUsed: number;
+  hoursLimit: number;
+  hoursPercentage: number;
+  indirectAdminRatio: number;
+  indirectAdminLimit: number;
+  adminRatio: number;
+  adminLimit: number;
+  warningLevel: CapWarningLevel;
+  projectedCapHitDate: string | null;
+}
+
+/** Daily billing summary */
+export interface BillingDaySummary {
+  date: string;
+  encounterCount: number;
+  encounters: BillingRecord[];
+  totalShadowCents: number;
+  totalOutOfBasketCents: number;
+  totalTimeBasedCents: number;
+  totalAmountCents: number;
+  timeHoursByCode: Record<string, number>;
+  totalTimeHours: number;
+  confirmedCount: number;
+  draftCount: number;
+  capStatus: DailyCapStatus;
+}
+
+/** Monthly (28-day rolling) billing summary */
+export interface BillingMonthSummary {
+  periodStart: string;
+  periodEnd: string;
+  dailySummaries: BillingDaySummary[];
+  totalShadowCents: number;
+  totalOutOfBasketCents: number;
+  totalTimeBasedCents: number;
+  totalAmountCents: number;
+  totalHours: number;
+  hoursByCode: Record<string, number>;
+  indirectAdminRatio: number;
+  adminRatio: number;
+  capStatus: MonthlyCapStatus;
+}
+
+/** FHO+ billing cap constants */
+export const BILLING_CAPS = {
+  DAILY_HOURS: 14,
+  MONTHLY_HOURS: 240,
+  MONTHLY_WINDOW_DAYS: 28,
+  INDIRECT_ADMIN_RATIO: 0.25,
+  ADMIN_ALONE_RATIO: 0.05,
+  WARNING_THRESHOLD: 0.80,
+  CRITICAL_THRESHOLD: 0.95,
+} as const;
+
+/** Time-based billing rates */
+export const TIME_BILLING_RATES: Record<TimeCode, { description: string; ratePerHour: number; ratePer15min: number }> = {
+  Q310: { description: 'Direct patient care', ratePerHour: 80, ratePer15min: 20 },
+  Q311: { description: 'Telephone/remote care', ratePerHour: 68, ratePer15min: 17 },
+  Q312: { description: 'Indirect patient care', ratePerHour: 80, ratePer15min: 20 },
+  Q313: { description: 'Clinical administration', ratePerHour: 80, ratePer15min: 20 },
+};
+
+/** Format cents as dollar string */
+export function formatBillingAmount(cents: number): string {
+  return `$${(cents / 100).toFixed(2)}`;
+}
+
+/** Get cap warning level from percentage */
+export function getCapWarningLevel(percentage: number): CapWarningLevel {
+  if (percentage >= 1.0) return 'exceeded';
+  if (percentage >= BILLING_CAPS.CRITICAL_THRESHOLD) return 'critical';
+  if (percentage >= BILLING_CAPS.WARNING_THRESHOLD) return 'warning';
+  return 'normal';
 }

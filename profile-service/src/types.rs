@@ -1,3 +1,4 @@
+use crate::error::ApiError;
 use serde::{Deserialize, Serialize};
 
 // ── Physician ──────────────────────────────────────────────────────
@@ -61,6 +62,23 @@ pub struct CreatePhysicianRequest {
     pub specialty: Option<String>,
 }
 
+impl CreatePhysicianRequest {
+    pub fn validate(&self) -> Result<(), ApiError> {
+        if self.name.is_empty() {
+            return Err(ApiError::BadRequest("Name must not be empty".into()));
+        }
+        if self.name.len() > 500 {
+            return Err(ApiError::BadRequest("Name exceeds 500 characters".into()));
+        }
+        if self.specialty.as_ref().map_or(false, |s| s.len() > 500) {
+            return Err(ApiError::BadRequest(
+                "Specialty exceeds 500 characters".into(),
+            ));
+        }
+        Ok(())
+    }
+}
+
 /// Request body for partial update of physician preferences
 #[derive(Debug, Deserialize)]
 pub struct UpdatePhysicianRequest {
@@ -106,6 +124,49 @@ pub struct UpdatePhysicianRequest {
     pub max_speakers: Option<usize>,
     #[serde(default)]
     pub medplum_practitioner_id: Option<String>,
+}
+
+impl UpdatePhysicianRequest {
+    pub fn validate(&self) -> Result<(), ApiError> {
+        if let Some(ref name) = self.name {
+            if name.is_empty() {
+                return Err(ApiError::BadRequest("Name must not be empty".into()));
+            }
+            if name.len() > 500 {
+                return Err(ApiError::BadRequest("Name exceeds 500 characters".into()));
+            }
+        }
+        if self.specialty.as_ref().map_or(false, |s| s.len() > 500) {
+            return Err(ApiError::BadRequest(
+                "Specialty exceeds 500 characters".into(),
+            ));
+        }
+        if self
+            .soap_custom_instructions
+            .as_ref()
+            .map_or(false, |s| s.len() > 10_000)
+        {
+            return Err(ApiError::BadRequest(
+                "Custom instructions exceed 10000 characters".into(),
+            ));
+        }
+        if self.soap_format.as_ref().map_or(false, |s| s.len() > 500) {
+            return Err(ApiError::BadRequest(
+                "SOAP format exceeds 500 characters".into(),
+            ));
+        }
+        if self.charting_mode.as_ref().map_or(false, |s| s.len() > 100) {
+            return Err(ApiError::BadRequest(
+                "Charting mode exceeds 100 characters".into(),
+            ));
+        }
+        if self.language.as_ref().map_or(false, |s| s.len() > 100) {
+            return Err(ApiError::BadRequest(
+                "Language exceeds 100 characters".into(),
+            ));
+        }
+        Ok(())
+    }
 }
 
 // ── Infrastructure ────────────────────────────────────────────────
@@ -250,6 +311,23 @@ pub struct CreateRoomRequest {
     pub description: Option<String>,
 }
 
+impl CreateRoomRequest {
+    pub fn validate(&self) -> Result<(), ApiError> {
+        if self.name.is_empty() {
+            return Err(ApiError::BadRequest("Name must not be empty".into()));
+        }
+        if self.name.len() > 500 {
+            return Err(ApiError::BadRequest("Name exceeds 500 characters".into()));
+        }
+        if self.description.as_ref().map_or(false, |s| s.len() > 2000) {
+            return Err(ApiError::BadRequest(
+                "Description exceeds 2000 characters".into(),
+            ));
+        }
+        Ok(())
+    }
+}
+
 #[derive(Debug, Deserialize)]
 pub struct UpdateRoomRequest {
     #[serde(default)]
@@ -301,6 +379,25 @@ pub struct UpdateRoomRequest {
     pub debug_storage_enabled: Option<bool>,
     #[serde(default)]
     pub input_device_id: Option<String>,
+}
+
+impl UpdateRoomRequest {
+    pub fn validate(&self) -> Result<(), ApiError> {
+        if let Some(ref name) = self.name {
+            if name.is_empty() {
+                return Err(ApiError::BadRequest("Name must not be empty".into()));
+            }
+            if name.len() > 500 {
+                return Err(ApiError::BadRequest("Name exceeds 500 characters".into()));
+            }
+        }
+        if self.description.as_ref().map_or(false, |s| s.len() > 2000) {
+            return Err(ApiError::BadRequest(
+                "Description exceeds 2000 characters".into(),
+            ));
+        }
+        Ok(())
+    }
 }
 
 // ── Speaker ────────────────────────────────────────────────────────
@@ -400,6 +497,10 @@ pub struct ArchiveMetadata {
     pub physician_name: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub room_name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub has_patient_handout: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub has_billing_record: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -433,6 +534,8 @@ pub struct ArchiveSummary {
     pub physician_name: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub room_name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub has_billing_record: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

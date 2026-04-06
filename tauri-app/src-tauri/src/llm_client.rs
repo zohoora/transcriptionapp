@@ -11,6 +11,19 @@ use tracing::{debug, error, info, warn};
 
 use crate::encounter_detection::MultiPatientDetectionResult;
 
+/// Truncate HTTP error bodies to prevent PHI leakage and log flooding.
+/// Proxy error pages (e.g. nginx 502) can echo request bodies containing
+/// patient transcripts; capping at `max_len` chars prevents that data from
+/// entering logs or error strings.
+fn truncate_error_body(body: &str, max_len: usize) -> &str {
+    if body.len() <= max_len {
+        body
+    } else {
+        let end = body.ceil_char_boundary(max_len);
+        &body[..end]
+    }
+}
+
 /// Full outcome of a multi-patient detection LLM call, including the raw
 /// prompt/response for pipeline logging.
 pub struct MultiPatientDetectionOutcome {
@@ -550,8 +563,9 @@ impl LLMClient {
                 } else {
                     let status = response.status();
                     let body = response.text().await.unwrap_or_default();
-                    error!("Failed to pre-warm model {}: {} - {}", model, status, body);
-                    Err(format!("Failed to pre-warm model: {} - {}", status, body))
+                    let truncated = truncate_error_body(&body, 200);
+                    error!("Failed to pre-warm model {}: {} - {}", model, status, truncated);
+                    Err(format!("Failed to pre-warm model: {} - {}", status, truncated))
                 }
             }
             Err(e) => {
@@ -711,13 +725,14 @@ impl LLMClient {
                     } else if is_retryable_status(response.status()) {
                         let status = response.status();
                         let body = response.text().await.unwrap_or_default();
-                        last_error = format!("LLM router returned error: {} - {}", status, body);
+                        last_error = format!("LLM router returned error: {} - {}", status, truncate_error_body(&body, 200));
                         continue;
                     } else {
                         let status = response.status();
                         let body = response.text().await.unwrap_or_default();
-                        error!("LLM generate failed: {} - {}", status, body);
-                        return Err(format!("LLM router returned error: {} - {}", status, body));
+                        let truncated = truncate_error_body(&body, 200);
+                        error!("LLM generate failed: {} - {}", status, truncated);
+                        return Err(format!("LLM router returned error: {} - {}", status, truncated));
                     }
                 }
                 Err(e) => {
@@ -1177,7 +1192,7 @@ Respond ONLY with JSON: {{"is_greeting": true/false, "confidence": 0.0-1.0, "det
         if !response.status().is_success() {
             let status = response.status();
             let body = response.text().await.unwrap_or_default();
-            return Err(format!("LLM router returned error: {} - {}", status, body));
+            return Err(format!("LLM router returned error: {} - {}", status, truncate_error_body(&body, 200)));
         }
 
         let chat_response: ChatCompletionResponse = response
@@ -1278,13 +1293,14 @@ Respond ONLY with JSON: {{"is_greeting": true/false, "confidence": 0.0-1.0, "det
                     } else if is_retryable_status(response.status()) {
                         let status = response.status();
                         let body = response.text().await.unwrap_or_default();
-                        last_error = format!("LLM router returned error: {} - {}", status, body);
+                        last_error = format!("LLM router returned error: {} - {}", status, truncate_error_body(&body, 200));
                         continue;
                     } else {
                         let status = response.status();
                         let body = response.text().await.unwrap_or_default();
-                        error!("Vision generate failed: {} - {}", status, body);
-                        return Err(format!("LLM router returned error: {} - {}", status, body));
+                        let truncated = truncate_error_body(&body, 200);
+                        error!("Vision generate failed: {} - {}", status, truncated);
+                        return Err(format!("LLM router returned error: {} - {}", status, truncated));
                     }
                 }
                 Err(e) => {
@@ -1679,9 +1695,15 @@ fn remove_italic_markers(line: &str) -> String {
     }
 }
 
-/// Extract JSON from LLM response (handles markdown code blocks and cleanup)
-/// Fix unescaped newlines inside JSON strings
-/// LLMs sometimes produce JSON with literal newlines in strings which is invalid
+// ── JSON repair pipeline ─────────────────────────────────────────────────
+// Functions: fix_json_newlines → remove_leading_commas → remove_trailing_commas
+//            → fix_truncated_json
+// Applied in sequence by extract_json_from_response() and the aggressive
+// repair fallback in parse_and_format_soap_json().
+// ─────────────────────────────────────────────────────────────────────────
+
+/// Fix unescaped newlines inside JSON strings.
+/// LLMs sometimes produce JSON with literal newlines in strings which is invalid.
 fn fix_json_newlines(json: &str) -> String {
     let mut result = String::with_capacity(json.len());
     let mut in_string = false;
@@ -2309,6 +2331,44 @@ pub(crate) fn build_per_patient_user_content(
         TRANSCRIPT:\n{}",
         patient_label, patient_summary, all_patients_desc, transcript
     )
+}
+
+/// Build a system prompt for generating a plain-language patient handout
+/// from a clinical transcript. The handout should be easy for patients to
+/// understand (5th-8th grade reading level) and use warm, reassuring language.
+pub fn build_patient_handout_prompt() -> String {
+    r#"You are a caring medical assistant who writes visit summaries for patients.
+Write a clear, easy-to-understand summary of this medical visit for the patient to take home.
+
+RULES:
+- Write at a 5th to 8th grade reading level
+- Avoid medical jargon; if you must use a medical term, explain it in parentheses
+- Address the patient directly using "you" and "your"
+- Be warm, reassuring, and professional
+- Target 200-500 words
+- Do NOT wrap the output in JSON or any other format — output plain text only
+- Do NOT include the patient's name or the physician's name
+- Only include information that was actually discussed in the visit
+
+USE THESE SECTIONS (with the exact headings below):
+
+What We Discussed Today
+- Summarize the main reasons for the visit and topics covered
+
+What We Found
+- Summarize any exam findings, test results, or observations shared during the visit
+
+Your Plan
+- List next steps: medications, lifestyle changes, procedures, or referrals
+- Explain each item simply so the patient understands what to do and why
+
+When to Come Back
+- State when the patient should return or follow up
+
+Warning Signs — Call Us If...
+- List specific symptoms or situations that should prompt the patient to call the office or seek urgent care
+
+If a section has no relevant information from the visit, skip that section entirely."#.to_string()
 }
 
 /// Build a prompt for merging incorrectly split patients within one encounter.
