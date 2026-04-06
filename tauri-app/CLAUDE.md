@@ -35,6 +35,7 @@ Rust Backend
 │   ├── screenshot.rs      # Screen capture commands
 │   ├── continuous.rs      # Continuous charting mode commands
 │   ├── archive.rs         # Local session history commands
+│   ├── billing.rs         # FHO+ billing commands (7 commands)
 │   ├── whisper_server.rs  # STT Router status commands
 │   └── permissions.rs     # Microphone permission commands
 ├── lib.rs             # Tauri app setup, plugin registration, command routing
@@ -75,7 +76,7 @@ Rust Backend
 ├── encounter_pipeline.rs # Shared encounter pipeline helpers (SOAP generation, merge checks, clinical content check)
 ├── screenshot_task.rs # Screenshot capture task for continuous mode (extracted from continuous_mode.rs)
 ├── continuous_mode_events.rs # Typed event emission for continuous mode
-├── server_sync.rs     # ServerSyncContext — fire-and-forget session upload to profile server
+├── server_sync.rs     # ServerSyncContext — fire-and-forget session upload + billing.json sync
 ├── shadow_observer.rs # Shadow mode observer task (sensor-side for dual detection comparison)
 ├── co2_calibration.rs # CO2 sensor baseline calibration tool
 ├── debug_storage.rs   # Debug storage (dev only)
@@ -97,6 +98,13 @@ Rust Backend
 ├── vision_experiment.rs    # Vision SOAP experiment CLI support
 ├── diarization/       # Speaker detection (ONNX embeddings, clustering)
 ├── enhancement/       # Speech enhancement (GTCRN)
+├── billing/             # FHO+ billing engine
+│   ├── mod.rs               # Module root, re-exports
+│   ├── types.rs             # BillingRecord, BillingCode, TimeEntry, cap types
+│   ├── ohip_codes.rs        # Static OHIP code database (74 codes)
+│   ├── clinical_features.rs # LLM extraction schema + prompt builder
+│   ├── rule_engine.rs       # Deterministic feature → OHIP code mapping
+│   └── time_tracking.rs     # Q310-Q313 time calculation, daily/monthly caps
 ├── biomarkers/        # Vocal analysis (vitality, stability, cough detection)
 ├── mcp/               # MCP server on port 7101
 ├── preprocessing.rs   # DC removal, high-pass filter, AGC
@@ -166,8 +174,9 @@ cd src-tauri && cargo test       # Rust
 | Modify room setup | `room_config.rs`, `commands/physicians.rs`, `useRoomConfig.ts`, `RoomSetup.tsx` |
 | Modify server session sync | `profile_client.rs`, `continuous_mode.rs` (ServerSyncContext), `commands/archive.rs` (server fallback) |
 | Modify patient handout | `llm_client.rs` (`build_patient_handout_prompt()`), `commands/ollama.rs` (`generate_patient_handout`), `commands/archive.rs` (`save_patient_handout`, `get_patient_handout`), `local_archive.rs`, `usePatientHandout.ts`, `PatientHandoutEditor.tsx` |
+| Modify billing | `commands/billing.rs`, `billing/rule_engine.rs`, `billing/ohip_codes.rs`, `billing/types.rs`, `billing/time_tracking.rs`, `src/components/billing/BillingTab.tsx`, `src/types/index.ts` (billing types section) |
 
-## IPC Commands (~136 total across 20 modules)
+## IPC Commands (~143 total across 21 modules)
 
 | Module | Commands | Source |
 |--------|----------|--------|
@@ -190,6 +199,7 @@ cd src-tauri && cargo test       # Rust
 | Physicians (18) | `get_room_config`, `save_room_config`, `test_profile_server`, `get_physicians`, `select_physician`, `get_active_physician`, `deselect_physician`, `sync_speaker_profiles`, `create_physician`, `update_physician`, `delete_physician`, `get_rooms`, `create_room`, `update_room`, `delete_room`, `sync_settings_from_server`, `sync_infrastructure_settings`, `sync_room_settings` | `commands/physicians.rs` |
 | Calibration (4) | `start_co2_calibration`, `stop_co2_calibration`, `advance_calibration_phase`, `get_calibration_status` | `commands/calibration.rs` |
 | Patient Handout (3) | `generate_patient_handout`, `save_patient_handout`, `get_patient_handout` | `commands/ollama.rs`, `commands/archive.rs` |
+| Billing (7) | `get_session_billing`, `save_session_billing`, `confirm_session_billing`, `extract_billing_codes`, `get_daily_billing_summary`, `get_monthly_billing_summary`, `export_billing_csv` | `commands/billing.rs` |
 
 ## Events (Backend → Frontend)
 
@@ -273,6 +283,9 @@ Idle → Preparing → Recording → Stopping → Completed
 | Archive date parsing | `parse_archive_date()` in commands/archive.rs — shared helper for "YYYY-MM-DD" → `DateTime<Utc>` conversion. Used by save_local_soap_note, save_patient_handout, get_patient_handout |
 | Patient handout save-then-load | `usePatientHandout` saves handout to archive first, then opens editor window which loads from backend on mount. Avoids event delivery race condition between window creation and React mount |
 | Patient handout in SOAP context | `generate_soap_note_auto_detect` checks for `patient_handout.txt` via `get_patient_handout_by_id()` and includes it in the LLM prompt. Uses local date for path construction |
+| Billing extraction fail-open | Billing extraction errors in continuous mode are logged but never block encounter processing. `extract_and_archive_billing()` in encounter_pipeline.rs returns `Err`, caller logs warning and continues |
+| Billing invalidation on SOAP change | `add_soap_note()` in local_archive.rs auto-deletes billing.json and clears `has_billing_record` when SOAP is regenerated. Same pattern in split_session and merge_encounters |
+| Two-stage billing (no LLM hallucination) | LLM extracts clinical features (constrained enums in `clinical_features.rs`), rule engine maps to OHIP codes deterministically (`rule_engine.rs`). LLM never outputs billing codes |
 
 ## Features
 
@@ -297,6 +310,7 @@ Idle → Preparing → Recording → Stopping → Completed
 | **Session Cleanup** | History window tools: delete, split, merge sessions, rename patients, renumber encounters. Split opens in separate resizable window with LLM-suggested split point (`suggest_split_points` via `fast-model`) | `commands/archive.rs`, `components/cleanup/`, `SplitWindow.tsx` |
 | **Vision Experiments** | CLI + IPC tools for comparing vision-based SOAP strategies across archived sessions | `vision_experiment.rs`, `commands/ollama.rs` |
 | **Simulation Replay Logging** | Three-tier structured logging for offline replay and regression testing: per-segment JSONL timeline (`segments.jsonl`), self-contained encounter test case (`replay_bundle.json` — all LLM prompts/responses, sensor transitions, vision results, split decisions), day-level orchestration events (`day_log.jsonl`). Config snapshot via `replay_snapshot()`. ~0.5-3MB/day. `detection_replay_cli` replays archived decisions through `evaluate_detection()` with `--override` for what-if parameter tuning | `segment_log.rs`, `replay_bundle.rs`, `day_log.rs`, `config.rs`, `tools/detection_replay_cli.rs` |
+| **FHO+ Billing** | Two-stage billing extraction: LLM extracts clinical features (constrained enums), deterministic rule engine maps to OHIP codes. 74 OHIP codes (assessments, procedures at 50% shadow, chronic disease, premiums, Q310-Q313). Auto-extracts after SOAP in continuous mode. Full Q310-Q313 time tracking with 14hr/day and 240hr/28-day caps. Daily/monthly summary views with cap warnings. CSV export. Billing invalidated on SOAP regen, split, merge. Stored as `billing.json` per session | `billing/`, `commands/billing.rs`, `encounter_pipeline.rs`, `src/components/billing/` |
 | **Multi-User** | Room + physician profile system. Passwordless physician selection (physical clinic security). Profile service on Mac Studio (:8090) stores physicians, rooms, speakers, and sessions. Server is source of truth — local archive is write-through cache. Settings merge: infrastructure (shared) → room (per-machine) → physician (roaming). Background audio upload, 30s delayed re-sync for late-written files. Offline resilience with cached profiles | `profile_client.rs`, `room_config.rs`, `physician_cache.rs`, `commands/physicians.rs` |
 
 ### Continuous Mode Lifecycle Notes
@@ -335,6 +349,7 @@ Multi-user: profile_service_url (in room_config.json), active_physician_id.
 | `~/.transcriptionapp/archive/YYYY/MM/DD/session_id/segments.jsonl` | Per-segment timeline (timestamp, text, speaker, word counts) |
 | `~/.transcriptionapp/archive/YYYY/MM/DD/session_id/replay_bundle.json` | Self-contained encounter test case (all LLM calls, decisions, outcomes) |
 | `~/.transcriptionapp/archive/YYYY/MM/DD/session_id/patient_handout.txt` | Patient-facing visit summary (optional, only if clinician generated one) |
+| `~/.transcriptionapp/archive/YYYY/MM/DD/session_id/billing.json` | Per-session billing record (OHIP codes, time entries, totals, draft/confirmed status) |
 | `~/.transcriptionapp/logs/` | Activity logs (daily rotation, PHI-safe) |
 | `~/.transcriptionapp/debug/` | Debug storage (dev only) |
 | `~/.transcriptionapp/mmwave/` | Presence sensor CSV logs (daily rotation) |
@@ -403,6 +418,13 @@ Multi-user: profile_service_url (in room_config.json), active_physician_id.
 - `FeedbackPanel.tsx` - Session feedback/rating UI
 - `ImageViewerWindow.tsx` - Full-screen image viewer (standalone window)
 - `PatientHandoutEditor.tsx` - Patient handout editor (standalone window — Save/Print/Copy/Close)
+
+**Billing Components** (`src/components/billing/`):
+- `BillingTab.tsx` - Per-encounter billing panel (code list, time entries, totals, confirm)
+- `DailySummaryView.tsx` - Daily billing summary with cap progress bars
+- `MonthlySummaryView.tsx` - 28-day rolling summary with FHO+ cap tracking
+- `CapProgressBar.tsx` - Reusable cap progress bar with warning colors
+- `billingUtils.ts` - Formatting helpers (formatCents, capWarningColor)
 
 **Cleanup Components** (`src/components/cleanup/`):
 - `CleanupActionBar.tsx` - Toolbar with delete/split/merge/rename actions for session cleanup

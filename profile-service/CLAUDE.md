@@ -46,7 +46,7 @@ Middleware stack (outermost → innermost): CORS → body limit (500 MB) → aut
 | Atomic writes | `atomic_write()` — UUID-suffixed temp file + rename. Used for transcript, SOAP, metadata, all JSON stores |
 | Session cache | `session_cache: HashMap<(physician_id, session_id), PathBuf>` — avoids O(N) directory walk per lookup. Populated lazily, invalidated on delete/split/merge |
 | Path traversal | `validate_id()` rejects `/`, `\`, `..`, `\0`, empty strings. Called on all physician_id and session_id inputs |
-| File allowlist | `is_allowed_session_file()` — explicit allowlist for auxiliary files (pipeline_log, replay_bundle, segments, screenshots/*.jpg) |
+| File allowlist | `is_allowed_session_file()` — explicit allowlist for auxiliary files (pipeline_log, replay_bundle, segments, screenshots/*.jpg, billing.json) |
 | Input validation | `validate()` methods on all Create/Update request types — name 500 chars, instructions 10K, etc. |
 | Backup safety | Split/merge operations create `.bak` files before modifying transcripts, removed on success |
 | JSON stores | Physicians, rooms, speakers, infrastructure — in-memory Vec + `atomic_write` to disk on mutation. `0o600` file permissions |
@@ -88,6 +88,7 @@ profile-data/
                 ├── pipeline_log.jsonl
                 ├── replay_bundle.json
                 ├── segments.jsonl
+                ├── billing.json
                 └── screenshots/*.jpg
 ```
 
@@ -98,4 +99,4 @@ profile-data/
 | Add physician field | `types.rs` (struct + Create/UpdateRequest + validate), `store/physicians.rs` (merge logic) |
 | Add room setting | `types.rs` (RoomOverlay + Create/UpdateRoomRequest + validate), `store/rooms.rs` |
 | Add session endpoint | `routes/sessions.rs` (handler), `store/sessions.rs` (logic), `routes/mod.rs` (register) |
-| Modify file allowlist | `store/sessions.rs` (`is_allowed_session_file()`) |
+| Modify file allowlist | `store/sessions.rs` (`is_allowed_session_file()`) — currently allows: pipeline_log, replay_bundle, segments, screenshots/*.jpg, billing.json |
