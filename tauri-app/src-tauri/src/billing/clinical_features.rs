@@ -93,7 +93,7 @@ pub struct ClinicalFeatures {
 /// Returns `(system_prompt, user_prompt)`.
 pub fn build_billing_extraction_prompt(
     soap_content: &str,
-    transcript_excerpt: &str,
+    transcript: &str,
 ) -> (String, String) {
     let system_prompt = r#"You are a medical billing analyst for Ontario FHO+ family medicine. Your task is to extract clinical features from a SOAP note and transcript to determine appropriate OHIP billing codes.
 
@@ -211,8 +211,8 @@ IMPORTANT: Only include procedures that were PHYSICALLY PERFORMED, not just disc
 Respond ONLY with the JSON object. No explanations or commentary."#;
 
     let user_prompt = format!(
-        "## SOAP Note\n\n{}\n\n## Transcript Excerpt\n\n{}",
-        soap_content, transcript_excerpt
+        "## SOAP Note\n\n{}\n\n## Full Transcript\n\n{}",
+        soap_content, transcript
     );
 
     (system_prompt.to_string(), user_prompt)

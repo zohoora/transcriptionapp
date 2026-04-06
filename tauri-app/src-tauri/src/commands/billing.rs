@@ -63,13 +63,9 @@ pub async fn extract_billing_codes(
         .map_err(CommandError::Other)?;
     let soap = details.soap_note
         .ok_or_else(|| CommandError::NotFound("No SOAP note found for billing extraction".into()))?;
-    let transcript_excerpt = details.transcript
+    let transcript = details.transcript
         .as_deref()
-        .unwrap_or("")
-        .split_whitespace()
-        .take(1000)
-        .collect::<Vec<_>>()
-        .join(" ");
+        .unwrap_or("");
 
     let config = Config::load_or_default();
     let client = LLMClient::new(
@@ -89,7 +85,7 @@ pub async fn extract_billing_codes(
         &client,
         &config.fast_model,
         &soap,
-        &transcript_excerpt,
+        transcript,
         &session_id,
         &parsed_date,
         duration_ms,

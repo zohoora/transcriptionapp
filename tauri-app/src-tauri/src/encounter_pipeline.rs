@@ -200,7 +200,7 @@ pub async fn generate_and_archive_soap(
 // ── Billing extraction ─────────────────────────────────────────────
 
 /// Timeout for billing extraction LLM calls (seconds).
-const BILLING_EXTRACTION_TIMEOUT_SECS: u64 = 60;
+const BILLING_EXTRACTION_TIMEOUT_SECS: u64 = 300;
 
 /// Extract billing codes from a completed SOAP note and save to archive.
 ///
@@ -213,7 +213,7 @@ pub async fn extract_and_archive_billing(
     client: &LLMClient,
     model: &str,
     soap_content: &str,
-    transcript_excerpt: &str,
+    transcript: &str,
     session_id: &str,
     session_date: &DateTime<Utc>,
     duration_ms: u64,
@@ -225,7 +225,7 @@ pub async fn extract_and_archive_billing(
     use crate::billing::rule_engine::map_features_to_billing;
 
     // Build prompt
-    let (system_prompt, user_prompt) = build_billing_extraction_prompt(soap_content, transcript_excerpt);
+    let (system_prompt, user_prompt) = build_billing_extraction_prompt(soap_content, transcript);
 
     // Call LLM with timeout
     let start = Instant::now();
@@ -384,13 +384,9 @@ pub async fn recover_orphaned_billing(
             None => continue,
         };
 
-        let transcript_excerpt = details.transcript
+        let transcript = details.transcript
             .as_deref()
-            .unwrap_or("")
-            .split_whitespace()
-            .take(1000)
-            .collect::<Vec<_>>()
-            .join(" ");
+            .unwrap_or("");
 
         let duration_ms = summary.duration_ms.unwrap_or(0);
         let after_hours = is_after_hours(&session_date);
@@ -404,7 +400,7 @@ pub async fn recover_orphaned_billing(
             client,
             model,
             &soap,
-            &transcript_excerpt,
+            transcript,
             &summary.session_id,
             &session_date,
             duration_ms,

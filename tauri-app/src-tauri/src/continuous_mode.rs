@@ -1884,11 +1884,6 @@ pub async fn run_continuous_mode(
 
                                     // Billing extraction (fail-open)
                                     {
-                                        let transcript_excerpt = filtered_encounter_text
-                                            .split_whitespace()
-                                            .take(1000)
-                                            .collect::<Vec<_>>()
-                                            .join(" ");
                                         let encounter_duration_ms = encounter_start
                                             .map(|s| (Utc::now() - s).num_milliseconds().max(0) as u64)
                                             .unwrap_or(0);
@@ -1897,7 +1892,7 @@ pub async fn run_continuous_mode(
                                             client,
                                             &fast_model,
                                             content,
-                                            &transcript_excerpt,
+                                            &filtered_encounter_text,
                                             &session_id,
                                             &soap_now,
                                             encounter_duration_ms,
@@ -2776,11 +2771,6 @@ pub async fn run_continuous_mode(
 
                         // Billing extraction (fail-open)
                         {
-                            let billing_transcript_excerpt = filtered_text
-                                .split_whitespace()
-                                .take(1000)
-                                .collect::<Vec<_>>()
-                                .join(" ");
                             let flush_duration_ms = flush_encounter_start
                                 .map(|s| (Utc::now() - s).num_milliseconds().max(0) as u64)
                                 .unwrap_or(0);
@@ -2794,7 +2784,7 @@ pub async fn run_continuous_mode(
                                 &client,
                                 &flush_fast_model,
                                 content,
-                                &billing_transcript_excerpt,
+                                &filtered_text,
                                 &session_id,
                                 &flush_now,
                                 flush_duration_ms,
