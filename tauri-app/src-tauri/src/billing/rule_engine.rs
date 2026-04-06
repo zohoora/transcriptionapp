@@ -241,8 +241,8 @@ mod tests {
         assert_eq!(record.status, BillingStatus::Draft);
         assert_eq!(record.codes.len(), 1);
         assert_eq!(record.codes[0].code, "A001A");
-        // A001A: 2375 cents * 30% = 712 cents (integer truncation)
-        assert_eq!(record.codes[0].billable_amount_cents, 712);
+        // A001A: 2680 cents * 30% = 804 cents (integer truncation)
+        assert_eq!(record.codes[0].billable_amount_cents, 804);
         assert_eq!(record.codes[0].category, "in_basket");
     }
 
@@ -252,8 +252,8 @@ mod tests {
         features.visit_type = VisitType::GeneralAssessment;
         let record = map_features_to_billing(&features, "s1", "2026-04-05", 1_800_000, None);
         assert_eq!(record.codes[0].code, "A003A");
-        // A003A: 7720 * 30% = 2316
-        assert_eq!(record.codes[0].billable_amount_cents, 2316);
+        // A003A: 9560 * 30% = 2868
+        assert_eq!(record.codes[0].billable_amount_cents, 2868);
     }
 
     #[test]
@@ -286,8 +286,8 @@ mod tests {
         features.visit_type = VisitType::PrenatalMajor;
         let record = map_features_to_billing(&features, "s1", "2026-04-05", 1_800_000, None);
         assert_eq!(record.codes[0].code, "P003A");
-        // Out-of-basket: full FFS = 8035
-        assert_eq!(record.codes[0].billable_amount_cents, 8035);
+        // Out-of-basket: full FFS = 8467
+        assert_eq!(record.codes[0].billable_amount_cents, 8467);
         assert_eq!(record.codes[0].category, "out_of_basket");
     }
 
@@ -297,7 +297,7 @@ mod tests {
         features.visit_type = VisitType::PrenatalMinor;
         let record = map_features_to_billing(&features, "s1", "2026-04-05", 900_000, None);
         assert_eq!(record.codes[0].code, "P004A");
-        assert_eq!(record.codes[0].billable_amount_cents, 3815);
+        assert_eq!(record.codes[0].billable_amount_cents, 4020);
     }
 
     #[test]
@@ -306,7 +306,7 @@ mod tests {
         features.visit_type = VisitType::PalliativeCare;
         let record = map_features_to_billing(&features, "s1", "2026-04-05", 1_800_000, None);
         assert_eq!(record.codes[0].code, "K023A");
-        assert_eq!(record.codes[0].billable_amount_cents, 6275);
+        assert_eq!(record.codes[0].billable_amount_cents, 6612);
     }
 
     #[test]
@@ -352,8 +352,8 @@ mod tests {
         let biopsy = &record.codes[1];
         assert_eq!(biopsy.code, "Z104A");
         assert_eq!(biopsy.shadow_pct, 50);
-        // Z104A: 3500 * 50% = 1750
-        assert_eq!(biopsy.billable_amount_cents, 1750);
+        // Z104A: 3688 * 50% = 1844
+        assert_eq!(biopsy.billable_amount_cents, 1844);
     }
 
     #[test]
@@ -380,7 +380,7 @@ mod tests {
         let dm = &record.codes[1];
         assert_eq!(dm.code, "Q040A");
         assert_eq!(dm.category, "out_of_basket");
-        assert_eq!(dm.billable_amount_cents, 6000); // full FFS
+        assert_eq!(dm.billable_amount_cents, 6322); // full FFS
     }
 
     #[test]
@@ -396,8 +396,8 @@ mod tests {
         let assessment = &record.codes[0];
         assert_eq!(assessment.code, "A001A");
         assert!(assessment.after_hours);
-        // Premium = 2375 * 50% = 1187
-        assert_eq!(assessment.after_hours_premium_cents, 1187);
+        // Premium = 2680 * 50% = 1340
+        assert_eq!(assessment.after_hours_premium_cents, 1340);
 
         let premium = &record.codes[1];
         assert_eq!(premium.code, "Q012A");
@@ -489,10 +489,10 @@ mod tests {
         let record =
             map_features_to_billing(&features, "s1", "2026-04-05", 20 * 60 * 1000, None);
 
-        // A004A shadow: 3815 * 30% = 1144
-        let a004_shadow = 3815 * 30 / 100;
-        // Q040A out-of-basket: 6000
-        let q040_full = 6000;
+        // A004A shadow: 3935 * 30% = 1180
+        let a004_shadow = 3935 * 30 / 100;
+        // Q040A out-of-basket: 6322
+        let q040_full = 6322;
         // Q310: 1 unit * $20 = 2000
         let time = 2000;
 
