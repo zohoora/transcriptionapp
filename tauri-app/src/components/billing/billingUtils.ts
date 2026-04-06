@@ -108,11 +108,98 @@ export const OHIP_CODE_CRITERIA: Record<string, string> = {
   Q012A: 'After-Hours Premium: 50% premium for eligible services outside clinic hours',
   Q053A: 'Patient Attachment Bonus: $500 for newly rostered patient',
   Q054A: 'Mother & Newborn Bonus: $350',
+  // Injections & joint procedures
+  G373A: 'Injection — Sole Reason for Visit: IM, SC, or joint injection with no other assessment',
+  G369A: 'Epidural Injection: Caudal or lumbar epidural steroid injection performed',
+  G370A: 'Nerve Block: Peripheral nerve block performed (e.g., digital, intercostal)',
+  G371A: 'Trigger Point Injection (single): Single-site trigger point injection',
+  G372A: 'Trigger Point Injection (multiple): Multi-site trigger point injections',
+  Z331A: 'Joint Injection (small): Intra-articular injection — small joint (finger, wrist, ankle)',
+  Z332A: 'Joint Injection (large): Intra-articular injection — large joint (knee, shoulder, hip)',
+  G394A: 'Pap Smear Repeat: Follow-up or repeat Pap smear collection',
+  // Additional procedures
+  Z117A: 'Wound Debridement: Wound care with debridement of devitalized tissue',
+  Z129A: 'Foreign Body Removal (skin): Removal of foreign body from skin or subcutaneous tissue',
+  Z169A: 'Toenail Removal: Partial or complete toenail removal (ingrown nail, onychocryptosis)',
+  E502A: 'Tray Fee — Minor Procedure: Disposable supplies for minor office procedure',
+  K030A: 'Diabetic Management Assessment: Active diabetes care visit — A1C review, med adjustment, foot exam (max 4/year)',
+  A900A: 'Telephone/Email Management: Brief phone/email patient management per call',
+  K022A: 'Abnormal Pap Counselling: Counselling for abnormal Papanicolaou smear result',
   // Time-based
   Q310: 'Direct Patient Care: In-person, video, or phone-from-office encounters. $80/hr ($20/15min)',
   Q311: 'Telephone Remote Care: Phone calls when physician is NOT in clinic. $68/hr ($17/15min)',
   Q312: 'Indirect Patient Care: Charting, lab review, referral letters, care coordination. $80/hr ($20/15min)',
   Q313: 'Clinical Administration: Screening programs, EMR updates, QI initiatives. $80/hr ($20/15min)',
+  // Telehealth / Virtual Care
+  B960A: 'Telephone Intermediate Assessment: Phone-based assessment, moderate complexity, 1-2 issues',
+  B961A: 'Telephone Minor Assessment: Phone-based single focused complaint, brief',
+  B962A: 'Telephone General/Complete Assessment: Phone-based comprehensive assessment, multi-system',
+  K083A: 'Telephone/Email Clinical Management: Per 15 min clinical management via phone or email',
+  K082A: 'Telehealth Consultation Fee: Telehealth-delivered consultation',
+  // Mental Health
+  K007A: 'Psychotherapy — Individual (half hour+): Individual psychotherapy session, 30+ minutes',
+  K002A: 'Individual Psychotherapy (half hour): Individual psychotherapy session, ~30 minutes',
+  K197A: 'Prenatal Genetic Counselling: Genetic counselling for prenatal patients',
+  // Hospital Visits
+  C003A: 'Hospital Admission Assessment: Full admission assessment for hospitalized patient',
+  C004A: 'Hospital Admission — Partial: Partial admission assessment (e.g., already assessed by other MD)',
+  C009A: 'Hospital Subsequent Visit: Follow-up visit for hospitalized patient',
+  C010A: 'Hospital Concurrent Care: Concurrent care visit when another physician is MRP',
+  C012A: 'Hospital Discharge Day Management: Discharge planning and management on day of discharge',
+  C001A: 'Family Practice Consultation: In-office consultation requested by another physician',
+  C002A: 'Repeat Consultation: Follow-up consultation for previously consulted patient',
+  H003A: 'Newborn Hospital Care — First Day: Initial newborn assessment and care in hospital',
+  H004A: 'Newborn Hospital Care — Subsequent: Follow-up newborn care in hospital, per day',
+  // Long-Term Care
+  A191A: 'LTC New Admission: Comprehensive assessment for newly admitted LTC resident',
+  A192A: 'LTC Subsequent Visit: Follow-up visit for LTC resident',
+  A193A: 'LTC Annual Comprehensive: Annual comprehensive assessment for existing LTC resident',
+  A194A: 'LTC Intermediate Visit: Intermediate complexity visit for LTC resident',
+  A195A: 'LTC Pronouncement of Death: Pronouncement of death for LTC resident',
+  // House Calls
+  A901A: 'House Call Assessment: Assessment performed at patient\'s home',
+  A902A: 'House Call — Pronouncement of Death: Home visit for pronouncement of death',
+  A903A: 'House Call — Additional Patient: Additional patient at same residence during house call',
+  // Prenatal / Obstetric
+  P001A: 'Prenatal Visit — First: Initial prenatal visit, complete OB history + baseline',
+  P002A: 'Prenatal Visit — Subsequent: Follow-up prenatal visit',
+  P006A: 'Prenatal Global: Global fee covering all prenatal visits (mutually exclusive with P001A/P002A)',
+  P007A: 'Postnatal Visit — General: Postnatal general assessment',
+  P008A: 'Postnatal Visit — Subsequent: Follow-up postnatal visit',
+  P009A: 'Prenatal Care — Late Transfer In: Prenatal care for late-transfer patient',
+  P018A: 'Postpartum Care — Comprehensive: Comprehensive postpartum assessment',
+  P013A: 'Labour Management — First 2 Hours: Active labour management, initial 2 hours',
+  P014A: 'Labour Management — Additional Hour: Each additional hour of active labour management',
+  // Palliative Care
+  K036A: 'Palliative Care Counselling (office): Half hour+ palliative care counselling in office',
+  K037A: 'Palliative Care Counselling — Subsequent: Follow-up palliative counselling',
+  K038A: 'Palliative Care — Home Visit: Palliative care counselling at patient\'s home',
+  E082A: 'Palliative Care Premium: Add-on premium for palliative care visit',
+  B998A: 'Home Palliative Phone Management: Per 15 min phone management for palliative patient at home',
+  // Geriatric
+  K655A: 'Comprehensive Geriatric Assessment: Annual comprehensive assessment for patients 75+',
+  K656A: 'Geriatric Assessment — Follow-Up: Follow-up to comprehensive geriatric assessment',
+  // Preventive Care Bonuses
+  Q010A: 'Childhood Immunization Bonus: Per completed immunization series',
+  Q015A: 'Flu Immunization Bonus: Bonus for administering influenza vaccine',
+  Q100A: 'Cervical Screening Bonus: Bonus for Pap/cervical screening referral',
+  Q101A: 'Mammography Screening Bonus: Bonus for mammography screening referral',
+  Q102A: 'Colorectal Cancer Screening Bonus: Bonus for FOBT/FIT screening referral',
+  Q200A: 'New Patient Intake Incentive: Incentive for rostering a new patient',
+  // Form Completion
+  K031A: 'Certificate — Short: Sick note, return-to-work, brief certificate',
+  K035A: 'Certificate — Long: Insurance report, disability report, detailed certificate',
+  K034A: 'Transfer of Care Summary: Transfer of care report or summary letter',
+  // Additional Procedures
+  G420A: 'Ear Syringing: Cerumen removal (bilateral ear irrigation)',
+  G313A: 'Aspiration — Abscess/Cyst/Hematoma: Needle aspiration of abscess, cyst, or hematoma',
+  Z200A: 'Curette — Skin Lesion: Shave or curettage of skin lesion',
+  Z201A: 'Curette — Additional Lesion: Each additional skin lesion curetted',
+  E540A: 'Toenail Removal — Under Block: Toenail removal with local anesthetic block',
+  E541A: 'Toenail Wedge Resection with Phenol: Wedge resection with phenol matrixectomy',
+  // eConsult
+  K998A: 'Physician-to-Physician Telephone Consultation: Phone consultation between physicians',
+  K738A: 'eConsult — Specialist Seeking GP Input: Electronic consultation from specialist',
 };
 
 /** Exclusion group — codes within the same group cannot be billed together */
@@ -136,6 +223,12 @@ const EXCLUSION_GROUPS: ExclusionGroup[] = [
   { name: 'Electrocoagulation single/multiple', codes: ['Z112A', 'Z113A'], reason: 'Single vs multiple lesion — pick one' },
   { name: 'Epistaxis treatment', codes: ['Z314A', 'Z315A'], reason: 'Cautery vs packing — typically one per encounter' },
   { name: 'Direct care time', codes: ['Q310', 'Q311'], reason: 'In-office vs remote — one setting per encounter' },
+  { name: 'Trigger point single/multiple', codes: ['G371A', 'G372A'], reason: 'Single vs multiple sites — pick one' },
+  { name: 'Joint injection size', codes: ['Z331A', 'Z332A'], reason: 'Small vs large joint — pick one per joint' },
+  { name: 'Prenatal visit types', codes: ['P001A', 'P006A'], reason: 'Individual visits vs global — can\'t bill both' },
+  { name: 'Hospital assessment types', codes: ['C003A', 'C004A'], reason: 'Full vs partial admission assessment' },
+  { name: 'Palliative counselling', codes: ['K036A', 'K037A'], reason: 'Initial vs subsequent per visit' },
+  { name: 'LTC assessment types', codes: ['A191A', 'A193A'], reason: 'Admission vs annual — different purposes but both comprehensive' },
 ];
 
 /** Check if a new code conflicts with any existing codes */
