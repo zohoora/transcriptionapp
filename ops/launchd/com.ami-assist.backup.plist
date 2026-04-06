@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.ami-assist.backup</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>/Users/arash/transcriptionapp/ops/backup.sh</string>
+    </array>
+
+    <!-- Run daily at 1:00 AM -->
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Hour</key>
+        <integer>1</integer>
+        <key>Minute</key>
+        <integer>0</integer>
+    </dict>
+
+    <key>StandardOutPath</key>
+    <string>/Users/arash/backups/ami-assist/launchd-backup.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/arash/backups/ami-assist/launchd-backup.log</string>
+
+    <!-- Don't run on load — wait for scheduled time -->
+    <key>RunAtLoad</key>
+    <false/>
+</dict>
+</plist>

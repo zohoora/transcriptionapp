@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.ami-assist.health-monitor</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>/Users/arash/transcriptionapp/ops/health-monitor.sh</string>
+    </array>
+
+    <!-- Run every 5 minutes (300 seconds) -->
+    <key>StartInterval</key>
+    <integer>300</integer>
+
+    <key>StandardOutPath</key>
+    <string>/Users/arash/backups/ami-assist/launchd-health.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/arash/backups/ami-assist/launchd-health.log</string>
+
+    <!-- Start checking immediately on load -->
+    <key>RunAtLoad</key>
+    <true/>
+</dict>
+</plist>
