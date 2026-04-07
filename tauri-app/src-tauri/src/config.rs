@@ -3,9 +3,11 @@ use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use tracing::debug;
 
-/// Map ISO 639-1 language code to the English name expected by the STT server (Qwen3-ASR).
+/// Map ISO 639-1 language code to the English name expected by the STT server.
+/// Empty string means auto-detect (server determines language from audio).
 pub fn iso_to_stt_language(iso: &str) -> &str {
     match iso {
+        "auto" | "" => "", // Auto-detect — server determines language from audio
         "en" => "English",
         "fr" => "French",
         "fa" | "per" => "Persian",
@@ -36,7 +38,7 @@ pub fn iso_to_stt_language(iso: &str) -> &str {
         "tl" => "Filipino",
         "mk" => "Macedonian",
         "yue" => "Cantonese",
-        _ => "English",
+        _ => "", // Auto-detect for unknown language codes
     }
 }
 
@@ -420,7 +422,7 @@ impl Default for Settings {
     fn default() -> Self {
         Self {
             whisper_model: "small".to_string(),
-            language: "en".to_string(),
+            language: "auto".to_string(),
             input_device_id: None,
             output_format: "paragraphs".to_string(),
             vad_threshold: 0.5,

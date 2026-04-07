@@ -24,6 +24,7 @@ import { ImageSuggestions } from '../ImageSuggestions';
 import { PatientPulse } from '../PatientPulse';
 
 const ALL_LANGUAGES = [
+  { iso: 'auto', name: 'Auto-detect' },
   { iso: 'en', name: 'English' }, { iso: 'fr', name: 'French' },
   { iso: 'fa', name: 'Persian' }, { iso: 'es', name: 'Spanish' },
   { iso: 'de', name: 'German' }, { iso: 'zh', name: 'Chinese' },
