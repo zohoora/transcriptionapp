@@ -137,15 +137,15 @@ fn procedure_type_to_code(proc: &ProcedureType) -> &'static str {
         ProcedureType::LesionExcisionMedium => "R051A",
         ProcedureType::LesionExcisionLarge => "R094A",
         ProcedureType::AbscessDrainage => "Z101A",
-        ProcedureType::SkinBiopsy => "Z104A",
-        ProcedureType::CryotherapySingle => "Z108A",
-        ProcedureType::CryotherapyMultiple => "Z110A",
-        ProcedureType::ElectrocoagulationSingle => "Z112A",
-        ProcedureType::ElectrocoagulationMultiple => "Z113A",
-        ProcedureType::BenignExcisionSmall => "Z114A",
-        ProcedureType::BenignExcisionMedium => "Z119A",
+        ProcedureType::SkinBiopsy => "Z113A",
+        ProcedureType::CryotherapySingle => "Z117A",
+        ProcedureType::CryotherapyMultiple => "Z117A",
+        ProcedureType::ElectrocoagulationSingle => "Z159A",
+        ProcedureType::ElectrocoagulationMultiple => "Z160A",
+        ProcedureType::BenignExcisionSmall => "Z125A",
+        ProcedureType::BenignExcisionMedium => "Z125A",
         ProcedureType::LacerationRepairSimpleSmall => "Z154A",
-        ProcedureType::LacerationRepairSimpleLarge => "Z160A",
+        ProcedureType::LacerationRepairSimpleLarge => "Z175A",
         ProcedureType::LacerationRepairComplex => "Z176A",
         ProcedureType::EpistaxisCautery => "Z314A",
         ProcedureType::EpistaxisPacking => "Z315A",
@@ -154,7 +154,7 @@ fn procedure_type_to_code(proc: &ProcedureType) -> &'static str {
         ProcedureType::HemorrhoidIncision => "Z545A",
         ProcedureType::CornealForeignBody => "Z847A",
         ProcedureType::Immunization => "G538A",
-        ProcedureType::InjectionSoleReason => "G538A", // maps to general immunization
+        ProcedureType::InjectionSoleReason => "G373A", // sole reason for visit injection
     }
 }
 
@@ -286,8 +286,8 @@ mod tests {
         features.visit_type = VisitType::PrenatalMajor;
         let record = map_features_to_billing(&features, "s1", "2026-04-05", 1_800_000, None);
         assert_eq!(record.codes[0].code, "P003A");
-        // Out-of-basket: full FFS = 8467
-        assert_eq!(record.codes[0].billable_amount_cents, 8467);
+        // Out-of-basket: full FFS = 8035
+        assert_eq!(record.codes[0].billable_amount_cents, 8035);
         assert_eq!(record.codes[0].category, "out_of_basket");
     }
 
@@ -297,7 +297,7 @@ mod tests {
         features.visit_type = VisitType::PrenatalMinor;
         let record = map_features_to_billing(&features, "s1", "2026-04-05", 900_000, None);
         assert_eq!(record.codes[0].code, "P004A");
-        assert_eq!(record.codes[0].billable_amount_cents, 4020);
+        assert_eq!(record.codes[0].billable_amount_cents, 3815);
     }
 
     #[test]
@@ -306,7 +306,7 @@ mod tests {
         features.visit_type = VisitType::PalliativeCare;
         let record = map_features_to_billing(&features, "s1", "2026-04-05", 1_800_000, None);
         assert_eq!(record.codes[0].code, "K023A");
-        assert_eq!(record.codes[0].billable_amount_cents, 6612);
+        assert_eq!(record.codes[0].billable_amount_cents, 6275);
     }
 
     #[test]
@@ -350,10 +350,10 @@ mod tests {
         // Assessment + procedure = 2 codes
         assert_eq!(record.codes.len(), 2);
         let biopsy = &record.codes[1];
-        assert_eq!(biopsy.code, "Z104A");
+        assert_eq!(biopsy.code, "Z113A");
         assert_eq!(biopsy.shadow_pct, 50);
-        // Z104A: 3688 * 50% = 1844
-        assert_eq!(biopsy.billable_amount_cents, 1844);
+        // Z113A: 3500 * 50% = 1750
+        assert_eq!(biopsy.billable_amount_cents, 1750);
     }
 
     #[test]
@@ -367,7 +367,7 @@ mod tests {
         // Assessment + 2 procedures = 3 codes
         assert_eq!(record.codes.len(), 3);
         assert_eq!(record.codes[1].code, "G365A");
-        assert_eq!(record.codes[2].code, "Z110A");
+        assert_eq!(record.codes[2].code, "Z117A");
     }
 
     #[test]
@@ -380,7 +380,7 @@ mod tests {
         let dm = &record.codes[1];
         assert_eq!(dm.code, "Q040A");
         assert_eq!(dm.category, "out_of_basket");
-        assert_eq!(dm.billable_amount_cents, 6322); // full FFS
+        assert_eq!(dm.billable_amount_cents, 6000); // full FFS
     }
 
     #[test]
@@ -414,7 +414,7 @@ mod tests {
         assert_eq!(record.codes.len(), 3);
 
         let biopsy = &record.codes[1];
-        assert_eq!(biopsy.code, "Z104A");
+        assert_eq!(biopsy.code, "Z113A");
         assert!(!biopsy.after_hours); // procedures not after-hours eligible
         assert_eq!(biopsy.after_hours_premium_cents, 0);
     }
@@ -491,8 +491,8 @@ mod tests {
 
         // A004A shadow: 3935 * 30% = 1180
         let a004_shadow = 3935 * 30 / 100;
-        // Q040A out-of-basket: 6322
-        let q040_full = 6322;
+        // Q040A out-of-basket: 6000
+        let q040_full = 6000;
         // Q310: 1 unit * $20 = 2000
         let time = 2000;
 
