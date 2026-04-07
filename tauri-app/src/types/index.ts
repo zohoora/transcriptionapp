@@ -1069,6 +1069,15 @@ export interface BillingRecord {
   extractedAt: string | null;
 }
 
+/** Physician-provided billing context for code extraction */
+export interface BillingContext {
+  visitSetting: string;       // "in_office" | "phone_office" | "phone_home" | "video" | "home_visit"
+  patientAge: string;         // "adult" | "child_0_1" | "child_2_15" | "adolescent" | "senior" | "idd"
+  referralReceived: boolean;
+  counsellingExhausted: boolean;
+  afterHoursOverride: boolean | null;  // null = auto-detect
+}
+
 /** Daily cap tracking */
 export interface DailyCapStatus {
   hoursUsed: number;

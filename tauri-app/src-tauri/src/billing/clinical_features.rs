@@ -146,10 +146,12 @@ pub struct ClinicalFeatures {
 // ── Prompt construction ────────────────────────────────────────────────────
 
 /// Build the system + user prompts for clinical feature extraction.
+/// `context_hints` contains physician-provided billing context (visit setting, patient age, etc.).
 /// Returns `(system_prompt, user_prompt)`.
 pub fn build_billing_extraction_prompt(
     soap_content: &str,
     transcript: &str,
+    context_hints: &str,
 ) -> (String, String) {
     let system_prompt = r#"You are a medical billing analyst for Ontario FHO+ family medicine. Your task is to extract clinical features from a SOAP note and transcript to determine appropriate OHIP billing codes.
 
@@ -348,9 +350,15 @@ CRITICAL RULES:
 
 Respond ONLY with the JSON object. No explanations or commentary."#;
 
+    let context_section = if context_hints.is_empty() {
+        String::new()
+    } else {
+        format!("\n\n## Billing Context (provided by physician)\n\n{}", context_hints)
+    };
+
     let user_prompt = format!(
-        "## SOAP Note\n\n{}\n\n## Full Transcript\n\n{}",
-        soap_content, transcript
+        "## SOAP Note\n\n{}\n\n## Full Transcript\n\n{}{}",
+        soap_content, transcript, context_section
     );
 
     (system_prompt.to_string(), user_prompt)
@@ -408,7 +416,7 @@ mod tests {
 
     #[test]
     fn test_build_billing_extraction_prompt() {
-        let (system, user) = build_billing_extraction_prompt("SOAP content here", "Transcript here");
+        let (system, user) = build_billing_extraction_prompt("SOAP content here", "Transcript here", "");
         assert!(system.contains("FHO+"));
         assert!(system.contains("minor_assessment"));
         assert!(system.contains("pap_smear"));
@@ -422,6 +430,16 @@ mod tests {
         assert!(system.contains("pap_smear_repeat"));
         assert!(user.contains("SOAP content here"));
         assert!(user.contains("Transcript here"));
+        // No context section when hints are empty
+        assert!(!user.contains("Billing Context"));
+    }
+
+    #[test]
+    fn test_build_billing_extraction_prompt_with_context() {
+        let hints = "Visit was conducted by VIDEO telemedicine. Use A101 (limited virtual care video).";
+        let (_, user) = build_billing_extraction_prompt("SOAP", "Transcript", hints);
+        assert!(user.contains("## Billing Context (provided by physician)"));
+        assert!(user.contains("VIDEO telemedicine"));
     }
 
     #[test]

@@ -1894,6 +1894,7 @@ pub async fn run_continuous_mode(
                                             &fast_model,
                                             content,
                                             &filtered_encounter_text,
+                                            "", // no physician-provided context in auto-extraction
                                             &session_id,
                                             &soap_now,
                                             encounter_duration_ms,
@@ -2836,6 +2837,7 @@ pub async fn run_continuous_mode(
                                 &flush_fast_model,
                                 content,
                                 &filtered_text,
+                                "", // no physician-provided context in auto-extraction
                                 &session_id,
                                 &flush_now,
                                 flush_duration_ms,

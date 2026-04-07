@@ -1,7 +1,7 @@
 import React, { useState, useCallback, useEffect } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { writeText } from '@tauri-apps/plugin-clipboard-manager';
-import type { BillingRecord, BillingCode, OhipCodeSearchResult, BillingCategory } from '../../types';
+import type { BillingRecord, BillingCode, BillingContext, OhipCodeSearchResult, BillingCategory } from '../../types';
 import { formatCents, confidenceBadgeClass, OHIP_CODE_CRITERIA, findConflicts, findAllConflicts } from './billingUtils';
 
 interface BillingTabProps {
@@ -23,6 +23,14 @@ export const BillingTab: React.FC<BillingTabProps> = ({
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<OhipCodeSearchResult[]>([]);
   const [searchLoading, setSearchLoading] = useState(false);
+
+  // Billing context selectors
+  const [contextExpanded, setContextExpanded] = useState(false);
+  const [visitSetting, setVisitSetting] = useState('in_office');
+  const [patientAge, setPatientAge] = useState('adult');
+  const [referralReceived, setReferralReceived] = useState(false);
+  const [counsellingExhausted, setCounsellingExhausted] = useState(false);
+  const [afterHoursMode, setAfterHoursMode] = useState<'auto' | 'yes' | 'no'>('auto');
 
   useEffect(() => {
     if (!showAddCode || searchQuery.length < 2) {
@@ -74,12 +82,23 @@ export const BillingTab: React.FC<BillingTabProps> = ({
     recalcTotals(updated);
   }, [record, recalcTotals]);
 
+  const buildContext = useCallback((): BillingContext => {
+    return {
+      visitSetting,
+      patientAge,
+      referralReceived,
+      counsellingExhausted,
+      afterHoursOverride: afterHoursMode === 'auto' ? null : afterHoursMode === 'yes',
+    };
+  }, [visitSetting, patientAge, referralReceived, counsellingExhausted, afterHoursMode]);
+
   const handleExtract = useCallback(async () => {
     setExtracting(true);
     setExtractError(null);
     try {
+      const context = buildContext();
       const result = await invoke<BillingRecord>('extract_billing_codes', {
-        sessionId, date,
+        sessionId, date, context,
       });
       onRecordChange(result);
     } catch (e) {
@@ -89,7 +108,7 @@ export const BillingTab: React.FC<BillingTabProps> = ({
     } finally {
       setExtracting(false);
     }
-  }, [sessionId, date, onRecordChange]);
+  }, [sessionId, date, onRecordChange, buildContext]);
 
   const handleConfirm = useCallback(async () => {
     try {
@@ -160,6 +179,72 @@ export const BillingTab: React.FC<BillingTabProps> = ({
     return (
       <div className="billing-panel billing-empty">
         <p>No billing codes extracted for this encounter.</p>
+
+        {/* Collapsible Billing Context */}
+        <div className="billing-context-section">
+          <button
+            className="billing-context-toggle"
+            onClick={() => setContextExpanded(prev => !prev)}
+          >
+            <span className="billing-context-arrow">{contextExpanded ? '\u25BC' : '\u25B6'}</span>
+            Billing Context
+          </button>
+          {contextExpanded && (
+            <div className="billing-context-fields">
+              <div className="billing-context-row">
+                <label>Setting</label>
+                <select value={visitSetting} onChange={e => setVisitSetting(e.target.value)}>
+                  <option value="in_office">In Office</option>
+                  <option value="phone_office">Phone from Office</option>
+                  <option value="phone_home">Phone from Home</option>
+                  <option value="video">Video</option>
+                  <option value="home_visit">Home Visit</option>
+                </select>
+              </div>
+              <div className="billing-context-row">
+                <label>Patient</label>
+                <select value={patientAge} onChange={e => setPatientAge(e.target.value)}>
+                  <option value="adult">Adult 18-64</option>
+                  <option value="child_0_1">Child 0-1</option>
+                  <option value="child_2_15">Child 2-15</option>
+                  <option value="adolescent">Adolescent 16-17</option>
+                  <option value="senior">Senior 65+</option>
+                  <option value="idd">Adult with IDD</option>
+                </select>
+              </div>
+              <div className="billing-context-row">
+                <label>Referral</label>
+                <label className="billing-context-checkbox">
+                  <input
+                    type="checkbox"
+                    checked={referralReceived}
+                    onChange={e => setReferralReceived(e.target.checked)}
+                  />
+                  Consultation
+                </label>
+              </div>
+              <div className="billing-context-row">
+                <label>K013</label>
+                <select
+                  value={counsellingExhausted ? 'exhausted' : 'available'}
+                  onChange={e => setCounsellingExhausted(e.target.value === 'exhausted')}
+                >
+                  <option value="available">Available</option>
+                  <option value="exhausted">3+ used (K033)</option>
+                </select>
+              </div>
+              <div className="billing-context-row">
+                <label>Hours</label>
+                <select value={afterHoursMode} onChange={e => setAfterHoursMode(e.target.value as 'auto' | 'yes' | 'no')}>
+                  <option value="auto">Auto-detect</option>
+                  <option value="yes">After Hours</option>
+                  <option value="no">Regular Hours</option>
+                </select>
+              </div>
+            </div>
+          )}
+        </div>
+
         <button className="btn-generate" onClick={handleExtract} disabled={extracting}>
           {extracting ? 'Extracting...' : 'Extract Billing Codes'}
         </button>

@@ -9533,6 +9533,87 @@ button.review-section-header-left:focus {
   color: var(--text-secondary, #9ca3af);
 }
 
+/* Billing context selectors */
+.billing-context-section {
+  width: 100%;
+  max-width: 360px;
+}
+
+.billing-context-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: none;
+  border: none;
+  color: var(--text-secondary, #9ca3af);
+  font-size: 12px;
+  cursor: pointer;
+  padding: 4px 0;
+  width: 100%;
+  text-align: left;
+}
+.billing-context-toggle:hover {
+  color: var(--text-primary, #e5e7eb);
+}
+
+.billing-context-arrow {
+  font-size: 10px;
+  width: 12px;
+  display: inline-block;
+}
+
+.billing-context-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 12px;
+  margin-top: 4px;
+  border-radius: 6px;
+  background: var(--bg-secondary, #1f2937);
+  border: 1px solid var(--border-color, #374151);
+}
+
+.billing-context-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.billing-context-row > label:first-child {
+  flex: 0 0 60px;
+  font-size: 11px;
+  color: var(--text-secondary, #9ca3af);
+  text-align: right;
+}
+.billing-context-row select {
+  flex: 1;
+  font-size: 11px;
+  padding: 3px 6px;
+  border-radius: 4px;
+  border: 1px solid var(--border-color, #374151);
+  background: var(--bg-primary, #111827);
+  color: var(--text-primary, #e5e7eb);
+  cursor: pointer;
+}
+.billing-context-row select:focus {
+  outline: none;
+  border-color: var(--accent-idle, #22c55e);
+}
+
+.billing-context-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--text-primary, #e5e7eb);
+  cursor: pointer;
+  flex: 1 !important;
+  text-align: left !important;
+}
+.billing-context-checkbox input[type="checkbox"] {
+  cursor: pointer;
+  accent-color: var(--accent-idle, #22c55e);
+}
+
 .billing-status-bar {
   display: flex;
   align-items: center;

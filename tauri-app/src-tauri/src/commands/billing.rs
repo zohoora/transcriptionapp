@@ -10,8 +10,77 @@ use crate::config::Config;
 use crate::llm_client::LLMClient;
 use crate::local_archive;
 use chrono::{Datelike, Duration};
+use serde::Deserialize;
 use tauri::State;
 use tracing::{debug, info, warn};
+
+/// Physician-provided billing context that supplements LLM extraction.
+#[derive(Deserialize, Debug, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct BillingContext {
+    /// "in_office", "phone_office", "phone_home", "video", "home_visit"
+    #[serde(default = "default_setting")]
+    pub visit_setting: String,
+    /// "adult", "child_0_1", "child_2_15", "adolescent", "senior", "idd"
+    #[serde(default = "default_age")]
+    pub patient_age: String,
+    /// Formal consultation referral received
+    #[serde(default)]
+    pub referral_received: bool,
+    /// K013 3-unit annual limit reached — use K033 instead
+    #[serde(default)]
+    pub counselling_exhausted: bool,
+    /// None = auto-detect from time, Some(true/false) = manual override
+    #[serde(default)]
+    pub after_hours_override: Option<bool>,
+}
+
+fn default_setting() -> String {
+    "in_office".to_string()
+}
+fn default_age() -> String {
+    "adult".to_string()
+}
+
+/// Build prompt hint text from billing context selections.
+pub fn build_context_hints(ctx: &BillingContext) -> String {
+    let mut hints = Vec::new();
+
+    match ctx.visit_setting.as_str() {
+        "phone_office" => hints.push("Visit was conducted by TELEPHONE from the physician's office. Use assessment codes, not A101/A102.".to_string()),
+        "phone_home" => hints.push("Visit was conducted by TELEPHONE from outside the office (physician at home). Use A102 (limited virtual care phone) or Q311 for time tracking.".to_string()),
+        "video" => hints.push("Visit was conducted by VIDEO telemedicine. Use A101 (limited virtual care video).".to_string()),
+        "home_visit" => hints.push("Visit was a HOME VISIT to the patient's residence. Use A900 (complex house call assessment).".to_string()),
+        _ => {} // in_office is default, no hint needed
+    }
+
+    match ctx.patient_age.as_str() {
+        "child_0_1" => hints.push("Patient is an infant (0-1 years old). For periodic health visit use K017 (child).".to_string()),
+        "child_2_15" => hints.push("Patient is a child (2-15 years old). For periodic health visit use K017 (child).".to_string()),
+        "adolescent" => hints.push("Patient is an adolescent (16-17 years old). For periodic health visit use K130 (adolescent).".to_string()),
+        "senior" => hints.push("Patient is 65 years or older. For periodic health visit use K132 (65+).".to_string()),
+        "idd" => hints.push("Patient is an adult with intellectual/developmental disability. For periodic health visit use K133 (IDD).".to_string()),
+        _ => {} // adult 18-64 is default
+    }
+
+    if ctx.referral_received {
+        hints.push("A formal written REFERRAL was received from another physician for this visit. Use A005 (consultation) instead of a regular assessment.".to_string());
+    }
+
+    if ctx.counselling_exhausted {
+        hints.push("The patient has EXHAUSTED their 3 K013 counselling units for this year. Use K033 (additional counselling units) instead of K013.".to_string());
+    }
+
+    if let Some(ah) = ctx.after_hours_override {
+        if ah {
+            hints.push("This visit is AFTER HOURS. Apply the after-hours indicator.".to_string());
+        } else {
+            hints.push("This visit is during regular hours. Do NOT mark as after hours.".to_string());
+        }
+    }
+
+    hints.join("\n")
+}
 
 #[tauri::command]
 pub fn get_session_billing(
@@ -54,15 +123,26 @@ pub fn confirm_session_billing(
 /// Extract billing codes from a session's SOAP note via LLM + rule engine.
 /// Called on-demand from the billing tab "Extract Billing Codes" button.
 /// Tries local archive first, then server (session may be from another machine).
+/// Accepts optional `context` with physician-provided billing hints.
 #[tauri::command]
 pub async fn extract_billing_codes(
     session_id: String,
     date: String,
+    context: Option<BillingContext>,
     active_physician: State<'_, SharedActivePhysician>,
     profile_client: State<'_, SharedProfileClient>,
 ) -> Result<BillingRecord, CommandError> {
     info!("Extracting billing codes for session: {}", session_id);
     let parsed_date = super::parse_date(&date)?;
+
+    // Build context hints string (empty if no context provided)
+    let context_hints = context
+        .as_ref()
+        .map(|c| build_context_hints(c))
+        .unwrap_or_default();
+    if !context_hints.is_empty() {
+        debug!("Billing context hints:\n{}", context_hints);
+    }
 
     // Load session details — try local first, then server
     let details = match local_archive::get_session(&session_id, &date) {
@@ -103,7 +183,13 @@ pub async fn extract_billing_codes(
     ).map_err(|e| CommandError::Network(e))?;
 
     let duration_ms = details.metadata.duration_ms.unwrap_or(0);
-    let after_hours = crate::encounter_pipeline::is_after_hours(&parsed_date);
+
+    // After-hours: use override from context if provided, else auto-detect
+    let after_hours = context
+        .as_ref()
+        .and_then(|c| c.after_hours_override)
+        .unwrap_or_else(|| crate::encounter_pipeline::is_after_hours(&parsed_date));
+
     let logger = std::sync::Arc::new(std::sync::Mutex::new(
         crate::pipeline_log::PipelineLogger::new(),
     ));
@@ -113,6 +199,7 @@ pub async fn extract_billing_codes(
         &config.fast_model,
         &soap,
         transcript,
+        &context_hints,
         &session_id,
         &parsed_date,
         duration_ms,
@@ -389,5 +476,137 @@ fn escape_csv(s: &str) -> String {
         format!("\"{}\"", s.replace('"', "\"\""))
     } else {
         s.to_string()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_build_context_hints_defaults() {
+        let ctx = BillingContext::default();
+        let hints = build_context_hints(&ctx);
+        assert!(hints.is_empty(), "Default context should produce no hints");
+    }
+
+    #[test]
+    fn test_build_context_hints_video() {
+        let ctx = BillingContext {
+            visit_setting: "video".to_string(),
+            ..Default::default()
+        };
+        let hints = build_context_hints(&ctx);
+        assert!(hints.contains("VIDEO telemedicine"));
+        assert!(hints.contains("A101"));
+    }
+
+    #[test]
+    fn test_build_context_hints_phone_home() {
+        let ctx = BillingContext {
+            visit_setting: "phone_home".to_string(),
+            ..Default::default()
+        };
+        let hints = build_context_hints(&ctx);
+        assert!(hints.contains("TELEPHONE"));
+        assert!(hints.contains("A102"));
+    }
+
+    #[test]
+    fn test_build_context_hints_home_visit() {
+        let ctx = BillingContext {
+            visit_setting: "home_visit".to_string(),
+            ..Default::default()
+        };
+        let hints = build_context_hints(&ctx);
+        assert!(hints.contains("HOME VISIT"));
+        assert!(hints.contains("A900"));
+    }
+
+    #[test]
+    fn test_build_context_hints_senior() {
+        let ctx = BillingContext {
+            patient_age: "senior".to_string(),
+            ..Default::default()
+        };
+        let hints = build_context_hints(&ctx);
+        assert!(hints.contains("65 years or older"));
+        assert!(hints.contains("K132"));
+    }
+
+    #[test]
+    fn test_build_context_hints_child() {
+        let ctx = BillingContext {
+            patient_age: "child_2_15".to_string(),
+            ..Default::default()
+        };
+        let hints = build_context_hints(&ctx);
+        assert!(hints.contains("child (2-15"));
+        assert!(hints.contains("K017"));
+    }
+
+    #[test]
+    fn test_build_context_hints_idd() {
+        let ctx = BillingContext {
+            patient_age: "idd".to_string(),
+            ..Default::default()
+        };
+        let hints = build_context_hints(&ctx);
+        assert!(hints.contains("intellectual/developmental disability"));
+        assert!(hints.contains("K133"));
+    }
+
+    #[test]
+    fn test_build_context_hints_referral() {
+        let ctx = BillingContext {
+            referral_received: true,
+            ..Default::default()
+        };
+        let hints = build_context_hints(&ctx);
+        assert!(hints.contains("REFERRAL"));
+        assert!(hints.contains("A005"));
+    }
+
+    #[test]
+    fn test_build_context_hints_counselling_exhausted() {
+        let ctx = BillingContext {
+            counselling_exhausted: true,
+            ..Default::default()
+        };
+        let hints = build_context_hints(&ctx);
+        assert!(hints.contains("EXHAUSTED"));
+        assert!(hints.contains("K033"));
+    }
+
+    #[test]
+    fn test_build_context_hints_after_hours_override() {
+        let ctx_yes = BillingContext {
+            after_hours_override: Some(true),
+            ..Default::default()
+        };
+        assert!(build_context_hints(&ctx_yes).contains("AFTER HOURS"));
+
+        let ctx_no = BillingContext {
+            after_hours_override: Some(false),
+            ..Default::default()
+        };
+        assert!(build_context_hints(&ctx_no).contains("regular hours"));
+    }
+
+    #[test]
+    fn test_build_context_hints_multiple() {
+        let ctx = BillingContext {
+            visit_setting: "video".to_string(),
+            patient_age: "senior".to_string(),
+            referral_received: true,
+            counselling_exhausted: false,
+            after_hours_override: None,
+        };
+        let hints = build_context_hints(&ctx);
+        assert!(hints.contains("VIDEO"));
+        assert!(hints.contains("65 years"));
+        assert!(hints.contains("REFERRAL"));
+        // Three hints, joined by newlines
+        assert_eq!(hints.lines().count(), 3);
     }
 }

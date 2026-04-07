@@ -214,6 +214,7 @@ pub async fn extract_and_archive_billing(
     model: &str,
     soap_content: &str,
     transcript: &str,
+    context_hints: &str,
     session_id: &str,
     session_date: &DateTime<Utc>,
     duration_ms: u64,
@@ -225,7 +226,7 @@ pub async fn extract_and_archive_billing(
     use crate::billing::rule_engine::map_features_to_billing;
 
     // Build prompt
-    let (system_prompt, user_prompt) = build_billing_extraction_prompt(soap_content, transcript);
+    let (system_prompt, user_prompt) = build_billing_extraction_prompt(soap_content, transcript, context_hints);
 
     // Call LLM with timeout
     let start = Instant::now();
@@ -412,6 +413,7 @@ pub async fn recover_orphaned_billing(
             model,
             &soap,
             transcript,
+            "", // no physician-provided context in recovery
             &summary.session_id,
             &session_date,
             duration_ms,
