@@ -227,15 +227,15 @@ pub fn get_monthly_billing_summary(
     }
 
     let indirect_admin_ratio = if total_hours > 0.0 {
-        let q312 = hours_by_code.get("Q312").copied().unwrap_or(0.0);
-        let q313 = hours_by_code.get("Q313").copied().unwrap_or(0.0);
+        let q312 = hours_by_code.get("Q312A").copied().unwrap_or(0.0);
+        let q313 = hours_by_code.get("Q313A").copied().unwrap_or(0.0);
         (q312 + q313) / total_hours
     } else {
         0.0
     };
 
     let admin_ratio = if total_hours > 0.0 {
-        hours_by_code.get("Q313").copied().unwrap_or(0.0) / total_hours
+        hours_by_code.get("Q313A").copied().unwrap_or(0.0) / total_hours
     } else {
         0.0
     };

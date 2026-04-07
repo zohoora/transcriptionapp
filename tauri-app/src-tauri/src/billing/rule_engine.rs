@@ -44,6 +44,8 @@ pub fn map_features_to_billing(
     }
 
     // 4. After-hours premium: add Q012A for eligible codes
+    //    Q012A is a percentage-based premium (50% of eligible FFS) — not in the
+    //    static code database because it has no fixed SOB rate.
     if features.is_after_hours {
         // Compute the total premium from all after-hours-eligible codes
         let mut total_ah_premium_cents: u32 = 0;
@@ -54,24 +56,21 @@ pub fn map_features_to_billing(
             }
         }
         if total_ah_premium_cents > 0 {
-            if let Some(q012) = ohip_codes::get_code("Q012A") {
-                let mut premium_code = BillingCode {
-                    code: q012.code.to_string(),
-                    description: q012.description.to_string(),
-                    fee_cents: total_ah_premium_cents, // derived from eligible codes
-                    category: basket_to_category(q012.basket),
-                    shadow_pct: q012.shadow_pct,
-                    billable_amount_cents: total_ah_premium_cents * q012.shadow_pct as u32 / 100,
-                    confidence: BillingConfidence::High,
-                    auto_extracted: true,
-                    after_hours: false,
-                    after_hours_premium_cents: 0,
-                };
-                // Q012A is in-basket with 50% shadow
-                premium_code.billable_amount_cents =
-                    total_ah_premium_cents * q012.shadow_pct as u32 / 100;
-                codes.push(premium_code);
-            }
+            // Q012A: 50% shadow billing on the computed premium
+            let shadow_pct: u8 = 50;
+            let billable = total_ah_premium_cents * shadow_pct as u32 / 100;
+            codes.push(BillingCode {
+                code: "Q012A".to_string(),
+                description: "After-Hours Premium (50% of FFS)".to_string(),
+                fee_cents: total_ah_premium_cents,
+                category: "in_basket".to_string(),
+                shadow_pct,
+                billable_amount_cents: billable,
+                confidence: BillingConfidence::High,
+                auto_extracted: true,
+                after_hours: false,
+                after_hours_premium_cents: 0,
+            });
         }
     }
 
@@ -134,7 +133,7 @@ fn procedure_type_to_code(proc: &ProcedureType) -> &'static str {
         ProcedureType::IudInsertion => "G378A",
         ProcedureType::IudRemoval => "G552A",
         ProcedureType::LesionExcisionSmall => "R048A",
-        ProcedureType::LesionExcisionMedium => "R051A",
+        ProcedureType::LesionExcisionMedium => "R094A",
         ProcedureType::LesionExcisionLarge => "R094A",
         ProcedureType::AbscessDrainage => "Z101A",
         ProcedureType::SkinBiopsy => "Z113A",
@@ -286,8 +285,8 @@ mod tests {
         features.visit_type = VisitType::PrenatalMajor;
         let record = map_features_to_billing(&features, "s1", "2026-04-05", 1_800_000, None);
         assert_eq!(record.codes[0].code, "P003A");
-        // Out-of-basket: full FFS = 8035
-        assert_eq!(record.codes[0].billable_amount_cents, 8035);
+        // Out-of-basket: full FFS = 9385
+        assert_eq!(record.codes[0].billable_amount_cents, 9385);
         assert_eq!(record.codes[0].category, "out_of_basket");
     }
 
@@ -297,7 +296,7 @@ mod tests {
         features.visit_type = VisitType::PrenatalMinor;
         let record = map_features_to_billing(&features, "s1", "2026-04-05", 900_000, None);
         assert_eq!(record.codes[0].code, "P004A");
-        assert_eq!(record.codes[0].billable_amount_cents, 3815);
+        assert_eq!(record.codes[0].billable_amount_cents, 4455);
     }
 
     #[test]
@@ -306,7 +305,7 @@ mod tests {
         features.visit_type = VisitType::PalliativeCare;
         let record = map_features_to_billing(&features, "s1", "2026-04-05", 1_800_000, None);
         assert_eq!(record.codes[0].code, "K023A");
-        assert_eq!(record.codes[0].billable_amount_cents, 6275);
+        assert_eq!(record.codes[0].billable_amount_cents, 8525);
     }
 
     #[test]
@@ -352,8 +351,8 @@ mod tests {
         let biopsy = &record.codes[1];
         assert_eq!(biopsy.code, "Z113A");
         assert_eq!(biopsy.shadow_pct, 50);
-        // Z113A: 3500 * 50% = 1750
-        assert_eq!(biopsy.billable_amount_cents, 1750);
+        // Z113A: 3245 * 50% = 1622
+        assert_eq!(biopsy.billable_amount_cents, 1622);
     }
 
     #[test]
@@ -380,7 +379,7 @@ mod tests {
         let dm = &record.codes[1];
         assert_eq!(dm.code, "Q040A");
         assert_eq!(dm.category, "out_of_basket");
-        assert_eq!(dm.billable_amount_cents, 6000); // full FFS
+        assert_eq!(dm.billable_amount_cents, 6570); // full FFS
     }
 
     #[test]
@@ -475,7 +474,7 @@ mod tests {
         let record =
             map_features_to_billing(&features, "s1", "2026-04-05", 15 * 60 * 1000, None);
         assert_eq!(record.time_entries.len(), 1);
-        assert_eq!(record.time_entries[0].code, "Q311");
+        assert_eq!(record.time_entries[0].code, "Q311A");
         assert_eq!(record.time_entries[0].rate_per_15min_cents, 1700);
         assert_eq!(record.time_entries[0].billable_amount_cents, 1700);
     }
@@ -491,9 +490,9 @@ mod tests {
 
         // A004A shadow: 3935 * 30% = 1180
         let a004_shadow = 3935 * 30 / 100;
-        // Q040A out-of-basket: 6000
-        let q040_full = 6000;
-        // Q310: 1 unit * $20 = 2000
+        // Q040A out-of-basket: 6570
+        let q040_full = 6570;
+        // Q310A: 1 unit * $20 = 2000
         let time = 2000;
 
         assert_eq!(record.total_shadow_cents, a004_shadow);

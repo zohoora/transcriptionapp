@@ -136,7 +136,7 @@ Analyze the provided SOAP note and transcript excerpt, then output a JSON object
 - "iud_insertion" — IUD physically INSERTED during this visit. Not just counselling about IUD (G378A)
 - "iud_removal" — IUD physically REMOVED during this visit (G552A)
 - "lesion_excision_small" — Excision of MALIGNANT/suspicious skin lesion <1cm with scalpel. Pathology sent. Not cryotherapy (R048A)
-- "lesion_excision_medium" — Excision of malignant/suspicious lesion 1-2cm (R051A)
+- "lesion_excision_medium" — Excision of malignant/suspicious lesion 1-2cm (R094A)
 - "lesion_excision_large" — Excision of malignant/suspicious lesion >2cm (R094A)
 - "abscess_drainage" — Incision and drainage of abscess performed. Requires cutting, draining, packing (Z101A)
 - "skin_biopsy" — Punch biopsy or shave biopsy of skin lesion TAKEN for pathology. Must involve tissue sampling (Z113A)

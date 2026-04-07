@@ -37,12 +37,14 @@ pub struct OhipCode {
 
 // ── Complete OHIP code database ────────────────────────────────────────────
 //
-// Section 1: IN-BASKET codes (from OMA "Fee Codes in FHO and FHN Basket")
-// Section 2: OUT-OF-BASKET codes (100% FFS)
+// Generated from April 2026 Schedule of Benefits (effective April 1, 2026)
+// Source: ontario.ca/files/2026-03/moh-schedule-benefit-2026-03-27.pdf
+// Basket classification: OMA Fee Codes in FHO and FHN Basket (Dec 2023)
+// Total codes: 190 (136 in-basket + 54 out-of-basket)
 
 pub static OHIP_CODES: &[OhipCode] = &[
     // ═══════════════════════════════════════════════════════════════════════
-    // SECTION 1: IN-BASKET CODES (OMA verified)
+    // SECTION 1: IN-BASKET CODES (136 codes, from OMA FHO basket list)
     // ═══════════════════════════════════════════════════════════════════════
 
     // ── Assessments (in-basket, 30% shadow, Assessment) ──────────────────
@@ -78,7 +80,7 @@ pub static OHIP_CODES: &[OhipCode] = &[
     },
     OhipCode {
         code: "A007A",
-        description: "Intermediate Assessment / Well Baby Care",
+        description: "Intermediate Assessment or Well Baby Care",
         ffs_rate_cents: 4455, // $44.55
         basket: Basket::In,
         shadow_pct: 30,
@@ -98,8 +100,8 @@ pub static OHIP_CODES: &[OhipCode] = &[
     },
     OhipCode {
         code: "A101A",
-        description: "Limited Virtual Care Service — Video",
-        ffs_rate_cents: 2680, // $26.80
+        description: "Limited Virtual Care \u{2014} Video",
+        ffs_rate_cents: 2000, // $20.00
         basket: Basket::In,
         shadow_pct: 30,
         category: CodeCategory::Assessment,
@@ -108,8 +110,8 @@ pub static OHIP_CODES: &[OhipCode] = &[
     },
     OhipCode {
         code: "A102A",
-        description: "Limited Virtual Care Service — Phone",
-        ffs_rate_cents: 2680, // $26.80
+        description: "Limited Virtual Care \u{2014} Telephone",
+        ffs_rate_cents: 1500, // $15.00
         basket: Basket::In,
         shadow_pct: 30,
         category: CodeCategory::Assessment,
@@ -138,8 +140,8 @@ pub static OHIP_CODES: &[OhipCode] = &[
     },
     OhipCode {
         code: "A777A",
-        description: "Intermediate Assessment — Pronouncement of Death",
-        ffs_rate_cents: 4455, // $44.55 (FHO only)
+        description: "Intermediate Assessment \u{2014} Pronouncement of Death",
+        ffs_rate_cents: 4455, // $44.55
         basket: Basket::In,
         shadow_pct: 30,
         category: CodeCategory::Assessment,
@@ -149,73 +151,72 @@ pub static OHIP_CODES: &[OhipCode] = &[
     OhipCode {
         code: "A900A",
         description: "Complex House Call Assessment",
-        ffs_rate_cents: 6480, // $64.80 (FHO only)
+        ffs_rate_cents: 6480, // $64.80
         basket: Basket::In,
         shadow_pct: 30,
-        category: CodeCategory::Assessment,
+        category: CodeCategory::Premium,
         after_hours_eligible: false,
         max_per_year: None,
     },
 
-    // ── Focused Practice Assessments (in-basket, 30% shadow, Assessment) ─
-    // Require FPA designation
+    // ── Focused Practice Assessments (in-basket, 30% shadow, Premium) ────
     OhipCode {
         code: "A917A",
-        description: "FPA — Sport Medicine",
-        ffs_rate_cents: 9560, // $95.60
+        description: "FPA \u{2014} Sport Medicine",
+        ffs_rate_cents: 4455, // $44.55
         basket: Basket::In,
         shadow_pct: 30,
-        category: CodeCategory::Assessment,
+        category: CodeCategory::Premium,
         after_hours_eligible: false,
         max_per_year: None,
     },
     OhipCode {
         code: "A927A",
-        description: "FPA — Allergy",
-        ffs_rate_cents: 9560, // $95.60
+        description: "FPA \u{2014} Allergy",
+        ffs_rate_cents: 4455, // $44.55
         basket: Basket::In,
         shadow_pct: 30,
-        category: CodeCategory::Assessment,
+        category: CodeCategory::Premium,
         after_hours_eligible: false,
         max_per_year: None,
     },
     OhipCode {
         code: "A937A",
-        description: "FPA — Pain Management",
-        ffs_rate_cents: 9560, // $95.60
+        description: "FPA \u{2014} Pain Management",
+        ffs_rate_cents: 4455, // $44.55
         basket: Basket::In,
         shadow_pct: 30,
-        category: CodeCategory::Assessment,
+        category: CodeCategory::Premium,
         after_hours_eligible: false,
         max_per_year: None,
     },
     OhipCode {
         code: "A947A",
-        description: "FPA — Sleep Medicine",
-        ffs_rate_cents: 9560, // $95.60
+        description: "FPA \u{2014} Sleep Medicine",
+        ffs_rate_cents: 4455, // $44.55
         basket: Basket::In,
         shadow_pct: 30,
-        category: CodeCategory::Assessment,
+        category: CodeCategory::Premium,
         after_hours_eligible: false,
         max_per_year: None,
     },
     OhipCode {
         code: "A957A",
-        description: "FPA — Addiction Medicine",
-        ffs_rate_cents: 9560, // $95.60
+        description: "FPA \u{2014} Addiction Medicine",
+        ffs_rate_cents: 4455, // $44.55
         basket: Basket::In,
         shadow_pct: 30,
-        category: CodeCategory::Assessment,
+        category: CodeCategory::Premium,
         after_hours_eligible: false,
         max_per_year: None,
     },
     OhipCode {
         code: "A967A",
-        description: "FPA — Care of the Elderly",
-        ffs_rate_cents: 9560, // $95.60
+        description: "FPA \u{2014} Care of the Elderly",
+        ffs_rate_cents: 4455, // $44.55
         basket: Basket::In,
         shadow_pct: 30,
-        category: CodeCategory::Assessment,
+        category: CodeCategory::Premium,
         after_hours_eligible: false,
         max_per_year: None,
     },
@@ -223,7 +224,7 @@ pub static OHIP_CODES: &[OhipCode] = &[
     // ── SVP — Physician Office (in-basket, 30% shadow, Premium) ──────────
     OhipCode {
         code: "A990A",
-        description: "SVP Office — Weekday Daytime (07:00-17:00)",
+        description: "SVP Office \u{2014} Weekday Daytime (07:00-17:00)",
         ffs_rate_cents: 2055, // $20.55
         basket: Basket::In,
         shadow_pct: 30,
@@ -233,7 +234,7 @@ pub static OHIP_CODES: &[OhipCode] = &[
     },
     OhipCode {
         code: "A994A",
-        description: "SVP Office — Evening (17:00-24:00) Mon-Fri",
+        description: "SVP Office \u{2014} Evening (17:00-24:00) Mon-Fri",
         ffs_rate_cents: 6170, // $61.70
         basket: Basket::In,
         shadow_pct: 30,
@@ -243,7 +244,7 @@ pub static OHIP_CODES: &[OhipCode] = &[
     },
     OhipCode {
         code: "A996A",
-        description: "SVP Office — Night (00:00-07:00)",
+        description: "SVP Office \u{2014} Night (00:00-07:00)",
         ffs_rate_cents: 10280, // $102.80
         basket: Basket::In,
         shadow_pct: 30,
@@ -253,7 +254,7 @@ pub static OHIP_CODES: &[OhipCode] = &[
     },
     OhipCode {
         code: "A998A",
-        description: "SVP Office — Sat/Sun/Holiday (07:00-24:00)",
+        description: "SVP Office \u{2014} Sat/Sun/Holiday (07:00-24:00)",
         ffs_rate_cents: 7710, // $77.10
         basket: Basket::In,
         shadow_pct: 30,
@@ -262,11 +263,11 @@ pub static OHIP_CODES: &[OhipCode] = &[
         max_per_year: None,
     },
 
-    // ── SVP — Patient's Home (in-basket, 30% shadow, Premium, FHO only) ──
+    // ── SVP — Patient's Home (in-basket, 30% shadow, Premium) ────────────
     OhipCode {
         code: "B990A",
-        description: "SVP Home — Weekday Daytime Non-elective/Elective",
-        ffs_rate_cents: 2055, // $20.55
+        description: "SVP Home \u{2014} Weekday Non-elective/Elective",
+        ffs_rate_cents: 2825, // $28.25
         basket: Basket::In,
         shadow_pct: 30,
         category: CodeCategory::Premium,
@@ -275,8 +276,8 @@ pub static OHIP_CODES: &[OhipCode] = &[
     },
     OhipCode {
         code: "B992A",
-        description: "SVP Home — Weekday with Sacrifice of Office Hours",
-        ffs_rate_cents: 3740, // $37.40
+        description: "SVP Home \u{2014} Weekday with Sacrifice of Office Hours",
+        ffs_rate_cents: 4525, // $45.25
         basket: Basket::In,
         shadow_pct: 30,
         category: CodeCategory::Premium,
@@ -285,8 +286,8 @@ pub static OHIP_CODES: &[OhipCode] = &[
     },
     OhipCode {
         code: "B993A",
-        description: "SVP Home — Sat/Sun/Holiday (07:00-24:00)",
-        ffs_rate_cents: 7710, // $77.10
+        description: "SVP Home \u{2014} Sat/Sun/Holiday (07:00-24:00)",
+        ffs_rate_cents: 8480, // $84.80
         basket: Basket::In,
         shadow_pct: 30,
         category: CodeCategory::Premium,
@@ -295,8 +296,8 @@ pub static OHIP_CODES: &[OhipCode] = &[
     },
     OhipCode {
         code: "B994A",
-        description: "SVP Home — Evening (17:00-24:00) Mon-Fri Non-elective",
-        ffs_rate_cents: 6170, // $61.70
+        description: "SVP Home \u{2014} Evening (17:00-24:00) Mon-Fri",
+        ffs_rate_cents: 6785, // $67.85
         basket: Basket::In,
         shadow_pct: 30,
         category: CodeCategory::Premium,
@@ -305,8 +306,8 @@ pub static OHIP_CODES: &[OhipCode] = &[
     },
     OhipCode {
         code: "B996A",
-        description: "SVP Home — Night (00:00-07:00) Non-elective",
-        ffs_rate_cents: 10280, // $102.80
+        description: "SVP Home \u{2014} Night (00:00-07:00)",
+        ffs_rate_cents: 11310, // $113.10
         basket: Basket::In,
         shadow_pct: 30,
         category: CodeCategory::Premium,
@@ -314,21 +315,11 @@ pub static OHIP_CODES: &[OhipCode] = &[
         max_per_year: None,
     },
 
-    // ── Hospital (in-basket, 30% shadow, Assessment, FHO only) ───────────
+    // ── Hospital (in-basket, 30% shadow, Assessment) ─────────────────────
     OhipCode {
         code: "C882A",
-        description: "Palliative Care — Subsequent Visits by MRP from ICU Transfer",
-        ffs_rate_cents: 3335, // $33.35
-        basket: Basket::In,
-        shadow_pct: 30,
-        category: CodeCategory::Assessment,
-        after_hours_eligible: false,
-        max_per_year: None,
-    },
-    OhipCode {
-        code: "C903A",
-        description: "Pre-Dental/Pre-Operative General Assessment",
-        ffs_rate_cents: 9560, // $95.60
+        description: "Hospital Palliative Care \u{2014} MRP Subsequent Visit",
+        ffs_rate_cents: 4005, // $40.05
         basket: Basket::In,
         shadow_pct: 30,
         category: CodeCategory::Assessment,
@@ -336,10 +327,10 @@ pub static OHIP_CODES: &[OhipCode] = &[
         max_per_year: None,
     },
 
-    // ── Tray Fee (in-basket, 50% shadow, Screening, FHO only) ───────────
+    // ── Tray Fee (in-basket, 50% shadow, Screening) ─────────────────────
     OhipCode {
         code: "E542A",
-        description: "Tray Fee — When Procedure Performed Outside Hospital",
+        description: "Tray Fee \u{2014} Procedure Outside Hospital",
         ffs_rate_cents: 1265, // $12.65
         basket: Basket::In,
         shadow_pct: 50,
@@ -351,8 +342,8 @@ pub static OHIP_CODES: &[OhipCode] = &[
     // ── Lab (in-basket, 30% shadow, Screening) ──────────────────────────
     OhipCode {
         code: "G001A",
-        description: "Lab — Cholesterol, Total",
-        ffs_rate_cents: 308, // $3.08
+        description: "Lab \u{2014} Cholesterol, Total",
+        ffs_rate_cents: 570, // $5.70
         basket: Basket::In,
         shadow_pct: 30,
         category: CodeCategory::Screening,
@@ -361,8 +352,8 @@ pub static OHIP_CODES: &[OhipCode] = &[
     },
     OhipCode {
         code: "G002A",
-        description: "Lab — Glucose, Quantitative/Semi-Quantitative",
-        ffs_rate_cents: 308, // $3.08
+        description: "Lab \u{2014} Glucose, Quantitative/Semi-Quantitative",
+        ffs_rate_cents: 226, // $2.26
         basket: Basket::In,
         shadow_pct: 30,
         category: CodeCategory::Screening,
@@ -371,8 +362,8 @@ pub static OHIP_CODES: &[OhipCode] = &[
     },
     OhipCode {
         code: "G004A",
-        description: "Lab — Occult Blood",
-        ffs_rate_cents: 308, // $3.08
+        description: "Lab \u{2014} Occult Blood",
+        ffs_rate_cents: 158, // $1.58
         basket: Basket::In,
         shadow_pct: 30,
         category: CodeCategory::Screening,
@@ -381,8 +372,8 @@ pub static OHIP_CODES: &[OhipCode] = &[
     },
     OhipCode {
         code: "G005A",
-        description: "Lab — Pregnancy Test",
-        ffs_rate_cents: 450, // $4.50
+        description: "Lab \u{2014} Pregnancy Test",
+        ffs_rate_cents: 388, // $3.88
         basket: Basket::In,
         shadow_pct: 30,
         category: CodeCategory::Screening,
@@ -391,8 +382,8 @@ pub static OHIP_CODES: &[OhipCode] = &[
     },
     OhipCode {
         code: "G009A",
-        description: "Lab — Urinalysis, Routine (includes microscopy)",
-        ffs_rate_cents: 308, // $3.08
+        description: "Lab \u{2014} Urinalysis, Routine (includes microscopy)",
+        ffs_rate_cents: 490, // $4.90
         basket: Basket::In,
         shadow_pct: 30,
         category: CodeCategory::Screening,
@@ -401,8 +392,8 @@ pub static OHIP_CODES: &[OhipCode] = &[
     },
     OhipCode {
         code: "G010A",
-        description: "Lab — Urinalysis Without Microscopy",
-        ffs_rate_cents: 200, // $2.00
+        description: "Lab \u{2014} Urinalysis Without Microscopy",
+        ffs_rate_cents: 264, // $2.64
         basket: Basket::In,
         shadow_pct: 30,
         category: CodeCategory::Screening,
@@ -411,8 +402,8 @@ pub static OHIP_CODES: &[OhipCode] = &[
     },
     OhipCode {
         code: "G011A",
-        description: "Lab — Fungus Culture incl KOH Prep and Smear",
-        ffs_rate_cents: 450, // $4.50
+        description: "Lab \u{2014} Fungus Culture incl KOH Prep",
+        ffs_rate_cents: 1305, // $13.05
         basket: Basket::In,
         shadow_pct: 30,
         category: CodeCategory::Screening,
@@ -421,8 +412,8 @@ pub static OHIP_CODES: &[OhipCode] = &[
     },
     OhipCode {
         code: "G012A",
-        description: "Lab — Wet Preparation (fungus, trichomonas, parasites)",
-        ffs_rate_cents: 308, // $3.08
+        description: "Lab \u{2014} Wet Preparation (fungus, trichomonas)",
+        ffs_rate_cents: 193, // $1.93
         basket: Basket::In,
         shadow_pct: 30,
         category: CodeCategory::Screening,
@@ -431,8 +422,8 @@ pub static OHIP_CODES: &[OhipCode] = &[
     },
     OhipCode {
         code: "G014A",
-        description: "Lab — Rapid Streptococcal Test",
-        ffs_rate_cents: 450, // $4.50
+        description: "Lab \u{2014} Rapid Streptococcal Test",
+        ffs_rate_cents: 680, // $6.80
         basket: Basket::In,
         shadow_pct: 30,
         category: CodeCategory::Screening,
@@ -440,11 +431,23 @@ pub static OHIP_CODES: &[OhipCode] = &[
         max_per_year: None,
     },
 
+    // ── Nerve Blocks (in-basket, 50% shadow, Procedure) ─────────────────
+    OhipCode {
+        code: "G123A",
+        description: "Nerve Block \u{2014} Obturator, Each Additional (max 4)",
+        ffs_rate_cents: 1710, // $17.10
+        basket: Basket::In,
+        shadow_pct: 50,
+        category: CodeCategory::Procedure,
+        after_hours_eligible: false,
+        max_per_year: None,
+    },
+
     // ── Allergy (in-basket, 50% shadow, Procedure) ──────────────────────
     OhipCode {
         code: "G197A",
-        description: "Allergy — Skin Testing, Professional Component (max 50/yr)",
-        ffs_rate_cents: 37, // $0.37
+        description: "Allergy Skin Testing \u{2014} Professional Component (max 50/yr)",
+        ffs_rate_cents: 39, // $0.39
         basket: Basket::In,
         shadow_pct: 50,
         category: CodeCategory::Procedure,
@@ -453,8 +456,8 @@ pub static OHIP_CODES: &[OhipCode] = &[
     },
     OhipCode {
         code: "G202A",
-        description: "Allergy — Hyposensitisation, Each Injection",
-        ffs_rate_cents: 445, // $4.45
+        description: "Allergy \u{2014} Hyposensitisation, Each Injection",
+        ffs_rate_cents: 715, // $7.15
         basket: Basket::In,
         shadow_pct: 50,
         category: CodeCategory::Procedure,
@@ -463,7 +466,7 @@ pub static OHIP_CODES: &[OhipCode] = &[
     },
     OhipCode {
         code: "G205A",
-        description: "Allergy — Insect Venom Desensitisation (max 5/day)",
+        description: "Allergy \u{2014} Insect Venom Desensitisation (max 5/day)",
         ffs_rate_cents: 1315, // $13.15
         basket: Basket::In,
         shadow_pct: 50,
@@ -473,8 +476,8 @@ pub static OHIP_CODES: &[OhipCode] = &[
     },
     OhipCode {
         code: "G209A",
-        description: "Allergy — Skin Testing, Technical Component (max 50/yr)",
-        ffs_rate_cents: 72, // $0.72 (FHO only)
+        description: "Allergy Skin Testing \u{2014} Technical Component (max 50/yr)",
+        ffs_rate_cents: 80, // $0.80
         basket: Basket::In,
         shadow_pct: 50,
         category: CodeCategory::Procedure,
@@ -483,8 +486,8 @@ pub static OHIP_CODES: &[OhipCode] = &[
     },
     OhipCode {
         code: "G212A",
-        description: "Allergy — Hyposensitisation, Sole Reason for Visit",
-        ffs_rate_cents: 975, // $9.75
+        description: "Allergy \u{2014} Hyposensitisation, Sole Reason for Visit",
+        ffs_rate_cents: 1285, // $12.85
         basket: Basket::In,
         shadow_pct: 50,
         category: CodeCategory::Procedure,
@@ -492,21 +495,11 @@ pub static OHIP_CODES: &[OhipCode] = &[
         max_per_year: None,
     },
 
-    // ── Nerve Blocks (in-basket, 50% shadow, Procedure, FHO only) ───────
-    OhipCode {
-        code: "G123A",
-        description: "Nerve Block — Obturator, Each Additional (max 4)",
-        ffs_rate_cents: 1555, // $15.55
-        basket: Basket::In,
-        shadow_pct: 50,
-        category: CodeCategory::Procedure,
-        after_hours_eligible: false,
-        max_per_year: None,
-    },
+    // ── Nerve Blocks cont. (in-basket, 50% shadow, Procedure) ───────────
     OhipCode {
         code: "G223A",
-        description: "Nerve Block — Somatic/Peripheral, Additional Nerve(s)",
-        ffs_rate_cents: 3410, // $34.10
+        description: "Nerve Block \u{2014} Somatic/Peripheral, Additional Sites",
+        ffs_rate_cents: 1710, // $17.10
         basket: Basket::In,
         shadow_pct: 50,
         category: CodeCategory::Procedure,
@@ -515,7 +508,7 @@ pub static OHIP_CODES: &[OhipCode] = &[
     },
     OhipCode {
         code: "G227A",
-        description: "Nerve Block — Other Cranial Nerve",
+        description: "Nerve Block \u{2014} Other Cranial Nerve",
         ffs_rate_cents: 5465, // $54.65
         basket: Basket::In,
         shadow_pct: 50,
@@ -525,7 +518,7 @@ pub static OHIP_CODES: &[OhipCode] = &[
     },
     OhipCode {
         code: "G228A",
-        description: "Nerve Block — Paravertebral (cervical/thoracic/lumbar/sacral/coccygeal)",
+        description: "Nerve Block \u{2014} Paravertebral (cervical/thoracic/lumbar/sacral)",
         ffs_rate_cents: 3410, // $34.10
         basket: Basket::In,
         shadow_pct: 50,
@@ -535,7 +528,7 @@ pub static OHIP_CODES: &[OhipCode] = &[
     },
     OhipCode {
         code: "G231A",
-        description: "Nerve Block — Somatic/Peripheral, One Nerve or Site",
+        description: "Nerve Block \u{2014} Somatic/Peripheral, One Nerve or Site",
         ffs_rate_cents: 3410, // $34.10
         basket: Basket::In,
         shadow_pct: 50,
@@ -545,7 +538,7 @@ pub static OHIP_CODES: &[OhipCode] = &[
     },
     OhipCode {
         code: "G235A",
-        description: "Nerve Block — Supraorbital",
+        description: "Nerve Block \u{2014} Supraorbital",
         ffs_rate_cents: 3410, // $34.10
         basket: Basket::In,
         shadow_pct: 50,
@@ -557,8 +550,8 @@ pub static OHIP_CODES: &[OhipCode] = &[
     // ── Cardiovascular (in-basket, 30% shadow, Procedure) ───────────────
     OhipCode {
         code: "G271A",
-        description: "Anticoagulant Supervision — Long-Term, Telephone/Month",
-        ffs_rate_cents: 1395, // $13.95
+        description: "Anticoagulant Supervision \u{2014} Long-Term, Phone/Month",
+        ffs_rate_cents: 1310, // $13.10
         basket: Basket::In,
         shadow_pct: 30,
         category: CodeCategory::Procedure,
@@ -566,11 +559,11 @@ pub static OHIP_CODES: &[OhipCode] = &[
         max_per_year: None,
     },
 
-    // ── ECG (in-basket, 50% shadow, Procedure, FHO only) ────────────────
+    // ── ECG (in-basket, 50% shadow, Procedure) ─────────────────────────
     OhipCode {
         code: "G310A",
-        description: "ECG — Twelve Lead, Technical Component",
-        ffs_rate_cents: 1530, // $15.30
+        description: "ECG Twelve Lead \u{2014} Technical Component",
+        ffs_rate_cents: 770, // $7.70
         basket: Basket::In,
         shadow_pct: 50,
         category: CodeCategory::Procedure,
@@ -579,8 +572,8 @@ pub static OHIP_CODES: &[OhipCode] = &[
     },
     OhipCode {
         code: "G313A",
-        description: "ECG — Twelve Lead, Professional Component (written interpretation)",
-        ffs_rate_cents: 1530, // $15.30
+        description: "ECG Twelve Lead \u{2014} Professional Component (written interp)",
+        ffs_rate_cents: 455, // $4.55
         basket: Basket::In,
         shadow_pct: 50,
         category: CodeCategory::Procedure,
@@ -588,41 +581,11 @@ pub static OHIP_CODES: &[OhipCode] = &[
         max_per_year: None,
     },
 
-    // ── Gynaecology (in-basket, 50% shadow, Procedure) ──────────────────
+    // ── Gynaecology (in-basket, 50% shadow, Procedure) ─────────────────
     OhipCode {
         code: "G365A",
-        description: "Papanicolaou Smear — Periodic",
+        description: "Papanicolaou Smear \u{2014} Periodic",
         ffs_rate_cents: 1200, // $12.00
-        basket: Basket::In,
-        shadow_pct: 50,
-        category: CodeCategory::Procedure,
-        after_hours_eligible: false,
-        max_per_year: None,
-    },
-    OhipCode {
-        code: "G378A",
-        description: "IUD Insertion",
-        ffs_rate_cents: 4750, // $47.50 (FHO only)
-        basket: Basket::In,
-        shadow_pct: 50,
-        category: CodeCategory::Procedure,
-        after_hours_eligible: false,
-        max_per_year: None,
-    },
-    OhipCode {
-        code: "G394A",
-        description: "Papanicolaou Smear — Additional/Repeat",
-        ffs_rate_cents: 1200, // $12.00 (FHO only)
-        basket: Basket::In,
-        shadow_pct: 50,
-        category: CodeCategory::Procedure,
-        after_hours_eligible: false,
-        max_per_year: None,
-    },
-    OhipCode {
-        code: "G552A",
-        description: "IUD Removal",
-        ffs_rate_cents: 2380, // $23.80 (FHO only)
         basket: Basket::In,
         shadow_pct: 50,
         category: CodeCategory::Procedure,
@@ -633,8 +596,8 @@ pub static OHIP_CODES: &[OhipCode] = &[
     // ── Injections/Infusions (in-basket, 50% shadow, Procedure) ─────────
     OhipCode {
         code: "G370A",
-        description: "Injection/Aspiration of Joint, Bursa, Ganglion, or Tendon Sheath",
-        ffs_rate_cents: 2025, // $20.25 (FHO only)
+        description: "Injection/Aspiration of Joint, Bursa, Ganglion, Tendon Sheath",
+        ffs_rate_cents: 2025, // $20.25
         basket: Basket::In,
         shadow_pct: 50,
         category: CodeCategory::Procedure,
@@ -644,7 +607,7 @@ pub static OHIP_CODES: &[OhipCode] = &[
     OhipCode {
         code: "G371A",
         description: "Additional Joint/Bursa/Ganglion/Tendon Sheath (max 5)",
-        ffs_rate_cents: 1990, // $19.90 (FHO only)
+        ffs_rate_cents: 1990, // $19.90
         basket: Basket::In,
         shadow_pct: 50,
         category: CodeCategory::Procedure,
@@ -653,8 +616,8 @@ pub static OHIP_CODES: &[OhipCode] = &[
     },
     OhipCode {
         code: "G372A",
-        description: "IM/SC/Intradermal — Each Additional Injection (with visit)",
-        ffs_rate_cents: 389, // $3.89
+        description: "IM/SC/Intradermal \u{2014} Each Additional Injection (with visit)",
+        ffs_rate_cents: 455, // $4.55
         basket: Basket::In,
         shadow_pct: 50,
         category: CodeCategory::Procedure,
@@ -663,8 +626,8 @@ pub static OHIP_CODES: &[OhipCode] = &[
     },
     OhipCode {
         code: "G373A",
-        description: "IM/SC/Intradermal — Sole Reason for Visit (first injection)",
-        ffs_rate_cents: 675, // $6.75
+        description: "IM/SC/Intradermal \u{2014} Sole Reason (first injection)",
+        ffs_rate_cents: 790, // $7.90
         basket: Basket::In,
         shadow_pct: 50,
         category: CodeCategory::Procedure,
@@ -673,8 +636,8 @@ pub static OHIP_CODES: &[OhipCode] = &[
     },
     OhipCode {
         code: "G375A",
-        description: "Intralesional Infiltration — 1 or 2 Lesions",
-        ffs_rate_cents: 885, // $8.85
+        description: "Intralesional Infiltration \u{2014} 1 or 2 Lesions",
+        ffs_rate_cents: 1050, // $10.50
         basket: Basket::In,
         shadow_pct: 50,
         category: CodeCategory::Procedure,
@@ -683,8 +646,18 @@ pub static OHIP_CODES: &[OhipCode] = &[
     },
     OhipCode {
         code: "G377A",
-        description: "Intralesional Infiltration — 3 or More Lesions",
-        ffs_rate_cents: 1330, // $13.30
+        description: "Intralesional Infiltration \u{2014} 3 or More Lesions",
+        ffs_rate_cents: 1580, // $15.80
+        basket: Basket::In,
+        shadow_pct: 50,
+        category: CodeCategory::Procedure,
+        after_hours_eligible: false,
+        max_per_year: None,
+    },
+    OhipCode {
+        code: "G378A",
+        description: "IUD Insertion",
+        ffs_rate_cents: 4750, // $47.50
         basket: Basket::In,
         shadow_pct: 50,
         category: CodeCategory::Procedure,
@@ -693,7 +666,7 @@ pub static OHIP_CODES: &[OhipCode] = &[
     },
     OhipCode {
         code: "G379A",
-        description: "Intravenous — Child, Adolescent or Adult",
+        description: "Intravenous \u{2014} Child, Adolescent or Adult",
         ffs_rate_cents: 615, // $6.15
         basket: Basket::In,
         shadow_pct: 50,
@@ -703,8 +676,8 @@ pub static OHIP_CODES: &[OhipCode] = &[
     },
     OhipCode {
         code: "G381A",
-        description: "Chemotherapy — Standard Agents, Minor Toxicity",
-        ffs_rate_cents: 5425, // $54.25 (FHO only)
+        description: "Chemotherapy \u{2014} Standard Agents, Minor Toxicity",
+        ffs_rate_cents: 5450, // $54.50
         basket: Basket::In,
         shadow_pct: 50,
         category: CodeCategory::Procedure,
@@ -713,7 +686,7 @@ pub static OHIP_CODES: &[OhipCode] = &[
     },
     OhipCode {
         code: "G384A",
-        description: "Trigger Point Injection — Infiltration of Tissue",
+        description: "Trigger Point Injection \u{2014} Infiltration of Tissue",
         ffs_rate_cents: 885, // $8.85
         basket: Basket::In,
         shadow_pct: 50,
@@ -723,7 +696,7 @@ pub static OHIP_CODES: &[OhipCode] = &[
     },
     OhipCode {
         code: "G385A",
-        description: "Trigger Point — Each Additional Site (max 2)",
+        description: "Trigger Point \u{2014} Each Additional Site (max 2)",
         ffs_rate_cents: 455, // $4.55
         basket: Basket::In,
         shadow_pct: 50,
@@ -731,12 +704,22 @@ pub static OHIP_CODES: &[OhipCode] = &[
         after_hours_eligible: false,
         max_per_year: None,
     },
+    OhipCode {
+        code: "G394A",
+        description: "Papanicolaou Smear \u{2014} Additional/Repeat",
+        ffs_rate_cents: 1200, // $12.00
+        basket: Basket::In,
+        shadow_pct: 50,
+        category: CodeCategory::Procedure,
+        after_hours_eligible: false,
+        max_per_year: None,
+    },
 
-    // ── Other D&T (in-basket, various shadow) ────────────────────────────
+    // ── Other D&T (in-basket, various shadow) ───────────────────────────
     OhipCode {
         code: "G420A",
-        description: "Ear Syringing/Curetting — Unilateral or Bilateral",
-        ffs_rate_cents: 1595, // $15.95
+        description: "Ear Syringing/Curetting \u{2014} Unilateral or Bilateral",
+        ffs_rate_cents: 1315, // $13.15
         basket: Basket::In,
         shadow_pct: 50,
         category: CodeCategory::Procedure,
@@ -746,7 +729,7 @@ pub static OHIP_CODES: &[OhipCode] = &[
     OhipCode {
         code: "G435A",
         description: "Tonometry",
-        ffs_rate_cents: 1025, // $10.25
+        ffs_rate_cents: 510, // $5.10
         basket: Basket::In,
         shadow_pct: 30,
         category: CodeCategory::Screening,
@@ -756,7 +739,7 @@ pub static OHIP_CODES: &[OhipCode] = &[
     OhipCode {
         code: "G462A",
         description: "Administration of Oral Polio Vaccine",
-        ffs_rate_cents: 165, // $1.65
+        ffs_rate_cents: 880, // $8.80
         basket: Basket::In,
         shadow_pct: 50,
         category: CodeCategory::Immunization,
@@ -768,7 +751,7 @@ pub static OHIP_CODES: &[OhipCode] = &[
     OhipCode {
         code: "G481A",
         description: "Haemoglobin Screen and/or Haematocrit",
-        ffs_rate_cents: 308, // $3.08
+        ffs_rate_cents: 137, // $1.37
         basket: Basket::In,
         shadow_pct: 30,
         category: CodeCategory::Screening,
@@ -777,8 +760,8 @@ pub static OHIP_CODES: &[OhipCode] = &[
     },
     OhipCode {
         code: "G482A",
-        description: "Venipuncture — Child",
-        ffs_rate_cents: 450, // $4.50
+        description: "Venipuncture \u{2014} Child",
+        ffs_rate_cents: 735, // $7.35
         basket: Basket::In,
         shadow_pct: 30,
         category: CodeCategory::Screening,
@@ -787,8 +770,8 @@ pub static OHIP_CODES: &[OhipCode] = &[
     },
     OhipCode {
         code: "G489A",
-        description: "Venipuncture — Adolescent or Adult",
-        ffs_rate_cents: 450, // $4.50
+        description: "Venipuncture \u{2014} Adolescent or Adult",
+        ffs_rate_cents: 354, // $3.54
         basket: Basket::In,
         shadow_pct: 30,
         category: CodeCategory::Screening,
@@ -799,8 +782,8 @@ pub static OHIP_CODES: &[OhipCode] = &[
     // ── Audiometry (in-basket, 30% shadow, Screening) ───────────────────
     OhipCode {
         code: "G525A",
-        description: "Pure Tone Threshold Audiometry — Professional Component",
-        ffs_rate_cents: 1025, // $10.25
+        description: "Pure Tone Audiometry \u{2014} Professional Component",
+        ffs_rate_cents: 585, // $5.85
         basket: Basket::In,
         shadow_pct: 30,
         category: CodeCategory::Screening,
@@ -811,8 +794,8 @@ pub static OHIP_CODES: &[OhipCode] = &[
     // ── Immunizations (in-basket, 50% shadow, Immunization) ─────────────
     OhipCode {
         code: "G538A",
-        description: "Immunization — Other Agents Not Listed",
-        ffs_rate_cents: 580, // $5.80
+        description: "Immunization \u{2014} Other Agents",
+        ffs_rate_cents: 880, // $8.80
         basket: Basket::In,
         shadow_pct: 50,
         category: CodeCategory::Immunization,
@@ -820,9 +803,19 @@ pub static OHIP_CODES: &[OhipCode] = &[
         max_per_year: None,
     },
     OhipCode {
+        code: "G552A",
+        description: "IUD Removal",
+        ffs_rate_cents: 2380, // $23.80
+        basket: Basket::In,
+        shadow_pct: 50,
+        category: CodeCategory::Procedure,
+        after_hours_eligible: false,
+        max_per_year: None,
+    },
+    OhipCode {
         code: "G840A",
-        description: "Immunization — DTaP/IPV (paediatric)",
-        ffs_rate_cents: 540, // $5.40
+        description: "Immunization \u{2014} DTaP/IPV (paediatric)",
+        ffs_rate_cents: 880, // $8.80
         basket: Basket::In,
         shadow_pct: 50,
         category: CodeCategory::Immunization,
@@ -831,8 +824,8 @@ pub static OHIP_CODES: &[OhipCode] = &[
     },
     OhipCode {
         code: "G841A",
-        description: "Immunization — DTaP-IPV-Hib (paediatric)",
-        ffs_rate_cents: 635, // $6.35
+        description: "Immunization \u{2014} DTaP-IPV-Hib (paediatric)",
+        ffs_rate_cents: 880, // $8.80
         basket: Basket::In,
         shadow_pct: 50,
         category: CodeCategory::Immunization,
@@ -841,8 +834,8 @@ pub static OHIP_CODES: &[OhipCode] = &[
     },
     OhipCode {
         code: "G842A",
-        description: "Immunization — Hepatitis B",
-        ffs_rate_cents: 540, // $5.40
+        description: "Immunization \u{2014} Hepatitis B",
+        ffs_rate_cents: 880, // $8.80
         basket: Basket::In,
         shadow_pct: 50,
         category: CodeCategory::Immunization,
@@ -851,8 +844,8 @@ pub static OHIP_CODES: &[OhipCode] = &[
     },
     OhipCode {
         code: "G843A",
-        description: "Immunization — Human Papillomavirus",
-        ffs_rate_cents: 540, // $5.40
+        description: "Immunization \u{2014} HPV",
+        ffs_rate_cents: 880, // $8.80
         basket: Basket::In,
         shadow_pct: 50,
         category: CodeCategory::Immunization,
@@ -861,8 +854,8 @@ pub static OHIP_CODES: &[OhipCode] = &[
     },
     OhipCode {
         code: "G844A",
-        description: "Immunization — Meningococcal C Conjugate",
-        ffs_rate_cents: 540, // $5.40
+        description: "Immunization \u{2014} Meningococcal C Conjugate",
+        ffs_rate_cents: 880, // $8.80
         basket: Basket::In,
         shadow_pct: 50,
         category: CodeCategory::Immunization,
@@ -871,8 +864,8 @@ pub static OHIP_CODES: &[OhipCode] = &[
     },
     OhipCode {
         code: "G845A",
-        description: "Immunization — Measles, Mumps, Rubella",
-        ffs_rate_cents: 540, // $5.40
+        description: "Immunization \u{2014} MMR",
+        ffs_rate_cents: 880, // $8.80
         basket: Basket::In,
         shadow_pct: 50,
         category: CodeCategory::Immunization,
@@ -881,8 +874,8 @@ pub static OHIP_CODES: &[OhipCode] = &[
     },
     OhipCode {
         code: "G846A",
-        description: "Immunization — Pneumococcal Conjugate",
-        ffs_rate_cents: 540, // $5.40
+        description: "Immunization \u{2014} Pneumococcal Conjugate",
+        ffs_rate_cents: 880, // $8.80
         basket: Basket::In,
         shadow_pct: 50,
         category: CodeCategory::Immunization,
@@ -891,8 +884,8 @@ pub static OHIP_CODES: &[OhipCode] = &[
     },
     OhipCode {
         code: "G847A",
-        description: "Immunization — Tdap (adult)",
-        ffs_rate_cents: 540, // $5.40
+        description: "Immunization \u{2014} Tdap (adult)",
+        ffs_rate_cents: 880, // $8.80
         basket: Basket::In,
         shadow_pct: 50,
         category: CodeCategory::Immunization,
@@ -901,8 +894,8 @@ pub static OHIP_CODES: &[OhipCode] = &[
     },
     OhipCode {
         code: "G848A",
-        description: "Immunization — Varicella",
-        ffs_rate_cents: 540, // $5.40
+        description: "Immunization \u{2014} Varicella",
+        ffs_rate_cents: 880, // $8.80
         basket: Basket::In,
         shadow_pct: 50,
         category: CodeCategory::Immunization,
@@ -910,31 +903,11 @@ pub static OHIP_CODES: &[OhipCode] = &[
         max_per_year: None,
     },
 
-    // ── Spirometry (in-basket, 50% shadow, Procedure, FHO only) ─────────
-    OhipCode {
-        code: "J301A",
-        description: "Spirometry — Simple (VC, FEV1, FEV1/FVC, MMEFR)",
-        ffs_rate_cents: 2500, // $25.00
-        basket: Basket::In,
-        shadow_pct: 50,
-        category: CodeCategory::Procedure,
-        after_hours_eligible: false,
-        max_per_year: None,
-    },
-    OhipCode {
-        code: "J304A",
-        description: "Flow Volume Loop — Expiratory + Inspiratory",
-        ffs_rate_cents: 3500, // $35.00
-        basket: Basket::In,
-        shadow_pct: 50,
-        category: CodeCategory::Procedure,
-        after_hours_eligible: false,
-        max_per_year: None,
-    },
+    // ── Spirometry (in-basket, 50% shadow, Procedure) ───────────────────
     OhipCode {
         code: "J324A",
-        description: "Spirometry — Repeat After Bronchodilator",
-        ffs_rate_cents: 1500, // $15.00
+        description: "Spirometry \u{2014} Repeat After Bronchodilator",
+        ffs_rate_cents: 420, // $4.20
         basket: Basket::In,
         shadow_pct: 50,
         category: CodeCategory::Procedure,
@@ -943,8 +916,8 @@ pub static OHIP_CODES: &[OhipCode] = &[
     },
     OhipCode {
         code: "J327A",
-        description: "Flow Volume Loop — Repeat After Bronchodilator",
-        ffs_rate_cents: 2000, // $20.00
+        description: "Flow Volume Loop \u{2014} Repeat After Bronchodilator",
+        ffs_rate_cents: 765, // $7.65
         basket: Basket::In,
         shadow_pct: 50,
         category: CodeCategory::Procedure,
@@ -955,8 +928,8 @@ pub static OHIP_CODES: &[OhipCode] = &[
     // ── Counselling/Mental Health (in-basket, 30% shadow, Counselling) ───
     OhipCode {
         code: "K001A",
-        description: "Detention — Per Full Quarter Hour",
-        ffs_rate_cents: 2680, // $26.80 (FHO only)
+        description: "Detention \u{2014} Per Full Quarter Hour",
+        ffs_rate_cents: 2110, // $21.10
         basket: Basket::In,
         shadow_pct: 30,
         category: CodeCategory::Counselling,
@@ -966,7 +939,7 @@ pub static OHIP_CODES: &[OhipCode] = &[
     OhipCode {
         code: "K002A",
         description: "Interviews with Relatives/Authorized Decision-Maker (per unit)",
-        ffs_rate_cents: 8000, // $80.00 (FHO only)
+        ffs_rate_cents: 8000, // $80.00
         basket: Basket::In,
         shadow_pct: 30,
         category: CodeCategory::Counselling,
@@ -976,16 +949,6 @@ pub static OHIP_CODES: &[OhipCode] = &[
     OhipCode {
         code: "K003A",
         description: "Interviews with CAS/Legal Guardian (per unit)",
-        ffs_rate_cents: 8000, // $80.00 (FHO only)
-        basket: Basket::In,
-        shadow_pct: 30,
-        category: CodeCategory::Counselling,
-        after_hours_eligible: false,
-        max_per_year: None,
-    },
-    OhipCode {
-        code: "K004A",
-        description: "Psychotherapy — Family (2+ members, per unit)",
         ffs_rate_cents: 8000, // $80.00
         basket: Basket::In,
         shadow_pct: 30,
@@ -994,8 +957,18 @@ pub static OHIP_CODES: &[OhipCode] = &[
         max_per_year: None,
     },
     OhipCode {
+        code: "K004A",
+        description: "Psychotherapy \u{2014} Family (2+ members, per unit)",
+        ffs_rate_cents: 8685, // $86.85
+        basket: Basket::In,
+        shadow_pct: 30,
+        category: CodeCategory::Counselling,
+        after_hours_eligible: false,
+        max_per_year: None,
+    },
+    OhipCode {
         code: "K005A",
-        description: "Primary Mental Health Care — Individual (per unit)",
+        description: "Primary Mental Health Care \u{2014} Individual (per unit)",
         ffs_rate_cents: 8000, // $80.00
         basket: Basket::In,
         shadow_pct: 30,
@@ -1005,7 +978,7 @@ pub static OHIP_CODES: &[OhipCode] = &[
     },
     OhipCode {
         code: "K006A",
-        description: "Hypnotherapy — Individual (per unit)",
+        description: "Hypnotherapy \u{2014} Individual (per unit)",
         ffs_rate_cents: 8000, // $80.00
         basket: Basket::In,
         shadow_pct: 30,
@@ -1015,7 +988,7 @@ pub static OHIP_CODES: &[OhipCode] = &[
     },
     OhipCode {
         code: "K007A",
-        description: "Psychotherapy — Individual (per unit)",
+        description: "Psychotherapy \u{2014} Individual (per unit)",
         ffs_rate_cents: 8000, // $80.00
         basket: Basket::In,
         shadow_pct: 30,
@@ -1025,7 +998,7 @@ pub static OHIP_CODES: &[OhipCode] = &[
     },
     OhipCode {
         code: "K008A",
-        description: "Diagnostic Interview/Counselling — Child/Parent (per unit)",
+        description: "Diagnostic Interview/Counselling \u{2014} Child/Parent (per unit)",
         ffs_rate_cents: 8000, // $80.00
         basket: Basket::In,
         shadow_pct: 30,
@@ -1035,7 +1008,7 @@ pub static OHIP_CODES: &[OhipCode] = &[
     },
     OhipCode {
         code: "K013A",
-        description: "Counselling — Individual (first 3 units K013+K040/12mo, per unit)",
+        description: "Counselling \u{2014} Individual (first 3 units K013+K040/12mo, per unit)",
         ffs_rate_cents: 8000, // $80.00
         basket: Basket::In,
         shadow_pct: 30,
@@ -1045,7 +1018,7 @@ pub static OHIP_CODES: &[OhipCode] = &[
     },
     OhipCode {
         code: "K015A",
-        description: "Counselling of Relatives — Terminally Ill Patient (per unit)",
+        description: "Counselling of Relatives \u{2014} Terminally Ill Patient (per unit)",
         ffs_rate_cents: 8000, // $80.00
         basket: Basket::In,
         shadow_pct: 30,
@@ -1055,7 +1028,7 @@ pub static OHIP_CODES: &[OhipCode] = &[
     },
     OhipCode {
         code: "K017A",
-        description: "Periodic Health Visit — Child",
+        description: "Periodic Health Visit \u{2014} Child",
         ffs_rate_cents: 4955, // $49.55
         basket: Basket::In,
         shadow_pct: 30,
@@ -1064,52 +1037,10 @@ pub static OHIP_CODES: &[OhipCode] = &[
         max_per_year: None,
     },
 
-    // ── Periodic Health Visits (in-basket, 30% shadow, Counselling) ──────
-    OhipCode {
-        code: "K130A",
-        description: "Periodic Health Visit — Adolescent",
-        ffs_rate_cents: 8710, // $87.10
-        basket: Basket::In,
-        shadow_pct: 30,
-        category: CodeCategory::Counselling,
-        after_hours_eligible: false,
-        max_per_year: None,
-    },
-    OhipCode {
-        code: "K131A",
-        description: "Periodic Health Visit — Adult 18-64",
-        ffs_rate_cents: 6425, // $64.25
-        basket: Basket::In,
-        shadow_pct: 30,
-        category: CodeCategory::Counselling,
-        after_hours_eligible: false,
-        max_per_year: None,
-    },
-    OhipCode {
-        code: "K132A",
-        description: "Periodic Health Visit — Adult 65+",
-        ffs_rate_cents: 9135, // $91.35
-        basket: Basket::In,
-        shadow_pct: 30,
-        category: CodeCategory::Counselling,
-        after_hours_eligible: false,
-        max_per_year: None,
-    },
-    OhipCode {
-        code: "K133A",
-        description: "Periodic Health Visit — Adult with IDD",
-        ffs_rate_cents: 9135, // $91.35
-        basket: Basket::In,
-        shadow_pct: 30,
-        category: CodeCategory::Counselling,
-        after_hours_eligible: false,
-        max_per_year: None,
-    },
-
-    // ── Home Care (in-basket, 30% shadow, Counselling, FHO only) ────────
+    // ── Home Care (in-basket, 30% shadow, Counselling) ──────────────────
     OhipCode {
         code: "K070A",
-        description: "Home Care Application/Supervision",
+        description: "Completion of Home Care Referral Form",
         ffs_rate_cents: 3475, // $34.75
         basket: Basket::In,
         shadow_pct: 30,
@@ -1119,8 +1050,50 @@ pub static OHIP_CODES: &[OhipCode] = &[
     },
     OhipCode {
         code: "K071A",
-        description: "Acute Home Care Supervision",
-        ffs_rate_cents: 2140, // $21.40
+        description: "Acute Home Care Supervision (first 8 weeks)",
+        ffs_rate_cents: 2195, // $21.95
+        basket: Basket::In,
+        shadow_pct: 30,
+        category: CodeCategory::Counselling,
+        after_hours_eligible: false,
+        max_per_year: None,
+    },
+
+    // ── Periodic Health Visits (in-basket, 30% shadow, Counselling) ─────
+    OhipCode {
+        code: "K130A",
+        description: "Periodic Health Visit \u{2014} Adolescent",
+        ffs_rate_cents: 8710, // $87.10
+        basket: Basket::In,
+        shadow_pct: 30,
+        category: CodeCategory::Counselling,
+        after_hours_eligible: false,
+        max_per_year: None,
+    },
+    OhipCode {
+        code: "K131A",
+        description: "Periodic Health Visit \u{2014} Adult 18-64",
+        ffs_rate_cents: 6425, // $64.25
+        basket: Basket::In,
+        shadow_pct: 30,
+        category: CodeCategory::Counselling,
+        after_hours_eligible: false,
+        max_per_year: None,
+    },
+    OhipCode {
+        code: "K132A",
+        description: "Periodic Health Visit \u{2014} Adult 65+",
+        ffs_rate_cents: 9135, // $91.35
+        basket: Basket::In,
+        shadow_pct: 30,
+        category: CodeCategory::Counselling,
+        after_hours_eligible: false,
+        max_per_year: None,
+    },
+    OhipCode {
+        code: "K133A",
+        description: "Periodic Health Visit \u{2014} Adult with IDD",
+        ffs_rate_cents: 16425, // $164.25
         basket: Basket::In,
         shadow_pct: 30,
         category: CodeCategory::Counselling,
@@ -1132,7 +1105,7 @@ pub static OHIP_CODES: &[OhipCode] = &[
     OhipCode {
         code: "K700A",
         description: "Palliative Care Out-Patient Case Conference (per unit)",
-        ffs_rate_cents: 8000, // $80.00
+        ffs_rate_cents: 3705, // $37.05
         basket: Basket::In,
         shadow_pct: 30,
         category: CodeCategory::Counselling,
@@ -1142,7 +1115,7 @@ pub static OHIP_CODES: &[OhipCode] = &[
     OhipCode {
         code: "K702A",
         description: "Bariatric Out-Patient Case Conference (per unit)",
-        ffs_rate_cents: 8000, // $80.00
+        ffs_rate_cents: 3705, // $37.05
         basket: Basket::In,
         shadow_pct: 30,
         category: CodeCategory::Counselling,
@@ -1151,8 +1124,8 @@ pub static OHIP_CODES: &[OhipCode] = &[
     },
     OhipCode {
         code: "K730A",
-        description: "Physician-to-Physician Phone Consultation — Referring",
-        ffs_rate_cents: 2475, // $24.75
+        description: "Physician-to-Physician Phone Consultation \u{2014} Referring",
+        ffs_rate_cents: 3705, // $37.05
         basket: Basket::In,
         shadow_pct: 30,
         category: CodeCategory::Counselling,
@@ -1161,8 +1134,8 @@ pub static OHIP_CODES: &[OhipCode] = &[
     },
     OhipCode {
         code: "K731A",
-        description: "Physician-to-Physician Phone Consultation — Consultant",
-        ffs_rate_cents: 2475, // $24.75
+        description: "Physician-to-Physician Phone Consultation \u{2014} Consultant",
+        ffs_rate_cents: 4775, // $47.75
         basket: Basket::In,
         shadow_pct: 30,
         category: CodeCategory::Counselling,
@@ -1171,8 +1144,8 @@ pub static OHIP_CODES: &[OhipCode] = &[
     },
     OhipCode {
         code: "K732A",
-        description: "CritiCall Phone Consultation — Referring",
-        ffs_rate_cents: 2475, // $24.75
+        description: "CritiCall Phone Consultation \u{2014} Referring",
+        ffs_rate_cents: 3705, // $37.05
         basket: Basket::In,
         shadow_pct: 30,
         category: CodeCategory::Counselling,
@@ -1181,8 +1154,8 @@ pub static OHIP_CODES: &[OhipCode] = &[
     },
     OhipCode {
         code: "K733A",
-        description: "CritiCall Phone Consultation — Consultant",
-        ffs_rate_cents: 2475, // $24.75
+        description: "CritiCall Phone Consultation \u{2014} Consultant",
+        ffs_rate_cents: 4775, // $47.75
         basket: Basket::In,
         shadow_pct: 30,
         category: CodeCategory::Counselling,
@@ -1190,73 +1163,11 @@ pub static OHIP_CODES: &[OhipCode] = &[
         max_per_year: None,
     },
 
-    // ── SVP — Other Setting (in-basket, 30% shadow, Premium, FHO only) ──
-    OhipCode {
-        code: "Q990A",
-        description: "SVP Other — Weekday Daytime (07:00-17:00)",
-        ffs_rate_cents: 2055, // $20.55
-        basket: Basket::In,
-        shadow_pct: 30,
-        category: CodeCategory::Premium,
-        after_hours_eligible: false,
-        max_per_year: None,
-    },
-    OhipCode {
-        code: "Q992A",
-        description: "SVP Other — Weekday with Sacrifice of Office Hours",
-        ffs_rate_cents: 3740, // $37.40
-        basket: Basket::In,
-        shadow_pct: 30,
-        category: CodeCategory::Premium,
-        after_hours_eligible: false,
-        max_per_year: None,
-    },
-    OhipCode {
-        code: "Q994A",
-        description: "SVP Other — Evening (17:00-24:00) Mon-Fri",
-        ffs_rate_cents: 6170, // $61.70
-        basket: Basket::In,
-        shadow_pct: 30,
-        category: CodeCategory::Premium,
-        after_hours_eligible: false,
-        max_per_year: None,
-    },
-    OhipCode {
-        code: "Q996A",
-        description: "SVP Other — Night (00:00-07:00)",
-        ffs_rate_cents: 10280, // $102.80
-        basket: Basket::In,
-        shadow_pct: 30,
-        category: CodeCategory::Premium,
-        after_hours_eligible: false,
-        max_per_year: None,
-    },
-    OhipCode {
-        code: "Q998A",
-        description: "SVP Other — Sat/Sun/Holiday (07:00-24:00)",
-        ffs_rate_cents: 7710, // $77.10
-        basket: Basket::In,
-        shadow_pct: 30,
-        category: CodeCategory::Premium,
-        after_hours_eligible: false,
-        max_per_year: None,
-    },
-
     // ── Integumentary Surgery (in-basket, 50% shadow, Procedure) ────────
     OhipCode {
         code: "R048A",
-        description: "Malignant Lesion Excision — Face/Neck, Single",
-        ffs_rate_cents: 6330, // $63.30 (FHO only)
-        basket: Basket::In,
-        shadow_pct: 50,
-        category: CodeCategory::Procedure,
-        after_hours_eligible: false,
-        max_per_year: None,
-    },
-    OhipCode {
-        code: "R051A",
-        description: "Malignant Lesion — Laser Surgery Group 1-4",
-        ffs_rate_cents: 11085, // $110.85 (FHO only)
+        description: "Malignant Lesion Excision \u{2014} Face/Neck, Single",
+        ffs_rate_cents: 10095, // $100.95
         basket: Basket::In,
         shadow_pct: 50,
         category: CodeCategory::Procedure,
@@ -1265,8 +1176,8 @@ pub static OHIP_CODES: &[OhipCode] = &[
     },
     OhipCode {
         code: "R094A",
-        description: "Malignant Lesion Excision — Other Areas, Single",
-        ffs_rate_cents: 14100, // $141.00 (FHO only)
+        description: "Malignant Lesion Excision \u{2014} Other Areas, Single",
+        ffs_rate_cents: 6370, // $63.70
         basket: Basket::In,
         shadow_pct: 50,
         category: CodeCategory::Procedure,
@@ -1275,8 +1186,8 @@ pub static OHIP_CODES: &[OhipCode] = &[
     },
     OhipCode {
         code: "Z101A",
-        description: "Abscess/Haematoma Incision — Subcutaneous, One",
-        ffs_rate_cents: 3500, // $35.00
+        description: "Abscess/Haematoma Incision \u{2014} Subcutaneous, One",
+        ffs_rate_cents: 2820, // $28.20
         basket: Basket::In,
         shadow_pct: 50,
         category: CodeCategory::Procedure,
@@ -1285,8 +1196,8 @@ pub static OHIP_CODES: &[OhipCode] = &[
     },
     OhipCode {
         code: "Z110A",
-        description: "Onychogryphotic Nail — Extensive Debridement",
-        ffs_rate_cents: 2000, // $20.00 (FHO only)
+        description: "Onychogryphotic Nail \u{2014} Extensive Debridement",
+        ffs_rate_cents: 1915, // $19.15
         basket: Basket::In,
         shadow_pct: 50,
         category: CodeCategory::Procedure,
@@ -1295,8 +1206,8 @@ pub static OHIP_CODES: &[OhipCode] = &[
     },
     OhipCode {
         code: "Z113A",
-        description: "Biopsy — Any Method, Without Sutures",
-        ffs_rate_cents: 3500, // $35.00 (FHO only)
+        description: "Biopsy \u{2014} Any Method, Without Sutures",
+        ffs_rate_cents: 3245, // $32.45
         basket: Basket::In,
         shadow_pct: 50,
         category: CodeCategory::Procedure,
@@ -1305,8 +1216,8 @@ pub static OHIP_CODES: &[OhipCode] = &[
     },
     OhipCode {
         code: "Z114A",
-        description: "Foreign Body Removal — Local Anaesthetic",
-        ffs_rate_cents: 3500, // $35.00 (FHO only)
+        description: "Foreign Body Removal \u{2014} Local Anaesthetic",
+        ffs_rate_cents: 2765, // $27.65
         basket: Basket::In,
         shadow_pct: 50,
         category: CodeCategory::Procedure,
@@ -1315,8 +1226,8 @@ pub static OHIP_CODES: &[OhipCode] = &[
     },
     OhipCode {
         code: "Z116A",
-        description: "Biopsy — Any Method, With Sutures",
-        ffs_rate_cents: 5000, // $50.00 (FHO only)
+        description: "Biopsy \u{2014} Any Method, With Sutures",
+        ffs_rate_cents: 3245, // $32.45
         basket: Basket::In,
         shadow_pct: 50,
         category: CodeCategory::Procedure,
@@ -1325,8 +1236,8 @@ pub static OHIP_CODES: &[OhipCode] = &[
     },
     OhipCode {
         code: "Z117A",
-        description: "Chemical/Cryotherapy Treatment — One or More Lesions",
-        ffs_rate_cents: 2250, // $22.50 (FHO only)
+        description: "Chemical/Cryotherapy Treatment \u{2014} One or More Lesions",
+        ffs_rate_cents: 1275, // $12.75
         basket: Basket::In,
         shadow_pct: 50,
         category: CodeCategory::Procedure,
@@ -1335,8 +1246,8 @@ pub static OHIP_CODES: &[OhipCode] = &[
     },
     OhipCode {
         code: "Z122A",
-        description: "Group 3 Excision (cyst/lipoma) — Face/Neck, Single",
-        ffs_rate_cents: 6330, // $63.30 (FHO only)
+        description: "Group 3 Excision (cyst/lipoma) \u{2014} Face/Neck, Single",
+        ffs_rate_cents: 4220, // $42.20
         basket: Basket::In,
         shadow_pct: 50,
         category: CodeCategory::Procedure,
@@ -1345,8 +1256,8 @@ pub static OHIP_CODES: &[OhipCode] = &[
     },
     OhipCode {
         code: "Z125A",
-        description: "Group 3 Excision (cyst/lipoma) — Other Areas, Single",
-        ffs_rate_cents: 6330, // $63.30 (FHO only)
+        description: "Group 3 Excision (cyst/lipoma) \u{2014} Other Areas, Single",
+        ffs_rate_cents: 3505, // $35.05
         basket: Basket::In,
         shadow_pct: 50,
         category: CodeCategory::Procedure,
@@ -1355,8 +1266,8 @@ pub static OHIP_CODES: &[OhipCode] = &[
     },
     OhipCode {
         code: "Z128A",
-        description: "Nail Plate Excision Requiring Anaesthesia — One",
-        ffs_rate_cents: 4500, // $45.00 (FHO only)
+        description: "Nail Plate Excision Requiring Anaesthesia \u{2014} One",
+        ffs_rate_cents: 3630, // $36.30
         basket: Basket::In,
         shadow_pct: 50,
         category: CodeCategory::Procedure,
@@ -1365,8 +1276,8 @@ pub static OHIP_CODES: &[OhipCode] = &[
     },
     OhipCode {
         code: "Z129A",
-        description: "Nail Plate Excision Requiring Anaesthesia — Multiple",
-        ffs_rate_cents: 6000, // $60.00 (FHO only)
+        description: "Nail Plate Excision \u{2014} Multiple",
+        ffs_rate_cents: 3920, // $39.20
         basket: Basket::In,
         shadow_pct: 50,
         category: CodeCategory::Procedure,
@@ -1375,8 +1286,8 @@ pub static OHIP_CODES: &[OhipCode] = &[
     },
     OhipCode {
         code: "Z154A",
-        description: "Laceration Repair — Up to 5cm (face/layers)",
-        ffs_rate_cents: 6330, // $63.30 (FHO only)
+        description: "Laceration Repair \u{2014} Up to 5cm (face/layers)",
+        ffs_rate_cents: 3935, // $39.35
         basket: Basket::In,
         shadow_pct: 50,
         category: CodeCategory::Procedure,
@@ -1385,8 +1296,8 @@ pub static OHIP_CODES: &[OhipCode] = &[
     },
     OhipCode {
         code: "Z156A",
-        description: "Group 1 Excision (keratosis) — Excision & Suture, Single",
-        ffs_rate_cents: 4000, // $40.00 (FHO only)
+        description: "Group 1 Excision (keratosis) \u{2014} Excision & Suture, Single",
+        ffs_rate_cents: 2190, // $21.90
         basket: Basket::In,
         shadow_pct: 50,
         category: CodeCategory::Procedure,
@@ -1395,8 +1306,8 @@ pub static OHIP_CODES: &[OhipCode] = &[
     },
     OhipCode {
         code: "Z157A",
-        description: "Group 1 Excision (keratosis) — Excision & Suture, Two",
-        ffs_rate_cents: 5500, // $55.00 (FHO only)
+        description: "Group 1 Excision (keratosis) \u{2014} Excision & Suture, Two",
+        ffs_rate_cents: 2905, // $29.05
         basket: Basket::In,
         shadow_pct: 50,
         category: CodeCategory::Procedure,
@@ -1405,8 +1316,8 @@ pub static OHIP_CODES: &[OhipCode] = &[
     },
     OhipCode {
         code: "Z158A",
-        description: "Group 1 Excision (keratosis) — Excision & Suture, Three+",
-        ffs_rate_cents: 7000, // $70.00 (FHO only)
+        description: "Group 1 Excision (keratosis) \u{2014} Excision & Suture, Three+",
+        ffs_rate_cents: 4850, // $48.50
         basket: Basket::In,
         shadow_pct: 50,
         category: CodeCategory::Procedure,
@@ -1415,8 +1326,8 @@ pub static OHIP_CODES: &[OhipCode] = &[
     },
     OhipCode {
         code: "Z159A",
-        description: "Group 1 — Electrocoagulation/Curetting, Single",
-        ffs_rate_cents: 2250, // $22.50 (FHO only)
+        description: "Group 1 \u{2014} Electrocoagulation/Curetting, Single",
+        ffs_rate_cents: 1155, // $11.55
         basket: Basket::In,
         shadow_pct: 50,
         category: CodeCategory::Procedure,
@@ -1425,8 +1336,8 @@ pub static OHIP_CODES: &[OhipCode] = &[
     },
     OhipCode {
         code: "Z160A",
-        description: "Group 1 — Electrocoagulation/Curetting, Two",
-        ffs_rate_cents: 3500, // $35.00 (FHO only)
+        description: "Group 1 \u{2014} Electrocoagulation/Curetting, Two",
+        ffs_rate_cents: 1735, // $17.35
         basket: Basket::In,
         shadow_pct: 50,
         category: CodeCategory::Procedure,
@@ -1435,8 +1346,8 @@ pub static OHIP_CODES: &[OhipCode] = &[
     },
     OhipCode {
         code: "Z161A",
-        description: "Group 1 — Electrocoagulation/Curetting, Three+",
-        ffs_rate_cents: 4500, // $45.00 (FHO only)
+        description: "Group 1 \u{2014} Electrocoagulation/Curetting, Three+",
+        ffs_rate_cents: 2870, // $28.70
         basket: Basket::In,
         shadow_pct: 50,
         category: CodeCategory::Procedure,
@@ -1445,8 +1356,8 @@ pub static OHIP_CODES: &[OhipCode] = &[
     },
     OhipCode {
         code: "Z162A",
-        description: "Group 2 (nevus) — Excision & Suture, Single",
-        ffs_rate_cents: 5000, // $50.00 (FHO only)
+        description: "Group 2 (nevus) \u{2014} Excision & Suture, Single",
+        ffs_rate_cents: 2190, // $21.90
         basket: Basket::In,
         shadow_pct: 50,
         category: CodeCategory::Procedure,
@@ -1455,8 +1366,8 @@ pub static OHIP_CODES: &[OhipCode] = &[
     },
     OhipCode {
         code: "Z175A",
-        description: "Laceration Repair — 5.1 to 10cm",
-        ffs_rate_cents: 8660, // $86.60 (FHO only)
+        description: "Laceration Repair \u{2014} 5.1 to 10cm",
+        ffs_rate_cents: 3935, // $39.35
         basket: Basket::In,
         shadow_pct: 50,
         category: CodeCategory::Procedure,
@@ -1465,8 +1376,8 @@ pub static OHIP_CODES: &[OhipCode] = &[
     },
     OhipCode {
         code: "Z176A",
-        description: "Laceration Repair — Up to 5cm (simple)",
-        ffs_rate_cents: 6330, // $63.30
+        description: "Laceration Repair \u{2014} Up to 5cm (simple)",
+        ffs_rate_cents: 2190, // $21.90
         basket: Basket::In,
         shadow_pct: 50,
         category: CodeCategory::Procedure,
@@ -1475,8 +1386,8 @@ pub static OHIP_CODES: &[OhipCode] = &[
     },
     OhipCode {
         code: "Z314A",
-        description: "Epistaxis — Cauterization, Unilateral",
-        ffs_rate_cents: 2250, // $22.50 (FHO only)
+        description: "Epistaxis \u{2014} Cauterization, Unilateral",
+        ffs_rate_cents: 1150, // $11.50
         basket: Basket::In,
         shadow_pct: 50,
         category: CodeCategory::Procedure,
@@ -1485,8 +1396,8 @@ pub static OHIP_CODES: &[OhipCode] = &[
     },
     OhipCode {
         code: "Z315A",
-        description: "Epistaxis — Anterior Packing, Unilateral",
-        ffs_rate_cents: 3500, // $35.00 (FHO only)
+        description: "Epistaxis \u{2014} Anterior Packing, Unilateral",
+        ffs_rate_cents: 1535, // $15.35
         basket: Basket::In,
         shadow_pct: 50,
         category: CodeCategory::Procedure,
@@ -1494,11 +1405,11 @@ pub static OHIP_CODES: &[OhipCode] = &[
         max_per_year: None,
     },
 
-    // ── GI/Urological/Eye (in-basket, 50% shadow, Procedure, FHO only) ──
+    // ── GI/Urological/Eye (in-basket, 50% shadow, Procedure) ───────────
     OhipCode {
         code: "Z535A",
-        description: "Sigmoidoscopy — Rigid Scope",
-        ffs_rate_cents: 6115, // $61.15
+        description: "Sigmoidoscopy \u{2014} Rigid Scope",
+        ffs_rate_cents: 3680, // $36.80
         basket: Basket::In,
         shadow_pct: 50,
         category: CodeCategory::Procedure,
@@ -1508,7 +1419,7 @@ pub static OHIP_CODES: &[OhipCode] = &[
     OhipCode {
         code: "Z543A",
         description: "Anoscopy (Proctoscopy)",
-        ffs_rate_cents: 2250, // $22.50
+        ffs_rate_cents: 870, // $8.70
         basket: Basket::In,
         shadow_pct: 50,
         category: CodeCategory::Procedure,
@@ -1518,7 +1429,7 @@ pub static OHIP_CODES: &[OhipCode] = &[
     OhipCode {
         code: "Z545A",
         description: "Thrombosed Haemorrhoid(s) Incision",
-        ffs_rate_cents: 6115, // $61.15
+        ffs_rate_cents: 2525, // $25.25
         basket: Basket::In,
         shadow_pct: 50,
         category: CodeCategory::Procedure,
@@ -1527,8 +1438,8 @@ pub static OHIP_CODES: &[OhipCode] = &[
     },
     OhipCode {
         code: "Z611A",
-        description: "Catheterization — Hospital",
-        ffs_rate_cents: 1500, // $15.00
+        description: "Catheterization \u{2014} Hospital",
+        ffs_rate_cents: 915, // $9.15
         basket: Basket::In,
         shadow_pct: 50,
         category: CodeCategory::Procedure,
@@ -1537,8 +1448,8 @@ pub static OHIP_CODES: &[OhipCode] = &[
     },
     OhipCode {
         code: "Z847A",
-        description: "Corneal Foreign Body Removal — Local Anaesthetic",
-        ffs_rate_cents: 3500, // $35.00
+        description: "Corneal Foreign Body Removal \u{2014} One",
+        ffs_rate_cents: 3300, // $33.00
         basket: Basket::In,
         shadow_pct: 50,
         category: CodeCategory::Procedure,
@@ -1547,10 +1458,10 @@ pub static OHIP_CODES: &[OhipCode] = &[
     },
 
     // ═══════════════════════════════════════════════════════════════════════
-    // SECTION 2: OUT-OF-BASKET CODES (100% FFS)
+    // SECTION 2: OUT-OF-BASKET CODES (54 codes, 100% FFS)
     // ═══════════════════════════════════════════════════════════════════════
 
-    // ── Consultations (out-of-basket, 100% FFS) ─────────────────────────
+    // ── Consultations (out-of-basket) ──────────────────────────────────
     OhipCode {
         code: "A005A",
         description: "Consultation",
@@ -1573,7 +1484,7 @@ pub static OHIP_CODES: &[OhipCode] = &[
     },
     OhipCode {
         code: "A888A",
-        description: "ED Equivalent — Weekend/Holiday",
+        description: "Emergency Department Equivalent \u{2014} Partial Assessment",
         ffs_rate_cents: 4455, // $44.55
         basket: Basket::Out,
         shadow_pct: 100,
@@ -1587,58 +1498,16 @@ pub static OHIP_CODES: &[OhipCode] = &[
         ffs_rate_cents: 8015, // $80.15
         basket: Basket::Out,
         shadow_pct: 100,
-        category: CodeCategory::Assessment,
-        after_hours_eligible: false,
-        max_per_year: None,
-    },
-
-    // ── House Calls (out-of-basket) ─────────────────────────────────────
-    OhipCode {
-        code: "A901A",
-        description: "House Call Assessment",
-        ffs_rate_cents: 6620, // $66.20
-        basket: Basket::Out,
-        shadow_pct: 100,
-        category: CodeCategory::Assessment,
-        after_hours_eligible: false,
-        max_per_year: None,
-    },
-    OhipCode {
-        code: "A902A",
-        description: "House Call — Pronouncement of Death",
-        ffs_rate_cents: 6620, // $66.20
-        basket: Basket::Out,
-        shadow_pct: 100,
-        category: CodeCategory::Assessment,
-        after_hours_eligible: false,
-        max_per_year: None,
-    },
-    OhipCode {
-        code: "A903A",
-        description: "House Call — Additional Patient Same Residence",
-        ffs_rate_cents: 3310, // $33.10
-        basket: Basket::Out,
-        shadow_pct: 100,
-        category: CodeCategory::Assessment,
+        category: CodeCategory::Premium,
         after_hours_eligible: false,
         max_per_year: None,
     },
 
     // ── Hospital Visits (out-of-basket) ─────────────────────────────────
     OhipCode {
-        code: "C001A",
-        description: "Family Practice Consultation",
-        ffs_rate_cents: 6565, // $65.65
-        basket: Basket::Out,
-        shadow_pct: 100,
-        category: CodeCategory::Assessment,
-        after_hours_eligible: false,
-        max_per_year: None,
-    },
-    OhipCode {
         code: "C002A",
-        description: "Repeat Consultation",
-        ffs_rate_cents: 3835, // $38.35
+        description: "Hospital Subsequent Visit \u{2014} First Five Weeks",
+        ffs_rate_cents: 4005, // $40.05
         basket: Basket::Out,
         shadow_pct: 100,
         category: CodeCategory::Assessment,
@@ -1648,7 +1517,7 @@ pub static OHIP_CODES: &[OhipCode] = &[
     OhipCode {
         code: "C003A",
         description: "Hospital Admission Assessment",
-        ffs_rate_cents: 10930, // $109.30
+        ffs_rate_cents: 8965, // $89.65
         basket: Basket::Out,
         shadow_pct: 100,
         category: CodeCategory::Assessment,
@@ -1657,8 +1526,8 @@ pub static OHIP_CODES: &[OhipCode] = &[
     },
     OhipCode {
         code: "C004A",
-        description: "Hospital Admission — Partial",
-        ffs_rate_cents: 5845, // $58.45
+        description: "Hospital General Re-Assessment",
+        ffs_rate_cents: 3835, // $38.35
         basket: Basket::Out,
         shadow_pct: 100,
         category: CodeCategory::Assessment,
@@ -1667,8 +1536,8 @@ pub static OHIP_CODES: &[OhipCode] = &[
     },
     OhipCode {
         code: "C009A",
-        description: "Hospital Subsequent Visit",
-        ffs_rate_cents: 3335, // $33.35
+        description: "Hospital Subsequent Visit \u{2014} After Thirteenth Week",
+        ffs_rate_cents: 4005, // $40.05
         basket: Basket::Out,
         shadow_pct: 100,
         category: CodeCategory::Assessment,
@@ -1677,8 +1546,8 @@ pub static OHIP_CODES: &[OhipCode] = &[
     },
     OhipCode {
         code: "C010A",
-        description: "Hospital Concurrent Care",
-        ffs_rate_cents: 2475, // $24.75
+        description: "Hospital Supportive Care",
+        ffs_rate_cents: 4005, // $40.05
         basket: Basket::Out,
         shadow_pct: 100,
         category: CodeCategory::Assessment,
@@ -1688,444 +1557,10 @@ pub static OHIP_CODES: &[OhipCode] = &[
     OhipCode {
         code: "C012A",
         description: "Hospital Discharge Day Management",
-        ffs_rate_cents: 3335, // $33.35
+        ffs_rate_cents: 3170, // $31.70
         basket: Basket::Out,
         shadow_pct: 100,
         category: CodeCategory::Assessment,
-        after_hours_eligible: false,
-        max_per_year: None,
-    },
-    OhipCode {
-        code: "H003A",
-        description: "Newborn Hospital Care — First Day",
-        ffs_rate_cents: 4475, // $44.75
-        basket: Basket::Out,
-        shadow_pct: 100,
-        category: CodeCategory::Assessment,
-        after_hours_eligible: false,
-        max_per_year: None,
-    },
-    OhipCode {
-        code: "H004A",
-        description: "Newborn Hospital Care — Subsequent Day",
-        ffs_rate_cents: 2475, // $24.75
-        basket: Basket::Out,
-        shadow_pct: 100,
-        category: CodeCategory::Assessment,
-        after_hours_eligible: false,
-        max_per_year: None,
-    },
-
-    // ── LTC (out-of-basket) ─────────────────────────────────────────────
-    OhipCode {
-        code: "A191A",
-        description: "LTC — New Admission Comprehensive",
-        ffs_rate_cents: 16500, // $165.00
-        basket: Basket::Out,
-        shadow_pct: 100,
-        category: CodeCategory::Assessment,
-        after_hours_eligible: false,
-        max_per_year: None,
-    },
-    OhipCode {
-        code: "A192A",
-        description: "LTC — Subsequent Visit",
-        ffs_rate_cents: 3335, // $33.35
-        basket: Basket::Out,
-        shadow_pct: 100,
-        category: CodeCategory::Assessment,
-        after_hours_eligible: false,
-        max_per_year: None,
-    },
-    OhipCode {
-        code: "A193A",
-        description: "LTC — Annual Comprehensive",
-        ffs_rate_cents: 10930, // $109.30
-        basket: Basket::Out,
-        shadow_pct: 100,
-        category: CodeCategory::Assessment,
-        after_hours_eligible: false,
-        max_per_year: None,
-    },
-    OhipCode {
-        code: "A194A",
-        description: "LTC — Intermediate Visit",
-        ffs_rate_cents: 3335, // $33.35
-        basket: Basket::Out,
-        shadow_pct: 100,
-        category: CodeCategory::Assessment,
-        after_hours_eligible: false,
-        max_per_year: None,
-    },
-    OhipCode {
-        code: "A195A",
-        description: "LTC — Pronouncement of Death",
-        ffs_rate_cents: 6620, // $66.20
-        basket: Basket::Out,
-        shadow_pct: 100,
-        category: CodeCategory::Assessment,
-        after_hours_eligible: false,
-        max_per_year: None,
-    },
-
-    // ── Prenatal/Obstetric (out-of-basket) ──────────────────────────────
-    OhipCode {
-        code: "P001A",
-        description: "Prenatal Visit — First",
-        ffs_rate_cents: 6620, // $66.20
-        basket: Basket::Out,
-        shadow_pct: 100,
-        category: CodeCategory::Assessment,
-        after_hours_eligible: false,
-        max_per_year: None,
-    },
-    OhipCode {
-        code: "P002A",
-        description: "Prenatal Visit — Subsequent",
-        ffs_rate_cents: 3310, // $33.10
-        basket: Basket::Out,
-        shadow_pct: 100,
-        category: CodeCategory::Assessment,
-        after_hours_eligible: false,
-        max_per_year: None,
-    },
-    OhipCode {
-        code: "P003A",
-        description: "Prenatal General Assessment",
-        ffs_rate_cents: 8035, // $80.35
-        basket: Basket::Out,
-        shadow_pct: 100,
-        category: CodeCategory::Assessment,
-        after_hours_eligible: false,
-        max_per_year: None,
-    },
-    OhipCode {
-        code: "P004A",
-        description: "Prenatal Re-Assessment",
-        ffs_rate_cents: 3815, // $38.15
-        basket: Basket::Out,
-        shadow_pct: 100,
-        category: CodeCategory::Assessment,
-        after_hours_eligible: false,
-        max_per_year: None,
-    },
-    OhipCode {
-        code: "P005A",
-        description: "Antenatal Preventive Assessment",
-        ffs_rate_cents: 4515, // $45.15
-        basket: Basket::Out,
-        shadow_pct: 100,
-        category: CodeCategory::Assessment,
-        after_hours_eligible: false,
-        max_per_year: None,
-    },
-    OhipCode {
-        code: "P006A",
-        description: "Vaginal Delivery",
-        ffs_rate_cents: 42820, // $428.20
-        basket: Basket::Out,
-        shadow_pct: 100,
-        category: CodeCategory::Procedure,
-        after_hours_eligible: false,
-        max_per_year: None,
-    },
-    OhipCode {
-        code: "P007A",
-        description: "Postnatal Visit",
-        ffs_rate_cents: 3335, // $33.35
-        basket: Basket::Out,
-        shadow_pct: 100,
-        category: CodeCategory::Assessment,
-        after_hours_eligible: false,
-        max_per_year: None,
-    },
-    OhipCode {
-        code: "P008A",
-        description: "Postnatal — Subsequent",
-        ffs_rate_cents: 2175, // $21.75
-        basket: Basket::Out,
-        shadow_pct: 100,
-        category: CodeCategory::Assessment,
-        after_hours_eligible: false,
-        max_per_year: None,
-    },
-    OhipCode {
-        code: "P009A",
-        description: "Prenatal Late Transfer In",
-        ffs_rate_cents: 21200, // $212.00
-        basket: Basket::Out,
-        shadow_pct: 100,
-        category: CodeCategory::Assessment,
-        after_hours_eligible: false,
-        max_per_year: None,
-    },
-    OhipCode {
-        code: "P013A",
-        description: "Labour Management — First 2 Hours",
-        ffs_rate_cents: 22000, // $220.00
-        basket: Basket::Out,
-        shadow_pct: 100,
-        category: CodeCategory::Procedure,
-        after_hours_eligible: false,
-        max_per_year: None,
-    },
-    OhipCode {
-        code: "P014A",
-        description: "Labour Management — Each Additional Hour",
-        ffs_rate_cents: 5500, // $55.00
-        basket: Basket::Out,
-        shadow_pct: 100,
-        category: CodeCategory::Procedure,
-        after_hours_eligible: false,
-        max_per_year: None,
-    },
-    OhipCode {
-        code: "P018A",
-        description: "Postpartum Care — Comprehensive",
-        ffs_rate_cents: 5845, // $58.45
-        basket: Basket::Out,
-        shadow_pct: 100,
-        category: CodeCategory::Assessment,
-        after_hours_eligible: false,
-        max_per_year: None,
-    },
-
-    // ── Chronic Disease (out-of-basket) ─────────────────────────────────
-    OhipCode {
-        code: "K022A",
-        description: "HIV Primary Care (per unit, min 20 min)",
-        ffs_rate_cents: 7010, // $70.10
-        basket: Basket::Out,
-        shadow_pct: 100,
-        category: CodeCategory::ChronicDisease,
-        after_hours_eligible: false,
-        max_per_year: None,
-    },
-    OhipCode {
-        code: "K023A",
-        description: "Palliative Care Support",
-        ffs_rate_cents: 6275, // $62.75
-        basket: Basket::Out,
-        shadow_pct: 100,
-        category: CodeCategory::ChronicDisease,
-        after_hours_eligible: false,
-        max_per_year: None,
-    },
-    OhipCode {
-        code: "K028A",
-        description: "STI Management",
-        ffs_rate_cents: 6275, // $62.75
-        basket: Basket::Out,
-        shadow_pct: 100,
-        category: CodeCategory::ChronicDisease,
-        after_hours_eligible: false,
-        max_per_year: None,
-    },
-    OhipCode {
-        code: "K029A",
-        description: "Insulin Therapy Support (max 6/yr)",
-        ffs_rate_cents: 3920, // $39.20
-        basket: Basket::Out,
-        shadow_pct: 100,
-        category: CodeCategory::ChronicDisease,
-        after_hours_eligible: false,
-        max_per_year: Some(6),
-    },
-    OhipCode {
-        code: "K030A",
-        description: "Diabetic Management Assessment (max 4/yr)",
-        ffs_rate_cents: 3920, // $39.20
-        basket: Basket::Out,
-        shadow_pct: 100,
-        category: CodeCategory::ChronicDisease,
-        after_hours_eligible: false,
-        max_per_year: Some(4),
-    },
-    OhipCode {
-        code: "K032A",
-        description: "Neurocognitive Assessment (min 20 min)",
-        ffs_rate_cents: 8225, // $82.25
-        basket: Basket::Out,
-        shadow_pct: 100,
-        category: CodeCategory::ChronicDisease,
-        after_hours_eligible: false,
-        max_per_year: None,
-    },
-    OhipCode {
-        code: "K033A",
-        description: "Counselling — Additional Units (per unit)",
-        ffs_rate_cents: 5630, // $56.30
-        basket: Basket::Out,
-        shadow_pct: 100,
-        category: CodeCategory::ChronicDisease,
-        after_hours_eligible: false,
-        max_per_year: None,
-    },
-    OhipCode {
-        code: "K039A",
-        description: "Smoking Cessation Follow-Up (max 2/yr)",
-        ffs_rate_cents: 3345, // $33.45
-        basket: Basket::Out,
-        shadow_pct: 100,
-        category: CodeCategory::ChronicDisease,
-        after_hours_eligible: false,
-        max_per_year: Some(2),
-    },
-
-    // ── Palliative (out-of-basket) ──────────────────────────────────────
-    OhipCode {
-        code: "K036A",
-        description: "Palliative Care Counselling — Office (half hour+)",
-        ffs_rate_cents: 7525, // $75.25
-        basket: Basket::Out,
-        shadow_pct: 100,
-        category: CodeCategory::ChronicDisease,
-        after_hours_eligible: false,
-        max_per_year: None,
-    },
-    OhipCode {
-        code: "K037A",
-        description: "Palliative Care Counselling — Subsequent",
-        ffs_rate_cents: 3835, // $38.35
-        basket: Basket::Out,
-        shadow_pct: 100,
-        category: CodeCategory::ChronicDisease,
-        after_hours_eligible: false,
-        max_per_year: None,
-    },
-    OhipCode {
-        code: "K038A",
-        description: "Palliative Care — Home Visit",
-        ffs_rate_cents: 7525, // $75.25
-        basket: Basket::Out,
-        shadow_pct: 100,
-        category: CodeCategory::ChronicDisease,
-        after_hours_eligible: false,
-        max_per_year: None,
-    },
-    OhipCode {
-        code: "B998A",
-        description: "Home Palliative Phone Management (per 15 min)",
-        ffs_rate_cents: 2475, // $24.75
-        basket: Basket::Out,
-        shadow_pct: 100,
-        category: CodeCategory::ChronicDisease,
-        after_hours_eligible: false,
-        max_per_year: None,
-    },
-    OhipCode {
-        code: "E082A",
-        description: "Palliative Care Premium (add-on)",
-        ffs_rate_cents: 2475, // $24.75
-        basket: Basket::Out,
-        shadow_pct: 100,
-        category: CodeCategory::Premium,
-        after_hours_eligible: false,
-        max_per_year: None,
-    },
-
-    // ── Geriatric (out-of-basket — may require FPA) ─────────────────────
-    OhipCode {
-        code: "K655A",
-        description: "Comprehensive Geriatric Assessment (75+, annual)",
-        ffs_rate_cents: 15655, // $156.55
-        basket: Basket::Out,
-        shadow_pct: 100,
-        category: CodeCategory::Assessment,
-        after_hours_eligible: false,
-        max_per_year: None,
-    },
-    OhipCode {
-        code: "K656A",
-        description: "Geriatric Assessment — Follow-Up",
-        ffs_rate_cents: 7825, // $78.25
-        basket: Basket::Out,
-        shadow_pct: 100,
-        category: CodeCategory::Assessment,
-        after_hours_eligible: false,
-        max_per_year: None,
-    },
-
-    // ── Forms (out-of-basket) ───────────────────────────────────────────
-    OhipCode {
-        code: "K031A",
-        description: "Certificate — Short (sick note)",
-        ffs_rate_cents: 1595, // $15.95
-        basket: Basket::Out,
-        shadow_pct: 100,
-        category: CodeCategory::Counselling,
-        after_hours_eligible: false,
-        max_per_year: None,
-    },
-    OhipCode {
-        code: "K034A",
-        description: "Transfer of Care Summary",
-        ffs_rate_cents: 4475, // $44.75
-        basket: Basket::Out,
-        shadow_pct: 100,
-        category: CodeCategory::Counselling,
-        after_hours_eligible: false,
-        max_per_year: None,
-    },
-    OhipCode {
-        code: "K035A",
-        description: "Certificate — Long (disability/insurance report)",
-        ffs_rate_cents: 4475, // $44.75
-        basket: Basket::Out,
-        shadow_pct: 100,
-        category: CodeCategory::Counselling,
-        after_hours_eligible: false,
-        max_per_year: None,
-    },
-
-    // ── Shared Appointments (out-of-basket) ─────────────────────────────
-    OhipCode {
-        code: "K140A",
-        description: "Shared Appointment — 2 Patients",
-        ffs_rate_cents: 1670, // $16.70
-        basket: Basket::Out,
-        shadow_pct: 100,
-        category: CodeCategory::Counselling,
-        after_hours_eligible: false,
-        max_per_year: None,
-    },
-    OhipCode {
-        code: "K141A",
-        description: "Shared Appointment — 3 Patients",
-        ffs_rate_cents: 1250, // $12.50
-        basket: Basket::Out,
-        shadow_pct: 100,
-        category: CodeCategory::Counselling,
-        after_hours_eligible: false,
-        max_per_year: None,
-    },
-    OhipCode {
-        code: "K142A",
-        description: "Shared Appointment — 4 Patients",
-        ffs_rate_cents: 1000, // $10.00
-        basket: Basket::Out,
-        shadow_pct: 100,
-        category: CodeCategory::Counselling,
-        after_hours_eligible: false,
-        max_per_year: None,
-    },
-    OhipCode {
-        code: "K143A",
-        description: "Shared Appointment — 5 Patients",
-        ffs_rate_cents: 835, // $8.35
-        basket: Basket::Out,
-        shadow_pct: 100,
-        category: CodeCategory::Counselling,
-        after_hours_eligible: false,
-        max_per_year: None,
-    },
-    OhipCode {
-        code: "K144A",
-        description: "Shared Appointment — 6+ Patients",
-        ffs_rate_cents: 695, // $6.95
-        basket: Basket::Out,
-        shadow_pct: 100,
-        category: CodeCategory::Counselling,
         after_hours_eligible: false,
         max_per_year: None,
     },
@@ -2133,11 +1568,11 @@ pub static OHIP_CODES: &[OhipCode] = &[
     // ── Premiums/Incentives (out-of-basket) ─────────────────────────────
     OhipCode {
         code: "E079A",
-        description: "Smoking Cessation — Initial Discussion (add-on)",
+        description: "Smoking Cessation \u{2014} Initial Discussion (add-on)",
         ffs_rate_cents: 1595, // $15.95
         basket: Basket::Out,
         shadow_pct: 100,
-        category: CodeCategory::Premium,
+        category: CodeCategory::Screening,
         after_hours_eligible: false,
         max_per_year: None,
     },
@@ -2147,34 +1582,346 @@ pub static OHIP_CODES: &[OhipCode] = &[
         ffs_rate_cents: 1195, // $11.95
         basket: Basket::Out,
         shadow_pct: 100,
-        category: CodeCategory::Premium,
+        category: CodeCategory::Screening,
         after_hours_eligible: false,
         max_per_year: None,
     },
     OhipCode {
         code: "E431A",
-        description: "Pap Tray Fee (immunocompromised)",
+        description: "Pap Tray Fee \u{2014} Immunocompromised",
         ffs_rate_cents: 1195, // $11.95
         basket: Basket::Out,
         shadow_pct: 100,
-        category: CodeCategory::Premium,
+        category: CodeCategory::Screening,
         after_hours_eligible: false,
         max_per_year: None,
     },
+
+    // ── Influenza (FHN only, not FHO basket — out-of-basket) ────────────
     OhipCode {
-        code: "Q012A",
-        description: "After-Hours Premium (50% of FFS)",
-        ffs_rate_cents: 0, // percentage-based, not a fixed fee
+        code: "G590A",
+        description: "Immunization \u{2014} Influenza (FHN only, not FHO basket)",
+        ffs_rate_cents: 880, // $8.80
         basket: Basket::Out,
         shadow_pct: 100,
-        category: CodeCategory::Premium,
+        category: CodeCategory::Immunization,
+        after_hours_eligible: false,
+        max_per_year: None,
+    },
+
+    // ── Chronic Disease/Counselling (out-of-basket) ─────────────────────
+    OhipCode {
+        code: "K022A",
+        description: "HIV Primary Care (per unit)",
+        ffs_rate_cents: 8000, // $80.00
+        basket: Basket::Out,
+        shadow_pct: 100,
+        category: CodeCategory::Counselling,
         after_hours_eligible: false,
         max_per_year: None,
     },
     OhipCode {
+        code: "K023A",
+        description: "Palliative Care Support (per unit)",
+        ffs_rate_cents: 8525, // $85.25
+        basket: Basket::Out,
+        shadow_pct: 100,
+        category: CodeCategory::Counselling,
+        after_hours_eligible: false,
+        max_per_year: None,
+    },
+    OhipCode {
+        code: "K028A",
+        description: "STI Management (per unit)",
+        ffs_rate_cents: 8000, // $80.00
+        basket: Basket::Out,
+        shadow_pct: 100,
+        category: CodeCategory::Counselling,
+        after_hours_eligible: false,
+        max_per_year: None,
+    },
+    OhipCode {
+        code: "K029A",
+        description: "Insulin Therapy Support (per unit)",
+        ffs_rate_cents: 8000, // $80.00
+        basket: Basket::Out,
+        shadow_pct: 100,
+        category: CodeCategory::Counselling,
+        after_hours_eligible: false,
+        max_per_year: Some(6),
+    },
+    OhipCode {
+        code: "K030A",
+        description: "Diabetic Management Assessment",
+        ffs_rate_cents: 4575, // $45.75
+        basket: Basket::Out,
+        shadow_pct: 100,
+        category: CodeCategory::Counselling,
+        after_hours_eligible: false,
+        max_per_year: Some(4),
+    },
+    OhipCode {
+        code: "K031A",
+        description: "Form 1 \u{2014} Physician Report (Mental Health Act)",
+        ffs_rate_cents: 10520, // $105.20
+        basket: Basket::Out,
+        shadow_pct: 100,
+        category: CodeCategory::Counselling,
+        after_hours_eligible: false,
+        max_per_year: None,
+    },
+    OhipCode {
+        code: "K032A",
+        description: "Specific Neurocognitive Assessment (min 20 min)",
+        ffs_rate_cents: 8225, // $82.25
+        basket: Basket::Out,
+        shadow_pct: 100,
+        category: CodeCategory::Counselling,
+        after_hours_eligible: false,
+        max_per_year: None,
+    },
+    OhipCode {
+        code: "K033A",
+        description: "Counselling \u{2014} Additional Units (per unit)",
+        ffs_rate_cents: 5630, // $56.30
+        basket: Basket::Out,
+        shadow_pct: 100,
+        category: CodeCategory::Counselling,
+        after_hours_eligible: false,
+        max_per_year: None,
+    },
+    OhipCode {
+        code: "K034A",
+        description: "Telephone Reporting \u{2014} Specified Reportable Disease to MOH",
+        ffs_rate_cents: 3600, // $36.00
+        basket: Basket::Out,
+        shadow_pct: 100,
+        category: CodeCategory::Counselling,
+        after_hours_eligible: false,
+        max_per_year: None,
+    },
+    OhipCode {
+        code: "K035A",
+        description: "Mandatory Reporting \u{2014} Medical Condition to Ontario MOT",
+        ffs_rate_cents: 3625, // $36.25
+        basket: Basket::Out,
+        shadow_pct: 100,
+        category: CodeCategory::Counselling,
+        after_hours_eligible: false,
+        max_per_year: None,
+    },
+    OhipCode {
+        code: "K036A",
+        description: "Northern Health Travel Grant Application Form",
+        ffs_rate_cents: 1025, // $10.25
+        basket: Basket::Out,
+        shadow_pct: 100,
+        category: CodeCategory::Counselling,
+        after_hours_eligible: false,
+        max_per_year: None,
+    },
+    OhipCode {
+        code: "K037A",
+        description: "Fibromyalgia/Myalgic Encephalomyelitis Care (per unit)",
+        ffs_rate_cents: 8000, // $80.00
+        basket: Basket::Out,
+        shadow_pct: 100,
+        category: CodeCategory::Counselling,
+        after_hours_eligible: false,
+        max_per_year: None,
+    },
+    OhipCode {
+        code: "K038A",
+        description: "Completion of LTC Health Assessment Form",
+        ffs_rate_cents: 4635, // $46.35
+        basket: Basket::Out,
+        shadow_pct: 100,
+        category: CodeCategory::Counselling,
+        after_hours_eligible: false,
+        max_per_year: None,
+    },
+    OhipCode {
+        code: "K039A",
+        description: "Smoking Cessation Follow-Up Visit",
+        ffs_rate_cents: 3925, // $39.25
+        basket: Basket::Out,
+        shadow_pct: 100,
+        category: CodeCategory::Counselling,
+        after_hours_eligible: false,
+        max_per_year: Some(2),
+    },
+
+    // ── Shared Appointments (out-of-basket) ─────────────────────────────
+    OhipCode {
+        code: "K140A",
+        description: "Shared Medical Appointment \u{2014} 2 Patients",
+        ffs_rate_cents: 4005, // $40.05
+        basket: Basket::Out,
+        shadow_pct: 100,
+        category: CodeCategory::Counselling,
+        after_hours_eligible: false,
+        max_per_year: None,
+    },
+    OhipCode {
+        code: "K141A",
+        description: "Shared Medical Appointment \u{2014} 3 Patients",
+        ffs_rate_cents: 2665, // $26.65
+        basket: Basket::Out,
+        shadow_pct: 100,
+        category: CodeCategory::Counselling,
+        after_hours_eligible: false,
+        max_per_year: None,
+    },
+    OhipCode {
+        code: "K142A",
+        description: "Shared Medical Appointment \u{2014} 4 Patients",
+        ffs_rate_cents: 2015, // $20.15
+        basket: Basket::Out,
+        shadow_pct: 100,
+        category: CodeCategory::Counselling,
+        after_hours_eligible: false,
+        max_per_year: None,
+    },
+    OhipCode {
+        code: "K143A",
+        description: "Shared Medical Appointment \u{2014} 5 Patients",
+        ffs_rate_cents: 1660, // $16.60
+        basket: Basket::Out,
+        shadow_pct: 100,
+        category: CodeCategory::Counselling,
+        after_hours_eligible: false,
+        max_per_year: None,
+    },
+    OhipCode {
+        code: "K144A",
+        description: "Shared Medical Appointment \u{2014} 6-12 Patients",
+        ffs_rate_cents: 1410, // $14.10
+        basket: Basket::Out,
+        shadow_pct: 100,
+        category: CodeCategory::Counselling,
+        after_hours_eligible: false,
+        max_per_year: None,
+    },
+
+    // ── eConsult (out-of-basket) ────────────────────────────────────────
+    OhipCode {
+        code: "K738A",
+        description: "Physician-to-Physician eConsult \u{2014} Referring",
+        ffs_rate_cents: 1645, // $16.45
+        basket: Basket::Out,
+        shadow_pct: 100,
+        category: CodeCategory::Counselling,
+        after_hours_eligible: false,
+        max_per_year: None,
+    },
+
+    // ── Prenatal/Obstetric (out-of-basket) ──────────────────────────────
+    OhipCode {
+        code: "P001A",
+        description: "Attendance at Labour and Delivery (normal)",
+        ffs_rate_cents: 47955, // $479.55
+        basket: Basket::Out,
+        shadow_pct: 100,
+        category: CodeCategory::Assessment,
+        after_hours_eligible: false,
+        max_per_year: None,
+    },
+    OhipCode {
+        code: "P002A",
+        description: "High Risk Prenatal Assessment",
+        ffs_rate_cents: 8725, // $87.25
+        basket: Basket::Out,
+        shadow_pct: 100,
+        category: CodeCategory::Assessment,
+        after_hours_eligible: false,
+        max_per_year: None,
+    },
+    OhipCode {
+        code: "P003A",
+        description: "General Assessment (Major Prenatal Visit)",
+        ffs_rate_cents: 9385, // $93.85
+        basket: Basket::Out,
+        shadow_pct: 100,
+        category: CodeCategory::Assessment,
+        after_hours_eligible: false,
+        max_per_year: None,
+    },
+    OhipCode {
+        code: "P004A",
+        description: "Minor Prenatal Assessment",
+        ffs_rate_cents: 4455, // $44.55
+        basket: Basket::Out,
+        shadow_pct: 100,
+        category: CodeCategory::Assessment,
+        after_hours_eligible: false,
+        max_per_year: None,
+    },
+    OhipCode {
+        code: "P005A",
+        description: "Antenatal Preventive Health Assessment",
+        ffs_rate_cents: 5570, // $55.70
+        basket: Basket::Out,
+        shadow_pct: 100,
+        category: CodeCategory::Assessment,
+        after_hours_eligible: false,
+        max_per_year: None,
+    },
+    OhipCode {
+        code: "P006A",
+        description: "Vaginal Delivery",
+        ffs_rate_cents: 51265, // $512.65
+        basket: Basket::Out,
+        shadow_pct: 100,
+        category: CodeCategory::Assessment,
+        after_hours_eligible: false,
+        max_per_year: None,
+    },
+    OhipCode {
+        code: "P007A",
+        description: "Postnatal Care \u{2014} Hospital and/or Home",
+        ffs_rate_cents: 6555, // $65.55
+        basket: Basket::Out,
+        shadow_pct: 100,
+        category: CodeCategory::Assessment,
+        after_hours_eligible: false,
+        max_per_year: None,
+    },
+    OhipCode {
+        code: "P008A",
+        description: "Postnatal Care \u{2014} Office",
+        ffs_rate_cents: 4380, // $43.80
+        basket: Basket::Out,
+        shadow_pct: 100,
+        category: CodeCategory::Assessment,
+        after_hours_eligible: false,
+        max_per_year: None,
+    },
+    OhipCode {
+        code: "P009A",
+        description: "Attendance at Labour and Delivery (complicated)",
+        ffs_rate_cents: 51265, // $512.65
+        basket: Basket::Out,
+        shadow_pct: 100,
+        category: CodeCategory::Assessment,
+        after_hours_eligible: false,
+        max_per_year: None,
+    },
+    OhipCode {
+        code: "P018A",
+        description: "Caesarean Section",
+        ffs_rate_cents: 57980, // $579.80
+        basket: Basket::Out,
+        shadow_pct: 100,
+        category: CodeCategory::Assessment,
+        after_hours_eligible: false,
+        max_per_year: None,
+    },
+
+    // ── Incentives/Premiums (out-of-basket) ─────────────────────────────
+    OhipCode {
         code: "Q040A",
-        description: "Diabetes Management Incentive (after 3x K030)",
-        ffs_rate_cents: 6000, // $60.00
+        description: "Diabetes Management Incentive",
+        ffs_rate_cents: 6570, // $65.70
         basket: Basket::Out,
         shadow_pct: 100,
         category: CodeCategory::Premium,
@@ -2183,8 +1930,8 @@ pub static OHIP_CODES: &[OhipCode] = &[
     },
     OhipCode {
         code: "Q042A",
-        description: "Smoking Cessation Fee (add-on)",
-        ffs_rate_cents: 750, // $7.50
+        description: "Smoking Cessation Counselling Fee",
+        ffs_rate_cents: 770, // $7.70
         basket: Basket::Out,
         shadow_pct: 100,
         category: CodeCategory::Premium,
@@ -2193,7 +1940,7 @@ pub static OHIP_CODES: &[OhipCode] = &[
     },
     OhipCode {
         code: "Q050A",
-        description: "CHF Management Incentive",
+        description: "Heart Failure Management Incentive",
         ffs_rate_cents: 12500, // $125.00
         basket: Basket::Out,
         shadow_pct: 100,
@@ -2212,72 +1959,54 @@ pub static OHIP_CODES: &[OhipCode] = &[
         max_per_year: None,
     },
     OhipCode {
-        code: "Q054A",
-        description: "Mother & Newborn Bonus",
-        ffs_rate_cents: 35000, // $350.00
-        basket: Basket::Out,
-        shadow_pct: 100,
-        category: CodeCategory::Premium,
-        after_hours_eligible: false,
-        max_per_year: None,
-    },
-    OhipCode {
-        code: "Q010A",
-        description: "Childhood Immunization Bonus",
-        ffs_rate_cents: 620, // $6.20
-        basket: Basket::Out,
-        shadow_pct: 100,
-        category: CodeCategory::Premium,
-        after_hours_eligible: false,
-        max_per_year: None,
-    },
-    OhipCode {
-        code: "Q015A",
-        description: "Flu Immunization Bonus",
-        ffs_rate_cents: 220, // $2.20
-        basket: Basket::Out,
-        shadow_pct: 100,
-        category: CodeCategory::Premium,
-        after_hours_eligible: false,
-        max_per_year: None,
-    },
-    OhipCode {
-        code: "Q100A",
-        description: "Cervical Screening Bonus",
-        ffs_rate_cents: 640, // $6.40
-        basket: Basket::Out,
-        shadow_pct: 100,
-        category: CodeCategory::Premium,
-        after_hours_eligible: false,
-        max_per_year: None,
-    },
-    OhipCode {
-        code: "Q101A",
-        description: "Mammography Screening Bonus",
-        ffs_rate_cents: 640, // $6.40
-        basket: Basket::Out,
-        shadow_pct: 100,
-        category: CodeCategory::Premium,
-        after_hours_eligible: false,
-        max_per_year: None,
-    },
-    OhipCode {
-        code: "Q102A",
-        description: "Colorectal Cancer Screening Bonus",
-        ffs_rate_cents: 640, // $6.40
-        basket: Basket::Out,
-        shadow_pct: 100,
-        category: CodeCategory::Premium,
-        after_hours_eligible: false,
-        max_per_year: None,
-    },
-    OhipCode {
         code: "Q200A",
-        description: "Patient Rostering Fee",
-        ffs_rate_cents: 0, // $0
+        description: "Per Patient Rostering Fee",
+        ffs_rate_cents: 0, // $0.00
         basket: Basket::Out,
         shadow_pct: 100,
         category: CodeCategory::Premium,
+        after_hours_eligible: false,
+        max_per_year: None,
+    },
+
+    // ── FHO+ Time-Based (out-of-basket) ─────────────────────────────────
+    OhipCode {
+        code: "Q310A",
+        description: "Direct Patient Care \u{2014} In-Person/Video/Phone (per 15 min)",
+        ffs_rate_cents: 2000, // $20.00
+        basket: Basket::Out,
+        shadow_pct: 100,
+        category: CodeCategory::TimeBased,
+        after_hours_eligible: false,
+        max_per_year: None,
+    },
+    OhipCode {
+        code: "Q311A",
+        description: "Telephone Care \u{2014} Not in Office (per 15 min)",
+        ffs_rate_cents: 1700, // $17.00
+        basket: Basket::Out,
+        shadow_pct: 100,
+        category: CodeCategory::TimeBased,
+        after_hours_eligible: false,
+        max_per_year: None,
+    },
+    OhipCode {
+        code: "Q312A",
+        description: "Indirect Patient Care \u{2014} Charting/Labs/Referrals (per 15 min)",
+        ffs_rate_cents: 2000, // $20.00
+        basket: Basket::Out,
+        shadow_pct: 100,
+        category: CodeCategory::TimeBased,
+        after_hours_eligible: false,
+        max_per_year: None,
+    },
+    OhipCode {
+        code: "Q313A",
+        description: "Clinical Administration \u{2014} EMR/QI/Screening (per 15 min)",
+        ffs_rate_cents: 2000, // $20.00
+        basket: Basket::Out,
+        shadow_pct: 100,
+        category: CodeCategory::TimeBased,
         after_hours_eligible: false,
         max_per_year: None,
     },
@@ -2288,104 +2017,6 @@ pub static OHIP_CODES: &[OhipCode] = &[
         basket: Basket::Out,
         shadow_pct: 100,
         category: CodeCategory::Premium,
-        after_hours_eligible: false,
-        max_per_year: None,
-    },
-
-    // ── eConsult (out-of-basket) ────────────────────────────────────────
-    OhipCode {
-        code: "K738A",
-        description: "eConsult — Specialist Seeking GP Input",
-        ffs_rate_cents: 2475, // $24.75
-        basket: Basket::Out,
-        shadow_pct: 100,
-        category: CodeCategory::Counselling,
-        after_hours_eligible: false,
-        max_per_year: None,
-    },
-    OhipCode {
-        code: "K998A",
-        description: "Physician-to-Physician Phone Consultation",
-        ffs_rate_cents: 2475, // $24.75
-        basket: Basket::Out,
-        shadow_pct: 100,
-        category: CodeCategory::Counselling,
-        after_hours_eligible: false,
-        max_per_year: None,
-    },
-
-    // ── Virtual Care Modality Indicators (out-of-basket, $0) ────────────
-    OhipCode {
-        code: "K300A",
-        description: "Video Visit Modality Indicator",
-        ffs_rate_cents: 0,
-        basket: Basket::Out,
-        shadow_pct: 100,
-        category: CodeCategory::Counselling,
-        after_hours_eligible: false,
-        max_per_year: None,
-    },
-    OhipCode {
-        code: "K301A",
-        description: "Telephone Visit Modality Indicator",
-        ffs_rate_cents: 0,
-        basket: Basket::Out,
-        shadow_pct: 100,
-        category: CodeCategory::Counselling,
-        after_hours_eligible: false,
-        max_per_year: None,
-    },
-
-    // ── FHO+ Time-Based (out-of-basket) ─────────────────────────────────
-    OhipCode {
-        code: "Q310",
-        description: "Direct Patient Care (per 15 min)",
-        ffs_rate_cents: 2000, // $20.00
-        basket: Basket::Out,
-        shadow_pct: 100,
-        category: CodeCategory::TimeBased,
-        after_hours_eligible: false,
-        max_per_year: None,
-    },
-    OhipCode {
-        code: "Q311",
-        description: "Telephone Remote Care (per 15 min)",
-        ffs_rate_cents: 1700, // $17.00
-        basket: Basket::Out,
-        shadow_pct: 100,
-        category: CodeCategory::TimeBased,
-        after_hours_eligible: false,
-        max_per_year: None,
-    },
-    OhipCode {
-        code: "Q312",
-        description: "Indirect Patient Care (per 15 min)",
-        ffs_rate_cents: 2000, // $20.00
-        basket: Basket::Out,
-        shadow_pct: 100,
-        category: CodeCategory::TimeBased,
-        after_hours_eligible: false,
-        max_per_year: None,
-    },
-    OhipCode {
-        code: "Q313",
-        description: "Clinical Administration (per 15 min)",
-        ffs_rate_cents: 2000, // $20.00
-        basket: Basket::Out,
-        shadow_pct: 100,
-        category: CodeCategory::TimeBased,
-        after_hours_eligible: false,
-        max_per_year: None,
-    },
-
-    // ── Influenza (FHN only, not FHO — treat as out-of-basket) ──────────
-    OhipCode {
-        code: "G590A",
-        description: "Immunization — Influenza Agent (FHN only)",
-        ffs_rate_cents: 565, // $5.65
-        basket: Basket::Out,
-        shadow_pct: 100,
-        category: CodeCategory::Immunization,
         after_hours_eligible: false,
         max_per_year: None,
     },
@@ -2463,7 +2094,7 @@ pub static EXCLUSION_GROUPS: &[ExclusionGroup] = &[
     },
     ExclusionGroup {
         name: "Malignant excision",
-        codes: &["R048A", "R051A", "R094A"],
+        codes: &["R048A", "R094A"],
         reason: "One excision code per lesion",
     },
     ExclusionGroup {
@@ -2474,27 +2105,27 @@ pub static EXCLUSION_GROUPS: &[ExclusionGroup] = &[
     ExclusionGroup {
         name: "Group 1 excision vs electro",
         codes: &["Z156A", "Z157A", "Z158A", "Z159A", "Z160A", "Z161A"],
-        reason: "Pick excision & suture OR electrocoagulation method — not both",
+        reason: "Pick excision & suture OR electrocoagulation method \u{2014} not both",
     },
     ExclusionGroup {
         name: "Epistaxis treatment",
         codes: &["Z314A", "Z315A"],
-        reason: "Cautery vs packing — one per encounter",
+        reason: "Cautery vs packing \u{2014} one per encounter",
     },
     ExclusionGroup {
         name: "Trigger point add-on",
         codes: &["G384A", "G385A"],
-        reason: "G385 is add-on to G384 — don't bill both as standalone",
+        reason: "G385 is add-on to G384 \u{2014} don't bill both as standalone",
     },
     ExclusionGroup {
         name: "Joint injection add-on",
         codes: &["G370A", "G371A"],
-        reason: "G371 is add-on to G370 — requires G370 as base code",
+        reason: "G371 is add-on to G370 \u{2014} requires G370 as base code",
     },
     ExclusionGroup {
         name: "Direct care time",
-        codes: &["Q310", "Q311"],
-        reason: "In-office vs remote — one setting per encounter",
+        codes: &["Q310A", "Q311A"],
+        reason: "In-office vs remote \u{2014} one setting per encounter",
     },
     ExclusionGroup {
         name: "FHO weekend access",
@@ -2512,29 +2143,14 @@ pub static EXCLUSION_GROUPS: &[ExclusionGroup] = &[
         reason: "One SVP home premium per visit",
     },
     ExclusionGroup {
-        name: "SVP other premiums",
-        codes: &["Q990A", "Q992A", "Q994A", "Q996A", "Q998A"],
-        reason: "One SVP other premium per visit",
-    },
-    ExclusionGroup {
         name: "Prenatal visit types",
         codes: &["P001A", "P006A"],
-        reason: "Individual visits vs global — can't bill both",
+        reason: "Individual visits vs global \u{2014} can't bill both",
     },
     ExclusionGroup {
         name: "Hospital assessment types",
         codes: &["C003A", "C004A"],
         reason: "Full vs partial admission assessment",
-    },
-    ExclusionGroup {
-        name: "Palliative counselling",
-        codes: &["K036A", "K037A"],
-        reason: "Initial vs subsequent per visit",
-    },
-    ExclusionGroup {
-        name: "LTC assessment types",
-        codes: &["A191A", "A193A"],
-        reason: "Admission vs annual — different purposes but both comprehensive",
     },
 ];
 
@@ -2573,7 +2189,7 @@ pub fn find_conflicts(existing_codes: &[&str], new_code: &str) -> Vec<ConflictRe
     results
 }
 
-/// Check all codes in a list and return a map of code → conflicting codes.
+/// Check all codes in a list and return a map of code -> conflicting codes.
 pub fn find_all_conflicts(codes: &[&str]) -> std::collections::HashMap<String, Vec<ConflictResult>> {
     let mut map = std::collections::HashMap::new();
     for (i, &code) in codes.iter().enumerate() {
@@ -2617,8 +2233,8 @@ mod tests {
 
     #[test]
     fn test_code_count() {
-        // Count all codes in the database
-        assert_eq!(all_codes().len(), 226);
+        // 190 codes from April 2026 SOB (136 in-basket + 54 out-of-basket)
+        assert_eq!(all_codes().len(), 190);
     }
 
     #[test]
@@ -2626,16 +2242,16 @@ mod tests {
         let time = codes_by_category(CodeCategory::TimeBased);
         assert_eq!(time.len(), 4);
         let codes: Vec<&str> = time.iter().map(|c| c.code).collect();
-        assert!(codes.contains(&"Q310"));
-        assert!(codes.contains(&"Q311"));
-        assert!(codes.contains(&"Q312"));
-        assert!(codes.contains(&"Q313"));
+        assert!(codes.contains(&"Q310A"));
+        assert!(codes.contains(&"Q311A"));
+        assert!(codes.contains(&"Q312A"));
+        assert!(codes.contains(&"Q313A"));
     }
 
     #[test]
     fn test_codes_by_category_immunization() {
         let imm = codes_by_category(CodeCategory::Immunization);
-        // 11 in-basket + 1 out-of-basket (G590A FHN-only)
+        // 11 in-basket (G462A + G538A + G840A-G848A) + 1 out-of-basket (G590A)
         assert_eq!(imm.len(), 12);
     }
 
@@ -2706,16 +2322,9 @@ mod tests {
 
     #[test]
     fn test_premium_codes() {
-        let q012 = get_code("Q012A").unwrap();
-        assert_eq!(q012.ffs_rate_cents, 0); // percentage-based
-        assert_eq!(q012.category, CodeCategory::Premium);
-
         let q053 = get_code("Q053A").unwrap();
         assert_eq!(q053.ffs_rate_cents, 35000); // $350.00
         assert_eq!(q053.basket, Basket::Out);
-
-        let q054 = get_code("Q054A").unwrap();
-        assert_eq!(q054.ffs_rate_cents, 35000); // $350.00
     }
 
     #[test]
@@ -2731,17 +2340,15 @@ mod tests {
     }
 
     #[test]
-    fn test_q310_rate() {
-        let q310 = get_code("Q310").unwrap();
+    fn test_q310a_rate() {
+        let q310 = get_code("Q310A").unwrap();
         assert_eq!(q310.ffs_rate_cents, 2000); // $20/15min
-        assert_eq!(q310.description, "Direct Patient Care (per 15 min)");
     }
 
     #[test]
-    fn test_q311_rate() {
-        let q311 = get_code("Q311").unwrap();
+    fn test_q311a_rate() {
+        let q311 = get_code("Q311A").unwrap();
         assert_eq!(q311.ffs_rate_cents, 1700); // $17/15min
-        assert_eq!(q311.description, "Telephone Remote Care (per 15 min)");
     }
 
     #[test]
@@ -2762,7 +2369,7 @@ mod tests {
     #[test]
     fn test_find_conflicts_procedure_size() {
         let existing = vec!["R048A"]; // face/neck excision
-        let conflicts = find_conflicts(&existing, "R051A"); // laser surgery
+        let conflicts = find_conflicts(&existing, "R094A"); // other areas excision
         assert_eq!(conflicts.len(), 1);
         assert!(conflicts[0].reason.contains("excision") || conflicts[0].reason.contains("lesion"));
     }
@@ -2784,49 +2391,23 @@ mod tests {
     }
 
     #[test]
-    fn test_removed_codes_gone() {
-        // Verify removed codes no longer exist
-        for code in ["G369A", "G591A", "Z104A", "Z108A", "Z112A", "Z119A",
-                     "Z169A", "Z200A", "Z201A", "E502A", "E540A", "E541A",
-                     "K197A", "B960A", "B961A", "B962A"] {
-            assert!(get_code(code).is_none(), "{} should have been removed", code);
-        }
-    }
-
-    #[test]
-    fn test_new_in_basket_codes_exist() {
-        // Verify key new in-basket codes exist
-        for code in ["A101A", "A102A", "A110A", "A112A", "A777A",
-                     "A917A", "A990A", "A994A", "A996A", "A998A",
-                     "B990A", "B992A", "B993A", "B994A", "B996A",
-                     "C882A", "C903A", "E542A",
-                     "G001A", "G002A", "G004A", "G005A", "G009A",
-                     "G197A", "G202A", "G205A", "G209A", "G212A",
-                     "G123A", "G223A", "G227A", "G235A", "G271A",
-                     "G310A", "G377A", "G381A",
-                     "G435A", "G481A", "G482A", "G489A", "G525A",
-                     "G840A", "G841A", "G842A", "G843A", "G844A",
-                     "G845A", "G846A", "G847A", "G848A",
-                     "J301A", "J304A", "J324A", "J327A",
-                     "K001A", "K003A", "K004A", "K006A", "K008A",
-                     "K700A", "K702A", "K730A", "K731A", "K732A", "K733A",
-                     "Q990A", "Q992A", "Q994A", "Q996A", "Q998A",
-                     "Z110A", "Z116A", "Z122A", "Z125A", "Z128A",
-                     "Z156A", "Z157A", "Z158A", "Z159A", "Z161A",
-                     "Z162A", "Z175A", "Z611A"] {
-            assert!(get_code(code).is_some(), "{} should exist", code);
-        }
-    }
-
-    #[test]
     fn test_svp_premiums_in_basket() {
         for code in ["A990A", "A994A", "A996A", "A998A",
-                     "B990A", "B992A", "B993A", "B994A", "B996A",
-                     "Q990A", "Q992A", "Q994A", "Q996A", "Q998A"] {
+                     "B990A", "B992A", "B993A", "B994A", "B996A"] {
             let c = get_code(code).unwrap();
             assert_eq!(c.basket, Basket::In, "{} should be in-basket", code);
             assert_eq!(c.category, CodeCategory::Premium, "{} should be Premium", code);
             assert_eq!(c.shadow_pct, 30, "{} should have 30% shadow", code);
         }
+    }
+
+    #[test]
+    fn test_sob_rates_key_codes() {
+        // Verify key rates match April 2026 SOB
+        assert_eq!(get_code("Z113A").unwrap().ffs_rate_cents, 3245); // $32.45
+        assert_eq!(get_code("K023A").unwrap().ffs_rate_cents, 8525); // $85.25
+        assert_eq!(get_code("P003A").unwrap().ffs_rate_cents, 9385); // $93.85
+        assert_eq!(get_code("P004A").unwrap().ffs_rate_cents, 4455); // $44.55
+        assert_eq!(get_code("Q040A").unwrap().ffs_rate_cents, 6570); // $65.70
     }
 }

@@ -2,10 +2,10 @@ use super::clinical_features::EncounterSetting;
 use super::types::*;
 use std::collections::HashMap;
 
-/// Calculate a Q310 or Q311 time entry from the encounter duration in milliseconds.
+/// Calculate a Q310A or Q311A time entry from the encounter duration in milliseconds.
 ///
-/// - Q310 (Direct Patient Care, $20/15 min) for InOffice, HomeVisit, TelephoneInOffice, Video
-/// - Q311 (Telephone Remote, $17/15 min) for TelephoneRemote
+/// - Q310A (Direct Patient Care, $20/15 min) for InOffice, HomeVisit, TelephoneInOffice, Video
+/// - Q311A (Telephone Remote, $17/15 min) for TelephoneRemote
 ///
 /// Rounding: total_minutes / 15 with 8+ minute remainder rounding up to the next unit.
 pub fn calculate_direct_care_time(duration_ms: u64, setting: &EncounterSetting) -> TimeEntry {
@@ -13,8 +13,8 @@ pub fn calculate_direct_care_time(duration_ms: u64, setting: &EncounterSetting) 
     let billable_units = round_to_15min_units(total_minutes);
 
     let (code, description, rate_cents) = match setting {
-        EncounterSetting::TelephoneRemote => ("Q311", "Telephone Remote", 1700u32),
-        _ => ("Q310", "Direct Patient Care", 2000u32),
+        EncounterSetting::TelephoneRemote => ("Q311A", "Telephone Remote", 1700u32),
+        _ => ("Q310A", "Direct Patient Care", 2000u32),
     };
 
     let billable_amount_cents = billable_units as u32 * rate_cents;
@@ -82,8 +82,8 @@ pub fn calculate_monthly_caps(daily_summaries: &[BillingDaySummary]) -> MonthlyC
         }
     }
 
-    let q312_hours = hours_by_code.get("Q312").copied().unwrap_or(0.0);
-    let q313_hours = hours_by_code.get("Q313").copied().unwrap_or(0.0);
+    let q312_hours = hours_by_code.get("Q312A").copied().unwrap_or(0.0);
+    let q313_hours = hours_by_code.get("Q313A").copied().unwrap_or(0.0);
 
     // Indirect + admin ratio: (Q312 + Q313) / total
     let indirect_admin_ratio = if total_hours > 0.0 {
@@ -256,7 +256,7 @@ mod tests {
     #[test]
     fn test_direct_care_in_office() {
         let te = calculate_direct_care_time(15 * 60 * 1000, &EncounterSetting::InOffice);
-        assert_eq!(te.code, "Q310");
+        assert_eq!(te.code, "Q310A");
         assert_eq!(te.rate_per_15min_cents, 2000);
         assert_eq!(te.minutes, 15);
         assert_eq!(te.billable_units, 1);
@@ -267,7 +267,7 @@ mod tests {
     #[test]
     fn test_direct_care_telephone_remote() {
         let te = calculate_direct_care_time(15 * 60 * 1000, &EncounterSetting::TelephoneRemote);
-        assert_eq!(te.code, "Q311");
+        assert_eq!(te.code, "Q311A");
         assert_eq!(te.rate_per_15min_cents, 1700);
         assert_eq!(te.billable_amount_cents, 1700);
     }
@@ -275,7 +275,7 @@ mod tests {
     #[test]
     fn test_direct_care_home_visit() {
         let te = calculate_direct_care_time(30 * 60 * 1000, &EncounterSetting::HomeVisit);
-        assert_eq!(te.code, "Q310");
+        assert_eq!(te.code, "Q310A");
         assert_eq!(te.billable_units, 2);
         assert_eq!(te.billable_amount_cents, 4000);
     }
@@ -283,7 +283,7 @@ mod tests {
     #[test]
     fn test_direct_care_video() {
         let te = calculate_direct_care_time(23 * 60 * 1000, &EncounterSetting::Video);
-        assert_eq!(te.code, "Q310");
+        assert_eq!(te.code, "Q310A");
         assert_eq!(te.billable_units, 2);
     }
 
@@ -304,7 +304,7 @@ mod tests {
             status: BillingStatus::Draft,
             codes: vec![],
             time_entries: vec![TimeEntry {
-                code: "Q310".into(),
+                code: "Q310A".into(),
                 description: "Direct Patient Care".into(),
                 rate_per_15min_cents: 2000,
                 minutes,
@@ -382,13 +382,13 @@ mod tests {
         let mut time_hours_by_code = HashMap::new();
         let q310_hours = total_hours - q312_hours - q313_hours;
         if q310_hours > 0.0 {
-            time_hours_by_code.insert("Q310".to_string(), q310_hours);
+            time_hours_by_code.insert("Q310A".to_string(), q310_hours);
         }
         if q312_hours > 0.0 {
-            time_hours_by_code.insert("Q312".to_string(), q312_hours);
+            time_hours_by_code.insert("Q312A".to_string(), q312_hours);
         }
         if q313_hours > 0.0 {
-            time_hours_by_code.insert("Q313".to_string(), q313_hours);
+            time_hours_by_code.insert("Q313A".to_string(), q313_hours);
         }
 
         BillingDaySummary {
@@ -436,7 +436,7 @@ mod tests {
 
     #[test]
     fn test_monthly_caps_indirect_admin_ratio() {
-        // 10h total per day, 2h Q312, 0.5h Q313 → ratio = 2.5/10 = 0.25
+        // 10h total per day, 2h Q312A, 0.5h Q313A → ratio = 2.5/10 = 0.25
         let summaries = vec![make_day_summary("2026-04-01", 10.0, 2.0, 0.5)];
         let caps = calculate_monthly_caps(&summaries);
         assert!((caps.indirect_admin_ratio - 0.25).abs() < 0.001);
@@ -445,7 +445,7 @@ mod tests {
 
     #[test]
     fn test_monthly_caps_admin_ratio_exceeded() {
-        // 10h total, 0h Q312, 1h Q313 → admin_ratio = 0.10, limit 0.05 → exceeded
+        // 10h total, 0h Q312A, 1h Q313A → admin_ratio = 0.10, limit 0.05 → exceeded
         let summaries = vec![make_day_summary("2026-04-01", 10.0, 0.0, 1.0)];
         let caps = calculate_monthly_caps(&summaries);
         assert!((caps.admin_ratio - 0.10).abs() < 0.001);

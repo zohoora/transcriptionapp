@@ -1013,7 +1013,7 @@ export interface RoomConfig {
 export type BillingCategory = 'in_basket' | 'out_of_basket';
 
 /** Time-based billing code identifier */
-export type TimeCode = 'Q310' | 'Q311' | 'Q312' | 'Q313';
+export type TimeCode = 'Q310A' | 'Q311A' | 'Q312A' | 'Q313A';
 
 /** Billing record status lifecycle */
 export type BillingStatus = 'draft' | 'confirmed';
@@ -1038,7 +1038,7 @@ export interface BillingCode {
   afterHoursPremiumCents: number;
 }
 
-/** Time-based billing entry (Q310-Q313) */
+/** Time-based billing entry (Q310A-Q313A) */
 export interface TimeEntry {
   code: string;
   description: string;
@@ -1143,10 +1143,10 @@ export const BILLING_CAPS = {
 
 /** Time-based billing rates */
 export const TIME_BILLING_RATES: Record<TimeCode, { description: string; ratePerHour: number; ratePer15min: number }> = {
-  Q310: { description: 'Direct patient care', ratePerHour: 80, ratePer15min: 20 },
-  Q311: { description: 'Telephone/remote care', ratePerHour: 68, ratePer15min: 17 },
-  Q312: { description: 'Indirect patient care', ratePerHour: 80, ratePer15min: 20 },
-  Q313: { description: 'Clinical administration', ratePerHour: 80, ratePer15min: 20 },
+  Q310A: { description: 'Direct patient care', ratePerHour: 80, ratePer15min: 20 },
+  Q311A: { description: 'Telephone/remote care', ratePerHour: 68, ratePer15min: 17 },
+  Q312A: { description: 'Indirect patient care', ratePerHour: 80, ratePer15min: 20 },
+  Q313A: { description: 'Clinical administration', ratePerHour: 80, ratePer15min: 20 },
 };
 
 /** Format cents as dollar string */

@@ -285,8 +285,8 @@ mod tests {
         let mut rec = empty_record();
         rec.codes.push(make_code("in_basket", 300, false, 0));
         rec.codes.push(make_code("out_of_basket", 5000, false, 0));
-        rec.time_entries.push(make_time_entry("Q310", 2000));
-        rec.time_entries.push(make_time_entry("Q310", 2000));
+        rec.time_entries.push(make_time_entry("Q310A", 2000));
+        rec.time_entries.push(make_time_entry("Q310A", 2000));
         rec.recalculate_totals();
         assert_eq!(rec.total_shadow_cents, 300);
         assert_eq!(rec.total_out_of_basket_cents, 5000);
@@ -338,7 +338,7 @@ mod tests {
 
     #[test]
     fn test_serde_camel_case_time_entry() {
-        let te = make_time_entry("Q310", 2000);
+        let te = make_time_entry("Q310A", 2000);
         let json = serde_json::to_string(&te).unwrap();
         assert!(json.contains("\"ratePer15minCents\""));
         assert!(json.contains("\"billableUnits\""));
@@ -350,7 +350,7 @@ mod tests {
     fn test_serde_roundtrip_billing_record() {
         let mut rec = empty_record();
         rec.codes.push(make_code("in_basket", 300, true, 150));
-        rec.time_entries.push(make_time_entry("Q310", 2000));
+        rec.time_entries.push(make_time_entry("Q310A", 2000));
         rec.recalculate_totals();
 
         let json = serde_json::to_string(&rec).unwrap();
