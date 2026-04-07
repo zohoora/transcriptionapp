@@ -100,6 +100,9 @@ pub struct ArchiveMetadata {
     /// Patient name extracted via vision-based screenshot analysis (majority vote)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub patient_name: Option<String>,
+    /// Patient date of birth extracted via vision (YYYY-MM-DD), used for age-based billing
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub patient_dob: Option<String>,
     /// How the encounter was detected: "llm", "sensor", or "manual"
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub detection_method: Option<String>,
@@ -147,6 +150,7 @@ impl ArchiveMetadata {
             charting_mode: None,
             encounter_number: None,
             patient_name: None,
+            patient_dob: None,
             detection_method: None,
             shadow_comparison: None,
             likely_non_clinical: None,
@@ -1111,6 +1115,7 @@ pub fn split_session(session_id: &str, date_str: &str, split_line: usize) -> Res
         charting_mode: original_meta.charting_mode.clone(),
         encounter_number: None, // Will be renumbered
         patient_name: original_meta.patient_name.clone(),
+        patient_dob: original_meta.patient_dob.clone(),
         detection_method: original_meta.detection_method.clone(),
         shadow_comparison: None,
         likely_non_clinical: original_meta.likely_non_clinical,

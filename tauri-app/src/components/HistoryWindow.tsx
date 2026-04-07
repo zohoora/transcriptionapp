@@ -1782,6 +1782,7 @@ const HistoryWindow: React.FC = () => {
                     sessionId={selectedSession?.session_id || ''}
                     date={formatDateForApi(selectedDate)}
                     durationMs={selectedSession?.metadata?.duration_ms ?? null}
+                    patientDob={selectedSession?.metadata?.patient_dob ?? null}
                     onRecordChange={setBillingRecord}
                   />
                 )}

@@ -726,6 +726,8 @@ export interface LocalArchiveMetadata {
   encounter_number: number | null;
   /** Patient name extracted via vision-based screenshot analysis */
   patient_name: string | null;
+  /** Patient date of birth extracted via vision (YYYY-MM-DD), used for age-based billing */
+  patient_dob?: string | null;
   /** Flagged as likely non-clinical by two-pass content check */
   likely_non_clinical: boolean | null;
   /** Whether a patient handout has been saved for this session */

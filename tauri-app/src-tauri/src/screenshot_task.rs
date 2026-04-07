@@ -18,7 +18,7 @@ use crate::patient_name_tracker::PatientNameTracker;
 use crate::pipeline_log::PipelineLogger;
 use crate::replay_bundle::{ReplayBundleBuilder, VisionResult};
 
-pub(crate) use crate::patient_name_tracker::{build_patient_name_prompt, parse_patient_name};
+pub(crate) use crate::patient_name_tracker::{build_patient_name_prompt, parse_vision_response};
 
 /// All inputs needed by the screenshot task, gathered at spawn time.
 pub struct ScreenshotTaskConfig {
@@ -126,7 +126,7 @@ pub async fn run_screenshot_task(cfg: ScreenshotTaskConfig) {
             content_parts,
             "patient_name_extraction",
             Some(0.1),
-            Some(50),
+            Some(100),
             None,
             None,
         );
@@ -134,7 +134,15 @@ pub async fn run_screenshot_task(cfg: ScreenshotTaskConfig) {
         match tokio::time::timeout(tokio::time::Duration::from_secs(30), vision_future).await {
             Ok(Ok(response)) => {
                 let vision_latency = vision_start.elapsed().as_millis() as u64;
-                let parsed_name = parse_patient_name(&response);
+                let (parsed_name, parsed_dob) = parse_vision_response(&response);
+
+                // Store DOB if found (most recent extraction wins)
+                if let Some(ref dob) = parsed_dob {
+                    if let Ok(mut tracker) = cfg.name_tracker.lock() {
+                        tracker.set_dob(dob.clone());
+                    }
+                }
+
                 if let Some(ref name) = parsed_name {
                     info!("Vision extracted patient name: {}", name);
 
@@ -155,6 +163,7 @@ pub async fn run_screenshot_task(cfg: ScreenshotTaskConfig) {
                             None,
                             serde_json::json!({
                                 "parsed_name": name,
+                                "parsed_dob": parsed_dob,
                                 "screenshot_blank": false,
                                 "is_stale": is_stale,
                             }),

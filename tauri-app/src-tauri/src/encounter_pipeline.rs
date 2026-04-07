@@ -989,6 +989,7 @@ mod tests {
             charting_mode: Some("continuous".into()),
             encounter_number: Some(3),
             patient_name: Some("Jane Doe".into()),
+            patient_dob: None,
             detection_method: Some("llm".into()),
             shadow_comparison: None,
             likely_non_clinical: None,

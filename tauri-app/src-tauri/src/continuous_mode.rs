@@ -1612,11 +1612,12 @@ pub async fn run_continuous_mode(
                                         metadata.encounter_number = Some(encounter_number);
                                         // Record how this encounter was detected (reuse pre-computed value)
                                         metadata.detection_method = Some(detection_method_str.to_string());
-                                        // Add patient name from vision extraction (majority vote)
+                                        // Add patient name and DOB from vision extraction
                                         if let Ok(tracker) = name_tracker_for_detector.lock() {
                                             metadata.patient_name = tracker.majority_name();
+                                            metadata.patient_dob = tracker.dob().map(|s| s.to_string());
                                         } else {
-                                            warn!("Name tracker lock poisoned, patient name not written to metadata");
+                                            warn!("Name tracker lock poisoned, patient name/dob not written to metadata");
                                         }
                                         // Add shadow comparison data if in shadow mode
                                         if is_shadow_mode {
@@ -2667,6 +2668,7 @@ pub async fn run_continuous_mode(
                                 metadata.detection_method = Some("flush".to_string());
                                 if let Ok(tracker) = handle.name_tracker.lock() {
                                     metadata.patient_name = tracker.majority_name();
+                                    metadata.patient_dob = tracker.dob().map(|s| s.to_string());
                                 } else {
                                     warn!("Name tracker lock poisoned during flush metadata enrichment");
                                 }

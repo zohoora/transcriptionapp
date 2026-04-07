@@ -10,11 +10,12 @@ interface BillingTabProps {
   sessionId: string;
   date: string;
   durationMs: number | null;
+  patientDob?: string | null;
   onRecordChange: (record: BillingRecord) => void;
 }
 
 export const BillingTab: React.FC<BillingTabProps> = ({
-  record, loading, sessionId, date, onRecordChange,
+  record, loading, sessionId, date, patientDob, onRecordChange,
 }) => {
   const [extracting, setExtracting] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -31,6 +32,24 @@ export const BillingTab: React.FC<BillingTabProps> = ({
   const [referralReceived, setReferralReceived] = useState(false);
   const [counsellingExhausted, setCounsellingExhausted] = useState(false);
   const [afterHoursMode, setAfterHoursMode] = useState<'auto' | 'yes' | 'no'>('auto');
+
+  // Auto-populate age bracket from vision-extracted DOB
+  useEffect(() => {
+    if (!patientDob) return;
+    const birth = new Date(patientDob);
+    if (isNaN(birth.getTime())) return;
+    const today = new Date();
+    let age = today.getFullYear() - birth.getFullYear();
+    if (today.getMonth() < birth.getMonth() ||
+        (today.getMonth() === birth.getMonth() && today.getDate() < birth.getDate())) {
+      age--;
+    }
+    if (age <= 1) setPatientAge('child_0_1');
+    else if (age <= 15) setPatientAge('child_2_15');
+    else if (age <= 17) setPatientAge('adolescent');
+    else if (age <= 64) setPatientAge('adult');
+    else setPatientAge('senior');
+  }, [patientDob]);
 
   useEffect(() => {
     if (!showAddCode || searchQuery.length < 2) {
