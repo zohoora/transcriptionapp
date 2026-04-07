@@ -319,6 +319,10 @@ const EXCLUSION_GROUPS: ExclusionGroup[] = [
   { name: 'Laceration repair sizes', codes: ['Z154A', 'Z175A', 'Z176A'], reason: 'One repair code per wound' },
   { name: 'Group 1 excision vs electro', codes: ['Z156A', 'Z157A', 'Z158A', 'Z159A', 'Z160A', 'Z161A'], reason: 'Pick excision & suture OR electrocoagulation method -- not both' },
   { name: 'Epistaxis treatment', codes: ['Z314A', 'Z315A'], reason: 'Cautery vs packing -- one per encounter' },
+  { name: 'Intralesional infiltration count', codes: ['G375A', 'G377A'], reason: '1-2 lesions vs 3+ lesions -- pick one based on count' },
+  { name: 'Biopsy method', codes: ['Z113A', 'Z116A'], reason: 'Without sutures vs with sutures -- pick one based on method' },
+  { name: 'Nail excision count', codes: ['Z128A', 'Z129A'], reason: 'One nail vs multiple nails -- pick one based on count' },
+  { name: 'Group 3 excision location', codes: ['Z122A', 'Z125A'], reason: 'Face/neck vs other areas -- pick one location per lesion' },
   // NOTE: G384A + G385A are base+add-on pair -- NOT mutually exclusive
   // NOTE: G370A + G371A are base+add-on pair -- NOT mutually exclusive
   { name: 'Direct care time', codes: ['Q310A', 'Q311A'], reason: 'In-office vs remote -- one setting per encounter' },

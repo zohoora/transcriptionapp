@@ -2275,13 +2275,30 @@ pub static EXCLUSION_GROUPS: &[ExclusionGroup] = &[
         codes: &["Z314A", "Z315A"],
         reason: "Cautery vs packing \u{2014} one per encounter",
     },
-    // NOTE: G384A + G385A are a base+add-on pair — G385 REQUIRES G384.
-    // They are NOT mutually exclusive. No exclusion group needed.
     ExclusionGroup {
-        name: "Joint injection add-on",
-        codes: &["G370A", "G371A"],
-        reason: "G371 is add-on to G370 \u{2014} requires G370 as base code",
+        name: "Intralesional infiltration count",
+        codes: &["G375A", "G377A"],
+        reason: "1-2 lesions vs 3+ lesions \u{2014} pick one based on count",
     },
+    ExclusionGroup {
+        name: "Biopsy method",
+        codes: &["Z113A", "Z116A"],
+        reason: "Without sutures vs with sutures \u{2014} pick one based on method",
+    },
+    ExclusionGroup {
+        name: "Nail excision count",
+        codes: &["Z128A", "Z129A"],
+        reason: "One nail vs multiple nails \u{2014} pick one based on count",
+    },
+    ExclusionGroup {
+        name: "Group 3 excision location",
+        codes: &["Z122A", "Z125A"],
+        reason: "Face/neck vs other areas \u{2014} pick one location per lesion",
+    },
+    // NOTE: G384A + G385A are a base+add-on pair — NOT mutually exclusive
+    // NOTE: G370A + G371A are a base+add-on pair — NOT mutually exclusive
+    // NOTE: G373A + G372A are a base+add-on pair — NOT mutually exclusive
+    // NOTE: G231A + G223A are a base+add-on pair — NOT mutually exclusive
     ExclusionGroup {
         name: "Direct care time",
         codes: &["Q310A", "Q311A"],
