@@ -122,7 +122,18 @@ fn visit_type_to_code(vt: &VisitType) -> &'static str {
         VisitType::Counselling => "K013A",
         VisitType::SharedAppointment => "K140A", // default to 2-patient; frontend can adjust
         VisitType::WellBabyVisit => "A007A",
-        VisitType::PeriodicHealthVisit => "K130A", // default to 18-44 age range
+        VisitType::Consultation => "A005A",
+        VisitType::RepeatConsultation => "A006A",
+        VisitType::LimitedConsultation => "A905A",
+        VisitType::VirtualVideo => "A101A",
+        VisitType::VirtualPhone => "A102A",
+        VisitType::HouseCall => "A900A",
+        VisitType::EmergencyDeptEquiv => "A888A",
+        VisitType::PeriodicHealthChild => "K017A",
+        VisitType::PeriodicHealthAdolescent => "K130A",
+        VisitType::PeriodicHealthAdult => "K131A",
+        VisitType::PeriodicHealthSenior => "K132A",
+        VisitType::PeriodicHealthIdd => "K133A",
     }
 }
 
@@ -154,6 +165,14 @@ fn procedure_type_to_code(proc: &ProcedureType) -> &'static str {
         ProcedureType::HemorrhoidIncision => "Z545A",
         ProcedureType::CornealForeignBody => "Z847A",
         ProcedureType::Immunization => "G538A",
+        ProcedureType::ImmunizationFlu => "G590A",
+        ProcedureType::ImmunizationTdap => "G847A",
+        ProcedureType::ImmunizationHepB => "G842A",
+        ProcedureType::ImmunizationHpv => "G843A",
+        ProcedureType::ImmunizationMmr => "G845A",
+        ProcedureType::ImmunizationPneumococcal => "G846A",
+        ProcedureType::ImmunizationVaricella => "G848A",
+        ProcedureType::ImmunizationPediatric => "G840A",
         ProcedureType::InjectionSoleReason => "G373A", // sole reason for visit injection
         ProcedureType::JointInjection => "G370A",
         ProcedureType::JointInjectionAdditional => "G371A",
@@ -180,6 +199,8 @@ fn procedure_type_to_code(proc: &ProcedureType) -> &'static str {
         ProcedureType::GroupOneExcisionTwo => "Z157A",
         ProcedureType::GroupOneExcisionThree => "Z158A",
         ProcedureType::NevusExcision => "Z162A",
+        ProcedureType::PapSmearRepeat => "G394A",
+        ProcedureType::ElectrocoagThreeOrMore => "Z161A",
     }
 }
 
@@ -194,6 +215,13 @@ fn condition_type_to_codes(cond: &ConditionType) -> Vec<&'static str> {
         ConditionType::Neurocognitive => vec!["K032A"],
         ConditionType::HomeCare => vec!["K070A"],
         ConditionType::SmokingCessationFollowUp => vec!["K039A"],
+        ConditionType::PrimaryMentalHealth => vec!["K005A"],
+        ConditionType::Psychotherapy => vec!["K007A"],
+        ConditionType::HivPrimaryCare => vec!["K022A"],
+        ConditionType::InsulinTherapySupport => vec!["K029A"],
+        ConditionType::DiabeticAssessment => vec!["K030A"],
+        ConditionType::CounsellingAdditional => vec!["K033A"],
+        ConditionType::FibromyalgiaCare => vec!["K037A"],
     }
 }
 
@@ -361,11 +389,43 @@ mod tests {
     }
 
     #[test]
-    fn test_periodic_health_visit_mapping() {
+    fn test_periodic_health_child_mapping() {
         let mut features = default_features();
-        features.visit_type = VisitType::PeriodicHealthVisit;
+        features.visit_type = VisitType::PeriodicHealthChild;
+        let record = map_features_to_billing(&features, "s1", "2026-04-05", 1_800_000, None);
+        assert_eq!(record.codes[0].code, "K017A");
+    }
+
+    #[test]
+    fn test_periodic_health_adolescent_mapping() {
+        let mut features = default_features();
+        features.visit_type = VisitType::PeriodicHealthAdolescent;
         let record = map_features_to_billing(&features, "s1", "2026-04-05", 1_800_000, None);
         assert_eq!(record.codes[0].code, "K130A");
+    }
+
+    #[test]
+    fn test_periodic_health_adult_mapping() {
+        let mut features = default_features();
+        features.visit_type = VisitType::PeriodicHealthAdult;
+        let record = map_features_to_billing(&features, "s1", "2026-04-05", 1_800_000, None);
+        assert_eq!(record.codes[0].code, "K131A");
+    }
+
+    #[test]
+    fn test_periodic_health_senior_mapping() {
+        let mut features = default_features();
+        features.visit_type = VisitType::PeriodicHealthSenior;
+        let record = map_features_to_billing(&features, "s1", "2026-04-05", 1_800_000, None);
+        assert_eq!(record.codes[0].code, "K132A");
+    }
+
+    #[test]
+    fn test_periodic_health_idd_mapping() {
+        let mut features = default_features();
+        features.visit_type = VisitType::PeriodicHealthIdd;
+        let record = map_features_to_billing(&features, "s1", "2026-04-05", 1_800_000, None);
+        assert_eq!(record.codes[0].code, "K133A");
     }
 
     #[test]
@@ -594,7 +654,18 @@ mod tests {
             VisitType::Counselling,
             VisitType::SharedAppointment,
             VisitType::WellBabyVisit,
-            VisitType::PeriodicHealthVisit,
+            VisitType::Consultation,
+            VisitType::RepeatConsultation,
+            VisitType::LimitedConsultation,
+            VisitType::VirtualVideo,
+            VisitType::VirtualPhone,
+            VisitType::HouseCall,
+            VisitType::EmergencyDeptEquiv,
+            VisitType::PeriodicHealthChild,
+            VisitType::PeriodicHealthAdolescent,
+            VisitType::PeriodicHealthAdult,
+            VisitType::PeriodicHealthSenior,
+            VisitType::PeriodicHealthIdd,
         ];
         for vt in &visit_types {
             let code = visit_type_to_code(vt);
@@ -634,6 +705,14 @@ mod tests {
             ProcedureType::HemorrhoidIncision,
             ProcedureType::CornealForeignBody,
             ProcedureType::Immunization,
+            ProcedureType::ImmunizationFlu,
+            ProcedureType::ImmunizationTdap,
+            ProcedureType::ImmunizationHepB,
+            ProcedureType::ImmunizationHpv,
+            ProcedureType::ImmunizationMmr,
+            ProcedureType::ImmunizationPneumococcal,
+            ProcedureType::ImmunizationVaricella,
+            ProcedureType::ImmunizationPediatric,
             ProcedureType::InjectionSoleReason,
             ProcedureType::JointInjection,
             ProcedureType::JointInjectionAdditional,
@@ -660,6 +739,8 @@ mod tests {
             ProcedureType::GroupOneExcisionTwo,
             ProcedureType::GroupOneExcisionThree,
             ProcedureType::NevusExcision,
+            ProcedureType::PapSmearRepeat,
+            ProcedureType::ElectrocoagThreeOrMore,
         ];
         for p in &procedures {
             let code = procedure_type_to_code(p);
@@ -682,6 +763,13 @@ mod tests {
             ConditionType::Neurocognitive,
             ConditionType::HomeCare,
             ConditionType::SmokingCessationFollowUp,
+            ConditionType::PrimaryMentalHealth,
+            ConditionType::Psychotherapy,
+            ConditionType::HivPrimaryCare,
+            ConditionType::InsulinTherapySupport,
+            ConditionType::DiabeticAssessment,
+            ConditionType::CounsellingAdditional,
+            ConditionType::FibromyalgiaCare,
         ];
         for c in &conditions {
             let codes = condition_type_to_codes(c);

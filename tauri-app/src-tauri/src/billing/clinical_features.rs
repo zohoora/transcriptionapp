@@ -16,7 +16,18 @@ pub enum VisitType {
     Counselling,
     SharedAppointment,
     WellBabyVisit,
-    PeriodicHealthVisit,
+    Consultation,
+    RepeatConsultation,
+    LimitedConsultation,
+    VirtualVideo,
+    VirtualPhone,
+    HouseCall,
+    EmergencyDeptEquiv,
+    PeriodicHealthChild,
+    PeriodicHealthAdolescent,
+    PeriodicHealthAdult,
+    PeriodicHealthSenior,
+    PeriodicHealthIdd,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
@@ -46,6 +57,14 @@ pub enum ProcedureType {
     HemorrhoidIncision,
     CornealForeignBody,
     Immunization,
+    ImmunizationFlu,
+    ImmunizationTdap,
+    ImmunizationHepB,
+    ImmunizationHpv,
+    ImmunizationMmr,
+    ImmunizationPneumococcal,
+    ImmunizationVaricella,
+    ImmunizationPediatric,
     InjectionSoleReason,
     // Injections
     JointInjection,
@@ -75,6 +94,8 @@ pub enum ProcedureType {
     GroupOneExcisionTwo,
     GroupOneExcisionThree,
     NevusExcision,
+    PapSmearRepeat,
+    ElectrocoagThreeOrMore,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
@@ -87,6 +108,13 @@ pub enum ConditionType {
     Neurocognitive,
     HomeCare,
     SmokingCessationFollowUp,
+    PrimaryMentalHealth,
+    Psychotherapy,
+    HivPrimaryCare,
+    InsulinTherapySupport,
+    DiabeticAssessment,
+    CounsellingAdditional,
+    FibromyalgiaCare,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
@@ -157,7 +185,18 @@ Analyze the provided SOAP note and transcript excerpt, then output a JSON object
 - "counselling" — Visit is PRIMARILY counselling/psychotherapy, not a physical assessment. Extended discussion of mental health, lifestyle, substance use. The main activity is talking, not examining (K005A/K013A)
 - "shared_appointment" — Multiple patients seen TOGETHER in a group visit for chronic disease education (diabetes, COPD, etc.). NOT a family visit where patients are seen separately (K140-K144A)
 - "well_baby_visit" — Well-baby or well-child preventive health check at standard intervals (2w, 1m, 2m, 4m, 6m, 9m, 12m, 18m, 24m). Developmental milestones + immunizations (A007A)
-- "periodic_health_visit" — Annual preventive health exam for adults (age-appropriate screening discussion, lifestyle counselling). NOT a visit triggered by a specific complaint (K130-K132A)
+- "consultation" — Formal consultation following a written referral from another physician. Requires referral letter (A005A)
+- "repeat_consultation" — Follow-up consultation for previously consulted patient, same problem (A006A)
+- "limited_consultation" — Less demanding consultation, requires less physician time than full consultation (A905A)
+- "virtual_video" — Video visit using telemedicine platform (A101A)
+- "virtual_phone" — Telephone visit (A102A)
+- "house_call" — Complex house call assessment for frail/housebound patient at their home (A900A)
+- "emergency_dept_equiv" — Emergency department equivalent assessment on weekend/holiday (A888A)
+- "periodic_health_child" — Periodic health visit for child after second birthday (K017A)
+- "periodic_health_adolescent" — Periodic health visit for adolescent 16-17 (K130A)
+- "periodic_health_adult" — Periodic health visit for adult 18-64 (K131A)
+- "periodic_health_senior" — Periodic health visit for adult 65+ (K132A)
+- "periodic_health_idd" — Periodic health visit for adult with intellectual/developmental disability (K133A)
 
 ### procedures (array — only include procedures ACTUALLY PERFORMED during this visit, not just discussed)
 - "pap_smear" — Pap smear/cervical cytology ACTUALLY COLLECTED during visit. Must involve speculum exam + sample collection (G365A)
@@ -183,7 +222,15 @@ Analyze the provided SOAP note and transcript excerpt, then output a JSON object
 - "anoscopy" — Anoscopy PERFORMED in office (Z543A)
 - "hemorrhoid_incision" — Thrombosed external hemorrhoid incised and drained (Z545A)
 - "corneal_foreign_body" — Foreign body REMOVED from cornea with slit lamp/needle (Z847A)
-- "immunization" — Any vaccine ADMINISTERED during visit (flu, pneumococcal, Td, HPV, etc.) (G538A)
+- "immunization" — Generic vaccine administration not specifically listed below (G538A)
+- "immunization_flu" — Influenza vaccine administered (G590A)
+- "immunization_tdap" — Adult Tdap (tetanus/diphtheria/pertussis) vaccine (G847A)
+- "immunization_hep_b" — Hepatitis B vaccine (G842A)
+- "immunization_hpv" — HPV vaccine (G843A)
+- "immunization_mmr" — MMR (measles/mumps/rubella) vaccine (G845A)
+- "immunization_pneumococcal" — Pneumococcal conjugate vaccine (G846A)
+- "immunization_varicella" — Varicella (chickenpox) vaccine (G848A)
+- "immunization_pediatric" — Paediatric DTaP/IPV or DTaP-IPV-Hib vaccine (G840A/G841A)
 - "injection_sole_reason" — IM/SC/intradermal injection as the SOLE reason for visit with NO assessment performed (e.g., flu shot walk-in, B12 injection only). For joint/trigger point/nerve block injections, use the specific injection code instead (G373A)
 - "joint_injection" — Injection INTO a joint, bursa, ganglion, or tendon sheath (e.g., knee injection, shoulder injection, cortisone injection into joint). NOT an IM injection (G370A)
 - "joint_injection_additional" — Each additional joint/bursa/ganglion/tendon sheath injected in the same visit (max 5). Use WITH joint_injection (G371A)
@@ -210,6 +257,8 @@ Analyze the provided SOAP note and transcript excerpt, then output a JSON object
 - "keratosis_excision_two" — Group 1 lesion removal by excision and suture — two lesions (Z157A)
 - "keratosis_excision_three" — Group 1 lesion removal by excision and suture — three or more (Z158A)
 - "nevus_excision" — Group 2 lesion (nevus/mole) removal by excision and suture — single (Z162A)
+- "pap_smear_repeat" — Additional or repeat Pap smear collection (not the periodic one) (G394A)
+- "electrocoagulation_three_plus" — Electrocoagulation/curetting of three or more Group 1 lesions (Z161A)
 
 ### conditions (array — only include if SPECIFIC MANAGEMENT was done, not just mentioned in history)
 - "diabetes_management" — Active diabetes care: A1C review, medication adjustment, glucose log review, diabetic foot exam, or diet counselling for diabetes. Must involve treatment decisions, not just "has diabetes" in history (Q040A)
@@ -219,6 +268,13 @@ Analyze the provided SOAP note and transcript excerpt, then output a JSON object
 - "neurocognitive" — FORMAL cognitive assessment performed: MMSE, MoCA, clock drawing test, or structured dementia screening tool administered and scored. Takes 20+ min of dedicated testing. NOT general mental status observations, NOT memory complaints discussed without formal testing, NOT neurological exam for non-cognitive concerns (K032A)
 - "home_care" — Home care services APPLICATION submitted (CCAC/home care referral form) or active home care supervision visit (K070A/K071A)
 - "smoking_cessation_follow_up" — FOLLOW-UP visit specifically for smoking cessation progress. Patient previously started cessation program, this is a check-in on quit attempt (K039A)
+- "primary_mental_health" — Primary mental health care session (K005A). Individual care, minimum 20 min per unit. NOT psychotherapy
+- "psychotherapy" — Individual psychotherapy session (K007A). Minimum 30 min per unit
+- "hiv_primary_care" — HIV primary care management session (K022A). Minimum 20 min per unit
+- "insulin_therapy_support" — Insulin therapy support: training patients on insulin use, device education (K029A). Max 6 units/year
+- "diabetic_assessment" — Dedicated diabetic management assessment: A1C review, foot exam, medication adjustment (K030A). Max 4/year. Different from diabetes_management incentive (Q040A)
+- "counselling_additional" — Counselling after the first 3 K013 units are exhausted for the year (K033A). Out-of-basket at full FFS
+- "fibromyalgia_care" — Fibromyalgia or myalgic encephalomyelitis care session (K037A). Per unit
 
 ### setting
 - "in_office" — Standard in-person office visit (default if not specified)
@@ -341,6 +397,12 @@ mod tests {
         assert!(system.contains("pap_smear"));
         assert!(system.contains("diabetes_management"));
         assert!(system.contains("in_office"));
+        assert!(system.contains("consultation"));
+        assert!(system.contains("virtual_video"));
+        assert!(system.contains("periodic_health_adult"));
+        assert!(system.contains("immunization_flu"));
+        assert!(system.contains("primary_mental_health"));
+        assert!(system.contains("pap_smear_repeat"));
         assert!(user.contains("SOAP content here"));
         assert!(user.contains("Transcript here"));
     }
@@ -444,7 +506,18 @@ This patient had a diabetes follow-up via phone."#;
             (VisitType::PalliativeCare, "\"palliative_care\""),
             (VisitType::SharedAppointment, "\"shared_appointment\""),
             (VisitType::WellBabyVisit, "\"well_baby_visit\""),
-            (VisitType::PeriodicHealthVisit, "\"periodic_health_visit\""),
+            (VisitType::Consultation, "\"consultation\""),
+            (VisitType::RepeatConsultation, "\"repeat_consultation\""),
+            (VisitType::LimitedConsultation, "\"limited_consultation\""),
+            (VisitType::VirtualVideo, "\"virtual_video\""),
+            (VisitType::VirtualPhone, "\"virtual_phone\""),
+            (VisitType::HouseCall, "\"house_call\""),
+            (VisitType::EmergencyDeptEquiv, "\"emergency_dept_equiv\""),
+            (VisitType::PeriodicHealthChild, "\"periodic_health_child\""),
+            (VisitType::PeriodicHealthAdolescent, "\"periodic_health_adolescent\""),
+            (VisitType::PeriodicHealthAdult, "\"periodic_health_adult\""),
+            (VisitType::PeriodicHealthSenior, "\"periodic_health_senior\""),
+            (VisitType::PeriodicHealthIdd, "\"periodic_health_idd\""),
         ] {
             let json = serde_json::to_string(&variant).unwrap();
             assert_eq!(json, expected, "VisitType serialization mismatch for {:?}", variant);
@@ -475,6 +548,14 @@ This patient had a diabetes follow-up via phone."#;
             ProcedureType::HemorrhoidIncision,
             ProcedureType::CornealForeignBody,
             ProcedureType::Immunization,
+            ProcedureType::ImmunizationFlu,
+            ProcedureType::ImmunizationTdap,
+            ProcedureType::ImmunizationHepB,
+            ProcedureType::ImmunizationHpv,
+            ProcedureType::ImmunizationMmr,
+            ProcedureType::ImmunizationPneumococcal,
+            ProcedureType::ImmunizationVaricella,
+            ProcedureType::ImmunizationPediatric,
             ProcedureType::InjectionSoleReason,
             ProcedureType::JointInjection,
             ProcedureType::JointInjectionAdditional,
@@ -501,6 +582,8 @@ This patient had a diabetes follow-up via phone."#;
             ProcedureType::GroupOneExcisionTwo,
             ProcedureType::GroupOneExcisionThree,
             ProcedureType::NevusExcision,
+            ProcedureType::PapSmearRepeat,
+            ProcedureType::ElectrocoagThreeOrMore,
         ];
         for p in all_procedures {
             let json = serde_json::to_string(&p).unwrap();
@@ -519,6 +602,13 @@ This patient had a diabetes follow-up via phone."#;
             ConditionType::Neurocognitive,
             ConditionType::HomeCare,
             ConditionType::SmokingCessationFollowUp,
+            ConditionType::PrimaryMentalHealth,
+            ConditionType::Psychotherapy,
+            ConditionType::HivPrimaryCare,
+            ConditionType::InsulinTherapySupport,
+            ConditionType::DiabeticAssessment,
+            ConditionType::CounsellingAdditional,
+            ConditionType::FibromyalgiaCare,
         ] {
             let json = serde_json::to_string(&c).unwrap();
             let deser: ConditionType = serde_json::from_str(&json).unwrap();
