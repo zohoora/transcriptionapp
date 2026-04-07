@@ -799,8 +799,8 @@ pub static OHIP_CODES: &[OhipCode] = &[
     },
     OhipCode {
         code: "G369A",
-        description: "Epidural Injection — Caudal or Lumbar",
-        ffs_rate_cents: 6612, // $66.12
+        description: "B.C.G. Inoculation Following Tuberculin Test",
+        ffs_rate_cents: 558, // $5.58
         basket: Basket::In,
         shadow_pct: 50,
         category: CodeCategory::Procedure,
@@ -809,8 +809,8 @@ pub static OHIP_CODES: &[OhipCode] = &[
     },
     OhipCode {
         code: "G370A",
-        description: "Nerve Block — Peripheral",
-        ffs_rate_cents: 3688, // $36.88
+        description: "Injection/Aspiration of Joint, Bursa, Ganglion, or Tendon Sheath",
+        ffs_rate_cents: 2134, // $21.34
         basket: Basket::In,
         shadow_pct: 50,
         category: CodeCategory::Procedure,
@@ -819,8 +819,8 @@ pub static OHIP_CODES: &[OhipCode] = &[
     },
     OhipCode {
         code: "G371A",
-        description: "Trigger Point Injection (single site)",
-        ffs_rate_cents: 2371, // $23.71
+        description: "Additional Joint/Bursa/Ganglion/Tendon Sheath (add-on to G370, max 3)",
+        ffs_rate_cents: 2097, // $20.97
         basket: Basket::In,
         shadow_pct: 50,
         category: CodeCategory::Procedure,
@@ -829,8 +829,8 @@ pub static OHIP_CODES: &[OhipCode] = &[
     },
     OhipCode {
         code: "G372A",
-        description: "Trigger Point Injection (multiple sites)",
-        ffs_rate_cents: 3688, // $36.88
+        description: "IM/SC/Intradermal Injection — Each Additional (with visit)",
+        ffs_rate_cents: 410, // $4.10
         basket: Basket::In,
         shadow_pct: 50,
         category: CodeCategory::Procedure,
@@ -838,9 +838,9 @@ pub static OHIP_CODES: &[OhipCode] = &[
         max_per_year: None,
     },
     OhipCode {
-        code: "Z331A",
-        description: "Intra-articular Joint Injection (small joint)",
-        ffs_rate_cents: 2371, // $23.71
+        code: "G384A",
+        description: "Trigger Point Injection — Infiltration of Tissue",
+        ffs_rate_cents: 933, // $9.33
         basket: Basket::In,
         shadow_pct: 50,
         category: CodeCategory::Procedure,
@@ -848,9 +848,29 @@ pub static OHIP_CODES: &[OhipCode] = &[
         max_per_year: None,
     },
     OhipCode {
-        code: "Z332A",
-        description: "Intra-articular Joint Injection (large joint — knee, shoulder)",
-        ffs_rate_cents: 3688, // $36.88
+        code: "G385A",
+        description: "Trigger Point Injection — Additional Site (add-on to G384, max 2)",
+        ffs_rate_cents: 479, // $4.79
+        basket: Basket::In,
+        shadow_pct: 50,
+        category: CodeCategory::Procedure,
+        after_hours_eligible: false,
+        max_per_year: None,
+    },
+    OhipCode {
+        code: "G228A",
+        description: "Paravertebral Nerve Block (cervical/thoracic/lumbar/sacral/coccygeal)",
+        ffs_rate_cents: 3593, // $35.93
+        basket: Basket::In,
+        shadow_pct: 50,
+        category: CodeCategory::Procedure,
+        after_hours_eligible: false,
+        max_per_year: None,
+    },
+    OhipCode {
+        code: "G231A",
+        description: "Somatic/Peripheral Nerve Block — One Nerve or Site",
+        ffs_rate_cents: 3593, // $35.93
         basket: Basket::In,
         shadow_pct: 50,
         category: CodeCategory::Procedure,
@@ -1722,14 +1742,14 @@ pub static EXCLUSION_GROUPS: &[ExclusionGroup] = &[
         reason: "In-office vs remote — one setting per encounter",
     },
     ExclusionGroup {
-        name: "Trigger point single/multiple",
-        codes: &["G371A", "G372A"],
-        reason: "Single vs multiple sites — pick one",
+        name: "Trigger point sites",
+        codes: &["G384A", "G385A"],
+        reason: "G384 is first site, G385 is add-on — don't bill both as standalone",
     },
     ExclusionGroup {
-        name: "Joint injection size",
-        codes: &["Z331A", "Z332A"],
-        reason: "Small vs large joint — pick one per joint",
+        name: "Joint injection add-on",
+        codes: &["G370A", "G371A"],
+        reason: "G371 is add-on to G370 — requires G370 as base code",
     },
     ExclusionGroup {
         name: "Prenatal visit types",
@@ -1852,9 +1872,8 @@ mod tests {
 
     #[test]
     fn test_code_count() {
-        // 150 original - 2 expired COVID codes (K082A, K083A) + 7 new
-        // (K300A, K301A, K133A, Q888A, G375A, G379A, K015A) = 155
-        assert_eq!(all_codes().len(), 155);
+        // 155 previous - 2 removed (Z331A, Z332A) + 4 added (G384A, G385A, G228A, G231A) = 157
+        assert_eq!(all_codes().len(), 157);
     }
 
     #[test]
