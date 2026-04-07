@@ -2275,11 +2275,8 @@ pub static EXCLUSION_GROUPS: &[ExclusionGroup] = &[
         codes: &["Z314A", "Z315A"],
         reason: "Cautery vs packing \u{2014} one per encounter",
     },
-    ExclusionGroup {
-        name: "Trigger point add-on",
-        codes: &["G384A", "G385A"],
-        reason: "G385 is add-on to G384 \u{2014} don't bill both as standalone",
-    },
+    // NOTE: G384A + G385A are a base+add-on pair — G385 REQUIRES G384.
+    // They are NOT mutually exclusive. No exclusion group needed.
     ExclusionGroup {
         name: "Joint injection add-on",
         codes: &["G370A", "G371A"],

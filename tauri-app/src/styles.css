@@ -9606,6 +9606,42 @@ button.review-section-header-left:focus {
   margin-left: 4px;
   font-weight: 600;
 }
+.billing-qty {
+  text-align: center;
+  white-space: nowrap;
+}
+.qty-controls {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+.qty-btn {
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 1px solid var(--border-color, #374151);
+  border-radius: 3px;
+  background: var(--bg-secondary, #1f2937);
+  color: var(--text-primary, #e5e7eb);
+  font-size: 12px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.qty-btn:hover:not(:disabled) {
+  background: var(--bg-hover, #374151);
+}
+.qty-btn:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+.qty-value {
+  min-width: 16px;
+  text-align: center;
+  font-weight: 600;
+  font-size: 12px;
+}
 
 .billing-confidence {
   font-size: 10px;

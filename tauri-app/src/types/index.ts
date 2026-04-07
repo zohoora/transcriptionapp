@@ -1036,6 +1036,8 @@ export interface BillingCode {
   autoExtracted: boolean;
   afterHours: boolean;
   afterHoursPremiumCents: number;
+  /** Quantity (default 1). For add-on codes like G385A, can be >1. */
+  quantity?: number;
 }
 
 /** Time-based billing entry (Q310A-Q313A) */

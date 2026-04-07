@@ -319,8 +319,8 @@ const EXCLUSION_GROUPS: ExclusionGroup[] = [
   { name: 'Laceration repair sizes', codes: ['Z154A', 'Z175A', 'Z176A'], reason: 'One repair code per wound' },
   { name: 'Group 1 excision vs electro', codes: ['Z156A', 'Z157A', 'Z158A', 'Z159A', 'Z160A', 'Z161A'], reason: 'Pick excision & suture OR electrocoagulation method -- not both' },
   { name: 'Epistaxis treatment', codes: ['Z314A', 'Z315A'], reason: 'Cautery vs packing -- one per encounter' },
-  { name: 'Trigger point add-on', codes: ['G384A', 'G385A'], reason: 'G385 is add-on to G384 -- don\'t bill both as standalone' },
-  { name: 'Joint injection add-on', codes: ['G370A', 'G371A'], reason: 'G371 is add-on to G370 -- requires G370 as base code' },
+  // NOTE: G384A + G385A are base+add-on pair -- NOT mutually exclusive
+  // NOTE: G370A + G371A are base+add-on pair -- NOT mutually exclusive
   { name: 'Direct care time', codes: ['Q310A', 'Q311A'], reason: 'In-office vs remote -- one setting per encounter' },
   { name: 'FHO weekend access', codes: ['Q888A', 'A888A'], reason: 'Q888A and A888A cannot be billed same day' },
   { name: 'SVP office premiums', codes: ['A990A', 'A994A', 'A996A', 'A998A'], reason: 'One SVP office premium per visit' },

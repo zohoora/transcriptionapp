@@ -70,6 +70,7 @@ pub fn map_features_to_billing(
                 auto_extracted: true,
                 after_hours: false,
                 after_hours_premium_cents: 0,
+                quantity: 1,
             });
         }
     }
@@ -210,6 +211,7 @@ fn make_billing_code(
         auto_extracted: true,
         after_hours,
         after_hours_premium_cents,
+        quantity: 1,
     }
 }
 

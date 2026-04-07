@@ -52,6 +52,13 @@ pub struct BillingCode {
     pub auto_extracted: bool,
     pub after_hours: bool,
     pub after_hours_premium_cents: u32,
+    /// Quantity (default 1). For add-on codes like G385A (max 2), can be >1.
+    #[serde(default = "default_quantity")]
+    pub quantity: u8,
+}
+
+fn default_quantity() -> u8 {
+    1
 }
 
 // ── Time entry (Q310–Q313) ────────────────────────────────────────────────
@@ -96,17 +103,18 @@ impl BillingRecord {
         let mut out_of_basket_cents: u32 = 0;
 
         for c in &self.codes {
+            let qty = c.quantity.max(1) as u32;
             if c.category == "in_basket" {
-                shadow_cents = shadow_cents.saturating_add(c.billable_amount_cents);
+                shadow_cents = shadow_cents.saturating_add(c.billable_amount_cents * qty);
                 if c.after_hours {
-                    shadow_cents = shadow_cents.saturating_add(c.after_hours_premium_cents);
+                    shadow_cents = shadow_cents.saturating_add(c.after_hours_premium_cents * qty);
                 }
             } else {
                 // out_of_basket
-                out_of_basket_cents = out_of_basket_cents.saturating_add(c.billable_amount_cents);
+                out_of_basket_cents = out_of_basket_cents.saturating_add(c.billable_amount_cents * qty);
                 if c.after_hours {
                     out_of_basket_cents =
-                        out_of_basket_cents.saturating_add(c.after_hours_premium_cents);
+                        out_of_basket_cents.saturating_add(c.after_hours_premium_cents * qty);
                 }
             }
         }
@@ -208,6 +216,7 @@ mod tests {
             auto_extracted: true,
             after_hours,
             after_hours_premium_cents: ah_premium,
+            quantity: 1,
         }
     }
 

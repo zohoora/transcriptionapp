@@ -46,6 +46,34 @@ export const BillingTab: React.FC<BillingTabProps> = ({
   const existingCodeIds = record?.codes.map(c => c.code) || [];
   const conflictMap = record ? findAllConflicts(existingCodeIds) : new Map();
 
+  // Recalculate totals accounting for quantity
+  const recalcTotals = useCallback((updated: BillingRecord) => {
+    let shadow = 0, oob = 0, time = 0;
+    for (const c of updated.codes) {
+      const qty = (c.quantity ?? 1);
+      const ahPremium = c.afterHours ? c.afterHoursPremiumCents : 0;
+      if (c.category === 'in_basket') { shadow += (c.billableAmountCents + ahPremium) * qty; }
+      else { oob += (c.billableAmountCents + ahPremium) * qty; }
+    }
+    time = updated.timeEntries.reduce((sum, t) => sum + t.billableAmountCents, 0);
+    updated.totalShadowCents = shadow;
+    updated.totalOutOfBasketCents = oob;
+    updated.totalTimeBasedCents = time;
+    updated.totalAmountCents = shadow + oob + time;
+    onRecordChange(updated);
+    invoke('save_session_billing', { sessionId, date, record: updated }).catch(console.error);
+  }, [sessionId, date, onRecordChange]);
+
+  const handleQuantityChange = useCallback((index: number, delta: number) => {
+    if (!record) return;
+    const updated = { ...record, codes: record.codes.map((c, i) => {
+      if (i !== index) return c;
+      const newQty = Math.max(1, Math.min(10, (c.quantity ?? 1) + delta));
+      return { ...c, quantity: newQty };
+    })};
+    recalcTotals(updated);
+  }, [record, recalcTotals]);
+
   const handleExtract = useCallback(async () => {
     setExtracting(true);
     setExtractError(null);
@@ -77,25 +105,8 @@ export const BillingTab: React.FC<BillingTabProps> = ({
   const handleRemoveCode = useCallback((index: number) => {
     if (!record) return;
     const updated = { ...record, codes: record.codes.filter((_, i) => i !== index) };
-    // Recalculate totals (must match Rust BillingRecord::recalculate_totals)
-    let shadow = 0, oob = 0, time = 0;
-    for (const c of updated.codes) {
-      const amount = c.billableAmountCents;
-      const ahPremium = c.afterHours ? c.afterHoursPremiumCents : 0;
-      if (c.category === 'in_basket') {
-        shadow += amount + ahPremium;
-      } else {
-        oob += amount + ahPremium;
-      }
-    }
-    time = updated.timeEntries.reduce((sum, t) => sum + t.billableAmountCents, 0);
-    updated.totalShadowCents = shadow;
-    updated.totalOutOfBasketCents = oob;
-    updated.totalTimeBasedCents = time;
-    updated.totalAmountCents = shadow + oob + time;
-    onRecordChange(updated);
-    invoke('save_session_billing', { sessionId, date, record: updated }).catch(console.error);
-  }, [record, sessionId, date, onRecordChange]);
+    recalcTotals(updated);
+  }, [record, recalcTotals]);
 
   const handleCopy = useCallback(async () => {
     if (!record) return;
@@ -132,18 +143,7 @@ export const BillingTab: React.FC<BillingTabProps> = ({
     };
 
     const updated = { ...record, codes: [...record.codes, newCode] };
-    // Recalculate totals
-    let shadow = 0, oob = 0, time = 0;
-    for (const c of updated.codes) {
-      const ahPremium = c.afterHours ? c.afterHoursPremiumCents : 0;
-      if (c.category === 'in_basket') { shadow += c.billableAmountCents + ahPremium; }
-      else { oob += c.billableAmountCents + ahPremium; }
-    }
-    time = updated.timeEntries.reduce((sum, t) => sum + t.billableAmountCents, 0);
-    updated.totalShadowCents = shadow;
-    updated.totalOutOfBasketCents = oob;
-    updated.totalTimeBasedCents = time;
-    updated.totalAmountCents = shadow + oob + time;
+    recalcTotals(updated);
 
     onRecordChange(updated);
     invoke('save_session_billing', { sessionId, date, record: updated }).catch(console.error);
@@ -202,6 +202,7 @@ export const BillingTab: React.FC<BillingTabProps> = ({
                 <th>Fee</th>
                 <th>Rate</th>
                 <th>Amount</th>
+                <th>Qty</th>
                 <th>Confidence</th>
                 <th></th>
               </tr>
@@ -219,8 +220,19 @@ export const BillingTab: React.FC<BillingTabProps> = ({
                     <td>{formatCents(code.feeCents)}</td>
                     <td>{code.category === 'in_basket' ? `${code.shadowPct}%` : '100%'}</td>
                     <td className="billing-amount">
-                      {formatCents(code.billableAmountCents + code.afterHoursPremiumCents)}
+                      {formatCents((code.billableAmountCents + (code.afterHours ? code.afterHoursPremiumCents : 0)) * (code.quantity ?? 1))}
                       {code.afterHours && <span className="billing-after-hours" title="After-hours premium">AH</span>}
+                    </td>
+                    <td className="billing-qty">
+                      {record.status === 'draft' ? (
+                        <span className="qty-controls">
+                          <button className="qty-btn" onClick={() => handleQuantityChange(i, -1)} disabled={(code.quantity ?? 1) <= 1}>-</button>
+                          <span className="qty-value">{code.quantity ?? 1}</span>
+                          <button className="qty-btn" onClick={() => handleQuantityChange(i, 1)} disabled={(code.quantity ?? 1) >= 10}>+</button>
+                        </span>
+                      ) : (
+                        <span>{code.quantity ?? 1}</span>
+                      )}
                     </td>
                     <td><span className={`billing-confidence ${confidenceBadgeClass(code.confidence)}`}>{code.confidence}</span></td>
                     <td>
