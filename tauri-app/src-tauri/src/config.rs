@@ -1396,7 +1396,7 @@ mod tests {
         let config = Config::default();
         assert_eq!(config.schema_version, 1);
         assert_eq!(config.whisper_model, "small");
-        assert_eq!(config.language, "en");
+        assert_eq!(config.language, "auto");
     }
 
     #[test]

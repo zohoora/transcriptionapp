@@ -15,7 +15,7 @@ mod tests {
         let settings = Settings::default();
 
         assert_eq!(settings.whisper_model, "small");
-        assert_eq!(settings.language, "en");
+        assert_eq!(settings.language, "auto");
         assert!(settings.input_device_id.is_none());
         assert_eq!(settings.output_format, "paragraphs");
         assert!(settings.vad_threshold >= 0.0 && settings.vad_threshold <= 1.0);

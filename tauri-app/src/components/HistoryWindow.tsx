@@ -1573,7 +1573,7 @@ const HistoryWindow: React.FC = () => {
                           >
                             <span className={`chevron-small ${customInstructionsExpanded ? '' : 'collapsed'}`}>&#9660;</span>
                             Additional Context
-                            {soapOptions.session_custom_instructions.trim() && (
+                            {soapOptions.session_custom_instructions?.trim() && (
                               <span className="custom-badge">Active</span>
                             )}
                           </button>
