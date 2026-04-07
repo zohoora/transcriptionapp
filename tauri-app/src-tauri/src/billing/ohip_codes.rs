@@ -1039,7 +1039,7 @@ pub static OHIP_CODES: &[OhipCode] = &[
     },
     OhipCode {
         code: "K013A",
-        description: "Counselling \u{2014} Individual (first 3 units K013+K040/12mo, per unit)",
+        description: "Counselling \u{2014} Individual (max 3 units/year, per unit)",
         ffs_rate_cents: 8000, // $80.00
         basket: Basket::In,
         shadow_pct: 30,

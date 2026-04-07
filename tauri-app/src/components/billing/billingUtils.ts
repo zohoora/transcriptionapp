@@ -166,7 +166,7 @@ export const OHIP_CODE_CRITERIA: Record<string, string> = {
   K006A: 'Hypnotherapy -- Individual (per unit)',
   K007A: 'Psychotherapy -- Individual (per unit)',
   K008A: 'Diagnostic Interview/Counselling -- Child/Parent (per unit)',
-  K013A: 'Counselling -- Individual (first 3 units K013+K040/12mo, per unit)',
+  K013A: 'Counselling -- Individual (max 3 units/year, per unit). After limit exhausted, use K033A instead',
   K015A: 'Counselling of Relatives -- Terminally Ill Patient (per unit)',
   K017A: 'Periodic Health Visit -- Child',
 
