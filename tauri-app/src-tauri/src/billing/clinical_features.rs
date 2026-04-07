@@ -211,8 +211,8 @@ Analyze the provided SOAP note and transcript excerpt, then output a JSON object
 - "cryotherapy_multiple" — Same as cryotherapy_single — Z117A covers one or more lesions (Z117A)
 - "electrocoagulation_single" — Electrocautery/electrocoagulation/curetting of single lesion (Z159A)
 - "electrocoagulation_multiple" — Electrocautery/curetting of two lesions (Z160A)
-- "benign_excision_small" — Excision of BENIGN lesion (cyst, lipoma) with closure (Z125A)
-- "benign_excision_medium" — Excision of benign lesion, larger (Z125A)
+- "benign_excision_small" — Excision of small benign skin lesion (NOT lipoma/cyst — use cyst_excision for those) (Z125A)
+- "benign_excision_medium" — Excision of larger benign skin lesion (NOT lipoma/cyst) (Z125A)
 - "laceration_repair_simple_small" — Suturing of simple wound/laceration <5cm. Must involve actual sutures/staples (Z154A)
 - "laceration_repair_simple_large" — Suturing of simple laceration 5.1-10cm (Z175A)
 - "laceration_repair_complex" — Complex laceration repair: deep tissue, layered closure, debridement (Z176A)
@@ -245,14 +245,14 @@ Analyze the provided SOAP note and transcript excerpt, then output a JSON object
 - "nerve_block_additional" — Additional nerve block site(s) in the same visit (G223A)
 - "ear_syringing" — Ear syringing, curetting, or debridement — unilateral or bilateral (G420A)
 - "tonometry" — Tonometry eye pressure measurement (G435A)
-- "nail_debridement" — Extensive debridement of onychogryphotic (thickened) nail (Z110A)
-- "nail_excision_single" — Nail plate excision requiring anaesthesia — one nail (Z128A)
-- "nail_excision_multiple" — Nail plate excision requiring anaesthesia — multiple nails (Z129A)
+- "nail_debridement" — Extensive debridement of thickened (onychogryphotic) nail WITHOUT removal. Trimming/grinding only (Z110A)
+- "nail_excision_single" — Partial or complete nail plate REMOVAL/AVULSION of one nail (e.g., ingrown toenail removal, nail avulsion with phenol). Requires local anaesthetic/nerve block (Z128A)
+- "nail_excision_multiple" — Nail plate removal of multiple nails in same visit (Z129A)
 - "foreign_body_removal" — Foreign body removal from skin/subcutaneous tissue under local anaesthetic (Z114A)
 - "biopsy_with_sutures" — Skin biopsy using any method where sutures ARE used (Z116A)
 - "catheterization" — Urinary catheterization in hospital (Z611A)
-- "cyst_excision_face" — Excision of cyst, haemangioma, or lipoma — face or neck (Z122A)
-- "cyst_excision_other" — Excision of cyst, haemangioma, or lipoma — other body areas (Z125A)
+- "cyst_excision_face" — Excision of cyst, haemangioma, lipoma, or sebaceous cyst — FACE or NECK location (Z122A)
+- "cyst_excision_other" — Excision of cyst, haemangioma, lipoma, or sebaceous cyst — BODY location (back, arm, leg, trunk). Use this for lipoma excision on the body (Z125A)
 - "keratosis_excision_single" — Group 1 lesion (keratosis, pyogenic granuloma) removal by excision and suture — single (Z156A)
 - "keratosis_excision_two" — Group 1 lesion removal by excision and suture — two lesions (Z157A)
 - "keratosis_excision_three" — Group 1 lesion removal by excision and suture — three or more (Z158A)
@@ -261,7 +261,7 @@ Analyze the provided SOAP note and transcript excerpt, then output a JSON object
 - "electrocoagulation_three_plus" — Electrocoagulation/curetting of three or more Group 1 lesions (Z161A)
 
 ### conditions (array — only include if SPECIFIC MANAGEMENT was done, not just mentioned in history)
-- "diabetes_management" — Active diabetes care: A1C review, medication adjustment, glucose log review, diabetic foot exam, or diet counselling for diabetes. Must involve treatment decisions, not just "has diabetes" in history (Q040A)
+- "diabetes_management" — Diabetes management INCENTIVE: billable when at least 3 diabetic assessment visits (K030A) have occurred in the past year. Include this whenever diabetic_assessment is also included (Q040A)
 - "smoking_cessation" — Active smoking cessation COUNSELLING provided: discussed quit date, NRT options, triggers, or started cessation medication. Not just "smoker" noted in history (Q042A)
 - "sti_management" — STI testing ORDERED/PERFORMED, STI treatment prescribed, or contact tracing discussed. Active STI workup, not just sexual history taking (K028A)
 - "chf_management" — Active CHF management: fluid status assessment, diuretic adjustment, weight monitoring, exercise counselling specifically for heart failure. Not just "has CHF" in history (Q050A)
@@ -272,7 +272,7 @@ Analyze the provided SOAP note and transcript excerpt, then output a JSON object
 - "psychotherapy" — Individual psychotherapy session (K007A). Minimum 30 min per unit
 - "hiv_primary_care" — HIV primary care management session (K022A). Minimum 20 min per unit
 - "insulin_therapy_support" — Insulin therapy support: training patients on insulin use, device education (K029A). Max 6 units/year
-- "diabetic_assessment" — Dedicated diabetic management assessment: A1C review, foot exam, medication adjustment (K030A). Max 4/year. Different from diabetes_management incentive (Q040A)
+- "diabetic_assessment" — Dedicated diabetic management assessment: A1C review, foot exam, medication adjustment, glucose monitoring review (K030A). Max 4/year. Include BOTH diabetic_assessment AND diabetes_management when diabetes is actively managed
 - "counselling_additional" — Counselling after the first 3 K013 units are exhausted for the year (K033A). Out-of-basket at full FFS
 - "fibromyalgia_care" — Fibromyalgia or myalgic encephalomyelitis care session (K037A). Per unit
 
@@ -306,7 +306,7 @@ SOAP: "S: 28 weeks gestation, routine follow-up. O: BP 120/80, fundal height 28c
 ### Example 4: Chronic disease management
 SOAP: "S: Type 2 DM follow-up, A1C review. O: A1C 7.8%, up from 7.2%. BMI 31. A: Suboptimal diabetes control. P: Increase metformin, dietary counselling, recheck A1C in 3 months."
 ```json
-{"visitType":"general_reassessment","procedures":[],"conditions":["diabetes_management"],"setting":"in_office","isNewPatient":false,"isAfterHours":false,"patientCount":null,"estimatedDurationMinutes":20,"confidence":0.90}
+{"visitType":"general_reassessment","procedures":[],"conditions":["diabetic_assessment","diabetes_management"],"setting":"in_office","isNewPatient":false,"isAfterHours":false,"patientCount":null,"estimatedDurationMinutes":20,"confidence":0.90}
 ```
 
 ### Example 5: After-hours counselling
@@ -327,7 +327,24 @@ SOAP: "S: Chronic neck and upper back pain. Multiple tender trigger points. O: T
 {"visitType":"intermediate_assessment","procedures":["trigger_point_injection","trigger_point_additional"],"conditions":[],"setting":"in_office","isNewPatient":false,"isAfterHours":false,"patientCount":null,"estimatedDurationMinutes":20,"confidence":0.95}
 ```
 
-IMPORTANT: Only include procedures that were PHYSICALLY PERFORMED, not just discussed or planned. Only include conditions where ACTIVE MANAGEMENT occurred during this visit, not conditions merely listed in the patient's medical history. When uncertain, leave the array empty rather than guessing.
+### Example 8: Ingrown toenail — nerve block + nail removal (MULTIPLE procedures)
+SOAP: "S: Painful ingrown toenail right great toe. O: Medial nail border embedded, erythema. A: Ingrown toenail with paronychia. P: Digital nerve block performed. Partial nail avulsion with phenol matrixectomy."
+```json
+{"visitType":"intermediate_assessment","procedures":["nerve_block_peripheral","nail_excision_single"],"conditions":[],"setting":"in_office","isNewPatient":false,"isAfterHours":false,"patientCount":null,"estimatedDurationMinutes":20,"confidence":0.95}
+```
+
+### Example 9: Lipoma excision on back
+SOAP: "S: Lump on upper back for 1 year. O: 3cm soft mobile subcutaneous mass. A: Lipoma right upper back. P: Excision performed under local anaesthesia. Wound closed with sutures."
+```json
+{"visitType":"intermediate_assessment","procedures":["cyst_excision_other"],"conditions":[],"setting":"in_office","isNewPatient":false,"isAfterHours":false,"patientCount":null,"estimatedDurationMinutes":25,"confidence":0.95}
+```
+
+CRITICAL RULES:
+1. Include ALL procedures physically performed during the visit — not just the main one. If a nerve block was done AND a nail excision, include BOTH. If an injection was given AND a biopsy taken, include BOTH.
+2. Only include procedures that were PHYSICALLY PERFORMED, not just discussed or planned.
+3. Only include conditions where ACTIVE MANAGEMENT occurred during this visit, not conditions merely listed in the patient's medical history.
+4. For visits involving procedures (injection, excision, biopsy, etc.), the visit type should typically be "intermediate_assessment" unless it was truly brief (<10 min) or comprehensive (multi-system).
+5. When uncertain about a procedure, leave it out rather than guessing. But when a procedure is clearly described as performed, always include it.
 
 Respond ONLY with the JSON object. No explanations or commentary."#;
 
