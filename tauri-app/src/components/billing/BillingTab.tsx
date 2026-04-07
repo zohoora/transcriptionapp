@@ -9,7 +9,6 @@ interface BillingTabProps {
   loading: boolean;
   sessionId: string;
   date: string;
-  durationMs: number | null;
   patientDob?: string | null;
   onRecordChange: (record: BillingRecord) => void;
 }

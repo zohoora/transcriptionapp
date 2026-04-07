@@ -5,7 +5,6 @@
 //! votes across multiple screenshots per encounter to determine the most
 //! likely patient name. DOB uses most-recent-wins (no voting needed).
 
-use chrono::Datelike;
 use std::collections::HashMap;
 
 /// Tracks patient name votes from periodic screenshot analysis.
@@ -88,22 +87,8 @@ impl PatientNameTracker {
         self.dob.as_deref()
     }
 
-    /// Calculate the patient's age bracket from the stored DOB.
-    /// Returns None if no DOB is stored or if the DOB can't be parsed.
-    pub fn age_bracket(&self) -> Option<&'static str> {
-        let dob = self.dob.as_ref()?;
-        let birth = chrono::NaiveDate::parse_from_str(dob, "%Y-%m-%d").ok()?;
-        let today = chrono::Local::now().date_naive();
-        let age = today.year() - birth.year()
-            - if today.ordinal() < birth.ordinal() { 1 } else { 0 };
-        Some(match age {
-            0..=1 => "child_0_1",
-            2..=15 => "child_2_15",
-            16..=17 => "adolescent",
-            18..=64 => "adult",
-            _ => "senior",
-        })
-    }
+    // Age bracket calculation is done in the frontend (BillingTab.tsx)
+    // using month/day comparison which correctly handles leap years.
 
     /// Returns the previous encounter's majority name (set during reset)
     pub fn previous_name(&self) -> Option<&str> {
@@ -193,9 +178,9 @@ pub(crate) fn parse_vision_response(response: &str) -> (Option<String>, Option<S
     (parse_patient_name(trimmed), None)
 }
 
-/// Parse the vision model's response for a patient name (legacy wrapper).
-/// Returns Some(name) if a name was extracted, None if NOT_FOUND or empty.
-pub(crate) fn parse_patient_name(response: &str) -> Option<String> {
+/// Parse a plain-text vision response for a patient name.
+/// Internal helper used as fallback by `parse_vision_response`.
+fn parse_patient_name(response: &str) -> Option<String> {
     let trimmed = response.trim();
     if trimmed.is_empty() || trimmed.contains("NOT_FOUND") {
         return None;
@@ -468,43 +453,6 @@ mod tests {
         tracker.set_dob("1990-05-15".to_string());
         tracker.reset();
         assert_eq!(tracker.dob(), None);
-    }
-
-    #[test]
-    fn test_age_bracket_adult() {
-        let mut tracker = PatientNameTracker::new();
-        tracker.set_dob("1980-01-01".to_string());
-        assert_eq!(tracker.age_bracket(), Some("adult"));
-    }
-
-    #[test]
-    fn test_age_bracket_senior() {
-        let mut tracker = PatientNameTracker::new();
-        tracker.set_dob("1950-01-01".to_string());
-        assert_eq!(tracker.age_bracket(), Some("senior"));
-    }
-
-    #[test]
-    fn test_age_bracket_child() {
-        let mut tracker = PatientNameTracker::new();
-        // Use a date that will be a child for a long time
-        let today = chrono::Local::now().date_naive();
-        let child_dob = today.checked_add_signed(chrono::Duration::days(-365 * 5)).unwrap();
-        tracker.set_dob(child_dob.format("%Y-%m-%d").to_string());
-        assert_eq!(tracker.age_bracket(), Some("child_2_15"));
-    }
-
-    #[test]
-    fn test_age_bracket_none_without_dob() {
-        let tracker = PatientNameTracker::new();
-        assert_eq!(tracker.age_bracket(), None);
-    }
-
-    #[test]
-    fn test_age_bracket_invalid_dob() {
-        let mut tracker = PatientNameTracker::new();
-        tracker.set_dob("not-a-date".to_string());
-        assert_eq!(tracker.age_bracket(), None);
     }
 
     // ── parse_vision_response tests ──
