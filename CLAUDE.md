@@ -58,7 +58,7 @@ cd tauri-app/src-tauri && cargo check     # Backend
 
 # Tests
 cd tauri-app && pnpm test:run             # Frontend (Vitest, ~552 passing)
-cd tauri-app/src-tauri && cargo test      # Backend (~911 tests, ~29 ignored)
+cd tauri-app/src-tauri && cargo test      # Backend (~946 tests, ~29 ignored)
 
 # E2E (requires live STT + LLM Router)
 cd tauri-app/src-tauri && cargo test e2e_ -- --ignored --nocapture
@@ -73,7 +73,7 @@ cd profile-service && cargo test           # Tests
 
 # Release (triggers auto-update for all rooms)
 # Bump version in tauri.conf.json + package.json + Cargo.toml, then:
-git tag v0.9.4
+git tag v0.10.4
 git push origin main --tags
 ```
 
