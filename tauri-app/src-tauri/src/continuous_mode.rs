@@ -709,8 +709,8 @@ pub async fn run_continuous_mode(
                 sensor_handle = Some(sensor);
             }
             Err(e) => {
-                warn!("Failed to start presence sensor: {}. Falling back to LLM mode.", e);
-                ContinuousModeEvent::Error { error: format!("Sensor failed to start: {}. Using LLM detection.", e) }.emit(&app);
+                info!("Presence sensor not available: {}. Running with LLM-only detection.", e);
+                ContinuousModeEvent::SensorStatus { connected: false, state: "not_configured".into() }.emit(&app);
                 // Fall back: create a dummy Notify that never fires
                 sensor_absence_trigger = Arc::new(tokio::sync::Notify::new());
             }
