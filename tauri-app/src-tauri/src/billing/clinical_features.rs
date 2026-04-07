@@ -47,6 +47,34 @@ pub enum ProcedureType {
     CornealForeignBody,
     Immunization,
     InjectionSoleReason,
+    // Injections
+    JointInjection,
+    JointInjectionAdditional,
+    TriggerPointInjection,
+    TriggerPointAdditional,
+    ImInjectionWithVisit,
+    IntralesionalSmall,
+    IntralesionalLarge,
+    IntravenousAdmin,
+    // Nerve blocks
+    NerveBlockPeripheral,
+    NerveBlockParavertebral,
+    NerveBlockAdditional,
+    // Other common procedures
+    EarSyringing,
+    Tonometry,
+    NailDebridement,
+    NailExcisionSingle,
+    NailExcisionMultiple,
+    ForeignBodyRemoval,
+    BiopsyWithSutures,
+    WoundCatheterization,
+    GroupThreeExcisionFace,
+    GroupThreeExcisionOther,
+    GroupOneExcisionSingle,
+    GroupOneExcisionTwo,
+    GroupOneExcisionThree,
+    NevusExcision,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
@@ -139,7 +167,7 @@ Analyze the provided SOAP note and transcript excerpt, then output a JSON object
 - "lesion_excision_medium" — Excision of malignant/suspicious lesion 1-2cm (R094A)
 - "lesion_excision_large" — Excision of malignant/suspicious lesion >2cm (R094A)
 - "abscess_drainage" — Incision and drainage of abscess performed. Requires cutting, draining, packing (Z101A)
-- "skin_biopsy" — Punch biopsy or shave biopsy of skin lesion TAKEN for pathology. Must involve tissue sampling (Z113A)
+- "skin_biopsy" — Skin biopsy using any method where sutures are NOT used (punch biopsy, shave biopsy). If sutures ARE used, use biopsy_with_sutures instead (Z113A)
 - "cryotherapy_single" — Liquid nitrogen or chemical treatment applied to skin lesion(s) (wart, actinic keratosis). Actual treatment performed (Z117A)
 - "cryotherapy_multiple" — Same as cryotherapy_single — Z117A covers one or more lesions (Z117A)
 - "electrocoagulation_single" — Electrocautery/electrocoagulation/curetting of single lesion (Z159A)
@@ -156,7 +184,32 @@ Analyze the provided SOAP note and transcript excerpt, then output a JSON object
 - "hemorrhoid_incision" — Thrombosed external hemorrhoid incised and drained (Z545A)
 - "corneal_foreign_body" — Foreign body REMOVED from cornea with slit lamp/needle (Z847A)
 - "immunization" — Any vaccine ADMINISTERED during visit (flu, pneumococcal, Td, HPV, etc.) (G538A)
-- "injection_sole_reason" — Injection (IM, SC, joint) was the ONLY reason for the visit — no other assessment performed (G373A)
+- "injection_sole_reason" — IM/SC/intradermal injection as the SOLE reason for visit with NO assessment performed (e.g., flu shot walk-in, B12 injection only). For joint/trigger point/nerve block injections, use the specific injection code instead (G373A)
+- "joint_injection" — Injection INTO a joint, bursa, ganglion, or tendon sheath (e.g., knee injection, shoulder injection, cortisone injection into joint). NOT an IM injection (G370A)
+- "joint_injection_additional" — Each additional joint/bursa/ganglion/tendon sheath injected in the same visit (max 5). Use WITH joint_injection (G371A)
+- "trigger_point_injection" — Infiltration of tissue at a trigger point for pain relief. NOT a joint injection (G384A)
+- "trigger_point_additional" — Each additional trigger point site (max 2). Use WITH trigger_point_injection (G385A)
+- "im_injection_with_visit" — Additional IM/SC/intradermal injection given during a visit that also included an assessment. NOT the sole reason for visit (G372A)
+- "intralesional_small" — Intralesional infiltration of 1-2 lesions (e.g., steroid injection into keloid or cyst) (G375A)
+- "intralesional_large" — Intralesional infiltration of 3+ lesions (G377A)
+- "intravenous_admin" — Intravenous administration to child/adolescent/adult (G379A)
+- "nerve_block_peripheral" — Somatic or peripheral nerve block at one nerve or site (e.g., digital block, intercostal) (G231A)
+- "nerve_block_paravertebral" — Paravertebral nerve block at any spinal level: cervical, thoracic, lumbar, sacral, or coccygeal (G228A)
+- "nerve_block_additional" — Additional nerve block site(s) in the same visit (G223A)
+- "ear_syringing" — Ear syringing, curetting, or debridement — unilateral or bilateral (G420A)
+- "tonometry" — Tonometry eye pressure measurement (G435A)
+- "nail_debridement" — Extensive debridement of onychogryphotic (thickened) nail (Z110A)
+- "nail_excision_single" — Nail plate excision requiring anaesthesia — one nail (Z128A)
+- "nail_excision_multiple" — Nail plate excision requiring anaesthesia — multiple nails (Z129A)
+- "foreign_body_removal" — Foreign body removal from skin/subcutaneous tissue under local anaesthetic (Z114A)
+- "biopsy_with_sutures" — Skin biopsy using any method where sutures ARE used (Z116A)
+- "catheterization" — Urinary catheterization in hospital (Z611A)
+- "cyst_excision_face" — Excision of cyst, haemangioma, or lipoma — face or neck (Z122A)
+- "cyst_excision_other" — Excision of cyst, haemangioma, or lipoma — other body areas (Z125A)
+- "keratosis_excision_single" — Group 1 lesion (keratosis, pyogenic granuloma) removal by excision and suture — single (Z156A)
+- "keratosis_excision_two" — Group 1 lesion removal by excision and suture — two lesions (Z157A)
+- "keratosis_excision_three" — Group 1 lesion removal by excision and suture — three or more (Z158A)
+- "nevus_excision" — Group 2 lesion (nevus/mole) removal by excision and suture — single (Z162A)
 
 ### conditions (array — only include if SPECIFIC MANAGEMENT was done, not just mentioned in history)
 - "diabetes_management" — Active diabetes care: A1C review, medication adjustment, glucose log review, diabetic foot exam, or diet counselling for diabetes. Must involve treatment decisions, not just "has diabetes" in history (Q040A)
@@ -204,6 +257,18 @@ SOAP: "S: Type 2 DM follow-up, A1C review. O: A1C 7.8%, up from 7.2%. BMI 31. A:
 SOAP: "S: Patient called after hours, anxious about chest tightness. O: History taken by phone. A: Anxiety-related symptoms, no red flags. P: Reassurance, follow-up tomorrow if persists."
 ```json
 {"visitType":"counselling","procedures":[],"conditions":[],"setting":"telephone_remote","isNewPatient":false,"isAfterHours":true,"patientCount":null,"estimatedDurationMinutes":15,"confidence":0.85}
+```
+
+### Example 6: Follow-up with knee injection
+SOAP: "S: Follow-up for right knee OA. Pain worse with stairs. O: Moderate effusion R knee. A: Right knee OA, moderate. P: Cortisone injection into right knee performed. Follow-up 6 weeks."
+```json
+{"visitType":"intermediate_assessment","procedures":["joint_injection"],"conditions":[],"setting":"in_office","isNewPatient":false,"isAfterHours":false,"patientCount":null,"estimatedDurationMinutes":15,"confidence":0.95}
+```
+
+### Example 7: Multiple trigger point injections
+SOAP: "S: Chronic neck and upper back pain. Multiple tender trigger points. O: Trigger points identified at bilateral trapezius and right levator scapulae. A: Myofascial pain syndrome. P: Trigger point injections performed at 3 sites with lidocaine."
+```json
+{"visitType":"intermediate_assessment","procedures":["trigger_point_injection","trigger_point_additional"],"conditions":[],"setting":"in_office","isNewPatient":false,"isAfterHours":false,"patientCount":null,"estimatedDurationMinutes":20,"confidence":0.95}
 ```
 
 IMPORTANT: Only include procedures that were PHYSICALLY PERFORMED, not just discussed or planned. Only include conditions where ACTIVE MANAGEMENT occurred during this visit, not conditions merely listed in the patient's medical history. When uncertain, leave the array empty rather than guessing.
@@ -411,6 +476,31 @@ This patient had a diabetes follow-up via phone."#;
             ProcedureType::CornealForeignBody,
             ProcedureType::Immunization,
             ProcedureType::InjectionSoleReason,
+            ProcedureType::JointInjection,
+            ProcedureType::JointInjectionAdditional,
+            ProcedureType::TriggerPointInjection,
+            ProcedureType::TriggerPointAdditional,
+            ProcedureType::ImInjectionWithVisit,
+            ProcedureType::IntralesionalSmall,
+            ProcedureType::IntralesionalLarge,
+            ProcedureType::IntravenousAdmin,
+            ProcedureType::NerveBlockPeripheral,
+            ProcedureType::NerveBlockParavertebral,
+            ProcedureType::NerveBlockAdditional,
+            ProcedureType::EarSyringing,
+            ProcedureType::Tonometry,
+            ProcedureType::NailDebridement,
+            ProcedureType::NailExcisionSingle,
+            ProcedureType::NailExcisionMultiple,
+            ProcedureType::ForeignBodyRemoval,
+            ProcedureType::BiopsyWithSutures,
+            ProcedureType::WoundCatheterization,
+            ProcedureType::GroupThreeExcisionFace,
+            ProcedureType::GroupThreeExcisionOther,
+            ProcedureType::GroupOneExcisionSingle,
+            ProcedureType::GroupOneExcisionTwo,
+            ProcedureType::GroupOneExcisionThree,
+            ProcedureType::NevusExcision,
         ];
         for p in all_procedures {
             let json = serde_json::to_string(&p).unwrap();
