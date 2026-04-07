@@ -216,6 +216,11 @@ export const ContinuousMode = memo(function ContinuousMode({
   const handleNewPatient = useCallback(() => {
     if (newPatientCooldownRef.current) return;
     newPatientCooldownRef.current = true;
+    // Reset all local UI state for fresh patient experience
+    setShowTranscript(false);
+    setShowDetails(false);
+    setShowNotes(false);
+    setCopiedEncounterId(null);
     onNewPatient();
     setTimeout(() => { newPatientCooldownRef.current = false; }, 2000);
   }, [onNewPatient]);
@@ -434,21 +439,6 @@ export const ContinuousMode = memo(function ContinuousMode({
         </button>
       )}
 
-      {/* New Patient button */}
-      <button
-        className="continuous-new-patient-btn"
-        onClick={handleNewPatient}
-        disabled={isStopping}
-      >
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-          <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
-          <circle cx="9" cy="7" r="4" />
-          <line x1="19" y1="8" x2="19" y2="14" />
-          <line x1="22" y1="11" x2="16" y2="11" />
-        </svg>
-        End Previous / Start New
-      </button>
-
       {/* Patient voice pulse indicator */}
       <PatientPulse biomarkers={biomarkers} trends={biomarkerTrends} />
 
@@ -573,6 +563,19 @@ export const ContinuousMode = memo(function ContinuousMode({
       {/* Language + Actions */}
       <LanguageSelector value={sttLanguage} preferred={preferredLanguages} onChange={onLanguageChange} />
       <div className="continuous-actions">
+        <button
+          className="continuous-new-patient-btn"
+          onClick={handleNewPatient}
+          disabled={isStopping}
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
+            <circle cx="9" cy="7" r="4" />
+            <line x1="19" y1="8" x2="19" y2="14" />
+            <line x1="22" y1="11" x2="16" y2="11" />
+          </svg>
+          End Previous / Start New
+        </button>
         <button className="btn-secondary" onClick={onViewHistory}>
           View Today&apos;s Sessions
         </button>
