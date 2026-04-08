@@ -16,8 +16,6 @@ interface ImageSuggestionsProps {
   aiImages?: AiImage[];
   aiLoading?: boolean;
   aiError?: string | null;
-  aiCooldownRemaining?: number;
-  aiSessionCount?: number;
   onAiGenerate?: (description: string) => void;
   onAiDismiss?: (index: number) => void;
   imageSource?: 'miis' | 'ai' | 'off';
@@ -38,8 +36,6 @@ export const ImageSuggestions = memo(function ImageSuggestions({
   aiImages,
   aiLoading,
   aiError,
-  aiCooldownRemaining,
-  aiSessionCount,
   onAiGenerate,
   onAiDismiss,
   imageSource = 'miis',
@@ -119,15 +115,11 @@ export const ImageSuggestions = memo(function ImageSuggestions({
     const activeLoading = aiLoading ?? false;
     const activeError = aiError ?? null;
     const activeImages = aiImages ?? [];
-    const cooldown = aiCooldownRemaining ?? 0;
-    const count = aiSessionCount ?? 0;
-    const canGenerate = !activeLoading && cooldown <= 0 && count < 8;
 
     return (
       <div className="ai-image-section">
         <div className="ai-image-header">
           <span className="ai-image-title">Patient Illustration</span>
-          {count > 0 && <span className="ai-image-count">{count}/8</span>}
         </div>
 
         {/* Prompt input */}
@@ -144,14 +136,14 @@ export const ImageSuggestions = memo(function ImageSuggestions({
             className="ai-image-input"
             placeholder="Describe what to illustrate (e.g., knee joint anatomy, lumbar disc herniation, insulin injection sites...)"
             rows={2}
-            disabled={!canGenerate}
+            disabled={activeLoading}
           />
           <button
             type="submit"
             className="ai-image-generate-btn"
-            disabled={!canGenerate}
+            disabled={activeLoading}
           >
-            {activeLoading ? 'Generating...' : cooldown > 0 ? `Wait ${Math.ceil(cooldown / 1000)}s` : 'Generate'}
+            {activeLoading ? 'Generating...' : 'Generate'}
           </button>
         </form>
 

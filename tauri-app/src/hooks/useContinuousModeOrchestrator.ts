@@ -57,8 +57,6 @@ export interface ContinuousModeOrchestratorResult {
   aiImages: AiImage[];
   aiLoading: boolean;
   aiError: string | null;
-  aiCooldownRemaining: number;
-  aiSessionCount: number;
   onAiGenerate: (description: string) => void;
   onAiDismiss: (index: number) => void;
   imageSource: 'miis' | 'ai' | 'off';
@@ -139,8 +137,6 @@ export function useContinuousModeOrchestrator({
     images: aiImages,
     isLoading: aiLoading,
     error: aiError,
-    cooldownRemaining: aiCooldownRemaining,
-    sessionCount: aiSessionCount,
     generate: aiGenerate,
     dismissImage: aiDismiss,
   } = useAiImages({
@@ -181,8 +177,6 @@ export function useContinuousModeOrchestrator({
     aiImages,
     aiLoading,
     aiError,
-    aiCooldownRemaining,
-    aiSessionCount,
     onAiGenerate: aiGenerate,
     onAiDismiss: aiDismiss,
     imageSource: continuousImageSource,

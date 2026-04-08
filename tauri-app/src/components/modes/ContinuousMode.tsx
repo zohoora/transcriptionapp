@@ -80,8 +80,6 @@ interface ContinuousModeProps {
   aiImages?: AiImage[];
   aiLoading?: boolean;
   aiError?: string | null;
-  aiCooldownRemaining?: number;
-  aiSessionCount?: number;
   onAiGenerate?: (description: string) => void;
   onAiDismiss?: (index: number) => void;
   imageSource?: 'miis' | 'ai' | 'off';
@@ -191,8 +189,6 @@ export const ContinuousMode = memo(function ContinuousMode({
   aiImages,
   aiLoading,
   aiError,
-  aiCooldownRemaining,
-  aiSessionCount,
   onAiGenerate,
   onAiDismiss,
   imageSource = 'miis',
@@ -476,8 +472,6 @@ export const ContinuousMode = memo(function ContinuousMode({
           aiImages={aiImages}
           aiLoading={aiLoading}
           aiError={aiError}
-          aiCooldownRemaining={aiCooldownRemaining}
-          aiSessionCount={aiSessionCount}
           onAiGenerate={onAiGenerate}
           onAiDismiss={onAiDismiss}
           imageSource={imageSource}

@@ -9893,10 +9893,6 @@ button.review-section-header-left:focus {
   text-transform: uppercase;
   letter-spacing: 0.5px;
 }
-.ai-image-count {
-  font-size: 10px;
-  color: var(--text-tertiary, #6b7280);
-}
 .ai-image-form {
   display: flex;
   gap: 6px;
