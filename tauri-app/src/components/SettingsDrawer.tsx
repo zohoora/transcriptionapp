@@ -1,6 +1,6 @@
 import { memo, useState } from 'react';
 import type { Device, AuthState, SpeakerRole } from '../types';
-import { SPEAKER_ROLE_LABELS, DETAIL_LEVEL_LABELS } from '../types';
+import { SPEAKER_ROLE_LABELS, DETAIL_LEVEL_LABELS, VISIT_SETTING_OPTIONS } from '../types';
 import type { PendingSettings } from '../hooks/useSettings';
 import { SpeakerEnrollment } from './SpeakerEnrollment';
 
@@ -169,6 +169,56 @@ export const SettingsDrawer = memo(function SettingsDrawer({
                     placeholder="e.g., I am a family medicine physician. Use concise bullet points. Always include ICD-10 codes..."
                   />
                   <span className="settings-hint">Added to every SOAP note prompt. Describe your preferences, specialty context, or formatting rules.</span>
+                </div>
+
+                {/* Billing Preferences */}
+                <div className="settings-divider" />
+                <h4 className="settings-sub-header">Billing Preferences</h4>
+
+                <div className="settings-group">
+                  <label className="settings-label" htmlFor="billing-visit-setting">Default Visit Setting</label>
+                  <select
+                    id="billing-visit-setting"
+                    className="settings-select"
+                    value={pendingSettings.billing_default_visit_setting}
+                    onChange={(e) => onSettingsChange({ ...pendingSettings, billing_default_visit_setting: e.target.value })}
+                  >
+                    {VISIT_SETTING_OPTIONS.map(opt => (
+                      <option key={opt.value} value={opt.value}>{opt.label}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="settings-group">
+                  <div className="settings-toggle">
+                    <span className="settings-label" style={{ marginBottom: 0 }}>K013 Exhausted This Year</span>
+                    <label className="toggle-switch">
+                      <input
+                        type="checkbox"
+                        checked={pendingSettings.billing_counselling_exhausted}
+                        onChange={(e) => onSettingsChange({ ...pendingSettings, billing_counselling_exhausted: e.target.checked })}
+                        aria-label="K013 counselling units exhausted"
+                      />
+                      <span className="toggle-slider"></span>
+                    </label>
+                  </div>
+                  <span className="settings-hint">Use K033 instead of K013 for counselling (3+ units used this year)</span>
+                </div>
+
+                <div className="settings-group">
+                  <div className="settings-toggle">
+                    <span className="settings-label" style={{ marginBottom: 0 }}>Hospital-Based Practice</span>
+                    <label className="toggle-switch">
+                      <input
+                        type="checkbox"
+                        checked={pendingSettings.billing_is_hospital}
+                        onChange={(e) => onSettingsChange({ ...pendingSettings, billing_is_hospital: e.target.checked })}
+                        aria-label="Hospital-based practice"
+                      />
+                      <span className="toggle-slider"></span>
+                    </label>
+                  </div>
+                  <span className="settings-hint">Suppresses tray fees (E542A, E430A) — hospitals cover supplies via global budget</span>
                 </div>
 
                 {/* Session Automation (session mode only) */}

@@ -48,6 +48,12 @@ pub struct PhysicianProfile {
     pub max_speakers: Option<usize>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub medplum_practitioner_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub billing_default_visit_setting: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub billing_counselling_exhausted: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub billing_is_hospital: Option<bool>,
     pub created_at: String,
     pub updated_at: String,
 }

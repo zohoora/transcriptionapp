@@ -2,6 +2,7 @@ import React, { useState, useCallback, useEffect } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { writeText } from '@tauri-apps/plugin-clipboard-manager';
 import type { BillingRecord, BillingCode, BillingContext, OhipCodeSearchResult, DiagnosticCodeSearchResult, BillingCategory } from '../../types';
+import { VISIT_SETTING_OPTIONS } from '../../types';
 import { formatCents, confidenceBadgeClass, OHIP_CODE_CRITERIA, findConflicts, findAllConflicts } from './billingUtils';
 
 interface BillingTabProps {
@@ -11,10 +12,15 @@ interface BillingTabProps {
   date: string;
   patientDob?: string | null;
   onRecordChange: (record: BillingRecord) => void;
+  /** Global billing defaults from physician settings */
+  defaultVisitSetting?: string;
+  defaultCounsellingExhausted?: boolean;
+  defaultIsHospital?: boolean;
 }
 
 export const BillingTab: React.FC<BillingTabProps> = ({
   record, loading, sessionId, date, patientDob, onRecordChange,
+  defaultVisitSetting, defaultCounsellingExhausted, defaultIsHospital,
 }) => {
   const [extracting, setExtracting] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -30,14 +36,14 @@ export const BillingTab: React.FC<BillingTabProps> = ({
   const [dxResults, setDxResults] = useState<DiagnosticCodeSearchResult[]>([]);
   const [dxSearchLoading, setDxSearchLoading] = useState(false);
 
-  // Billing context selectors
+  // Billing context selectors (initialized from physician billing preferences)
   const [contextExpanded, setContextExpanded] = useState(false);
-  const [visitSetting, setVisitSetting] = useState('in_office');
+  const [visitSetting, setVisitSetting] = useState(defaultVisitSetting || 'in_office');
   const [patientAge, setPatientAge] = useState('adult');
   const [referralReceived, setReferralReceived] = useState(false);
-  const [counsellingExhausted, setCounsellingExhausted] = useState(false);
+  const [counsellingExhausted, setCounsellingExhausted] = useState(defaultCounsellingExhausted || false);
   const [afterHoursMode, setAfterHoursMode] = useState<'auto' | 'yes' | 'no'>('auto');
-  const [isHospital, setIsHospital] = useState(false);
+  const [isHospital, setIsHospital] = useState(defaultIsHospital || false);
 
   // Auto-populate age bracket from vision-extracted DOB
   useEffect(() => {
@@ -250,11 +256,9 @@ export const BillingTab: React.FC<BillingTabProps> = ({
               <div className="billing-context-row">
                 <label>Setting</label>
                 <select value={visitSetting} onChange={e => setVisitSetting(e.target.value)}>
-                  <option value="in_office">In Office</option>
-                  <option value="phone_office">Phone from Office</option>
-                  <option value="phone_home">Phone from Home</option>
-                  <option value="video">Video</option>
-                  <option value="home_visit">Home Visit</option>
+                  {VISIT_SETTING_OPTIONS.map(opt => (
+                    <option key={opt.value} value={opt.value}>{opt.label}</option>
+                  ))}
                 </select>
               </div>
               <div className="billing-context-row">

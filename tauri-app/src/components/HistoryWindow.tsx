@@ -29,6 +29,7 @@ import type {
   SoapOptions,
   SessionFeedback,
   BillingRecord,
+  Settings,
 } from '../types';
 import { DETAIL_LEVEL_LABELS } from '../types';
 
@@ -281,6 +282,9 @@ const HistoryWindow: React.FC = () => {
   // Billing state
   const [billingRecord, setBillingRecord] = useState<BillingRecord | null>(null);
   const [billingLoading, setBillingLoading] = useState(false);
+  const [billingDefaults, setBillingDefaults] = useState<{
+    visitSetting: string; counsellingExhausted: boolean; isHospital: boolean;
+  }>({ visitSetting: 'in_office', counsellingExhausted: false, isHospital: false });
   const [rightPaneMode, setRightPaneMode] = useState<RightPaneMode>('session');
   const [showModelMenu, setShowModelMenu] = useState(false);
 
@@ -383,6 +387,14 @@ const HistoryWindow: React.FC = () => {
   // Local archive is production storage — always ready
   useEffect(() => {
     setSettingsLoaded(true);
+    // Load billing defaults from physician settings
+    invoke<Settings>('get_settings').then(s => {
+      setBillingDefaults({
+        visitSetting: s.billing_default_visit_setting || 'in_office',
+        counsellingExhausted: s.billing_counselling_exhausted || false,
+        isHospital: s.billing_is_hospital || false,
+      });
+    }).catch(() => {});
   }, []);
 
   // Sync globalSoapDefaults with hook's soapOptions (for session metadata fallback)
@@ -1783,6 +1795,9 @@ const HistoryWindow: React.FC = () => {
                     date={formatDateForApi(selectedDate)}
                     patientDob={selectedSession?.metadata?.patient_dob ?? null}
                     onRecordChange={setBillingRecord}
+                    defaultVisitSetting={billingDefaults.visitSetting}
+                    defaultCounsellingExhausted={billingDefaults.counsellingExhausted}
+                    defaultIsHospital={billingDefaults.isHospital}
                   />
                 )}
 

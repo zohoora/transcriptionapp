@@ -52,6 +52,10 @@ export interface PendingSettings {
   soap_detail_level: number;
   soap_format: SoapFormat;
   soap_custom_instructions: string;
+  // Billing preferences
+  billing_default_visit_setting: string;
+  billing_counselling_exhausted: boolean;
+  billing_is_hospital: boolean;
 }
 
 /**
@@ -97,6 +101,9 @@ export function buildMergedSettings(settings: Settings, pending: PendingSettings
     soap_detail_level: pending.soap_detail_level,
     soap_format: pending.soap_format,
     soap_custom_instructions: pending.soap_custom_instructions,
+    billing_default_visit_setting: pending.billing_default_visit_setting,
+    billing_counselling_exhausted: pending.billing_counselling_exhausted,
+    billing_is_hospital: pending.billing_is_hospital,
   };
 }
 
@@ -165,6 +172,9 @@ export function useSettings(): UseSettingsResult {
     soap_detail_level: s.soap_detail_level,
     soap_format: s.soap_format,
     soap_custom_instructions: s.soap_custom_instructions,
+    billing_default_visit_setting: s.billing_default_visit_setting,
+    billing_counselling_exhausted: s.billing_counselling_exhausted,
+    billing_is_hospital: s.billing_is_hospital,
   }), []);
 
   // Load settings
@@ -217,7 +227,10 @@ export function useSettings(): UseSettingsResult {
         settings.encounter_merge_enabled !== pendingSettings.encounter_merge_enabled ||
         settings.soap_custom_instructions !== pendingSettings.soap_custom_instructions ||
         settings.soap_detail_level !== pendingSettings.soap_detail_level ||
-        settings.soap_format !== pendingSettings.soap_format;
+        settings.soap_format !== pendingSettings.soap_format ||
+        settings.billing_default_visit_setting !== pendingSettings.billing_default_visit_setting ||
+        settings.billing_counselling_exhausted !== pendingSettings.billing_counselling_exhausted ||
+        settings.billing_is_hospital !== pendingSettings.billing_is_hospital;
 
       if (physicianTierChanged) {
         try {
@@ -238,6 +251,9 @@ export function useSettings(): UseSettingsResult {
                 soap_detail_level: pendingSettings.soap_detail_level,
                 soap_format: pendingSettings.soap_format,
                 soap_custom_instructions: pendingSettings.soap_custom_instructions,
+                billing_default_visit_setting: pendingSettings.billing_default_visit_setting,
+                billing_counselling_exhausted: pendingSettings.billing_counselling_exhausted,
+                billing_is_hospital: pendingSettings.billing_is_hospital,
               },
             });
           }
@@ -366,6 +382,9 @@ export function useSettings(): UseSettingsResult {
       [settings.soap_detail_level, pendingSettings.soap_detail_level],
       [settings.soap_format, pendingSettings.soap_format],
       [settings.soap_custom_instructions, pendingSettings.soap_custom_instructions],
+      [settings.billing_default_visit_setting, pendingSettings.billing_default_visit_setting],
+      [settings.billing_counselling_exhausted, pendingSettings.billing_counselling_exhausted],
+      [settings.billing_is_hospital, pendingSettings.billing_is_hospital],
     ];
 
     return comparisons.some(([saved, pending]) => saved !== pending);

@@ -79,6 +79,10 @@ export interface Settings {
   soap_detail_level: number;
   soap_format: SoapFormat;
   soap_custom_instructions: string;
+  // Billing preferences (physician-tier)
+  billing_default_visit_setting: string;
+  billing_counselling_exhausted: boolean;
+  billing_is_hospital: boolean;
   // Auto-session detection settings
   auto_start_enabled: boolean;
   greeting_sensitivity: number | null;
@@ -397,6 +401,15 @@ export const DETAIL_LEVEL_LABELS: Record<number, { name: string; description: st
   9: { name: 'Comprehensive', description: 'Extensive history, ROS, patient education' },
   10: { name: 'Maximum', description: 'Every detail, nothing omitted' },
 };
+
+/** Visit setting options for billing context (shared by SettingsDrawer + BillingTab) */
+export const VISIT_SETTING_OPTIONS: { value: string; label: string }[] = [
+  { value: 'in_office', label: 'In Office' },
+  { value: 'phone_office', label: 'Phone from Office' },
+  { value: 'phone_home', label: 'Phone from Home' },
+  { value: 'video', label: 'Video' },
+  { value: 'home_visit', label: 'Home Visit' },
+];
 
 // Constants for biomarker interpretation
 export const BIOMARKER_THRESHOLDS = {

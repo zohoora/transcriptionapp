@@ -149,6 +149,13 @@ pub struct Settings {
     pub soap_format: String,
     #[serde(default)]
     pub soap_custom_instructions: String,
+    // Billing preferences (physician-tier, synced via profile)
+    #[serde(default = "default_billing_visit_setting")]
+    pub billing_default_visit_setting: String,
+    #[serde(default)]
+    pub billing_counselling_exhausted: bool,
+    #[serde(default)]
+    pub billing_is_hospital: bool,
     // Auto-session detection settings
     #[serde(default)]
     pub auto_start_enabled: bool,
@@ -390,6 +397,9 @@ fn default_soap_detail_level() -> u8 {
 fn default_soap_format() -> String {
     "problem_based".to_string()
 }
+fn default_billing_visit_setting() -> String {
+    "in_office".to_string()
+}
 
 fn default_whisper_mode() -> String {
     "remote".to_string()  // Always use remote Whisper server
@@ -447,6 +457,9 @@ impl Default for Settings {
             soap_detail_level: default_soap_detail_level(),
             soap_format: default_soap_format(),
             soap_custom_instructions: String::new(),
+            billing_default_visit_setting: default_billing_visit_setting(),
+            billing_counselling_exhausted: false,
+            billing_is_hospital: false,
             auto_start_enabled: false,
             greeting_sensitivity: default_greeting_sensitivity(),
             min_speech_duration_ms: default_min_speech_duration_ms(),
@@ -734,6 +747,12 @@ pub struct PhysicianSettings {
     pub max_speakers: Option<usize>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub medplum_practitioner_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub billing_default_visit_setting: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub billing_counselling_exhausted: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub billing_is_hospital: Option<bool>,
 }
 
 impl From<&crate::profile_client::PhysicianProfile> for PhysicianSettings {
@@ -759,6 +778,9 @@ impl From<&crate::profile_client::PhysicianProfile> for PhysicianSettings {
             diarization_enabled: p.diarization_enabled,
             max_speakers: p.max_speakers,
             medplum_practitioner_id: p.medplum_practitioner_id.clone(),
+            billing_default_visit_setting: p.billing_default_visit_setting.clone(),
+            billing_counselling_exhausted: p.billing_counselling_exhausted,
+            billing_is_hospital: p.billing_is_hospital,
         }
     }
 }
@@ -877,6 +899,9 @@ impl Settings {
             diarization_enabled: Some(self.diarization_enabled),
             max_speakers: Some(self.max_speakers),
             medplum_practitioner_id: None,
+            billing_default_visit_setting: Some(self.billing_default_visit_setting.clone()),
+            billing_counselling_exhausted: Some(self.billing_counselling_exhausted),
+            billing_is_hospital: Some(self.billing_is_hospital),
         }
     }
 
@@ -904,6 +929,9 @@ impl Settings {
         if let Some(v) = phys.medplum_auto_sync { self.medplum_auto_sync = v; }
         if let Some(v) = phys.diarization_enabled { self.diarization_enabled = v; }
         if let Some(v) = phys.max_speakers { self.max_speakers = v; }
+        if let Some(ref v) = phys.billing_default_visit_setting { self.billing_default_visit_setting = v.clone(); }
+        if let Some(v) = phys.billing_counselling_exhausted { self.billing_counselling_exhausted = v; }
+        if let Some(v) = phys.billing_is_hospital { self.billing_is_hospital = v; }
     }
 
     /// Extract infrastructure-tier settings from current flat settings
@@ -1523,6 +1551,9 @@ mod tests {
             co2_baseline_ppm: default_co2_baseline_ppm(),
             stt_alias: "medical-streaming".to_string(),
             stt_postprocess: true,
+            billing_default_visit_setting: default_billing_visit_setting(),
+            billing_counselling_exhausted: false,
+            billing_is_hospital: false,
         };
 
         let mut config = Config::default();
@@ -1657,6 +1688,9 @@ mod tests {
             co2_baseline_ppm: default_co2_baseline_ppm(),
             stt_alias: default_stt_alias(),
             stt_postprocess: default_stt_postprocess(),
+            billing_default_visit_setting: default_billing_visit_setting(),
+            billing_counselling_exhausted: false,
+            billing_is_hospital: false,
         };
 
         let mut config = Config::default();
