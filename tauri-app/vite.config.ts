@@ -28,6 +28,7 @@ export default defineConfig({
         history: resolve(__dirname, 'history.html'),
         split: resolve(__dirname, 'split.html'),
         'image-viewer': resolve(__dirname, 'image-viewer.html'),
+        'image-history': resolve(__dirname, 'image-history.html'),
         admin: resolve(__dirname, 'admin.html'),
         calibration: resolve(__dirname, 'calibration.html'),
         'patient-handout': resolve(__dirname, 'patient-handout.html'),

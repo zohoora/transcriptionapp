@@ -410,6 +410,17 @@ pub async fn generate_patient_handout(
     }
 }
 
+/// A differential diagnosis suggestion
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DifferentialDiagnosis {
+    /// Diagnosis name (e.g., "Acute coronary syndrome")
+    pub diagnosis: String,
+    /// Likelihood: "likely", "possible", "less_likely"
+    pub likelihood: String,
+    /// Cardinal symptoms/findings for this condition (shown on hover)
+    pub key_findings: Vec<String>,
+}
+
 /// Response from predictive hint generation including MIIS image concepts
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PredictiveHintResponse {
@@ -420,6 +431,9 @@ pub struct PredictiveHintResponse {
     /// Optional image generation prompt for AI-generated medical illustrations
     #[serde(default)]
     pub image_prompt: Option<String>,
+    /// Top 3 differential diagnoses based on transcript so far
+    #[serde(default)]
+    pub differential_diagnoses: Vec<DifferentialDiagnosis>,
 }
 
 /// A medical concept for MIIS image search
@@ -439,6 +453,7 @@ pub async fn generate_predictive_hint(transcript: String) -> Result<PredictiveHi
         hint: String::new(),
         concepts: Vec::new(),
         image_prompt: None,
+        differential_diagnoses: Vec::new(),
     };
 
     if transcript.trim().is_empty() || transcript.split_whitespace().count() < 20 {
@@ -454,14 +469,15 @@ pub async fn generate_predictive_hint(transcript: String) -> Result<PredictiveHi
     )
     .map_err(|e| CommandError::Network(e))?;
 
-    let system_prompt = r#"You are a clinical assistant analyzing a medical transcript. Provide THREE things:
+    let system_prompt = r#"You are a clinical assistant analyzing a medical transcript. Provide FOUR things:
 
 1. HINT: A brief clinical fact the physician might need right now (max 60 chars, shorthand style)
 2. CONCEPTS: 1-5 medical image search terms for relevant anatomical diagrams or illustrations
 3. IMAGE_PROMPT: If an image or infographic would be helpful right now in patient communication, provide a detailed image generation prompt. Otherwise, return null.
+4. DIFFERENTIAL_DIAGNOSES: Top 3 differential diagnoses based on the transcript so far.
 
 Respond ONLY with this JSON format:
-{"hint":"brief clinical fact here","concepts":[{"text":"anatomy term","weight":0.9},{"text":"condition","weight":0.7}],"image_prompt":"detailed image generation prompt or null"}
+{"hint":"brief clinical fact here","concepts":[{"text":"anatomy term","weight":0.9}],"image_prompt":null,"differential_diagnoses":[{"diagnosis":"Condition name","likelihood":"likely","key_findings":["finding 1","finding 2","finding 3"]}]}
 
 RULES for hint:
 - Maximum 60 characters
@@ -475,20 +491,23 @@ RULES for concepts:
 - NO patient names, NO PII, NO protocols/procedures
 - Focus on: body parts, organs, basic conditions that have anatomical diagrams
 - Weight 0.0-1.0 based on relevance to current discussion
-- GOOD examples: "knee anatomy", "rotator cuff", "heart valves", "lumbar spine", "anemia", "thyroid"
-- BAD examples: "iron metabolism pathway", "ferritin levels reference ranges", "McMurray test positioning"
 
 If no relevant image concepts, return empty array: "concepts":[]
 
 RULES for image_prompt:
-- Generate an image prompt when a visual would help the patient understand their condition, treatment, or next steps
-- This includes: anatomy, disease processes, medication mechanisms, treatment comparisons, procedure explanations, lifestyle infographics, screening timelines, or any visual that aids patient education
+- Return null unless a visual would meaningfully aid patient communication
 - Style: "clean, professional medical illustration, labeled, white background"
-- Be specific: include relevant structures, pathology, or data being discussed
-- Do NOT include patient names or PII in the prompt
-- Do NOT repeat the same subject within a session
-- Maximum one image_prompt per response
-- Return null when no visual would meaningfully aid the conversation
+- Do NOT include patient names or PII
+
+RULES for differential_diagnoses:
+- Exactly 3 diagnoses, ranked by likelihood
+- likelihood must be one of: "likely", "possible", "less_likely"
+- key_findings: 2-5 cardinal symptoms, signs, or findings that characterize each condition
+- Focus on findings RELEVANT to this patient's presentation
+- Use concise clinical language (e.g., "pleuritic chest pain", "elevated troponin", "fever >38.5C")
+- First diagnosis should be the most probable given the transcript
+- Include at least one "must not miss" diagnosis if appropriate (e.g., PE for chest pain)
+- If insufficient clinical info for DDx, return empty array
 "#;
 
     // Truncate transcript if too long (keep last ~2000 words for context)
@@ -530,6 +549,7 @@ RULES for image_prompt:
                 hint: cleaned,
                 concepts: Vec::new(),
                 image_prompt: None,
+                differential_diagnoses: Vec::new(),
             })
         }
         Err(e) => {
@@ -676,12 +696,20 @@ fn parse_hint_response(response: &str) -> Option<PredictiveHintResponse> {
                 hint: Option<String>,
                 concepts: Option<Vec<RawConcept>>,
                 image_prompt: Option<String>,
+                differential_diagnoses: Option<Vec<RawDdx>>,
             }
 
             #[derive(Deserialize)]
             struct RawConcept {
                 text: String,
                 weight: Option<f64>,
+            }
+
+            #[derive(Deserialize)]
+            struct RawDdx {
+                diagnosis: Option<String>,
+                likelihood: Option<String>,
+                key_findings: Option<Vec<String>>,
             }
 
             if let Ok(raw) = serde_json::from_str::<RawResponse>(json_str) {
@@ -699,14 +727,34 @@ fn parse_hint_response(response: &str) -> Option<PredictiveHintResponse> {
                         text: c.text.trim().to_string(),
                         weight: c.weight.unwrap_or(1.0).clamp(0.0, 1.0),
                     })
-                    .take(5) // Max 5 concepts
+                    .take(5)
                     .collect();
 
-                // Filter out "null" string from image_prompt
                 let image_prompt = raw.image_prompt
                     .filter(|p| !p.trim().is_empty() && p.trim() != "null");
 
-                return Some(PredictiveHintResponse { hint, concepts, image_prompt });
+                let differential_diagnoses: Vec<DifferentialDiagnosis> = raw.differential_diagnoses
+                    .unwrap_or_default()
+                    .into_iter()
+                    .filter_map(|d| {
+                        let diagnosis = d.diagnosis?.trim().to_string();
+                        if diagnosis.is_empty() { return None; }
+                        let likelihood = match d.likelihood.as_deref() {
+                            Some("likely") => "likely",
+                            Some("possible") => "possible",
+                            Some("less_likely") => "less_likely",
+                            _ => "possible",
+                        }.to_string();
+                        let key_findings = d.key_findings.unwrap_or_default()
+                            .into_iter()
+                            .filter(|f| !f.trim().is_empty())
+                            .collect();
+                        Some(DifferentialDiagnosis { diagnosis, likelihood, key_findings })
+                    })
+                    .take(3)
+                    .collect();
+
+                return Some(PredictiveHintResponse { hint, concepts, image_prompt, differential_diagnoses });
             }
         }
     }

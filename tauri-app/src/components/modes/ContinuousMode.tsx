@@ -18,6 +18,8 @@ import type { ContinuousModeStats, AudioQualitySnapshot, BiomarkerUpdate } from 
 import type { PatientTrends } from '../../hooks/usePatientBiomarkers';
 import type { MiisSuggestion } from '../../hooks/useMiisImages';
 import type { AiImage } from '../../hooks/useAiImages';
+import type { DifferentialDiagnosis } from '../../hooks/usePredictiveHint';
+import { DDX_LIKELIHOOD_LABELS } from '../../hooks/usePredictiveHint';
 import { getAudioQualityLevel } from '../../utils';
 import { MarkdownContent } from '../ClinicalChat';
 import { ImageSuggestions } from '../ImageSuggestions';
@@ -57,6 +59,8 @@ interface ContinuousModeProps {
   predictiveHint: string;
   /** Whether a predictive hint is being generated */
   predictiveHintLoading: boolean;
+  /** Top differential diagnoses */
+  differentialDiagnoses: DifferentialDiagnosis[];
   /** Audio quality snapshot from the pipeline */
   audioQuality: AudioQualitySnapshot | null;
   /** Raw biomarker update for PatientPulse */
@@ -173,6 +177,7 @@ export const ContinuousMode = memo(function ContinuousMode({
   error,
   predictiveHint,
   predictiveHintLoading,
+  differentialDiagnoses,
   audioQuality,
   biomarkers,
   biomarkerTrends,
@@ -478,6 +483,22 @@ export const ContinuousMode = memo(function ContinuousMode({
         />
       )}
 
+
+      {/* Differential Diagnosis */}
+      {differentialDiagnoses.length > 0 && (
+        <div className="ddx-section">
+          <div className="ddx-title">Differential Diagnosis</div>
+          {differentialDiagnoses.map((ddx, i) => (
+            <div key={i} className="ddx-item" title={ddx.key_findings.join(' \u00B7 ')}>
+              <span className="ddx-rank">{i + 1}.</span>
+              <span className="ddx-name">{ddx.diagnosis}</span>
+              <span className={`ddx-likelihood ddx-${ddx.likelihood}`}>
+                {DDX_LIKELIHOOD_LABELS[ddx.likelihood] ?? ddx.likelihood}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* Recent encounters list */}
       {stats.recent_encounters.length > 0 && (

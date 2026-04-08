@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { invoke } from '@tauri-apps/api/core';
+import { emitTo } from '@tauri-apps/api/event';
 
 export interface AiImage {
   base64: string;
@@ -54,14 +55,14 @@ export function useAiImages({
       prompt: fullPrompt,
     })
       .then((result) => {
-        setImages((prev) => [
-          ...prev,
-          {
-            base64: result.imageBase64,
-            prompt: description.trim(),
-            timestamp: Date.now(),
-          },
-        ]);
+        const newImage = {
+          base64: result.imageBase64,
+          prompt: description.trim(),
+          timestamp: Date.now(),
+        };
+        setImages((prev) => [...prev, newImage]);
+        // Notify image history window if open
+        emitTo('image-history', 'image_history_new', newImage).catch(() => {});
       })
       .catch((e) => {
         setError(String(e));

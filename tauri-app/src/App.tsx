@@ -348,6 +348,7 @@ function App() {
   const {
     hint: predictiveHint,
     concepts: imageConcepts,
+    differentialDiagnoses,
     isLoading: predictiveHintLoading,
   } = usePredictiveHint({
     transcript: transcript.finalized_text,
@@ -814,6 +815,7 @@ function App() {
             error={continuous.error}
             predictiveHint={continuous.predictiveHint}
             predictiveHintLoading={continuous.predictiveHintLoading}
+            differentialDiagnoses={continuous.differentialDiagnoses}
             audioQuality={continuous.audioQuality}
             biomarkers={continuous.biomarkers}
             biomarkerTrends={continuous.biomarkerTrends}
@@ -890,6 +892,7 @@ function App() {
             onChatClear={clearChat}
             predictiveHint={predictiveHint}
             predictiveHintLoading={predictiveHintLoading}
+            differentialDiagnoses={differentialDiagnoses}
             // Image suggestions (MIIS or AI)
             miisSuggestions={miisSuggestions}
             miisLoading={miisLoading}

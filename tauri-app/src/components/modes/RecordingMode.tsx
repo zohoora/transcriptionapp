@@ -3,6 +3,8 @@ import type { AudioQualitySnapshot, BiomarkerUpdate, SilenceWarningPayload } fro
 import type { ChatMessage } from '../../hooks/useClinicalChat';
 import type { MiisSuggestion } from '../../hooks/useMiisImages';
 import type { AiImage } from '../../hooks/useAiImages';
+import type { DifferentialDiagnosis } from '../../hooks/usePredictiveHint';
+import { DDX_LIKELIHOOD_LABELS } from '../../hooks/usePredictiveHint';
 import { getAudioQualityLevel } from '../../utils';
 import { ClinicalChat, MarkdownContent } from '../ClinicalChat';
 import { ImageSuggestions } from '../ImageSuggestions';
@@ -46,6 +48,7 @@ interface RecordingModeProps {
   // Predictive hint
   predictiveHint: string;
   predictiveHintLoading: boolean;
+  differentialDiagnoses: DifferentialDiagnosis[];
 
   // MIIS (Medical Illustration Image Server) suggestions
   miisSuggestions: MiisSuggestion[];
@@ -100,6 +103,7 @@ export const RecordingMode = memo(function RecordingMode({
   onChatClear,
   predictiveHint,
   predictiveHintLoading,
+  differentialDiagnoses,
   miisSuggestions,
   miisLoading,
   miisError,
@@ -225,6 +229,22 @@ export const RecordingMode = memo(function RecordingMode({
           onAiDismiss={onAiDismiss}
           imageSource={imageSource}
         />
+      )}
+
+      {/* Differential Diagnosis */}
+      {differentialDiagnoses.length > 0 && (
+        <div className="ddx-section">
+          <div className="ddx-title">Differential Diagnosis</div>
+          {differentialDiagnoses.map((ddx, i) => (
+            <div key={i} className="ddx-item" title={ddx.key_findings.join(' \u00B7 ')}>
+              <span className="ddx-rank">{i + 1}.</span>
+              <span className="ddx-name">{ddx.diagnosis}</span>
+              <span className={`ddx-likelihood ddx-${ddx.likelihood}`}>
+                {DDX_LIKELIHOOD_LABELS[ddx.likelihood] ?? ddx.likelihood}
+              </span>
+            </div>
+          ))}
+        </div>
       )}
 
       {/* Session in progress indicator */}

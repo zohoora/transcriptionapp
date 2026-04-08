@@ -13,11 +13,25 @@ export interface ImageConcept {
   weight: number;
 }
 
+/** A differential diagnosis suggestion */
+export interface DifferentialDiagnosis {
+  diagnosis: string;
+  likelihood: 'likely' | 'possible' | 'less_likely';
+  key_findings: string[];
+}
+
+export const DDX_LIKELIHOOD_LABELS: Record<DifferentialDiagnosis['likelihood'], string> = {
+  likely: 'Likely',
+  possible: 'Possible',
+  less_likely: 'Less likely',
+};
+
 /** Response from predictive hint generation */
 interface PredictiveHintResponse {
   hint: string;
   concepts: ImageConcept[];
   image_prompt: string | null;
+  differential_diagnoses: DifferentialDiagnosis[];
 }
 
 interface UsePredictiveHintOptions {
@@ -32,6 +46,8 @@ interface UsePredictiveHintResult {
   concepts: ImageConcept[];
   /** Image generation prompt from LLM (null if no image needed) */
   imagePrompt: string | null;
+  /** Top 3 differential diagnoses */
+  differentialDiagnoses: DifferentialDiagnosis[];
   /** Whether a hint is being generated */
   isLoading: boolean;
   /** Timestamp of last update */
@@ -50,6 +66,7 @@ export function usePredictiveHint({
   const [hint, setHint] = useState('');
   const [concepts, setConcepts] = useState<ImageConcept[]>([]);
   const [imagePrompt, setImagePrompt] = useState<string | null>(null);
+  const [differentialDiagnoses, setDifferentialDiagnoses] = useState<DifferentialDiagnosis[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [lastUpdated, setLastUpdated] = useState<number | null>(null);
 
@@ -106,6 +123,9 @@ export function usePredictiveHint({
           setConcepts(result.concepts);
         }
         setImagePrompt(result.image_prompt ?? null);
+        if (result.differential_diagnoses && result.differential_diagnoses.length > 0) {
+          setDifferentialDiagnoses(result.differential_diagnoses);
+        }
         setLastUpdated(Date.now());
         lastGeneratedRef.current = text;
       }
@@ -147,6 +167,7 @@ export function usePredictiveHint({
       setHint('');
       setConcepts([]);
       setImagePrompt(null);
+      setDifferentialDiagnoses([]);
       setLastUpdated(null);
       lastGeneratedRef.current = '';
     }
@@ -156,6 +177,7 @@ export function usePredictiveHint({
     hint,
     concepts,
     imagePrompt,
+    differentialDiagnoses,
     isLoading,
     lastUpdated,
   };

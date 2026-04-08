@@ -61,6 +61,7 @@ function makeDefaultProps(overrides: Partial<Parameters<typeof ContinuousMode>[0
     error: null,
     predictiveHint: '',
     predictiveHintLoading: false,
+    differentialDiagnoses: [],
     audioQuality: null,
     biomarkers: null,
     biomarkerTrends: { vitalityTrend: 'insufficient' as const, stabilityTrend: 'insufficient' as const },

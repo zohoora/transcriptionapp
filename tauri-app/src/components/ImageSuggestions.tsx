@@ -95,7 +95,7 @@ export const ImageSuggestions = memo(function ImageSuggestions({
         // Small delay to let React mount
         setTimeout(async () => {
           try {
-            await emitTo('image-viewer', 'image_viewer_data', { base64: img.base64 });
+            await emitTo('image-viewer', 'image_viewer_data', { base64: img.base64, prompt: img.prompt });
           } catch (e) {
             console.error('Failed to send image data:', e);
           }
@@ -109,6 +109,34 @@ export const ImageSuggestions = memo(function ImageSuggestions({
       console.error('Error opening image viewer:', e);
     }
   }, []);
+
+  const openImageHistory = useCallback(async () => {
+    const allImages = aiImages ?? [];
+    if (allImages.length === 0) return;
+    try {
+      const existing = await WebviewWindow.getByLabel('image-history');
+      if (existing) { await existing.setFocus(); return; }
+
+      const win = new WebviewWindow('image-history', {
+        url: 'image-history.html',
+        title: 'Image History',
+        width: 700,
+        height: 600,
+        minWidth: 400,
+        minHeight: 300,
+        resizable: true,
+      });
+      win.once('tauri://webview-created', () => {
+        setTimeout(async () => {
+          try {
+            await emitTo('image-history', 'image_history_data', {
+              images: allImages.map(img => ({ base64: img.base64, prompt: img.prompt, timestamp: img.timestamp })),
+            });
+          } catch (e) { console.error('Failed to send history data:', e); }
+        }, 300);
+      });
+    } catch (e) { console.error('Error opening image history:', e); }
+  }, [aiImages]);
 
   // AI image rendering path — user-triggered with text input
   if (imageSource === 'ai') {
@@ -173,6 +201,12 @@ export const ImageSuggestions = memo(function ImageSuggestions({
             </div>
           );
         })()}
+
+        {activeImages.length > 1 && (
+          <button className="ai-image-history-link" onClick={openImageHistory}>
+            View all {activeImages.length} images
+          </button>
+        )}
       </div>
     );
   }

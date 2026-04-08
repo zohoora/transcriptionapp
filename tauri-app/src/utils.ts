@@ -287,3 +287,12 @@ export function formatErrorMessage(error: unknown): string {
     return 'Unknown error';
   }
 }
+
+/** Trigger a browser download from a base64-encoded data URI. */
+export function downloadBase64Image(base64: string, filenamePrefix: string): void {
+  const link = document.createElement('a');
+  link.href = `data:image/png;base64,${base64}`;
+  const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+  link.download = `${filenamePrefix}-${timestamp}.png`;
+  link.click();
+}

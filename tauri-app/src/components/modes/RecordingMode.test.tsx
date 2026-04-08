@@ -24,6 +24,7 @@ describe('RecordingMode', () => {
     onChatClear: vi.fn(),
     predictiveHint: '',
     predictiveHintLoading: false,
+    differentialDiagnoses: [],
   };
 
   beforeEach(() => {

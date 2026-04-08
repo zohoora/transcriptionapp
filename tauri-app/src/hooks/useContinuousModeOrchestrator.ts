@@ -15,6 +15,7 @@ import type { Settings, ContinuousModeStats, AudioQualitySnapshot, BiomarkerUpda
 import type { PatientTrends } from './usePatientBiomarkers';
 import type { MiisSuggestion } from './useMiisImages';
 import type { AiImage } from './useAiImages';
+import type { DifferentialDiagnosis } from './usePredictiveHint';
 import { useContinuousMode } from './useContinuousMode';
 import { usePatientBiomarkers } from './usePatientBiomarkers';
 import { usePredictiveHint } from './usePredictiveHint';
@@ -40,6 +41,7 @@ export interface ContinuousModeOrchestratorResult {
   error: string | null;
   predictiveHint: string;
   predictiveHintLoading: boolean;
+  differentialDiagnoses: DifferentialDiagnosis[];
   audioQuality: AudioQualitySnapshot | null;
   biomarkers: BiomarkerUpdate | null;
   biomarkerTrends: PatientTrends;
@@ -105,6 +107,7 @@ export function useContinuousModeOrchestrator({
   const {
     hint: predictiveHint,
     concepts: continuousImageConcepts,
+    differentialDiagnoses: continuousDdx,
     isLoading: predictiveHintLoading,
   } = usePredictiveHint({
     transcript: liveTranscript,
@@ -161,6 +164,7 @@ export function useContinuousModeOrchestrator({
     error,
     predictiveHint,
     predictiveHintLoading,
+    differentialDiagnoses: continuousDdx,
     audioQuality,
     biomarkers: continuousBiomarkers,
     biomarkerTrends: continuousTrends,
