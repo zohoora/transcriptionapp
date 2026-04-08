@@ -57,6 +57,9 @@ export interface ContinuousModeOrchestratorResult {
   aiImages: AiImage[];
   aiLoading: boolean;
   aiError: string | null;
+  aiCooldownRemaining: number;
+  aiSessionCount: number;
+  onAiGenerate: (description: string) => void;
   onAiDismiss: (index: number) => void;
   imageSource: 'miis' | 'ai' | 'off';
   onStart: () => void;
@@ -104,7 +107,6 @@ export function useContinuousModeOrchestrator({
   const {
     hint: predictiveHint,
     concepts: continuousImageConcepts,
-    imagePrompt: continuousImagePrompt,
     isLoading: predictiveHintLoading,
   } = usePredictiveHint({
     transcript: liveTranscript,
@@ -132,14 +134,16 @@ export function useContinuousModeOrchestrator({
 
   const continuousImageSource = (settings?.image_source ?? 'off') as 'off' | 'miis' | 'ai';
 
-  // AI-generated image suggestions for continuous mode
+  // AI-generated image suggestions for continuous mode (user-triggered)
   const {
     images: aiImages,
     isLoading: aiLoading,
     error: aiError,
+    cooldownRemaining: aiCooldownRemaining,
+    sessionCount: aiSessionCount,
+    generate: aiGenerate,
     dismissImage: aiDismiss,
   } = useAiImages({
-    imagePrompt: continuousImagePrompt,
     enabled: continuousImageSource === 'ai',
     sessionId: continuousMiisSessionId,
   });
@@ -177,6 +181,9 @@ export function useContinuousModeOrchestrator({
     aiImages,
     aiLoading,
     aiError,
+    aiCooldownRemaining,
+    aiSessionCount,
+    onAiGenerate: aiGenerate,
     onAiDismiss: aiDismiss,
     imageSource: continuousImageSource,
     onStart: start,

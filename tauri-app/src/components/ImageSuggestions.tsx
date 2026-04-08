@@ -16,6 +16,9 @@ interface ImageSuggestionsProps {
   aiImages?: AiImage[];
   aiLoading?: boolean;
   aiError?: string | null;
+  aiCooldownRemaining?: number;
+  aiSessionCount?: number;
+  onAiGenerate?: (description: string) => void;
   onAiDismiss?: (index: number) => void;
   imageSource?: 'miis' | 'ai' | 'off';
 }
@@ -35,6 +38,9 @@ export const ImageSuggestions = memo(function ImageSuggestions({
   aiImages,
   aiLoading,
   aiError,
+  aiCooldownRemaining,
+  aiSessionCount,
+  onAiGenerate,
   onAiDismiss,
   imageSource = 'miis',
 }: ImageSuggestionsProps) {
@@ -108,129 +114,74 @@ export const ImageSuggestions = memo(function ImageSuggestions({
     }
   }, []);
 
-  // AI image rendering path
+  // AI image rendering path — user-triggered with text input
   if (imageSource === 'ai') {
     const activeLoading = aiLoading ?? false;
     const activeError = aiError ?? null;
     const activeImages = aiImages ?? [];
-
-    if (!activeLoading && activeImages.length === 0 && !activeError) {
-      return null;
-    }
+    const cooldown = aiCooldownRemaining ?? 0;
+    const count = aiSessionCount ?? 0;
+    const canGenerate = !activeLoading && cooldown <= 0 && count < 8;
 
     return (
-      <>
-        <div style={{
-          padding: '8px 12px',
-          borderTop: '1px solid var(--border-color, #e0e0e0)',
-          backgroundColor: 'var(--bg-secondary, #f5f5f5)',
-        }}>
-          <div style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '8px',
-            marginBottom: '6px',
-          }}>
-            <span style={{
-              fontSize: '11px',
-              fontWeight: 500,
-              color: 'var(--text-secondary, #666)',
-              textTransform: 'uppercase',
-              letterSpacing: '0.5px',
-            }}>
-              AI Illustrations
-            </span>
-            {activeLoading && (
-              <span style={{
-                fontSize: '10px',
-                color: 'var(--text-tertiary, #999)',
-              }}>
-                Generating...
-              </span>
-            )}
-          </div>
-
-          {activeError && (
-            <div style={{
-              fontSize: '11px',
-              color: 'var(--error-color, #d32f2f)',
-              padding: '4px 0',
-            }}>
-              {activeError}
-            </div>
-          )}
-
-          {activeImages.length > 0 && (() => {
-            const img = activeImages[activeImages.length - 1];
-            const index = activeImages.length - 1;
-            return (
-              <div
-                onClick={() => openAiImageWindow(img)}
-                style={{
-                  position: 'relative',
-                  width: '200px',
-                  borderRadius: '6px',
-                  overflow: 'hidden',
-                  cursor: 'pointer',
-                  border: '1px solid var(--border-color, #ddd)',
-                  backgroundColor: '#fff',
-                  transition: 'transform 0.15s, box-shadow 0.15s',
-                }}
-                onMouseEnter={e => {
-                  e.currentTarget.style.transform = 'scale(1.02)';
-                  e.currentTarget.style.boxShadow = '0 2px 8px rgba(0,0,0,0.15)';
-                }}
-                onMouseLeave={e => {
-                  e.currentTarget.style.transform = 'scale(1)';
-                  e.currentTarget.style.boxShadow = 'none';
-                }}
-              >
-                <img
-                  src={`data:image/png;base64,${img.base64}`}
-                  alt="AI-generated medical illustration"
-                  style={{
-                    width: '100%',
-                    height: 'auto',
-                    objectFit: 'contain',
-                    display: 'block',
-                  }}
-                />
-                <button
-                  onClick={e => {
-                    e.stopPropagation();
-                    onAiDismiss?.(index);
-                  }}
-                  style={{
-                    position: 'absolute',
-                    top: '4px',
-                    right: '4px',
-                    width: '22px',
-                    height: '22px',
-                    borderRadius: '50%',
-                    border: 'none',
-                    backgroundColor: 'rgba(0,0,0,0.5)',
-                    color: '#fff',
-                    fontSize: '14px',
-                    lineHeight: '20px',
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    opacity: 0.7,
-                    transition: 'opacity 0.15s',
-                  }}
-                  onMouseEnter={e => { e.currentTarget.style.opacity = '1'; }}
-                  onMouseLeave={e => { e.currentTarget.style.opacity = '0.7'; }}
-                  title="Dismiss"
-                >
-                  ×
-                </button>
-              </div>
-            );
-          })()}
+      <div className="ai-image-section">
+        <div className="ai-image-header">
+          <span className="ai-image-title">Patient Illustration</span>
+          {count > 0 && <span className="ai-image-count">{count}/8</span>}
         </div>
 
-      </>
+        {/* Prompt input */}
+        <form className="ai-image-form" onSubmit={e => {
+          e.preventDefault();
+          const input = e.currentTarget.elements.namedItem('ai-prompt') as HTMLTextAreaElement;
+          if (input.value.trim() && onAiGenerate) {
+            onAiGenerate(input.value);
+            input.value = '';
+          }
+        }}>
+          <textarea
+            name="ai-prompt"
+            className="ai-image-input"
+            placeholder="Describe what to illustrate (e.g., knee joint anatomy, lumbar disc herniation, insulin injection sites...)"
+            rows={2}
+            disabled={!canGenerate}
+          />
+          <button
+            type="submit"
+            className="ai-image-generate-btn"
+            disabled={!canGenerate}
+          >
+            {activeLoading ? 'Generating...' : cooldown > 0 ? `Wait ${Math.ceil(cooldown / 1000)}s` : 'Generate'}
+          </button>
+        </form>
+
+        {activeError && (
+          <div className="ai-image-error">{activeError}</div>
+        )}
+
+        {/* Display latest image */}
+        {activeImages.length > 0 && (() => {
+          const img = activeImages[activeImages.length - 1];
+          const index = activeImages.length - 1;
+          return (
+            <div className="ai-image-result" onClick={() => openAiImageWindow(img)}>
+              <img
+                src={`data:image/png;base64,${img.base64}`}
+                alt="AI-generated medical illustration"
+                className="ai-image-img"
+              />
+              <div className="ai-image-prompt-label">{img.prompt}</div>
+              <button
+                className="ai-image-dismiss"
+                onClick={e => { e.stopPropagation(); onAiDismiss?.(index); }}
+                title="Dismiss"
+              >
+                ×
+              </button>
+            </div>
+          );
+        })()}
+      </div>
     );
   }
 

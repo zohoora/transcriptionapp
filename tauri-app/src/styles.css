@@ -9875,6 +9875,124 @@ button.review-section-header-left:focus {
 }
 
 /* Code search & conflict detection */
+/* AI Image Generation */
+.ai-image-section {
+  padding: 8px 12px;
+  border-top: 1px solid var(--border-color, #374151);
+}
+.ai-image-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+.ai-image-title {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-secondary, #9ca3af);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.ai-image-count {
+  font-size: 10px;
+  color: var(--text-tertiary, #6b7280);
+}
+.ai-image-form {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+.ai-image-input {
+  flex: 1;
+  padding: 6px 8px;
+  font-size: 12px;
+  border: 1px solid var(--border-color, #374151);
+  border-radius: 6px;
+  background: var(--bg-primary, #1f2937);
+  color: var(--text-primary, #e5e7eb);
+  resize: none;
+  font-family: inherit;
+}
+.ai-image-input::placeholder {
+  color: var(--text-tertiary, #6b7280);
+}
+.ai-image-input:disabled {
+  opacity: 0.5;
+}
+.ai-image-generate-btn {
+  padding: 6px 12px;
+  font-size: 12px;
+  font-weight: 500;
+  border: none;
+  border-radius: 6px;
+  background: var(--accent-color, #3b82f6);
+  color: #fff;
+  cursor: pointer;
+  white-space: nowrap;
+  align-self: flex-end;
+}
+.ai-image-generate-btn:hover:not(:disabled) {
+  background: var(--accent-hover, #2563eb);
+}
+.ai-image-generate-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.ai-image-error {
+  font-size: 11px;
+  color: var(--error-color, #ef4444);
+  padding: 4px 0;
+}
+.ai-image-result {
+  position: relative;
+  width: 200px;
+  border-radius: 6px;
+  overflow: hidden;
+  cursor: pointer;
+  border: 1px solid var(--border-color, #374151);
+  transition: transform 0.15s, box-shadow 0.15s;
+}
+.ai-image-result:hover {
+  transform: scale(1.02);
+  box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+}
+.ai-image-img {
+  width: 100%;
+  height: auto;
+  object-fit: contain;
+  display: block;
+}
+.ai-image-prompt-label {
+  padding: 4px 6px;
+  font-size: 10px;
+  color: var(--text-tertiary, #6b7280);
+  background: var(--bg-secondary, #111827);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ai-image-dismiss {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: none;
+  background: rgba(0,0,0,0.5);
+  color: #fff;
+  font-size: 14px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0.7;
+  transition: opacity 0.15s;
+}
+.ai-image-dismiss:hover {
+  opacity: 1;
+}
+
 .billing-dx-display {
   display: flex;
   align-items: center;

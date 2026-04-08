@@ -60,6 +60,9 @@ interface RecordingModeProps {
   aiImages?: AiImage[];
   aiLoading?: boolean;
   aiError?: string | null;
+  aiCooldownRemaining?: number;
+  aiSessionCount?: number;
+  onAiGenerate?: (description: string) => void;
   onAiDismiss?: (index: number) => void;
   imageSource?: 'miis' | 'ai' | 'off';
 
@@ -110,6 +113,9 @@ export const RecordingMode = memo(function RecordingMode({
   aiImages,
   aiLoading,
   aiError,
+  aiCooldownRemaining,
+  aiSessionCount,
+  onAiGenerate,
   onAiDismiss,
   imageSource = 'miis',
   onGenerateHandout,
@@ -219,6 +225,9 @@ export const RecordingMode = memo(function RecordingMode({
           aiImages={aiImages}
           aiLoading={aiLoading}
           aiError={aiError}
+          aiCooldownRemaining={aiCooldownRemaining}
+          aiSessionCount={aiSessionCount}
+          onAiGenerate={onAiGenerate}
           onAiDismiss={onAiDismiss}
           imageSource={imageSource}
         />

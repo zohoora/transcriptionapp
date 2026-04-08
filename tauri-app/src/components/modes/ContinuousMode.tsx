@@ -80,6 +80,9 @@ interface ContinuousModeProps {
   aiImages?: AiImage[];
   aiLoading?: boolean;
   aiError?: string | null;
+  aiCooldownRemaining?: number;
+  aiSessionCount?: number;
+  onAiGenerate?: (description: string) => void;
   onAiDismiss?: (index: number) => void;
   imageSource?: 'miis' | 'ai' | 'off';
   /** Current STT language (ISO code) */
@@ -188,6 +191,9 @@ export const ContinuousMode = memo(function ContinuousMode({
   aiImages,
   aiLoading,
   aiError,
+  aiCooldownRemaining,
+  aiSessionCount,
+  onAiGenerate,
   onAiDismiss,
   imageSource = 'miis',
   sttLanguage,
@@ -470,6 +476,9 @@ export const ContinuousMode = memo(function ContinuousMode({
           aiImages={aiImages}
           aiLoading={aiLoading}
           aiError={aiError}
+          aiCooldownRemaining={aiCooldownRemaining}
+          aiSessionCount={aiSessionCount}
+          onAiGenerate={onAiGenerate}
           onAiDismiss={onAiDismiss}
           imageSource={imageSource}
         />

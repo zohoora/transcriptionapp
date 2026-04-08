@@ -348,7 +348,6 @@ function App() {
   const {
     hint: predictiveHint,
     concepts: imageConcepts,
-    imagePrompt,
     isLoading: predictiveHintLoading,
   } = usePredictiveHint({
     transcript: transcript.finalized_text,
@@ -373,14 +372,16 @@ function App() {
     serverUrl: settings?.miis_server_url ?? '',
   });
 
-  // AI-generated image suggestions (uses image_prompt from predictive hints)
+  // AI-generated image suggestions (user-triggered via text input)
   const {
     images: aiImages,
     isLoading: aiLoading,
     error: aiError,
+    cooldownRemaining: aiCooldownRemaining,
+    sessionCount: aiSessionCount,
+    generate: aiGenerate,
     dismissImage: aiDismiss,
   } = useAiImages({
-    imagePrompt,
     enabled: imageSource === 'ai',
     sessionId: status.session_id ?? null,
   });
@@ -832,6 +833,9 @@ function App() {
             aiImages={continuous.aiImages}
             aiLoading={continuous.aiLoading}
             aiError={continuous.aiError}
+            aiCooldownRemaining={continuous.aiCooldownRemaining}
+            aiSessionCount={continuous.aiSessionCount}
+            onAiGenerate={continuous.onAiGenerate}
             onAiDismiss={continuous.onAiDismiss}
             imageSource={continuous.imageSource}
             sttLanguage={sttLanguage}
@@ -902,6 +906,9 @@ function App() {
             aiImages={aiImages}
             aiLoading={aiLoading}
             aiError={aiError}
+            aiCooldownRemaining={aiCooldownRemaining}
+            aiSessionCount={aiSessionCount}
+            onAiGenerate={aiGenerate}
             onAiDismiss={aiDismiss}
             imageSource={imageSource}
             onGenerateHandout={handleGenerateHandout}

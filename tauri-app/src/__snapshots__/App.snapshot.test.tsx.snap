@@ -805,6 +805,35 @@ exports[`App Snapshots > renders recording state correctly 1`] = `
       </label>
     </div>
     <div
+      class="ai-image-section"
+    >
+      <div
+        class="ai-image-header"
+      >
+        <span
+          class="ai-image-title"
+        >
+          Patient Illustration
+        </span>
+      </div>
+      <form
+        class="ai-image-form"
+      >
+        <textarea
+          class="ai-image-input"
+          name="ai-prompt"
+          placeholder="Describe what to illustrate (e.g., knee joint anatomy, lumbar disc herniation, insulin injection sites...)"
+          rows="2"
+        />
+        <button
+          class="ai-image-generate-btn"
+          type="submit"
+        >
+          Generate
+        </button>
+      </form>
+    </div>
+    <div
       class="session-progress"
     >
       <div
@@ -1047,6 +1076,35 @@ exports[`App Snapshots > renders stopping state correctly 1`] = `
           Auto-end
         </span>
       </label>
+    </div>
+    <div
+      class="ai-image-section"
+    >
+      <div
+        class="ai-image-header"
+      >
+        <span
+          class="ai-image-title"
+        >
+          Patient Illustration
+        </span>
+      </div>
+      <form
+        class="ai-image-form"
+      >
+        <textarea
+          class="ai-image-input"
+          name="ai-prompt"
+          placeholder="Describe what to illustrate (e.g., knee joint anatomy, lumbar disc herniation, insulin injection sites...)"
+          rows="2"
+        />
+        <button
+          class="ai-image-generate-btn"
+          type="submit"
+        >
+          Generate
+        </button>
+      </form>
     </div>
     <div
       class="session-progress"
@@ -1292,6 +1350,35 @@ exports[`App Snapshots > renders with transcript correctly 1`] = `
           Auto-end
         </span>
       </label>
+    </div>
+    <div
+      class="ai-image-section"
+    >
+      <div
+        class="ai-image-header"
+      >
+        <span
+          class="ai-image-title"
+        >
+          Patient Illustration
+        </span>
+      </div>
+      <form
+        class="ai-image-form"
+      >
+        <textarea
+          class="ai-image-input"
+          name="ai-prompt"
+          placeholder="Describe what to illustrate (e.g., knee joint anatomy, lumbar disc herniation, insulin injection sites...)"
+          rows="2"
+        />
+        <button
+          class="ai-image-generate-btn"
+          type="submit"
+        >
+          Generate
+        </button>
+      </form>
     </div>
     <div
       class="session-progress"
