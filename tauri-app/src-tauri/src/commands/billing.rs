@@ -33,6 +33,9 @@ pub struct BillingContext {
     /// None = auto-detect from time, Some(true/false) = manual override
     #[serde(default)]
     pub after_hours_override: Option<bool>,
+    /// True if procedure performed in hospital (no tray fees). Default false (office).
+    #[serde(default)]
+    pub is_hospital: bool,
 }
 
 fn default_setting() -> String {
@@ -194,6 +197,10 @@ pub async fn extract_billing_codes(
         crate::pipeline_log::PipelineLogger::new(),
     ));
 
+    let rule_ctx = crate::billing::RuleEngineContext {
+        is_hospital: context.as_ref().map_or(false, |c| c.is_hospital),
+    };
+
     let record = crate::encounter_pipeline::extract_and_archive_billing(
         &client,
         &config.fast_model,
@@ -205,6 +212,7 @@ pub async fn extract_billing_codes(
         duration_ms,
         details.metadata.patient_name.as_deref(),
         after_hours,
+        &rule_ctx,
         &logger,
     ).await
     .map_err(CommandError::Other)?;
@@ -354,7 +362,7 @@ pub fn export_billing_csv(
     let start = super::parse_date(&start_date)?;
     let end = super::parse_date(&end_date)?;
 
-    let mut csv = String::from("date,session_id,patient_name,encounter_number,code,description,fee,shadow_rate,billable_amount,category,time_minutes,status,confirmed_at\n");
+    let mut csv = String::from("date,session_id,patient_name,encounter_number,diagnostic_code,code,description,fee,shadow_rate,billable_amount,category,time_minutes,status,confirmed_at\n");
 
     let mut current = start;
     while current <= end {
@@ -370,15 +378,17 @@ pub fn export_billing_csv(
                     };
                     let confirmed = record.confirmed_at.as_deref().unwrap_or("");
                     let enc_num = session.encounter_number.map(|n| n.to_string()).unwrap_or_default();
+                    let dx = record.diagnostic_code.as_deref().unwrap_or("");
 
                     // Billing codes
                     for code in &record.codes {
                         csv.push_str(&format!(
-                            "{},{},{},{},{},{},{:.2},{},{:.2},{},,,{}\n",
+                            "{},{},{},{},{},{},{},{:.2},{},{:.2},{},,{},{}\n",
                             date_str,
                             session.session_id,
                             escape_csv(patient),
                             enc_num,
+                            dx,
                             code.code,
                             escape_csv(&code.description),
                             code.fee_cents as f64 / 100.0,
@@ -386,17 +396,19 @@ pub fn export_billing_csv(
                             code.billable_amount_cents as f64 / 100.0,
                             code.category,
                             status,
+                            confirmed,
                         ));
                     }
 
                     // Time entries
                     for te in &record.time_entries {
                         csv.push_str(&format!(
-                            "{},{},{},{},{},{},{:.2},,{:.2},time_based,{},{},{}\n",
+                            "{},{},{},{},{},{},{},{:.2},,{:.2},time_based,{},{},{}\n",
                             date_str,
                             session.session_id,
                             escape_csv(patient),
                             enc_num,
+                            dx,
                             te.code,
                             escape_csv(&te.description),
                             te.rate_per_15min_cents as f64 / 100.0 * 4.0, // hourly rate
@@ -468,6 +480,29 @@ pub fn search_ohip_codes(query: String) -> Vec<OhipCodeSearchResult> {
     }
 
     results
+}
+
+/// Search result for diagnostic code lookup.
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DiagnosticCodeSearchResult {
+    pub code: String,
+    pub description: String,
+    pub category: String,
+}
+
+/// Search OHIP diagnostic codes by code prefix or description substring.
+#[tauri::command]
+pub fn search_diagnostic_codes(query: String) -> Vec<DiagnosticCodeSearchResult> {
+    debug!("Searching diagnostic codes: {}", query);
+    crate::billing::diagnostic_codes::search_diagnostic_codes(&query, 15)
+        .into_iter()
+        .map(|dc| DiagnosticCodeSearchResult {
+            code: dc.code.to_string(),
+            description: dc.description.to_string(),
+            category: dc.category.to_string(),
+        })
+        .collect()
 }
 
 /// Escape a string for CSV output (quote if contains comma, newline, or quote)
@@ -599,8 +634,7 @@ mod tests {
             visit_setting: "video".to_string(),
             patient_age: "senior".to_string(),
             referral_received: true,
-            counselling_exhausted: false,
-            after_hours_override: None,
+            ..Default::default()
         };
         let hints = build_context_hints(&ctx);
         assert!(hints.contains("VIDEO"));

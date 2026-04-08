@@ -1005,6 +1005,7 @@ export interface RoomConfig {
   room_id?: string | null;
   active_physician_id?: string | null;
   profile_api_key?: string | null;
+  fallback_server_urls?: string[] | null;
 }
 
 // ============================================================================
@@ -1069,6 +1070,17 @@ export interface BillingRecord {
   notes: string | null;
   extractionModel: string | null;
   extractedAt: string | null;
+  /** OHIP 3-digit diagnostic code (e.g., "250" for diabetes) */
+  diagnosticCode?: string | null;
+  /** Description of the diagnostic code */
+  diagnosticDescription?: string | null;
+}
+
+/** Search result from diagnostic code lookup */
+export interface DiagnosticCodeSearchResult {
+  code: string;
+  description: string;
+  category: string;
 }
 
 /** Physician-provided billing context for code extraction */
@@ -1078,6 +1090,7 @@ export interface BillingContext {
   referralReceived: boolean;
   counsellingExhausted: boolean;
   afterHoursOverride: boolean | null;  // null = auto-detect
+  isHospital: boolean;                 // true = in-hospital (no tray fees)
 }
 
 /** Daily cap tracking */

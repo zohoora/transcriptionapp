@@ -579,9 +579,17 @@ function App() {
 
   // Generate patient-friendly visit summary handout
   const handleGenerateHandout = useCallback(async () => {
-    const currentTranscript = isContinuousMode
-      ? continuous.liveTranscript
-      : transcript.finalized_text;
+    let currentTranscript: string;
+    if (isContinuousMode) {
+      // Fetch full transcript buffer from backend (liveTranscript is only a ~500 char preview)
+      try {
+        currentTranscript = await invoke<string>('get_continuous_transcript');
+      } catch {
+        currentTranscript = continuous.liveTranscript;
+      }
+    } else {
+      currentTranscript = transcript.finalized_text;
+    }
 
     if (!currentTranscript?.trim()) return;
 

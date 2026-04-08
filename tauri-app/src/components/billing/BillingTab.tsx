@@ -1,7 +1,7 @@
 import React, { useState, useCallback, useEffect } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { writeText } from '@tauri-apps/plugin-clipboard-manager';
-import type { BillingRecord, BillingCode, BillingContext, OhipCodeSearchResult, BillingCategory } from '../../types';
+import type { BillingRecord, BillingCode, BillingContext, OhipCodeSearchResult, DiagnosticCodeSearchResult, BillingCategory } from '../../types';
 import { formatCents, confidenceBadgeClass, OHIP_CODE_CRITERIA, findConflicts, findAllConflicts } from './billingUtils';
 
 interface BillingTabProps {
@@ -24,6 +24,12 @@ export const BillingTab: React.FC<BillingTabProps> = ({
   const [searchResults, setSearchResults] = useState<OhipCodeSearchResult[]>([]);
   const [searchLoading, setSearchLoading] = useState(false);
 
+  // Diagnostic code search
+  const [showDxSearch, setShowDxSearch] = useState(false);
+  const [dxQuery, setDxQuery] = useState('');
+  const [dxResults, setDxResults] = useState<DiagnosticCodeSearchResult[]>([]);
+  const [dxSearchLoading, setDxSearchLoading] = useState(false);
+
   // Billing context selectors
   const [contextExpanded, setContextExpanded] = useState(false);
   const [visitSetting, setVisitSetting] = useState('in_office');
@@ -31,6 +37,7 @@ export const BillingTab: React.FC<BillingTabProps> = ({
   const [referralReceived, setReferralReceived] = useState(false);
   const [counsellingExhausted, setCounsellingExhausted] = useState(false);
   const [afterHoursMode, setAfterHoursMode] = useState<'auto' | 'yes' | 'no'>('auto');
+  const [isHospital, setIsHospital] = useState(false);
 
   // Auto-populate age bracket from vision-extracted DOB
   useEffect(() => {
@@ -68,6 +75,36 @@ export const BillingTab: React.FC<BillingTabProps> = ({
     }, 300);
     return () => clearTimeout(timer);
   }, [showAddCode, searchQuery]);
+
+  // Diagnostic code search with debounce
+  useEffect(() => {
+    if (!showDxSearch || dxQuery.length < 2) {
+      setDxResults([]);
+      return;
+    }
+    const timer = setTimeout(async () => {
+      setDxSearchLoading(true);
+      try {
+        const results = await invoke<DiagnosticCodeSearchResult[]>('search_diagnostic_codes', { query: dxQuery });
+        setDxResults(results);
+      } catch (e) {
+        console.error('Diagnostic code search failed:', e);
+      } finally {
+        setDxSearchLoading(false);
+      }
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [showDxSearch, dxQuery]);
+
+  const handleSelectDiagnosticCode = useCallback((result: DiagnosticCodeSearchResult) => {
+    if (!record) return;
+    const updated = { ...record, diagnosticCode: result.code, diagnosticDescription: result.description };
+    onRecordChange(updated);
+    invoke('save_session_billing', { sessionId, date, record: updated }).catch(console.error);
+    setShowDxSearch(false);
+    setDxQuery('');
+    setDxResults([]);
+  }, [record, sessionId, date, onRecordChange]);
 
   const existingCodeIds = record?.codes.map(c => c.code) || [];
   const conflictMap = record ? findAllConflicts(existingCodeIds) : new Map();
@@ -107,8 +144,9 @@ export const BillingTab: React.FC<BillingTabProps> = ({
       referralReceived,
       counsellingExhausted,
       afterHoursOverride: afterHoursMode === 'auto' ? null : afterHoursMode === 'yes',
+      isHospital,
     };
-  }, [visitSetting, patientAge, referralReceived, counsellingExhausted, afterHoursMode]);
+  }, [visitSetting, patientAge, referralReceived, counsellingExhausted, afterHoursMode, isHospital]);
 
   const handleExtract = useCallback(async () => {
     setExtracting(true);
@@ -259,6 +297,17 @@ export const BillingTab: React.FC<BillingTabProps> = ({
                   <option value="no">Regular Hours</option>
                 </select>
               </div>
+              <div className="billing-context-row">
+                <label>Location</label>
+                <label className="billing-context-checkbox">
+                  <input
+                    type="checkbox"
+                    checked={isHospital}
+                    onChange={e => setIsHospital(e.target.checked)}
+                  />
+                  In Hospital (no tray fees)
+                </label>
+              </div>
             </div>
           )}
         </div>
@@ -291,6 +340,57 @@ export const BillingTab: React.FC<BillingTabProps> = ({
             {extracting ? 'Extracting...' : 'Re-extract'}
           </button>
         </div>
+      </div>
+
+      {/* Diagnostic code */}
+      <div className="insight-card billing-dx-card">
+        <div className="insight-card-title">Diagnostic Code</div>
+        {record.diagnosticCode ? (
+          <div className="billing-dx-display">
+            <span className="billing-dx-code">{record.diagnosticCode}</span>
+            <span className="billing-dx-desc">{record.diagnosticDescription || ''}</span>
+            {record.status === 'draft' && (
+              <button className="btn-small" onClick={() => setShowDxSearch(true)}>Change</button>
+            )}
+          </div>
+        ) : (
+          <div className="billing-dx-display">
+            <span className="billing-dx-missing">No diagnostic code set</span>
+            <button className="btn-small" onClick={() => setShowDxSearch(true)}>Set Code</button>
+          </div>
+        )}
+        {showDxSearch && (
+          <div className="billing-search-container billing-dx-search">
+            <input
+              className="billing-search-input"
+              type="text"
+              placeholder="Search by code or diagnosis..."
+              value={dxQuery}
+              onChange={e => setDxQuery(e.target.value)}
+              autoFocus
+            />
+            <button className="btn-small" onClick={() => { setShowDxSearch(false); setDxQuery(''); setDxResults([]); }}>Cancel</button>
+            {dxResults.length > 0 && (
+              <div className="billing-search-dropdown">
+                {dxResults.map(result => (
+                  <div
+                    key={result.code}
+                    className="billing-search-result"
+                    onClick={() => handleSelectDiagnosticCode(result)}
+                  >
+                    <span className="billing-search-code">{result.code}</span>
+                    <span className="billing-search-desc">{result.description}</span>
+                    <span className="billing-search-category">{result.category}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+            {dxSearchLoading && <div className="billing-search-loading">Searching...</div>}
+            {dxQuery.length >= 2 && !dxSearchLoading && dxResults.length === 0 && (
+              <div className="billing-search-empty">No diagnostic codes found</div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Billing codes table */}

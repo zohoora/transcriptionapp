@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import type { Settings, SpeakerRole, ChartingMode, EncounterDetectionMode, InfrastructureOverlay, RoomOverlay } from '../types';
+import type { Settings, SpeakerRole, ChartingMode, EncounterDetectionMode, InfrastructureOverlay, RoomOverlay, SoapFormat } from '../types';
 
 /**
  * Pending settings that the user is editing before saving.
@@ -48,7 +48,9 @@ export interface PendingSettings {
   presence_csv_log_enabled: boolean;
   // Encounter merge
   encounter_merge_enabled: boolean;
-  // SOAP personal instructions
+  // SOAP preferences
+  soap_detail_level: number;
+  soap_format: SoapFormat;
   soap_custom_instructions: string;
 }
 
@@ -92,6 +94,8 @@ export function buildMergedSettings(settings: Settings, pending: PendingSettings
     thermal_hot_pixel_threshold_c: pending.thermal_hot_pixel_threshold_c,
     co2_baseline_ppm: pending.co2_baseline_ppm,
     presence_csv_log_enabled: pending.presence_csv_log_enabled,
+    soap_detail_level: pending.soap_detail_level,
+    soap_format: pending.soap_format,
     soap_custom_instructions: pending.soap_custom_instructions,
   };
 }
@@ -158,6 +162,8 @@ export function useSettings(): UseSettingsResult {
     co2_baseline_ppm: s.co2_baseline_ppm,
     presence_csv_log_enabled: s.presence_csv_log_enabled,
     encounter_merge_enabled: s.encounter_merge_enabled,
+    soap_detail_level: s.soap_detail_level,
+    soap_format: s.soap_format,
     soap_custom_instructions: s.soap_custom_instructions,
   }), []);
 
@@ -209,7 +215,9 @@ export function useSettings(): UseSettingsResult {
         settings.auto_end_enabled !== pendingSettings.auto_end_enabled ||
         settings.charting_mode !== pendingSettings.charting_mode ||
         settings.encounter_merge_enabled !== pendingSettings.encounter_merge_enabled ||
-        settings.soap_custom_instructions !== pendingSettings.soap_custom_instructions;
+        settings.soap_custom_instructions !== pendingSettings.soap_custom_instructions ||
+        settings.soap_detail_level !== pendingSettings.soap_detail_level ||
+        settings.soap_format !== pendingSettings.soap_format;
 
       if (physicianTierChanged) {
         try {
@@ -227,6 +235,8 @@ export function useSettings(): UseSettingsResult {
                 auto_end_enabled: pendingSettings.auto_end_enabled,
                 charting_mode: pendingSettings.charting_mode,
                 encounter_merge_enabled: pendingSettings.encounter_merge_enabled,
+                soap_detail_level: pendingSettings.soap_detail_level,
+                soap_format: pendingSettings.soap_format,
                 soap_custom_instructions: pendingSettings.soap_custom_instructions,
               },
             });
@@ -353,6 +363,8 @@ export function useSettings(): UseSettingsResult {
       [settings.thermal_hot_pixel_threshold_c, pendingSettings.thermal_hot_pixel_threshold_c],
       [settings.co2_baseline_ppm, pendingSettings.co2_baseline_ppm],
       [settings.presence_csv_log_enabled, pendingSettings.presence_csv_log_enabled],
+      [settings.soap_detail_level, pendingSettings.soap_detail_level],
+      [settings.soap_format, pendingSettings.soap_format],
       [settings.soap_custom_instructions, pendingSettings.soap_custom_instructions],
     ];
 

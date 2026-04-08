@@ -465,6 +465,7 @@ pub fn run() {
             commands::get_monthly_billing_summary,
             commands::export_billing_csv,
             commands::search_ohip_codes,
+            commands::search_diagnostic_codes,
             commands::read_local_audio_file,
             // Session cleanup commands (history window)
             commands::delete_local_session,
@@ -506,6 +507,7 @@ pub fn run() {
             commands::start_continuous_mode,
             commands::stop_continuous_mode,
             commands::get_continuous_mode_status,
+            commands::get_continuous_transcript,
             commands::trigger_new_patient,
             commands::set_continuous_encounter_notes,
             commands::get_current_encounter_transcript,

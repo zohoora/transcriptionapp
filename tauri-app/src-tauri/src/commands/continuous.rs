@@ -280,6 +280,27 @@ pub fn get_continuous_mode_status(
     }
 }
 
+/// Get the full transcript text from the current continuous mode buffer.
+/// Used by the patient handout feature which needs the complete transcript,
+/// not just the ~500 char preview sent via events.
+#[tauri::command]
+pub fn get_continuous_transcript(
+    continuous_state: State<'_, SharedContinuousModeState>,
+) -> Result<String, CommandError> {
+    let state = continuous_state
+        .lock()
+        .map_err(|_| CommandError::lock_poisoned("continuous_state"))?;
+    if let Some(ref handle) = *state {
+        let buffer = handle
+            .transcript_buffer
+            .lock()
+            .map_err(|_| CommandError::lock_poisoned("transcript_buffer"))?;
+        Ok(buffer.full_text_with_speakers())
+    } else {
+        Ok(String::new())
+    }
+}
+
 /// Set per-encounter notes for the current continuous mode encounter
 ///
 /// Notes are passed to SOAP generation and cleared when a new encounter starts.

@@ -1,6 +1,6 @@
 import { memo, useState } from 'react';
 import type { Device, AuthState, SpeakerRole } from '../types';
-import { SPEAKER_ROLE_LABELS } from '../types';
+import { SPEAKER_ROLE_LABELS, DETAIL_LEVEL_LABELS } from '../types';
 import type { PendingSettings } from '../hooks/useSettings';
 import { SpeakerEnrollment } from './SpeakerEnrollment';
 
@@ -118,6 +118,46 @@ export const SettingsDrawer = memo(function SettingsDrawer({
                 {/* SOAP Preferences */}
                 <div className="settings-divider" />
                 <h4 className="settings-sub-header">SOAP Preferences</h4>
+
+                {/* Format Toggle */}
+                <div className="settings-group">
+                  <label className="settings-label">Format</label>
+                  <div className="soap-format-toggle">
+                    <button
+                      className={`format-btn ${pendingSettings.soap_format === 'problem_based' ? 'active' : ''}`}
+                      onClick={() => onSettingsChange({ ...pendingSettings, soap_format: 'problem_based' })}
+                    >
+                      Problem
+                    </button>
+                    <button
+                      className={`format-btn ${pendingSettings.soap_format === 'comprehensive' ? 'active' : ''}`}
+                      onClick={() => onSettingsChange({ ...pendingSettings, soap_format: 'comprehensive' })}
+                    >
+                      Comprehensive
+                    </button>
+                  </div>
+                </div>
+
+                {/* Detail Level Slider */}
+                <div className="settings-group">
+                  <label className="settings-label">
+                    Detail: {DETAIL_LEVEL_LABELS[pendingSettings.soap_detail_level]?.name || 'Standard'}
+                  </label>
+                  <div className="soap-detail-slider">
+                    <input
+                      type="range"
+                      min="1"
+                      max="10"
+                      value={pendingSettings.soap_detail_level}
+                      onChange={(e) => onSettingsChange({ ...pendingSettings, soap_detail_level: parseInt(e.target.value) })}
+                      className="detail-slider"
+                      aria-label="SOAP note detail level"
+                    />
+                    <span className="detail-value">{pendingSettings.soap_detail_level}</span>
+                  </div>
+                </div>
+
+                {/* Personal Instructions */}
                 <div className="settings-group">
                   <label className="settings-label" htmlFor="soap-custom-instructions">Personal Instructions</label>
                   <textarea

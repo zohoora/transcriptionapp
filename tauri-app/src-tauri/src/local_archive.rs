@@ -759,30 +759,30 @@ pub fn list_sessions_by_date(date_str: &str) -> Result<Vec<ArchiveSummary>, Stri
 
         let has_feedback = session_dir.join("feedback.json").exists();
 
-        // Load patient labels for multi-patient sessions
+        // Load patient labels for multi-patient sessions.
+        // Try patient_labels.json first. If missing (pre-April 2026 sessions),
+        // fall back to scanning for soap_patient_N.txt files on disk.
         let patient_count = metadata.patient_count;
-        let patient_labels = if patient_count.unwrap_or(0) > 1 {
+        let patient_labels = {
             let labels_path = session_dir.join("patient_labels.json");
             if labels_path.exists() {
-                match fs::read_to_string(&labels_path) {
-                    Ok(json) => {
-                        match serde_json::from_str::<Vec<PatientLabelEntry>>(&json) {
-                            Ok(entries) => {
-                                let labels: Vec<String> = entries.iter()
-                                    .map(|e| e.label.clone())
-                                    .collect();
-                                if labels.len() > 1 { Some(labels) } else { None }
-                            }
-                            Err(_) => None,
-                        }
-                    }
-                    Err(_) => None,
+                // Preferred path: explicit labels file
+                fs::read_to_string(&labels_path).ok()
+                    .and_then(|json| serde_json::from_str::<Vec<PatientLabelEntry>>(&json).ok())
+                    .map(|entries| entries.iter().map(|e| e.label.clone()).collect::<Vec<_>>())
+                    .filter(|labels| labels.len() > 1)
+            } else if patient_count.unwrap_or(0) > 1 || session_dir.join("soap_patient_1.txt").exists() {
+                // Fallback: derive labels from soap_patient_N.txt files
+                let mut labels = Vec::new();
+                let mut i = 1u32;
+                while session_dir.join(format!("soap_patient_{}.txt", i)).exists() {
+                    labels.push(format!("Patient {}", i));
+                    i += 1;
                 }
+                if labels.len() > 1 { Some(labels) } else { None }
             } else {
                 None
             }
-        } else {
-            None
         };
 
         sessions.push(ArchiveSummary {
@@ -801,7 +801,7 @@ pub fn list_sessions_by_date(date_str: &str) -> Result<Vec<ArchiveSummary>, Stri
             has_feedback: Some(has_feedback),
             physician_name: metadata.physician_name,
             room_name: metadata.room_name,
-            patient_count,
+            patient_count: patient_labels.as_ref().map(|l| l.len() as u32).or(patient_count),
             patient_labels,
             has_billing_record: metadata.has_billing_record,
         });

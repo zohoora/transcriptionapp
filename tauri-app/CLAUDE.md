@@ -267,6 +267,7 @@ Idle → Preparing → Recording → Stopping → Completed
 | Server sync fire-and-forget | `ServerSyncContext` in `continuous_mode.rs` — clones IDs+client, spawns async upload task. 30s delayed re-sync catches late-written aux files |
 | Hybrid history merge | `commands/archive.rs` — local sessions + server sessions merged by session_id (local wins), server fills gaps for cross-machine sessions |
 | Profile cache fallback | `physician_cache.rs` — server fetch with local JSON cache fallback. Cache updated on every successful server fetch |
+| Profile server failover | `ProfileClient` stores multiple base URLs (`base_urls: Vec<String>`) with `AtomicUsize` active index. `select_best_url()` probes `/health` on each URL (2s timeout). `connect_timeout(3s)` on main client for fast connection failure detection. `save_room_config` preserves `fallback_server_urls` from existing config |
 | Gemini retry | `gemini_client.rs` — single retry with 2s backoff on network errors (DNS, connection, TLS). HTTP errors (4xx/5xx) are not retried |
 | Sensor-continuity gate | `sensor_continuous_present` in continuous_mode.rs — tracks unbroken sensor presence since last split. When true, `evaluate_detection()` raises LLM-only split threshold to 0.99. Prevents false splits during couples/family visits where sensor confirms room is occupied |
 | Recent encounters staleness | After encounter merge, `recent_encounters` list is updated via `retain()` to remove the merged-away session ID. Prevents click-to-copy from referencing deleted session directories |
@@ -315,7 +316,7 @@ Idle → Preparing → Recording → Stopping → Completed
 | **Vision Experiments** | CLI + IPC tools for comparing vision-based SOAP strategies across archived sessions | `vision_experiment.rs`, `commands/ollama.rs` |
 | **Simulation Replay Logging** | Three-tier structured logging for offline replay and regression testing: per-segment JSONL timeline (`segments.jsonl`), self-contained encounter test case (`replay_bundle.json` — all LLM prompts/responses, sensor transitions, vision results, split decisions), day-level orchestration events (`day_log.jsonl`). Config snapshot via `replay_snapshot()`. ~0.5-3MB/day. `detection_replay_cli` replays archived decisions through `evaluate_detection()` with `--override` for what-if parameter tuning | `segment_log.rs`, `replay_bundle.rs`, `day_log.rs`, `config.rs`, `tools/detection_replay_cli.rs` |
 | **FHO+ Billing** | Two-stage billing extraction: LLM extracts clinical features (23 visit types, 79 procedures, 14 conditions), deterministic rule engine maps to OHIP codes (94 reachable). 207 OHIP codes (SOB-verified Apr 2026), 22 exclusion groups with conflict detection. Billing context toggles: visit setting, patient age (auto-populated from vision DOB), referral, K013 exhausted, after-hours. Quantity support (+/- buttons for add-on codes). Code search across all 207 codes. Auto-extracts after SOAP in continuous mode. Full Q310-Q313 time tracking with 14hr/day and 240hr/28-day caps. Daily/monthly summary views with cap warnings. CSV export. Billing invalidated on SOAP regen, split, merge. Stored as `billing.json` per session. 132 billing unit tests (12 basic + 15 stress integration tests via scripts) | `billing/`, `commands/billing.rs`, `encounter_pipeline.rs`, `src/components/billing/` |
-| **Multi-User** | Room + physician profile system. Passwordless physician selection (physical clinic security). Profile service on Mac Studio (:8090) stores physicians, rooms, speakers, and sessions. Server is source of truth — local archive is write-through cache. Settings merge: infrastructure (shared) → room (per-machine) → physician (roaming). Background audio upload, 30s delayed re-sync for late-written files. Offline resilience with cached profiles | `profile_client.rs`, `room_config.rs`, `physician_cache.rs`, `commands/physicians.rs` |
+| **Multi-User** | Room + physician profile system. Passwordless physician selection (physical clinic security). Profile service on Mac Studio (:8090) stores physicians, rooms, speakers, and sessions. Server is source of truth — local archive is write-through cache. Settings merge: infrastructure (shared) → room (per-machine) → physician (roaming). Background audio upload, 30s delayed re-sync for late-written files. Offline resilience with cached profiles. Multi-URL failover: `fallback_server_urls` in room_config.json, startup health probe selects fastest responding URL (2s timeout per URL, `connect_timeout` 3s on main client) | `profile_client.rs`, `room_config.rs`, `physician_cache.rs`, `commands/physicians.rs` |
 
 ### Continuous Mode Lifecycle Notes
 - `started` event emitted only after pipeline successfully starts
@@ -338,7 +339,7 @@ Source of truth: `src-tauri/src/config.rs` (Rust) / `src/types/index.ts` (TypeSc
 
 Key settings groups: STT Router (whisper_server_url, stt_alias=`"medical-streaming"`, stt_postprocess=true, language=`"auto"` (auto-detect, default since Gemma 4 STT migration)), Audio (VAD, diarization, enhancement), LLM Router (soap_model=`"soap-model-fast"`, soap_model_fast=`"soap-model-fast"`, fast_model=`"fast-model"`), Medplum (OAuth, auto_sync), Auto-detection (auto_start, auto_end_silence_ms=180000), SOAP (detail_level 1-10, format, custom_instructions), Images (image_source=`"ai"` (default)|`"miis"`|`"off"`, gemini_api_key), MIIS, Screen Capture, Continuous Mode (charting_mode, encounter_check_interval_secs=120, encounter_silence_trigger_secs=45, encounter_merge_enabled, encounter_detection_model=`"fast-model"`, encounter_detection_nothink=false), Sleep Mode (sleep_mode_enabled=true, sleep_start_hour=22, sleep_end_hour=6 — hours in EST, clamped 0-23), Presence Sensor (encounter_detection_mode=`"hybrid"`, presence_sensor_port, presence_absence_threshold_secs=180, presence_debounce_secs=15, presence_csv_log_enabled=true, thermal_hot_pixel_threshold_c=28.0, co2_baseline_ppm=420.0), Shadow Mode (shadow_active_method=`"sensor"`, shadow_csv_log_enabled=true), Hybrid Detection (hybrid_confirm_window_secs=180, hybrid_min_words_for_sensor_split=500), Screen Capture (screen_capture_enabled, screen_capture_interval_secs=30, requires Screen Recording permission), Debug.
 
-Multi-user: profile_service_url (in room_config.json), active_physician_id.
+Multi-user: profile_server_url + fallback_server_urls (in room_config.json), active_physician_id.
 
 ## File Locations
 
@@ -361,7 +362,7 @@ Multi-user: profile_service_url (in room_config.json), active_physician_id.
 | `~/sensor-logs/` | Multi-sensor data logger — JSONL + thermal PNGs. `sensor_logger.py` polls ESP32 every 5s |
 | `~/sensor-logs/data/YYYY-MM-DD/sensor_log.jsonl` | All sensor data per poll (presence, CO2, temp, humidity, 768-float thermal frame) |
 | `~/sensor-logs/data/YYYY-MM-DD/thermal/*.png` | Thermal camera snapshots (iron colormap, every 30s) |
-| `~/.transcriptionapp/room_config.json` | Room config (room name, profile server URL, room ID) |
+| `~/.transcriptionapp/room_config.json` | Room config (room name, profile server URL, fallback URLs, room ID) |
 | `~/.transcriptionapp/cache/physicians.json` | Cached physician list from server |
 | `~/.transcriptionapp/cache/physician_{id}.json` | Cached individual physician settings |
 | `docs/OHIP_CODE_UPDATE_GUIDE.md` | OHIP code database update procedure (SOB PDF → extract → generate → verify) |
@@ -373,13 +374,13 @@ Multi-user: profile_service_url (in room_config.json), active_physician_id.
 
 ## Clinic Deployment
 
-| Machine | Role | IP (Tailscale) | User | Notes |
-|---------|------|----------------|------|-------|
-| MacBook | Server | 100.119.83.76 | arash | Runs all backend services |
-| iMac | Room 2 workstation | 100.74.186.113 | room2 (pw: 1278) | Has Node, Rust, pnpm installed |
-| This computer | Room 6 workstation | local | backoffice | Primary development machine |
+| Machine | Role | IP (Tailscale) | LAN IP | User | Notes |
+|---------|------|----------------|--------|------|-------|
+| MacBook | Server | 100.119.83.76 | 10.241.15.154 | arash | Runs all backend services |
+| iMac | Room 2 workstation | 100.74.186.113 | — | room2 (pw: 1278) | Has Node, Rust, pnpm installed |
+| This computer | Room 6 workstation | local | — | backoffice | Primary development machine |
 
-## External Services (all on MacBook 100.119.83.76)
+## External Services (on MacBook 100.119.83.76 / 10.241.15.154)
 
 | Service | Port | Purpose |
 |---------|------|---------|
@@ -502,7 +503,7 @@ Multi-user: profile_service_url (in room_config.json), active_physician_id.
 | Encounter detection not splitting | Check activity logs for `consecutive_llm_failures` count; force-split fires at 5K cleaned words + 3 consecutive LLM failures (errors/timeouts only — confident "no split" responses don't count), absolute cap at 25K cleaned words. FORCE_CHECK (3K cleaned words) triggers check even below timer interval |
 | Screenshots blank / vision always NOT_FOUND | Screen Recording permission not granted — macOS blanks other apps' windows. Toggle off/on in System Settings → Privacy & Security → Screen Recording. Rebuilds may invalidate old permission |
 | Vision name extraction 0 successes | Check activity logs for "Vision name extraction failed" (connection) vs "Vision did not find a patient name" (blank captures). If all NOT_FOUND, likely screen recording permission issue |
-| Profile server unreachable | Check `http://100.119.83.76:8090/health`, verify Tailscale connection, falls back to cached profiles |
+| Profile server unreachable | Check `http://100.119.83.76:8090/health` (Tailscale) or `http://10.241.15.154:8090/health` (LAN). App probes all URLs in `room_config.json` at startup (primary + `fallback_server_urls`) with 2s timeout, selects first responder. Falls back to cached profiles if all URLs fail |
 | Physician switch blocked | Stop active recording or continuous mode before switching physicians |
 | History shows sessions from other machines | Expected — server returns all sessions for the physician across all rooms |
 | Recent encounter click doesn't copy SOAP | Session may have been merged — merged sessions are auto-removed from recent encounters list. If stale entries persist, they reference deleted session IDs |

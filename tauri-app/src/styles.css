@@ -9875,6 +9875,38 @@ button.review-section-header-left:focus {
 }
 
 /* Code search & conflict detection */
+.billing-dx-display {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+}
+.billing-dx-code {
+  font-weight: 600;
+  font-size: 1rem;
+  color: var(--accent-color, #60a5fa);
+  min-width: 36px;
+}
+.billing-dx-desc {
+  flex: 1;
+  font-size: 0.85rem;
+  opacity: 0.85;
+}
+.billing-dx-missing {
+  font-size: 0.85rem;
+  opacity: 0.5;
+  font-style: italic;
+  flex: 1;
+}
+
+.billing-dx-search {
+  margin-top: 8px;
+}
+.billing-search-category {
+  font-size: 0.75rem;
+  opacity: 0.6;
+}
+
 .billing-add-code {
   padding: 8px 12px;
   border-top: 1px solid var(--border-color, #374151);

@@ -94,6 +94,12 @@ pub struct BillingRecord {
     pub notes: Option<String>,
     pub extraction_model: Option<String>,
     pub extracted_at: Option<String>,
+    /// OHIP 3-digit diagnostic code (e.g., "250" for diabetes)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub diagnostic_code: Option<String>,
+    /// Description of the diagnostic code
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub diagnostic_description: Option<String>,
 }
 
 impl BillingRecord {
@@ -248,6 +254,8 @@ mod tests {
             notes: None,
             extraction_model: None,
             extracted_at: None,
+            diagnostic_code: None,
+            diagnostic_description: None,
         }
     }
 

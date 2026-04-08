@@ -1901,6 +1901,7 @@ pub async fn run_continuous_mode(
                                             encounter_duration_ms,
                                             encounter_patient_name.as_deref(),
                                             after_hours,
+                                            &crate::billing::RuleEngineContext::default(), // office default
                                             &logger_for_detector,
                                         ).await;
                                         let billing_latency = billing_start.elapsed().as_millis() as u64;
@@ -2845,6 +2846,7 @@ pub async fn run_continuous_mode(
                                 flush_duration_ms,
                                 flush_patient_name.as_deref(),
                                 flush_after_hours,
+                                &crate::billing::RuleEngineContext::default(), // office default
                                 &logger_for_flush,
                             ).await;
                             let billing_latency = billing_start.elapsed().as_millis() as u64;

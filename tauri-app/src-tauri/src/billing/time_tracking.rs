@@ -320,6 +320,8 @@ mod tests {
             notes: None,
             extraction_model: None,
             extracted_at: None,
+            diagnostic_code: None,
+            diagnostic_description: None,
         }
     }
 

@@ -220,10 +220,10 @@ pub async fn extract_and_archive_billing(
     duration_ms: u64,
     patient_name: Option<&str>,
     is_after_hours: bool,
+    rule_ctx: &crate::billing::RuleEngineContext,
     logger: &Arc<Mutex<PipelineLogger>>,
 ) -> Result<crate::billing::BillingRecord, String> {
     use crate::billing::clinical_features::{build_billing_extraction_prompt, parse_billing_extraction};
-    use crate::billing::rule_engine::map_features_to_billing;
 
     // Build prompt
     let (system_prompt, user_prompt) = build_billing_extraction_prompt(soap_content, transcript, context_hints);
@@ -282,14 +282,15 @@ pub async fn extract_and_archive_billing(
     // Override after-hours from caller (more reliable than LLM)
     features.is_after_hours = is_after_hours;
 
-    // Map features to billing codes via deterministic rule engine
+    // Map features to billing codes via deterministic rule engine (with companion code context)
     let date_str = format!("{:04}-{:02}-{:02}", session_date.year(), session_date.month(), session_date.day());
-    let mut record = map_features_to_billing(
+    let mut record = crate::billing::map_features_to_billing_with_context(
         &features,
         session_id,
         &date_str,
         duration_ms,
         patient_name,
+        rule_ctx,
     );
     record.extraction_model = Some(model.to_string());
 
@@ -419,6 +420,7 @@ pub async fn recover_orphaned_billing(
             duration_ms,
             summary.patient_name.as_deref(),
             after_hours,
+            &crate::billing::RuleEngineContext::default(), // office default for recovery
             logger,
         ).await {
             warn!("Failed to recover billing for {}: {}", summary.session_id, e);

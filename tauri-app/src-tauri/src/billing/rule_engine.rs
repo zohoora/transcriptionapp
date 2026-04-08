@@ -1,6 +1,15 @@
 use super::clinical_features::*;
+use super::diagnostic_codes;
 use super::ohip_codes::{self, Basket, OhipCode};
 use super::types::*;
+
+/// Context flags that influence companion code selection in the rule engine.
+/// Populated from the `BillingContext` in commands/billing.rs.
+#[derive(Debug, Default)]
+pub struct RuleEngineContext {
+    /// True = procedure done in hospital (no tray fees). False = out-of-hospital / office (default).
+    pub is_hospital: bool,
+}
 
 /// Map extracted clinical features to a draft billing record with OHIP codes.
 pub fn map_features_to_billing(
@@ -9,6 +18,19 @@ pub fn map_features_to_billing(
     date: &str,
     duration_ms: u64,
     patient_name: Option<&str>,
+) -> BillingRecord {
+    map_features_to_billing_with_context(features, session_id, date, duration_ms, patient_name, &RuleEngineContext::default())
+}
+
+/// Map extracted clinical features to a draft billing record, with additional context
+/// for companion code decisions (tray fees, smoking cessation add-ons, etc.).
+pub fn map_features_to_billing_with_context(
+    features: &ClinicalFeatures,
+    session_id: &str,
+    date: &str,
+    duration_ms: u64,
+    patient_name: Option<&str>,
+    ctx: &RuleEngineContext,
 ) -> BillingRecord {
     let mut codes: Vec<BillingCode> = Vec::new();
 
@@ -26,24 +48,54 @@ pub fn map_features_to_billing(
     }
 
     // 2. Procedures -> procedure codes
+    let mut procedure_codes: Vec<&str> = Vec::new();
     for proc in &features.procedures {
         let proc_code = procedure_type_to_code(proc);
         if let Some(ohip) = ohip_codes::get_code(proc_code) {
             codes.push(make_billing_code(ohip, BillingConfidence::High, false));
+            procedure_codes.push(proc_code);
         }
     }
 
     // 3. Conditions -> K/Q codes
+    let mut condition_codes: Vec<&str> = Vec::new();
     for cond in &features.conditions {
         let cond_codes = condition_type_to_codes(cond);
         for code_str in cond_codes {
             if let Some(ohip) = ohip_codes::get_code(code_str) {
                 codes.push(make_billing_code(ohip, BillingConfidence::Medium, false));
+                condition_codes.push(code_str);
             }
         }
     }
 
-    // 4. After-hours premium: add Q012A for eligible codes
+    // 4. Companion codes — auto-add related codes based on what was extracted
+
+    // 4a. Tray fee (E542A) — for qualifying procedures performed outside hospital
+    if !ctx.is_hospital {
+        let tray_qualifying = procedure_codes.iter().any(|c| is_tray_fee_qualifying(c));
+        if tray_qualifying {
+            if let Some(ohip) = ohip_codes::get_code("E542A") {
+                codes.push(make_billing_code(ohip, BillingConfidence::High, false));
+            }
+        }
+    }
+
+    // 4b. Pap tray fee (E430A) — with G365A outside hospital
+    if !ctx.is_hospital && procedure_codes.iter().any(|c| *c == "G365A") {
+        if let Some(ohip) = ohip_codes::get_code("E430A") {
+            codes.push(make_billing_code(ohip, BillingConfidence::High, false));
+        }
+    }
+
+    // 4c. Smoking cessation initial discussion (E079A) — with Q042A
+    if condition_codes.iter().any(|c| *c == "Q042A") {
+        if let Some(ohip) = ohip_codes::get_code("E079A") {
+            codes.push(make_billing_code(ohip, BillingConfidence::Medium, false));
+        }
+    }
+
+    // 5. After-hours premium: add Q012A for eligible codes
     //    Q012A is a percentage-based premium (50% of eligible FFS) — not in the
     //    static code database because it has no fixed SOB rate.
     if features.is_after_hours {
@@ -75,7 +127,7 @@ pub fn map_features_to_billing(
         }
     }
 
-    // 5. Time entry
+    // 6. Time entry
     let time_entry =
         super::time_tracking::calculate_direct_care_time(duration_ms, &features.setting);
     let time_entries = if time_entry.billable_units > 0 {
@@ -84,7 +136,7 @@ pub fn map_features_to_billing(
         vec![]
     };
 
-    // 6. Build record and calculate totals
+    // 7. Build record and calculate totals
     let now = chrono::Utc::now().to_rfc3339();
     let mut record = BillingRecord {
         session_id: session_id.to_string(),
@@ -101,7 +153,20 @@ pub fn map_features_to_billing(
         notes: None,
         extraction_model: None,
         extracted_at: Some(now),
+        diagnostic_code: None,
+        diagnostic_description: None,
     };
+
+    // Validate and set diagnostic code from LLM suggestion
+    if let Some(ref suggested) = features.suggested_diagnostic_code {
+        let code_str = suggested.trim();
+        if let Some(dc) = diagnostic_codes::get_diagnostic_code(code_str) {
+            record.diagnostic_code = Some(dc.code.to_string());
+            record.diagnostic_description = Some(dc.description.to_string());
+        }
+        // Invalid code silently ignored — physician can set manually in the UI
+    }
+
     record.recalculate_totals();
 
     record
@@ -268,6 +333,36 @@ fn make_billing_code(
     }
 }
 
+// ── Tray fee qualification ────────────────────────────────────────────────
+
+/// Procedure codes that qualify for the E542A general tray fee when performed
+/// outside of hospital. Covers surgical/procedural Z-codes, R-codes, and select
+/// G-codes (biopsies, excisions, lacerations, injections, nail procedures, etc.).
+/// Immunizations and ear syringing do NOT qualify.
+fn is_tray_fee_qualifying(code: &str) -> bool {
+    matches!(
+        code,
+        // Excisions, biopsies, lacerations (Z series)
+        "Z101A" | "Z110A" | "Z113A" | "Z114A" | "Z116A" | "Z117A"
+        | "Z122A" | "Z125A" | "Z128A" | "Z129A"
+        | "Z154A" | "Z156A" | "Z157A" | "Z158A"
+        | "Z159A" | "Z160A" | "Z161A" | "Z162A"
+        | "Z175A" | "Z176A"
+        | "Z314A" | "Z315A"     // Epistaxis cautery/packing
+        | "Z535A" | "Z543A" | "Z545A"  // Sigmoidoscopy, anoscopy, hemorrhoid
+        | "Z611A"               // Catheterization
+        | "Z847A"               // Corneal foreign body
+        // Malignant excisions (R series)
+        | "R048A" | "R094A"
+        // Injections into joints/trigger points/nerve blocks (G series)
+        | "G370A" | "G375A" | "G377A"
+        | "G384A"
+        | "G228A" | "G231A"
+        // IUD procedures
+        | "G378A" | "G552A"
+    )
+}
+
 // ── Tests ──────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
@@ -285,6 +380,7 @@ mod tests {
             patient_count: None,
             estimated_duration_minutes: Some(10),
             confidence: 0.90,
+            suggested_diagnostic_code: None,
         }
     }
 
@@ -433,13 +529,14 @@ mod tests {
         let mut features = default_features();
         features.procedures = vec![ProcedureType::SkinBiopsy];
         let record = map_features_to_billing(&features, "s1", "2026-04-05", 900_000, None);
-        // Assessment + procedure = 2 codes
-        assert_eq!(record.codes.len(), 2);
+        // Assessment + procedure + E542A tray fee = 3 codes
+        assert_eq!(record.codes.len(), 3);
         let biopsy = &record.codes[1];
         assert_eq!(biopsy.code, "Z113A");
         assert_eq!(biopsy.shadow_pct, 50);
         // Z113A: 3245 * 50% = 1622
         assert_eq!(biopsy.billable_amount_cents, 1622);
+        assert_eq!(record.codes[2].code, "E542A");
     }
 
     #[test]
@@ -450,10 +547,11 @@ mod tests {
             ProcedureType::CryotherapyMultiple,
         ];
         let record = map_features_to_billing(&features, "s1", "2026-04-05", 1_200_000, None);
-        // Assessment + 2 procedures = 3 codes
-        assert_eq!(record.codes.len(), 3);
-        assert_eq!(record.codes[1].code, "G365A");
-        assert_eq!(record.codes[2].code, "Z117A");
+        // Assessment + 2 procedures + E542A tray fee + E430A pap tray = 5 codes
+        assert!(record.codes.iter().any(|c| c.code == "G365A"));
+        assert!(record.codes.iter().any(|c| c.code == "Z117A"));
+        assert!(record.codes.iter().any(|c| c.code == "E542A"), "General tray fee for cryotherapy");
+        assert!(record.codes.iter().any(|c| c.code == "E430A"), "Pap tray fee for G365A");
     }
 
     #[test]
@@ -496,13 +594,14 @@ mod tests {
         features.procedures = vec![ProcedureType::SkinBiopsy];
         let record = map_features_to_billing(&features, "s1", "2026-04-05", 900_000, None);
 
-        // Assessment (after-hours) + procedure (not eligible) + Q012A premium
-        assert_eq!(record.codes.len(), 3);
+        // Assessment (after-hours) + procedure + E542A tray fee + Q012A premium = 4 codes
+        assert_eq!(record.codes.len(), 4);
 
-        let biopsy = &record.codes[1];
-        assert_eq!(biopsy.code, "Z113A");
+        let biopsy = record.codes.iter().find(|c| c.code == "Z113A").unwrap();
         assert!(!biopsy.after_hours); // procedures not after-hours eligible
         assert_eq!(biopsy.after_hours_premium_cents, 0);
+        assert!(record.codes.iter().any(|c| c.code == "Q012A"));
+        assert!(record.codes.iter().any(|c| c.code == "E542A"));
     }
 
     #[test]
@@ -638,6 +737,84 @@ mod tests {
         features.confidence = 0.50;
         let record = map_features_to_billing(&features, "s1", "2026-04-05", 600_000, None);
         assert_eq!(record.codes[0].confidence, BillingConfidence::Low);
+    }
+
+    #[test]
+    fn test_tray_fee_auto_added_for_procedure() {
+        let mut features = default_features();
+        features.procedures = vec![ProcedureType::SkinBiopsy]; // Z113A qualifies for tray fee
+        let record = map_features_to_billing_with_context(
+            &features, "s1", "2026-04-05", 900_000, None,
+            &RuleEngineContext { is_hospital: false },
+        );
+        // Assessment + procedure + E542A tray fee = 3 codes
+        assert!(record.codes.iter().any(|c| c.code == "E542A"), "Tray fee should be auto-added for skin biopsy");
+    }
+
+    #[test]
+    fn test_tray_fee_not_added_in_hospital() {
+        let mut features = default_features();
+        features.procedures = vec![ProcedureType::SkinBiopsy];
+        let record = map_features_to_billing_with_context(
+            &features, "s1", "2026-04-05", 900_000, None,
+            &RuleEngineContext { is_hospital: true },
+        );
+        assert!(!record.codes.iter().any(|c| c.code == "E542A"), "No tray fee in hospital");
+    }
+
+    #[test]
+    fn test_tray_fee_not_added_for_immunization() {
+        let mut features = default_features();
+        features.procedures = vec![ProcedureType::ImmunizationFlu]; // G590A does NOT qualify
+        let record = map_features_to_billing_with_context(
+            &features, "s1", "2026-04-05", 600_000, None,
+            &RuleEngineContext { is_hospital: false },
+        );
+        assert!(!record.codes.iter().any(|c| c.code == "E542A"), "No tray fee for immunization");
+    }
+
+    #[test]
+    fn test_pap_tray_fee_auto_added() {
+        let mut features = default_features();
+        features.procedures = vec![ProcedureType::PapSmear]; // G365A
+        let record = map_features_to_billing_with_context(
+            &features, "s1", "2026-04-05", 900_000, None,
+            &RuleEngineContext { is_hospital: false },
+        );
+        assert!(record.codes.iter().any(|c| c.code == "E430A"), "Pap tray fee should be auto-added");
+        // G365A also qualifies for general tray fee — but Pap tray E430A is the specific one
+    }
+
+    #[test]
+    fn test_pap_tray_fee_not_in_hospital() {
+        let mut features = default_features();
+        features.procedures = vec![ProcedureType::PapSmear];
+        let record = map_features_to_billing_with_context(
+            &features, "s1", "2026-04-05", 900_000, None,
+            &RuleEngineContext { is_hospital: true },
+        );
+        assert!(!record.codes.iter().any(|c| c.code == "E430A"), "No Pap tray in hospital");
+    }
+
+    #[test]
+    fn test_smoking_cessation_addon() {
+        let mut features = default_features();
+        features.conditions = vec![ConditionType::SmokingCessation]; // maps to Q042A
+        let record = map_features_to_billing(&features, "s1", "2026-04-05", 900_000, None);
+        assert!(record.codes.iter().any(|c| c.code == "Q042A"), "Smoking cessation Q042A present");
+        assert!(record.codes.iter().any(|c| c.code == "E079A"), "E079A should be auto-added with Q042A");
+    }
+
+    #[test]
+    fn test_joint_injection_tray_fee() {
+        let mut features = default_features();
+        features.procedures = vec![ProcedureType::JointInjection]; // G370A qualifies
+        let record = map_features_to_billing_with_context(
+            &features, "s1", "2026-04-05", 900_000, None,
+            &RuleEngineContext { is_hospital: false },
+        );
+        assert!(record.codes.iter().any(|c| c.code == "G370A"));
+        assert!(record.codes.iter().any(|c| c.code == "E542A"), "Tray fee for joint injection");
     }
 
     #[test]

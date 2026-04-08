@@ -26,13 +26,15 @@ transcriptionapp/
 
 ## Clinic Deployment
 
-| Machine | Role | IP (Tailscale) | User | Location |
-|---------|------|----------------|------|----------|
-| MacBook | Server (profile service, STT Router, LLM Router, Medplum) | 100.119.83.76 | arash | Server room |
-| iMac | Room 2 clinic workstation | 100.74.186.113 | room2 (password: 1278) | Room 2 |
-| This computer | Room 6 clinic workstation | (local) | backoffice | Room 6 |
+| Machine | Role | IP (Tailscale) | LAN IP | User | Location |
+|---------|------|----------------|--------|------|----------|
+| MacBook | Server (profile service, STT Router, LLM Router, Medplum) | 100.119.83.76 | 10.241.15.154 | arash | Server room |
+| iMac | Room 2 clinic workstation | 100.74.186.113 | — | room2 (password: 1278) | Room 2 |
+| This computer | Room 6 clinic workstation | (local) | — | backoffice | Room 6 |
 
-### Services on MacBook (100.119.83.76)
+Workstations have `fallback_server_urls` in `room_config.json` so the app automatically falls back to the LAN IP if Tailscale is down.
+
+### Services on MacBook (100.119.83.76 / 10.241.15.154)
 
 | Service | Port | Purpose |
 |---------|------|---------|
