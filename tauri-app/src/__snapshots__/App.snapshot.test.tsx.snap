@@ -399,7 +399,6 @@ exports[`App Snapshots > renders error state correctly 1`] = `
           class="toggle-label"
         >
           <input
-            checked=""
             class="toggle-checkbox"
             type="checkbox"
           />
@@ -613,7 +612,6 @@ exports[`App Snapshots > renders idle state correctly 1`] = `
           class="toggle-label"
         >
           <input
-            checked=""
             class="toggle-checkbox"
             type="checkbox"
           />

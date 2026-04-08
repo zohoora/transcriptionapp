@@ -30,25 +30,34 @@ pub async fn save_room_config(
     room_config_state: State<'_, SharedRoomConfig>,
     profile_client_state: State<'_, SharedProfileClient>,
 ) -> Result<(), CommandError> {
+    // Preserve fallback URLs from existing config
+    let existing_fallbacks = {
+        let existing = room_config_state.read().await;
+        existing.as_ref().and_then(|c| c.fallback_server_urls.clone())
+    };
+
     let config = RoomConfig {
         room_name,
         profile_server_url: profile_server_url.clone(),
         room_id: room_id.clone(),
         active_physician_id: None,
         profile_api_key: profile_api_key.clone(),
+        fallback_server_urls: existing_fallbacks,
     };
     config
         .save()
         .map_err(|e| CommandError::Other(format!("Failed to save room config: {e}")))?;
 
-    // Update profile client
-    let client = ProfileClient::new(&profile_server_url, profile_api_key);
+    // Update profile client with all URLs (primary + fallbacks)
+    let urls = config.all_server_urls();
+    let client = ProfileClient::new(&urls, profile_api_key);
 
-    // Fire-and-forget: merge server settings if room is selected
+    // Fire-and-forget: probe best URL, then merge server settings if room is selected
     if room_id.is_some() {
         let merge_client = client.clone();
         let merge_room_id = room_id.clone();
         tokio::spawn(async move {
+            merge_client.select_best_url().await;
             match merge_client.merge_server_settings(merge_room_id.as_deref()).await {
                 Ok(true) => info!("Room setup settings merge complete"),
                 Ok(false) => {}
@@ -66,7 +75,7 @@ pub async fn save_room_config(
 
 #[tauri::command]
 pub async fn test_profile_server(url: String) -> Result<bool, CommandError> {
-    let client = ProfileClient::new(&url, None);
+    let client = ProfileClient::new(&[url], None);
     match client.health().await {
         Ok(healthy) => Ok(healthy),
         Err(e) => {

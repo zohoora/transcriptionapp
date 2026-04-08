@@ -13,6 +13,20 @@ pub struct RoomConfig {
     pub active_physician_id: Option<String>,
     #[serde(default)]
     pub profile_api_key: Option<String>,
+    /// Additional server URLs to try if the primary is unreachable (e.g. LAN IP fallback).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fallback_server_urls: Option<Vec<String>>,
+}
+
+impl RoomConfig {
+    /// Return all server URLs: primary first, then fallbacks.
+    pub fn all_server_urls(&self) -> Vec<String> {
+        let mut urls = vec![self.profile_server_url.clone()];
+        if let Some(ref fallbacks) = self.fallback_server_urls {
+            urls.extend(fallbacks.iter().cloned());
+        }
+        urls
+    }
 }
 
 impl RoomConfig {

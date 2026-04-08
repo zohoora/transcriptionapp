@@ -1,5 +1,7 @@
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
+use std::sync::atomic::{AtomicUsize, Ordering};
+use tracing::{info, warn};
 
 // Re-use types from the profile service (mirrored here for decoupling)
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -148,24 +150,70 @@ impl From<&Room> for crate::config::RoomOverlay {
     }
 }
 
-#[derive(Clone)]
 pub struct ProfileClient {
-    base_url: String,
+    base_urls: Vec<String>,
+    active_index: AtomicUsize,
     client: reqwest::Client,
     api_key: Option<String>,
 }
 
+impl Clone for ProfileClient {
+    fn clone(&self) -> Self {
+        Self {
+            base_urls: self.base_urls.clone(),
+            active_index: AtomicUsize::new(self.active_index.load(Ordering::Relaxed)),
+            client: self.client.clone(),
+            api_key: self.api_key.clone(),
+        }
+    }
+}
+
 impl ProfileClient {
-    pub fn new(base_url: &str, api_key: Option<String>) -> Self {
+    pub fn new(urls: &[String], api_key: Option<String>) -> Self {
         let client = reqwest::Client::builder()
+            .connect_timeout(std::time::Duration::from_secs(3))
             .timeout(std::time::Duration::from_secs(10))
             .build()
             .unwrap_or_default();
         Self {
-            base_url: base_url.trim_end_matches('/').to_string(),
+            base_urls: urls
+                .iter()
+                .map(|u| u.trim_end_matches('/').to_string())
+                .collect(),
+            active_index: AtomicUsize::new(0),
             client,
             api_key,
         }
+    }
+
+    /// Probe all URLs and switch to the first that responds to /health.
+    /// Uses a short 2s timeout per URL so the total probe is fast.
+    pub async fn select_best_url(&self) {
+        if self.base_urls.len() <= 1 {
+            return;
+        }
+        let probe = reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(2))
+            .build()
+            .unwrap_or_default();
+
+        for (i, url) in self.base_urls.iter().enumerate() {
+            match probe.get(format!("{}/health", url)).send().await {
+                Ok(resp) if resp.status().is_success() => {
+                    let prev = self.active_index.swap(i, Ordering::Relaxed);
+                    if prev != i {
+                        info!(
+                            "Selected profile server: {} (was: {})",
+                            url, self.base_urls[prev]
+                        );
+                    }
+                    return;
+                }
+                Ok(resp) => warn!("Profile server {} returned {}", url, resp.status()),
+                Err(e) => warn!("Profile server {} unreachable: {}", url, e),
+            }
+        }
+        warn!("No profile server URL responded to health check");
     }
 
     /// Add the API key header to a request builder, if configured.
@@ -188,9 +236,10 @@ impl ProfileClient {
         headers
     }
 
-    /// Get the base URL for constructing custom API calls
+    /// Get the currently active base URL.
     pub fn base_url(&self) -> &str {
-        &self.base_url
+        let idx = self.active_index.load(Ordering::Relaxed);
+        &self.base_urls[idx]
     }
 
     /// Get a reference to the underlying HTTP client
@@ -200,7 +249,7 @@ impl ProfileClient {
 
     pub async fn health(&self) -> Result<bool> {
         let resp = self
-            .with_auth(self.client.get(format!("{}/health", self.base_url)))
+            .with_auth(self.client.get(format!("{}/health", self.base_url())))
             .send()
             .await?;
         Ok(resp.status().is_success())
@@ -210,7 +259,7 @@ impl ProfileClient {
 
     pub async fn get_infrastructure(&self) -> Result<crate::config::InfrastructureOverlay> {
         let resp = self
-            .with_auth(self.client.get(format!("{}/infrastructure", self.base_url)))
+            .with_auth(self.client.get(format!("{}/infrastructure", self.base_url())))
             .send()
             .await?;
         if !resp.status().is_success() {
@@ -227,7 +276,7 @@ impl ProfileClient {
         settings: &crate::config::InfrastructureOverlay,
     ) -> Result<crate::config::InfrastructureOverlay> {
         let resp = self
-            .with_auth(self.client.put(format!("{}/infrastructure", self.base_url)))
+            .with_auth(self.client.put(format!("{}/infrastructure", self.base_url())))
             .json(settings)
             .send()
             .await?;
@@ -246,7 +295,7 @@ impl ProfileClient {
 
     pub async fn get_room(&self, room_id: &str) -> Result<Room> {
         let resp = self
-            .with_auth(self.client.get(format!("{}/rooms/{}", self.base_url, room_id)))
+            .with_auth(self.client.get(format!("{}/rooms/{}", self.base_url(), room_id)))
             .send()
             .await?;
         if !resp.status().is_success() {
@@ -297,7 +346,7 @@ impl ProfileClient {
 
     pub async fn list_physicians(&self) -> Result<Vec<PhysicianProfile>> {
         let resp = self
-            .with_auth(self.client.get(format!("{}/physicians", self.base_url)))
+            .with_auth(self.client.get(format!("{}/physicians", self.base_url())))
             .send()
             .await?;
         let profiles: Vec<PhysicianProfile> = resp.json().await?;
@@ -306,7 +355,7 @@ impl ProfileClient {
 
     pub async fn get_physician(&self, id: &str) -> Result<PhysicianProfile> {
         let resp = self
-            .with_auth(self.client.get(format!("{}/physicians/{}", self.base_url, id)))
+            .with_auth(self.client.get(format!("{}/physicians/{}", self.base_url(), id)))
             .send()
             .await?;
         let profile: PhysicianProfile = resp.json().await?;
@@ -322,7 +371,7 @@ impl ProfileClient {
     ) -> Result<()> {
         let url = format!(
             "{}/physicians/{}/sessions/{}",
-            self.base_url, physician_id, session_id
+            self.base_url(), physician_id, session_id
         );
         let resp = self.with_auth(self.client.post(&url)).json(body).send().await?;
         if !resp.status().is_success() {
@@ -345,7 +394,7 @@ impl ProfileClient {
     ) -> Result<()> {
         let url = format!(
             "{}/physicians/{}/sessions/{}/soap",
-            self.base_url, physician_id, session_id
+            self.base_url(), physician_id, session_id
         );
         let resp = self.with_auth(self.client.put(&url)).json(body).send().await?;
         if !resp.status().is_success() {
@@ -368,7 +417,7 @@ impl ProfileClient {
     ) -> Result<()> {
         let url = format!(
             "{}/physicians/{}/sessions/{}/metadata",
-            self.base_url, physician_id, session_id
+            self.base_url(), physician_id, session_id
         );
         let resp = self.with_auth(self.client.put(&url)).json(metadata).send().await?;
         if !resp.status().is_success() {
@@ -386,7 +435,7 @@ impl ProfileClient {
     pub async fn delete_session(&self, physician_id: &str, session_id: &str) -> Result<()> {
         let url = format!(
             "{}/physicians/{}/sessions/{}",
-            self.base_url, physician_id, session_id
+            self.base_url(), physician_id, session_id
         );
         let resp = self.with_auth(self.client.delete(&url)).send().await?;
         if !resp.status().is_success() {
@@ -409,7 +458,7 @@ impl ProfileClient {
     ) -> Result<()> {
         let url = format!(
             "{}/physicians/{}/sessions/{}/audio",
-            self.base_url, physician_id, session_id
+            self.base_url(), physician_id, session_id
         );
         let file_bytes = tokio::fs::read(audio_path)
             .await
@@ -446,7 +495,7 @@ impl ProfileClient {
     ) -> Result<Vec<String>> {
         let mut url = format!(
             "{}/physicians/{}/sessions/dates",
-            self.base_url, physician_id
+            self.base_url(), physician_id
         );
         let mut params = vec![];
         if let Some(f) = from {
@@ -470,7 +519,7 @@ impl ProfileClient {
     ) -> Result<Vec<crate::local_archive::ArchiveSummary>> {
         let url = format!(
             "{}/physicians/{}/sessions?date={}",
-            self.base_url, physician_id, date
+            self.base_url(), physician_id, date
         );
         let resp = self.with_auth(self.client.get(&url)).send().await?;
         let sessions: Vec<crate::local_archive::ArchiveSummary> = resp.json().await?;
@@ -484,7 +533,7 @@ impl ProfileClient {
     ) -> Result<crate::local_archive::ArchiveDetails> {
         let url = format!(
             "{}/physicians/{}/sessions/{}",
-            self.base_url, physician_id, session_id
+            self.base_url(), physician_id, session_id
         );
         let resp = self.with_auth(self.client.get(&url)).send().await?;
         let details: crate::local_archive::ArchiveDetails = resp.json().await?;
@@ -493,7 +542,7 @@ impl ProfileClient {
 
     pub async fn list_speakers(&self) -> Result<Vec<SpeakerProfile>> {
         let resp = self
-            .with_auth(self.client.get(format!("{}/speakers", self.base_url)))
+            .with_auth(self.client.get(format!("{}/speakers", self.base_url())))
             .send()
             .await?;
         let profiles: Vec<SpeakerProfile> = resp.json().await?;
@@ -502,7 +551,7 @@ impl ProfileClient {
 
     pub async fn upload_speaker(&self, speaker: &serde_json::Value) -> Result<()> {
         let resp = self
-            .with_auth(self.client.post(format!("{}/speakers", self.base_url)))
+            .with_auth(self.client.post(format!("{}/speakers", self.base_url())))
             .json(speaker)
             .send()
             .await?;
@@ -520,7 +569,7 @@ impl ProfileClient {
 
     pub async fn delete_speaker(&self, speaker_id: &str) -> Result<()> {
         let resp = self
-            .with_auth(self.client.delete(format!("{}/speakers/{}", self.base_url, speaker_id)))
+            .with_auth(self.client.delete(format!("{}/speakers/{}", self.base_url(), speaker_id)))
             .send()
             .await?;
         if !resp.status().is_success() {
@@ -537,7 +586,7 @@ impl ProfileClient {
 
     pub async fn list_rooms(&self) -> Result<Vec<Room>> {
         let resp = self
-            .with_auth(self.client.get(format!("{}/rooms", self.base_url)))
+            .with_auth(self.client.get(format!("{}/rooms", self.base_url())))
             .send()
             .await?;
         let rooms: Vec<Room> = resp.json().await?;
@@ -550,7 +599,7 @@ impl ProfileClient {
             body["description"] = serde_json::Value::String(desc.to_string());
         }
         let resp = self
-            .with_auth(self.client.post(format!("{}/rooms", self.base_url)))
+            .with_auth(self.client.post(format!("{}/rooms", self.base_url())))
             .json(&body)
             .send()
             .await?;
@@ -569,7 +618,7 @@ impl ProfileClient {
 
     pub async fn update_room(&self, room_id: &str, updates: &serde_json::Value) -> Result<Room> {
         let resp = self
-            .with_auth(self.client.put(format!("{}/rooms/{}", self.base_url, room_id)))
+            .with_auth(self.client.put(format!("{}/rooms/{}", self.base_url(), room_id)))
             .json(updates)
             .send()
             .await?;
@@ -588,7 +637,7 @@ impl ProfileClient {
 
     pub async fn delete_room(&self, room_id: &str) -> Result<()> {
         let resp = self
-            .with_auth(self.client.delete(format!("{}/rooms/{}", self.base_url, room_id)))
+            .with_auth(self.client.delete(format!("{}/rooms/{}", self.base_url(), room_id)))
             .send()
             .await?;
         if !resp.status().is_success() {
@@ -613,7 +662,7 @@ impl ProfileClient {
     ) -> Result<()> {
         let url = format!(
             "{}/physicians/{}/sessions/{}/files/{}",
-            self.base_url, physician_id, session_id, filename
+            self.base_url(), physician_id, session_id, filename
         );
         let resp = self.with_auth(self.client.put(&url)).body(data).send().await?;
         if !resp.status().is_success() {
@@ -637,7 +686,7 @@ impl ProfileClient {
     ) -> Result<()> {
         let url = format!(
             "{}/physicians/{}/day-log/{}",
-            self.base_url, physician_id, date
+            self.base_url(), physician_id, date
         );
         let resp = self.with_auth(self.client.put(&url)).body(data).send().await?;
         if !resp.status().is_success() {

@@ -16,6 +16,7 @@ transcriptionapp/
 │   ├── src/                # Physician profiles, rooms, sessions, speaker enrollments
 │   └── CLAUDE.md           # Profile service architecture and patterns
 ├── esp32-presence/         # ESP32 sensor firmware (PlatformIO)
+├── room6-xiao-sensor/     # XIAO ESP32-C3 mmWave sensor firmware (Arduino)
 ├── .github/workflows/      # CI + Release (auto-update via GitHub Releases)
 ├── docs/                   # Historical review documents, benchmarks, plans
 │   └── *.md                # Code review docs (ADRs live in tauri-app/docs/adr/)

@@ -709,8 +709,13 @@ function App() {
     return <RoomSetup onComplete={handleRoomSetupComplete} />;
   }
 
+  // Gate 1.5: Still loading startup data → don't render main app yet
+  if (roomLoading || physiciansLoading) {
+    return null;
+  }
+
   // Gate 2: No active physician OR user clicked "Switch" → show PhysicianSelect
-  if (showPhysicianSelect || (!roomLoading && !physiciansLoading && !activePhysician)) {
+  if (showPhysicianSelect || !activePhysician) {
     return (
       <PhysicianSelect
         physicians={physicians}

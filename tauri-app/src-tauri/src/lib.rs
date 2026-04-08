@@ -250,31 +250,35 @@ pub fn run() {
 
             // Initialize room config
             let room_config = room_config::RoomConfig::load().unwrap_or(None);
-            let profile_server_url = room_config.as_ref().map(|rc| rc.profile_server_url.clone());
+            let server_urls = room_config.as_ref().map(|rc| rc.all_server_urls());
             let room_id_for_merge = room_config.as_ref().and_then(|rc| rc.room_id.clone());
             let profile_api_key = room_config.as_ref().and_then(|rc| rc.profile_api_key.clone());
             let shared_room_config: commands::SharedRoomConfig = Arc::new(tokio::sync::RwLock::new(room_config));
             app.manage(shared_room_config);
 
-            // Initialize profile client
-            let profile_client = profile_server_url.map(|url| profile_client::ProfileClient::new(&url, profile_api_key));
+            // Initialize profile client with all server URLs (primary + fallbacks)
+            let profile_client = server_urls
+                .filter(|urls| !urls.is_empty())
+                .map(|urls| profile_client::ProfileClient::new(&urls, profile_api_key));
 
-            // Startup settings merge + speaker profile sync: fire-and-forget async tasks.
+            // Startup: probe URLs to find the best one, then merge settings + sync speakers.
             // Non-blocking — app launches immediately with cached config and profiles.
             if let Some(ref client) = profile_client {
-                // Settings merge
-                let client_settings = client.clone();
+                // URL probe + settings merge (sequential: probe first, then merge uses best URL)
+                let client_startup = client.clone();
                 let room_id = room_id_for_merge;
                 tauri::async_runtime::spawn(async move {
-                    match client_settings.merge_server_settings(room_id.as_deref()).await {
+                    client_startup.select_best_url().await;
+                    match client_startup.merge_server_settings(room_id.as_deref()).await {
                         Ok(true) => info!("Startup settings merge complete"),
                         Ok(false) => info!("Startup settings merge: no changes from server"),
                         Err(e) => warn!("Startup settings merge failed (using local config): {e}"),
                     }
                 });
-                // Speaker profile sync
+                // Speaker profile sync (runs concurrently with probe+merge)
                 let client_speakers = client.clone();
                 tauri::async_runtime::spawn(async move {
+                    client_speakers.select_best_url().await;
                     match commands::physicians::do_sync_speaker_profiles(&client_speakers).await {
                         Ok(msg) => info!("Startup speaker sync: {msg}"),
                         Err(e) => warn!("Startup speaker sync failed: {e}"),

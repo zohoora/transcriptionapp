@@ -89,6 +89,7 @@ profile-data/
                 ├── replay_bundle.json
                 ├── segments.jsonl
                 ├── billing.json
+                ├── patient_handout.txt
                 └── screenshots/*.jpg
 ```
 
@@ -100,3 +101,9 @@ profile-data/
 | Add room setting | `types.rs` (RoomOverlay + Create/UpdateRoomRequest + validate), `store/rooms.rs` |
 | Add session endpoint | `routes/sessions.rs` (handler), `store/sessions.rs` (logic), `routes/mod.rs` (register) |
 | Modify file allowlist | `store/sessions.rs` (`is_allowed_session_file()`) — currently allows: pipeline_log, replay_bundle, segments, screenshots/*.jpg, billing.json |
+
+## ArchiveMetadata Notes
+
+`ArchiveMetadata` in `types.rs` is the session metadata struct stored as `metadata.json`. Key fields include: session_id, started_at, ended_at, duration_ms, word_count, has_soap_note, has_audio, has_patient_handout, has_billing_record, charting_mode, encounter_number, patient_name, detection_method, likely_non_clinical, patient_count, physician_id, physician_name, room_name, encounter_started_at.
+
+**Note**: The tauri app's ArchiveMetadata includes `patient_dob` (vision-extracted date of birth, `Option<String>` in YYYY-MM-DD format) which is not yet in the profile service struct. The field is silently dropped during metadata uploads due to `#[serde(default)]`.

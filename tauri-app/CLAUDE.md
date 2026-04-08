@@ -61,7 +61,7 @@ Rust Backend
 │   ├── sensor_source.rs   # SensorSource trait
 │   ├── sources/
 │   │   ├── esp32_http.rs  # HTTP poller — mmWave + CO2 + thermal from ESP32 WiFi bridge
-│   │   ├── serial.rs      # USB-UART mmWave (legacy), auto_detect_port(), parse_jybss()
+│   │   ├── serial.rs      # USB-UART mmWave (XIAO ESP32-C3 or legacy JYBSS), auto_detect_port(), JSON + JYBSS parsers
 │   │   └── mock.rs        # Scripted timelines for testing
 │   ├── debounce.rs        # DebounceFsm — filters rapid toggles
 │   ├── thermal.rs         # Hot-pixel counting + flood-fill blob detection (pure functions)
@@ -98,11 +98,11 @@ Rust Backend
 ├── vision_experiment.rs    # Vision SOAP experiment CLI support
 ├── diarization/       # Speaker detection (ONNX embeddings, clustering)
 ├── enhancement/       # Speech enhancement (GTCRN)
-├── billing/             # FHO+ billing engine (206 OHIP codes, SOB-verified)
+├── billing/             # FHO+ billing engine (207 OHIP codes, SOB-verified)
 │   ├── mod.rs               # Module root, re-exports
 │   ├── types.rs             # BillingRecord, BillingCode, TimeEntry, cap types
-│   ├── ohip_codes.rs        # Static OHIP code database (206 codes, 20 exclusion groups)
-│   ├── clinical_features.rs # LLM extraction schema (23 visit types, 60 procedures, 14 conditions)
+│   ├── ohip_codes.rs        # Static OHIP code database (207 codes, 22 exclusion groups)
+│   ├── clinical_features.rs # LLM extraction schema (23 visit types, 79 procedures, 14 conditions)
 │   ├── rule_engine.rs       # Deterministic feature → OHIP code mapping (94 codes reachable)
 │   └── time_tracking.rs     # Q310-Q313 time calculation, daily/monthly caps
 ├── biomarkers/        # Vocal analysis (vitality, stability, cough detection)
@@ -174,7 +174,7 @@ cd src-tauri && cargo test       # Rust
 | Modify room setup | `room_config.rs`, `commands/physicians.rs`, `useRoomConfig.ts`, `RoomSetup.tsx` |
 | Modify server session sync | `profile_client.rs`, `continuous_mode.rs` (ServerSyncContext), `commands/archive.rs` (server fallback) |
 | Modify patient handout | `llm_client.rs` (`build_patient_handout_prompt()`), `commands/ollama.rs` (`generate_patient_handout`), `commands/archive.rs` (`save_patient_handout`, `get_patient_handout`), `local_archive.rs`, `usePatientHandout.ts`, `PatientHandoutEditor.tsx` |
-| Modify billing | `commands/billing.rs` (BillingContext toggles), `billing/rule_engine.rs`, `billing/ohip_codes.rs` (206 codes + 20 exclusion groups), `billing/clinical_features.rs` (23 visit types, 60 procedures, 14 conditions), `billing/types.rs`, `billing/time_tracking.rs`, `src/components/billing/BillingTab.tsx`, `src/types/index.ts` (billing types section) |
+| Modify billing | `commands/billing.rs` (BillingContext toggles), `billing/rule_engine.rs`, `billing/ohip_codes.rs` (207 codes + 22 exclusion groups), `billing/clinical_features.rs` (23 visit types, 79 procedures, 14 conditions), `billing/types.rs`, `billing/time_tracking.rs`, `src/components/billing/BillingTab.tsx`, `src/types/index.ts` (billing types section) |
 
 ## IPC Commands (~144 total across 21 modules)
 
@@ -288,7 +288,7 @@ Idle → Preparing → Recording → Stopping → Completed
 | Two-stage billing (no LLM hallucination) | LLM extracts clinical features (constrained enums in `clinical_features.rs`), rule engine maps to OHIP codes deterministically (`rule_engine.rs`). LLM never outputs billing codes |
 | Vision DOB extraction | `parse_vision_response()` in `patient_name_tracker.rs` — tries JSON `{"name": "...", "dob": "YYYY-MM-DD"}` first, falls back to plain-text parsing. DOB validated as YYYY-MM-DD format. `PatientNameTracker` stores DOB separately via `set_dob()`, cleared on `reset()`. `patient_dob` field in `ArchiveMetadata` auto-populates billing age bracket |
 | Billing context toggles | `BillingContext` struct in `commands/billing.rs` — physician-provided context (visit_setting, patient_age, referral_received, counselling_exhausted, after_hours_override). `build_context_hints()` converts to LLM prompt hints. Passed as optional parameter to `extract_billing_codes` |
-| OHIP code search + conflicts | `search_ohip_codes()` searches 206 codes by code prefix or description substring. `find_conflicts()` / `find_all_conflicts()` in `ohip_codes.rs` check 20 exclusion groups for code incompatibilities |
+| OHIP code search + conflicts | `search_ohip_codes()` searches 207 codes by code prefix or description substring. `find_conflicts()` / `find_all_conflicts()` in `ohip_codes.rs` check 22 exclusion groups for code incompatibilities |
 | SOAP model override | `model_override: Option<String>` parameter on `generate_soap_note` and `generate_soap_note_auto_detect`. History regenerate button has dropdown for `soap-alt` and `soap-alt-2` aliases |
 
 ## Features
@@ -308,13 +308,13 @@ Idle → Preparing → Recording → Stopping → Completed
 | **MIIS Images** | LLM extracts concepts every 30s → MIIS returns ranked images. Backend proxies through Rust (CORS). Server needs embedder enabled | `commands/miis.rs`, ADR 0018 |
 | **AI Images** | Gemini API generates medical illustrations from LLM-produced image prompts (piggybacks on predictive hint). **Default image source.** Cost guardrails: 45s cooldown, 8/session cap, 1 visible (latest only), prompt dedup. Single retry on network errors (2s backoff). Config: `image_source=ai` (default), `gemini_api_key`. Requires Gemini API key to function | `gemini_client.rs`, `commands/images.rs`, `useAiImages.ts` |
 | **Continuous Mode** | All-day recording, LLM or sensor-based encounter detection, auto-SOAP per encounter. Sleep mode auto-pauses 10 PM–6 AM EST (clean stop + auto-restart, configurable). Vision-based patient name + DOB extraction via `vision-model` alias (JSON format: `{"name": "...", "dob": "YYYY-MM-DD"}`). `PatientNameTracker` recency-weighted voting (later screenshots count more). DOB auto-populates patient age bracket in billing context. `patient_dob` stored in `ArchiveMetadata`. Screenshot capture gated on transcript word count (skips when buffer empty). Recent encounters list with click-to-copy SOAP; merged sessions auto-removed from list. Retrospective multi-patient check auto-splits incorrectly merged encounters (couples, family visits) | `continuous_mode.rs`, `encounter_detection.rs`, `commands/continuous.rs`, ADR 0019 |
-| **Presence Sensor** | ESP32 Multi-Sensor Bridge: mmWave (SEN0395 24GHz, UART), CO2/temp/humidity (SCD41, I2C), thermal camera (MLX90640 32x24, I2C). WiFi HTTP at `presence_sensor_url`. Module directory with `SensorSource` trait, `DebounceFsm`, thermal analysis, CO2 tracker, and fusion engine. Fusion currently mmWave-only passthrough; thermal + CO2 tracked for health/monitoring but don't influence presence decision (deferred to per-room calibration). Debounced presence → absence threshold → encounter split. Graceful fallback to LLM on failure. Config: `thermal_hot_pixel_threshold_c` (28°C), `co2_baseline_ppm` (420). Firmware: `~/projects/room6-sensor/` (PlatformIO) | `presence_sensor/` |
+| **Presence Sensor** | Two sensor hardware options: (1) ESP32 Multi-Sensor Bridge (WiFi HTTP): mmWave (SEN0395 24GHz, UART), CO2/temp/humidity (SCD41, I2C), thermal camera (MLX90640 32x24, I2C) at `presence_sensor_url`. (2) XIAO ESP32-C3 (USB serial): 24GHz mmWave (Seeed mmWave for XIAO), 115200 baud, JSON output, no WiFi. Module directory with `SensorSource` trait, `DebounceFsm`, thermal analysis, CO2 tracker, and fusion engine. Fusion currently mmWave-only passthrough; thermal + CO2 tracked for health/monitoring but don't influence presence decision (deferred to per-room calibration). Debounced presence → absence threshold → encounter split. Sensor failure emits SensorStatus (not Error) — continuous mode stays active. Config: `thermal_hot_pixel_threshold_c` (28°C), `co2_baseline_ppm` (420). Firmware: `~/projects/room6-sensor/` (PlatformIO) or `room6-xiao-sensor/` (Arduino) | `presence_sensor/` |
 | **Hybrid Detection** | Sensor early-warning + LLM confirmation. Sensor Present→Absent accelerates LLM check (~30s vs ~8 min). Sensor timeout force-splits after `hybrid_confirm_window_secs` (default 180s). Sensor-continuity gate: when sensor shows unbroken presence since last split, LLM-only split confidence threshold raised to 0.99 (prevents false splits during couples/family visits). Sensor-departed prompt (V2_soft) lists common false departures. Graceful LLM-only fallback when sensor unavailable. Handles back-to-back encounters via regular LLM timer. Config: `encounter_detection_mode="hybrid"` | `continuous_mode.rs`, `encounter_detection.rs`, `config.rs` |
 | **Shadow Mode** | Dual detection comparison — runs sensor and LLM concurrently, logs decisions to CSV for accuracy analysis. Config: `encounter_detection_mode="shadow"`, `shadow_active_method` | `shadow_log.rs`, `continuous_mode.rs` |
 | **Session Cleanup** | History window tools: delete, split, merge sessions, rename patients, renumber encounters. Split opens in separate resizable window with LLM-suggested split point (`suggest_split_points` via `fast-model`) | `commands/archive.rs`, `components/cleanup/`, `SplitWindow.tsx` |
 | **Vision Experiments** | CLI + IPC tools for comparing vision-based SOAP strategies across archived sessions | `vision_experiment.rs`, `commands/ollama.rs` |
 | **Simulation Replay Logging** | Three-tier structured logging for offline replay and regression testing: per-segment JSONL timeline (`segments.jsonl`), self-contained encounter test case (`replay_bundle.json` — all LLM prompts/responses, sensor transitions, vision results, split decisions), day-level orchestration events (`day_log.jsonl`). Config snapshot via `replay_snapshot()`. ~0.5-3MB/day. `detection_replay_cli` replays archived decisions through `evaluate_detection()` with `--override` for what-if parameter tuning | `segment_log.rs`, `replay_bundle.rs`, `day_log.rs`, `config.rs`, `tools/detection_replay_cli.rs` |
-| **FHO+ Billing** | Two-stage billing extraction: LLM extracts clinical features (23 visit types, 60 procedures, 14 conditions), deterministic rule engine maps to OHIP codes (94 reachable). 206 OHIP codes (SOB-verified Apr 2026), 20 exclusion groups with conflict detection. Billing context toggles: visit setting, patient age (auto-populated from vision DOB), referral, K013 exhausted, after-hours. Quantity support (+/- buttons for add-on codes). Code search across all 206 codes. Auto-extracts after SOAP in continuous mode. Full Q310-Q313 time tracking with 14hr/day and 240hr/28-day caps. Daily/monthly summary views with cap warnings. CSV export. Billing invalidated on SOAP regen, split, merge. Stored as `billing.json` per session | `billing/`, `commands/billing.rs`, `encounter_pipeline.rs`, `src/components/billing/` |
+| **FHO+ Billing** | Two-stage billing extraction: LLM extracts clinical features (23 visit types, 79 procedures, 14 conditions), deterministic rule engine maps to OHIP codes (94 reachable). 207 OHIP codes (SOB-verified Apr 2026), 22 exclusion groups with conflict detection. Billing context toggles: visit setting, patient age (auto-populated from vision DOB), referral, K013 exhausted, after-hours. Quantity support (+/- buttons for add-on codes). Code search across all 207 codes. Auto-extracts after SOAP in continuous mode. Full Q310-Q313 time tracking with 14hr/day and 240hr/28-day caps. Daily/monthly summary views with cap warnings. CSV export. Billing invalidated on SOAP regen, split, merge. Stored as `billing.json` per session. 132 billing unit tests (12 basic + 15 stress integration tests via scripts) | `billing/`, `commands/billing.rs`, `encounter_pipeline.rs`, `src/components/billing/` |
 | **Multi-User** | Room + physician profile system. Passwordless physician selection (physical clinic security). Profile service on Mac Studio (:8090) stores physicians, rooms, speakers, and sessions. Server is source of truth — local archive is write-through cache. Settings merge: infrastructure (shared) → room (per-machine) → physician (roaming). Background audio upload, 30s delayed re-sync for late-written files. Offline resilience with cached profiles | `profile_client.rs`, `room_config.rs`, `physician_cache.rs`, `commands/physicians.rs` |
 
 ### Continuous Mode Lifecycle Notes
@@ -336,7 +336,7 @@ Idle → Preparing → Recording → Stopping → Completed
 
 Source of truth: `src-tauri/src/config.rs` (Rust) / `src/types/index.ts` (TypeScript).
 
-Key settings groups: STT Router (whisper_server_url, stt_alias=`"medical-streaming"`, stt_postprocess=true, language=`"auto"` (auto-detect)), Audio (VAD, diarization, enhancement), LLM Router (soap_model=`"soap-model-fast"`, soap_model_fast=`"soap-model-fast"`, fast_model=`"fast-model"`), Medplum (OAuth, auto_sync), Auto-detection (auto_start, auto_end_silence_ms=180000), SOAP (detail_level 1-10, format, custom_instructions), Images (image_source=`"ai"` (default)|`"miis"`|`"off"`, gemini_api_key), MIIS, Screen Capture, Continuous Mode (charting_mode, encounter_check_interval_secs=120, encounter_silence_trigger_secs=45, encounter_merge_enabled, encounter_detection_model=`"fast-model"`, encounter_detection_nothink=false), Sleep Mode (sleep_mode_enabled=true, sleep_start_hour=22, sleep_end_hour=6 — hours in EST, clamped 0-23), Presence Sensor (encounter_detection_mode=`"hybrid"`, presence_sensor_port, presence_absence_threshold_secs=180, presence_debounce_secs=15, presence_csv_log_enabled=true, thermal_hot_pixel_threshold_c=28.0, co2_baseline_ppm=420.0), Shadow Mode (shadow_active_method=`"sensor"`, shadow_csv_log_enabled=true), Hybrid Detection (hybrid_confirm_window_secs=180, hybrid_min_words_for_sensor_split=500), Screen Capture (screen_capture_enabled, screen_capture_interval_secs=30, requires Screen Recording permission), Debug.
+Key settings groups: STT Router (whisper_server_url, stt_alias=`"medical-streaming"`, stt_postprocess=true, language=`"auto"` (auto-detect, default since Gemma 4 STT migration)), Audio (VAD, diarization, enhancement), LLM Router (soap_model=`"soap-model-fast"`, soap_model_fast=`"soap-model-fast"`, fast_model=`"fast-model"`), Medplum (OAuth, auto_sync), Auto-detection (auto_start, auto_end_silence_ms=180000), SOAP (detail_level 1-10, format, custom_instructions), Images (image_source=`"ai"` (default)|`"miis"`|`"off"`, gemini_api_key), MIIS, Screen Capture, Continuous Mode (charting_mode, encounter_check_interval_secs=120, encounter_silence_trigger_secs=45, encounter_merge_enabled, encounter_detection_model=`"fast-model"`, encounter_detection_nothink=false), Sleep Mode (sleep_mode_enabled=true, sleep_start_hour=22, sleep_end_hour=6 — hours in EST, clamped 0-23), Presence Sensor (encounter_detection_mode=`"hybrid"`, presence_sensor_port, presence_absence_threshold_secs=180, presence_debounce_secs=15, presence_csv_log_enabled=true, thermal_hot_pixel_threshold_c=28.0, co2_baseline_ppm=420.0), Shadow Mode (shadow_active_method=`"sensor"`, shadow_csv_log_enabled=true), Hybrid Detection (hybrid_confirm_window_secs=180, hybrid_min_words_for_sensor_split=500), Screen Capture (screen_capture_enabled, screen_capture_interval_secs=30, requires Screen Recording permission), Debug.
 
 Multi-user: profile_service_url (in room_config.json), active_physician_id.
 
@@ -368,8 +368,8 @@ Multi-user: profile_service_url (in room_config.json), active_physician_id.
 | `scripts/extract_sob_fees.py` | Extract fee data from Schedule of Benefits PDF |
 | `scripts/generate_ohip_codes.py` | Generate `ohip_codes.rs` from extracted fees |
 | `scripts/verify_ohip_codes.py` | Verify OHIP code database against source data |
-| `scripts/test_billing_extraction.py` | Billing extraction integration tests (12 cases) |
-| `scripts/test_billing_stress.py` | Billing extraction stress tests (15 cases) |
+| `scripts/test_billing_extraction.py` | Billing extraction basic integration tests (12 cases) |
+| `scripts/test_billing_stress.py` | Billing extraction stress tests (15 cases, 80% pass target) |
 
 ## Clinic Deployment
 
@@ -389,7 +389,7 @@ Multi-user: profile_service_url (in room_config.json), active_physician_id.
 | Medplum | 8103 | EMR/FHIR |
 | MIIS | 7843 | Medical illustration images |
 | Gemini | (external) | AI image generation (`gemini-3.1-flash-image-preview`) via `generativelanguage.googleapis.com` |
-| ESP32 Sensor | (per-room) | Room presence (mmWave + thermal + CO2). Room 6: `http://172.16.100.37`. Configured per room in admin panel |
+| ESP32 Sensor | (per-room) | Room presence (mmWave + thermal + CO2). WiFi bridge or USB serial (XIAO ESP32-C3, port `/dev/cu.usbmodem21201` on Room 6). Configured per room in admin panel |
 
 ## Frontend Structure
 
