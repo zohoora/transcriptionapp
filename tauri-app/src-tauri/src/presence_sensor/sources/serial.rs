@@ -86,6 +86,24 @@ pub fn parse_jybss(line: &str) -> Option<bool> {
     }
 }
 
+/// Parse JSON output from XIAO ESP32-C3 mmWave firmware (LD2410).
+/// Expects lines like: `{"present":true,"status":2,"move_dist_cm":75,...}`
+/// Ignores status/diagnostic lines (total_bytes, event, hex_dump).
+pub fn parse_xiao_json(line: &str) -> Option<bool> {
+    let trimmed = line.trim();
+    if !trimmed.starts_with('{') || !trimmed.contains("\"present\"") {
+        return None;
+    }
+    // Fast path: look for "present":true or "present":false without full JSON parse
+    if trimmed.contains("\"present\":true") {
+        Some(true)
+    } else if trimmed.contains("\"present\":false") {
+        Some(false)
+    } else {
+        None
+    }
+}
+
 /// Serial sensor source for direct USB-UART connection
 pub struct SerialSource {
     port: String,
@@ -184,7 +202,8 @@ async fn serial_reader_loop(
                             continue;
                         }
 
-                        if let Some(raw) = parse_jybss(line) {
+                        let presence = parse_jybss(line).or_else(|| parse_xiao_json(line));
+                        if let Some(raw) = presence {
                             let _ = reading_tx.blocking_send(SensorReading {
                                 sensor_type: SensorType::MmWave,
                                 timestamp: Instant::now(),
@@ -257,6 +276,32 @@ mod tests {
         if let Some(ref port) = result {
             assert_ne!(port, "/dev/cu.nonexistent-9999");
         }
+    }
+
+    #[test]
+    fn test_parse_xiao_json_present() {
+        assert_eq!(parse_xiao_json(r#"{"present":true,"status":2,"move_dist_cm":75}"#), Some(true));
+        assert_eq!(parse_xiao_json(r#"{"present":true,"status":3,"move_dist_cm":80,"move_energy":100,"still_dist_cm":75,"still_energy":100,"det_dist_cm":60}"#), Some(true));
+    }
+
+    #[test]
+    fn test_parse_xiao_json_absent() {
+        assert_eq!(parse_xiao_json(r#"{"present":false,"status":0,"move_dist_cm":0,"move_energy":0}"#), Some(false));
+    }
+
+    #[test]
+    fn test_parse_xiao_json_ignores_status_lines() {
+        assert_eq!(parse_xiao_json(r#"{"total_bytes":2438,"frames":106,"baud":256000,"buf_len":19}"#), None);
+        assert_eq!(parse_xiao_json(r#"{"event":"boot","board":"xiao_esp32c3"}"#), None);
+        assert_eq!(parse_xiao_json(r#"{"event":"trying_baud","baud":115200}"#), None);
+        assert_eq!(parse_xiao_json(r#"{"hex_dump":"F4 F3","len":2}"#), None);
+    }
+
+    #[test]
+    fn test_parse_xiao_json_garbage() {
+        assert_eq!(parse_xiao_json("garbage"), None);
+        assert_eq!(parse_xiao_json(""), None);
+        assert_eq!(parse_xiao_json("$JYBSS,1"), None);
     }
 
     #[test]
