@@ -1,6 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import { getCurrentWindow } from '@tauri-apps/api/window';
 import { writeText } from '@tauri-apps/plugin-clipboard-manager';
 import { formatErrorMessage } from '../utils';
 
@@ -54,7 +53,7 @@ export function PatientHandoutEditor() {
   }, [content]);
 
   const handlePrint = useCallback(() => { window.print(); }, []);
-  const handleClose = useCallback(async () => { await getCurrentWindow().close(); }, []);
+  const handleClose = useCallback(() => { window.close(); }, []);
 
   return (
     <>

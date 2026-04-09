@@ -1,6 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { listen } from '@tauri-apps/api/event';
-import { getCurrentWindow } from '@tauri-apps/api/window';
 import { downloadBase64Image } from '../utils';
 
 /**
@@ -50,7 +49,7 @@ export default function ImageViewerWindow() {
   }, []);
 
   const handleClose = useCallback(async () => {
-    await getCurrentWindow().close();
+    window.close();
   }, []);
 
   if (!imageBase64) {
