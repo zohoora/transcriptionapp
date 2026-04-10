@@ -3,7 +3,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { writeText } from '@tauri-apps/plugin-clipboard-manager';
 import type { BillingRecord, BillingCode, BillingContext, OhipCodeSearchResult, DiagnosticCodeSearchResult, BillingCategory } from '../../types';
 import { VISIT_SETTING_OPTIONS } from '../../types';
-import { formatCents, confidenceBadgeClass, OHIP_CODE_CRITERIA, findConflicts, findAllConflicts } from './billingUtils';
+import { formatCents, confidenceBadgeClass, OHIP_CODE_CRITERIA, ADDON_CODE_PAIRS, findConflicts, findAllConflicts } from './billingUtils';
 
 interface BillingTabProps {
   record: BillingRecord | null;
@@ -135,6 +135,72 @@ export const BillingTab: React.FC<BillingTabProps> = ({
 
   const handleQuantityChange = useCallback((index: number, delta: number) => {
     if (!record) return;
+    const code = record.codes[index];
+    if (!code) return;
+
+    const pair = ADDON_CODE_PAIRS[code.code];
+
+    // Base code with a known add-on: redirect +/- to the add-on code
+    if (pair) {
+      let codes = [...record.codes];
+      const addonIdx = codes.findIndex(c => c.code === pair.addonCode);
+
+      if (delta > 0) {
+        // Increase: add or increment the add-on code
+        if (addonIdx >= 0) {
+          const currentQty = codes[addonIdx].quantity ?? 1;
+          if (currentQty < pair.maxAddonQty) {
+            codes[addonIdx] = { ...codes[addonIdx], quantity: currentQty + 1 };
+          }
+        } else {
+          // Add-on not present yet — fetch its info via search and add it
+          invoke<OhipCodeSearchResult[]>('search_ohip_codes', { query: pair.addonCode })
+            .then(results => {
+              const match = results.find(r => r.code === pair.addonCode);
+              if (match && record) {
+                const newCode: BillingCode = {
+                  code: match.code,
+                  description: match.description,
+                  feeCents: match.feeCents,
+                  category: match.basket as BillingCategory,
+                  shadowPct: match.shadowPct,
+                  billableAmountCents: match.basket === 'in_basket'
+                    ? Math.round(match.feeCents * match.shadowPct / 100)
+                    : match.feeCents,
+                  confidence: 'high' as const,
+                  autoExtracted: false,
+                  afterHours: false,
+                  afterHoursPremiumCents: 0,
+                  quantity: 1,
+                };
+                // Insert add-on right after the base code
+                const insertIdx = index + 1;
+                const updatedCodes = [...record.codes];
+                updatedCodes.splice(insertIdx, 0, newCode);
+                recalcTotals({ ...record, codes: updatedCodes });
+              }
+            })
+            .catch(console.error);
+          return; // async — recalcTotals called in .then()
+        }
+      } else {
+        // Decrease: decrement or remove the add-on code
+        if (addonIdx >= 0) {
+          const currentQty = codes[addonIdx].quantity ?? 1;
+          if (currentQty <= 1) {
+            codes = codes.filter((_, i) => i !== addonIdx);
+          } else {
+            codes[addonIdx] = { ...codes[addonIdx], quantity: currentQty - 1 };
+          }
+        }
+        // If no add-on exists, do nothing (base stays at 1)
+      }
+
+      recalcTotals({ ...record, codes });
+      return;
+    }
+
+    // Regular code (no add-on pair): adjust quantity directly
     const updated = { ...record, codes: record.codes.map((c, i) => {
       if (i !== index) return c;
       const newQty = Math.max(1, Math.min(10, (c.quantity ?? 1) + delta));
@@ -431,13 +497,29 @@ export const BillingTab: React.FC<BillingTabProps> = ({
                       {code.afterHours && <span className="billing-after-hours" title="After-hours premium">AH</span>}
                     </td>
                     <td className="billing-qty">
-                      {record.status === 'draft' ? (
-                        <span className="qty-controls">
-                          <button className="qty-btn" onClick={() => handleQuantityChange(i, -1)} disabled={(code.quantity ?? 1) <= 1}>-</button>
-                          <span className="qty-value">{code.quantity ?? 1}</span>
-                          <button className="qty-btn" onClick={() => handleQuantityChange(i, 1)} disabled={(code.quantity ?? 1) >= 10}>+</button>
-                        </span>
-                      ) : (
+                      {record.status === 'draft' ? (() => {
+                        const pair = ADDON_CODE_PAIRS[code.code];
+                        if (pair) {
+                          // Base code: +/- controls the add-on code
+                          const addon = record.codes.find(c => c.code === pair.addonCode);
+                          const addonQty = addon ? (addon.quantity ?? 1) : 0;
+                          return (
+                            <span className="qty-controls">
+                              <button className="qty-btn" onClick={() => handleQuantityChange(i, -1)} disabled={addonQty <= 0}>-</button>
+                              <span className="qty-value" title={addonQty > 0 ? `1 base + ${addonQty} add-on` : '1 base'}>{1 + addonQty}</span>
+                              <button className="qty-btn" onClick={() => handleQuantityChange(i, 1)} disabled={addonQty >= pair.maxAddonQty}>+</button>
+                            </span>
+                          );
+                        }
+                        // Regular code or add-on: standard quantity controls
+                        return (
+                          <span className="qty-controls">
+                            <button className="qty-btn" onClick={() => handleQuantityChange(i, -1)} disabled={(code.quantity ?? 1) <= 1}>-</button>
+                            <span className="qty-value">{code.quantity ?? 1}</span>
+                            <button className="qty-btn" onClick={() => handleQuantityChange(i, 1)} disabled={(code.quantity ?? 1) >= 10}>+</button>
+                          </span>
+                        );
+                      })() : (
                         <span>{code.quantity ?? 1}</span>
                       )}
                     </td>

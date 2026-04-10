@@ -1,5 +1,16 @@
 import type { BillingConfidence, BillingStatus, CapWarningLevel } from '../../types';
 
+/**
+ * Base → Add-on code pairs. When the user increases quantity on a base code,
+ * the base stays at 1 and the add-on code is added/incremented instead.
+ */
+export const ADDON_CODE_PAIRS: Record<string, { addonCode: string; maxAddonQty: number }> = {
+  'G370A': { addonCode: 'G371A', maxAddonQty: 5 },  // Joint injection → additional joints
+  'G384A': { addonCode: 'G385A', maxAddonQty: 2 },  // Trigger point → additional sites
+  'G231A': { addonCode: 'G223A', maxAddonQty: 5 },  // Nerve block peripheral → additional
+  'G373A': { addonCode: 'G372A', maxAddonQty: 5 },  // IM injection sole → additional with visit
+};
+
 export function formatCents(cents: number): string {
   return `$${(cents / 100).toFixed(2)}`;
 }

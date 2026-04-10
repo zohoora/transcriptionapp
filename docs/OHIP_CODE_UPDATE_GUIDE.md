@@ -2,9 +2,9 @@
 
 How to update the AMI Assist billing code database when the Ontario Schedule of Benefits changes.
 
-**Last updated:** April 7, 2026
+**Last updated:** April 9, 2026
 **Current SOB:** March 9, 2026 (effective April 1, 2026)
-**Current database:** 206 codes (145 in-basket + 61 out-of-basket)
+**Current database:** 234 codes (145 in-basket + 89 out-of-basket) + 562 diagnostic codes
 
 ---
 

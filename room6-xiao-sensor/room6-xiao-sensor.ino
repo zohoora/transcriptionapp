@@ -45,6 +45,54 @@ void tryBaud(int baud) {
   delay(500);
 }
 
+// ── LD2410 configuration commands ──────────────────────────────
+// Command frame: FD FC FB FA [len_lo len_hi] [cmd data...] 04 03 02 01
+
+void sendLD2410Command(const uint8_t* data, size_t len) {
+  const uint8_t header[] = {0xFD, 0xFC, 0xFB, 0xFA};
+  const uint8_t footer[] = {0x04, 0x03, 0x02, 0x01};
+  radarSerial.write(header, 4);
+  uint16_t dlen = len;
+  radarSerial.write((uint8_t)(dlen & 0xFF));
+  radarSerial.write((uint8_t)(dlen >> 8));
+  radarSerial.write(data, len);
+  radarSerial.write(footer, 4);
+  radarSerial.flush();
+  delay(100);
+}
+
+void enableConfig() {
+  const uint8_t cmd[] = {0xFF, 0x00, 0x01, 0x00};
+  sendLD2410Command(cmd, 4);
+}
+
+void endConfig() {
+  const uint8_t cmd[] = {0xFE, 0x00};
+  sendLD2410Command(cmd, 2);
+}
+
+// Set max moving gates, max stationary gates, and no-one timeout (seconds)
+void setMaxGatesAndTimeout(uint8_t movingGates, uint8_t stationaryGates, uint16_t timeoutSecs) {
+  uint8_t cmd[] = {
+    0x60, 0x00,
+    0x00, 0x00, movingGates, 0x00, 0x00, 0x00,
+    0x01, 0x00, stationaryGates, 0x00, 0x00, 0x00,
+    0x02, 0x00, (uint8_t)(timeoutSecs & 0xFF), (uint8_t)(timeoutSecs >> 8), 0x00, 0x00
+  };
+  sendLD2410Command(cmd, 20);
+}
+
+// Configure LD2410: max range 4 gates (3m), no-one timeout 1 second
+void configureLD2410() {
+  Serial.println("{\"event\":\"configuring_ld2410\"}");
+  enableConfig();
+  delay(100);
+  setMaxGatesAndTimeout(4, 4, 1);  // 4 gates = 3m range, 1s timeout
+  delay(100);
+  endConfig();
+  Serial.println("{\"event\":\"ld2410_configured\",\"max_gates\":4,\"range_m\":3,\"timeout_s\":1}");
+}
+
 void setup() {
   Serial.begin(115200);
   delay(1500);
@@ -161,6 +209,7 @@ void loop() {
     Serial.print("{\"event\":\"baud_locked\",\"baud\":");
     Serial.print(currentBaud);
     Serial.println("}");
+    configureLD2410();
   }
 
   // Status report every 2 seconds

@@ -76,7 +76,7 @@ cd profile-service && cargo test           # Tests
 
 # Release (triggers auto-update for all rooms)
 # Bump version in tauri.conf.json + package.json + Cargo.toml, then:
-git tag v0.10.4
+git tag v0.10.11
 git push origin main --tags
 ```
 

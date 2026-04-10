@@ -2183,6 +2183,45 @@ pub static OHIP_CODES: &[OhipCode] = &[
         after_hours_eligible: false,
         max_per_year: None,
     },
+    // ── Codes added from April 2026 audit (28 codes) ─────────────────────────
+    // Verified against SOB PDF March 9, 2026 and FHO contract
+    // Epidural/spinal injections (Section J — open to all physicians)
+    OhipCode { code: "G246A", description: "Percutaneous Lumbar Epidural Injection", ffs_rate_cents: 15000, basket: Basket::Out, shadow_pct: 100, category: CodeCategory::Procedure, after_hours_eligible: false, max_per_year: None },
+    OhipCode { code: "G117A", description: "Percutaneous Thoracic Epidural Injection", ffs_rate_cents: 17000, basket: Basket::Out, shadow_pct: 100, category: CodeCategory::Procedure, after_hours_eligible: false, max_per_year: None },
+    OhipCode { code: "G119A", description: "Percutaneous Cervical Epidural Injection", ffs_rate_cents: 19000, basket: Basket::Out, shadow_pct: 100, category: CodeCategory::Procedure, after_hours_eligible: false, max_per_year: None },
+    OhipCode { code: "G918A", description: "Percutaneous Caudal Epidural Injection", ffs_rate_cents: 7420, basket: Basket::Out, shadow_pct: 100, category: CodeCategory::Procedure, after_hours_eligible: false, max_per_year: None },
+    // Epidural add-ons
+    OhipCode { code: "E440A", description: "Epidural with Fluoroscopy Contrast (add-on)", ffs_rate_cents: 3000, basket: Basket::Out, shadow_pct: 100, category: CodeCategory::Procedure, after_hours_eligible: false, max_per_year: None },
+    OhipCode { code: "E441A", description: "Epidural at Previous Spinal Surgery Site (add-on)", ffs_rate_cents: 1660, basket: Basket::Out, shadow_pct: 100, category: CodeCategory::Procedure, after_hours_eligible: false, max_per_year: None },
+    OhipCode { code: "E442A", description: "Epidural Transforaminal Technique (add-on)", ffs_rate_cents: 2000, basket: Basket::Out, shadow_pct: 100, category: CodeCategory::Procedure, after_hours_eligible: false, max_per_year: None },
+    OhipCode { code: "E443A", description: "Epidural Catheter for Continuous Infusion (add-on)", ffs_rate_cents: 8000, basket: Basket::Out, shadow_pct: 100, category: CodeCategory::Procedure, after_hours_eligible: false, max_per_year: None },
+    // Nerve blocks
+    OhipCode { code: "G060A", description: "Peripheral Nerve Block, Major", ffs_rate_cents: 5500, basket: Basket::Out, shadow_pct: 100, category: CodeCategory::Procedure, after_hours_eligible: false, max_per_year: None },
+    OhipCode { code: "G061A", description: "Peripheral Nerve Block, Minor", ffs_rate_cents: 3000, basket: Basket::Out, shadow_pct: 100, category: CodeCategory::Procedure, after_hours_eligible: false, max_per_year: None },
+    OhipCode { code: "G068A", description: "Epidural Blood Patch", ffs_rate_cents: 12500, basket: Basket::Out, shadow_pct: 100, category: CodeCategory::Procedure, after_hours_eligible: false, max_per_year: None },
+    OhipCode { code: "G248A", description: "Caudal Single Injection", ffs_rate_cents: 5500, basket: Basket::Out, shadow_pct: 100, category: CodeCategory::Procedure, after_hours_eligible: false, max_per_year: None },
+    // Office injections/procedures
+    OhipCode { code: "G328A", description: "Aspiration of Bursa or Complex Joint (with or without injection)", ffs_rate_cents: 3980, basket: Basket::Out, shadow_pct: 100, category: CodeCategory::Procedure, after_hours_eligible: false, max_per_year: None },
+    OhipCode { code: "G396A", description: "Injection of Extensive Keloids", ffs_rate_cents: 2490, basket: Basket::Out, shadow_pct: 100, category: CodeCategory::Procedure, after_hours_eligible: false, max_per_year: None },
+    OhipCode { code: "G536A", description: "Sclerotherapy Including One Post-Injection Visit (unilateral)", ffs_rate_cents: 7785, basket: Basket::Out, shadow_pct: 100, category: CodeCategory::Procedure, after_hours_eligible: false, max_per_year: None },
+    OhipCode { code: "G875A", description: "Botulinum Toxin Injection, First Injection", ffs_rate_cents: 4000, basket: Basket::Out, shadow_pct: 100, category: CodeCategory::Procedure, after_hours_eligible: false, max_per_year: None },
+    OhipCode { code: "G063A", description: "Initiation of Outpatient Continuous Nerve Block Infusion", ffs_rate_cents: 2920, basket: Basket::Out, shadow_pct: 100, category: CodeCategory::Procedure, after_hours_eligible: false, max_per_year: None },
+    OhipCode { code: "G550A", description: "Pessary Care — Removal, Care and Reinsertion", ffs_rate_cents: 1000, basket: Basket::Out, shadow_pct: 100, category: CodeCategory::Procedure, after_hours_eligible: false, max_per_year: None },
+    // Office diagnostics
+    OhipCode { code: "G900A", description: "Residual Urine Measurement by Ultrasound", ffs_rate_cents: 1270, basket: Basket::Out, shadow_pct: 100, category: CodeCategory::Procedure, after_hours_eligible: false, max_per_year: None },
+    OhipCode { code: "L805A", description: "Aspiration Biopsy (lung, breast, thyroid, prostate)", ffs_rate_cents: 9335, basket: Basket::Out, shadow_pct: 100, category: CodeCategory::Procedure, after_hours_eligible: false, max_per_year: None },
+    // Obstetrical
+    OhipCode { code: "P023A", description: "Oxytocin Infusion for Induction or Augmentation of Labour", ffs_rate_cents: 6775, basket: Basket::Out, shadow_pct: 100, category: CodeCategory::Procedure, after_hours_eligible: false, max_per_year: None },
+    OhipCode { code: "P025A", description: "Non Stress Test", ffs_rate_cents: 965, basket: Basket::Out, shadow_pct: 100, category: CodeCategory::Screening, after_hours_eligible: false, max_per_year: None },
+    // Early pregnancy management
+    OhipCode { code: "A920A", description: "Medical Management of Early Pregnancy — Initial", ffs_rate_cents: 19370, basket: Basket::Out, shadow_pct: 100, category: CodeCategory::Assessment, after_hours_eligible: false, max_per_year: None },
+    OhipCode { code: "A922A", description: "Medical Management of Ectopic Pregnancy — Initial", ffs_rate_cents: 24975, basket: Basket::Out, shadow_pct: 100, category: CodeCategory::Assessment, after_hours_eligible: false, max_per_year: None },
+    // Catheter procedures
+    OhipCode { code: "Z361A", description: "Insertion of Indwelling Catheter", ffs_rate_cents: 20000, basket: Basket::Out, shadow_pct: 100, category: CodeCategory::Procedure, after_hours_eligible: false, max_per_year: None },
+    OhipCode { code: "Z362A", description: "Removal of Indwelling Catheter", ffs_rate_cents: 20000, basket: Basket::Out, shadow_pct: 100, category: CodeCategory::Procedure, after_hours_eligible: false, max_per_year: None },
+    // Other
+    OhipCode { code: "Z346A", description: "Transtracheal Aspiration", ffs_rate_cents: 2235, basket: Basket::Out, shadow_pct: 100, category: CodeCategory::Procedure, after_hours_eligible: false, max_per_year: None },
+    OhipCode { code: "Z459A", description: "Arterial Puncture for Blood Gas Analysis", ffs_rate_cents: 1020, basket: Basket::Out, shadow_pct: 100, category: CodeCategory::Procedure, after_hours_eligible: false, max_per_year: None },
 ];
 
 // ── O(1) lookup map ────────────────────────────────────────────────────────
@@ -2410,8 +2449,8 @@ mod tests {
 
     #[test]
     fn test_code_count() {
-        // 206 codes from April 2026 SOB (145 in-basket + 61 out-of-basket)
-        assert_eq!(all_codes().len(), 206);
+        // 234 codes from April 2026 SOB (145 in-basket + 89 out-of-basket)
+        assert_eq!(all_codes().len(), 234);
     }
 
     #[test]
