@@ -819,7 +819,11 @@ pub static OHIP_CODES: &[OhipCode] = &[
     },
     OhipCode {
         code: "G552A",
-        description: "IUD Removal",
+        // SOB page J46: "Removal of intrauterine contraceptive device".
+        // SOB page V5 clarifies "without GA" — used in the office without
+        // general anaesthetic. The GA version is Z735 ($56.70). G552 is not
+        // eligible for payment on the same day as G378 (IUD insertion).
+        description: "IUD Removal (without general anaesthetic)",
         ffs_rate_cents: 2380, // $23.80
         basket: Basket::In,
         shadow_pct: 50,

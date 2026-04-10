@@ -100,28 +100,67 @@ def extract_sob_codes(text):
             '_line': i,
         })
 
-    # Collapse to primary entry per code + track dual-description codes
+    # Collapse to primary entry per code + track dual-description codes.
+    # Uses _normalize_desc() to strip cross-references so that e.g.
+    #   "when performed outside hospital, to G370 add"
+    #   "when performed outside hospital, to G328 add"
+    # are recognized as the same semantic meaning (E542 tray fee billable
+    # from multiple bases) and NOT flagged as a dual-description code.
     codes = {}
     dual_description_codes = {}
     for code, entries in all_occurrences.items():
-        # Deduplicate by (normalized description, fee) — keeps only genuinely distinct rows
-        seen = set()
-        unique = []
+        # Group by (normalized description, fee)
+        groups = defaultdict(list)
         for e in entries:
-            key = (re.sub(r'\s+', ' ', e['description']).strip().lower(), e['fee'])
-            if key not in seen:
-                seen.add(key)
-                unique.append(e)
+            norm = _normalize_desc(e['description'])
+            if not norm:
+                # Fully-cross-reference rows (e.g., "or G918 add") — skip
+                continue
+            groups[(norm, e['fee'])].append(e)
 
-        # Primary entry: the highest-fee occurrence (matches the old behavior)
-        codes[code] = max(unique, key=lambda e: e['fee'])
+        if not groups:
+            # All rows stripped — keep the longest original as a best-effort
+            codes[code] = max(entries, key=lambda e: len(e['description']))
+            continue
 
-        # Flag if the code appears with 2+ genuinely different descriptions.
-        # This is the G372 case — two valid meanings at the same fee.
-        if len(unique) >= 2:
-            dual_description_codes[code] = unique
+        # One representative (longest original) per semantic group
+        unique_meanings = [
+            max(group, key=lambda e: len(e['description']))
+            for group in groups.values()
+        ]
+
+        # Primary entry: highest-fee meaning (matches old behavior)
+        codes[code] = max(unique_meanings, key=lambda e: e['fee'])
+
+        # Flag only when there are 2+ *semantically* distinct meanings.
+        # This is the G372 case: "with visit (each injection)" AND
+        # "each additional injection" — same fee, different billable contexts.
+        if len(unique_meanings) >= 2:
+            dual_description_codes[code] = unique_meanings
 
     return codes, dual_description_codes
+
+
+def _normalize_desc(desc):
+    """
+    Normalize an SOB description for semantic duplicate detection.
+
+    Strips cross-references ("to G370", "or G918"), parenthetical page
+    references ("(see page A10)"), leading bullets/dashes, trailing "add",
+    and whitespace/dots so that cosmetic variants collapse to a single key.
+    """
+    d = desc.lower()
+    d = re.sub(r'\.{2,}', '', d)                              # dot leaders
+    d = re.sub(r'\s*\(see [^)]*\)', '', d)                    # "(see page A10)"
+    # Cross-references: "to G370", "or G918", "to N504 or N505", "to S299, S300 or S309"
+    d = re.sub(r'\b(to|or)\s+[a-z]\d{3}[a-z]?(?:\s*(?:or|,)\s*[a-z]\d{3}[a-z]?)*\b', '', d)
+    d = re.sub(r'\*', '', d)                                  # footnote asterisks
+    d = re.sub(r'(?<=[a-z])-(?=[a-z])', '', d)                # compound hyphens ("gastro-enterostomy" → "gastroenterostomy")
+    d = re.sub(r'\bof\s+hospital\b', 'hospital', d)           # "outside of hospital" → "outside hospital"
+    d = re.sub(r'^[\s\-*#]+', '', d)                          # leading bullets/dashes
+    d = re.sub(r'\s+add\s*$', '', d)                          # trailing "add"
+    d = re.sub(r'\s+', ' ', d).strip().strip(',').strip()
+    return d
 
 # ── Phase 2: FHO basket extraction ──────────────────────────────────────────
 
