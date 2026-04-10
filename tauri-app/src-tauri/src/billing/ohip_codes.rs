@@ -627,7 +627,11 @@ pub static OHIP_CODES: &[OhipCode] = &[
     },
     OhipCode {
         code: "G372A",
-        description: "IM/SC/Intradermal \u{2014} Each Additional Injection (with visit)",
+        // Note: SOB lists G372 twice on page J54 — "with visit (each injection)"
+        // (primary, billed per injection alongside an assessment) AND "each additional
+        // injection" (secondary, when paired with G373A in sole-reason scenarios).
+        // Both meanings are billed at the same $4.55 rate.
+        description: "IM/SC/Intradermal Injection \u{2014} with visit (each injection)",
         ffs_rate_cents: 455, // $4.55
         basket: Basket::In,
         shadow_pct: 30,

@@ -2,8 +2,8 @@
 
 How to update the AMI Assist billing code database when the Ontario Schedule of Benefits changes.
 
-**Last updated:** April 9, 2026
-**Current SOB:** March 9, 2026 (effective April 1, 2026)
+**Last updated:** April 10, 2026
+**Current SOB:** March 27, 2026 (effective April 1, 2026) — `docs/billing/references/moh-schedule-benefit-2026-03-27.pdf`
 **Current database:** 234 codes (145 in-basket + 89 out-of-basket) + 562 diagnostic codes
 
 ---
@@ -22,14 +22,18 @@ Check for new versions at: https://www.ontario.ca/page/ohip-schedule-benefits-an
 
 **Never use LLM-generated data for rates, descriptions, or code classifications.** Always extract from these documents:
 
-| Document | What it provides | Where to get it |
-|----------|-----------------|-----------------|
-| **Schedule of Benefits PDF** | Fee rates and descriptions for every OHIP code | ontario.ca/page/ohip-schedule-benefits-and-fees |
-| **OMA "Fee Codes in FHO and FHN Basket"** | Which codes are in-basket (capitation + shadow billing) | oma.org member resources (PDF) |
-| **FHO Contract Appendix I** | Schedule 2: core service codes, Schedule 2B: 50% shadow codes, Schedule 3: hospital codes | `/Users/backoffice/oma/fho-contract.pdf` |
-| **OMA FHO+ Hourly Rate Reference Guide** | Q310-Q313 rates and cap rules | `/Users/backoffice/oma/fho-hourly-rate-reference-guide.pdf` |
+| Document | What it provides | Location |
+|----------|-----------------|----------|
+| **Schedule of Benefits PDF (current: March 27, 2026)** | Fee rates and descriptions for every OHIP code | `docs/billing/references/moh-schedule-benefit-2026-03-27.pdf` |
+| **FHO Contract (Appendix I)** | Schedule 2: core service codes, Schedule 2B: 50% shadow codes, Schedule 3: hospital codes | `docs/billing/references/fho-contract.pdf` |
+| **OMA FHO+ Hourly Rate Reference Guide** | Q310-Q313 rates and cap rules | `docs/billing/references/fho-hourly-rate-reference-guide.pdf` |
+| **2026 PPC (Primary Care Physicians)** | FHO+ compensation summary | `docs/billing/references/2026 PPC.pdf` |
+| **Physician's Guide to Uninsured Services** | What OHIP does NOT cover (reference only — not billed through this app) | `docs/billing/references/physicians-guide-to-uninsured-services.pdf` |
+| **Schedule of Fees — Uninsured Services** | Suggested fees for uninsured services (reference only) | `docs/billing/references/schedule-of-fees-suggested-uninsured.pdf` |
 
-Local copies of OMA documents are in `/Users/backoffice/oma/`.
+All reference documents are version-controlled in the repo under `docs/billing/references/`. When a new SOB or FHO contract is released, drop the new PDF into that directory, update the filename constants in `scripts/audit_ohip_codes.py` (`SOB_PDF`, `FHO_PDF`), and re-run the audit.
+
+Check ontario.ca for new SOB versions: https://www.ontario.ca/page/ohip-schedule-benefits-and-fees
 
 ---
 
@@ -186,8 +190,10 @@ git push origin main
 | `scripts/verify_ohip_codes.py` | Verifies database against all source documents |
 | `tauri-app/src-tauri/src/billing/ohip_codes.rs` | The OHIP code database (Rust) |
 | `tauri-app/src/components/billing/billingUtils.ts` | Frontend tooltips + exclusion groups (TypeScript) |
-| `/Users/backoffice/oma/fho-contract.pdf` | FHO contract with Schedules 2, 2A, 2B, 3 |
-| `/Users/backoffice/oma/fho-hourly-rate-reference-guide.pdf` | Q310-Q313 time-based billing details |
+| `docs/billing/references/moh-schedule-benefit-2026-03-27.pdf` | Current Schedule of Benefits (authoritative source for fees and descriptions) |
+| `docs/billing/references/fho-contract.pdf` | FHO contract with Schedules 2, 2A, 2B, 3 |
+| `docs/billing/references/fho-hourly-rate-reference-guide.pdf` | Q310-Q313 time-based billing details |
+| `docs/billing/references/2026 PPC.pdf` | Primary Care Physicians compensation summary (FHO+ context) |
 
 ---
 
@@ -217,6 +223,48 @@ The `verify_ohip_codes.py` script catches misclassifications.
 
 ---
 
+## Lessons Learned
+
+### Codes with multiple descriptions in the SOB
+
+**A single OHIP code can appear more than once in the SOB with genuinely different descriptions.** This happens when one code covers multiple billable scenarios that share a fee.
+
+**Classic example — G372** (page J54, both in the 2025 and March 2026 SOB):
+
+```
+G372 - with visit (each injection) ...... $4.55
+G373 - sole reason (first injection) .... $7.90
+G372 - each additional injection ........ $4.55
+```
+
+G372 has two valid meanings at the same fee:
+
+1. **Primary:** billed alongside an assessment code (e.g., A007A) — one G372A per injection performed during the visit.
+2. **Secondary:** billed alongside G373A (sole-reason scenario) as "each additional" injection beyond the first.
+
+Earlier versions of our database stored G372A with the secondary description only (`"Each Additional Injection (with visit)"`), which mashed up both meanings incorrectly and confused clinicians reading the billing tab — they would ask "where's the first injection code?" when in reality G372A *was* the first injection code when billed with a visit.
+
+The fix: our G372A description now matches SOB primary wording verbatim (`"IM/SC/Intradermal Injection — with visit (each injection)"`), with a Rust code comment documenting the dual meaning. The secondary "each additional" meaning is still handled correctly by the `ADDON_CODE_PAIRS['G373A'] → G372A` mapping in `billingUtils.ts` — clicking `+` on G373A adds G372A, matching the sole-reason multi-injection scenario.
+
+### Automatic detection via the audit script
+
+`scripts/audit_ohip_codes.py` detects this class of issue automatically. The `extract_sob_codes()` function now tracks **all** occurrences of every code in the SOB (not just the last-seen or highest-fee match), and any code with 2+ genuinely distinct description rows is reported in the audit under **Section 6: Codes With Multiple Descriptions In SOB**.
+
+When a new SOB is released:
+
+```bash
+python3 scripts/audit_ohip_codes.py
+# Review Section 6 in /tmp/ohip_audit_report.txt
+# For each flagged code:
+#   1. Confirm the DB description captures the primary/dominant meaning
+#   2. Add a Rust code comment documenting the secondary meaning(s)
+#   3. Verify the ADDON_CODE_PAIRS logic (if applicable) handles the secondary case
+```
+
+This is the tripwire that would have caught the G372 description bug before it shipped.
+
+---
+
 ## Key Principles
 
 1. **Never trust LLM-generated rates or descriptions.** Always extract from the actual PDF documents.
@@ -224,3 +272,4 @@ The `verify_ohip_codes.py` script catches misclassifications.
 3. **Run verification before committing.** The `verify_ohip_codes.py` script must pass with 0 errors.
 4. **The FHO contract is authoritative for basket/shadow classification.** The SOB is authoritative for rates and descriptions. The OMA basket list is a convenience summary of the contract.
 5. **Keep the scripts updated.** When the source document formats change, update the extraction scripts rather than doing manual work.
+6. **Review Section 6 of the audit report** for codes with multiple descriptions. A single "latest match wins" extraction silently loses the other meaning.

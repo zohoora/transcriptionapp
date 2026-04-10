@@ -14,8 +14,9 @@ from collections import Counter, defaultdict
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).parent.parent
-SOB_PDF = Path("/Users/backoffice/oma/moh-schedule-benefit-2026-03-27.pdf")
-FHO_PDF = Path("/Users/backoffice/oma/fho-contract.pdf")
+REFERENCES_DIR = PROJECT_ROOT / "docs/billing/references"
+SOB_PDF = REFERENCES_DIR / "moh-schedule-benefit-2026-03-27.pdf"
+FHO_PDF = REFERENCES_DIR / "fho-contract.pdf"
 OHIP_CODES_RS = PROJECT_ROOT / "tauri-app/src-tauri/src/billing/ohip_codes.rs"
 
 # ── PDF extraction ───────────────────────────────────────────────────────────
@@ -28,6 +29,17 @@ def pdf_to_text(path, layout=True):
 # ── Phase 1: Extract ALL codes from SOB with page-section mapping ────────────
 
 def extract_sob_codes(text):
+    """
+    Extract OHIP codes with fees from the SOB text.
+
+    Returns:
+        codes: dict[code] → primary entry (highest-fee occurrence per code)
+        dual_description_codes: dict[code] → list of distinct entries, for codes
+            that appear in the SOB multiple times with DIFFERENT descriptions
+            (e.g., G372 is listed twice — "with visit (each injection)" AND
+            "each additional injection"). These need careful DB description
+            review to avoid losing one of the meanings.
+    """
     lines = text.split('\n')
 
     # Build line→SOB-page mapping from page footers
@@ -39,8 +51,8 @@ def extract_sob_codes(text):
                     page_at_line[i] = m
                     break
 
-    # Extract codes with fees, mapping each to its nearest SOB page section
-    codes = {}
+    # Collect ALL occurrences per code (for duplicate-description detection)
+    all_occurrences = defaultdict(list)
     code_pattern = re.compile(r'#?\s*([A-Z]\d{3}[A-Z]?)\s+(.+?)\s+(\d+\.\d{2})\s*$')
 
     for i, line in enumerate(lines):
@@ -62,6 +74,15 @@ def extract_sob_codes(text):
         if fee <= 0:
             continue
 
+        # Skip lines where the "description" is just "add" (possibly surrounded
+        # by dots/dashes/spaces). These are add-on references like
+        #   "G918 ......................... add   116.10"
+        # where G918 is being cross-referenced from E833's add-on definition,
+        # NOT a new G918 definition. Matching these produced false-positive
+        # fee mismatches for G918A, G117A, etc. (e.g., $74.20 vs $116.10).
+        if re.match(r'^[\s\.\-]*add[\s\.\-]*$', desc.lower()):
+            continue
+
         # Find SOB section from nearest page marker above
         section = 'Unknown'
         for search in range(i, max(i - 80, 0), -1):
@@ -71,15 +92,36 @@ def extract_sob_codes(text):
 
         has_hash = line.lstrip().startswith('#')
 
-        if code not in codes or fee > codes[code]['fee']:
-            codes[code] = {
-                'fee': fee,
-                'description': desc[:100],
-                'section': section,
-                'has_hash': has_hash,
-            }
+        all_occurrences[code].append({
+            'fee': fee,
+            'description': desc[:100],
+            'section': section,
+            'has_hash': has_hash,
+            '_line': i,
+        })
 
-    return codes
+    # Collapse to primary entry per code + track dual-description codes
+    codes = {}
+    dual_description_codes = {}
+    for code, entries in all_occurrences.items():
+        # Deduplicate by (normalized description, fee) — keeps only genuinely distinct rows
+        seen = set()
+        unique = []
+        for e in entries:
+            key = (re.sub(r'\s+', ' ', e['description']).strip().lower(), e['fee'])
+            if key not in seen:
+                seen.add(key)
+                unique.append(e)
+
+        # Primary entry: the highest-fee occurrence (matches the old behavior)
+        codes[code] = max(unique, key=lambda e: e['fee'])
+
+        # Flag if the code appears with 2+ genuinely different descriptions.
+        # This is the G372 case — two valid meanings at the same fee.
+        if len(unique) >= 2:
+            dual_description_codes[code] = unique
+
+    return codes, dual_description_codes
 
 # ── Phase 2: FHO basket extraction ──────────────────────────────────────────
 
@@ -248,7 +290,7 @@ def main():
 
     # Phase 1
     print("Phase 1: Extracting codes from SOB...")
-    sob_codes = extract_sob_codes(sob_text)
+    sob_codes, dual_description_codes = extract_sob_codes(sob_text)
     # Store line numbers for GP classification
     code_pattern = re.compile(r'#?\s*([A-Z]\d{3}[A-Z]?)\s')
     for i, line in enumerate(sob_lines):
@@ -256,6 +298,8 @@ def main():
         if m and m.group(1) in sob_codes:
             sob_codes[m.group(1)]['_line'] = i
     print(f"  {len(sob_codes)} codes with fees extracted")
+    if dual_description_codes:
+        print(f"  {len(dual_description_codes)} codes with multiple distinct descriptions — see Section 6")
 
     # Phase 2
     print("Phase 2: Extracting FHO basket...")
@@ -382,6 +426,26 @@ def main():
         R.append(f"  ... +{len(missing_review)-30} more")
 
     R.append(f"\n{'='*80}")
+    R.append(f"SECTION 6: CODES WITH MULTIPLE DESCRIPTIONS IN SOB — {len(dual_description_codes)}")
+    R.append(f"{'='*80}")
+    R.append("These codes appear more than once in the SOB with genuinely different")
+    R.append("descriptions — usually because a single code covers multiple billable")
+    R.append("scenarios. Review the DB description for each to make sure it captures")
+    R.append("all meanings OR document the dominant meaning with a code comment.")
+    R.append("")
+    R.append("Classic example: G372 is listed as both 'with visit (each injection)'")
+    R.append("and 'each additional injection' — same fee, different contexts.")
+    R.append("")
+    for code in sorted(dual_description_codes.keys()):
+        entries = dual_description_codes[code]
+        in_db = code in db or (code + 'A') in db
+        db_marker = "" if in_db else "  [NOT IN DB]"
+        R.append(f"  {code}{db_marker}")
+        for e in entries:
+            R.append(f"    ${e['fee']:>6.2f}  {e['description'][:72]}")
+        R.append("")
+
+    R.append(f"\n{'='*80}")
     R.append("SUMMARY")
     R.append(f"{'='*80}")
     R.append(f"  Missing GP-billable:     {len(missing_gp)}")
@@ -389,6 +453,7 @@ def main():
     R.append(f"  Basket mismatches:       {len(basket_mismatches)}")
     R.append(f"  Specialist-only:         {len(missing_specialist)}")
     R.append(f"  Needs manual review:     {len(missing_review)}")
+    R.append(f"  Dual-description codes:  {len(dual_description_codes)}")
 
     # Verify G246 is found
     g246 = [e for e in missing_gp if e['code'] == 'G246']
@@ -400,6 +465,10 @@ def main():
         'missing_gp_billable': missing_gp,
         'fee_mismatches': fee_mismatches,
         'basket_mismatches': basket_mismatches,
+        'dual_description_codes': {
+            code: [{k: v for k, v in e.items() if k != '_line'} for e in entries]
+            for code, entries in dual_description_codes.items()
+        },
     }, indent=2))
 
     print(f"\nReport: /tmp/ohip_audit_report.txt")

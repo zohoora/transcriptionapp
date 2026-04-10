@@ -367,11 +367,12 @@ Multi-user: profile_server_url + fallback_server_urls (in room_config.json), act
 | `~/.transcriptionapp/room_config.json` | Room config (room name, profile server URL, fallback URLs, room ID) |
 | `~/.transcriptionapp/cache/physicians.json` | Cached physician list from server |
 | `~/.transcriptionapp/cache/physician_{id}.json` | Cached individual physician settings |
-| `docs/OHIP_CODE_UPDATE_GUIDE.md` | OHIP code database update procedure (SOB PDF → extract → generate → verify) |
+| `docs/OHIP_CODE_UPDATE_GUIDE.md` | OHIP code database update procedure (SOB PDF → extract → generate → verify) + lessons learned |
+| `docs/billing/references/` | Authoritative PDF sources: current SOB, FHO contract, FHO+ hourly rate guide, PPC compensation summary, uninsured services references |
 | `scripts/extract_sob_fees.py` | Extract fee data from Schedule of Benefits PDF |
 | `scripts/generate_ohip_codes.py` | Generate `ohip_codes.rs` from extracted fees |
 | `scripts/verify_ohip_codes.py` | Verify OHIP code database against source data |
-| `scripts/audit_ohip_codes.py` | Comprehensive SOB audit — extracts ALL codes from PDF, cross-refs against DB, finds missing GP-billable codes |
+| `scripts/audit_ohip_codes.py` | Comprehensive SOB audit — extracts ALL codes from PDF, cross-refs against DB, finds missing GP-billable codes, flags dual-description codes (Section 6) |
 | `scripts/test_billing_extraction.py` | Billing extraction basic integration tests (12 cases) |
 | `scripts/test_billing_stress.py` | Billing extraction stress tests (15 cases, 80% pass target) |
 
