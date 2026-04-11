@@ -3,44 +3,10 @@ use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use tracing::debug;
 
-/// Map ISO 639-1 language code to the English name expected by the STT server.
-/// Empty string means auto-detect (server determines language from audio).
-pub fn iso_to_stt_language(iso: &str) -> &str {
-    match iso {
-        "auto" | "" => "", // Auto-detect — server determines language from audio
-        "en" => "English",
-        "fr" => "French",
-        "fa" | "per" => "Persian",
-        "es" => "Spanish",
-        "de" => "German",
-        "zh" => "Chinese",
-        "ar" => "Arabic",
-        "hi" => "Hindi",
-        "pt" => "Portuguese",
-        "it" => "Italian",
-        "ja" => "Japanese",
-        "ko" => "Korean",
-        "ru" => "Russian",
-        "nl" => "Dutch",
-        "pl" => "Polish",
-        "tr" => "Turkish",
-        "sv" => "Swedish",
-        "da" => "Danish",
-        "fi" => "Finnish",
-        "el" => "Greek",
-        "cs" => "Czech",
-        "ro" => "Romanian",
-        "hu" => "Hungarian",
-        "th" => "Thai",
-        "vi" => "Vietnamese",
-        "id" => "Indonesian",
-        "ms" => "Malay",
-        "tl" => "Filipino",
-        "mk" => "Macedonian",
-        "yue" => "Cantonese",
-        _ => "", // Auto-detect for unknown language codes
-    }
-}
+// STT language is always auto-detect. The Qwen backend determines the audio's
+// language from the waveform itself; passing an explicit language directive
+// was removed because it caused silence-hallucination artifacts when combined
+// with macOS Voice Isolation's zero-amplitude output.
 
 /// Charting mode: session-by-session or continuous all-day recording
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -101,7 +67,6 @@ impl std::fmt::Display for ShadowActiveMethod {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Settings {
     pub whisper_model: String,
-    pub language: String,
     pub input_device_id: Option<String>,
     pub output_format: String,
     pub vad_threshold: f32,
@@ -432,7 +397,6 @@ impl Default for Settings {
     fn default() -> Self {
         Self {
             whisper_model: "small".to_string(),
-            language: "auto".to_string(),
             input_device_id: None,
             output_format: "paragraphs".to_string(),
             vad_threshold: 0.5,
@@ -716,8 +680,6 @@ pub struct PhysicianSettings {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub charting_mode: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub language: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub image_source: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub gemini_api_key: Option<String>,
@@ -762,7 +724,6 @@ impl From<&crate::profile_client::PhysicianProfile> for PhysicianSettings {
             soap_format: p.soap_format.clone(),
             soap_custom_instructions: p.soap_custom_instructions.clone(),
             charting_mode: p.charting_mode.clone(),
-            language: p.language.clone(),
             image_source: p.image_source.clone(),
             gemini_api_key: p.gemini_api_key.clone(),
             auto_start_enabled: p.auto_start_enabled,
@@ -883,7 +844,6 @@ impl Settings {
             soap_format: Some(self.soap_format.clone()),
             soap_custom_instructions: if self.soap_custom_instructions.is_empty() { None } else { Some(self.soap_custom_instructions.clone()) },
             charting_mode: Some(self.charting_mode.to_string()),
-            language: Some(self.language.clone()),
             image_source: Some(self.image_source.clone()),
             gemini_api_key: if self.gemini_api_key.is_empty() { None } else { Some(self.gemini_api_key.clone()) },
             auto_start_enabled: Some(self.auto_start_enabled),
@@ -914,7 +874,6 @@ impl Settings {
             if v == "continuous" { self.charting_mode = ChartingMode::Continuous; }
             else { self.charting_mode = ChartingMode::Session; }
         }
-        if let Some(ref v) = phys.language { self.language = v.clone(); }
         if let Some(ref v) = phys.image_source { self.image_source = v.clone(); }
         if let Some(ref v) = phys.gemini_api_key { self.gemini_api_key = v.clone(); }
         if let Some(v) = phys.auto_start_enabled { self.auto_start_enabled = v; }
@@ -1066,7 +1025,7 @@ impl Settings {
         }
         // Physician
         for field in &["soap_custom_instructions", "soap_detail_level", "soap_format", "charting_mode",
-                       "language", "image_source", "gemini_api_key", "auto_start_enabled",
+                       "image_source", "gemini_api_key", "auto_start_enabled",
                        "auto_start_require_enrolled", "auto_start_required_role", "auto_end_enabled",
                        "auto_end_silence_ms", "output_format", "encounter_merge_enabled",
                        "encounter_check_interval_secs", "encounter_silence_trigger_secs",
@@ -1424,7 +1383,6 @@ mod tests {
         let config = Config::default();
         assert_eq!(config.schema_version, 1);
         assert_eq!(config.whisper_model, "small");
-        assert_eq!(config.language, "auto");
     }
 
     #[test]
@@ -1436,7 +1394,6 @@ mod tests {
         config2.update_from_settings(&settings);
 
         assert_eq!(config.whisper_model, config2.whisper_model);
-        assert_eq!(config.language, config2.language);
     }
 
     #[test]
@@ -1489,7 +1446,6 @@ mod tests {
     fn test_settings_all_fields() {
         let settings = Settings {
             whisper_model: "medium".to_string(),
-            language: "fr".to_string(),
             input_device_id: Some("mic-1".to_string()),
             output_format: "sentences".to_string(),
             vad_threshold: 0.6,
@@ -1560,7 +1516,6 @@ mod tests {
         config.update_from_settings(&settings);
 
         assert_eq!(config.whisper_model, "medium");
-        assert_eq!(config.language, "fr");
         assert_eq!(config.input_device_id, Some("mic-1".to_string()));
         assert_eq!(config.output_format, "sentences");
         assert_eq!(config.vad_threshold, 0.6);
@@ -1588,13 +1543,11 @@ mod tests {
     fn test_to_settings_preserves_values() {
         let mut config = Config::default();
         config.whisper_model = "large".to_string();
-        config.language = "de".to_string();
         config.vad_threshold = 0.7;
 
         let settings = config.to_settings();
 
         assert_eq!(settings.whisper_model, "large");
-        assert_eq!(settings.language, "de");
         assert_eq!(settings.vad_threshold, 0.7);
     }
 
@@ -1626,7 +1579,6 @@ mod tests {
     fn test_update_from_settings_none_device() {
         let settings = Settings {
             whisper_model: "small".to_string(),
-            language: "en".to_string(),
             input_device_id: None,
             output_format: "paragraphs".to_string(),
             vad_threshold: 0.5,
@@ -2045,7 +1997,6 @@ mod tests {
         let deserialized: Config = serde_json::from_str(&json).expect("Should deserialize");
 
         assert_eq!(config.whisper_model, deserialized.whisper_model);
-        assert_eq!(config.language, deserialized.language);
         assert_eq!(config.vad_threshold, deserialized.vad_threshold);
         assert_eq!(config.llm_router_url, deserialized.llm_router_url);
         assert_eq!(config.llm_api_key, deserialized.llm_api_key);
@@ -2060,7 +2011,6 @@ mod tests {
         let deserialized: Settings = serde_json::from_str(&json).expect("Should deserialize");
 
         assert_eq!(settings.whisper_model, deserialized.whisper_model);
-        assert_eq!(settings.language, deserialized.language);
         assert_eq!(settings.vad_threshold, deserialized.vad_threshold);
     }
 
@@ -2108,9 +2058,9 @@ mod tests {
 
     #[test]
     fn test_old_config_without_sensor_fields_loads_with_defaults() {
-        // Simulate an old config JSON without sensor fields
-        // Includes required Settings fields (whisper_model, language, etc.) plus
-        // diarization_enabled/max_speakers which Settings requires without serde(default)
+        // Simulate an old config JSON without sensor fields.
+        // Note: the top-level "language" field is a legacy carryover that serde
+        // will silently ignore since Settings no longer has that field.
         let json = r#"{
             "schema_version": 1,
             "whisper_model": "small",

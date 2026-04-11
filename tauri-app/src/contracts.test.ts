@@ -76,7 +76,6 @@ function isSettings(obj: unknown): obj is Settings {
 
   // Audio settings
   if (typeof o.whisper_model !== 'string') return false;
-  if (typeof o.language !== 'string') return false;
   if (o.input_device_id !== null && typeof o.input_device_id !== 'string') return false;
   if (typeof o.vad_threshold !== 'number') return false;
   if (typeof o.diarization_enabled !== 'boolean') return false;
@@ -279,7 +278,6 @@ describe('IPC Contracts', () => {
       // Use the canonical mock settings which must satisfy the Settings type
       const settings: Settings = {
         whisper_model: 'small',
-        language: 'en',
         input_device_id: null,
         output_format: 'paragraphs',
         vad_threshold: 0.5,
@@ -344,7 +342,6 @@ describe('IPC Contracts', () => {
     it('validates settings with device id', () => {
       const partial = {
         whisper_model: 'medium',
-        language: 'fr',
         input_device_id: 'device-123',
         vad_threshold: 0.6,
         diarization_enabled: false,
@@ -371,7 +368,6 @@ describe('IPC Contracts', () => {
     it('rejects wrong number types', () => {
       const settings = {
         whisper_model: 'small',
-        language: 'en',
         input_device_id: null,
         vad_threshold: '0.5', // should be number
         diarization_enabled: true,
@@ -398,7 +394,6 @@ describe('IPC Contracts', () => {
     it('rejects missing required boolean fields', () => {
       const settings = {
         whisper_model: 'small',
-        language: 'en',
         input_device_id: null,
         vad_threshold: 0.5,
         // missing diarization_enabled
@@ -447,7 +442,6 @@ describe('IPC Contracts', () => {
       // Verify that a full Settings object passes the type guard
       const mockResponse: Settings = {
         whisper_model: 'small',
-        language: 'en',
         input_device_id: null,
         output_format: 'paragraphs',
         vad_threshold: 0.5,

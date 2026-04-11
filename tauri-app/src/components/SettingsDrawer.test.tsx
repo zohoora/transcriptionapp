@@ -11,7 +11,6 @@ const mockDevices: Device[] = [
 ];
 
 const defaultPendingSettings: PendingSettings = {
-  language: 'en',
   device: 'default',
   llm_router_url: 'http://localhost:8080',
   llm_api_key: 'test-api-key',

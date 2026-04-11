@@ -72,10 +72,6 @@ pub struct ListeningConfig {
     /// Fast model for greeting detection
     pub fast_model: String,
 
-    /// Language for transcription
-    #[serde(default = "default_language")]
-    pub language: String,
-
     /// STT alias for transcription (e.g., "medical-streaming")
     pub stt_alias: String,
 
@@ -110,9 +106,6 @@ fn default_greeting_sensitivity() -> f32 {
 fn default_cooldown_ms() -> u32 {
     5000
 }
-fn default_language() -> String {
-    "en".to_string()
-}
 
 impl Default for ListeningConfig {
     fn default() -> Self {
@@ -128,7 +121,6 @@ impl Default for ListeningConfig {
             llm_api_key: String::new(),
             llm_client_id: "ai-scribe".to_string(),
             fast_model: "fast-model".to_string(),
-            language: default_language(),
             stt_alias: "medical-streaming".to_string(),
             stt_postprocess: true,
             require_enrolled: false,
@@ -820,14 +812,14 @@ fn analyze_speech(
         .build()
         .map_err(|e| format!("Failed to create runtime: {}", e))?;
 
-    // Step 1: Transcribe with STT streaming (blocking, no need for async)
+    // Step 1: Transcribe with STT streaming (blocking, no need for async).
+    // Language is always auto-detect — Qwen determines the language from audio.
     info!("Transcribing {} samples via streaming...", audio.len());
     let transcript = whisper_client
         .transcribe_streaming_blocking(
             audio,
             &config.stt_alias,
             config.stt_postprocess,
-            "English", // Greeting detection always in English
             |_chunk| {},
         )
         .map_err(|e| format!("Transcription error: {}", e))?;

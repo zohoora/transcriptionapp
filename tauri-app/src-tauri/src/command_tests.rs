@@ -15,7 +15,6 @@ mod tests {
         let settings = Settings::default();
 
         assert_eq!(settings.whisper_model, "small");
-        assert_eq!(settings.language, "auto");
         assert!(settings.input_device_id.is_none());
         assert_eq!(settings.output_format, "paragraphs");
         assert!(settings.vad_threshold >= 0.0 && settings.vad_threshold <= 1.0);
@@ -28,7 +27,6 @@ mod tests {
     fn test_settings_serialization() {
         let settings = Settings {
             whisper_model: "medium".to_string(),
-            language: "fr".to_string(),
             input_device_id: Some("device-123".to_string()),
             output_format: "sentences".to_string(),
             vad_threshold: 0.6,
@@ -102,7 +100,6 @@ mod tests {
         let deserialized: Settings = serde_json::from_str(&json).unwrap();
 
         assert_eq!(deserialized.whisper_model, "medium");
-        assert_eq!(deserialized.language, "fr");
         assert_eq!(deserialized.input_device_id, Some("device-123".to_string()));
         assert_eq!(deserialized.output_format, "sentences");
         assert_eq!(deserialized.vad_threshold, 0.6);

@@ -207,7 +207,61 @@ pub struct PhraseHallucinationEntry {
 // Hallucination Filter
 // ============================================================================
 
+/// Stateless filler phrases that the STT model (Qwen3-ASR) emits when given
+/// zero-amplitude or noise-only input. These are short, semantically empty
+/// strings that have no relationship to the actual audio content — they're
+/// the model's fallback when it has nothing to transcribe.
+///
+/// The comparison is case-insensitive and whitespace-insensitive. A segment
+/// whose entire `text.trim()` (after lowering and collapsing whitespace)
+/// exactly matches one of these is dropped.
+///
+/// NEW ones observed in production should be added here — test with the
+/// problematic audio via `stt-server` (`POST /v1/audio/transcribe/regular-batch`
+/// with `language=English`) to reproduce before adding.
+pub const QWEN_STATELESS_FILLERS: &[&str] = &[
+    // English fillers
+    "i'm not sure.",
+    "i'm not sure",
+    "i don't know.",
+    "i don't know",
+    "thank you.",
+    "thank you",
+    "thanks.",
+    "thanks",
+    // Hindi fillers (Devanagari "hmm", "yes", "yeah")
+    "हम्म",
+    "हूं।",
+    "हूं",
+    "हाँ।",
+    "हाँ",
+    // Punctuation-only or single-char outputs
+    ".",
+    ",",
+    "?",
+    "!",
+];
+
+/// Check if a segment's text is a stateless filler that should be dropped.
+/// Returns true for case-insensitive matches against `QWEN_STATELESS_FILLERS`
+/// on the trimmed, whitespace-collapsed input.
+pub fn is_stateless_filler(text: &str) -> bool {
+    let normalized = text
+        .trim()
+        .to_lowercase()
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ");
+    if normalized.is_empty() {
+        return false; // empty isn't filler, it's just silence
+    }
+    QWEN_STATELESS_FILLERS
+        .iter()
+        .any(|filler| normalized == *filler)
+}
+
 /// Two-phase hallucination detection and truncation:
+/// Phase 0: Stateless filler phrases (Qwen silence artifacts like "I'm not sure.")
 /// Phase 1: Single-word consecutive repetitions (e.g., "fractured" ×6000)
 /// Phase 2: Multi-word phrase loops (e.g., 20-word phrase ×75)
 ///
@@ -222,6 +276,24 @@ pub fn strip_hallucinations(text: &str, max_consecutive: usize) -> (String, Hall
                 repetitions: Vec::new(),
                 phrase_repetitions: Vec::new(),
                 original_word_count: 0,
+                cleaned_word_count: 0,
+            },
+        );
+    }
+
+    // Phase 0: If the ENTIRE text is a stateless filler, drop it to empty.
+    // This handles the common case where an utterance is short and consists
+    // entirely of a Qwen silence artifact (e.g., a VAD-gated "I'm not sure."
+    // chunk with no other content). Longer utterances that merely contain
+    // the filler as a subphrase are left alone; the LLM downstream can
+    // decide how to handle those.
+    if is_stateless_filler(text) {
+        return (
+            String::new(),
+            HallucinationReport {
+                repetitions: Vec::new(),
+                phrase_repetitions: Vec::new(),
+                original_word_count,
                 cleaned_word_count: 0,
             },
         );
@@ -1188,6 +1260,50 @@ mod tests {
         assert_eq!(cleaned, text);
         assert!(report.repetitions.is_empty());
         assert_eq!(report.original_word_count, report.cleaned_word_count);
+    }
+
+    #[test]
+    fn test_stateless_filler_is_filler() {
+        // Exact matches (case / whitespace insensitive)
+        assert!(is_stateless_filler("I'm not sure."));
+        assert!(is_stateless_filler("I'M NOT SURE."));
+        assert!(is_stateless_filler("  i'm not sure  "));
+        assert!(is_stateless_filler("I'm not sure"));
+        assert!(is_stateless_filler("Thank you."));
+        assert!(is_stateless_filler("thanks"));
+        assert!(is_stateless_filler("हम्म"));
+        assert!(is_stateless_filler("."));
+
+        // NOT fillers — real content, or filler as a subphrase of a longer utterance
+        assert!(!is_stateless_filler("I'm not sure about the diagnosis"));
+        assert!(!is_stateless_filler("Thank you for coming in today"));
+        assert!(!is_stateless_filler("the patient is stable"));
+        assert!(!is_stateless_filler("")); // empty is not filler, just silence
+    }
+
+    #[test]
+    fn test_strip_hallucinations_drops_stateless_filler() {
+        // A segment consisting entirely of a Qwen silence artifact should be
+        // stripped to empty, not passed downstream.
+        let (cleaned, report) = strip_hallucinations("I'm not sure.", 5);
+        assert_eq!(cleaned, "");
+        assert_eq!(report.cleaned_word_count, 0);
+        assert_eq!(report.original_word_count, 3);
+
+        let (cleaned2, _) = strip_hallucinations("हम्म", 5);
+        assert_eq!(cleaned2, "");
+
+        let (cleaned3, _) = strip_hallucinations("  Thank you.  ", 5);
+        assert_eq!(cleaned3, "");
+    }
+
+    #[test]
+    fn test_strip_hallucinations_preserves_filler_in_context() {
+        // When the filler appears inside a longer utterance, we leave it
+        // alone — the downstream LLM decides how to handle it.
+        let text = "Thank you for coming in today Mrs Johnson";
+        let (cleaned, _) = strip_hallucinations(text, 5);
+        assert_eq!(cleaned, text);
     }
 
     #[test]

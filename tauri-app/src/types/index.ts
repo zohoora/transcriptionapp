@@ -52,7 +52,6 @@ export interface WhisperModelInfo {
 
 export interface Settings {
   whisper_model: string;
-  language: string;
   input_device_id: string | null;
   output_format: string;
   vad_threshold: number;
@@ -941,7 +940,6 @@ export interface PhysicianProfile {
   soap_format?: string | null;
   soap_custom_instructions?: string | null;
   charting_mode?: string | null;
-  language?: string | null;
   image_source?: string | null;
   auto_start_enabled?: boolean | null;
   auto_end_enabled?: boolean | null;
@@ -952,7 +950,6 @@ export interface PhysicianProfile {
   medplum_auto_sync?: boolean | null;
   diarization_enabled?: boolean | null;
   max_speakers?: number | null;
-  stt_languages?: string[] | null;
   created_at: string;
   updated_at: string;
 }

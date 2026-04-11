@@ -20,8 +20,6 @@ pub struct PhysicianProfile {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub charting_mode: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub language: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub image_source: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub gemini_api_key: Option<String>,
@@ -95,8 +93,6 @@ pub struct UpdatePhysicianRequest {
     #[serde(default)]
     pub charting_mode: Option<String>,
     #[serde(default)]
-    pub language: Option<String>,
-    #[serde(default)]
     pub image_source: Option<String>,
     #[serde(default)]
     pub gemini_api_key: Option<String>,
@@ -158,11 +154,6 @@ impl UpdatePhysicianRequest {
         if self.charting_mode.as_ref().map_or(false, |s| s.len() > 100) {
             return Err(ApiError::BadRequest(
                 "Charting mode exceeds 100 characters".into(),
-            ));
-        }
-        if self.language.as_ref().map_or(false, |s| s.len() > 100) {
-            return Err(ApiError::BadRequest(
-                "Language exceeds 100 characters".into(),
             ));
         }
         Ok(())

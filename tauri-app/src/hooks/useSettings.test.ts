@@ -8,7 +8,6 @@ const mockInvoke = vi.mocked(invoke);
 
 const mockSettings = {
   whisper_model: 'small',
-  language: 'en',
   input_device_id: 'device-1',
   output_format: 'json',
   vad_threshold: 0.5,
@@ -80,7 +79,6 @@ describe('useSettings', () => {
     expect(result.current.settings).toEqual(mockSettings);
     expect(result.current.pendingSettings).toEqual(
       expect.objectContaining({
-        language: 'en',
         device: 'device-1',
         // LLM Router settings
         llm_router_url: 'http://localhost:8080',
@@ -140,11 +138,11 @@ describe('useSettings', () => {
     act(() => {
       result.current.setPendingSettings({
         ...result.current.pendingSettings!,
-        language: 'fa',
+        device: 'device-2',
       });
     });
 
-    expect(result.current.pendingSettings?.language).toBe('fa');
+    expect(result.current.pendingSettings?.device).toBe('device-2');
   });
 
   it('detects unsaved changes', async () => {
@@ -159,7 +157,7 @@ describe('useSettings', () => {
     act(() => {
       result.current.setPendingSettings({
         ...result.current.pendingSettings!,
-        language: 'fr',
+        device: 'device-2',
       });
     });
 
@@ -183,7 +181,7 @@ describe('useSettings', () => {
     act(() => {
       result.current.setPendingSettings({
         ...result.current.pendingSettings!,
-        language: 'es',
+        soap_custom_instructions: 'be brief',
       });
     });
 
@@ -196,10 +194,10 @@ describe('useSettings', () => {
     expect(saveResult!).toBe(true);
     expect(mockInvoke).toHaveBeenCalledWith('set_settings', {
       settings: expect.objectContaining({
-        language: 'es',
+        soap_custom_instructions: 'be brief',
       }),
     });
-    expect(result.current.settings?.language).toBe('es');
+    expect(result.current.settings?.soap_custom_instructions).toBe('be brief');
   });
 
   it('converts "default" device to null when saving', async () => {
@@ -298,15 +296,15 @@ describe('useSettings', () => {
     // Change the mock response
     mockInvoke.mockResolvedValue({
       ...mockSettings,
-      language: 'fr',
+      whisper_model: 'medium',
     });
 
     await act(async () => {
       await result.current.reloadSettings();
     });
 
-    expect(result.current.settings?.language).toBe('fr');
-    expect(result.current.pendingSettings?.language).toBe('fr');
+    expect(result.current.settings?.whisper_model).toBe('medium');
+    expect(result.current.pendingSettings?.whisper_model === undefined).toBe(true);
   });
 
   it('returns false from saveSettings when settings are null', async () => {

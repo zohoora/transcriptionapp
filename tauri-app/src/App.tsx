@@ -175,29 +175,6 @@ function App() {
   const chartingMode: ChartingMode = settings?.charting_mode || 'session';
   const isContinuousMode = chartingMode === 'continuous';
 
-  // STT language (switchable at runtime during continuous mode)
-  const [sttLanguage, setSttLanguage] = useState('en');
-  const handleLanguageChange = useCallback(async (iso: string) => {
-    setSttLanguage(iso);
-    try {
-      await invoke('set_stt_language', { language: iso });
-    } catch (e) {
-      console.warn('Failed to set STT language:', e);
-    }
-    // Auto-add to physician's preferred languages
-    if (activePhysician) {
-      const current = activePhysician.stt_languages;
-      if (!current?.includes(iso)) {
-        const updated = [...(current || ['en']), iso];
-        invoke('update_physician', {
-          physicianId: activePhysician.id,
-          updates: { stt_languages: updated },
-        }).catch(e => console.warn('Failed to sync language preference:', e));
-      }
-    }
-  }, [activePhysician]);
-  const preferredLanguages = activePhysician?.stt_languages ?? ['en'];
-
   // Continuous mode orchestrator (groups useContinuousMode, usePatientBiomarkers,
   // usePredictiveHint, useMiisImages, and related state)
   const continuous = useContinuousModeOrchestrator({ settings });
@@ -836,9 +813,6 @@ function App() {
             onAiGenerate={continuous.onAiGenerate}
             onAiDismiss={continuous.onAiDismiss}
             imageSource={continuous.imageSource}
-            sttLanguage={sttLanguage}
-            preferredLanguages={preferredLanguages}
-            onLanguageChange={handleLanguageChange}
             onStart={continuous.onStart}
             onStop={continuous.onStop}
             onNewPatient={continuous.onNewPatient}

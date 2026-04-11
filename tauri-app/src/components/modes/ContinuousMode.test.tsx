@@ -80,9 +80,6 @@ function makeDefaultProps(overrides: Partial<Parameters<typeof ContinuousMode>[0
     aiError: null,
     onAiDismiss: vi.fn(),
     imageSource: 'off' as const,
-    sttLanguage: 'en',
-    preferredLanguages: ['en', 'fr'],
-    onLanguageChange: vi.fn(),
     onStart: vi.fn(),
     onStop: vi.fn(),
     onNewPatient: vi.fn(),
@@ -116,12 +113,6 @@ describe('ContinuousMode', () => {
     it('does not display error when null', () => {
       render(<ContinuousMode {...makeDefaultProps()} />);
       expect(screen.queryByText('Connection lost')).not.toBeInTheDocument();
-    });
-
-    it('renders language selector with preferred languages', () => {
-      render(<ContinuousMode {...makeDefaultProps()} />);
-      const select = screen.getByDisplayValue('English');
-      expect(select).toBeInTheDocument();
     });
 
     it('calls onStart when start button is clicked', () => {
@@ -489,21 +480,6 @@ describe('ContinuousMode', () => {
     it('renders PatientPulse in active state', () => {
       render(<ContinuousMode {...makeDefaultProps({ isActive: true, stats: ACTIVE_STATS })} />);
       expect(screen.getByTestId('patient-pulse')).toBeInTheDocument();
-    });
-  });
-
-  describe('language selector', () => {
-    it('calls onLanguageChange when language is changed', () => {
-      const onLanguageChange = vi.fn();
-      render(<ContinuousMode {...makeDefaultProps({
-        isActive: true,
-        stats: ACTIVE_STATS,
-        onLanguageChange,
-      })} />);
-
-      const select = screen.getAllByRole('combobox')[0];
-      fireEvent.change(select, { target: { value: 'fr' } });
-      expect(onLanguageChange).toHaveBeenCalledWith('fr');
     });
   });
 });

@@ -362,12 +362,16 @@ impl WhisperServerClient {
     /// * `alias` - STT alias (e.g., "medical-streaming")
     /// * `postprocess` - Whether to enable medical term post-processing
     /// * `on_chunk` - Callback invoked with each partial transcript chunk
+    ///
+    /// Language is always auto-detect — the STT server determines the language
+    /// from the audio itself. This avoids the silence-hallucination issue where
+    /// Qwen emits stateless fillers ("I'm not sure.") when given an explicit
+    /// language directive with zero-amplitude input.
     pub fn transcribe_streaming_blocking(
         &self,
         audio: &[f32],
         alias: &str,
         postprocess: bool,
-        language: &str,
         mut on_chunk: impl FnMut(&str),
     ) -> Result<String, String> {
         if audio.is_empty() {
@@ -395,7 +399,7 @@ impl WhisperServerClient {
                 std::thread::sleep(backoff);
             }
 
-            match self.try_streaming_transcription(&ws_url, &wav_bytes, alias, postprocess, language, &mut on_chunk) {
+            match self.try_streaming_transcription(&ws_url, &wav_bytes, alias, postprocess, &mut on_chunk) {
                 Ok(text) => return Ok(text),
                 Err(e) => {
                     // Check if error is retryable (connection failures)
@@ -424,7 +428,6 @@ impl WhisperServerClient {
         wav_bytes: &[u8],
         alias: &str,
         postprocess: bool,
-        language: &str,
         on_chunk: &mut impl FnMut(&str),
     ) -> Result<String, String> {
         // Connect to WebSocket
@@ -433,18 +436,19 @@ impl WhisperServerClient {
 
         debug!("WebSocket connected to {}", ws_url);
 
-        // Step 1: Send configuration (language sent as English name per STT server spec)
-        let mut config = serde_json::json!({
+        // Step 1: Send configuration.
+        // Language field is intentionally omitted — Qwen's auto-detect is the
+        // only mode that avoids silence-hallucination artifacts like "I'm not
+        // sure." that appear when an explicit language directive is combined
+        // with macOS Voice Isolation's zero-amplitude output.
+        let config = serde_json::json!({
             "alias": alias,
             "postprocess": postprocess,
         });
-        if !language.is_empty() {
-            config["language"] = serde_json::json!(language);
-        }
         ws.send(WsMessage::Text(config.to_string()))
             .map_err(|e| format!("Failed to send STT config: {}", e))?;
 
-        debug!("Sent streaming config: alias={}, postprocess={}, language={}", alias, postprocess, language);
+        debug!("Sent streaming config: alias={}, postprocess={}, language=auto", alias, postprocess);
 
         // Step 2: Send audio as binary
         ws.send(WsMessage::Binary(wav_bytes.to_vec()))
@@ -523,7 +527,6 @@ impl WhisperServerClient {
         audio: &[f32],
         alias: &str,
         postprocess: bool,
-        language: &str,
     ) -> Result<String, String> {
         if audio.is_empty() {
             return Ok(String::new());
@@ -557,14 +560,11 @@ impl WhisperServerClient {
                 .mime_str("audio/wav")
                 .map_err(|e| format!("Failed to create file part: {}", e))?;
 
-            let mut form = reqwest::multipart::Form::new()
+            // Language field intentionally omitted — Qwen auto-detects from audio.
+            let form = reqwest::multipart::Form::new()
                 .part("file", file_part)
                 .text("postprocess", postprocess.to_string())
                 .text("response_format", "json");
-
-            if language != "auto" && !language.is_empty() {
-                form = form.text("language", language.to_string());
-            }
 
             match self.client.post(&url).multipart(form).send().await {
                 Ok(response) => {
@@ -614,14 +614,13 @@ impl WhisperServerClient {
         audio: &[f32],
         alias: &str,
         postprocess: bool,
-        language: &str,
     ) -> Result<String, String> {
         let rt = tokio::runtime::Builder::new_current_thread()
             .enable_all()
             .build()
             .map_err(|e| format!("Failed to create tokio runtime: {}", e))?;
 
-        rt.block_on(self.transcribe_batch(audio, alias, postprocess, language))
+        rt.block_on(self.transcribe_batch(audio, alias, postprocess))
     }
 
     // ─── Legacy Transcription (OpenAI-compatible) ─────────────────────
@@ -630,7 +629,7 @@ impl WhisperServerClient {
     ///
     /// This endpoint works without alias routing and is retained for
     /// backward compatibility (listening mode greeting detection).
-    pub async fn transcribe(&self, audio: &[f32], language: &str) -> Result<String, String> {
+    pub async fn transcribe(&self, audio: &[f32]) -> Result<String, String> {
         if audio.is_empty() {
             return Ok(String::new());
         }
@@ -662,17 +661,14 @@ impl WhisperServerClient {
                 .mime_str("audio/wav")
                 .map_err(|e| format!("Failed to create file part: {}", e))?;
 
-            let mut form = reqwest::multipart::Form::new()
+            // Language field intentionally omitted — Qwen auto-detects from audio.
+            let form = reqwest::multipart::Form::new()
                 .part("file", file_part)
                 .text("model", self.model.clone())
                 .text("response_format", "json")
                 .text("temperature", "0.0")
                 .text("no_speech_threshold", "0.8")
                 .text("condition_on_previous_text", "false");
-
-            if language != "auto" && !language.is_empty() {
-                form = form.text("language", language.to_string());
-            }
 
             match self.client.post(&url).multipart(form).send().await {
                 Ok(response) => {
@@ -724,13 +720,13 @@ impl WhisperServerClient {
     }
 
     /// Blocking version of legacy transcribe
-    pub fn transcribe_blocking(&self, audio: &[f32], language: &str) -> Result<String, String> {
+    pub fn transcribe_blocking(&self, audio: &[f32]) -> Result<String, String> {
         let rt = tokio::runtime::Builder::new_current_thread()
             .enable_all()
             .build()
             .map_err(|e| format!("Failed to create tokio runtime: {}", e))?;
 
-        rt.block_on(self.transcribe(audio, language))
+        rt.block_on(self.transcribe(audio))
     }
 }
 
@@ -985,7 +981,6 @@ mod tests {
             &audio,
             "medical-streaming",
             true,
-            "English",
             |chunk| {
                 println!("  chunk: {:?}", chunk);
                 chunks_received.push(chunk.to_string());
@@ -1023,7 +1018,7 @@ mod tests {
             "large-v3-turbo",
         ).expect("Failed to create client");
 
-        let result = client.transcribe_batch_blocking(&audio, "medical-streaming", true, "en");
+        let result = client.transcribe_batch_blocking(&audio, "medical-streaming", true);
 
         match result {
             Ok(text) => {

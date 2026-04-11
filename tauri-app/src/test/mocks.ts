@@ -57,7 +57,6 @@ export const mockTranscript: TranscriptUpdate = {
 
 export const mockSettings: Settings = {
   whisper_model: 'small',
-  language: 'en',
   input_device_id: null,
   output_format: 'text',
   vad_threshold: 0.5,

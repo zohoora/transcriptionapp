@@ -8,7 +8,6 @@ const mockInvoke = vi.mocked(invoke);
 
 const mockSettings = {
   whisper_model: 'small',
-  language: 'en',
   input_device_id: null,
   output_format: 'json',
   vad_threshold: 0.5,

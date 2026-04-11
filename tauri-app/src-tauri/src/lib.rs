@@ -512,7 +512,6 @@ pub fn run() {
             commands::set_continuous_encounter_notes,
             commands::get_current_encounter_transcript,
             commands::list_serial_ports,
-            commands::set_stt_language,
             // Physician selection and room config
             commands::get_room_config,
             commands::save_room_config,

@@ -83,7 +83,6 @@ impl PhysicianManager {
             soap_format: None,
             soap_custom_instructions: None,
             charting_mode: None,
-            language: None,
             image_source: None,
             gemini_api_key: None,
             auto_start_enabled: None,
@@ -137,9 +136,6 @@ impl PhysicianManager {
         }
         if req.charting_mode.is_some() {
             profile.charting_mode = req.charting_mode;
-        }
-        if req.language.is_some() {
-            profile.language = req.language;
         }
         if req.image_source.is_some() {
             profile.image_source = req.image_source;

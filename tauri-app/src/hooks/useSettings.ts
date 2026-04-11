@@ -7,7 +7,6 @@ import type { Settings, SpeakerRole, ChartingMode, EncounterDetectionMode, Infra
  * A subset of Settings fields that are commonly changed in the UI.
  */
 export interface PendingSettings {
-  language: string;
   device: string;
   // LLM Router settings (OpenAI-compatible API)
   llm_router_url: string;
@@ -65,7 +64,6 @@ export interface PendingSettings {
 export function buildMergedSettings(settings: Settings, pending: PendingSettings): Settings {
   return {
     ...settings,
-    language: pending.language,
     input_device_id: pending.device === 'default' ? null : pending.device,
     diarization_enabled: true,
     llm_router_url: pending.llm_router_url,
@@ -138,7 +136,6 @@ export function useSettings(): UseSettingsResult {
 
   // Create pending settings from full settings
   const createPendingFromSettings = useCallback((s: Settings): PendingSettings => ({
-    language: s.language,
     device: s.input_device_id || 'default',
     llm_router_url: s.llm_router_url,
     llm_api_key: s.llm_api_key,
@@ -216,7 +213,6 @@ export function useSettings(): UseSettingsResult {
       // Best-effort: sync physician-tier settings to profile server
       // Only sync if physician-tier fields actually changed
       const physicianTierChanged =
-        settings.language !== pendingSettings.language ||
         settings.image_source !== pendingSettings.image_source ||
         settings.gemini_api_key !== pendingSettings.gemini_api_key ||
         settings.auto_start_enabled !== pendingSettings.auto_start_enabled ||
@@ -239,7 +235,6 @@ export function useSettings(): UseSettingsResult {
             await invoke('update_physician', {
               physicianId: activePhysician.id,
               updates: {
-                language: pendingSettings.language,
                 image_source: pendingSettings.image_source,
                 gemini_api_key: pendingSettings.gemini_api_key,
                 auto_start_enabled: pendingSettings.auto_start_enabled,
@@ -349,7 +344,6 @@ export function useSettings(): UseSettingsResult {
     if (!settings || !pendingSettings) return false;
 
     const comparisons: [unknown, unknown][] = [
-      [settings.language, pendingSettings.language],
       [settings.input_device_id || 'default', pendingSettings.device],
       [settings.llm_router_url, pendingSettings.llm_router_url],
       [settings.llm_api_key, pendingSettings.llm_api_key],
