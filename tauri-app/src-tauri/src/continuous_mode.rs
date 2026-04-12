@@ -63,7 +63,108 @@ const IDLE_ENCOUNTER_MAX_WORDS: usize = 200;
 /// that leave the actual encounter content stranded in the next buffer.
 /// The existing sensor timeout force-split (which uses `last_index()`) is unaffected
 /// since it always archives the entire buffer.
-const MIN_SPLIT_WORD_FLOOR: usize = 100;
+///
+/// Exported so `detection_replay_cli` can apply the same floor to historical
+/// replays without drifting from production.
+pub const MIN_SPLIT_WORD_FLOOR: usize = 100;
+
+/// In hybrid mode, sensor triggers still require minimum transcript content so
+/// the LLM has enough to make a meaningful split decision. Without this, sensor
+/// flicker during departures causes micro-splits on wrap-up dialogue.
+///
+/// Exported so `detection_replay_cli` uses the same threshold as production
+/// instead of a hardcoded duplicate.
+pub const MIN_SENSOR_HYBRID_WORDS: usize = 500;
+
+/// Finalize a merged-away encounter's replay bundle as a sibling under the
+/// surviving session's directory, then clear the segment logger for the next
+/// encounter. Without this, all `detection_checks`/`clinical_check`/
+/// `soap_result`/`merge_check` accumulated for the merged-away encounter
+/// would leak into the next encounter's `replay_bundle.json`.
+///
+/// Called from both merge-back paths (small-orphan auto-merge and
+/// LLM-confirmed merge). Caller passes the pre-decrement `encounter_number`
+/// — i.e. the encounter number of the merged-away encounter, which is one
+/// more than the surviving encounter's number after `encounter_number -= 1`.
+#[allow(clippy::too_many_arguments)]
+fn finalize_merged_bundle(
+    bundle_mutex: &Arc<Mutex<crate::replay_bundle::ReplayBundleBuilder>>,
+    segment_logger_mutex: &Arc<Mutex<crate::segment_log::SegmentLogger>>,
+    tracker_snapshot: &(Option<String>, usize, Vec<String>),
+    session_id: &str,
+    encounter_number: u32,
+    encounter_word_count: usize,
+    is_clinical: bool,
+    prev_id: &str,
+    prev_date: &DateTime<Utc>,
+) {
+    let (tm, tv, tu) = tracker_snapshot;
+    if let Ok(mut bundle) = bundle_mutex.lock() {
+        bundle.set_name_tracker(crate::replay_bundle::NameTrackerState {
+            majority_name: tm.clone(),
+            vote_count: *tv,
+            unique_names: tu.clone(),
+        });
+        let trigger = bundle.split_decision_trigger();
+        bundle.set_outcome(crate::replay_bundle::Outcome {
+            session_id: session_id.to_string(),
+            encounter_number,
+            word_count: encounter_word_count,
+            is_clinical,
+            was_merged: true,
+            merged_into: Some(prev_id.to_string()),
+            patient_name: tm.clone(),
+            detection_method: trigger,
+        });
+        match local_archive::get_session_archive_dir(prev_id, prev_date) {
+            Ok(surviving_dir) => bundle.build_merged_and_reset(&surviving_dir, prev_id),
+            Err(e) => {
+                warn!(
+                    "Failed to resolve surviving session dir for merged bundle: {} — falling back to clear()",
+                    e
+                );
+                bundle.clear();
+            }
+        }
+    }
+    if let Ok(mut sl) = segment_logger_mutex.lock() {
+        sl.clear_session();
+    }
+}
+
+/// Convert a `MultiPatientDetectionOutcome` from `llm_client` into a
+/// `MultiPatientDetection` for the replay bundle.
+fn multi_patient_from_outcome(
+    outcome: &crate::llm_client::MultiPatientDetectionOutcome,
+    stage: crate::replay_bundle::MultiPatientStage,
+    word_count: usize,
+) -> crate::replay_bundle::MultiPatientDetection {
+    let (count, conf, reasoning, labels) = match &outcome.detection {
+        Some(d) => (
+            Some(d.patient_count),
+            d.confidence,
+            d.reasoning.clone(),
+            d.patients.iter().map(|p| p.label.clone()).collect(),
+        ),
+        None => (None, None, None, Vec::new()),
+    };
+    crate::replay_bundle::MultiPatientDetection {
+        ts: Utc::now().to_rfc3339(),
+        stage,
+        word_count,
+        model: outcome.model.clone(),
+        system_prompt: outcome.system_prompt.clone(),
+        user_prompt: outcome.user_prompt.clone(),
+        response_raw: outcome.response_raw.clone(),
+        parsed_patient_count: count,
+        parsed_confidence: conf,
+        parsed_reasoning: reasoning,
+        patient_labels: labels,
+        latency_ms: outcome.latency_ms,
+        success: outcome.success,
+        error: outcome.error.clone(),
+    }
+}
 
 /// Extract up to `n` words from the end of `text`.
 fn tail_words(text: &str, n: usize) -> String {
@@ -1115,11 +1216,7 @@ pub async fn run_continuous_mode(
                 })
                 .unwrap_or(word_count);
 
-            // Manual or sensor trigger: skip minimum guards, but still need >0 words
-            // In hybrid mode, sensor triggers still require minimum content so the LLM
-            // has enough transcript to make a meaningful split decision. Without this,
-            // sensor flicker during departures causes micro-splits on wrap-up dialogue.
-            const MIN_SENSOR_HYBRID_WORDS: usize = 500;
+            // Manual or sensor trigger: skip minimum guards, but still need >0 words.
             if manual_triggered || sensor_triggered {
                 if is_empty {
                     info!("{}: buffer is empty, nothing to archive",
@@ -1267,6 +1364,7 @@ pub async fn run_continuous_mode(
                                         replay_sensor_ctx.clone(), system_prompt.clone(), user_prompt.clone(),
                                         latency, consecutive_llm_failures, merge_back_count,
                                         replay_buffer_age, replay_sensor_absent.clone(),
+                                        sensor_continuous_present, sensor_triggered, manual_triggered,
                                     );
                                     check.response_raw = Some(response.clone());
                                     check.parsed_complete = Some(result.complete);
@@ -1293,6 +1391,7 @@ pub async fn run_continuous_mode(
                                         replay_sensor_ctx.clone(), system_prompt.clone(), user_prompt.clone(),
                                         latency, consecutive_llm_failures, merge_back_count,
                                         replay_buffer_age, replay_sensor_absent.clone(),
+                                        sensor_continuous_present, sensor_triggered, manual_triggered,
                                     );
                                     check.response_raw = Some(response.clone());
                                     check.error = Some(e.clone());
@@ -1324,6 +1423,7 @@ pub async fn run_continuous_mode(
                                 replay_sensor_ctx.clone(), system_prompt.clone(), user_prompt.clone(),
                                 latency, consecutive_llm_failures, merge_back_count,
                                 replay_buffer_age, replay_sensor_absent.clone(),
+                                sensor_continuous_present, sensor_triggered, manual_triggered,
                             );
                             check.error = Some(e.to_string());
                             bundle.add_detection_check(check);
@@ -1353,6 +1453,7 @@ pub async fn run_continuous_mode(
                                 replay_sensor_ctx, system_prompt.clone(), user_prompt.clone(),
                                 latency, consecutive_llm_failures, merge_back_count,
                                 replay_buffer_age, replay_sensor_absent,
+                                sensor_continuous_present, sensor_triggered, manual_triggered,
                             );
                             check.error = Some("timeout_90s".to_string());
                             bundle.add_detection_check(check);
@@ -1810,6 +1911,13 @@ pub async fn run_continuous_mode(
                                         det_context,
                                     );
                                 }
+                                if let Ok(mut bundle) = bundle_for_detector.lock() {
+                                    bundle.add_multi_patient_detection(multi_patient_from_outcome(
+                                        &outcome,
+                                        crate::replay_bundle::MultiPatientStage::PreSoap,
+                                        encounter_word_count,
+                                    ));
+                                }
                                 outcome.detection
                             } else {
                                 None
@@ -2130,6 +2238,18 @@ pub async fn run_continuous_mode(
                                             reason: Some(format!("small orphan ({} words) with sensor present", encounter_word_count)),
                                         }.emit(&app_for_detector);
 
+                                        finalize_merged_bundle(
+                                            &bundle_for_detector,
+                                            &segment_logger_for_detector,
+                                            &tracker_snapshot,
+                                            &session_id,
+                                            encounter_number + 1,
+                                            encounter_word_count,
+                                            is_clinical,
+                                            prev_id,
+                                            prev_date,
+                                        );
+
                                         // Update prev tracking to the merged encounter
                                         prev_encounter_text = Some(merged_text);
                                         prev_encounter_text_rich = Some(merged_text_rich);
@@ -2257,6 +2377,24 @@ pub async fn run_continuous_mode(
                                             merge_back_count += 1;
                                             info!("Merge-back #{}: next confidence threshold escalated by +{:.2}", merge_back_count, merge_back_count as f64 * 0.05);
 
+                                            // Finalize the merged-away encounter's bundle
+                                            // BEFORE the retrospective multi-patient check
+                                            // below — that check's LLM call lands in the
+                                            // freshly-cleared builder and flows into the
+                                            // surviving encounter's bundle, matching
+                                            // production's pipeline_log routing.
+                                            finalize_merged_bundle(
+                                                &bundle_for_detector,
+                                                &segment_logger_for_detector,
+                                                &tracker_snapshot,
+                                                &session_id,
+                                                encounter_number + 1,
+                                                encounter_word_count,
+                                                is_clinical,
+                                                prev_id,
+                                                prev_date,
+                                            );
+
                                             // ── Retrospective multi-patient check ──
                                             if merged_wc >= MULTI_PATIENT_DETECT_WORD_THRESHOLD {
                                                 if let Some(ref client) = llm_client {
@@ -2297,6 +2435,17 @@ pub async fn run_continuous_mode(
                                                             retro_outcome.error.as_deref(),
                                                             det_context,
                                                         );
+                                                    }
+                                                    // Lands in the post-`finalize_merged_bundle`
+                                                    // builder, so it flows into the surviving
+                                                    // encounter's replay_bundle.json on its
+                                                    // next finalization.
+                                                    if let Ok(mut bundle) = bundle_for_detector.lock() {
+                                                        bundle.add_multi_patient_detection(multi_patient_from_outcome(
+                                                            &retro_outcome,
+                                                            crate::replay_bundle::MultiPatientStage::Retrospective,
+                                                            merged_wc,
+                                                        ));
                                                     }
                                                     if let Some(detection) = retro_outcome.detection {
                                                         info!("Retrospective: {} patients detected, regenerating per-patient SOAP for {}",
@@ -2387,6 +2536,13 @@ pub async fn run_continuous_mode(
                                         mp_outcome.error.as_deref(),
                                         det_context,
                                     );
+                                }
+                                if let Ok(mut bundle) = bundle_for_detector.lock() {
+                                    bundle.add_multi_patient_detection(multi_patient_from_outcome(
+                                        &mp_outcome,
+                                        crate::replay_bundle::MultiPatientStage::Standalone,
+                                        encounter_word_count,
+                                    ));
                                 }
                                 if let Some(detection) = mp_outcome.detection {
                                     info!(

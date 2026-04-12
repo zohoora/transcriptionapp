@@ -150,6 +150,10 @@ path = "tools/encounter_experiment_cli.rs"
 name = "detection_replay_cli"
 path = "tools/detection_replay_cli.rs"
 
+[[bin]]
+name = "replay_bundle_backfill"
+path = "tools/replay_bundle_backfill.rs"
+
 [[bench]]
 name = "audio_benchmarks"
 harness = false

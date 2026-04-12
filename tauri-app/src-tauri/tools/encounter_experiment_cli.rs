@@ -33,6 +33,8 @@ fn print_usage(program: &str) {
     eprintln!("  --pairwise          Run pairwise detection on adjacent encounters (should split)");
     eprintln!("  --accumulation N,N  Words of next encounter to simulate (default: 200,500,0=full)");
     eprintln!("  --model ALIAS       LLM model alias to use (default: config fast_model)");
+    eprintln!("  --sensor-departed   Inject sensor-departed prompt context for Baseline strategy");
+    eprintln!("  --sensor-present    Inject sensor-confirmed-present prompt context for Baseline strategy");
     eprintln!("  --help              Show this help");
     eprintln!();
     eprintln!("Detection Strategies:");
@@ -81,6 +83,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut patient_name: Option<String> = None;
     let mut model_override: Option<String> = None;
     let mut nothink = false;
+    let mut sensor_departed = false;
+    let mut sensor_present = false;
     let mut merge_only = false;
     let mut detect_only = false;
     let mut pairwise = false;
@@ -119,6 +123,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
             }
             "--nothink" => nothink = true,
+            "--sensor-departed" => sensor_departed = true,
+            "--sensor-present" => sensor_present = true,
             "--merge-only" => merge_only = true,
             "--detect-only" => detect_only = true,
             "--pairwise" => pairwise = true,
@@ -151,7 +157,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         strategies = DetectionStrategy::all();
     }
 
-    // Load transcripts from archive
+    // Load encounters from archive (continuous-mode bundles only)
     let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("."));
     let archive_path = home.join(".transcriptionapp").join("archive").join(&date);
 
@@ -160,39 +166,52 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("{}", "=".repeat(80));
     println!();
 
-    let transcripts = match load_archived_transcripts(&archive_path) {
+    let encounters = match load_archived_encounters(&archive_path) {
         Ok(t) => t,
         Err(e) => {
-            eprintln!("Failed to load transcripts: {}", e);
+            eprintln!("Failed to load encounters: {}", e);
             eprintln!("Archive path: {}", archive_path.display());
             std::process::exit(1);
         }
     };
 
-    println!("Loaded {} archived encounters from {}:", transcripts.len(), date);
-    for (id, _text, wc, enc_num) in &transcripts {
-        let enc_label = enc_num
+    if encounters.is_empty() {
+        eprintln!(
+            "No continuous-mode encounters found at {}.",
+            archive_path.display()
+        );
+        eprintln!(
+            "(Session-mode archives without `replay_bundle.json` are silently skipped.)"
+        );
+        std::process::exit(1);
+    }
+
+    println!("Loaded {} continuous-mode encounters from {}:", encounters.len(), date);
+    for enc in &encounters {
+        let enc_label = enc
+            .encounter_number
             .map(|n| format!(" (encounter #{})", n))
             .unwrap_or_default();
         println!(
             "  {} - {} words{}",
-            &id[..8],
-            wc,
+            &enc.session_id[..8.min(enc.session_id.len())],
+            enc.word_count,
             enc_label
         );
     }
 
-    // Check for hallucinations in each transcript
+    // Check for hallucinations in each encounter
     println!("\nHallucination scan:");
-    for (id, text, _, _) in &transcripts {
-        let (_, report) = strip_hallucinations(text, 5);
+    for enc in &encounters {
+        let (_, report) = strip_hallucinations(&enc.plain_text, 5);
+        let id_short = &enc.session_id[..8.min(enc.session_id.len())];
         if report.repetitions.is_empty() {
-            println!("  {} - clean", &id[..8]);
+            println!("  {} - clean", id_short);
         } else {
             for rep in &report.repetitions {
                 println!(
                     "  {} - FOUND: '{}' repeated {}x at position {} ({} -> {} words)",
-                    &id[..8],
+                    id_short,
                     rep.word,
                     rep.original_count,
                     rep.position,
@@ -203,19 +222,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
-    // Try to auto-detect patient name from metadata if not provided
+    // Auto-detect patient name from the bundle's outcome if not provided
     if patient_name.is_none() {
-        for (id, _, _, _) in &transcripts {
-            let metadata_path = archive_path.join(id).join("metadata.json");
-            if let Ok(content) = fs::read_to_string(&metadata_path) {
-                if let Ok(value) = serde_json::from_str::<serde_json::Value>(&content) {
-                    if let Some(name) = value.get("patient_name").and_then(|n| n.as_str()) {
-                        if !name.is_empty() {
-                            patient_name = Some(name.to_string());
-                            println!("\nAuto-detected patient name from metadata: {}", name);
-                            break;
-                        }
-                    }
+        for enc in &encounters {
+            if let Some(ref name) = enc.patient_name {
+                if !name.is_empty() {
+                    patient_name = Some(name.clone());
+                    println!("\nAuto-detected patient name from bundle: {}", name);
+                    break;
                 }
             }
         }
@@ -234,10 +248,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         &model,
     )?;
 
-    // Build combined transcript (all encounters merged)
-    let combined_text: String = transcripts
+    // Build combined transcript (all encounters concatenated, plain text for stats)
+    let combined_text: String = encounters
         .iter()
-        .map(|(_, text, _, _)| text.as_str())
+        .map(|e| e.plain_text.as_str())
         .collect::<Vec<_>>()
         .join("\n\n");
     let combined_word_count = combined_text.split_whitespace().count();
@@ -259,7 +273,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         println!("(Correct answer: complete=false — the full transcript is one encounter)");
         println!("{}", "=".repeat(80));
 
-        let formatted = format_transcript_as_segments(&combined_text);
+        // Concatenate all encounter segments into one slice, re-indexing as
+        // we go so the combined transcript has monotonically-increasing
+        // indices. start_ms is left as-is since format_replay_segments_for_detection
+        // re-bases elapsed time to the first segment's start_ms automatically.
+        let mut combined_segments: Vec<transcription_app_lib::replay_bundle::ReplaySegment> =
+            Vec::new();
+        let mut next_index: u64 = 0;
+        for enc in &encounters {
+            for seg in &enc.segments {
+                let mut s = seg.clone();
+                s.index = next_index;
+                next_index += 1;
+                combined_segments.push(s);
+            }
+        }
+        let formatted = format_replay_segments_for_detection(&combined_segments);
 
         // Build experiment matrix
         let mut experiments: Vec<ExperimentConfig> = Vec::new();
@@ -273,6 +302,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 hallucination_filter: false,
                 patient_name: patient_name.clone(),
                 nothink,
+                sensor_departed,
+                sensor_present,
             });
 
             // Experiment with filter (except baseline without filter already covered)
@@ -283,6 +314,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 hallucination_filter: true,
                 patient_name: patient_name.clone(),
                 nothink,
+                sensor_departed,
+                sensor_present,
             });
 
             // Experiment with high threshold (for baseline)
@@ -294,6 +327,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     hallucination_filter: false,
                     patient_name: patient_name.clone(),
                     nothink,
+                    sensor_departed,
+                    sensor_present,
                 });
                 experiments.push(ExperimentConfig {
                     detection_strategy: Some(*strategy),
@@ -302,6 +337,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     hallucination_filter: true,
                     patient_name: patient_name.clone(),
                     nothink,
+                    sensor_departed,
+                    sensor_present,
                 });
             }
         }
@@ -376,20 +413,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // ========================================================================
     // Mode B: Pairwise detection on adjacent encounters
     // ========================================================================
-    if pairwise && transcripts.len() >= 2 {
+    if pairwise && encounters.len() >= 2 {
         println!("\n{}", "=".repeat(80));
         println!("MODE B: PAIRWISE DETECTION ON ADJACENT ENCOUNTER PAIRS");
         println!("(Simulates production detection at different accumulation points)");
         println!("{}", "=".repeat(80));
 
-        // Load patient names for display
-        let patient_names = load_patient_names(&archive_path);
-
-        // Filter to continuous-mode encounters only (have encounter_number)
-        let continuous_transcripts: Vec<_> = transcripts
-            .iter()
-            .filter(|(_, _, _, enc)| enc.is_some())
-            .collect();
+        // load_archived_encounters already only returns continuous-mode bundles
+        // (those with replay_bundle.json).
+        let continuous: Vec<&ArchivedEncounter> = encounters.iter().collect();
 
         // Default accumulation points: simulate check at 200w, 500w, and full
         let accum_points = if accumulation_words.is_empty() {
@@ -398,23 +430,23 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             accumulation_words.clone()
         };
 
-        if continuous_transcripts.len() < 2 {
+        if continuous.len() < 2 {
             println!("\nNeed at least 2 continuous-mode encounters for pairwise testing.");
         } else {
             let strategy = strategies.first().copied().unwrap_or(DetectionStrategy::Baseline);
             println!("\nUsing strategy: {}", strategy.name());
             println!(
                 "Testing {} adjacent pairs at {} accumulation points...\n",
-                continuous_transcripts.len() - 1,
+                continuous.len() - 1,
                 accum_points.len(),
             );
 
-            for pair_idx in 0..continuous_transcripts.len() - 1 {
-                let (id_a, text_a, wc_a, enc_a) = continuous_transcripts[pair_idx];
-                let (id_b, text_b, wc_b, enc_b) = continuous_transcripts[pair_idx + 1];
+            for pair_idx in 0..continuous.len() - 1 {
+                let enc_a = continuous[pair_idx];
+                let enc_b = continuous[pair_idx + 1];
 
-                let name_a = patient_names.get(id_a).map(|s| s.as_str()).unwrap_or("unknown");
-                let name_b = patient_names.get(id_b).map(|s| s.as_str()).unwrap_or("unknown");
+                let name_a = enc_a.patient_name.as_deref().unwrap_or("unknown");
+                let name_b = enc_b.patient_name.as_deref().unwrap_or("unknown");
 
                 let same_patient = name_a == name_b;
                 let expected_label = if same_patient {
@@ -426,41 +458,55 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 println!(
                     "═══ Pair {}: enc#{} ({}, {}w) → enc#{} ({}, {}w) ═══",
                     pair_idx + 1,
-                    enc_a.unwrap_or(0),
+                    enc_a.encounter_number.unwrap_or(0),
                     name_a,
-                    wc_a,
-                    enc_b.unwrap_or(0),
+                    enc_a.word_count,
+                    enc_b.encounter_number.unwrap_or(0),
                     name_b,
-                    wc_b,
+                    enc_b.word_count,
                 );
                 println!("  Expected: {}", expected_label);
 
                 for &accum in &accum_points {
-                    // Simulate buffer state: full previous encounter + first N words of next
-                    let next_fragment = if accum == 0 || accum >= *wc_b {
-                        text_b.clone()
-                    } else {
-                        extract_head(text_b, accum)
-                    };
-                    let next_words = next_fragment.split_whitespace().count();
+                    // Concatenate enc_a's full segments with the first `accum`
+                    // words' worth of enc_b's segments. This preserves bundle-
+                    // level segment structure (timing + indices) so the
+                    // formatter produces production-faithful prompts.
+                    let mut combined_segments: Vec<
+                        transcription_app_lib::replay_bundle::ReplaySegment,
+                    > = enc_a.segments.clone();
 
-                    let accum_label = if accum == 0 || accum >= *wc_b {
+                    // Take enough of enc_b's segments to reach `accum` words.
+                    let mut words_taken = 0usize;
+                    for seg in &enc_b.segments {
+                        if accum != 0 && words_taken >= accum {
+                            break;
+                        }
+                        words_taken += seg.text.split_whitespace().count();
+                        combined_segments.push(seg.clone());
+                    }
+
+                    // Re-index so the combined slice has monotonically
+                    // increasing indices starting at 0 (matches production's
+                    // single-buffer view).
+                    for (i, seg) in combined_segments.iter_mut().enumerate() {
+                        seg.index = i as u64;
+                    }
+
+                    let next_words = words_taken;
+                    let accum_label = if accum == 0 || accum >= enc_b.word_count {
                         format!("full ({}w)", next_words)
                     } else {
                         format!("{}w", next_words)
                     };
 
-                    let combined = format!("{}\n\n{}", text_a, next_fragment);
-                    let combined_words = combined.split_whitespace().count();
-
-                    // Format and truncate like production
-                    let formatted = format_transcript_as_segments(&combined);
-                    let truncated = truncate_segments_for_detection(&formatted);
-                    let truncated_words = truncated.split_whitespace().count();
+                    let combined_words = enc_a.word_count + next_words;
+                    let formatted = format_replay_segments_for_detection(&combined_segments);
+                    let formatted_words = formatted.split_whitespace().count();
 
                     print!(
-                        "  @{}: {}w combined → ~{}w truncated",
-                        accum_label, combined_words, truncated_words,
+                        "  @{}: {}w combined → {}w formatted",
+                        accum_label, combined_words, formatted_words,
                     );
 
                     let exp_config = ExperimentConfig {
@@ -470,12 +516,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         hallucination_filter: false,
                         patient_name: patient_name.clone(),
                         nothink,
+                        sensor_departed,
+                        sensor_present,
                     };
 
                     match run_detection_experiment(
                         &client,
                         &model,
-                        &truncated,
+                        &formatted,
                         &exp_config,
                     )
                     .await
@@ -516,7 +564,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // ========================================================================
     // Mode C: Merge experiments on archived encounter pairs
     // ========================================================================
-    if !detect_only && !pairwise && transcripts.len() >= 2 {
+    if !detect_only && !pairwise && encounters.len() >= 2 {
         println!("\n{}", "=".repeat(80));
         println!("MODE C: MERGE CHECK ON ARCHIVED ENCOUNTER PAIRS");
         println!("(Correct answer: same_encounter=true for all pairs)");
@@ -524,26 +572,26 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         let merge_strategies = MergeStrategy::all();
 
-        for pair_idx in 0..transcripts.len() - 1 {
-            let (id_a, text_a, _, enc_a) = &transcripts[pair_idx];
-            let (id_b, text_b, _, enc_b) = &transcripts[pair_idx + 1];
+        for pair_idx in 0..encounters.len() - 1 {
+            let enc_a = &encounters[pair_idx];
+            let enc_b = &encounters[pair_idx + 1];
 
             let pair_label = format!(
                 "enc{}→enc{}",
-                enc_a.unwrap_or((pair_idx + 1) as u32),
-                enc_b.unwrap_or((pair_idx + 2) as u32),
+                enc_a.encounter_number.unwrap_or((pair_idx + 1) as u32),
+                enc_b.encounter_number.unwrap_or((pair_idx + 2) as u32),
             );
 
             println!(
                 "\nPair: {} ({} → {})",
                 pair_label,
-                &id_a[..8],
-                &id_b[..8],
+                &enc_a.session_id[..8.min(enc_a.session_id.len())],
+                &enc_b.session_id[..8.min(enc_b.session_id.len())],
             );
 
-            // Extract tail/head excerpts
-            let prev_tail = extract_tail(text_a, 500);
-            let curr_head = extract_head(text_b, 500);
+            // Extract tail/head excerpts from plain text
+            let prev_tail = extract_tail(&enc_a.plain_text, 500);
+            let curr_head = extract_head(&enc_b.plain_text, 500);
 
             println!(
                 "  prev_tail: {} words, curr_head: {} words",
@@ -559,6 +607,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     hallucination_filter: *merge_strategy == MergeStrategy::HallucinationFiltered,
                     patient_name: patient_name.clone(),
                     nothink,
+                    sensor_departed,
+                    sensor_present,
                 };
 
                 println!("  [{}]", merge_strategy.name());

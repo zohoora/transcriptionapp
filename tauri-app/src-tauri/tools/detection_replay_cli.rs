@@ -13,6 +13,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use transcription_app_lib::config::Config;
+use transcription_app_lib::continuous_mode::MIN_SENSOR_HYBRID_WORDS;
 use transcription_app_lib::encounter_detection::{
     DetectionEvalContext, DetectionOutcome, EncounterDetectionResult, evaluate_detection,
 };
@@ -35,7 +36,9 @@ fn print_usage(program: &str) {
     eprintln!("  --all               Replay all bundles in ~/.transcriptionapp/archive/");
     eprintln!("  --override K=V      Override a DetectionEvalContext field for what-if analysis");
     eprintln!("                      Supported: hybrid_confirm_window_secs, hybrid_min_words_for_sensor_split,");
-    eprintln!("                                 merge_back_count, min_sensor_hybrid_words");
+    eprintln!("                                 merge_back_count, min_sensor_hybrid_words,");
+    eprintln!("                                 sensor_continuous_present=true|false,");
+    eprintln!("                                 manual_triggered=true|false");
     eprintln!("  --mismatches        Only show bundles where replayed decision differs from actual");
     eprintln!("  --help              Show this help");
     eprintln!();
@@ -53,6 +56,14 @@ struct Overrides {
     hybrid_min_words_for_sensor_split: Option<usize>,
     merge_back_count: Option<usize>,
     min_sensor_hybrid_words: Option<usize>,
+    /// What-if: force the `sensor_continuous_present` gate on or off for all
+    /// checks, regardless of the bundle's captured value. Useful for
+    /// evaluating how the 0.99 threshold gate would affect historical data.
+    sensor_continuous_present: Option<bool>,
+    /// What-if: force `manual_triggered` for all checks. Rarely needed since
+    /// manual triggers short-circuit the LLM and don't produce bundle checks,
+    /// but exposed for completeness/debugging.
+    manual_triggered: Option<bool>,
 }
 
 fn parse_override(s: &str) -> Result<(String, String), String> {
@@ -77,8 +88,14 @@ fn find_replay_bundles(dir: &Path) -> Vec<PathBuf> {
         let path = entry.path();
         if path.is_dir() {
             bundles.extend(find_replay_bundles(&path));
-        } else if path.file_name().map_or(false, |n| n == "replay_bundle.json") {
-            bundles.push(path);
+        } else if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+            // Match both the canonical bundle and merged-away sibling files
+            // (see ReplayBundleBuilder::build_merged_and_reset).
+            if name == "replay_bundle.json"
+                || (name.starts_with("replay_bundle.merged_") && name.ends_with(".json"))
+            {
+                bundles.push(path);
+            }
         }
     }
     bundles.sort();
@@ -150,8 +167,16 @@ fn build_eval_context(
             }
         });
 
-    // Detect sensor_triggered: sensor_departed + not hybrid → pure sensor trigger
-    let sensor_triggered = check.sensor_context.departed && !is_hybrid_mode;
+    // Read captured trigger state from the bundle (schema v2+). v1 bundles
+    // have these defaulted to false via #[serde(default)], so old replay
+    // results match pre-v2 CLI behavior unless the user opts into an override.
+    let sensor_triggered = check.loop_state.sensor_triggered;
+    let manual_triggered = overrides
+        .manual_triggered
+        .unwrap_or(check.loop_state.manual_triggered);
+    let sensor_continuous_present = overrides
+        .sensor_continuous_present
+        .unwrap_or(check.loop_state.sensor_continuous_present);
 
     DetectionEvalContext {
         detection_result,
@@ -160,19 +185,29 @@ fn build_eval_context(
         word_count: check.word_count,
         cleaned_word_count: check.cleaned_word_count,
         consecutive_llm_failures: check.loop_state.consecutive_failures,
-        manual_triggered: false, // bundles don't capture manual triggers
+        manual_triggered,
         sensor_triggered,
         is_hybrid_mode,
         sensor_absent_secs,
         hybrid_confirm_window_secs,
         hybrid_min_words_for_sensor_split,
-        sensor_continuous_present: false, // replay doesn't track continuous presence yet
+        sensor_continuous_present,
     }
 }
 
 /// Check if a detection check would be skipped by the pre-check guard that prevents
 /// micro-splits from sensor flicker in hybrid mode. In production, sensor-triggered
 /// wakeups skip the LLM call entirely when word count is below the minimum.
+///
+/// Uses the captured `loop_state.sensor_triggered` flag (schema v2+) as the
+/// sole signal. We used to fall back to `sensor_context.departed` for v1
+/// bundles, but that heuristic was wrong — `sensor_context.departed` is a
+/// prompt hint that production sets whenever `sensor_absent_since.is_some()`,
+/// not only when the current check was triggered by a sensor transition.
+/// That mismatch caused the replay to silently skip checks production ran.
+///
+/// The word threshold is imported from `continuous_mode::MIN_SENSOR_HYBRID_WORDS`
+/// so production and replay stay in lockstep.
 fn should_skip_precheck(
     check: &transcription_app_lib::replay_bundle::DetectionCheck,
     config: &serde_json::Value,
@@ -183,8 +218,10 @@ fn should_skip_precheck(
         .and_then(|v| v.as_str())
         .unwrap_or("hybrid")
         == "hybrid";
-    let min_words = overrides.min_sensor_hybrid_words.unwrap_or(500);
-    is_hybrid && check.sensor_context.departed && check.word_count < min_words
+    let min_words = overrides
+        .min_sensor_hybrid_words
+        .unwrap_or(MIN_SENSOR_HYBRID_WORDS);
+    is_hybrid && check.loop_state.sensor_triggered && check.word_count < min_words
 }
 
 /// Determine actual outcome from the bundle's split_decision and outcome fields.
@@ -294,6 +331,20 @@ fn main() {
                             overrides.min_sensor_hybrid_words =
                                 Some(value.parse().expect("Invalid usize value"));
                         }
+                        "sensor_continuous_present" => {
+                            overrides.sensor_continuous_present = Some(
+                                value
+                                    .parse()
+                                    .expect("Invalid bool value (use true|false)"),
+                            );
+                        }
+                        "manual_triggered" => {
+                            overrides.manual_triggered = Some(
+                                value
+                                    .parse()
+                                    .expect("Invalid bool value (use true|false)"),
+                            );
+                        }
                         _ => {
                             eprintln!("Unknown override key: {}", key);
                             std::process::exit(1);
@@ -343,11 +394,13 @@ fn main() {
     }
 
     // Print override info
-    if overrides.hybrid_confirm_window_secs.is_some()
+    let has_any_override = overrides.hybrid_confirm_window_secs.is_some()
         || overrides.hybrid_min_words_for_sensor_split.is_some()
         || overrides.merge_back_count.is_some()
         || overrides.min_sensor_hybrid_words.is_some()
-    {
+        || overrides.sensor_continuous_present.is_some()
+        || overrides.manual_triggered.is_some();
+    if has_any_override {
         eprintln!("Overrides active:");
         if let Some(v) = overrides.hybrid_confirm_window_secs {
             eprintln!("  hybrid_confirm_window_secs = {}", v);
@@ -360,6 +413,12 @@ fn main() {
         }
         if let Some(v) = overrides.min_sensor_hybrid_words {
             eprintln!("  min_sensor_hybrid_words = {}", v);
+        }
+        if let Some(v) = overrides.sensor_continuous_present {
+            eprintln!("  sensor_continuous_present = {}", v);
+        }
+        if let Some(v) = overrides.manual_triggered {
+            eprintln!("  manual_triggered = {}", v);
         }
         eprintln!();
     }
@@ -403,7 +462,9 @@ fn main() {
             // insufficient words would now be skipped before evaluate_detection()
             let (replayed_str, agree) =
                 if should_skip_precheck(check, &bundle.config, &overrides) {
-                    let min_words = overrides.min_sensor_hybrid_words.unwrap_or(500);
+                    let min_words = overrides
+                        .min_sensor_hybrid_words
+                        .unwrap_or(MIN_SENSOR_HYBRID_WORDS);
                     let s = format!(
                         "Skipped(sensor_precheck, {}w<{})",
                         check.word_count, min_words
@@ -412,6 +473,12 @@ fn main() {
                 } else {
                     let ctx = build_eval_context(check, &bundle.config, &overrides);
                     let (outcome, _new_failures) = evaluate_detection(&ctx);
+                    // TODO: simulating production's MIN_SPLIT_WORD_FLOOR
+                    // (continuous_mode.rs:1488) requires per-segment word
+                    // counts in `ReplaySegment` AND preserving leftover
+                    // segments across `build_and_reset`. Both are bundle
+                    // schema changes; until then a handful of historical
+                    // checks will report Split where production NoSplit'd.
                     let agree = outcomes_agree(&outcome, &actual);
                     (format_outcome(&outcome), agree)
                 };
@@ -494,6 +561,7 @@ mod tests {
             billing_result: None,
             name_tracker: None,
             outcome: None,
+            multi_patient_detections: vec![],
         }
     }
 
@@ -519,6 +587,9 @@ mod tests {
             merge_back_count,
             buffer_age_secs,
             None,
+            false, // sensor_continuous_present
+            false, // sensor_triggered
+            false, // manual_triggered
         );
         check.success = success;
         check.parsed_complete = complete;
@@ -764,6 +835,9 @@ mod tests {
             merge_back_count,
             buffer_age_secs,
             None,
+            false,    // sensor_continuous_present
+            departed, // sensor_triggered (v2+: captured from production select branch)
+            false,    // manual_triggered
         );
         check.success = success;
         check.parsed_complete = complete;
@@ -836,5 +910,219 @@ mod tests {
         let ctx = build_eval_context(&check_short, &config, &overrides);
         let (outcome, _) = evaluate_detection(&ctx);
         assert!(matches!(outcome, DetectionOutcome::BelowThreshold { .. }));
+    }
+
+    // ---- Drift-fix regression tests (schema v2) ----
+
+    /// Build a check with the sensor_continuous_present flag set. Used to
+    /// verify that schema v2 fields flow through build_eval_context correctly.
+    fn make_check_with_continuous_present(
+        confidence: f64,
+        word_count: usize,
+        merge_back_count: u32,
+        buffer_age_secs: f64,
+        sensor_continuous_present: bool,
+    ) -> DetectionCheck {
+        let mut check = DetectionCheck::new(
+            (0, 100),
+            word_count,
+            word_count,
+            SensorContext::new(false, true), // sensor present
+            String::new(),
+            String::new(),
+            500,
+            0,
+            merge_back_count,
+            buffer_age_secs,
+            None,
+            sensor_continuous_present,
+            false,
+            false,
+        );
+        check.success = true;
+        check.parsed_complete = Some(true);
+        check.parsed_confidence = Some(confidence);
+        check.parsed_end_index = Some(50);
+        check
+    }
+
+    #[test]
+    fn test_sensor_continuous_present_blocks_high_confidence_split() {
+        // Pre-fix bug: replay always set sensor_continuous_present=false, so a
+        // 0.95 confidence split would succeed. Production would block it
+        // because the 0.99 gate is raised when the sensor has remained Present
+        // since the last split (couples/family visit scenario).
+        let check = make_check_with_continuous_present(0.95, 1000, 0, 600.0, true);
+        let config = serde_json::json!({"encounter_detection_mode": "hybrid"});
+        let overrides = Overrides::default();
+        let ctx = build_eval_context(&check, &config, &overrides);
+        assert!(
+            ctx.sensor_continuous_present,
+            "sensor_continuous_present should flow through from loop_state"
+        );
+        let (outcome, _) = evaluate_detection(&ctx);
+        match outcome {
+            DetectionOutcome::BelowThreshold { confidence, threshold } => {
+                assert!((confidence - 0.95).abs() < 0.001);
+                assert!(
+                    (threshold - 0.99).abs() < 0.001,
+                    "threshold should be raised to 0.99, got {}",
+                    threshold
+                );
+            }
+            other => panic!(
+                "Expected BelowThreshold (sensor_continuous_present gate), got {:?}",
+                other
+            ),
+        }
+    }
+
+    #[test]
+    fn test_sensor_continuous_present_false_allows_normal_split() {
+        // When sensor_continuous_present=false, a 0.95 confidence split should
+        // succeed normally under the base 0.85 threshold.
+        let check = make_check_with_continuous_present(0.95, 1000, 0, 600.0, false);
+        let config = serde_json::json!({"encounter_detection_mode": "hybrid"});
+        let overrides = Overrides::default();
+        let ctx = build_eval_context(&check, &config, &overrides);
+        let (outcome, _) = evaluate_detection(&ctx);
+        assert!(matches!(outcome, DetectionOutcome::Split { .. }));
+    }
+
+    #[test]
+    fn test_override_forces_sensor_continuous_present_on() {
+        // What-if: "how would this historical data replay if the gate were on?"
+        let check = make_check_with_continuous_present(0.90, 1000, 0, 600.0, false);
+        let config = serde_json::json!({"encounter_detection_mode": "hybrid"});
+        let overrides = Overrides {
+            sensor_continuous_present: Some(true),
+            ..Default::default()
+        };
+        let ctx = build_eval_context(&check, &config, &overrides);
+        assert!(ctx.sensor_continuous_present);
+        let (outcome, _) = evaluate_detection(&ctx);
+        assert!(
+            matches!(outcome, DetectionOutcome::BelowThreshold { .. }),
+            "Override should force the 0.99 gate on, blocking a 0.90 split"
+        );
+    }
+
+    #[test]
+    fn test_override_forces_sensor_continuous_present_off() {
+        // What-if: "how would this replay if the gate weren't applied?"
+        let check = make_check_with_continuous_present(0.90, 1000, 0, 600.0, true);
+        let config = serde_json::json!({"encounter_detection_mode": "hybrid"});
+        let overrides = Overrides {
+            sensor_continuous_present: Some(false),
+            ..Default::default()
+        };
+        let ctx = build_eval_context(&check, &config, &overrides);
+        assert!(!ctx.sensor_continuous_present);
+        let (outcome, _) = evaluate_detection(&ctx);
+        assert!(
+            matches!(outcome, DetectionOutcome::Split { .. }),
+            "Override should force the gate off, allowing a 0.90 split"
+        );
+    }
+
+    #[test]
+    fn test_v1_bundle_backward_compat() {
+        // A schema v1 bundle (pre-v2) has no sensor_continuous_present field.
+        // Serde's #[serde(default)] makes it deserialize as false, which
+        // matches pre-drift-fix CLI behavior. This test documents that
+        // expectation so future schema changes notice if they break it.
+        let v1_bundle_json = r#"{
+            "schema_version": 1,
+            "config": {"encounter_detection_mode": "hybrid"},
+            "segments": [],
+            "sensor_transitions": [],
+            "vision_results": [],
+            "detection_checks": [{
+                "ts": "2026-03-12T10:00:00Z",
+                "segment_range": [0, 100],
+                "word_count": 1000,
+                "cleaned_word_count": 1000,
+                "sensor_context": {"departed": false, "present": false, "unknown": true},
+                "prompt_system": "",
+                "prompt_user": "",
+                "response_raw": null,
+                "parsed_complete": true,
+                "parsed_confidence": 0.95,
+                "parsed_end_index": 50,
+                "latency_ms": 500,
+                "success": true,
+                "error": null,
+                "loop_state": {
+                    "consecutive_failures": 0,
+                    "merge_back_count": 0,
+                    "buffer_age_secs": 600.0
+                }
+            }]
+        }"#;
+        let bundle: ReplayBundle = serde_json::from_str(v1_bundle_json)
+            .expect("v1 bundle should deserialize via serde defaults");
+        let check = &bundle.detection_checks[0];
+        assert!(!check.loop_state.sensor_continuous_present);
+        assert!(!check.loop_state.sensor_triggered);
+        assert!(!check.loop_state.manual_triggered);
+    }
+
+    #[test]
+    fn test_should_skip_precheck_uses_captured_sensor_triggered() {
+        // v2+ bundle: sensor_triggered=true captured directly from production.
+        // Word count below MIN_SENSOR_HYBRID_WORDS → should skip LLM call.
+        let mut check = DetectionCheck::new(
+            (0, 100),
+            120, // below threshold
+            120,
+            SensorContext::new(false, true), // sensor present per prompt context
+            String::new(),
+            String::new(),
+            500,
+            0,
+            0,
+            600.0,
+            None,
+            false,
+            true, // sensor_triggered (v2+ captured flag)
+            false,
+        );
+        check.success = true;
+        check.parsed_complete = Some(true);
+        check.parsed_confidence = Some(0.95);
+        check.parsed_end_index = Some(50);
+
+        let config = serde_json::json!({"encounter_detection_mode": "hybrid"});
+        assert!(
+            should_skip_precheck(&check, &config, &Overrides::default()),
+            "Should skip when sensor_triggered=true and word_count < MIN_SENSOR_HYBRID_WORDS"
+        );
+    }
+
+    // ---- scanner picks up merged-away sibling files ----
+
+    #[test]
+    fn test_find_replay_bundles_includes_merged_siblings() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let session = dir.path().join("2026").join("04").join("15").join("session-id");
+        fs::create_dir_all(&session).unwrap();
+        fs::write(session.join("replay_bundle.json"), "{}").unwrap();
+        fs::write(session.join("replay_bundle.merged_abc12345.json"), "{}").unwrap();
+        fs::write(session.join("replay_bundle.merged_def67890.json"), "{}").unwrap();
+        fs::write(session.join("metadata.json"), "{}").unwrap();
+        fs::write(session.join("transcript.txt"), "").unwrap();
+
+        let bundles = find_replay_bundles(dir.path());
+        assert_eq!(bundles.len(), 3, "should find canonical + 2 merged siblings");
+        let names: Vec<String> = bundles
+            .iter()
+            .filter_map(|p| p.file_name().and_then(|n| n.to_str()).map(String::from))
+            .collect();
+        assert!(names.contains(&"replay_bundle.json".to_string()));
+        assert!(names.iter().any(|n| n == "replay_bundle.merged_abc12345.json"));
+        assert!(names.iter().any(|n| n == "replay_bundle.merged_def67890.json"));
+        // Ensure unrelated files are not picked up
+        assert!(!names.contains(&"metadata.json".to_string()));
+        assert!(!names.contains(&"transcript.txt".to_string()));
     }
 }

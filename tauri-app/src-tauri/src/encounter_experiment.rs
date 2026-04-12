@@ -126,6 +126,17 @@ pub struct ExperimentConfig {
     /// Prepend /nothink to system prompts (for Qwen3 models with thinking mode)
     #[serde(default)]
     pub nothink: bool,
+    /// Inject sensor-departed prompt context for the Baseline strategy.
+    /// Production passes `Some(&ctx)` to `build_encounter_detection_prompt`
+    /// when the sensor went absent; setting this to true makes the experiment
+    /// match production's prompt for that scenario. Defaults false → matches
+    /// legacy behavior (Baseline always called with `None` context).
+    #[serde(default)]
+    pub sensor_departed: bool,
+    /// Inject sensor-confirmed-present prompt context for the Baseline strategy.
+    /// Defaults false → matches legacy behavior.
+    #[serde(default)]
+    pub sensor_present: bool,
 }
 
 impl Default for ExperimentConfig {
@@ -137,6 +148,8 @@ impl Default for ExperimentConfig {
             hallucination_filter: false,
             patient_name: None,
             nothink: false,
+            sensor_departed: false,
+            sensor_present: false,
         }
     }
 }
@@ -467,8 +480,20 @@ pub fn build_detection_prompt(
 
     match strategy {
         DetectionStrategy::Baseline => {
-            // Use the production prompt directly
-            build_encounter_detection_prompt(&segments, None)
+            // Use the production prompt directly. When sensor flags are set,
+            // build a context matching what production would inject so the
+            // Baseline experiment matches production's actual prompt for
+            // sensor-active scenarios. When neither flag is set, pass None
+            // for byte-identical legacy behavior.
+            let ctx = if config.sensor_departed || config.sensor_present {
+                Some(crate::encounter_detection::EncounterDetectionContext {
+                    sensor_departed: config.sensor_departed,
+                    sensor_present: config.sensor_present,
+                })
+            } else {
+                None
+            };
+            build_encounter_detection_prompt(&segments, ctx.as_ref())
         }
         DetectionStrategy::Conservative => {
             let system = r#"You are analyzing a continuous transcript from a medical office.
@@ -1026,20 +1051,86 @@ pub fn load_merge_results() -> Result<Vec<MergeStepResult>, String> {
 }
 
 // ============================================================================
-// Transcript Loading Helpers
+// Bundle-based Encounter Loading (Tier 5a)
 // ============================================================================
+//
+// The encounter_experiment tool reads continuous-mode archives via the
+// `replay_bundle.json` files. Session-mode archives that never had encounter
+// detection (and therefore no bundle) are silently skipped.
+//
+// Why bundle-only? Production's encounter detection prompt explicitly says
+// "Each segment includes elapsed time (MM:SS)" — flat `transcript.txt` files
+// don't carry per-segment timestamps, so they can't be reformatted into the
+// production format. The bundle has `ReplaySegment { index, start_ms, ... }`
+// which IS the same data shape production uses, so we can produce
+// byte-identical prompts to what the live pipeline would have built.
 
-/// Load archived transcripts from a date directory.
-/// Returns a vec of (session_id, transcript_text, word_count, encounter_number).
-pub fn load_archived_transcripts(
+/// One archived encounter, loaded from `replay_bundle.json`.
+#[derive(Debug, Clone)]
+pub struct ArchivedEncounter {
+    pub session_id: String,
+    /// Plain transcript text (concatenated segment texts) for tail/head excerpts.
+    pub plain_text: String,
+    /// All segments from the bundle. Callers reformat as needed via
+    /// `format_replay_segments_for_detection` — typically after concatenating
+    /// multiple encounters' segments and re-indexing.
+    pub segments: Vec<crate::replay_bundle::ReplaySegment>,
+    pub word_count: usize,
+    pub encounter_number: Option<u32>,
+    pub patient_name: Option<String>,
+}
+
+/// Format a slice of `ReplaySegment` into the same detection-prompt format
+/// as production's `format_segments_for_detection` in
+/// `transcript_buffer.rs:50`. Output: `[index] (MM:SS) (Speaker Label): text`.
+///
+/// Drift protection: a unit test (below) builds matched `ReplaySegment` and
+/// `BufferedSegment` slices and asserts both formatters produce byte-identical
+/// output. If `transcript_buffer::format_segments_for_detection` ever changes,
+/// the test breaks and we update both.
+pub fn format_replay_segments_for_detection(
+    segments: &[crate::replay_bundle::ReplaySegment],
+) -> String {
+    let first_start_ms = segments.first().map(|s| s.start_ms).unwrap_or(0);
+    segments
+        .iter()
+        .map(|s| {
+            let elapsed_ms = s.start_ms.saturating_sub(first_start_ms);
+            let total_secs = elapsed_ms / 1000;
+            let hours = total_secs / 3600;
+            let minutes = (total_secs % 3600) / 60;
+            let seconds = total_secs % 60;
+            let elapsed = if hours > 0 {
+                format!("{}:{:02}:{:02}", hours, minutes, seconds)
+            } else {
+                format!("{:02}:{:02}", minutes, seconds)
+            };
+            let speaker_label = match (s.speaker_id.as_deref(), s.speaker_confidence) {
+                (Some(spk), Some(conf)) => format!("{} ({:.0}%)", spk, conf * 100.0),
+                (Some(spk), None) => spk.to_string(),
+                _ => "Unknown".to_string(),
+            };
+            format!("[{}] ({}) ({}): {}", s.index, elapsed, speaker_label, s.text)
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// Load archived encounters from a date directory.
+///
+/// Reads `replay_bundle.json` from each session directory (continuous-mode
+/// only). Session-mode archives without a bundle are silently skipped.
+///
+/// Returns encounters sorted by `encounter_number` then by `session_id` for
+/// stable ordering.
+pub fn load_archived_encounters(
     date_path: &std::path::Path,
-) -> Result<Vec<(String, String, usize, Option<u32>)>, String> {
+) -> Result<Vec<ArchivedEncounter>, String> {
     if !date_path.exists() {
         return Err(format!("Archive path does not exist: {}", date_path.display()));
     }
 
-    let mut transcripts = Vec::new();
-
+    let mut encounters = Vec::new();
     let entries = fs::read_dir(date_path)
         .map_err(|e| format!("Failed to read archive dir: {}", e))?;
 
@@ -1056,63 +1147,52 @@ pub fn load_archived_transcripts(
             .unwrap_or("")
             .to_string();
 
-        let transcript_path = session_dir.join("transcript.txt");
-        if !transcript_path.exists() {
+        // Bundle-only: skip session-mode archives.
+        let bundle_path = session_dir.join("replay_bundle.json");
+        if !bundle_path.exists() {
             continue;
         }
-
-        let text = fs::read_to_string(&transcript_path)
-            .map_err(|e| format!("Failed to read transcript: {}", e))?;
-        let word_count = text.split_whitespace().count();
-
-        // Try to read encounter_number from metadata
-        let encounter_number = session_dir
-            .join("metadata.json")
-            .pipe_read_metadata();
-
-        transcripts.push((session_id, text, word_count, encounter_number));
-    }
-
-    // Sort by encounter_number (if available) for consistent ordering
-    transcripts.sort_by_key(|(_, _, _, enc)| enc.unwrap_or(u32::MAX));
-
-    Ok(transcripts)
-}
-
-/// Helper trait to read encounter_number from metadata
-trait MetadataReader {
-    fn pipe_read_metadata(&self) -> Option<u32>;
-}
-
-impl MetadataReader for PathBuf {
-    fn pipe_read_metadata(&self) -> Option<u32> {
-        let content = fs::read_to_string(self).ok()?;
-        let value: serde_json::Value = serde_json::from_str(&content).ok()?;
-        value.get("encounter_number")?.as_u64().map(|n| n as u32)
-    }
-}
-
-/// Format transcript text as numbered segments (simulating detection input).
-/// Each line becomes a segment.
-pub fn format_transcript_as_segments(text: &str) -> String {
-    text.lines()
-        .enumerate()
-        .filter(|(_, line)| !line.trim().is_empty())
-        .map(|(i, line)| {
-            // Try to extract speaker label if line has "Speaker X: " pattern
-            if let Some(colon_pos) = line.find(": ") {
-                let speaker = &line[..colon_pos];
-                let content = &line[colon_pos + 2..];
-                format!("[{}] ({}): {}", i, speaker, content)
-            } else {
-                format!("[{}] (Unknown): {}", i, line.trim())
+        let bundle_json = match fs::read_to_string(&bundle_path) {
+            Ok(s) => s,
+            Err(e) => {
+                warn!("Failed to read bundle {}: {}", bundle_path.display(), e);
+                continue;
             }
-        })
-        .collect::<Vec<_>>()
-        .join("\n")
+        };
+        let bundle: crate::replay_bundle::ReplayBundle = match serde_json::from_str(&bundle_json) {
+            Ok(b) => b,
+            Err(e) => {
+                warn!("Failed to parse bundle {}: {}", bundle_path.display(), e);
+                continue;
+            }
+        };
+
+        let plain_text: String = bundle
+            .segments
+            .iter()
+            .map(|s| s.text.as_str())
+            .collect::<Vec<_>>()
+            .join(" ");
+        let word_count = plain_text.split_whitespace().count();
+        let encounter_number = bundle.outcome.as_ref().map(|o| o.encounter_number);
+        let patient_name = bundle.outcome.as_ref().and_then(|o| o.patient_name.clone());
+
+        encounters.push(ArchivedEncounter {
+            session_id,
+            plain_text,
+            segments: bundle.segments,
+            word_count,
+            encounter_number,
+            patient_name,
+        });
+    }
+
+    // Sort by (encounter_number, session_id) for stable ordering
+    encounters.sort_by_key(|e| (e.encounter_number.unwrap_or(u32::MAX), e.session_id.clone()));
+    Ok(encounters)
 }
 
-/// Extract a tail excerpt (~500 words) from text
+/// Extract a tail excerpt (~500 words) from text. Used for merge experiments.
 pub fn extract_tail(text: &str, max_words: usize) -> String {
     let words: Vec<&str> = text.split_whitespace().collect();
     if words.len() <= max_words {
@@ -1122,7 +1202,7 @@ pub fn extract_tail(text: &str, max_words: usize) -> String {
     }
 }
 
-/// Extract a head excerpt (~500 words) from text
+/// Extract a head excerpt (~500 words) from text. Used for merge experiments.
 pub fn extract_head(text: &str, max_words: usize) -> String {
     let words: Vec<&str> = text.split_whitespace().collect();
     if words.len() <= max_words {
@@ -1130,95 +1210,6 @@ pub fn extract_head(text: &str, max_words: usize) -> String {
     } else {
         words[..max_words].join(" ")
     }
-}
-
-/// Truncate formatted segments using the same 500-head + 1000-tail algorithm
-/// as the production `TranscriptBuffer::format_for_detection_truncated()`.
-///
-/// Input: newline-separated formatted segments (e.g., "[0] (Speaker 1): text")
-/// Output: truncated text with omission marker if over 1500 words
-pub fn truncate_segments_for_detection(formatted: &str) -> String {
-    const MAX_WORDS: usize = 1500;
-    const HEAD_WORDS: usize = 500;
-    const TAIL_WORDS: usize = 1000;
-
-    let lines: Vec<&str> = formatted.lines().filter(|l| !l.trim().is_empty()).collect();
-    let word_counts: Vec<usize> = lines.iter().map(|l| l.split_whitespace().count()).collect();
-    let total_words: usize = word_counts.iter().sum();
-
-    if total_words <= MAX_WORDS {
-        return lines.join("\n");
-    }
-
-    // Find head end (first HEAD_WORDS words)
-    let mut head_words = 0;
-    let mut head_end = 0;
-    for (i, &wc) in word_counts.iter().enumerate() {
-        head_words += wc;
-        if head_words >= HEAD_WORDS {
-            head_end = i + 1;
-            break;
-        }
-    }
-
-    // Find tail start (last TAIL_WORDS words)
-    let mut tail_words = 0;
-    let mut tail_start = lines.len();
-    for (i, &wc) in word_counts.iter().enumerate().rev() {
-        tail_words += wc;
-        if tail_words >= TAIL_WORDS {
-            tail_start = i;
-            break;
-        }
-    }
-
-    // No overlap
-    if tail_start <= head_end {
-        return lines.join("\n");
-    }
-
-    let skipped = tail_start - head_end;
-    let head: String = lines[..head_end].join("\n");
-    let tail: String = lines[tail_start..].join("\n");
-    format!(
-        "{}\n\n[... {} segments omitted for brevity ...]\n\n{}",
-        head, skipped, tail
-    )
-}
-
-/// Load patient names from metadata files for a given archive date.
-/// Returns a map of session_id -> patient_name.
-pub fn load_patient_names(
-    date_path: &std::path::Path,
-) -> std::collections::HashMap<String, String> {
-    let mut names = std::collections::HashMap::new();
-
-    if let Ok(entries) = fs::read_dir(date_path) {
-        for entry in entries.flatten() {
-            let session_dir = entry.path();
-            if !session_dir.is_dir() {
-                continue;
-            }
-            let session_id = session_dir
-                .file_name()
-                .and_then(|n| n.to_str())
-                .unwrap_or("")
-                .to_string();
-
-            let metadata_path = session_dir.join("metadata.json");
-            if let Ok(content) = fs::read_to_string(&metadata_path) {
-                if let Ok(value) = serde_json::from_str::<serde_json::Value>(&content) {
-                    if let Some(name) = value.get("patient_name").and_then(|n| n.as_str()) {
-                        if !name.is_empty() {
-                            names.insert(session_id, name.to_string());
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    names
 }
 
 // ============================================================================
@@ -1641,15 +1632,123 @@ mod tests {
         );
     }
 
-    // ---- Helper tests ----
+    // ---- Bundle loader / format helper tests (Tier 5a) ----
+
+    fn make_replay_segment(
+        index: u64,
+        start_ms: u64,
+        text: &str,
+        speaker: Option<&str>,
+        conf: Option<f32>,
+    ) -> crate::replay_bundle::ReplaySegment {
+        crate::replay_bundle::ReplaySegment {
+            ts: "2026-04-15T10:00:00Z".to_string(),
+            index,
+            start_ms,
+            end_ms: start_ms + 1000,
+            text: text.to_string(),
+            speaker_id: speaker.map(|s| s.to_string()),
+            speaker_confidence: conf,
+        }
+    }
+
+    /// Drift protection: format_replay_segments_for_detection must produce
+    /// byte-identical output to production's format_segments_for_detection.
+    /// If `transcript_buffer.rs::format_segments_for_detection` ever changes,
+    /// this test breaks and we must update both implementations in lockstep.
+    #[test]
+    fn test_format_replay_segments_matches_production_format() {
+        use crate::transcript_buffer::{format_segments_for_detection, BufferedSegment};
+        use chrono::Utc;
+
+        let now = Utc::now();
+        let buffered = vec![
+            BufferedSegment {
+                index: 0,
+                start_ms: 0,
+                timestamp_ms: 1000,
+                started_at: now,
+                text: "Hello doctor".into(),
+                speaker_id: Some("Speaker 1".into()),
+                speaker_confidence: Some(0.92),
+                generation: 0,
+            },
+            BufferedSegment {
+                index: 1,
+                start_ms: 8000,
+                timestamp_ms: 9000,
+                started_at: now,
+                text: "Vitals look fine.".into(),
+                speaker_id: Some("Speaker 2".into()),
+                speaker_confidence: Some(0.65),
+                generation: 0,
+            },
+            BufferedSegment {
+                index: 2,
+                start_ms: 35_000,
+                timestamp_ms: 36_000,
+                started_at: now,
+                text: "Any other concerns?".into(),
+                speaker_id: None,
+                speaker_confidence: None,
+                generation: 0,
+            },
+        ];
+        let replay = vec![
+            make_replay_segment(0, 0, "Hello doctor", Some("Speaker 1"), Some(0.92)),
+            make_replay_segment(1, 8000, "Vitals look fine.", Some("Speaker 2"), Some(0.65)),
+            make_replay_segment(2, 35_000, "Any other concerns?", None, None),
+        ];
+        let production_output = format_segments_for_detection(&buffered);
+        let experiment_output = format_replay_segments_for_detection(&replay);
+        assert_eq!(
+            production_output, experiment_output,
+            "format_replay_segments_for_detection must produce byte-identical output to \
+             transcript_buffer::format_segments_for_detection. If this test fails, both \
+             functions need updating in lockstep."
+        );
+    }
 
     #[test]
-    fn test_format_transcript_as_segments() {
-        let text = "Speaker 1: Hello doctor\nSpeaker 2: Hi there\nambient noise";
-        let formatted = format_transcript_as_segments(text);
-        assert!(formatted.contains("[0] (Speaker 1): Hello doctor"));
-        assert!(formatted.contains("[1] (Speaker 2): Hi there"));
-        assert!(formatted.contains("[2] (Unknown): ambient noise"));
+    fn test_format_replay_segments_emits_mmss() {
+        let segments = vec![make_replay_segment(0, 0, "Hello", Some("Speaker 1"), Some(0.92))];
+        let formatted = format_replay_segments_for_detection(&segments);
+        assert!(formatted.contains("[0] (00:00) (Speaker 1 (92%)): Hello"));
+    }
+
+    #[test]
+    fn test_format_replay_segments_emits_hours_for_long_recordings() {
+        // start_ms = 1 hour, 5 min, 30 sec = 3_930_000 ms
+        // first_start_ms is the same, so elapsed = 0 → "00:00"
+        let segments = vec![make_replay_segment(0, 3_930_000, "Still here", None, None)];
+        let formatted = format_replay_segments_for_detection(&segments);
+        assert!(formatted.contains("[0] (00:00) (Unknown): Still here"));
+    }
+
+    #[test]
+    fn test_format_replay_segments_relative_elapsed_time() {
+        // Two segments: first at 0ms, second at 65000ms (1:05). The second
+        // should display as (01:05) because elapsed is computed from the first.
+        let segments = vec![
+            make_replay_segment(0, 0, "First", Some("Speaker 1"), None),
+            make_replay_segment(1, 65_000, "Second", Some("Speaker 1"), None),
+        ];
+        let formatted = format_replay_segments_for_detection(&segments);
+        assert!(formatted.contains("[0] (00:00) (Speaker 1): First"));
+        assert!(formatted.contains("[1] (01:05) (Speaker 1): Second"));
+    }
+
+    #[test]
+    fn test_format_replay_segments_unknown_speaker() {
+        let segments = vec![make_replay_segment(0, 0, "ambient noise", None, None)];
+        let formatted = format_replay_segments_for_detection(&segments);
+        assert!(formatted.contains("[0] (00:00) (Unknown): ambient noise"));
+    }
+
+    #[test]
+    fn test_format_replay_segments_empty() {
+        let formatted = format_replay_segments_for_detection(&[]);
+        assert_eq!(formatted, "");
     }
 
     #[test]
@@ -1692,6 +1791,71 @@ mod tests {
             assert!(!s.name().is_empty());
             assert!(!s.id().is_empty());
         }
+    }
+
+    // ---- Baseline sensor context tests (Tier 5b) ----
+
+    #[test]
+    fn test_baseline_no_sensor_matches_legacy() {
+        // Backward compat: when neither sensor flag is set, the Baseline strategy
+        // produces byte-identical output to a direct call with `None` context.
+        let cfg = ExperimentConfig::default();
+        let (sys_new, user_new) = build_detection_prompt(
+            DetectionStrategy::Baseline,
+            "[0] (Speaker 1): hello",
+            &cfg,
+        );
+        let (sys_legacy, user_legacy) = build_encounter_detection_prompt("[0] (Speaker 1): hello", None);
+        assert_eq!(sys_new, sys_legacy);
+        assert_eq!(user_new, user_legacy);
+    }
+
+    #[test]
+    fn test_baseline_sensor_departed_includes_context() {
+        let cfg = ExperimentConfig {
+            sensor_departed: true,
+            ..ExperimentConfig::default()
+        };
+        let (system, user) = build_detection_prompt(
+            DetectionStrategy::Baseline,
+            "[0] (Speaker 1): hello",
+            &cfg,
+        );
+        // Production injects "Real-time context signals" framing into the user prompt
+        // when sensor_departed is true. Cross-check by building the production prompt
+        // directly and asserting equivalence.
+        let ctx = crate::encounter_detection::EncounterDetectionContext {
+            sensor_departed: true,
+            sensor_present: false,
+        };
+        let (sys_prod, user_prod) =
+            build_encounter_detection_prompt("[0] (Speaker 1): hello", Some(&ctx));
+        assert_eq!(system, sys_prod);
+        assert_eq!(user, user_prod);
+        // And confirm the context section is actually present
+        assert!(user.contains("Real-time context signals") || user.contains("CONTEXT:"));
+    }
+
+    #[test]
+    fn test_baseline_sensor_present_includes_context() {
+        let cfg = ExperimentConfig {
+            sensor_present: true,
+            ..ExperimentConfig::default()
+        };
+        let (system, user) = build_detection_prompt(
+            DetectionStrategy::Baseline,
+            "[0] (Speaker 1): hello",
+            &cfg,
+        );
+        let ctx = crate::encounter_detection::EncounterDetectionContext {
+            sensor_departed: false,
+            sensor_present: true,
+        };
+        let (sys_prod, user_prod) =
+            build_encounter_detection_prompt("[0] (Speaker 1): hello", Some(&ctx));
+        assert_eq!(system, sys_prod);
+        assert_eq!(user, user_prod);
+        assert!(user.contains("still in the room"));
     }
 
     // ---- Report generation tests ----

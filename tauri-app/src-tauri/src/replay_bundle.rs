@@ -14,7 +14,19 @@ use std::path::Path;
 use tracing::warn;
 
 const BUNDLE_FILENAME: &str = "replay_bundle.json";
-const SCHEMA_VERSION: u32 = 1;
+/// Filename prefix for merged-away encounter bundles. Full name format:
+/// `replay_bundle.merged_{short_id}.json` where `short_id` is the first 8
+/// characters of the merged-away session's UUID. Lives as a sibling to the
+/// surviving session's canonical `replay_bundle.json`.
+///
+/// See `ReplayBundleBuilder::build_merged_and_reset()`.
+const MERGED_BUNDLE_PREFIX: &str = "replay_bundle.merged_";
+/// v2 (2026-04): added `sensor_continuous_present`, `sensor_triggered`,
+/// `manual_triggered` to `LoopState` so `detection_replay_cli` can reconstruct
+/// the full production `DetectionEvalContext` without hardcoded defaults.
+/// Older v1 bundles still load via `#[serde(default)]` — their replay results
+/// silently default to `false` for the new fields (same as pre-v2 CLI behavior).
+const SCHEMA_VERSION: u32 = 2;
 
 /// Self-contained replay test case for an encounter.
 #[derive(Debug, Serialize, Deserialize)]
@@ -39,6 +51,11 @@ pub struct ReplayBundle {
     pub name_tracker: Option<NameTrackerState>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub outcome: Option<Outcome>,
+    /// Multi-patient detection LLM calls (pre-SOAP inline, retrospective
+    /// post-merge, standalone safety-net). 0, 1, or 2+ per encounter.
+    /// Schema v2+; defaults to empty Vec for older bundles.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub multi_patient_detections: Vec<MultiPatientDetection>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -113,6 +130,7 @@ impl SensorContext {
 impl DetectionCheck {
     /// Build a detection check with common fields. Result-specific fields (`response_raw`,
     /// `parsed_*`, `success`, `error`) are set by the caller after construction.
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         segment_range: (u64, u64),
         word_count: usize,
@@ -125,6 +143,9 @@ impl DetectionCheck {
         merge_back_count: u32,
         buffer_age_secs: f64,
         sensor_absent_since: Option<String>,
+        sensor_continuous_present: bool,
+        sensor_triggered: bool,
+        manual_triggered: bool,
     ) -> Self {
         Self {
             ts: chrono::Utc::now().to_rfc3339(),
@@ -146,6 +167,9 @@ impl DetectionCheck {
                 merge_back_count,
                 buffer_age_secs,
                 sensor_absent_since,
+                sensor_continuous_present,
+                sensor_triggered,
+                manual_triggered,
             },
         }
     }
@@ -158,6 +182,24 @@ pub struct LoopState {
     pub buffer_age_secs: f64,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub sensor_absent_since: Option<String>,
+    /// True when the sensor has remained continuously Present since the last
+    /// encounter split. Production uses this to raise the LLM-only split
+    /// threshold to 0.99 (block false splits during couples/family visits).
+    /// Schema v2+; defaults to false for older bundles.
+    #[serde(default)]
+    pub sensor_continuous_present: bool,
+    /// True when this detection check was triggered by a sensor Present→Absent
+    /// transition (hybrid mode). In pure sensor mode, sensor triggers short-
+    /// circuit the LLM and no bundle check is produced, so this is only
+    /// meaningful in hybrid mode. Schema v2+; defaults to false.
+    #[serde(default)]
+    pub sensor_triggered: bool,
+    /// True when this check was triggered by a manual "new patient" button
+    /// press. Manual triggers also short-circuit the LLM so bundle checks
+    /// rarely record this as true — it exists mainly so `--override
+    /// manual_triggered=true` works in the replay CLI. Schema v2+.
+    #[serde(default)]
+    pub manual_triggered: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -213,6 +255,49 @@ pub struct SoapResult {
     pub patient_count: Option<usize>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum MultiPatientStage {
+    /// Inline pre-SOAP detection at >=500 words. Runs immediately after a
+    /// split decision, before SOAP generation. Can fire on every clinical
+    /// encounter.
+    PreSoap,
+    /// Retrospective check on the merged text after a merge-back, when the
+    /// merged encounter exceeds 500 words. Captured in the SURVIVING bundle
+    /// (not the merged-away sibling) — production attributes it to the
+    /// surviving session via `logger.set_session(prev_dir)`.
+    Retrospective,
+    /// Standalone safety net for very large encounters (>=2500 words),
+    /// runs after the merge check, only on clinical encounters.
+    Standalone,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MultiPatientDetection {
+    pub ts: String,
+    pub stage: MultiPatientStage,
+    pub word_count: usize,
+    pub model: String,
+    pub system_prompt: String,
+    pub user_prompt: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub response_raw: Option<String>,
+    /// Patient count from parsed result. None when LLM call failed or parse failed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parsed_patient_count: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parsed_confidence: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parsed_reasoning: Option<String>,
+    /// Labels for each detected patient (empty when none parsed).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub patient_labels: Vec<String>,
+    pub latency_ms: u64,
+    pub success: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BillingResult {
     pub ts: String,
@@ -264,6 +349,7 @@ pub struct ReplayBundleBuilder {
     billing_result: Option<BillingResult>,
     name_tracker: Option<NameTrackerState>,
     outcome: Option<Outcome>,
+    multi_patient_detections: Vec<MultiPatientDetection>,
 }
 
 impl ReplayBundleBuilder {
@@ -281,6 +367,7 @@ impl ReplayBundleBuilder {
             billing_result: None,
             name_tracker: None,
             outcome: None,
+            multi_patient_detections: Vec::new(),
         }
     }
 
@@ -328,16 +415,19 @@ impl ReplayBundleBuilder {
         self.outcome = Some(outcome);
     }
 
+    pub fn add_multi_patient_detection(&mut self, detection: MultiPatientDetection) {
+        self.multi_patient_detections.push(detection);
+    }
+
     /// Returns the trigger string from the split decision, if set.
     pub fn split_decision_trigger(&self) -> Option<String> {
         self.split_decision.as_ref().map(|d| d.trigger.clone())
     }
 
-    /// Write the replay bundle to `session_dir/replay_bundle.json` and reset
-    /// the builder for the next encounter (config is preserved).
-    /// Never panics — logs warnings on I/O errors.
-    pub fn build_and_reset(&mut self, session_dir: &Path) {
-        let bundle = ReplayBundle {
+    /// Drain per-encounter state into a `ReplayBundle`. Config is cloned, all
+    /// other fields are moved out via `mem::take` / `Option::take`.
+    fn take_bundle(&mut self) -> ReplayBundle {
+        ReplayBundle {
             schema_version: SCHEMA_VERSION,
             config: self.config.clone(),
             segments: std::mem::take(&mut self.segments),
@@ -351,20 +441,63 @@ impl ReplayBundleBuilder {
             billing_result: self.billing_result.take(),
             name_tracker: self.name_tracker.take(),
             outcome: self.outcome.take(),
-        };
-
-        let json = match serde_json::to_string_pretty(&bundle) {
-            Ok(j) => j,
-            Err(e) => {
-                warn!("Failed to serialize replay bundle: {}", e);
-                return;
-            }
-        };
-
-        let path = session_dir.join(BUNDLE_FILENAME);
-        if let Err(e) = fs::write(&path, json) {
-            warn!("Failed to write replay bundle to {}: {}", path.display(), e);
+            multi_patient_detections: std::mem::take(&mut self.multi_patient_detections),
         }
+    }
+
+    /// Serialize a bundle to pretty JSON and write it to `path`. Logs a
+    /// warning on failure; never panics.
+    fn write_bundle(path: &Path, bundle: &ReplayBundle) {
+        match serde_json::to_string_pretty(bundle) {
+            Ok(json) => {
+                if let Err(e) = fs::write(path, json) {
+                    warn!("Failed to write replay bundle to {}: {}", path.display(), e);
+                }
+            }
+            Err(e) => warn!("Failed to serialize replay bundle: {}", e),
+        }
+    }
+
+    /// Write the replay bundle to `session_dir/replay_bundle.json` and reset
+    /// the builder for the next encounter (config is preserved).
+    pub fn build_and_reset(&mut self, session_dir: &Path) {
+        let bundle = self.take_bundle();
+        Self::write_bundle(&session_dir.join(BUNDLE_FILENAME), &bundle);
+    }
+
+    /// Reset per-encounter state without writing to disk. Config is preserved
+    /// (same as `build_and_reset`). Used when builder state must be discarded
+    /// without producing an artifact — fallback for the merge-back path when
+    /// the surviving session's directory cannot be resolved.
+    pub fn clear(&mut self) {
+        // Drop the bundle immediately so allocations are released.
+        let _ = self.take_bundle();
+    }
+
+    /// Write this builder's state as a merged-away sibling under the SURVIVING
+    /// session's directory, then reset for the next encounter.
+    ///
+    /// Filename format: `replay_bundle.merged_{short_id}.json` where short_id
+    /// is the first 8 chars of the outcome's session_id (or the full ID if
+    /// shorter). Forces `outcome.was_merged = true` and
+    /// `outcome.merged_into = Some(surviving_session_id)` immediately before
+    /// serialization. Caller MUST set the outcome via `set_outcome()` before
+    /// calling — the merged-away session_id is read from `outcome.session_id`.
+    pub fn build_merged_and_reset(&mut self, surviving_dir: &Path, surviving_session_id: &str) {
+        let merged_away_short = self
+            .outcome
+            .as_ref()
+            .and_then(|o| o.session_id.get(..8).map(str::to_string).or_else(|| Some(o.session_id.clone())))
+            .unwrap_or_else(|| "unknown".to_string());
+
+        if let Some(ref mut o) = self.outcome {
+            o.was_merged = true;
+            o.merged_into = Some(surviving_session_id.to_string());
+        }
+
+        let bundle = self.take_bundle();
+        let filename = format!("{}{}.json", MERGED_BUNDLE_PREFIX, merged_away_short);
+        Self::write_bundle(&surviving_dir.join(filename), &bundle);
     }
 }
 
@@ -417,6 +550,9 @@ mod tests {
                 merge_back_count: 0,
                 buffer_age_secs: 300.0,
                 sensor_absent_since: None,
+                sensor_continuous_present: false,
+                sensor_triggered: false,
+                manual_triggered: false,
             },
         }
     }
@@ -674,5 +810,262 @@ mod tests {
         assert_eq!(parsed["sensor_transitions"][0]["from"], "Present");
         assert_eq!(parsed["detection_checks"][0]["sensor_context"]["present"], true);
         assert_eq!(parsed["detection_checks"][0]["loop_state"]["consecutive_failures"], 0);
+    }
+
+    // ---- clear() and build_merged_and_reset tests ----
+
+    fn sample_outcome(session_id: &str) -> Outcome {
+        Outcome {
+            session_id: session_id.to_string(),
+            encounter_number: 3,
+            word_count: 250,
+            is_clinical: true,
+            was_merged: false,
+            merged_into: None,
+            patient_name: Some("Test Patient".to_string()),
+            detection_method: Some("llm".to_string()),
+        }
+    }
+
+    #[test]
+    fn test_clear_resets_without_writing() {
+        let dir = tempdir().expect("tempdir");
+        let mut builder = ReplayBundleBuilder::new(sample_config());
+        builder.add_segment(sample_segment(0));
+        builder.add_segment(sample_segment(1));
+        builder.add_detection_check(sample_detection_check());
+        builder.set_clinical_check(ClinicalCheck {
+            ts: "2026-04-15T10:00:00Z".into(),
+            is_clinical: true,
+            latency_ms: 800,
+            success: true,
+            error: None,
+        });
+        builder.set_outcome(sample_outcome("test-session"));
+
+        builder.clear();
+
+        // All per-encounter state cleared
+        assert!(builder.segments.is_empty());
+        assert!(builder.sensor_transitions.is_empty());
+        assert!(builder.vision_results.is_empty());
+        assert!(builder.detection_checks.is_empty());
+        assert!(builder.split_decision.is_none());
+        assert!(builder.clinical_check.is_none());
+        assert!(builder.merge_check.is_none());
+        assert!(builder.soap_result.is_none());
+        assert!(builder.billing_result.is_none());
+        assert!(builder.name_tracker.is_none());
+        assert!(builder.outcome.is_none());
+
+        // Config preserved
+        assert_eq!(builder.config, sample_config());
+
+        // No file written
+        assert!(!dir.path().join("replay_bundle.json").exists());
+    }
+
+    #[test]
+    fn test_build_merged_and_reset_writes_sibling_file() {
+        let dir = tempdir().expect("tempdir");
+        let mut builder = ReplayBundleBuilder::new(sample_config());
+        builder.add_segment(sample_segment(0));
+        builder.add_detection_check(sample_detection_check());
+        builder.set_outcome(sample_outcome("merged-abc12345-fake"));
+
+        builder.build_merged_and_reset(dir.path(), "surviving-xyz");
+
+        // Sibling file created with the expected name (first 8 chars of outcome.session_id)
+        let expected = dir.path().join("replay_bundle.merged_merged-a.json");
+        assert!(
+            expected.exists(),
+            "merged sibling file should exist at {}",
+            expected.display()
+        );
+
+        let content = fs::read_to_string(&expected).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&content).unwrap();
+        assert_eq!(parsed["schema_version"], SCHEMA_VERSION);
+        assert_eq!(parsed["outcome"]["was_merged"], true);
+        assert_eq!(parsed["outcome"]["merged_into"], "surviving-xyz");
+        assert_eq!(parsed["segments"].as_array().unwrap().len(), 1);
+        assert_eq!(parsed["detection_checks"].as_array().unwrap().len(), 1);
+
+        // Builder is reset
+        assert!(builder.segments.is_empty());
+        assert!(builder.detection_checks.is_empty());
+        assert!(builder.outcome.is_none());
+        assert_eq!(builder.config, sample_config()); // config preserved
+    }
+
+    #[test]
+    fn test_build_merged_and_reset_short_session_id_fallback() {
+        let dir = tempdir().expect("tempdir");
+        let mut builder = ReplayBundleBuilder::new(sample_config());
+        builder.set_outcome(sample_outcome("abc"));
+
+        // Session ID shorter than 8 chars — uses full ID as fallback
+        builder.build_merged_and_reset(dir.path(), "surviving");
+        assert!(dir.path().join("replay_bundle.merged_abc.json").exists());
+    }
+
+    #[test]
+    fn test_build_merged_and_reset_overrides_was_merged_flags() {
+        let dir = tempdir().expect("tempdir");
+        let mut builder = ReplayBundleBuilder::new(sample_config());
+        // Set outcome with was_merged=false (simulating a normal split outcome)
+        let mut outcome = sample_outcome("merged-session");
+        outcome.was_merged = false;
+        outcome.merged_into = None;
+        builder.set_outcome(outcome);
+
+        builder.build_merged_and_reset(dir.path(), "surviving");
+
+        let content =
+            fs::read_to_string(dir.path().join("replay_bundle.merged_merged-s.json")).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&content).unwrap();
+        // build_merged_and_reset must override these regardless of caller intent
+        assert_eq!(parsed["outcome"]["was_merged"], true);
+        assert_eq!(parsed["outcome"]["merged_into"], "surviving");
+    }
+
+    // ---- multi-patient detection capture tests ----
+
+    fn sample_multi_patient_detection(stage: MultiPatientStage) -> MultiPatientDetection {
+        MultiPatientDetection {
+            ts: "2026-04-15T10:00:00Z".into(),
+            stage,
+            word_count: 800,
+            model: "fast-model".into(),
+            system_prompt: "You are a multi-patient detector".into(),
+            user_prompt: "Transcript:".into(),
+            response_raw: Some(r#"{"patient_count": 2}"#.into()),
+            parsed_patient_count: Some(2),
+            parsed_confidence: Some(0.92),
+            parsed_reasoning: Some("Two distinct patients discussed".into()),
+            patient_labels: vec!["Mrs. Smith".into(), "Mr. Jones".into()],
+            latency_ms: 1200,
+            success: true,
+            error: None,
+        }
+    }
+
+    #[test]
+    fn test_add_multi_patient_detection() {
+        let mut builder = ReplayBundleBuilder::new(sample_config());
+        builder.add_multi_patient_detection(sample_multi_patient_detection(
+            MultiPatientStage::PreSoap,
+        ));
+        builder.add_multi_patient_detection(sample_multi_patient_detection(
+            MultiPatientStage::Standalone,
+        ));
+        assert_eq!(builder.multi_patient_detections.len(), 2);
+    }
+
+    #[test]
+    fn test_multi_patient_detection_persists_in_bundle() {
+        let dir = tempdir().expect("tempdir");
+        let mut builder = ReplayBundleBuilder::new(sample_config());
+        builder.add_multi_patient_detection(sample_multi_patient_detection(
+            MultiPatientStage::PreSoap,
+        ));
+        builder.build_and_reset(dir.path());
+
+        let content = fs::read_to_string(dir.path().join("replay_bundle.json")).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&content).unwrap();
+        assert_eq!(parsed["multi_patient_detections"][0]["stage"], "pre_soap");
+        assert_eq!(parsed["multi_patient_detections"][0]["parsed_patient_count"], 2);
+        assert_eq!(parsed["multi_patient_detections"][0]["patient_labels"][0], "Mrs. Smith");
+        // Cleared after reset
+        assert!(builder.multi_patient_detections.is_empty());
+    }
+
+    #[test]
+    fn test_multi_patient_detection_cleared_by_clear() {
+        let mut builder = ReplayBundleBuilder::new(sample_config());
+        builder.add_multi_patient_detection(sample_multi_patient_detection(
+            MultiPatientStage::Retrospective,
+        ));
+        builder.clear();
+        assert!(builder.multi_patient_detections.is_empty());
+    }
+
+    #[test]
+    fn test_multi_patient_detection_cleared_by_build_merged_and_reset() {
+        let dir = tempdir().expect("tempdir");
+        let mut builder = ReplayBundleBuilder::new(sample_config());
+        builder.add_multi_patient_detection(sample_multi_patient_detection(
+            MultiPatientStage::PreSoap,
+        ));
+        builder.set_outcome(sample_outcome("merged-id"));
+        builder.build_merged_and_reset(dir.path(), "surviving-id");
+
+        // Builder is cleared
+        assert!(builder.multi_patient_detections.is_empty());
+
+        // The sibling file contains the detection
+        let path = dir.path().join("replay_bundle.merged_merged-i.json");
+        let content = fs::read_to_string(&path).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&content).unwrap();
+        assert_eq!(parsed["multi_patient_detections"].as_array().unwrap().len(), 1);
+        assert_eq!(parsed["multi_patient_detections"][0]["stage"], "pre_soap");
+    }
+
+    #[test]
+    fn test_v1_bundle_deserializes_with_empty_multi_patient_detections() {
+        // Backward compat: a bundle without the new field deserializes
+        // with an empty Vec via #[serde(default)].
+        let json = r#"{
+            "schema_version": 2,
+            "config": {},
+            "segments": [],
+            "sensor_transitions": [],
+            "vision_results": [],
+            "detection_checks": []
+        }"#;
+        let bundle: ReplayBundle = serde_json::from_str(json).unwrap();
+        assert!(bundle.multi_patient_detections.is_empty());
+    }
+
+    #[test]
+    fn test_multi_patient_stage_serializes_snake_case() {
+        // The serde rename_all = "snake_case" must produce stage values that
+        // match expectations: pre_soap, retrospective, standalone.
+        let pre = serde_json::to_string(&MultiPatientStage::PreSoap).unwrap();
+        let retro = serde_json::to_string(&MultiPatientStage::Retrospective).unwrap();
+        let stand = serde_json::to_string(&MultiPatientStage::Standalone).unwrap();
+        assert_eq!(pre, r#""pre_soap""#);
+        assert_eq!(retro, r#""retrospective""#);
+        assert_eq!(stand, r#""standalone""#);
+    }
+
+    #[test]
+    fn test_no_state_leaks_after_clear_then_build() {
+        // Critical regression: simulate the bug where merge-back left state
+        // behind. Build encounter A as merged → clear via build_merged_and_reset
+        // → build encounter B normally → assert B's bundle has only B's data.
+        let dir = tempdir().expect("tempdir");
+        let mut builder = ReplayBundleBuilder::new(sample_config());
+
+        // Encounter A: merged-away
+        builder.add_segment(sample_segment(0));
+        builder.add_detection_check(sample_detection_check());
+        builder.set_outcome(sample_outcome("session-a-merged"));
+        builder.build_merged_and_reset(dir.path(), "surviving");
+
+        // Confirm builder is empty
+        assert!(builder.segments.is_empty());
+
+        // Encounter B: normal split
+        builder.add_segment(sample_segment(99));
+        builder.set_outcome(sample_outcome("session-b"));
+        builder.build_and_reset(dir.path());
+
+        let b_content = fs::read_to_string(dir.path().join("replay_bundle.json")).unwrap();
+        let b_parsed: serde_json::Value = serde_json::from_str(&b_content).unwrap();
+        let segs = b_parsed["segments"].as_array().unwrap();
+        assert_eq!(segs.len(), 1, "B's bundle must have only B's segments, no leak from A");
+        assert_eq!(segs[0]["index"], 99, "B's segment index, not A's (0)");
+        assert_eq!(b_parsed["outcome"]["was_merged"], false, "B was not merged");
     }
 }
