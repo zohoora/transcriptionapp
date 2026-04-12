@@ -91,7 +91,7 @@ Rust Backend
 ├── audio_upload_queue.rs # Background audio upload queue for server sync
 ├── pipeline_log.rs    # Pipeline replay JSONL logger (detection, SOAP, screenshot events)
 ├── segment_log.rs     # Per-segment JSONL timeline logger (continuous mode)
-├── replay_bundle.rs   # Self-contained encounter replay test case builder
+├── replay_bundle.rs   # Self-contained encounter replay test case builder (schema v2: adds sensor_continuous_present/sensor_triggered/manual_triggered to loop_state, merge-back sibling files, multi_patient_detections)
 ├── day_log.rs         # Day-level orchestration JSONL logger
 ├── transcript_buffer.rs # Timestamped transcript segment buffer (continuous mode)
 ├── encounter_experiment.rs # Encounter detection experiment CLI support
@@ -261,9 +261,9 @@ Idle → Preparing → Recording → Stopping → Completed
 | Orphaned SOAP recovery | On continuous mode stop, scans today's sessions for `has_soap_note == false` and regenerates SOAP. Skips non-clinical encounters. Uses existing flush LLM client |
 | Sensor prompt design | sensor_departed: V2_soft framing lists common false departures, directs LLM to evaluate transcript content. sensor_present: conservative "NOT transitions" framing, proven in production |
 | Retrospective multi-patient check | After merge-back, if merged transcript >= 2500 words: (1) `MULTI_PATIENT_CHECK_PROMPT` detects multiple patients (distinguishes companions from separate visits), (2) `MULTI_PATIENT_SPLIT_PROMPT` finds boundary via name transitions, (3) size gate requires both halves >= 500 words. Auto-splits and regenerates SOAP for both halves. Constants in `encounter_detection.rs`, logic in `continuous_mode.rs` |
-| Replay logging architecture | Three tiers: `SegmentLogger` (per-segment JSONL, buffers before session dir exists, holds open file handle), `ReplayBundleBuilder` (accumulator pattern, `build_and_reset()` uses `std::mem::take()` for zero-copy write+reset), `DayLogger` (day-level JSONL, immediate writes). All created in continuous mode setup, wired at 12+ integration points. Schema version field for forward compatibility |
+| Replay logging architecture | Three tiers: `SegmentLogger` (per-segment JSONL, buffers before session dir exists, holds open file handle), `ReplayBundleBuilder` (accumulator pattern, `build_and_reset()` uses `std::mem::take()` for zero-copy write+reset; private `take_bundle()` + `write_bundle()` helpers shared with `build_merged_and_reset()`), `DayLogger` (day-level JSONL, immediate writes). All created in continuous mode setup, wired at 12+ integration points. `SCHEMA_VERSION=2` (v2 added `sensor_continuous_present`/`sensor_triggered`/`manual_triggered` to `loop_state` + `multi_patient_detections` field). All new fields use `#[serde(default)]` for backward compat with v1 bundles. `replay_bundle_backfill` tool reconstructs historical v1→v2 upgrades from mmWave CSV + day_log |
 | DetectionCheck construction | Use `DetectionCheck::new()` constructor for common fields (sensor context, prompts, loop state), then set result-specific fields (`success`, `response_raw`, `parsed_*`, `error`). Avoids 4x copy-paste at LLM call outcomes |
-| Replay bundle lifecycle | Created with `config.replay_snapshot()` at continuous mode start → `add_segment/detection_check/vision_result/sensor_transition` during encounter → `set_split_decision/clinical_check/merge_check/soap_result/name_tracker/outcome` at encounter end → `build_and_reset()` writes JSON and clears for next encounter |
+| Replay bundle lifecycle | Created with `config.replay_snapshot()` at continuous mode start → `add_segment/detection_check/vision_result/sensor_transition/multi_patient_detection` during encounter → `set_split_decision/clinical_check/merge_check/soap_result/name_tracker/outcome` at encounter end → normal split uses `build_and_reset()` (writes `replay_bundle.json`, clears builder). Merge-back paths use `build_merged_and_reset(surviving_dir, surviving_id)` which writes `replay_bundle.merged_{short_id}.json` as a sibling under the surviving session's directory (forces `was_merged=true`, `merged_into=Some(surviving_id)`). `clear()` resets without writing (fail-safe fallback when surviving dir can't be resolved). `finalize_merged_bundle()` helper in continuous_mode.rs wraps the lock+set_outcome+build sequence at both merge-back sites. Sibling-file convention chosen so both replay tools can discover merged bundles via filename prefix without recursive traversal |
 | Config replay snapshot | `config.replay_snapshot()` returns `serde_json::Value` with 20 pipeline-relevant fields (detection mode/model/timing, merge, sensor, SOAP, screen capture). Logged in both `day_log.jsonl` config event and `replay_bundle.json` |
 | Server sync fire-and-forget | `ServerSyncContext` in `continuous_mode.rs` — clones IDs+client, spawns async upload task. 30s delayed re-sync catches late-written aux files |
 | Hybrid history merge | `commands/archive.rs` — local sessions + server sessions merged by session_id (local wins), server fills gaps for cross-machine sessions |
@@ -316,7 +316,7 @@ Idle → Preparing → Recording → Stopping → Completed
 | **Shadow Mode** | Dual detection comparison — runs sensor and LLM concurrently, logs decisions to CSV for accuracy analysis. Config: `encounter_detection_mode="shadow"`, `shadow_active_method` | `shadow_log.rs`, `continuous_mode.rs` |
 | **Session Cleanup** | History window tools: delete, split, merge sessions, rename patients, renumber encounters. Split opens in separate resizable window with LLM-suggested split point (`suggest_split_points` via `fast-model`) | `commands/archive.rs`, `components/cleanup/`, `SplitWindow.tsx` |
 | **Vision Experiments** | CLI + IPC tools for comparing vision-based SOAP strategies across archived sessions | `vision_experiment.rs`, `commands/ollama.rs` |
-| **Simulation Replay Logging** | Three-tier structured logging for offline replay and regression testing: per-segment JSONL timeline (`segments.jsonl`), self-contained encounter test case (`replay_bundle.json` — all LLM prompts/responses, sensor transitions, vision results, split decisions), day-level orchestration events (`day_log.jsonl`). Config snapshot via `replay_snapshot()`. ~0.5-3MB/day. `detection_replay_cli` replays archived decisions through `evaluate_detection()` with `--override` for what-if parameter tuning | `segment_log.rs`, `replay_bundle.rs`, `day_log.rs`, `config.rs`, `tools/detection_replay_cli.rs` |
+| **Simulation Replay Logging** | Three-tier structured logging for offline replay and regression testing: per-segment JSONL timeline (`segments.jsonl`), self-contained encounter test case (`replay_bundle.json` — all LLM prompts/responses, sensor transitions, vision results, split decisions, multi-patient detections), day-level orchestration events (`day_log.jsonl`). Schema v2 adds `sensor_continuous_present`/`sensor_triggered`/`manual_triggered` to loop_state (~99.5% replay agreement with production). Merge-back encounters finalize as `replay_bundle.merged_{short_id}.json` siblings under the surviving session's dir. Multi-patient detections captured at three call sites (PreSoap, Retrospective, Standalone) via `MultiPatientStage` enum. Config snapshot via `replay_snapshot()`. ~0.5-3MB/day. `detection_replay_cli` replays archived decisions through `evaluate_detection()` with `--override` for what-if parameter tuning. `replay_bundle_backfill` tool reconstructs v1→v2 upgrades from mmWave CSV + day_log. `scripts/replay_day.py` orchestrates full-day audio replay through STT Router + LLM Router for end-to-end model comparison | `segment_log.rs`, `replay_bundle.rs`, `day_log.rs`, `config.rs`, `tools/detection_replay_cli.rs`, `tools/replay_bundle_backfill.rs`, `scripts/replay_day.py` |
 | **FHO+ Billing** | Two-stage billing extraction: LLM extracts clinical features (23 visit types, 79 procedures, 14 conditions), deterministic rule engine maps to OHIP codes. 234 OHIP codes (SOB-verified Apr 2026, including epidurals/nerve blocks from audit), 562 diagnostic codes (MOH ICD-8), 21 exclusion groups. Companion code auto-add: E542A tray fee, E430A pap tray, E079A smoking cessation. Base+add-on quantity logic (G370→G371, G384→G385). Billing preferences in Settings (visit setting, K013 exhausted, hospital-based). Diagnostic code search + LLM suggestion from SOAP. Billing context toggles: visit setting, patient age (auto from vision DOB), referral, K013, after-hours, hospital. CSV export with diagnostic code column. Auto-extracts after SOAP in continuous mode. Full Q310-Q313 time tracking with 14hr/day and 240hr/28-day caps. Daily/monthly summary. Stored as `billing.json` per session | `billing/`, `commands/billing.rs`, `encounter_pipeline.rs`, `src/components/billing/` |
 | **Multi-User** | Room + physician profile system. Passwordless physician selection (physical clinic security). Profile service on Mac Studio (:8090) stores physicians, rooms, speakers, and sessions. Server is source of truth — local archive is write-through cache. Settings merge: infrastructure (shared) → room (per-machine) → physician (roaming). Background audio upload, 30s delayed re-sync for late-written files. Offline resilience with cached profiles. Multi-URL failover: `fallback_server_urls` in room_config.json, startup health probe selects fastest responding URL (2s timeout per URL, `connect_timeout` 3s on main client) | `profile_client.rs`, `room_config.rs`, `physician_cache.rs`, `commands/physicians.rs` |
 
@@ -355,6 +355,7 @@ Multi-user: profile_server_url + fallback_server_urls (in room_config.json), act
 | `~/.transcriptionapp/archive/YYYY/MM/DD/day_log.jsonl` | Day-level orchestration events (config snapshot, splits, merges, SOAP results) |
 | `~/.transcriptionapp/archive/YYYY/MM/DD/session_id/segments.jsonl` | Per-segment timeline (timestamp, text, speaker, word counts) |
 | `~/.transcriptionapp/archive/YYYY/MM/DD/session_id/replay_bundle.json` | Self-contained encounter test case (all LLM calls, decisions, outcomes) |
+| `~/.transcriptionapp/archive/YYYY/MM/DD/{surviving_session}/replay_bundle.merged_{short_id}.json` | Sibling replay bundles for encounters that were merged back into the surviving session. `short_id` = first 8 chars of the merged-away session UUID. Preserves merged-away encounter's LLM calls/decisions since the merged-away session dir is deleted |
 | `~/.transcriptionapp/archive/YYYY/MM/DD/session_id/patient_handout.txt` | Patient-facing visit summary (optional, only if clinician generated one) |
 | `~/.transcriptionapp/archive/YYYY/MM/DD/session_id/billing.json` | Per-session billing record (OHIP codes, time entries, totals, draft/confirmed status) |
 | `~/.transcriptionapp/logs/` | Activity logs (daily rotation, PHI-safe) |
@@ -375,6 +376,7 @@ Multi-user: profile_server_url + fallback_server_urls (in room_config.json), act
 | `scripts/audit_ohip_codes.py` | Comprehensive SOB audit — extracts ALL codes from PDF, cross-refs against DB, finds missing GP-billable codes, flags dual-description codes (Section 6) |
 | `scripts/test_billing_extraction.py` | Billing extraction basic integration tests (12 cases) |
 | `scripts/test_billing_stress.py` | Billing extraction stress tests (15 cases, 80% pass target) |
+| `scripts/replay_day.py` | Full-day audio replay orchestrator. Re-transcribes `continuous_YYYYMMDD_*.wav` files through STT Router (5-min chunks, auto language detect) and runs the resulting transcript through encounter detection + SOAP generation via LLM Router. Three subcommands: `transcribe YYYY-MM-DD`, `replay YYYY-MM-DD <config>` (`default`/`soap_alt`/`soap_alt_2`), `compare YYYY-MM-DD`. Reads auth from `~/.transcriptionapp/config.json`. Caches intermediate results under `/tmp/replay_YYYY-MM-DD/`. Uses production prompts verbatim. Used to compare model alternatives end-to-end on real clinic data without disrupting the running app |
 
 ## Clinic Deployment
 
@@ -598,7 +600,32 @@ cargo run --bin detection_replay_cli -- ~/.transcriptionapp/archive/2026/03/12/
 cargo run --bin detection_replay_cli -- --all
 cargo run --bin detection_replay_cli -- --all --mismatches
 cargo run --bin detection_replay_cli -- --all --override hybrid_confirm_window_secs=120
+cargo run --bin detection_replay_cli -- --all --override sensor_continuous_present=true
+cargo run --bin detection_replay_cli -- --all --override manual_triggered=false
+
+# Replay bundle backfill (v1 → v2 upgrade from mmWave CSV + day_log)
+cargo run --bin replay_bundle_backfill -- --dry-run
+cargo run --bin replay_bundle_backfill --            # apply in place (atomic UUID-suffixed writes)
 ```
+
+**Full-day audio replay** (Python orchestrator in `tauri-app/scripts/`):
+
+```bash
+cd tauri-app
+
+# Step 1: re-transcribe all continuous_*.wav files for a day via STT Router
+python3 scripts/replay_day.py transcribe 2026-04-10
+
+# Step 2: replay transcripts through encounter detection + SOAP generation
+python3 scripts/replay_day.py replay 2026-04-10 default       # fast-model + soap-model-fast
+python3 scripts/replay_day.py replay 2026-04-10 soap_alt      # fast-model + soap-alt
+python3 scripts/replay_day.py replay 2026-04-10 soap_alt_2    # fast-model + soap-alt-2
+
+# Step 3: compare outputs across configs (encounter counts, SOAP item counts, failure rates)
+python3 scripts/replay_day.py compare 2026-04-10
+```
+
+Intermediate results are cached at `/tmp/replay_YYYY-MM-DD/` so re-runs are cheap. Useful for end-to-end model comparison on real clinic data without touching the running app.
 
 ## Testing Best Practices
 

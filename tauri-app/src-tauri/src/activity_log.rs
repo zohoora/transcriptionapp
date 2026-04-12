@@ -57,8 +57,15 @@ pub fn init_logging() -> Result<(), Box<dyn std::error::Error>> {
     // Store the guard to keep logging active
     LOG_GUARD.set(guard).ok();
 
-    // File layer - JSON format for structured logging with explicit UTC timestamps
-    // IMPORTANT: Filter to info+ to avoid TRACE/DEBUG floods from hyper, tokio, etc.
+    // File layer - JSON format for structured logging with explicit UTC timestamps.
+    //
+    // Filter rules:
+    // - Default `info+` for application code.
+    // - ORT (ONNX Runtime) internals downgraded to `warn+`: the ort crate routes the
+    //   C++ runtime's memory-arena and tensor-init logs through `tracing` at INFO. Left
+    //   unfiltered, they generate 5-20 GB of JSON logs per day per continuous session
+    //   ("Reserving memory in BFCArena", "Saving initialized tensors", etc.).
+    // - Tower/hyper/reqwest kept at `warn+` to suppress verbose HTTP handshake traces.
     let file_layer = fmt::layer()
         .json()
         .with_timer(UtcTime::rfc_3339())
@@ -67,7 +74,10 @@ pub fn init_logging() -> Result<(), Box<dyn std::error::Error>> {
         .with_thread_ids(true)
         .with_file(true)
         .with_line_number(true)
-        .with_filter(EnvFilter::new("info"));
+        .with_filter(EnvFilter::new(
+            "info,ort=warn,ort_sys=warn,onnxruntime=warn,\
+             hyper=warn,hyper_util=warn,reqwest=warn,tower=warn,h2=warn",
+        ));
 
     // Console layer - human-readable format
     let console_layer = fmt::layer()

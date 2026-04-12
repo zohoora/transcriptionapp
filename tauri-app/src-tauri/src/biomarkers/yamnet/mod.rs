@@ -254,7 +254,7 @@ impl YamnetProvider {
                 .take(3)
                 .map(|(id, score)| format!("{}={:.1}", get_class_name(*id), score))
                 .collect();
-            info!("YAMNet top: {}", top.join(", "));
+            debug!("YAMNet top: {}", top.join(", "));
         }
 
         Ok(predictions)

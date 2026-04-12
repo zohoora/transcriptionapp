@@ -222,7 +222,7 @@ fn run_biomarker_thread(
                     match yam.process_chunk(&samples, timestamp_ms, config.cough_threshold) {
                         Ok(events) => {
                             for event in events {
-                                info!(
+                                debug!(
                                     "AUDIO EVENT: {} at {}ms (confidence: {:.2})",
                                     event.label, event.timestamp_ms, event.confidence
                                 );
