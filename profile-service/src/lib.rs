@@ -29,6 +29,11 @@ pub fn create_app_state(data_dir: &Path) -> Arc<AppState> {
         store::infrastructure::InfrastructureStore::load(data_dir.join("infrastructure.json"))
             .expect("Failed to load infrastructure settings");
     let sessions = store::sessions::SessionStore::new(data_dir.join("sessions"));
+    let mobile_jobs = store::mobile_jobs::MobileJobStore::load(
+        data_dir.join("mobile_jobs.json"),
+        data_dir.join("mobile_uploads"),
+    )
+    .expect("Failed to load mobile jobs");
 
     Arc::new(AppState {
         physicians: RwLock::new(physicians),
@@ -36,6 +41,7 @@ pub fn create_app_state(data_dir: &Path) -> Arc<AppState> {
         speakers: RwLock::new(speakers),
         infrastructure: RwLock::new(infrastructure),
         sessions,
+        mobile_jobs: RwLock::new(mobile_jobs),
         data_dir: data_dir.to_path_buf(),
     })
 }

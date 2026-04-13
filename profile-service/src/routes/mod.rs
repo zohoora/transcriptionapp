@@ -1,5 +1,6 @@
 pub mod health;
 pub mod infrastructure;
+pub mod mobile;
 pub mod physicians;
 pub mod rooms;
 pub mod sessions;
@@ -14,6 +15,22 @@ pub fn build_router(state: Arc<AppState>) -> Router {
     Router::new()
         // Health
         .route("/health", get(health::health))
+        // Mobile — upload & job tracking
+        .route("/mobile/upload", post(mobile::upload))
+        .route(
+            "/mobile/jobs",
+            get(mobile::list_jobs),
+        )
+        .route(
+            "/mobile/jobs/:job_id",
+            get(mobile::get_job)
+                .put(mobile::update_job)
+                .delete(mobile::delete_job),
+        )
+        .route(
+            "/mobile/uploads/:job_id",
+            get(mobile::download_audio),
+        )
         // Infrastructure settings (singleton)
         .route("/infrastructure", get(infrastructure::get).put(infrastructure::update))
         // Physicians

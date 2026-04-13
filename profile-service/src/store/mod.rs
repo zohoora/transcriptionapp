@@ -1,4 +1,5 @@
 pub mod infrastructure;
+pub mod mobile_jobs;
 pub mod physicians;
 pub mod rooms;
 pub mod sessions;
@@ -13,5 +14,6 @@ pub struct AppState {
     pub speakers: RwLock<speakers::SpeakerManager>,
     pub infrastructure: RwLock<infrastructure::InfrastructureStore>,
     pub sessions: sessions::SessionStore,
+    pub mobile_jobs: RwLock<mobile_jobs::MobileJobStore>,
     pub data_dir: PathBuf,
 }

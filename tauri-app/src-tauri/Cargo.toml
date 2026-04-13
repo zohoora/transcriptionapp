@@ -154,6 +154,10 @@ path = "tools/detection_replay_cli.rs"
 name = "replay_bundle_backfill"
 path = "tools/replay_bundle_backfill.rs"
 
+[[bin]]
+name = "process_mobile"
+path = "src/bin/process_mobile.rs"
+
 [[bench]]
 name = "audio_benchmarks"
 harness = false
