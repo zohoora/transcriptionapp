@@ -85,7 +85,8 @@ cd tauri-app/src-tauri && cargo run --bin process_mobile -- --once  # Process on
 
 # iOS app
 cd ios && xcodegen generate                # Regenerate Xcode project
-cd ios && xcodebuild -project "AMI Assist.xcodeproj" -scheme "AMI Assist" -destination "generic/platform=iOS" build
+./ios/scripts/test.sh                      # Build + test (60 tests)
+./ios/scripts/test.sh --build-only         # Build only
 
 # Release (triggers auto-update for all rooms)
 # Bump version in tauri.conf.json + package.json + Cargo.toml, then:

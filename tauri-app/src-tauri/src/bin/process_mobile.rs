@@ -19,9 +19,20 @@ use serde::{Deserialize, Serialize};
 use tracing::{error, info, warn};
 
 use transcription_app_lib::llm_client::{LLMClient, SoapFormat, SoapOptions};
+use transcription_app_lib::profile_client::PhysicianProfile;
 use transcription_app_lib::whisper_server::WhisperServerClient;
 
 // ── Types matching profile service API ──────────────────────────────────────
+
+/// Job status constants matching the profile service's JobStatus enum (snake_case wire format).
+mod status {
+    pub const TRANSCODING: &str = "transcoding";
+    pub const TRANSCRIBING: &str = "transcribing";
+    pub const DETECTING: &str = "detecting";
+    pub const GENERATING_SOAP: &str = "generating_soap";
+    pub const COMPLETE: &str = "complete";
+    pub const FAILED: &str = "failed";
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct MobileJob {
@@ -55,17 +66,13 @@ struct UpdateJobRequest {
     sessions_created: Option<Vec<CreatedSession>>,
 }
 
-#[derive(Debug, Deserialize)]
-#[allow(dead_code)]
-struct Physician {
-    id: String,
-    name: String,
-    #[serde(default)]
-    soap_detail_level: Option<u8>,
-    #[serde(default)]
-    soap_format: Option<String>,
-    #[serde(default)]
-    soap_custom_instructions: Option<String>,
+/// Build an UpdateJobRequest with just a status change (no error or sessions).
+fn status_update(status: &str) -> UpdateJobRequest {
+    UpdateJobRequest {
+        status: status.to_string(),
+        error: None,
+        sessions_created: None,
+    }
 }
 
 #[derive(Debug, Serialize)]
@@ -258,7 +265,7 @@ impl ProfileServiceClient {
             .map_err(|e| format!("Failed to read audio bytes: {e}"))
     }
 
-    async fn get_physician(&self, physician_id: &str) -> Result<Physician, String> {
+    async fn get_physician(&self, physician_id: &str) -> Result<PhysicianProfile, String> {
         let url = format!("{}/physicians/{}", self.base_url, physician_id);
         let resp = self
             .client
@@ -402,7 +409,7 @@ async fn generate_soap(
     llm_client: &LLMClient,
     transcript: &str,
     model: &str,
-    physician: &Physician,
+    physician: &PhysicianProfile,
 ) -> Result<Option<String>, String> {
     let word_count = transcript.split_whitespace().count();
     if word_count < 50 {
@@ -440,7 +447,6 @@ async fn process_job(
     config: &CliConfig,
     work_dir: &Path,
 ) -> Result<Vec<CreatedSession>, String> {
-    // Step 1: Download audio
     info!("Downloading audio for job {}...", job.job_id);
     let audio_data = profile_client.download_audio(&job.job_id).await?;
     let m4a_path = work_dir.join(format!("{}.m4a", job.job_id));
@@ -448,30 +454,14 @@ async fn process_job(
         .await
         .map_err(|e| format!("Failed to write audio: {e}"))?;
 
-    // Step 2: Transcode
     profile_client
-        .update_job_status(
-            &job.job_id,
-            &UpdateJobRequest {
-                status: "transcoding".to_string(),
-                error: None,
-                sessions_created: None,
-            },
-        )
+        .update_job_status(&job.job_id, &status_update(status::TRANSCODING))
         .await?;
     info!("Transcoding AAC → WAV...");
     let wav_path = transcode_to_wav(&m4a_path)?;
 
-    // Step 3: Speech-to-text
     profile_client
-        .update_job_status(
-            &job.job_id,
-            &UpdateJobRequest {
-                status: "transcribing".to_string(),
-                error: None,
-                sessions_created: None,
-            },
-        )
+        .update_job_status(&job.job_id, &status_update(status::TRANSCRIBING))
         .await?;
     let samples = read_wav_samples(&wav_path)?;
     let transcript = transcribe_audio(stt_client, &samples, &config.stt_alias).await?;
@@ -480,30 +470,14 @@ async fn process_job(
         transcript.split_whitespace().count()
     );
 
-    // Step 4: Encounter detection
     profile_client
-        .update_job_status(
-            &job.job_id,
-            &UpdateJobRequest {
-                status: "detecting".to_string(),
-                error: None,
-                sessions_created: None,
-            },
-        )
+        .update_job_status(&job.job_id, &status_update(status::DETECTING))
         .await?;
     let encounters = split_transcript_into_encounters(&transcript);
     info!("Detected {} encounter(s)", encounters.len());
 
-    // Step 5: SOAP generation + session creation
     profile_client
-        .update_job_status(
-            &job.job_id,
-            &UpdateJobRequest {
-                status: "generating_soap".to_string(),
-                error: None,
-                sessions_created: None,
-            },
-        )
+        .update_job_status(&job.job_id, &status_update(status::GENERATING_SOAP))
         .await?;
 
     let physician = profile_client.get_physician(&job.physician_id).await?;
@@ -658,7 +632,7 @@ async fn main() {
                                     .update_job_status(
                                         &job.job_id,
                                         &UpdateJobRequest {
-                                            status: "complete".to_string(),
+                                            status: status::COMPLETE.to_string(),
                                             error: None,
                                             sessions_created: Some(sessions),
                                         },
@@ -671,7 +645,7 @@ async fn main() {
                                     .update_job_status(
                                         &job.job_id,
                                         &UpdateJobRequest {
-                                            status: "failed".to_string(),
+                                            status: status::FAILED.to_string(),
                                             error: Some(e),
                                             sessions_created: None,
                                         },

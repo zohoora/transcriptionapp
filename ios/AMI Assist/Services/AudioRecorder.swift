@@ -14,13 +14,13 @@ class AudioRecorder: NSObject, ObservableObject {
     /// Current recording's UUID. Set when recording starts.
     private(set) var currentRecordingId: String?
 
-    /// Directory where recordings are stored.
-    static var recordingsDirectory: URL {
+    /// Directory where recordings are stored (created once on first access).
+    static let recordingsDirectory: URL = {
         let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
         let dir = docs.appendingPathComponent("recordings")
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         return dir
-    }
+    }()
 
     func startRecording() throws -> (id: String, url: URL) {
         let session = AVAudioSession.sharedInstance()

@@ -1,5 +1,5 @@
 use crate::error::ApiError;
-use crate::store::mobile_jobs::{MobileJob, UpdateJobRequest};
+use crate::store::mobile_jobs::{MobileJob, MobileJobStore, UpdateJobRequest};
 use crate::store::AppState;
 use axum::extract::{Multipart, Path, Query, State};
 use axum::Json;
@@ -136,6 +136,7 @@ pub async fn get_job(
     State(state): State<Arc<AppState>>,
     Path(job_id): Path<String>,
 ) -> Result<Json<MobileJob>, ApiError> {
+    MobileJobStore::validate_job_id(&job_id)?;
     let store = state.mobile_jobs.read().await;
     let job = store.get_job(&job_id)?;
     Ok(Json(job))
@@ -157,6 +158,7 @@ pub async fn update_job(
     Path(job_id): Path<String>,
     Json(req): Json<UpdateJobRequest>,
 ) -> Result<Json<MobileJob>, ApiError> {
+    MobileJobStore::validate_job_id(&job_id)?;
     let mut store = state.mobile_jobs.write().await;
     let job = store.update_job(&job_id, req)?;
     Ok(Json(job))
@@ -167,6 +169,7 @@ pub async fn delete_job(
     State(state): State<Arc<AppState>>,
     Path(job_id): Path<String>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
+    MobileJobStore::validate_job_id(&job_id)?;
     let mut store = state.mobile_jobs.write().await;
     store.delete_job(&job_id)?;
     Ok(Json(serde_json::json!({ "ok": true })))
@@ -176,9 +179,9 @@ pub async fn delete_job(
 pub async fn download_audio(
     State(state): State<Arc<AppState>>,
     Path(job_id): Path<String>,
-) -> Result<Vec<u8>, ApiError> {
+) -> Result<(axum::http::HeaderMap, Vec<u8>), ApiError> {
+    MobileJobStore::validate_job_id(&job_id)?;
     let store = state.mobile_jobs.read().await;
-    // Verify job exists
     store.get_job(&job_id)?;
 
     let path = store.upload_path(&job_id);
@@ -188,7 +191,17 @@ pub async fn download_audio(
         )));
     }
 
-    tokio::fs::read(&path)
+    let data = tokio::fs::read(&path)
         .await
-        .map_err(|e| ApiError::Internal(format!("Failed to read audio: {e}")))
+        .map_err(|e| ApiError::Internal(format!("Failed to read audio: {e}")))?;
+
+    let mut headers = axum::http::HeaderMap::new();
+    headers.insert("content-type", "audio/mp4".parse().unwrap());
+    headers.insert(
+        "content-disposition",
+        format!("attachment; filename=\"{job_id}.m4a\"")
+            .parse()
+            .unwrap(),
+    );
+    Ok((headers, data))
 }

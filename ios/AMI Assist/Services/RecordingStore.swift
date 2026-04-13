@@ -5,6 +5,8 @@ import Combine
 class RecordingStore: ObservableObject {
     @Published var recordings: [Recording] = []
 
+    let directory: URL
+
     private let encoder: JSONEncoder = {
         let e = JSONEncoder()
         e.dateEncodingStrategy = .iso8601
@@ -16,7 +18,8 @@ class RecordingStore: ObservableObject {
         return d
     }()
 
-    init() {
+    init(directory: URL? = nil) {
+        self.directory = directory ?? AudioRecorder.recordingsDirectory
         loadAll()
     }
 
@@ -35,7 +38,7 @@ class RecordingStore: ObservableObject {
     }
 
     func delete(_ recording: Recording) {
-        let audioURL = AudioRecorder.recordingsDirectory.appendingPathComponent(recording.audioFileName)
+        let audioURL = directory.appendingPathComponent(recording.audioFileName)
         let metaURL = metadataURL(for: recording.recordingId)
         try? FileManager.default.removeItem(at: audioURL)
         try? FileManager.default.removeItem(at: metaURL)
@@ -48,8 +51,7 @@ class RecordingStore: ObservableObject {
 
     /// Total size of local audio files in bytes.
     var totalStorageBytes: UInt64 {
-        let dir = AudioRecorder.recordingsDirectory
-        guard let files = try? FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: [.fileSizeKey]) else {
+        guard let files = try? FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: [.fileSizeKey]) else {
             return 0
         }
         return files.reduce(0) { total, url in
@@ -71,8 +73,7 @@ class RecordingStore: ObservableObject {
     // MARK: - Persistence
 
     func loadAll() {
-        let dir = AudioRecorder.recordingsDirectory
-        guard let files = try? FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil) else {
+        guard let files = try? FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil) else {
             return
         }
         recordings = files
@@ -87,6 +88,6 @@ class RecordingStore: ObservableObject {
     // MARK: - Helpers
 
     private func metadataURL(for recordingId: String) -> URL {
-        AudioRecorder.recordingsDirectory.appendingPathComponent("\(recordingId).json")
+        directory.appendingPathComponent("\(recordingId).json")
     }
 }

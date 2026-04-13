@@ -97,12 +97,16 @@ class UploadService: ObservableObject {
     private func pollStatuses() {
         guard let client = apiClient else { return }
         let processing = store.processingRecordings
+        guard !processing.isEmpty else { return }
 
-        for recording in processing {
-            guard let jobId = recording.jobId else { continue }
-            Task {
-                do {
-                    let job = try await client.fetchJob(jobId: jobId)
+        Task {
+            do {
+                let jobs = try await client.fetchJobs()
+                let jobMap = Dictionary(uniqueKeysWithValues: jobs.map { ($0.jobId, $0) })
+
+                for recording in processing {
+                    guard let jobId = recording.jobId,
+                          let job = jobMap[jobId] else { continue }
                     var rec = recording
                     switch job.status {
                     case "complete":
@@ -112,16 +116,13 @@ class UploadService: ObservableObject {
                         rec.status = .failed
                         rec.errorMessage = job.error
                     default:
-                        // Still processing (queued, transcoding, transcribing, detecting, generating_soap)
-                        break
+                        continue
                     }
-                    if rec.status != recording.status {
-                        let updated = rec
-                        await MainActor.run { store.save(updated) }
-                    }
-                } catch {
-                    // Polling failure is transient — don't change recording status
+                    let updated = rec
+                    await MainActor.run { store.save(updated) }
                 }
+            } catch {
+                // Polling failure is transient — don't change recording status
             }
         }
     }

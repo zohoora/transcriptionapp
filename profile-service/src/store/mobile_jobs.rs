@@ -94,6 +94,10 @@ impl MobileJobStore {
 
     /// Persist all jobs to disk atomically.
     fn save(&self) -> Result<(), ApiError> {
+        if let Some(parent) = self.persist_path.parent() {
+            std::fs::create_dir_all(parent)
+                .map_err(|e| ApiError::Internal(format!("Failed to create parent dir: {e}")))?;
+        }
         let content = serde_json::to_string_pretty(&self.jobs)
             .map_err(|e| ApiError::Internal(format!("Failed to serialize jobs: {e}")))?;
         let tmp = self
@@ -101,6 +105,11 @@ impl MobileJobStore {
             .with_extension(format!("{}.tmp", Uuid::new_v4()));
         std::fs::write(&tmp, &content)
             .map_err(|e| ApiError::Internal(format!("Failed to write temp file: {e}")))?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let _ = std::fs::set_permissions(&tmp, std::fs::Permissions::from_mode(0o600));
+        }
         std::fs::rename(&tmp, &self.persist_path).map_err(|e| {
             let _ = std::fs::remove_file(&tmp);
             ApiError::Internal(format!("Failed to rename: {e}"))
@@ -219,6 +228,29 @@ impl MobileJobStore {
         let _ = std::fs::remove_file(wav);
 
         self.save()?;
+        Ok(())
+    }
+
+    /// Validate a job_id doesn't contain path traversal characters.
+    pub fn validate_job_id(job_id: &str) -> Result<(), ApiError> {
+        if job_id.is_empty() {
+            return Err(ApiError::BadRequest("job_id must not be empty".into()));
+        }
+        if job_id.contains('/') || job_id.contains('\\') {
+            return Err(ApiError::BadRequest(
+                "job_id must not contain path separators".into(),
+            ));
+        }
+        if job_id.contains("..") {
+            return Err(ApiError::BadRequest(
+                "job_id must not contain '..'".into(),
+            ));
+        }
+        if job_id.contains('\0') {
+            return Err(ApiError::BadRequest(
+                "job_id must not contain null bytes".into(),
+            ));
+        }
         Ok(())
     }
 
