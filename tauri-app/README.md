@@ -28,10 +28,16 @@ Ambient Medical Intelligence — a real-time speech-to-text transcription deskto
 | iMac | Room 2 workstation | 100.74.186.113 | room2 (pw: 1278) |
 | Room 6 Mac | Room 6 workstation | local | backoffice |
 
-- **Profile service** — centralized physician profiles, room config, session storage, speaker enrollments
+- **Profile service** — centralized physician profiles, room config, session storage, speaker enrollments, mobile job tracking
 - **Settings merge chain** — hard-coded defaults -> server infrastructure -> server room -> local config -> physician overlay
 - **Fire-and-forget sync** — sessions uploaded to server after each encounter, 30s delayed re-sync for late-written files
 - **Speaker profiles** — auto-synced bidirectionally at startup (name-based matching, server wins on newer `updated_at`)
+
+### Mobile House Call Support
+- **iOS app** (`ios/`) — SwiftUI offline recorder, auto-uploads AAC audio to profile service on network
+- **Processing CLI** (`src-tauri/src/bin/process_mobile.rs`) — shares desktop app's Rust modules for zero algorithm divergence
+- **Pipeline**: ffmpeg transcode → STT Router → encounter detection → SOAP generation → upload to profile service
+- Mobile-recorded sessions appear in desktop History automatically (same profile service storage)
 
 ### Presence Sensor (Hybrid Detection)
 - **ESP32 multi-sensor bridge** — mmWave radar (SEN0395), thermal camera (MLX90640), CO2/temp/humidity (SCD41)

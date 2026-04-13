@@ -36,7 +36,7 @@ cat ~/backups/ami-assist/backup.log | tail -20
 | `~/.transcriptionapp/speaker_profiles.json` | `~/backups/ami-assist/{date}/config/` | Voice enrollment data |
 | `~/.transcriptionapp/room_config.json` | `~/backups/ami-assist/{date}/config/` | Room setup |
 
-**Not backed up** (recoverable): ONNX models, activity logs, debug storage, sensor CSV logs.
+**Not backed up** (recoverable): ONNX models, activity logs, debug storage, sensor CSV logs, mobile audio uploads (`mobile_uploads/` — re-uploadable from iOS app).
 
 ### Configuration
 

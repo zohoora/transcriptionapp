@@ -1,6 +1,6 @@
 # Transcription App
 
-A real-time speech-to-text transcription desktop application built with Tauri, React, and Rust. Designed as a clinical ambient scribe for physicians, running as a compact 300px sidebar alongside EMR systems.
+A clinical ambient scribe for physicians. Real-time speech-to-text transcription desktop app with automated encounter detection, SOAP note generation, and multi-room clinic deployment. Includes an iOS mobile app for house call recordings with server-side processing.
 
 ## Status
 
@@ -30,6 +30,7 @@ A real-time speech-to-text transcription desktop application built with Tauri, R
 - **Vision-Based Patient Name Extraction** - Screenshots + vision LLM extract patient names from on-screen EHR
 - **MIIS Image Suggestions** - Medical illustration images suggested from transcript concepts
 - **MCP Server** - JSON-RPC 2.0 server on port 7101 for external tool integration
+- **Mobile House Call Recording** - iOS app records offline, auto-uploads when on network, server processes via shared Rust pipeline
 
 ### Biomarker Analysis
 - **PatientPulse Display** - Glanceable "check engine light" for patient voice metrics (hidden/normal/alert states)
@@ -76,29 +77,40 @@ ORT_DYLIB_PATH=$(./scripts/setup-ort.sh) \
 
 ## Documentation
 
-- **[tauri-app/CLAUDE.md](tauri-app/CLAUDE.md)** - Comprehensive AI coder context
+- **[tauri-app/CLAUDE.md](tauri-app/CLAUDE.md)** - Comprehensive AI coder context (desktop app)
+- **[profile-service/CLAUDE.md](profile-service/CLAUDE.md)** - Profile service architecture and patterns
+- **[docs/superpowers/specs/2026-04-13-mobile-app-v1-design.md](docs/superpowers/specs/2026-04-13-mobile-app-v1-design.md)** - Mobile app design spec
 - **[tauri-app/CONTRIBUTING.md](tauri-app/CONTRIBUTING.md)** - Development guidelines
-- **[tauri-app/README.md](tauri-app/README.md)** - App-specific documentation
+- **[tauri-app/README.md](tauri-app/README.md)** - Desktop app documentation
 - **[tauri-app/docs/adr/](tauri-app/docs/adr/)** - Architecture Decision Records
 
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────────────────┐
-│                              Tauri App                                   │
-├─────────────────────────────────────────────────────────────────────────┤
-│  ┌─────────────────┐      IPC       ┌─────────────────────────────────┐ │
-│  │   React/TS UI   │◄──────────────►│          Rust Backend           │ │
-│  │  - Sidebar      │    Events      │  - Session State Machine        │ │
-│  │  - Settings     │                │  - Audio Pipeline               │ │
-│  │  - Transcript   │                │  - STT Router + Diarization     │ │
-│  │  - SOAP Notes   │                │  - Biomarker Analysis           │ │
-│  │  - EMR Sync     │                │  - LLM Router + Medplum         │ │
-│  │  - Clinical Chat│                │  - Continuous Mode              │ │
-│  │  - Continuous   │                │  - Speaker Profiles             │ │
-│  └─────────────────┘                │  - MCP Server (port 7101)       │ │
-│                                     └─────────────────────────────────┘ │
-└─────────────────────────────────────────────────────────────────────────┘
+┌─────────────────┐         ┌───────────────────────────────────────────────┐
+│   iOS App        │         │  MacBook Server                               │
+│   (SwiftUI)      │  HTTP   │                                               │
+│  Record audio ───┼────────►│  Profile Service (:8090)                      │
+│  Upload AAC   ───┼────────►│    └─ Mobile job tracking + audio storage     │
+│  Poll status  ───┼────────►│                                               │
+└─────────────────┘         │  Processing CLI (process_mobile)              │
+                            │    └─ Shares desktop Rust modules (STT, SOAP) │
+┌─────────────────────────────────────────────────────────────────────────┐ │
+│                         Desktop App (Tauri)                               │ │
+│  ┌─────────────────┐      IPC       ┌─────────────────────────────────┐ │ │
+│  │   React/TS UI   │◄──────────────►│          Rust Backend           │ │ │
+│  │  - Sidebar      │    Events      │  - Session State Machine        │ │ │
+│  │  - Settings     │                │  - Audio Pipeline               │ │ │
+│  │  - Transcript   │                │  - STT Router + Diarization     │ │ │
+│  │  - SOAP Notes   │                │  - Biomarker Analysis           │ │ │
+│  │  - EMR Sync     │                │  - LLM Router + Medplum         │ │ │
+│  │  - Clinical Chat│                │  - Continuous Mode              │ │ │
+│  │  - Continuous   │                │  - Speaker Profiles             │ │ │
+│  └─────────────────┘                │  - MCP Server (port 7101)       │ │ │
+│                                     └─────────────────────────────────┘ │ │
+└─────────────────────────────────────────────────────────────────────────┘ │
+                            │  STT Router (:8001)  |  LLM Router (:8080)    │
+                            └───────────────────────────────────────────────┘
 ```
 
 ## Technology Stack
