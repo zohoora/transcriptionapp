@@ -33,6 +33,8 @@ export interface ContinuousModeOrchestratorConfig {
 export interface ContinuousModeOrchestratorResult {
   // Needed by App.tsx directly
   isActive: boolean;
+  /** Changes on each encounter_detected — used to clear per-encounter state */
+  encounterSessionId: string;
 
   // All ContinuousMode component props (except onViewHistory, which comes from App.tsx)
   isStopping: boolean;
@@ -156,6 +158,7 @@ export function useContinuousModeOrchestrator({
   return {
     // Needed by App.tsx directly
     isActive,
+    encounterSessionId,
 
     // ContinuousMode component props
     isStopping,

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { WebviewWindow } from '@tauri-apps/api/webviewWindow';
 import { useAuth } from './components/AuthProvider';
@@ -178,6 +178,15 @@ function App() {
   // Continuous mode orchestrator (groups useContinuousMode, usePatientBiomarkers,
   // usePredictiveHint, useMiisImages, and related state)
   const continuous = useContinuousModeOrchestrator({ settings });
+
+  // Clear clinical chat when a new encounter is detected in continuous mode
+  const prevEncounterIdRef = useRef(continuous.encounterSessionId);
+  useEffect(() => {
+    if (continuous.encounterSessionId !== prevEncounterIdRef.current) {
+      prevEncounterIdRef.current = continuous.encounterSessionId;
+      clearChat();
+    }
+  }, [continuous.encounterSessionId, clearChat]);
 
   // Patient handout generation
   const { isGenerating: isGeneratingHandout, generateHandout } = usePatientHandout();
@@ -822,6 +831,11 @@ function App() {
             isSleeping={continuous.isSleeping}
             sleepResumeAt={continuous.sleepResumeAt}
             onViewHistory={openHistoryWindow}
+            chatMessages={chatMessages}
+            chatIsLoading={chatIsLoading}
+            chatError={chatError}
+            onChatSendMessage={chatSendMessage}
+            onChatClear={clearChat}
           />
         )}
 

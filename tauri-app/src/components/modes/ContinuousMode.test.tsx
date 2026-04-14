@@ -20,6 +20,7 @@ vi.mock('../ImageSuggestions', () => ({
 }));
 vi.mock('../ClinicalChat', () => ({
   MarkdownContent: ({ content }: { content: string }) => <div>{content}</div>,
+  ClinicalChat: () => <div data-testid="clinical-chat" />,
 }));
 
 const IDLE_STATS: ContinuousModeStats = {
@@ -84,6 +85,11 @@ function makeDefaultProps(overrides: Partial<Parameters<typeof ContinuousMode>[0
     onStop: vi.fn(),
     onNewPatient: vi.fn(),
     onViewHistory: vi.fn(),
+    chatMessages: [],
+    chatIsLoading: false,
+    chatError: null,
+    onChatSendMessage: vi.fn(),
+    onChatClear: vi.fn(),
     ...overrides,
   };
 }
