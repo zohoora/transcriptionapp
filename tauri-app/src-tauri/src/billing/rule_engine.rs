@@ -58,10 +58,22 @@ pub fn map_features_to_billing_with_context(
     }
 
     // 3. Conditions -> K/Q codes
+    //    K codes require evidence from the SOAP note — suppress if the LLM
+    //    could not cite supporting text (guards against hallucinated conditions).
     let mut condition_codes: Vec<&str> = Vec::new();
     for cond in &features.conditions {
         let cond_codes = condition_type_to_codes(cond);
         for code_str in cond_codes {
+            if code_str.starts_with('K') {
+                let key = condition_type_to_key(cond);
+                let has_evidence = features
+                    .condition_evidence
+                    .get(key)
+                    .is_some_and(|e| !e.trim().is_empty());
+                if !has_evidence {
+                    continue; // suppress K code — no SOAP evidence provided
+                }
+            }
             if let Some(ohip) = ohip_codes::get_code(code_str) {
                 codes.push(make_billing_code(ohip, BillingConfidence::Medium, false));
                 condition_codes.push(code_str);
@@ -136,7 +148,10 @@ pub fn map_features_to_billing_with_context(
         vec![]
     };
 
-    // 7. Build record and calculate totals
+    // 7. Collect billing code strings before moving `codes` into record
+    let billing_code_strs: Vec<String> = codes.iter().map(|c| c.code.clone()).collect();
+
+    // 8. Build record and calculate totals
     let now = chrono::Utc::now().to_rfc3339();
     let mut record = BillingRecord {
         session_id: session_id.to_string(),
@@ -157,15 +172,12 @@ pub fn map_features_to_billing_with_context(
         diagnostic_description: None,
     };
 
-    // Validate and set diagnostic code from LLM suggestion
-    if let Some(ref suggested) = features.suggested_diagnostic_code {
-        let code_str = suggested.trim();
-        if let Some(dc) = diagnostic_codes::get_diagnostic_code(code_str) {
-            record.diagnostic_code = Some(dc.code.to_string());
-            record.diagnostic_description = Some(dc.description.to_string());
-        }
-        // Invalid code silently ignored — physician can set manually in the UI
-    }
+    // Resolve diagnostic code via 4-stage pipeline:
+    // 1. LLM's suggestedDiagnosticCode (if valid)
+    // 2. Text-match primaryDiagnosis against 562-code database
+    // 3. Billing-code-implied diagnosis (K030A→250, Q050A→428)
+    // 4. SOB constraint (K133A/K125A require IDD codes)
+    resolve_diagnostic_code(features, &billing_code_strs, assessment_code, &mut record);
 
     record.recalculate_totals();
 
@@ -271,6 +283,28 @@ fn procedure_type_to_code(proc: &ProcedureType) -> &'static str {
 
 // ── Condition type mapping ─────────────────────────────────────────────────
 
+/// Return the snake_case key for `ConditionType`, matching the serde rename
+/// and the keys the LLM places in `conditionEvidence`.
+fn condition_type_to_key(cond: &ConditionType) -> &'static str {
+    match cond {
+        ConditionType::DiabetesManagement => "diabetes_management",
+        ConditionType::SmokingCessation => "smoking_cessation",
+        ConditionType::StiManagement => "sti_management",
+        ConditionType::ChfManagement => "chf_management",
+        ConditionType::Neurocognitive => "neurocognitive",
+        ConditionType::HomeCare => "home_care",
+        ConditionType::SmokingCessationFollowUp => "smoking_cessation_follow_up",
+        ConditionType::PrimaryMentalHealth => "primary_mental_health",
+        ConditionType::Psychotherapy => "psychotherapy",
+        ConditionType::HivPrimaryCare => "hiv_primary_care",
+        ConditionType::InsulinTherapySupport => "insulin_therapy_support",
+        ConditionType::DiabeticAssessment => "diabetic_assessment",
+        ConditionType::CounsellingAdditional => "counselling_additional",
+        ConditionType::FibromyalgiaCare => "fibromyalgia_care",
+        ConditionType::IddPrimaryCare => "idd_primary_care",
+    }
+}
+
 fn condition_type_to_codes(cond: &ConditionType) -> Vec<&'static str> {
     match cond {
         ConditionType::DiabetesManagement => vec!["Q040A"],
@@ -287,6 +321,7 @@ fn condition_type_to_codes(cond: &ConditionType) -> Vec<&'static str> {
         ConditionType::DiabeticAssessment => vec!["K030A"],
         ConditionType::CounsellingAdditional => vec!["K033A"],
         ConditionType::FibromyalgiaCare => vec!["K037A"],
+        ConditionType::IddPrimaryCare => vec!["K125A"],
     }
 }
 
@@ -363,6 +398,88 @@ fn is_tray_fee_qualifying(code: &str) -> bool {
     )
 }
 
+// ── Diagnostic code resolution ────────────────────────────────────────────
+
+/// Set diagnostic code + description on a billing record from a DiagnosticCode reference.
+fn set_diagnostic(record: &mut BillingRecord, dc: &diagnostic_codes::DiagnosticCode) {
+    record.diagnostic_code = Some(dc.code.to_string());
+    record.diagnostic_description = Some(dc.description.to_string());
+}
+
+/// Billing-code-implied diagnostic codes: when a specific K/Q code is present,
+/// it strongly implies a particular diagnosis family.
+fn billing_code_implied_diagnostic(codes: &[String]) -> Option<&'static str> {
+    for c in codes {
+        match c.as_str() {
+            "K030A" | "Q040A" => return Some("250"), // diabetes
+            "Q050A" => return Some("428"),            // CHF
+            "K028A" => return Some("099"),            // STI
+            _ => {}
+        }
+    }
+    None
+}
+
+/// Valid IDD diagnostic codes per SOB.
+const IDD_CODES_K133: &[&str] = &["299", "319", "343", "758"];
+const IDD_CODES_K125: &[&str] = &["299", "319", "343", "741", "758"];
+
+/// Resolve the diagnostic code for a billing record via a 4-stage pipeline:
+/// 1. Try the LLM's `suggestedDiagnosticCode` (if valid)
+/// 2. Fall back to text-matching `primaryDiagnosis` against the 562-code database
+/// 3. Apply billing-code signals (K030A→250, Q050A→428) as fallback
+/// 4. Enforce SOB constraints (K133A/K125A require IDD codes)
+fn resolve_diagnostic_code(
+    features: &ClinicalFeatures,
+    billing_codes: &[String],
+    assessment_code: &str,
+    record: &mut BillingRecord,
+) {
+    // Stage 1: try the explicit code suggestion
+    if let Some(ref suggested) = features.suggested_diagnostic_code {
+        if let Some(dc) = diagnostic_codes::get_diagnostic_code(suggested.trim()) {
+            set_diagnostic(record, dc);
+        }
+    }
+
+    // Stage 2: if no code yet, resolve from plain-text primaryDiagnosis
+    if record.diagnostic_code.is_none() {
+        if let Some(ref text) = features.primary_diagnosis {
+            if let Some(dc) = diagnostic_codes::match_diagnosis_text(text.trim()) {
+                set_diagnostic(record, dc);
+            }
+        }
+    }
+
+    // Stage 3: if still no code, use billing-code-implied diagnosis as fallback
+    if record.diagnostic_code.is_none() {
+        if let Some(implied) = billing_code_implied_diagnostic(billing_codes) {
+            if let Some(dc) = diagnostic_codes::get_diagnostic_code(implied) {
+                set_diagnostic(record, dc);
+            }
+        }
+    }
+
+    // Stage 4: SOB constraint — K133A/K125A require IDD diagnostic codes
+    let idd_code_in_billing = assessment_code == "K133A"
+        || billing_codes.iter().any(|c| c == "K125A");
+    if idd_code_in_billing {
+        let allowed = if billing_codes.iter().any(|c| c == "K125A") {
+            IDD_CODES_K125
+        } else {
+            IDD_CODES_K133
+        };
+        let is_valid = record
+            .diagnostic_code
+            .as_deref()
+            .map_or(false, |c| allowed.contains(&c));
+        if !is_valid {
+            record.diagnostic_code = None;
+            record.diagnostic_description = None;
+        }
+    }
+}
+
 // ── Tests ──────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
@@ -381,6 +498,8 @@ mod tests {
             estimated_duration_minutes: Some(10),
             confidence: 0.90,
             suggested_diagnostic_code: None,
+            primary_diagnosis: None,
+            condition_evidence: std::collections::HashMap::new(),
         }
     }
 
@@ -931,8 +1050,130 @@ mod tests {
     }
 
     #[test]
+    fn test_k_code_suppressed_without_evidence() {
+        let mut features = default_features();
+        features.conditions = vec![ConditionType::DiabeticAssessment];
+        // No evidence provided — K030A should be suppressed
+        let record = map_features_to_billing(&features, "s1", "2026-04-05", 1_200_000, None);
+        assert!(
+            !record.codes.iter().any(|c| c.code == "K030A"),
+            "K030A should be suppressed without evidence"
+        );
+    }
+
+    #[test]
+    fn test_k_code_emitted_with_evidence() {
+        let mut features = default_features();
+        features.conditions = vec![ConditionType::DiabeticAssessment];
+        features.condition_evidence.insert(
+            "diabetic_assessment".to_string(),
+            "A1C 7.8%, foot exam normal, increased metformin".to_string(),
+        );
+        let record = map_features_to_billing(&features, "s1", "2026-04-05", 1_200_000, None);
+        assert!(
+            record.codes.iter().any(|c| c.code == "K030A"),
+            "K030A should be emitted when evidence is provided"
+        );
+    }
+
+    #[test]
+    fn test_k_code_suppressed_with_blank_evidence() {
+        let mut features = default_features();
+        features.conditions = vec![ConditionType::DiabeticAssessment];
+        features.condition_evidence.insert(
+            "diabetic_assessment".to_string(),
+            "   ".to_string(), // whitespace-only
+        );
+        let record = map_features_to_billing(&features, "s1", "2026-04-05", 1_200_000, None);
+        assert!(
+            !record.codes.iter().any(|c| c.code == "K030A"),
+            "K030A should be suppressed with blank evidence"
+        );
+    }
+
+    #[test]
+    fn test_q_code_not_gated_by_evidence() {
+        let mut features = default_features();
+        features.conditions = vec![ConditionType::DiabetesManagement];
+        // No evidence — but Q040A is a Q code, not K, so it should still emit
+        let record = map_features_to_billing(&features, "s1", "2026-04-05", 1_200_000, None);
+        assert!(
+            record.codes.iter().any(|c| c.code == "Q040A"),
+            "Q codes should not be gated by evidence"
+        );
+    }
+
+    #[test]
+    fn test_k133_accepts_idd_diagnostic_code() {
+        let mut features = default_features();
+        features.visit_type = VisitType::PeriodicHealthIdd;
+        for code in ["299", "319", "343", "758"] {
+            features.suggested_diagnostic_code = Some(code.to_string());
+            let record = map_features_to_billing(&features, "s1", "2026-04-05", 3_600_000, None);
+            assert_eq!(
+                record.diagnostic_code.as_deref(),
+                Some(code),
+                "K133A should accept IDD diagnostic code {code}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_k133_rejects_non_idd_diagnostic_code() {
+        let mut features = default_features();
+        features.visit_type = VisitType::PeriodicHealthIdd;
+        features.suggested_diagnostic_code = Some("250".to_string());
+        let record = map_features_to_billing(&features, "s1", "2026-04-05", 3_600_000, None);
+        assert_eq!(
+            record.diagnostic_code, None,
+            "K133A should reject non-IDD diagnostic code 250"
+        );
+    }
+
+    #[test]
+    fn test_k133_no_diagnostic_code_stays_none() {
+        let mut features = default_features();
+        features.visit_type = VisitType::PeriodicHealthIdd;
+        let record = map_features_to_billing(&features, "s1", "2026-04-05", 3_600_000, None);
+        assert_eq!(record.diagnostic_code, None);
+    }
+
+    #[test]
     fn test_all_condition_types_have_valid_codes() {
-        let conditions = [
+        let conditions = all_condition_types();
+        for c in &conditions {
+            let codes = condition_type_to_codes(c);
+            for code_str in &codes {
+                assert!(
+                    ohip_codes::get_code(code_str).is_some(),
+                    "ConditionType {:?} maps to {} which is not in OHIP_CODES",
+                    c,
+                    code_str
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_condition_type_to_key_matches_serde() {
+        // Guards against condition_type_to_key diverging from serde rename_all.
+        for c in &all_condition_types() {
+            let serde_key = serde_json::to_value(c)
+                .unwrap()
+                .as_str()
+                .unwrap()
+                .to_string();
+            assert_eq!(
+                condition_type_to_key(c),
+                serde_key,
+                "condition_type_to_key({:?}) does not match serde serialization",
+                c
+            );
+        }
+    }
+
+    fn all_condition_types() -> Vec<ConditionType> {
+        vec![
             ConditionType::DiabetesManagement,
             ConditionType::SmokingCessation,
             ConditionType::StiManagement,
@@ -947,17 +1188,112 @@ mod tests {
             ConditionType::DiabeticAssessment,
             ConditionType::CounsellingAdditional,
             ConditionType::FibromyalgiaCare,
-        ];
-        for c in &conditions {
-            let codes = condition_type_to_codes(c);
-            for code_str in &codes {
-                assert!(
-                    ohip_codes::get_code(code_str).is_some(),
-                    "ConditionType {:?} maps to {} which is not in OHIP_CODES",
-                    c,
-                    code_str
-                );
-            }
-        }
+            ConditionType::IddPrimaryCare,
+        ]
+    }
+
+    #[test]
+    fn test_k125_emitted_with_evidence() {
+        let mut features = default_features();
+        features.conditions = vec![ConditionType::IddPrimaryCare];
+        features.condition_evidence.insert(
+            "idd_primary_care".to_string(),
+            "Patient with Down syndrome, annual IDD care review".to_string(),
+        );
+        features.suggested_diagnostic_code = Some("758".to_string());
+        let record = map_features_to_billing(&features, "s1", "2026-04-05", 1_800_000, None);
+        assert!(record.codes.iter().any(|c| c.code == "K125A"));
+        assert_eq!(record.diagnostic_code.as_deref(), Some("758"));
+    }
+
+    #[test]
+    fn test_k125_accepts_spina_bifida_741() {
+        let mut features = default_features();
+        features.conditions = vec![ConditionType::IddPrimaryCare];
+        features.condition_evidence.insert(
+            "idd_primary_care".to_string(),
+            "Spina bifida patient, IDD primary care".to_string(),
+        );
+        features.suggested_diagnostic_code = Some("741".to_string());
+        let record = map_features_to_billing(&features, "s1", "2026-04-05", 1_800_000, None);
+        assert!(record.codes.iter().any(|c| c.code == "K125A"));
+        assert_eq!(record.diagnostic_code.as_deref(), Some("741"));
+    }
+
+    #[test]
+    fn test_k125_rejects_non_idd_diagnostic() {
+        let mut features = default_features();
+        features.conditions = vec![ConditionType::IddPrimaryCare];
+        features.condition_evidence.insert(
+            "idd_primary_care".to_string(),
+            "some evidence".to_string(),
+        );
+        features.suggested_diagnostic_code = Some("496".to_string());
+        let record = map_features_to_billing(&features, "s1", "2026-04-05", 1_800_000, None);
+        assert!(record.codes.iter().any(|c| c.code == "K125A"));
+        assert_eq!(record.diagnostic_code, None, "Non-IDD diagnostic should be cleared");
+    }
+
+    #[test]
+    fn test_k133_does_not_accept_741() {
+        // K133A's SOB list doesn't include 741 (spina bifida) — only K125A does
+        let mut features = default_features();
+        features.visit_type = VisitType::PeriodicHealthIdd;
+        features.suggested_diagnostic_code = Some("741".to_string());
+        let record = map_features_to_billing(&features, "s1", "2026-04-05", 3_600_000, None);
+        assert_eq!(record.diagnostic_code, None, "K133A should not accept 741");
+    }
+
+    // ── Diagnostic code resolution tests ──────────────────────────────────
+
+    #[test]
+    fn test_diagnosis_resolved_from_primary_text() {
+        let mut features = default_features();
+        features.primary_diagnosis = Some("diabetes mellitus".to_string());
+        // No suggestedDiagnosticCode — should resolve from text
+        let record = map_features_to_billing(&features, "s1", "2026-04-05", 600_000, None);
+        assert_eq!(record.diagnostic_code.as_deref(), Some("250"));
+    }
+
+    #[test]
+    fn test_suggested_code_takes_precedence_over_text() {
+        let mut features = default_features();
+        features.suggested_diagnostic_code = Some("401".to_string());
+        features.primary_diagnosis = Some("diabetes mellitus".to_string());
+        // Explicit code wins over text match
+        let record = map_features_to_billing(&features, "s1", "2026-04-05", 600_000, None);
+        assert_eq!(record.diagnostic_code.as_deref(), Some("401"));
+    }
+
+    #[test]
+    fn test_billing_code_implies_diagnosis_fallback() {
+        let mut features = default_features();
+        features.conditions = vec![ConditionType::DiabeticAssessment];
+        features.condition_evidence.insert(
+            "diabetic_assessment".to_string(),
+            "A1C review, foot exam".to_string(),
+        );
+        // No suggestedDiagnosticCode, no primaryDiagnosis — K030A implies 250
+        let record = map_features_to_billing(&features, "s1", "2026-04-05", 1_200_000, None);
+        assert_eq!(
+            record.diagnostic_code.as_deref(),
+            Some("250"),
+            "K030A should imply diagnostic code 250"
+        );
+    }
+
+    #[test]
+    fn test_primary_diagnosis_copd() {
+        let mut features = default_features();
+        features.primary_diagnosis = Some("COPD with progressive dyspnea".to_string());
+        let record = map_features_to_billing(&features, "s1", "2026-04-05", 600_000, None);
+        assert_eq!(record.diagnostic_code.as_deref(), Some("496"));
+    }
+
+    #[test]
+    fn test_no_diagnosis_info_leaves_none() {
+        let features = default_features();
+        let record = map_features_to_billing(&features, "s1", "2026-04-05", 600_000, None);
+        assert_eq!(record.diagnostic_code, None);
     }
 }

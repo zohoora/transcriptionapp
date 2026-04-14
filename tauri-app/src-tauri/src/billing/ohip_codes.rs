@@ -1139,6 +1139,16 @@ pub static OHIP_CODES: &[OhipCode] = &[
         after_hours_eligible: false,
         max_per_year: None,
     },
+    OhipCode {
+        code: "K125A",
+        description: "IDD Primary Care (per unit)",
+        ffs_rate_cents: 8000, // $80.00
+        basket: Basket::Out,
+        shadow_pct: 100,
+        category: CodeCategory::Counselling,
+        after_hours_eligible: false,
+        max_per_year: None,
+    },
 
     // ── Case Conference/Phone Consult (in-basket, 30% shadow, Counselling)
     OhipCode {
@@ -2457,8 +2467,8 @@ mod tests {
 
     #[test]
     fn test_code_count() {
-        // 234 codes from April 2026 SOB (145 in-basket + 89 out-of-basket)
-        assert_eq!(all_codes().len(), 234);
+        // 235 codes from April 2026 SOB (145 in-basket + 90 out-of-basket)
+        assert_eq!(all_codes().len(), 235);
     }
 
     #[test]

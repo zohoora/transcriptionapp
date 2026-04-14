@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 // ── Constrained enums for LLM extraction ───────────────────────────────────
 
@@ -115,6 +116,7 @@ pub enum ConditionType {
     DiabeticAssessment,
     CounsellingAdditional,
     FibromyalgiaCare,
+    IddPrimaryCare,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
@@ -142,8 +144,18 @@ pub struct ClinicalFeatures {
     pub estimated_duration_minutes: Option<u16>,
     pub confidence: f32,
     /// LLM-suggested OHIP 3-digit diagnostic code (validated against database post-extraction).
+    /// Legacy field — kept for backward compat. Prefer `primary_diagnosis` text matching.
     #[serde(default)]
     pub suggested_diagnostic_code: Option<String>,
+    /// Plain-text primary diagnosis from the SOAP Assessment section.
+    /// The rule engine resolves this to a 3-digit OHIP diagnostic code via database search.
+    #[serde(default)]
+    pub primary_diagnosis: Option<String>,
+    /// Evidence quotes from the SOAP note justifying each condition.
+    /// Key = condition enum value (e.g. "diabetic_assessment"), value = brief quote.
+    /// K-code conditions without evidence are suppressed by the rule engine.
+    #[serde(default)]
+    pub condition_evidence: HashMap<String, String>,
 }
 
 // ── Prompt construction ────────────────────────────────────────────────────
@@ -173,22 +185,17 @@ Analyze the provided SOAP note and transcript excerpt, then output a JSON object
   "patientCount": <number or null>,
   "estimatedDurationMinutes": <number or null>,
   "confidence": <float 0.0-1.0>,
-  "suggestedDiagnosticCode": "<3-digit OHIP diagnostic code or null>"
+  "primaryDiagnosis": "<plain-text primary diagnosis from the Assessment section>",
+  "suggestedDiagnosticCode": "<3-digit OHIP diagnostic code or null>",
+  "conditionEvidence": {"<condition_name>": "<brief quote from SOAP supporting this condition>", ...}
 }
 ```
 
-### suggestedDiagnosticCode (OHIP 3-digit diagnostic code — required for claim submission)
-Pick the SINGLE most relevant code from the Assessment. Common codes:
-- 250 Diabetes mellitus | 272 Hyperlipidemia | 401 Essential hypertension
-- 300 Anxiety/neuroses | 311 Depression | 296 Bipolar disorder | 309 Adjustment reaction
-- 460 Common cold/URI | 461 Sinusitis | 463 Tonsillitis/pharyngitis | 466 Acute bronchitis | 486 Pneumonia | 493 Asthma | 496 COPD
-- 530 GERD | 571 Chronic liver disease | 574 Gallstones | 599 UTI
-- 692 Dermatitis/eczema | 715 Osteoarthritis | 724 Back pain | 726 Fibromyalgia
-- 780 General symptoms (fatigue, dizziness) | 786 Respiratory symptoms | 787 GI symptoms | 788 Urinary symptoms
-- 847 Back sprain/strain | 919 Abrasions/contusions | 959 Other injury
-- 916 Well baby care | 917 Annual health examination
-- 799 Other ill-defined conditions (LAST RESORT only)
-Choose the most specific code matching the primary diagnosis in the Assessment section.
+### primaryDiagnosis (REQUIRED)
+Extract the single most important diagnosis from the Assessment section as a short plain-text phrase (e.g. "COPD with progressive dyspnea", "Type 2 diabetes suboptimal control", "Anxiety disorder"). This will be matched to an OHIP diagnostic code automatically. Be specific — use the clinical language from the Assessment.
+
+### suggestedDiagnosticCode (optional — 3-digit OHIP diagnostic code)
+If you are confident of the exact code, provide it. Common codes: 250 Diabetes | 401 Hypertension | 496 COPD | 493 Asthma | 311 Depression | 300 Anxiety | 715 Osteoarthritis | 724 Back pain | 917 Annual health exam. Leave null if uncertain — the system will resolve from primaryDiagnosis.
 
 ## Valid Values
 
@@ -294,6 +301,10 @@ Choose the most specific code matching the primary diagnosis in the Assessment s
 - "diabetic_assessment" — Dedicated diabetic management assessment: A1C review, foot exam, medication adjustment, glucose monitoring review (K030A). Max 4/year. Include BOTH diabetic_assessment AND diabetes_management when diabetes is actively managed
 - "counselling_additional" — Counselling after the first 3 K013 units are exhausted for the year (K033A). Out-of-basket at full FFS
 - "fibromyalgia_care" — Fibromyalgia or myalgic encephalomyelitis care session (K037A). Per unit
+- "idd_primary_care" — Primary care for patient with intellectual/developmental disability (autism, Down syndrome, cerebral palsy, FAS, spina bifida). Minimum 20 min. Requires IDD diagnosis (K125A)
+
+### conditionEvidence (REQUIRED for every condition listed)
+For EACH condition in the conditions array, provide a brief quote or paraphrase from the SOAP note that supports it. The key must match the condition name exactly. If you cannot find specific evidence in the SOAP note for a condition, do NOT include that condition.
 
 ### setting
 - "in_office" — Standard in-person office visit (default if not specified)
@@ -307,55 +318,55 @@ Choose the most specific code matching the primary diagnosis in the Assessment s
 ### Example 1: Minor assessment
 SOAP: "S: Patient presents with sore throat x 2 days. O: Pharynx erythematous, no exudate. A: Viral pharyngitis. P: Supportive care, return if worsening."
 ```json
-{"visitType":"minor_assessment","procedures":[],"conditions":[],"setting":"in_office","isNewPatient":false,"isAfterHours":false,"patientCount":null,"estimatedDurationMinutes":8,"confidence":0.95,"suggestedDiagnosticCode":"463"}
+{"visitType":"minor_assessment","procedures":[],"conditions":[],"setting":"in_office","isNewPatient":false,"isAfterHours":false,"patientCount":null,"estimatedDurationMinutes":8,"confidence":0.95,"primaryDiagnosis":"Viral pharyngitis","suggestedDiagnosticCode":"463"}
 ```
 
 ### Example 2: General assessment with procedure
 SOAP: "S: New patient, 45F, referred for suspicious mole on back. Full history obtained. O: Full exam. 8mm pigmented lesion on upper back, irregular borders. Excision performed. A: Suspicious melanocytic lesion. P: Pathology pending, follow-up 2 weeks."
 ```json
-{"visitType":"general_assessment","procedures":["lesion_excision_small"],"conditions":[],"setting":"in_office","isNewPatient":true,"isAfterHours":false,"patientCount":null,"estimatedDurationMinutes":30,"confidence":0.92,"suggestedDiagnosticCode":"216"}
+{"visitType":"general_assessment","procedures":["lesion_excision_small"],"conditions":[],"setting":"in_office","isNewPatient":true,"isAfterHours":false,"patientCount":null,"estimatedDurationMinutes":30,"confidence":0.92,"primaryDiagnosis":"Suspicious melanocytic lesion upper back","suggestedDiagnosticCode":"216"}
 ```
 
 ### Example 3: Prenatal visit
 SOAP: "S: 28 weeks gestation, routine follow-up. O: BP 120/80, fundal height 28cm, FHR 145. A: Normal pregnancy progression. P: Routine labs, next visit 2 weeks."
 ```json
-{"visitType":"prenatal_minor","procedures":[],"conditions":[],"setting":"in_office","isNewPatient":false,"isAfterHours":false,"patientCount":null,"estimatedDurationMinutes":15,"confidence":0.95,"suggestedDiagnosticCode":"650"}
+{"visitType":"prenatal_minor","procedures":[],"conditions":[],"setting":"in_office","isNewPatient":false,"isAfterHours":false,"patientCount":null,"estimatedDurationMinutes":15,"confidence":0.95,"primaryDiagnosis":"Normal pregnancy progression 28 weeks","suggestedDiagnosticCode":"650"}
 ```
 
 ### Example 4: Chronic disease management
 SOAP: "S: Type 2 DM follow-up, A1C review. O: A1C 7.8%, up from 7.2%. BMI 31. A: Suboptimal diabetes control. P: Increase metformin, dietary counselling, recheck A1C in 3 months."
 ```json
-{"visitType":"general_reassessment","procedures":[],"conditions":["diabetic_assessment","diabetes_management"],"setting":"in_office","isNewPatient":false,"isAfterHours":false,"patientCount":null,"estimatedDurationMinutes":20,"confidence":0.90,"suggestedDiagnosticCode":"250"}
+{"visitType":"general_reassessment","procedures":[],"conditions":["diabetic_assessment","diabetes_management"],"setting":"in_office","isNewPatient":false,"isAfterHours":false,"patientCount":null,"estimatedDurationMinutes":20,"confidence":0.90,"primaryDiagnosis":"Suboptimal type 2 diabetes control","suggestedDiagnosticCode":"250","conditionEvidence":{"diabetic_assessment":"A1C 7.8%, up from 7.2%, increase metformin, recheck A1C in 3 months","diabetes_management":"A1C review, medication adjustment, dietary counselling"}}
 ```
 
 ### Example 5: After-hours counselling
 SOAP: "S: Patient called after hours, anxious about chest tightness. O: History taken by phone. A: Anxiety-related symptoms, no red flags. P: Reassurance, follow-up tomorrow if persists."
 ```json
-{"visitType":"counselling","procedures":[],"conditions":[],"setting":"telephone_remote","isNewPatient":false,"isAfterHours":true,"patientCount":null,"estimatedDurationMinutes":15,"confidence":0.85,"suggestedDiagnosticCode":"300"}
+{"visitType":"counselling","procedures":[],"conditions":[],"setting":"telephone_remote","isNewPatient":false,"isAfterHours":true,"patientCount":null,"estimatedDurationMinutes":15,"confidence":0.85,"primaryDiagnosis":"Anxiety-related chest tightness","suggestedDiagnosticCode":"300"}
 ```
 
 ### Example 6: Follow-up with knee injection
 SOAP: "S: Follow-up for right knee OA. Pain worse with stairs. O: Moderate effusion R knee. A: Right knee OA, moderate. P: Cortisone injection into right knee performed. Follow-up 6 weeks."
 ```json
-{"visitType":"intermediate_assessment","procedures":["joint_injection"],"conditions":[],"setting":"in_office","isNewPatient":false,"isAfterHours":false,"patientCount":null,"estimatedDurationMinutes":15,"confidence":0.95,"suggestedDiagnosticCode":"715"}
+{"visitType":"intermediate_assessment","procedures":["joint_injection"],"conditions":[],"setting":"in_office","isNewPatient":false,"isAfterHours":false,"patientCount":null,"estimatedDurationMinutes":15,"confidence":0.95,"primaryDiagnosis":"Right knee osteoarthritis moderate","suggestedDiagnosticCode":"715"}
 ```
 
 ### Example 7: Multiple trigger point injections
 SOAP: "S: Chronic neck and upper back pain. Multiple tender trigger points. O: Trigger points identified at bilateral trapezius and right levator scapulae. A: Myofascial pain syndrome. P: Trigger point injections performed at 3 sites with lidocaine."
 ```json
-{"visitType":"intermediate_assessment","procedures":["trigger_point_injection","trigger_point_additional"],"conditions":[],"setting":"in_office","isNewPatient":false,"isAfterHours":false,"patientCount":null,"estimatedDurationMinutes":20,"confidence":0.95,"suggestedDiagnosticCode":"726"}
+{"visitType":"intermediate_assessment","procedures":["trigger_point_injection","trigger_point_additional"],"conditions":[],"setting":"in_office","isNewPatient":false,"isAfterHours":false,"patientCount":null,"estimatedDurationMinutes":20,"confidence":0.95,"primaryDiagnosis":"Myofascial pain syndrome neck and upper back","suggestedDiagnosticCode":"726"}
 ```
 
 ### Example 8: Ingrown toenail — nerve block + nail removal (MULTIPLE procedures)
 SOAP: "S: Painful ingrown toenail right great toe. O: Medial nail border embedded, erythema. A: Ingrown toenail with paronychia. P: Digital nerve block performed. Partial nail avulsion with phenol matrixectomy."
 ```json
-{"visitType":"intermediate_assessment","procedures":["nerve_block_peripheral","nail_excision_single"],"conditions":[],"setting":"in_office","isNewPatient":false,"isAfterHours":false,"patientCount":null,"estimatedDurationMinutes":20,"confidence":0.95,"suggestedDiagnosticCode":"703"}
+{"visitType":"intermediate_assessment","procedures":["nerve_block_peripheral","nail_excision_single"],"conditions":[],"setting":"in_office","isNewPatient":false,"isAfterHours":false,"patientCount":null,"estimatedDurationMinutes":20,"confidence":0.95,"primaryDiagnosis":"Ingrown toenail with paronychia","suggestedDiagnosticCode":"703"}
 ```
 
 ### Example 9: Lipoma excision on back
 SOAP: "S: Lump on upper back for 1 year. O: 3cm soft mobile subcutaneous mass. A: Lipoma right upper back. P: Excision performed under local anaesthesia. Wound closed with sutures."
 ```json
-{"visitType":"intermediate_assessment","procedures":["cyst_excision_other"],"conditions":[],"setting":"in_office","isNewPatient":false,"isAfterHours":false,"patientCount":null,"estimatedDurationMinutes":25,"confidence":0.95,"suggestedDiagnosticCode":"214"}
+{"visitType":"intermediate_assessment","procedures":["cyst_excision_other"],"conditions":[],"setting":"in_office","isNewPatient":false,"isAfterHours":false,"patientCount":null,"estimatedDurationMinutes":25,"confidence":0.95,"primaryDiagnosis":"Lipoma right upper back","suggestedDiagnosticCode":"214"}
 ```
 
 CRITICAL RULES:
@@ -696,6 +707,8 @@ This patient had a diabetes follow-up via phone."#;
             estimated_duration_minutes: Some(10),
             confidence: 0.95,
             suggested_diagnostic_code: None,
+            primary_diagnosis: None,
+            condition_evidence: HashMap::new(),
         };
         let json = serde_json::to_string(&features).unwrap();
         assert!(json.contains("\"visitType\""));

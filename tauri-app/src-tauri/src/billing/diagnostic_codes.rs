@@ -643,6 +643,84 @@ pub fn search_diagnostic_codes(query: &str, limit: usize) -> Vec<&'static Diagno
     results
 }
 
+/// Common medical abbreviations mapped to their full description terms.
+/// Used to expand LLM-generated diagnosis text before matching against the code database.
+const ABBREVIATION_EXPANSIONS: &[(&str, &str)] = &[
+    ("copd", "obstructive pulmonary"),
+    ("chf", "congestive heart failure"),
+    ("uti", "urinary tract infection"),
+    ("uri", "upper respiratory"),
+    ("gerd", "esophageal reflux"),
+    ("dm", "diabetes mellitus"),
+    ("htn", "hypertension"),
+    ("oa", "osteoarthritis"),
+    ("ra", "rheumatoid arthritis"),
+    ("mi", "myocardial infarction"),
+    ("ckd", "chronic kidney renal"),
+    ("bph", "prostatic hyperplasia"),
+    ("afib", "cardiac arrhythmia"),
+    ("dvt", "venous thrombosis"),
+    ("tia", "cerebrovascular"),
+    ("ibs", "irritable bowel"),
+];
+
+/// Match a plain-text diagnosis to the best diagnostic code using word-level scoring.
+/// Each word in the query that appears in the description or category scores a point.
+/// Common abbreviations (COPD, CHF, UTI, etc.) are expanded before matching.
+/// Returns the best match, or None if no words match.
+pub fn match_diagnosis_text(text: &str) -> Option<&'static DiagnosticCode> {
+    let stop_words: &[&str] = &[
+        "with", "and", "the", "of", "for", "in", "on", "a", "an", "or", "by",
+        "to", "is", "was", "due", "from", "not", "other", "including",
+        "progressive", "mild", "moderate", "severe",
+        "unspecified", "bilateral", "left", "right",
+    ];
+
+    // Expand abbreviations before tokenizing
+    let mut expanded = text.to_lowercase();
+    for (abbr, expansion) in ABBREVIATION_EXPANSIONS {
+        // Replace whole-word abbreviation with expansion (keep original too)
+        if expanded.split(|c: char| !c.is_alphanumeric()).any(|w| w == *abbr) {
+            expanded.push(' ');
+            expanded.push_str(expansion);
+        }
+    }
+
+    let words: Vec<String> = expanded
+        .split(|c: char| !c.is_alphanumeric())
+        .filter(|w| w.len() >= 2 && !stop_words.contains(&w.as_ref()))
+        .map(String::from)
+        .collect();
+
+    if words.is_empty() {
+        return None;
+    }
+
+    let is_common = |code: &str| COMMON_DIAGNOSTIC_CODES.iter().any(|(c, _)| *c == code);
+
+    let mut best: Option<(&DiagnosticCode, usize, bool)> = None;
+
+    for dc in &DIAGNOSTIC_CODES {
+        let desc = dc.description.to_lowercase();
+        let cat = dc.category.to_lowercase();
+        let hits = words
+            .iter()
+            .filter(|w| desc.contains(w.as_str()) || cat.contains(w.as_str()))
+            .count();
+        if hits > 0 {
+            let common = is_common(dc.code);
+            let dominated = best.map_or(false, |(_, bh, bc)| {
+                hits < bh || (hits == bh && (!common || bc))
+            });
+            if !dominated {
+                best = Some((dc, hits, common));
+            }
+        }
+    }
+
+    best.map(|(dc, _, _)| dc)
+}
+
 // ── Common diagnostic codes for prompt guidance ─────────────────────────────
 
 /// A curated list of common diagnostic codes for family practice,
@@ -768,5 +846,57 @@ mod tests {
                 code
             );
         }
+    }
+
+    #[test]
+    fn test_match_copd_abbreviation() {
+        let dc = match_diagnosis_text("COPD with progressive dyspnea").unwrap();
+        assert_eq!(dc.code, "496");
+    }
+
+    #[test]
+    fn test_match_diabetes() {
+        let dc = match_diagnosis_text("diabetes mellitus").unwrap();
+        assert_eq!(dc.code, "250");
+    }
+
+    #[test]
+    fn test_match_hypertension() {
+        let dc = match_diagnosis_text("essential hypertension").unwrap();
+        assert_eq!(dc.code, "401");
+    }
+
+    #[test]
+    fn test_match_chf_abbreviation() {
+        let dc = match_diagnosis_text("CHF exacerbation").unwrap();
+        assert_eq!(dc.code, "428");
+    }
+
+    #[test]
+    fn test_match_uti_abbreviation() {
+        let dc = match_diagnosis_text("recurrent UTI").unwrap();
+        assert_eq!(dc.code, "599");
+    }
+
+    #[test]
+    fn test_match_returns_none_for_gibberish() {
+        assert!(match_diagnosis_text("xyzzy foobar").is_none());
+    }
+
+    #[test]
+    fn test_match_empty_string() {
+        assert!(match_diagnosis_text("").is_none());
+    }
+
+    #[test]
+    fn test_match_anxiety() {
+        let dc = match_diagnosis_text("generalized anxiety disorder").unwrap();
+        assert_eq!(dc.code, "300");
+    }
+
+    #[test]
+    fn test_match_osteoarthritis() {
+        let dc = match_diagnosis_text("knee osteoarthritis").unwrap();
+        assert_eq!(dc.code, "715");
     }
 }

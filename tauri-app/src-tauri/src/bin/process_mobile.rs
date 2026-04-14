@@ -308,6 +308,30 @@ impl ProfileServiceClient {
         }
         Ok(())
     }
+
+    async fn delete_session(
+        &self,
+        physician_id: &str,
+        session_id: &str,
+    ) -> Result<(), String> {
+        let url = format!(
+            "{}/physicians/{}/sessions/{}",
+            self.base_url, physician_id, session_id
+        );
+        let resp = self
+            .client
+            .delete(&url)
+            .send()
+            .await
+            .map_err(|e| format!("Failed to delete session: {e}"))?;
+        if !resp.status().is_success() {
+            return Err(format!(
+                "Failed to delete session: HTTP {}",
+                resp.status()
+            ));
+        }
+        Ok(())
+    }
 }
 
 // ── Pipeline Functions ──────────────────────────────────────────────────────
@@ -447,6 +471,17 @@ async fn process_job(
     config: &CliConfig,
     work_dir: &Path,
 ) -> Result<Vec<CreatedSession>, String> {
+    // Clean up sessions from previous processing attempts (requeue scenario)
+    for prev in &job.sessions_created {
+        info!("Deleting previous session {} from requeue", prev.session_id);
+        if let Err(e) = profile_client
+            .delete_session(&job.physician_id, &prev.session_id)
+            .await
+        {
+            warn!("Failed to delete previous session {}: {e}", prev.session_id);
+        }
+    }
+
     info!("Downloading audio for job {}...", job.job_id);
     let audio_data = profile_client.download_audio(&job.job_id).await?;
     let m4a_path = work_dir.join(format!("{}.m4a", job.job_id));
