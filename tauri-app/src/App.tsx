@@ -580,7 +580,7 @@ function App() {
     if (!currentTranscript?.trim()) return;
 
     const sessionId = status.session_id || `handout-${Date.now()}`;
-    const date = new Date().toISOString();
+    const date = new Date().toLocaleDateString('en-CA'); // YYYY-MM-DD
     await generateHandout(currentTranscript, sessionId, date);
   }, [isContinuousMode, continuous.liveTranscript, transcript.finalized_text, status.session_id, generateHandout]);
 
