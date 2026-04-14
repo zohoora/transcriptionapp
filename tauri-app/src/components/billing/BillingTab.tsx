@@ -485,11 +485,11 @@ export const BillingTab: React.FC<BillingTabProps> = ({
                 const codeConflicts = conflictMap.get(code.code);
                 return (
                   <tr key={`${code.code}-${i}`} className={`billing-code-row ${codeConflicts ? 'conflicted' : ''}`}>
-                    <td className="billing-code-id" title={OHIP_CODE_CRITERIA[code.code] || code.description}>
+                    <td className="billing-code-id" data-tooltip={OHIP_CODE_CRITERIA[code.code] || code.description}>
                       {code.code}
-                      {codeConflicts && <span className="billing-conflict-icon" title={codeConflicts.map((c: { code: string; reason: string }) => `Conflicts with ${c.code}: ${c.reason}`).join('\n')}>&#9888;</span>}
+                      {codeConflicts && <span className="billing-conflict-icon" data-tooltip={codeConflicts.map((c: { code: string; reason: string }) => `Conflicts with ${c.code}: ${c.reason}`).join('\n')}>&#9888;</span>}
                     </td>
-                    <td title={OHIP_CODE_CRITERIA[code.code] || ''}>{code.description}</td>
+                    <td data-tooltip={OHIP_CODE_CRITERIA[code.code] || undefined}>{code.description}</td>
                     <td>{formatCents(code.feeCents)}</td>
                     <td>{code.category === 'in_basket' ? `${code.shadowPct}%` : '100%'}</td>
                     <td className="billing-amount">
@@ -562,7 +562,7 @@ export const BillingTab: React.FC<BillingTabProps> = ({
                           key={result.code}
                           className={`billing-search-result ${conflicts.length > 0 ? 'conflicted' : ''} ${alreadyAdded ? 'disabled' : ''}`}
                           onClick={() => !alreadyAdded && handleAddCode(result)}
-                          title={conflicts.length > 0 ? conflicts.map(c => `Conflicts with ${c.code}: ${c.reason}`).join('\n') : OHIP_CODE_CRITERIA[result.code] || ''}
+                          data-tooltip={conflicts.length > 0 ? conflicts.map(c => `Conflicts with ${c.code}: ${c.reason}`).join('\n') : OHIP_CODE_CRITERIA[result.code] || undefined}
                         >
                           <span className="billing-search-code">{result.code}</span>
                           <span className="billing-search-desc">{result.description}</span>
@@ -600,7 +600,7 @@ export const BillingTab: React.FC<BillingTabProps> = ({
           <tbody>
             {record.timeEntries.map((te) => (
               <tr key={te.code} className="billing-code-row">
-                <td className="billing-code-id" title={OHIP_CODE_CRITERIA[te.code] || te.description}>{te.code}</td>
+                <td className="billing-code-id" data-tooltip={OHIP_CODE_CRITERIA[te.code] || te.description}>{te.code}</td>
                 <td>{te.description}{te.autoCalculated ? ' (auto)' : ''}</td>
                 <td>{te.minutes}</td>
                 <td>{te.billableUnits}</td>

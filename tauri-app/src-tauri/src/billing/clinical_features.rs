@@ -375,6 +375,8 @@ CRITICAL RULES:
 3. Only include conditions where ACTIVE MANAGEMENT occurred during this visit, not conditions merely listed in the patient's medical history.
 4. For visits involving procedures (injection, excision, biopsy, etc.), the visit type should typically be "intermediate_assessment" unless it was truly brief (<10 min) or comprehensive (multi-system).
 5. When uncertain about a procedure, leave it out rather than guessing. But when a procedure is clearly described as performed, always include it.
+6. If no condition from the list matches what happened in the visit, leave the conditions array EMPTY. Do NOT force-fit unrelated clinical activities into a condition. Ordering labs, making referrals, or general investigations are NOT conditions — they are part of the assessment and plan.
+7. diabetic_assessment requires EXPLICIT diabetes management (A1C, glucose, diabetic medication adjustment, diabetic foot exam). Ordering thyroid or iron labs is NOT diabetic_assessment.
 
 Respond ONLY with the JSON object. No explanations or commentary."#;
 

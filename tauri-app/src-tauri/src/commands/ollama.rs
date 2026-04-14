@@ -1083,16 +1083,17 @@ pub async fn generate_clinical_feedback(
     }
 
     let config = Config::load_or_default();
+    let feedback_model = "clinical-assistant";
     let client = LLMClient::new(
         &config.llm_router_url,
         &config.llm_api_key,
         &config.llm_client_id,
-        &config.fast_model,
+        feedback_model,
     )
     .map_err(|e| CommandError::Network(e))?;
 
     let response = client
-        .generate(&config.fast_model, &system_prompt, &transcript, "clinical_feedback")
+        .generate(feedback_model, &system_prompt, &transcript, "clinical_feedback")
         .await
         .map_err(|e| CommandError::Network(e))?;
 

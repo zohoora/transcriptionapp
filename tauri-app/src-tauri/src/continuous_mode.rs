@@ -997,6 +997,7 @@ pub async fn run_continuous_mode(
     // Hybrid mode config
     let hybrid_confirm_window_secs = config.hybrid_confirm_window_secs;
     let hybrid_min_words_for_sensor_split = config.hybrid_min_words_for_sensor_split;
+    let billing_counselling_exhausted = config.billing_counselling_exhausted;
     // Move the hybrid sensor receiver into the detector task
     let mut hybrid_sensor_rx = hybrid_sensor_state_rx;
 
@@ -2000,7 +2001,7 @@ pub async fn run_continuous_mode(
                                             encounter_duration_ms,
                                             encounter_patient_name.as_deref(),
                                             after_hours,
-                                            &crate::billing::RuleEngineContext::default(), // office default
+                                            &crate::billing::RuleEngineContext { counselling_exhausted: billing_counselling_exhausted, ..Default::default() },
                                             &logger_for_detector,
                                         ).await;
                                         let billing_latency = billing_start.elapsed().as_millis() as u64;
@@ -2088,31 +2089,10 @@ pub async fn run_continuous_mode(
 
                         // ---- Retrospective merge check ----
                         // After archiving + SOAP for encounter N, check if it should merge with N-1.
-                        // Gap fix: when prev_encounter_session_id is None (first encounter in this
-                        // continuous session), load the most recent same-day session from the archive
-                        // so the very first split still gets merge-checked.
-                        if merge_enabled && prev_encounter_session_id.is_none() {
-                            let today_str = Utc::now().format("%Y-%m-%d").to_string();
-                            if let Ok(sessions) = local_archive::list_sessions_by_date(&today_str) {
-                                // Find the most recent session that isn't the one we just archived
-                                if let Some(prev_summary) = sessions.iter().find(|s| s.session_id != session_id) {
-                                    if let Ok(details) = local_archive::get_session(&prev_summary.session_id, &today_str) {
-                                        if let Some(transcript) = details.transcript {
-                                            info!(
-                                                "Loaded previous same-day session {} from archive for merge check (first encounter fallback)",
-                                                prev_summary.session_id
-                                            );
-                                            prev_encounter_session_id = Some(prev_summary.session_id.clone());
-                                            prev_encounter_text = Some(transcript);
-                                            prev_encounter_text_rich = None; // Archive only has flat text
-                                            prev_encounter_date = Some(Utc::now());
-                                            prev_encounter_is_clinical = prev_summary.likely_non_clinical != Some(true);
-                                        }
-                                    }
-                                }
-                            }
-                        }
-
+                        // Only runs when prev_encounter_session_id is set (i.e., a prior encounter
+                        // was split within this same continuous session). First encounters after
+                        // restart or manual "New Patient" trigger are never merge-checked — the
+                        // user's explicit action (restart / new patient) means a new session.
                         if merge_enabled {
                             if let (Some(ref prev_id), Some(ref prev_text), Some(ref prev_date)) =
                                 (&prev_encounter_session_id, &prev_encounter_text, &prev_encounter_date)
@@ -2993,7 +2973,7 @@ pub async fn run_continuous_mode(
                                 flush_duration_ms,
                                 flush_patient_name.as_deref(),
                                 flush_after_hours,
-                                &crate::billing::RuleEngineContext::default(), // office default
+                                &crate::billing::RuleEngineContext { counselling_exhausted: billing_counselling_exhausted, ..Default::default() },
                                 &logger_for_flush,
                             ).await;
                             let billing_latency = billing_start.elapsed().as_millis() as u64;

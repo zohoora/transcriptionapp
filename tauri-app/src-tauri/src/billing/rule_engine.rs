@@ -9,6 +9,8 @@ use super::types::*;
 pub struct RuleEngineContext {
     /// True = procedure done in hospital (no tray fees). False = out-of-hospital / office (default).
     pub is_hospital: bool,
+    /// True = patient's 3 K013 units for the year are exhausted. Use K033A instead.
+    pub counselling_exhausted: bool,
 }
 
 /// Map extracted clinical features to a draft billing record with OHIP codes.
@@ -35,7 +37,13 @@ pub fn map_features_to_billing_with_context(
     let mut codes: Vec<BillingCode> = Vec::new();
 
     // 1. Visit type -> assessment code
-    let assessment_code = visit_type_to_code(&features.visit_type);
+    let mut assessment_code = visit_type_to_code(&features.visit_type);
+
+    // Counselling: switch K013A → K033A when yearly cap is exhausted
+    if assessment_code == "K013A" && ctx.counselling_exhausted {
+        assessment_code = "K033A";
+    }
+
     if let Some(ohip) = ohip_codes::get_code(assessment_code) {
         let confidence = if features.confidence >= 0.85 {
             BillingConfidence::High
@@ -44,7 +52,13 @@ pub fn map_features_to_billing_with_context(
         } else {
             BillingConfidence::Low
         };
-        codes.push(make_billing_code(ohip, confidence, features.is_after_hours));
+        let mut code = make_billing_code(ohip, confidence, features.is_after_hours);
+        // Per-unit codes (K013A, K033A, K005A, K007A): set quantity from session duration
+        // using GP54 counselling unit table (½ hour or major part thereof).
+        if matches!(assessment_code, "K013A" | "K033A" | "K005A" | "K007A") {
+            code.quantity = counselling_units_from_duration(duration_ms);
+        }
+        codes.push(code);
     }
 
     // 2. Procedures -> procedure codes
@@ -60,10 +74,16 @@ pub fn map_features_to_billing_with_context(
     // 3. Conditions -> K/Q codes
     //    K codes require evidence from the SOAP note — suppress if the LLM
     //    could not cite supporting text (guards against hallucinated conditions).
+    //    K005A/K007A are suppressed when visitType is counselling (K013A) —
+    //    they're mutually exclusive per-unit time codes for the same service.
     let mut condition_codes: Vec<&str> = Vec::new();
     for cond in &features.conditions {
         let cond_codes = condition_type_to_codes(cond);
         for code_str in cond_codes {
+            // Suppress K005A/K007A when already billing K013A (or vice versa)
+            if matches!(code_str, "K005A" | "K007A") && assessment_code == "K013A" {
+                continue;
+            }
             if code_str.starts_with('K') {
                 let key = condition_type_to_key(cond);
                 let has_evidence = features
@@ -396,6 +416,31 @@ fn is_tray_fee_qualifying(code: &str) -> bool {
         // IUD procedures
         | "G378A" | "G552A"
     )
+}
+
+// ── Counselling unit calculation (GP54) ───────────────────────────────────
+
+/// Calculate counselling/PMH units from session duration.
+/// Per SOB GP54 time table: 1 unit = 20 min, 2 units = 46 min, 3 units = 76 min, etc.
+/// Pattern: first unit at 20 min, second at 46 min, then +30 min per additional unit.
+const COUNSELLING_UNIT_THRESHOLDS: &[u64] = &[20, 46, 76, 106, 136, 166, 196, 226];
+
+fn counselling_units_from_duration(duration_ms: u64) -> u8 {
+    let minutes = duration_ms / 60_000;
+    let mut units: u8 = 0;
+    for &threshold in COUNSELLING_UNIT_THRESHOLDS {
+        if minutes >= threshold {
+            units += 1;
+        } else {
+            break;
+        }
+    }
+    // If longer than all thresholds, extrapolate at +30 min per unit
+    if units == COUNSELLING_UNIT_THRESHOLDS.len() as u8 {
+        let beyond = minutes - COUNSELLING_UNIT_THRESHOLDS[COUNSELLING_UNIT_THRESHOLDS.len() - 1];
+        units = units.saturating_add((beyond / 30) as u8);
+    }
+    units.max(1) // At least 1 unit if the visit happened
 }
 
 // ── Diagnostic code resolution ────────────────────────────────────────────
@@ -864,7 +909,7 @@ mod tests {
         features.procedures = vec![ProcedureType::SkinBiopsy]; // Z113A qualifies for tray fee
         let record = map_features_to_billing_with_context(
             &features, "s1", "2026-04-05", 900_000, None,
-            &RuleEngineContext { is_hospital: false },
+            &RuleEngineContext { is_hospital: false, ..Default::default() },
         );
         // Assessment + procedure + E542A tray fee = 3 codes
         assert!(record.codes.iter().any(|c| c.code == "E542A"), "Tray fee should be auto-added for skin biopsy");
@@ -876,7 +921,7 @@ mod tests {
         features.procedures = vec![ProcedureType::SkinBiopsy];
         let record = map_features_to_billing_with_context(
             &features, "s1", "2026-04-05", 900_000, None,
-            &RuleEngineContext { is_hospital: true },
+            &RuleEngineContext { is_hospital: true, ..Default::default() },
         );
         assert!(!record.codes.iter().any(|c| c.code == "E542A"), "No tray fee in hospital");
     }
@@ -887,7 +932,7 @@ mod tests {
         features.procedures = vec![ProcedureType::ImmunizationFlu]; // G590A does NOT qualify
         let record = map_features_to_billing_with_context(
             &features, "s1", "2026-04-05", 600_000, None,
-            &RuleEngineContext { is_hospital: false },
+            &RuleEngineContext { is_hospital: false, ..Default::default() },
         );
         assert!(!record.codes.iter().any(|c| c.code == "E542A"), "No tray fee for immunization");
     }
@@ -898,7 +943,7 @@ mod tests {
         features.procedures = vec![ProcedureType::PapSmear]; // G365A
         let record = map_features_to_billing_with_context(
             &features, "s1", "2026-04-05", 900_000, None,
-            &RuleEngineContext { is_hospital: false },
+            &RuleEngineContext { is_hospital: false, ..Default::default() },
         );
         assert!(record.codes.iter().any(|c| c.code == "E430A"), "Pap tray fee should be auto-added");
         // G365A also qualifies for general tray fee — but Pap tray E430A is the specific one
@@ -910,7 +955,7 @@ mod tests {
         features.procedures = vec![ProcedureType::PapSmear];
         let record = map_features_to_billing_with_context(
             &features, "s1", "2026-04-05", 900_000, None,
-            &RuleEngineContext { is_hospital: true },
+            &RuleEngineContext { is_hospital: true, ..Default::default() },
         );
         assert!(!record.codes.iter().any(|c| c.code == "E430A"), "No Pap tray in hospital");
     }
@@ -930,7 +975,7 @@ mod tests {
         features.procedures = vec![ProcedureType::JointInjection]; // G370A qualifies
         let record = map_features_to_billing_with_context(
             &features, "s1", "2026-04-05", 900_000, None,
-            &RuleEngineContext { is_hospital: false },
+            &RuleEngineContext { is_hospital: false, ..Default::default() },
         );
         assert!(record.codes.iter().any(|c| c.code == "G370A"));
         assert!(record.codes.iter().any(|c| c.code == "E542A"), "Tray fee for joint injection");
@@ -1242,6 +1287,58 @@ mod tests {
         features.suggested_diagnostic_code = Some("741".to_string());
         let record = map_features_to_billing(&features, "s1", "2026-04-05", 3_600_000, None);
         assert_eq!(record.diagnostic_code, None, "K133A should not accept 741");
+    }
+
+    // ── Counselling unit + mutual exclusion tests ──────────────────────────
+
+    #[test]
+    fn test_counselling_units_gp54_table() {
+        // Exact SOB GP54 thresholds
+        assert_eq!(counselling_units_from_duration(10 * 60_000), 1);  // below minimum
+        assert_eq!(counselling_units_from_duration(19 * 60_000), 1);  // just below 20
+        assert_eq!(counselling_units_from_duration(20 * 60_000), 1);  // 1 unit
+        assert_eq!(counselling_units_from_duration(45 * 60_000), 1);  // just below 46
+        assert_eq!(counselling_units_from_duration(46 * 60_000), 2);  // 2 units
+        assert_eq!(counselling_units_from_duration(74 * 60_000), 2);  // below 76
+        assert_eq!(counselling_units_from_duration(76 * 60_000), 3);  // 3 units
+        assert_eq!(counselling_units_from_duration(106 * 60_000), 4); // 4 units
+        assert_eq!(counselling_units_from_duration(136 * 60_000), 5); // 5 units
+    }
+
+    #[test]
+    fn test_counselling_visit_sets_quantity() {
+        let mut features = default_features();
+        features.visit_type = VisitType::Counselling;
+        // 74 minutes → 2 units per GP54
+        let record = map_features_to_billing(&features, "s1", "2026-04-05", 74 * 60 * 1000, None);
+        assert_eq!(record.codes[0].code, "K013A");
+        assert_eq!(record.codes[0].quantity, 2);
+    }
+
+    #[test]
+    fn test_counselling_exhausted_uses_k033() {
+        let mut features = default_features();
+        features.visit_type = VisitType::Counselling;
+        let record = map_features_to_billing_with_context(
+            &features, "s1", "2026-04-05", 74 * 60 * 1000, None,
+            &RuleEngineContext { counselling_exhausted: true, ..Default::default() },
+        );
+        assert_eq!(record.codes[0].code, "K033A");
+        assert_eq!(record.codes[0].quantity, 2);
+    }
+
+    #[test]
+    fn test_k005_suppressed_when_counselling() {
+        let mut features = default_features();
+        features.visit_type = VisitType::Counselling;
+        features.conditions = vec![ConditionType::PrimaryMentalHealth];
+        features.condition_evidence.insert(
+            "primary_mental_health".to_string(),
+            "counselling for adjustment reaction".to_string(),
+        );
+        let record = map_features_to_billing(&features, "s1", "2026-04-05", 74 * 60 * 1000, None);
+        assert!(record.codes.iter().any(|c| c.code == "K013A"), "K013A should be present");
+        assert!(!record.codes.iter().any(|c| c.code == "K005A"), "K005A should be suppressed when K013A is the visit type");
     }
 
     // ── Diagnostic code resolution tests ──────────────────────────────────

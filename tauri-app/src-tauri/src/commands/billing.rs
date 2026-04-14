@@ -199,6 +199,7 @@ pub async fn extract_billing_codes(
 
     let rule_ctx = crate::billing::RuleEngineContext {
         is_hospital: context.as_ref().map_or(false, |c| c.is_hospital),
+        counselling_exhausted: context.as_ref().map_or(config.billing_counselling_exhausted, |c| c.counselling_exhausted),
     };
 
     let record = crate::encounter_pipeline::extract_and_archive_billing(
