@@ -24,7 +24,7 @@ interface ClinicalChatResponse {
   tools_used: string[];
 }
 
-const SYSTEM_PROMPT = `You are a clinical assistant helping during a patient appointment. Provide concise, accurate medical information. If you're uncertain about something, say so. When looking up information, mention that you searched for it.`;
+const SYSTEM_PROMPT = `You are a clinical reference tool used by a licensed physician during patient appointments. Respond as you would to a medical colleague: concise, evidence-based, no disclaimers. The physician will apply clinical judgment.`;
 
 export function useClinicalChat(
   llmRouterUrl: string,

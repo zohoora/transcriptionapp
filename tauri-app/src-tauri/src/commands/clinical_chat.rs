@@ -1,11 +1,15 @@
 //! Clinical chat Tauri commands.
 //!
 //! Provides HTTP proxy for clinical assistant chat to work around browser CSP restrictions.
+//! Full conversation logging to `~/.transcriptionapp/logs/chat_log.jsonl` for debugging
+//! and quality control.
 
 use reqwest::header::{HeaderMap, HeaderValue, AUTHORIZATION, CONTENT_TYPE};
 use serde::{Deserialize, Serialize};
+use std::fs::OpenOptions;
+use std::io::Write;
 use std::time::Duration;
-use tracing::{debug, error, info};
+use tracing::{debug, error, info, warn};
 
 /// Timeout for clinical chat requests (60 seconds - allows for tool use)
 const CHAT_TIMEOUT: Duration = Duration::from_secs(60);
@@ -63,6 +67,42 @@ pub struct ClinicalChatResponse {
     pub tools_used: Vec<String>,
 }
 
+/// A single chat exchange logged to JSONL for debugging and quality control.
+#[derive(Serialize)]
+struct ChatLogEntry {
+    ts: String,
+    user_message: String,
+    system_prompt: String,
+    response: String,
+    tools_used: Vec<String>,
+    model: String,
+    duration_ms: u64,
+    error: Option<String>,
+}
+
+/// Append a chat log entry to `~/.transcriptionapp/logs/chat_log.jsonl`.
+fn log_chat_exchange(entry: &ChatLogEntry) {
+    let Ok(log_dir) = dirs::home_dir()
+        .map(|h| h.join(".transcriptionapp").join("logs"))
+        .ok_or(())
+    else {
+        return;
+    };
+    if std::fs::create_dir_all(&log_dir).is_err() {
+        return;
+    }
+    let path = log_dir.join("chat_log.jsonl");
+    let Ok(line) = serde_json::to_string(entry) else {
+        return;
+    };
+    match OpenOptions::new().create(true).append(true).open(&path) {
+        Ok(mut f) => {
+            let _ = writeln!(f, "{}", line);
+        }
+        Err(e) => warn!("Failed to write chat log: {e}"),
+    }
+}
+
 /// Send a message to the clinical assistant LLM
 #[tauri::command]
 pub async fn clinical_chat_send(
@@ -83,6 +123,21 @@ pub async fn clinical_chat_send(
             "LLM Router URL is not configured".into(),
         ));
     }
+
+    let start = std::time::Instant::now();
+
+    // Extract the user's latest question and system prompt for logging
+    let user_message = messages
+        .iter()
+        .rev()
+        .find(|m| m.role == "user")
+        .map(|m| m.content.clone())
+        .unwrap_or_default();
+    let system_prompt = messages
+        .iter()
+        .find(|m| m.role == "system")
+        .map(|m| m.content.clone())
+        .unwrap_or_default();
 
     // Build headers
     let mut headers = HeaderMap::new();
@@ -155,6 +210,16 @@ pub async fn clinical_chat_send(
     if !status.is_success() {
         let error_text = response.text().await.unwrap_or_default();
         error!("Clinical chat API error: {} - {}", status, error_text);
+        log_chat_exchange(&ChatLogEntry {
+            ts: chrono::Utc::now().to_rfc3339(),
+            user_message,
+            system_prompt,
+            response: String::new(),
+            tools_used: vec![],
+            model: "clinical-assistant".to_string(),
+            duration_ms: start.elapsed().as_millis() as u64,
+            error: Some(format!("{} - {}", status, error_text)),
+        });
         return Err(CommandError::Network(format!(
             "API error: {} - {}",
             status, error_text
@@ -182,6 +247,17 @@ pub async fn clinical_chat_send(
         content.len(),
         tools_used.len()
     );
+
+    log_chat_exchange(&ChatLogEntry {
+        ts: chrono::Utc::now().to_rfc3339(),
+        user_message,
+        system_prompt,
+        response: content.clone(),
+        tools_used: tools_used.clone(),
+        model: "clinical-assistant".to_string(),
+        duration_ms: start.elapsed().as_millis() as u64,
+        error: None,
+    });
 
     Ok(ClinicalChatResponse {
         content,
