@@ -384,7 +384,7 @@ pub async fn generate_patient_handout(
     )
     .map_err(|e| CommandError::Network(e))?;
 
-    let system_prompt = crate::llm_client::build_patient_handout_prompt();
+    let system_prompt = crate::llm_client::build_patient_handout_prompt(None);
 
     // 90-second timeout for handout generation
     let result = tokio::time::timeout(
@@ -1020,6 +1020,7 @@ pub async fn merge_patient_soaps(
         &transcript,
         &patient_data,
         &merged_indices,
+        None,
     );
 
     // Get LLM client and model from config — follows the same pattern as generate_soap_note

@@ -89,6 +89,7 @@ pub mod whisper_server;
 pub mod room_config;
 pub mod profile_client;
 pub mod physician_cache;
+pub mod server_config;
 
 use commands::PipelineState;
 use std::sync::{Arc, Mutex};
@@ -288,6 +289,28 @@ pub fn run() {
 
             let shared_profile_client: commands::SharedProfileClient = Arc::new(tokio::sync::RwLock::new(profile_client));
             app.manage(shared_profile_client.clone());
+
+            // Server-configurable data (prompts, billing rules, detection thresholds).
+            // Starts with compiled defaults; async fetch updates in background.
+            let shared_server_config: commands::SharedServerConfig =
+                Arc::new(tokio::sync::RwLock::new(server_config::compiled_defaults()));
+            app.manage(shared_server_config.clone());
+
+            // Async: fetch server config in background (non-blocking)
+            {
+                let client_for_config = shared_profile_client.clone();
+                let config_state = shared_server_config.clone();
+                tauri::async_runtime::spawn(async move {
+                    let client_guard = client_for_config.read().await;
+                    if let Some(ref client) = *client_guard {
+                        let config = server_config::load_server_config(client).await;
+                        let source = format!("{:?}", config.source);
+                        let version = config.version;
+                        *config_state.write().await = config;
+                        info!(version, source = %source, "Server config loaded");
+                    }
+                });
+            }
 
             // Initialize active physician
             let shared_active_physician: commands::SharedActivePhysician = Arc::new(tokio::sync::RwLock::new(None));

@@ -135,15 +135,22 @@ fn normalize_patient_name(name: &str) -> String {
 
 /// Build the vision prompt for patient name and DOB extraction.
 /// Returns (system_prompt, user_prompt_text).
-pub(crate) fn build_patient_name_prompt() -> (String, String) {
-    let system = "You are analyzing a screenshot of a computer screen in a clinical setting. \
-        If a patient's chart or medical record is visible, extract the patient's full name \
-        and date of birth. Respond with ONLY a JSON object, no other text.";
+/// When `templates` is provided and the relevant field is non-empty, it overrides the hardcoded default.
+pub(crate) fn build_patient_name_prompt(
+    templates: Option<&crate::server_config::PromptTemplates>,
+) -> (String, String) {
+    let system = templates
+        .and_then(|t| (!t.patient_name_system.is_empty()).then(|| t.patient_name_system.clone()))
+        .unwrap_or_else(|| "You are analyzing a screenshot of a computer screen in a clinical setting. \
+            If a patient's chart or medical record is visible, extract the patient's full name \
+            and date of birth. Respond with ONLY a JSON object, no other text.".to_string());
 
-    let user = "Extract patient name and date of birth from this screenshot. \
-        Respond with ONLY: {\"name\": \"<full name or NOT_FOUND>\", \"dob\": \"<YYYY-MM-DD or NOT_FOUND>\"}";
+    let user = templates
+        .and_then(|t| (!t.patient_name_user.is_empty()).then(|| t.patient_name_user.clone()))
+        .unwrap_or_else(|| "Extract patient name and date of birth from this screenshot. \
+            Respond with ONLY: {\"name\": \"<full name or NOT_FOUND>\", \"dob\": \"<YYYY-MM-DD or NOT_FOUND>\"}".to_string());
 
-    (system.to_string(), user.to_string())
+    (system, user)
 }
 
 /// Parse the vision model's response for a patient name and date of birth.
@@ -334,7 +341,7 @@ mod tests {
 
     #[test]
     fn test_build_patient_name_prompt() {
-        let (system, user) = build_patient_name_prompt();
+        let (system, user) = build_patient_name_prompt(None);
         assert!(!system.is_empty());
         assert!(!user.is_empty());
         assert!(system.contains("patient"));

@@ -216,7 +216,7 @@ pub fn spawn_shadow_observer(
                 if let Some(ref client) = shadow_llm_client {
                     let (filtered, _) = strip_hallucinations(&formatted, 5);
                     let (system_prompt, user_prompt) =
-                        build_encounter_detection_prompt(&filtered, None);
+                        build_encounter_detection_prompt(&filtered, None, None);
                     let system_prompt = if shadow_detection_nothink {
                         format!("/nothink\n{}", system_prompt)
                     } else {

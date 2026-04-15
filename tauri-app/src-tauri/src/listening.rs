@@ -840,7 +840,7 @@ fn analyze_speech(
         // Step 2: Check for greeting with LLM router
         info!("Checking for greeting...");
         let greeting_result = llm_client
-            .check_greeting(&transcript, config.greeting_sensitivity)
+            .check_greeting(&transcript, config.greeting_sensitivity, None)
             .await
             .map_err(|e| format!("Greeting check error: {}", e))?;
 

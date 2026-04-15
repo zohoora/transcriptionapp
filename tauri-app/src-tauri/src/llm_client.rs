@@ -865,7 +865,7 @@ impl LLMClient {
             speaker_context.map(|c| c.speakers.len()).unwrap_or(0)
         );
 
-        let system_prompt = build_simple_soap_prompt(&opts);
+        let system_prompt = build_simple_soap_prompt(&opts, None);
         let session_notes = if opts.session_notes.trim().is_empty() { None } else { Some(opts.session_notes.as_str()) };
         let user_content = build_soap_user_content(&prepared_transcript, audio_events, session_notes, speaker_context);
 
@@ -910,7 +910,7 @@ impl LLMClient {
             prepared_transcript.split_whitespace().count(),
         );
 
-        let system_prompt = build_single_patient_soap_prompt(&opts, patient_label);
+        let system_prompt = build_single_patient_soap_prompt(&opts, patient_label, None);
         let session_notes = if opts.session_notes.trim().is_empty() { None } else { Some(opts.session_notes.as_str()) };
         let user_content = build_soap_user_content(&prepared_transcript, audio_events, session_notes, speaker_context);
 
@@ -965,7 +965,7 @@ impl LLMClient {
             speaker_context.map(|c| c.speakers.len()).unwrap_or(0)
         );
 
-        let system_prompt = build_simple_soap_prompt(&opts);
+        let system_prompt = build_simple_soap_prompt(&opts, None);
         let session_notes = if opts.session_notes.trim().is_empty() { None } else { Some(opts.session_notes.as_str()) };
         let user_content = build_soap_user_content(&prepared_transcript, audio_events, session_notes, speaker_context);
 
@@ -993,7 +993,7 @@ impl LLMClient {
         options: &SoapOptions,
         detection: &MultiPatientDetectionResult,
     ) -> Result<MultiPatientSoapResult, String> {
-        let system_prompt = build_per_patient_soap_prompt(options);
+        let system_prompt = build_per_patient_soap_prompt(options, None);
         let all_patients_desc: String = detection.patients.iter()
             .map(|p| format!("{}: {}", p.label, p.summary))
             .collect::<Vec<_>>()
@@ -1117,6 +1117,7 @@ impl LLMClient {
         &self,
         transcript: &str,
         sensitivity: f32,
+        templates: Option<&crate::server_config::PromptTemplates>,
     ) -> Result<GreetingResult, String> {
         let trimmed = transcript.trim();
 
@@ -1128,7 +1129,12 @@ impl LLMClient {
             });
         }
 
-        let system_prompt = format!(
+        let system_prompt = templates
+            .and_then(|t| (!t.greeting_detection.is_empty()).then(|| {
+                // Server template may contain {sensitivity} placeholder
+                t.greeting_detection.replace("{sensitivity}", &format!("{:.2}", sensitivity))
+            }))
+            .unwrap_or_else(|| format!(
             r#"You are a speech classifier. Analyze if the given speech is a greeting that would START a medical consultation.
 
 Common greeting patterns that START consultations:
@@ -1148,7 +1154,7 @@ Use a sensitivity threshold of {:.2} (higher = more likely to classify as greeti
 
 Respond ONLY with JSON: {{"is_greeting": true/false, "confidence": 0.0-1.0, "detected_phrase": "the greeting phrase if found or null"}}"#,
             sensitivity
-        );
+        ));
 
         let url = format!("{}/v1/chat/completions", self.base_url);
         info!("Checking greeting with LLM at {} (timeout={}s)", url, Self::GREETING_TIMEOUT.as_secs());
@@ -1348,7 +1354,7 @@ Respond ONLY with JSON: {{"is_greeting": true/false, "confidence": 0.0-1.0, "det
             image_base64.len(),
         );
 
-        let system_prompt = build_vision_soap_prompt(&opts);
+        let system_prompt = build_vision_soap_prompt(&opts, None);
 
         // Build user content: text BEFORE image (slightly faster per integration guide)
         let session_notes = if opts.session_notes.trim().is_empty() { None } else { Some(opts.session_notes.as_str()) };
@@ -1388,7 +1394,14 @@ Respond ONLY with JSON: {{"is_greeting": true/false, "confidence": 0.0-1.0, "det
 
 /// Build system prompt for vision SOAP note generation
 /// Uses the "Verified Steps" prompt strategy (P11) which achieved perfect scores in experiments
-fn build_vision_soap_prompt(_options: &SoapOptions) -> String {
+/// When `templates` is provided and the relevant field is non-empty, it overrides the hardcoded default.
+fn build_vision_soap_prompt(
+    _options: &SoapOptions,
+    templates: Option<&crate::server_config::PromptTemplates>,
+) -> String {
+    templates
+        .and_then(|t| (!t.soap_vision_template.is_empty()).then(|| t.soap_vision_template.clone()))
+        .unwrap_or_else(|| {
     // Note: detail_level and custom_instructions are intentionally ignored for vision path
     // The step-by-step prompt with explicit verification prevents irrelevant EHR data extraction
     r#"Medical scribe AI. Follow these steps EXACTLY:
@@ -1418,50 +1431,29 @@ Rules:
 - Do NOT include EHR data that wasn't referenced in the conversation
 - Stop immediately after the closing brace
 - Do not repeat information"#.to_string()
+    })
 }
 
 /// Build system prompt for SOAP note generation (JSON output required).
 /// Used by both single-patient and multi-patient SOAP generation.
-pub fn build_simple_soap_prompt(options: &SoapOptions) -> String {
-    let detail_instruction = match options.detail_level {
-        1..=3 => format!(
-            "DETAIL LEVEL: {}/10 - Be BRIEF. Use short phrases, 1-2 items per section. Omit minor details.",
-            options.detail_level
-        ),
-        4..=6 => format!(
-            "DETAIL LEVEL: {}/10 - Use STANDARD clinical detail. Include key findings and relevant history.",
-            options.detail_level
-        ),
-        7..=10 => format!(
-            "DETAIL LEVEL: {}/10 - Be THOROUGH. Include all findings, measurements, pertinent negatives, and clinical reasoning.",
-            options.detail_level
-        ),
-        _ => format!(
-            "DETAIL LEVEL: {}/10 - Use standard clinical detail.",
-            options.detail_level
-        ),
-    };
+/// When `templates` is provided and the relevant fields are non-empty, they override the hardcoded defaults.
+/// The server provides TEXT FRAGMENTS; the client assembles them using the same dynamic logic
+/// (detail_level matching, format matching, custom_instructions branching).
+pub fn build_simple_soap_prompt(
+    options: &SoapOptions,
+    templates: Option<&crate::server_config::PromptTemplates>,
+) -> String {
+    // If a full base template is provided, use it directly (with detail/format/custom appended)
+    if let Some(base) = templates.and_then(|t| (!t.soap_base_template.is_empty()).then(|| t.soap_base_template.clone())) {
+        let detail_instruction = build_soap_detail_instruction(options, templates);
+        let format_instruction = build_soap_format_instruction(options, templates);
+        let custom_section = build_soap_custom_section(options, templates);
+        return format!("{base}{custom_section}\n\n{format_instruction}\n\n- {detail_instruction}");
+    }
 
-    let format_instruction = match options.format {
-        SoapFormat::ProblemBased => "ORGANIZATION: If multiple medical problems are discussed, group items by problem. Prefix each bullet with the problem name in square brackets, e.g., '[Hypertension] Elevated BP reported at home' in Subjective, '[Hypertension] BP 150/90' in Objective, '[Hypertension] Uncontrolled, consider med adjustment' in Assessment, '[Hypertension] Increase amlodipine to 10mg' in Plan. Every item MUST have a [Problem] prefix. Problems with only one mention still get a prefix.",
-        SoapFormat::Comprehensive => "ORGANIZATION: Create a single unified SOAP note covering all problems together in each section. Do NOT prefix items with problem labels.",
-    };
-
-    let global_instr = options.custom_instructions.trim();
-    let session_instr = options.session_custom_instructions.trim();
-
-    let custom_section = match (global_instr.is_empty(), session_instr.is_empty()) {
-        (true, true) => String::new(),
-        (false, true) => format!(
-            "\n\nCRITICAL - PHYSICIAN'S REQUIRED STYLE (you MUST follow these instructions exactly): {global_instr}"
-        ),
-        (true, false) => format!(
-            "\n\nCRITICAL - SESSION-SPECIFIC INSTRUCTIONS (you MUST follow these exactly): {session_instr}"
-        ),
-        (false, false) => format!(
-            "\n\nCRITICAL - PHYSICIAN'S REQUIRED STYLE (you MUST follow these instructions exactly): {global_instr}\n\nSESSION-SPECIFIC INSTRUCTIONS (these take precedence where they conflict): {session_instr}"
-        ),
-    };
+    let detail_instruction = build_soap_detail_instruction(options, templates);
+    let format_instruction = build_soap_format_instruction(options, templates);
+    let custom_section = build_soap_custom_section(options, templates);
 
     format!(
         r#"You are a medical scribe that outputs ONLY valid JSON. Extract clinical information from transcripts into SOAP notes.{custom_section}
@@ -1494,6 +1486,118 @@ Rules:
 - CLINICIAN NOTES: If provided, incorporate clinician observations into the appropriate SOAP sections (usually Objective for physical observations, Subjective for reported symptoms).
 - {detail_instruction}"#
     )
+}
+
+/// Build the detail-level instruction fragment for SOAP prompts.
+fn build_soap_detail_instruction(
+    options: &SoapOptions,
+    templates: Option<&crate::server_config::PromptTemplates>,
+) -> String {
+    // Check server-provided detail instructions by level key
+    let level_key = match options.detail_level {
+        1..=3 => "low",
+        4..=6 => "medium",
+        7..=10 => "high",
+        _ => "default",
+    };
+    if let Some(text) = templates
+        .and_then(|t| t.soap_detail_instructions.get(level_key))
+        .filter(|s| !s.is_empty())
+    {
+        return text.replace("{level}", &options.detail_level.to_string());
+    }
+
+    match options.detail_level {
+        1..=3 => format!(
+            "DETAIL LEVEL: {}/10 - Be BRIEF. Use short phrases, 1-2 items per section. Omit minor details.",
+            options.detail_level
+        ),
+        4..=6 => format!(
+            "DETAIL LEVEL: {}/10 - Use STANDARD clinical detail. Include key findings and relevant history.",
+            options.detail_level
+        ),
+        7..=10 => format!(
+            "DETAIL LEVEL: {}/10 - Be THOROUGH. Include all findings, measurements, pertinent negatives, and clinical reasoning.",
+            options.detail_level
+        ),
+        _ => format!(
+            "DETAIL LEVEL: {}/10 - Use standard clinical detail.",
+            options.detail_level
+        ),
+    }
+}
+
+/// Build the format instruction fragment for SOAP prompts.
+fn build_soap_format_instruction(
+    options: &SoapOptions,
+    templates: Option<&crate::server_config::PromptTemplates>,
+) -> String {
+    let format_key = match options.format {
+        SoapFormat::ProblemBased => "problem_based",
+        SoapFormat::Comprehensive => "comprehensive",
+    };
+    if let Some(text) = templates
+        .and_then(|t| t.soap_format_instructions.get(format_key))
+        .filter(|s| !s.is_empty())
+    {
+        return text.clone();
+    }
+
+    match options.format {
+        SoapFormat::ProblemBased => "ORGANIZATION: If multiple medical problems are discussed, group items by problem. Prefix each bullet with the problem name in square brackets, e.g., '[Hypertension] Elevated BP reported at home' in Subjective, '[Hypertension] BP 150/90' in Objective, '[Hypertension] Uncontrolled, consider med adjustment' in Assessment, '[Hypertension] Increase amlodipine to 10mg' in Plan. Every item MUST have a [Problem] prefix. Problems with only one mention still get a prefix.".to_string(),
+        SoapFormat::Comprehensive => "ORGANIZATION: Create a single unified SOAP note covering all problems together in each section. Do NOT prefix items with problem labels.".to_string(),
+    }
+}
+
+/// Build the custom instructions section for SOAP prompts.
+fn build_soap_custom_section(
+    options: &SoapOptions,
+    templates: Option<&crate::server_config::PromptTemplates>,
+) -> String {
+    let global_instr = options.custom_instructions.trim();
+    let session_instr = options.session_custom_instructions.trim();
+
+    // Check for server-provided custom section templates
+    let global_tmpl = templates
+        .and_then(|t| t.soap_custom_section_templates.get("global"))
+        .filter(|s| !s.is_empty());
+    let session_tmpl = templates
+        .and_then(|t| t.soap_custom_section_templates.get("session"))
+        .filter(|s| !s.is_empty());
+    let combined_tmpl = templates
+        .and_then(|t| t.soap_custom_section_templates.get("combined"))
+        .filter(|s| !s.is_empty());
+
+    match (global_instr.is_empty(), session_instr.is_empty()) {
+        (true, true) => String::new(),
+        (false, true) => {
+            if let Some(tmpl) = global_tmpl {
+                format!("\n\n{}", tmpl.replace("{global}", global_instr))
+            } else {
+                format!(
+                    "\n\nCRITICAL - PHYSICIAN'S REQUIRED STYLE (you MUST follow these instructions exactly): {global_instr}"
+                )
+            }
+        }
+        (true, false) => {
+            if let Some(tmpl) = session_tmpl {
+                format!("\n\n{}", tmpl.replace("{session}", session_instr))
+            } else {
+                format!(
+                    "\n\nCRITICAL - SESSION-SPECIFIC INSTRUCTIONS (you MUST follow these exactly): {session_instr}"
+                )
+            }
+        }
+        (false, false) => {
+            if let Some(tmpl) = combined_tmpl {
+                format!("\n\n{}", tmpl.replace("{global}", global_instr).replace("{session}", session_instr))
+            } else {
+                format!(
+                    "\n\nCRITICAL - PHYSICIAN'S REQUIRED STYLE (you MUST follow these instructions exactly): {global_instr}\n\nSESSION-SPECIFIC INSTRUCTIONS (these take precedence where they conflict): {session_instr}"
+                )
+            }
+        }
+    }
 }
 
 /// Clean up LLM response by removing channel markers, think tags, and markdown formatting
@@ -2284,10 +2388,15 @@ pub fn build_soap_user_content(
 
 /// Build a SOAP system prompt specialized for per-patient extraction from a multi-patient transcript.
 /// Extends `build_simple_soap_prompt` with multi-patient context.
-pub(crate) fn build_per_patient_soap_prompt(options: &SoapOptions) -> String {
-    let base = build_simple_soap_prompt(options);
-    format!(
-        "{}\n\n\
+/// When `templates` is provided and `soap_per_patient_extension` is non-empty, it overrides the hardcoded extension.
+pub(crate) fn build_per_patient_soap_prompt(
+    options: &SoapOptions,
+    templates: Option<&crate::server_config::PromptTemplates>,
+) -> String {
+    let base = build_simple_soap_prompt(options, templates);
+    let extension = templates
+        .and_then(|t| (!t.soap_per_patient_extension.is_empty()).then(|| t.soap_per_patient_extension.clone()))
+        .unwrap_or_else(|| "\
         IMPORTANT CONTEXT: This transcript was recorded during a visit where MULTIPLE PATIENTS were seen together \
         (e.g., a couple, family members). The conversation is interwoven — the doctor goes back and forth between patients \
         throughout the visit. Clinical discussions for different patients may be interleaved.\n\n\
@@ -2295,22 +2404,31 @@ pub(crate) fn build_per_patient_soap_prompt(options: &SoapOptions) -> String {
         - Their symptoms, history, and concerns\n\
         - The doctor's examination findings and clinical reasoning for that patient\n\
         - Treatment plans, prescriptions, and follow-ups for that patient\n\
-        - Ignore clinical content that belongs to the other patient(s), even if it appears nearby",
-        base
-    )
+        - Ignore clinical content that belongs to the other patient(s), even if it appears nearby".to_string());
+    format!("{}\n\n{}", base, extension)
 }
 
 /// Build a SOAP system prompt scoped to a single patient within a multi-patient transcript.
 /// Used when the physician regenerates SOAP for one specific patient (flattened sidebar entry).
 /// Appends a single-patient constraint to the base SOAP prompt.
-pub fn build_single_patient_soap_prompt(options: &SoapOptions, patient_label: &str) -> String {
-    let base = build_simple_soap_prompt(options);
-    format!(
-        "{}\n\nIMPORTANT: This transcript contains multiple patients. \
-         Generate a SOAP note ONLY for the patient identified as \"{}\". \
-         Ignore clinical content belonging to other patients in the transcript.",
-        base, patient_label
-    )
+/// When `templates` is provided and `soap_single_patient_scope_template` is non-empty, it overrides the hardcoded constraint.
+pub fn build_single_patient_soap_prompt(
+    options: &SoapOptions,
+    patient_label: &str,
+    templates: Option<&crate::server_config::PromptTemplates>,
+) -> String {
+    let base = build_simple_soap_prompt(options, templates);
+    let scope = templates
+        .and_then(|t| (!t.soap_single_patient_scope_template.is_empty()).then(|| {
+            t.soap_single_patient_scope_template.replace("{patient_label}", patient_label)
+        }))
+        .unwrap_or_else(|| format!(
+            "IMPORTANT: This transcript contains multiple patients. \
+             Generate a SOAP note ONLY for the patient identified as \"{}\". \
+             Ignore clinical content belonging to other patients in the transcript.",
+            patient_label
+        ));
+    format!("{}\n\n{}", base, scope)
 }
 
 /// Build user content for a per-patient SOAP note from a multi-patient transcript.
@@ -2336,8 +2454,13 @@ pub(crate) fn build_per_patient_user_content(
 /// Build a system prompt for generating a plain-language patient handout
 /// from a clinical transcript. The handout should be easy for patients to
 /// understand (5th-8th grade reading level) and use warm, reassuring language.
-pub fn build_patient_handout_prompt() -> String {
-    r#"You are a caring medical assistant who writes visit summaries for patients.
+/// When `templates` is provided and the relevant field is non-empty, it overrides the hardcoded default.
+pub fn build_patient_handout_prompt(
+    templates: Option<&crate::server_config::PromptTemplates>,
+) -> String {
+    templates
+        .and_then(|t| (!t.patient_handout.is_empty()).then(|| t.patient_handout.clone()))
+        .unwrap_or_else(|| r#"You are a caring medical assistant who writes visit summaries for patients.
 Write a clear, easy-to-understand summary of this medical visit for the patient to take home.
 
 RULES:
@@ -2368,16 +2491,18 @@ When to Come Back
 Warning Signs — Call Us If...
 - List specific symptoms or situations that should prompt the patient to call the office or seek urgent care
 
-If a section has no relevant information from the visit, skip that section entirely."#.to_string()
+If a section has no relevant information from the visit, skip that section entirely."#.to_string())
 }
 
 /// Build a prompt for merging incorrectly split patients within one encounter.
 /// Used when the physician determines that the LLM's multi-patient detection was wrong
 /// and two or more detected "patients" are actually the same person.
+/// When `templates` is provided and the relevant field is non-empty, it overrides the hardcoded system prompt.
 pub fn build_patient_merge_correction_prompt(
     transcript: &str,
     all_patient_labels: &[(u32, String, String)], // (index, label, soap_content)
     merged_indices: &[u32],
+    templates: Option<&crate::server_config::PromptTemplates>,
 ) -> (String, String) {
     let mut context = String::new();
     context.push_str("The following patients were detected in this encounter:\n\n");
@@ -2400,7 +2525,11 @@ pub fn build_patient_merge_correction_prompt(
         .map(|(_, label, _)| label.as_str())
         .collect();
 
-    let system = format!(
+    let system = templates
+        .and_then(|t| (!t.patient_merge_correction.is_empty()).then(|| {
+            t.patient_merge_correction.replace("{merged_names}", &merged_names.join(", "))
+        }))
+        .unwrap_or_else(|| format!(
         "You are a medical scribe assistant. The physician has reviewed automatically detected \
          patient notes from a multi-patient encounter and determined that the following patients \
          are actually the SAME person and should be merged: {}.\n\n\
@@ -2408,7 +2537,7 @@ pub fn build_patient_merge_correction_prompt(
          from all the notes marked TO BE MERGED. Do not include content from patients marked \
          as 'correct, keep separate'.",
         merged_names.join(", ")
-    );
+    ));
 
     let user = format!(
         "TRANSCRIPT:\n{}\n\nDETECTED PATIENTS AND THEIR CURRENT SOAP NOTES:\n{}\n\n\

@@ -19,6 +19,7 @@ use crate::encounter_merge::{build_encounter_merge_prompt, parse_merge_check};
 use crate::llm_client::{
     build_simple_soap_prompt, LLMClient, MultiPatientSoapResult, SoapFormat, SoapOptions,
 };
+use crate::server_config::PromptTemplates;
 use crate::local_archive;
 use crate::pipeline_log::PipelineLogger;
 use crate::continuous_mode::effective_soap_detail_level;
@@ -67,6 +68,7 @@ pub async fn generate_and_archive_soap(
     multi_patient_detection: Option<&MultiPatientDetectionResult>,
     logger: &Arc<Mutex<PipelineLogger>>,
     log_extra: serde_json::Value,
+    templates: Option<&PromptTemplates>,
 ) -> SoapGenerationOutcome {
     let effective_detail = effective_soap_detail_level(soap_detail_level, word_count);
     let soap_opts = SoapOptions {
@@ -76,7 +78,7 @@ pub async fn generate_and_archive_soap(
         session_notes,
         ..Default::default()
     };
-    let soap_system_prompt = build_simple_soap_prompt(&soap_opts);
+    let soap_system_prompt = build_simple_soap_prompt(&soap_opts, templates);
 
     let soap_start = Instant::now();
     let soap_future = client.generate_multi_patient_soap_note(
@@ -222,11 +224,13 @@ pub async fn extract_and_archive_billing(
     is_after_hours: bool,
     rule_ctx: &crate::billing::RuleEngineContext,
     logger: &Arc<Mutex<PipelineLogger>>,
+    templates: Option<&PromptTemplates>,
+    billing_data: Option<&crate::server_config::BillingData>,
 ) -> Result<crate::billing::BillingRecord, String> {
     use crate::billing::clinical_features::{build_billing_extraction_prompt, parse_billing_extraction};
 
     // Build prompt
-    let (system_prompt, user_prompt) = build_billing_extraction_prompt(soap_content, transcript, context_hints);
+    let (system_prompt, user_prompt) = build_billing_extraction_prompt(soap_content, transcript, context_hints, templates);
 
     // Call LLM with timeout
     let start = Instant::now();
@@ -291,6 +295,7 @@ pub async fn extract_and_archive_billing(
         duration_ms,
         patient_name,
         rule_ctx,
+        billing_data,
     );
     record.extraction_model = Some(model.to_string());
 
@@ -422,6 +427,8 @@ pub async fn recover_orphaned_billing(
             after_hours,
             &crate::billing::RuleEngineContext::default(), // office default for recovery
             logger,
+            None,
+            None,
         ).await {
             warn!("Failed to recover billing for {}: {}", summary.session_id, e);
         } else {
@@ -468,9 +475,10 @@ pub async fn run_merge_check(
     patient_name: Option<&str>,
     logger: &Arc<Mutex<PipelineLogger>>,
     log_extra: serde_json::Value,
+    templates: Option<&PromptTemplates>,
 ) -> MergeCheckOutcome {
     let (merge_system, merge_user) =
-        build_encounter_merge_prompt(prev_tail, curr_head, patient_name);
+        build_encounter_merge_prompt(prev_tail, curr_head, patient_name, templates);
     let merge_start = Instant::now();
     let merge_future = client.generate(model, &merge_system, &merge_user, "encounter_merge");
 
@@ -604,6 +612,7 @@ pub async fn check_clinical_content(
     word_count: usize,
     logger: &Arc<Mutex<PipelineLogger>>,
     log_extra: serde_json::Value,
+    templates: Option<&PromptTemplates>,
 ) -> bool {
     if word_count < MIN_WORDS_FOR_CLINICAL_CHECK {
         info!(
@@ -613,7 +622,7 @@ pub async fn check_clinical_content(
         return false;
     }
 
-    let (cc_system, cc_user) = build_clinical_content_check_prompt(transcript);
+    let (cc_system, cc_user) = build_clinical_content_check_prompt(transcript, templates);
     let cc_start = Instant::now();
     let cc_future = client.generate(model, &cc_system, &cc_user, "clinical_content_check");
 
@@ -828,6 +837,7 @@ pub async fn recover_orphaned_soap(
                 "session_id": summary.session_id,
                 "word_count": word_count,
             }),
+            None,
         )
         .await;
 
@@ -942,6 +952,7 @@ pub async fn regen_soap_after_merge(
             "stage": log_stage,
             "merged_into": surviving_session_id,
         }),
+        None,
     )
     .await;
 

@@ -21,16 +21,18 @@ src/
 ├── error.rs           # ApiError enum → HTTP status mapping
 ├── types.rs           # All data structures + validation methods
 ├── routes/
-│   ├── mod.rs         # build_router() — ~45 route registrations
+│   ├── mod.rs         # build_router() — ~50 route registrations
 │   ├── health.rs      # GET /health
 │   ├── infrastructure.rs  # Clinic-wide settings (singleton)
+│   ├── config_data.rs # GET/PUT for prompts, billing, thresholds + version check (7 handlers)
 │   ├── mobile.rs      # Mobile job upload, status, CRUD (6 handlers)
 │   ├─��� physicians.rs  # Physician CRUD
 │   ├── rooms.rs       # Room CRUD
 │   ├── sessions.rs    # Session storage, split, merge, audio, files, day-log
 │   └── speakers.rs    # Speaker profile CRUD
 └── store/
-    ├── mod.rs         # AppState (5 RwLock<Manager> + SessionStore)
+    ├── mod.rs         # AppState (6 RwLock<Manager> + SessionStore)
+    ├── config_data.rs # ConfigDataStore — prompts, billing rules, thresholds; version counter
     ├── mobile_jobs.rs # Mobile job store (in-memory HashMap + JSON persistence)
     ├── physicians.rs  # In-memory Vec + atomic JSON persistence
     ├── rooms.rs       # Same pattern as physicians
@@ -58,12 +60,13 @@ Middleware stack (outermost → innermost): CORS → body limit (500 MB) → aut
 
 ## API Routes
 
-~45 route handlers across 7 resource types. Session routes scoped under `/physicians/:id/sessions/...`. Mobile routes under `/mobile/...`.
+~50 route handlers across 8 resource types. Session routes scoped under `/physicians/:id/sessions/...`. Mobile routes under `/mobile/...`. Config routes under `/config/...`.
 
 | Resource | Endpoints |
 |----------|-----------|
 | Health | `GET /health` |
 | Infrastructure | `GET/PUT /infrastructure` |
+| Config Data | `GET /config/version`, `GET/PUT /config/prompts`, `GET/PUT /config/billing`, `GET/PUT /config/thresholds` |
 | Mobile Jobs | `POST /mobile/upload`, `GET /mobile/jobs`, `GET/PUT/DELETE /mobile/jobs/:job_id`, `GET /mobile/uploads/:job_id` |
 | Physicians | `GET/POST /physicians`, `GET/PUT/DELETE /physicians/:id` |
 | Rooms | `GET/POST /rooms`, `GET/PUT/DELETE /rooms/:id` |
@@ -80,6 +83,10 @@ profile-data/
 ├── rooms.json               # All room configs
 ├── speakers.json            # Speaker voice profiles
 ├── infrastructure.json      # Clinic-wide settings
+├── prompt_templates.json    # Server-configurable LLM prompt templates
+├── billing_data.json        # Server-configurable billing rules (OHIP codes, mappings, etc.)
+├── detection_thresholds.json # Server-configurable detection thresholds
+├── config_version.json      # Shared config version counter (bumped on any config change)
 ├── mobile_jobs.json         # Mobile recording job queue + status
 ├── mobile_uploads/          # Uploaded mobile audio files ({job_id}.m4a)
 └── sessions/
@@ -109,6 +116,10 @@ profile-data/
 | Add session endpoint | `routes/sessions.rs` (handler), `store/sessions.rs` (logic), `routes/mod.rs` (register) |
 | Add mobile job field | `store/mobile_jobs.rs` (MobileJob struct + UpdateJobRequest), `routes/mobile.rs` (handlers) |
 | Modify file allowlist | `store/sessions.rs` (`is_allowed_session_file()`) — currently allows: pipeline_log, replay_bundle, segments, screenshots/*.jpg, billing.json |
+| Add/update prompt template | `types.rs` (PromptTemplates struct), `PUT /config/prompts` with full replacement body |
+| Add/update billing rule | `types.rs` (BillingData or nested structs), `PUT /config/billing` with full replacement body |
+| Add detection threshold | `types.rs` (DetectionThresholds struct + `default_N()` fn + Default impl), `PUT /config/thresholds` |
+| Update server config | PUT to `/config/prompts`, `/config/billing`, or `/config/thresholds`. Version auto-bumps. Clients re-fetch on next startup |
 
 ## ArchiveMetadata Notes
 

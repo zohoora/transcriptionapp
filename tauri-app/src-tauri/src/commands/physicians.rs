@@ -12,6 +12,7 @@ use tracing::{info, warn};
 pub type SharedActivePhysician = Arc<RwLock<Option<PhysicianProfile>>>;
 pub type SharedRoomConfig = Arc<RwLock<Option<RoomConfig>>>;
 pub type SharedProfileClient = Arc<RwLock<Option<ProfileClient>>>;
+pub type SharedServerConfig = Arc<RwLock<crate::server_config::ServerConfig>>;
 
 #[tauri::command]
 pub async fn get_room_config(

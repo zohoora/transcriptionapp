@@ -493,7 +493,7 @@ pub fn build_detection_prompt(
             } else {
                 None
             };
-            build_encounter_detection_prompt(&segments, ctx.as_ref())
+            build_encounter_detection_prompt(&segments, ctx.as_ref(), None)
         }
         DetectionStrategy::Conservative => {
             let system = r#"You are analyzing a continuous transcript from a medical office.
@@ -628,7 +628,7 @@ pub fn build_merge_prompt(
     match strategy {
         MergeStrategy::Baseline => {
             // Use the production prompt directly
-            build_encounter_merge_prompt(&clean_prev, &clean_curr, None)
+            build_encounter_merge_prompt(&clean_prev, &clean_curr, None, None)
         }
         MergeStrategy::PatientNameWeighted => {
             // Use the production prompt with patient name injection (M1 strategy)
@@ -636,11 +636,12 @@ pub fn build_merge_prompt(
                 &clean_prev,
                 &clean_curr,
                 config.patient_name.as_deref(),
+                None,
             )
         }
         MergeStrategy::HallucinationFiltered => {
             // Same prompt as baseline, but excerpts are pre-filtered (done above)
-            build_encounter_merge_prompt(&clean_prev, &clean_curr, None)
+            build_encounter_merge_prompt(&clean_prev, &clean_curr, None, None)
         }
     }
 }
@@ -1805,7 +1806,7 @@ mod tests {
             "[0] (Speaker 1): hello",
             &cfg,
         );
-        let (sys_legacy, user_legacy) = build_encounter_detection_prompt("[0] (Speaker 1): hello", None);
+        let (sys_legacy, user_legacy) = build_encounter_detection_prompt("[0] (Speaker 1): hello", None, None);
         assert_eq!(sys_new, sys_legacy);
         assert_eq!(user_new, user_legacy);
     }
@@ -1829,7 +1830,7 @@ mod tests {
             sensor_present: false,
         };
         let (sys_prod, user_prod) =
-            build_encounter_detection_prompt("[0] (Speaker 1): hello", Some(&ctx));
+            build_encounter_detection_prompt("[0] (Speaker 1): hello", Some(&ctx), None);
         assert_eq!(system, sys_prod);
         assert_eq!(user, user_prod);
         // And confirm the context section is actually present
@@ -1852,7 +1853,7 @@ mod tests {
             sensor_present: true,
         };
         let (sys_prod, user_prod) =
-            build_encounter_detection_prompt("[0] (Speaker 1): hello", Some(&ctx));
+            build_encounter_detection_prompt("[0] (Speaker 1): hello", Some(&ctx), None);
         assert_eq!(system, sys_prod);
         assert_eq!(user, user_prod);
         assert!(user.contains("still in the room"));

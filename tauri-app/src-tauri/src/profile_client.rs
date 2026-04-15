@@ -313,6 +313,60 @@ impl ProfileClient {
         Ok(room)
     }
 
+    // ── Server-configurable data (prompts, billing, thresholds) ────
+
+    pub async fn get_config_version(&self) -> Result<crate::server_config::ConfigVersion> {
+        let resp = self
+            .with_auth(self.client.get(format!("{}/config/version", self.base_url())))
+            .send()
+            .await?;
+        if !resp.status().is_success() {
+            let status = resp.status();
+            let text = resp.text().await.unwrap_or_default();
+            anyhow::bail!("Get config version failed: {} - {}", status, &text[..text.len().min(200)]);
+        }
+        Ok(resp.json().await?)
+    }
+
+    pub async fn get_config_prompts(&self) -> Result<crate::server_config::PromptTemplates> {
+        let resp = self
+            .with_auth(self.client.get(format!("{}/config/prompts", self.base_url())))
+            .send()
+            .await?;
+        if !resp.status().is_success() {
+            let status = resp.status();
+            let text = resp.text().await.unwrap_or_default();
+            anyhow::bail!("Get config prompts failed: {} - {}", status, &text[..text.len().min(200)]);
+        }
+        Ok(resp.json().await?)
+    }
+
+    pub async fn get_config_billing(&self) -> Result<crate::server_config::BillingData> {
+        let resp = self
+            .with_auth(self.client.get(format!("{}/config/billing", self.base_url())))
+            .send()
+            .await?;
+        if !resp.status().is_success() {
+            let status = resp.status();
+            let text = resp.text().await.unwrap_or_default();
+            anyhow::bail!("Get config billing failed: {} - {}", status, &text[..text.len().min(200)]);
+        }
+        Ok(resp.json().await?)
+    }
+
+    pub async fn get_config_thresholds(&self) -> Result<crate::server_config::DetectionThresholds> {
+        let resp = self
+            .with_auth(self.client.get(format!("{}/config/thresholds", self.base_url())))
+            .send()
+            .await?;
+        if !resp.status().is_success() {
+            let status = resp.status();
+            let text = resp.text().await.unwrap_or_default();
+            anyhow::bail!("Get config thresholds failed: {} - {}", status, &text[..text.len().min(200)]);
+        }
+        Ok(resp.json().await?)
+    }
+
     /// Fetch infrastructure + room settings from server and merge into local config.
     /// Returns true if any settings were merged.
     pub async fn merge_server_settings(&self, room_id: Option<&str>) -> Result<bool> {

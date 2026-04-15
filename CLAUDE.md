@@ -42,7 +42,7 @@ Workstations have `fallback_server_urls` in `room_config.json` so the app automa
 
 | Service | Port | Purpose |
 |---------|------|---------|
-| Profile Service | 8090 | Physician profiles, rooms, sessions, speaker sync, mobile job tracking |
+| Profile Service | 8090 | Physician profiles, rooms, sessions, speaker sync, mobile job tracking, server-configurable prompts/billing/thresholds |
 | STT Router | 8001 | WebSocket streaming transcription (alias: `medical-streaming`) |
 | LLM Router | 8080 | SOAP generation, encounter detection, vision |
 | Medplum | 8103 | EMR/FHIR server |

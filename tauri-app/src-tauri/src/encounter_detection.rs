@@ -10,9 +10,17 @@ use serde::{de::DeserializeOwned, Deserialize, Serialize};
 /// Short encounters (<20 min) use a higher base threshold (0.85) to reduce
 /// false splits on natural pauses. Longer encounters use 0.7.
 /// Each prior merge-back raises the bar by +0.05 (capped at 0.99).
-pub fn calculate_confidence_threshold(buffer_age_mins: i64, merge_back_count: usize) -> f64 {
-    let base_threshold = if buffer_age_mins < 20 { 0.85 } else { 0.7 };
-    (base_threshold + merge_back_count as f64 * 0.05).min(0.99)
+pub fn calculate_confidence_threshold(
+    buffer_age_mins: i64,
+    merge_back_count: usize,
+    thresholds: Option<&crate::server_config::DetectionThresholds>,
+) -> f64 {
+    let (base_short, base_long, age_thresh, increment, max_val) = thresholds.map_or(
+        (0.85, 0.7, 20i64, 0.05, 0.99),
+        |t| (t.confidence_base_short, t.confidence_base_long, t.confidence_age_threshold_mins, t.confidence_merge_back_increment, t.confidence_max),
+    );
+    let base_threshold = if buffer_age_mins < age_thresh { base_short } else { base_long };
+    (base_threshold + merge_back_count as f64 * increment).min(max_val)
 }
 
 /// Word count forcing encounter check regardless of buffer age.
@@ -117,6 +125,8 @@ pub struct DetectionEvalContext {
     /// True when sensor has been continuously present since the last encounter split
     /// (no absent transitions). Indicates this is likely the same visit — block LLM-only splits.
     pub sensor_continuous_present: bool,
+    /// Optional server-configurable thresholds. When set, these override the compiled constants.
+    pub server_thresholds: Option<crate::server_config::DetectionThresholds>,
 }
 
 /// Evaluate a detection result against thresholds and force-split rules.
@@ -126,8 +136,15 @@ pub fn evaluate_detection(ctx: &DetectionEvalContext) -> (DetectionOutcome, u32)
     let effective_word_count = ctx.cleaned_word_count.max(ctx.word_count / 2);
     let mut failures = ctx.consecutive_llm_failures;
 
+    let absolute_cap = ctx.server_thresholds.as_ref()
+        .map_or(ABSOLUTE_WORD_CAP, |t| t.absolute_word_cap);
+    let force_split_threshold = ctx.server_thresholds.as_ref()
+        .map_or(FORCE_SPLIT_WORD_THRESHOLD, |t| t.force_split_word_threshold);
+    let force_split_limit = ctx.server_thresholds.as_ref()
+        .map_or(FORCE_SPLIT_CONSECUTIVE_LIMIT, |t| t.force_split_consecutive_limit);
+
     // 1. Absolute word cap — unconditional force-split
-    if effective_word_count > ABSOLUTE_WORD_CAP {
+    if effective_word_count > absolute_cap {
         return (DetectionOutcome::ForceSplit { trigger: TRIGGER_ABSOLUTE_WORD_CAP.into() }, failures);
     }
 
@@ -165,8 +182,8 @@ pub fn evaluate_detection(ctx: &DetectionEvalContext) -> (DetectionOutcome, u32)
         None => {
             failures += 1;
             // Graduated force-split on repeated LLM failures
-            if effective_word_count > FORCE_SPLIT_WORD_THRESHOLD
-                && failures >= FORCE_SPLIT_CONSECUTIVE_LIMIT
+            if effective_word_count > force_split_threshold
+                && failures >= force_split_limit
             {
                 return (DetectionOutcome::ForceSplit { trigger: TRIGGER_GRADUATED_LLM_FAILURE.into() }, failures);
             }
@@ -187,9 +204,9 @@ pub fn evaluate_detection(ctx: &DetectionEvalContext) -> (DetectionOutcome, u32)
     // the physician discusses multiple patients without anyone leaving the room.
     // Manual triggers and sensor-departure triggers bypass this gate.
     let threshold = if ctx.sensor_continuous_present && !ctx.manual_triggered && !ctx.sensor_triggered {
-        0.99_f64.max(calculate_confidence_threshold(ctx.buffer_age_mins, ctx.merge_back_count))
+        0.99_f64.max(calculate_confidence_threshold(ctx.buffer_age_mins, ctx.merge_back_count, ctx.server_thresholds.as_ref()))
     } else {
-        calculate_confidence_threshold(ctx.buffer_age_mins, ctx.merge_back_count)
+        calculate_confidence_threshold(ctx.buffer_age_mins, ctx.merge_back_count, ctx.server_thresholds.as_ref())
     };
     if confidence < threshold {
         return (DetectionOutcome::BelowThreshold { confidence, threshold }, failures);
@@ -207,8 +224,11 @@ pub fn evaluate_detection(ctx: &DetectionEvalContext) -> (DetectionOutcome, u32)
 pub fn build_encounter_detection_prompt(
     formatted_segments: &str,
     context: Option<&EncounterDetectionContext>,
+    templates: Option<&crate::server_config::PromptTemplates>,
 ) -> (String, String) {
-    let system = r#"You MUST respond in English with ONLY a JSON object. No other text, no explanations, no markdown.
+    let system = templates
+        .and_then(|t| (!t.encounter_detection_system.is_empty()).then(|| t.encounter_detection_system.clone()))
+        .unwrap_or_else(|| r#"You MUST respond in English with ONLY a JSON object. No other text, no explanations, no markdown.
 
 You are analyzing a continuous transcript from a medical office where the microphone records all day.
 
@@ -224,33 +244,37 @@ If you find a transition point or completed encounter, return:
 If the current discussion is still one ongoing encounter with no transition, return:
 {"complete": false, "confidence": <0.0-1.0>}
 
-Respond with ONLY the JSON object."#;
+Respond with ONLY the JSON object."#.to_string());
+
+    let sensor_departed_text = templates
+        .and_then(|t| (!t.encounter_detection_sensor_departed.is_empty()).then(|| t.encounter_detection_sensor_departed.clone()))
+        .unwrap_or_else(|| "CONTEXT: The presence sensor detected possible movement away from the room. \
+            Note: brief departures during medical visits are common (hand washing, supplies, \
+            injection preparation, bathroom). Evaluate the TRANSCRIPT CONTENT to determine \
+            if the encounter has actually concluded — a sensor departure alone is not sufficient. \
+            IMPORTANT: Transcript timestamps are more reliable than the sensor. If segments \
+            show continuous or very recent speech (no large time gap), the encounter is likely \
+            still active regardless of the sensor signal.".to_string());
+
+    let sensor_present_text = templates
+        .and_then(|t| (!t.encounter_detection_sensor_present.is_empty()).then(|| t.encounter_detection_sensor_present.clone()))
+        .unwrap_or_else(|| "CONTEXT: The presence sensor confirms someone is still in the room. \
+            Topic changes or pauses within the same visit are NOT transitions. \
+            Discussing a different family member or patient who is part of the same visit/call is NOT a transition — \
+            couples visits, family visits, and phone calls to households often involve the physician addressing \
+            multiple people's medical issues in a single encounter. \
+            Only split if there is a clear farewell, departure, AND arrival of a completely unrelated new patient.".to_string());
 
     // Build context section if signals are available
     let context_section = if let Some(ctx) = context {
         let mut parts = Vec::new();
         // Sensor departure — soft signal, not a split trigger on its own
         if ctx.sensor_departed {
-            parts.push(
-                "CONTEXT: The presence sensor detected possible movement away from the room. \
-                Note: brief departures during medical visits are common (hand washing, supplies, \
-                injection preparation, bathroom). Evaluate the TRANSCRIPT CONTENT to determine \
-                if the encounter has actually concluded — a sensor departure alone is not sufficient. \
-                IMPORTANT: Transcript timestamps are more reliable than the sensor. If segments \
-                show continuous or very recent speech (no large time gap), the encounter is likely \
-                still active regardless of the sensor signal.".to_string()
-            );
+            parts.push(sensor_departed_text);
         }
         // Sensor still present — use original production prompt (proven reliable)
         if ctx.sensor_present && !ctx.sensor_departed {
-            parts.push(
-                "CONTEXT: The presence sensor confirms someone is still in the room. \
-                Topic changes or pauses within the same visit are NOT transitions. \
-                Discussing a different family member or patient who is part of the same visit/call is NOT a transition — \
-                couples visits, family visits, and phone calls to households often involve the physician addressing \
-                multiple people's medical issues in a single encounter. \
-                Only split if there is a clear farewell, departure, AND arrival of a completely unrelated new patient.".to_string()
-            );
+            parts.push(sensor_present_text);
         }
         if parts.is_empty() {
             String::new()
@@ -266,7 +290,7 @@ Respond with ONLY the JSON object."#;
         formatted_segments, context_section
     );
 
-    (system.to_string(), user)
+    (system, user)
 }
 
 /// Strip `<think>...</think>` tags from LLM output (model may emit these even with /nothink).
@@ -393,8 +417,14 @@ pub struct ClinicalContentCheckResult {
 
 /// Build the clinical content check prompt.
 /// Called after encounter text is extracted, before SOAP generation.
-pub fn build_clinical_content_check_prompt(encounter_text: &str) -> (String, String) {
-    let system = r#"You MUST respond in English with ONLY a JSON object. No other text, no explanations, no markdown.
+/// When `templates` is provided and the relevant field is non-empty, it overrides the hardcoded default.
+pub fn build_clinical_content_check_prompt(
+    encounter_text: &str,
+    templates: Option<&crate::server_config::PromptTemplates>,
+) -> (String, String) {
+    let system = templates
+        .and_then(|t| (!t.clinical_content_check.is_empty()).then(|| t.clinical_content_check.clone()))
+        .unwrap_or_else(|| r#"You MUST respond in English with ONLY a JSON object. No other text, no explanations, no markdown.
 
 You are reviewing a segment of transcript from a medical office where the microphone records all day.
 
@@ -406,7 +436,7 @@ If it contains ANY substantive clinical content (history-taking, physical exam, 
 If it is entirely non-clinical (personal chat, administrative only, no patient care), return:
 {"clinical": false, "reason": "brief description of why this is not clinical"}
 
-Respond with ONLY the JSON object."#;
+Respond with ONLY the JSON object."#.to_string());
 
     // Truncate to ~2000 words for fast-model efficiency
     let words: Vec<&str> = encounter_text.split_whitespace().collect();
@@ -556,6 +586,27 @@ Return a JSON object (or empty object {} if no clear boundary):
 
 Respond with ONLY the JSON."#;
 
+/// Get the multi-patient check system prompt, using server template if non-empty.
+pub fn multi_patient_check_prompt(templates: Option<&crate::server_config::PromptTemplates>) -> String {
+    templates
+        .and_then(|t| (!t.multi_patient_check.is_empty()).then(|| t.multi_patient_check.clone()))
+        .unwrap_or_else(|| MULTI_PATIENT_CHECK_PROMPT.to_string())
+}
+
+/// Get the multi-patient detect system prompt, using server template if non-empty.
+pub fn multi_patient_detect_prompt(templates: Option<&crate::server_config::PromptTemplates>) -> String {
+    templates
+        .and_then(|t| (!t.multi_patient_detect.is_empty()).then(|| t.multi_patient_detect.clone()))
+        .unwrap_or_else(|| MULTI_PATIENT_DETECT_PROMPT.to_string())
+}
+
+/// Get the multi-patient split system prompt, using server template if non-empty.
+pub fn multi_patient_split_prompt(templates: Option<&crate::server_config::PromptTemplates>) -> String {
+    templates
+        .and_then(|t| (!t.multi_patient_split.is_empty()).then(|| t.multi_patient_split.clone()))
+        .unwrap_or_else(|| MULTI_PATIENT_SPLIT_PROMPT.to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -669,14 +720,14 @@ mod tests {
 
     #[test]
     fn test_detection_prompt_requires_english() {
-        let (system, _) = build_encounter_detection_prompt("test transcript", None);
+        let (system, _) = build_encounter_detection_prompt("test transcript", None, None);
         assert!(system.contains("MUST respond in English"), "Prompt should require English response");
         assert!(system.contains("ONLY a JSON object"), "Prompt should require JSON only");
     }
 
     #[test]
     fn test_detection_prompt_transition_framing() {
-        let (system, _) = build_encounter_detection_prompt("test transcript", None);
+        let (system, _) = build_encounter_detection_prompt("test transcript", None, None);
         assert!(
             system.to_lowercase().contains("transition"),
             "Prompt should use transition-based framing"
@@ -693,7 +744,7 @@ mod tests {
 
     #[test]
     fn test_detection_prompt_core_framing() {
-        let (system, _) = build_encounter_detection_prompt("test transcript", None);
+        let (system, _) = build_encounter_detection_prompt("test transcript", None, None);
         assert!(
             system.contains("pre-visit assessment"),
             "Prompt should mention pre-visit assessment"
@@ -710,7 +761,7 @@ mod tests {
             sensor_departed: true,
             sensor_present: false,
         };
-        let (_, user) = build_encounter_detection_prompt("test transcript", Some(&ctx));
+        let (_, user) = build_encounter_detection_prompt("test transcript", Some(&ctx), None);
         assert!(user.contains("presence sensor"), "User prompt should mention sensor departure");
     }
 
@@ -720,7 +771,7 @@ mod tests {
             sensor_departed: false,
             sensor_present: true,
         };
-        let (_, user) = build_encounter_detection_prompt("test transcript", Some(&ctx));
+        let (_, user) = build_encounter_detection_prompt("test transcript", Some(&ctx), None);
         assert!(user.contains("still in the room"), "User prompt should mention sensor presence");
         assert!(user.contains("NOT transitions"), "Should mention topic changes are not transitions");
     }
@@ -731,7 +782,7 @@ mod tests {
             sensor_departed: false,
             sensor_present: false,
         };
-        let (_, user) = build_encounter_detection_prompt("test transcript", Some(&ctx));
+        let (_, user) = build_encounter_detection_prompt("test transcript", Some(&ctx), None);
         // No sensor signals — no context section
         assert!(!user.contains("presence sensor"), "No sensor signal should be present");
     }
@@ -772,14 +823,14 @@ mod tests {
     #[test]
     fn test_build_clinical_content_check_prompt_truncation() {
         let long_text = "word ".repeat(3000);
-        let (_, user) = build_clinical_content_check_prompt(&long_text);
+        let (_, user) = build_clinical_content_check_prompt(&long_text, None);
         assert!(user.contains("words omitted"));
     }
 
     #[test]
     fn test_build_clinical_content_check_prompt_short() {
         let short_text = "Patient reports headache for two weeks.";
-        let (system, user) = build_clinical_content_check_prompt(short_text);
+        let (system, user) = build_clinical_content_check_prompt(short_text, None);
         assert!(system.contains("clinical patient encounter"));
         assert!(user.contains("headache"));
         assert!(!user.contains("words omitted"));
@@ -820,7 +871,7 @@ mod tests {
 
     #[test]
     fn test_detection_prompt_mentions_elapsed_time() {
-        let (system, _user) = build_encounter_detection_prompt("test transcript", None);
+        let (system, _user) = build_encounter_detection_prompt("test transcript", None, None);
         assert!(system.contains("elapsed time"));
         assert!(system.contains("Large gaps between timestamps"));
     }
@@ -902,6 +953,7 @@ mod tests {
             hybrid_confirm_window_secs: 180,
             hybrid_min_words_for_sensor_split: 500,
             sensor_continuous_present: false,
+            server_thresholds: None,
         }
     }
 
@@ -1120,49 +1172,49 @@ mod tests {
 
     #[test]
     fn test_confidence_threshold_short_encounter_no_merges() {
-        assert!((calculate_confidence_threshold(0, 0) - 0.85).abs() < f64::EPSILON);
+        assert!((calculate_confidence_threshold(0, 0, None) - 0.85).abs() < f64::EPSILON);
     }
 
     #[test]
     fn test_confidence_threshold_boundary_19_min() {
-        assert!((calculate_confidence_threshold(19, 0) - 0.85).abs() < f64::EPSILON);
+        assert!((calculate_confidence_threshold(19, 0, None) - 0.85).abs() < f64::EPSILON);
     }
 
     #[test]
     fn test_confidence_threshold_boundary_20_min() {
-        assert!((calculate_confidence_threshold(20, 0) - 0.7).abs() < f64::EPSILON);
+        assert!((calculate_confidence_threshold(20, 0, None) - 0.7).abs() < f64::EPSILON);
     }
 
     #[test]
     fn test_confidence_threshold_long_encounter() {
-        assert!((calculate_confidence_threshold(60, 0) - 0.7).abs() < f64::EPSILON);
+        assert!((calculate_confidence_threshold(60, 0, None) - 0.7).abs() < f64::EPSILON);
     }
 
     #[test]
     fn test_confidence_threshold_one_mergeback_short() {
-        assert!((calculate_confidence_threshold(10, 1) - 0.90).abs() < f64::EPSILON);
+        assert!((calculate_confidence_threshold(10, 1, None) - 0.90).abs() < f64::EPSILON);
     }
 
     #[test]
     fn test_confidence_threshold_one_mergeback_long() {
-        assert!((calculate_confidence_threshold(25, 1) - 0.75).abs() < f64::EPSILON);
+        assert!((calculate_confidence_threshold(25, 1, None) - 0.75).abs() < f64::EPSILON);
     }
 
     #[test]
     fn test_confidence_threshold_cap_at_099() {
         // 3 merge-backs on short: 0.85 + 0.15 = 1.0, capped at 0.99
-        assert!((calculate_confidence_threshold(10, 3) - 0.99).abs() < f64::EPSILON);
+        assert!((calculate_confidence_threshold(10, 3, None) - 0.99).abs() < f64::EPSILON);
     }
 
     #[test]
     fn test_confidence_threshold_many_mergebacks_cap() {
         // 10 merge-backs on long: 0.7 + 0.5 = 1.2, capped at 0.99
-        assert!((calculate_confidence_threshold(30, 10) - 0.99).abs() < f64::EPSILON);
+        assert!((calculate_confidence_threshold(30, 10, None) - 0.99).abs() < f64::EPSILON);
     }
 
     #[test]
     fn test_confidence_threshold_negative_age() {
         // Negative minutes (clock skew) still < 20, so base = 0.85
-        assert!((calculate_confidence_threshold(-5, 0) - 0.85).abs() < f64::EPSILON);
+        assert!((calculate_confidence_threshold(-5, 0, None) - 0.85).abs() < f64::EPSILON);
     }
 }

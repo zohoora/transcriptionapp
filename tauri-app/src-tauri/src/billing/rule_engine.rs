@@ -3,6 +3,8 @@ use super::diagnostic_codes;
 use super::ohip_codes::{self, Basket, OhipCode};
 use super::types::*;
 
+use super::BillingDataRef;
+
 /// Context flags that influence companion code selection in the rule engine.
 /// Populated from the `BillingContext` in commands/billing.rs.
 #[derive(Debug, Default)]
@@ -20,8 +22,9 @@ pub fn map_features_to_billing(
     date: &str,
     duration_ms: u64,
     patient_name: Option<&str>,
+    billing_data: BillingDataRef<'_>,
 ) -> BillingRecord {
-    map_features_to_billing_with_context(features, session_id, date, duration_ms, patient_name, &RuleEngineContext::default())
+    map_features_to_billing_with_context(features, session_id, date, duration_ms, patient_name, &RuleEngineContext::default(), billing_data)
 }
 
 /// Map extracted clinical features to a draft billing record, with additional context
@@ -33,18 +36,19 @@ pub fn map_features_to_billing_with_context(
     duration_ms: u64,
     patient_name: Option<&str>,
     ctx: &RuleEngineContext,
+    billing_data: BillingDataRef<'_>,
 ) -> BillingRecord {
     let mut codes: Vec<BillingCode> = Vec::new();
 
     // 1. Visit type -> assessment code
-    let mut assessment_code = visit_type_to_code(&features.visit_type);
+    let mut assessment_code = visit_type_to_code(&features.visit_type, billing_data);
 
     // Counselling: switch K013A → K033A when yearly cap is exhausted
     if assessment_code == "K013A" && ctx.counselling_exhausted {
-        assessment_code = "K033A";
+        assessment_code = "K033A".to_string();
     }
 
-    if let Some(ohip) = ohip_codes::get_code(assessment_code) {
+    if let Some(ohip) = ohip_codes::get_code(&assessment_code) {
         let confidence = if features.confidence >= 0.85 {
             BillingConfidence::High
         } else if features.confidence >= 0.65 {
@@ -55,17 +59,17 @@ pub fn map_features_to_billing_with_context(
         let mut code = make_billing_code(ohip, confidence, features.is_after_hours);
         // Per-unit codes (K013A, K033A, K005A, K007A): set quantity from session duration
         // using GP54 counselling unit table (½ hour or major part thereof).
-        if matches!(assessment_code, "K013A" | "K033A" | "K005A" | "K007A") {
-            code.quantity = counselling_units_from_duration(duration_ms);
+        if matches!(assessment_code.as_str(), "K013A" | "K033A" | "K005A" | "K007A") {
+            code.quantity = counselling_units_from_duration(duration_ms, billing_data);
         }
         codes.push(code);
     }
 
     // 2. Procedures -> procedure codes
-    let mut procedure_codes: Vec<&str> = Vec::new();
+    let mut procedure_codes: Vec<String> = Vec::new();
     for proc in &features.procedures {
-        let proc_code = procedure_type_to_code(proc);
-        if let Some(ohip) = ohip_codes::get_code(proc_code) {
+        let proc_code = procedure_type_to_code(proc, billing_data);
+        if let Some(ohip) = ohip_codes::get_code(&proc_code) {
             codes.push(make_billing_code(ohip, BillingConfidence::High, false));
             procedure_codes.push(proc_code);
         }
@@ -76,12 +80,12 @@ pub fn map_features_to_billing_with_context(
     //    could not cite supporting text (guards against hallucinated conditions).
     //    K005A/K007A are suppressed when visitType is counselling (K013A) —
     //    they're mutually exclusive per-unit time codes for the same service.
-    let mut condition_codes: Vec<&str> = Vec::new();
+    let mut condition_codes: Vec<String> = Vec::new();
     for cond in &features.conditions {
-        let cond_codes = condition_type_to_codes(cond);
+        let cond_codes = condition_type_to_codes(cond, billing_data);
         for code_str in cond_codes {
             // Suppress K005A/K007A when already billing K013A (or vice versa)
-            if matches!(code_str, "K005A" | "K007A") && assessment_code == "K013A" {
+            if matches!(code_str.as_str(), "K005A" | "K007A") && assessment_code == "K013A" {
                 continue;
             }
             if code_str.starts_with('K') {
@@ -94,7 +98,7 @@ pub fn map_features_to_billing_with_context(
                     continue; // suppress K code — no SOAP evidence provided
                 }
             }
-            if let Some(ohip) = ohip_codes::get_code(code_str) {
+            if let Some(ohip) = ohip_codes::get_code(&code_str) {
                 codes.push(make_billing_code(ohip, BillingConfidence::Medium, false));
                 condition_codes.push(code_str);
             }
@@ -105,7 +109,7 @@ pub fn map_features_to_billing_with_context(
 
     // 4a. Tray fee (E542A) — for qualifying procedures performed outside hospital
     if !ctx.is_hospital {
-        let tray_qualifying = procedure_codes.iter().any(|c| is_tray_fee_qualifying(c));
+        let tray_qualifying = procedure_codes.iter().any(|c| is_tray_fee_qualifying(c, billing_data));
         if tray_qualifying {
             if let Some(ohip) = ohip_codes::get_code("E542A") {
                 codes.push(make_billing_code(ohip, BillingConfidence::High, false));
@@ -113,18 +117,15 @@ pub fn map_features_to_billing_with_context(
         }
     }
 
-    // 4b. Pap tray fee (E430A) — with G365A outside hospital
-    if !ctx.is_hospital && procedure_codes.iter().any(|c| *c == "G365A") {
-        if let Some(ohip) = ohip_codes::get_code("E430A") {
-            codes.push(make_billing_code(ohip, BillingConfidence::High, false));
+    // 4b–4c. Companion codes from server config (if available) or hardcoded rules
+    if let Some(data) = billing_data {
+        if !data.companion_rules.is_empty() {
+            apply_companion_rules_from_data(data, &procedure_codes, &condition_codes, ctx, &mut codes);
+        } else {
+            apply_hardcoded_companion_rules(&procedure_codes, &condition_codes, ctx, &mut codes);
         }
-    }
-
-    // 4c. Smoking cessation initial discussion (E079A) — with Q042A
-    if condition_codes.iter().any(|c| *c == "Q042A") {
-        if let Some(ohip) = ohip_codes::get_code("E079A") {
-            codes.push(make_billing_code(ohip, BillingConfidence::Medium, false));
-        }
+    } else {
+        apply_hardcoded_companion_rules(&procedure_codes, &condition_codes, ctx, &mut codes);
     }
 
     // 5. After-hours premium: add Q012A for eligible codes
@@ -161,7 +162,7 @@ pub fn map_features_to_billing_with_context(
 
     // 6. Time entry
     let time_entry =
-        super::time_tracking::calculate_direct_care_time(duration_ms, &features.setting);
+        super::time_tracking::calculate_direct_care_time(duration_ms, &features.setting, billing_data);
     let time_entries = if time_entry.billable_units > 0 {
         vec![time_entry]
     } else {
@@ -197,7 +198,7 @@ pub fn map_features_to_billing_with_context(
     // 2. Text-match primaryDiagnosis against 562-code database
     // 3. Billing-code-implied diagnosis (K030A→250, Q050A→428)
     // 4. SOB constraint (K133A/K125A require IDD codes)
-    resolve_diagnostic_code(features, &billing_code_strs, assessment_code, &mut record);
+    resolve_diagnostic_code(features, &billing_code_strs, &assessment_code, &mut record, billing_data);
 
     record.recalculate_totals();
 
@@ -206,7 +207,17 @@ pub fn map_features_to_billing_with_context(
 
 // ── Visit type mapping ─────────────────────────────────────────────────────
 
-fn visit_type_to_code(vt: &VisitType) -> &'static str {
+fn visit_type_to_code(vt: &VisitType, billing_data: BillingDataRef<'_>) -> String {
+    // Try server config first
+    if let Some(data) = billing_data {
+        if !data.visit_type_mappings.is_empty() {
+            let key = format!("{:?}", vt);
+            if let Some(entry) = data.visit_type_mappings.get(&key) {
+                return entry.code.clone();
+            }
+        }
+    }
+    // Fall back to hardcoded match
     match vt {
         VisitType::MinorAssessment => "A001A",
         VisitType::IntermediateAssessment => "A007A",
@@ -231,12 +242,22 @@ fn visit_type_to_code(vt: &VisitType) -> &'static str {
         VisitType::PeriodicHealthAdult => "K131A",
         VisitType::PeriodicHealthSenior => "K132A",
         VisitType::PeriodicHealthIdd => "K133A",
-    }
+    }.to_string()
 }
 
 // ── Procedure type mapping ─────────────────────────────────────────────────
 
-fn procedure_type_to_code(proc: &ProcedureType) -> &'static str {
+fn procedure_type_to_code(proc: &ProcedureType, billing_data: BillingDataRef<'_>) -> String {
+    // Try server config first
+    if let Some(data) = billing_data {
+        if !data.procedure_type_mappings.is_empty() {
+            let key = format!("{:?}", proc);
+            if let Some(code) = data.procedure_type_mappings.get(&key) {
+                return code.clone();
+            }
+        }
+    }
+    // Fall back to hardcoded match
     match proc {
         ProcedureType::PapSmear => "G365A",
         ProcedureType::IudInsertion => "G378A",
@@ -298,7 +319,7 @@ fn procedure_type_to_code(proc: &ProcedureType) -> &'static str {
         ProcedureType::NevusExcision => "Z162A",
         ProcedureType::PapSmearRepeat => "G394A",
         ProcedureType::ElectrocoagThreeOrMore => "Z161A",
-    }
+    }.to_string()
 }
 
 // ── Condition type mapping ─────────────────────────────────────────────────
@@ -325,23 +346,33 @@ fn condition_type_to_key(cond: &ConditionType) -> &'static str {
     }
 }
 
-fn condition_type_to_codes(cond: &ConditionType) -> Vec<&'static str> {
+fn condition_type_to_codes(cond: &ConditionType, billing_data: BillingDataRef<'_>) -> Vec<String> {
+    // Try server config first
+    if let Some(data) = billing_data {
+        if !data.condition_type_mappings.is_empty() {
+            let key = format!("{:?}", cond);
+            if let Some(codes) = data.condition_type_mappings.get(&key) {
+                return codes.clone();
+            }
+        }
+    }
+    // Fall back to hardcoded match
     match cond {
-        ConditionType::DiabetesManagement => vec!["Q040A"],
-        ConditionType::SmokingCessation => vec!["Q042A"],
-        ConditionType::StiManagement => vec!["K028A"],
-        ConditionType::ChfManagement => vec!["Q050A"],
-        ConditionType::Neurocognitive => vec!["K032A"],
-        ConditionType::HomeCare => vec!["K070A"],
-        ConditionType::SmokingCessationFollowUp => vec!["K039A"],
-        ConditionType::PrimaryMentalHealth => vec!["K005A"],
-        ConditionType::Psychotherapy => vec!["K007A"],
-        ConditionType::HivPrimaryCare => vec!["K022A"],
-        ConditionType::InsulinTherapySupport => vec!["K029A"],
-        ConditionType::DiabeticAssessment => vec!["K030A"],
-        ConditionType::CounsellingAdditional => vec!["K033A"],
-        ConditionType::FibromyalgiaCare => vec!["K037A"],
-        ConditionType::IddPrimaryCare => vec!["K125A"],
+        ConditionType::DiabetesManagement => vec!["Q040A".to_string()],
+        ConditionType::SmokingCessation => vec!["Q042A".to_string()],
+        ConditionType::StiManagement => vec!["K028A".to_string()],
+        ConditionType::ChfManagement => vec!["Q050A".to_string()],
+        ConditionType::Neurocognitive => vec!["K032A".to_string()],
+        ConditionType::HomeCare => vec!["K070A".to_string()],
+        ConditionType::SmokingCessationFollowUp => vec!["K039A".to_string()],
+        ConditionType::PrimaryMentalHealth => vec!["K005A".to_string()],
+        ConditionType::Psychotherapy => vec!["K007A".to_string()],
+        ConditionType::HivPrimaryCare => vec!["K022A".to_string()],
+        ConditionType::InsulinTherapySupport => vec!["K029A".to_string()],
+        ConditionType::DiabeticAssessment => vec!["K030A".to_string()],
+        ConditionType::CounsellingAdditional => vec!["K033A".to_string()],
+        ConditionType::FibromyalgiaCare => vec!["K037A".to_string()],
+        ConditionType::IddPrimaryCare => vec!["K125A".to_string()],
     }
 }
 
@@ -394,7 +425,14 @@ fn make_billing_code(
 /// outside of hospital. Covers surgical/procedural Z-codes, R-codes, and select
 /// G-codes (biopsies, excisions, lacerations, injections, nail procedures, etc.).
 /// Immunizations and ear syringing do NOT qualify.
-fn is_tray_fee_qualifying(code: &str) -> bool {
+fn is_tray_fee_qualifying(code: &str, billing_data: BillingDataRef<'_>) -> bool {
+    // Try server config first
+    if let Some(data) = billing_data {
+        if !data.tray_fee_qualifying_codes.is_empty() {
+            return data.tray_fee_qualifying_codes.iter().any(|c| c == code);
+        }
+    }
+    // Fall back to hardcoded list
     matches!(
         code,
         // Excisions, biopsies, lacerations (Z series)
@@ -418,6 +456,59 @@ fn is_tray_fee_qualifying(code: &str) -> bool {
     )
 }
 
+// ── Companion code helpers ───────────────────────────────────────────────
+
+/// Apply hardcoded companion code rules (pap tray fee, smoking cessation).
+fn apply_hardcoded_companion_rules(
+    procedure_codes: &[String],
+    condition_codes: &[String],
+    ctx: &RuleEngineContext,
+    codes: &mut Vec<BillingCode>,
+) {
+    // Pap tray fee (E430A) — with G365A outside hospital
+    if !ctx.is_hospital && procedure_codes.iter().any(|c| c == "G365A") {
+        if let Some(ohip) = ohip_codes::get_code("E430A") {
+            codes.push(make_billing_code(ohip, BillingConfidence::High, false));
+        }
+    }
+
+    // Smoking cessation initial discussion (E079A) — with Q042A
+    if condition_codes.iter().any(|c| c == "Q042A") {
+        if let Some(ohip) = ohip_codes::get_code("E079A") {
+            codes.push(make_billing_code(ohip, BillingConfidence::Medium, false));
+        }
+    }
+}
+
+/// Apply companion code rules from server-provided billing data.
+fn apply_companion_rules_from_data(
+    data: &crate::server_config::BillingData,
+    procedure_codes: &[String],
+    condition_codes: &[String],
+    ctx: &RuleEngineContext,
+    codes: &mut Vec<BillingCode>,
+) {
+    let all_trigger_codes: Vec<&str> = procedure_codes
+        .iter()
+        .chain(condition_codes.iter())
+        .map(|s| s.as_str())
+        .collect();
+
+    for rule in &data.companion_rules {
+        // Check condition: "not_hospital" means skip if hospital
+        if rule.condition == "not_hospital" && ctx.is_hospital {
+            continue;
+        }
+
+        // Check if the trigger code is present in procedure or condition codes
+        if all_trigger_codes.contains(&rule.trigger_code.as_str()) {
+            if let Some(ohip) = ohip_codes::get_code(&rule.companion_code) {
+                codes.push(make_billing_code(ohip, BillingConfidence::Medium, false));
+            }
+        }
+    }
+}
+
 // ── Counselling unit calculation (GP54) ───────────────────────────────────
 
 /// Calculate counselling/PMH units from session duration.
@@ -425,10 +516,22 @@ fn is_tray_fee_qualifying(code: &str) -> bool {
 /// Pattern: first unit at 20 min, second at 46 min, then +30 min per additional unit.
 const COUNSELLING_UNIT_THRESHOLDS: &[u64] = &[20, 46, 76, 106, 136, 166, 196, 226];
 
-fn counselling_units_from_duration(duration_ms: u64) -> u8 {
+fn counselling_units_from_duration(duration_ms: u64, billing_data: BillingDataRef<'_>) -> u8 {
     let minutes = duration_ms / 60_000;
+
+    // Use server-provided thresholds if available
+    let thresholds: &[u64] = if let Some(data) = billing_data {
+        if !data.counselling_unit_thresholds.is_empty() {
+            &data.counselling_unit_thresholds
+        } else {
+            COUNSELLING_UNIT_THRESHOLDS
+        }
+    } else {
+        COUNSELLING_UNIT_THRESHOLDS
+    };
+
     let mut units: u8 = 0;
-    for &threshold in COUNSELLING_UNIT_THRESHOLDS {
+    for &threshold in thresholds {
         if minutes >= threshold {
             units += 1;
         } else {
@@ -436,8 +539,8 @@ fn counselling_units_from_duration(duration_ms: u64) -> u8 {
         }
     }
     // If longer than all thresholds, extrapolate at +30 min per unit
-    if units == COUNSELLING_UNIT_THRESHOLDS.len() as u8 {
-        let beyond = minutes - COUNSELLING_UNIT_THRESHOLDS[COUNSELLING_UNIT_THRESHOLDS.len() - 1];
+    if units == thresholds.len() as u8 && !thresholds.is_empty() {
+        let beyond = minutes - thresholds[thresholds.len() - 1];
         units = units.saturating_add((beyond / 30) as u8);
     }
     units.max(1) // At least 1 unit if the visit happened
@@ -453,12 +556,24 @@ fn set_diagnostic(record: &mut BillingRecord, dc: &diagnostic_codes::DiagnosticC
 
 /// Billing-code-implied diagnostic codes: when a specific K/Q code is present,
 /// it strongly implies a particular diagnosis family.
-fn billing_code_implied_diagnostic(codes: &[String]) -> Option<&'static str> {
+fn billing_code_implied_diagnostic(codes: &[String], billing_data: BillingDataRef<'_>) -> Option<String> {
+    // Try server config first
+    if let Some(data) = billing_data {
+        if !data.code_implied_diagnostics.is_empty() {
+            for c in codes {
+                if let Some(diag) = data.code_implied_diagnostics.get(c.as_str()) {
+                    return Some(diag.clone());
+                }
+            }
+            return None;
+        }
+    }
+    // Fall back to hardcoded mapping
     for c in codes {
         match c.as_str() {
-            "K030A" | "Q040A" => return Some("250"), // diabetes
-            "Q050A" => return Some("428"),            // CHF
-            "K028A" => return Some("099"),            // STI
+            "K030A" | "Q040A" => return Some("250".to_string()), // diabetes
+            "Q050A" => return Some("428".to_string()),            // CHF
+            "K028A" => return Some("099".to_string()),            // STI
             _ => {}
         }
     }
@@ -479,6 +594,7 @@ fn resolve_diagnostic_code(
     billing_codes: &[String],
     assessment_code: &str,
     record: &mut BillingRecord,
+    billing_data: BillingDataRef<'_>,
 ) {
     // Stage 1: try the explicit code suggestion
     if let Some(ref suggested) = features.suggested_diagnostic_code {
@@ -498,8 +614,8 @@ fn resolve_diagnostic_code(
 
     // Stage 3: if still no code, use billing-code-implied diagnosis as fallback
     if record.diagnostic_code.is_none() {
-        if let Some(implied) = billing_code_implied_diagnostic(billing_codes) {
-            if let Some(dc) = diagnostic_codes::get_diagnostic_code(implied) {
+        if let Some(implied) = billing_code_implied_diagnostic(billing_codes, billing_data) {
+            if let Some(dc) = diagnostic_codes::get_diagnostic_code(&implied) {
                 set_diagnostic(record, dc);
             }
         }
@@ -551,7 +667,7 @@ mod tests {
     #[test]
     fn test_minor_assessment_mapping() {
         let features = default_features();
-        let record = map_features_to_billing(&features, "s1", "2026-04-05", 600_000, None);
+        let record = map_features_to_billing(&features, "s1", "2026-04-05", 600_000, None, None);
         assert_eq!(record.status, BillingStatus::Draft);
         assert_eq!(record.codes.len(), 1);
         assert_eq!(record.codes[0].code, "A001A");
@@ -564,7 +680,7 @@ mod tests {
     fn test_general_assessment_mapping() {
         let mut features = default_features();
         features.visit_type = VisitType::GeneralAssessment;
-        let record = map_features_to_billing(&features, "s1", "2026-04-05", 1_800_000, None);
+        let record = map_features_to_billing(&features, "s1", "2026-04-05", 1_800_000, None, None);
         assert_eq!(record.codes[0].code, "A003A");
         // A003A: 9560 * 30% = 2868
         assert_eq!(record.codes[0].billable_amount_cents, 2868);
@@ -574,7 +690,7 @@ mod tests {
     fn test_general_reassessment_mapping() {
         let mut features = default_features();
         features.visit_type = VisitType::GeneralReassessment;
-        let record = map_features_to_billing(&features, "s1", "2026-04-05", 1_200_000, None);
+        let record = map_features_to_billing(&features, "s1", "2026-04-05", 1_200_000, None, None);
         assert_eq!(record.codes[0].code, "A004A");
     }
 
@@ -582,7 +698,7 @@ mod tests {
     fn test_intermediate_assessment_mapping() {
         let mut features = default_features();
         features.visit_type = VisitType::IntermediateAssessment;
-        let record = map_features_to_billing(&features, "s1", "2026-04-05", 900_000, None);
+        let record = map_features_to_billing(&features, "s1", "2026-04-05", 900_000, None, None);
         assert_eq!(record.codes[0].code, "A007A");
     }
 
@@ -590,7 +706,7 @@ mod tests {
     fn test_mini_assessment_mapping() {
         let mut features = default_features();
         features.visit_type = VisitType::MiniAssessment;
-        let record = map_features_to_billing(&features, "s1", "2026-04-05", 300_000, None);
+        let record = map_features_to_billing(&features, "s1", "2026-04-05", 300_000, None, None);
         assert_eq!(record.codes[0].code, "A008A");
     }
 
@@ -598,7 +714,7 @@ mod tests {
     fn test_prenatal_major_mapping() {
         let mut features = default_features();
         features.visit_type = VisitType::PrenatalMajor;
-        let record = map_features_to_billing(&features, "s1", "2026-04-05", 1_800_000, None);
+        let record = map_features_to_billing(&features, "s1", "2026-04-05", 1_800_000, None, None);
         assert_eq!(record.codes[0].code, "P003A");
         // Out-of-basket: full FFS = 9385
         assert_eq!(record.codes[0].billable_amount_cents, 9385);
@@ -609,7 +725,7 @@ mod tests {
     fn test_prenatal_minor_mapping() {
         let mut features = default_features();
         features.visit_type = VisitType::PrenatalMinor;
-        let record = map_features_to_billing(&features, "s1", "2026-04-05", 900_000, None);
+        let record = map_features_to_billing(&features, "s1", "2026-04-05", 900_000, None, None);
         assert_eq!(record.codes[0].code, "P004A");
         assert_eq!(record.codes[0].billable_amount_cents, 4455);
     }
@@ -618,7 +734,7 @@ mod tests {
     fn test_palliative_care_mapping() {
         let mut features = default_features();
         features.visit_type = VisitType::PalliativeCare;
-        let record = map_features_to_billing(&features, "s1", "2026-04-05", 1_800_000, None);
+        let record = map_features_to_billing(&features, "s1", "2026-04-05", 1_800_000, None, None);
         assert_eq!(record.codes[0].code, "K023A");
         assert_eq!(record.codes[0].billable_amount_cents, 8525);
     }
@@ -627,7 +743,7 @@ mod tests {
     fn test_counselling_mapping() {
         let mut features = default_features();
         features.visit_type = VisitType::Counselling;
-        let record = map_features_to_billing(&features, "s1", "2026-04-05", 900_000, None);
+        let record = map_features_to_billing(&features, "s1", "2026-04-05", 900_000, None, None);
         assert_eq!(record.codes[0].code, "K013A");
     }
 
@@ -636,7 +752,7 @@ mod tests {
         let mut features = default_features();
         features.visit_type = VisitType::SharedAppointment;
         features.patient_count = Some(3);
-        let record = map_features_to_billing(&features, "s1", "2026-04-05", 3_600_000, None);
+        let record = map_features_to_billing(&features, "s1", "2026-04-05", 3_600_000, None, None);
         assert_eq!(record.codes[0].code, "K140A");
     }
 
@@ -644,7 +760,7 @@ mod tests {
     fn test_well_baby_mapping() {
         let mut features = default_features();
         features.visit_type = VisitType::WellBabyVisit;
-        let record = map_features_to_billing(&features, "s1", "2026-04-05", 900_000, None);
+        let record = map_features_to_billing(&features, "s1", "2026-04-05", 900_000, None, None);
         assert_eq!(record.codes[0].code, "A007A");
     }
 
@@ -652,7 +768,7 @@ mod tests {
     fn test_periodic_health_child_mapping() {
         let mut features = default_features();
         features.visit_type = VisitType::PeriodicHealthChild;
-        let record = map_features_to_billing(&features, "s1", "2026-04-05", 1_800_000, None);
+        let record = map_features_to_billing(&features, "s1", "2026-04-05", 1_800_000, None, None);
         assert_eq!(record.codes[0].code, "K017A");
     }
 
@@ -660,7 +776,7 @@ mod tests {
     fn test_periodic_health_adolescent_mapping() {
         let mut features = default_features();
         features.visit_type = VisitType::PeriodicHealthAdolescent;
-        let record = map_features_to_billing(&features, "s1", "2026-04-05", 1_800_000, None);
+        let record = map_features_to_billing(&features, "s1", "2026-04-05", 1_800_000, None, None);
         assert_eq!(record.codes[0].code, "K130A");
     }
 
@@ -668,7 +784,7 @@ mod tests {
     fn test_periodic_health_adult_mapping() {
         let mut features = default_features();
         features.visit_type = VisitType::PeriodicHealthAdult;
-        let record = map_features_to_billing(&features, "s1", "2026-04-05", 1_800_000, None);
+        let record = map_features_to_billing(&features, "s1", "2026-04-05", 1_800_000, None, None);
         assert_eq!(record.codes[0].code, "K131A");
     }
 
@@ -676,7 +792,7 @@ mod tests {
     fn test_periodic_health_senior_mapping() {
         let mut features = default_features();
         features.visit_type = VisitType::PeriodicHealthSenior;
-        let record = map_features_to_billing(&features, "s1", "2026-04-05", 1_800_000, None);
+        let record = map_features_to_billing(&features, "s1", "2026-04-05", 1_800_000, None, None);
         assert_eq!(record.codes[0].code, "K132A");
     }
 
@@ -684,7 +800,7 @@ mod tests {
     fn test_periodic_health_idd_mapping() {
         let mut features = default_features();
         features.visit_type = VisitType::PeriodicHealthIdd;
-        let record = map_features_to_billing(&features, "s1", "2026-04-05", 1_800_000, None);
+        let record = map_features_to_billing(&features, "s1", "2026-04-05", 1_800_000, None, None);
         assert_eq!(record.codes[0].code, "K133A");
     }
 
@@ -692,7 +808,7 @@ mod tests {
     fn test_procedure_50_shadow_rate() {
         let mut features = default_features();
         features.procedures = vec![ProcedureType::SkinBiopsy];
-        let record = map_features_to_billing(&features, "s1", "2026-04-05", 900_000, None);
+        let record = map_features_to_billing(&features, "s1", "2026-04-05", 900_000, None, None);
         // Assessment + procedure + E542A tray fee = 3 codes
         assert_eq!(record.codes.len(), 3);
         let biopsy = &record.codes[1];
@@ -710,7 +826,7 @@ mod tests {
             ProcedureType::PapSmear,
             ProcedureType::CryotherapyMultiple,
         ];
-        let record = map_features_to_billing(&features, "s1", "2026-04-05", 1_200_000, None);
+        let record = map_features_to_billing(&features, "s1", "2026-04-05", 1_200_000, None, None);
         // Assessment + 2 procedures + E542A tray fee + E430A pap tray = 5 codes
         assert!(record.codes.iter().any(|c| c.code == "G365A"));
         assert!(record.codes.iter().any(|c| c.code == "Z117A"));
@@ -722,7 +838,7 @@ mod tests {
     fn test_conditions_out_of_basket() {
         let mut features = default_features();
         features.conditions = vec![ConditionType::DiabetesManagement];
-        let record = map_features_to_billing(&features, "s1", "2026-04-05", 1_200_000, None);
+        let record = map_features_to_billing(&features, "s1", "2026-04-05", 1_200_000, None, None);
         // Assessment + condition = 2 codes
         assert_eq!(record.codes.len(), 2);
         let dm = &record.codes[1];
@@ -736,7 +852,7 @@ mod tests {
         let mut features = default_features();
         features.is_after_hours = true;
         // A001A is after-hours eligible
-        let record = map_features_to_billing(&features, "s1", "2026-04-05", 600_000, None);
+        let record = map_features_to_billing(&features, "s1", "2026-04-05", 600_000, None, None);
 
         // Should have assessment code + Q012A premium
         assert_eq!(record.codes.len(), 2);
@@ -756,7 +872,7 @@ mod tests {
         let mut features = default_features();
         features.is_after_hours = true;
         features.procedures = vec![ProcedureType::SkinBiopsy];
-        let record = map_features_to_billing(&features, "s1", "2026-04-05", 900_000, None);
+        let record = map_features_to_billing(&features, "s1", "2026-04-05", 900_000, None, None);
 
         // Assessment (after-hours) + procedure + E542A tray fee + Q012A premium = 4 codes
         assert_eq!(record.codes.len(), 4);
@@ -773,7 +889,7 @@ mod tests {
         // 7 minutes = 0 units (below 8-min threshold)
         let features = default_features();
         let record =
-            map_features_to_billing(&features, "s1", "2026-04-05", 7 * 60 * 1000, None);
+            map_features_to_billing(&features, "s1", "2026-04-05", 7 * 60 * 1000, None, None);
         assert!(record.time_entries.is_empty());
     }
 
@@ -782,7 +898,7 @@ mod tests {
         // 8 minutes = 1 unit (>= 8 remainder rounds up)
         let features = default_features();
         let record =
-            map_features_to_billing(&features, "s1", "2026-04-05", 8 * 60 * 1000, None);
+            map_features_to_billing(&features, "s1", "2026-04-05", 8 * 60 * 1000, None, None);
         assert_eq!(record.time_entries.len(), 1);
         assert_eq!(record.time_entries[0].billable_units, 1);
     }
@@ -792,7 +908,7 @@ mod tests {
         // 15 minutes = 1 unit (exact boundary)
         let features = default_features();
         let record =
-            map_features_to_billing(&features, "s1", "2026-04-05", 15 * 60 * 1000, None);
+            map_features_to_billing(&features, "s1", "2026-04-05", 15 * 60 * 1000, None, None);
         assert_eq!(record.time_entries.len(), 1);
         assert_eq!(record.time_entries[0].billable_units, 1);
     }
@@ -802,7 +918,7 @@ mod tests {
         // 23 minutes: 15 + 8 remainder = 2 units
         let features = default_features();
         let record =
-            map_features_to_billing(&features, "s1", "2026-04-05", 23 * 60 * 1000, None);
+            map_features_to_billing(&features, "s1", "2026-04-05", 23 * 60 * 1000, None, None);
         assert_eq!(record.time_entries.len(), 1);
         assert_eq!(record.time_entries[0].billable_units, 2);
     }
@@ -812,7 +928,7 @@ mod tests {
         // 30 minutes = 2 units (exact boundary)
         let features = default_features();
         let record =
-            map_features_to_billing(&features, "s1", "2026-04-05", 30 * 60 * 1000, None);
+            map_features_to_billing(&features, "s1", "2026-04-05", 30 * 60 * 1000, None, None);
         assert_eq!(record.time_entries.len(), 1);
         assert_eq!(record.time_entries[0].billable_units, 2);
     }
@@ -822,7 +938,7 @@ mod tests {
         let mut features = default_features();
         features.setting = EncounterSetting::TelephoneRemote;
         let record =
-            map_features_to_billing(&features, "s1", "2026-04-05", 15 * 60 * 1000, None);
+            map_features_to_billing(&features, "s1", "2026-04-05", 15 * 60 * 1000, None, None);
         assert_eq!(record.time_entries.len(), 1);
         assert_eq!(record.time_entries[0].code, "Q311A");
         assert_eq!(record.time_entries[0].rate_per_15min_cents, 1700);
@@ -836,7 +952,7 @@ mod tests {
         features.conditions = vec![ConditionType::DiabetesManagement];
         // 20 minutes = 2 units (15 + 5 remainder < 8 → 1 unit... wait: 20/15=1 remainder 5 < 8 → 1 unit)
         let record =
-            map_features_to_billing(&features, "s1", "2026-04-05", 20 * 60 * 1000, None);
+            map_features_to_billing(&features, "s1", "2026-04-05", 20 * 60 * 1000, None, None);
 
         // A004A shadow: 3935 * 30% = 1180
         let a004_shadow = 3935 * 30 / 100;
@@ -863,6 +979,7 @@ mod tests {
             "2026-04-05",
             600_000,
             Some("John Doe"),
+            None,
         );
         assert_eq!(record.patient_name, Some("John Doe".to_string()));
         assert_eq!(record.session_id, "session-123");
@@ -872,7 +989,7 @@ mod tests {
     #[test]
     fn test_extracted_at_populated() {
         let features = default_features();
-        let record = map_features_to_billing(&features, "s1", "2026-04-05", 600_000, None);
+        let record = map_features_to_billing(&features, "s1", "2026-04-05", 600_000, None, None);
         assert!(record.extracted_at.is_some());
         // Should be valid RFC3339
         let ts = record.extracted_at.unwrap();
@@ -883,7 +1000,7 @@ mod tests {
     fn test_confidence_high() {
         let mut features = default_features();
         features.confidence = 0.90;
-        let record = map_features_to_billing(&features, "s1", "2026-04-05", 600_000, None);
+        let record = map_features_to_billing(&features, "s1", "2026-04-05", 600_000, None, None);
         assert_eq!(record.codes[0].confidence, BillingConfidence::High);
     }
 
@@ -891,7 +1008,7 @@ mod tests {
     fn test_confidence_medium() {
         let mut features = default_features();
         features.confidence = 0.70;
-        let record = map_features_to_billing(&features, "s1", "2026-04-05", 600_000, None);
+        let record = map_features_to_billing(&features, "s1", "2026-04-05", 600_000, None, None);
         assert_eq!(record.codes[0].confidence, BillingConfidence::Medium);
     }
 
@@ -899,7 +1016,7 @@ mod tests {
     fn test_confidence_low() {
         let mut features = default_features();
         features.confidence = 0.50;
-        let record = map_features_to_billing(&features, "s1", "2026-04-05", 600_000, None);
+        let record = map_features_to_billing(&features, "s1", "2026-04-05", 600_000, None, None);
         assert_eq!(record.codes[0].confidence, BillingConfidence::Low);
     }
 
@@ -910,6 +1027,7 @@ mod tests {
         let record = map_features_to_billing_with_context(
             &features, "s1", "2026-04-05", 900_000, None,
             &RuleEngineContext { is_hospital: false, ..Default::default() },
+            None,
         );
         // Assessment + procedure + E542A tray fee = 3 codes
         assert!(record.codes.iter().any(|c| c.code == "E542A"), "Tray fee should be auto-added for skin biopsy");
@@ -922,6 +1040,7 @@ mod tests {
         let record = map_features_to_billing_with_context(
             &features, "s1", "2026-04-05", 900_000, None,
             &RuleEngineContext { is_hospital: true, ..Default::default() },
+            None,
         );
         assert!(!record.codes.iter().any(|c| c.code == "E542A"), "No tray fee in hospital");
     }
@@ -933,6 +1052,7 @@ mod tests {
         let record = map_features_to_billing_with_context(
             &features, "s1", "2026-04-05", 600_000, None,
             &RuleEngineContext { is_hospital: false, ..Default::default() },
+            None,
         );
         assert!(!record.codes.iter().any(|c| c.code == "E542A"), "No tray fee for immunization");
     }
@@ -944,6 +1064,7 @@ mod tests {
         let record = map_features_to_billing_with_context(
             &features, "s1", "2026-04-05", 900_000, None,
             &RuleEngineContext { is_hospital: false, ..Default::default() },
+            None,
         );
         assert!(record.codes.iter().any(|c| c.code == "E430A"), "Pap tray fee should be auto-added");
         // G365A also qualifies for general tray fee — but Pap tray E430A is the specific one
@@ -956,6 +1077,7 @@ mod tests {
         let record = map_features_to_billing_with_context(
             &features, "s1", "2026-04-05", 900_000, None,
             &RuleEngineContext { is_hospital: true, ..Default::default() },
+            None,
         );
         assert!(!record.codes.iter().any(|c| c.code == "E430A"), "No Pap tray in hospital");
     }
@@ -964,7 +1086,7 @@ mod tests {
     fn test_smoking_cessation_addon() {
         let mut features = default_features();
         features.conditions = vec![ConditionType::SmokingCessation]; // maps to Q042A
-        let record = map_features_to_billing(&features, "s1", "2026-04-05", 900_000, None);
+        let record = map_features_to_billing(&features, "s1", "2026-04-05", 900_000, None, None);
         assert!(record.codes.iter().any(|c| c.code == "Q042A"), "Smoking cessation Q042A present");
         assert!(record.codes.iter().any(|c| c.code == "E079A"), "E079A should be auto-added with Q042A");
     }
@@ -976,6 +1098,7 @@ mod tests {
         let record = map_features_to_billing_with_context(
             &features, "s1", "2026-04-05", 900_000, None,
             &RuleEngineContext { is_hospital: false, ..Default::default() },
+            None,
         );
         assert!(record.codes.iter().any(|c| c.code == "G370A"));
         assert!(record.codes.iter().any(|c| c.code == "E542A"), "Tray fee for joint injection");
@@ -1009,9 +1132,9 @@ mod tests {
             VisitType::PeriodicHealthIdd,
         ];
         for vt in &visit_types {
-            let code = visit_type_to_code(vt);
+            let code = visit_type_to_code(vt, None);
             assert!(
-                ohip_codes::get_code(code).is_some(),
+                ohip_codes::get_code(&code).is_some(),
                 "VisitType {:?} maps to {} which is not in OHIP_CODES",
                 vt,
                 code
@@ -1084,9 +1207,9 @@ mod tests {
             ProcedureType::ElectrocoagThreeOrMore,
         ];
         for p in &procedures {
-            let code = procedure_type_to_code(p);
+            let code = procedure_type_to_code(p, None);
             assert!(
-                ohip_codes::get_code(code).is_some(),
+                ohip_codes::get_code(&code).is_some(),
                 "ProcedureType {:?} maps to {} which is not in OHIP_CODES",
                 p,
                 code
@@ -1099,7 +1222,7 @@ mod tests {
         let mut features = default_features();
         features.conditions = vec![ConditionType::DiabeticAssessment];
         // No evidence provided — K030A should be suppressed
-        let record = map_features_to_billing(&features, "s1", "2026-04-05", 1_200_000, None);
+        let record = map_features_to_billing(&features, "s1", "2026-04-05", 1_200_000, None, None);
         assert!(
             !record.codes.iter().any(|c| c.code == "K030A"),
             "K030A should be suppressed without evidence"
@@ -1114,7 +1237,7 @@ mod tests {
             "diabetic_assessment".to_string(),
             "A1C 7.8%, foot exam normal, increased metformin".to_string(),
         );
-        let record = map_features_to_billing(&features, "s1", "2026-04-05", 1_200_000, None);
+        let record = map_features_to_billing(&features, "s1", "2026-04-05", 1_200_000, None, None);
         assert!(
             record.codes.iter().any(|c| c.code == "K030A"),
             "K030A should be emitted when evidence is provided"
@@ -1129,7 +1252,7 @@ mod tests {
             "diabetic_assessment".to_string(),
             "   ".to_string(), // whitespace-only
         );
-        let record = map_features_to_billing(&features, "s1", "2026-04-05", 1_200_000, None);
+        let record = map_features_to_billing(&features, "s1", "2026-04-05", 1_200_000, None, None);
         assert!(
             !record.codes.iter().any(|c| c.code == "K030A"),
             "K030A should be suppressed with blank evidence"
@@ -1141,7 +1264,7 @@ mod tests {
         let mut features = default_features();
         features.conditions = vec![ConditionType::DiabetesManagement];
         // No evidence — but Q040A is a Q code, not K, so it should still emit
-        let record = map_features_to_billing(&features, "s1", "2026-04-05", 1_200_000, None);
+        let record = map_features_to_billing(&features, "s1", "2026-04-05", 1_200_000, None, None);
         assert!(
             record.codes.iter().any(|c| c.code == "Q040A"),
             "Q codes should not be gated by evidence"
@@ -1154,7 +1277,7 @@ mod tests {
         features.visit_type = VisitType::PeriodicHealthIdd;
         for code in ["299", "319", "343", "758"] {
             features.suggested_diagnostic_code = Some(code.to_string());
-            let record = map_features_to_billing(&features, "s1", "2026-04-05", 3_600_000, None);
+            let record = map_features_to_billing(&features, "s1", "2026-04-05", 3_600_000, None, None);
             assert_eq!(
                 record.diagnostic_code.as_deref(),
                 Some(code),
@@ -1168,7 +1291,7 @@ mod tests {
         let mut features = default_features();
         features.visit_type = VisitType::PeriodicHealthIdd;
         features.suggested_diagnostic_code = Some("250".to_string());
-        let record = map_features_to_billing(&features, "s1", "2026-04-05", 3_600_000, None);
+        let record = map_features_to_billing(&features, "s1", "2026-04-05", 3_600_000, None, None);
         assert_eq!(
             record.diagnostic_code, None,
             "K133A should reject non-IDD diagnostic code 250"
@@ -1179,7 +1302,7 @@ mod tests {
     fn test_k133_no_diagnostic_code_stays_none() {
         let mut features = default_features();
         features.visit_type = VisitType::PeriodicHealthIdd;
-        let record = map_features_to_billing(&features, "s1", "2026-04-05", 3_600_000, None);
+        let record = map_features_to_billing(&features, "s1", "2026-04-05", 3_600_000, None, None);
         assert_eq!(record.diagnostic_code, None);
     }
 
@@ -1187,7 +1310,7 @@ mod tests {
     fn test_all_condition_types_have_valid_codes() {
         let conditions = all_condition_types();
         for c in &conditions {
-            let codes = condition_type_to_codes(c);
+            let codes = condition_type_to_codes(c, None);
             for code_str in &codes {
                 assert!(
                     ohip_codes::get_code(code_str).is_some(),
@@ -1246,7 +1369,7 @@ mod tests {
             "Patient with Down syndrome, annual IDD care review".to_string(),
         );
         features.suggested_diagnostic_code = Some("758".to_string());
-        let record = map_features_to_billing(&features, "s1", "2026-04-05", 1_800_000, None);
+        let record = map_features_to_billing(&features, "s1", "2026-04-05", 1_800_000, None, None);
         assert!(record.codes.iter().any(|c| c.code == "K125A"));
         assert_eq!(record.diagnostic_code.as_deref(), Some("758"));
     }
@@ -1260,7 +1383,7 @@ mod tests {
             "Spina bifida patient, IDD primary care".to_string(),
         );
         features.suggested_diagnostic_code = Some("741".to_string());
-        let record = map_features_to_billing(&features, "s1", "2026-04-05", 1_800_000, None);
+        let record = map_features_to_billing(&features, "s1", "2026-04-05", 1_800_000, None, None);
         assert!(record.codes.iter().any(|c| c.code == "K125A"));
         assert_eq!(record.diagnostic_code.as_deref(), Some("741"));
     }
@@ -1274,7 +1397,7 @@ mod tests {
             "some evidence".to_string(),
         );
         features.suggested_diagnostic_code = Some("496".to_string());
-        let record = map_features_to_billing(&features, "s1", "2026-04-05", 1_800_000, None);
+        let record = map_features_to_billing(&features, "s1", "2026-04-05", 1_800_000, None, None);
         assert!(record.codes.iter().any(|c| c.code == "K125A"));
         assert_eq!(record.diagnostic_code, None, "Non-IDD diagnostic should be cleared");
     }
@@ -1285,7 +1408,7 @@ mod tests {
         let mut features = default_features();
         features.visit_type = VisitType::PeriodicHealthIdd;
         features.suggested_diagnostic_code = Some("741".to_string());
-        let record = map_features_to_billing(&features, "s1", "2026-04-05", 3_600_000, None);
+        let record = map_features_to_billing(&features, "s1", "2026-04-05", 3_600_000, None, None);
         assert_eq!(record.diagnostic_code, None, "K133A should not accept 741");
     }
 
@@ -1294,15 +1417,15 @@ mod tests {
     #[test]
     fn test_counselling_units_gp54_table() {
         // Exact SOB GP54 thresholds
-        assert_eq!(counselling_units_from_duration(10 * 60_000), 1);  // below minimum
-        assert_eq!(counselling_units_from_duration(19 * 60_000), 1);  // just below 20
-        assert_eq!(counselling_units_from_duration(20 * 60_000), 1);  // 1 unit
-        assert_eq!(counselling_units_from_duration(45 * 60_000), 1);  // just below 46
-        assert_eq!(counselling_units_from_duration(46 * 60_000), 2);  // 2 units
-        assert_eq!(counselling_units_from_duration(74 * 60_000), 2);  // below 76
-        assert_eq!(counselling_units_from_duration(76 * 60_000), 3);  // 3 units
-        assert_eq!(counselling_units_from_duration(106 * 60_000), 4); // 4 units
-        assert_eq!(counselling_units_from_duration(136 * 60_000), 5); // 5 units
+        assert_eq!(counselling_units_from_duration(10 * 60_000, None), 1);  // below minimum
+        assert_eq!(counselling_units_from_duration(19 * 60_000, None), 1);  // just below 20
+        assert_eq!(counselling_units_from_duration(20 * 60_000, None), 1);  // 1 unit
+        assert_eq!(counselling_units_from_duration(45 * 60_000, None), 1);  // just below 46
+        assert_eq!(counselling_units_from_duration(46 * 60_000, None), 2);  // 2 units
+        assert_eq!(counselling_units_from_duration(74 * 60_000, None), 2);  // below 76
+        assert_eq!(counselling_units_from_duration(76 * 60_000, None), 3);  // 3 units
+        assert_eq!(counselling_units_from_duration(106 * 60_000, None), 4); // 4 units
+        assert_eq!(counselling_units_from_duration(136 * 60_000, None), 5); // 5 units
     }
 
     #[test]
@@ -1310,7 +1433,7 @@ mod tests {
         let mut features = default_features();
         features.visit_type = VisitType::Counselling;
         // 74 minutes → 2 units per GP54
-        let record = map_features_to_billing(&features, "s1", "2026-04-05", 74 * 60 * 1000, None);
+        let record = map_features_to_billing(&features, "s1", "2026-04-05", 74 * 60 * 1000, None, None);
         assert_eq!(record.codes[0].code, "K013A");
         assert_eq!(record.codes[0].quantity, 2);
     }
@@ -1322,6 +1445,7 @@ mod tests {
         let record = map_features_to_billing_with_context(
             &features, "s1", "2026-04-05", 74 * 60 * 1000, None,
             &RuleEngineContext { counselling_exhausted: true, ..Default::default() },
+            None,
         );
         assert_eq!(record.codes[0].code, "K033A");
         assert_eq!(record.codes[0].quantity, 2);
@@ -1336,7 +1460,7 @@ mod tests {
             "primary_mental_health".to_string(),
             "counselling for adjustment reaction".to_string(),
         );
-        let record = map_features_to_billing(&features, "s1", "2026-04-05", 74 * 60 * 1000, None);
+        let record = map_features_to_billing(&features, "s1", "2026-04-05", 74 * 60 * 1000, None, None);
         assert!(record.codes.iter().any(|c| c.code == "K013A"), "K013A should be present");
         assert!(!record.codes.iter().any(|c| c.code == "K005A"), "K005A should be suppressed when K013A is the visit type");
     }
@@ -1348,7 +1472,7 @@ mod tests {
         let mut features = default_features();
         features.primary_diagnosis = Some("diabetes mellitus".to_string());
         // No suggestedDiagnosticCode — should resolve from text
-        let record = map_features_to_billing(&features, "s1", "2026-04-05", 600_000, None);
+        let record = map_features_to_billing(&features, "s1", "2026-04-05", 600_000, None, None);
         assert_eq!(record.diagnostic_code.as_deref(), Some("250"));
     }
 
@@ -1358,7 +1482,7 @@ mod tests {
         features.suggested_diagnostic_code = Some("401".to_string());
         features.primary_diagnosis = Some("diabetes mellitus".to_string());
         // Explicit code wins over text match
-        let record = map_features_to_billing(&features, "s1", "2026-04-05", 600_000, None);
+        let record = map_features_to_billing(&features, "s1", "2026-04-05", 600_000, None, None);
         assert_eq!(record.diagnostic_code.as_deref(), Some("401"));
     }
 
@@ -1371,7 +1495,7 @@ mod tests {
             "A1C review, foot exam".to_string(),
         );
         // No suggestedDiagnosticCode, no primaryDiagnosis — K030A implies 250
-        let record = map_features_to_billing(&features, "s1", "2026-04-05", 1_200_000, None);
+        let record = map_features_to_billing(&features, "s1", "2026-04-05", 1_200_000, None, None);
         assert_eq!(
             record.diagnostic_code.as_deref(),
             Some("250"),
@@ -1383,14 +1507,14 @@ mod tests {
     fn test_primary_diagnosis_copd() {
         let mut features = default_features();
         features.primary_diagnosis = Some("COPD with progressive dyspnea".to_string());
-        let record = map_features_to_billing(&features, "s1", "2026-04-05", 600_000, None);
+        let record = map_features_to_billing(&features, "s1", "2026-04-05", 600_000, None, None);
         assert_eq!(record.diagnostic_code.as_deref(), Some("496"));
     }
 
     #[test]
     fn test_no_diagnosis_info_leaves_none() {
         let features = default_features();
-        let record = map_features_to_billing(&features, "s1", "2026-04-05", 600_000, None);
+        let record = map_features_to_billing(&features, "s1", "2026-04-05", 600_000, None, None);
         assert_eq!(record.diagnostic_code, None);
     }
 }

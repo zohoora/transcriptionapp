@@ -37,6 +37,7 @@ pub use crate::encounter_detection::{
     MIN_WORDS_FOR_CLINICAL_CHECK, SCREENSHOT_STALE_GRACE_SECS,
     MULTI_PATIENT_CHECK_WORD_THRESHOLD, MULTI_PATIENT_SPLIT_MIN_WORDS,
     MULTI_PATIENT_CHECK_PROMPT, MULTI_PATIENT_SPLIT_PROMPT,
+    multi_patient_check_prompt, multi_patient_split_prompt,
     parse_multi_patient_check,
     MULTI_PATIENT_DETECT_WORD_THRESHOLD,
     DetectionEvalContext, DetectionOutcome, evaluate_detection,
@@ -483,6 +484,18 @@ pub async fn run_continuous_mode(
     sync_ctx: ServerSyncContext,
 ) -> Result<(), String> {
     use tauri::Emitter;
+
+    // Read server-configurable data (prompts, billing rules, thresholds).
+    // Snapshot at start of continuous mode — changes take effect on next restart.
+    // Arc-wrapped to share between detector task and flush-on-stop path without cloning.
+    let (templates, billing_data) = {
+        use tauri::Manager;
+        let shared = app.state::<crate::commands::SharedServerConfig>();
+        let config = shared.read().await;
+        (Arc::new(config.prompts.clone()), Arc::new(config.billing.clone()))
+    };
+    let flush_templates = templates.clone();
+    let flush_billing_data = billing_data.clone();
 
     // Audio recording path for continuous mode
     let audio_output_path = {
@@ -1310,6 +1323,7 @@ pub async fn run_continuous_mode(
                 let (system_prompt, user_prompt) = build_encounter_detection_prompt(
                     &filtered_for_llm,
                     Some(&detection_context),
+                    Some(&templates),
                 );
                 // Prepend /nothink for Qwen3 models to disable thinking mode (improves detection accuracy)
                 let system_prompt = if detection_nothink {
@@ -1503,6 +1517,7 @@ pub async fn run_continuous_mode(
                 hybrid_confirm_window_secs,
                 hybrid_min_words_for_sensor_split,
                 sensor_continuous_present,
+                server_thresholds: None,
             };
             let (outcome, new_failures) = evaluate_detection(&eval_ctx);
             consecutive_llm_failures = new_failures;
@@ -1843,6 +1858,7 @@ pub async fn run_continuous_mode(
                                     "encounter_number": encounter_number,
                                     "word_count": encounter_word_count,
                                 }),
+                                Some(&templates),
                             ).await
                         } else {
                             encounter_word_count >= MIN_WORDS_FOR_CLINICAL_CHECK
@@ -1954,6 +1970,7 @@ pub async fn run_continuous_mode(
                                     "word_count": encounter_word_count,
                                     "has_notes": !notes_text.is_empty(),
                                 }),
+                                Some(&templates),
                             ).await;
 
                             match soap_outcome {
@@ -2003,6 +2020,8 @@ pub async fn run_continuous_mode(
                                             after_hours,
                                             &crate::billing::RuleEngineContext { counselling_exhausted: billing_counselling_exhausted, ..Default::default() },
                                             &logger_for_detector,
+                                            Some(&templates),
+                                            Some(&billing_data),
                                         ).await;
                                         let billing_latency = billing_start.elapsed().as_millis() as u64;
 
@@ -2262,6 +2281,7 @@ pub async fn run_continuous_mode(
                                             "prev_tail_words": filtered_prev_tail.split_whitespace().count(),
                                             "curr_head_words": filtered_curr_head.split_whitespace().count(),
                                         }),
+                                        Some(&templates),
                                     ).await;
 
                                     // Log to replay bundle
@@ -2445,6 +2465,7 @@ pub async fn run_continuous_mode(
                                                                 "session_id": prev_id,
                                                                 "detection_confidence": detection.confidence,
                                                             }),
+                                                            Some(&templates),
                                                         ).await;
                                                         if let crate::encounter_pipeline::SoapGenerationOutcome::Success { ref result, ref content, .. } = regen_outcome {
                                                             // Server sync: upload retrospective SOAP
@@ -2551,6 +2572,7 @@ pub async fn run_continuous_mode(
                                                 "encounter_number": encounter_number,
                                                 "detection_confidence": detection.confidence,
                                             }),
+                                            Some(&templates),
                                         )
                                         .await;
                                     if let crate::encounter_pipeline::SoapGenerationOutcome::Success {
@@ -2825,6 +2847,7 @@ pub async fn run_continuous_mode(
                             "stage": "flush_on_stop",
                             "word_count": word_count,
                         }),
+                        Some(&flush_templates),
                     ).await
                 } else {
                     word_count >= MIN_WORDS_FOR_CLINICAL_CHECK
@@ -2862,6 +2885,7 @@ pub async fn run_continuous_mode(
                                                 "prev_tail_words": filtered_prev_tail.split_whitespace().count(),
                                                 "curr_head_words": filtered_curr_head.split_whitespace().count(),
                                             }),
+                                            Some(&flush_templates),
                                         ).await;
 
                                         if merge_outcome.same_encounter == Some(true) {
@@ -2940,6 +2964,7 @@ pub async fn run_continuous_mode(
                         flush_notes, word_count, None,
                         &logger_for_flush,
                         serde_json::json!({"stage": "flush_on_stop", "word_count": word_count}),
+                        Some(&flush_templates),
                     ).await;
                     if let crate::encounter_pipeline::SoapGenerationOutcome::Success { ref content, .. } = outcome {
                         sync_ctx.sync_soap(&session_id, content, flush_soap_detail_level, &flush_soap_format);
@@ -2975,6 +3000,8 @@ pub async fn run_continuous_mode(
                                 flush_after_hours,
                                 &crate::billing::RuleEngineContext { counselling_exhausted: billing_counselling_exhausted, ..Default::default() },
                                 &logger_for_flush,
+                                Some(&flush_templates),
+                                Some(&flush_billing_data),
                             ).await;
                             let billing_latency = billing_start.elapsed().as_millis() as u64;
 
@@ -3199,7 +3226,7 @@ mod tests {
 
     #[test]
     fn test_detection_prompt_no_premature_bias() {
-        let (system, _) = build_encounter_detection_prompt("test transcript", None);
+        let (system, _) = build_encounter_detection_prompt("test transcript", None, None);
         assert!(
             !system.contains("better to wait"),
             "Prompt should not have 'better to wait' bias"

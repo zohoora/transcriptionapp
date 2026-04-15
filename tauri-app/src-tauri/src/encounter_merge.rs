@@ -21,7 +21,12 @@ pub struct MergeCheckResult {
 /// When `patient_name` is provided (e.g. from vision-based extraction), the prompt
 /// includes it as context, significantly improving merge accuracy on topic-shift cases
 /// (33% -> 100% in experiments -- see encounter-experiments/summary.md).
-pub fn build_encounter_merge_prompt(prev_tail: &str, curr_head: &str, patient_name: Option<&str>) -> (String, String) {
+pub fn build_encounter_merge_prompt(
+    prev_tail: &str,
+    curr_head: &str,
+    patient_name: Option<&str>,
+    templates: Option<&crate::server_config::PromptTemplates>,
+) -> (String, String) {
     let patient_context = match patient_name {
         Some(name) if !name.is_empty() => format!(
             "\n\nCONTEXT: The patient being seen is {}. If both excerpts reference this patient or the same clinical context, they are almost certainly the same encounter.",
@@ -30,7 +35,11 @@ pub fn build_encounter_merge_prompt(prev_tail: &str, curr_head: &str, patient_na
         _ => String::new(),
     };
 
-    let system = format!(
+    let system = templates
+        .and_then(|t| (!t.encounter_merge_system.is_empty()).then(|| {
+            format!("{}{}", t.encounter_merge_system, patient_context)
+        }))
+        .unwrap_or_else(|| format!(
         r#"You are reviewing two consecutive transcript excerpts from a medical office where a microphone records all day.
 
 The system split these into two separate encounters, but they may actually be the SAME patient visit that was incorrectly split (e.g., due to a pause, phone call, or silence during an examination).
@@ -56,7 +65,7 @@ or
 
 Return ONLY the JSON object, nothing else."#,
         patient_context
-    );
+    ));
 
     let user = format!(
         "EXCERPT FROM END OF PREVIOUS ENCOUNTER:\n{}\n\n---\n\nEXCERPT FROM START OF NEXT ENCOUNTER:\n{}",
@@ -88,6 +97,7 @@ mod tests {
             "...we'll see you in two weeks",
             "Good morning Mr. Smith...",
             None,
+            None,
         );
         assert!(system.contains("SAME patient visit"));
         assert!(user.contains("we'll see you in two weeks"));
@@ -100,6 +110,7 @@ mod tests {
             "tail text",
             "head text",
             Some("Buckland, Deborah Ann"),
+            None,
         );
         assert!(system.contains("Buckland, Deborah Ann"));
         assert!(system.contains("almost certainly the same encounter"));

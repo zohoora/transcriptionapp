@@ -107,7 +107,7 @@ pub async fn run_screenshot_task(cfg: ScreenshotTaskConfig) {
             }
         };
 
-        let (system_prompt, user_text) = build_patient_name_prompt();
+        let (system_prompt, user_text) = build_patient_name_prompt(None);
         let system_prompt_log = system_prompt.clone();
         let user_text_log = user_text.clone();
         let content_parts = vec![

@@ -5,7 +5,7 @@ use crate::billing::{
     calculate_daily_caps, calculate_monthly_caps,
 };
 use crate::commands::CommandError;
-use crate::commands::physicians::{SharedActivePhysician, SharedProfileClient};
+use crate::commands::physicians::{SharedActivePhysician, SharedProfileClient, SharedServerConfig};
 use crate::config::Config;
 use crate::llm_client::LLMClient;
 use crate::local_archive;
@@ -134,6 +134,7 @@ pub async fn extract_billing_codes(
     context: Option<BillingContext>,
     active_physician: State<'_, SharedActivePhysician>,
     profile_client: State<'_, SharedProfileClient>,
+    server_config: State<'_, SharedServerConfig>,
 ) -> Result<BillingRecord, CommandError> {
     info!("Extracting billing codes for session: {}", session_id);
     let parsed_date = super::parse_date(&date)?;
@@ -202,6 +203,7 @@ pub async fn extract_billing_codes(
         counselling_exhausted: context.as_ref().map_or(config.billing_counselling_exhausted, |c| c.counselling_exhausted),
     };
 
+    let sc = server_config.read().await;
     let record = crate::encounter_pipeline::extract_and_archive_billing(
         &client,
         &config.fast_model,
@@ -215,6 +217,8 @@ pub async fn extract_billing_codes(
         after_hours,
         &rule_ctx,
         &logger,
+        Some(&sc.prompts),
+        Some(&sc.billing),
     ).await
     .map_err(CommandError::Other)?;
 

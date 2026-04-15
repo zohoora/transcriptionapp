@@ -163,12 +163,16 @@ pub struct ClinicalFeatures {
 /// Build the system + user prompts for clinical feature extraction.
 /// `context_hints` contains physician-provided billing context (visit setting, patient age, etc.).
 /// Returns `(system_prompt, user_prompt)`.
+/// When `templates` is provided and the relevant field is non-empty, it overrides the hardcoded default.
 pub fn build_billing_extraction_prompt(
     soap_content: &str,
     transcript: &str,
     context_hints: &str,
+    templates: Option<&crate::server_config::PromptTemplates>,
 ) -> (String, String) {
-    let system_prompt = r#"You are a medical billing analyst for Ontario FHO+ family medicine. Your task is to extract clinical features from a SOAP note and transcript to determine appropriate OHIP billing codes.
+    let system_prompt = templates
+        .and_then(|t| (!t.billing_extraction.is_empty()).then(|| t.billing_extraction.clone()))
+        .unwrap_or_else(|| r#"You are a medical billing analyst for Ontario FHO+ family medicine. Your task is to extract clinical features from a SOAP note and transcript to determine appropriate OHIP billing codes.
 
 Analyze the provided SOAP note and transcript excerpt, then output a JSON object matching the schema below. Only extract features explicitly supported by the SOAP note content. Do not guess or infer procedures not mentioned.
 
@@ -378,7 +382,7 @@ CRITICAL RULES:
 6. If no condition from the list matches what happened in the visit, leave the conditions array EMPTY. Do NOT force-fit unrelated clinical activities into a condition. Ordering labs, making referrals, or general investigations are NOT conditions — they are part of the assessment and plan.
 7. diabetic_assessment requires EXPLICIT diabetes management (A1C, glucose, diabetic medication adjustment, diabetic foot exam). Ordering thyroid or iron labs is NOT diabetic_assessment.
 
-Respond ONLY with the JSON object. No explanations or commentary."#;
+Respond ONLY with the JSON object. No explanations or commentary."#.to_string());
 
     let context_section = if context_hints.is_empty() {
         String::new()
@@ -446,7 +450,7 @@ mod tests {
 
     #[test]
     fn test_build_billing_extraction_prompt() {
-        let (system, user) = build_billing_extraction_prompt("SOAP content here", "Transcript here", "");
+        let (system, user) = build_billing_extraction_prompt("SOAP content here", "Transcript here", "", None);
         assert!(system.contains("FHO+"));
         assert!(system.contains("minor_assessment"));
         assert!(system.contains("pap_smear"));
@@ -467,7 +471,7 @@ mod tests {
     #[test]
     fn test_build_billing_extraction_prompt_with_context() {
         let hints = "Visit was conducted by VIDEO telemedicine. Use A101 (limited virtual care video).";
-        let (_, user) = build_billing_extraction_prompt("SOAP", "Transcript", hints);
+        let (_, user) = build_billing_extraction_prompt("SOAP", "Transcript", hints, None);
         assert!(user.contains("## Billing Context (provided by physician)"));
         assert!(user.contains("VIDEO telemedicine"));
     }

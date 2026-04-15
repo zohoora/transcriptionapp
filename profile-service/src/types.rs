@@ -1,5 +1,6 @@
 use crate::error::ApiError;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 // ── Physician ──────────────────────────────────────────────────────
 
@@ -626,4 +627,401 @@ pub struct MergeSessionsRequest {
 #[derive(Debug, Deserialize)]
 pub struct RenumberRequest {
     pub date: String,
+}
+
+// ── Server-Configurable Data ─────────────────────────────────────
+
+/// Version metadata for the config data bundle.
+/// Clients compare their cached version against this to detect staleness.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ConfigVersion {
+    pub version: u64,
+    pub updated_at: String,
+}
+
+// ── Prompt Templates ─────────────────────────────────────────────
+
+/// All LLM prompt templates served to clients.
+/// The client fetches this at startup and uses the templates instead of
+/// compiled-in string literals. Dynamic variables use `{variable_name}` syntax.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PromptTemplates {
+    #[serde(default)]
+    pub version: u64,
+
+    // SOAP note generation — stored as fragments for flexible assembly.
+    // The client assembles: base_template + detail_instruction + format_instruction + custom_section.
+    /// Main SOAP system prompt body. Placeholders: {custom_section}, {detail_instruction}, {format_instruction}
+    #[serde(default)]
+    pub soap_base_template: String,
+    /// Detail instruction per level range: keys "1-3", "4-6", "7-10". Placeholder: {detail_level}
+    #[serde(default)]
+    pub soap_detail_instructions: HashMap<String, String>,
+    /// Format instruction per SOAP format: keys "problem_based", "comprehensive"
+    #[serde(default)]
+    pub soap_format_instructions: HashMap<String, String>,
+    /// Custom instruction section templates: keys "global_only", "session_only", "both"
+    /// Each has placeholders like {global_instructions}, {session_instructions}
+    #[serde(default)]
+    pub soap_custom_section_templates: HashMap<String, String>,
+    /// Vision-based SOAP system prompt (step-by-step verification, no dynamic vars)
+    #[serde(default)]
+    pub soap_vision_template: String,
+    /// Extension text appended to base prompt for per-patient SOAP (multi-patient context)
+    #[serde(default)]
+    pub soap_per_patient_extension: String,
+    /// Extension text for scoping SOAP to a single patient label. Placeholder: {patient_label}
+    #[serde(default)]
+    pub soap_single_patient_scope_template: String,
+
+    // Patient handout
+    /// Patient handout generation system prompt (5th-8th grade reading level, plain text)
+    #[serde(default)]
+    pub patient_handout: String,
+
+    // Encounter detection
+    /// Encounter detection system prompt (transition-point detection framing)
+    #[serde(default)]
+    pub encounter_detection_system: String,
+    /// Context text when sensor detects departure (soft signal framing)
+    #[serde(default)]
+    pub encounter_detection_sensor_departed: String,
+    /// Context text when sensor confirms presence (conservative "NOT transitions" framing)
+    #[serde(default)]
+    pub encounter_detection_sensor_present: String,
+
+    // Clinical content check
+    /// Binary clinical-vs-non-clinical classification system prompt
+    #[serde(default)]
+    pub clinical_content_check: String,
+
+    // Multi-patient prompts (all static, no dynamic vars)
+    /// Gate check after merge-back: confirms multiple patients vs companions
+    #[serde(default)]
+    pub multi_patient_check: String,
+    /// Structured patient extraction (count, labels, summaries)
+    #[serde(default)]
+    pub multi_patient_detect: String,
+    /// Enhanced split-point detection via name transitions
+    #[serde(default)]
+    pub multi_patient_split: String,
+
+    // Encounter merge
+    /// Merge check system prompt. Optional placeholder: {patient_context}
+    #[serde(default)]
+    pub encounter_merge_system: String,
+
+    // Patient name/DOB extraction
+    /// Vision model system prompt for extracting patient name from screenshots
+    #[serde(default)]
+    pub patient_name_system: String,
+    /// Vision model user prompt (JSON schema instruction)
+    #[serde(default)]
+    pub patient_name_user: String,
+
+    // Greeting detection
+    /// Greeting detection system prompt. Placeholder: {sensitivity}
+    #[serde(default)]
+    pub greeting_detection: String,
+
+    // Billing extraction
+    /// Billing feature extraction system prompt (large schema: visit types, procedures, conditions)
+    #[serde(default)]
+    pub billing_extraction: String,
+
+    // Patient merge correction
+    /// Physician-reviewed multi-patient merge correction prompt
+    #[serde(default)]
+    pub patient_merge_correction: String,
+}
+
+impl Default for PromptTemplates {
+    fn default() -> Self {
+        Self {
+            version: 0,
+            soap_base_template: String::new(),
+            soap_detail_instructions: HashMap::new(),
+            soap_format_instructions: HashMap::new(),
+            soap_custom_section_templates: HashMap::new(),
+            soap_vision_template: String::new(),
+            soap_per_patient_extension: String::new(),
+            soap_single_patient_scope_template: String::new(),
+            patient_handout: String::new(),
+            encounter_detection_system: String::new(),
+            encounter_detection_sensor_departed: String::new(),
+            encounter_detection_sensor_present: String::new(),
+            clinical_content_check: String::new(),
+            multi_patient_check: String::new(),
+            multi_patient_detect: String::new(),
+            multi_patient_split: String::new(),
+            encounter_merge_system: String::new(),
+            patient_name_system: String::new(),
+            patient_name_user: String::new(),
+            greeting_detection: String::new(),
+            billing_extraction: String::new(),
+            patient_merge_correction: String::new(),
+        }
+    }
+}
+
+// ── Billing Data ─────────────────────────────────────────────────
+
+/// Server-configurable billing data: OHIP codes, diagnostic codes,
+/// exclusion groups, and mapping tables.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BillingData {
+    #[serde(default)]
+    pub version: u64,
+    /// OHIP fee schedule codes (236 codes as of Apr 2026 SOB)
+    #[serde(default)]
+    pub ohip_codes: Vec<OhipCodeEntry>,
+    /// ICD-8 diagnostic codes (562 codes as of MOH Apr 2023 + Mar 2026)
+    #[serde(default)]
+    pub diagnostic_codes: Vec<DiagnosticCodeEntry>,
+    /// Code incompatibility groups (21 groups)
+    #[serde(default)]
+    pub exclusion_groups: Vec<ExclusionGroupEntry>,
+    /// VisitType enum variant → OHIP assessment code mapping
+    #[serde(default)]
+    pub visit_type_mappings: HashMap<String, VisitTypeMappingEntry>,
+    /// ProcedureType enum variant → OHIP procedure code mapping
+    #[serde(default)]
+    pub procedure_type_mappings: HashMap<String, String>,
+    /// ConditionType enum variant → list of K/Q codes
+    #[serde(default)]
+    pub condition_type_mappings: HashMap<String, Vec<String>>,
+    /// Companion code auto-add rules (e.g., tray fee with procedures)
+    #[serde(default)]
+    pub companion_rules: Vec<CompanionRule>,
+    /// Time-based billing rates (Q310A, Q311A)
+    #[serde(default)]
+    pub time_rates: Vec<TimeRate>,
+    /// Counselling duration thresholds in minutes for K013A/K033A units
+    #[serde(default)]
+    pub counselling_unit_thresholds: Vec<u64>,
+    /// Billing code → implied diagnostic code mapping (e.g., K030A → 250)
+    #[serde(default)]
+    pub code_implied_diagnostics: HashMap<String, String>,
+    /// Codes that qualify for tray fee (E542A) companion
+    #[serde(default)]
+    pub tray_fee_qualifying_codes: Vec<String>,
+}
+
+impl Default for BillingData {
+    fn default() -> Self {
+        Self {
+            version: 0,
+            ohip_codes: Vec::new(),
+            diagnostic_codes: Vec::new(),
+            exclusion_groups: Vec::new(),
+            visit_type_mappings: HashMap::new(),
+            procedure_type_mappings: HashMap::new(),
+            condition_type_mappings: HashMap::new(),
+            companion_rules: Vec::new(),
+            time_rates: Vec::new(),
+            counselling_unit_thresholds: Vec::new(),
+            code_implied_diagnostics: HashMap::new(),
+            tray_fee_qualifying_codes: Vec::new(),
+        }
+    }
+}
+
+/// A single OHIP billing code entry.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OhipCodeEntry {
+    pub code: String,
+    pub description: String,
+    pub ffs_rate_cents: u32,
+    /// "in" or "out" (in-basket vs out-of-basket)
+    pub basket: String,
+    pub shadow_pct: u8,
+    /// Category: "assessment", "counselling", "procedure", "chronic_disease",
+    /// "screening", "premium", "time_based", "immunization"
+    pub category: String,
+    pub after_hours_eligible: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_per_year: Option<u8>,
+}
+
+/// A single ICD-8 diagnostic code entry.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DiagnosticCodeEntry {
+    pub code: String,
+    pub description: String,
+    pub category: String,
+}
+
+/// Code exclusion group — codes that cannot be billed together.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExclusionGroupEntry {
+    pub name: String,
+    pub codes: Vec<String>,
+    #[serde(default)]
+    pub reason: String,
+}
+
+/// Visit type mapping: maps a VisitType enum variant to an OHIP code
+/// with optional quantity and alternative code logic.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VisitTypeMappingEntry {
+    pub code: String,
+    /// For counselling types, the quantity is computed from duration
+    #[serde(default)]
+    pub quantity_from_duration: bool,
+    /// Alternative code when counselling is exhausted (e.g., K013A → K033A)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub exhausted_alternative: Option<String>,
+}
+
+/// Companion code auto-add rule.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CompanionRule {
+    /// Code that triggers the companion (e.g., "G365A" for pap tray)
+    pub trigger_code: String,
+    /// Companion code to add (e.g., "E430A")
+    pub companion_code: String,
+    /// Condition: "not_hospital", "always"
+    #[serde(default)]
+    pub condition: String,
+}
+
+/// Time-based billing rate entry.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TimeRate {
+    pub code: String,
+    pub description: String,
+    pub rate_per_15min_cents: u32,
+    /// Encounter settings this rate applies to
+    pub settings: Vec<String>,
+}
+
+// ── Detection Thresholds ─────────────────────────────────────────
+
+/// Server-configurable encounter detection thresholds and pipeline constants.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DetectionThresholds {
+    #[serde(default)]
+    pub version: u64,
+
+    // ── Encounter detection word thresholds ──
+    /// Force encounter check regardless of timer when buffer exceeds this (default: 3000)
+    #[serde(default = "default_3000")]
+    pub force_check_word_threshold: usize,
+    /// Word count for graduated force-split (default: 5000)
+    #[serde(default = "default_5000")]
+    pub force_split_word_threshold: usize,
+    /// Consecutive LLM failures before force-split (default: 3)
+    #[serde(default = "default_3")]
+    pub force_split_consecutive_limit: u32,
+    /// Unconditional force-split safety valve (default: 25000)
+    #[serde(default = "default_25000")]
+    pub absolute_word_cap: usize,
+    /// Minimum words for clinical content check (default: 100)
+    #[serde(default = "default_100")]
+    pub min_words_for_clinical_check: usize,
+    /// Grace period after split for stale screenshot suppression in seconds (default: 90)
+    #[serde(default = "default_90")]
+    pub screenshot_stale_grace_secs: i64,
+    /// Minimum merged words for retrospective multi-patient check (default: 2500)
+    #[serde(default = "default_2500")]
+    pub multi_patient_check_word_threshold: usize,
+    /// Minimum words per half for retrospective split acceptance (default: 500)
+    #[serde(default = "default_500_usize")]
+    pub multi_patient_split_min_words: usize,
+
+    // ── Confidence thresholds ──
+    /// Base confidence for short encounters (<threshold mins) (default: 0.85)
+    #[serde(default = "default_085")]
+    pub confidence_base_short: f64,
+    /// Base confidence for long encounters (>=threshold mins) (default: 0.70)
+    #[serde(default = "default_070")]
+    pub confidence_base_long: f64,
+    /// Buffer age in minutes that separates short/long threshold (default: 20)
+    #[serde(default = "default_20")]
+    pub confidence_age_threshold_mins: i64,
+    /// Confidence increment per merge-back (default: 0.05)
+    #[serde(default = "default_005")]
+    pub confidence_merge_back_increment: f64,
+    /// Maximum confidence threshold (default: 0.99)
+    #[serde(default = "default_099")]
+    pub confidence_max: f64,
+
+    // ── Pipeline timeouts ──
+    /// SOAP generation LLM timeout in seconds (default: 300)
+    #[serde(default = "default_300")]
+    pub soap_generation_timeout_secs: u64,
+    /// Billing extraction LLM timeout in seconds (default: 300)
+    #[serde(default = "default_300")]
+    pub billing_extraction_timeout_secs: u64,
+
+    // ── Continuous mode constants ──
+    /// Words to use for merge check excerpt (default: 500)
+    #[serde(default = "default_500_usize")]
+    pub merge_excerpt_words: usize,
+    /// Max words to skip clinical check (idle speech) (default: 200)
+    #[serde(default = "default_200")]
+    pub idle_encounter_max_words: usize,
+    /// Minimum accepted split size in words (default: 100)
+    #[serde(default = "default_100")]
+    pub min_split_word_floor: usize,
+
+    // ── Billing cap constants ──
+    /// Daily direct care hour limit (default: 14.0)
+    #[serde(default = "default_14f")]
+    pub daily_hour_limit: f32,
+    /// Monthly (28-day rolling) hour limit (default: 240.0)
+    #[serde(default = "default_240f")]
+    pub monthly_hour_limit: f32,
+    /// Monthly rolling window in days (default: 28)
+    #[serde(default = "default_28")]
+    pub monthly_window_days: u32,
+}
+
+// Serde default value functions for DetectionThresholds
+fn default_3000() -> usize { 3000 }
+fn default_5000() -> usize { 5000 }
+fn default_3() -> u32 { 3 }
+fn default_25000() -> usize { 25000 }
+fn default_100() -> usize { 100 }
+fn default_90() -> i64 { 90 }
+fn default_2500() -> usize { 2500 }
+fn default_500_usize() -> usize { 500 }
+fn default_085() -> f64 { 0.85 }
+fn default_070() -> f64 { 0.70 }
+fn default_20() -> i64 { 20 }
+fn default_005() -> f64 { 0.05 }
+fn default_099() -> f64 { 0.99 }
+fn default_300() -> u64 { 300 }
+fn default_200() -> usize { 200 }
+fn default_14f() -> f32 { 14.0 }
+fn default_240f() -> f32 { 240.0 }
+fn default_28() -> u32 { 28 }
+
+impl Default for DetectionThresholds {
+    fn default() -> Self {
+        Self {
+            version: 0,
+            force_check_word_threshold: 3000,
+            force_split_word_threshold: 5000,
+            force_split_consecutive_limit: 3,
+            absolute_word_cap: 25000,
+            min_words_for_clinical_check: 100,
+            screenshot_stale_grace_secs: 90,
+            multi_patient_check_word_threshold: 2500,
+            multi_patient_split_min_words: 500,
+            confidence_base_short: 0.85,
+            confidence_base_long: 0.70,
+            confidence_age_threshold_mins: 20,
+            confidence_merge_back_increment: 0.05,
+            confidence_max: 0.99,
+            soap_generation_timeout_secs: 300,
+            billing_extraction_timeout_secs: 300,
+            merge_excerpt_words: 500,
+            idle_encounter_max_words: 200,
+            min_split_word_floor: 100,
+            daily_hour_limit: 14.0,
+            monthly_hour_limit: 240.0,
+            monthly_window_days: 28,
+        }
+    }
 }

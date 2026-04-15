@@ -85,7 +85,8 @@ Rust Backend
 ├── activity_log.rs    # Structured PHI-safe activity logging
 ├── shadow_log.rs      # Shadow mode CSV logging (dual detection comparison)
 ├── gemini_client.rs   # Google Gemini API client (image generation)
-├── profile_client.rs    # HTTP client for profile service (physicians, sessions, speakers, rooms)
+├── profile_client.rs    # HTTP client for profile service (physicians, sessions, speakers, rooms, config)
+├── server_config.rs     # Server-configurable data (prompts, billing, thresholds); fetch/cache/defaults
 ├── room_config.rs       # Room config (room name, profile server URL, room ID)
 ├── physician_cache.rs   # Local cache for physician list + settings
 ├── audio_upload_queue.rs # Background audio upload queue for server sync
@@ -151,7 +152,8 @@ cd src-tauri && cargo test       # Rust
 |------|-----------------|
 | Add new setting | `config.rs`, `types/index.ts`; if UI-visible: also `useSettings.ts` (PendingSettings + `buildMergedSettings()`), `SettingsDrawer.tsx` (Zone 1 or Zone 3 Advanced) |
 | Modify transcription | `pipeline.rs`, `whisper_server.rs` (STT Router streaming), `transcription.rs` (types) |
-| Change SOAP prompt | `llm_client.rs` (`build_multi_patient_soap_prompt()`) |
+| Change SOAP prompt | `llm_client.rs` (prompt builders accept `Option<&PromptTemplates>`), or update server-wide via profile service `PUT /config/prompts` |
+| Modify server config (prompts/billing/thresholds) | `server_config.rs` (client types + fetch), `profile_client.rs` (4 fetch methods), profile service `PUT /config/*` endpoints |
 | Modify LLM integration | `llm_client.rs`, `commands/ollama.rs`, `useOllamaConnection.ts` |
 | Add new biomarker | `biomarkers/mod.rs`, `BiomarkersSection.tsx` |
 | Modify biomarker thresholds | `types/index.ts` (`BIOMARKER_THRESHOLDS`, status helper functions) |
@@ -271,6 +273,9 @@ Idle → Preparing → Recording → Stopping → Completed
 | Server sync fire-and-forget | `ServerSyncContext` in `continuous_mode.rs` — clones IDs+client, spawns async upload task. 30s delayed re-sync catches late-written aux files |
 | Hybrid history merge | `commands/archive.rs` — local sessions + server sessions merged by session_id (local wins), server fills gaps for cross-machine sessions |
 | Profile cache fallback | `physician_cache.rs` — server fetch with local JSON cache fallback. Cache updated on every successful server fetch |
+| Server config three-tier fallback | `server_config.rs` — `load_server_config()` fetches from profile service `/config/*`, caches to `server_config_cache.json`, falls back to compiled defaults. Version-based staleness check avoids unnecessary refetch. `SharedServerConfig` (Arc<RwLock>) in Tauri managed state, initialized to compiled defaults then updated async |
+| Prompt template override | All prompt builders accept `Option<&PromptTemplates>`. Non-empty server field overrides hardcoded default. Pattern: `templates.and_then(\|t\| (!t.field.is_empty()).then(\|\| t.field.clone())).unwrap_or_else(\|\| HARDCODED.to_string())`. Billing rule engine uses same pattern with `Option<&BillingData>` |
+| Detection threshold override | `DetectionEvalContext.server_thresholds: Option<DetectionThresholds>` — when set, `evaluate_detection()` reads thresholds from it via `.as_ref().map_or(COMPILED_DEFAULT, \|t\| t.field)`. Currently always `None` in production; wiring deferred to Phase 2 |
 | Profile server failover | `ProfileClient` stores multiple base URLs (`base_urls: Vec<String>`) with `AtomicUsize` active index. `select_best_url()` probes `/health` on each URL (2s timeout). `connect_timeout(3s)` on main client for fast connection failure detection. `save_room_config` preserves `fallback_server_urls` from existing config |
 | Gemini retry | `gemini_client.rs` — single retry with 2s backoff on network errors (DNS, connection, TLS). HTTP errors (4xx/5xx) are not retried |
 | Sensor-continuity gate | `sensor_continuous_present` in continuous_mode.rs — tracks unbroken sensor presence since last split. When true, `evaluate_detection()` raises LLM-only split threshold to 0.99. Prevents false splits during couples/family visits where sensor confirms room is occupied |
@@ -371,6 +376,7 @@ Multi-user: profile_server_url + fallback_server_urls (in room_config.json), act
 | `~/sensor-logs/data/YYYY-MM-DD/thermal/*.png` | Thermal camera snapshots (iron colormap, every 30s) |
 | `~/.transcriptionapp/room_config.json` | Room config (room name, profile server URL, fallback URLs, room ID) |
 | `~/.transcriptionapp/cache/physicians.json` | Cached physician list from server |
+| `~/.transcriptionapp/server_config_cache.json` | Cached server config (prompts, billing, thresholds). Updated on successful server fetch. Fallback when server unreachable |
 | `~/.transcriptionapp/cache/physician_{id}.json` | Cached individual physician settings |
 | `docs/OHIP_CODE_UPDATE_GUIDE.md` | OHIP code database update procedure (SOB PDF → extract → generate → verify) + lessons learned |
 | `docs/billing/references/` | Authoritative PDF sources: current SOB, FHO contract, FHO+ hourly rate guide, PPC compensation summary, uninsured services references |

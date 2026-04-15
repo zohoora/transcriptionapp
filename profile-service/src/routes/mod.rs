@@ -1,3 +1,4 @@
+pub mod config_data;
 pub mod health;
 pub mod infrastructure;
 pub mod mobile;
@@ -33,6 +34,11 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         )
         // Infrastructure settings (singleton)
         .route("/infrastructure", get(infrastructure::get).put(infrastructure::update))
+        // Server-configurable data (prompts, billing rules, detection thresholds)
+        .route("/config/version", get(config_data::get_version))
+        .route("/config/prompts", get(config_data::get_prompts).put(config_data::update_prompts))
+        .route("/config/billing", get(config_data::get_billing).put(config_data::update_billing))
+        .route("/config/thresholds", get(config_data::get_thresholds).put(config_data::update_thresholds))
         // Physicians
         .route("/physicians", get(physicians::list).post(physicians::create))
         .route(

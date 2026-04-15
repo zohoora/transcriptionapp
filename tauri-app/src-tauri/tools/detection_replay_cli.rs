@@ -192,6 +192,7 @@ fn build_eval_context(
         hybrid_confirm_window_secs,
         hybrid_min_words_for_sensor_split,
         sensor_continuous_present,
+        server_thresholds: None,
     }
 }
 

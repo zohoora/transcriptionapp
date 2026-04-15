@@ -34,6 +34,8 @@ pub fn create_app_state(data_dir: &Path) -> Arc<AppState> {
         data_dir.join("mobile_uploads"),
     )
     .expect("Failed to load mobile jobs");
+    let config_data = store::config_data::ConfigDataStore::load(data_dir)
+        .expect("Failed to load config data");
 
     Arc::new(AppState {
         physicians: RwLock::new(physicians),
@@ -42,6 +44,7 @@ pub fn create_app_state(data_dir: &Path) -> Arc<AppState> {
         infrastructure: RwLock::new(infrastructure),
         sessions,
         mobile_jobs: RwLock::new(mobile_jobs),
+        config_data: RwLock::new(config_data),
         data_dir: data_dir.to_path_buf(),
     })
 }

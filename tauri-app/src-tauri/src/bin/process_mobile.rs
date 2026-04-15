@@ -20,6 +20,7 @@ use tracing::{error, info, warn};
 
 use transcription_app_lib::llm_client::{LLMClient, SoapFormat, SoapOptions};
 use transcription_app_lib::profile_client::PhysicianProfile;
+use transcription_app_lib::server_config;
 use transcription_app_lib::whisper_server::WhisperServerClient;
 
 // ── Types matching profile service API ──────────────────────────────────────
@@ -626,6 +627,13 @@ async fn main() {
     let llm_client =
         LLMClient::new(&config.llm_url, &config.llm_api_key, "process_mobile", "fast-model")
             .expect("Failed to create LLM client");
+
+    // Fetch server-configurable data (prompts, billing rules, thresholds)
+    // via the shared ProfileClient. Uses version-based caching + disk fallback.
+    let shared_client = transcription_app_lib::profile_client::ProfileClient::new(
+        &[config.profile_service_url.clone()], None,
+    );
+    let _server_config = server_config::load_server_config(&shared_client).await;
 
     // Work directory for temp files
     let work_dir = std::env::temp_dir().join("process_mobile");

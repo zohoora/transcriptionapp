@@ -2,20 +2,39 @@ use super::clinical_features::EncounterSetting;
 use super::types::*;
 use std::collections::HashMap;
 
+use super::BillingDataRef;
+
 /// Calculate a Q310A or Q311A time entry from the encounter duration in milliseconds.
 ///
 /// - Q310A (Direct Patient Care, $20/15 min) for InOffice, HomeVisit, TelephoneInOffice, Video
 /// - Q311A (Telephone Remote, $17/15 min) for TelephoneRemote
 ///
+/// When `billing_data` is provided with time_rates, those rates are used instead of hardcoded values.
+///
 /// Rounding: total_minutes / 15 with 8+ minute remainder rounding up to the next unit.
-pub fn calculate_direct_care_time(duration_ms: u64, setting: &EncounterSetting) -> TimeEntry {
+pub fn calculate_direct_care_time(
+    duration_ms: u64,
+    setting: &EncounterSetting,
+    billing_data: BillingDataRef<'_>,
+) -> TimeEntry {
     let total_minutes = (duration_ms / 1000 / 60) as u16;
     let billable_units = round_to_15min_units(total_minutes);
 
-    let (code, description, rate_cents) = match setting {
+    // Hardcoded default rates
+    let hardcoded = || match setting {
         EncounterSetting::TelephoneRemote => ("Q311A", "Telephone Remote", 1700u32),
         _ => ("Q310A", "Direct Patient Care", 2000u32),
     };
+
+    // Try server-provided rates first; fall back to hardcoded
+    let (code, description, rate_cents) = billing_data
+        .and_then(|data| {
+            let key = format!("{:?}", setting);
+            data.time_rates.iter()
+                .find(|r| r.settings.contains(&key))
+                .map(|r| (r.code.as_str(), r.description.as_str(), r.rate_per_15min_cents))
+        })
+        .unwrap_or_else(hardcoded);
 
     let billable_amount_cents = billable_units as u32 * rate_cents;
 
@@ -255,7 +274,7 @@ mod tests {
 
     #[test]
     fn test_direct_care_in_office() {
-        let te = calculate_direct_care_time(15 * 60 * 1000, &EncounterSetting::InOffice);
+        let te = calculate_direct_care_time(15 * 60 * 1000, &EncounterSetting::InOffice, None);
         assert_eq!(te.code, "Q310A");
         assert_eq!(te.rate_per_15min_cents, 2000);
         assert_eq!(te.minutes, 15);
@@ -266,7 +285,7 @@ mod tests {
 
     #[test]
     fn test_direct_care_telephone_remote() {
-        let te = calculate_direct_care_time(15 * 60 * 1000, &EncounterSetting::TelephoneRemote);
+        let te = calculate_direct_care_time(15 * 60 * 1000, &EncounterSetting::TelephoneRemote, None);
         assert_eq!(te.code, "Q311A");
         assert_eq!(te.rate_per_15min_cents, 1700);
         assert_eq!(te.billable_amount_cents, 1700);
@@ -274,7 +293,7 @@ mod tests {
 
     #[test]
     fn test_direct_care_home_visit() {
-        let te = calculate_direct_care_time(30 * 60 * 1000, &EncounterSetting::HomeVisit);
+        let te = calculate_direct_care_time(30 * 60 * 1000, &EncounterSetting::HomeVisit, None);
         assert_eq!(te.code, "Q310A");
         assert_eq!(te.billable_units, 2);
         assert_eq!(te.billable_amount_cents, 4000);
@@ -282,14 +301,14 @@ mod tests {
 
     #[test]
     fn test_direct_care_video() {
-        let te = calculate_direct_care_time(23 * 60 * 1000, &EncounterSetting::Video);
+        let te = calculate_direct_care_time(23 * 60 * 1000, &EncounterSetting::Video, None);
         assert_eq!(te.code, "Q310A");
         assert_eq!(te.billable_units, 2);
     }
 
     #[test]
     fn test_direct_care_zero_duration() {
-        let te = calculate_direct_care_time(0, &EncounterSetting::InOffice);
+        let te = calculate_direct_care_time(0, &EncounterSetting::InOffice, None);
         assert_eq!(te.billable_units, 0);
         assert_eq!(te.billable_amount_cents, 0);
     }
