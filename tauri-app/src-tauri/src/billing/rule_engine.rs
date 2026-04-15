@@ -56,13 +56,29 @@ pub fn map_features_to_billing_with_context(
         } else {
             BillingConfidence::Low
         };
-        let mut code = make_billing_code(ohip, confidence, features.is_after_hours);
+        let mut code = make_billing_code(ohip, confidence.clone(), features.is_after_hours);
         // Per-unit codes (K013A, K033A, K005A, K007A): set quantity from session duration
         // using GP54 counselling unit table (½ hour or major part thereof).
         if matches!(assessment_code.as_str(), "K013A" | "K033A" | "K005A" | "K007A") {
-            code.quantity = counselling_units_from_duration(duration_ms, billing_data);
+            let units = counselling_units_from_duration(duration_ms, billing_data);
+
+            // K013A is capped at 3 units/year — overflow goes to K033A (out-of-basket)
+            if assessment_code == "K013A" && units > 3 {
+                code.quantity = 3;
+                codes.push(code);
+                // Add K033A for the overflow units
+                if let Some(k033) = ohip_codes::get_code("K033A") {
+                    let mut overflow = make_billing_code(k033, confidence, false);
+                    overflow.quantity = units - 3;
+                    codes.push(overflow);
+                }
+            } else {
+                code.quantity = units;
+                codes.push(code);
+            }
+        } else {
+            codes.push(code);
         }
-        codes.push(code);
     }
 
     // 2. Procedures -> procedure codes
@@ -1449,6 +1465,42 @@ mod tests {
         );
         assert_eq!(record.codes[0].code, "K033A");
         assert_eq!(record.codes[0].quantity, 2);
+    }
+
+    #[test]
+    fn test_counselling_auto_split_k013_k033() {
+        let mut features = default_features();
+        features.visit_type = VisitType::Counselling;
+        // 106 minutes → 4 units: should split into K013A (3) + K033A (1)
+        let record = map_features_to_billing(&features, "s1", "2026-04-05", 106 * 60 * 1000, None, None);
+        assert_eq!(record.codes.len(), 2, "Should have K013A + K033A");
+        assert_eq!(record.codes[0].code, "K013A");
+        assert_eq!(record.codes[0].quantity, 3, "K013A capped at 3");
+        assert_eq!(record.codes[1].code, "K033A");
+        assert_eq!(record.codes[1].quantity, 1, "K033A gets overflow");
+    }
+
+    #[test]
+    fn test_counselling_auto_split_5_units() {
+        let mut features = default_features();
+        features.visit_type = VisitType::Counselling;
+        // 136 minutes → 5 units: K013A (3) + K033A (2)
+        let record = map_features_to_billing(&features, "s1", "2026-04-05", 136 * 60 * 1000, None, None);
+        assert_eq!(record.codes[0].code, "K013A");
+        assert_eq!(record.codes[0].quantity, 3);
+        assert_eq!(record.codes[1].code, "K033A");
+        assert_eq!(record.codes[1].quantity, 2);
+    }
+
+    #[test]
+    fn test_counselling_no_split_at_3_units() {
+        let mut features = default_features();
+        features.visit_type = VisitType::Counselling;
+        // 76 minutes → exactly 3 units: no split needed
+        let record = map_features_to_billing(&features, "s1", "2026-04-05", 76 * 60 * 1000, None, None);
+        assert_eq!(record.codes.len(), 1);
+        assert_eq!(record.codes[0].code, "K013A");
+        assert_eq!(record.codes[0].quantity, 3);
     }
 
     #[test]

@@ -288,7 +288,13 @@ pub fn save_session(
     // Use actual encounter start time if provided (continuous mode)
     if let Some(started) = encounter_started_at {
         metadata.started_at = started.to_rfc3339();
-        metadata.duration_ms = Some((now - started).num_milliseconds().max(0) as u64);
+        // Use caller-provided duration if available (first-to-last segment span),
+        // otherwise fall back to now - started (includes LLM processing time)
+        metadata.duration_ms = if duration_ms > 0 {
+            Some(duration_ms)
+        } else {
+            Some((now - started).num_milliseconds().max(0) as u64)
+        };
     } else {
         // Derive started_at from duration for session mode (avoids defaulting to save time)
         metadata.started_at = (now - chrono::Duration::milliseconds(duration_ms as i64)).to_rfc3339();

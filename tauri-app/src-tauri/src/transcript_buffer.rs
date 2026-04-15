@@ -218,6 +218,11 @@ impl TranscriptBuffer {
         self.segments.first().map(|s| s.started_at)
     }
 
+    /// Get the timestamp of the last segment (end of speech activity).
+    pub fn last_timestamp(&self) -> Option<DateTime<Utc>> {
+        self.segments.last().map(|s| s.started_at)
+    }
+
     /// Remove all segments from the buffer.
     pub fn clear(&mut self) {
         self.segments.clear();

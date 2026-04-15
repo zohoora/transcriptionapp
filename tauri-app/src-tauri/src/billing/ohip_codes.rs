@@ -1053,7 +1053,7 @@ pub static OHIP_CODES: &[OhipCode] = &[
         shadow_pct: 30,
         category: CodeCategory::Counselling,
         after_hours_eligible: false,
-        max_per_year: None,
+        max_per_year: Some(3),
     },
     OhipCode {
         code: "K015A",

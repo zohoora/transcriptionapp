@@ -1628,7 +1628,7 @@ pub async fn run_continuous_mode(
                         );
 
                         // Extract encounter segments from buffer
-                        let (encounter_text, encounter_text_rich, encounter_word_count, encounter_start, encounter_segment_count) = {
+                        let (encounter_text, encounter_text_rich, encounter_word_count, encounter_start, encounter_end, encounter_segment_count) = {
                             let mut buffer = match buffer_for_detector.lock() {
                                 Ok(b) => b,
                                 Err(_) => continue,
@@ -1653,21 +1653,29 @@ pub async fn run_continuous_mode(
                             let text_rich = crate::transcript_buffer::format_segments_for_detection(&drained);
                             let wc = text.split_whitespace().count();
                             let start = drained.first().map(|s| s.started_at);
-                            (text, text_rich, wc, start, seg_count)
+                            let end = drained.last().map(|s| s.started_at);
+                            (text, text_rich, wc, start, end, seg_count)
                         };
 
                         // Generate session ID for this encounter
                         let session_id = uuid::Uuid::new_v4().to_string();
 
+                        // Compute duration from first-to-last segment (not Utc::now which includes LLM processing time)
+                        let encounter_duration_ms_computed = match (encounter_start, encounter_end) {
+                            (Some(s), Some(e)) => (e - s).num_milliseconds().max(0) as u64,
+                            (Some(s), None) => (Utc::now() - s).num_milliseconds().max(0) as u64,
+                            _ => 0,
+                        };
+
                         // Archive the encounter transcript (pass actual start time for accurate duration)
                         if let Err(e) = local_archive::save_session(
                             &session_id,
                             &encounter_text,
-                            0, // duration_ms unused when encounter_started_at is provided
+                            encounter_duration_ms_computed,
                             None, // No per-encounter audio in continuous mode
                             false,
                             None,
-                            encounter_start, // actual encounter start time for duration calc
+                            encounter_start, // actual encounter start time for started_at metadata
                             Some(encounter_segment_count),
                         ) {
                             warn!("Failed to archive encounter: {}", e);
@@ -2002,9 +2010,7 @@ pub async fn run_continuous_mode(
 
                                     // Billing extraction (fail-open)
                                     {
-                                        let encounter_duration_ms = encounter_start
-                                            .map(|s| (Utc::now() - s).num_milliseconds().max(0) as u64)
-                                            .unwrap_or(0);
+                                        let encounter_duration_ms = encounter_duration_ms_computed;
                                         let after_hours = crate::encounter_pipeline::is_after_hours(&soap_now);
                                         let billing_start = std::time::Instant::now();
                                         let billing_result = crate::encounter_pipeline::extract_and_archive_billing(
@@ -2750,12 +2756,12 @@ pub async fn run_continuous_mode(
     }
 
     // Flush remaining buffer as final encounter check
-    let (remaining_text, flush_encounter_start, flush_segment_count) = {
+    let (remaining_text, flush_encounter_start, flush_encounter_end, flush_segment_count) = {
         let buffer = handle.transcript_buffer.lock().unwrap_or_else(|e| e.into_inner());
         if !buffer.is_empty() {
-            (Some(buffer.full_text_with_speakers()), buffer.first_timestamp(), buffer.segment_count())
+            (Some(buffer.full_text_with_speakers()), buffer.first_timestamp(), buffer.last_timestamp(), buffer.segment_count())
         } else {
-            (None, None, 0)
+            (None, None, None, 0)
         }
     };
     let mut flush_session_id_for_log: Option<String> = None;
@@ -2774,14 +2780,20 @@ pub async fn run_continuous_mode(
         if word_count > 100 {
             info!("Flushing remaining buffer ({} words after filtering) as final session", word_count);
             let session_id = uuid::Uuid::new_v4().to_string();
+            // Compute duration from first-to-last segment
+            let flush_duration_ms_computed = match (flush_encounter_start, flush_encounter_end) {
+                (Some(s), Some(e)) => (e - s).num_milliseconds().max(0) as u64,
+                (Some(s), None) => (Utc::now() - s).num_milliseconds().max(0) as u64,
+                _ => 0,
+            };
             if let Err(e) = local_archive::save_session(
                 &session_id,
                 &text, // Archive the raw text (preserve original for audit)
-                0, // Unknown duration for flush
+                flush_duration_ms_computed,
                 None,
                 false,
                 Some("continuous_mode_stopped"),
-                flush_encounter_start, // Actual encounter start time for accurate duration
+                flush_encounter_start, // Actual encounter start time for started_at metadata
                 Some(flush_segment_count),
             ) {
                 warn!("Failed to archive final buffer: {}", e);
@@ -2977,9 +2989,7 @@ pub async fn run_continuous_mode(
 
                         // Billing extraction (fail-open)
                         {
-                            let flush_duration_ms = flush_encounter_start
-                                .map(|s| (Utc::now() - s).num_milliseconds().max(0) as u64)
-                                .unwrap_or(0);
+                            let flush_duration_ms = flush_duration_ms_computed;
                             let flush_now = Utc::now();
                             let flush_after_hours = crate::encounter_pipeline::is_after_hours(&flush_now);
                             let flush_patient_name = handle.name_tracker
