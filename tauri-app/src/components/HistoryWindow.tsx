@@ -977,8 +977,11 @@ const HistoryWindow: React.FC = () => {
       await invoke<string>('merge_local_sessions', { sessionIds: uniqueSessionIds, date: dateStr });
       await afterCleanupOp(`Merged ${uniqueSessionIds.length} sessions`);
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      const msg = e instanceof Error ? e.message : String(e);
+      setError(msg);
       setCleanupDialog('none');
+      // Clear selection so error is visible (error is hidden when a session is selected)
+      clearSelection();
     }
   }, [selectedDate, selectedIds, afterCleanupOp]);
 

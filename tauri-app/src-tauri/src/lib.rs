@@ -573,6 +573,10 @@ pub fn run() {
                 // Other windows (like history) should just close normally
                 if window.label() != "main" {
                     info!("Closing secondary window: {}", window.label());
+                    // Hide window before destruction to flush pending WebKit layout
+                    // callbacks. Without this, WebKit::WebPageProxy::dispatchSetObscuredContentInsets()
+                    // can fire on a deallocated webview → SIGSEGV.
+                    let _ = window.hide();
                     return;
                 }
 

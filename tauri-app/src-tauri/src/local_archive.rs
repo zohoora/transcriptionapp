@@ -1253,16 +1253,21 @@ pub fn merge_sessions(session_ids: &[String], date_str: &str) -> Result<String, 
     surviving_meta.has_audio = has_audio;
     surviving_meta.soap_detail_level = None;
     surviving_meta.soap_format = None;
+    surviving_meta.has_billing_record = None; // billing is stale after merge
 
     let meta_json = serde_json::to_string_pretty(&surviving_meta)
         .map_err(|e| format!("Failed to serialize merged metadata: {}", e))?;
     fs::write(surviving_dir.join("metadata.json"), meta_json)
         .map_err(|e| format!("Failed to write merged metadata: {}", e))?;
 
-    // Delete stale SOAP from surviving session
+    // Delete stale SOAP and billing from surviving session
     let soap_path = surviving_dir.join("soap_note.txt");
     if soap_path.exists() {
         let _ = fs::remove_file(&soap_path);
+    }
+    let billing_path = surviving_dir.join("billing.json");
+    if billing_path.exists() {
+        let _ = fs::remove_file(&billing_path);
     }
 
     // Delete all other sessions (only after surviving is safely updated)
