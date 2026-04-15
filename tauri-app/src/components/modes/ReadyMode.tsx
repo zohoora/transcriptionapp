@@ -32,6 +32,8 @@ interface ReadyModeProps {
   onAutoStartToggle?: (enabled: boolean) => void;
   // Toggle auto-end on/off
   onAutoEndToggle?: (enabled: boolean) => void;
+  // Upload audio file for batch processing
+  onUploadAudio?: () => void;
 }
 
 /**
@@ -68,6 +70,7 @@ export const ReadyMode = memo(function ReadyMode({
   onOpenSettings,
   onAutoStartToggle,
   onAutoEndToggle,
+  onUploadAudio,
 }: ReadyModeProps) {
   // Determine if we're in listening mode with visual feedback
   const showListeningIndicator = autoStartEnabled && isListening;
@@ -140,6 +143,17 @@ export const ReadyMode = memo(function ReadyMode({
           {showListeningIndicator ? 'Start Manually' : 'Start New Session'}
         </span>
       </button>
+
+      {/* Upload Recording Link */}
+      {onUploadAudio && (
+        <button
+          className="upload-audio-link"
+          onClick={onUploadAudio}
+          aria-label="Upload a recording for processing"
+        >
+          Upload Recording
+        </button>
+      )}
 
       {/* Error Messages Only */}
       {errorMessage && (

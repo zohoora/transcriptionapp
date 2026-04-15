@@ -1197,3 +1197,29 @@ export function getCapWarningLevel(percentage: number): CapWarningLevel {
   if (percentage >= BILLING_CAPS.WARNING_THRESHOLD) return 'warning';
   return 'normal';
 }
+
+// ============================================================================
+// Audio Upload Types
+// ============================================================================
+
+/** Progress event during audio upload processing */
+export interface AudioUploadProgress {
+  step: 'transcoding' | 'transcribing' | 'detecting' | 'generating_soap' | 'complete' | 'failed';
+  encounter?: number;
+  total?: number;
+  error?: string;
+}
+
+/** Info about a single session created from an audio upload */
+export interface UploadedSession {
+  sessionId: string;
+  encounterNumber: number;
+  wordCount: number;
+  hasSoap: boolean;
+}
+
+/** Result of processing an uploaded audio file */
+export interface AudioUploadResult {
+  sessions: UploadedSession[];
+  totalWordCount: number;
+}

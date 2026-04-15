@@ -3,8 +3,9 @@
 //! This module re-exports all command handlers for registration in lib.rs.
 
 mod archive;
-mod billing;
 mod audio;
+mod audio_upload;
+mod billing;
 pub(crate) mod calibration;
 mod clinical_chat;
 mod continuous;
@@ -24,8 +25,9 @@ mod whisper_server;
 
 // Re-export all commands for lib.rs registration
 pub use archive::*;
-pub use billing::*;
 pub use audio::*;
+pub use audio_upload::*;
+pub use billing::*;
 pub use calibration::*;
 pub use clinical_chat::*;
 pub use continuous::*;

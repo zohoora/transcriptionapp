@@ -30,6 +30,7 @@
 //! ```
 
 pub mod activity_log;
+pub mod audio_processing;
 pub mod audio;
 pub mod audio_upload_queue;
 pub mod billing;
@@ -200,6 +201,7 @@ pub fn run() {
         .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| {
             // When another instance tries to launch, focus the existing window
@@ -556,6 +558,9 @@ pub fn run() {
             commands::sync_settings_from_server,
             commands::sync_infrastructure_settings,
             commands::sync_room_settings,
+            // Audio upload (manual batch processing)
+            commands::check_audio_ffmpeg,
+            commands::process_audio_upload,
             // CO2 calibration
             commands::start_co2_calibration,
             commands::stop_co2_calibration,

@@ -12,12 +12,12 @@
 
 use std::env;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 use tracing::{error, info, warn};
 
+use transcription_app_lib::audio_processing;
 use transcription_app_lib::llm_client::{LLMClient, SoapFormat, SoapOptions};
 use transcription_app_lib::profile_client::PhysicianProfile;
 use transcription_app_lib::server_config;
@@ -340,61 +340,13 @@ impl ProfileServiceClient {
 /// Transcode AAC/m4a to WAV (16kHz mono PCM) using ffmpeg.
 fn transcode_to_wav(input: &Path) -> Result<PathBuf, String> {
     let output = input.with_extension("wav");
-    let status = Command::new("ffmpeg")
-        .args([
-            "-y", // overwrite output
-            "-i",
-            input.to_str().ok_or("Invalid input path")?,
-            "-ar",
-            "16000",
-            "-ac",
-            "1",
-            "-f",
-            "wav",
-            output.to_str().ok_or("Invalid output path")?,
-        ])
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status()
-        .map_err(|e| format!("Failed to run ffmpeg: {e}. Is ffmpeg installed?"))?;
-
-    if !status.success() {
-        return Err(format!(
-            "ffmpeg exited with code {}",
-            status.code().unwrap_or(-1)
-        ));
-    }
+    audio_processing::transcode_to_wav(input, &output)?;
     Ok(output)
 }
 
 /// Read a WAV file into f32 samples (expected: 16kHz mono PCM).
 fn read_wav_samples(path: &Path) -> Result<Vec<f32>, String> {
-    let reader = hound::WavReader::open(path)
-        .map_err(|e| format!("Failed to open WAV: {e}"))?;
-    let spec = reader.spec();
-
-    if spec.channels != 1 {
-        return Err(format!("Expected mono WAV, got {} channels", spec.channels));
-    }
-
-    match spec.sample_format {
-        hound::SampleFormat::Int => {
-            let max_val = (1 << (spec.bits_per_sample - 1)) as f32;
-            let samples: Vec<f32> = reader
-                .into_samples::<i32>()
-                .filter_map(|s| s.ok())
-                .map(|s| s as f32 / max_val)
-                .collect();
-            Ok(samples)
-        }
-        hound::SampleFormat::Float => {
-            let samples: Vec<f32> = reader
-                .into_samples::<f32>()
-                .filter_map(|s| s.ok())
-                .collect();
-            Ok(samples)
-        }
-    }
+    audio_processing::read_wav_samples(path)
 }
 
 /// Transcribe audio using the STT Router (batch mode).
@@ -414,19 +366,7 @@ async fn transcribe_audio(
 /// Detect encounter boundaries in a transcript.
 /// Returns a list of transcript segments (one per detected encounter).
 fn split_transcript_into_encounters(transcript: &str) -> Vec<String> {
-    let word_count = transcript.split_whitespace().count();
-
-    // For v1: simple word-count based splitting. If < 500 words, treat as single encounter.
-    // Full LLM-based detection will be added in a follow-up.
-    if word_count < 500 {
-        return vec![transcript.to_string()];
-    }
-
-    // For now, return as single encounter. The encounter detection via LLM
-    // requires the full prompt infrastructure which we'll wire up iteratively.
-    // The desktop app's encounter detection is real-time (timer-based), so
-    // batch detection needs a different prompt approach.
-    vec![transcript.to_string()]
+    audio_processing::split_transcript_into_encounters(transcript)
 }
 
 /// Generate a SOAP note for a transcript segment.
@@ -608,15 +548,10 @@ async fn main() {
     info!("  Mode:            {}", if config.once { "once" } else { "daemon" });
 
     // Check ffmpeg is available
-    match Command::new("ffmpeg")
-        .arg("-version")
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status()
-    {
-        Ok(s) if s.success() => info!("ffmpeg: available"),
-        _ => {
-            error!("ffmpeg not found in PATH. Install with: brew install ffmpeg");
+    match audio_processing::check_ffmpeg_available() {
+        Ok(()) => info!("ffmpeg: available"),
+        Err(e) => {
+            error!("{e}");
             std::process::exit(1);
         }
     }
@@ -650,7 +585,7 @@ async fn main() {
                 } else {
                     for job in &jobs {
                         info!("Processing job {} (physician={}, {:.0}s audio)",
-                            &job.job_id[..8],
+                            &job.job_id[..8.min(job.job_id.len())],
                             &job.physician_id[..8.min(job.physician_id.len())],
                             job.duration_ms as f64 / 1000.0,
                         );
@@ -668,7 +603,7 @@ async fn main() {
                             Ok(sessions) => {
                                 info!(
                                     "Job {} complete: {} session(s) created",
-                                    &job.job_id[..8],
+                                    &job.job_id[..8.min(job.job_id.len())],
                                     sessions.len()
                                 );
                                 let _ = profile_client
@@ -683,7 +618,7 @@ async fn main() {
                                     .await;
                             }
                             Err(e) => {
-                                error!("Job {} failed: {}", &job.job_id[..8], e);
+                                error!("Job {} failed: {}", &job.job_id[..8.min(job.job_id.len())], e);
                                 let _ = profile_client
                                     .update_job_status(
                                         &job.job_id,

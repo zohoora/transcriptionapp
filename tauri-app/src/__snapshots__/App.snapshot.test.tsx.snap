@@ -435,6 +435,12 @@ exports[`App Snapshots > renders error state correctly 1`] = `
         Start New Session
       </span>
     </button>
+    <button
+      aria-label="Upload a recording for processing"
+      class="upload-audio-link"
+    >
+      Upload Recording
+    </button>
     <div
       class="ready-status"
     >
@@ -647,6 +653,12 @@ exports[`App Snapshots > renders idle state correctly 1`] = `
       >
         Start New Session
       </span>
+    </button>
+    <button
+      aria-label="Upload a recording for processing"
+      class="upload-audio-link"
+    >
+      Upload Recording
     </button>
     <div
       class="medplum-status-section"

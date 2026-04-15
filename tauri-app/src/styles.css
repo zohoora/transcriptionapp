@@ -4311,6 +4311,352 @@ body {
   color: var(--text-secondary);
 }
 
+/* ── Upload Recording Link ─────────────────────────────────── */
+
+.upload-audio-link {
+  display: inline-block;
+  margin-top: 8px;
+  padding: 0;
+  font-size: 13px;
+  color: var(--text-secondary);
+  background: none;
+  border: none;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  transition: color 0.15s ease;
+}
+
+.upload-audio-link:hover {
+  color: var(--accent-idle);
+}
+
+/* ── Audio Upload Modal ───────────────────────────────────── */
+
+.audio-upload-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.audio-upload-modal {
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  width: 290px;
+  max-height: 80vh;
+  overflow-y: auto;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+}
+
+.audio-upload-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px 10px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.audio-upload-header h3 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.audio-upload-close {
+  background: none;
+  border: none;
+  font-size: 20px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  padding: 0 4px;
+  line-height: 1;
+}
+
+.audio-upload-close:hover {
+  color: var(--text-primary);
+}
+
+.audio-upload-body {
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.audio-upload-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.audio-upload-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.audio-upload-file-btn {
+  padding: 10px 12px;
+  font-size: 13px;
+  color: var(--text-primary);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  cursor: pointer;
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  transition: border-color 0.15s ease;
+}
+
+.audio-upload-file-btn:hover {
+  border-color: var(--accent-idle);
+}
+
+.audio-upload-file-info {
+  display: none;
+}
+
+.audio-upload-date {
+  padding: 10px 12px;
+  font-size: 13px;
+  color: var(--text-primary);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  color-scheme: dark;
+}
+
+.audio-upload-hint {
+  font-size: 11px;
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+
+.audio-upload-process-btn {
+  padding: 12px;
+  font-size: 14px;
+  font-weight: 600;
+  color: white;
+  background: var(--accent-idle);
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.15s ease, opacity 0.15s ease;
+}
+
+.audio-upload-process-btn:hover:not(:disabled) {
+  background: #3d8fd6;
+}
+
+.audio-upload-process-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* Progress */
+.audio-upload-progress {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 20px 0;
+}
+
+.audio-upload-spinner {
+  width: 32px;
+  height: 32px;
+  border: 3px solid var(--border-color);
+  border-top-color: var(--accent-idle);
+  border-radius: 50%;
+  animation: audio-upload-spin 0.8s linear infinite;
+}
+
+@keyframes audio-upload-spin {
+  to { transform: rotate(360deg); }
+}
+
+.audio-upload-step {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.audio-upload-step-detail {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+/* Result */
+.audio-upload-result {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+
+.audio-upload-result-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: var(--accent-idle);
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.audio-upload-result-summary {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-primary);
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.audio-upload-result-words {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--text-secondary);
+}
+
+.audio-upload-session-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 10px;
+  font-size: 12px;
+  color: var(--text-primary);
+  background: var(--bg-secondary);
+  border-radius: 6px;
+}
+
+.audio-upload-session-words {
+  color: var(--text-secondary);
+  margin-left: auto;
+}
+
+.audio-upload-soap-badge {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 2px 6px;
+  border-radius: 4px;
+  text-transform: uppercase;
+}
+
+.audio-upload-soap-badge.has-soap {
+  background: rgba(76, 175, 80, 0.15);
+  color: #4caf50;
+}
+
+.audio-upload-soap-badge.no-soap {
+  background: rgba(255, 152, 0, 0.15);
+  color: #ff9800;
+}
+
+.audio-upload-actions {
+  display: flex;
+  gap: 8px;
+  width: 100%;
+}
+
+.audio-upload-history-btn {
+  flex: 1;
+  padding: 10px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--accent-idle);
+  background: transparent;
+  border: 1px solid var(--accent-idle);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.audio-upload-history-btn:hover {
+  background: rgba(74, 144, 226, 0.1);
+}
+
+.audio-upload-done-btn {
+  flex: 1;
+  padding: 10px;
+  font-size: 13px;
+  font-weight: 600;
+  color: white;
+  background: var(--accent-idle);
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.audio-upload-done-btn:hover {
+  background: #3d8fd6;
+}
+
+/* Error */
+.audio-upload-error {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  text-align: center;
+}
+
+.audio-upload-error-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: #e53935;
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.audio-upload-error-message {
+  font-size: 13px;
+  color: var(--text-secondary);
+  line-height: 1.4;
+  word-break: break-word;
+}
+
+.audio-upload-retry-btn {
+  width: 100%;
+  padding: 10px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.audio-upload-retry-btn:hover {
+  background: var(--bg-hover);
+}
+
 /* Settings hint text */
 .settings-hint {
   font-size: 11px;

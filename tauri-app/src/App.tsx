@@ -34,8 +34,10 @@ import {
   usePhysicianProfiles,
 } from './hooks';
 import { useAppUpdater } from './hooks/useAppUpdater';
+import { useAudioUpload } from './hooks/useAudioUpload';
 import { usePatientHandout } from './hooks/usePatientHandout';
 import { buildMergedSettings } from './hooks/useSettings';
+import AudioUploadModal from './components/AudioUploadModal';
 import type { ChartingMode } from './types';
 
 // UI Mode type
@@ -313,6 +315,8 @@ function App() {
 
   // UI state
   const [showSettings, setShowSettings] = useState(false);
+  const [showUploadModal, setShowUploadModal] = useState(false);
+  const audioUpload = useAudioUpload();
 
   // Determine current UI mode based on session state
   const uiMode: UIMode = useMemo(() => {
@@ -857,6 +861,29 @@ function App() {
             onAutoStartToggle={handleAutoStartToggle}
             autoEndEnabled={pendingSettings?.auto_end_enabled ?? true}
             onAutoEndToggle={handleAutoEndToggle}
+            onUploadAudio={() => setShowUploadModal(true)}
+          />
+        )}
+
+        {/* Audio Upload Modal */}
+        {showUploadModal && (
+          <AudioUploadModal
+            filePath={audioUpload.filePath}
+            fileName={audioUpload.fileName}
+            recordingDate={audioUpload.recordingDate}
+            isProcessing={audioUpload.isProcessing}
+            progress={audioUpload.progress}
+            result={audioUpload.result}
+            error={audioUpload.error}
+            onSelectFile={audioUpload.selectFile}
+            onSetDate={audioUpload.setRecordingDate}
+            onStartProcessing={audioUpload.startProcessing}
+            onReset={audioUpload.reset}
+            onClose={() => {
+              setShowUploadModal(false);
+              audioUpload.reset();
+            }}
+            onViewHistory={openHistoryWindow}
           />
         )}
 
