@@ -1,0 +1,15 @@
+{
+  "session_id": "22dfde79-2f9c-4352-8a96-7d2797a45b8a",
+  "date": "2026-04-15",
+  "labeled_at": "2026-04-16T07:00:00Z",
+  "labeled_by": "Forensic analysis (auto)",
+  "labels": {
+    "split_correct": true,
+    "merge_correct": true,
+    "clinical_correct": true,
+    "patient_count_correct": true,
+    "billing_codes_expected": ["A007A", "G435A", "Q310A"],
+    "diagnostic_code_expected": "715",
+    "notes": "Troy Mels — knee, back, nasal lesions. Production gave dx 491 (chronic bronchitis) which is WRONG (no bronchitis in encounter). v0.10.30 diagnostic cross-validation should reject 491 and fall through to text match → 715 (osteoarthritis). This is a regression-detection test."
+  }
+}

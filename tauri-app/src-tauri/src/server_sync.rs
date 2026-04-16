@@ -222,3 +222,84 @@ impl ServerSyncContext {
         metadata.room_name = self.room_name.clone();
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_empty_context_has_no_client() {
+        let ctx = ServerSyncContext::empty();
+        assert!(ctx.physician_id.is_none());
+        assert!(ctx.physician_name.is_none());
+        assert!(ctx.room_name.is_none());
+        assert!(ctx.client.is_none());
+    }
+
+    #[test]
+    fn test_enrich_metadata_overwrites_fields() {
+        let ctx = ServerSyncContext {
+            physician_id: Some("phys-1".to_string()),
+            physician_name: Some("Dr Test".to_string()),
+            room_name: Some("Room 6".to_string()),
+            client: None,
+        };
+        let mut metadata = local_archive::ArchiveMetadata::new("test-session");
+        // Enrich should set the multi-user fields
+        ctx.enrich_metadata(&mut metadata);
+        assert_eq!(metadata.physician_id, Some("phys-1".to_string()));
+        assert_eq!(metadata.physician_name, Some("Dr Test".to_string()));
+        assert_eq!(metadata.room_name, Some("Room 6".to_string()));
+    }
+
+    #[test]
+    fn test_enrich_metadata_clears_fields_when_empty_context() {
+        let ctx = ServerSyncContext::empty();
+        let mut metadata = local_archive::ArchiveMetadata::new("test-session");
+        // Pre-populate to verify they get cleared
+        metadata.physician_id = Some("old-id".to_string());
+        metadata.physician_name = Some("Old Name".to_string());
+        metadata.room_name = Some("Old Room".to_string());
+
+        ctx.enrich_metadata(&mut metadata);
+
+        assert_eq!(metadata.physician_id, None);
+        assert_eq!(metadata.physician_name, None);
+        assert_eq!(metadata.room_name, None);
+    }
+
+    #[test]
+    fn test_clone_preserves_all_fields() {
+        let ctx = ServerSyncContext {
+            physician_id: Some("phys-1".to_string()),
+            physician_name: Some("Dr Test".to_string()),
+            room_name: Some("Room 6".to_string()),
+            client: None,
+        };
+        let cloned = ctx.clone();
+        assert_eq!(cloned.physician_id, ctx.physician_id);
+        assert_eq!(cloned.physician_name, ctx.physician_name);
+        assert_eq!(cloned.room_name, ctx.room_name);
+    }
+
+    #[tokio::test]
+    async fn test_sync_session_silently_drops_when_no_client() {
+        // Without a client, sync should be a no-op (not panic)
+        let ctx = ServerSyncContext::empty();
+        ctx.sync_session("nonexistent-session", "2026-04-15");
+        // No assertion needed — just verifying it doesn't panic
+        // The fire-and-forget task will silently exit when client is None
+    }
+
+    #[tokio::test]
+    async fn test_sync_session_silently_drops_when_no_physician() {
+        // Without a physician_id, sync should also be a no-op
+        let ctx = ServerSyncContext {
+            physician_id: None,
+            physician_name: None,
+            room_name: None,
+            client: None,
+        };
+        ctx.sync_session("nonexistent-session", "2026-04-15");
+    }
+}

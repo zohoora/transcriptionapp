@@ -1,0 +1,15 @@
+{
+  "session_id": "a5cf4d8e-7b12-49f2-8eb2-526acbe53a1c",
+  "date": "2026-04-15",
+  "labeled_at": "2026-04-16T07:00:00Z",
+  "labeled_by": "Forensic analysis (auto)",
+  "labels": {
+    "split_correct": true,
+    "merge_correct": true,
+    "clinical_correct": true,
+    "patient_count_correct": true,
+    "billing_codes_expected": ["A004A", "K005A", "Q310A"],
+    "diagnostic_code_expected": "300",
+    "notes": "Erik Droogendyk — pediatric psychiatric follow-up (age ~17). Clean encounter, production correct."
+  }
+}

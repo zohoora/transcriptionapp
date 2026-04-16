@@ -1,0 +1,15 @@
+{
+  "session_id": "14bc1041-cb1a-4d2e-9d2a-7c6bf26ccced",
+  "date": "2026-04-15",
+  "labeled_at": "2026-04-16T07:00:00Z",
+  "labeled_by": "Forensic analysis (auto)",
+  "labels": {
+    "split_correct": true,
+    "merge_correct": true,
+    "clinical_correct": true,
+    "patient_count_correct": true,
+    "billing_codes_expected": ["A007A", "K005A", "Q310A"],
+    "diagnostic_code_expected": "304",
+    "notes": "Trevor Emery — sinusitis + opioid tapering + PRP discussion. Production incorrectly added K030A (Diabetic Management) with no diabetes mention — false positive. v0.10.30 evidence validation should suppress K030A. Production dx 460 (nasopharyngitis) is secondary; 304 (drug dependence) is more appropriate for opioid tapering. Also note: opioid_withdrawal_management ConditionType added in v0.10.30 to fix the initial extraction failure."
+  }
+}

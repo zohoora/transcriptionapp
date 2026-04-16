@@ -1,0 +1,15 @@
+{
+  "session_id": "deb824b0-ef88-4020-a3a3-c858e4050121",
+  "date": "2026-04-15",
+  "labeled_at": "2026-04-16T07:00:00Z",
+  "labeled_by": "Forensic analysis (auto)",
+  "labels": {
+    "split_correct": true,
+    "merge_correct": true,
+    "clinical_correct": true,
+    "patient_count_correct": true,
+    "billing_codes_expected": ["K013A", "K033A", "Q310A"],
+    "diagnostic_code_expected": "311",
+    "notes": "Hussein Esmaili Seyghalahi — 115 min psychotherapy session. Original production billed K013A qty 4 (violates 3-unit cap). v0.10.25 auto-split fix should now produce K013A qty 3 + K033A qty 1. This test validates the K013/K033 auto-split."
+  }
+}

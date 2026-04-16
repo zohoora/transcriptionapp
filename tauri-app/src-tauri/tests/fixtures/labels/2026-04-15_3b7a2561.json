@@ -1,0 +1,15 @@
+{
+  "session_id": "3b7a2561-35dd-4a89-b805-d9b35c4123da",
+  "date": "2026-04-15",
+  "labeled_at": "2026-04-16T07:00:00Z",
+  "labeled_by": "Forensic analysis (auto)",
+  "labels": {
+    "split_correct": true,
+    "merge_correct": true,
+    "clinical_correct": true,
+    "patient_count_correct": true,
+    "billing_codes_expected": ["A004A", "K005A", "K030A", "Q310A"],
+    "diagnostic_code_expected": "311",
+    "notes": "Leonard Da Silva — complex 55min encounter: fever, depression, diabetes, housing. All 3 K codes appropriate with SOAP evidence."
+  }
+}

@@ -1,0 +1,47 @@
+{
+  "task": "encounter_merge",
+  "model": "fast-model",
+  "targets": {
+    "overall_accuracy_pct": 92.0,
+    "true_same_encounter_recall_pct": 90.0,
+    "true_different_encounter_recall_pct": 95.0
+  },
+  "test_cases": [
+    {
+      "id": "TC-1",
+      "name": "Same Encounter Examination Pause",
+      "difficulty": "easy",
+      "prev_tail": "Speaker 1: Let me examine your knee. Can you bend it for me?\nSpeaker 2: Like this? It hurts right here.\nSpeaker 1: I see some swelling on the medial side. Let me check your range of motion.",
+      "curr_head": "Speaker 1: Okay, I've finished the exam. Your knee shows signs of early osteoarthritis.\nSpeaker 2: Is that serious?\nSpeaker 1: It's manageable. I'd recommend physical therapy and we'll get an X-ray.",
+      "patient_name": null,
+      "expected_same_encounter": true
+    },
+    {
+      "id": "TC-2",
+      "name": "Different Encounters Farewell + Greeting",
+      "difficulty": "easy",
+      "prev_tail": "Speaker 1: I'd like to start you on sumatriptan as needed and schedule a follow-up in two weeks. If the headaches get worse or you develop new symptoms, come back sooner.\nSpeaker 2: Thank you doctor. I'll see you in two weeks then.",
+      "curr_head": "Speaker 1: Good morning. What brings you in today?\nSpeaker 3: Hi doctor, I've been having this pain in my lower back for about a week.\nSpeaker 1: Can you describe the pain? Is it sharp or dull?",
+      "patient_name": null,
+      "expected_same_encounter": false
+    },
+    {
+      "id": "TC-3",
+      "name": "Same Encounter Doctor Wrapping Up",
+      "difficulty": "medium",
+      "prev_tail": "Speaker 1: I'd like to start you on sumatriptan as needed and schedule a follow-up in two weeks. If the headaches get worse or you develop new symptoms, come back sooner.\nSpeaker 2: Thank you doctor. I'll see you in two weeks then.",
+      "curr_head": "Speaker 1: Take care. We'll see you soon.\nSpeaker 2: Thanks again doctor.\nSpeaker 1: Now let me update the chart with your visit notes.",
+      "patient_name": "Test Patient",
+      "expected_same_encounter": true
+    },
+    {
+      "id": "TC-4",
+      "name": "Different Encounters Topic Shift",
+      "difficulty": "hard",
+      "prev_tail": "Speaker 1: So your cholesterol is well controlled. Keep up the statin and the diet changes.\nSpeaker 2: Okay, thanks doctor.\nSpeaker 1: I'll see you in six months.",
+      "curr_head": "Speaker 1: Alright, next up. Let me look at the chart here.\nSpeaker 3: Hi doctor.\nSpeaker 1: So you're here about your shoulder?\nSpeaker 3: Yes, it's been bothering me for about three weeks.",
+      "patient_name": null,
+      "expected_same_encounter": false
+    }
+  ]
+}

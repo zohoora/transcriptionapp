@@ -1,0 +1,53 @@
+{
+  "task": "encounter_detection",
+  "model": "fast-model",
+  "targets": {
+    "overall_accuracy_pct": 85.0,
+    "true_positive_rate_pct": 90.0,
+    "false_positive_rate_pct_max": 10.0
+  },
+  "test_cases": [
+    {
+      "id": "TC-1",
+      "name": "Clear Farewell Transition",
+      "difficulty": "easy",
+      "input": "[0] (Speaker 1): Good morning, how are you feeling today?\n[1] (Speaker 2): Hi doctor. I've been having these headaches for about two weeks now.\n[2] (Speaker 2): They're mostly on the right side and they get worse in the afternoon.\n[3] (Speaker 1): I see. On a scale of one to ten, how would you rate the pain?\n[4] (Speaker 2): Usually about a six or seven. Sometimes it goes up to an eight.\n[5] (Speaker 1): Are you experiencing any nausea, vision changes, or sensitivity to light?\n[6] (Speaker 2): A little bit of light sensitivity, but no nausea.\n[7] (Speaker 1): Have you tried any over-the-counter medications?\n[8] (Speaker 2): I've been taking ibuprofen but it only helps for a couple of hours.\n[9] (Speaker 1): Based on what you're describing, this sounds like tension headaches or possibly migraines. I'd like to start you on sumatriptan.\n[10] (Speaker 1): Schedule a follow-up in two weeks. If the headaches get worse, come back sooner.\n[11] (Speaker 2): Thank you doctor. I'll see you in two weeks then.\n[12] (Speaker 1): Take care. We'll see you soon.",
+      "expected_complete": true,
+      "expected_end_segment_index": 12,
+      "min_confidence": 0.85
+    },
+    {
+      "id": "TC-2",
+      "name": "Ongoing Visit No Transition",
+      "difficulty": "easy",
+      "input": "[0] (Speaker 1): Good morning. What brings you in today?\n[1] (Speaker 2): I've been having this knee pain for about a month now.\n[2] (Speaker 1): Which knee? Can you point to where it hurts?\n[3] (Speaker 2): The right one, mostly on the inside.\n[4] (Speaker 1): Let me take a look. Does it hurt when I press here?\n[5] (Speaker 2): Yes, right there.\n[6] (Speaker 1): How about when you bend it like this?\n[7] (Speaker 2): That's okay, it's more when I go up stairs.\n[8] (Speaker 1): I'd like to get an X-ray of that knee. Let me also check your blood pressure while you're here.",
+      "expected_complete": false,
+      "min_confidence": 0.85
+    },
+    {
+      "id": "TC-4",
+      "name": "Topic Change Same Patient",
+      "difficulty": "medium",
+      "input": "[0] (Speaker 1): How is your blood pressure medication working?\n[1] (Speaker 2): It's been good, but I forget doses sometimes.\n[2] (Speaker 1): Any side effects?\n[3] (Speaker 2): No, none.\n[4] (Speaker 1): Good. Now, on a different note — you mentioned trouble sleeping last visit?\n[5] (Speaker 2): Yes, I'm only getting about 4 hours.\n[6] (Speaker 1): Let me ask about your sleep hygiene. What time do you go to bed?\n[7] (Speaker 2): Around midnight, usually.",
+      "expected_complete": false,
+      "min_confidence": 0.7
+    },
+    {
+      "id": "TC-5",
+      "name": "Farewell + New Patient Greeting",
+      "difficulty": "easy",
+      "input": "[0] (Speaker 1): Alright, I'll send those prescriptions to your pharmacy. See you in three months.\n[1] (Speaker 2): Thank you doctor. Take care.\n[2] (Speaker 1): Bye now.\n[3] (Speaker 1): Hello Mr. Johnson, come on in. Have a seat.\n[4] (Speaker 3): Hi doctor. Thanks for fitting me in today.\n[5] (Speaker 1): Of course. So what brings you in?",
+      "expected_complete": true,
+      "expected_end_segment_index": 2,
+      "min_confidence": 0.9
+    },
+    {
+      "id": "TC-9",
+      "name": "Only Beginning of Visit",
+      "difficulty": "easy",
+      "input": "[0] (Speaker 1): Good morning. What brings you in today?\n[1] (Speaker 2): Hi doctor. I've been having this rash on my arm.\n[2] (Speaker 1): How long has it been there?\n[3] (Speaker 2): About a week.\n[4] (Speaker 1): Let me take a look.",
+      "expected_complete": false,
+      "min_confidence": 0.9
+    }
+  ]
+}

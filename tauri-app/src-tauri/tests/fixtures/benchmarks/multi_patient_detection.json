@@ -1,0 +1,43 @@
+{
+  "task": "multi_patient_detection",
+  "model": "fast-model",
+  "targets": {
+    "overall_accuracy_pct": 92.0,
+    "multi_recall_pct": 90.0,
+    "single_specificity_pct": 95.0
+  },
+  "test_cases": [
+    {
+      "id": "TC-1",
+      "name": "Couple Visit Both Patients",
+      "difficulty": "easy",
+      "input": "Speaker 1: Lynn, your blood work came back. Your thyroid levels are still elevated at 8.2.\nSpeaker 2: I figured. I've been feeling tired and gaining weight again.\nSpeaker 1: I'd like to increase your levothyroxine from 50 to 75 micrograms. We'll recheck your TSH in six weeks.\nSpeaker 2: Okay.\nSpeaker 1: Also, your cholesterol is borderline at 215. Let's talk about diet modifications.\nSpeaker 2: I've been trying to cut back on the fried foods.\nSpeaker 1: Good, keep that up. We'll recheck in three months.\nSpeaker 2: Sounds good.\nSpeaker 1: Now Jim, how about you? Let me pull up your chart.\nSpeaker 3: Well, my knees have been really bothering me. Both of them.\nSpeaker 1: When did that start getting worse?\nSpeaker 3: About three weeks ago. I can barely go up the stairs now.\nSpeaker 1: Let me examine your knees. I see some swelling on the right side.\nSpeaker 3: It's worse on the right, yeah.\nSpeaker 1: I'd like to get X-rays of both knees and start you on some anti-inflammatory medication.\nSpeaker 3: Okay, whatever you think is best.\nSpeaker 1: Come back in two weeks and we'll review the results.",
+      "expected_multiple_patients": true,
+      "min_confidence": 0.9
+    },
+    {
+      "id": "TC-2",
+      "name": "Single Patient Talkative Spouse",
+      "difficulty": "medium",
+      "input": "Speaker 1: Tracy, how have you been feeling since we adjusted your medication?\nSpeaker 2: Much better. My energy is up and I'm sleeping better.\nSpeaker 3: I've noticed a big difference too. She used to be exhausted by lunchtime.\nSpeaker 1: That's great to hear. Tracy, are you still taking the levothyroxine every morning?\nSpeaker 2: Yes, on an empty stomach like you said.\nSpeaker 3: I make sure she takes it before breakfast.\nSpeaker 1: Excellent. Let me check your thyroid. The levels look good on the latest labs.\nSpeaker 2: What about my cholesterol?\nSpeaker 1: It's come down nicely to 198. The diet changes are working.\nSpeaker 1: Tracy, I'd like to see you again in three months.\nSpeaker 2: Sounds good. Thank you doctor.",
+      "expected_multiple_patients": false,
+      "min_confidence": 0.85
+    },
+    {
+      "id": "TC-3",
+      "name": "Family Visit Mother Daughter",
+      "difficulty": "hard",
+      "input": "Speaker 1: Jocelyn, let's go over your lab results. Your blood count looks normal.\nSpeaker 2: Oh good. I was worried about the anemia.\nSpeaker 1: Your iron levels are actually fine now. The supplements worked. We can stop those.\nSpeaker 2: Okay, that's a relief.\nSpeaker 1: Your blood pressure is 118 over 76 which is great. Any other concerns?\nSpeaker 2: No, I feel good. Mercedes has been having some issues though.\nSpeaker 1: Mercedes, come sit down. Your mom mentioned you've been having stomach problems?\nSpeaker 3: Yeah, I've been getting cramps after eating, especially with dairy.\nSpeaker 1: How long has this been going on?\nSpeaker 3: About two months now.\nSpeaker 1: I'd like to test you for lactose intolerance. We'll do a hydrogen breath test. In the meantime, try avoiding dairy for two weeks.\nSpeaker 3: Okay.\nSpeaker 1: I'll order the test. Mercedes, come back in two weeks. Jocelyn, we'll see you in six months.",
+      "expected_multiple_patients": true,
+      "min_confidence": 0.85
+    },
+    {
+      "id": "TC-4",
+      "name": "Caregiver Mentions Own Stress",
+      "difficulty": "hard",
+      "input": "Speaker 1: Mrs. Rodriguez, how has your father been doing with the new medication?\nSpeaker 2: He's doing much better. The tremors have reduced a lot.\nSpeaker 1: That's good. Is he eating well?\nSpeaker 2: Yes, his appetite is back. He's gained about five pounds.\nSpeaker 1: Good. We want him at a healthy weight. Has he had any falls?\nSpeaker 2: No falls, but I've been really stressed taking care of him. I haven't been sleeping well.\nSpeaker 1: I'm sorry to hear that. You might want to talk to your doctor about that. Caregiver burnout is real.\nSpeaker 2: I should. Anyway, his memory seems about the same.\nSpeaker 1: That's expected with this stage. I'd like to continue the current medication and see him again in two months.\nSpeaker 2: Okay, I'll bring him back.",
+      "expected_multiple_patients": false,
+      "min_confidence": 0.8
+    }
+  ]
+}

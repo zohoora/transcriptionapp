@@ -1,0 +1,15 @@
+{
+  "session_id": "5d25a0ac-1d3e-4f88-ab45-00c772b1b414",
+  "date": "2026-04-15",
+  "labeled_at": "2026-04-16T08:00:00Z",
+  "labeled_by": "Forensic analysis (auto)",
+  "labels": {
+    "split_correct": true,
+    "merge_correct": true,
+    "clinical_correct": true,
+    "patient_count_correct": true,
+    "billing_codes_expected": ["K013A", "K037A", "Q310A"],
+    "diagnostic_code_expected": "300",
+    "notes": "Victoria Keith — fibromyalgia + multi-system + family stress. SOAP has medication transcription error ('citalopram (Topamax)' — different drugs). Dx 300 (anxiety) reasonable; 729 (fibromyalgia) also valid."
+  }
+}

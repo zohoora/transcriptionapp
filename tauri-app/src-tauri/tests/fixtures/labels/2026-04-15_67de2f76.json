@@ -1,0 +1,15 @@
+{
+  "session_id": "67de2f76-9bbc-4fe8-bdf7-3643a5e2829d",
+  "date": "2026-04-15",
+  "labeled_at": "2026-04-16T08:00:00Z",
+  "labeled_by": "Forensic analysis (auto)",
+  "labels": {
+    "split_correct": true,
+    "merge_correct": true,
+    "clinical_correct": true,
+    "patient_count_correct": true,
+    "billing_codes_expected": ["A008A", "Q310A"],
+    "diagnostic_code_expected": "703",
+    "notes": "Victoria Keith tail-end (115 words) — fingernail problems noted. Flush encounter on continuous mode stop. Minimal SOAP appropriate for content captured. Same patient as encounter #10 — could arguably be merged manually."
+  }
+}

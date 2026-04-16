@@ -1,0 +1,15 @@
+{
+  "session_id": "c9825576-856c-429e-9eb5-258821bd1a42",
+  "date": "2026-04-15",
+  "labeled_at": "2026-04-16T07:00:00Z",
+  "labeled_by": "Forensic analysis (auto)",
+  "labels": {
+    "split_correct": true,
+    "merge_correct": true,
+    "clinical_correct": true,
+    "patient_count_correct": true,
+    "billing_codes_expected": ["A004A", "A004A", "Q310A"],
+    "diagnostic_code_expected": "787",
+    "notes": "George Wilkes + Jamie Boudreaux — multi-patient (couples visit). Production correctly identified 2 patients and generated per-patient SOAP, but only billed A004A x1 (under-coded). v0.10.30 multi-patient billing fix should now produce A004A x2."
+  }
+}

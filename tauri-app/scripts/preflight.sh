@@ -141,6 +141,24 @@ if [[ -z "$LAYER" || "$LAYER" == "6" ]]; then
     echo ""
 fi
 
+# Layer 7: Golden Day Regression (offline, labeled fixtures vs production archive)
+if [[ -z "$LAYER" || "$LAYER" == "7" ]]; then
+    echo -e "${YELLOW}Layer 7: Golden Day Regression${NC}"
+    echo -n "  Verifying labeled clinic days match production... "
+    if cd src-tauri && cargo run --quiet --bin golden_day_cli -- --all-days --fail-on-regression > /tmp/preflight_golden.log 2>&1; then
+        echo -e "${GREEN}PASS${NC}"
+        grep "Total:\|Golden Day:" /tmp/preflight_golden.log | sed 's/^/    /'
+        PASSED=$((PASSED + 1))
+        cd ..
+    else
+        echo -e "${RED}FAIL${NC}"
+        tail -10 /tmp/preflight_golden.log | sed 's/^/    /'
+        FAILED=$((FAILED + 1))
+        cd ..
+    fi
+    echo ""
+fi
+
 # Summary
 echo "========================================"
 if [[ $FAILED -eq 0 ]]; then

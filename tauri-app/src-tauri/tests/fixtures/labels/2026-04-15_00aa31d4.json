@@ -1,0 +1,15 @@
+{
+  "session_id": "00aa31d4-b2d8-42da-a41a-3ccdd9e0f294",
+  "date": "2026-04-15",
+  "labeled_at": "2026-04-16T07:00:00Z",
+  "labeled_by": "Forensic analysis (auto)",
+  "labels": {
+    "split_correct": true,
+    "merge_correct": true,
+    "clinical_correct": true,
+    "patient_count_correct": true,
+    "billing_codes_expected": ["A007A", "Q310A"],
+    "diagnostic_code_expected": "250",
+    "notes": "Frederick Paul Moore — venipuncture + GDM partner discussion. Production code A007A correct. Dx 250 (diabetes) is appropriate given GDM context."
+  }
+}

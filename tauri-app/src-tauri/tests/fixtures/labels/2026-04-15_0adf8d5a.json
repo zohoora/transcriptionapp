@@ -1,0 +1,15 @@
+{
+  "session_id": "0adf8d5a-6bf8-4ce4-a7fd-85c40587b95b",
+  "date": "2026-04-15",
+  "labeled_at": "2026-04-16T08:00:00Z",
+  "labeled_by": "Forensic analysis (auto)",
+  "labels": {
+    "split_correct": true,
+    "merge_correct": true,
+    "clinical_correct": true,
+    "patient_count_correct": true,
+    "billing_codes_expected": ["A007A", "Q310A"],
+    "diagnostic_code_expected": "627",
+    "notes": "Unnamed patient — menopausal symptoms HRT initiation. Production added G372A (injection) which is wrong (oral estrogen prescribed). v0.10.30 evidence validation should suppress G372A. Patient name extraction failed (vision permission?)."
+  }
+}

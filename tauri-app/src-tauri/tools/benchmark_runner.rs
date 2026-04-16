@@ -18,7 +18,11 @@ use std::process::ExitCode;
 use serde::Deserialize;
 
 use transcription_app_lib::config::Config;
-use transcription_app_lib::encounter_detection::parse_clinical_content_check;
+use transcription_app_lib::encounter_detection::{
+    build_clinical_content_check_prompt, build_encounter_detection_prompt,
+    parse_clinical_content_check, parse_encounter_detection, parse_multi_patient_detection,
+};
+use transcription_app_lib::encounter_merge::{build_encounter_merge_prompt, parse_merge_check};
 use transcription_app_lib::llm_client::LLMClient;
 
 #[derive(Debug, Deserialize)]
@@ -37,16 +41,50 @@ struct Targets {
     clinical_recall_pct: Option<f64>,
     #[serde(default)]
     non_clinical_precision_pct: Option<f64>,
+    #[serde(default)]
+    true_positive_rate_pct: Option<f64>,
+    #[serde(default)]
+    false_positive_rate_pct_max: Option<f64>,
+    #[serde(default)]
+    true_same_encounter_recall_pct: Option<f64>,
+    #[serde(default)]
+    true_different_encounter_recall_pct: Option<f64>,
+    #[serde(default)]
+    multi_recall_pct: Option<f64>,
+    #[serde(default)]
+    single_specificity_pct: Option<f64>,
 }
 
 #[derive(Debug, Deserialize)]
 struct TestCase {
     id: String,
+    #[allow(dead_code)]
     name: String,
     difficulty: String,
-    input: String,
+    #[serde(default)]
+    input: Option<String>,
+    // Clinical content check
     #[serde(default)]
     expected_clinical: Option<bool>,
+    // Encounter detection
+    #[serde(default)]
+    expected_complete: Option<bool>,
+    #[serde(default)]
+    expected_end_segment_index: Option<u64>,
+    #[serde(default)]
+    min_confidence: Option<f64>,
+    // Encounter merge
+    #[serde(default)]
+    prev_tail: Option<String>,
+    #[serde(default)]
+    curr_head: Option<String>,
+    #[serde(default)]
+    patient_name: Option<String>,
+    #[serde(default)]
+    expected_same_encounter: Option<bool>,
+    // Multi-patient detection
+    #[serde(default)]
+    expected_multiple_patients: Option<bool>,
 }
 
 fn print_usage(program: &str) {
@@ -174,9 +212,10 @@ async fn main() -> ExitCode {
         };
 
         let regression = match bench.task.as_str() {
-            "clinical_content_check" => {
-                run_clinical_content_check(&client, &bench, trials).await
-            }
+            "clinical_content_check" => run_clinical_content_check(&client, &bench, trials).await,
+            "encounter_detection" => run_encounter_detection(&client, &bench, trials).await,
+            "encounter_merge" => run_encounter_merge(&client, &bench, trials).await,
+            "multi_patient_detection" => run_multi_patient_detection(&client, &bench, trials).await,
             other => {
                 eprintln!("Task not yet implemented in runner: {other}");
                 false
@@ -214,7 +253,11 @@ async fn run_clinical_content_check(
             Some(e) => e,
             None => continue,
         };
-        let (system, user) = build_clinical_content_check_prompt(&tc.input, None);
+        let input = match tc.input.as_ref() {
+            Some(s) => s,
+            None => continue,
+        };
+        let (system, user) = build_clinical_content_check_prompt(input, None);
 
         // Run trials, take majority
         let mut votes: Vec<bool> = Vec::new();
@@ -302,6 +345,297 @@ async fn run_clinical_content_check(
     if let Some(target) = bench.targets.non_clinical_precision_pct {
         if precision < target {
             println!("  ✗ non_clinical_precision {:.1}% < target {:.1}%", precision, target);
+            regression = true;
+        }
+    }
+    regression
+}
+
+async fn run_encounter_detection(
+    client: &LLMClient,
+    bench: &BenchmarkFile,
+    trials: u32,
+) -> bool {
+    let mut total = 0;
+    let mut correct = 0;
+    let mut tp = 0; // true positive (correctly identified split)
+    let mut fp = 0; // false positive (incorrectly split)
+    let mut tn = 0;
+    let mut fn_ = 0;
+
+    for tc in &bench.test_cases {
+        let expected_complete = match tc.expected_complete {
+            Some(e) => e,
+            None => continue,
+        };
+        let input = match tc.input.as_ref() {
+            Some(s) => s,
+            None => continue,
+        };
+        let (system, user) = build_encounter_detection_prompt(input, None, None);
+
+        let mut votes: Vec<bool> = Vec::new();
+        for _ in 0..trials {
+            match client.generate(&bench.model, &system, &user, "encounter_detection_bench").await {
+                Ok(response) => match parse_encounter_detection(&response) {
+                    Ok(parsed) => votes.push(parsed.complete),
+                    Err(e) => eprintln!("  {} parse error: {e}", tc.id),
+                },
+                Err(e) => eprintln!("  {} LLM error: {e}", tc.id),
+            }
+        }
+
+        let predicted = if votes.is_empty() {
+            None
+        } else {
+            let true_count = votes.iter().filter(|v| **v).count();
+            Some(true_count * 2 >= votes.len())
+        };
+
+        total += 1;
+        let pass = predicted == Some(expected_complete);
+        if pass { correct += 1; }
+
+        // Confusion matrix
+        match (expected_complete, predicted) {
+            (true, Some(true)) => tp += 1,
+            (true, Some(false)) => fn_ += 1,
+            (false, Some(true)) => fp += 1,
+            (false, Some(false)) => tn += 1,
+            (_, None) => {}
+        }
+
+        let symbol = if pass { "✓" } else { "✗" };
+        let pred_str = match predicted {
+            Some(true) => "true",
+            Some(false) => "false",
+            None => "ERROR",
+        };
+        println!(
+            "  {} {} ({}): expected={}, predicted={} [{} trials]",
+            symbol, tc.id, tc.difficulty, expected_complete, pred_str, votes.len()
+        );
+    }
+
+    let overall = correct as f64 / total.max(1) as f64 * 100.0;
+    let tpr = if tp + fn_ > 0 { tp as f64 / (tp + fn_) as f64 * 100.0 } else { 100.0 };
+    let fpr = if fp + tn > 0 { fp as f64 / (fp + tn) as f64 * 100.0 } else { 0.0 };
+
+    println!();
+    println!("  Overall accuracy: {:.1}% ({}/{})", overall, correct, total);
+    println!("  TPR (split recall): {:.1}%   FPR: {:.1}%", tpr, fpr);
+
+    let mut regression = false;
+    if let Some(target) = bench.targets.overall_accuracy_pct {
+        if overall < target {
+            println!("  ✗ overall_accuracy {:.1}% < target {:.1}%", overall, target);
+            regression = true;
+        }
+    }
+    if let Some(target) = bench.targets.true_positive_rate_pct {
+        if tpr < target {
+            println!("  ✗ TPR {:.1}% < target {:.1}%", tpr, target);
+            regression = true;
+        }
+    }
+    if let Some(max) = bench.targets.false_positive_rate_pct_max {
+        if fpr > max {
+            println!("  ✗ FPR {:.1}% > max {:.1}%", fpr, max);
+            regression = true;
+        }
+    }
+    regression
+}
+
+async fn run_encounter_merge(client: &LLMClient, bench: &BenchmarkFile, trials: u32) -> bool {
+    let mut total = 0;
+    let mut correct = 0;
+    let mut same_total = 0;
+    let mut same_correct = 0;
+    let mut diff_total = 0;
+    let mut diff_correct = 0;
+
+    for tc in &bench.test_cases {
+        let expected = match tc.expected_same_encounter {
+            Some(e) => e,
+            None => continue,
+        };
+        let prev = match tc.prev_tail.as_ref() {
+            Some(s) => s,
+            None => continue,
+        };
+        let curr = match tc.curr_head.as_ref() {
+            Some(s) => s,
+            None => continue,
+        };
+        let (system, user) = build_encounter_merge_prompt(prev, curr, tc.patient_name.as_deref(), None);
+
+        let mut votes: Vec<bool> = Vec::new();
+        for _ in 0..trials {
+            match client.generate(&bench.model, &system, &user, "encounter_merge_bench").await {
+                Ok(response) => match parse_merge_check(&response) {
+                    Ok(parsed) => votes.push(parsed.same_encounter),
+                    Err(e) => eprintln!("  {} parse error: {e}", tc.id),
+                },
+                Err(e) => eprintln!("  {} LLM error: {e}", tc.id),
+            }
+        }
+
+        let predicted = if votes.is_empty() {
+            None
+        } else {
+            let true_count = votes.iter().filter(|v| **v).count();
+            Some(true_count * 2 >= votes.len())
+        };
+
+        total += 1;
+        let pass = predicted == Some(expected);
+        if pass { correct += 1; }
+
+        if expected {
+            same_total += 1;
+            if predicted == Some(true) { same_correct += 1; }
+        } else {
+            diff_total += 1;
+            if predicted == Some(false) { diff_correct += 1; }
+        }
+
+        let symbol = if pass { "✓" } else { "✗" };
+        let pred_str = match predicted {
+            Some(true) => "true",
+            Some(false) => "false",
+            None => "ERROR",
+        };
+        println!(
+            "  {} {} ({}): expected_same={}, predicted={} [{} trials]",
+            symbol, tc.id, tc.difficulty, expected, pred_str, votes.len()
+        );
+    }
+
+    let overall = correct as f64 / total.max(1) as f64 * 100.0;
+    let same_recall = if same_total > 0 { same_correct as f64 / same_total as f64 * 100.0 } else { 100.0 };
+    let diff_recall = if diff_total > 0 { diff_correct as f64 / diff_total as f64 * 100.0 } else { 100.0 };
+
+    println!();
+    println!("  Overall accuracy: {:.1}% ({}/{})", overall, correct, total);
+    println!("  True same recall: {:.1}% ({}/{})", same_recall, same_correct, same_total);
+    println!("  True different recall: {:.1}% ({}/{})", diff_recall, diff_correct, diff_total);
+
+    let mut regression = false;
+    if let Some(target) = bench.targets.overall_accuracy_pct {
+        if overall < target {
+            println!("  ✗ overall_accuracy {:.1}% < target {:.1}%", overall, target);
+            regression = true;
+        }
+    }
+    if let Some(target) = bench.targets.true_same_encounter_recall_pct {
+        if same_recall < target {
+            println!("  ✗ true_same_recall {:.1}% < target {:.1}%", same_recall, target);
+            regression = true;
+        }
+    }
+    if let Some(target) = bench.targets.true_different_encounter_recall_pct {
+        if diff_recall < target {
+            println!("  ✗ true_different_recall {:.1}% < target {:.1}%", diff_recall, target);
+            regression = true;
+        }
+    }
+    regression
+}
+
+async fn run_multi_patient_detection(
+    client: &LLMClient,
+    bench: &BenchmarkFile,
+    trials: u32,
+) -> bool {
+    use transcription_app_lib::encounter_detection::MULTI_PATIENT_DETECT_PROMPT;
+    let mut total = 0;
+    let mut correct = 0;
+    let mut multi_total = 0;
+    let mut multi_correct = 0;
+    let mut single_total = 0;
+    let mut single_correct = 0;
+
+    for tc in &bench.test_cases {
+        let expected_multi = match tc.expected_multiple_patients {
+            Some(e) => e,
+            None => continue,
+        };
+        let input = match tc.input.as_ref() {
+            Some(s) => s,
+            None => continue,
+        };
+
+        let user = format!("Transcript:\n{}", input);
+        let mut votes: Vec<bool> = Vec::new();
+        for _ in 0..trials {
+            match client.generate(&bench.model, MULTI_PATIENT_DETECT_PROMPT, &user, "multi_patient_bench").await {
+                Ok(response) => match parse_multi_patient_detection(&response) {
+                    Ok(parsed) => votes.push(parsed.patient_count >= 2),
+                    Err(e) => eprintln!("  {} parse error: {e}", tc.id),
+                },
+                Err(e) => eprintln!("  {} LLM error: {e}", tc.id),
+            }
+        }
+
+        let predicted = if votes.is_empty() {
+            None
+        } else {
+            let multi_count = votes.iter().filter(|v| **v).count();
+            Some(multi_count * 2 >= votes.len())
+        };
+
+        total += 1;
+        let pass = predicted == Some(expected_multi);
+        if pass { correct += 1; }
+
+        if expected_multi {
+            multi_total += 1;
+            if predicted == Some(true) { multi_correct += 1; }
+        } else {
+            single_total += 1;
+            if predicted == Some(false) { single_correct += 1; }
+        }
+
+        let symbol = if pass { "✓" } else { "✗" };
+        let pred_str = match predicted {
+            Some(true) => "multi",
+            Some(false) => "single",
+            None => "ERROR",
+        };
+        println!(
+            "  {} {} ({}): expected={}, predicted={} [{} trials]",
+            symbol, tc.id, tc.difficulty,
+            if expected_multi { "multi" } else { "single" },
+            pred_str, votes.len()
+        );
+    }
+
+    let overall = correct as f64 / total.max(1) as f64 * 100.0;
+    let multi_recall = if multi_total > 0 { multi_correct as f64 / multi_total as f64 * 100.0 } else { 100.0 };
+    let single_specificity = if single_total > 0 { single_correct as f64 / single_total as f64 * 100.0 } else { 100.0 };
+
+    println!();
+    println!("  Overall accuracy: {:.1}% ({}/{})", overall, correct, total);
+    println!("  Multi recall: {:.1}% ({}/{})", multi_recall, multi_correct, multi_total);
+    println!("  Single specificity: {:.1}% ({}/{})", single_specificity, single_correct, single_total);
+
+    let mut regression = false;
+    if let Some(target) = bench.targets.overall_accuracy_pct {
+        if overall < target {
+            println!("  ✗ overall_accuracy {:.1}% < target {:.1}%", overall, target);
+            regression = true;
+        }
+    }
+    if let Some(target) = bench.targets.multi_recall_pct {
+        if multi_recall < target {
+            println!("  ✗ multi_recall {:.1}% < target {:.1}%", multi_recall, target);
+            regression = true;
+        }
+    }
+    if let Some(target) = bench.targets.single_specificity_pct {
+        if single_specificity < target {
+            println!("  ✗ single_specificity {:.1}% < target {:.1}%", single_specificity, target);
             regression = true;
         }
     }

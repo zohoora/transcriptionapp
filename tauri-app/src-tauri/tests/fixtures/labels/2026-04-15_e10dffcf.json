@@ -1,0 +1,15 @@
+{
+  "session_id": "e10dffcf-85df-4a21-abd1-1d3943c2591a",
+  "date": "2026-04-15",
+  "labeled_at": "2026-04-16T08:00:00Z",
+  "labeled_by": "Forensic analysis (auto)",
+  "labels": {
+    "split_correct": true,
+    "merge_correct": true,
+    "clinical_correct": true,
+    "patient_count_correct": true,
+    "billing_codes_expected": ["A004A", "Q310A"],
+    "diagnostic_code_expected": "354",
+    "notes": "Dawn Slater — ulnar neuropathy workup, EMG, EI letter. Production gave dx 977 (drug reactions) which is wrong. Should be 354 (mononeuritis upper limb). Detection_method: flush (continuous mode stopped mid-encounter)."
+  }
+}

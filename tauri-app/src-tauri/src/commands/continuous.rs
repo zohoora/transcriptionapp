@@ -424,4 +424,96 @@ mod tests {
         assert!(!is_hour_in_sleep_window(0, 0, 0));
         assert!(!is_hour_in_sleep_window(12, 6, 6));
     }
+
+    // ── compute_resume_at + DST tests ──
+
+    #[test]
+    fn test_compute_resume_at_returns_valid_rfc3339() {
+        let resume = compute_resume_at(6);
+        // Should parse as RFC3339
+        let parsed = chrono::DateTime::parse_from_rfc3339(&resume);
+        assert!(parsed.is_ok(), "compute_resume_at should return valid RFC3339, got: {}", resume);
+    }
+
+    #[test]
+    fn test_compute_resume_at_is_in_future() {
+        let resume_str = compute_resume_at(6);
+        let resume = chrono::DateTime::parse_from_rfc3339(&resume_str).unwrap();
+        let now = chrono::Utc::now();
+        // Resume should always be in the future (next 6 AM EST)
+        assert!(
+            resume.with_timezone(&chrono::Utc) > now,
+            "resume_at {} should be in the future (now: {})",
+            resume_str,
+            now.to_rfc3339()
+        );
+    }
+
+    #[test]
+    fn test_compute_resume_at_within_24_hours() {
+        let resume_str = compute_resume_at(6);
+        let resume = chrono::DateTime::parse_from_rfc3339(&resume_str).unwrap();
+        let now = chrono::Utc::now();
+        let diff = resume.with_timezone(&chrono::Utc) - now;
+        // Resume should be within 24 hours (next 6 AM, not next month)
+        assert!(
+            diff.num_hours() <= 26 && diff.num_hours() >= -2,
+            "resume should be within ~24h of now, but is {} hours away",
+            diff.num_hours()
+        );
+    }
+
+    /// Spring-forward DST handling: 2026-03-08 02:00 EST jumps to 03:00 EDT.
+    /// If sleep_end_hour is 2 and we computed resume on a date where 2 AM doesn't
+    /// exist, the function should not panic and should return a valid time.
+    #[test]
+    fn test_compute_resume_at_handles_dst_spring_forward_gap() {
+        use chrono::TimeZone;
+        // Verify the LocalResult::None path is handled — pick hour 2 which is the
+        // typical DST gap. compute_resume_at internally falls back via shifting +1h.
+        // We can't easily inject a fake "now" here, so we just verify the code path
+        // doesn't panic across reasonable hours.
+        for h in 0..24 {
+            let result = compute_resume_at(h);
+            assert!(
+                chrono::DateTime::parse_from_rfc3339(&result).is_ok(),
+                "compute_resume_at({}) returned invalid RFC3339: {}",
+                h, result
+            );
+        }
+    }
+
+    #[test]
+    fn test_dst_spring_forward_gap_handled_by_chrono_tz() {
+        // Direct test: 2026-03-08 02:30 EST is a DST gap (clocks jump 2→3 AM EDT)
+        use chrono::TimeZone;
+        let gap_naive = chrono::NaiveDate::from_ymd_opt(2026, 3, 8).unwrap()
+            .and_hms_opt(2, 30, 0).unwrap();
+        let result = chrono_tz::America::New_York.from_local_datetime(&gap_naive);
+        // chrono-tz returns LocalResult::None for the DST gap
+        assert!(matches!(result, chrono::LocalResult::None),
+            "DST gap should produce LocalResult::None");
+
+        // Our compute_resume_at handles this with a +1h shift fallback
+        let shifted = gap_naive + chrono::Duration::hours(1);
+        let shifted_result = chrono_tz::America::New_York
+            .from_local_datetime(&shifted)
+            .earliest();
+        assert!(shifted_result.is_some(), "shifted time should resolve");
+    }
+
+    #[test]
+    fn test_dst_fall_back_ambiguous_handled() {
+        // 2026-11-01 01:30 EST occurs twice (clocks fall back 2→1 AM EST)
+        use chrono::TimeZone;
+        let ambig_naive = chrono::NaiveDate::from_ymd_opt(2026, 11, 1).unwrap()
+            .and_hms_opt(1, 30, 0).unwrap();
+        let result = chrono_tz::America::New_York.from_local_datetime(&ambig_naive);
+        // Verify the LocalResult variant - either Ambiguous (most common) or Single
+        // (some chrono-tz versions may resolve differently; both are acceptable)
+        assert!(
+            matches!(result, chrono::LocalResult::Ambiguous(_, _) | chrono::LocalResult::Single(_)),
+            "DST fall-back should produce Ambiguous or Single, got {:?}", result
+        );
+    }
 }

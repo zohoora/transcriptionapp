@@ -1,6 +1,6 @@
 [package]
 name = "transcription-app"
-version = "0.10.31"
+version = "0.10.32"
 description = "Local Transcription App"
 authors = ["you"]
 license = "MIT"
@@ -164,8 +164,24 @@ name = "merge_replay_cli"
 path = "tools/merge_replay_cli.rs"
 
 [[bin]]
+name = "clinical_replay_cli"
+path = "tools/clinical_replay_cli.rs"
+
+[[bin]]
+name = "multi_patient_replay_cli"
+path = "tools/multi_patient_replay_cli.rs"
+
+[[bin]]
 name = "benchmark_runner"
 path = "tools/benchmark_runner.rs"
+
+[[bin]]
+name = "labeled_regression_cli"
+path = "tools/labeled_regression_cli.rs"
+
+[[bin]]
+name = "golden_day_cli"
+path = "tools/golden_day_cli.rs"
 
 [[bench]]
 name = "audio_benchmarks"
