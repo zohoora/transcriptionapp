@@ -47,9 +47,11 @@ Enum-only for enumerable fields means the LLM can't hallucinate a code like "Q99
 3. Applies base+add-on quantity logic (`G370` → `G371` for subsequent units, `G384` → `G385`).
 4. Handles **K013A → K033A overflow**: K013A (counselling) is capped at 3 units/year per patient. If the session duration maps to >3 units or the physician's yearly cap is exhausted, the overflow quantity moves to `K033A` (out-of-basket).
 5. Applies Q310–Q313 time tracking (after-hours premiums) with 14-hour/day and 240-hour/28-day caps.
-6. Resolves the diagnostic code in two stages:
-   - **Cross-validate** the LLM's `suggestedDiagnosticCode` against `primaryDiagnosis` text (e.g., suggested "250" for diabetes — check the text mentions diabetes). If inconsistent, fall through.
-   - **Text match** against the 562-code database by description substring match.
+6. Resolves the diagnostic code via a confidence-tiered policy (Apr 16 2026 revision — see Consequences below for the audit that motivated this):
+   - `confidence ≥ 0.90` (DX_TRUST_CONFIDENCE): accept the LLM's `suggestedDiagnosticCode` directly. The LLM's semantic reasoning over narrative clinical text is more reliable than substring matching for the primary complaint.
+   - `0.50 ≤ confidence < 0.90`: keep the original literal-word cross-validation guardrail — require at least one significant word (≥4 chars) from the code's description to appear in `primaryDiagnosis`, else fall through.
+   - `confidence < 0.50` (DX_MIN_CONSIDER): treat as noise, ignore entirely and fall through.
+   - **Fall-through stages**: text-match `primaryDiagnosis` against the 562-code database by substring, then billing-code-implied diagnosis (e.g., K030A → 250), then the K133A/K125A IDD constraint.
 
 Every suggested code carries the reasoning path for audit ("Selected A007A because visitType=intermediate and after_hours=false; added E430A because procedures includes pap_smear").
 
@@ -105,7 +107,7 @@ The Settings drawer exposes billing context that modifies Stage 2 output:
 ### Risks
 
 - **Schedule of Benefits drift**: OHIP updates the SOB periodically. Policy is to update `ohip_codes.rs` + test + comment header together; CI fails if the count-pinning test disagrees.
-- **Diagnostic cross-validation false negatives**: A correct suggestion may be rejected if the primary diagnosis wording is unusual, falling through to text-match which might land on a different code. Logged as a warning; physician can correct before confirming.
+- **Diagnostic cross-validation false negatives** (mitigated Apr 16 2026): The Apr 16 Room 6 forensic audit showed the literal-word cross-validation was rejecting 7/10 correct LLM suggestions on a normal clinic day, because the LLM writes clinical-narrative language ("knee and back pain") while OHIP descriptions use formal terms ("Lumbar strain, lumbago, coccydynia") — zero words overlap → LLM suggestion rejected → text-match then matched on a secondary comorbidity (e.g., "atrial fibrillation" → 427 cardiac) instead of the primary musculoskeletal complaint. The confidence-tiered policy above now trusts the LLM when it reports high confidence (empirically always ≥0.90 today) and reserves cross-validation for the mid-confidence band. Net effect on a normal day: recovers ~7/10 correct dx codes; edge case regression on ~1/10 where text-match happened to improve on an LLM suggestion (e.g., LLM 311 depression → text-match 300 anxiety for an anxiety visit).
 
 ## References
 

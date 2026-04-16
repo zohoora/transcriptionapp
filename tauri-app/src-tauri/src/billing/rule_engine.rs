@@ -645,6 +645,20 @@ fn billing_code_implied_diagnostic(codes: &[String], billing_data: BillingDataRe
 const IDD_CODES_K133: &[&str] = &["299", "319", "343", "758"];
 const IDD_CODES_K125: &[&str] = &["299", "319", "343", "741", "758"];
 
+// ── Diagnostic code resolution policy (Apr 16 2026) ────────────────────────
+//
+// Empirical calibration from a 10-session Room 6 day: the LLM (fast-model)
+// always emits confidence in [0.90, 0.95] when it produces a suggestion.
+// A 0.90 threshold effectively means "accept whenever the LLM gave any
+// suggestion at all"; 0.95 would reject about half the day's outputs.
+//
+// Current policy — TODO: confirm these values match your intent:
+//   • 0.90 = trust threshold (skip cross-validation)
+//   • 0.50 = consider threshold (below this, ignore the suggestion entirely)
+// ────────────────────────────────────────────────────────────────────────────
+const DX_TRUST_CONFIDENCE: f32 = 0.90;
+const DX_MIN_CONSIDER: f32 = 0.50;
+
 /// Resolve the diagnostic code for a billing record via a 4-stage pipeline:
 /// 1. Try the LLM's `suggestedDiagnosticCode` — cross-validated against primaryDiagnosis
 /// 2. Fall back to text-matching `primaryDiagnosis` against the 562-code database
@@ -657,29 +671,46 @@ fn resolve_diagnostic_code(
     record: &mut BillingRecord,
     billing_data: BillingDataRef<'_>,
 ) {
-    // Stage 1: try the explicit code suggestion, cross-validated against primaryDiagnosis.
-    // The LLM's numeric code suggestion is wrong ~27% of the time (e.g. suggesting 491
-    // "bronchitis" for a knee pain encounter). Cross-validate: at least one significant
-    // word from the code's description must appear in the primaryDiagnosis text.
+    // Stage 1: try the explicit code suggestion with confidence-aware policy.
+    //
+    // Background (Apr 16 2026 audit): the prior literal-word cross-validation
+    // rejected 7/10 correct LLM suggestions on a normal clinic day, because the
+    // LLM writes clinical-narrative language ("knee and back pain") while the
+    // OHIP descriptions use formal terms ("Lumbar strain, lumbago, coccydynia").
+    // Zero words overlap → LLM suggestion rejected → text-match then matched on
+    // a secondary comorbidity ("atrial fibrillation" → 427 cardiac) instead of
+    // the primary musculoskeletal complaint.
+    //
+    // New policy is confidence-tiered:
+    //   • confidence >= DX_TRUST_CONFIDENCE: accept LLM suggestion unconditionally.
+    //     The LLM's semantic reasoning over narrative text is more reliable than
+    //     rule-engine substring matching for the primary complaint.
+    //   • DX_MIN_CONSIDER <= confidence < DX_TRUST_CONFIDENCE: retain the original
+    //     literal-word cross-validation as a guardrail.
+    //   • confidence < DX_MIN_CONSIDER: skip the suggestion entirely; fall through
+    //     to Stage 2 text match. (A low-confidence LLM output is noise.)
     if let Some(ref suggested) = features.suggested_diagnostic_code {
         if let Some(dc) = diagnostic_codes::get_diagnostic_code(suggested.trim()) {
-            // Cross-validate against primaryDiagnosis when available.
-            // Accept the code if: (a) no primaryDiagnosis to check against, or
-            // (b) at least one significant word from the code description appears
-            // in the primaryDiagnosis text.
-            let cross_valid = match features.primary_diagnosis.as_ref() {
-                None => true, // no text to cross-check, accept the code
-                Some(diag) => {
-                    let diag_lower = diag.to_lowercase();
-                    dc.description.to_lowercase().split_whitespace()
-                        .filter(|w| w.len() >= 4)
-                        .any(|w| diag_lower.contains(w))
-                }
-            };
-            if cross_valid {
+            let conf = features.confidence;
+            if conf >= DX_TRUST_CONFIDENCE {
+                // High-confidence path: trust the LLM.
                 set_diagnostic(record, dc);
+            } else if conf >= DX_MIN_CONSIDER {
+                // Mid-confidence path: keep the literal-word cross-validation guardrail.
+                let cross_valid = match features.primary_diagnosis.as_ref() {
+                    None => true,
+                    Some(diag) => {
+                        let diag_lower = diag.to_lowercase();
+                        dc.description.to_lowercase().split_whitespace()
+                            .filter(|w| w.len() >= 4)
+                            .any(|w| diag_lower.contains(w))
+                    }
+                };
+                if cross_valid {
+                    set_diagnostic(record, dc);
+                }
             }
-            // If not cross-valid, fall through to Stage 2 (text match is more reliable)
+            // conf < DX_MIN_CONSIDER: intentionally ignore the suggestion, fall through.
         }
     }
 
@@ -1603,12 +1634,51 @@ mod tests {
     }
 
     #[test]
-    fn test_suggested_code_rejected_when_inconsistent() {
+    fn test_suggested_code_trusted_at_high_confidence() {
+        // New policy (Apr 16 2026): when LLM confidence >= DX_TRUST_CONFIDENCE (0.90),
+        // the rule engine trusts the suggestion without cross-validation. The prior
+        // literal-word check rejected 7/10 correct suggestions on a normal clinic day
+        // because OHIP descriptions use formal terms ("Lumbar strain, lumbago") while
+        // the LLM writes narrative text ("back pain"), so zero words overlap even
+        // when the code is clinically correct.
         let mut features = default_features();
+        features.confidence = 0.95;
+        features.suggested_diagnostic_code = Some("715".to_string()); // Osteoarthritis
+        features.primary_diagnosis = Some("Chronic knee and back pain with atrial fibrillation history".to_string());
+        // Under old policy: 715 description has no words in the primary text → rejected,
+        // text match picks up "atrial fibrillation" → 427 (wrong primary dx).
+        // Under new policy: high confidence trusts the LLM → 715.
+        let record = map_features_to_billing(&features, "s1", "2026-04-05", 600_000, None, None);
+        assert_eq!(record.diagnostic_code.as_deref(), Some("715"));
+    }
+
+    #[test]
+    fn test_suggested_code_cross_validated_at_mid_confidence() {
+        // When DX_MIN_CONSIDER (0.50) <= confidence < DX_TRUST_CONFIDENCE (0.90),
+        // the literal-word cross-validation guardrail still applies. Low-but-not-ignored
+        // confidence falls through to text match if the description and primary
+        // diagnosis share no significant words.
+        let mut features = default_features();
+        features.confidence = 0.70; // below trust threshold → guardrail active
         features.suggested_diagnostic_code = Some("491".to_string()); // bronchitis
         features.primary_diagnosis = Some("knee osteoarthritis".to_string());
-        // Inconsistent: 491 "chronic bronchitis" doesn't match "knee osteoarthritis"
-        // Falls through to text match → 715 (osteoarthritis)
+        // "chronic bronchitis" shares no significant words with "knee osteoarthritis"
+        // → cross-validation rejects → falls through to text match → 715.
+        let record = map_features_to_billing(&features, "s1", "2026-04-05", 600_000, None, None);
+        assert_eq!(record.diagnostic_code.as_deref(), Some("715"));
+    }
+
+    #[test]
+    fn test_suggested_code_ignored_at_low_confidence() {
+        // confidence < DX_MIN_CONSIDER (0.50): the suggestion is treated as noise
+        // and ignored entirely, without running cross-validation. Falls through to
+        // text match.
+        let mut features = default_features();
+        features.confidence = 0.30;
+        features.suggested_diagnostic_code = Some("401".to_string()); // hypertension
+        features.primary_diagnosis = Some("knee osteoarthritis".to_string());
+        // Even though 401 is semantically unrelated, we don't do the work of cross-
+        // validating — we just skip and let text match handle it.
         let record = map_features_to_billing(&features, "s1", "2026-04-05", 600_000, None, None);
         assert_eq!(record.diagnostic_code.as_deref(), Some("715"));
     }

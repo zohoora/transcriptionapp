@@ -934,6 +934,9 @@ pub async fn regen_soap_after_merge(
     merged_text: &str,
     surviving_session_id: &str,
     surviving_date: &DateTime<Utc>,
+    // Vision-extracted patient name on the surviving session — needed so the
+    // re-extracted billing.json keeps patientName populated rather than going null.
+    surviving_patient_name: Option<&str>,
     soap_model: &str,
     soap_detail_level: u8,
     soap_format: &str,
@@ -958,6 +961,17 @@ pub async fn regen_soap_after_merge(
 
     let (filtered_merged, _) = strip_hallucinations(merged_text, 5);
     let filtered_wc = filtered_merged.split_whitespace().count();
+
+    // Re-point the logger at the SURVIVING session's directory before regen calls.
+    // Without this, the logger still points at the merged-away encounter's directory
+    // (which is about to be deleted as part of the merge), so the merge-regen SOAP
+    // and billing pipeline_log events get written to a deleted path and lost.
+    // Observed during the Apr 16 2026 Room 6 audit for the Wicks/3eaa2d79 merge.
+    if let Ok(surviving_dir) = crate::local_archive::get_session_archive_dir(surviving_session_id, surviving_date) {
+        if let Ok(mut l) = logger.lock() {
+            l.set_session(&surviving_dir);
+        }
+    }
 
     let outcome = generate_and_archive_soap(
         client,
@@ -998,7 +1012,7 @@ pub async fn regen_soap_after_merge(
             match extract_and_archive_billing(
                 client, fast_model, content, &filtered_merged, "",
                 surviving_session_id, surviving_date, billing_duration_ms,
-                None, after_hours, &rule_ctx, logger,
+                surviving_patient_name, after_hours, &rule_ctx, logger,
                 billing_templates, billing_data,
                 None, // merge-path billing uses compiled default timeout
             ).await {

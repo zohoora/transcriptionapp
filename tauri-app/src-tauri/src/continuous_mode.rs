@@ -1051,6 +1051,10 @@ pub async fn run_continuous_mode(
         let mut prev_encounter_text_rich: Option<String> = None;
         let mut prev_encounter_date: Option<DateTime<Utc>> = None;
         let mut prev_encounter_is_clinical: bool = true;
+        // Vision-extracted patient name of the prev encounter. Used when a merge-back
+        // regenerates SOAP + billing for the surviving (prev) session — without this,
+        // the re-extracted billing.json ends up with patient_name: null.
+        let mut prev_encounter_patient_name: Option<String> = None;
 
         loop {
             // Wait for trigger based on detection mode
@@ -1916,6 +1920,16 @@ pub async fn run_continuous_mode(
                             });
                         }
 
+                        // Whether the pre-SOAP multi-patient detector already found
+                        // 2+ patients for this encounter. Used later to gate the
+                        // "standalone safety net" check — no point re-detecting what
+                        // we already confirmed (saves a 30s-timeout LLM call on long
+                        // encounters, as seen in the Apr 16 2026 Room 6 audit where
+                        // Brown + Wicks each ran a redundant standalone check that
+                        // burned the full 30s timeout after pre_soap had already
+                        // succeeded).
+                        let mut pre_soap_found_multi_patient = false;
+
                         // Generate SOAP note (with 120s timeout — SOAP is heavier than detection)
                         // Skip SOAP for non-clinical encounters to prevent hallucinated clinical content
                         if !is_clinical {
@@ -1982,6 +1996,12 @@ pub async fn run_continuous_mode(
                                     }));
                                 }
                             }
+
+                            // Propagate pre_soap's multi-patient result into the outer
+                            // scope so the standalone safety-net check can skip.
+                            pre_soap_found_multi_patient = multi_patient_detection
+                                .as_ref()
+                                .map_or(false, |d| d.patient_count >= 2);
 
                             info!("Generating SOAP for encounter #{}", encounter_number);
                             let soap_now = Utc::now();
@@ -2240,6 +2260,7 @@ pub async fn run_continuous_mode(
                                                 .unwrap_or_default();
                                             crate::encounter_pipeline::regen_soap_after_merge(
                                                 client, &merged_text, prev_id, prev_date,
+                                                prev_encounter_patient_name.as_deref(),
                                                 &soap_model, soap_detail_level, &soap_format, &soap_custom_instructions,
                                                 merge_notes, prev_encounter_is_clinical, is_clinical,
                                                 &logger_for_detector, &sync_ctx_for_detector,
@@ -2381,6 +2402,7 @@ pub async fn run_continuous_mode(
                                                     .unwrap_or_default();
                                                 crate::encounter_pipeline::regen_soap_after_merge(
                                                     client, &merged_text, prev_id, prev_date,
+                                                    prev_encounter_patient_name.as_deref(),
                                                     &soap_model, soap_detail_level, &soap_format, &soap_custom_instructions,
                                                     merge_notes, prev_encounter_is_clinical, is_clinical,
                                                     &logger_for_detector, &sync_ctx_for_detector,
@@ -2533,8 +2555,15 @@ pub async fn run_continuous_mode(
                         // second pass catches it for large encounters (≥2,500 words).
                         // Runs after the merge check to avoid wasted work on encounters
                         // that will be merged back.
+                        //
+                        // Skip when pre_soap already confirmed 2+ patients — the pre_soap
+                        // and standalone prompts are identical, and re-running just burns
+                        // the LLM budget (Brown + Wicks in the Apr 16 audit each ran a
+                        // redundant standalone call that timed out at 30s after pre_soap
+                        // had already succeeded).
                         if is_clinical
                             && encounter_word_count >= multi_patient_check_word_threshold
+                            && !pre_soap_found_multi_patient
                         {
                             if let Some(ref client) = llm_client {
                                 info!(
@@ -2671,6 +2700,7 @@ pub async fn run_continuous_mode(
                         prev_encounter_text_rich = Some(encounter_text_rich);
                         prev_encounter_date = Some(Utc::now());
                         prev_encounter_is_clinical = is_clinical;
+                        prev_encounter_patient_name = encounter_patient_name.clone();
             }
 
             // Return to recording state
@@ -2843,9 +2873,17 @@ pub async fn run_continuous_mode(
                 let flush_today_str = Utc::now().format("%Y-%m-%d").to_string();
                 let flush_today_sessions = local_archive::list_sessions_by_date(&flush_today_str).ok();
 
-                // Update archive metadata with continuous mode info (match normal encounter path)
+                // Update archive metadata with continuous mode info (match normal encounter path).
+                //
+                // Encounter number for a flushed session: previous session's encounter_number + 1.
+                // Previously computed as `sessions.len()` which counts across continuous-mode
+                // restarts (mid-day stops) and disagrees with the detector's per-run counter —
+                // observed Apr 16 2026 where the evening run's flushed Grantham session was
+                // labelled enc#10 even though the evening run only had 3 splits (Marchut #1 /
+                // Nock #2 / Suglio #3), because the 6 morning sessions bled into the count.
                 let flush_encounter_number = flush_today_sessions.as_ref()
-                    .map(|s| s.len() as u32)
+                    .and_then(|sessions| sessions.iter().rev().find(|s| s.session_id != session_id))
+                    .and_then(|prev| prev.encounter_number.map(|n| n + 1))
                     .unwrap_or(1);
                 if let Ok(session_dir) = local_archive::get_session_archive_dir(&session_id, &Utc::now()) {
                     let meta_path = session_dir.join("metadata.json");
@@ -2905,7 +2943,14 @@ pub async fn run_continuous_mode(
                 if merge_enabled {
                     if let Some(ref client) = flush_llm_client {
                         if let Some(ref sessions) = flush_today_sessions {
-                            if let Some(prev_summary) = sessions.iter().find(|s| s.session_id != session_id) {
+                            // Pick the MOST RECENT session other than the one being flushed.
+                            // `list_sessions_by_date` sorts ascending by started_at, so the
+                            // plain `find` at the start of the vec returned the oldest —
+                            // on a 2-run day this meant comparing the evening flush against
+                            // a morning encounter 6 hours earlier (observed Apr 16 2026 for
+                            // the Grantham flush at 19:59 which got compared against Pani
+                            // from 13:24). Iterate in reverse to pick the temporal neighbor.
+                            if let Some(prev_summary) = sessions.iter().rev().find(|s| s.session_id != session_id) {
                                 if let Ok(prev_details) = local_archive::get_session(&prev_summary.session_id, &flush_today_str) {
                                     if let Some(ref prev_transcript) = prev_details.transcript {
                                         let prev_tail = tail_words(prev_transcript, MERGE_EXCERPT_WORDS);
@@ -2961,6 +3006,7 @@ pub async fn run_continuous_mode(
                                                     .unwrap_or_default();
                                                 crate::encounter_pipeline::regen_soap_after_merge(
                                                     client, &merged_text, &prev_summary.session_id, &now,
+                                                    prev_summary.patient_name.as_deref(),
                                                     &flush_soap_model, flush_soap_detail_level, &flush_soap_format, &flush_soap_custom_instructions,
                                                     flush_merge_notes, prev_is_clinical, is_clinical,
                                                     &logger_for_flush, &sync_ctx,
