@@ -1,0 +1,18 @@
+{
+  "date": "2026-04-09",
+  "labeled_at": "2026-04-16T13:23:56.113850+00:00",
+  "labeled_by": "bootstrap_labels (auto from production)",
+  "labels": {
+    "billing_codes_expected": [
+      "A007A",
+      "Q310A"
+    ],
+    "clinical_correct": true,
+    "diagnostic_code_expected": "724",
+    "merge_correct": true,
+    "notes": "Auto-bootstrapped from production. Patient: Helena Fatima Oliveira. Words: 3290. Encounter #7. Clinical. Dx: Lumbar strain, lumbago, coccydynia, sciatica",
+    "patient_count_correct": true,
+    "split_correct": true
+  },
+  "session_id": "54c036a2-1857-46dd-b972-360bf70d71f6"
+}

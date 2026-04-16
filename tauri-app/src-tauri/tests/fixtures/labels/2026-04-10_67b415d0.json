@@ -1,0 +1,18 @@
+{
+  "date": "2026-04-10",
+  "labeled_at": "2026-04-16T13:23:54.911041+00:00",
+  "labeled_by": "bootstrap_labels (auto from production)",
+  "labels": {
+    "billing_codes_expected": [
+      "A007A",
+      "Q310A"
+    ],
+    "clinical_correct": true,
+    "diagnostic_code_expected": "682",
+    "merge_correct": true,
+    "notes": "Auto-bootstrapped from production. Patient: David Albert William Krabbe. Words: 5427. Encounter #3. Clinical. Dx: Cellulitis, abscess",
+    "patient_count_correct": true,
+    "split_correct": true
+  },
+  "session_id": "67b415d0-e90d-485d-92c5-21b93494c329"
+}

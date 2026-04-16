@@ -1,0 +1,18 @@
+{
+  "date": "2026-04-09",
+  "labeled_at": "2026-04-16T13:23:56.112599+00:00",
+  "labeled_by": "bootstrap_labels (auto from production)",
+  "labels": {
+    "billing_codes_expected": [
+      "K013A",
+      "Q310A"
+    ],
+    "clinical_correct": true,
+    "diagnostic_code_expected": "300",
+    "merge_correct": true,
+    "notes": "Auto-bootstrapped from production. Patient: Mary Margaret Hegedus. Words: 2504. Encounter #1. Clinical. Dx: Anxiety neurosis, hysteria, neurasthenia, obsessive compulsive neurosis, reactive depression",
+    "patient_count_correct": true,
+    "split_correct": true
+  },
+  "session_id": "b25f029c-ccd3-4962-bd5a-bc45e08ce850"
+}

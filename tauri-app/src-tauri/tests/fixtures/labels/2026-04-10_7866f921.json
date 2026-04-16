@@ -1,0 +1,18 @@
+{
+  "date": "2026-04-10",
+  "labeled_at": "2026-04-16T13:23:54.908579+00:00",
+  "labeled_by": "bootstrap_labels (auto from production)",
+  "labels": {
+    "billing_codes_expected": [
+      "A007A",
+      "Q310A"
+    ],
+    "clinical_correct": true,
+    "diagnostic_code_expected": "959",
+    "merge_correct": true,
+    "notes": "Auto-bootstrapped from production. Patient: Kelly Spoelstra. Words: 2113. Encounter #10. Clinical. Dx: Other injuries or trauma",
+    "patient_count_correct": true,
+    "split_correct": true
+  },
+  "session_id": "7866f921-8c6f-457b-b785-dd643a7c471c"
+}

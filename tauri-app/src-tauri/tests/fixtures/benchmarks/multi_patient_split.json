@@ -1,0 +1,47 @@
+{
+  "task": "multi_patient_split",
+  "model": "fast-model",
+  "targets": {
+    "overall_accuracy_pct": 85.0,
+    "exact_match_pct": 60.0,
+    "within_2_lines_pct": 85.0,
+    "within_5_lines_pct": 95.0
+  },
+  "test_cases": [
+    {
+      "id": "TC-1",
+      "name": "Clear Name Switch Boundary",
+      "difficulty": "easy",
+      "input": "0: Speaker 1: Lynn, your blood work came back. Your thyroid levels are still elevated.\n1: Speaker 2: I figured. I've been feeling tired and gaining weight again.\n2: Speaker 1: I'd like to increase your levothyroxine from 50 to 75 micrograms.\n3: Speaker 2: Okay. Should I still take it on an empty stomach?\n4: Speaker 1: Yes, first thing in the morning. We'll recheck your TSH in six weeks.\n5: Speaker 2: Sounds good.\n6: Speaker 1: Now Jim, how about you? Let me pull up your chart.\n7: Speaker 3: Well, my knees have been really bothering me. Both of them.\n8: Speaker 1: When did that start getting worse?\n9: Speaker 3: About three weeks ago.\n10: Speaker 1: Let me examine your knees. I see some swelling.\n11: Speaker 1: I'd like to get X-rays and start anti-inflammatory medication.\n12: Speaker 3: Okay, whatever you think is best.",
+      "expected_line_index": 5,
+      "expected_line_index_acceptable": [5],
+      "min_confidence": 0.9
+    },
+    {
+      "id": "TC-2",
+      "name": "Mother Daughter Transition",
+      "difficulty": "medium",
+      "input": "0: Speaker 1: Jocelyn, your lab results look normal. Iron levels are fine.\n1: Speaker 2: Oh good. The supplements worked.\n2: Speaker 1: We can stop those. Your blood pressure is 118 over 76, great.\n3: Speaker 2: No other concerns. But Mercedes has been having issues.\n4: Speaker 1: Mercedes, come sit down. Your mom mentioned stomach problems?\n5: Speaker 3: Yeah, I've been getting cramps after eating, especially with dairy.\n6: Speaker 1: How long has this been going on?\n7: Speaker 3: About two months.\n8: Speaker 1: I'd like to test for lactose intolerance. Try avoiding dairy for two weeks.\n9: Speaker 1: Mercedes, come back in two weeks. Jocelyn, six months.",
+      "expected_line_index": 3,
+      "expected_line_index_acceptable": [3, 4],
+      "min_confidence": 0.8
+    },
+    {
+      "id": "TC-3",
+      "name": "No Clear Boundary (single patient)",
+      "difficulty": "easy",
+      "input": "0: Speaker 1: Your blood pressure looks good today.\n1: Speaker 2: Thanks doctor.\n2: Speaker 1: We'll continue your current medications.\n3: Speaker 2: Sounds good.\n4: Speaker 1: Any questions about your diabetes management?\n5: Speaker 2: No, I think I understand the new diet plan.\n6: Speaker 1: Great. See you in three months.",
+      "expected_line_index": null,
+      "expected_no_boundary": true
+    },
+    {
+      "id": "TC-4",
+      "name": "Subtle Transition (same family, same topic)",
+      "difficulty": "hard",
+      "input": "0: Speaker 1: Danika, your thyroid levels have stabilized nicely at 2.8.\n1: Speaker 2: I feel so much better. The fatigue is almost gone.\n2: Speaker 1: I want to keep you on the current dose and recheck in three months.\n3: Speaker 2: My sister's been having similar symptoms.\n4: Speaker 3: Yeah, I've been exhausted. Could it be thyroid too?\n5: Speaker 1: It could be hereditary. Let me do a quick exam. Can you swallow for me?\n6: Speaker 3: Like this?\n7: Speaker 1: I can feel some enlargement. Let me order thyroid labs for you.\n8: Speaker 1: Danika, keep taking your medication. We'll call your sister with results.",
+      "expected_line_index": 3,
+      "expected_line_index_acceptable": [3, 4],
+      "min_confidence": 0.7
+    }
+  ]
+}

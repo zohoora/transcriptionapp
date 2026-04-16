@@ -20,7 +20,8 @@ use serde::Deserialize;
 use transcription_app_lib::config::Config;
 use transcription_app_lib::encounter_detection::{
     build_clinical_content_check_prompt, build_encounter_detection_prompt,
-    parse_clinical_content_check, parse_encounter_detection, parse_multi_patient_detection,
+    multi_patient_split_prompt, parse_clinical_content_check, parse_encounter_detection,
+    parse_multi_patient_detection, parse_multi_patient_split,
 };
 use transcription_app_lib::encounter_merge::{build_encounter_merge_prompt, parse_merge_check};
 use transcription_app_lib::llm_client::LLMClient;
@@ -53,6 +54,12 @@ struct Targets {
     multi_recall_pct: Option<f64>,
     #[serde(default)]
     single_specificity_pct: Option<f64>,
+    #[serde(default)]
+    exact_match_pct: Option<f64>,
+    #[serde(default)]
+    within_2_lines_pct: Option<f64>,
+    #[serde(default)]
+    within_5_lines_pct: Option<f64>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -85,6 +92,13 @@ struct TestCase {
     // Multi-patient detection
     #[serde(default)]
     expected_multiple_patients: Option<bool>,
+    // Multi-patient split
+    #[serde(default)]
+    expected_line_index: Option<usize>,
+    #[serde(default)]
+    expected_line_index_acceptable: Option<Vec<usize>>,
+    #[serde(default)]
+    expected_no_boundary: Option<bool>,
 }
 
 fn print_usage(program: &str) {
@@ -216,6 +230,7 @@ async fn main() -> ExitCode {
             "encounter_detection" => run_encounter_detection(&client, &bench, trials).await,
             "encounter_merge" => run_encounter_merge(&client, &bench, trials).await,
             "multi_patient_detection" => run_multi_patient_detection(&client, &bench, trials).await,
+            "multi_patient_split" => run_multi_patient_split(&client, &bench, trials).await,
             other => {
                 eprintln!("Task not yet implemented in runner: {other}");
                 false
@@ -636,6 +651,155 @@ async fn run_multi_patient_detection(
     if let Some(target) = bench.targets.single_specificity_pct {
         if single_specificity < target {
             println!("  ✗ single_specificity {:.1}% < target {:.1}%", single_specificity, target);
+            regression = true;
+        }
+    }
+    regression
+}
+
+async fn run_multi_patient_split(
+    client: &LLMClient,
+    bench: &BenchmarkFile,
+    trials: u32,
+) -> bool {
+    let mut total = 0;
+    let mut exact = 0;
+    let mut within_2 = 0;
+    let mut within_5 = 0;
+    let mut correct_overall = 0;
+    let mut no_boundary_total = 0;
+    let mut no_boundary_correct = 0;
+
+    for tc in &bench.test_cases {
+        let input = match tc.input.as_ref() {
+            Some(s) => s,
+            None => continue,
+        };
+
+        let system = multi_patient_split_prompt(None);
+        let user = format!("Transcript:\n{}", input);
+
+        let mut votes: Vec<Option<usize>> = Vec::new();
+        for _ in 0..trials {
+            match client.generate(&bench.model, &system, &user, "multi_patient_split_bench").await {
+                Ok(response) => match parse_multi_patient_split(&response) {
+                    Ok(parsed) => votes.push(parsed.line_index),
+                    Err(e) => eprintln!("  {} parse error: {e}", tc.id),
+                },
+                Err(e) => eprintln!("  {} LLM error: {e}", tc.id),
+            }
+        }
+
+        // Take majority for "no boundary" (None) vs median for line_index
+        if votes.is_empty() {
+            continue;
+        }
+        let none_votes = votes.iter().filter(|v| v.is_none()).count();
+        let predicted_no_boundary = none_votes * 2 >= votes.len();
+        let predicted_line: Option<usize> = if predicted_no_boundary {
+            None
+        } else {
+            let mut nums: Vec<usize> = votes.iter().filter_map(|v| *v).collect();
+            nums.sort();
+            Some(nums[nums.len() / 2])
+        };
+
+        total += 1;
+        let symbol;
+        let detail;
+
+        if tc.expected_no_boundary == Some(true) {
+            // No-boundary case
+            no_boundary_total += 1;
+            if predicted_no_boundary {
+                correct_overall += 1;
+                no_boundary_correct += 1;
+                symbol = "✓";
+                detail = "no_boundary".to_string();
+            } else {
+                symbol = "✗";
+                detail = format!("predicted_line={}", predicted_line.unwrap());
+            }
+        } else if let Some(expected_line) = tc.expected_line_index {
+            let acceptable = tc.expected_line_index_acceptable.clone()
+                .unwrap_or_else(|| vec![expected_line]);
+            let predicted = match predicted_line {
+                Some(l) => l,
+                None => {
+                    symbol = "✗";
+                    detail = "got_no_boundary".to_string();
+                    println!("  {} {} ({}): expected_line={}, predicted=NONE", symbol, tc.id, tc.difficulty, expected_line);
+                    continue;
+                }
+            };
+            let diff = (predicted as i64 - expected_line as i64).abs();
+            if acceptable.contains(&predicted) {
+                exact += 1;
+                within_2 += 1;
+                within_5 += 1;
+                correct_overall += 1;
+                symbol = "✓";
+                detail = format!("predicted={} (in acceptable range)", predicted);
+            } else if diff <= 2 {
+                within_2 += 1;
+                within_5 += 1;
+                correct_overall += 1;
+                symbol = "≈";
+                detail = format!("predicted={} (within ±2 of {})", predicted, expected_line);
+            } else if diff <= 5 {
+                within_5 += 1;
+                symbol = "~";
+                detail = format!("predicted={} (within ±5 of {})", predicted, expected_line);
+            } else {
+                symbol = "✗";
+                detail = format!("predicted={} (off by {})", predicted, diff);
+            }
+        } else {
+            continue;
+        }
+
+        println!("  {} {} ({}): {}", symbol, tc.id, tc.difficulty, detail);
+    }
+
+    let overall = correct_overall as f64 / total.max(1) as f64 * 100.0;
+    let exact_pct = exact as f64 / total.max(1) as f64 * 100.0;
+    let within_2_pct = within_2 as f64 / total.max(1) as f64 * 100.0;
+    let within_5_pct = within_5 as f64 / total.max(1) as f64 * 100.0;
+    let no_boundary_pct = if no_boundary_total > 0 {
+        no_boundary_correct as f64 / no_boundary_total as f64 * 100.0
+    } else { 100.0 };
+
+    println!();
+    println!("  Overall correct: {:.1}% ({}/{})", overall, correct_overall, total);
+    println!("  Exact match: {:.1}% ({}/{})", exact_pct, exact, total);
+    println!("  Within ±2 lines: {:.1}% ({}/{})", within_2_pct, within_2, total);
+    println!("  Within ±5 lines: {:.1}% ({}/{})", within_5_pct, within_5, total);
+    if no_boundary_total > 0 {
+        println!("  No-boundary recall: {:.1}% ({}/{})", no_boundary_pct, no_boundary_correct, no_boundary_total);
+    }
+
+    let mut regression = false;
+    if let Some(target) = bench.targets.overall_accuracy_pct {
+        if overall < target {
+            println!("  ✗ overall {:.1}% < target {:.1}%", overall, target);
+            regression = true;
+        }
+    }
+    if let Some(target) = bench.targets.exact_match_pct {
+        if exact_pct < target {
+            println!("  ✗ exact_match {:.1}% < target {:.1}%", exact_pct, target);
+            regression = true;
+        }
+    }
+    if let Some(target) = bench.targets.within_2_lines_pct {
+        if within_2_pct < target {
+            println!("  ✗ within_2_lines {:.1}% < target {:.1}%", within_2_pct, target);
+            regression = true;
+        }
+    }
+    if let Some(target) = bench.targets.within_5_lines_pct {
+        if within_5_pct < target {
+            println!("  ✗ within_5_lines {:.1}% < target {:.1}%", within_5_pct, target);
             regression = true;
         }
     }

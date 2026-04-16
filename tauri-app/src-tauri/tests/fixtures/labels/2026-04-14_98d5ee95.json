@@ -1,0 +1,20 @@
+{
+  "date": "2026-04-14",
+  "labeled_at": "2026-04-16T13:23:58.572345+00:00",
+  "labeled_by": "bootstrap_labels (auto from production)",
+  "labels": {
+    "billing_codes_expected": [
+      "A007A",
+      "E542A",
+      "G119A",
+      "Q310A"
+    ],
+    "clinical_correct": true,
+    "diagnostic_code_expected": "724",
+    "merge_correct": true,
+    "notes": "Auto-bootstrapped from production. Patient: Judith Caroline Mclaren. Words: 2568. Encounter #5. Clinical. Dx: Lumbar strain, lumbago, coccydynia, sciatica",
+    "patient_count_correct": true,
+    "split_correct": true
+  },
+  "session_id": "98d5ee95-4658-4927-a1b0-4e06bd6500c3"
+}

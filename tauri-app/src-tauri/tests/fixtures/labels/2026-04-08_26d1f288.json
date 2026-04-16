@@ -1,0 +1,18 @@
+{
+  "date": "2026-04-08",
+  "labeled_at": "2026-04-16T13:23:57.318544+00:00",
+  "labeled_by": "bootstrap_labels (auto from production)",
+  "labels": {
+    "billing_codes_expected": [
+      "A007A",
+      "Q310A"
+    ],
+    "clinical_correct": true,
+    "diagnostic_code_expected": "401",
+    "merge_correct": true,
+    "notes": "Auto-bootstrapped from production. Patient: Lily Marie Skater. Words: 5712. Encounter #15. Clinical. Dx: Essential, benign hypertension",
+    "patient_count_correct": true,
+    "split_correct": true
+  },
+  "session_id": "26d1f288-c243-4f55-b428-396ffd6da754"
+}

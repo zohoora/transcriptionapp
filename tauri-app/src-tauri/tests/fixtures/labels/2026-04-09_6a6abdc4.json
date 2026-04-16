@@ -1,0 +1,13 @@
+{
+  "date": "2026-04-09",
+  "labeled_at": "2026-04-16T13:23:56.114676+00:00",
+  "labeled_by": "bootstrap_labels (auto from production)",
+  "labels": {
+    "clinical_correct": false,
+    "merge_correct": true,
+    "notes": "Auto-bootstrapped from production. Patient: -. Words: 915. Encounter #2. Non-clinical (no SOAP/billing).",
+    "patient_count_correct": true,
+    "split_correct": true
+  },
+  "session_id": "6a6abdc4-e7a2-4db8-bc8d-9d57ae545c50"
+}

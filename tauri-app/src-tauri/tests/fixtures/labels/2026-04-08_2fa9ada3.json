@@ -1,0 +1,17 @@
+{
+  "date": "2026-04-08",
+  "labeled_at": "2026-04-16T13:23:57.312148+00:00",
+  "labeled_by": "bootstrap_labels (auto from production)",
+  "labels": {
+    "billing_codes_expected": [
+      "A001A",
+      "Q310A"
+    ],
+    "clinical_correct": true,
+    "merge_correct": true,
+    "notes": "Auto-bootstrapped from production. Patient: Janice Leslie Carey. Words: 652. Encounter #12. Clinical.",
+    "patient_count_correct": true,
+    "split_correct": true
+  },
+  "session_id": "2fa9ada3-b98d-4aaf-a7af-efa8be3f9c7a"
+}

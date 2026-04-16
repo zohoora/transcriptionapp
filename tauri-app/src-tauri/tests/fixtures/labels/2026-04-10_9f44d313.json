@@ -1,0 +1,20 @@
+{
+  "date": "2026-04-10",
+  "labeled_at": "2026-04-16T13:23:54.916877+00:00",
+  "labeled_by": "bootstrap_labels (auto from production)",
+  "labels": {
+    "billing_codes_expected": [
+      "A007A",
+      "G370A",
+      "G372A",
+      "Q310A"
+    ],
+    "clinical_correct": true,
+    "diagnostic_code_expected": "715",
+    "merge_correct": true,
+    "notes": "Auto-bootstrapped from production. Patient: Marion Rymiena Dyk. Words: 2396. Encounter #4. Clinical. Dx: Osteoarthritis",
+    "patient_count_correct": true,
+    "split_correct": true
+  },
+  "session_id": "9f44d313-8b1e-44ac-9fac-b0a0a8c1314e"
+}

@@ -1,0 +1,18 @@
+{
+  "date": "2026-04-10",
+  "labeled_at": "2026-04-16T13:23:54.921034+00:00",
+  "labeled_by": "bootstrap_labels (auto from production)",
+  "labels": {
+    "billing_codes_expected": [
+      "A007A",
+      "Q310A"
+    ],
+    "clinical_correct": true,
+    "diagnostic_code_expected": "780",
+    "merge_correct": true,
+    "notes": "Auto-bootstrapped from production. Patient: Malaki Stewart. Words: 709. Encounter #2. Clinical. Dx: Ataxia",
+    "patient_count_correct": true,
+    "split_correct": true
+  },
+  "session_id": "ad0a9bc5-b70b-450b-9673-1bee5a524c6f"
+}

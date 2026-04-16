@@ -1,0 +1,18 @@
+{
+  "date": "2026-04-09",
+  "labeled_at": "2026-04-16T13:23:56.115742+00:00",
+  "labeled_by": "bootstrap_labels (auto from production)",
+  "labels": {
+    "billing_codes_expected": [
+      "A007A",
+      "Q310A"
+    ],
+    "clinical_correct": true,
+    "diagnostic_code_expected": "842",
+    "merge_correct": true,
+    "notes": "Auto-bootstrapped from production. Patient: Elliete (ellie) Medeiros-pugh. Words: 4984. Encounter #1. Clinical. Dx: Wrist, hand, fingers",
+    "patient_count_correct": true,
+    "split_correct": true
+  },
+  "session_id": "8188ff4f-91b8-4f93-89ac-335547f224b5"
+}

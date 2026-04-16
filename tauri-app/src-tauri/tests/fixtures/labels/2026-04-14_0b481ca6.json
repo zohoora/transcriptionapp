@@ -1,0 +1,17 @@
+{
+  "date": "2026-04-14",
+  "labeled_at": "2026-04-16T13:23:58.576703+00:00",
+  "labeled_by": "bootstrap_labels (auto from production)",
+  "labels": {
+    "billing_codes_expected": [
+      "A102A"
+    ],
+    "clinical_correct": true,
+    "diagnostic_code_expected": "410",
+    "merge_correct": true,
+    "notes": "Auto-bootstrapped from production. Patient: Beverly Anne Bond. Words: 537. Encounter #4. Clinical. Dx: Acute myocardial infarction",
+    "patient_count_correct": true,
+    "split_correct": true
+  },
+  "session_id": "0b481ca6-9757-46b0-addc-231ec577ef3a"
+}

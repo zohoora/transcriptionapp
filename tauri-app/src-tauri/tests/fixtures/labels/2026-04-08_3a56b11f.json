@@ -1,0 +1,17 @@
+{
+  "date": "2026-04-08",
+  "labeled_at": "2026-04-16T13:23:57.322720+00:00",
+  "labeled_by": "bootstrap_labels (auto from production)",
+  "labels": {
+    "billing_codes_expected": [
+      "A007A",
+      "Q311A"
+    ],
+    "clinical_correct": true,
+    "merge_correct": true,
+    "notes": "Auto-bootstrapped from production. Patient: Judith Arlene (judy) Croft. Words: 1726. Encounter #6. Clinical.",
+    "patient_count_correct": true,
+    "split_correct": true
+  },
+  "session_id": "3a56b11f-789b-4103-84ce-724e2597828f"
+}

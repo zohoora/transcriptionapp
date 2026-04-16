@@ -1,0 +1,21 @@
+{
+  "date": "2026-04-14",
+  "labeled_at": "2026-04-16T13:23:58.582590+00:00",
+  "labeled_by": "bootstrap_labels (auto from production)",
+  "labels": {
+    "billing_codes_expected": [
+      "A004A",
+      "E542A",
+      "G370A",
+      "K030A",
+      "Q310A"
+    ],
+    "clinical_correct": true,
+    "diagnostic_code_expected": "715",
+    "merge_correct": true,
+    "notes": "Auto-bootstrapped from production. Patient: Sigrid C Eberley. Words: 2966. Encounter #9. Clinical. Dx: Osteoarthritis",
+    "patient_count_correct": true,
+    "split_correct": true
+  },
+  "session_id": "4b36a186-84ba-447d-93a8-65e3853d84b7"
+}

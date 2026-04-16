@@ -1,0 +1,19 @@
+{
+  "date": "2026-04-14",
+  "labeled_at": "2026-04-16T13:23:58.573579+00:00",
+  "labeled_by": "bootstrap_labels (auto from production)",
+  "labels": {
+    "billing_codes_expected": [
+      "A007A",
+      "K037A",
+      "Q310A"
+    ],
+    "clinical_correct": true,
+    "diagnostic_code_expected": "724",
+    "merge_correct": true,
+    "notes": "Auto-bootstrapped from production. Patient: Elizabeth Anne Stypa Jones. Words: 8259. Encounter #2. Clinical. Dx: Lumbar strain, lumbago, coccydynia, sciatica",
+    "patient_count_correct": true,
+    "split_correct": true
+  },
+  "session_id": "7e836616-ef10-4d6b-90ac-f073b8470bad"
+}

@@ -1,0 +1,22 @@
+{
+  "date": "2026-04-14",
+  "labeled_at": "2026-04-16T13:23:58.575711+00:00",
+  "labeled_by": "bootstrap_labels (auto from production)",
+  "labels": {
+    "billing_codes_expected": [
+      "A007A",
+      "E542A",
+      "G370A",
+      "G372A",
+      "K005A",
+      "Q310A"
+    ],
+    "clinical_correct": true,
+    "diagnostic_code_expected": "311",
+    "merge_correct": true,
+    "notes": "Auto-bootstrapped from production. Patient: Kathy Ann Muldoon. Words: 3975. Encounter #11. Clinical. Dx: Depressive or other non-psychotic disorders, not elsewhere classified",
+    "patient_count_correct": true,
+    "split_correct": true
+  },
+  "session_id": "73d178ff-ae04-46c4-a86e-ca4d2308c0aa"
+}

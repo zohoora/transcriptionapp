@@ -1,0 +1,13 @@
+{
+  "date": "2026-04-08",
+  "labeled_at": "2026-04-16T13:23:57.320074+00:00",
+  "labeled_by": "bootstrap_labels (auto from production)",
+  "labels": {
+    "clinical_correct": false,
+    "merge_correct": true,
+    "notes": "Auto-bootstrapped from production. Patient: Bethany Marie Scott. Words: 608. Encounter #8. Non-clinical (no SOAP/billing).",
+    "patient_count_correct": true,
+    "split_correct": true
+  },
+  "session_id": "f68af765-6fc4-4973-b6f8-6499eba5040f"
+}

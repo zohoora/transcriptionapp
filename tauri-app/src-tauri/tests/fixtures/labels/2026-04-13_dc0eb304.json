@@ -1,0 +1,17 @@
+{
+  "date": "2026-04-13",
+  "labeled_at": "2026-04-16T13:23:53.675318+00:00",
+  "labeled_by": "bootstrap_labels (auto from production)",
+  "labels": {
+    "billing_codes_expected": [
+      "A008A",
+      "Q311A"
+    ],
+    "clinical_correct": true,
+    "merge_correct": true,
+    "notes": "Auto-bootstrapped from production. Patient: Erica Kathleen Easto. Words: 586. Encounter #2. Clinical.",
+    "patient_count_correct": true,
+    "split_correct": true
+  },
+  "session_id": "dc0eb304-2bd2-4e99-a499-b1daf8bc9777"
+}

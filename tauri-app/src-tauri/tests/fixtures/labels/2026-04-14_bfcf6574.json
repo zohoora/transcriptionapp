@@ -1,0 +1,18 @@
+{
+  "date": "2026-04-14",
+  "labeled_at": "2026-04-16T13:23:58.574690+00:00",
+  "labeled_by": "bootstrap_labels (auto from production)",
+  "labels": {
+    "billing_codes_expected": [
+      "A004A",
+      "Q310A"
+    ],
+    "clinical_correct": true,
+    "diagnostic_code_expected": "489",
+    "merge_correct": true,
+    "notes": "Auto-bootstrapped from production. Patient: Judie Joan Guest. Words: 7387. Encounter #1. Clinical. Dx: Respiratory syncytial virus (RSV)",
+    "patient_count_correct": true,
+    "split_correct": true
+  },
+  "session_id": "bfcf6574-2f55-4ca5-910e-e878b7486064"
+}

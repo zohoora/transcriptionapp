@@ -1,0 +1,13 @@
+{
+  "date": "2026-04-14",
+  "labeled_at": "2026-04-16T13:23:58.581562+00:00",
+  "labeled_by": "bootstrap_labels (auto from production)",
+  "labels": {
+    "clinical_correct": false,
+    "merge_correct": true,
+    "notes": "Auto-bootstrapped from production. Patient: Gloria Ileen Hutton. Words: 247. Encounter #10. Non-clinical (no SOAP/billing).",
+    "patient_count_correct": true,
+    "split_correct": true
+  },
+  "session_id": "627613a8-2eac-4dfe-a005-127dd1cbd8f4"
+}

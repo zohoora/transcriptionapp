@@ -1,0 +1,13 @@
+{
+  "date": "2026-04-08",
+  "labeled_at": "2026-04-16T13:23:57.317387+00:00",
+  "labeled_by": "bootstrap_labels (auto from production)",
+  "labels": {
+    "clinical_correct": false,
+    "merge_correct": true,
+    "notes": "Auto-bootstrapped from production. Patient: Judith Arlene Croft. Words: 198. Encounter #7. Non-clinical (no SOAP/billing).",
+    "patient_count_correct": true,
+    "split_correct": true
+  },
+  "session_id": "0922dfe5-d304-4439-a7dc-b53c49fd7f8e"
+}

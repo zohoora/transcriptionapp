@@ -1,0 +1,19 @@
+{
+  "date": "2026-04-14",
+  "labeled_at": "2026-04-16T13:23:58.583710+00:00",
+  "labeled_by": "bootstrap_labels (auto from production)",
+  "labels": {
+    "billing_codes_expected": [
+      "A102A",
+      "K030A",
+      "Q311A"
+    ],
+    "clinical_correct": true,
+    "diagnostic_code_expected": "780",
+    "merge_correct": true,
+    "notes": "Auto-bootstrapped from production. Patient: Margaret Olive Hill. Words: 1618. Encounter #6. Clinical. Dx: Ataxia",
+    "patient_count_correct": true,
+    "split_correct": true
+  },
+  "session_id": "b7be8b2f-3d3a-4664-b780-bdc88de383ee"
+}

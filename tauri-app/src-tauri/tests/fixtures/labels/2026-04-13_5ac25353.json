@@ -1,0 +1,13 @@
+{
+  "date": "2026-04-13",
+  "labeled_at": "2026-04-16T13:23:53.677796+00:00",
+  "labeled_by": "bootstrap_labels (auto from production)",
+  "labels": {
+    "clinical_correct": false,
+    "merge_correct": true,
+    "notes": "Auto-bootstrapped from production. Patient: Gaven Bradfield. Words: 1340. Encounter #7. Non-clinical (no SOAP/billing).",
+    "patient_count_correct": true,
+    "split_correct": true
+  },
+  "session_id": "5ac25353-f1d7-40f5-b2dc-87e816a2ef08"
+}

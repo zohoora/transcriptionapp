@@ -57,9 +57,11 @@ cargo run --bin <tool> -- [PATH | --all] [--trials N] [--fail-on-mismatch] [--th
 | `merge_replay_cli` | Merge-check LLM calls | Yes | 75.0% |
 | `clinical_replay_cli` | Clinical content check LLM calls | Yes | 90.0% |
 | `multi_patient_replay_cli` | Multi-patient detection LLM calls | Yes | 80.0% |
+| `multi_patient_split_replay_cli` | Multi-patient split (line_index) LLM calls | Yes | 70.0% (±2 lines) |
 | `benchmark_runner` | Curated TC fixtures from docs/benchmarks | Yes | per-fixture |
 | `labeled_regression_cli` | Per-session labeled outputs vs production | No (offline) | n/a (per-check) |
 | `golden_day_cli` | Full clinic-day labeled corpus integrity | No (offline) | n/a (all-or-nothing) |
+| `bootstrap_labels` | Generate label fixtures from production billing | No (offline) | n/a (creates labels) |
 
 ### Why thresholds vary
 LLM responses at temp=0.3 have a documented ~40% flip rate on borderline cases. Each task has a different difficulty distribution; thresholds reflect what's achievable with `--trials 3` majority voting on the labeled corpus.
@@ -131,14 +133,15 @@ Run the labeled regression with `cargo run --bin labeled_regression_cli -- --all
 
 | Surface | Target | Current |
 |---------|--------|---------|
-| Rust unit + integration | 1,000+ | 1,056 |
+| Rust unit + integration | 1,000+ | 1,061 |
 | Frontend hook + component | 600+ | 585 |
 | Profile service | 50+ | 46 |
 | Replay corpus (bundles) | 200+ | 192 |
-| Labeled bundles | 30+ | 11 (all of 2026-04-15) |
-| Benchmark test cases | 30+ | 17 (4 tasks × ~4 cases) |
-| Replay regression CLIs | 5 | 5 (detection + merge + clinical + multi-patient + golden-day) |
+| Labeled bundles | 30+ | 68 (5 days: 04-08, 04-09, 04-10, 04-13, 04-14, 04-15) |
+| Benchmark test cases | 30+ | 21 (5 tasks: clinical, detection, merge, multi-patient detection, multi-patient split) |
+| Replay regression CLIs | 5 | 6 (detection + merge + clinical + multi-patient + multi-patient-split + golden-day) |
 | Preflight layers | 7 | 7 (1-5 E2E + 6 detection replay + 7 golden day) |
+| Bundle schema version | — | v3 (added MultiPatientSplitDecision capture) |
 
 ## Removed test infrastructure (Apr 2026)
 

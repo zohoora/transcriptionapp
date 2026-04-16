@@ -1,0 +1,18 @@
+{
+  "date": "2026-04-10",
+  "labeled_at": "2026-04-16T13:23:54.914780+00:00",
+  "labeled_by": "bootstrap_labels (auto from production)",
+  "labels": {
+    "billing_codes_expected": [
+      "A004A",
+      "Q310A"
+    ],
+    "clinical_correct": true,
+    "diagnostic_code_expected": "299",
+    "merge_correct": true,
+    "notes": "Auto-bootstrapped from production. Patient: \"dob\": \"1951-05-29\" } ``` ```json { \"name\": \"roberts Hope Marie\". Words: 3772. Encounter #8. Clinical. Dx: Childhood psychoses (e.g., autism)",
+    "patient_count_correct": true,
+    "split_correct": true
+  },
+  "session_id": "e1abe6d3-65b1-4dd0-bd42-ab0cbedee988"
+}

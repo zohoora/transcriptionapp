@@ -1,0 +1,20 @@
+{
+  "date": "2026-04-14",
+  "labeled_at": "2026-04-16T13:23:58.579819+00:00",
+  "labeled_by": "bootstrap_labels (auto from production)",
+  "labels": {
+    "billing_codes_expected": [
+      "A007A",
+      "G372A",
+      "K037A",
+      "Q310A"
+    ],
+    "clinical_correct": true,
+    "diagnostic_code_expected": "724",
+    "merge_correct": true,
+    "notes": "Auto-bootstrapped from production. Patient: Linda Frances Routledge. Words: 2134. Encounter #3. Clinical. Dx: Lumbar strain, lumbago, coccydynia, sciatica",
+    "patient_count_correct": true,
+    "split_correct": true
+  },
+  "session_id": "6834d957-c2a0-4932-bb0c-6f253910878e"
+}

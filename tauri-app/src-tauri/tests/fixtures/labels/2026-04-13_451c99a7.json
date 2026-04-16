@@ -1,0 +1,13 @@
+{
+  "date": "2026-04-13",
+  "labeled_at": "2026-04-16T13:23:53.676018+00:00",
+  "labeled_by": "bootstrap_labels (auto from production)",
+  "labels": {
+    "clinical_correct": false,
+    "merge_correct": true,
+    "notes": "Auto-bootstrapped from production. Patient: Kenneth Wayne Calleya. Words: 759. Encounter #5. Non-clinical (no SOAP/billing).",
+    "patient_count_correct": true,
+    "split_correct": true
+  },
+  "session_id": "451c99a7-3a40-41f3-9b0c-583b3cbb726e"
+}

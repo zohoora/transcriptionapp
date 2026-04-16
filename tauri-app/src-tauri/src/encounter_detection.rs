@@ -607,6 +607,53 @@ pub fn multi_patient_split_prompt(templates: Option<&crate::server_config::Promp
         .unwrap_or_else(|| MULTI_PATIENT_SPLIT_PROMPT.to_string())
 }
 
+/// Parsed result from the multi-patient split prompt.
+/// Returns the LAST line index of the FIRST patient's encounter.
+#[derive(Debug, Clone)]
+pub struct MultiPatientSplitResult {
+    pub line_index: Option<usize>,
+    pub confidence: Option<f64>,
+    pub reason: Option<String>,
+}
+
+/// Parse the multi-patient split LLM response: `{"line_index": N, "confidence": F, "reason": "..."}`.
+/// Returns None if no boundary found (empty `{}` response).
+pub fn parse_multi_patient_split(response: &str) -> Result<MultiPatientSplitResult, String> {
+    // Strip markdown code fences and surrounding text
+    let trimmed = response.trim();
+    let json_str = if let Some(start) = trimmed.find('{') {
+        let end = trimmed.rfind('}').unwrap_or(trimmed.len() - 1);
+        if end > start {
+            &trimmed[start..=end]
+        } else {
+            return Err(format!("No JSON object found in response: {}",
+                &trimmed[..trimmed.len().min(200)]));
+        }
+    } else {
+        return Err(format!("No JSON object found in response: {}",
+            &trimmed[..trimmed.len().min(200)]));
+    };
+
+    #[derive(serde::Deserialize)]
+    struct Raw {
+        #[serde(default)]
+        line_index: Option<usize>,
+        #[serde(default)]
+        confidence: Option<f64>,
+        #[serde(default)]
+        reason: Option<String>,
+    }
+
+    let raw: Raw = serde_json::from_str(json_str)
+        .map_err(|e| format!("multi-patient split parse error: {}", e))?;
+
+    Ok(MultiPatientSplitResult {
+        line_index: raw.line_index,
+        confidence: raw.confidence.map(|c| c.clamp(0.0, 1.0)),
+        reason: raw.reason,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -649,6 +696,43 @@ mod tests {
             py_content.contains(contract),
             "PROMPT DRIFT: scripts/replay_day.py is missing the current detection JSON contract"
         );
+    }
+
+    #[test]
+    fn test_parse_multi_patient_split_with_line_index() {
+        let response = r#"{"line_index": 5, "confidence": 0.9, "reason": "Lynn ends, Jim starts"}"#;
+        let result = parse_multi_patient_split(response).unwrap();
+        assert_eq!(result.line_index, Some(5));
+        assert_eq!(result.confidence, Some(0.9));
+        assert!(result.reason.unwrap().contains("Lynn"));
+    }
+
+    #[test]
+    fn test_parse_multi_patient_split_empty_object_no_boundary() {
+        let response = "{}";
+        let result = parse_multi_patient_split(response).unwrap();
+        assert_eq!(result.line_index, None);
+        assert_eq!(result.confidence, None);
+    }
+
+    #[test]
+    fn test_parse_multi_patient_split_with_markdown_fence() {
+        let response = "```json\n{\"line_index\": 3, \"confidence\": 0.8}\n```";
+        let result = parse_multi_patient_split(response).unwrap();
+        assert_eq!(result.line_index, Some(3));
+    }
+
+    #[test]
+    fn test_parse_multi_patient_split_clamps_confidence() {
+        let response = r#"{"line_index": 5, "confidence": 1.5}"#;
+        let result = parse_multi_patient_split(response).unwrap();
+        assert_eq!(result.confidence, Some(1.0));
+    }
+
+    #[test]
+    fn test_parse_multi_patient_split_invalid_json_returns_error() {
+        let response = "not json at all";
+        assert!(parse_multi_patient_split(response).is_err());
     }
 
     #[test]

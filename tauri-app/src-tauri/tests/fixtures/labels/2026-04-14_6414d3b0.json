@@ -1,0 +1,20 @@
+{
+  "date": "2026-04-14",
+  "labeled_at": "2026-04-16T13:23:58.578670+00:00",
+  "labeled_by": "bootstrap_labels (auto from production)",
+  "labels": {
+    "billing_codes_expected": [
+      "A007A",
+      "E542A",
+      "G370A",
+      "Q310A"
+    ],
+    "clinical_correct": true,
+    "diagnostic_code_expected": "715",
+    "merge_correct": true,
+    "notes": "Auto-bootstrapped from production. Patient: Burton Ruth. Words: 2176. Encounter #8. Clinical. Dx: Osteoarthritis",
+    "patient_count_correct": true,
+    "split_correct": true
+  },
+  "session_id": "6414d3b0-4766-439b-a731-9ac9f778b746"
+}

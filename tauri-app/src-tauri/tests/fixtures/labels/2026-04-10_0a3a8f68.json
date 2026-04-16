@@ -1,0 +1,13 @@
+{
+  "date": "2026-04-10",
+  "labeled_at": "2026-04-16T13:23:54.910063+00:00",
+  "labeled_by": "bootstrap_labels (auto from production)",
+  "labels": {
+    "clinical_correct": false,
+    "merge_correct": true,
+    "notes": "Auto-bootstrapped from production. Patient: Hope Marie Roberts. Words: 834. Encounter #7. Non-clinical (no SOAP/billing).",
+    "patient_count_correct": true,
+    "split_correct": true
+  },
+  "session_id": "0a3a8f68-149d-42b6-8809-d4904a05e69b"
+}

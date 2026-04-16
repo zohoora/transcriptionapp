@@ -1,0 +1,13 @@
+{
+  "date": "2026-04-09",
+  "labeled_at": "2026-04-16T13:23:56.116390+00:00",
+  "labeled_by": "bootstrap_labels (auto from production)",
+  "labels": {
+    "clinical_correct": true,
+    "merge_correct": true,
+    "notes": "Auto-bootstrapped from production. Patient: Claudia Marcela Zamorano Sanchez. Words: 15746. Encounter #1. Clinical.",
+    "patient_count_correct": true,
+    "split_correct": true
+  },
+  "session_id": "8d205075-f426-4175-817e-d6445cf9a02e"
+}

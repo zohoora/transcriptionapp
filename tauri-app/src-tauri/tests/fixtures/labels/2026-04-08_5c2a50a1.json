@@ -1,0 +1,16 @@
+{
+  "date": "2026-04-08",
+  "labeled_at": "2026-04-16T13:23:57.321114+00:00",
+  "labeled_by": "bootstrap_labels (auto from production)",
+  "labels": {
+    "billing_codes_expected": [
+      "A001A"
+    ],
+    "clinical_correct": true,
+    "merge_correct": true,
+    "notes": "Auto-bootstrapped from production. Patient: Hussein Esmaili Seyghalahi. Words: 425. Encounter #10. Clinical.",
+    "patient_count_correct": true,
+    "split_correct": true
+  },
+  "session_id": "5c2a50a1-87da-46b6-9b14-f19dad8572a2"
+}

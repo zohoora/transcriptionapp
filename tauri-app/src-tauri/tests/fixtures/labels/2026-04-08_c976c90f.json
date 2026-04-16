@@ -1,0 +1,17 @@
+{
+  "date": "2026-04-08",
+  "labeled_at": "2026-04-16T13:23:57.315751+00:00",
+  "labeled_by": "bootstrap_labels (auto from production)",
+  "labels": {
+    "billing_codes_expected": [
+      "A001A",
+      "Q310A"
+    ],
+    "clinical_correct": true,
+    "merge_correct": true,
+    "notes": "Auto-bootstrapped from production. Patient: Cheryl Elizabeth Kelly. Words: 486. Encounter #5. Clinical.",
+    "patient_count_correct": true,
+    "split_correct": true
+  },
+  "session_id": "c976c90f-666c-4b7c-a587-671c6e65b3f8"
+}

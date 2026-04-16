@@ -1,0 +1,13 @@
+{
+  "date": "2026-04-10",
+  "labeled_at": "2026-04-16T13:23:54.909340+00:00",
+  "labeled_by": "bootstrap_labels (auto from production)",
+  "labels": {
+    "clinical_correct": false,
+    "merge_correct": true,
+    "notes": "Auto-bootstrapped from production. Patient: Gary Phil Stewart. Words: 289. Encounter #13. Non-clinical (no SOAP/billing).",
+    "patient_count_correct": true,
+    "split_correct": true
+  },
+  "session_id": "8712f879-b0e8-4712-8ba6-36ed2b2d5f31"
+}

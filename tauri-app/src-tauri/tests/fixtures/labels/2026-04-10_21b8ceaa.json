@@ -1,0 +1,18 @@
+{
+  "date": "2026-04-10",
+  "labeled_at": "2026-04-16T13:23:54.912965+00:00",
+  "labeled_by": "bootstrap_labels (auto from production)",
+  "labels": {
+    "billing_codes_expected": [
+      "A004A",
+      "Q310A"
+    ],
+    "clinical_correct": true,
+    "diagnostic_code_expected": "799",
+    "merge_correct": true,
+    "notes": "Auto-bootstrapped from production. Patient: Gary Stewart. Words: 4643. Encounter #12. Clinical. Dx: Other ill-defined conditions",
+    "patient_count_correct": true,
+    "split_correct": true
+  },
+  "session_id": "21b8ceaa-c4ec-410f-8d06-c996f388c5fe"
+}

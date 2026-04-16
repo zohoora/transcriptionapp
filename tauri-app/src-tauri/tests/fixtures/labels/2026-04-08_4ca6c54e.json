@@ -1,0 +1,17 @@
+{
+  "date": "2026-04-08",
+  "labeled_at": "2026-04-16T13:23:57.313926+00:00",
+  "labeled_by": "bootstrap_labels (auto from production)",
+  "labels": {
+    "billing_codes_expected": [
+      "A007A",
+      "Q310A"
+    ],
+    "clinical_correct": true,
+    "merge_correct": true,
+    "notes": "Auto-bootstrapped from production. Patient: Raeanne Beth Randall. Words: 3667. Encounter #14. Clinical.",
+    "patient_count_correct": true,
+    "split_correct": true
+  },
+  "session_id": "4ca6c54e-d5d0-4390-9480-ccd511a23859"
+}

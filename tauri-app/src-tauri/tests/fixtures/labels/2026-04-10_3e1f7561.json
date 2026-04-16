@@ -1,0 +1,19 @@
+{
+  "date": "2026-04-10",
+  "labeled_at": "2026-04-16T13:23:54.918127+00:00",
+  "labeled_by": "bootstrap_labels (auto from production)",
+  "labels": {
+    "billing_codes_expected": [
+      "K007A",
+      "K013A",
+      "Q310A"
+    ],
+    "clinical_correct": true,
+    "diagnostic_code_expected": "300",
+    "merge_correct": true,
+    "notes": "Auto-bootstrapped from production. Patient: Shirley Lorraine Muir. Words: 29000. Encounter #14. Clinical. Dx: Anxiety neurosis, hysteria, neurasthenia, obsessive compulsive neurosis, reactive depression",
+    "patient_count_correct": true,
+    "split_correct": true
+  },
+  "session_id": "3e1f7561-24d8-49bf-ac83-ae1a69791613"
+}

@@ -1,0 +1,21 @@
+{
+  "date": "2026-04-14",
+  "labeled_at": "2026-04-16T13:23:58.577667+00:00",
+  "labeled_by": "bootstrap_labels (auto from production)",
+  "labels": {
+    "billing_codes_expected": [
+      "A007A",
+      "E542A",
+      "G370A",
+      "G371A",
+      "Q310A"
+    ],
+    "clinical_correct": true,
+    "diagnostic_code_expected": "715",
+    "merge_correct": true,
+    "notes": "Auto-bootstrapped from production. Patient: Jason Michael Heath. Words: 1384. Encounter #2. Clinical. Dx: Osteoarthritis",
+    "patient_count_correct": true,
+    "split_correct": true
+  },
+  "session_id": "d53148d2-d22e-4828-b74f-a3af2d75bf6c"
+}

@@ -1,0 +1,16 @@
+{
+  "date": "2026-04-10",
+  "labeled_at": "2026-04-16T13:23:54.912006+00:00",
+  "labeled_by": "bootstrap_labels (auto from production)",
+  "labels": {
+    "billing_codes_expected": [
+      "A001A"
+    ],
+    "clinical_correct": true,
+    "merge_correct": true,
+    "notes": "Auto-bootstrapped from production. Patient: -. Words: 160. Encounter #9. Clinical.",
+    "patient_count_correct": true,
+    "split_correct": true
+  },
+  "session_id": "96b8df3b-2918-4d8f-9f50-9e48658437f0"
+}

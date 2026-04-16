@@ -24,9 +24,10 @@ const MERGED_BUNDLE_PREFIX: &str = "replay_bundle.merged_";
 /// v2 (2026-04): added `sensor_continuous_present`, `sensor_triggered`,
 /// `manual_triggered` to `LoopState` so `detection_replay_cli` can reconstruct
 /// the full production `DetectionEvalContext` without hardcoded defaults.
-/// Older v1 bundles still load via `#[serde(default)]` — their replay results
-/// silently default to `false` for the new fields (same as pre-v2 CLI behavior).
-const SCHEMA_VERSION: u32 = 2;
+/// v3 (2026-04): added `MultiPatientDetection.split_decision` to capture the
+/// multi-patient SPLIT prompt's parsed line_index for replay regression testing.
+/// Older bundles still load via `#[serde(default)]` — older replay tools see None.
+const SCHEMA_VERSION: u32 = 3;
 
 /// Self-contained replay test case for an encounter.
 #[derive(Debug, Serialize, Deserialize)]
@@ -292,6 +293,36 @@ pub struct MultiPatientDetection {
     /// Labels for each detected patient (empty when none parsed).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub patient_labels: Vec<String>,
+    pub latency_ms: u64,
+    pub success: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+    /// If a multi-patient split was performed after this detection, the captured
+    /// LLM call that found the line_index boundary. Schema v3+ field.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub split_decision: Option<MultiPatientSplitDecision>,
+}
+
+/// Captured LLM call for the multi-patient SPLIT prompt — finds the line_index
+/// boundary between the first and second patient's encounters.
+/// Only populated when retrospective multi-patient detection found 2+ patients
+/// and the system invoked the split prompt to find the boundary line.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MultiPatientSplitDecision {
+    pub ts: String,
+    pub model: String,
+    pub system_prompt: String,
+    pub user_prompt: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub response_raw: Option<String>,
+    /// Last line index of the FIRST patient's encounter. None when LLM returned
+    /// empty `{}` (no clear boundary) or parse failed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parsed_line_index: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parsed_confidence: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parsed_reason: Option<String>,
     pub latency_ms: u64,
     pub success: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -947,6 +978,7 @@ mod tests {
             latency_ms: 1200,
             success: true,
             error: None,
+            split_decision: None,
         }
     }
 

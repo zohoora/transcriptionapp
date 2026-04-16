@@ -164,6 +164,7 @@ fn multi_patient_from_outcome(
         latency_ms: outcome.latency_ms,
         success: outcome.success,
         error: outcome.error.clone(),
+        split_decision: None, // populated separately when multi-patient split runs
     }
 }
 

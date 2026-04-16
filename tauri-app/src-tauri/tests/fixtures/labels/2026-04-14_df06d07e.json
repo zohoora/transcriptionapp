@@ -1,0 +1,18 @@
+{
+  "date": "2026-04-14",
+  "labeled_at": "2026-04-16T13:23:58.580885+00:00",
+  "labeled_by": "bootstrap_labels (auto from production)",
+  "labels": {
+    "billing_codes_expected": [
+      "A007A",
+      "Q310A"
+    ],
+    "clinical_correct": true,
+    "diagnostic_code_expected": "715",
+    "merge_correct": true,
+    "notes": "Auto-bootstrapped from production. Patient: Deborah Dailey. Words: 7598. Encounter #7. Clinical. Dx: Osteoarthritis",
+    "patient_count_correct": true,
+    "split_correct": true
+  },
+  "session_id": "df06d07e-56f7-4a3a-819c-5d407d3a53f4"
+}

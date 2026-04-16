@@ -1,0 +1,18 @@
+{
+  "date": "2026-04-10",
+  "labeled_at": "2026-04-16T13:23:54.915750+00:00",
+  "labeled_by": "bootstrap_labels (auto from production)",
+  "labels": {
+    "billing_codes_expected": [
+      "A007A",
+      "Q310A"
+    ],
+    "clinical_correct": true,
+    "diagnostic_code_expected": "466",
+    "merge_correct": true,
+    "notes": "Auto-bootstrapped from production. Patient: Kathleen Carolyn Maud (kathy) Long. Words: 1105. Encounter #6. Clinical. Dx: Acute bronchitis",
+    "patient_count_correct": true,
+    "split_correct": true
+  },
+  "session_id": "9d6c20bc-00c5-418c-bc52-647f9c3bbf33"
+}

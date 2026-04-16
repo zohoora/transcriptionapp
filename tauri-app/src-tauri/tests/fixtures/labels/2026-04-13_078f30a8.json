@@ -1,0 +1,19 @@
+{
+  "date": "2026-04-13",
+  "labeled_at": "2026-04-16T13:23:53.677122+00:00",
+  "labeled_by": "bootstrap_labels (auto from production)",
+  "labels": {
+    "billing_codes_expected": [
+      "K017A",
+      "K030A",
+      "Q310A"
+    ],
+    "clinical_correct": true,
+    "diagnostic_code_expected": "780",
+    "merge_correct": true,
+    "notes": "Auto-bootstrapped from production. Patient: Dara Jane Hope. Words: 6320. Encounter #1. Clinical. Dx: Ataxia",
+    "patient_count_correct": true,
+    "split_correct": true
+  },
+  "session_id": "078f30a8-c3a6-4d0b-9ece-4fed35d2b707"
+}

@@ -1,0 +1,17 @@
+{
+  "date": "2026-04-08",
+  "labeled_at": "2026-04-16T13:23:57.323770+00:00",
+  "labeled_by": "bootstrap_labels (auto from production)",
+  "labels": {
+    "billing_codes_expected": [
+      "A007A",
+      "Q310A"
+    ],
+    "clinical_correct": true,
+    "merge_correct": true,
+    "notes": "Auto-bootstrapped from production. Patient: Davar Valinia. Words: 6156. Encounter #1. Clinical.",
+    "patient_count_correct": true,
+    "split_correct": true
+  },
+  "session_id": "883690dd-d090-4559-8ba0-1a201923bdf4"
+}

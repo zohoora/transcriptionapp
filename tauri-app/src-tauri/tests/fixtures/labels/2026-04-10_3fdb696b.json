@@ -1,0 +1,13 @@
+{
+  "date": "2026-04-10",
+  "labeled_at": "2026-04-16T13:23:54.913654+00:00",
+  "labeled_by": "bootstrap_labels (auto from production)",
+  "labels": {
+    "clinical_correct": false,
+    "merge_correct": true,
+    "notes": "Auto-bootstrapped from production. Patient: Malaki Stewart. Words: 237. Encounter #1. Non-clinical (no SOAP/billing).",
+    "patient_count_correct": true,
+    "split_correct": true
+  },
+  "session_id": "3fdb696b-433c-4404-9651-93ece9422799"
+}

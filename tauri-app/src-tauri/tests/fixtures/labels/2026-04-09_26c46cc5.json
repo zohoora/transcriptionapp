@@ -1,0 +1,20 @@
+{
+  "date": "2026-04-09",
+  "labeled_at": "2026-04-16T13:23:56.111277+00:00",
+  "labeled_by": "bootstrap_labels (auto from production)",
+  "labels": {
+    "billing_codes_expected": [
+      "A007A",
+      "E542A",
+      "G370A",
+      "Q310A"
+    ],
+    "clinical_correct": true,
+    "diagnostic_code_expected": "842",
+    "merge_correct": true,
+    "notes": "Auto-bootstrapped from production. Patient: Eileen (pss) Medina-pugh. Words: 2226. Encounter #4. Clinical. Dx: Wrist, hand, fingers",
+    "patient_count_correct": true,
+    "split_correct": true
+  },
+  "session_id": "26c46cc5-4bd4-4453-9367-956b5c76bc32"
+}
