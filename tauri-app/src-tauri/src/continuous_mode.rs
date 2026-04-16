@@ -2223,6 +2223,8 @@ pub async fn run_continuous_mode(
                                                 merge_notes, prev_encounter_is_clinical, is_clinical,
                                                 &logger_for_detector, &sync_ctx_for_detector,
                                                 "auto_merge_soap_regen",
+                                                Some(&fast_model), merged_duration, billing_counselling_exhausted,
+                                                Some(&templates), Some(&billing_data),
                                             ).await;
                                         }
 
@@ -2362,6 +2364,8 @@ pub async fn run_continuous_mode(
                                                     merge_notes, prev_encounter_is_clinical, is_clinical,
                                                     &logger_for_detector, &sync_ctx_for_detector,
                                                     "merge_soap_regen",
+                                                    Some(&fast_model), merged_duration, billing_counselling_exhausted,
+                                                    Some(&templates), Some(&billing_data),
                                                 ).await;
                                             }
 
@@ -2937,6 +2941,8 @@ pub async fn run_continuous_mode(
                                                     flush_merge_notes, prev_is_clinical, is_clinical,
                                                     &logger_for_flush, &sync_ctx,
                                                     "flush_merge_soap_regen",
+                                                    Some(&flush_fast_model), 0, billing_counselling_exhausted,
+                                                    Some(&flush_templates), Some(&flush_billing_data),
                                                 ).await;
                                                 ContinuousModeEvent::EncounterMerged {
                                                     kept_session_id: None,

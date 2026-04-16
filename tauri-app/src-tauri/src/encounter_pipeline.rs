@@ -926,6 +926,12 @@ pub async fn regen_soap_after_merge(
     logger: &Arc<Mutex<PipelineLogger>>,
     sync_ctx: &crate::server_sync::ServerSyncContext,
     log_stage: &str,
+    // Billing extraction context (pass fast_model for LLM extraction)
+    billing_fast_model: Option<&str>,
+    billing_duration_ms: u64,
+    billing_counselling_exhausted: bool,
+    billing_templates: Option<&PromptTemplates>,
+    billing_data: Option<&crate::server_config::BillingData>,
 ) -> bool {
     if !(prev_is_clinical || curr_is_clinical) {
         info!("Skipping SOAP regeneration for merged non-clinical encounters");
@@ -962,6 +968,28 @@ pub async fn regen_soap_after_merge(
             clear_non_clinical_flag(surviving_session_id, surviving_date);
         }
         info!("Regenerated SOAP for merged encounter {}", surviving_session_id);
+
+        // Extract billing for the merged encounter (fail-open)
+        if let Some(fast_model) = billing_fast_model {
+            let after_hours = is_after_hours(&Utc::now());
+            let rule_ctx = crate::billing::RuleEngineContext {
+                counselling_exhausted: billing_counselling_exhausted,
+                ..Default::default()
+            };
+            match extract_and_archive_billing(
+                client, fast_model, content, &filtered_merged, "",
+                surviving_session_id, surviving_date, billing_duration_ms,
+                None, after_hours, &rule_ctx, logger,
+                billing_templates, billing_data,
+            ).await {
+                Ok(record) => info!(
+                    "Billing extracted after merge for {} ({} codes)",
+                    surviving_session_id, record.codes.len()
+                ),
+                Err(e) => warn!("Billing extraction failed after merge for {}: {e}", surviving_session_id),
+            }
+        }
+
         true
     } else {
         false
