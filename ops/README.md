@@ -106,3 +106,43 @@ rm ~/Library/LaunchAgents/com.ami-assist.health-monitor.plist
 ## Launchd plist paths
 
 The plist files reference `/Users/arash/transcriptionapp/ops/` as the script location. If the repo is cloned to a different path, edit the `ProgramArguments` in both plists before installing.
+
+---
+
+## Profile Service Auto-Deploy
+
+The profile service on the MacBook auto-rebuilds and restarts whenever the repo's `main` branch advances. This avoids manual SSH + `cargo build` after every commit.
+
+### How it works
+
+A launchd agent (`com.fabricscribe.profile-service-updater`) runs `~/transcriptionapp-deploy.sh` on a 5-minute schedule. The script:
+
+1. `git fetch origin main` in `~/transcriptionapp/`
+2. If no new commits: exit. If `profile-service/` unchanged: fast-forward pull and exit
+3. Otherwise: `git pull --ff-only`, `cd profile-service && cargo build --release`
+4. Kill the running profile-service process; launchd `KeepAlive=true` auto-respawns the new binary
+5. Verify via `curl /health` (up to 10s) before declaring success
+6. Atomic `mkdir` lock at `~/.fabricscribe/deploy.lock.d` (stale locks reclaimed after 10 min)
+7. Log to `~/.fabricscribe/deploy.log`
+
+### Logs
+
+```bash
+ssh arash@100.119.83.76 'tail -50 ~/.fabricscribe/deploy.log'
+```
+
+### Manual trigger
+
+```bash
+ssh arash@100.119.83.76 'bash ~/transcriptionapp-deploy.sh'
+```
+
+### Reproducible from repo
+
+The deploy script and launchd plist are checked into `ops/auto-deploy/`:
+
+- `ops/auto-deploy/transcriptionapp-deploy.sh`
+- `ops/auto-deploy/com.fabricscribe.profile-service-updater.plist`
+- `ops/auto-deploy/README.md` — install + operations guide
+
+If the server is rebuilt, follow the install steps in that README. The existing `~/transcriptionapp-deploy.sh` on the MacBook should be reviewed against the repo version and the repo made authoritative (any server-local tweaks should be folded back into the checked-in script or captured as environment variables).

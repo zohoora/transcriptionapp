@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.fabricscribe.profile-service</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/arash/transcriptionapp/profile-service/target/release/profile-service</string>
+        <string>--port</string>
+        <string>8090</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <!--
+        KeepAlive=true is load-bearing: the deploy script (transcriptionapp-deploy.sh)
+        restarts the service by killing the PID and relying on launchd to respawn.
+        If this flag is removed, the updater will leave the service down after every
+        deploy that touches profile-service/.
+    -->
+    <key>KeepAlive</key>
+    <true/>
+    <key>StandardOutPath</key>
+    <string>/Users/arash/.fabricscribe/profile-service.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/arash/.fabricscribe/profile-service.log</string>
+    <key>WorkingDirectory</key>
+    <string>/Users/arash/transcriptionapp/profile-service</string>
+</dict>
+</plist>
