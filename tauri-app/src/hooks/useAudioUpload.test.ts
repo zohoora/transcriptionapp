@@ -206,13 +206,26 @@ describe('useAudioUpload', () => {
     expect(result.current.recordingDate).toMatch(/^\d{4}-\d{2}-\d{2}$/);
   });
 
-  it('cleans up listener on unmount', () => {
+  it('cleans up listener on unmount after processing', async () => {
+    mockOpen.mockResolvedValue('/path/to/audio.mp3');
+    mockInvoke.mockResolvedValue({ sessions: [], totalWordCount: 0 });
     const unlistenSpy = vi.fn();
     mockListen.mockResolvedValue(unlistenSpy);
-    const { unmount } = renderHook(() => useAudioUpload());
+
+    const { result, unmount } = renderHook(() => useAudioUpload());
+    await act(async () => {
+      await result.current.selectFile();
+    });
+    await act(async () => {
+      await result.current.startProcessing();
+    });
+
+    // After processing completes, the unlisten function should have been
+    // called in the finally block (verified with > 0 since startProcessing
+    // also calls it once at the start to clear any stale listener).
+    expect(unlistenSpy).toHaveBeenCalled();
+
     unmount();
-    // No listener was registered yet (selectFile not called), so spy not called
-    // Just verify unmount doesn't crash
-    expect(true).toBe(true);
+    // Unmount should not throw
   });
 });

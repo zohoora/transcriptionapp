@@ -617,23 +617,8 @@ pub struct MultiPatientSplitResult {
 }
 
 /// Parse the multi-patient split LLM response: `{"line_index": N, "confidence": F, "reason": "..."}`.
-/// Returns None if no boundary found (empty `{}` response).
+/// Returns None for line_index when no boundary found (empty `{}` response).
 pub fn parse_multi_patient_split(response: &str) -> Result<MultiPatientSplitResult, String> {
-    // Strip markdown code fences and surrounding text
-    let trimmed = response.trim();
-    let json_str = if let Some(start) = trimmed.find('{') {
-        let end = trimmed.rfind('}').unwrap_or(trimmed.len() - 1);
-        if end > start {
-            &trimmed[start..=end]
-        } else {
-            return Err(format!("No JSON object found in response: {}",
-                &trimmed[..trimmed.len().min(200)]));
-        }
-    } else {
-        return Err(format!("No JSON object found in response: {}",
-            &trimmed[..trimmed.len().min(200)]));
-    };
-
     #[derive(serde::Deserialize)]
     struct Raw {
         #[serde(default)]
@@ -643,10 +628,7 @@ pub fn parse_multi_patient_split(response: &str) -> Result<MultiPatientSplitResu
         #[serde(default)]
         reason: Option<String>,
     }
-
-    let raw: Raw = serde_json::from_str(json_str)
-        .map_err(|e| format!("multi-patient split parse error: {}", e))?;
-
+    let raw: Raw = parse_llm_json_response(response, "{\"line_index\"", "multi-patient split")?;
     Ok(MultiPatientSplitResult {
         line_index: raw.line_index,
         confidence: raw.confidence.map(|c| c.clamp(0.0, 1.0)),

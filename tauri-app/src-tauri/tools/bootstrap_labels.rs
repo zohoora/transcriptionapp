@@ -104,11 +104,6 @@ fn main() -> ExitCode {
         Ok(d) => d,
         Err(e) => { eprintln!("{e}"); return ExitCode::from(1); }
     };
-    if !day_dir.exists() {
-        eprintln!("Day directory does not exist: {}", day_dir.display());
-        return ExitCode::from(1);
-    }
-
     let labels_d = labels_dir();
     fs::create_dir_all(&labels_d).expect("create labels dir");
 
@@ -116,17 +111,19 @@ fn main() -> ExitCode {
     let mut labels_written = 0;
     let mut labels_skipped = 0;
 
-    let entries = fs::read_dir(&day_dir).expect("read day dir");
+    let entries = match fs::read_dir(&day_dir) {
+        Ok(e) => e,
+        Err(e) => {
+            eprintln!("Cannot read day directory {}: {}", day_dir.display(), e);
+            return ExitCode::from(1);
+        }
+    };
     for entry in entries.flatten() {
         let path = entry.path();
         if !path.is_dir() { continue; }
 
-        let metadata_path = path.join("metadata.json");
-        if !metadata_path.exists() { continue; }
-
-        let metadata_content = match fs::read_to_string(&metadata_path) {
-            Ok(c) => c,
-            Err(_) => continue,
+        let Ok(metadata_content) = fs::read_to_string(path.join("metadata.json")) else {
+            continue;
         };
         let metadata: Metadata = match serde_json::from_str(&metadata_content) {
             Ok(m) => m,
@@ -147,14 +144,10 @@ fn main() -> ExitCode {
         // Determine clinical classification from metadata
         let is_clinical = !metadata.likely_non_clinical.unwrap_or(false);
 
-        // Load production billing.json (if present)
-        let billing_path = path.join("billing.json");
-        let billing_record: Option<BillingRecord> = if billing_path.exists() {
-            fs::read_to_string(&billing_path).ok()
-                .and_then(|s| serde_json::from_str::<BillingRecord>(&s).ok())
-        } else {
-            None
-        };
+        // Load production billing.json (if present — None on read or parse failure)
+        let billing_record: Option<BillingRecord> = fs::read_to_string(path.join("billing.json"))
+            .ok()
+            .and_then(|s| serde_json::from_str::<BillingRecord>(&s).ok());
 
         // Build labels object — only include billing assertions when billing exists
         let mut labels = serde_json::json!({

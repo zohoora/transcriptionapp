@@ -10,7 +10,7 @@
 
 use std::env;
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use transcription_app_lib::config::Config;
 use transcription_app_lib::continuous_mode::MIN_SENSOR_HYBRID_WORDS;
@@ -18,7 +18,7 @@ use transcription_app_lib::encounter_detection::{
     DetectionEvalContext, DetectionOutcome, EncounterDetectionResult, evaluate_detection,
 };
 use transcription_app_lib::local_archive;
-use transcription_app_lib::replay_bundle::ReplayBundle;
+use transcription_app_lib::replay_bundle::{find_replay_bundles, ReplayBundle};
 
 fn print_usage(program: &str) {
     eprintln!("Detection Replay CLI");
@@ -74,34 +74,6 @@ fn parse_override(s: &str) -> Result<(String, String), String> {
         return Err(format!("Invalid override format: '{}' (expected KEY=VALUE)", s));
     }
     Ok((parts[0].to_string(), parts[1].to_string()))
-}
-
-/// Recursively find all replay_bundle.json files under a directory
-fn find_replay_bundles(dir: &Path) -> Vec<PathBuf> {
-    let mut bundles = Vec::new();
-    if !dir.is_dir() {
-        return bundles;
-    }
-    let entries = match fs::read_dir(dir) {
-        Ok(entries) => entries,
-        Err(_) => return bundles,
-    };
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if path.is_dir() {
-            bundles.extend(find_replay_bundles(&path));
-        } else if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
-            // Match both the canonical bundle and merged-away sibling files
-            // (see ReplayBundleBuilder::build_merged_and_reset).
-            if name == "replay_bundle.json"
-                || (name.starts_with("replay_bundle.merged_") && name.ends_with(".json"))
-            {
-                bundles.push(path);
-            }
-        }
-    }
-    bundles.sort();
-    bundles
 }
 
 /// Reconstruct DetectionEvalContext from a DetectionCheck in a replay bundle

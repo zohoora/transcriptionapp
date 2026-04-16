@@ -82,16 +82,14 @@ fn count_sessions_in_archive(date: &str) -> Result<usize, String> {
         return Err(format!("Invalid date format: {}", date));
     }
     let day_dir = archive_dir.join(parts[0]).join(parts[1]).join(parts[2]);
-    if !day_dir.exists() {
-        return Ok(0);
-    }
+    let Ok(entries) = fs::read_dir(&day_dir) else {
+        return Ok(0); // missing day dir = zero sessions
+    };
     let mut count = 0;
-    if let Ok(entries) = fs::read_dir(&day_dir) {
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if path.is_dir() && path.join("metadata.json").exists() {
-                count += 1;
-            }
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_dir() && path.join("metadata.json").exists() {
+            count += 1;
         }
     }
     Ok(count)

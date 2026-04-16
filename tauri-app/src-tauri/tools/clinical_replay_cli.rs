@@ -12,7 +12,7 @@
 
 use std::env;
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::process::ExitCode;
 
 use transcription_app_lib::config::Config;
@@ -21,7 +21,7 @@ use transcription_app_lib::encounter_detection::{
 };
 use transcription_app_lib::llm_client::LLMClient;
 use transcription_app_lib::local_archive;
-use transcription_app_lib::replay_bundle::ReplayBundle;
+use transcription_app_lib::replay_bundle::{find_replay_bundles, ReplayBundle};
 
 const DEFAULT_THRESHOLD: f64 = 90.0;
 const DEFAULT_TRIALS: u32 = 1;
@@ -45,27 +45,6 @@ fn print_usage(program: &str) {
     eprintln!("  --mismatches        Only show bundles where the replayed result differs");
     eprintln!("  --model NAME        Override the model (default: from config)");
     eprintln!("  --help              Show this help");
-}
-
-fn find_replay_bundles(root: &Path) -> Vec<PathBuf> {
-    let mut out = Vec::new();
-    fn walk(dir: &Path, out: &mut Vec<PathBuf>) {
-        if let Ok(entries) = fs::read_dir(dir) {
-            for entry in entries.flatten() {
-                let path = entry.path();
-                if path.is_dir() {
-                    walk(&path, out);
-                } else if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
-                    if name == "replay_bundle.json" || name.starts_with("replay_bundle.merged_") {
-                        out.push(path);
-                    }
-                }
-            }
-        }
-    }
-    walk(root, &mut out);
-    out.sort();
-    out
 }
 
 #[tokio::main]
@@ -191,9 +170,9 @@ async fn main() -> ExitCode {
             match client.generate(&model, &system, &user, "clinical_replay").await {
                 Ok(response) => match parse_clinical_content_check(&response) {
                     Ok(parsed) => votes.push(parsed.clinical),
-                    Err(_) => {}
+                    Err(e) => eprintln!("  parse error: {e}"),
                 },
-                Err(_) => {}
+                Err(e) => eprintln!("  LLM error: {e}"),
             }
         }
 

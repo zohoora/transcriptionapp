@@ -179,16 +179,15 @@ describe('BillingTab', () => {
         onRecordChange={onRecordChange}
       />
     );
-    const confirmBtn = screen.queryByRole('button', { name: /^Confirm$/i });
-    if (confirmBtn) {
-      await user.click(confirmBtn);
-      await waitFor(() => {
-        expect(mockInvoke).toHaveBeenCalledWith(
-          'confirm_session_billing',
-          expect.objectContaining({ sessionId: 's1', date: '2026-04-15' })
-        );
-      });
-    }
+    // baseRecord.status is 'draft' so the Confirm button must render
+    const confirmBtn = screen.getByRole('button', { name: /^Confirm$/i });
+    await user.click(confirmBtn);
+    await waitFor(() => {
+      expect(mockInvoke).toHaveBeenCalledWith(
+        'confirm_session_billing',
+        expect.objectContaining({ sessionId: 's1', date: '2026-04-15' })
+      );
+    });
   });
 
   it('shows total amount', () => {

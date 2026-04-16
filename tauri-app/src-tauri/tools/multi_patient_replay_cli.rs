@@ -16,14 +16,14 @@
 
 use std::env;
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::process::ExitCode;
 
 use transcription_app_lib::config::Config;
 use transcription_app_lib::encounter_detection::parse_multi_patient_detection;
 use transcription_app_lib::llm_client::LLMClient;
 use transcription_app_lib::local_archive;
-use transcription_app_lib::replay_bundle::{MultiPatientStage, ReplayBundle};
+use transcription_app_lib::replay_bundle::{find_replay_bundles, MultiPatientStage, ReplayBundle};
 
 const DEFAULT_THRESHOLD: f64 = 80.0;
 const DEFAULT_TRIALS: u32 = 1;
@@ -41,27 +41,6 @@ fn print_usage(program: &str) {
     eprintln!("  --stage STAGE       Filter to one stage: pre_soap | retrospective | standalone");
     eprintln!("  --model NAME        Override the model (default: from config)");
     eprintln!("  --help              Show this help");
-}
-
-fn find_replay_bundles(root: &Path) -> Vec<PathBuf> {
-    let mut out = Vec::new();
-    fn walk(dir: &Path, out: &mut Vec<PathBuf>) {
-        if let Ok(entries) = fs::read_dir(dir) {
-            for entry in entries.flatten() {
-                let path = entry.path();
-                if path.is_dir() {
-                    walk(&path, out);
-                } else if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
-                    if name == "replay_bundle.json" || name.starts_with("replay_bundle.merged_") {
-                        out.push(path);
-                    }
-                }
-            }
-        }
-    }
-    walk(root, &mut out);
-    out.sort();
-    out
 }
 
 fn parse_stage_filter(s: &str) -> Option<MultiPatientStage> {
@@ -175,7 +154,7 @@ async fn main() -> ExitCode {
         for mp in &bundle.multi_patient_detections {
             // Apply stage filter if present
             if let Some(ref s) = stage_filter {
-                if !std::mem::discriminant(s).eq(&std::mem::discriminant(&mp.stage)) {
+                if *s != mp.stage {
                     continue;
                 }
             }
@@ -189,9 +168,9 @@ async fn main() -> ExitCode {
                 match client.generate(&model, &mp.system_prompt, &mp.user_prompt, "multi_patient_replay").await {
                     Ok(response) => match parse_multi_patient_detection(&response) {
                         Ok(parsed) => votes.push(parsed.patient_count),
-                        Err(_) => {}
+                        Err(e) => eprintln!("  parse error: {e}"),
                     },
-                    Err(_) => {}
+                    Err(e) => eprintln!("  LLM error: {e}"),
                 }
             }
 

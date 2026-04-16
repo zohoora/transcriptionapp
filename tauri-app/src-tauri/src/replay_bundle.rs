@@ -10,7 +10,7 @@
 
 use serde::{Deserialize, Serialize};
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use tracing::warn;
 
 const BUNDLE_FILENAME: &str = "replay_bundle.json";
@@ -530,6 +530,31 @@ impl ReplayBundleBuilder {
         let filename = format!("{}{}.json", MERGED_BUNDLE_PREFIX, merged_away_short);
         Self::write_bundle(&surviving_dir.join(filename), &bundle);
     }
+}
+
+/// Recursively find every replay bundle file under `root`. Matches the
+/// canonical `replay_bundle.json` and merged-away siblings
+/// (`replay_bundle.merged_*.json`). Sorted alphabetically.
+pub fn find_replay_bundles(root: &Path) -> Vec<PathBuf> {
+    fn walk(dir: &Path, out: &mut Vec<PathBuf>) {
+        let Ok(entries) = fs::read_dir(dir) else { return };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                walk(&path, out);
+            } else if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+                if name == BUNDLE_FILENAME
+                    || (name.starts_with(MERGED_BUNDLE_PREFIX) && name.ends_with(".json"))
+                {
+                    out.push(path);
+                }
+            }
+        }
+    }
+    let mut out = Vec::new();
+    walk(root, &mut out);
+    out.sort();
+    out
 }
 
 #[cfg(test)]

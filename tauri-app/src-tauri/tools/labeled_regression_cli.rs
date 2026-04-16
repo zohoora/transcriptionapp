@@ -40,6 +40,7 @@ struct Label {
 }
 
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)] // split/merge/patient_count fields are reserved for future regression checks
 struct LabelData {
     #[serde(default)]
     split_correct: Option<bool>,
@@ -91,6 +92,14 @@ fn list_label_files(dir: &Path) -> Vec<PathBuf> {
     }
     out.sort();
     out
+}
+
+/// Parse a YYYY-MM-DD label date into a noon-UTC DateTime.
+/// Returns None if the date is malformed (rather than silently using today).
+fn parse_date(date: &str) -> Option<chrono::DateTime<chrono::Utc>> {
+    let naive = chrono::NaiveDate::parse_from_str(date, "%Y-%m-%d").ok()?;
+    let noon = naive.and_hms_opt(12, 0, 0)?;
+    Some(chrono::DateTime::<chrono::Utc>::from_naive_utc_and_offset(noon, chrono::Utc))
 }
 
 #[derive(Debug, Default)]
@@ -211,24 +220,29 @@ fn main() -> ExitCode {
             results.check("clinical_classification", &expected, &actual_clinical);
         }
 
-        if let Some(expected) = label.labels.patient_count_correct {
-            // The label asserts production's patient_count was correct
-            // (we don't know the exact "right" count but we trust the label)
-            let _ = (expected, &session.metadata.patient_count);
-            // If label says false, this means production miscounted —
-            // we'd need the expected count to verify. For now this is informational only.
-        }
-
         // Load and check billing
-        if label.labels.billing_codes_expected.is_some() || label.labels.diagnostic_code_expected.is_some() {
-            let billing_path = local_archive::get_session_archive_dir(&label.session_id, &chrono::DateTime::parse_from_rfc3339(&format!("{}T12:00:00Z", &label.date))
-                    .map(|d| d.with_timezone(&chrono::Utc))
-                    .unwrap_or_else(|_| chrono::Utc::now()))
-                .ok()
-                .map(|d| d.join("billing.json"));
+        let want_billing = label.labels.billing_codes_expected.is_some()
+            || label.labels.diagnostic_code_expected.is_some();
+        if want_billing {
+            let session_dir = match parse_date(&label.date)
+                .and_then(|dt| local_archive::get_session_archive_dir(&label.session_id, &dt).ok())
+            {
+                Some(dir) => dir,
+                None => {
+                    results.checks += 1;
+                    results.failures.push(format!(
+                        "  ✗ cannot resolve archive dir for date {}",
+                        label.date
+                    ));
+                    total_checks += results.checks;
+                    total_passes += results.passes;
+                    if !results.failures.is_empty() { total_regressions += 1; }
+                    continue;
+                }
+            };
 
-            let billing: Option<BillingRecord> = billing_path
-                .and_then(|p| fs::read_to_string(&p).ok())
+            let billing: Option<BillingRecord> = fs::read_to_string(session_dir.join("billing.json"))
+                .ok()
                 .and_then(|s| serde_json::from_str(&s).ok());
 
             match billing {
@@ -236,17 +250,14 @@ fn main() -> ExitCode {
                     if let Some(expected_codes) = &label.labels.billing_codes_expected {
                         let mut actual: Vec<String> = billing.codes.iter().map(|c| c.code.clone()).collect();
                         actual.extend(billing.time_entries.iter().map(|t| t.code.clone()));
-                        // Check that all expected codes are present (allow extras)
-                        let mut expected_sorted = expected_codes.clone();
-                        expected_sorted.sort();
-                        let mut actual_sorted = actual.clone();
-                        actual_sorted.sort();
-
                         results.checks += 1;
-                        let all_present = expected_codes.iter().all(|c| actual.contains(c));
-                        if all_present {
+                        if expected_codes.iter().all(|c| actual.contains(c)) {
                             results.passes += 1;
                         } else {
+                            let mut expected_sorted = expected_codes.clone();
+                            expected_sorted.sort();
+                            let mut actual_sorted = actual.clone();
+                            actual_sorted.sort();
                             results.failures.push(format!(
                                 "  ✗ billing_codes: expected {:?} subset of actual, got {:?}",
                                 expected_sorted, actual_sorted
@@ -260,20 +271,17 @@ fn main() -> ExitCode {
                     }
                 }
                 None => {
-                    if label.labels.billing_codes_expected.is_some() || label.labels.diagnostic_code_expected.is_some() {
-                        results.checks += 1;
-                        results.failures.push("  ✗ billing.json missing — cannot check codes/dx".to_string());
-                    }
+                    results.checks += 1;
+                    results.failures.push("  ✗ billing.json missing — cannot check codes/dx".to_string());
                 }
             }
         }
 
-        let _ = label.labels.split_correct;
-        let _ = label.labels.merge_correct;
-        // Production split/merge correctness can be inferred from session existence
-        // and metadata, but the precise check requires looking at the parent day_log
-        // and replay_bundle. Deferred — for now we focus on billing checks since
-        // those are the most actionable regression signals.
+        // Note: split_correct, merge_correct, patient_count_correct are reserved
+        // for future implementation when day_log + replay_bundle inspection lands.
+        // Current production state for these is informational; the labels capture
+        // the desired behavior so the regression test can be enabled once the
+        // verification logic is added.
 
         total_checks += results.checks;
         total_passes += results.passes;

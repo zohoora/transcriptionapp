@@ -19,9 +19,9 @@ use serde::Deserialize;
 
 use transcription_app_lib::config::Config;
 use transcription_app_lib::encounter_detection::{
-    build_clinical_content_check_prompt, build_encounter_detection_prompt,
-    multi_patient_split_prompt, parse_clinical_content_check, parse_encounter_detection,
-    parse_multi_patient_detection, parse_multi_patient_split,
+    build_encounter_detection_prompt, multi_patient_split_prompt,
+    parse_clinical_content_check, parse_encounter_detection, parse_multi_patient_detection,
+    parse_multi_patient_split,
 };
 use transcription_app_lib::encounter_merge::{build_encounter_merge_prompt, parse_merge_check};
 use transcription_app_lib::llm_client::LLMClient;
@@ -192,6 +192,20 @@ async fn main() -> ExitCode {
     }
 
     let config = Config::load_or_default();
+    // Build the LLM client once. Inside the per-file loop it would rebuild
+    // the reqwest connection pool every iteration, defeating keep-alive.
+    let client = match LLMClient::new(
+        &config.llm_router_url,
+        &config.llm_api_key,
+        &config.llm_client_id,
+        &config.fast_model,
+    ) {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("LLM client init failed: {e}");
+            return ExitCode::from(1);
+        }
+    };
     let mut any_regression = false;
 
     for file in &files {
@@ -211,19 +225,6 @@ async fn main() -> ExitCode {
         };
 
         println!("\n=== Benchmark: {} (model={}) ===", bench.task, bench.model);
-
-        let client = match LLMClient::new(
-            &config.llm_router_url,
-            &config.llm_api_key,
-            &config.llm_client_id,
-            &config.fast_model,
-        ) {
-            Ok(c) => c,
-            Err(e) => {
-                eprintln!("LLM client init failed: {e}");
-                return ExitCode::from(1);
-            }
-        };
 
         let regression = match bench.task.as_str() {
             "clinical_content_check" => run_clinical_content_check(&client, &bench, trials).await,

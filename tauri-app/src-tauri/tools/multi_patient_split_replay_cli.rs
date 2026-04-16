@@ -4,11 +4,15 @@
 //! Per benchmark spec, line accuracy is fuzzy (±2 lines = correct, ±5 = acceptable).
 //! Two modes:
 //!   - **Captured replay** (v3+ bundles): re-issue the exact captured prompt,
-//!     compare line_index within tolerance.
+//!     compare line_index within tolerance. **Note (2026-04):** production
+//!     does not yet wire the multi-patient SPLIT prompt through
+//!     `MultiPatientDetection.split_decision`. Until that's added in
+//!     `continuous_mode.rs`, captured-mode runs will report "no captured split"
+//!     for every bundle. Use `--synthetic` for sanity checks until then.
 //!   - **Synthetic replay** (any bundle with multi_patient_detection ≥ 2):
 //!     build a split prompt from the segments and ask the LLM. No ground truth
 //!     comparison — just a sanity check that the split prompt produces a valid
-//!     line_index. Useful for v1/v2 bundles before split capture was added.
+//!     line_index. Works with v1/v2 bundles too.
 //!
 //! Usage:
 //!   cargo run --bin multi_patient_split_replay_cli -- --all
@@ -17,7 +21,7 @@
 
 use std::env;
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::process::ExitCode;
 
 use transcription_app_lib::config::Config;
@@ -26,7 +30,7 @@ use transcription_app_lib::encounter_detection::{
 };
 use transcription_app_lib::llm_client::LLMClient;
 use transcription_app_lib::local_archive;
-use transcription_app_lib::replay_bundle::ReplayBundle;
+use transcription_app_lib::replay_bundle::{find_replay_bundles, ReplayBundle};
 
 const DEFAULT_THRESHOLD: f64 = 70.0;
 const DEFAULT_TRIALS: u32 = 1;
@@ -50,27 +54,6 @@ fn print_usage(program: &str) {
     eprintln!("  --synthetic           Synthetic mode (no ground truth)");
     eprintln!("  --model NAME          Override the model");
     eprintln!("  --help                Show this help");
-}
-
-fn find_replay_bundles(root: &Path) -> Vec<PathBuf> {
-    let mut out = Vec::new();
-    fn walk(dir: &Path, out: &mut Vec<PathBuf>) {
-        if let Ok(entries) = fs::read_dir(dir) {
-            for entry in entries.flatten() {
-                let path = entry.path();
-                if path.is_dir() {
-                    walk(&path, out);
-                } else if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
-                    if name == "replay_bundle.json" || name.starts_with("replay_bundle.merged_") {
-                        out.push(path);
-                    }
-                }
-            }
-        }
-    }
-    walk(root, &mut out);
-    out.sort();
-    out
 }
 
 #[tokio::main]
@@ -181,9 +164,9 @@ async fn main() -> ExitCode {
                                 votes.push(idx as u32);
                             }
                         }
-                        Err(_) => {}
+                        Err(e) => eprintln!("  parse error: {e}"),
                     },
-                    Err(_) => {}
+                    Err(e) => eprintln!("  LLM error: {e}"),
                 }
             }
 
