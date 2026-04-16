@@ -2,7 +2,17 @@
 
 ## Status
 
-Accepted (Updated Jan 2025: Audio Events, Updated Jan 12 2025: OpenAI-compatible API)
+**Partially superseded** (Apr 2026). Original decision (use LLM for SOAP, JSON-structured output) still holds. Specifics that have moved on:
+
+- **Title** still references "Ollama" but the integration is now an OpenAI-compatible LLM Router (see ADR-0013) that fronts multiple model backends. The `ollama.rs` module is now a thin re-export of `llm_client.rs`.
+- **Default model** is `soap-model-fast` (alias resolved by the router), with `soap-alt` and `soap-alt-2` available as `model_override` options on the regenerate button.
+- **Multi-patient SOAP** added in ADR-0012 (auto-detect 1-4 patients per visit).
+- **Server-configurable prompts**: All SOAP prompt builders now accept `Option<&PromptTemplates>`. Profile service `PUT /config/prompts` overrides the compiled defaults — see root CLAUDE.md "Server-Configurable Data".
+- **Patient handout context**: When a patient handout exists, `generate_soap_note_auto_detect` includes it in the prompt.
+- **Reliability**: `parse_soap_with_retry()` retries the LLM call once on `MALFORMED_SOAP_SENTINEL`. Orphaned SOAP recovery on continuous mode stop scans for `has_soap_note=false` and regenerates. 300s timeout via `SOAP_GENERATION_TIMEOUT_SECS`.
+- **Billing extraction** runs after every SOAP in continuous mode — see `billing/` module and `encounter_pipeline.rs::extract_and_archive_billing()`.
+
+**Original status**: Accepted (Updated Jan 2025: Audio Events, Updated Jan 12 2025: OpenAI-compatible API).
 
 **Note**: See ADR-0013 for the migration from Ollama native API to OpenAI-compatible LLM router.
 

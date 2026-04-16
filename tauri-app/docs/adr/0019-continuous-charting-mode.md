@@ -1,6 +1,28 @@
 # ADR 0019: Continuous Charting Mode (End of Day)
 
 ## Status
+
+**Partially superseded** (Apr 2026). The original decision (run continuously, auto-detect encounters via LLM, archive separately, monitoring dashboard) still holds — this ADR remains the authoritative record for why continuous mode exists and its baseline shape. The feature has since accreted substantial additions, each captured in a dedicated follow-up ADR:
+
+| Feature | Superseding ADR |
+|---------|-----------------|
+| Sensor-accelerated LLM detection (hybrid mode) | ADR-0024 |
+| Multi-sensor hardware (mmWave + thermal + CO2) | ADR-0025 |
+| Overnight auto-pause with DST-safe scheduling | ADR-0026 |
+| Retrospective multi-patient detection + split | ADR-0027 |
+| Three-tier replay logging for offline regression | ADR-0028 |
+| FHO+ billing extraction after SOAP | ADR-0021 |
+| Server-configurable prompts/thresholds | ADR-0023 |
+
+Other behavior added without its own ADR (see `tauri-app/CLAUDE.md` for current specifics): clinical-content check before SOAP, encounter merge check before SOAP, patient handout as SOAP context, vision-based patient name + DOB extraction, server sync with delayed re-sync for late-written aux files, shadow mode for dual detection comparison, sensor-continuity gate.
+
+The constants table below has also drifted — `encounter_silence_trigger_secs` is now 45 (was 60), and `ABSOLUTE_WORD_CAP` is 25,000.
+
+When the behavior of continuous mode changes in the future, prefer writing a targeted ADR over editing this one — keep this as the historical baseline.
+
+---
+
+## Original Status
 Accepted
 
 ## Context
