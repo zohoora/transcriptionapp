@@ -31,8 +31,19 @@ fn validate_id(id: &str, label: &str) -> Result<(), ApiError> {
     Ok(())
 }
 
-/// Whitelist of allowed auxiliary file names for session-level uploads
-const ALLOWED_SESSION_FILES: &[&str] = &["pipeline_log.jsonl", "replay_bundle.json", "segments.jsonl", "billing.json"];
+/// Whitelist of allowed auxiliary file names for session-level uploads via the
+/// generic `PUT /sessions/:id/files/:filename` route. Each entry also has a
+/// dedicated typed route where relevant (e.g. `PUT /sessions/:id/patient-handout`
+/// for `patient_handout.txt`). The generic route is primarily used by the tauri
+/// `server_sync::upload_aux_files()` helper which copies replay + billing
+/// artifacts to the server; the typed routes are used by interactive UI actions.
+const ALLOWED_SESSION_FILES: &[&str] = &[
+    "pipeline_log.jsonl",
+    "replay_bundle.json",
+    "segments.jsonl",
+    "billing.json",
+    "patient_handout.txt",
+];
 
 /// Check if a filename is allowed for session file upload.
 /// Supports exact matches from ALLOWED_SESSION_FILES and screenshots/*.jpg pattern.
@@ -951,4 +962,44 @@ async fn atomic_write(path: impl AsRef<Path>, content: impl AsRef<[u8]>) -> Resu
             ApiError::Internal(format!("Failed to rename: {e}"))
         })?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn allowlist_accepts_replay_artifacts() {
+        assert!(is_allowed_session_file("pipeline_log.jsonl"));
+        assert!(is_allowed_session_file("replay_bundle.json"));
+        assert!(is_allowed_session_file("segments.jsonl"));
+        assert!(is_allowed_session_file("billing.json"));
+    }
+
+    #[test]
+    fn allowlist_accepts_patient_handout() {
+        // Regression guard: handout was omitted from the allowlist until v0.10.34.
+        assert!(is_allowed_session_file("patient_handout.txt"));
+    }
+
+    #[test]
+    fn allowlist_accepts_valid_screenshots() {
+        assert!(is_allowed_session_file("screenshots/shot1.jpg"));
+        assert!(is_allowed_session_file("screenshots/abc123.jpg"));
+    }
+
+    #[test]
+    fn allowlist_rejects_screenshot_traversal() {
+        assert!(!is_allowed_session_file("screenshots/../secret.jpg"));
+        assert!(!is_allowed_session_file("screenshots/sub/nested.jpg"));
+        assert!(!is_allowed_session_file("screenshots/file.png"));
+    }
+
+    #[test]
+    fn allowlist_rejects_unknown_files() {
+        assert!(!is_allowed_session_file("transcript.txt"));
+        assert!(!is_allowed_session_file("metadata.json"));
+        assert!(!is_allowed_session_file("arbitrary.file"));
+        assert!(!is_allowed_session_file("../../etc/passwd"));
+    }
 }

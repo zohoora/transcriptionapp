@@ -40,7 +40,10 @@ pub struct OhipCode {
 // Generated from April 2026 Schedule of Benefits (effective April 1, 2026)
 // Source: ontario.ca/files/2026-03/moh-schedule-benefit-2026-03-27.pdf
 // Basket classification: OMA Fee Codes in FHO and FHN Basket (Dec 2023)
-// Total codes: 198 (137 in-basket + 61 out-of-basket)
+// Total codes: 235 (145 in-basket + 90 out-of-basket). Updated Apr 2026 after
+// the epidural + nerve block audit added ~38 previously missing codes. The
+// `test_ohip_code_count` unit test pins these numbers so documentation stays
+// in sync with the array — update the doc comment + test together.
 
 pub static OHIP_CODES: &[OhipCode] = &[
     // ═══════════════════════════════════════════════════════════════════════
@@ -2571,6 +2574,23 @@ mod tests {
                 c.code
             );
         }
+    }
+
+    /// Pinning test: guards against silent doc drift between the file header
+    /// comment and the actual array. If you add/remove a code, update both
+    /// the header comment ("Total codes: N (X in-basket + Y out-of-basket)")
+    /// AND these numbers, then grep the rest of the repo for the old count.
+    #[test]
+    fn test_ohip_code_count() {
+        let in_basket = all_codes().iter().filter(|c| c.basket == Basket::In).count();
+        let out_basket = all_codes().iter().filter(|c| c.basket == Basket::Out).count();
+        assert_eq!(
+            all_codes().len(),
+            235,
+            "OHIP code count changed — update the file header comment and this test"
+        );
+        assert_eq!(in_basket, 145, "In-basket count changed — update the file header comment");
+        assert_eq!(out_basket, 90, "Out-of-basket count changed — update the file header comment");
     }
 
     #[test]

@@ -1125,4 +1125,45 @@ mod tests {
         assert_eq!(segs[0]["index"], 99, "B's segment index, not A's (0)");
         assert_eq!(b_parsed["outcome"]["was_merged"], false, "B was not merged");
     }
+
+    /// Guard against SCHEMA_VERSION drift between the code and the docs that
+    /// promise a specific version. When SCHEMA_VERSION is bumped, update the
+    /// callouts in these files or this test fails with a clear diff.
+    ///
+    /// Why these files? `tauri-app/CLAUDE.md` is the canonical codebase guide
+    /// and tables the schema version explicitly; `docs/benchmarks/multi-patient-split.md`
+    /// promises that the replay CLI accepts "schema v3+" and would mislead
+    /// benchmark consumers if SCHEMA_VERSION advanced without the doc updating.
+    #[test]
+    fn test_schema_version_docs_in_sync() {
+        let manifest_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+        let repo_root = manifest_dir.parent().expect("src-tauri parent").parent().expect("tauri-app parent");
+
+        let checks: &[(&str, String)] = &[
+            (
+                "tauri-app/CLAUDE.md",
+                format!("SCHEMA_VERSION={}", SCHEMA_VERSION),
+            ),
+            (
+                "docs/benchmarks/multi-patient-split.md",
+                format!("schema v{}", SCHEMA_VERSION),
+            ),
+        ];
+
+        for (rel, needle) in checks {
+            let path = repo_root.join(rel);
+            if !path.exists() {
+                // Doc moved or deleted — not this test's job to guard against that.
+                continue;
+            }
+            let body = std::fs::read_to_string(&path)
+                .unwrap_or_else(|e| panic!("failed to read {}: {e}", path.display()));
+            assert!(
+                body.contains(needle.as_str()),
+                "SCHEMA_VERSION drift: {rel} is missing the literal `{needle}`. \
+                 replay_bundle.rs declares SCHEMA_VERSION={} — update {rel} to match.",
+                SCHEMA_VERSION,
+            );
+        }
+    }
 }

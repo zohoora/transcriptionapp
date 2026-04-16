@@ -493,6 +493,12 @@ pub struct ArchiveMetadata {
     pub has_patient_handout: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub has_billing_record: Option<bool>,
+    /// Vision-extracted patient date of birth (YYYY-MM-DD). Populated during
+    /// continuous mode when the visible EMR chart header yields a DOB via the
+    /// `vision-model` call. Used by the tauri billing context to auto-derive
+    /// the patient age bracket for OHIP codes with age-gated fees.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub patient_dob: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1023,5 +1029,40 @@ impl Default for DetectionThresholds {
             monthly_hour_limit: 240.0,
             monthly_window_days: 28,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Regression guard: `patient_dob` was added to ArchiveMetadata in v0.10.34
+    /// so it survives the typed `PUT /sessions/:id/metadata` upload path (not just
+    /// the JSON-merge patch path). Keep this test so future struct reshuffles
+    /// don't silently drop the field.
+    #[test]
+    fn archive_metadata_round_trips_patient_dob() {
+        let src = r#"{
+            "session_id": "abc",
+            "started_at": "2026-04-15T10:00:00Z",
+            "patient_dob": "1980-03-22"
+        }"#;
+        let parsed: ArchiveMetadata = serde_json::from_str(src).expect("parses");
+        assert_eq!(parsed.patient_dob.as_deref(), Some("1980-03-22"));
+
+        let round_tripped = serde_json::to_string(&parsed).expect("serializes");
+        assert!(
+            round_tripped.contains(r#""patient_dob":"1980-03-22""#),
+            "patient_dob was dropped during re-serialization: {round_tripped}"
+        );
+    }
+
+    /// `patient_dob` must remain fully optional so old metadata.json files
+    /// written before the field existed still load.
+    #[test]
+    fn archive_metadata_defaults_patient_dob_to_none() {
+        let src = r#"{"session_id": "abc", "started_at": "2026-04-15T10:00:00Z"}"#;
+        let parsed: ArchiveMetadata = serde_json::from_str(src).expect("parses");
+        assert!(parsed.patient_dob.is_none());
     }
 }
