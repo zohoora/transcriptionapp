@@ -1240,8 +1240,14 @@ pub fn merge_sessions(session_ids: &[String], date_str: &str) -> Result<String, 
     let surviving_dir = date_dir.join(&surviving_id);
     let has_audio = surviving_dir.join("audio.wav").exists();
 
-    // Update surviving session
-    fs::write(surviving_dir.join("transcript.txt"), &merged_transcript)
+    // ── Crash-safe write: use temp files, rename on success ─────────
+    // If the process crashes mid-merge, the original files remain intact.
+    let temp_suffix = format!(".merge_{}", uuid::Uuid::new_v4().simple());
+    let temp_transcript = surviving_dir.join(format!("transcript.txt{}", temp_suffix));
+    let temp_metadata = surviving_dir.join(format!("metadata.json{}", temp_suffix));
+
+    // Write merged data to temp files first
+    fs::write(&temp_transcript, &merged_transcript)
         .map_err(|e| format!("Failed to write merged transcript: {}", e))?;
 
     let mut surviving_meta = sessions[0].1.clone();
@@ -1257,8 +1263,25 @@ pub fn merge_sessions(session_ids: &[String], date_str: &str) -> Result<String, 
 
     let meta_json = serde_json::to_string_pretty(&surviving_meta)
         .map_err(|e| format!("Failed to serialize merged metadata: {}", e))?;
-    fs::write(surviving_dir.join("metadata.json"), meta_json)
-        .map_err(|e| format!("Failed to write merged metadata: {}", e))?;
+    fs::write(&temp_metadata, &meta_json)
+        .map_err(|e| {
+            let _ = fs::remove_file(&temp_transcript); // clean up partial write
+            format!("Failed to write merged metadata: {}", e)
+        })?;
+
+    // Atomic rename: replace originals (crash between these two renames
+    // leaves at most one file stale, but both originals are still readable)
+    fs::rename(&temp_transcript, surviving_dir.join("transcript.txt"))
+        .map_err(|e| {
+            let _ = fs::remove_file(&temp_transcript);
+            let _ = fs::remove_file(&temp_metadata);
+            format!("Failed to finalize merged transcript: {}", e)
+        })?;
+    fs::rename(&temp_metadata, surviving_dir.join("metadata.json"))
+        .map_err(|e| {
+            let _ = fs::remove_file(&temp_metadata);
+            format!("Failed to finalize merged metadata: {}", e)
+        })?;
 
     // Delete stale SOAP and billing from surviving session
     let soap_path = surviving_dir.join("soap_note.txt");

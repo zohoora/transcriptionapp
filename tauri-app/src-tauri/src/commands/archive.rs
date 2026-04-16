@@ -306,43 +306,51 @@ pub fn split_local_session(
 
 /// Merge multiple sessions into one, returning the surviving session ID
 #[tauri::command]
-pub fn merge_local_sessions(
+pub async fn merge_local_sessions(
     session_ids: Vec<String>,
     date: String,
     active_physician: State<'_, SharedActivePhysician>,
     profile_client: State<'_, SharedProfileClient>,
 ) -> Result<String, CommandError> {
     info!("Merging {} local sessions on {}", session_ids.len(), date);
-    let surviving_id = local_archive::merge_sessions(&session_ids, &date)?;
 
-    let surv_id = surviving_id.clone();
+    // Run filesystem merge on blocking thread (avoids blocking main/Tauri thread)
+    let date_clone = date.clone();
+    let ids_clone = session_ids.clone();
+    let surviving_id = tokio::task::spawn_blocking(move || {
+        local_archive::merge_sessions(&ids_clone, &date_clone)
+    })
+    .await
+    .map_err(|e| CommandError::Other(format!("Merge task failed: {e}")))?
+    .map_err(CommandError::Other)?;
+
+    info!(surviving_id = %surviving_id, "Local merge complete, syncing to server");
+
+    // Server sync: await completion so consumed sessions don't reappear
+    // in the hybrid history view when the frontend refreshes
     let consumed_ids: Vec<String> = session_ids
         .iter()
         .filter(|id| **id != surviving_id)
         .cloned()
         .collect();
-    let date_clone = date.clone();
-    spawn_sync(
-        active_physician.inner().clone(),
-        profile_client.inner().clone(),
-        "merge_sessions",
-        move |phys_id, client| async move {
-            // Upload merged (surviving) session
-            if let Ok(details) = local_archive::get_session(&surv_id, &date_clone) {
-                if let Ok(body) = serde_json::to_value(&details) {
-                    if let Err(e) = client.upload_session(&phys_id, &surv_id, &body).await {
-                        warn!("Server sync failed (upload merged session): {e}");
-                    }
+    let physician_id = active_physician.read().await.as_ref().map(|p| p.id.clone());
+    let client = profile_client.read().await.clone();
+    if let (Some(phys_id), Some(client)) = (physician_id, client) {
+        // Upload merged (surviving) session
+        if let Ok(details) = local_archive::get_session(&surviving_id, &date) {
+            if let Ok(body) = serde_json::to_value(&details) {
+                if let Err(e) = client.upload_session(&phys_id, &surviving_id, &body).await {
+                    warn!("Server sync failed (upload merged session): {e}");
                 }
             }
-            // Delete consumed sessions from server
-            for consumed_id in &consumed_ids {
-                if let Err(e) = client.delete_session(&phys_id, consumed_id).await {
-                    warn!("Server sync failed (delete consumed session {consumed_id}): {e}");
-                }
+        }
+        // Delete consumed sessions from server (must complete before UI refresh)
+        for consumed_id in &consumed_ids {
+            if let Err(e) = client.delete_session(&phys_id, consumed_id).await {
+                warn!("Server sync failed (delete consumed session {consumed_id}): {e}");
             }
-        },
-    );
+        }
+    }
 
     Ok(surviving_id)
 }
