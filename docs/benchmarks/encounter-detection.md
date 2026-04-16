@@ -68,7 +68,7 @@ When a presence sensor reports departure, this is appended to the user prompt:
 ```
 
 Real-time context signals:
-CONTEXT: The presence sensor detected possible movement away from the room. Note: brief departures during medical visits are common (hand washing, supplies, injection preparation, bathroom). Evaluate the TRANSCRIPT CONTENT to determine if the encounter has actually concluded — a sensor departure alone is not sufficient.
+CONTEXT: The presence sensor detected possible movement away from the room. Note: brief departures during medical visits are common (hand washing, supplies, injection preparation, bathroom). Evaluate the TRANSCRIPT CONTENT to determine if the encounter has actually concluded — a sensor departure alone is not sufficient. IMPORTANT: Transcript timestamps are more reliable than the sensor. If segments show continuous or very recent speech (no large time gap), the encounter is likely still active regardless of the sensor signal.
 ```
 
 When the sensor confirms someone is still in the room (and NOT departed):
@@ -76,10 +76,12 @@ When the sensor confirms someone is still in the room (and NOT departed):
 ```
 
 Real-time context signals:
-CONTEXT: The presence sensor confirms someone is still in the room. Topic changes or pauses within the same visit are NOT transitions. Only split if there is strong evidence of a different patient (new name, new history intake, greeting a new person).
+CONTEXT: The presence sensor confirms someone is still in the room. Topic changes or pauses within the same visit are NOT transitions. Discussing a different family member or patient who is part of the same visit/call is NOT a transition — couples visits, family visits, and phone calls to households often involve the physician addressing multiple people's medical issues in a single encounter. Only split if there is a clear farewell, departure, AND arrival of a completely unrelated new patient.
 ```
 
 When neither signal is active (or no sensor is available), no context section is appended.
+
+> **Note**: These prompts are the *compiled defaults* in `encounter_detection.rs::build_encounter_detection_prompt()`. The profile service can override any of them via `PUT /config/prompts` (`PromptTemplates.encounter_detection_*` fields). When a server template is non-empty, it replaces the compiled string. The replay regression tests use whatever prompt is in effect at runtime.
 
 ### Optional `/nothink` Prefix
 

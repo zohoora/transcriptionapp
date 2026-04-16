@@ -21,12 +21,12 @@ src/
 ├── error.rs           # ApiError enum → HTTP status mapping
 ├── types.rs           # All data structures + validation methods
 ├── routes/
-│   ├── mod.rs         # build_router() — ~50 route registrations
+│   ├── mod.rs         # build_router() — 31 route registrations across 8 resource groups
 │   ├── health.rs      # GET /health
 │   ├── infrastructure.rs  # Clinic-wide settings (singleton)
 │   ├── config_data.rs # GET/PUT for prompts, billing, thresholds + version check (7 handlers)
 │   ├── mobile.rs      # Mobile job upload, status, CRUD (6 handlers)
-│   ├─��� physicians.rs  # Physician CRUD
+│   ├── physicians.rs  # Physician CRUD
 │   ├── rooms.rs       # Room CRUD
 │   ├── sessions.rs    # Session storage, split, merge, audio, files, day-log
 │   └── speakers.rs    # Speaker profile CRUD
@@ -50,7 +50,8 @@ Middleware stack (outermost → innermost): CORS → body limit (500 MB) → aut
 | Atomic writes | `atomic_write()` — UUID-suffixed temp file + rename. Used for transcript, SOAP, metadata, all JSON stores |
 | Session cache | `session_cache: HashMap<(physician_id, session_id), PathBuf>` — avoids O(N) directory walk per lookup. Populated lazily, invalidated on delete/split/merge |
 | Path traversal | `validate_id()` rejects `/`, `\`, `..`, `\0`, empty strings. Called on all physician_id and session_id inputs |
-| File allowlist | `is_allowed_session_file()` — explicit allowlist for auxiliary files (pipeline_log, replay_bundle, segments, screenshots/*.jpg, billing.json) |
+| File allowlist | `is_allowed_session_file()` in `store/sessions.rs` — explicit allowlist for auxiliary files. Currently allows: `pipeline_log.jsonl`, `replay_bundle.json`, `segments.jsonl`, `billing.json`, and `screenshots/*.jpg`. **Note**: `patient_handout.txt` is stored alongside other session files but is NOT in the allowlist — it can only be created via the dedicated `PUT /sessions/.../patient-handout` route, not via the generic file upload route. Same applies to `feedback.json`, `patient_labels.json` (each has its own typed route). Adding new aux file types requires updating both the allowlist and the tauri-side `server_sync.rs::SYNCED_AUX_FILES` |
+| Metadata patch (JSON merge) | `patch_metadata()` accepts `serde_json::Value` (raw JSON object) and merges non-null fields into existing metadata. Replaced the v0.10.30 typed-struct approach so new tauri-side metadata fields propagate without requiring a profile-service rebuild. Tradeoff: no compile-time type checking on patch keys — bad keys are silently merged. The store re-serializes after merge so unknown fields persist for future tauri reads |
 | Input validation | `validate()` methods on all Create/Update request types — name 500 chars, instructions 10K, etc. |
 | Backup safety | Split/merge operations create `.bak` files before modifying transcripts, removed on success |
 | JSON stores | Physicians, rooms, speakers, infrastructure — in-memory Vec + `atomic_write` to disk on mutation. `0o600` file permissions |
@@ -60,7 +61,7 @@ Middleware stack (outermost → innermost): CORS → body limit (500 MB) → aut
 
 ## API Routes
 
-~50 route handlers across 8 resource types. Session routes scoped under `/physicians/:id/sessions/...`. Mobile routes under `/mobile/...`. Config routes under `/config/...`.
+31 `.route()` registrations (each with multiple HTTP methods, ~52 handler functions total) across 8 resource groups. Session routes scoped under `/physicians/:id/sessions/...`. Mobile routes under `/mobile/...`. Config routes under `/config/...`.
 
 | Resource | Endpoints |
 |----------|-----------|
@@ -115,7 +116,7 @@ profile-data/
 | Add room setting | `types.rs` (RoomOverlay + Create/UpdateRoomRequest + validate), `store/rooms.rs` |
 | Add session endpoint | `routes/sessions.rs` (handler), `store/sessions.rs` (logic), `routes/mod.rs` (register) |
 | Add mobile job field | `store/mobile_jobs.rs` (MobileJob struct + UpdateJobRequest), `routes/mobile.rs` (handlers) |
-| Modify file allowlist | `store/sessions.rs` (`is_allowed_session_file()`) — currently allows: pipeline_log, replay_bundle, segments, screenshots/*.jpg, billing.json |
+| Modify file allowlist | `store/sessions.rs` (`is_allowed_session_file()`) — currently allows: pipeline_log, replay_bundle, segments, screenshots/*.jpg, billing.json. Update tauri-side `SYNCED_AUX_FILES` in `server_sync.rs` to match |
 | Add/update prompt template | `types.rs` (PromptTemplates struct), `PUT /config/prompts` with full replacement body |
 | Add/update billing rule | `types.rs` (BillingData or nested structs), `PUT /config/billing` with full replacement body |
 | Add detection threshold | `types.rs` (DetectionThresholds struct + `default_N()` fn + Default impl), `PUT /config/thresholds` |
@@ -123,6 +124,8 @@ profile-data/
 
 ## ArchiveMetadata Notes
 
-`ArchiveMetadata` in `types.rs` is the session metadata struct stored as `metadata.json`. Key fields include: session_id, started_at, ended_at, duration_ms, word_count, has_soap_note, has_audio, has_patient_handout, has_billing_record, charting_mode, encounter_number, patient_name, detection_method, likely_non_clinical, patient_count, physician_id, physician_name, room_name, encounter_started_at.
+`ArchiveMetadata` in `types.rs` is the session metadata struct stored as `metadata.json`. Key fields include: session_id, started_at, ended_at, duration_ms, word_count, has_soap_note, has_audio, has_patient_handout, has_billing_record, charting_mode (`session`|`continuous`|`mobile`|`upload`), encounter_number, patient_name, detection_method, likely_non_clinical, patient_count, physician_id, physician_name, room_name, encounter_started_at.
 
-**Note**: The tauri app's ArchiveMetadata includes `patient_dob` (vision-extracted date of birth, `Option<String>` in YYYY-MM-DD format) which is not yet in the profile service struct. The field is silently dropped during metadata uploads due to `#[serde(default)]`.
+**Schema-divergent fields**: The tauri-side `ArchiveMetadata` carries additional fields not declared on the profile-service struct (e.g., `patient_dob` from vision extraction in YYYY-MM-DD format, and any `shadow_comparison` data). The `PUT /sessions/:id/metadata` route was changed in v0.10.30 to deserialize the body as `serde_json::Value` (untyped) and call `patch_metadata()`, which merges non-null fields into the on-disk JSON. Result: unknown fields are preserved end-to-end without requiring the profile-service struct to be updated. So `patient_dob` round-trips correctly via tauri's `server_sync.rs::update_metadata()` even though the typed `ArchiveMetadata` struct here doesn't declare it.
+
+The initial session creation path (`POST /sessions/upload`) still uses the typed `ArchiveMetadata` struct via `UploadSessionRequest`, so unknown fields ARE dropped on first upload — the subsequent metadata PUT (after enrichment) restores them. When adding a new field that needs server-side filtering, validation, or indexing, declare it on the typed struct here and bump the upload payload.

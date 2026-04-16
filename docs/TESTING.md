@@ -6,11 +6,12 @@ This document describes the AMI Assist test infrastructure: what's tested, where
 
 | Surface | Files | Tests | Runner |
 |---------|-------|-------|--------|
-| Rust backend (lib + tools) | ~85 | ~1,140 | `cargo test --lib` |
-| Profile service | 7 | 42 | `cd profile-service && cargo test` |
-| Frontend (React + TS) | 28 | 550 | `pnpm test:run` |
+| Rust backend (lib) | ~85 | 1,061 | `cd tauri-app/src-tauri && cargo test --lib` |
+| Rust CLI tool tests | 4 binaries | ~46 inline | `cargo test --bins` |
+| Profile service | 7 | 46 | `cd profile-service && cargo test` |
+| Frontend (React + TS) | 31 | 585 | `cd tauri-app && pnpm test:run` |
 | E2E (live services) | 1 file, 11 tests | All `#[ignore]` | `./scripts/preflight.sh --full` |
-| Replay regressions | 4 CLIs | Run against archive | See "Replay Tools" below |
+| Replay regressions | 6 CLIs | Run against archive | See "Replay tools" below |
 
 ## Test layers
 
@@ -93,6 +94,24 @@ LLM responses at temp=0.3 have a documented ~40% flip rate on borderline cases. 
 2. **Wire the task into `tools/benchmark_runner.rs`** — add a `match` arm in `main()` that calls a new `run_<task_name>(...)` function.
 3. **Test it** with `cargo run --bin benchmark_runner -- <task_name> --trials 3`.
 
+## Growing the labeled corpus
+
+Two paths:
+
+**Bootstrap from production** — fastest, lowest-effort:
+```bash
+cd tauri-app/src-tauri
+cargo run --bin bootstrap_labels -- 2026-04-16
+```
+This walks the day's archive, reads each session's `metadata.json` + `billing.json`, and writes a label file per session that asserts the current production output is correct. After bootstrap, manual review can downgrade individual assertions for known errors.
+
+**Manual labeling** — higher effort, captures genuine ground truth:
+1. Open the History window, review the session's transcript + SOAP + billing
+2. Hand-write `tauri-app/src-tauri/tests/fixtures/labels/{date}_{short_id}.json` per the schema in `tests/fixtures/labels/README.md`
+3. Use `clinical_correct: false` or `billing_codes_expected: [different from prod]` to lock in the corrected answer
+
+Either way, the next `labeled_regression_cli --all` run will report production divergence from the labels.
+
 ## Adding a new replay CLI
 
 The pattern from `merge_replay_cli.rs`:
@@ -120,12 +139,14 @@ Located at `tauri-app/src-tauri/tests/fixtures/labels/`. JSON schema:
     "merge_correct": true,
     "clinical_correct": true,
     "patient_count_correct": true,
-    "billing_codes": ["A007A", "Q310A"],
-    "diagnostic_code": "311",
+    "billing_codes_expected": ["A007A", "Q310A"],
+    "diagnostic_code_expected": "311",
     "notes": "Headache encounter, clean split"
   }
 }
 ```
+
+The canonical schema reference lives at `tauri-app/src-tauri/tests/fixtures/labels/README.md`. The `_expected` suffix on `billing_codes_expected` and `diagnostic_code_expected` is intentional — it distinguishes the expectation (what should be true) from the production value (what currently is true).
 
 Run the labeled regression with `cargo run --bin labeled_regression_cli -- --all --fail-on-regression`.
 
@@ -137,7 +158,7 @@ Run the labeled regression with `cargo run --bin labeled_regression_cli -- --all
 | Frontend hook + component | 600+ | 585 |
 | Profile service | 50+ | 46 |
 | Replay corpus (bundles) | 200+ | 192 |
-| Labeled bundles | 30+ | 68 (5 days: 04-08, 04-09, 04-10, 04-13, 04-14, 04-15) |
+| Labeled bundles | 30+ | 68 (6 days: 04-08, 04-09, 04-10, 04-13, 04-14, 04-15) |
 | Benchmark test cases | 30+ | 21 (5 tasks: clinical, detection, merge, multi-patient detection, multi-patient split) |
 | Replay regression CLIs | 5 | 6 (detection + merge + clinical + multi-patient + multi-patient-split + golden-day) |
 | Preflight layers | 7 | 7 (1-5 E2E + 6 detection replay + 7 golden day) |
@@ -175,7 +196,19 @@ For prompts captured in replay bundles: run the relevant replay CLI to verify ac
 ```bash
 cd src-tauri && cargo test --lib billing
 cd src-tauri && cargo run --bin benchmark_runner -- --all --fail-on-regression
+cd src-tauri && cargo run --bin labeled_regression_cli -- --all --fail-on-regression
 ```
+
+### A/B testing a model or prompt change end-to-end on real audio
+Use the Python orchestrator at `tauri-app/scripts/replay_day.py`:
+```bash
+cd tauri-app
+python3 scripts/replay_day.py transcribe 2026-04-15
+python3 scripts/replay_day.py replay 2026-04-15 default       # baseline
+python3 scripts/replay_day.py replay 2026-04-15 soap_alt      # alternative model
+python3 scripts/replay_day.py compare 2026-04-15
+```
+Reports encounter counts, SOAP item counts, and failure rates side-by-side. Caches transcripts at `/tmp/replay_<date>/` so repeated `replay` runs are cheap.
 
 ### Investigating a regression
 ```bash

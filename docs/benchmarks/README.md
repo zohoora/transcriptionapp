@@ -49,13 +49,15 @@ Audio → STT → Transcript Buffer
 
 ## Tasks
 
-| Spec | Task | When It Runs | Current Model |
-|------|------|-------------|---------------|
-| [encounter-detection.md](encounter-detection.md) | Detect transition between patient encounters | Every ~2 min, or on sensor trigger, or on word count threshold | `fast-model` (with optional `/nothink`) |
-| [encounter-merge.md](encounter-merge.md) | Check if split segments are same visit | After every encounter split | `fast-model` |
-| [clinical-content-check.md](clinical-content-check.md) | Classify transcript as clinical vs non-clinical | After split confirmed (not merged back) | `fast-model` |
-| [multi-patient-detection.md](multi-patient-detection.md) | Detect multiple patients in merged transcript | After merge-back, if merged text ≥ 2500 words | `fast-model` |
-| [multi-patient-split.md](multi-patient-split.md) | Find boundary line between patients | After multi-patient detection confirms multiple patients | `fast-model` |
+| Spec | Task | When It Runs | Current Model | Fixture File |
+|------|------|-------------|---------------|--------------|
+| [encounter-detection.md](encounter-detection.md) | Detect transition between patient encounters | Every ~2 min, or on sensor trigger, or on word count threshold | `fast-model` (with optional `/nothink`) | `tauri-app/src-tauri/tests/fixtures/benchmarks/encounter_detection.json` |
+| [encounter-merge.md](encounter-merge.md) | Check if split segments are same visit | After every encounter split | `fast-model` | `tauri-app/src-tauri/tests/fixtures/benchmarks/encounter_merge.json` |
+| [clinical-content-check.md](clinical-content-check.md) | Classify transcript as clinical vs non-clinical | After split confirmed (not merged back) | `fast-model` | `tauri-app/src-tauri/tests/fixtures/benchmarks/clinical_content.json` |
+| [multi-patient-detection.md](multi-patient-detection.md) | Detect multiple patients in merged transcript | After merge-back, if merged text ≥ 2500 words | `fast-model` | `tauri-app/src-tauri/tests/fixtures/benchmarks/multi_patient_detection.json` |
+| [multi-patient-split.md](multi-patient-split.md) | Find boundary line between patients | After multi-patient detection confirms multiple patients | `fast-model` | `tauri-app/src-tauri/tests/fixtures/benchmarks/multi_patient_split.json` |
+
+Run a single benchmark: `cd tauri-app/src-tauri && cargo run --bin benchmark_runner -- <task_name> --trials 3`. The replay regression CLIs (`merge_replay_cli`, `clinical_replay_cli`, `multi_patient_replay_cli`, `multi_patient_split_replay_cli`) re-issue captured prompts from production replay bundles instead of curated fixtures — see `docs/TESTING.md` for the full picture.
 
 ## Shared Conventions
 
@@ -110,7 +112,7 @@ From `encounter_detection.rs`:
 | `FORCE_CHECK_WORD_THRESHOLD` | 3,000 | Trigger detection regardless of timer |
 | `FORCE_SPLIT_WORD_THRESHOLD` | 5,000 | Force-split if consecutive no-split ≥ limit |
 | `FORCE_SPLIT_CONSECUTIVE_LIMIT` | 3 | Consecutive non-split cycles before force-split |
-| `ABSOLUTE_WORD_CAP` | 10,000 | Unconditional force-split (hard safety valve) |
+| `ABSOLUTE_WORD_CAP` | 25,000 | Unconditional force-split (hard safety valve) |
 | `MIN_WORDS_FOR_CLINICAL_CHECK` | 100 | Minimum words for clinical content check |
 | `MULTI_PATIENT_CHECK_WORD_THRESHOLD` | 2,500 | Minimum merged words for multi-patient check |
 | `MULTI_PATIENT_SPLIT_MIN_WORDS` | 500 | Minimum words per half for split acceptance |

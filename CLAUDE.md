@@ -8,22 +8,29 @@ Ambient Medical Intelligence — clinical ambient scribe for physicians. Real-ti
 transcriptionapp/
 ├── tauri-app/              # Desktop application (Tauri v2 + React + Rust)
 │   ├── src/                # React + TypeScript frontend
-│   ├── src-tauri/          # Rust backend + CLI binaries
-│   │   └── src/bin/        # CLI tools (process_mobile, detection_replay, etc.)
+│   ├── src-tauri/
+│   │   ├── src/            # Rust library + main binary
+│   │   ├── src/bin/        # process_mobile (mobile audio processing daemon)
+│   │   ├── tools/          # 12 replay/regression CLIs (detection_replay, merge_replay, clinical_replay, multi_patient_replay, multi_patient_split_replay, benchmark_runner, labeled_regression, golden_day, bootstrap_labels, replay_bundle_backfill, encounter_experiment, vision_experiment)
+│   │   ├── benches/        # Criterion benchmarks (audio_benchmarks)
+│   │   └── tests/fixtures/ # benchmarks/*.json + labels/*.json (ground-truth corpus)
 │   ├── CLAUDE.md           # Detailed codebase context (architecture, commands, patterns)
 │   ├── CONTRIBUTING.md     # Development workflow
 │   └── README.md           # App-level docs
 ├── profile-service/        # Standalone axum REST API for multi-user management
-│   ├── src/                # Physician profiles, rooms, sessions, speaker enrollments, mobile jobs
+│   ├── src/                # Physician profiles, rooms, sessions, speaker enrollments, mobile jobs, server-configurable prompts/billing/thresholds
 │   └── CLAUDE.md           # Profile service architecture and patterns
 ├── ios/                    # iOS mobile app (SwiftUI) — offline recorder + auto-upload
 │   ├── AMI Assist/         # Source (Views, Services, Models)
 │   └── project.yml         # XcodeGen project spec
 ├── esp32-presence/         # ESP32 sensor firmware (PlatformIO)
-├── room6-xiao-sensor/     # XIAO ESP32-C3 mmWave sensor firmware (Arduino)
+├── room6-xiao-sensor/      # XIAO ESP32-C3 mmWave sensor firmware (Arduino)
+├── ops/                    # Server-side ops scripts (auto-deploy, backups, health monitor)
 ├── .github/workflows/      # CI + Release (auto-update via GitHub Releases)
-├── docs/                   # Historical review documents, benchmarks, plans
-│   └── *.md                # Code review docs (ADRs live in tauri-app/docs/adr/)
+├── docs/                   # Test architecture, benchmarks, design specs, ADRs
+│   ├── TESTING.md          # Authoritative test infrastructure doc (7 layers, replay tools, labeled corpus)
+│   ├── benchmarks/         # Per-task benchmark fixture documentation
+│   └── superpowers/specs/  # Feature design specs
 ├── scripts/                # Data export and sensor logging scripts
 └── CODE_REVIEW_FINDINGS.md # Review findings tracker
 ```
@@ -65,15 +72,20 @@ cd tauri-app && npx tsc --noEmit          # Frontend
 cd tauri-app/src-tauri && cargo check     # Backend
 
 # Tests
-cd tauri-app && pnpm test:run             # Frontend (Vitest, ~552 passing)
-cd tauri-app/src-tauri && cargo test      # Backend (~1044 tests, ~29 ignored)
+cd tauri-app && pnpm test:run             # Frontend (Vitest, 585 passing across 31 files)
+cd tauri-app/src-tauri && cargo test --lib   # Backend lib (1,061 passing, 29 ignored)
 
 # E2E (requires live STT + LLM Router)
 cd tauri-app/src-tauri && cargo test e2e_ -- --ignored --nocapture
 
-# Daily preflight
+# Daily preflight (7 layers: 5 E2E + detection replay + golden day)
 ./scripts/preflight.sh                    # Quick (~10s)
 ./scripts/preflight.sh --full             # Full (~30s)
+
+# Replay regression CLIs (offline + online, see docs/TESTING.md)
+cd tauri-app/src-tauri && cargo run --bin detection_replay_cli -- --all --fail-on-mismatch
+cd tauri-app/src-tauri && cargo run --bin labeled_regression_cli -- --all
+cd tauri-app/src-tauri && cargo run --bin benchmark_runner -- --all --trials 3
 
 # Profile service
 cd profile-service && cargo check          # Type check
@@ -89,8 +101,8 @@ cd ios && xcodegen generate                # Regenerate Xcode project
 ./ios/scripts/test.sh --build-only         # Build only
 
 # Release (triggers auto-update for all rooms)
-# Bump version in tauri.conf.json + package.json + Cargo.toml, then:
-git tag v0.10.11
+# Bump version in tauri.conf.json + package.json + src-tauri/Cargo.toml, then:
+git tag v0.10.34   # use the next patch version
 git push origin main --tags
 ```
 
@@ -108,7 +120,7 @@ Three-component architecture for offline mobile recording:
 
 1. **iOS App** (`ios/`) — SwiftUI recorder, records AAC audio offline, auto-uploads to profile service on network
 2. **Profile Service** — stores audio + tracks job status via `/mobile/*` endpoints (no processing logic)
-3. **Processing CLI** (`tauri-app/src-tauri/src/bin/process_mobile.rs`) — polls for jobs, runs STT→encounter detection→SOAP using the same shared Rust modules as the desktop app (zero algorithm divergence)
+3. **Processing CLI** (`tauri-app/src-tauri/src/bin/process_mobile.rs`) — polls for jobs, runs STT→encounter detection→SOAP using shared `audio_processing` module + `transcription_app_lib` (zero algorithm divergence with desktop)
 
 ```bash
 # Run processing daemon on MacBook
@@ -120,6 +132,23 @@ cargo run --bin process_mobile -- --once
 
 Design spec: `docs/superpowers/specs/2026-04-13-mobile-app-v1-design.md`
 
+## Manual Audio Upload (Desktop)
+
+Same pipeline as mobile, but invoked from the desktop UI. "Upload Recording" link in both ReadyMode and ContinuousMode opens an `AudioUploadModal` where the user picks an audio file (mp3/wav/m4a/aac/flac/ogg/wma/webm) and a date. Backend uses the same `audio_processing` module as `process_mobile` (ffmpeg → STT batch → encounter detection → SOAP). Sessions are written to the local archive under the user-selected date with `charting_mode = "upload"`. Progress events stream to the UI via `audio_upload_progress` Tauri events.
+
+## Server-Configurable Data (Phase 1)
+
+Three categories of operational data can be updated centrally without app rebuilds:
+- **Prompt templates** — `PUT /config/prompts` on profile service. All LLM prompt builders accept `Option<&PromptTemplates>` and override the compiled default with the server value when present.
+- **Billing data** — `PUT /config/billing`. Rule engine accepts `Option<&BillingData>`.
+- **Detection thresholds** — `PUT /config/thresholds`. Wired into `DetectionEvalContext.server_thresholds` (currently always `None` in production; Phase 2 work).
+
+Three-tier fallback: server fetch (on startup + version-bump check) → `~/.transcriptionapp/server_config_cache.json` → compiled defaults. Stored as `SharedServerConfig` (Arc<RwLock>) in Tauri managed state.
+
+## Auto-Deploy (Profile Service)
+
+The profile service on the MacBook is auto-deployed via launchd. The `com.fabricscribe.profile-service-updater` plist runs `~/transcriptionapp-deploy.sh` on a schedule, which pulls the repo, rebuilds `profile-service`, and restarts via launchctl. Logs in `~/transcriptionapp-deploy.log`. See `ops/README.md`.
+
 ## Detailed Context
 
-See **[tauri-app/CLAUDE.md](tauri-app/CLAUDE.md)** for full architecture, IPC commands, code patterns, gotchas, and troubleshooting.
+See **[tauri-app/CLAUDE.md](tauri-app/CLAUDE.md)** for full architecture, IPC commands, code patterns, gotchas, and troubleshooting. See **[docs/TESTING.md](docs/TESTING.md)** for the test architecture.

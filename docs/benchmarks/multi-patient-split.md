@@ -305,18 +305,23 @@ The parsing for this task has some differences from other tasks:
 | Array response | `[{"line_index": 5}]` | Parser tries single object first, falls back to array, uses first element |
 | Markdown fences | `` ```json\n{"line_index": 5}\n``` `` | Fences stripped before parsing |
 
-### Important Parsing Difference
+### Parser
 
-Unlike other tasks that use the shared `parse_llm_json_response()`, the multi-patient split in production uses a local struct:
+`parse_multi_patient_split()` in `encounter_detection.rs` uses the shared `parse_llm_json_response()` helper (same as other tasks). The local struct:
 
 ```rust
-struct SplitSuggestion {
-    line_index: Option<usize>,
-    confidence: Option<f64>,
-    reason: Option<String>,
+pub struct MultiPatientSplitResult {
+    pub line_index: Option<usize>,
+    pub confidence: Option<f64>,
+    pub reason: Option<String>,
 }
 ```
 
-All fields are `Option` — the model may return a subset. `line_index: None` or `line_index: 0` or `line_index > max_line` all result in the split being rejected.
+All fields are `Option` — the model may return a subset. `line_index: None` or `line_index: 0` or `line_index > max_line` all result in the split being rejected. Confidence is clamped to `[0.0, 1.0]` post-parse.
 
 **Benchmark should test:** Verify parsing handles all the above edge cases, especially empty objects, out-of-range values, and missing fields.
+
+### Fixture and Replay Tools
+
+- **Curated benchmark fixture**: `tauri-app/src-tauri/tests/fixtures/benchmarks/multi_patient_split.json` — TC-1, TC-2, etc., with `expected_line_index` and tolerance.
+- **Production replay**: `cargo run --bin multi_patient_split_replay_cli -- --all` — re-issues archived split prompts from production replay bundles (schema v3+) and compares `line_index` within `±2 lines` (configurable via `--tolerance`). Synthetic mode (`--synthetic`) builds a split prompt from scratch for any bundle with ≥2-patient detection. See `tools/multi_patient_split_replay_cli.rs`.

@@ -116,21 +116,30 @@ refactor: extract audio resampling into separate module
 
 ## Testing
 
-We maintain comprehensive test coverage (~415 frontend tests, ~764 Rust tests). All PRs must pass tests.
+The full test architecture is documented in **[../docs/TESTING.md](../docs/TESTING.md)** — read it first for context on the 7 test layers, replay tools, labeled corpus, and benchmark fixtures.
+
+Current coverage: 585 frontend tests, 1,061 Rust lib tests, 46 profile-service tests, 192 replay bundles, 68 labeled bundles. All PRs must pass `cargo test --lib`, `pnpm test:run`, and `./scripts/preflight.sh --full`.
 
 ### Running Tests
 
 ```bash
-# Frontend tests (~415 tests)
+# Frontend (Vitest, 31 files)
 pnpm test:run
 
-# Rust tests (~764 tests)
+# Rust backend (~1,061 lib tests)
 cd src-tauri
+cargo test --lib
+
+# Profile service (46 tests)
+cd ../../profile-service
 cargo test
 
-# All tests with coverage
+# Full preflight (7 layers, ~30s)
+cd ../tauri-app
+./scripts/preflight.sh --full
+
+# Frontend coverage
 pnpm test:coverage
-cd src-tauri && cargo llvm-cov
 ```
 
 ### Test Categories
@@ -138,18 +147,21 @@ cd src-tauri && cargo llvm-cov
 | Type | Location | Command |
 |------|----------|---------|
 | Unit tests (TS) | `src/*.test.tsx` | `pnpm test:run` |
-| Unit tests (Rust) | `src/*.rs` (mod tests) | `cargo test` |
+| Unit tests (Rust) | `src/*.rs` (mod tests) | `cargo test --lib` |
 | Snapshot tests | `src/*.snapshot.test.tsx` | `pnpm test:run` |
 | Accessibility | `src/*.a11y.test.tsx` | `pnpm test:run` |
 | Contract tests | `src/contracts.test.ts` | `pnpm test:run` |
 | Property-based | Rust modules | `cargo test prop_` |
 | Stress tests | `src/stress_tests.rs` | `cargo test stress_` |
 | Pipeline tests | `src/pipeline_tests.rs` | `cargo test pipeline_` |
-| Visual regression | `tests/visual/` | `pnpm visual:test` |
-| E2E tests | `e2e/` | `pnpm e2e` |
-| Fuzz tests | `fuzz/` | `cargo +nightly fuzz run` |
-| Mutation tests | - | `pnpm mutation:test` / `cargo mutants` |
-| Soak tests | `src/soak_tests.rs` | `pnpm soak:test` |
+| Soak tests (`#[ignore]`) | `src/soak_tests.rs` | `pnpm soak:1h` |
+| E2E (`#[ignore]`, requires live STT+LLM Router) | `src/e2e_tests.rs` | `cargo test e2e_ -- --ignored --nocapture` |
+| Replay regression CLIs | `tools/*.rs` | `cargo run --bin <name> -- --all` |
+| Benchmark fixtures | `tests/fixtures/benchmarks/*.json` | `cargo run --bin benchmark_runner -- <task>` |
+| Labeled regression | `tests/fixtures/labels/*.json` | `cargo run --bin labeled_regression_cli -- --all` |
+| Golden day | `tests/fixtures/labels/2026-04-15_*.json` | `cargo run --bin golden_day_cli` |
+
+> **Removed in v0.10.31** (April 2026): WebdriverIO E2E (`e2e/`), Playwright visual regression (`tests/visual/`), Stryker mutation testing (`stryker.config.mjs`), `cargo +nightly fuzz` infrastructure. The replay regression CLIs (which test real LLM/data flows) supersede them — see `docs/TESTING.md` for rationale.
 
 ### Writing Tests
 
@@ -288,70 +300,86 @@ proptest! {
 
 | Module | Purpose |
 |--------|---------|
-| `commands/` | Tauri IPC command handlers (18 submodules) |
+| `commands/` | Tauri IPC command handlers (~21 submodules incl. audio_upload, billing, calibration) |
 | `session` | Recording state machine (Idle→Preparing→Recording→Stopping→Completed) |
-| `pipeline` | Audio processing coordination (VAD, Whisper, diarization, enhancement) |
+| `pipeline` | Audio processing coordination (VAD, STT, diarization, enhancement) |
 | `audio` | Device enumeration, audio capture, resampling (rubato) |
 | `vad` | Voice Activity Detection (Silero VAD) |
 | `transcription` | Segment and utterance data types |
-| `config` | Settings persistence (JSON) |
+| `config` | Settings persistence (JSON) + `replay_snapshot()` |
 | `models` | Model download management |
 | `checklist` | Pre-flight verification system |
 | `diarization/` | Speaker embedding extraction (ONNX) and clustering |
 | `enhancement/` | Speech denoising (GTCRN ONNX model) |
-| `continuous_mode` | Continuous charting mode (end-of-day encounter detection) |
+| `continuous_mode` | Continuous charting mode (all-day encounter detection) |
+| `continuous_mode_events` | Typed event emission for continuous mode |
 | `local_archive` | Local session storage and history |
 | `speaker_profiles` | Speaker voice enrollment storage |
-| `whisper_server` | STT Router client (WebSocket streaming) |
+| `whisper_server` | STT Router client (WebSocket streaming + batch fallback) |
 | `listening` | Auto-session detection (VAD + greeting check) |
 | `screenshot` | Screen capture (in-memory JPEG for vision) |
-| `mcp/` | MCP server on port 7101 for IT Admin Coordinator |
+| `mcp/` | MCP server on port 7101 |
 | `biomarkers/` | Vocal biomarker analysis (vitality, stability, cough) |
 | `llm_client` | OpenAI-compatible LLM client for SOAP generation |
 | `ollama` | Re-exports from llm_client.rs (backward compat) |
 | `medplum` | Medplum FHIR client (OAuth, encounters, documents) |
-| `encounter_detection` | Encounter detection prompts/parsing + clinical content check |
+| `encounter_detection` | Encounter detection prompts/parsing + clinical content check + retrospective multi-patient check |
 | `encounter_merge` | Encounter merge prompts/parsing (M1 name-aware strategy) |
-| `encounter_pipeline` | Shared pipeline helpers (SOAP generation, merge checks) |
+| `encounter_pipeline` | Shared helpers (SOAP, merge check, clinical check, billing extraction) |
 | `screenshot_task` | Screenshot capture task for continuous mode |
-| `patient_name_tracker` | Vision-based patient name extraction + majority-vote |
+| `patient_name_tracker` | Vision-based patient name + DOB extraction (JSON format) |
 | `presence_sensor/` | Multi-sensor presence suite (mmWave + thermal + CO2, SensorSource trait, DebounceFsm, fusion engine) |
 | `gemini_client` | Google Gemini API client (AI image generation) |
 | `shadow_log` | Shadow mode CSV logging (dual detection comparison) |
+| `shadow_observer` | Shadow mode observer task (sensor-side dual detection) |
 | `activity_log` | Structured PHI-safe activity logging |
 | `pipeline_log` | Pipeline replay JSONL logger |
 | `segment_log` | Per-segment JSONL timeline logger (continuous mode) |
-| `replay_bundle` | Self-contained encounter replay test case builder |
+| `replay_bundle` | Self-contained encounter replay test case builder (schema v3, includes MultiPatientSplitDecision) |
 | `day_log` | Day-level orchestration JSONL logger |
+| `transcript_buffer` | Timestamped segment buffer (continuous mode) |
+| `audio_processing` | Shared ffmpeg + WAV helpers used by manual audio upload + mobile CLI |
+| `billing/` | FHO+ billing engine (234 OHIP codes, 562 diagnostic codes, two-stage extraction) |
+| `server_sync` | `ServerSyncContext` — fire-and-forget session upload + 30s delayed re-sync |
+| `server_config` | Server-configurable prompts/billing/thresholds (3-tier fallback: server → cache → defaults) |
+| `room_config` | Room config (room name, profile server URL, fallback URLs, room ID) |
+| `physician_cache` | Local cache fallback for physician list + settings |
+| `profile_client` | HTTP client for profile service (physicians, sessions, speakers, rooms, config) |
+| `audio_upload_queue` | Background audio upload queue for server sync |
+| `co2_calibration` | CO2 sensor baseline calibration tool |
+| `tools/*.rs` | 12 replay/regression CLIs (detection_replay, merge_replay, clinical_replay, multi_patient_replay, multi_patient_split_replay, benchmark_runner, labeled_regression, golden_day, bootstrap_labels, replay_bundle_backfill, encounter_experiment, vision_experiment) |
+| `bin/process_mobile.rs` | Mobile audio processing CLI (polls profile service, runs STT→detect→SOAP) |
+| `benches/audio_benchmarks.rs` | Criterion benchmarks for audio processing |
 
 ### Frontend (React)
 
+See `tauri-app/CLAUDE.md` "Frontend Structure" section for the canonical full list. Highlights:
+
 | Component | Purpose |
 |-----------|---------|
-| `App.tsx` | Main sidebar layout, state management |
-| `modes/ReadyMode` | Pre-recording state (device selection, start button) |
-| `modes/RecordingMode` | Active recording (timer, transcript preview) |
-| `modes/ReviewMode` | Post-recording (full transcript, SOAP note, sync) |
-| `modes/ContinuousMode` | Continuous charting dashboard (monitoring, encounters) |
-| `AudioQualitySection` | Real-time audio level/SNR display |
-| `BiomarkersSection` | Vitality, stability, cough metrics |
-| `ConversationDynamicsSection` | Turn-taking, overlap, response latency |
-| `PatientPulse` | Glanceable biomarker summary |
-| `PatientVoiceMonitor` | Patient-focused voice metric trending |
-| `SettingsDrawer` | Flat settings panel (continuous mode, mic, SOAP prefs, session automation, room, speaker profiles) |
-| `Header` | AMI Assist title + version, history button, settings button |
-| `AuthProvider` | Medplum OAuth context |
-| `LoginScreen` | Medplum login UI |
-| `PatientSearch` | FHIR patient search |
-| `EncounterBar` | Active encounter display |
-| `SpeakerEnrollment` | Speaker voice enrollment |
-| `ClinicalChat` | Clinical assistant chat panel |
-| `ImageSuggestions` | Medical illustration display (AI-generated via Gemini or MIIS server) |
-| `SyncStatusBar` | EMR sync status indicator |
-| `HistoryWindow` | Separate window for encounter history |
-| `HistoryView` | Encounter history list |
-| `Calendar` | Date picker for history |
-| `AudioPlayer` | Playback of recorded audio |
+| `App.tsx` | Main sidebar layout, mode routing, modal coordination |
+| `modes/ReadyMode` | Pre-recording state (device selection, start button, audio upload link) |
+| `modes/RecordingMode` | Active recording (timer, transcript preview, patient handout, DDx) |
+| `modes/ReviewMode` | Post-recording (full transcript, SOAP note, EMR sync) |
+| `modes/ContinuousMode` | Continuous charting dashboard (live transcript, encounter stats, recent encounters) |
+| `AudioUploadModal` | Manual audio file upload (mp3/wav/m4a/...) → ffmpeg → STT → detection → SOAP |
+| `SettingsDrawer` | Flat settings panel (continuous mode toggle, mic, SOAP prefs, automation, room, speakers) |
+| `Header` | AMI Assist title + version, update banner, history/settings buttons |
+| `ActivePhysicianBadge` | Current physician display + switch button |
+| `PhysicianSelect` / `RoomSetup` / `RoomSelect` / `AdminPanel` | Multi-user setup + admin |
+| `AuthProvider` / `LoginScreen` | Medplum OAuth |
+| `PatientSearch` / `EncounterBar` / `SpeakerEnrollment` / `ClinicalChat` | EMR + chat |
+| `ImageSuggestions` / `ImageViewerWindow` / `ImageHistoryWindow` | AI image generation (Gemini) or MIIS images |
+| `PatientHandoutEditor` | Standalone window for patient handout (Save/Print/Copy/Close) |
+| `HistoryWindow` / `HistoryView` / `Calendar` / `AudioPlayer` | Session archive browsing |
+| `SplitWindow` | Standalone window for splitting sessions (LLM-suggested split point) |
+| `cleanup/` | Session cleanup dialogs (delete, merge, rename, edit) |
+| `billing/BillingTab` + `DailySummaryView` + `MonthlySummaryView` + `CapProgressBar` | FHO+ billing UI |
+| `CalibrationWindow` | CO2 sensor calibration (standalone window) |
+| `FeedbackPanel` | Session feedback/rating |
+| `PatientPulse` / `PatientVoiceMonitor` / `BiomarkersSection` / `ConversationDynamicsSection` / `AudioQualitySection` | Voice metric displays |
+| `SyncStatusBar` | EMR sync indicator |
+| `ErrorBoundary` | React error boundary with fallback UI |
 
 ### Shared Types
 
@@ -361,11 +389,14 @@ See `src/types/index.ts` for TypeScript types that mirror Rust backend types:
 - `BiomarkerUpdate`, `AudioQualitySnapshot` - Metrics
 - `SoapNote`, `MultiPatientSoapResult`, `SoapOptions` - SOAP generation
 - `LLMStatus` (alias: `OllamaStatus`) - LLM integration
-- `AuthState`, `Encounter`, `Patient` - Medplum types
+- `AuthState`, `Encounter`, `Patient`, `MedplumSyncState` - Medplum types
 - `SpeakerProfileInfo`, `SpeakerRole` - Speaker enrollment
 - `LocalArchiveSummary`, `LocalArchiveMetadata`, `LocalArchiveDetails` - Session history
 - `ContinuousModeStats`, `ContinuousModeEvent` - Continuous charting mode
 - `ListeningEventPayload` - Auto-session detection
+- `BillingRecord`, `BillingCode`, `TimeEntry`, `BillingContext` - FHO+ billing
+- `AudioUploadProgress`, `AudioUploadResult`, `UploadedSession` - Manual audio upload
+- `PatientHandout` - Patient handout editor
 
 ## Adding New Features
 

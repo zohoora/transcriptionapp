@@ -5,8 +5,9 @@ Ambient Medical Intelligence — a real-time speech-to-text transcription deskto
 ## Features
 
 ### Core
-- **Continuous mode** (default) — records all day, auto-detects patient encounters, generates SOAP notes per encounter
+- **Two charting modes** — `session` (per-encounter manual start/stop, default for fresh installs) and `continuous` (records all day with auto-detection); selectable per-physician via settings
 - **Real-time streaming transcription** via STT Router (WebSocket, medical-optimized aliases)
+- **Manual audio upload** — upload an audio file (mp3/wav/m4a/aac/flac/ogg/wma/webm) and run it through the same continuous-mode pipeline (ffmpeg → STT batch → encounter detection → SOAP)
 - **Speaker diarization** — ONNX-based speaker embeddings with online clustering
 - **Speaker profile sync** — enrolled speaker profiles auto-sync across all rooms at startup
 - **Auto-update** — GitHub Releases with Ed25519 signing; rooms detect new versions on launch
@@ -14,11 +15,15 @@ Ambient Medical Intelligence — a real-time speech-to-text transcription deskto
 ### Clinical
 - **SOAP note generation** — AI-powered via OpenAI-compatible LLM router with explicit S/O/A/P section definitions
 - **Multi-patient SOAP** — supports up to 4 patients per visit with auto patient/physician detection
-- **AI medical illustrations** — Gemini-generated images from clinical concepts
-- **Vision-based patient name** — screenshot capture + vision LLM to extract patient name from EMR chart
+- **FHO+ Billing Engine** — two-stage extraction (LLM clinical features → deterministic OHIP rule engine); 234 OHIP codes; auto K013A→K033A overflow at 4+ counselling units; per-patient billing; diagnostic-code cross-validation
+- **Patient handout** — plain-language visit summary (5th–8th grade reading level); included as context in SOAP generation
+- **Differential diagnosis** — top 3 DDx with cardinal symptoms, refreshed every 30s during continuous mode
+- **Clinical assistant chat** — `clinical-assistant` LLM alias for live questions during recording; chat history persisted per session (continuous mode)
+- **AI medical illustrations** — Gemini-generated images from clinical concepts (default); MIIS server alternative
+- **Vision-based patient name + DOB** — screenshot capture + vision LLM to extract patient name and DOB from EMR chart; DOB auto-populates billing age bracket
 - **Screenshot archival** — all screenshots saved per encounter for replay and debugging
 - **Encounter history** — session browser with sort (time, encounter, patient, words, duration) and filter (clinical, SOAP status)
-- **Session cleanup tools** — delete, split, merge sessions, rename patients, renumber encounters
+- **Session cleanup tools** — delete, split, merge sessions, rename patients, renumber encounters; merge is async + crash-safe (atomic rename, server delete awaited)
 
 ### Multi-Room Clinic Deployment
 
@@ -41,9 +46,10 @@ Ambient Medical Intelligence — a real-time speech-to-text transcription deskto
 
 ### Presence Sensor (Hybrid Detection)
 - **ESP32 multi-sensor bridge** — mmWave radar (SEN0395), thermal camera (MLX90640), CO2/temp/humidity (SCD41)
-- **Detection mode auto-derived** — if room has sensor configured (WiFi or USB), uses hybrid detection; otherwise LLM-only
+- **Detection mode auto-derived** — if room has sensor configured (WiFi or USB), uses hybrid detection (sensor + LLM); otherwise LLM-only
 - **Sensor tuning** — absence threshold, debounce filter, hybrid confirm window, per-room calibration (thermal, CO2)
-- **Connection types** — WiFi (HTTP to ESP32), USB-UART (serial to mmWave), configured per room in admin panel
+- **Connection types** — WiFi (HTTP to ESP32), USB-UART (serial to mmWave; XIAO ESP32-C3 supported), configured per room in admin panel
+- **Sleep mode** — auto-pauses continuous mode 10 PM – 6 AM EST (configurable, DST-safe via chrono-tz); sleep banner in UI
 
 ### Biomarker Analysis
 - **Vitality (prosody)** — pitch variability analysis for affect detection
@@ -83,8 +89,8 @@ open "src-tauri/target/debug/bundle/macos/AMI Assist.app"
 ## Release & Auto-Update
 
 ```bash
-# Bump version in tauri.conf.json + package.json, then:
-git tag v0.4.0
+# Bump version in tauri.conf.json + package.json + src-tauri/Cargo.toml, then:
+git tag v0.10.34
 git push origin main --tags
 # GitHub Actions builds, signs, and publishes to Releases
 # All running rooms detect the update on next launch
@@ -96,14 +102,14 @@ The release workflow (`.github/workflows/release.yml`) builds the app, creates a
 
 The app settings are simplified into a flat list:
 
-1. **Continuous Mode** toggle (on by default)
+1. **Continuous Mode** toggle (compiled default is session mode; physicians who prefer continuous flip the toggle once and the choice persists in their physician profile)
 2. **Microphone** selector
 3. **SOAP Preferences** — personal instructions per physician
 4. **Session Automation** — auto-start on greeting, auto-end on silence (session mode only)
 5. **Room** — current room name + change button
 6. **Speaker Profiles** — manage enrolled voices
 
-Infrastructure settings (STT/LLM URLs, API keys, model aliases) are managed centrally via the profile service and merged at startup. Sensor settings are configured per room in the admin panel.
+Infrastructure settings (STT/LLM URLs, API keys, model aliases) are managed centrally via the profile service and merged at startup. Server-configurable data (LLM prompt templates, billing rules, detection thresholds) follows a three-tier fallback: server fetch → local cache → compiled defaults. Sensor settings are configured per room in the admin panel.
 
 ## Configuration
 
@@ -125,18 +131,26 @@ Settings stored in `~/.transcriptionapp/config.json`. Room config in `~/.transcr
 
 ## Testing
 
+See [docs/TESTING.md](../docs/TESTING.md) for the full test architecture (unit, integration, E2E, replay regression layers).
+
 ```bash
-# Frontend (~415 tests)
+# Frontend (Vitest)
 pnpm test:run
 
-# Rust (~764 tests)
-cd src-tauri && cargo test
+# Rust (cargo test)
+cd src-tauri && cargo test --lib
 
-# E2E (requires STT + LLM Router)
+# E2E (requires STT + LLM Router running)
 cd src-tauri && cargo test e2e_ -- --ignored --nocapture
 
-# Preflight (verifies all services)
+# Preflight — runs all 7 layers including offline replay regressions
 ./scripts/preflight.sh --full
+
+# Offline replay regression (no LLM needed) — runs against ~195 archived bundles
+cd src-tauri && cargo run --bin detection_replay_cli -- --all --fail-on-mismatch --threshold 99.0
+
+# Labeled regression (offline) — compares production billing.json to ground-truth labels
+cd src-tauri && cargo run --bin labeled_regression_cli -- --all
 ```
 
 ## Building for Room 2 (iMac)
