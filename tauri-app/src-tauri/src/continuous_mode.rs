@@ -489,14 +489,28 @@ pub async fn run_continuous_mode(
     // Read server-configurable data (prompts, billing rules, thresholds).
     // Snapshot at start of continuous mode — changes take effect on next restart.
     // Arc-wrapped to share between detector task and flush-on-stop path without cloning.
-    let (templates, billing_data) = {
+    let (templates, billing_data, detector_thresholds) = {
         use tauri::Manager;
         let shared = app.state::<crate::commands::SharedServerConfig>();
         let config = shared.read().await;
-        (Arc::new(config.prompts.clone()), Arc::new(config.billing.clone()))
+        (
+            Arc::new(config.prompts.clone()),
+            Arc::new(config.billing.clone()),
+            Arc::new(config.thresholds.clone()),
+        )
     };
     let flush_templates = templates.clone();
     let flush_billing_data = billing_data.clone();
+
+    // Phase 2: primitive snapshots of server thresholds. Captured by Copy into every
+    // `async move` block (detector, consumer, flush-on-stop), so changing a threshold
+    // server-side takes effect on the next continuous-mode restart, same cadence as
+    // prompts and billing rules.
+    let force_check_word_threshold = detector_thresholds.force_check_word_threshold;
+    let min_words_for_clinical_check = detector_thresholds.min_words_for_clinical_check;
+    let multi_patient_check_word_threshold = detector_thresholds.multi_patient_check_word_threshold;
+    let soap_generation_timeout_secs = detector_thresholds.soap_generation_timeout_secs;
+    let billing_extraction_timeout_secs = detector_thresholds.billing_extraction_timeout_secs;
 
     // Audio recording path for continuous mode
     let audio_output_path = {
@@ -1194,7 +1208,7 @@ pub async fn run_continuous_mode(
             // Pre-compute hallucination-cleaned word count for large buffers.
             // This prevents STT phrase loops from inflating word counts and triggering
             // premature force-splits. Only runs when buffer is large enough to matter.
-            let (filtered_formatted, hallucination_report) = if word_count > FORCE_CHECK_WORD_THRESHOLD {
+            let (filtered_formatted, hallucination_report) = if word_count > force_check_word_threshold {
                 let (filtered, report) = strip_hallucinations(&formatted, 5);
                 if !report.repetitions.is_empty() || !report.phrase_repetitions.is_empty() {
                     info!(
@@ -1254,7 +1268,7 @@ pub async fn run_continuous_mode(
                 // Also trigger if buffer is very large (safety valve).
                 // Use hallucination-cleaned word count so STT phrase loops
                 // don't inflate counts past the threshold prematurely.
-                let force_check = cleaned_word_count > FORCE_CHECK_WORD_THRESHOLD;
+                let force_check = cleaned_word_count > force_check_word_threshold;
 
                 // Minimum encounter duration: 2 minutes (unless force_check)
                 if !force_check {
@@ -1268,7 +1282,7 @@ pub async fn run_continuous_mode(
                 }
                 if force_check {
                     info!("Buffer exceeds {} cleaned words (raw={}, cleaned={}) — forcing encounter check",
-                        FORCE_CHECK_WORD_THRESHOLD, word_count, cleaned_word_count);
+                        force_check_word_threshold, word_count, cleaned_word_count);
                 }
             }
 
@@ -1518,7 +1532,10 @@ pub async fn run_continuous_mode(
                 hybrid_confirm_window_secs,
                 hybrid_min_words_for_sensor_split,
                 sensor_continuous_present,
-                server_thresholds: None,
+                // Phase 2 wiring: server-configurable thresholds override the compiled
+                // constants inside evaluate_detection(). Snapshotted at continuous-mode
+                // start; new values take effect on next restart (same as prompts/billing).
+                server_thresholds: Some((*detector_thresholds).clone()),
             };
             let (outcome, new_failures) = evaluate_detection(&eval_ctx);
             consecutive_llm_failures = new_failures;
@@ -1868,9 +1885,10 @@ pub async fn run_continuous_mode(
                                     "word_count": encounter_word_count,
                                 }),
                                 Some(&templates),
+                                Some(min_words_for_clinical_check),
                             ).await
                         } else {
-                            encounter_word_count >= MIN_WORDS_FOR_CLINICAL_CHECK
+                            encounter_word_count >= min_words_for_clinical_check
                         };
 
                         if !is_clinical {
@@ -1980,6 +1998,7 @@ pub async fn run_continuous_mode(
                                     "has_notes": !notes_text.is_empty(),
                                 }),
                                 Some(&templates),
+                                Some(soap_generation_timeout_secs),
                             ).await;
 
                             match soap_outcome {
@@ -2029,6 +2048,7 @@ pub async fn run_continuous_mode(
                                             &logger_for_detector,
                                             Some(&templates),
                                             Some(&billing_data),
+                                            Some(billing_extraction_timeout_secs),
                                         ).await;
                                         let billing_latency = billing_start.elapsed().as_millis() as u64;
 
@@ -2477,6 +2497,7 @@ pub async fn run_continuous_mode(
                                                                 "detection_confidence": detection.confidence,
                                                             }),
                                                             Some(&templates),
+                                                            Some(soap_generation_timeout_secs),
                                                         ).await;
                                                         if let crate::encounter_pipeline::SoapGenerationOutcome::Success { ref result, ref content, .. } = regen_outcome {
                                                             // Server sync: upload retrospective SOAP
@@ -2513,7 +2534,7 @@ pub async fn run_continuous_mode(
                         // Runs after the merge check to avoid wasted work on encounters
                         // that will be merged back.
                         if is_clinical
-                            && encounter_word_count >= MULTI_PATIENT_CHECK_WORD_THRESHOLD
+                            && encounter_word_count >= multi_patient_check_word_threshold
                         {
                             if let Some(ref client) = llm_client {
                                 info!(
@@ -2584,6 +2605,7 @@ pub async fn run_continuous_mode(
                                                 "detection_confidence": detection.confidence,
                                             }),
                                             Some(&templates),
+                                            Some(soap_generation_timeout_secs),
                                         )
                                         .await;
                                     if let crate::encounter_pipeline::SoapGenerationOutcome::Success {
@@ -2865,9 +2887,10 @@ pub async fn run_continuous_mode(
                             "word_count": word_count,
                         }),
                         Some(&flush_templates),
+                        Some(min_words_for_clinical_check),
                     ).await
                 } else {
-                    word_count >= MIN_WORDS_FOR_CLINICAL_CHECK
+                    word_count >= min_words_for_clinical_check
                 };
 
                 if !is_clinical {
@@ -2984,6 +3007,7 @@ pub async fn run_continuous_mode(
                         &logger_for_flush,
                         serde_json::json!({"stage": "flush_on_stop", "word_count": word_count}),
                         Some(&flush_templates),
+                        Some(soap_generation_timeout_secs),
                     ).await;
                     if let crate::encounter_pipeline::SoapGenerationOutcome::Success { ref content, .. } = outcome {
                         sync_ctx.sync_soap(&session_id, content, flush_soap_detail_level, &flush_soap_format);
@@ -3019,6 +3043,7 @@ pub async fn run_continuous_mode(
                                 &logger_for_flush,
                                 Some(&flush_templates),
                                 Some(&flush_billing_data),
+                                Some(billing_extraction_timeout_secs),
                             ).await;
                             let billing_latency = billing_start.elapsed().as_millis() as u64;
 

@@ -69,7 +69,12 @@ pub async fn generate_and_archive_soap(
     logger: &Arc<Mutex<PipelineLogger>>,
     log_extra: serde_json::Value,
     templates: Option<&PromptTemplates>,
+    // Optional server-configured timeout override. `None` falls back to the compiled
+    // `SOAP_GENERATION_TIMEOUT_SECS` constant. Pass `None` from tests and pre-Phase-2
+    // callers; production continuous mode passes `Some(thresholds.soap_generation_timeout_secs)`.
+    soap_timeout_override: Option<u64>,
 ) -> SoapGenerationOutcome {
+    let soap_timeout = soap_timeout_override.unwrap_or(SOAP_GENERATION_TIMEOUT_SECS);
     let effective_detail = effective_soap_detail_level(soap_detail_level, word_count);
     let soap_opts = SoapOptions {
         detail_level: effective_detail,
@@ -90,7 +95,7 @@ pub async fn generate_and_archive_soap(
         multi_patient_detection,
     );
 
-    match tokio::time::timeout(tokio::time::Duration::from_secs(SOAP_GENERATION_TIMEOUT_SECS), soap_future).await {
+    match tokio::time::timeout(tokio::time::Duration::from_secs(soap_timeout), soap_future).await {
         Ok(Ok(soap_result)) => {
             let latency_ms = soap_start.elapsed().as_millis() as u64;
             let content = soap_result.format_for_archive();
@@ -190,7 +195,7 @@ pub async fn generate_and_archive_soap(
                     meta,
                 );
             }
-            warn!("SOAP generation timed out ({}s)", SOAP_GENERATION_TIMEOUT_SECS);
+            warn!("SOAP generation timed out ({}s)", soap_timeout);
             SoapGenerationOutcome::Failed {
                 latency_ms,
                 error: SOAP_TIMEOUT_ERROR.to_string(),
@@ -226,8 +231,13 @@ pub async fn extract_and_archive_billing(
     logger: &Arc<Mutex<PipelineLogger>>,
     templates: Option<&PromptTemplates>,
     billing_data: Option<&crate::server_config::BillingData>,
+    // Optional server-configured timeout override. `None` falls back to the
+    // compiled `BILLING_EXTRACTION_TIMEOUT_SECS` constant.
+    billing_timeout_override: Option<u64>,
 ) -> Result<crate::billing::BillingRecord, String> {
     use crate::billing::clinical_features::{build_billing_extraction_prompt, parse_billing_extraction};
+
+    let billing_timeout = billing_timeout_override.unwrap_or(BILLING_EXTRACTION_TIMEOUT_SECS);
 
     // Build prompt
     let (system_prompt, user_prompt) = build_billing_extraction_prompt(soap_content, transcript, context_hints, templates);
@@ -235,7 +245,7 @@ pub async fn extract_and_archive_billing(
     // Call LLM with timeout
     let start = Instant::now();
     let result = tokio::time::timeout(
-        tokio::time::Duration::from_secs(BILLING_EXTRACTION_TIMEOUT_SECS),
+        tokio::time::Duration::from_secs(billing_timeout),
         client.generate(model, &system_prompt, &user_prompt, "billing_extraction"),
     )
     .await;
@@ -262,7 +272,7 @@ pub async fn extract_and_archive_billing(
             return Err(format!("LLM error: {}", e));
         }
         Err(_) => {
-            warn!("Billing extraction timed out for {} ({}s)", session_id, BILLING_EXTRACTION_TIMEOUT_SECS);
+            warn!("Billing extraction timed out for {} ({}s)", session_id, billing_timeout);
             if let Ok(mut l) = logger.lock() {
                 l.log_llm_call(
                     "billing_extraction",
@@ -429,6 +439,7 @@ pub async fn recover_orphaned_billing(
             logger,
             None,
             None,
+            None, // recovery path uses compiled default timeout
         ).await {
             warn!("Failed to recover billing for {}: {}", summary.session_id, e);
         } else {
@@ -605,6 +616,10 @@ pub async fn run_merge_check(
 ///
 /// Returns `true` if the encounter is clinical, `false` if non-clinical.
 /// Fail-open: LLM errors or timeouts default to clinical (true).
+///
+/// `min_words_override`: when `Some`, replaces the compiled `MIN_WORDS_FOR_CLINICAL_CHECK`
+/// constant — lets callers inject server-configured `DetectionThresholds.min_words_for_clinical_check`.
+/// Pass `None` to use the compiled default (tests, fallback paths, or pre-Phase-2 callers).
 pub async fn check_clinical_content(
     client: &LLMClient,
     model: &str,
@@ -613,11 +628,13 @@ pub async fn check_clinical_content(
     logger: &Arc<Mutex<PipelineLogger>>,
     log_extra: serde_json::Value,
     templates: Option<&PromptTemplates>,
+    min_words_override: Option<usize>,
 ) -> bool {
-    if word_count < MIN_WORDS_FOR_CLINICAL_CHECK {
+    let min_words = min_words_override.unwrap_or(MIN_WORDS_FOR_CLINICAL_CHECK);
+    if word_count < min_words {
         info!(
             "Encounter too small for clinical analysis ({} words < {} threshold) — treating as non-clinical",
-            word_count, MIN_WORDS_FOR_CLINICAL_CHECK
+            word_count, min_words
         );
         return false;
     }
@@ -838,6 +855,7 @@ pub async fn recover_orphaned_soap(
                 "word_count": word_count,
             }),
             None,
+            None, // recovery path uses compiled default timeout
         )
         .await;
 
@@ -959,6 +977,7 @@ pub async fn regen_soap_after_merge(
             "merged_into": surviving_session_id,
         }),
         None,
+        None, // merge-regen uses compiled default timeout; caller could thread from ServerConfig if desired
     )
     .await;
 
@@ -981,6 +1000,7 @@ pub async fn regen_soap_after_merge(
                 surviving_session_id, surviving_date, billing_duration_ms,
                 None, after_hours, &rule_ctx, logger,
                 billing_templates, billing_data,
+                None, // merge-path billing uses compiled default timeout
             ).await {
                 Ok(record) => info!(
                     "Billing extracted after merge for {} ({} codes)",
