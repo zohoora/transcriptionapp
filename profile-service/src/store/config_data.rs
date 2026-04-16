@@ -116,20 +116,6 @@ impl ConfigDataStore {
         Ok(())
     }
 
-    fn save_all(&self) -> Result<(), ApiError> {
-        Self::save_json(&self.prompts_path, &self.prompts)?;
-        Self::save_json(&self.billing_path, &self.billing)?;
-        Self::save_json(&self.thresholds_path, &self.thresholds)?;
-        Self::save_json(
-            &self.version_path,
-            &VersionFile {
-                version: self.version,
-                updated_at: self.updated_at.clone(),
-            },
-        )?;
-        Ok(())
-    }
-
     fn bump_version(&mut self) {
         self.version += 1;
         self.updated_at = Utc::now().to_rfc3339();
