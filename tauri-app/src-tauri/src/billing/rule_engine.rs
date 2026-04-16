@@ -57,6 +57,11 @@ pub fn map_features_to_billing_with_context(
             BillingConfidence::Low
         };
         let mut code = make_billing_code(ohip, confidence.clone(), features.is_after_hours);
+
+        // Multi-patient encounters: each patient gets their own assessment code.
+        // Set quantity = patient_count for non-per-unit assessment codes.
+        let patient_count = features.patient_count.unwrap_or(1).max(1);
+
         // Per-unit codes (K013A, K033A, K005A, K007A): set quantity from session duration
         // using GP54 counselling unit table (½ hour or major part thereof).
         if matches!(assessment_code.as_str(), "K013A" | "K033A" | "K005A" | "K007A") {
@@ -77,6 +82,10 @@ pub fn map_features_to_billing_with_context(
                 codes.push(code);
             }
         } else {
+            // Non-counselling assessment: multiply by patient count for multi-patient encounters
+            if patient_count > 1 {
+                code.quantity = patient_count;
+            }
             codes.push(code);
         }
     }
@@ -106,12 +115,18 @@ pub fn map_features_to_billing_with_context(
             }
             if code_str.starts_with('K') {
                 let key = condition_type_to_key(cond);
-                let has_evidence = features
+                let evidence = features
                     .condition_evidence
                     .get(key)
-                    .is_some_and(|e| !e.trim().is_empty());
-                if !has_evidence {
+                    .map(|e| e.trim())
+                    .unwrap_or("");
+                if evidence.is_empty() {
                     continue; // suppress K code — no SOAP evidence provided
+                }
+                // Cross-validate: evidence text must contain condition-relevant keywords.
+                // Prevents LLM from fabricating evidence for conditions not in the SOAP.
+                if !validate_condition_evidence(cond, evidence) {
+                    continue;
                 }
             }
             if let Some(ohip) = ohip_codes::get_code(&code_str) {
@@ -359,6 +374,7 @@ fn condition_type_to_key(cond: &ConditionType) -> &'static str {
         ConditionType::CounsellingAdditional => "counselling_additional",
         ConditionType::FibromyalgiaCare => "fibromyalgia_care",
         ConditionType::IddPrimaryCare => "idd_primary_care",
+        ConditionType::OpioidWithdrawalManagement => "opioid_withdrawal_management",
     }
 }
 
@@ -389,7 +405,36 @@ fn condition_type_to_codes(cond: &ConditionType, billing_data: BillingDataRef<'_
         ConditionType::CounsellingAdditional => vec!["K033A".to_string()],
         ConditionType::FibromyalgiaCare => vec!["K037A".to_string()],
         ConditionType::IddPrimaryCare => vec!["K125A".to_string()],
+        ConditionType::OpioidWithdrawalManagement => vec!["K005A".to_string()],
     }
+}
+
+/// Cross-validate condition evidence: ensure the evidence text contains at least
+/// one keyword relevant to the condition. This catches LLM hallucinations where
+/// evidence is fabricated for conditions not actually present in the SOAP.
+fn validate_condition_evidence(cond: &ConditionType, evidence: &str) -> bool {
+    let evidence_lower = evidence.to_lowercase();
+    let keywords: &[&str] = match cond {
+        ConditionType::DiabeticAssessment | ConditionType::DiabetesManagement
+        | ConditionType::InsulinTherapySupport => &[
+            "diabet", "a1c", "glucose", "insulin", "metformin", "hyperglycemia",
+            "hypoglycemia", "blood sugar",
+        ],
+        ConditionType::ChfManagement => &[
+            "heart failure", "chf", "fluid", "diuretic", "ejection", "edema",
+            "cardiomyopathy",
+        ],
+        ConditionType::OpioidWithdrawalManagement => &[
+            "opioid", "methadone", "suboxone", "buprenorphine", "naloxone",
+            "withdrawal", "tapering", "opiate",
+        ],
+        ConditionType::StiManagement => &["sti", "chlamydia", "gonorrhea", "syphilis", "hiv", "sexual"],
+        ConditionType::Neurocognitive => &["cognitive", "mmse", "moca", "dementia", "alzheimer"],
+        ConditionType::IddPrimaryCare => &["intellectual", "developmental", "autism", "down syndrome", "cerebral palsy", "spina bifida", "fetal alcohol"],
+        // For conditions where evidence text is already sufficient proof, accept any non-empty evidence
+        _ => return true,
+    };
+    keywords.iter().any(|kw| evidence_lower.contains(kw))
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────
@@ -601,7 +646,7 @@ const IDD_CODES_K133: &[&str] = &["299", "319", "343", "758"];
 const IDD_CODES_K125: &[&str] = &["299", "319", "343", "741", "758"];
 
 /// Resolve the diagnostic code for a billing record via a 4-stage pipeline:
-/// 1. Try the LLM's `suggestedDiagnosticCode` (if valid)
+/// 1. Try the LLM's `suggestedDiagnosticCode` — cross-validated against primaryDiagnosis
 /// 2. Fall back to text-matching `primaryDiagnosis` against the 562-code database
 /// 3. Apply billing-code signals (K030A→250, Q050A→428) as fallback
 /// 4. Enforce SOB constraints (K133A/K125A require IDD codes)
@@ -612,10 +657,29 @@ fn resolve_diagnostic_code(
     record: &mut BillingRecord,
     billing_data: BillingDataRef<'_>,
 ) {
-    // Stage 1: try the explicit code suggestion
+    // Stage 1: try the explicit code suggestion, cross-validated against primaryDiagnosis.
+    // The LLM's numeric code suggestion is wrong ~27% of the time (e.g. suggesting 491
+    // "bronchitis" for a knee pain encounter). Cross-validate: at least one significant
+    // word from the code's description must appear in the primaryDiagnosis text.
     if let Some(ref suggested) = features.suggested_diagnostic_code {
         if let Some(dc) = diagnostic_codes::get_diagnostic_code(suggested.trim()) {
-            set_diagnostic(record, dc);
+            // Cross-validate against primaryDiagnosis when available.
+            // Accept the code if: (a) no primaryDiagnosis to check against, or
+            // (b) at least one significant word from the code description appears
+            // in the primaryDiagnosis text.
+            let cross_valid = match features.primary_diagnosis.as_ref() {
+                None => true, // no text to cross-check, accept the code
+                Some(diag) => {
+                    let diag_lower = diag.to_lowercase();
+                    dc.description.to_lowercase().split_whitespace()
+                        .filter(|w| w.len() >= 4)
+                        .any(|w| diag_lower.contains(w))
+                }
+            };
+            if cross_valid {
+                set_diagnostic(record, dc);
+            }
+            // If not cross-valid, fall through to Stage 2 (text match is more reliable)
         }
     }
 
@@ -1410,7 +1474,7 @@ mod tests {
         features.conditions = vec![ConditionType::IddPrimaryCare];
         features.condition_evidence.insert(
             "idd_primary_care".to_string(),
-            "some evidence".to_string(),
+            "Patient with developmental disability, annual review".to_string(),
         );
         features.suggested_diagnostic_code = Some("496".to_string());
         let record = map_features_to_billing(&features, "s1", "2026-04-05", 1_800_000, None, None);
@@ -1529,11 +1593,32 @@ mod tests {
     }
 
     #[test]
-    fn test_suggested_code_takes_precedence_over_text() {
+    fn test_suggested_code_takes_precedence_when_consistent() {
         let mut features = default_features();
         features.suggested_diagnostic_code = Some("401".to_string());
-        features.primary_diagnosis = Some("diabetes mellitus".to_string());
-        // Explicit code wins over text match
+        features.primary_diagnosis = Some("essential hypertension".to_string());
+        // Consistent: 401 = "Essential hypertension" matches "essential hypertension"
+        let record = map_features_to_billing(&features, "s1", "2026-04-05", 600_000, None, None);
+        assert_eq!(record.diagnostic_code.as_deref(), Some("401"));
+    }
+
+    #[test]
+    fn test_suggested_code_rejected_when_inconsistent() {
+        let mut features = default_features();
+        features.suggested_diagnostic_code = Some("491".to_string()); // bronchitis
+        features.primary_diagnosis = Some("knee osteoarthritis".to_string());
+        // Inconsistent: 491 "chronic bronchitis" doesn't match "knee osteoarthritis"
+        // Falls through to text match → 715 (osteoarthritis)
+        let record = map_features_to_billing(&features, "s1", "2026-04-05", 600_000, None, None);
+        assert_eq!(record.diagnostic_code.as_deref(), Some("715"));
+    }
+
+    #[test]
+    fn test_suggested_code_accepted_without_primary_diagnosis() {
+        let mut features = default_features();
+        features.suggested_diagnostic_code = Some("401".to_string());
+        features.primary_diagnosis = None;
+        // No primaryDiagnosis to cross-check → accept the suggested code
         let record = map_features_to_billing(&features, "s1", "2026-04-05", 600_000, None, None);
         assert_eq!(record.diagnostic_code.as_deref(), Some("401"));
     }

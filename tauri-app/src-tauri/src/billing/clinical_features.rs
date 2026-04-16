@@ -117,6 +117,7 @@ pub enum ConditionType {
     CounsellingAdditional,
     FibromyalgiaCare,
     IddPrimaryCare,
+    OpioidWithdrawalManagement,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
@@ -306,6 +307,7 @@ If you are confident of the exact code, provide it. Common codes: 250 Diabetes |
 - "counselling_additional" — Counselling after the first 3 K013 units are exhausted for the year (K033A). Out-of-basket at full FFS
 - "fibromyalgia_care" — Fibromyalgia or myalgic encephalomyelitis care session (K037A). Per unit
 - "idd_primary_care" — Primary care for patient with intellectual/developmental disability (autism, Down syndrome, cerebral palsy, FAS, spina bifida). Minimum 20 min. Requires IDD diagnosis (K125A)
+- "opioid_withdrawal_management" — Active opioid use disorder management: methadone/suboxone/buprenorphine prescribing, dose adjustment, tapering plan, or withdrawal assessment. Not just noting opioid use in history (K005A)
 
 ### conditionEvidence (REQUIRED for every condition listed)
 For EACH condition in the conditions array, provide a brief quote or paraphrase from the SOAP note that supports it. The key must match the condition name exactly. If you cannot find specific evidence in the SOAP note for a condition, do NOT include that condition.

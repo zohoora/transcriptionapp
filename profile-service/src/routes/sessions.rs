@@ -72,11 +72,11 @@ pub async fn upload_session(
 pub async fn update_metadata(
     State(state): State<Arc<AppState>>,
     Path((physician_id, session_id)): Path<(String, String)>,
-    Json(metadata): Json<crate::types::ArchiveMetadata>,
+    Json(patch): Json<serde_json::Value>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     state
         .sessions
-        .update_metadata(&physician_id, &session_id, &metadata)
+        .patch_metadata(&physician_id, &session_id, &patch)
         .await?;
     Ok(Json(serde_json::json!({ "ok": true })))
 }

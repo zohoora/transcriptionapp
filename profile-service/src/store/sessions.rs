@@ -162,7 +162,7 @@ impl SessionStore {
         Ok(())
     }
 
-    /// Update metadata
+    /// Update metadata (full replacement)
     pub async fn update_metadata(
         &self,
         physician_id: &str,
@@ -172,6 +172,38 @@ impl SessionStore {
         let dir = self.find_session_dir(physician_id, session_id).await?;
         self.write_metadata(&dir, metadata).await?;
         info!(physician_id, session_id, "Metadata updated");
+        Ok(())
+    }
+
+    /// Patch metadata by merging provided fields into the existing metadata.
+    /// Accepts partial JSON — only non-null fields are overwritten.
+    pub async fn patch_metadata(
+        &self,
+        physician_id: &str,
+        session_id: &str,
+        patch: &serde_json::Value,
+    ) -> Result<(), ApiError> {
+        let dir = self.find_session_dir(physician_id, session_id).await?;
+        let meta_path = dir.join("metadata.json");
+        let existing_json = tokio::fs::read_to_string(&meta_path)
+            .await
+            .map_err(|e| ApiError::Internal(format!("Failed to read metadata: {e}")))?;
+        let mut existing: serde_json::Value = serde_json::from_str(&existing_json)
+            .map_err(|e| ApiError::Internal(format!("Failed to parse metadata: {e}")))?;
+
+        // Merge patch fields into existing metadata
+        if let (Some(base), Some(patch_obj)) = (existing.as_object_mut(), patch.as_object()) {
+            for (key, value) in patch_obj {
+                if !value.is_null() {
+                    base.insert(key.clone(), value.clone());
+                }
+            }
+        }
+
+        let merged_json = serde_json::to_string_pretty(&existing)
+            .map_err(|e| ApiError::Internal(format!("Failed to serialize metadata: {e}")))?;
+        atomic_write(&meta_path, &merged_json).await?;
+        info!(physician_id, session_id, "Metadata patched");
         Ok(())
     }
 
