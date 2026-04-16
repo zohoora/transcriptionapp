@@ -81,6 +81,8 @@ interface ContinuousModeProps {
   isGeneratingHandout: boolean;
   /** Open history window to view today's sessions */
   onViewHistory: () => void;
+  /** Upload audio file for batch processing */
+  onUploadAudio?: () => void;
   /** Clinical chat messages */
   chatMessages: ChatMessage[];
   /** Whether a chat response is being generated */
@@ -189,6 +191,7 @@ export const ContinuousMode = memo(function ContinuousMode({
   onGenerateHandout,
   isGeneratingHandout,
   onViewHistory,
+  onUploadAudio,
   chatMessages,
   chatIsLoading,
   chatError,
@@ -270,6 +273,11 @@ export const ContinuousMode = memo(function ContinuousMode({
           <button className="btn-link" onClick={onViewHistory}>
             View Past Sessions
           </button>
+          {onUploadAudio && (
+            <button className="upload-audio-link" onClick={onUploadAudio}>
+              Upload Recording
+            </button>
+          )}
         </div>
       </div>
     );

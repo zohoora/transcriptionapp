@@ -5,6 +5,7 @@
 
 use std::path::Path;
 use std::process::{Command, Stdio};
+use std::sync::OnceLock;
 
 use tracing::info;
 
@@ -13,14 +14,43 @@ pub const SUPPORTED_EXTENSIONS: &[&str] = &[
     "mp3", "wav", "m4a", "aac", "flac", "ogg", "wma", "webm",
 ];
 
-/// Check if ffmpeg is available in PATH.
+/// Common ffmpeg locations on macOS (app bundles don't inherit shell PATH).
+const FFMPEG_SEARCH_PATHS: &[&str] = &[
+    "ffmpeg",                     // system PATH
+    "/opt/homebrew/bin/ffmpeg",   // Apple Silicon Homebrew
+    "/usr/local/bin/ffmpeg",      // Intel Homebrew
+];
+
+/// Cached resolved ffmpeg path (resolved once, reused for all calls).
+static FFMPEG_PATH: OnceLock<String> = OnceLock::new();
+
+/// Resolve the ffmpeg binary path, checking common locations.
+fn resolve_ffmpeg() -> Result<&'static str, String> {
+    let path = FFMPEG_PATH.get_or_init(|| {
+        for candidate in FFMPEG_SEARCH_PATHS {
+            if Command::new(candidate)
+                .arg("-version")
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .status()
+                .is_ok()
+            {
+                info!("Resolved ffmpeg at: {candidate}");
+                return candidate.to_string();
+            }
+        }
+        String::new() // empty = not found
+    });
+    if path.is_empty() {
+        Err("ffmpeg is required but not found. Install with: brew install ffmpeg".to_string())
+    } else {
+        Ok(path.as_str())
+    }
+}
+
+/// Check if ffmpeg is available (searches common paths).
 pub fn check_ffmpeg_available() -> Result<(), String> {
-    Command::new("ffmpeg")
-        .arg("-version")
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status()
-        .map_err(|_| "ffmpeg is required but not found. Install with: brew install ffmpeg".to_string())?;
+    resolve_ffmpeg()?;
     Ok(())
 }
 
@@ -34,7 +64,8 @@ pub fn is_supported_format(path: &Path) -> bool {
 
 /// Transcode any supported audio format to WAV (16kHz mono PCM) using ffmpeg.
 pub fn transcode_to_wav(input: &Path, output: &Path) -> Result<(), String> {
-    let status = Command::new("ffmpeg")
+    let ffmpeg = resolve_ffmpeg()?;
+    let status = Command::new(ffmpeg)
         .args([
             "-y", // overwrite output
             "-i",

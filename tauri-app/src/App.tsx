@@ -835,6 +835,7 @@ function App() {
             isSleeping={continuous.isSleeping}
             sleepResumeAt={continuous.sleepResumeAt}
             onViewHistory={openHistoryWindow}
+            onUploadAudio={() => setShowUploadModal(true)}
             chatMessages={chatMessages}
             chatIsLoading={chatIsLoading}
             chatError={chatError}
