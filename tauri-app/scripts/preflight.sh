@@ -97,7 +97,7 @@ fi
 if [[ -z "$LAYER" || "$LAYER" == "2" ]]; then
     echo -e "${YELLOW}Layer 2: LLM Router${NC}"
     run_test "e2e_layer2_llm_soap_generation" "SOAP generation (soap-model-fast)"
-    run_test "e2e_layer2_llm_encounter_detection" "Encounter detection (faster + /nothink)"
+    run_test "e2e_layer2_llm_encounter_detection" "Encounter detection (fast-model)"
     run_test "e2e_layer2_hybrid_detection_and_merge" "Hybrid model (detect + merge + filter)"
     echo ""
 fi
@@ -120,6 +120,24 @@ fi
 if [[ "$MODE" == "full" || "$LAYER" == "5" ]]; then
     echo -e "${YELLOW}Layer 5: Continuous Mode (full pipeline)${NC}"
     run_test "e2e_layer5_continuous_mode_full" "Audio → Detection → SOAP → Archive → History"
+    echo ""
+fi
+
+# Layer 6: Detection Replay Regression (offline, against archived bundles)
+if [[ -z "$LAYER" || "$LAYER" == "6" ]]; then
+    echo -e "${YELLOW}Layer 6: Detection Replay Regression${NC}"
+    echo -n "  Replaying detection decisions against archive (target ≥ 99.0%)... "
+    if cd src-tauri && cargo run --quiet --bin detection_replay_cli -- --all --fail-on-mismatch --threshold 99.0 > /tmp/preflight_replay.log 2>&1; then
+        echo -e "${GREEN}PASS${NC}"
+        grep "Bundles:\|Agreement:" /tmp/preflight_replay.log | sed 's/^/    /'
+        PASSED=$((PASSED + 1))
+        cd ..
+    else
+        echo -e "${RED}FAIL${NC}"
+        tail -10 /tmp/preflight_replay.log | sed 's/^/    /'
+        FAILED=$((FAILED + 1))
+        cd ..
+    fi
     echo ""
 fi
 

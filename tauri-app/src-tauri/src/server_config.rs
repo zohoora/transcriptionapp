@@ -392,3 +392,74 @@ async fn fetch_from_server(client: &ProfileClient) -> Result<ServerConfig> {
         source: ConfigSource::Server,
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_compiled_defaults_has_correct_source() {
+        let config = compiled_defaults();
+        assert!(matches!(config.source, ConfigSource::CompiledDefaults));
+        assert_eq!(config.version, 0);
+    }
+
+    #[test]
+    fn test_compiled_defaults_has_sane_thresholds() {
+        let config = compiled_defaults();
+        // These are documented production values — sanity check they survive refactors
+        assert_eq!(config.thresholds.force_check_word_threshold, 3000);
+        assert_eq!(config.thresholds.force_split_word_threshold, 5000);
+        assert_eq!(config.thresholds.absolute_word_cap, 25000);
+        assert_eq!(config.thresholds.confidence_base_short, 0.85);
+        assert_eq!(config.thresholds.confidence_base_long, 0.70);
+    }
+
+    #[test]
+    fn test_cached_config_roundtrip() {
+        // The on-disk cache format must roundtrip cleanly so a saved cache
+        // can be read back after an app restart
+        let original = CachedConfig {
+            version: 42,
+            prompts: PromptTemplates::default(),
+            billing: BillingData::default(),
+            thresholds: DetectionThresholds::default(),
+        };
+        let json = serde_json::to_string(&original).unwrap();
+        let parsed: CachedConfig = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed.version, 42);
+    }
+
+    #[test]
+    fn test_cached_config_back_compat() {
+        // Old caches that lack newer threshold fields should still parse
+        // (DetectionThresholds uses #[serde(default = "default_N")] on each field)
+        let json = r#"{
+            "version": 1,
+            "prompts": {},
+            "billing": {},
+            "thresholds": {}
+        }"#;
+        let parsed: CachedConfig = serde_json::from_str(json).unwrap();
+        assert_eq!(parsed.version, 1);
+        // Defaults should be applied
+        assert_eq!(parsed.thresholds.force_check_word_threshold, 3000);
+    }
+
+    #[test]
+    fn test_config_source_variants() {
+        // Ensure all three sources are distinguishable in code
+        let server = ServerConfig {
+            source: ConfigSource::Server,
+            ..compiled_defaults()
+        };
+        let cache = ServerConfig {
+            source: ConfigSource::Cache,
+            ..compiled_defaults()
+        };
+        let defaults = compiled_defaults();
+        assert!(matches!(server.source, ConfigSource::Server));
+        assert!(matches!(cache.source, ConfigSource::Cache));
+        assert!(matches!(defaults.source, ConfigSource::CompiledDefaults));
+    }
+}

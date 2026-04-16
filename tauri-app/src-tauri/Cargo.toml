@@ -1,6 +1,6 @@
 [package]
 name = "transcription-app"
-version = "0.10.30"
+version = "0.10.31"
 description = "Local Transcription App"
 authors = ["you"]
 license = "MIT"
@@ -158,6 +158,14 @@ path = "tools/replay_bundle_backfill.rs"
 [[bin]]
 name = "process_mobile"
 path = "src/bin/process_mobile.rs"
+
+[[bin]]
+name = "merge_replay_cli"
+path = "tools/merge_replay_cli.rs"
+
+[[bin]]
+name = "benchmark_runner"
+path = "tools/benchmark_runner.rs"
 
 [[bench]]
 name = "audio_benchmarks"

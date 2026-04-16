@@ -1,0 +1,39 @@
+{
+  "task": "clinical_content_check",
+  "model": "fast-model",
+  "targets": {
+    "clinical_recall_pct": 98.0,
+    "non_clinical_precision_pct": 95.0,
+    "overall_accuracy_pct": 95.0
+  },
+  "test_cases": [
+    {
+      "id": "TC-1",
+      "name": "Clear Clinical Encounter",
+      "difficulty": "easy",
+      "input": "Speaker 1: Good morning, how are you feeling today?\nSpeaker 2: Hi doctor. I've been having these headaches for about two weeks now. They're mostly on the right side and they get worse in the afternoon.\nSpeaker 1: I see. On a scale of one to ten, how would you rate the pain?\nSpeaker 2: Usually about a six or seven. Sometimes it goes up to an eight.\nSpeaker 1: Are you experiencing any nausea, vision changes, or sensitivity to light?\nSpeaker 2: A little bit of light sensitivity, but no nausea.\nSpeaker 1: Have you tried any over-the-counter medications?\nSpeaker 2: I've been taking ibuprofen but it only helps for a couple of hours.\nSpeaker 1: Based on what you're describing, this sounds like it could be tension headaches or possibly migraines. I'd like to start you on sumatriptan as needed and schedule a follow-up in two weeks.\nSpeaker 2: Thank you doctor. I'll see you in two weeks then.\nSpeaker 1: Take care. We'll see you soon.",
+      "expected_clinical": true
+    },
+    {
+      "id": "TC-2",
+      "name": "Staff Personal Conversation",
+      "difficulty": "easy",
+      "input": "Speaker 1: Hey, did you watch the game last night?\nSpeaker 2: Oh my god, yes! That last-minute goal was incredible.\nSpeaker 1: I couldn't believe it. I was screaming at the TV.\nSpeaker 2: Me too! My neighbors probably hate me now.\nSpeaker 1: So what are you doing this weekend? Want to grab lunch?\nSpeaker 2: Sure, how about Saturday? There's that new Thai place on Main Street.\nSpeaker 1: Sounds great. I'll text you.\nSpeaker 2: Your next patient is ready in room three, by the way.",
+      "expected_clinical": false
+    },
+    {
+      "id": "TC-3",
+      "name": "Phone Call About a Different Patient",
+      "difficulty": "medium",
+      "input": "Speaker 1: Yes, this is Doctor Williams. I'm returning your call about the lab results for Mrs. Henderson.\nSpeaker 1: Her hemoglobin A1C came back at 8.1, which is above her target of 7.0.\nSpeaker 1: I'd like to increase her metformin to 1000 milligrams twice daily.\nSpeaker 1: Yes, and please schedule a follow-up in three months.\nSpeaker 1: Thank you. Bye.",
+      "expected_clinical": true
+    },
+    {
+      "id": "TC-4",
+      "name": "Administrative/Scheduling Only",
+      "difficulty": "medium",
+      "input": "Speaker 1: Can we move Mrs. Johnson's appointment from Tuesday to Thursday?\nSpeaker 2: Let me check the schedule. Thursday at 2pm is open.\nSpeaker 1: That works. And I need to send a referral to the orthopedic surgeon for Mr. Chen.\nSpeaker 2: I'll get that faxed today. Do you want me to include the X-ray results?\nSpeaker 1: Yes, please include the imaging report from last week.",
+      "expected_clinical": false
+    }
+  ]
+}

@@ -40,6 +40,8 @@ fn print_usage(program: &str) {
     eprintln!("                                 sensor_continuous_present=true|false,");
     eprintln!("                                 manual_triggered=true|false");
     eprintln!("  --mismatches        Only show bundles where replayed decision differs from actual");
+    eprintln!("  --fail-on-mismatch  Exit non-zero if agreement drops below threshold (default: 99.0%)");
+    eprintln!("  --threshold PCT     Set the agreement threshold for --fail-on-mismatch (e.g. 95.0)");
     eprintln!("  --help              Show this help");
     eprintln!();
     eprintln!("Examples:");
@@ -299,6 +301,8 @@ fn main() {
     let mut overrides = Overrides::default();
     let mut mismatches_only = false;
     let mut all_archives = false;
+    let mut fail_on_mismatch = false;
+    let mut threshold_pct: f64 = 99.0;
     let mut i = 1;
     while i < args.len() {
         match args[i].as_str() {
@@ -307,6 +311,17 @@ fn main() {
             }
             "--mismatches" => {
                 mismatches_only = true;
+            }
+            "--fail-on-mismatch" => {
+                fail_on_mismatch = true;
+            }
+            "--threshold" => {
+                i += 1;
+                if i >= args.len() {
+                    eprintln!("Error: --threshold requires a percentage value");
+                    std::process::exit(1);
+                }
+                threshold_pct = args[i].parse().expect("Invalid threshold (use a percent like 95.0)");
             }
             "--override" => {
                 i += 1;
@@ -528,9 +543,25 @@ fn main() {
         "Bundles: {}  Checks: {}  Match: {}  Mismatch: {}",
         total_bundles, total_checks, matches, mismatches
     );
-    if total_checks > 0 {
+    let agreement_pct = if total_checks > 0 {
         let pct = matches as f64 / total_checks as f64 * 100.0;
         println!("Agreement: {:.1}%", pct);
+        pct
+    } else {
+        100.0
+    };
+
+    // Regression gate: exit non-zero if below threshold
+    if fail_on_mismatch && agreement_pct < threshold_pct {
+        eprintln!();
+        eprintln!(
+            "REGRESSION: agreement {:.1}% is below threshold {:.1}%",
+            agreement_pct, threshold_pct
+        );
+        eprintln!(
+            "Run without --fail-on-mismatch and with --mismatches to investigate."
+        );
+        std::process::exit(2);
     }
 }
 

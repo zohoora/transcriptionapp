@@ -611,6 +611,46 @@ pub fn multi_patient_split_prompt(templates: Option<&crate::server_config::Promp
 mod tests {
     use super::*;
 
+    /// Guard against prompt drift between Rust source and `scripts/replay_day.py`.
+    /// The Python orchestrator copies prompts verbatim — if they diverge, the replay
+    /// becomes meaningless. This test asserts the Python file contains the current
+    /// canonical prompt (or at least the load-bearing first paragraph).
+    #[test]
+    fn test_replay_day_py_has_current_detection_prompt() {
+        let py_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("..")
+            .join("scripts")
+            .join("replay_day.py");
+        if !py_path.exists() {
+            // replay_day.py is part of the repo; if it's missing the test is moot
+            return;
+        }
+        let py_content = std::fs::read_to_string(&py_path)
+            .expect("replay_day.py should be readable");
+
+        // Build current prompt with no overrides — uses the hardcoded default
+        let (system, _) = build_encounter_detection_prompt("dummy", None, None);
+
+        // Check the first load-bearing paragraph is present in the Python source
+        let signature = "You are analyzing a continuous transcript from a medical office where the microphone records all day.";
+        assert!(
+            system.contains(signature),
+            "Rust prompt no longer contains the load-bearing signature line"
+        );
+        assert!(
+            py_content.contains(signature),
+            "PROMPT DRIFT: scripts/replay_day.py is missing the current detection prompt signature.\n\
+             Update DETECTION_SYSTEM_PROMPT in replay_day.py to match build_encounter_detection_prompt() in encounter_detection.rs."
+        );
+
+        // Also check the JSON contract phrasing
+        let contract = "{\"complete\": true, \"end_segment_index\":";
+        assert!(
+            py_content.contains(contract),
+            "PROMPT DRIFT: scripts/replay_day.py is missing the current detection JSON contract"
+        );
+    }
+
     #[test]
     fn test_parse_encounter_detection_complete() {
         let response = r#"{"complete": true, "end_segment_index": 15, "confidence": 0.95}"#;

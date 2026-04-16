@@ -19,15 +19,15 @@ const mockSettings = {
   llm_router_url: 'http://localhost:8080',
   llm_api_key: 'test-api-key',
   llm_client_id: 'clinic-001',
-  soap_model: 'gpt-4',
-  fast_model: 'gpt-3.5-turbo',
+  soap_model: 'soap-model-fast',
+  fast_model: 'fast-model',
   // Medplum settings
   medplum_server_url: 'http://localhost:8103',
   medplum_client_id: 'test-client',
   medplum_auto_sync: false,
   // Whisper server settings (remote only)
   whisper_mode: 'remote' as const,
-  whisper_server_url: 'http://172.16.100.45:8001',
+  whisper_server_url: 'http://100.119.83.76:8001',
   whisper_server_model: 'large-v3-turbo',
   // SOAP options
   soap_detail_level: 5,
@@ -84,14 +84,14 @@ describe('useSettings', () => {
         llm_router_url: 'http://localhost:8080',
         llm_api_key: 'test-api-key',
         llm_client_id: 'clinic-001',
-        soap_model: 'gpt-4',
-        fast_model: 'gpt-3.5-turbo',
+        soap_model: 'soap-model-fast',
+        fast_model: 'fast-model',
         // Medplum settings
         medplum_server_url: 'http://localhost:8103',
         medplum_client_id: 'test-client',
         medplum_auto_sync: false,
         // Whisper server settings
-        whisper_server_url: 'http://172.16.100.45:8001',
+        whisper_server_url: 'http://100.119.83.76:8001',
         // Auto-session detection
         auto_start_enabled: false,
         // SOAP personal instructions

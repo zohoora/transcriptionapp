@@ -1,128 +1,104 @@
+/**
+ * App state-transition tests.
+ *
+ * Replaces the previous full-DOM snapshot tests, which were 1,500+ lines and
+ * churned on any UI change. These assertion-based tests verify the load-bearing
+ * behavior of each app state without coupling to specific DOM structure or
+ * inline SVG paths.
+ */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import App from './App';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
-import {
-  mockDevices,
-  mockSettings,
-  createListenMock,
-  createStandardMock,
-} from './test/mocks';
+import { createListenMock, createStandardMock } from './test/mocks';
 
 const mockInvoke = vi.mocked(invoke);
 const mockListen = vi.mocked(listen);
 
-// Helper to wait for the app to finish loading (checklist running completes)
 async function waitForAppReady() {
-  await waitFor(() => {
-    // In the new mode-based UI, when checks pass and app is ready,
-    // the "Start New Session" button should be available in ReadyMode
-    expect(screen.getByText('Start New Session')).toBeInTheDocument();
-  }, { timeout: 3000 });
+  await waitFor(
+    () => {
+      expect(screen.getByText('Start New Session')).toBeInTheDocument();
+    },
+    { timeout: 3000 }
+  );
 }
 
-describe('App Snapshots', () => {
+describe('App state transitions', () => {
   let listenHelper: ReturnType<typeof createListenMock>;
 
   beforeEach(() => {
     vi.clearAllMocks();
     listenHelper = createListenMock();
     mockListen.mockImplementation(listenHelper.listen as typeof listen);
+    mockInvoke.mockImplementation(createStandardMock());
   });
 
-  it('renders idle state correctly', async () => {
-    mockInvoke.mockImplementation(createStandardMock());
-
-    const { container } = render(<App />);
+  it('idle: shows Start New Session button and the upload link', async () => {
+    render(<App />);
     await waitForAppReady();
-
-    expect(container.firstChild).toMatchSnapshot();
+    expect(screen.getByText('Start New Session')).toBeInTheDocument();
+    expect(screen.getByText('Upload Recording')).toBeInTheDocument();
   });
 
-  it('renders recording state correctly', async () => {
-    mockInvoke.mockImplementation(createStandardMock());
-
-    const { container, findByText } = render(<App />);
+  it('recording: shows End Session and elapsed timer', async () => {
+    render(<App />);
     await waitForAppReady();
-
-    // Emit recording status
     listenHelper.emit('session_status', {
       state: 'recording',
       provider: 'whisper',
       elapsed_ms: 5000,
       is_processing_behind: false,
     });
-
-    await findByText('End Session');
-
-    expect(container.firstChild).toMatchSnapshot();
+    await screen.findByText('End Session');
+    // Start button should be gone in recording mode
+    expect(screen.queryByText('Start New Session')).not.toBeInTheDocument();
   });
 
-  it('renders with transcript correctly', async () => {
+  it('recording: live transcript preview can be revealed', async () => {
     const user = userEvent.setup();
-    mockInvoke.mockImplementation(createStandardMock());
-
-    const { container, findByText } = render(<App />);
+    render(<App />);
     await waitForAppReady();
-
-    // Emit recording status with transcript
     listenHelper.emit('session_status', {
       state: 'recording',
       provider: 'whisper',
       elapsed_ms: 10000,
       is_processing_behind: false,
     });
-
     listenHelper.emit('transcript_update', {
-      finalized_text: 'Hello, this is a test transcription.\n\nThis is the second paragraph.',
-      draft_text: 'Still speaking...',
-      segment_count: 2,
+      finalized_text: 'Patient reports headaches.',
+      draft_text: null,
+      segment_count: 1,
     });
-
-    // Click "Show Transcript" to reveal the preview (hidden by default in new UI)
     await waitFor(() => {
       expect(screen.getByText('Show Transcript')).toBeInTheDocument();
     });
     await user.click(screen.getByText('Show Transcript'));
-
-    // In recording mode, transcript is in a floating preview
-    await findByText(/Hello, this is a test transcription/);
-
-    expect(container.firstChild).toMatchSnapshot();
+    await screen.findByText(/Patient reports headaches/);
   });
 
-  it('renders completed state correctly', async () => {
-    mockInvoke.mockImplementation(createStandardMock());
-
-    const { container, findByText } = render(<App />);
+  it('completed: shows New Session button and review controls', async () => {
+    render(<App />);
     await waitForAppReady();
-
     listenHelper.emit('session_status', {
       state: 'completed',
       provider: 'whisper',
       elapsed_ms: 30000,
       is_processing_behind: false,
     });
-
     listenHelper.emit('transcript_update', {
       finalized_text: 'Final transcript text here.',
       draft_text: null,
       segment_count: 1,
     });
-
-    await findByText('New Session');
-
-    expect(container.firstChild).toMatchSnapshot();
+    await screen.findByText('New Session');
   });
 
-  it('renders error state correctly', async () => {
-    mockInvoke.mockImplementation(createStandardMock());
-
-    const { container, findByText } = render(<App />);
+  it('error: shows the error message', async () => {
+    render(<App />);
     await waitForAppReady();
-
     listenHelper.emit('session_status', {
       state: 'error',
       provider: null,
@@ -130,32 +106,20 @@ describe('App Snapshots', () => {
       is_processing_behind: false,
       error_message: 'Microphone access denied',
     });
-
-    await findByText('Microphone access denied');
-
-    expect(container.firstChild).toMatchSnapshot();
+    await screen.findByText('Microphone access denied');
   });
 
-  it('renders stopping state correctly', async () => {
-    mockInvoke.mockImplementation(createStandardMock());
-
-    const { container, findByText } = render(<App />);
+  it('stopping: shows Ending… and disables the stop button', async () => {
+    const { container } = render(<App />);
     await waitForAppReady();
-
     listenHelper.emit('session_status', {
       state: 'stopping',
       provider: 'whisper',
       elapsed_ms: 60000,
       is_processing_behind: false,
     });
-
-    // In the new UI, stopping state shows "Ending..." text
-    await findByText('Ending...');
-
-    // Button should be disabled during stopping
+    await screen.findByText('Ending...');
     const stopButton = container.querySelector('.stop-button');
     expect(stopButton).toBeDisabled();
-
-    expect(container.firstChild).toMatchSnapshot();
   });
 });

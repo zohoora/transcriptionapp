@@ -66,7 +66,7 @@ cd tauri-app/src-tauri && cargo check     # Backend
 
 # Tests
 cd tauri-app && pnpm test:run             # Frontend (Vitest, ~552 passing)
-cd tauri-app/src-tauri && cargo test      # Backend (~946 tests, ~29 ignored)
+cd tauri-app/src-tauri && cargo test      # Backend (~1044 tests, ~29 ignored)
 
 # E2E (requires live STT + LLM Router)
 cd tauri-app/src-tauri && cargo test e2e_ -- --ignored --nocapture

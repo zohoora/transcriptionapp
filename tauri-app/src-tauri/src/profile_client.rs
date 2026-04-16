@@ -761,3 +761,107 @@ impl ProfileClient {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_new_strips_trailing_slashes() {
+        let client = ProfileClient::new(
+            &[
+                "http://primary:8090/".to_string(),
+                "http://fallback:8090".to_string(),
+                "http://with/path/".to_string(),
+            ],
+            None,
+        );
+        assert_eq!(client.base_urls[0], "http://primary:8090");
+        assert_eq!(client.base_urls[1], "http://fallback:8090");
+        assert_eq!(client.base_urls[2], "http://with/path");
+    }
+
+    #[test]
+    fn test_new_starts_at_first_url() {
+        let client = ProfileClient::new(
+            &["http://a:8090".to_string(), "http://b:8090".to_string()],
+            None,
+        );
+        assert_eq!(client.base_url(), "http://a:8090");
+        assert_eq!(client.active_index.load(Ordering::Relaxed), 0);
+    }
+
+    #[test]
+    fn test_clone_preserves_active_index() {
+        let client = ProfileClient::new(
+            &["http://a:8090".to_string(), "http://b:8090".to_string()],
+            None,
+        );
+        client.active_index.store(1, Ordering::Relaxed);
+        let cloned = client.clone();
+        assert_eq!(cloned.active_index.load(Ordering::Relaxed), 1);
+        assert_eq!(cloned.base_url(), "http://b:8090");
+    }
+
+    #[test]
+    fn test_auth_headers_with_key() {
+        let client = ProfileClient::new(
+            &["http://localhost".to_string()],
+            Some("secret-key".to_string()),
+        );
+        let headers = client.auth_headers();
+        assert_eq!(headers.get("X-API-Key").unwrap(), "secret-key");
+    }
+
+    #[test]
+    fn test_auth_headers_without_key() {
+        let client = ProfileClient::new(&["http://localhost".to_string()], None);
+        let headers = client.auth_headers();
+        assert!(headers.get("X-API-Key").is_none());
+    }
+
+    #[test]
+    fn test_select_best_url_noop_with_single_url() {
+        // Single URL: select_best_url should return immediately without probing
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        let client = ProfileClient::new(&["http://localhost:9999".to_string()], None);
+        rt.block_on(client.select_best_url());
+        // Active index should still be 0 (no change because nothing to probe)
+        assert_eq!(client.active_index.load(Ordering::Relaxed), 0);
+    }
+
+    #[tokio::test]
+    async fn test_select_best_url_picks_responding_url() {
+        // Spin up a tiny health server on a free port
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        tokio::spawn(async move {
+            loop {
+                if let Ok((mut socket, _)) = listener.accept().await {
+                    use tokio::io::AsyncWriteExt;
+                    let _ = socket
+                        .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nok")
+                        .await;
+                }
+            }
+        });
+        // Give the server a moment to be ready
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+
+        // Primary URL is dead, fallback is the live test server
+        let client = ProfileClient::new(
+            &[
+                "http://127.0.0.1:1".to_string(), // unreachable
+                format!("http://127.0.0.1:{}", port),
+            ],
+            None,
+        );
+        client.select_best_url().await;
+        // Should have switched to the responding URL (index 1)
+        assert_eq!(client.active_index.load(Ordering::Relaxed), 1);
+        assert!(client.base_url().ends_with(&port.to_string()));
+    }
+}

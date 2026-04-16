@@ -294,7 +294,7 @@ Speaker 1: Take care. We'll see you soon.";
 
     /// Verify the LLM Router can detect a completed encounter in transcript segments.
     ///
-    /// Uses the hybrid detection model ("faster" / Qwen3-1.7B) with /nothink prefix,
+    /// Uses the production detection model ("fast-model", ~7B) without /nothink,
     /// matching the production configuration in continuous_mode.rs.
     #[test]
     #[ignore = "Requires live LLM Router"]
@@ -308,8 +308,7 @@ Speaker 1: Take care. We'll see you soon.";
         let (system_prompt, user_prompt) =
             build_encounter_detection_prompt(FIXTURE_CONTINUOUS_SEGMENTS, None, None);
 
-        // Prepend /nothink to match production (disables Qwen3 thinking mode)
-        let system_prompt = format!("/nothink\n{}", system_prompt);
+        // Production uses fast-model without /nothink (allows reasoning for ~7B model)
 
         let response = rt.block_on(client.generate(
             DETECTION_MODEL,
@@ -335,9 +334,9 @@ Speaker 1: Take care. We'll see you soon.";
         );
     }
 
-    /// Verify the hybrid model approach: detection uses "faster" model,
-    /// merge uses "fast-model". Also verifies the hallucination filter
-    /// and /nothink prefix work correctly with the LLM Router.
+    /// Verify the hybrid detection + merge approach using "fast-model" (~7B)
+    /// for both detection and merge checks. Also verifies the hallucination filter
+    /// works correctly with the LLM Router.
     #[test]
     #[ignore = "Requires live LLM Router"]
     fn e2e_layer2_hybrid_detection_and_merge() {
@@ -351,14 +350,13 @@ Speaker 1: Take care. We'll see you soon.";
         let api_key = &config.llm_api_key;
         let client_id = if config.llm_client_id.is_empty() { LLM_CLIENT_ID } else { &config.llm_client_id };
 
-        // ── Detection with smaller model + /nothink ──────────────────────
-        println!("Step 1: Detection with model='{}' + /nothink...", DETECTION_MODEL);
+        // ── Detection with fast-model (~7B) ──────────────────────────────
+        println!("Step 1: Detection with model='{}'...", DETECTION_MODEL);
         let detection_client = LLMClient::new(llm_url, api_key, client_id, DETECTION_MODEL)
             .expect("Failed to create detection LLM client");
 
         let (system_prompt, user_prompt) =
             build_encounter_detection_prompt(FIXTURE_CONTINUOUS_SEGMENTS, None, None);
-        let system_prompt = format!("/nothink\n{}", system_prompt);
 
         let response = rt.block_on(detection_client.generate(
             DETECTION_MODEL,
@@ -420,7 +418,7 @@ Speaker 1: Take care. We'll see you soon.";
         );
 
         println!("\n[PASS] Hybrid model E2E complete");
-        println!("  Detection: model={} + /nothink → complete=true", DETECTION_MODEL);
+        println!("  Detection: model={} → complete=true", DETECTION_MODEL);
         println!("  Merge: model={} + patient name → same_encounter=true", FAST_MODEL);
         println!("  Hallucination filter → cleaned {} repetitions", report.repetitions.len());
     }
@@ -837,8 +835,7 @@ Jim: Thanks doc."#;
         let (system_prompt, user_prompt) =
             build_encounter_detection_prompt(FIXTURE_CONTINUOUS_SEGMENTS, None, None);
 
-        // Prepend /nothink to match production hybrid detection model config
-        let system_prompt = format!("/nothink\n{}", system_prompt);
+        // Production uses fast-model without /nothink prefix
 
         let detection_response = rt.block_on(llm_client.generate(
             DETECTION_MODEL,

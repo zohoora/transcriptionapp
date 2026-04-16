@@ -68,8 +68,8 @@ export const mockSettings: Settings = {
   llm_router_url: 'http://localhost:8080',
   llm_api_key: 'test-api-key',
   llm_client_id: 'clinic-001',
-  soap_model: 'gpt-4',
-  fast_model: 'gpt-3.5-turbo',
+  soap_model: 'soap-model-fast',
+  fast_model: 'fast-model',
   // Medplum settings
   medplum_server_url: 'http://localhost:8103',
   medplum_client_id: 'test-client-id',
@@ -112,14 +112,14 @@ export const mockSettings: Settings = {
   encounter_check_interval_secs: 120,
   encounter_silence_trigger_secs: 60,
   encounter_merge_enabled: true,
-  encounter_detection_model: 'faster',
-  encounter_detection_nothink: true,
+  encounter_detection_model: 'fast-model',
+  encounter_detection_nothink: false,
 };
 
 // LLM Router / Ollama types
 export const mockOllamaStatusConnected: OllamaStatus = {
   connected: true,
-  available_models: ['qwen3:4b', 'llama3:8b', 'mistral:7b'],
+  available_models: ['soap-model-fast', 'fast-model', 'soap-alt'],
   error: null,
 };
 
@@ -132,7 +132,7 @@ export const mockOllamaStatusDisconnected: OllamaStatus = {
 export const mockSoapNote: SoapNote = {
   content: 'S: Patient reports persistent cough for 3 days, accompanied by mild fever and fatigue.\n\nO: Temperature 38.2C, respiratory rate normal, lungs clear on auscultation.\n\nA: Likely viral upper respiratory infection.\n\nP: Rest and hydration, OTC fever reducer as needed, follow up if symptoms worsen or persist beyond 7 days.',
   generated_at: '2025-01-15T14:32:00Z',
-  model_used: 'qwen3:4b',
+  model_used: 'soap-model-fast',
 };
 
 // Good audio quality - no issues
