@@ -1032,6 +1032,141 @@ impl Default for DetectionThresholds {
     }
 }
 
+// ── Operational Defaults ─────────────────────────────────────────
+
+/// Server-configurable operational defaults (Phase 3 of ADR-0023).
+///
+/// Category B settings: operator-facing workflow knobs (sleep hours, sensor
+/// baselines, encounter timing, LLM model aliases). Separate from
+/// `DetectionThresholds` (algorithm internals) so admin UIs can present them
+/// distinctly. Clients apply a precedence model
+/// (compiled default < server value < local override if user-edited).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct OperationalDefaults {
+    // ── Sleep mode (continuous mode pause hours, EST/EDT) ──
+    /// Hour of day (0-23, local EST/EDT) when continuous mode auto-pauses (default: 22)
+    #[serde(default = "default_sleep_start_hour")]
+    pub sleep_start_hour: u32,
+    /// Hour of day (0-23, local EST/EDT) when continuous mode auto-resumes (default: 6)
+    #[serde(default = "default_sleep_end_hour")]
+    pub sleep_end_hour: u32,
+
+    // ── Sensor baselines (per-room calibration, Phase 2 roadmap) ──
+    /// Thermal hot-pixel threshold in Celsius (default: 28.0, valid 20.0-40.0)
+    #[serde(default = "default_thermal_hot_pixel_threshold_c")]
+    pub thermal_hot_pixel_threshold_c: f32,
+    /// CO2 ambient baseline in ppm (default: 420.0, valid 300.0-600.0)
+    #[serde(default = "default_co2_baseline_ppm")]
+    pub co2_baseline_ppm: f32,
+
+    // ── Encounter detection timing ──
+    /// Interval between encounter detection checks in seconds (default: 120)
+    #[serde(default = "default_encounter_check_interval_secs")]
+    pub encounter_check_interval_secs: u32,
+    /// Silence duration that triggers an encounter-end check in seconds (default: 45)
+    #[serde(default = "default_encounter_silence_trigger_secs")]
+    pub encounter_silence_trigger_secs: u32,
+
+    // ── LLM model aliases ──
+    /// Alias for SOAP generation model (default: "soap-model-fast")
+    #[serde(default = "default_soap_model")]
+    pub soap_model: String,
+    /// Alias for fast SOAP generation / patient handout model (default: "soap-model-fast")
+    #[serde(default = "default_soap_model_fast")]
+    pub soap_model_fast: String,
+    /// Alias for fast utility model (clinical check, merge, greeting, etc.) (default: "fast-model")
+    #[serde(default = "default_fast_model")]
+    pub fast_model: String,
+    /// Alias for encounter detection model (default: "fast-model")
+    #[serde(default = "default_encounter_detection_model")]
+    pub encounter_detection_model: String,
+}
+
+// Serde default value functions for OperationalDefaults
+fn default_sleep_start_hour() -> u32 { 22 }
+fn default_sleep_end_hour() -> u32 { 6 }
+fn default_thermal_hot_pixel_threshold_c() -> f32 { 28.0 }
+fn default_co2_baseline_ppm() -> f32 { 420.0 }
+fn default_encounter_check_interval_secs() -> u32 { 120 }
+fn default_encounter_silence_trigger_secs() -> u32 { 45 }
+fn default_soap_model() -> String { "soap-model-fast".to_string() }
+fn default_soap_model_fast() -> String { "soap-model-fast".to_string() }
+fn default_fast_model() -> String { "fast-model".to_string() }
+fn default_encounter_detection_model() -> String { "fast-model".to_string() }
+
+impl Default for OperationalDefaults {
+    fn default() -> Self {
+        Self {
+            sleep_start_hour: default_sleep_start_hour(),
+            sleep_end_hour: default_sleep_end_hour(),
+            thermal_hot_pixel_threshold_c: default_thermal_hot_pixel_threshold_c(),
+            co2_baseline_ppm: default_co2_baseline_ppm(),
+            encounter_check_interval_secs: default_encounter_check_interval_secs(),
+            encounter_silence_trigger_secs: default_encounter_silence_trigger_secs(),
+            soap_model: default_soap_model(),
+            soap_model_fast: default_soap_model_fast(),
+            fast_model: default_fast_model(),
+            encounter_detection_model: default_encounter_detection_model(),
+        }
+    }
+}
+
+impl OperationalDefaults {
+    /// Bounds-check all fields. Returns a human-readable error string on violation.
+    /// A bad PUT should 400, not propagate garbage to every workstation.
+    pub fn validate(&self) -> Result<(), String> {
+        if self.sleep_start_hour > 23 {
+            return Err(format!(
+                "sleep_start_hour must be in [0, 23], got {}",
+                self.sleep_start_hour
+            ));
+        }
+        if self.sleep_end_hour > 23 {
+            return Err(format!(
+                "sleep_end_hour must be in [0, 23], got {}",
+                self.sleep_end_hour
+            ));
+        }
+        if !(20.0..=40.0).contains(&self.thermal_hot_pixel_threshold_c) {
+            return Err(format!(
+                "thermal_hot_pixel_threshold_c must be in [20.0, 40.0], got {}",
+                self.thermal_hot_pixel_threshold_c
+            ));
+        }
+        if !(300.0..=600.0).contains(&self.co2_baseline_ppm) {
+            return Err(format!(
+                "co2_baseline_ppm must be in [300.0, 600.0], got {}",
+                self.co2_baseline_ppm
+            ));
+        }
+        if !(10..=3600).contains(&self.encounter_check_interval_secs) {
+            return Err(format!(
+                "encounter_check_interval_secs must be in [10, 3600], got {}",
+                self.encounter_check_interval_secs
+            ));
+        }
+        if !(5..=600).contains(&self.encounter_silence_trigger_secs) {
+            return Err(format!(
+                "encounter_silence_trigger_secs must be in [5, 600], got {}",
+                self.encounter_silence_trigger_secs
+            ));
+        }
+        if self.soap_model.trim().is_empty() {
+            return Err("soap_model must not be empty".to_string());
+        }
+        if self.soap_model_fast.trim().is_empty() {
+            return Err("soap_model_fast must not be empty".to_string());
+        }
+        if self.fast_model.trim().is_empty() {
+            return Err("fast_model must not be empty".to_string());
+        }
+        if self.encounter_detection_model.trim().is_empty() {
+            return Err("encounter_detection_model must not be empty".to_string());
+        }
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

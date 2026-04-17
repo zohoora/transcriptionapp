@@ -1,23 +1,26 @@
 use crate::error::ApiError;
 use crate::types::{
-    BillingData, ConfigVersion, DetectionThresholds, PromptTemplates,
+    BillingData, ConfigVersion, DetectionThresholds, OperationalDefaults, PromptTemplates,
 };
 use chrono::Utc;
 use std::path::PathBuf;
 use tracing::info;
 
-/// Store for server-configurable data: prompt templates, billing data, and
-/// detection thresholds. Each category persists to its own JSON file.
-/// A shared version counter bumps on any update for client staleness checks.
+/// Store for server-configurable data: prompt templates, billing data,
+/// detection thresholds, and operational defaults. Each category persists
+/// to its own JSON file. A shared version counter bumps on any update for
+/// client staleness checks.
 pub struct ConfigDataStore {
     prompts: PromptTemplates,
     billing: BillingData,
     thresholds: DetectionThresholds,
+    defaults: OperationalDefaults,
     version: u64,
     updated_at: String,
     prompts_path: PathBuf,
     billing_path: PathBuf,
     thresholds_path: PathBuf,
+    defaults_path: PathBuf,
     version_path: PathBuf,
 }
 
@@ -32,12 +35,15 @@ impl ConfigDataStore {
         let prompts_path = data_dir.join("prompt_templates.json");
         let billing_path = data_dir.join("billing_data.json");
         let thresholds_path = data_dir.join("detection_thresholds.json");
+        let defaults_path = data_dir.join("operational_defaults.json");
         let version_path = data_dir.join("config_version.json");
 
         let prompts = Self::load_or_default::<PromptTemplates>(&prompts_path, "prompts")?;
         let billing = Self::load_or_default::<BillingData>(&billing_path, "billing")?;
         let thresholds =
             Self::load_or_default::<DetectionThresholds>(&thresholds_path, "thresholds")?;
+        let defaults =
+            Self::load_or_default::<OperationalDefaults>(&defaults_path, "operational defaults")?;
 
         let (version, updated_at) = if version_path.exists() {
             let content = std::fs::read_to_string(&version_path)
@@ -54,11 +60,13 @@ impl ConfigDataStore {
             prompts,
             billing,
             thresholds,
+            defaults,
             version,
             updated_at,
             prompts_path,
             billing_path,
             thresholds_path,
+            defaults_path,
             version_path,
         };
 
@@ -66,6 +74,7 @@ impl ConfigDataStore {
         if !store.prompts_path.exists() { Self::save_json(&store.prompts_path, &store.prompts)?; }
         if !store.billing_path.exists() { Self::save_json(&store.billing_path, &store.billing)?; }
         if !store.thresholds_path.exists() { Self::save_json(&store.thresholds_path, &store.thresholds)?; }
+        if !store.defaults_path.exists() { Self::save_json(&store.defaults_path, &store.defaults)?; }
         if !store.version_path.exists() {
             Self::save_json(&store.version_path, &VersionFile {
                 version: store.version, updated_at: store.updated_at.clone(),
@@ -74,7 +83,7 @@ impl ConfigDataStore {
 
         info!(
             version = store.version,
-            "Loaded config data (prompts, billing, thresholds)"
+            "Loaded config data (prompts, billing, thresholds, operational defaults)"
         );
         Ok(store)
     }
@@ -142,6 +151,10 @@ impl ConfigDataStore {
         self.thresholds.clone()
     }
 
+    pub fn get_defaults(&self) -> OperationalDefaults {
+        self.defaults.clone()
+    }
+
     // ── Updaters (full replace) ──
 
     pub fn update_prompts(
@@ -196,5 +209,28 @@ impl ConfigDataStore {
         )?;
         info!(version = self.version, "Updated detection thresholds");
         Ok(self.thresholds.clone())
+    }
+
+    pub fn update_defaults(
+        &mut self,
+        defaults: OperationalDefaults,
+    ) -> Result<OperationalDefaults, ApiError> {
+        // Validate before mutating in-memory state so a bad PUT can't
+        // stomp a valid config even transiently.
+        defaults
+            .validate()
+            .map_err(ApiError::BadRequest)?;
+        self.defaults = defaults;
+        Self::save_json(&self.defaults_path, &self.defaults)?;
+        self.bump_version();
+        Self::save_json(
+            &self.version_path,
+            &VersionFile {
+                version: self.version,
+                updated_at: self.updated_at.clone(),
+            },
+        )?;
+        info!(version = self.version, "Updated operational defaults");
+        Ok(self.defaults.clone())
     }
 }

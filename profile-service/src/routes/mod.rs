@@ -39,6 +39,7 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         .route("/config/prompts", get(config_data::get_prompts).put(config_data::update_prompts))
         .route("/config/billing", get(config_data::get_billing).put(config_data::update_billing))
         .route("/config/thresholds", get(config_data::get_thresholds).put(config_data::update_thresholds))
+        .route("/config/defaults", get(config_data::get_defaults).put(config_data::update_defaults))
         // Physicians
         .route("/physicians", get(physicians::list).post(physicians::create))
         .route(

@@ -1,6 +1,8 @@
 use crate::error::ApiError;
 use crate::store::AppState;
-use crate::types::{BillingData, ConfigVersion, DetectionThresholds, PromptTemplates};
+use crate::types::{
+    BillingData, ConfigVersion, DetectionThresholds, OperationalDefaults, PromptTemplates,
+};
 use axum::extract::State;
 use axum::Json;
 use std::sync::Arc;
@@ -55,4 +57,21 @@ pub async fn update_thresholds(
 ) -> Result<Json<DetectionThresholds>, ApiError> {
     let mut store = state.config_data.write().await;
     Ok(Json(store.update_thresholds(req)?))
+}
+
+pub async fn get_defaults(
+    State(state): State<Arc<AppState>>,
+) -> Result<Json<OperationalDefaults>, ApiError> {
+    let store = state.config_data.read().await;
+    Ok(Json(store.get_defaults()))
+}
+
+pub async fn update_defaults(
+    State(state): State<Arc<AppState>>,
+    Json(req): Json<OperationalDefaults>,
+) -> Result<Json<OperationalDefaults>, ApiError> {
+    let mut store = state.config_data.write().await;
+    // `update_defaults` validates internally and returns ApiError::BadRequest
+    // on violation, which `IntoResponse` maps to 400.
+    Ok(Json(store.update_defaults(req)?))
 }
