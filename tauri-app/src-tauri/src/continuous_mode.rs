@@ -34,12 +34,11 @@ pub use crate::encounter_detection::{
     build_encounter_detection_prompt, parse_encounter_detection,
     ClinicalContentCheckResult, build_clinical_content_check_prompt, parse_clinical_content_check,
     FORCE_CHECK_WORD_THRESHOLD, FORCE_SPLIT_WORD_THRESHOLD, FORCE_SPLIT_CONSECUTIVE_LIMIT, ABSOLUTE_WORD_CAP,
-    MIN_WORDS_FOR_CLINICAL_CHECK, SCREENSHOT_STALE_GRACE_SECS,
+    MIN_WORDS_FOR_CLINICAL_CHECK,
     MULTI_PATIENT_CHECK_WORD_THRESHOLD, MULTI_PATIENT_SPLIT_MIN_WORDS,
     MULTI_PATIENT_CHECK_PROMPT, MULTI_PATIENT_SPLIT_PROMPT,
     multi_patient_check_prompt, multi_patient_split_prompt,
     parse_multi_patient_check,
-    MULTI_PATIENT_DETECT_WORD_THRESHOLD,
     DetectionEvalContext, DetectionOutcome, evaluate_detection,
     TRIGGER_HYBRID_SENSOR_TIMEOUT,
 };
@@ -509,8 +508,16 @@ pub async fn run_continuous_mode(
     let force_check_word_threshold = detector_thresholds.force_check_word_threshold;
     let min_words_for_clinical_check = detector_thresholds.min_words_for_clinical_check;
     let multi_patient_check_word_threshold = detector_thresholds.multi_patient_check_word_threshold;
+    let multi_patient_detect_word_threshold = detector_thresholds.multi_patient_detect_word_threshold;
     let soap_generation_timeout_secs = detector_thresholds.soap_generation_timeout_secs;
     let billing_extraction_timeout_secs = detector_thresholds.billing_extraction_timeout_secs;
+
+    // T5 primitive snapshots consumed by the screenshot task (built later in this
+    // function, outside the detector move). Copy types, so safe to capture after
+    // `detector_thresholds` is moved into the detector `async move` block.
+    let screenshot_stale_grace_secs = detector_thresholds.screenshot_stale_grace_secs;
+    let vision_skip_streak_k = detector_thresholds.vision_skip_streak_k;
+    let vision_skip_call_cap = detector_thresholds.vision_skip_call_cap;
 
     // Audio recording path for continuous mode
     let audio_output_path = {
@@ -1943,7 +1950,7 @@ pub async fn run_continuous_mode(
                         } else if let Some(ref client) = llm_client {
                             // ── Multi-patient detection ──────────────────────────
                             // Run before SOAP to detect couples/family visits.
-                            let multi_patient_detection = if encounter_word_count >= MULTI_PATIENT_DETECT_WORD_THRESHOLD {
+                            let multi_patient_detection = if encounter_word_count >= multi_patient_detect_word_threshold {
                                 info!("Running multi-patient detection for encounter #{} ({} words)", encounter_number, encounter_word_count);
                                 let outcome = client.run_multi_patient_detection(&fast_model, &encounter_text_rich).await;
                                 if let Ok(mut logger) = logger_for_detector.lock() {
@@ -2455,7 +2462,7 @@ pub async fn run_continuous_mode(
                                             );
 
                                             // ── Retrospective multi-patient check ──
-                                            if merged_wc >= MULTI_PATIENT_DETECT_WORD_THRESHOLD {
+                                            if merged_wc >= multi_patient_detect_word_threshold {
                                                 if let Some(ref client) = llm_client {
                                                     info!("Retrospective multi-patient detect on {} ({} words)", prev_id, merged_wc);
                                                     // Log to the surviving session's pipeline log
@@ -2749,6 +2756,11 @@ pub async fn run_continuous_mode(
                 replay_bundle: bundle_for_screenshot.clone(),
                 screenshot_buffer: handle.screenshot_buffer.clone(),
                 transcript_buffer: handle.transcript_buffer.clone(),
+                // Phase 3: server-configurable thresholds (T5). Snapshotted
+                // at continuous-mode start — takes effect on next restart.
+                screenshot_stale_grace_secs,
+                vision_skip_streak_k,
+                vision_skip_call_cap,
             },
         )))
     } else {

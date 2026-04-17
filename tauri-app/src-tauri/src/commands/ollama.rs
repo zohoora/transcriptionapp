@@ -222,6 +222,7 @@ pub async fn generate_soap_note_auto_detect(
     session_id: Option<String>,
     speaker_context: Option<Vec<SpeakerInfo>>,
     model_override: Option<String>,
+    server_config: tauri::State<'_, crate::commands::physicians::SharedServerConfig>,
 ) -> Result<MultiPatientSoapResult, CommandError> {
     info!(
         "Generating multi-patient SOAP note for transcript of {} chars, {} audio events, {} speakers",
@@ -273,7 +274,12 @@ pub async fn generate_soap_note_auto_detect(
     let selected_model = model_override.as_deref().unwrap_or(&default_model);
 
     // Run multi-patient detection if transcript is long enough
-    let multi_patient_detection = if word_count >= crate::encounter_detection::MULTI_PATIENT_DETECT_WORD_THRESHOLD {
+    // T5: threshold sourced from server-configurable DetectionThresholds.
+    let multi_patient_detect_word_threshold = {
+        let sc = server_config.read().await;
+        sc.thresholds.multi_patient_detect_word_threshold
+    };
+    let multi_patient_detection = if word_count >= multi_patient_detect_word_threshold {
         info!("Running multi-patient detection for session-mode SOAP ({} words)", word_count);
         client.run_multi_patient_detection(&config.fast_model, &transcript).await.detection
     } else {

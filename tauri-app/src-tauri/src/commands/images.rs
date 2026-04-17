@@ -4,6 +4,7 @@ use super::CommandError;
 use serde::{Deserialize, Serialize};
 use tracing::info;
 
+use crate::commands::physicians::SharedServerConfig;
 use crate::config::Config;
 use crate::gemini_client::GeminiClient;
 
@@ -15,7 +16,10 @@ pub struct AiImageResponse {
 }
 
 #[tauri::command]
-pub async fn generate_ai_image(prompt: String) -> Result<AiImageResponse, CommandError> {
+pub async fn generate_ai_image(
+    prompt: String,
+    server_config: tauri::State<'_, SharedServerConfig>,
+) -> Result<AiImageResponse, CommandError> {
     if prompt.trim().is_empty() {
         return Err(CommandError::Validation("Image prompt is empty".into()));
     }
@@ -28,7 +32,14 @@ pub async fn generate_ai_image(prompt: String) -> Result<AiImageResponse, Comman
         ));
     }
 
-    let client = GeminiClient::new(&config.gemini_api_key)
+    // T5: Gemini HTTP timeout sourced from server-configurable DetectionThresholds
+    // so ops can tune upstream timeout without an app rebuild.
+    let gemini_timeout_secs = {
+        let sc = server_config.read().await;
+        sc.thresholds.gemini_generation_timeout_secs
+    };
+
+    let client = GeminiClient::new(&config.gemini_api_key, gemini_timeout_secs)
         .map_err(|e| CommandError::Config(e))?;
 
     info!("Generating AI image: prompt={} chars", prompt.len());

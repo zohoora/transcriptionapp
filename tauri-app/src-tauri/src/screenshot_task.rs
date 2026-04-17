@@ -12,7 +12,6 @@ use tokio::sync::Notify;
 use tracing::{debug, info, warn};
 
 use crate::config::Config;
-use crate::encounter_detection::SCREENSHOT_STALE_GRACE_SECS;
 use crate::llm_client::{ContentPart, ImageUrlContent, LLMClient};
 use crate::patient_name_tracker::PatientNameTracker;
 use crate::pipeline_log::PipelineLogger;
@@ -31,14 +30,13 @@ pub(crate) use crate::patient_name_tracker::{build_patient_name_prompt, parse_vi
 // ~10 min of LLM wait freed up. Same downstream behavior because the
 // weighted-majority name is unchanged on stable cases — see Option A
 // rationale in the Apr 17 operational analysis.
+//
+// The K (consecutive-match streak) and cap (per-encounter hard backstop)
+// are now server-configurable via `DetectionThresholds.vision_skip_streak_k`
+// and `DetectionThresholds.vision_skip_call_cap`, passed into
+// `ScreenshotTaskConfig` by the caller in `continuous_mode.rs`. Compiled
+// defaults (5 and 30) live on `DetectionThresholds::default()`.
 // ────────────────────────────────────────────────────────────────────────────
-/// Skip further vision calls for an encounter once this many consecutive
-/// vision extractions all returned the same patient name.
-const VISION_STREAK_CUTOFF: usize = 5;
-
-/// Hard cap on total vision LLM calls per encounter. Backstops the rare
-/// case where names keep flipping so `VISION_STREAK_CUTOFF` is never reached.
-const VISION_MAX_CALLS_PER_ENCOUNTER: usize = 30;
 
 /// All inputs needed by the screenshot task, gathered at spawn time.
 pub struct ScreenshotTaskConfig {
@@ -57,6 +55,18 @@ pub struct ScreenshotTaskConfig {
     pub screenshot_buffer: Arc<Mutex<Vec<(String, Vec<u8>)>>>,
     /// Transcript buffer used to gate captures: skip when no words are present
     pub transcript_buffer: Arc<std::sync::Mutex<crate::transcript_buffer::TranscriptBuffer>>,
+    /// Grace period (seconds) after encounter split during which screenshot
+    /// votes matching the previous encounter's patient name are suppressed.
+    /// Mirror of `DetectionThresholds.screenshot_stale_grace_secs`.
+    pub screenshot_stale_grace_secs: i64,
+    /// Skip further vision calls once this many consecutive vision
+    /// extractions all returned the same patient name.
+    /// Mirror of `DetectionThresholds.vision_skip_streak_k`.
+    pub vision_skip_streak_k: usize,
+    /// Hard cap on total vision LLM calls per encounter — backstops
+    /// pathological encounters where names keep flipping.
+    /// Mirror of `DetectionThresholds.vision_skip_call_cap`.
+    pub vision_skip_call_cap: usize,
 }
 
 /// Runs the screenshot capture + vision extraction loop.
@@ -134,7 +144,7 @@ pub async fn run_screenshot_task(cfg: ScreenshotTaskConfig) {
         //   • the encounter has already burned the per-encounter cap
         // Both state fields are reset by `PatientNameTracker::reset()` on split.
         let should_skip = cfg.name_tracker.lock().ok()
-            .map(|t| t.should_skip_vision(VISION_STREAK_CUTOFF, VISION_MAX_CALLS_PER_ENCOUNTER))
+            .map(|t| t.should_skip_vision(cfg.vision_skip_streak_k, cfg.vision_skip_call_cap))
             .unwrap_or(false);
         if should_skip {
             if let Ok(t) = cfg.name_tracker.lock() {
@@ -200,6 +210,7 @@ pub async fn run_screenshot_task(cfg: ScreenshotTaskConfig) {
                         name,
                         &cfg.last_split_time,
                         &cfg.name_tracker,
+                        cfg.screenshot_stale_grace_secs,
                     );
 
                     if let Ok(mut logger) = cfg.pipeline_logger.lock() {
@@ -234,7 +245,7 @@ pub async fn run_screenshot_task(cfg: ScreenshotTaskConfig) {
                     if is_stale {
                         info!(
                             "Skipping stale screenshot vote '{}' — matches previous encounter name and within {}s grace period",
-                            name, SCREENSHOT_STALE_GRACE_SECS
+                            name, cfg.screenshot_stale_grace_secs
                         );
                         continue;
                     }
@@ -337,10 +348,11 @@ fn check_stale_vote(
     name: &str,
     last_split_time: &Arc<Mutex<DateTime<Utc>>>,
     name_tracker: &Arc<Mutex<PatientNameTracker>>,
+    screenshot_stale_grace_secs: i64,
 ) -> bool {
     if let Ok(split_time) = last_split_time.lock() {
         let secs_since_split = (Utc::now() - *split_time).num_seconds();
-        if secs_since_split < SCREENSHOT_STALE_GRACE_SECS {
+        if secs_since_split < screenshot_stale_grace_secs {
             if let Ok(tracker) = name_tracker.lock() {
                 return tracker.previous_name() == Some(name);
             }
@@ -411,4 +423,84 @@ pub fn flush_screenshots_to_session(
         }
     }
     info!("Saved {} screenshots to {}", screenshots.len(), dir.display());
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chrono::Duration as ChronoDuration;
+
+    /// T5: when `screenshot_stale_grace_secs` is overridden, `check_stale_vote`
+    /// respects that window instead of the hardcoded default.
+    ///
+    /// Setup: last split occurred 60s ago. Previous encounter had patient
+    /// "Alice". We receive a new vote for "Alice".
+    ///   - grace_secs=30  → 60s > 30s → NOT stale (fresh vote for a returning patient)
+    ///   - grace_secs=90  → 60s < 90s → STALE (within grace window, suppress)
+    ///   - grace_secs=120 → 60s < 120s → STALE
+    #[test]
+    fn check_stale_vote_honors_override_grace_secs() {
+        let mut tracker = PatientNameTracker::new();
+        // Establish "Alice" as the previous encounter's patient: record three
+        // votes, then reset — reset() captures the majority name as
+        // `previous_name` for stale-vote detection in the next encounter.
+        tracker.record("Alice");
+        tracker.record("Alice");
+        tracker.record("Alice");
+        tracker.reset();
+        assert_eq!(tracker.previous_name(), Some("Alice"));
+
+        let name_tracker = Arc::new(Mutex::new(tracker));
+        // Last split 60 seconds ago
+        let split_time = Utc::now() - ChronoDuration::seconds(60);
+        let last_split_time = Arc::new(Mutex::new(split_time));
+
+        // Short grace window — vote is NOT stale (grace expired)
+        let stale_short = check_stale_vote("Alice", &last_split_time, &name_tracker, 30);
+        assert!(!stale_short, "grace=30 should be expired after 60s");
+
+        // Default-sized grace window — vote IS stale
+        let stale_default = check_stale_vote("Alice", &last_split_time, &name_tracker, 90);
+        assert!(stale_default, "grace=90 should still be active at 60s");
+
+        // Longer grace window — vote IS stale
+        let stale_long = check_stale_vote("Alice", &last_split_time, &name_tracker, 120);
+        assert!(stale_long, "grace=120 should still be active at 60s");
+    }
+
+    /// T5: ScreenshotTaskConfig carries the threshold values provided at
+    /// construction. This is a type-level confirmation that the new fields
+    /// plumb through; the detector-loop behavior is covered by integration
+    /// tests for `should_skip_vision` in `patient_name_tracker.rs`.
+    #[test]
+    fn screenshot_task_config_carries_threshold_fields() {
+        use std::sync::atomic::AtomicBool;
+        use tokio::sync::Notify;
+
+        let cfg = ScreenshotTaskConfig {
+            stop_flag: Arc::new(AtomicBool::new(false)),
+            name_tracker: Arc::new(Mutex::new(PatientNameTracker::new())),
+            last_split_time: Arc::new(Mutex::new(Utc::now())),
+            vision_trigger: Arc::new(Notify::new()),
+            vision_new_name: Arc::new(Mutex::new(None)),
+            vision_old_name: Arc::new(Mutex::new(None)),
+            debug_storage: false,
+            screenshot_interval: 30,
+            llm_client: None,
+            pipeline_logger: Arc::new(Mutex::new(PipelineLogger::new())),
+            replay_bundle: Arc::new(Mutex::new(ReplayBundleBuilder::new(serde_json::Value::Null))),
+            screenshot_buffer: Arc::new(Mutex::new(Vec::new())),
+            transcript_buffer: Arc::new(std::sync::Mutex::new(
+                crate::transcript_buffer::TranscriptBuffer::new(),
+            )),
+            // Custom threshold values — should be preserved on the struct
+            screenshot_stale_grace_secs: 111,
+            vision_skip_streak_k: 7,
+            vision_skip_call_cap: 42,
+        };
+
+        assert_eq!(cfg.screenshot_stale_grace_secs, 111);
+        assert_eq!(cfg.vision_skip_streak_k, 7);
+        assert_eq!(cfg.vision_skip_call_cap, 42);
+    }
 }

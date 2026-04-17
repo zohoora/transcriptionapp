@@ -38,6 +38,10 @@ pub const ABSOLUTE_WORD_CAP: usize = 25_000;
 pub const MIN_WORDS_FOR_CLINICAL_CHECK: usize = 100;
 /// Grace period (seconds) after encounter split during which screenshot votes matching the
 /// previous encounter's patient name are suppressed (stale screenshot detection).
+///
+/// Mirrored into `DetectionThresholds.screenshot_stale_grace_secs` as the compiled
+/// default. Production reads the value from the server-configurable thresholds
+/// snapshot — this constant is now the source-of-truth default.
 pub const SCREENSHOT_STALE_GRACE_SECS: i64 = 90;
 /// Minimum merged word count to trigger retrospective multi-patient check after merge-back.
 pub const MULTI_PATIENT_CHECK_WORD_THRESHOLD: usize = 2500;
@@ -503,6 +507,10 @@ pub fn parse_multi_patient_check(response: &str) -> Result<MultiPatientCheckResu
 /// Minimum word count for multi-patient detection.
 /// Lower than MULTI_PATIENT_CHECK_WORD_THRESHOLD (2500) because short couples visits
 /// (~10 min = ~1500 words) should still be detected.
+///
+/// Mirrored into `DetectionThresholds.multi_patient_detect_word_threshold` as the
+/// compiled default. Production reads the value from the server-configurable
+/// thresholds snapshot — this constant is now the source-of-truth default.
 pub const MULTI_PATIENT_DETECT_WORD_THRESHOLD: usize = 500;
 
 /// Minimum confidence for multi-patient detection to be acted upon.

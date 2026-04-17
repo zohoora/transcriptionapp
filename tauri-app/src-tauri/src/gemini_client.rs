@@ -10,7 +10,6 @@ use tracing::info;
 
 const GEMINI_ENDPOINT: &str = "https://generativelanguage.googleapis.com/v1beta/models";
 const DEFAULT_MODEL: &str = "gemini-3.1-flash-image-preview";
-const DEFAULT_TIMEOUT: Duration = Duration::from_secs(45);
 
 pub struct GeminiClient {
     client: reqwest::Client,
@@ -52,13 +51,19 @@ struct GeminiInlineData {
 }
 
 impl GeminiClient {
-    pub fn new(api_key: &str) -> Result<Self, String> {
+    /// Construct a Gemini API client.
+    ///
+    /// `timeout_secs` — HTTP timeout applied to each generate_image request.
+    /// Sourced from `DetectionThresholds.gemini_generation_timeout_secs`
+    /// (compiled default: 45s). Allows ops to tune upstream timeout behavior
+    /// without an app rebuild.
+    pub fn new(api_key: &str, timeout_secs: u64) -> Result<Self, String> {
         if api_key.trim().is_empty() {
             return Err("Gemini API key is required".to_string());
         }
 
         let client = reqwest::Client::builder()
-            .timeout(DEFAULT_TIMEOUT)
+            .timeout(Duration::from_secs(timeout_secs))
             .build()
             .map_err(|e| format!("Failed to create HTTP client: {}", e))?;
 
@@ -212,13 +217,28 @@ mod tests {
 
     #[test]
     fn test_new_empty_api_key() {
-        let result = GeminiClient::new("");
+        let result = GeminiClient::new("", 45);
         assert!(result.is_err());
     }
 
     #[test]
     fn test_new_valid_api_key() {
-        let result = GeminiClient::new("test-key-123");
+        let result = GeminiClient::new("test-key-123", 45);
+        assert!(result.is_ok());
+    }
+
+    /// T5: confirm GeminiClient::new accepts a custom timeout without panic.
+    /// Actual timeout enforcement happens at HTTP request time; this test is
+    /// a construction-level smoke test — it only verifies that the builder
+    /// accepts the provided timeout value.
+    #[test]
+    fn test_new_with_custom_timeout() {
+        // A short custom timeout (different from the 45s default)
+        let result = GeminiClient::new("test-key-456", 10);
+        assert!(result.is_ok());
+
+        // A longer custom timeout
+        let result = GeminiClient::new("test-key-789", 120);
         assert!(result.is_ok());
     }
 }
