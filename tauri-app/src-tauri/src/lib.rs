@@ -92,6 +92,7 @@ pub mod room_config;
 pub mod profile_client;
 pub mod physician_cache;
 pub mod server_config;
+pub mod server_config_resolve;
 
 use commands::PipelineState;
 use std::sync::{Arc, Mutex};
