@@ -2,7 +2,37 @@
 
 *This is the synthesis of STRATEGY_DECADE (the unified-healthcare-substrate vision) and STRATEGY_MOATS (what remains defensible when software commoditizes). It is written to be critically reviewed — by other AIs, by investors, by physicians, by regulators, by the founder's skeptical future self. Every ambitious claim is paired with the condition under which it fails, and every moat is paired with the specific architectural investment that makes it real.*
 
-*The central argument: the ten-year vision described in STRATEGY_DECADE is not a single bet. It is a portfolio of six durable moats (sensor fabric, compute appliance, regulatory stack, clinical evidence, data fiduciary, institutional graph) that compound together. Each moat alone is valuable; together they form a structure that cannot be replicated in less than a decade even with unlimited capital. The vision — Mary's 2036 — emerges from the moats. The moats are not in service of the vision; they are the vision, rendered structurally defensible.*
+*The central argument: the ten-year vision described in STRATEGY_DECADE is not a single bet. It is a portfolio of durable moats that compound together — with **institutional graph, clinical evidence, and regulatory depth as the load-bearing core**, and sensor fabric, data governance, and compute architecture as reinforcing layers. The vision — Mary's 2036 — emerges from the moats accumulating in sequence. The moats are not in service of the vision; they are the vision, rendered structurally defensible through multi-year lead times that no amount of capital can collapse.*
+
+---
+
+## v2 revision notes — response to external critique
+
+*This document has been revised in response to a detailed external strategic critique (GPT-5.4 Pro, 2026-04-17, saved as `STRATEGY_COMPOUND_DEEP_ANALYSIS.md` in the reviewer's working notes). The v1 thesis survives. The v1 operating plan required sharpening. Specific changes:*
+
+**Reordered moat priority.** The v1 moat sequence (Sensor Fabric → Compute Appliance → Regulatory → Evidence → Data → Institutional) overweighted hardware in the narrative. The reviewer's correct critique: institutional graph, clinical evidence, and regulatory depth are the load-bearing moats; hardware is a reinforcing layer, not the centerpiece. Sections 4 and 11 now reflect this ordering.
+
+**Rhetorical discipline.** "Uncopyable" has been replaced with "multi-year lead" or "compound sequencing asymmetry" in most places. The argument is about time barriers, not permanent exclusivity.
+
+**Speculative ideas explicitly relabeled as optionality.** Data fiduciary protocol (Section 9), CMPA architectural liability transfer (Section 10.4), Specialist Emeritus program, multi-generational data, inheritance data — all now explicitly tagged as **Phase 2+ optionality contingent on core moats succeeding**, not core near-term execution. Custom silicon is moved further from the foreground.
+
+**Compute appliance demoted from flagship moat to operational architecture.** The reviewer is right: it is an operational burden as much as a differentiator. Edge-first computation is the principle; a proprietary-branded appliance is not necessarily the implementation.
+
+**Stage gates added (Section 22).** The v1 implicit parallelism of Year 1 has been replaced with explicit gates: Stage 1 (0-24 months) must prove wedge before Stage 2 (24-48 months) commits to continuous-observation hardware.
+
+**Competitor landscape updated (Section 24).** Dragon Copilot, Abridge, Suki, and Nabla are already not scribe-only. The moat argument must assume crowded ambient-workflow competition, not a greenfield.
+
+**"Platform-as-EMR-alternative" language removed.** The reviewer is correct that this frightens the EMR partners the plan depends on. The Y10 table has been rewritten.
+
+**Numeric inconsistencies fixed.** Y10 ARR target reconciled to $250-350M range (v1 had $150-300M in intro vs $390M in revenue table — the $390M was inflated by including non-recurring streams; the revenue table now separates ARR from grants/partnerships). Paper count canonicalized at 8-12 anchor peer-reviewed papers with 12-15 total publications including secondary analyses. Clearance target canonicalized at 2-3 major FDA/Health Canada device clearances plus 8-10 supporting certifications. SR&ED reclassified as cash support, not ARR.
+
+**Missing Canadian considerations added (Section 23).** Indigenous data governance, French-language support, rural/remote deployment complexity, substitute decision-maker workflows, third-party household consent, and field-operations margin modeling.
+
+**Unit economics gap acknowledged (Section 13.5).** The v1 clinic revenue figures imply 20-35 clinicians per clinic — possible in FHO groups but not justified. A bottom-up model is deferred to the operating memo.
+
+**Probability calibration added (Section 25).** The reviewer's estimate of 5-15% for the full vision as written, 25-40% for a narrowed plan with stage gates, is incorporated.
+
+*The v1 document remains valuable as a constitutional statement of ambition. This v2 version is the constitution plus the amendments needed to make it executable. The reviewer's one-sentence summary — "keep the decade vision, keep the moat-first thinking, but radically narrow the first three years" — is adopted as guidance.*
 
 ---
 
@@ -10,7 +40,7 @@
 
 Before engaging the argument, a brief alignment on scope:
 
-**What this document claims.** That there is a coherent ten-year path from AMI Assist's current codebase and team to a healthcare infrastructure platform with $150-300M ARR, 100,000+ patients enrolled, 2-3 FDA/Health Canada clearances, 8-12 peer-reviewed publications, and structural moats that resist commoditization. That this path is achievable on $250-400M of cumulative capital over a decade. That the path compounds — that Year 1 investments in the right moats make Year 5 moats cheaper, and Year 5 moats make Year 10 moats nearly uncontestable.
+**What this document claims.** That there is a coherent ten-year path from AMI Assist's current codebase and team to a healthcare infrastructure platform with $250-350M ARR (recurring, excluding grants and partnership milestone payments), 100,000+ patients enrolled, 2-3 major FDA/Health Canada device clearances (plus supporting certifications), 8-12 anchor peer-reviewed publications, and structural moats that resist commoditization. That this path is achievable on $250-400M of cumulative capital over a decade. That the path compounds — Year 1 investments in the right moats make Year 5 moats cheaper, and Year 5 moats produce multi-year lead times that competitors starting in Year 6 cannot collapse before Year 11-12.
 
 **What this document does not claim.** That success is guaranteed. That the specific numbers will be met exactly. That the founder can execute alone. That competitors won't appear. That the regulatory or political environment will stay favorable. That hardware product development won't slip. That any specific hypothesis about 2030+ technology trajectory is reliable.
 
@@ -28,7 +58,7 @@ Three compound claims:
 
 **Claim 1 — Software is becoming free.** By 2028-2030, AI-assisted coding reduces the cost of producing a given software product by 10-30× from 2024 baselines. Any feature AMI Assist builds is replicable by a competent competitor within 6-18 months. Any API surface AMI Assist exposes is integrable by competitors within 3-6 months. Any LLM prompt innovation AMI Assist develops is copyable in hours. Speed, feature-completeness, engineering velocity, and API breadth — all of which were 2015-2024-era moats — compound toward zero over the decade.
 
-**Claim 2 — Non-software moats compound.** Hardware, regulatory clearances, clinical evidence, physical deployments, patient consent graphs, institutional trust — none of these are accelerated by AI coding. Each takes real-world time (6-24 months for regulatory submissions, 2-5 years for clinical validation, 6-12 months per institutional partnership, decades to accumulate longitudinal patient data). The time itself is the moat. By Year 10, a platform with 10+ accumulated clearances, 8-12 papers, 500+ deployed clinics, 50,000+ home-monitored patients, and a structured fiduciary consent graph has a position that a Year-6-starting competitor cannot match before Year 11-12 — during which AMI accumulates five more years of the same.
+**Claim 2 — Non-software moats compound, ranked by proximity to real buying decisions.** The load-bearing moats are (in order of near-term strategic priority): **institutional graph** (distribution, credibility, reference customers), **clinical evidence** (outcomes that change buying behavior), **regulatory depth** (market permission and accumulated submission expertise), and **unique continuous signal** (sensors + home observation that cloud-only ambient vendors cannot access). Reinforcing these are **data governance architecture** (patient-directed, auditable, revocable — expanding over time toward formal fiduciary status) and **edge-first compute architecture** (sovereignty, privacy, latency — where a proprietary appliance is one implementation, not the only one). None of these are accelerated by AI coding. Each takes real-world time (6-24 months for regulatory submissions, 2-5 years for clinical validation, 6-12 months per institutional partnership, decades to accumulate longitudinal patient data). The time itself is the moat. A competitor starting in Year 6 cannot collapse a Year-10 incumbent's lead before Year 11-12, during which AMI accumulates five more years of compound assets.
 
 **Claim 3 — The moats reinforce each other.** Each moat strengthens adjacent moats. Sensor hardware deployed widely generates longitudinal data. Longitudinal data produces clinical evidence. Clinical evidence earns regulatory clearances. Clearances open institutional relationships. Institutional relationships deploy more sensors. The ten-year compound structure is what produces the ambitious outcomes, not any single bet. Remove any one moat and the structure weakens.
 
@@ -140,11 +170,91 @@ Six moats independently are an impressive portfolio. Six moats that each make th
 
 ---
 
-## 4. The moat stack — six compounding layers
+## 4. The moat stack — six compounding layers, reordered by strategic weight
 
-Six moats, arranged not as a list but as a structure where each reinforces adjacent layers.
+Six moats, arranged not as a list but as a structure where each reinforces adjacent layers. **Reordered in v2 to reflect near-term buying decisions rather than narrative emphasis.** The load-bearing moats (1-4) are the ones that determine whether the company exists in Year 5. The reinforcing moats (5-6) are what make the Year-10 position durable.
 
-### Moat 1 — Sensor Fabric
+### Moat 1 — Institutional Graph (load-bearing)
+
+**What it is.** The network of formal relationships: EMR integration partners (Oscar Pro, PS Suite, Accuro, Epic, Meditech), academic medical centers (15-25 research partnerships), pharma sponsors (5-10), CROs (2-3), health authorities (provincial contracts), payers (OHIP, private, potential US), government (Infoway, Stats Canada, public health), patient advocacy organizations, and specialty societies (clinical practice guideline groups). These are not one graph — they are three graphs: **distribution** (clinics, OHTs, EMRs), **validation** (academic centers, investigators, guideline bodies), and **capital + policy** (grant agencies, government, strategic partners).
+
+**Why this moves to Moat 1 in v2.** The reviewer's structural critique: institutional relationships determine whether every other moat matters. A sensor with no deployments is an unused sensor. Evidence with no reference customers is unused evidence. A clearance without distribution channels is an unused clearance. Institutional graph is the substrate that makes all other investments payable.
+
+**Why it resists commoditization.** Each relationship is a multi-year trust-building, contracting, due-diligence process tied to specific people and institutional moments. AI does not accelerate institutional trust. Each institutional relationship is specific to its moment — you cannot re-do a 2028 pilot in 2030 at the same cost.
+
+**How it compounds.** Institutions reference other institutions. EMR integration makes clinical deployment easier. Academic partnerships produce clinical evidence (Moat 2). Pharma partnerships produce non-dilutive capital + clinical trial cohorts (Moat 5). Health authority contracts produce population-health evidence.
+
+**Year-10 position.** 8+ EMR integrations, 20+ academic partnerships, 5-10 pharma sponsors, 3-5 Ontario Health Teams, 2-3 provincial health authorities, 1-2 US health system pilots, 2-3 international footholds.
+
+### Moat 2 — Clinical Evidence (load-bearing)
+
+**What it is.** Peer-reviewed publications documenting outcomes — but, per reviewer critique, **decision-grade evidence**, not paper count. The right unit is not "8-15 papers" but "did any study change buying behavior, change clinical practice, support reimbursement, create defensible public trust, or prove hard-outcome improvement?" A high-volume publication strategy becomes vanity if untied to these decision points.
+
+**Why load-bearing.** In Canadian healthcare, evidence is what distinguishes trusted platforms from hyped platforms. The single strong multicentre outcome study plus one guideline mention is worth more strategically than several lighter papers.
+
+**Why it resists commoditization.** Studies take the time they take. Longitudinal outcome studies require years of enrollment. Randomized trials require IRB approval, protocol development, site recruitment, data collection, analysis, peer review, publication. No AI shortcut.
+
+**How it compounds.** Published evidence supports regulatory submissions (Moat 3). Published evidence produces named investigator relationships (Moat 1). Published evidence drives physician adoption (Moat 1 again). Published evidence is citable in pharma negotiations (revenue). Published evidence is the raw material for clinical practice guideline inclusion.
+
+**Year-10 position.** 8-12 anchor peer-reviewed papers (12-15 total including secondary analyses), 20-30 named investigators publicly associated, 2-3 practice guideline inclusions, $40-80M cumulative clinical research investment. **Critically:** at least one study that demonstrably moved a procurement decision or guideline, not just a h-index increment.
+
+### Moat 3 — Regulatory Stack (load-bearing)
+
+**What it is.** Accumulated certifications + clearances: SOC 2 Type 2, HIPAA BAA, PIPEDA, HITRUST, 21 CFR Part 11 validated + audited, ISO 13485, ISO 27001, **2-3 major FDA/Health Canada device clearances** for specific indications (targeted, not sprawling), Canada Health Infoway vendor status, provincial data-sharing agreements. Total regulatory milestones including supporting certifications: 10+. Total major device clearances: 2-3 chosen with discipline.
+
+**Why it resists commoditization.** Each clearance takes the time it takes. FDA 510(k): 6-18 months after submission; submission preparation: 12+ months; clinical validation for submission: 12-24 months; supporting QMS infrastructure: 12-24 months. Total from zero to first 510(k): 4-6 years. Subsequent clearances compound: precedent, reviewer familiarity, platform's QMS already proven.
+
+**Reviewer caveat accepted.** FDA has already authorized 1,000+ AI-enabled devices. Regulatory clearance is no longer rare enough to be a standalone winner-takes-most moat. What it creates is **permission, trust, and multi-year lead time** — very valuable, not magic.
+
+**How it compounds.** Clearances unlock institutional deployment (Moat 1). Validated QMS enables faster clearances (self-compounds). Specific indications legally exclude unclear competitors from marketing (per-indication exclusivity in the narrow sense). Audit history becomes a trust asset.
+
+**Year-10 position.** 10+ certifications held, 2-3 major FDA/Health Canada device clearances, CE-MDR pathway active or cleared, audit history referenceable, $8-15M cumulative regulatory investment producing compound returns.
+
+### Moat 4 — Unique Continuous Signal (Sensor Fabric)
+
+**What it is.** A **narrow** family of sensors tied to specific clinical indications that cloud-only ambient vendors cannot match. Not a six-device home kit in Year 2. One or two sensors with real predictive or operational lift, proven before industrialization.
+
+**Reviewer critique accepted.** The v1 six-device home kit was too broad too early. The v1 wearable spec (fall detection + HR/HRV/ECG + SpO2 + voice + cellular + 30-day battery + IP68) was a wish list, not a first product. V2 narrows: room presence sensor (Y1-2), one home-monitoring signal proven to change outcomes (Y3-4), wearable v1 with **one primary indication** (Y4-5), everything else is Year 5+ optionality that has to earn its right to exist.
+
+**Why it resists commoditization (when narrowed).** Each sensor with a specific clinical indication requires regulatory certification, clinical validation, manufacturing partnership, field installation, and ongoing maintenance. Lead time 18-24 months minimum per sensor. Narrow focus lets the company actually accumulate the moat rather than dissipating across six half-finished products.
+
+**How it compounds.** Sensors generate data (feeds Moat 5). Sensors enable clinical indications (feeds Moat 2). Sensors create physical presence (feeds Moat 1). Sensors require compute for local processing (feeds Moat 6).
+
+**Year-10 position.** 2-3 sensor product lines with proven clinical lift, 4-6 distinct clinical indications cleared, 100,000+ units deployed (not the v1 target of 200,000+ — the reviewer's critique of over-scoping applies), contract manufacturing for 30K-100K units/year established.
+
+### Moat 5 — Longitudinal Data + Data Governance Architecture (reinforcing)
+
+**What it is.** 100,000+ patients × 5-10 years of continuous, multi-modal, consented observation, held under a data governance architecture that evolves across three phases:
+
+- **Phase 1 (Y1-3):** patient-directed, auditable, revocable, transparent, portable where feasible — using standard Canadian privacy frameworks (PHIPA, HIA, provincial equivalents). No novel legal structure yet.
+- **Phase 2 (Y3-6):** formalized stewardship model, external governance, data portability rights, possibly independent trust layer.
+- **Phase 3 (Y6+, contingent on Phase 2 success):** formal data fiduciary protocol (see Section 9), inheritance semantics, broader standards-setting.
+
+**Reviewer critique accepted.** The v1 document loaded too much near-term weight on the fiduciary protocol. Most early buyers will not pay extra for legal elegance. The protocol becomes valuable as an enabling architecture and trust signal over time; it is not the lead commercial story.
+
+**Why it resists commoditization.** You cannot retroactively observe a patient. You cannot retroactively obtain consent. Time is the only way to accumulate this dataset. A competitor in Year 6 cannot have a 10-year cohort until Year 16.
+
+**Year-10 position.** ~300-500 patient-years per active patient across the cohort, a governance architecture covering 100,000+ patient consents with at least 20,000+ under formal stewardship model (Phase 2 adopters), multi-modal data at a quality/granularity unmatched in primary-care + home-monitoring research.
+
+### Moat 6 — Edge-First Compute Architecture (reinforcing, not flagship)
+
+**What it is.** Local computation for sensitive, latency-critical data, with centralized aggregation for what genuinely benefits from it. A proprietary compute appliance is **one implementation**; a hardened edge deployment on commodity hardware is another. The principle is the moat; the specific branded appliance is optional.
+
+**Reviewer critique accepted.** The v1 document positioned a custom appliance as a marquee moat. The reviewer is correct that an appliance fleet is a significant operational burden (provisioning, firmware updates, secure boot, fleet health, hardware failures, patching, remote observability, replacement logistics, attestation, decommissioning, long-tail support) and that similar value can be extracted from hardened commodity deployments. V2 demotes the appliance from flagship to operational architecture.
+
+**Custom silicon** is further deprioritized — noted in Section 7 as Year 5-10 contingent optionality, not a moat AMI is actively pursuing.
+
+**Why it still matters.** Edge-first architecture is a **regulatory + sovereignty + privacy moat** in its principles, not in its branding. A platform architecturally committed to local-first computation satisfies data sovereignty, privacy, and latency requirements that cloud-first competitors cannot retrofit without 2-5 years of rearchitecture. The moat is architectural, not product.
+
+**Year-10 position.** 5,000-10,000 edge deployments (clinics + homes), hybrid architecture proven at scale, sovereignty + privacy story validated through regulatory engagement. Whether these run on AMI-branded appliances or on hardened commodity hardware is a cost-of-operations decision, not a moat decision.
+
+---
+
+*The v1 Moat Stack sequence (Sensor Fabric → Compute Appliance → Regulatory → Evidence → Data → Institutional) is preserved below in Appendix D for historical reference. The v2 sequence above is the operative one.*
+
+[Archival of v1 Moat stack content below is preserved verbatim under its original numbering for reviewers who want to trace what changed. The v2 content above supersedes it in strategic priority.]
+
+### [v1 archive] Moat 1 — Sensor Fabric
 
 **What it is.** A family of medical-grade sensors (room presence, bed, bathroom, kitchen, doorway, wearable, clinician-worn, specialty) with specific clinical indications cleared by FDA / Health Canada / CE-MDR, manufactured at scale, deployed at 50,000+ homes and 1,000+ clinics by Year 10.
 
@@ -154,7 +264,9 @@ Six moats, arranged not as a list but as a structure where each reinforces adjac
 
 **Year-10 position.** 4-6 sensor product lines, 8-12 distinct clinical indications cleared, 200,000+ units deployed, $30-80M annual hardware revenue, contract manufacturing for 50K-200K units/year established.
 
-### Moat 2 — Compute Appliance
+### [v1 archive] Moat 2 — Compute Appliance
+
+*Note: v2 demotes this from flagship moat to operational architecture. See v2 Moat 6 above for the current framing.*
 
 **What it is.** A purpose-built local compute device for homes and clinics, sealed, attested, encrypted, medically certified, running the platform's inference + storage + coordination stack. Not a Mac Mini; a medical appliance with hardware security module, tamper evidence, and long firmware lifecycle.
 
@@ -164,7 +276,9 @@ Six moats, arranged not as a list but as a structure where each reinforces adjac
 
 **Year-10 position.** 10,000+ appliances deployed (home + clinic), $800-1,500 home / $2,500-5,000 clinic BOM, two generations of hardware deployed with clear upgrade path, custom silicon either in development or deployed (see Moat 2 evolution).
 
-### Moat 3 — Regulatory Stack
+### [v1 archive] Moat 3 — Regulatory Stack
+
+*Note: v2 promotes Regulatory to Moat 3 in the load-bearing trio. See v2 Moat 3 above.*
 
 **What it is.** Accumulated certifications + clearances: SOC 2 Type 2, HIPAA BAA, PIPEDA, HITRUST, 21 CFR Part 11 validated + audited, ISO 13485, ISO 27001, FDA 510(k) for 2-3 indications, Health Canada MDL, CE-MDR Class IIa or IIb, Canada Health Infoway vendor status, provincial data-sharing agreements.
 
@@ -174,9 +288,11 @@ Six moats, arranged not as a list but as a structure where each reinforces adjac
 
 **Year-10 position.** 10+ certifications held, 2-3 FDA 510(k) clearances, Canadian MDL, CE-MDR pathway active, audit history referenceable, $8-15M cumulative regulatory investment producing compound returns.
 
-### Moat 4 — Clinical Evidence
+### [v1 archive] Moat 4 — Clinical Evidence
 
-**What it is.** Peer-reviewed publications documenting outcomes (hospitalization reduction, cost-effectiveness, adherence improvement, clinician burnout reduction, trial operational efficiency), 8-15 papers by Year 10, multiple randomized or quasi-experimental designs, inclusion in 2-3 clinical practice guidelines.
+*Note: v2 promotes Clinical Evidence to Moat 2 and reframes around decision-grade evidence rather than paper count. See v2 Moat 2 above.*
+
+**What it is.** Peer-reviewed publications documenting outcomes (hospitalization reduction, cost-effectiveness, adherence improvement, clinician burnout reduction, trial operational efficiency), 8-12 anchor papers (12-15 total with secondary analyses) by Year 10, multiple randomized or quasi-experimental designs, inclusion in 2-3 clinical practice guidelines.
 
 **Why it resists commoditization.** Studies take the time they take. Longitudinal outcome studies require years of enrollment. Randomized trials require IRB approval, protocol development, site recruitment, data collection, analysis, peer review, publication. No AI shortcut to a validated outcome measurement.
 
@@ -184,7 +300,9 @@ Six moats, arranged not as a list but as a structure where each reinforces adjac
 
 **Year-10 position.** 8-15 peer-reviewed papers, 20-30 named investigators publicly associated, 2-3 practice guideline inclusions, $40-80M cumulative clinical research investment.
 
-### Moat 5 — Longitudinal Data + Fiduciary Consent Graph
+### [v1 archive] Moat 5 — Longitudinal Data + Fiduciary Consent Graph
+
+*Note: v2 retains Moat 5 designation but reframes the fiduciary structure as Phase 2+ evolution rather than Phase 1 positioning. See v2 Moat 5 above.*
 
 **What it is.** 100,000+ patients × 5-10 years of continuous, multi-modal, consented observation, held under a data fiduciary structure where the platform operates legally as the patient's agent, not as a data controller. Each patient's consent is granular, revocable, and anchored in the platform's cryptographic audit chain.
 
@@ -194,7 +312,9 @@ Six moats, arranged not as a list but as a structure where each reinforces adjac
 
 **Year-10 position.** ~300-500 patient-years per active patient across the cohort, a fiduciary consent graph covering 100,000+ consents, multi-modal data at a quality/granularity unmatched in primary-care + home-monitoring research.
 
-### Moat 6 — Institutional Graph
+### [v1 archive] Moat 6 — Institutional Graph
+
+*Note: v2 promotes Institutional Graph to Moat 1 — the most important structural critique adopted. See v2 Moat 1 above.*
 
 **What it is.** The network of formal relationships: EMR integration partners (Oscar Pro, PS Suite, Accuro, Epic, Meditech), academic medical centers (15-25 research partnerships), pharma sponsors (5-10), CROs (2-3), health authorities (provincial contracts), payers (OHIP, private, potential US), government (Infoway, Stats Canada, public health), patient advocacy organizations, and specialty societies (clinical practice guideline groups).
 
@@ -283,7 +403,7 @@ A year-by-year table of the plan as moats accumulate. Rows are years, columns ar
 | Y6* | Clinician-worn shipping; smart pill bottle + BP cuff partnerships | Gen 2 appliance shipping; custom silicon decision (go/no-go) | 2nd 510(k) submitted (ambient scribe decision support); ISO 13485 | 2-3 papers published; clinical practice guideline engagement | 50,000 patients; fiduciary graph 1M+ edges | 5-10 pharma sponsors; CE-MDR preparation for EU |
 | Y7 | Specialty sensors (ECG patch, spirometer, scale) integrations | If silicon: tape-out; if no: Gen 3 appliance | 2nd 510(k) cleared; CE-MDR submission | 4-5 papers; practice guideline inclusion (1st indication) | 70,000 patients | US health system pilot; international research partnership |
 | Y8* | 5+ sensor lines mature; 100K+ units deployed | Gen 3 or silicon deployed in production | CE-MDR cleared; 3rd 510(k) submitted | 6-8 papers; 2nd practice guideline inclusion | 100,000 patients; data inheritance active (first patient deaths) | 10+ pharma; first Medicare Advantage (US) pilot |
-| Y9 | 6 sensor lines; custom silicon in production appliances | Silicon Gen 2 in design if deployed | 3rd 510(k) cleared; platform-level clearances for specific indications | 8-12 papers; platform-as-EMR-alternative evidence | 130,000 patients | Major pharma enterprise contract; 2nd country at scale |
+| Y9 | 6 sensor lines; custom silicon in production appliances | Silicon Gen 2 in design if deployed | 3rd 510(k) cleared; platform-level clearances for specific indications | 8-12 anchor papers; strong multisite outcome evidence for flagship indications | 130,000 patients | Major pharma enterprise contract; 2nd country at scale |
 | Y10 | 200K+ units in field; second wearable generation | Silicon deployed across fleet; Gen 4 appliance in design | 4+ clearances total; audit history of 8+ years | 12-15 papers; platform cited in 3+ guidelines | 150,000-200,000 patients | 20+ institutional partnerships; platform as infrastructure |
 
 Phase transitions at Years 3, 6, and 8 mark structural shifts: Y3 is when hardware moves from R&D to product; Y6 is when clinical evidence moves from supporting role to central asset; Y8 is when the platform moves from product to infrastructure.
@@ -659,18 +779,24 @@ The capital plan (Section 15) requires revenue to offset dilution and extend run
 
 ### 13.1 Revenue sources, by year
 
-| Year | Primary care SaaS | Home monitoring | Clinical trials | Enterprise / health system | Partnerships / non-dilutive | Total ARR |
-|------|-------------------|-----------------|-----------------|----------------------------|------------------------------|-----------|
-| Y1 | $100K | - | - | - | $500K (IRAP) | $0.1M |
+**v2 revision:** the v1 table conflated recurring ARR with grants + partnership milestone payments. The v2 table separates them cleanly. The reviewer's critique — that SR&ED and grant funding is cash support, not ARR — is adopted. Grants/partnerships are reported as a separate column and excluded from ARR totals.
+
+| Year | Primary care SaaS | Home monitoring | Clinical trials | Enterprise / health system | Total ARR (recurring) | Grants + partnerships (non-ARR cash) |
+|------|-------------------|-----------------|-----------------|----------------------------|----------------------|--------------------------------------|
+| Y1 | $100K | - | - | - | $0.1M | $0.5M |
 | Y2 | $1M | - | - | - | $1M | $1M |
-| Y3 | $4M | $0.5M | - | - | $2M | $4.5M |
-| Y4 | $10M | $3M | $1M | - | $3M | $14M |
-| Y5 | $20M | $8M | $5M | $2M | $5M | $35M |
-| Y6 | $35M | $20M | $15M | $8M | $10M | $78M |
-| Y7 | $50M | $35M | $25M | $20M | $15M | $130M |
-| Y8 | $65M | $55M | $35M | $40M | $20M | $195M |
-| Y9 | $80M | $75M | $50M | $65M | $25M | $270M |
-| Y10 | $90M | $100M | $70M | $100M | $30M | $390M |
+| Y3 | $4M | $0.5M | - | - | $4.5M | $2M |
+| Y4 | $10M | $3M | $1M | - | $14M | $3M |
+| Y5 | $20M | $8M | $5M | $2M | $35M | $5M |
+| Y6 | $35M | $20M | $15M | $8M | $78M | $10M |
+| Y7 | $50M | $35M | $25M | $20M | $130M | $15M |
+| Y8 | $60M | $50M | $30M | $35M | $175M | $20M |
+| Y9 | $70M | $65M | $40M | $50M | $225M | $25M |
+| Y10 | $80M | $85M | $50M | $70M | $285M | $30M |
+
+**Year 10 canonical ARR target: $250-350M recurring** (previously stated as $150-300M in intro / $390M in v1 revenue table — reconciled). Plus ~$30M annual grants + partnerships. Plus non-recurring strategic transactions (pilot-to-scale conversions, pharma milestone payments) that vary year to year.
+
+**Critical reviewer caveat accepted.** The clinic-level unit economics implied by these numbers — roughly $80-100K ARR per clinic at end of Y3, growing over time — imply 20-35 clinicians per clinic at the stated $200-400 per-clinician-per-month price. This is possible in large FHO groups and multi-physician enterprises, not obvious in small practices. A bottom-up clinic model (clinic size × physician count × base price × usage × attach rate × churn) must be built in the 24-month operating memo. Until then, treat the revenue trajectory as directional, not commitment-grade.
 
 ### 13.2 Revenue model specifics
 
@@ -875,9 +1001,11 @@ Mitigation: architectural commitment to safety at all layers (hardware, software
 
 ---
 
-## 17. Uncopyable combinations
+## 17. Compound sequencing asymmetries (v1: "uncopyable combinations")
 
-The strongest claim of this document: certain *combinations* of moats become uncopyable even with unlimited capital and a 10-year timeline. Specific combinations worth enumerating:
+*v2 revision. The reviewer's rhetorical critique is accepted: "uncopyable" overclaims. The real argument is about multi-year lead times that competitors cannot collapse. Several v1 ideas are relabeled here as **Phase 2+ optionality**, not core near-term moats.*
+
+Specific combinations of moats produce multi-year sequencing asymmetries:
 
 ### 17.1 Longitudinal data + fiduciary consent structure
 
@@ -885,11 +1013,13 @@ Cannot be created retroactively. Cannot be bought (consent is non-transferable).
 
 By Year 10, AMI's 100K-patient × 5-year longitudinal consented cohort is unique in North American primary care + home monitoring. Even if Apple committed $5B to the space in Year 6, by Year 11 they'd have Year-5 data; AMI would have Year-16 data.
 
-### 17.2 Operator-in-the-loop + replay architecture + CMPA negotiation
+### 17.2 Operator-in-the-loop + replay architecture + CMPA optionality
 
-A specific combination: a platform architected to name the operator, with cryptographic audit of every AI suggestion, with a formal relationship with the dominant Canadian malpractice insurer accepting the architecture as risk-reducing.
+**v2 reclassification: Phase 2+ optionality, not core near-term moat.**
 
-No competitor can negotiate AMI's CMPA relationship. No competitor can retrofit replay semantics into a cloud-first architecture in under 2-3 years. The combination is uncopyable at scale.
+A specific combination: a platform architected to name the operator, with cryptographic audit of every AI suggestion, *potentially* with a formal relationship with the dominant Canadian malpractice insurer accepting the architecture as risk-reducing.
+
+**Reviewer critique accepted.** Current CMPA guidance emphasizes physician responsibility, consent, privacy, and regulatory approval — it does not signal any willingness to negotiate premium reductions or safe harbors based on platform architecture. A formal CMPA agreement recognizing architectural liability transfer is speculative upside, not a moat to plan around. The operator-in-the-loop + replay architecture is real and defensive on its own; the CMPA piece is a possible Year 5-7 conversation if the architecture proves itself in practice.
 
 ### 17.3 Canadian regulatory depth + sovereignty architecture + provincial contracts
 
@@ -903,19 +1033,23 @@ To replicate AMI's ambient UTI detection (Section 5): need the specific sensors 
 
 Each step is years. The combination is a decade. Even if a competitor can build equivalent capability faster in 2030 than AMI did in 2026 (due to software commoditization), the non-software time-dependent steps remain.
 
-### 17.5 The Specialist Emeritus program
+### 17.5 The Specialist Emeritus program (Phase 2+ optionality)
+
+**v2 reclassification: future optionality, not core moat.**
 
 A creative idea worth naming: many retired specialists (cardiologists, geriatricians, etc.) want meaningful part-time work. Build a "Specialist Emeritus" program — retired Canadian specialists provide second-opinion review of specific AMI alerts (ambient UTI detection, fall risk patterns, cognitive decline signals).
 
-Why this is a moat: a pool of 50-100 retired specialists doing 5-10 hours/week at AMI is specific to AMI. Can't be poached (they chose AMI because of alignment + culture). Can't be replaced at scale (labor pool is limited). Can't be AI-substituted for the specific role of clinical second-opinion where malpractice liability matters.
+*The reviewer's critique is accepted: this is fascinating optionality but not a load-bearing near-term moat. It belongs in the document as a possible Year 5-7 program if earlier layers succeed, not as something carrying strategic weight today.*
 
-This becomes a Year 4-6 program. By Year 10, it's a competitive asset few competitors can replicate because building it requires cultural credibility with retired specialist networks.
+Why it's still worth noting: a pool of 50-100 retired specialists doing 5-10 hours/week at AMI is specific to AMI and difficult for a consumer-tech competitor to replicate because it requires cultural credibility with retired specialist networks. But building this pool is not a Year 1-3 priority.
 
-### 17.6 Multi-generational data inheritance
+### 17.6 Multi-generational data inheritance (Phase 3+ optionality)
 
-By Year 10-15, AMI holds longitudinal data on patients who have died (and whose data lives on per their directives). By Year 20, AMI begins holding the first parent-child pairs across generations (the son of a Year-5 enrolled patient, now enrolled himself with family history data from his deceased father's AMI record).
+**v2 reclassification: 20-year future, not near-term strategic weight.**
 
-No competitor can match this until their own platform runs for multiple generations. This is a 20-year moat, but the architecture for it must be built in Year 1-5.
+By Year 10-15, AMI potentially holds longitudinal data on patients who have died (and whose data lives on per their directives). By Year 20, AMI might begin holding the first parent-child pairs across generations.
+
+*Reviewer critique accepted: this is an interesting architectural commitment to make from Year 1-5 (the inheritance semantics must be designed in early or retrofitting is impossible), but it carries no near-term strategic weight. It belongs in the long arc, not in the Year 1-5 narrative.*
 
 ### 17.7 Physician institutional memory + workflow encoding
 
@@ -1122,3 +1256,252 @@ The plan is a hypothesis. Evidence changes hypotheses. The document should be re
 ---
 
 *End of document. Total pages: the document is long because the synthesis requires it. A reviewer who wants the one-page version reads Section 20. A reviewer who wants the argument reads Sections 1-3. A reviewer who wants to stress-test reads Sections 16-19. A reviewer who wants the vision reads Section 5. The rest is the specificity that separates "plan" from "aspiration."*
+
+---
+
+## 22. Stage gates — what must be proven before the next stage commits capital
+
+*New in v2. The reviewer's most important structural critique was that v1 proposed too many simultaneous bets. Stage gates are the explicit mechanism that replaces implicit parallelism with disciplined sequencing. Each stage gate is a go/no-go decision. If the gate is not met, the next stage does not commit capital; the plan narrows or pivots.*
+
+### Stage 1 gate (end of Month 24) — Wedge proven
+
+**Must be true to proceed to Stage 2:**
+
+- $8-15M ARR with clear unit economics (per-clinic revenue, retention, expansion rate) documented
+- One major EMR integration (Oscar Pro or PS Suite) stable and deployed at ≥30 clinics
+- SOC 2 Type 2 achieved + PIPEDA certified + HIPAA BAA capable
+- One clinical study enrolling (not necessarily published) with IRB-approved protocol
+- At least one institutional reference customer at OHT, hospital system, or academic center level
+- Physician retention >90% after 6 months; NPS >50 on clinical-usefulness measures
+- Room sensor productization track on schedule (prototype certified, pilot manufacturing validated, 50-100 units deployed)
+- **Not required:** custom appliance, wearable, six-device kit, fiduciary protocol, pharma partnerships, international expansion
+
+**If gate is NOT met:** narrow the plan. Phase 2 hardware investment is deferred. Company returns to pure-software + room-sensor focus for 12 more months, or pivots to the STRATEGY_2026 path if fundamental wedge logic is wrong.
+
+### Stage 2 gate (end of Month 48) — Differentiated signal proven
+
+**Must be true to proceed to Stage 3:**
+
+- $30-50M ARR
+- At least ONE continuous-observation capability with demonstrable clinical impact (published outcome data in peer-reviewed venue, or accepted for publication; hospital admission reduction, fall detection sensitivity/specificity, or equivalent hard endpoint)
+- First FDA 510(k) submitted OR first Health Canada MDL granted for a specific indication
+- One multicentre validation study complete, findings in line with single-site pilot
+- 3-5 institutional partnerships at enterprise level (OHTs, hospital systems, academic centers)
+- Home-monitoring pilot deployed with ≥500 patients; retention + satisfaction measured
+- Clear decision on which sensor to verticalize in Stage 3 (bed? bathroom? wearable?)
+- Bottom-up clinic unit economics validated against actuals
+
+**If gate is NOT met:** Stage 3 hardware expansion and broader clearances are deferred. Company stays in specialty-focused clinical-AI mode, closer to STRATEGY_2031.
+
+### Stage 3 gate (end of Month 84) — Compound moats visible
+
+**Must be true to proceed to Stage 4:**
+
+- $100M+ ARR
+- 2+ peer-reviewed outcome papers published; ≥1 in top-tier journal
+- First clinical practice guideline mention or formal CMO-level reference agreement
+- 2+ FDA/Health Canada major clearances in hand
+- 10+ enterprise institutional customers with renewal rates >90%
+- Data fiduciary Phase 2 (formalized stewardship model) operational for ≥20% of patient cohort
+- Field operations at positive contribution margin (home monitoring unit economics ≥40% gross margin after field services cost)
+- Clear competitive position: can articulate in one sentence what AMI does that ambient-scribe competitors cannot
+
+**If gate is NOT met:** international expansion, silicon exploration, and Phase 3 governance (formal fiduciary protocol) are deferred. Company continues as Canadian + single-adjacent-market infrastructure platform.
+
+### Stage 4 — Infrastructure (Year 8-10)
+
+Only entered if Stages 1-3 gates all cleared. This is where international + silicon + pharma platform + trial operating mode become serious bets, not before.
+
+---
+
+## 23. Missing considerations — operational realities the v1 document underweighted
+
+*New in v2. Five areas the external reviewer flagged as underweighted. Each is now acknowledged with appropriate strategic implications.*
+
+### 23.1 Indigenous data governance
+
+A Canadian health data platform without an explicit Indigenous data governance posture is strategically and ethically incomplete. First Nations data sovereignty (OCAP® principles — Ownership, Control, Access, Possession — established by the First Nations Information Governance Centre) establishes distinct requirements for research and health data involving Indigenous populations.
+
+**Plan implication:**
+- Year 2-3: formal engagement with FNIGC and provincial Indigenous health authorities before any platform deployment in communities with significant Indigenous population
+- Year 3-4: data governance architecture modified to support OCAP® compliance as a first-class requirement, not an afterthought
+- Decision: do not deploy in Indigenous-serving contexts until the governance architecture explicitly accommodates OCAP® requirements
+
+This is a gap in v1 that the v2 plan formally commits to closing in the first operational memo.
+
+### 23.2 French-language support
+
+Quebec is 23% of the Canadian population. French-language support is not optional for a Canadian infrastructure platform. Beyond Quebec, Francophone minority communities (New Brunswick, Ontario, Manitoba) require service in French. Current AMI scribing likely has English-dominant language models; French Canadian accent coverage, Quebec medical vocabulary, and bilingual encounters are distinct capabilities.
+
+**Plan implication:**
+- Year 1-2: audit current language coverage; estimate gap to production Quebec deployment
+- Year 2-3: bilingual scribing at production quality before any Quebec FHO deployment
+- Year 3-5: French Canadian outcome evidence in clinical validation studies (not English-only)
+- Ongoing: French content for patient-facing consent flows, handouts, family dashboards
+
+### 23.3 Substitute decision-makers and evolving capacity
+
+The Mary vignette in Section 5 describes a population in which cognitive capacity may change over time. A consent architecture that only handles competent adults fails for this population.
+
+**Plan implication:**
+- Phase 1 consent UX must handle substitute decision-maker workflows (legal authority, documentation, revocation)
+- Phase 2 governance must specify how capacity transitions are handled (loss of capacity triggers what workflow? emergency overrides? family disagreements?)
+- Phase 3 inheritance semantics must handle the specific case of dementia + post-death data continuity
+
+### 23.4 Third-party consent in home deployments
+
+Home sensors capture spouses, adult children, PSWs, cleaners, visitors, and incidental conversations. Patient consent covers the patient; it does not cover household third parties.
+
+**Plan implication:**
+- Year 3+ home deployments require explicit third-party consent UX (household poster, visitor notification, incidental-capture handling)
+- Privacy-preserving sensors (thermal, mmWave, audio with on-device processing) are not a panacea; they still capture signal about non-consenting third parties
+- Legal review specifically for multi-occupant household deployments, including the case where one member consents and another does not
+- Likely requires specific product differentiation (guest mode, household-wide consent, household conflict resolution procedures)
+
+### 23.5 Field operations margin modeling
+
+Hardware + home deployment implies installation, replacement, troubleshooting, elder support, caregiver support, and in-home service channels. The v1 document allocated 10-15% of capital to field ops. The reviewer's critique: this is likely under-modeled for the scale proposed.
+
+**Plan implication:**
+- Year 3-4 home monitoring pilot must include full field-ops cost measurement (install time, repair rate, caregiver support volume, replacement cost)
+- Year 5+ home monitoring unit economics must hit ≥40% gross margin after field services, or the business is structurally unprofitable
+- Field operations may become a regional partnership model (provincial home-care agencies, franchise technicians) rather than fully in-house
+- Patient retention depends heavily on field-ops quality; an under-invested field organization kills home monitoring NPS and churn economics
+
+### 23.6 Rural and remote deployment complexity
+
+Canada has significant rural and remote population where internet connectivity is intermittent, cellular coverage is incomplete, and technician travel is expensive. A platform architecture that implicitly assumes metropolitan deployment excludes 15-20% of the Canadian patient population.
+
+**Plan implication:**
+- Edge-first architecture is actually well-suited to this — but only if explicitly validated at intermittent-connectivity sites
+- Starlink integration (or equivalent) may be required for home monitoring in rural contexts
+- Service level targets must be achievable with longer technician travel radii
+- This is an advantage as well as a challenge: rural-deployed evidence is distinctive and opens policy doors that urban-only platforms cannot match
+
+---
+
+## 24. Updated competitor landscape
+
+*New in v2. The v1 document framed the competitive threat as primarily future (Apple, Google, Microsoft entering ambient health in Year 5-8). The reviewer correctly notes that the nearer threat is the already-existing ambient workflow market — and that several vendors have already moved past "scribe-only" positioning.*
+
+### 24.1 Current-state competitors (2026)
+
+| Vendor | Positioning 2026 | Threat profile to AMI |
+|--------|------------------|-----------------------|
+| Microsoft Dragon Copilot | Ambient scribe + workflow automation + EMR-embedded assistance (Nuance DAX successor) | Largest. Bundled with Microsoft + enterprise hospital EHR footprint. Not Canadian-sovereignty-friendly by default. Primary competitor for Canadian hospitals. |
+| Abridge | Clinical documentation + coding support + ambient AI with specialty tuning | Strong US primary care + specialty. US-focused so far; Canadian deployment limited. Well-funded ($300M+ raised). |
+| Suki | Ambient documentation + ambient order staging + EHR-agnostic | Physician-loved in US primary care. Moving into orders + workflow. Less Canadian presence. |
+| Nabla | Ambient scribe + Epic integration + French-origin company | Direct threat in Canada because: (a) Epic-native integration valuable for Canadian hospitals on Epic, (b) French-language heritage relevant to Quebec. |
+| Tali AI | Canadian-origin AI scribe | Most direct Canadian competitor. Positioning overlaps with AMI. Relationship matters — competitive but not necessarily adversarial. |
+| Mutuo, Phelix, other Canadian entrants | Various Canadian ambient + workflow tools | Fragmented; no single leader yet. Market is coalescing. |
+
+### 24.2 Strategic implications
+
+**The "not just a scribe" claim is no longer differentiating.** Dragon Copilot, Abridge, Suki, and Nabla all market workflow capabilities beyond transcription. AMI's moat cannot be positioned as "we do more than scribing." The moat has to be:
+
+1. **Unique continuous signal** (home + sensor-based observation that cloud ambient vendors cannot access)
+2. **Canadian sovereignty + institutional embedding** (specific to Canadian regulatory, procurement, and trust dynamics)
+3. **Regulatory depth** (specific 510(k) clearances that cleared competitors don't have)
+4. **Clinical evidence** (outcome studies that change procurement decisions)
+5. **Stage 3+ moats** (institutional graph density, longitudinal data, governance architecture)
+
+**The Canadian wedge is the short-term defensible position.** Nabla (French-origin) is the most structurally concerning competitor in Quebec. Dragon Copilot is the most concerning in Canadian hospitals. Abridge and Suki are primarily US concerns unless they materially expand into Canada.
+
+**Future (Year 5-8) competitors remain Apple, Google, Microsoft.** But these are now *additional* threats, not the primary ones. The primary threats are the ambient workflow vendors already deployed.
+
+### 24.3 The crowded-market paradox
+
+Counter-intuitively, the crowded ambient market strengthens AMI's deeper moat thesis. If ambient documentation is becoming commoditized, then durable differentiation must come from evidence, home signal, cross-setting continuity, regulatory advantage, and institutional trust — exactly what Moats 1-5 describe. The v2 Moat reordering (institutional graph first, clinical evidence second) is a more honest answer to "what differentiates in a crowded ambient market" than the v1 hardware-centric framing.
+
+---
+
+## 25. Probability calibration — v2 honest self-assessment
+
+*New in v2. The reviewer's probability estimates are incorporated with appropriate caveats.*
+
+**Probability of the full v1-as-written vision (10-year platform with all major moats intact):** ~5-15% (reviewer estimate, accepted).
+
+Why low: too many independent hard things must go right simultaneously — workflow adoption + hardware execution + regulatory success + clinical evidence + fundraising over a decade + governance innovation + organizational scaling across very different business models.
+
+**Probability of a strong mid-scale company if the v2 plan (with stage gates and narrowed scope) is executed well:** ~25-40% (reviewer estimate, accepted).
+
+Why higher: narrowing first three years to proven wedge + differentiated signal + core regulatory work, with speculative ideas as optionality, is more fundable and survivable.
+
+**Probability of any meaningful outcome (positive acquisition or sustainable business above $30M ARR):** ~50-60% (my estimate, not the reviewer's).
+
+Why: even in partial failure modes, the primary-care wedge + sensor work + institutional relationships likely produces *something* worth owning. The question is whether that something is an infrastructure platform ($1B+) or a specialty clinical AI company ($50-200M).
+
+### 25.1 The calibration implication
+
+If the base rate for full-vision-as-written is 5-15%, the v1 document's confidence in specific Year-10 numbers was too high. V2 revisions reduce that overclaiming:
+- ARR target is now a $250-350M range (not $390M)
+- Paper targets are decision-grade-evidence-oriented, not publication-count
+- Moat claims use "multi-year lead" language, not "uncopyable"
+- Hardware roadmap is explicitly narrowed with stage gates
+- Speculative ideas are labeled as optionality
+
+The document is still ambitious. It is now calibrated-ambitious instead of aspirational-ambitious. That is a meaningful difference for investor + partner + founder reality-testing.
+
+### 25.2 The asymmetric bet
+
+The reviewer's final observation worth reinforcing: *even if the grandest version never arrives, the plan should leave behind a company worth owning*. The stage gates ensure this. If Stage 1 succeeds but Stage 2 fails to prove a differentiated signal, the company is still a $30-80M Canadian ambient AI company — a legitimate mid-scale outcome, not a failure. If Stage 2 succeeds but Stage 3 stalls on regulatory or international work, the company is still a $100-200M specialty clinical AI company with a defensible Canadian position.
+
+The asymmetric bet is: small capital + narrow scope at each stage → stop-loss limited → upside preserved. That is fundable in a way a $250-400M all-or-nothing thesis is not.
+
+---
+
+## Appendix D — What was cut, delayed, or downgraded in v2
+
+*Per reviewer's detailed editing recommendation. This appendix documents what changed so future revisions can trace reasoning.*
+
+### Cut from core narrative for now
+
+- Custom silicon as active investment (still mentioned as Year 5-10 contingent optionality)
+- Multi-generational data as a strategic story (kept as 20-year architectural principle)
+- Specialist Emeritus program as a near-term commitment (kept as Phase 2+ optionality)
+- Explicit CMPA premium-reduction thesis (replaced with "operator-in-the-loop architecture is defensive on its own; CMPA engagement is speculative upside")
+- "Platform-as-EMR-alternative" language (replaced with "outcome evidence for flagship indications" — preserves EMR partner relationships)
+- Early international ambition as committed milestone (now Stage 4 optionality)
+
+### Delayed until later proof exists
+
+- Formal fiduciary protocol as open spec (now Phase 3, not Phase 1-2)
+- Inheritance data as a strategic story (kept as architectural principle, moved out of near-term narrative)
+- Multiple hardware categories in parallel (narrowed to room sensor → one home-monitoring signal → one wearable indication, sequenced not parallel)
+- Pharma / trials as a major revenue pillar in Y4-6 (now Stage 3+ expansion, after Stage 1-2 core is proven)
+- CE-MDR and broader international paths (Stage 4)
+
+### Kept and sharpened
+
+- Ontario / Canada-first workflow wedge
+- One major EMR integration (Oscar Pro primary)
+- Privacy / audit architecture as table-stakes defensive posture
+- One meaningful evidence program focused on decision-grade outcomes
+- One differentiated home / continuous signal program (narrowed)
+- **Institutional graph moved to Moat 1** (most important structural change)
+- Regulatory path for a carefully-chosen flagship indication
+- Operator-in-the-loop architecture as defensive design
+- Canadian sovereignty as procurement advantage (not exclusion of competitors)
+
+### The new strategic core, in one paragraph (reviewer's version, adopted)
+
+*Build the most trusted Canadian clinical AI platform for community-based care. Win first in physician workflow and coordination, with strong integrations, privacy discipline, and measurable time-saving value. Add one evidence-backed home monitoring capability that cloud-only ambient vendors cannot match. Use that wedge to accumulate the assets that compound over time — institutional trust, longitudinal signal, clinical evidence, regulatory depth, and patient-directed governance. Everything else — trials mode, broader device surface area, formal fiduciary protocols, silicon — only happens if those first layers genuinely work.*
+
+### The 12 questions to answer before funding a decade
+
+(Per reviewer, adopted verbatim.)
+
+1. What is the first buyer, exactly, and why do they buy in the first 12 months?
+2. What is the first regulated indication, exactly, and why that one?
+3. Which hardware is actually proprietary, and which should be OEM / partner-based?
+4. How does the clinic-level unit economics model work in detail?
+5. How much consent friction is acceptable before workflow breaks?
+6. What happens if the fiduciary / trust structure is legally workable but commercially confusing?
+7. What happens if CMPA never engages beyond generic medico-legal guidance?
+8. What is the fallback if one core home-signal hypothesis fails?
+9. What are the conditions under which the company explicitly does NOT build custom hardware categories?
+10. What is the first truly decision-grade evidence package, and what financing round depends on it?
+11. Which institutional relationships are for revenue, which are for evidence, and which are for policy leverage?
+12. If the company had to become a great $30-60M ARR business without the full grand vision, what would that business be?
+
+Question 12 is the most important discipline: a good deep-tech plan should leave a valuable company behind even if the grandest version never fully arrives. The v2 stage gates preserve this optionality.
