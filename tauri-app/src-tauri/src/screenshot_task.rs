@@ -20,6 +20,26 @@ use crate::replay_bundle::{ReplayBundleBuilder, VisionResult};
 
 pub(crate) use crate::patient_name_tracker::{build_patient_name_prompt, parse_vision_response};
 
+// ── Vision early-stop policy (Apr 17 2026) ─────────────────────────────────
+//
+// Calibrated from the Apr 16 Room 6 forensic analysis: 329 vision calls
+// produced only ~52 unique names (80%+ redundancy). Sessions with stable
+// names converged after 5 consecutive matching votes; the hard cap backstops
+// pathological encounters that never stabilize (e.g. chart-switching noise).
+//
+// Expected savings per clinic day: ~78% reduction in vision calls,
+// ~10 min of LLM wait freed up. Same downstream behavior because the
+// weighted-majority name is unchanged on stable cases — see Option A
+// rationale in the Apr 17 operational analysis.
+// ────────────────────────────────────────────────────────────────────────────
+/// Skip further vision calls for an encounter once this many consecutive
+/// vision extractions all returned the same patient name.
+const VISION_STREAK_CUTOFF: usize = 5;
+
+/// Hard cap on total vision LLM calls per encounter. Backstops the rare
+/// case where names keep flipping so `VISION_STREAK_CUTOFF` is never reached.
+const VISION_MAX_CALLS_PER_ENCOUNTER: usize = 30;
+
 /// All inputs needed by the screenshot task, gathered at spawn time.
 pub struct ScreenshotTaskConfig {
     pub stop_flag: Arc<AtomicBool>,
@@ -106,6 +126,31 @@ pub async fn run_screenshot_task(cfg: ScreenshotTaskConfig) {
                 continue;
             }
         };
+
+        // Vision early-stop gate (Apr 17 2026). Screenshots are already buffered
+        // above, so the audit trail is preserved — only the vision LLM call is
+        // skipped. Skip fires when either:
+        //   • the tracker has accumulated K consecutive matching votes (confident)
+        //   • the encounter has already burned the per-encounter cap
+        // Both state fields are reset by `PatientNameTracker::reset()` on split.
+        let should_skip = cfg.name_tracker.lock().ok()
+            .map(|t| t.should_skip_vision(VISION_STREAK_CUTOFF, VISION_MAX_CALLS_PER_ENCOUNTER))
+            .unwrap_or(false);
+        if should_skip {
+            if let Ok(t) = cfg.name_tracker.lock() {
+                debug!(
+                    "Vision early-stop: streak={} attempts={} — skipping LLM call",
+                    t.streak_count(), t.vision_calls_attempted()
+                );
+            }
+            continue;
+        }
+
+        // Bump the attempt counter BEFORE invoking vision so the cap counts
+        // failures too (a timed-out or unparseable response still burned LLM budget).
+        if let Ok(mut t) = cfg.name_tracker.lock() {
+            t.note_vision_attempt();
+        }
 
         let (system_prompt, user_text) = build_patient_name_prompt(None);
         let system_prompt_log = system_prompt.clone();

@@ -20,6 +20,21 @@ pub struct PatientNameTracker {
     previous_name: Option<String>,
     /// Patient date of birth in YYYY-MM-DD format (most recent successful extraction wins)
     dob: Option<String>,
+    /// Name of the current consecutive-match streak (Apr 17 2026 — vision early-stop).
+    /// Tracks the most recent recorded name so `streak_count` can gate further vision
+    /// calls: once we have K consecutive votes for the same name, the screenshot task
+    /// stops making LLM calls for this encounter.
+    streak_name: Option<String>,
+    /// Number of consecutive recorded votes for `streak_name`. Failed vision calls
+    /// (no name returned) do NOT reset the streak because `record()` is never called
+    /// for them — the tracker only sees successful extractions.
+    streak_count: usize,
+    /// Total vision LLM calls attempted for this encounter (incremented by the
+    /// screenshot task via `note_vision_attempt()` BEFORE each call, including
+    /// ones that will fail or return empty). Used as a backstop cap so a
+    /// pathological encounter with never-stable names doesn't burn unbounded
+    /// LLM budget. Reset on `reset()`.
+    vision_calls_attempted: usize,
 }
 
 impl PatientNameTracker {
@@ -29,6 +44,9 @@ impl PatientNameTracker {
             vote_seq: 0,
             previous_name: None,
             dob: None,
+            streak_name: None,
+            streak_count: 0,
+            vision_calls_attempted: 0,
         }
     }
 
@@ -38,8 +56,52 @@ impl PatientNameTracker {
         let normalized = normalize_patient_name(name);
         if !normalized.is_empty() {
             self.vote_seq += 1;
-            *self.votes.entry(normalized).or_insert(0) += self.vote_seq;
+            *self.votes.entry(normalized.clone()).or_insert(0) += self.vote_seq;
+            // Streak maintenance: if this recorded name matches the current streak,
+            // extend it; otherwise start a new streak at this name.
+            if self.streak_name.as_deref() == Some(normalized.as_str()) {
+                self.streak_count += 1;
+            } else {
+                self.streak_name = Some(normalized);
+                self.streak_count = 1;
+            }
         }
+    }
+
+    /// Bump the attempted-call counter. The screenshot task calls this BEFORE
+    /// each vision LLM invocation so the cap counts failures, parse errors, and
+    /// empty responses too — all of which burn LLM budget even when they don't
+    /// result in a recorded vote.
+    pub fn note_vision_attempt(&mut self) {
+        self.vision_calls_attempted += 1;
+    }
+
+    /// Current length of the consecutive-match streak (read-only, for logging).
+    pub fn streak_count(&self) -> usize {
+        self.streak_count
+    }
+
+    /// Total vision LLM calls attempted for this encounter (read-only).
+    pub fn vision_calls_attempted(&self) -> usize {
+        self.vision_calls_attempted
+    }
+
+    /// Should the screenshot task skip the next vision LLM call?
+    ///
+    /// Two conditions are OR'd:
+    ///   • `streak_count >= streak_k`: we've seen K consecutive recorded votes
+    ///     for the same name, so the tracker has high confidence in the majority.
+    ///   • `vision_calls_attempted >= cap`: pathological fallback — an encounter
+    ///     that keeps flipping between names would otherwise burn unbounded
+    ///     LLM budget. Stop after `cap` attempts regardless of agreement.
+    ///
+    /// Screenshots are still captured and archived when this returns true —
+    /// only the vision LLM call is skipped. Calibrated from the Apr 16 2026
+    /// forensic analysis: `streak_k=5, cap=30` cuts vision calls by ~78% on a
+    /// normal clinic day while preserving behavior on ambiguous (couples/
+    /// family) visits.
+    pub fn should_skip_vision(&self, streak_k: usize, cap: usize) -> bool {
+        self.streak_count >= streak_k || self.vision_calls_attempted >= cap
     }
 
     /// Returns the name with the highest recency-weighted total, or None if no votes recorded
@@ -69,12 +131,17 @@ impl PatientNameTracker {
         (changed, prev, current)
     }
 
-    /// Clear all votes for a new encounter period, storing outgoing majority name
+    /// Clear all votes for a new encounter period, storing outgoing majority name.
+    /// Also clears the streak + attempt counters so vision early-stop starts fresh
+    /// for the next encounter.
     pub fn reset(&mut self) {
         self.previous_name = self.majority_name();
         self.votes.clear();
         self.vote_seq = 0;
         self.dob = None;
+        self.streak_name = None;
+        self.streak_count = 0;
+        self.vision_calls_attempted = 0;
     }
 
     /// Store the patient's date of birth (most recent extraction wins, no voting needed).
@@ -547,5 +614,86 @@ mod tests {
         );
         assert_eq!(name, Some("Claudia Zamorano Sanchez".to_string()));
         assert_eq!(dob, Some("1990-01-15".to_string()));
+    }
+
+    // ── Vision early-stop tests (Apr 17 2026) ──────────────────────────
+
+    #[test]
+    fn streak_increments_on_consecutive_matching_votes() {
+        let mut t = PatientNameTracker::new();
+        t.record("Pani"); assert_eq!(t.streak_count(), 1);
+        t.record("Pani"); assert_eq!(t.streak_count(), 2);
+        t.record("Pani"); assert_eq!(t.streak_count(), 3);
+        t.record("Brown"); assert_eq!(t.streak_count(), 1); // reset to new name
+        t.record("Brown"); assert_eq!(t.streak_count(), 2);
+    }
+
+    #[test]
+    fn streak_not_affected_by_attempts_without_records() {
+        // Failed vision calls bump vision_calls_attempted but don't call record().
+        // Streak should only track successful records.
+        let mut t = PatientNameTracker::new();
+        t.record("Pani");
+        t.note_vision_attempt(); // simulates a failed call
+        t.record("Pani");
+        assert_eq!(t.streak_count(), 2, "streak preserved across failed attempts");
+    }
+
+    #[test]
+    fn should_skip_vision_fires_at_streak_threshold() {
+        let mut t = PatientNameTracker::new();
+        for _ in 0..4 {
+            t.record("Pani");
+            assert!(!t.should_skip_vision(5, 30), "not yet at streak=5");
+        }
+        t.record("Pani");
+        assert!(t.should_skip_vision(5, 30), "streak=5 triggers skip");
+    }
+
+    #[test]
+    fn should_skip_vision_fires_at_cap_regardless_of_streak() {
+        // Worst case: names keep flipping so streak never reaches K, but we
+        // still stop at the cap so LLM budget is bounded.
+        let mut t = PatientNameTracker::new();
+        for i in 0..30 {
+            t.note_vision_attempt();
+            // Alternate names so streak never exceeds 1
+            t.record(if i % 2 == 0 { "A" } else { "B" });
+        }
+        assert_eq!(t.streak_count(), 1);
+        assert!(t.should_skip_vision(5, 30), "cap=30 reached");
+    }
+
+    #[test]
+    fn reset_clears_streak_and_attempts() {
+        let mut t = PatientNameTracker::new();
+        t.record("Pani");
+        t.record("Pani");
+        t.record("Pani");
+        t.note_vision_attempt();
+        t.note_vision_attempt();
+        t.reset();
+        assert_eq!(t.streak_count(), 0);
+        assert_eq!(t.vision_calls_attempted(), 0);
+        assert!(!t.should_skip_vision(5, 30));
+    }
+
+    #[test]
+    fn should_skip_vision_uses_or_logic() {
+        let mut t = PatientNameTracker::new();
+        // Five consecutive votes — streak fires independent of attempt count
+        for _ in 0..5 { t.record("Pani"); }
+        assert!(t.should_skip_vision(5, 100), "streak branch fires even with cap far away");
+    }
+
+    #[test]
+    fn streak_matches_normalized_form() {
+        // The streak key is the normalized name, so different casings / whitespace
+        // of the same patient should still extend a streak.
+        let mut t = PatientNameTracker::new();
+        t.record("John Smith");
+        t.record("JOHN SMITH");
+        t.record("john smith");
+        assert_eq!(t.streak_count(), 3, "case-insensitive match extends streak");
     }
 }
