@@ -73,7 +73,7 @@ cd tauri-app/src-tauri && cargo check     # Backend
 
 # Tests
 cd tauri-app && pnpm test:run             # Frontend (Vitest, 585 passing across 31 files)
-cd tauri-app/src-tauri && cargo test --lib   # Backend lib (1,061 passing, 29 ignored)
+cd tauri-app/src-tauri && cargo test --lib   # Backend lib (1,076 passing, 30 ignored)
 
 # E2E (requires live STT + LLM Router)
 cd tauri-app/src-tauri && cargo test e2e_ -- --ignored --nocapture
@@ -102,7 +102,7 @@ cd ios && xcodegen generate                # Regenerate Xcode project
 
 # Release (triggers auto-update for all rooms)
 # Bump version in tauri.conf.json + package.json + src-tauri/Cargo.toml, then:
-git tag v0.10.34   # use the next patch version
+git tag v0.10.39   # use the next patch version
 git push origin main --tags
 ```
 
@@ -148,6 +148,14 @@ Three-tier fallback: server fetch (on startup + version-bump check) → `~/.tran
 ## Auto-Deploy (Profile Service)
 
 The profile service on the MacBook is auto-deployed via launchd. The `com.fabricscribe.profile-service-updater` plist runs `~/transcriptionapp-deploy.sh` on a schedule, which pulls the repo, rebuilds `profile-service`, and restarts via launchctl. Logs in `~/transcriptionapp-deploy.log`. See `ops/README.md`.
+
+## Operational observability (v0.10.36+)
+
+LLM calls emit per-call `CallMetrics` (wall_ms, scheduling_ms, network_ms, concurrent_at_start, retry_count) that's folded into each `pipeline_log.jsonl` event's context. At `continuous_mode_stopped` a `performance_summary.json` is written to `archive/YYYY/MM/DD/` with per-step latency percentiles, failure counts, and the scheduling-vs-network split. Makes tail attribution ("is the LLM slow or is our async runtime sleeping?") a one-file lookup instead of a per-session parse. Coverage: encounter_detection, billing_extraction, encounter_merge, clinical_content_check, vision_extraction. Not yet migrated: soap_generation, multi_patient_detect (go through higher-level client wrappers).
+
+## Vision early-stop (v0.10.37+)
+
+Screenshot task skips vision LLM calls once `PatientNameTracker` has K=5 consecutive matching votes (or cap=30 total per encounter). Screenshots still captured + archived for audit. Calibrated from the Apr 16 Room 6 audit: ~78% vision-call reduction (329 → ~70/day) with no downstream behavior change on stable encounters.
 
 ## Detailed Context
 

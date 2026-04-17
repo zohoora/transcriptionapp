@@ -6,7 +6,7 @@ This document describes the AMI Assist test infrastructure: what's tested, where
 
 | Surface | Files | Tests | Runner |
 |---------|-------|-------|--------|
-| Rust backend (lib) | ~85 | 1,061 | `cd tauri-app/src-tauri && cargo test --lib` |
+| Rust backend (lib) | ~86 | 1,076 | `cd tauri-app/src-tauri && cargo test --lib` |
 | Rust CLI tool tests | 4 binaries | ~46 inline | `cargo test --bins` |
 | Profile service | 7 | 46 | `cd profile-service && cargo test` |
 | Frontend (React + TS) | 31 | 585 | `cd tauri-app && pnpm test:run` |
@@ -66,6 +66,18 @@ cargo run --bin <tool> -- [PATH | --all] [--trials N] [--fail-on-mismatch] [--th
 
 ### Why thresholds vary
 LLM responses at temp=0.3 have a documented ~40% flip rate on borderline cases. Each task has a different difficulty distribution; thresholds reflect what's achievable with `--trials 3` majority voting on the labeled corpus.
+
+## Performance summary (ops observability)
+
+Written automatically at `continuous_mode_stopped` to `archive/YYYY/MM/DD/performance_summary.json`. Aggregates the day's `pipeline_log.jsonl` + `day_log.jsonl` data into per-step percentiles (p50/p90/p99/max), failure counts, and — for LLM steps migrated to `generate_timed` / `generate_vision_timed` — `total_scheduling_ms` / `total_network_ms` / `peak_concurrent` / `retried_call_count`.
+
+Useful for attributing tail latencies without parsing 10+ per-session files. Verify with the ignored integration test:
+
+```bash
+cargo test --lib performance_summary::tests::show_real_day -- --ignored --nocapture
+```
+
+The file format is stable and machine-readable; external dashboards can tail it across clinic days without coupling to session-directory structure.
 
 ### Why offline replay matters
 `detection_replay_cli` is the only fully-deterministic regression gate. It runs in <30s against ~2,500 historical decisions and catches **any logic regression in `evaluate_detection()`** — the central decision function. It's wired into `preflight.sh` as Layer 6.
@@ -154,7 +166,7 @@ Run the labeled regression with `cargo run --bin labeled_regression_cli -- --all
 
 | Surface | Target | Current |
 |---------|--------|---------|
-| Rust unit + integration | 1,000+ | 1,061 |
+| Rust unit + integration | 1,000+ | 1,076 |
 | Frontend hook + component | 600+ | 585 |
 | Profile service | 50+ | 46 |
 | Replay corpus (bundles) | 200+ | 192 |

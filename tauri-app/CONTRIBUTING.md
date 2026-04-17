@@ -118,7 +118,7 @@ refactor: extract audio resampling into separate module
 
 The full test architecture is documented in **[../docs/TESTING.md](../docs/TESTING.md)** — read it first for context on the 7 test layers, replay tools, labeled corpus, and benchmark fixtures.
 
-Current coverage: 585 frontend tests, 1,061 Rust lib tests, 46 profile-service tests, 192 replay bundles, 68 labeled bundles. All PRs must pass `cargo test --lib`, `pnpm test:run`, and `./scripts/preflight.sh --full`.
+Current coverage: 585 frontend tests, 1,076 Rust lib tests, 46 profile-service tests, 192 replay bundles, 68 labeled bundles. All PRs must pass `cargo test --lib`, `pnpm test:run`, and `./scripts/preflight.sh --full`.
 
 ### Running Tests
 
@@ -126,7 +126,7 @@ Current coverage: 585 frontend tests, 1,061 Rust lib tests, 46 profile-service t
 # Frontend (Vitest, 31 files)
 pnpm test:run
 
-# Rust backend (~1,061 lib tests)
+# Rust backend (~1,076 lib tests)
 cd src-tauri
 cargo test --lib
 
@@ -337,6 +337,7 @@ proptest! {
 | `segment_log` | Per-segment JSONL timeline logger (continuous mode) |
 | `replay_bundle` | Self-contained encounter replay test case builder (schema v3, includes MultiPatientSplitDecision) |
 | `day_log` | Day-level orchestration JSONL logger |
+| `performance_summary` | Writes `performance_summary.json` per day at continuous-mode stop. Per-step latency percentiles + scheduling/network split + peak concurrency + failure counts |
 | `transcript_buffer` | Timestamped segment buffer (continuous mode) |
 | `audio_processing` | Shared ffmpeg + WAV helpers used by manual audio upload + mobile CLI |
 | `billing/` | FHO+ billing engine (234 OHIP codes, 562 diagnostic codes, two-stage extraction) |
