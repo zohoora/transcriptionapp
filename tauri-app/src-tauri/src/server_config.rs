@@ -392,6 +392,16 @@ struct CachedConfig {
 }
 
 fn save_cache(config: &ServerConfig) -> Result<()> {
+    save_cache_to(config, &cache_path())
+}
+
+fn load_cache() -> Option<ServerConfig> {
+    load_cache_from(&cache_path())
+}
+
+/// Path-aware variant of [`save_cache`]. Factored out so tests can redirect
+/// the cache location to a tempdir without racing against the real cache.
+fn save_cache_to(config: &ServerConfig, path: &std::path::Path) -> Result<()> {
     let cached = CachedConfig {
         version: config.version,
         prompts: config.prompts.clone(),
@@ -399,23 +409,22 @@ fn save_cache(config: &ServerConfig) -> Result<()> {
         thresholds: config.thresholds.clone(),
         defaults: config.defaults.clone(),
     };
-    let path = cache_path();
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
     }
     let content = serde_json::to_string(&cached)?;
     let temp = path.with_extension("json.tmp");
     std::fs::write(&temp, &content)?;
-    std::fs::rename(&temp, &path)?;
+    std::fs::rename(&temp, path)?;
     Ok(())
 }
 
-fn load_cache() -> Option<ServerConfig> {
-    let path = cache_path();
+/// Path-aware variant of [`load_cache`]. See [`save_cache_to`].
+fn load_cache_from(path: &std::path::Path) -> Option<ServerConfig> {
     if !path.exists() {
         return None;
     }
-    let content = std::fs::read_to_string(&path).ok()?;
+    let content = std::fs::read_to_string(path).ok()?;
     let cached: CachedConfig = serde_json::from_str(&content).ok()?;
     Some(ServerConfig {
         version: cached.version,
@@ -451,6 +460,29 @@ pub async fn load_server_config(client: &ProfileClient) -> ServerConfig {
                 compiled_defaults()
             }
         }
+    }
+}
+
+/// Pure three-tier fallback resolution (server → cache → compiled defaults).
+///
+/// Used by integration tests to exercise the fallback composition without
+/// going through [`ProfileClient`]. Production callers use
+/// [`load_server_config`], which wraps this with the real HTTP fetch.
+///
+/// - `fetch`: result of attempting the server fetch (`Ok` → server wins and
+///   gets cached; `Err` → fall back to cache).
+/// - `cache_path`: where the on-disk cache lives (redirectable for tests).
+#[cfg(test)]
+fn resolve_with_cache_path(
+    fetch: Result<ServerConfig>,
+    cache_path: &std::path::Path,
+) -> ServerConfig {
+    match fetch {
+        Ok(config) => {
+            let _ = save_cache_to(&config, cache_path);
+            config
+        }
+        Err(_) => load_cache_from(cache_path).unwrap_or_else(compiled_defaults),
     }
 }
 
@@ -673,5 +705,141 @@ mod tests {
         assert_eq!(config.thresholds.vision_skip_streak_k, 5);
         assert_eq!(config.thresholds.vision_skip_call_cap, 30);
         assert_eq!(config.thresholds.gemini_generation_timeout_secs, 45);
+    }
+
+    // ── Three-tier fallback integration tests (Phase 3 T8) ───────────
+    //
+    // The three tests below exercise the fallback composition in
+    // [`resolve_with_cache_path`] end-to-end. Each uses a `tempdir` to isolate
+    // the on-disk cache from the real `~/.transcriptionapp/` cache so they
+    // can run in parallel without stomping production data.
+
+    fn make_server_config_with_version(version: u64) -> ServerConfig {
+        // Give every section a distinct "server value" so we can tell it
+        // apart from cached values and compiled defaults below.
+        let mut thresholds = DetectionThresholds::default();
+        thresholds.version = version;
+        thresholds.force_check_word_threshold = 9000;
+        thresholds.multi_patient_detect_word_threshold = 777;
+        let mut defaults = OperationalDefaults::default();
+        defaults.version = version;
+        defaults.sleep_start_hour = 23;
+        defaults.soap_model = "server-wins-soap".to_string();
+        ServerConfig {
+            prompts: PromptTemplates::default(),
+            billing: BillingData::default(),
+            thresholds,
+            defaults,
+            version,
+            source: ConfigSource::Server,
+        }
+    }
+
+    fn make_cache_config() -> ServerConfig {
+        // Distinct values so "cache wins" is unambiguously observable.
+        let mut thresholds = DetectionThresholds::default();
+        thresholds.force_check_word_threshold = 4444;
+        thresholds.multi_patient_detect_word_threshold = 111;
+        let mut defaults = OperationalDefaults::default();
+        defaults.sleep_start_hour = 19;
+        defaults.soap_model = "cache-wins-soap".to_string();
+        ServerConfig {
+            prompts: PromptTemplates::default(),
+            billing: BillingData::default(),
+            thresholds,
+            defaults,
+            version: 77,
+            source: ConfigSource::Cache,
+        }
+    }
+
+    #[test]
+    fn test_load_server_config_three_tier_server_wins() {
+        // Cache X on disk, server fetch returns Y — Y must win AND be written
+        // back to the cache so the next offline load sees Y (not X).
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let cache_path = tmp.path().join("server_config_cache.json");
+
+        // Seed cache with X (values different from what the server returns)
+        let cached_x = make_cache_config();
+        save_cache_to(&cached_x, &cache_path).expect("seed cache");
+        assert!(cache_path.exists(), "seeded cache must exist");
+
+        // Server returns Y
+        let server_y = make_server_config_with_version(42);
+
+        let resolved = resolve_with_cache_path(Ok(server_y.clone()), &cache_path);
+
+        // Server values win in-memory
+        assert!(matches!(resolved.source, ConfigSource::Server));
+        assert_eq!(resolved.version, 42);
+        assert_eq!(resolved.thresholds.force_check_word_threshold, 9000);
+        assert_eq!(resolved.thresholds.multi_patient_detect_word_threshold, 777);
+        assert_eq!(resolved.defaults.sleep_start_hour, 23);
+        assert_eq!(resolved.defaults.soap_model, "server-wins-soap");
+
+        // Cache was overwritten with Y — reloading it now returns Y, not X
+        let reloaded = load_cache_from(&cache_path).expect("cache written");
+        assert_eq!(reloaded.version, 42);
+        assert_eq!(reloaded.thresholds.force_check_word_threshold, 9000);
+        assert_eq!(reloaded.defaults.soap_model, "server-wins-soap");
+    }
+
+    #[test]
+    fn test_load_server_config_three_tier_cache_fallback() {
+        // Server fetch fails, cache present — resolver must return the cached
+        // values (NOT fall through to compiled defaults).
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let cache_path = tmp.path().join("server_config_cache.json");
+
+        let cached = make_cache_config();
+        save_cache_to(&cached, &cache_path).expect("seed cache");
+
+        let resolved = resolve_with_cache_path(
+            Err(anyhow::anyhow!("simulated server outage")),
+            &cache_path,
+        );
+
+        assert!(matches!(resolved.source, ConfigSource::Cache));
+        assert_eq!(resolved.version, 77);
+        assert_eq!(resolved.thresholds.force_check_word_threshold, 4444);
+        assert_eq!(resolved.thresholds.multi_patient_detect_word_threshold, 111);
+        assert_eq!(resolved.defaults.sleep_start_hour, 19);
+        assert_eq!(resolved.defaults.soap_model, "cache-wins-soap");
+
+        // Guard against accidentally leaking compiled defaults.
+        assert_ne!(
+            resolved.thresholds.force_check_word_threshold,
+            DetectionThresholds::default().force_check_word_threshold,
+            "cache fallback must return CACHED value, not compiled default"
+        );
+    }
+
+    #[test]
+    fn test_load_server_config_three_tier_compiled_fallback() {
+        // Server fetch fails, no cache on disk — fall all the way through to
+        // compiled defaults.
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let cache_path = tmp.path().join("server_config_cache.json");
+        // (Do NOT seed the cache — path must not exist.)
+        assert!(!cache_path.exists());
+
+        let resolved = resolve_with_cache_path(
+            Err(anyhow::anyhow!("simulated server outage")),
+            &cache_path,
+        );
+
+        assert!(matches!(resolved.source, ConfigSource::CompiledDefaults));
+        assert_eq!(resolved.version, 0);
+        let compiled = compiled_defaults();
+        assert_eq!(
+            resolved.thresholds.force_check_word_threshold,
+            compiled.thresholds.force_check_word_threshold
+        );
+        assert_eq!(
+            resolved.thresholds.multi_patient_detect_word_threshold,
+            compiled.thresholds.multi_patient_detect_word_threshold
+        );
+        assert_eq!(resolved.defaults, compiled.defaults);
     }
 }

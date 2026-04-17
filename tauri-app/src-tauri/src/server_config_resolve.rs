@@ -273,4 +273,75 @@ mod tests {
         // with the same value (since no user edits).
         assert_eq!(resolved, server);
     }
+
+    // ── Phase 3 T8 end-to-end precedence tests ───────────────────────
+    //
+    // These tests pin the exact integration contract described in the T8
+    // plan (items 4-6): user-edited fields always win over the server, and
+    // a mixed scenario resolves each of the 10 Cat B fields independently.
+
+    #[test]
+    fn test_resolve_operational_user_edited_fields_win_regardless_of_server() {
+        // Exact scenario from the T8 plan: user tuned sleep_start_hour to 21
+        // locally. Server pushes a new clinic-wide default of 23. User's
+        // local edit must win, unconditionally.
+        let mut settings = Settings::default();
+        settings.sleep_start_hour = 21;
+        settings.user_edited_fields = vec!["sleep_start_hour".to_string()];
+
+        let mut server = OperationalDefaults::default();
+        server.sleep_start_hour = 23;
+
+        let resolved = resolve_operational(&settings, Some(&server));
+        assert_eq!(
+            resolved.sleep_start_hour, 21,
+            "user-edited local value must win even when server pushes a different value"
+        );
+    }
+
+    #[test]
+    fn test_resolve_operational_mixed() {
+        // Phase 3 T8 item 6: verify the resolver handles every one of the 10
+        // Cat B fields independently in a mixed scenario. We partition the
+        // fields into two halves — 5 user-edited (local wins) and 5 unedited
+        // (server wins) — and assert each resolves correctly.
+        //
+        // If a future refactor accidentally couples fields (e.g. by sharing a
+        // resolve closure and feeding the wrong field_name into one of them),
+        // the asymmetric edit set here catches it: the "edited" half would
+        // fall through to the server value or vice versa.
+        let mut settings = make_local_settings();
+        settings.user_edited_fields = vec![
+            "sleep_start_hour".to_string(),
+            "thermal_hot_pixel_threshold_c".to_string(),
+            "encounter_check_interval_secs".to_string(),
+            "soap_model".to_string(),
+            "fast_model".to_string(),
+        ];
+        let server = make_server_defaults();
+        let resolved = resolve_operational(&settings, Some(&server));
+
+        // ── Edited: local values must win ─────────────────────────
+        assert_eq!(resolved.sleep_start_hour, 20);
+        assert!(
+            (resolved.thermal_hot_pixel_threshold_c - 27.0).abs() < f32::EPSILON,
+            "edited float must take local value"
+        );
+        assert_eq!(resolved.encounter_check_interval_secs, 60);
+        assert_eq!(resolved.soap_model, "local-soap");
+        assert_eq!(resolved.fast_model, "local-fast");
+
+        // ── Unedited: server values must win ──────────────────────
+        assert_eq!(resolved.sleep_end_hour, 7);
+        assert!(
+            (resolved.co2_baseline_ppm - 450.0).abs() < f32::EPSILON,
+            "unedited float must take server value"
+        );
+        assert_eq!(resolved.encounter_silence_trigger_secs, 30);
+        assert_eq!(resolved.soap_model_fast, "server-soap-fast");
+        assert_eq!(resolved.encounter_detection_model, "server-detect");
+
+        // Version is metadata, always copied from server.
+        assert_eq!(resolved.version, 7);
+    }
 }

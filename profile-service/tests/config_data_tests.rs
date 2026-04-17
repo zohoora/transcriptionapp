@@ -666,6 +666,66 @@ async fn update_operational_defaults_rejects_invalid_via_route() {
 }
 
 #[tokio::test]
+async fn update_operational_defaults_rejection_preserves_prior_values() {
+    // Phase 3 T8 item 9: after a rejected PUT (e.g. sleep_start_hour=24), a
+    // subsequent GET must return the last valid values — the rejected payload
+    // must NOT have been partially applied. Guards against the common bug
+    // where validation runs but writes still go through (e.g. validating a
+    // clone while the store is mutated first).
+    let app = TestApp::new();
+
+    // 1. Seed a known-good custom value.
+    let resp = app
+        .put_json(
+            "/config/defaults",
+            &serde_json::json!({
+                "sleep_start_hour": 21,
+                "sleep_end_hour": 7,
+                "thermal_hot_pixel_threshold_c": 28.0,
+                "co2_baseline_ppm": 420.0,
+                "encounter_check_interval_secs": 120,
+                "encounter_silence_trigger_secs": 45,
+                "soap_model": "soap-model-fast",
+                "soap_model_fast": "soap-model-fast",
+                "fast_model": "fast-model",
+                "encounter_detection_model": "fast-model"
+            }),
+        )
+        .await;
+    resp.assert_ok();
+
+    // 2. Try an invalid PUT — must 400.
+    let resp = app
+        .put_json(
+            "/config/defaults",
+            &serde_json::json!({
+                "sleep_start_hour": 24,  // ← invalid
+                "sleep_end_hour": 6,
+                "thermal_hot_pixel_threshold_c": 28.0,
+                "co2_baseline_ppm": 420.0,
+                "encounter_check_interval_secs": 120,
+                "encounter_silence_trigger_secs": 45,
+                "soap_model": "soap-model-fast",
+                "soap_model_fast": "soap-model-fast",
+                "fast_model": "fast-model",
+                "encounter_detection_model": "fast-model"
+            }),
+        )
+        .await;
+    resp.assert_status(axum::http::StatusCode::BAD_REQUEST);
+
+    // 3. GET must still return the seeded value, NOT the rejected one.
+    let resp = app.get("/config/defaults").await;
+    resp.assert_ok();
+    let json = resp.json();
+    assert_eq!(
+        json["sleep_start_hour"], 21,
+        "rejected PUT must not overwrite last valid sleep_start_hour"
+    );
+    assert_eq!(json["sleep_end_hour"], 7);
+}
+
+#[tokio::test]
 async fn update_operational_defaults_partial_body_uses_defaults() {
     let app = TestApp::new();
 

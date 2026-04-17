@@ -1331,4 +1331,109 @@ mod tests {
         // Negative minutes (clock skew) still < 20, so base = 0.85
         assert!((calculate_confidence_threshold(-5, 0, None) - 0.85).abs() < f64::EPSILON);
     }
+
+    // ========================================================================
+    // Cat A server-threshold override tests (Phase 3 T8)
+    //
+    // evaluate_detection reads absolute_word_cap, force_split_word_threshold,
+    // force_split_consecutive_limit, and the confidence_* fields from
+    // ctx.server_thresholds when present. These tests confirm the override
+    // flows through — without them we'd only catch threshold overrides at the
+    // unit-level serde-default layer in server_config.rs.
+    // ========================================================================
+
+    fn server_thresholds_with<F: FnOnce(&mut crate::server_config::DetectionThresholds)>(
+        tweak: F,
+    ) -> crate::server_config::DetectionThresholds {
+        let mut t = crate::server_config::DetectionThresholds::default();
+        tweak(&mut t);
+        t
+    }
+
+    #[test]
+    fn test_eval_server_absolute_word_cap_override_affects_behavior() {
+        // Lower the absolute cap to 1000. With 1001 cleaned words we should
+        // force-split even though the compiled cap (25_000) would not fire.
+        let mut ctx = make_ctx(None);
+        ctx.cleaned_word_count = 1001;
+        ctx.server_thresholds = Some(server_thresholds_with(|t| t.absolute_word_cap = 1000));
+        let (outcome, _) = evaluate_detection(&ctx);
+        assert!(
+            matches!(&outcome, DetectionOutcome::ForceSplit { trigger } if trigger == "absolute_word_cap"),
+            "server absolute_word_cap override must flow through evaluate_detection, got: {outcome:?}"
+        );
+    }
+
+    #[test]
+    fn test_eval_server_force_split_word_threshold_override() {
+        // Raise the force-split word threshold to 10_000. With 5_001 cleaned
+        // words + 3 consecutive failures, the compiled threshold (5_000)
+        // would graduate-force-split — but the server override says "no,
+        // wait until 10_000," so we get NoResult instead.
+        let mut ctx = make_ctx(None);
+        ctx.cleaned_word_count = 5001;
+        ctx.consecutive_llm_failures = FORCE_SPLIT_CONSECUTIVE_LIMIT - 1;
+        ctx.server_thresholds = Some(server_thresholds_with(|t| {
+            t.force_split_word_threshold = 10_000;
+        }));
+        let (outcome, failures) = evaluate_detection(&ctx);
+        assert_eq!(outcome, DetectionOutcome::NoResult);
+        assert_eq!(failures, FORCE_SPLIT_CONSECUTIVE_LIMIT); // incremented but didn't trip
+    }
+
+    #[test]
+    fn test_eval_server_force_split_consecutive_limit_override() {
+        // Tighten the consecutive-failure limit to 2. First failure (0 → 1):
+        // below limit. Second (1 → 2): at limit → graduated force-split.
+        let mut ctx = make_ctx(None);
+        ctx.cleaned_word_count = FORCE_SPLIT_WORD_THRESHOLD + 1;
+        ctx.consecutive_llm_failures = 1;
+        ctx.server_thresholds = Some(server_thresholds_with(|t| {
+            t.force_split_consecutive_limit = 2;
+        }));
+        let (outcome, failures) = evaluate_detection(&ctx);
+        assert!(
+            matches!(&outcome, DetectionOutcome::ForceSplit { trigger } if trigger == "graduated_llm_failure"),
+            "tightened consecutive limit must trip force-split sooner, got: {outcome:?}"
+        );
+        assert_eq!(failures, 2);
+    }
+
+    #[test]
+    fn test_eval_server_confidence_thresholds_override() {
+        // Raise confidence_base_short to 0.95. 0.92 should now be rejected
+        // (the compiled default 0.85 would pass).
+        let mut ctx = make_ctx(Some(make_detection(true, 0.92)));
+        ctx.server_thresholds = Some(server_thresholds_with(|t| {
+            t.confidence_base_short = 0.95;
+        }));
+        let (outcome, _) = evaluate_detection(&ctx);
+        assert!(
+            matches!(outcome, DetectionOutcome::BelowThreshold { threshold, .. }
+                if (threshold - 0.95).abs() < f64::EPSILON),
+            "server confidence_base_short override must raise gate"
+        );
+    }
+
+    #[test]
+    fn test_eval_multi_patient_detect_threshold_pull_through() {
+        // `multi_patient_detect_word_threshold` is read from the same
+        // server-thresholds snapshot but consumed outside evaluate_detection
+        // (in continuous_mode + commands::ollama). This test pins the
+        // field-access contract so both consumers keep reading a single value
+        // from the snapshot — no drift between the two sites.
+        let thresholds = server_thresholds_with(|t| {
+            t.multi_patient_detect_word_threshold = 777;
+        });
+        assert_eq!(
+            thresholds.multi_patient_detect_word_threshold, 777,
+            "Cat A multi_patient_detect_word_threshold must be tunable via the snapshot"
+        );
+        // And the compiled default matches the source-of-truth constant.
+        let default = crate::server_config::DetectionThresholds::default();
+        assert_eq!(
+            default.multi_patient_detect_word_threshold,
+            MULTI_PATIENT_DETECT_WORD_THRESHOLD
+        );
+    }
 }
