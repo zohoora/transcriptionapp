@@ -2472,21 +2472,37 @@ mod tests {
     #[test]
     fn test_cat_b_field_names_matches_operational_defaults() {
         // Guardrail: the Cat B list in config.rs must stay in lockstep with
-        // OperationalDefaults in server_config.rs. If this test fails after
-        // editing OperationalDefaults, update CAT_B_FIELD_NAMES (and the
-        // two match helpers) to match.
-        let expected = [
-            "sleep_start_hour",
-            "sleep_end_hour",
-            "thermal_hot_pixel_threshold_c",
-            "co2_baseline_ppm",
-            "encounter_check_interval_secs",
-            "encounter_silence_trigger_secs",
-            "soap_model",
-            "soap_model_fast",
-            "fast_model",
-            "encounter_detection_model",
-        ];
-        assert_eq!(CAT_B_FIELD_NAMES, &expected);
+        // OperationalDefaults in server_config.rs. We reflect against the
+        // struct via serde so adding / removing / renaming any field actually
+        // fails this test — catching drift in BOTH directions.
+        use crate::server_config::OperationalDefaults;
+
+        let defaults = OperationalDefaults::default();
+        let json = serde_json::to_value(&defaults).expect("serialize OperationalDefaults");
+        let obj = json.as_object().expect("OperationalDefaults serializes as object");
+
+        // Every Cat B field name must correspond to an actual field in OperationalDefaults.
+        for name in CAT_B_FIELD_NAMES {
+            assert!(
+                obj.contains_key(*name),
+                "CAT_B_FIELD_NAMES contains {:?}, but OperationalDefaults has no such field. \
+                 If you added/renamed a field, update CAT_B_FIELD_NAMES.",
+                name
+            );
+        }
+
+        // Every non-version field on OperationalDefaults must be in CAT_B_FIELD_NAMES.
+        // 'version' is infrastructure, not a user-tunable setting.
+        for key in obj.keys() {
+            if key == "version" {
+                continue;
+            }
+            assert!(
+                CAT_B_FIELD_NAMES.contains(&key.as_str()),
+                "OperationalDefaults has field {:?} that is not in CAT_B_FIELD_NAMES. \
+                 If you added a new user-tunable field, add it to CAT_B_FIELD_NAMES.",
+                key
+            );
+        }
     }
 }
