@@ -621,7 +621,6 @@ pub async fn suggest_split_points(
     }
 
     let config = Config::load_or_default();
-    // Phase 3: resolve fast_model via precedence rule.
     let sc = server_config.read().await;
     let effective_fast_model = resolve(
         Some(&sc.defaults.fast_model),

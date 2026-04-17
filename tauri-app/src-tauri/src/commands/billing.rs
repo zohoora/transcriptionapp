@@ -179,7 +179,6 @@ pub async fn extract_billing_codes(
         .unwrap_or("");
 
     let config = Config::load_or_default();
-    // Phase 3: resolve fast_model via precedence rule.
     let sc_read = server_config.read().await;
     let effective_fast_model = crate::server_config_resolve::resolve(
         Some(&sc_read.defaults.fast_model),

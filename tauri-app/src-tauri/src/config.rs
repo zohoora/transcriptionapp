@@ -212,16 +212,16 @@ pub struct Settings {
     pub thermal_hot_pixel_threshold_c: f32,
     #[serde(default = "default_co2_baseline_ppm")]
     pub co2_baseline_ppm: f32,
-    // Phase 3 server-config: field names the user has locally tuned.
-    // Server pushes of OperationalDefaults (Cat B fields) must NOT stomp
-    // values listed here. Populated by legacy migration (first load after
-    // upgrade) and by `set_settings` diff-on-save. Cleared via
-    // `clear_user_edited_field`. See T3 plan + CAT_B_FIELD_NAMES.
+    // Field names the user has locally tuned. Server pushes of
+    // OperationalDefaults (Cat B fields) must NOT stomp values listed here.
+    // Populated by legacy migration (first load after upgrade) and by
+    // `set_settings` diff-on-save. Cleared via `clear_user_edited_field`.
+    // See CAT_B_FIELD_NAMES.
     #[serde(default)]
     pub user_edited_fields: Vec<String>,
 }
 
-// ── Phase 3 server-config: Cat B field list ──────────────────────────
+// ── Cat B field list ──────────────────────────────────────────────────
 //
 // These 10 field names are pushed by the server as `OperationalDefaults`
 // (see `server_config.rs` — field names must stay in lockstep with
@@ -240,8 +240,8 @@ pub const CAT_B_FIELD_NAMES: &[&str] = &[
     "encounter_detection_model",
 ];
 
-/// Phase 3 legacy migration: if `user_edited_fields` is empty, seed it with
-/// every Cat B field whose current value differs from the compiled default.
+/// Legacy migration: if `user_edited_fields` is empty, seed it with every
+/// Cat B field whose current value differs from the compiled default.
 /// Returns `true` if the Vec grew (caller should persist to disk).
 ///
 /// Idempotent: once the Vec is non-empty we assume migration has already run,
@@ -1255,7 +1255,7 @@ impl Config {
             config.image_source = "miis".to_string();
         }
 
-        // Phase 3 legacy migration: seed user_edited_fields on first load after
+        // Legacy migration: seed user_edited_fields on first load after
         // upgrade. See `migrate_user_edited_fields` for the logic.
         if migrate_user_edited_fields(&mut config.settings) {
             if let Err(e) = config.save() {
@@ -2372,13 +2372,13 @@ mod tests {
     }
 
     // ========================================================================
-    // Phase 3: user_edited_fields migration tests
+    // user_edited_fields migration tests
     // ========================================================================
 
     #[test]
     fn test_legacy_migration_seeds_user_edited_fields_for_tuned_values() {
         let mut settings = Settings::default();
-        // Simulate an existing config from before Phase 3: user had tuned
+        // Simulate an existing config from the pre-migration era: user had tuned
         // `sleep_start_hour` but the Vec hasn't been seeded yet.
         settings.sleep_start_hour = 23;
         settings.user_edited_fields.clear();

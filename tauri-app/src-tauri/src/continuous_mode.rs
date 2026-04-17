@@ -490,8 +490,8 @@ pub async fn run_continuous_mode(
     // Arc-wrapped to share between detector task and flush-on-stop path without cloning.
     //
     // `operational` holds the resolved OperationalDefaults (Cat B fields) with
-    // the Phase 3 precedence rule applied: compiled default < server < local
-    // (only if user-edited). All 10 Cat B values downstream (sleep hours, sensor
+    // the precedence rule applied: compiled default < server < local (only if
+    // user-edited). All 10 Cat B values downstream (sleep hours, sensor
     // baselines, encounter intervals, 4 model aliases) read from `operational`
     // instead of `config.*` directly. Sleep hours are handled separately in the
     // outer loop (re-resolved every tick); the 8 remaining fields snapshot here.
@@ -524,12 +524,9 @@ pub async fn run_continuous_mode(
     let soap_generation_timeout_secs = detector_thresholds.soap_generation_timeout_secs;
     let billing_extraction_timeout_secs = detector_thresholds.billing_extraction_timeout_secs;
 
-    // T5 primitive snapshots consumed by the screenshot task (built later in this
-    // function, outside the detector move). Copy types, so safe to capture after
-    // `detector_thresholds` is moved into the detector `async move` block.
-    let screenshot_stale_grace_secs = detector_thresholds.screenshot_stale_grace_secs;
-    let vision_skip_streak_k = detector_thresholds.vision_skip_streak_k;
-    let vision_skip_call_cap = detector_thresholds.vision_skip_call_cap;
+    // Shared-Arc clone consumed by the screenshot task (spawned after the
+    // detector moves `detector_thresholds` into its `async move` block).
+    let screenshot_thresholds = Arc::clone(&detector_thresholds);
 
     // Audio recording path for continuous mode
     let audio_output_path = {
@@ -812,7 +809,7 @@ pub async fn run_continuous_mode(
             debounce_secs: config.presence_debounce_secs,
             absence_threshold_secs: config.presence_absence_threshold_secs,
             csv_log_enabled: config.presence_csv_log_enabled,
-            // Sensor baselines snapshot here via the Phase 3 precedence resolver.
+            // Sensor baselines snapshot here via the precedence resolver.
             // Changes take effect on next continuous-mode restart, same cadence
             // as prompts/billing/thresholds.
             thermal: crate::presence_sensor::ThermalConfig {
@@ -922,8 +919,6 @@ pub async fn run_continuous_mode(
             crate::shadow_observer::ShadowObserverConfig {
                 active_method: shadow_active_method,
                 csv_log_enabled: config.shadow_csv_log_enabled,
-                // Phase 3: detection model + check interval read from operational
-                // defaults snapshot (server < local-when-edited).
                 detection_model: operational.encounter_detection_model.clone(),
                 detection_nothink: config.encounter_detection_nothink,
                 check_interval_secs: operational.encounter_check_interval_secs,
@@ -954,14 +949,10 @@ pub async fn run_continuous_mode(
     let last_split_time_for_detector = handle.last_split_time.clone();
     let screenshot_buffer_for_detector = handle.screenshot_buffer.clone();
     let app_for_detector = app.clone();
-    // Phase 3: encounter-check interval resolved via precedence snapshot.
     let check_interval = operational.encounter_check_interval_secs;
     let idle_timeout_secs = config.idle_encounter_timeout_secs;
 
     // Build LLM client for encounter detection (uses smaller model for better accuracy).
-    // Phase 3: all four model aliases read from the `operational` snapshot so the
-    // server can push a replacement alias and it takes effect on next continuous-mode
-    // restart (same cadence as prompts/billing/thresholds).
     let detection_model = operational.encounter_detection_model.clone();
     let detection_nothink = config.encounter_detection_nothink;
     let llm_client = if !config.llm_router_url.is_empty() {
@@ -2750,7 +2741,6 @@ pub async fn run_continuous_mode(
 
     // Spawn screenshot-based patient name extraction task (if screen capture enabled)
     let screenshot_task = if config.screen_capture_enabled {
-        // Phase 3: fast_model alias resolved from operational defaults snapshot.
         let llm_client_for_screenshot = if !config.llm_router_url.is_empty() {
             LLMClient::new(
                 &config.llm_router_url,
@@ -2778,11 +2768,7 @@ pub async fn run_continuous_mode(
                 replay_bundle: bundle_for_screenshot.clone(),
                 screenshot_buffer: handle.screenshot_buffer.clone(),
                 transcript_buffer: handle.transcript_buffer.clone(),
-                // Phase 3: server-configurable thresholds (T5). Snapshotted
-                // at continuous-mode start — takes effect on next restart.
-                screenshot_stale_grace_secs,
-                vision_skip_streak_k,
-                vision_skip_call_cap,
+                thresholds: screenshot_thresholds,
             },
         )))
     } else {

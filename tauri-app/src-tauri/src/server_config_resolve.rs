@@ -2,7 +2,7 @@ use crate::config::Settings;
 use crate::server_config::OperationalDefaults;
 
 /// Resolves the effective value for a user-tunable field according to the
-/// Phase 3 precedence model:
+/// precedence model:
 ///   compiled default  <  server value  <  local config.json (only if user-edited)
 ///
 /// Returns:
@@ -274,17 +274,16 @@ mod tests {
         assert_eq!(resolved, server);
     }
 
-    // ── Phase 3 T8 end-to-end precedence tests ───────────────────────
+    // ── End-to-end precedence tests ──────────────────────────────────
     //
-    // These tests pin the exact integration contract described in the T8
-    // plan (items 4-6): user-edited fields always win over the server, and
-    // a mixed scenario resolves each of the 10 Cat B fields independently.
+    // These tests pin the integration contract: user-edited fields always win
+    // over the server, and a mixed scenario resolves each of the 10 Cat B
+    // fields independently.
 
     #[test]
     fn test_resolve_operational_user_edited_fields_win_regardless_of_server() {
-        // Exact scenario from the T8 plan: user tuned sleep_start_hour to 21
-        // locally. Server pushes a new clinic-wide default of 23. User's
-        // local edit must win, unconditionally.
+        // User tuned sleep_start_hour to 21 locally. Server pushes a new
+        // clinic-wide default of 23. User's local edit must win, unconditionally.
         let mut settings = Settings::default();
         settings.sleep_start_hour = 21;
         settings.user_edited_fields = vec!["sleep_start_hour".to_string()];
@@ -301,10 +300,10 @@ mod tests {
 
     #[test]
     fn test_resolve_operational_mixed() {
-        // Phase 3 T8 item 6: verify the resolver handles every one of the 10
-        // Cat B fields independently in a mixed scenario. We partition the
-        // fields into two halves — 5 user-edited (local wins) and 5 unedited
-        // (server wins) — and assert each resolves correctly.
+        // Verify the resolver handles every one of the 10 Cat B fields
+        // independently in a mixed scenario. We partition the fields into
+        // two halves — 5 user-edited (local wins) and 5 unedited (server
+        // wins) — and assert each resolves correctly.
         //
         // If a future refactor accidentally couples fields (e.g. by sharing a
         // resolve closure and feeding the wrong field_name into one of them),

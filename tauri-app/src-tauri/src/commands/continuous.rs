@@ -15,8 +15,8 @@ use std::sync::{Arc, Mutex};
 use tauri::{AppHandle, State};
 use tracing::{info, warn};
 
-/// Resolve the effective (start, end) sleep hours using the Phase 3 precedence
-/// rule: compiled default < server < local(only if user-edited).
+/// Resolve the effective (start, end) sleep hours using the precedence rule:
+/// compiled default < server < local(only if user-edited).
 ///
 /// Reads the server config lock fresh on every call — the caller is expected
 /// to invoke this once per sleep-loop tick so pushes from the profile service
@@ -138,7 +138,7 @@ pub async fn start_continuous_mode(
     let handle_for_task = handle.clone();
     let continuous_state_for_cleanup = continuous_state.inner().clone();
     // Clone the Arc<RwLock<ServerConfig>> so every tick can re-read the
-    // latest server defaults without snapshotting — Phase 3 requirement.
+    // latest server defaults without snapshotting.
     let server_config_for_task = server_config.inner().clone();
 
     tokio::spawn(async move {
@@ -150,7 +150,7 @@ pub async fn start_continuous_mode(
             // Reload config each cycle (picks up setting changes between sleep/wake)
             let config = Config::load_or_default();
 
-            // Resolve effective sleep hours via Phase 3 precedence rule:
+            // Resolve effective sleep hours via precedence rule:
             //   compiled default < server < local(only if user-edited)
             // Each iteration re-reads SharedServerConfig so server pushes take
             // effect within one tick without waiting for continuous-mode restart.

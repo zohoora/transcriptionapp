@@ -215,8 +215,6 @@ pub async fn process_audio_upload(
     info!("Detected {encounter_count} encounter(s)");
 
     // ── Generate SOAP + archive per encounter ────────────────────────────
-    // Phase 3: model aliases resolved via precedence rule. Snapshot once per
-    // upload call — changes take effect on next upload.
     let sc = server_config.read().await;
     let effective_fast_model = resolve(
         Some(&sc.defaults.fast_model),

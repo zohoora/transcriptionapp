@@ -1333,7 +1333,7 @@ mod tests {
     }
 
     // ========================================================================
-    // Cat A server-threshold override tests (Phase 3 T8)
+    // Cat A server-threshold override tests
     //
     // evaluate_detection reads absolute_word_cap, force_split_word_threshold,
     // force_split_consecutive_limit, and the confidence_* fields from

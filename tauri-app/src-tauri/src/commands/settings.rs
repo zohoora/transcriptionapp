@@ -15,7 +15,7 @@ pub fn get_settings() -> Result<Settings, CommandError> {
 
 /// Update settings.
 ///
-/// Phase 3 diff-on-save: before writing, compare each Cat B field against the
+/// Diff-on-save: before writing, compare each Cat B field against the
 /// currently-stored value. Any field whose value changed is appended to
 /// `user_edited_fields` (dedup'd). This lets server-pushed
 /// `OperationalDefaults` skip user-tuned values on future refreshes.
@@ -74,12 +74,11 @@ pub fn clear_user_edited_field(field_name: String) -> Result<Settings, CommandEr
 /// the Settings UI to show "Clinic default: …" hints next to Cat B inputs and
 /// to power the "Reset to clinic default" link.
 ///
-/// Phase 3 note: only the four Cat B fields that have visible inputs in the
-/// settings drawer currently surface this value to the user. The remaining six
-/// Cat B fields (`sleep_*`, `encounter_*`, `soap_model_fast`,
-/// `encounter_detection_model`) are still server-controllable via
-/// `PUT /config/defaults` on the profile service — they just lack a UI surface
-/// until a future phase.
+/// Only the four Cat B fields that have visible inputs in the settings drawer
+/// currently surface this value to the user. The remaining six Cat B fields
+/// (`sleep_*`, `encounter_*`, `soap_model_fast`, `encounter_detection_model`)
+/// are still server-controllable via `PUT /config/defaults` on the profile
+/// service — they just lack a UI surface.
 #[tauri::command]
 pub async fn get_operational_defaults(
     server_config: State<'_, SharedServerConfig>,
@@ -103,12 +102,13 @@ pub async fn get_operational_defaults(
 ///    value (because the frontend's pre-clear snapshot had the pre-clear value),
 ///    the diff-on-save branch re-adds field name "X" to user_edited_fields.
 ///
-/// T7 (admin UI) is responsible for re-fetching settings after a `clear_user_edited_field`
-/// call before allowing another `set_settings` to be issued. This function treats
-/// every `set_settings` payload as authoritative at its construction time.
+/// The admin UI is responsible for re-fetching settings after a
+/// `clear_user_edited_field` call before allowing another `set_settings` to be
+/// issued. This function treats every `set_settings` payload as authoritative
+/// at its construction time.
 ///
 /// Closing this race properly would require a version counter on
-/// `user_edited_fields` — a larger design change deferred past Phase 3.
+/// `user_edited_fields` — a larger design change deferred for now.
 fn merge_user_edited_fields(new: &mut Settings, previous: &Settings) {
     // Start from the existing list so an oblivious frontend doesn't erase it.
     for field in &previous.user_edited_fields {

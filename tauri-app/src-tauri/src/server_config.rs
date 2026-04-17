@@ -222,7 +222,7 @@ pub struct DetectionThresholds {
     pub monthly_hour_limit: f32,
     #[serde(default = "default_28")]
     pub monthly_window_days: u32,
-    // ── Category A extensions (Phase 3) ──
+    // ── Category A extensions ──
     #[serde(default = "default_mp_detect_word_threshold")]
     pub multi_patient_detect_word_threshold: usize,
     #[serde(default = "default_vision_skip_streak_k")]
@@ -291,7 +291,7 @@ impl Default for DetectionThresholds {
 
 // ── OperationalDefaults ──────────────────────────────────────────
 
-/// Server-configurable operational defaults (Phase 3).
+/// Server-configurable operational defaults.
 ///
 /// Mirrors `profile_service::types::OperationalDefaults` — same field names,
 /// types, and compiled defaults. Clients trust the server response and DO NOT
@@ -513,8 +513,8 @@ async fn fetch_from_server(client: &ProfileClient) -> Result<ServerConfig> {
 
     // Defaults fetch falls back to compiled defaults on error (matches the
     // precedent set by whole-config fallback: never let one missing payload
-    // brick the app). Prompts/billing/thresholds still hard-fail because they
-    // pre-date Phase 3 and a sudden miss there would signal a real regression.
+    // brick the app). Prompts/billing/thresholds still hard-fail because a
+    // sudden miss there would signal a real regression.
     let defaults = defaults_result.unwrap_or_else(|e| {
         warn!("Failed to fetch config defaults, using compiled defaults: {e}");
         OperationalDefaults::default()
@@ -601,7 +601,7 @@ mod tests {
         assert!(matches!(defaults.source, ConfigSource::CompiledDefaults));
     }
 
-    // ── OperationalDefaults (Phase 3) ────────────────────────────
+    // ── OperationalDefaults ──────────────────────────────────────
 
     #[test]
     fn test_operational_defaults_back_compat() {
@@ -651,7 +651,7 @@ mod tests {
 
     #[test]
     fn test_cached_config_back_compat_missing_defaults() {
-        // Caches written before Phase 3 landed don't have a `defaults` key.
+        // Older caches may lack a `defaults` key.
         // CachedConfig#defaults uses `#[serde(default)]` so old caches still load.
         let json = r#"{
             "version": 1,
@@ -707,7 +707,7 @@ mod tests {
         assert_eq!(config.thresholds.gemini_generation_timeout_secs, 45);
     }
 
-    // ── Three-tier fallback integration tests (Phase 3 T8) ───────────
+    // ── Three-tier fallback integration tests ────────────────────────
     //
     // The three tests below exercise the fallback composition in
     // [`resolve_with_cache_path`] end-to-end. Each uses a `tempdir` to isolate

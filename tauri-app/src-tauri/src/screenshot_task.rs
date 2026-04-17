@@ -31,11 +31,11 @@ pub(crate) use crate::patient_name_tracker::{build_patient_name_prompt, parse_vi
 // weighted-majority name is unchanged on stable cases — see Option A
 // rationale in the Apr 17 operational analysis.
 //
-// The K (consecutive-match streak) and cap (per-encounter hard backstop)
-// are now server-configurable via `DetectionThresholds.vision_skip_streak_k`
-// and `DetectionThresholds.vision_skip_call_cap`, passed into
-// `ScreenshotTaskConfig` by the caller in `continuous_mode.rs`. Compiled
-// defaults (5 and 30) live on `DetectionThresholds::default()`.
+// K (consecutive-match streak), cap (per-encounter hard backstop), and the
+// stale-vote grace period are sourced from `DetectionThresholds`, passed in
+// as a shared Arc so the snapshot follows the same lifecycle as the other
+// server-configurable thresholds. Compiled defaults (5, 30, 90s) live on
+// `DetectionThresholds::default()`.
 // ────────────────────────────────────────────────────────────────────────────
 
 /// All inputs needed by the screenshot task, gathered at spawn time.
@@ -55,18 +55,10 @@ pub struct ScreenshotTaskConfig {
     pub screenshot_buffer: Arc<Mutex<Vec<(String, Vec<u8>)>>>,
     /// Transcript buffer used to gate captures: skip when no words are present
     pub transcript_buffer: Arc<std::sync::Mutex<crate::transcript_buffer::TranscriptBuffer>>,
-    /// Grace period (seconds) after encounter split during which screenshot
-    /// votes matching the previous encounter's patient name are suppressed.
-    /// Mirror of `DetectionThresholds.screenshot_stale_grace_secs`.
-    pub screenshot_stale_grace_secs: i64,
-    /// Skip further vision calls once this many consecutive vision
-    /// extractions all returned the same patient name.
-    /// Mirror of `DetectionThresholds.vision_skip_streak_k`.
-    pub vision_skip_streak_k: usize,
-    /// Hard cap on total vision LLM calls per encounter — backstops
-    /// pathological encounters where names keep flipping.
-    /// Mirror of `DetectionThresholds.vision_skip_call_cap`.
-    pub vision_skip_call_cap: usize,
+    /// Snapshot of the server-configurable detection thresholds. The
+    /// screenshot task reads `screenshot_stale_grace_secs`,
+    /// `vision_skip_streak_k`, and `vision_skip_call_cap` from this.
+    pub thresholds: std::sync::Arc<crate::server_config::DetectionThresholds>,
 }
 
 /// Runs the screenshot capture + vision extraction loop.
@@ -144,7 +136,10 @@ pub async fn run_screenshot_task(cfg: ScreenshotTaskConfig) {
         //   • the encounter has already burned the per-encounter cap
         // Both state fields are reset by `PatientNameTracker::reset()` on split.
         let should_skip = cfg.name_tracker.lock().ok()
-            .map(|t| t.should_skip_vision(cfg.vision_skip_streak_k, cfg.vision_skip_call_cap))
+            .map(|t| t.should_skip_vision(
+                cfg.thresholds.vision_skip_streak_k,
+                cfg.thresholds.vision_skip_call_cap,
+            ))
             .unwrap_or(false);
         if should_skip {
             if let Ok(t) = cfg.name_tracker.lock() {
@@ -210,7 +205,7 @@ pub async fn run_screenshot_task(cfg: ScreenshotTaskConfig) {
                         name,
                         &cfg.last_split_time,
                         &cfg.name_tracker,
-                        cfg.screenshot_stale_grace_secs,
+                        cfg.thresholds.screenshot_stale_grace_secs,
                     );
 
                     if let Ok(mut logger) = cfg.pipeline_logger.lock() {
@@ -245,7 +240,7 @@ pub async fn run_screenshot_task(cfg: ScreenshotTaskConfig) {
                     if is_stale {
                         info!(
                             "Skipping stale screenshot vote '{}' — matches previous encounter name and within {}s grace period",
-                            name, cfg.screenshot_stale_grace_secs
+                            name, cfg.thresholds.screenshot_stale_grace_secs
                         );
                         continue;
                     }
@@ -429,8 +424,9 @@ pub fn flush_screenshots_to_session(
 mod tests {
     use super::*;
     use chrono::Duration as ChronoDuration;
+    use crate::server_config::DetectionThresholds;
 
-    /// T5: when `screenshot_stale_grace_secs` is overridden, `check_stale_vote`
+    /// When `screenshot_stale_grace_secs` is overridden, `check_stale_vote`
     /// respects that window instead of the hardcoded default.
     ///
     /// Setup: last split occurred 60s ago. Previous encounter had patient
@@ -468,15 +464,21 @@ mod tests {
         assert!(stale_long, "grace=120 should still be active at 60s");
     }
 
-    /// T5: ScreenshotTaskConfig carries the threshold values provided at
-    /// construction. This is a type-level confirmation that the new fields
-    /// plumb through; the detector-loop behavior is covered by integration
+    /// ScreenshotTaskConfig carries the threshold values provided at
+    /// construction. Type-level confirmation that the threshold fields
+    /// plumb through; detector-loop behavior is covered by integration
     /// tests for `should_skip_vision` in `patient_name_tracker.rs`.
     #[test]
     fn screenshot_task_config_carries_threshold_fields() {
         use std::sync::atomic::AtomicBool;
         use tokio::sync::Notify;
 
+        let thresholds = Arc::new(DetectionThresholds {
+            screenshot_stale_grace_secs: 111,
+            vision_skip_streak_k: 7,
+            vision_skip_call_cap: 42,
+            ..DetectionThresholds::default()
+        });
         let cfg = ScreenshotTaskConfig {
             stop_flag: Arc::new(AtomicBool::new(false)),
             name_tracker: Arc::new(Mutex::new(PatientNameTracker::new())),
@@ -493,14 +495,11 @@ mod tests {
             transcript_buffer: Arc::new(std::sync::Mutex::new(
                 crate::transcript_buffer::TranscriptBuffer::new(),
             )),
-            // Custom threshold values — should be preserved on the struct
-            screenshot_stale_grace_secs: 111,
-            vision_skip_streak_k: 7,
-            vision_skip_call_cap: 42,
+            thresholds,
         };
 
-        assert_eq!(cfg.screenshot_stale_grace_secs, 111);
-        assert_eq!(cfg.vision_skip_streak_k, 7);
-        assert_eq!(cfg.vision_skip_call_cap, 42);
+        assert_eq!(cfg.thresholds.screenshot_stale_grace_secs, 111);
+        assert_eq!(cfg.thresholds.vision_skip_streak_k, 7);
+        assert_eq!(cfg.thresholds.vision_skip_call_cap, 42);
     }
 }
