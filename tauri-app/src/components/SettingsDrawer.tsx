@@ -270,77 +270,81 @@ export const SettingsDrawer = memo(function SettingsDrawer({
                   <span className="settings-hint">Suppresses tray fees (E542A, E430A) — hospitals cover supplies via global budget</span>
                 </div>
 
-                {/* Advanced — LLM model aliases (Cat B operational defaults) */}
+                {/* Advanced — LLM model aliases (Cat B operational defaults).
+                    Collapsed by default: these are IT/developer inputs, so keep
+                    the drawer's "5 visible controls at first open" pattern. */}
                 <div className="settings-divider" />
-                <h4 className="settings-sub-header">Advanced</h4>
+                <details className="settings-advanced-models">
+                  <summary className="settings-sub-header" style={{ cursor: 'pointer' }}>
+                    Advanced (LLM Models)
+                  </summary>
 
-                {/* SOAP Model */}
-                <div className="settings-group">
-                  <label className="settings-label" htmlFor="soap-model-input">SOAP Model</label>
-                  <input
-                    id="soap-model-input"
-                    type="text"
-                    className="settings-input"
-                    value={pendingSettings.soap_model}
-                    onChange={(e) => onSettingsChange({ ...pendingSettings, soap_model: e.target.value })}
-                    placeholder="soap-model-fast"
-                  />
-                  {hasClinicDefault(operationalDefaults?.soap_model)
-                    && operationalDefaults!.soap_model !== pendingSettings.soap_model && (
-                    <span className="settings-hint" style={{ opacity: 0.6 }}>
-                      Clinic default: {operationalDefaults!.soap_model}
-                      {isUserEdited('soap_model') && (
-                        <>
-                          {' — '}
-                          <a
-                            href="#"
-                            onClick={(e) => {
-                              e.preventDefault();
-                              void resetCatBField('soap_model', operationalDefaults!.soap_model);
-                            }}
-                            style={{ color: 'var(--color-accent, #4a90e2)', textDecoration: 'underline' }}
-                          >
-                            Reset to clinic default
-                          </a>
-                        </>
-                      )}
-                    </span>
-                  )}
-                </div>
+                  {/* SOAP Model */}
+                  <div className="settings-group">
+                    <label className="settings-label" htmlFor="soap-model-input">SOAP Model</label>
+                    <input
+                      id="soap-model-input"
+                      type="text"
+                      className="settings-input"
+                      value={pendingSettings.soap_model}
+                      onChange={(e) => onSettingsChange({ ...pendingSettings, soap_model: e.target.value })}
+                      placeholder="soap-model-fast"
+                    />
+                    {hasClinicDefault(operationalDefaults?.soap_model)
+                      && operationalDefaults!.soap_model !== pendingSettings.soap_model && (
+                      <span className="settings-hint" style={{ opacity: 0.6 }}>
+                        Clinic default: {operationalDefaults!.soap_model}
+                        {isUserEdited('soap_model') && (
+                          <>
+                            {' — '}
+                            <button
+                              type="button"
+                              className="btn-link"
+                              onClick={() => {
+                                void resetCatBField('soap_model', operationalDefaults!.soap_model);
+                              }}
+                            >
+                              Reset to clinic default
+                            </button>
+                          </>
+                        )}
+                      </span>
+                    )}
+                  </div>
 
-                {/* Fast Model */}
-                <div className="settings-group">
-                  <label className="settings-label" htmlFor="fast-model-input">Fast Model</label>
-                  <input
-                    id="fast-model-input"
-                    type="text"
-                    className="settings-input"
-                    value={pendingSettings.fast_model}
-                    onChange={(e) => onSettingsChange({ ...pendingSettings, fast_model: e.target.value })}
-                    placeholder="fast-model"
-                  />
-                  {hasClinicDefault(operationalDefaults?.fast_model)
-                    && operationalDefaults!.fast_model !== pendingSettings.fast_model && (
-                    <span className="settings-hint" style={{ opacity: 0.6 }}>
-                      Clinic default: {operationalDefaults!.fast_model}
-                      {isUserEdited('fast_model') && (
-                        <>
-                          {' — '}
-                          <a
-                            href="#"
-                            onClick={(e) => {
-                              e.preventDefault();
-                              void resetCatBField('fast_model', operationalDefaults!.fast_model);
-                            }}
-                            style={{ color: 'var(--color-accent, #4a90e2)', textDecoration: 'underline' }}
-                          >
-                            Reset to clinic default
-                          </a>
-                        </>
-                      )}
-                    </span>
-                  )}
-                </div>
+                  {/* Fast Model */}
+                  <div className="settings-group">
+                    <label className="settings-label" htmlFor="fast-model-input">Fast Model</label>
+                    <input
+                      id="fast-model-input"
+                      type="text"
+                      className="settings-input"
+                      value={pendingSettings.fast_model}
+                      onChange={(e) => onSettingsChange({ ...pendingSettings, fast_model: e.target.value })}
+                      placeholder="fast-model"
+                    />
+                    {hasClinicDefault(operationalDefaults?.fast_model)
+                      && operationalDefaults!.fast_model !== pendingSettings.fast_model && (
+                      <span className="settings-hint" style={{ opacity: 0.6 }}>
+                        Clinic default: {operationalDefaults!.fast_model}
+                        {isUserEdited('fast_model') && (
+                          <>
+                            {' — '}
+                            <button
+                              type="button"
+                              className="btn-link"
+                              onClick={() => {
+                                void resetCatBField('fast_model', operationalDefaults!.fast_model);
+                              }}
+                            >
+                              Reset to clinic default
+                            </button>
+                          </>
+                        )}
+                      </span>
+                    )}
+                  </div>
+                </details>
 
                 {/* Session Automation (session mode only) */}
                 {pendingSettings.charting_mode !== 'continuous' && (<>
