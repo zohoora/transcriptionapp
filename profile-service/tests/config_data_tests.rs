@@ -269,6 +269,7 @@ async fn operational_defaults_round_trip() {
     use profile_service::types::OperationalDefaults;
 
     let original = OperationalDefaults {
+        version: 0,
         sleep_start_hour: 21,
         sleep_end_hour: 7,
         thermal_hot_pixel_threshold_c: 29.5,
@@ -348,11 +349,19 @@ async fn update_operational_defaults_bumps_version() {
         )
         .await;
     resp.assert_ok();
+    // Returned body must carry the bumped version stamped into the struct —
+    // parity with prompts/billing/thresholds so clients can cache payload +
+    // version together and detect defaults-specific staleness.
+    let body_version = resp.json()["version"].as_u64().unwrap();
 
     let after = app.get("/config/version").await.json()["version"]
         .as_u64()
         .unwrap();
     assert!(after > initial, "version must bump on update_defaults");
+    assert_eq!(
+        body_version, after,
+        "update_defaults response must stamp the bumped shared version into the returned struct"
+    );
 }
 
 #[tokio::test]

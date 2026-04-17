@@ -1043,6 +1043,9 @@ impl Default for DetectionThresholds {
 /// (compiled default < server value < local override if user-edited).
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct OperationalDefaults {
+    #[serde(default)]
+    pub version: u64,
+
     // ── Sleep mode (continuous mode pause hours, EST/EDT) ──
     /// Hour of day (0-23, local EST/EDT) when continuous mode auto-pauses (default: 22)
     #[serde(default = "default_sleep_start_hour")]
@@ -1097,6 +1100,7 @@ fn default_encounter_detection_model() -> String { "fast-model".to_string() }
 impl Default for OperationalDefaults {
     fn default() -> Self {
         Self {
+            version: 0,
             sleep_start_hour: default_sleep_start_hour(),
             sleep_end_hour: default_sleep_end_hour(),
             thermal_hot_pixel_threshold_c: default_thermal_hot_pixel_threshold_c(),

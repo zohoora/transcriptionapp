@@ -221,8 +221,9 @@ impl ConfigDataStore {
             .validate()
             .map_err(ApiError::BadRequest)?;
         self.defaults = defaults;
-        Self::save_json(&self.defaults_path, &self.defaults)?;
         self.bump_version();
+        self.defaults.version = self.version;
+        Self::save_json(&self.defaults_path, &self.defaults)?;
         Self::save_json(
             &self.version_path,
             &VersionFile {
