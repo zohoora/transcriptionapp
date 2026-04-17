@@ -35,6 +35,56 @@ async fn get_default_thresholds() {
     assert_eq!(json["daily_hour_limit"], 14.0);
     assert_eq!(json["monthly_hour_limit"], 240.0);
     assert_eq!(json["monthly_window_days"], 28);
+    // Category A extensions (Phase 3)
+    assert_eq!(json["multi_patient_detect_word_threshold"], 500);
+    assert_eq!(json["vision_skip_streak_k"], 5);
+    assert_eq!(json["vision_skip_call_cap"], 30);
+    assert_eq!(json["gemini_generation_timeout_secs"], 45);
+}
+
+#[tokio::test]
+async fn detection_thresholds_back_compat_cat_a_extensions() {
+    use profile_service::types::DetectionThresholds;
+
+    // Old client caches / older server responses won't carry the new Cat A
+    // fields. Per-field `#[serde(default = "fn")]` must fill them in cleanly.
+    let parsed: DetectionThresholds =
+        serde_json::from_str("{}").expect("parses empty object");
+    assert_eq!(parsed.multi_patient_detect_word_threshold, 500);
+    assert_eq!(parsed.vision_skip_streak_k, 5);
+    assert_eq!(parsed.vision_skip_call_cap, 30);
+    assert_eq!(parsed.gemini_generation_timeout_secs, 45);
+    // Sanity-check an existing field — defense against accidental renames
+    // collapsing back-compat for the whole struct.
+    assert_eq!(parsed.force_check_word_threshold, 3000);
+}
+
+#[tokio::test]
+async fn update_thresholds_persists_cat_a_extensions() {
+    let app = TestApp::new();
+
+    let resp = app
+        .put_json(
+            "/config/thresholds",
+            &serde_json::json!({
+                "multi_patient_detect_word_threshold": 750,
+                "vision_skip_streak_k": 7,
+                "vision_skip_call_cap": 50,
+                "gemini_generation_timeout_secs": 60
+            }),
+        )
+        .await;
+    resp.assert_ok();
+
+    let resp = app.get("/config/thresholds").await;
+    resp.assert_ok();
+    let json = resp.json();
+    assert_eq!(json["multi_patient_detect_word_threshold"], 750);
+    assert_eq!(json["vision_skip_streak_k"], 7);
+    assert_eq!(json["vision_skip_call_cap"], 50);
+    assert_eq!(json["gemini_generation_timeout_secs"], 60);
+    // Untouched Phase 2 fields still hold defaults
+    assert_eq!(json["force_check_word_threshold"], 3000);
 }
 
 #[tokio::test]

@@ -367,6 +367,40 @@ impl ProfileClient {
         Ok(resp.json().await?)
     }
 
+    pub async fn get_config_defaults(&self) -> Result<crate::server_config::OperationalDefaults> {
+        let resp = self
+            .with_auth(self.client.get(format!("{}/config/defaults", self.base_url())))
+            .send()
+            .await?;
+        if !resp.status().is_success() {
+            let status = resp.status();
+            let text = resp.text().await.unwrap_or_default();
+            anyhow::bail!("Get config defaults failed: {} - {}", status, &text[..text.len().min(200)]);
+        }
+        Ok(resp.json().await?)
+    }
+
+    pub async fn update_config_defaults(
+        &self,
+        defaults: &crate::server_config::OperationalDefaults,
+    ) -> Result<crate::server_config::OperationalDefaults> {
+        let resp = self
+            .with_auth(self.client.put(format!("{}/config/defaults", self.base_url())))
+            .json(defaults)
+            .send()
+            .await?;
+        if !resp.status().is_success() {
+            let status = resp.status();
+            let text = resp.text().await.unwrap_or_default();
+            anyhow::bail!(
+                "Update config defaults failed: {} - {}",
+                status,
+                &text[..text.len().min(200)]
+            );
+        }
+        Ok(resp.json().await?)
+    }
+
     /// Fetch infrastructure + room settings from server and merge into local config.
     /// Returns true if any settings were merged.
     pub async fn merge_server_settings(&self, room_id: Option<&str>) -> Result<bool> {

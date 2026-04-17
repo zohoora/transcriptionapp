@@ -27,6 +27,7 @@ pub struct ServerConfig {
     pub prompts: PromptTemplates,
     pub billing: BillingData,
     pub thresholds: DetectionThresholds,
+    pub defaults: OperationalDefaults,
     pub version: u64,
     pub source: ConfigSource,
 }
@@ -221,6 +222,15 @@ pub struct DetectionThresholds {
     pub monthly_hour_limit: f32,
     #[serde(default = "default_28")]
     pub monthly_window_days: u32,
+    // ── Category A extensions (Phase 3) ──
+    #[serde(default = "default_mp_detect_word_threshold")]
+    pub multi_patient_detect_word_threshold: usize,
+    #[serde(default = "default_vision_skip_streak_k")]
+    pub vision_skip_streak_k: usize,
+    #[serde(default = "default_vision_skip_call_cap")]
+    pub vision_skip_call_cap: usize,
+    #[serde(default = "default_gemini_generation_timeout_secs")]
+    pub gemini_generation_timeout_secs: u64,
 }
 
 fn default_3000() -> usize { 3000 }
@@ -241,6 +251,10 @@ fn default_200() -> usize { 200 }
 fn default_14f() -> f32 { 14.0 }
 fn default_240f() -> f32 { 240.0 }
 fn default_28() -> u32 { 28 }
+fn default_mp_detect_word_threshold() -> usize { 500 }
+fn default_vision_skip_streak_k() -> usize { 5 }
+fn default_vision_skip_call_cap() -> usize { 30 }
+fn default_gemini_generation_timeout_secs() -> u64 { 45 }
 
 impl Default for DetectionThresholds {
     fn default() -> Self {
@@ -267,6 +281,80 @@ impl Default for DetectionThresholds {
             daily_hour_limit: 14.0,
             monthly_hour_limit: 240.0,
             monthly_window_days: 28,
+            multi_patient_detect_word_threshold: 500,
+            vision_skip_streak_k: 5,
+            vision_skip_call_cap: 30,
+            gemini_generation_timeout_secs: 45,
+        }
+    }
+}
+
+// ── OperationalDefaults ──────────────────────────────────────────
+
+/// Server-configurable operational defaults (Phase 3).
+///
+/// Mirrors `profile_service::types::OperationalDefaults` — same field names,
+/// types, and compiled defaults. Clients trust the server response and DO NOT
+/// validate locally (defense in depth: the server validates on PUT).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct OperationalDefaults {
+    #[serde(default)]
+    pub version: u64,
+
+    // ── Sleep mode ──
+    #[serde(default = "default_sleep_start_hour")]
+    pub sleep_start_hour: u8,
+    #[serde(default = "default_sleep_end_hour")]
+    pub sleep_end_hour: u8,
+
+    // ── Sensor baselines ──
+    #[serde(default = "default_thermal_hot_pixel_threshold_c")]
+    pub thermal_hot_pixel_threshold_c: f32,
+    #[serde(default = "default_co2_baseline_ppm")]
+    pub co2_baseline_ppm: f32,
+
+    // ── Encounter detection timing ──
+    #[serde(default = "default_encounter_check_interval_secs")]
+    pub encounter_check_interval_secs: u32,
+    #[serde(default = "default_encounter_silence_trigger_secs")]
+    pub encounter_silence_trigger_secs: u32,
+
+    // ── LLM model aliases ──
+    #[serde(default = "default_soap_model")]
+    pub soap_model: String,
+    #[serde(default = "default_soap_model_fast")]
+    pub soap_model_fast: String,
+    #[serde(default = "default_fast_model")]
+    pub fast_model: String,
+    #[serde(default = "default_encounter_detection_model")]
+    pub encounter_detection_model: String,
+}
+
+fn default_sleep_start_hour() -> u8 { 22 }
+fn default_sleep_end_hour() -> u8 { 6 }
+fn default_thermal_hot_pixel_threshold_c() -> f32 { 28.0 }
+fn default_co2_baseline_ppm() -> f32 { 420.0 }
+fn default_encounter_check_interval_secs() -> u32 { 120 }
+fn default_encounter_silence_trigger_secs() -> u32 { 45 }
+fn default_soap_model() -> String { "soap-model-fast".to_string() }
+fn default_soap_model_fast() -> String { "soap-model-fast".to_string() }
+fn default_fast_model() -> String { "fast-model".to_string() }
+fn default_encounter_detection_model() -> String { "fast-model".to_string() }
+
+impl Default for OperationalDefaults {
+    fn default() -> Self {
+        Self {
+            version: 0,
+            sleep_start_hour: 22,
+            sleep_end_hour: 6,
+            thermal_hot_pixel_threshold_c: 28.0,
+            co2_baseline_ppm: 420.0,
+            encounter_check_interval_secs: 120,
+            encounter_silence_trigger_secs: 45,
+            soap_model: "soap-model-fast".to_string(),
+            soap_model_fast: "soap-model-fast".to_string(),
+            fast_model: "fast-model".to_string(),
+            encounter_detection_model: "fast-model".to_string(),
         }
     }
 }
@@ -280,6 +368,7 @@ pub fn compiled_defaults() -> ServerConfig {
         prompts: PromptTemplates::default(),
         billing: BillingData::default(),
         thresholds: DetectionThresholds::default(),
+        defaults: OperationalDefaults::default(),
         version: 0,
         source: ConfigSource::CompiledDefaults,
     }
@@ -292,12 +381,14 @@ fn cache_path() -> PathBuf {
     base.join(".transcriptionapp").join("server_config_cache.json")
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 struct CachedConfig {
     version: u64,
     prompts: PromptTemplates,
     billing: BillingData,
     thresholds: DetectionThresholds,
+    #[serde(default)]
+    defaults: OperationalDefaults,
 }
 
 fn save_cache(config: &ServerConfig) -> Result<()> {
@@ -306,6 +397,7 @@ fn save_cache(config: &ServerConfig) -> Result<()> {
         prompts: config.prompts.clone(),
         billing: config.billing.clone(),
         thresholds: config.thresholds.clone(),
+        defaults: config.defaults.clone(),
     };
     let path = cache_path();
     if let Some(parent) = path.parent() {
@@ -330,6 +422,7 @@ fn load_cache() -> Option<ServerConfig> {
         prompts: cached.prompts,
         billing: cached.billing,
         thresholds: cached.thresholds,
+        defaults: cached.defaults,
         source: ConfigSource::Cache,
     })
 }
@@ -372,23 +465,35 @@ async fn fetch_from_server(client: &ProfileClient) -> Result<ServerConfig> {
                 prompts: cached.prompts,
                 billing: cached.billing,
                 thresholds: cached.thresholds,
+                defaults: cached.defaults,
                 source: ConfigSource::Cache,
             });
         }
     }
 
-    // Fetch all three in parallel
-    let (prompts_result, billing_result, thresholds_result) = tokio::join!(
+    // Fetch all four in parallel
+    let (prompts_result, billing_result, thresholds_result, defaults_result) = tokio::join!(
         client.get_config_prompts(),
         client.get_config_billing(),
         client.get_config_thresholds(),
+        client.get_config_defaults(),
     );
+
+    // Defaults fetch falls back to compiled defaults on error (matches the
+    // precedent set by whole-config fallback: never let one missing payload
+    // brick the app). Prompts/billing/thresholds still hard-fail because they
+    // pre-date Phase 3 and a sudden miss there would signal a real regression.
+    let defaults = defaults_result.unwrap_or_else(|e| {
+        warn!("Failed to fetch config defaults, using compiled defaults: {e}");
+        OperationalDefaults::default()
+    });
 
     Ok(ServerConfig {
         version: server_version.version,
         prompts: prompts_result?,
         billing: billing_result?,
         thresholds: thresholds_result?,
+        defaults,
         source: ConfigSource::Server,
     })
 }
@@ -424,6 +529,7 @@ mod tests {
             prompts: PromptTemplates::default(),
             billing: BillingData::default(),
             thresholds: DetectionThresholds::default(),
+            defaults: OperationalDefaults::default(),
         };
         let json = serde_json::to_string(&original).unwrap();
         let parsed: CachedConfig = serde_json::from_str(&json).unwrap();
@@ -461,5 +567,111 @@ mod tests {
         assert!(matches!(server.source, ConfigSource::Server));
         assert!(matches!(cache.source, ConfigSource::Cache));
         assert!(matches!(defaults.source, ConfigSource::CompiledDefaults));
+    }
+
+    // ── OperationalDefaults (Phase 3) ────────────────────────────
+
+    #[test]
+    fn test_operational_defaults_back_compat() {
+        // Deserializing `{}` must populate every field with its compiled default —
+        // guarantees old caches + older server responses still parse after field additions.
+        let parsed: OperationalDefaults =
+            serde_json::from_str("{}").expect("parses empty object");
+        assert_eq!(parsed, OperationalDefaults::default());
+    }
+
+    #[test]
+    fn test_cached_config_roundtrip_with_defaults() {
+        // Full 4-section roundtrip — must survive serde without losing fields.
+        // Neither PromptTemplates, BillingData, nor DetectionThresholds derive
+        // PartialEq (they carry large nested maps/vecs), so we field-compare
+        // on the one section we're actually exercising in this test — the
+        // new OperationalDefaults — and sanity-check the version.
+        let original_defaults = OperationalDefaults {
+            version: 7,
+            sleep_start_hour: 21,
+            sleep_end_hour: 7,
+            thermal_hot_pixel_threshold_c: 29.5,
+            co2_baseline_ppm: 450.0,
+            encounter_check_interval_secs: 90,
+            encounter_silence_trigger_secs: 30,
+            soap_model: "custom-soap".to_string(),
+            soap_model_fast: "custom-soap-fast".to_string(),
+            fast_model: "custom-fast".to_string(),
+            encounter_detection_model: "custom-detect".to_string(),
+        };
+        let original = CachedConfig {
+            version: 7,
+            prompts: PromptTemplates::default(),
+            billing: BillingData::default(),
+            thresholds: DetectionThresholds::default(),
+            defaults: original_defaults.clone(),
+        };
+        let json = serde_json::to_string(&original).unwrap();
+        let parsed: CachedConfig = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed.version, 7);
+        assert_eq!(parsed.defaults, original_defaults);
+        // Sanity-check one threshold field survives (guards against serde
+        // accidentally dropping the `thresholds` section entirely).
+        assert_eq!(parsed.thresholds.force_check_word_threshold, 3000);
+        assert_eq!(parsed.thresholds.multi_patient_detect_word_threshold, 500);
+    }
+
+    #[test]
+    fn test_cached_config_back_compat_missing_defaults() {
+        // Caches written before Phase 3 landed don't have a `defaults` key.
+        // CachedConfig#defaults uses `#[serde(default)]` so old caches still load.
+        let json = r#"{
+            "version": 1,
+            "prompts": {},
+            "billing": {},
+            "thresholds": {}
+        }"#;
+        let parsed: CachedConfig = serde_json::from_str(json).unwrap();
+        assert_eq!(parsed.version, 1);
+        // Per-field equality — OperationalDefaults derives PartialEq, so this is clean.
+        assert_eq!(parsed.defaults, OperationalDefaults::default());
+    }
+
+    #[test]
+    fn test_compiled_defaults_has_sane_operational_defaults() {
+        // Locks in the 10 compiled operational-default values. If any drifts,
+        // this test flips red so a rebuild can't silently change behavior.
+        let config = compiled_defaults();
+        assert_eq!(config.defaults.sleep_start_hour, 22);
+        assert_eq!(config.defaults.sleep_end_hour, 6);
+        assert_eq!(config.defaults.thermal_hot_pixel_threshold_c, 28.0);
+        assert_eq!(config.defaults.co2_baseline_ppm, 420.0);
+        assert_eq!(config.defaults.encounter_check_interval_secs, 120);
+        assert_eq!(config.defaults.encounter_silence_trigger_secs, 45);
+        assert_eq!(config.defaults.soap_model, "soap-model-fast");
+        assert_eq!(config.defaults.soap_model_fast, "soap-model-fast");
+        assert_eq!(config.defaults.fast_model, "fast-model");
+        assert_eq!(config.defaults.encounter_detection_model, "fast-model");
+    }
+
+    #[test]
+    fn test_detection_thresholds_back_compat_cat_a_extensions() {
+        // Existing Phase 2 thresholds already use per-field serde defaults; the
+        // new Cat A fields must do the same so old caches + older server
+        // responses don't break after we extend the struct.
+        let parsed: DetectionThresholds =
+            serde_json::from_str("{}").expect("parses empty object");
+        assert_eq!(parsed.multi_patient_detect_word_threshold, 500);
+        assert_eq!(parsed.vision_skip_streak_k, 5);
+        assert_eq!(parsed.vision_skip_call_cap, 30);
+        assert_eq!(parsed.gemini_generation_timeout_secs, 45);
+        // And an existing field — defense against accidental renames collapsing
+        // back-compat for the whole struct.
+        assert_eq!(parsed.force_check_word_threshold, 3000);
+    }
+
+    #[test]
+    fn test_compiled_defaults_has_sane_cat_a_extensions() {
+        let config = compiled_defaults();
+        assert_eq!(config.thresholds.multi_patient_detect_word_threshold, 500);
+        assert_eq!(config.thresholds.vision_skip_streak_k, 5);
+        assert_eq!(config.thresholds.vision_skip_call_cap, 30);
+        assert_eq!(config.thresholds.gemini_generation_timeout_secs, 45);
     }
 }

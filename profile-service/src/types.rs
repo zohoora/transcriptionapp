@@ -981,6 +981,20 @@ pub struct DetectionThresholds {
     /// Monthly rolling window in days (default: 28)
     #[serde(default = "default_28")]
     pub monthly_window_days: u32,
+
+    // ── Category A extensions (Phase 3) ──
+    /// Min merged words before retrospective multi-patient detection runs (default: 500)
+    #[serde(default = "default_mp_detect_word_threshold")]
+    pub multi_patient_detect_word_threshold: usize,
+    /// Consecutive matching vision votes to early-stop the vision LLM call (default: 5)
+    #[serde(default = "default_vision_skip_streak_k")]
+    pub vision_skip_streak_k: usize,
+    /// Pathological backstop cap on vision calls per encounter (default: 30)
+    #[serde(default = "default_vision_skip_call_cap")]
+    pub vision_skip_call_cap: usize,
+    /// Gemini image generation HTTP timeout in seconds (default: 45)
+    #[serde(default = "default_gemini_generation_timeout_secs")]
+    pub gemini_generation_timeout_secs: u64,
 }
 
 // Serde default value functions for DetectionThresholds
@@ -1002,6 +1016,10 @@ fn default_200() -> usize { 200 }
 fn default_14f() -> f32 { 14.0 }
 fn default_240f() -> f32 { 240.0 }
 fn default_28() -> u32 { 28 }
+fn default_mp_detect_word_threshold() -> usize { 500 }
+fn default_vision_skip_streak_k() -> usize { 5 }
+fn default_vision_skip_call_cap() -> usize { 30 }
+fn default_gemini_generation_timeout_secs() -> u64 { 45 }
 
 impl Default for DetectionThresholds {
     fn default() -> Self {
@@ -1028,6 +1046,10 @@ impl Default for DetectionThresholds {
             daily_hour_limit: 14.0,
             monthly_hour_limit: 240.0,
             monthly_window_days: 28,
+            multi_patient_detect_word_threshold: 500,
+            vision_skip_streak_k: 5,
+            vision_skip_call_cap: 30,
+            gemini_generation_timeout_secs: 45,
         }
     }
 }
