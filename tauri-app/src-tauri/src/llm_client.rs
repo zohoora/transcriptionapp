@@ -6,7 +6,8 @@
 use chrono::Utc;
 use reqwest::header::{HeaderMap, HeaderValue, AUTHORIZATION, CONTENT_TYPE};
 use serde::{Deserialize, Serialize};
-use std::time::Duration;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::time::{Duration, Instant};
 use tracing::{debug, error, info, warn};
 
 use crate::encounter_detection::MultiPatientDetectionResult;
@@ -375,10 +376,67 @@ pub struct LLMClient {
     api_key: String,
     client_id: String,
     fast_model: String,
+    /// Count of currently in-flight `generate_timed` calls. Incremented on entry,
+    /// decremented on return. Snapshotted into `CallMetrics.concurrent_at_start`
+    /// so we can attribute tail latencies to app-side concurrency vs router-side
+    /// processing. Added Apr 2026 after the Apr 16 Room 6 audit showed a
+    /// p90=27s / p99=40s tail on encounter_detection with no way to distinguish
+    /// those causes from the existing `latency_ms` alone.
+    in_flight: AtomicUsize,
+}
+
+/// Timing + concurrency metrics for a single LLM call. Emitted alongside the
+/// pipeline_log event so post-hoc analysis can answer:
+///   • "how much of `wall_ms` was us vs the network?"  (scheduling_ms vs network_ms)
+///   • "how many LLM calls were queued at the router when we started?"  (concurrent_at_start)
+///   • "did we have to retry the call?"  (retry_count)
+///
+/// `scheduling_ms` captures the time between the caller invoking `generate_timed`
+/// and the first HTTP byte going out — a combination of tokio wake latency,
+/// prompt serialization, and any contention on our side. `network_ms` is the
+/// *cumulative* HTTP + response-body time across retries, so on a successful
+/// first-try call `wall_ms ≈ scheduling_ms + network_ms`.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct CallMetrics {
+    pub wall_ms: u64,
+    pub scheduling_ms: u64,
+    pub network_ms: u64,
+    pub concurrent_at_start: usize,
+    pub retry_count: u32,
+}
+
+impl CallMetrics {
+    /// Merge the metrics into an existing pipeline_log context object. Callers
+    /// pass the mutated value to `log_llm_call` / `log_soap` / etc. — no API
+    /// surface changes required on the logger side. If `context` isn't an
+    /// object (unexpected), the metrics are silently skipped.
+    pub fn attach_to(&self, context: &mut serde_json::Value) {
+        if let Some(obj) = context.as_object_mut() {
+            obj.insert("scheduling_ms".into(), serde_json::json!(self.scheduling_ms));
+            obj.insert("network_ms".into(), serde_json::json!(self.network_ms));
+            obj.insert("concurrent_at_start".into(), serde_json::json!(self.concurrent_at_start));
+            if self.retry_count > 0 {
+                obj.insert("retry_count".into(), serde_json::json!(self.retry_count));
+            }
+        }
+    }
 }
 
 // Re-export as OllamaClient for backward compatibility
 pub type OllamaClient = LLMClient;
+
+/// RAII guard that decrements the in-flight counter on drop, guaranteeing
+/// correctness across every early-return path in `generate_timed` without
+/// forcing each arm to remember to decrement.
+struct InFlightGuard<'a> {
+    counter: &'a AtomicUsize,
+}
+
+impl<'a> Drop for InFlightGuard<'a> {
+    fn drop(&mut self) {
+        self.counter.fetch_sub(1, Ordering::Relaxed);
+    }
+}
 
 /// Check if a reqwest error is retryable (transient network issues)
 fn is_retryable_error(err: &reqwest::Error) -> bool {
@@ -449,6 +507,7 @@ impl LLMClient {
             api_key: api_key.to_string(),
             client_id: client_id.to_string(),
             fast_model: fast_model.to_string(),
+            in_flight: AtomicUsize::new(0),
         })
     }
 
@@ -643,7 +702,8 @@ impl LLMClient {
         Err(last_error)
     }
 
-    /// Generate text using the LLM with retry logic
+    /// Generate text using the LLM with retry logic.
+    /// Thin wrapper over [`generate_timed`] for callers that don't need metrics.
     pub async fn generate(
         &self,
         model: &str,
@@ -651,25 +711,59 @@ impl LLMClient {
         user_content: &str,
         task: &str,
     ) -> Result<String, String> {
+        self.generate_timed(model, system_prompt, user_content, task).await.0
+    }
+
+    /// Same as [`generate`] but returns timing + concurrency metrics alongside
+    /// the result. Use this for any call path that feeds `pipeline_log` so
+    /// post-hoc analysis can tell "app-side scheduling latency" apart from
+    /// "LLM-side processing latency".
+    pub async fn generate_timed(
+        &self,
+        model: &str,
+        system_prompt: &str,
+        user_content: &str,
+        task: &str,
+    ) -> (Result<String, String>, CallMetrics) {
+        let entry_ts = Instant::now();
+        let concurrent_at_start = self.in_flight.fetch_add(1, Ordering::Relaxed);
+        let _guard = InFlightGuard { counter: &self.in_flight };
+
         if model.trim().is_empty() {
-            return Err("Model name cannot be empty".to_string());
+            return (
+                Err("Model name cannot be empty".to_string()),
+                CallMetrics {
+                    wall_ms: entry_ts.elapsed().as_millis() as u64,
+                    scheduling_ms: entry_ts.elapsed().as_millis() as u64,
+                    network_ms: 0,
+                    concurrent_at_start,
+                    retry_count: 0,
+                },
+            );
         }
         if user_content.trim().is_empty() {
-            return Err("User content cannot be empty".to_string());
+            return (
+                Err("User content cannot be empty".to_string()),
+                CallMetrics {
+                    wall_ms: entry_ts.elapsed().as_millis() as u64,
+                    scheduling_ms: entry_ts.elapsed().as_millis() as u64,
+                    network_ms: 0,
+                    concurrent_at_start,
+                    retry_count: 0,
+                },
+            );
         }
 
         let url = format!("{}/v1/chat/completions", self.base_url);
         debug!("Generating with LLM model {} at {}", model, url);
 
         let mut messages = Vec::new();
-
         if !system_prompt.is_empty() {
             messages.push(ChatMessage {
                 role: "system".to_string(),
                 content: ChatMessageContent::Text(system_prompt.to_string()),
             });
         }
-
         messages.push(ChatMessage {
             role: "user".to_string(),
             content: ChatMessageContent::Text(user_content.to_string()),
@@ -690,9 +784,17 @@ impl LLMClient {
         };
 
         let mut last_error = String::new();
+        let mut network_ms_total: u64 = 0;
+        let mut retry_count: u32 = 0;
+
+        // Scheduling latency is measured once: from `generate_timed` entry to
+        // just before the FIRST send() call. Everything else on the wall-clock
+        // path is network (HTTP + body parse) plus retry backoff.
+        let mut scheduling_ms: Option<u64> = None;
 
         for attempt in 0..DEFAULT_MAX_RETRIES {
             if attempt > 0 {
+                retry_count = attempt;
                 let backoff = calculate_backoff(attempt - 1);
                 warn!(
                     "LLM generate attempt {} failed, retrying in {:?}",
@@ -701,21 +803,40 @@ impl LLMClient {
                 tokio::time::sleep(backoff).await;
             }
 
-            match self.client
+            let http_start = Instant::now();
+            if scheduling_ms.is_none() {
+                scheduling_ms = Some(entry_ts.elapsed().as_millis() as u64);
+            }
+
+            let result = self.client
                 .post(&url)
                 .headers(self.auth_headers(task))
                 .json(&request)
                 .send()
-                .await
-            {
+                .await;
+
+            match result {
                 Ok(response) => {
                     if response.status().is_success() {
-                        match response.json::<ChatCompletionResponse>().await {
+                        let body_result = response.json::<ChatCompletionResponse>().await;
+                        network_ms_total = network_ms_total.saturating_add(http_start.elapsed().as_millis() as u64);
+                        match body_result {
                             Ok(chat_response) => {
-                                if let Some(choice) = chat_response.choices.first() {
-                                    return Ok(choice.message.content.as_text().to_string());
-                                }
-                                return Err("No response choices returned".to_string());
+                                let res = if let Some(choice) = chat_response.choices.first() {
+                                    Ok(choice.message.content.as_text().to_string())
+                                } else {
+                                    Err("No response choices returned".to_string())
+                                };
+                                return (
+                                    res,
+                                    CallMetrics {
+                                        wall_ms: entry_ts.elapsed().as_millis() as u64,
+                                        scheduling_ms: scheduling_ms.unwrap_or(0),
+                                        network_ms: network_ms_total,
+                                        concurrent_at_start,
+                                        retry_count,
+                                    },
+                                );
                             }
                             Err(e) => {
                                 last_error = format!("Failed to parse LLM response: {}", e);
@@ -725,22 +846,43 @@ impl LLMClient {
                     } else if is_retryable_status(response.status()) {
                         let status = response.status();
                         let body = response.text().await.unwrap_or_default();
+                        network_ms_total = network_ms_total.saturating_add(http_start.elapsed().as_millis() as u64);
                         last_error = format!("LLM router returned error: {} - {}", status, truncate_error_body(&body, 200));
                         continue;
                     } else {
                         let status = response.status();
                         let body = response.text().await.unwrap_or_default();
+                        network_ms_total = network_ms_total.saturating_add(http_start.elapsed().as_millis() as u64);
                         let truncated = truncate_error_body(&body, 200);
                         error!("LLM generate failed: {} - {}", status, truncated);
-                        return Err(format!("LLM router returned error: {} - {}", status, truncated));
+                        return (
+                            Err(format!("LLM router returned error: {} - {}", status, truncated)),
+                            CallMetrics {
+                                wall_ms: entry_ts.elapsed().as_millis() as u64,
+                                scheduling_ms: scheduling_ms.unwrap_or(0),
+                                network_ms: network_ms_total,
+                                concurrent_at_start,
+                                retry_count,
+                            },
+                        );
                     }
                 }
                 Err(e) => {
+                    network_ms_total = network_ms_total.saturating_add(http_start.elapsed().as_millis() as u64);
                     if is_retryable_error(&e) {
                         last_error = format!("Failed to connect to LLM router: {}", e);
                         continue;
                     } else {
-                        return Err(format!("Failed to connect to LLM router: {}", e));
+                        return (
+                            Err(format!("Failed to connect to LLM router: {}", e)),
+                            CallMetrics {
+                                wall_ms: entry_ts.elapsed().as_millis() as u64,
+                                scheduling_ms: scheduling_ms.unwrap_or(0),
+                                network_ms: network_ms_total,
+                                concurrent_at_start,
+                                retry_count,
+                            },
+                        );
                     }
                 }
             }
@@ -750,7 +892,16 @@ impl LLMClient {
             "LLM generate failed after {} attempts: {}",
             DEFAULT_MAX_RETRIES, last_error
         );
-        Err(last_error)
+        (
+            Err(last_error),
+            CallMetrics {
+                wall_ms: entry_ts.elapsed().as_millis() as u64,
+                scheduling_ms: scheduling_ms.unwrap_or(entry_ts.elapsed().as_millis() as u64),
+                network_ms: network_ms_total,
+                concurrent_at_start,
+                retry_count,
+            },
+        )
     }
 
     /// Maximum transcript size (500KB) to prevent memory issues

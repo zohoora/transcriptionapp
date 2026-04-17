@@ -65,6 +65,7 @@ pub mod segment_log;
 pub mod server_sync;
 pub mod shadow_observer;
 pub mod day_log;
+pub mod performance_summary;
 pub mod screenshot;
 pub mod screenshot_task;
 pub mod encounter_pipeline;

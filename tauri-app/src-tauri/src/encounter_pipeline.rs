@@ -246,17 +246,22 @@ pub async fn extract_and_archive_billing(
     let start = Instant::now();
     let result = tokio::time::timeout(
         tokio::time::Duration::from_secs(billing_timeout),
-        client.generate(model, &system_prompt, &user_prompt, "billing_extraction"),
+        client.generate_timed(model, &system_prompt, &user_prompt, "billing_extraction"),
     )
     .await;
 
     let latency_ms = start.elapsed().as_millis() as u64;
 
-    let response = match result {
-        Ok(Ok(resp)) => resp,
-        Ok(Err(e)) => {
+    // `call_metrics` is carried forward to the success-log path so per-step
+    // scheduling_ms / network_ms / concurrent_at_start get attached to the
+    // pipeline_log event.
+    let (response, call_metrics) = match result {
+        Ok((Ok(resp), m)) => (resp, m),
+        Ok((Err(e), m)) => {
             warn!("Billing extraction LLM failed for {}: {}", session_id, e);
             if let Ok(mut l) = logger.lock() {
+                let mut ctx = serde_json::json!({"session_id": session_id, "error": "llm_error"});
+                m.attach_to(&mut ctx);
                 l.log_llm_call(
                     "billing_extraction",
                     model,
@@ -266,7 +271,7 @@ pub async fn extract_and_archive_billing(
                     latency_ms,
                     false,
                     Some(&e.to_string()),
-                    serde_json::json!({"session_id": session_id, "error": "llm_error"}),
+                    ctx,
                 );
             }
             return Err(format!("LLM error: {}", e));
@@ -314,6 +319,23 @@ pub async fn extract_and_archive_billing(
 
     // Log success
     if let Ok(mut l) = logger.lock() {
+        let mut ctx = serde_json::json!({
+            "session_id": session_id,
+            "codes_extracted": record.codes.len(),
+            "total_cents": record.total_amount_cents,
+            "total_shadow_cents": record.total_shadow_cents,
+            "total_oob_cents": record.total_out_of_basket_cents,
+            "total_time_cents": record.total_time_based_cents,
+            "after_hours": is_after_hours,
+            "clinical_features": serde_json::to_value(&features).unwrap_or_default(),
+            "selected_codes": record.codes.iter().map(|c| c.code.clone()).collect::<Vec<_>>(),
+            "time_entries": record.time_entries.iter().map(|t| serde_json::json!({
+                "code": t.code,
+                "minutes": t.minutes,
+                "units": t.billable_units,
+            })).collect::<Vec<_>>(),
+        });
+        call_metrics.attach_to(&mut ctx);
         l.log_llm_call(
             "billing_extraction",
             model,
@@ -323,22 +345,7 @@ pub async fn extract_and_archive_billing(
             latency_ms,
             true,
             None,
-            serde_json::json!({
-                "session_id": session_id,
-                "codes_extracted": record.codes.len(),
-                "total_cents": record.total_amount_cents,
-                "total_shadow_cents": record.total_shadow_cents,
-                "total_oob_cents": record.total_out_of_basket_cents,
-                "total_time_cents": record.total_time_based_cents,
-                "after_hours": is_after_hours,
-                "clinical_features": serde_json::to_value(&features).unwrap_or_default(),
-                "selected_codes": record.codes.iter().map(|c| c.code.clone()).collect::<Vec<_>>(),
-                "time_entries": record.time_entries.iter().map(|t| serde_json::json!({
-                    "code": t.code,
-                    "minutes": t.minutes,
-                    "units": t.billable_units,
-                })).collect::<Vec<_>>(),
-            }),
+            ctx,
         );
     }
 
@@ -491,10 +498,10 @@ pub async fn run_merge_check(
     let (merge_system, merge_user) =
         build_encounter_merge_prompt(prev_tail, curr_head, patient_name, templates);
     let merge_start = Instant::now();
-    let merge_future = client.generate(model, &merge_system, &merge_user, "encounter_merge");
+    let merge_future = client.generate_timed(model, &merge_system, &merge_user, "encounter_merge");
 
     match tokio::time::timeout(tokio::time::Duration::from_secs(60), merge_future).await {
-        Ok(Ok(merge_response)) => {
+        Ok((Ok(merge_response), m)) => {
             let latency_ms = merge_start.elapsed().as_millis() as u64;
             match parse_merge_check(&merge_response) {
                 Ok(merge_result) => {
@@ -510,6 +517,7 @@ pub async fn run_merge_check(
                                 serde_json::json!(format!("{:?}", merge_result.reason)),
                             );
                         }
+                        m.attach_to(&mut meta);
                         l.log_merge_check(
                             model,
                             &merge_system,
@@ -533,6 +541,8 @@ pub async fn run_merge_check(
                 }
                 Err(e) => {
                     if let Ok(mut l) = logger.lock() {
+                        let mut meta = log_extra;
+                        m.attach_to(&mut meta);
                         l.log_merge_check(
                             model,
                             &merge_system,
@@ -541,7 +551,7 @@ pub async fn run_merge_check(
                             latency_ms,
                             false,
                             Some(&format!("parse_error: {}", e)),
-                            log_extra,
+                            meta,
                         );
                     }
                     warn!("Failed to parse merge check response: {}", e);
@@ -557,9 +567,11 @@ pub async fn run_merge_check(
                 }
             }
         }
-        Ok(Err(e)) => {
+        Ok((Err(e), m)) => {
             let latency_ms = merge_start.elapsed().as_millis() as u64;
             if let Ok(mut l) = logger.lock() {
+                let mut meta = log_extra;
+                m.attach_to(&mut meta);
                 l.log_merge_check(
                     model,
                     &merge_system,
@@ -568,7 +580,7 @@ pub async fn run_merge_check(
                     latency_ms,
                     false,
                     Some(&e.to_string()),
-                    log_extra,
+                    meta,
                 );
             }
             warn!("Merge check LLM call failed: {}", e);
@@ -641,10 +653,10 @@ pub async fn check_clinical_content(
 
     let (cc_system, cc_user) = build_clinical_content_check_prompt(transcript, templates);
     let cc_start = Instant::now();
-    let cc_future = client.generate(model, &cc_system, &cc_user, "clinical_content_check");
+    let cc_future = client.generate_timed(model, &cc_system, &cc_user, "clinical_content_check");
 
     match tokio::time::timeout(tokio::time::Duration::from_secs(30), cc_future).await {
-        Ok(Ok(cc_response)) => {
+        Ok((Ok(cc_response), m)) => {
             let cc_latency = cc_start.elapsed().as_millis() as u64;
             match parse_clinical_content_check(&cc_response) {
                 Ok(cc_result) => {
@@ -657,6 +669,7 @@ pub async fn check_clinical_content(
                             );
                             obj.insert("reason".into(), serde_json::json!(cc_result.reason));
                         }
+                        m.attach_to(&mut meta);
                         l.log_clinical_check(
                             model,
                             &cc_system,
@@ -681,6 +694,7 @@ pub async fn check_clinical_content(
                         if let Some(obj) = meta.as_object_mut() {
                             obj.insert("parse_error".into(), serde_json::json!(true));
                         }
+                        m.attach_to(&mut meta);
                         l.log_clinical_check(
                             model,
                             &cc_system,
@@ -697,13 +711,14 @@ pub async fn check_clinical_content(
                 }
             }
         }
-        Ok(Err(e)) => {
+        Ok((Err(e), m)) => {
             let cc_latency = cc_start.elapsed().as_millis() as u64;
             if let Ok(mut l) = logger.lock() {
                 let mut meta = log_extra;
                 if let Some(obj) = meta.as_object_mut() {
                     obj.insert("llm_error".into(), serde_json::json!(true));
                 }
+                m.attach_to(&mut meta);
                 l.log_clinical_check(
                     model,
                     &cc_system,

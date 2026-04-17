@@ -1351,7 +1351,10 @@ pub async fn run_continuous_mode(
                     system_prompt
                 };
                 let detect_start = Instant::now();
-                let llm_future = client.generate(&detection_model, &system_prompt, &user_prompt, "encounter_detection");
+                // generate_timed returns (Result<String>, CallMetrics). Timeout-wrapping
+                // a tuple-returning future works the same as the old Result-returning one —
+                // the match arms below just destructure one extra element per branch.
+                let llm_future = client.generate_timed(&detection_model, &system_prompt, &user_prompt, "encounter_detection");
                 let detect_ctx = serde_json::json!({
                     "word_count": word_count,
                     "cleaned_word_count": cleaned_word_count,
@@ -1369,7 +1372,7 @@ pub async fn run_continuous_mode(
                 );
 
                 match tokio::time::timeout(tokio::time::Duration::from_secs(90), llm_future).await {
-                    Ok(Ok(response)) => {
+                    Ok((Ok(response), metrics)) => {
                         let latency = detect_start.elapsed().as_millis() as u64;
                         match parse_encounter_detection(&response) {
                             Ok(result) => {
@@ -1386,6 +1389,7 @@ pub async fn run_continuous_mode(
                                     ctx["parsed_complete"] = serde_json::json!(result.complete);
                                     ctx["parsed_confidence"] = serde_json::json!(result.confidence);
                                     ctx["parsed_end_segment_index"] = serde_json::json!(result.end_segment_index);
+                                    metrics.attach_to(&mut ctx);
                                     logger.log_detection(
                                         &detection_model, &system_prompt, &user_prompt,
                                         Some(&response), latency, true, None, ctx,
@@ -1414,6 +1418,7 @@ pub async fn run_continuous_mode(
                                 if let Ok(mut logger) = logger_for_detector.lock() {
                                     let mut ctx = detect_ctx.clone();
                                     ctx["parse_error"] = serde_json::json!(true);
+                                    metrics.attach_to(&mut ctx);
                                     logger.log_detection(
                                         &detection_model, &system_prompt, &user_prompt,
                                         Some(&response), latency, false, Some(&e), ctx,
@@ -1440,12 +1445,13 @@ pub async fn run_continuous_mode(
                             }
                         }
                     }
-                    Ok(Err(e)) => {
+                    Ok((Err(e), metrics)) => {
                         let latency = detect_start.elapsed().as_millis() as u64;
                         warn!("Encounter detection LLM call failed: {}", e);
                         if let Ok(mut logger) = logger_for_detector.lock() {
                             let mut ctx = detect_ctx.clone();
                             ctx["llm_error"] = serde_json::json!(true);
+                            metrics.attach_to(&mut ctx);
                             logger.log_detection(
                                 &detection_model, &system_prompt, &user_prompt,
                                 None, latency, false, Some(&e.to_string()), ctx,
@@ -3135,6 +3141,13 @@ pub async fn run_continuous_mode(
             flush_session_id: flush_session_id_for_log,
         });
     }
+
+    // Write the day's performance_summary.json after the stop event so it
+    // reflects all events up to and including this run. On a multi-run day,
+    // each stop overwrites the file with the cumulative aggregate. Cost is a
+    // single pass over today's pipeline_log files (~sub-second on a normal
+    // clinic day) and it runs only at stop, not on the hot path.
+    crate::performance_summary::write_today_summary();
 
     // Set state to idle
     if let Ok(mut state) = handle.state.lock() {
