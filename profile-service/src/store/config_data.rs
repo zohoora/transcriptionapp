@@ -216,10 +216,9 @@ impl ConfigDataStore {
         defaults: OperationalDefaults,
     ) -> Result<OperationalDefaults, ApiError> {
         // Validate before mutating in-memory state so a bad PUT can't
-        // stomp a valid config even transiently.
-        defaults
-            .validate()
-            .map_err(ApiError::BadRequest)?;
+        // stomp a valid config even transiently. `validate()` returns
+        // `ApiError::BadRequest` directly, which propagates to a 400.
+        defaults.validate()?;
         self.defaults = defaults;
         self.bump_version();
         self.defaults.version = self.version;

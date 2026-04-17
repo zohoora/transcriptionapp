@@ -1049,10 +1049,10 @@ pub struct OperationalDefaults {
     // ── Sleep mode (continuous mode pause hours, EST/EDT) ──
     /// Hour of day (0-23, local EST/EDT) when continuous mode auto-pauses (default: 22)
     #[serde(default = "default_sleep_start_hour")]
-    pub sleep_start_hour: u32,
+    pub sleep_start_hour: u8,
     /// Hour of day (0-23, local EST/EDT) when continuous mode auto-resumes (default: 6)
     #[serde(default = "default_sleep_end_hour")]
-    pub sleep_end_hour: u32,
+    pub sleep_end_hour: u8,
 
     // ── Sensor baselines (per-room calibration, Phase 2 roadmap) ──
     /// Thermal hot-pixel threshold in Celsius (default: 28.0, valid 20.0-40.0)
@@ -1086,8 +1086,8 @@ pub struct OperationalDefaults {
 }
 
 // Serde default value functions for OperationalDefaults
-fn default_sleep_start_hour() -> u32 { 22 }
-fn default_sleep_end_hour() -> u32 { 6 }
+fn default_sleep_start_hour() -> u8 { 22 }
+fn default_sleep_end_hour() -> u8 { 6 }
 fn default_thermal_hot_pixel_threshold_c() -> f32 { 28.0 }
 fn default_co2_baseline_ppm() -> f32 { 420.0 }
 fn default_encounter_check_interval_secs() -> u32 { 120 }
@@ -1116,56 +1116,73 @@ impl Default for OperationalDefaults {
 }
 
 impl OperationalDefaults {
-    /// Bounds-check all fields. Returns a human-readable error string on violation.
+    /// Bounds-check all fields. Returns `ApiError::BadRequest` on violation so
+    /// the route layer surfaces a 400 directly (matches sibling validators).
     /// A bad PUT should 400, not propagate garbage to every workstation.
-    pub fn validate(&self) -> Result<(), String> {
+    pub fn validate(&self) -> Result<(), ApiError> {
+        // NOTE: `sleep_start_hour`/`sleep_end_hour` are `u8`, so values >255 can't
+        // be represented on the wire. `> 23` still catches every invalid value
+        // (24..=255) and remains readable, so we keep the explicit bounds check.
         if self.sleep_start_hour > 23 {
-            return Err(format!(
+            return Err(ApiError::BadRequest(format!(
                 "sleep_start_hour must be in [0, 23], got {}",
                 self.sleep_start_hour
-            ));
+            )));
         }
         if self.sleep_end_hour > 23 {
-            return Err(format!(
+            return Err(ApiError::BadRequest(format!(
                 "sleep_end_hour must be in [0, 23], got {}",
                 self.sleep_end_hour
+            )));
+        }
+        if self.sleep_start_hour == self.sleep_end_hour {
+            return Err(ApiError::BadRequest(
+                "sleep_start_hour and sleep_end_hour must differ (got equal values)".to_string(),
             ));
         }
         if !(20.0..=40.0).contains(&self.thermal_hot_pixel_threshold_c) {
-            return Err(format!(
+            return Err(ApiError::BadRequest(format!(
                 "thermal_hot_pixel_threshold_c must be in [20.0, 40.0], got {}",
                 self.thermal_hot_pixel_threshold_c
-            ));
+            )));
         }
         if !(300.0..=600.0).contains(&self.co2_baseline_ppm) {
-            return Err(format!(
+            return Err(ApiError::BadRequest(format!(
                 "co2_baseline_ppm must be in [300.0, 600.0], got {}",
                 self.co2_baseline_ppm
-            ));
+            )));
         }
         if !(10..=3600).contains(&self.encounter_check_interval_secs) {
-            return Err(format!(
+            return Err(ApiError::BadRequest(format!(
                 "encounter_check_interval_secs must be in [10, 3600], got {}",
                 self.encounter_check_interval_secs
-            ));
+            )));
         }
         if !(5..=600).contains(&self.encounter_silence_trigger_secs) {
-            return Err(format!(
+            return Err(ApiError::BadRequest(format!(
                 "encounter_silence_trigger_secs must be in [5, 600], got {}",
                 self.encounter_silence_trigger_secs
-            ));
+            )));
         }
         if self.soap_model.trim().is_empty() {
-            return Err("soap_model must not be empty".to_string());
+            return Err(ApiError::BadRequest(
+                "soap_model must not be empty".to_string(),
+            ));
         }
         if self.soap_model_fast.trim().is_empty() {
-            return Err("soap_model_fast must not be empty".to_string());
+            return Err(ApiError::BadRequest(
+                "soap_model_fast must not be empty".to_string(),
+            ));
         }
         if self.fast_model.trim().is_empty() {
-            return Err("fast_model must not be empty".to_string());
+            return Err(ApiError::BadRequest(
+                "fast_model must not be empty".to_string(),
+            ));
         }
         if self.encounter_detection_model.trim().is_empty() {
-            return Err("encounter_detection_model must not be empty".to_string());
+            return Err(ApiError::BadRequest(
+                "encounter_detection_model must not be empty".to_string(),
+            ));
         }
         Ok(())
     }

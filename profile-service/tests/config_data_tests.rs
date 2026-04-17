@@ -460,8 +460,110 @@ async fn operational_defaults_validate_rejects_bad_values() {
     bad.encounter_detection_model = String::new();
     assert!(bad.validate().is_err());
 
+    // sleep_start_hour == sleep_end_hour — rejected (otherwise the sleep window
+    // collapses to either 0h or 24h, neither of which is a sensible pause window)
+    let mut bad = OperationalDefaults::default();
+    bad.sleep_start_hour = 10;
+    bad.sleep_end_hour = 10;
+    let err = bad.validate().expect_err("equal hours must error");
+    let msg = format!("{err}");
+    assert!(
+        msg.contains("differ"),
+        "expected equality error message, got: {msg}"
+    );
+
     // Good values pass
     assert!(OperationalDefaults::default().validate().is_ok());
+}
+
+#[tokio::test]
+async fn operational_defaults_validate_accepts_exact_boundaries() {
+    use profile_service::types::OperationalDefaults;
+
+    // Locks in inclusive-range semantics at both ends of every bounded field.
+    // If a future refactor tightens a `..=` to `..`, these tests flip red.
+    let boundary_cases: &[(&str, OperationalDefaults)] = &[
+        (
+            "thermal low",
+            OperationalDefaults {
+                thermal_hot_pixel_threshold_c: 20.0,
+                ..OperationalDefaults::default()
+            },
+        ),
+        (
+            "thermal high",
+            OperationalDefaults {
+                thermal_hot_pixel_threshold_c: 40.0,
+                ..OperationalDefaults::default()
+            },
+        ),
+        (
+            "co2 low",
+            OperationalDefaults {
+                co2_baseline_ppm: 300.0,
+                ..OperationalDefaults::default()
+            },
+        ),
+        (
+            "co2 high",
+            OperationalDefaults {
+                co2_baseline_ppm: 600.0,
+                ..OperationalDefaults::default()
+            },
+        ),
+        (
+            "check interval low",
+            OperationalDefaults {
+                encounter_check_interval_secs: 10,
+                ..OperationalDefaults::default()
+            },
+        ),
+        (
+            "check interval high",
+            OperationalDefaults {
+                encounter_check_interval_secs: 3600,
+                ..OperationalDefaults::default()
+            },
+        ),
+        (
+            "silence trigger low",
+            OperationalDefaults {
+                encounter_silence_trigger_secs: 5,
+                ..OperationalDefaults::default()
+            },
+        ),
+        (
+            "silence trigger high",
+            OperationalDefaults {
+                encounter_silence_trigger_secs: 600,
+                ..OperationalDefaults::default()
+            },
+        ),
+        (
+            "sleep_start_hour = 0",
+            OperationalDefaults {
+                sleep_start_hour: 0,
+                sleep_end_hour: 6, // differ to dodge the equality rule
+                ..OperationalDefaults::default()
+            },
+        ),
+        (
+            "sleep_start_hour = 23",
+            OperationalDefaults {
+                sleep_start_hour: 23,
+                sleep_end_hour: 6,
+                ..OperationalDefaults::default()
+            },
+        ),
+    ];
+
+    for (label, defaults) in boundary_cases {
+        assert!(
+            defaults.validate().is_ok(),
+            "boundary case '{label}' must pass validate(), but got: {:?}",
+            defaults.validate().unwrap_err()
+        );
+    }
 }
 
 #[tokio::test]
