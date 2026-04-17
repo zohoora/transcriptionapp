@@ -1,16 +1,45 @@
 //! Commands for continuous charting mode (start/stop/status)
 
 use super::CommandError;
-use crate::commands::physicians::{SharedActivePhysician, SharedProfileClient, SharedRoomConfig};
+use crate::commands::physicians::{
+    SharedActivePhysician, SharedProfileClient, SharedRoomConfig, SharedServerConfig,
+};
 use crate::config::Config;
 use crate::continuous_mode::{ContinuousModeHandle, ContinuousModeStats, ContinuousState};
 use crate::continuous_mode_events::ContinuousModeEvent;
+use crate::server_config_resolve::resolve;
 use crate::server_sync::ServerSyncContext;
 use chrono::Timelike;
 use std::sync::atomic::Ordering;
 use std::sync::{Arc, Mutex};
 use tauri::{AppHandle, State};
 use tracing::{info, warn};
+
+/// Resolve the effective (start, end) sleep hours using the Phase 3 precedence
+/// rule: compiled default < server < local(only if user-edited).
+///
+/// Reads the server config lock fresh on every call — the caller is expected
+/// to invoke this once per sleep-loop tick so pushes from the profile service
+/// take effect without waiting for continuous mode to restart.
+async fn resolve_sleep_hours(
+    config: &Config,
+    server_config: &SharedServerConfig,
+) -> (u8, u8) {
+    let sc = server_config.read().await;
+    let start = resolve(
+        Some(&sc.defaults.sleep_start_hour),
+        &config.sleep_start_hour,
+        "sleep_start_hour",
+        &config.user_edited_fields,
+    );
+    let end = resolve(
+        Some(&sc.defaults.sleep_end_hour),
+        &config.sleep_end_hour,
+        "sleep_end_hour",
+        &config.user_edited_fields,
+    );
+    (start, end)
+}
 
 /// Check if the current time falls within the sleep window (EST timezone).
 fn is_in_sleep_window(sleep_start: u8, sleep_end: u8) -> bool {
@@ -75,6 +104,7 @@ pub async fn start_continuous_mode(
     active_physician: State<'_, SharedActivePhysician>,
     room_config_state: State<'_, SharedRoomConfig>,
     profile_client_state: State<'_, SharedProfileClient>,
+    server_config: State<'_, SharedServerConfig>,
 ) -> Result<(), CommandError> {
     info!("Starting continuous charting mode");
 
@@ -107,17 +137,36 @@ pub async fn start_continuous_mode(
     // Spawn the continuous mode loop with sleep scheduler
     let handle_for_task = handle.clone();
     let continuous_state_for_cleanup = continuous_state.inner().clone();
+    // Clone the Arc<RwLock<ServerConfig>> so every tick can re-read the
+    // latest server defaults without snapshotting — Phase 3 requirement.
+    let server_config_for_task = server_config.inner().clone();
 
     tokio::spawn(async move {
+        // Last-logged sleep hours to avoid spamming the log every tick;
+        // we only log when the effective value actually changes.
+        let mut last_logged_sleep: Option<(u8, u8)> = None;
+
         loop {
             // Reload config each cycle (picks up setting changes between sleep/wake)
             let config = Config::load_or_default();
 
+            // Resolve effective sleep hours via Phase 3 precedence rule:
+            //   compiled default < server < local(only if user-edited)
+            // Each iteration re-reads SharedServerConfig so server pushes take
+            // effect within one tick without waiting for continuous-mode restart.
+            let (sleep_start, sleep_end) =
+                resolve_sleep_hours(&config, &server_config_for_task).await;
+            if last_logged_sleep != Some((sleep_start, sleep_end)) {
+                info!(
+                    "Effective sleep hours: start={} end={} (was={:?})",
+                    sleep_start, sleep_end, last_logged_sleep
+                );
+                last_logged_sleep = Some((sleep_start, sleep_end));
+            }
+
             // Check if we're in the sleep window
-            if config.sleep_mode_enabled
-                && is_in_sleep_window(config.sleep_start_hour, config.sleep_end_hour)
-            {
-                let resume_at = compute_resume_at(config.sleep_end_hour);
+            if config.sleep_mode_enabled && is_in_sleep_window(sleep_start, sleep_end) {
+                let resume_at = compute_resume_at(sleep_end);
                 info!("Entering sleep mode — will resume at {}", resume_at);
 
                 // Update handle state to Sleeping
@@ -144,9 +193,9 @@ pub async fn start_continuous_mode(
                     // Reload config every 5 minutes to check for setting changes
                     if sleep_poll_count % 10 == 0 {
                         let cfg = Config::load_or_default();
-                        if !cfg.sleep_mode_enabled
-                            || !is_in_sleep_window(cfg.sleep_start_hour, cfg.sleep_end_hour)
-                        {
+                        let (start, end) =
+                            resolve_sleep_hours(&cfg, &server_config_for_task).await;
+                        if !cfg.sleep_mode_enabled || !is_in_sleep_window(start, end) {
                             break;
                         }
                     }
@@ -164,21 +213,23 @@ pub async fn start_continuous_mode(
             // Reset handle for a fresh run cycle
             handle_for_task.reset_for_new_run();
 
-            // Spawn a sleep timer that will stop this run at sleep_start_hour
+            // Spawn a sleep timer that will stop this run at sleep_start_hour.
+            // The timer re-resolves each tick so a mid-run server push to the
+            // sleep hours propagates within ~60s.
             let sleep_timer_handle = if config.sleep_mode_enabled {
                 let stop_flag = handle_for_task.stop_flag.clone();
-                let sleep_start = config.sleep_start_hour;
-                let sleep_end = config.sleep_end_hour;
+                let server_cfg = server_config_for_task.clone();
                 Some(tokio::spawn(async move {
                     loop {
                         tokio::time::sleep(std::time::Duration::from_secs(60)).await;
                         if stop_flag.load(Ordering::Relaxed) {
                             break; // Already stopped (user or other)
                         }
-                        if is_in_sleep_window(sleep_start, sleep_end) {
-                            info!(
-                                "Sleep timer: entering sleep window, stopping pipeline"
-                            );
+                        // Re-read each tick — server pushes propagate here too
+                        let cfg = Config::load_or_default();
+                        let (start, end) = resolve_sleep_hours(&cfg, &server_cfg).await;
+                        if is_in_sleep_window(start, end) {
+                            info!("Sleep timer: entering sleep window, stopping pipeline");
                             stop_flag.store(true, Ordering::Relaxed);
                             break;
                         }

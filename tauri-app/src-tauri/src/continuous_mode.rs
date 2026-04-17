@@ -485,17 +485,29 @@ pub async fn run_continuous_mode(
 ) -> Result<(), String> {
     use tauri::Emitter;
 
-    // Read server-configurable data (prompts, billing rules, thresholds).
+    // Read server-configurable data (prompts, billing rules, thresholds, defaults).
     // Snapshot at start of continuous mode — changes take effect on next restart.
     // Arc-wrapped to share between detector task and flush-on-stop path without cloning.
-    let (templates, billing_data, detector_thresholds) = {
+    //
+    // `operational` holds the resolved OperationalDefaults (Cat B fields) with
+    // the Phase 3 precedence rule applied: compiled default < server < local
+    // (only if user-edited). All 10 Cat B values downstream (sleep hours, sensor
+    // baselines, encounter intervals, 4 model aliases) read from `operational`
+    // instead of `config.*` directly. Sleep hours are handled separately in the
+    // outer loop (re-resolved every tick); the 8 remaining fields snapshot here.
+    let (templates, billing_data, detector_thresholds, operational) = {
         use tauri::Manager;
         let shared = app.state::<crate::commands::SharedServerConfig>();
-        let config = shared.read().await;
+        let sc = shared.read().await;
+        let op = crate::server_config_resolve::resolve_operational(
+            &config.settings,
+            Some(&sc.defaults),
+        );
         (
-            Arc::new(config.prompts.clone()),
-            Arc::new(config.billing.clone()),
-            Arc::new(config.thresholds.clone()),
+            Arc::new(sc.prompts.clone()),
+            Arc::new(sc.billing.clone()),
+            Arc::new(sc.thresholds.clone()),
+            op,
         )
     };
     let flush_templates = templates.clone();
@@ -599,7 +611,7 @@ pub async fn run_continuous_mode(
     let silence_start = Arc::new(Mutex::new(Option::<std::time::Instant>::None));
     let silence_trigger_tx = Arc::new(tokio::sync::Notify::new());
     let silence_trigger_rx = silence_trigger_tx.clone();
-    let silence_threshold_secs = config.encounter_silence_trigger_secs;
+    let silence_threshold_secs = operational.encounter_silence_trigger_secs;
     let silence_start_for_consumer = silence_start.clone();
 
     // Spawn segment consumer task
@@ -800,12 +812,15 @@ pub async fn run_continuous_mode(
             debounce_secs: config.presence_debounce_secs,
             absence_threshold_secs: config.presence_absence_threshold_secs,
             csv_log_enabled: config.presence_csv_log_enabled,
+            // Sensor baselines snapshot here via the Phase 3 precedence resolver.
+            // Changes take effect on next continuous-mode restart, same cadence
+            // as prompts/billing/thresholds.
             thermal: crate::presence_sensor::ThermalConfig {
-                hot_pixel_threshold_c: config.thermal_hot_pixel_threshold_c,
+                hot_pixel_threshold_c: operational.thermal_hot_pixel_threshold_c,
                 ..Default::default()
             },
             co2: crate::presence_sensor::Co2Config {
-                baseline_ppm: config.co2_baseline_ppm,
+                baseline_ppm: operational.co2_baseline_ppm,
                 ..Default::default()
             },
             fusion: crate::presence_sensor::FusionConfig::default(),
@@ -907,9 +922,11 @@ pub async fn run_continuous_mode(
             crate::shadow_observer::ShadowObserverConfig {
                 active_method: shadow_active_method,
                 csv_log_enabled: config.shadow_csv_log_enabled,
-                detection_model: config.encounter_detection_model.clone(),
+                // Phase 3: detection model + check interval read from operational
+                // defaults snapshot (server < local-when-edited).
+                detection_model: operational.encounter_detection_model.clone(),
                 detection_nothink: config.encounter_detection_nothink,
-                check_interval_secs: config.encounter_check_interval_secs,
+                check_interval_secs: operational.encounter_check_interval_secs,
                 llm_router_url: config.llm_router_url.clone(),
                 llm_api_key: config.llm_api_key.clone(),
                 llm_client_id: config.llm_client_id.clone(),
@@ -937,11 +954,15 @@ pub async fn run_continuous_mode(
     let last_split_time_for_detector = handle.last_split_time.clone();
     let screenshot_buffer_for_detector = handle.screenshot_buffer.clone();
     let app_for_detector = app.clone();
-    let check_interval = config.encounter_check_interval_secs;
+    // Phase 3: encounter-check interval resolved via precedence snapshot.
+    let check_interval = operational.encounter_check_interval_secs;
     let idle_timeout_secs = config.idle_encounter_timeout_secs;
 
-    // Build LLM client for encounter detection (uses smaller model for better accuracy)
-    let detection_model = config.encounter_detection_model.clone();
+    // Build LLM client for encounter detection (uses smaller model for better accuracy).
+    // Phase 3: all four model aliases read from the `operational` snapshot so the
+    // server can push a replacement alias and it takes effect on next continuous-mode
+    // restart (same cadence as prompts/billing/thresholds).
+    let detection_model = operational.encounter_detection_model.clone();
     let detection_nothink = config.encounter_detection_nothink;
     let llm_client = if !config.llm_router_url.is_empty() {
         LLMClient::new(
@@ -955,15 +976,15 @@ pub async fn run_continuous_mode(
         None
     };
 
-    let soap_model = config.soap_model_fast.clone();
-    let fast_model = config.fast_model.clone();
+    let soap_model = operational.soap_model_fast.clone();
+    let fast_model = operational.fast_model.clone();
     let soap_detail_level = config.soap_detail_level;
     let soap_format = config.soap_format.clone();
     let soap_custom_instructions = config.soap_custom_instructions.clone();
     let merge_enabled = config.encounter_merge_enabled;
     // Clone config values for flush-on-stop SOAP generation + merge check (outside detector task)
-    let flush_fast_model = config.fast_model.clone();
-    let flush_soap_model = config.soap_model_fast.clone();
+    let flush_fast_model = operational.fast_model.clone();
+    let flush_soap_model = operational.soap_model_fast.clone();
     let flush_soap_detail_level = config.soap_detail_level;
     let flush_soap_format = config.soap_format.clone();
     let flush_soap_custom_instructions = config.soap_custom_instructions.clone();
@@ -972,7 +993,7 @@ pub async fn run_continuous_mode(
             &config.llm_router_url,
             &config.llm_api_key,
             &config.llm_client_id,
-            &config.fast_model,
+            &operational.fast_model,
         )
         .ok()
     } else {
@@ -2729,12 +2750,13 @@ pub async fn run_continuous_mode(
 
     // Spawn screenshot-based patient name extraction task (if screen capture enabled)
     let screenshot_task = if config.screen_capture_enabled {
+        // Phase 3: fast_model alias resolved from operational defaults snapshot.
         let llm_client_for_screenshot = if !config.llm_router_url.is_empty() {
             LLMClient::new(
                 &config.llm_router_url,
                 &config.llm_api_key,
                 &config.llm_client_id,
-                &config.fast_model,
+                &operational.fast_model,
             )
             .ok()
         } else {
