@@ -1,7 +1,7 @@
 //! Settings commands
 
 use super::CommandError;
-use crate::config::{Config, Settings, CAT_B_FIELD_NAMES};
+use crate::config::{cat_b_field_eq, Config, Settings, CAT_B_FIELD_NAMES};
 
 /// Get current settings
 #[tauri::command]
@@ -64,14 +64,28 @@ pub fn clear_user_edited_field(field_name: String) -> Result<Settings, CommandEr
     Ok(config.to_settings())
 }
 
-/// Merge `user_edited_fields` from `previous` into `new` and append any Cat B
-/// fields whose value changed between them. Dedup'd so repeated edits don't
-/// create duplicates.
+/// Merges changed-field tracking from `previous` into `new`:
+/// - For each Cat B field: if `new.X != previous.X`, append field name to `new.user_edited_fields`.
+/// - Union with `previous.user_edited_fields` so an oblivious frontend that omits
+///   the field in its round-trip doesn't erase tracking state.
 ///
-/// The frontend isn't aware of `user_edited_fields` yet (T3 ships backend
-/// only), so the incoming `new.user_edited_fields` is typically empty. Taking
-/// the union with `previous.user_edited_fields` preserves the existing
-/// tracking instead of wiping it on every save.
+/// Dedup'd so repeated edits don't create duplicates.
+///
+/// # Known race
+///
+/// If `clear_user_edited_field("X")` runs and then a `set_settings` call arrives
+/// whose payload was built from a stale snapshot (pre-clear), this function will:
+/// 1. Union with the now-empty previous list → no effect.
+/// 2. But if the stale payload's Cat B value `X` differs from the current on-disk
+///    value (because the frontend's pre-clear snapshot had the pre-clear value),
+///    the diff-on-save branch re-adds field name "X" to user_edited_fields.
+///
+/// T7 (admin UI) is responsible for re-fetching settings after a `clear_user_edited_field`
+/// call before allowing another `set_settings` to be issued. This function treats
+/// every `set_settings` payload as authoritative at its construction time.
+///
+/// Closing this race properly would require a version counter on
+/// `user_edited_fields` — a larger design change deferred past Phase 3.
 fn merge_user_edited_fields(new: &mut Settings, previous: &Settings) {
     // Start from the existing list so an oblivious frontend doesn't erase it.
     for field in &previous.user_edited_fields {
@@ -81,34 +95,11 @@ fn merge_user_edited_fields(new: &mut Settings, previous: &Settings) {
     }
     // Diff Cat B fields and append any that changed.
     for &field in CAT_B_FIELD_NAMES {
-        if cat_b_field_changed(new, previous, field)
+        if !cat_b_field_eq(new, previous, field)
             && !new.user_edited_fields.iter().any(|f| f == field)
         {
             new.user_edited_fields.push(field.to_string());
         }
-    }
-}
-
-/// Returns true if the given Cat B field differs between `a` and `b`.
-fn cat_b_field_changed(a: &Settings, b: &Settings, field: &str) -> bool {
-    match field {
-        "sleep_start_hour" => a.sleep_start_hour != b.sleep_start_hour,
-        "sleep_end_hour" => a.sleep_end_hour != b.sleep_end_hour,
-        "thermal_hot_pixel_threshold_c" => {
-            a.thermal_hot_pixel_threshold_c != b.thermal_hot_pixel_threshold_c
-        }
-        "co2_baseline_ppm" => a.co2_baseline_ppm != b.co2_baseline_ppm,
-        "encounter_check_interval_secs" => {
-            a.encounter_check_interval_secs != b.encounter_check_interval_secs
-        }
-        "encounter_silence_trigger_secs" => {
-            a.encounter_silence_trigger_secs != b.encounter_silence_trigger_secs
-        }
-        "soap_model" => a.soap_model != b.soap_model,
-        "soap_model_fast" => a.soap_model_fast != b.soap_model_fast,
-        "fast_model" => a.fast_model != b.fast_model,
-        "encounter_detection_model" => a.encounter_detection_model != b.encounter_detection_model,
-        _ => false,
     }
 }
 

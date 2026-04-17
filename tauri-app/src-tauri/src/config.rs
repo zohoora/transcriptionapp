@@ -258,33 +258,48 @@ pub fn migrate_user_edited_fields(settings: &mut Settings) -> bool {
     !settings.user_edited_fields.is_empty()
 }
 
-/// Returns true if `settings.<field>` currently equals the compiled default.
+/// Returns true if both `Settings` have equal values for the given Cat B field.
+/// Returns `true` (conservative default) for unknown field names — callers use
+/// this to decide "has the user changed this?", so treating unknowns as equal
+/// means we don't invent edits for fields we don't recognize.
 ///
-/// Only handles the 10 Cat B field names. Unknown names return `true`
-/// (conservative: we don't seed fields we don't know about).
-pub fn is_cat_b_field_default(settings: &Settings, field: &str) -> bool {
-    let def = Settings::default();
+/// Single source of truth for the Cat B field-name → field-value mapping.
+/// Both [`is_cat_b_field_default`] and the diff-on-save path in
+/// `commands::settings` go through this one match.
+///
+/// Float fields use `f32::EPSILON` comparison because direct `==` on f32 is
+/// flaky across arithmetic paths (serde round-trips, clamping, etc.).
+pub fn cat_b_field_eq(a: &Settings, b: &Settings, field: &str) -> bool {
     match field {
-        "sleep_start_hour" => settings.sleep_start_hour == def.sleep_start_hour,
-        "sleep_end_hour" => settings.sleep_end_hour == def.sleep_end_hour,
+        "sleep_start_hour" => a.sleep_start_hour == b.sleep_start_hour,
+        "sleep_end_hour" => a.sleep_end_hour == b.sleep_end_hour,
         "thermal_hot_pixel_threshold_c" => {
-            settings.thermal_hot_pixel_threshold_c == def.thermal_hot_pixel_threshold_c
+            (a.thermal_hot_pixel_threshold_c - b.thermal_hot_pixel_threshold_c).abs()
+                < f32::EPSILON
         }
-        "co2_baseline_ppm" => settings.co2_baseline_ppm == def.co2_baseline_ppm,
+        "co2_baseline_ppm" => (a.co2_baseline_ppm - b.co2_baseline_ppm).abs() < f32::EPSILON,
         "encounter_check_interval_secs" => {
-            settings.encounter_check_interval_secs == def.encounter_check_interval_secs
+            a.encounter_check_interval_secs == b.encounter_check_interval_secs
         }
         "encounter_silence_trigger_secs" => {
-            settings.encounter_silence_trigger_secs == def.encounter_silence_trigger_secs
+            a.encounter_silence_trigger_secs == b.encounter_silence_trigger_secs
         }
-        "soap_model" => settings.soap_model == def.soap_model,
-        "soap_model_fast" => settings.soap_model_fast == def.soap_model_fast,
-        "fast_model" => settings.fast_model == def.fast_model,
+        "soap_model" => a.soap_model == b.soap_model,
+        "soap_model_fast" => a.soap_model_fast == b.soap_model_fast,
+        "fast_model" => a.fast_model == b.fast_model,
         "encounter_detection_model" => {
-            settings.encounter_detection_model == def.encounter_detection_model
+            a.encounter_detection_model == b.encounter_detection_model
         }
-        _ => true,
+        _ => true, // Unknown field — conservative (treat as equal, no action)
     }
+}
+
+/// Returns true if `settings.<field>` currently equals the compiled default.
+///
+/// Thin wrapper over [`cat_b_field_eq`] with `Settings::default()` as the
+/// reference. Only handles the Cat B field names; unknowns return `true`.
+pub fn is_cat_b_field_default(settings: &Settings, field: &str) -> bool {
+    cat_b_field_eq(settings, &Settings::default(), field)
 }
 
 fn default_idle_encounter_timeout_secs() -> u32 {
@@ -2503,6 +2518,63 @@ mod tests {
                  If you added a new user-tunable field, add it to CAT_B_FIELD_NAMES.",
                 key
             );
+        }
+    }
+
+    #[test]
+    fn test_cat_b_field_eq_detects_all_changes() {
+        // Locks in that the single `cat_b_field_eq` match is exhaustive AND
+        // mutually exclusive: for every Cat B field, mutating only that field
+        // makes eq() return false for that field and true for every other.
+        // If someone adds a field to CAT_B_FIELD_NAMES but forgets the match
+        // arm, this test will fail (mutated field still reports equal).
+        fn mutate_field(settings: &mut Settings, field: &str) {
+            match field {
+                "sleep_start_hour" => settings.sleep_start_hour = 21,
+                "sleep_end_hour" => settings.sleep_end_hour = 7,
+                "thermal_hot_pixel_threshold_c" => {
+                    settings.thermal_hot_pixel_threshold_c = 29.5
+                }
+                "co2_baseline_ppm" => settings.co2_baseline_ppm = 450.0,
+                "encounter_check_interval_secs" => settings.encounter_check_interval_secs = 90,
+                "encounter_silence_trigger_secs" => {
+                    settings.encounter_silence_trigger_secs = 60
+                }
+                "soap_model" => settings.soap_model = "custom-soap".to_string(),
+                "soap_model_fast" => settings.soap_model_fast = "custom-soap-fast".to_string(),
+                "fast_model" => settings.fast_model = "custom-fast".to_string(),
+                "encounter_detection_model" => {
+                    settings.encounter_detection_model = "custom-detect".to_string()
+                }
+                other => panic!("unhandled Cat B field in test: {}", other),
+            }
+        }
+
+        for &field in CAT_B_FIELD_NAMES {
+            let default = Settings::default();
+            let mut mutated = default.clone();
+            mutate_field(&mut mutated, field);
+
+            assert!(
+                !cat_b_field_eq(&default, &mutated, field),
+                "cat_b_field_eq should detect the change to field {:?} — \
+                 likely missing or wrong match arm",
+                field
+            );
+
+            // Every OTHER Cat B field must still report equal (mutual exclusion).
+            for &other in CAT_B_FIELD_NAMES {
+                if other == field {
+                    continue;
+                }
+                assert!(
+                    cat_b_field_eq(&default, &mutated, other),
+                    "mutating {:?} should not affect eq() on {:?} — \
+                     two match arms may be reading the same field",
+                    field,
+                    other
+                );
+            }
         }
     }
 }
