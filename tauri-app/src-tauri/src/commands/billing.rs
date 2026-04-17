@@ -179,11 +179,20 @@ pub async fn extract_billing_codes(
         .unwrap_or("");
 
     let config = Config::load_or_default();
+    // Phase 3: resolve fast_model via precedence rule.
+    let sc_read = server_config.read().await;
+    let effective_fast_model = crate::server_config_resolve::resolve(
+        Some(&sc_read.defaults.fast_model),
+        &config.fast_model,
+        "fast_model",
+        &config.user_edited_fields,
+    );
+    drop(sc_read);
     let client = LLMClient::new(
         &config.llm_router_url,
         &config.llm_api_key,
         &config.llm_client_id,
-        &config.fast_model,
+        &effective_fast_model,
     ).map_err(|e| CommandError::Network(e))?;
 
     let duration_ms = details.metadata.duration_ms.unwrap_or(0);
@@ -206,7 +215,7 @@ pub async fn extract_billing_codes(
     let sc = server_config.read().await;
     let record = crate::encounter_pipeline::extract_and_archive_billing(
         &client,
-        &config.fast_model,
+        &effective_fast_model,
         &soap,
         transcript,
         &context_hints,

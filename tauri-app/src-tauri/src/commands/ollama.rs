@@ -2,10 +2,13 @@
 
 use super::{CommandError, SharedScreenCaptureState};
 use crate::activity_log;
+use crate::commands::physicians::SharedServerConfig;
 use crate::config::Config;
 use crate::debug_storage;
 use crate::ollama::{AudioEvent, LLMClient, LLMStatus, MultiPatientSoapResult, SoapNote, SoapOptions, SpeakerContext, SpeakerInfo};
 use crate::screenshot;
+use crate::server_config_resolve::resolve;
+use crate::server_config::ServerConfig;
 use crate::vision_experiment::{
     self, ExperimentParams, ExperimentResult, PromptStrategy,
     run_experiment, save_result, load_results, generate_summary_report,
@@ -15,20 +18,62 @@ use serde::{Deserialize, Serialize};
 use tracing::{info, warn, error};
 
 
-/// Select the SOAP model for generation.
-/// Uses soap_model for all transcript lengths.
-fn select_soap_model(config: &Config, word_count: usize) -> &str {
-    info!(
-        word_count = word_count,
-        model = %config.soap_model,
-        "Using SOAP model"
-    );
-    &config.soap_model
+/// Resolve the four Cat B model aliases via the Phase 3 precedence rule:
+///   compiled default < server < local(only if user-edited).
+///
+/// Returns an `EffectiveModels` bundle so the caller picks which alias it
+/// needs without re-reading the lock. Exposed for testability — see the unit
+/// test below.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct EffectiveModels {
+    pub soap_model: String,
+    pub soap_model_fast: String,
+    pub fast_model: String,
+    pub encounter_detection_model: String,
+}
+
+pub(crate) fn resolve_effective_models(
+    config: &Config,
+    server: &ServerConfig,
+) -> EffectiveModels {
+    let edited = &config.user_edited_fields;
+    EffectiveModels {
+        soap_model: resolve(
+            Some(&server.defaults.soap_model),
+            &config.soap_model,
+            "soap_model",
+            edited,
+        ),
+        soap_model_fast: resolve(
+            Some(&server.defaults.soap_model_fast),
+            &config.soap_model_fast,
+            "soap_model_fast",
+            edited,
+        ),
+        fast_model: resolve(
+            Some(&server.defaults.fast_model),
+            &config.fast_model,
+            "fast_model",
+            edited,
+        ),
+        encounter_detection_model: resolve(
+            Some(&server.defaults.encounter_detection_model),
+            &config.encounter_detection_model,
+            "encounter_detection_model",
+            edited,
+        ),
+    }
 }
 
 /// Check LLM router status and list available models
 ///
 /// Optional URL/key overrides allow testing pending settings without persisting them.
+///
+/// Note: intentionally NOT wired to SharedServerConfig — this is a connectivity
+/// probe and the `fast_model` passed to `LLMClient::new` is irrelevant (the
+/// client only calls `check_status()`). Adding `State<SharedServerConfig>`
+/// would force the return type to `Result<LLMStatus, _>`, disrupting the
+/// frontend; skipped in Phase 3 Task 6.
 #[tauri::command]
 pub async fn check_ollama_status(
     url: Option<String>,
@@ -54,9 +99,14 @@ pub async fn check_ollama_status(
 
 /// List available models from LLM router
 #[tauri::command]
-pub async fn list_ollama_models() -> Result<Vec<String>, CommandError> {
+pub async fn list_ollama_models(
+    server_config: tauri::State<'_, SharedServerConfig>,
+) -> Result<Vec<String>, CommandError> {
     let config = Config::load_or_default();
-    let client = LLMClient::new(&config.llm_router_url, &config.llm_api_key, &config.llm_client_id, &config.fast_model)
+    let sc = server_config.read().await;
+    let models = resolve_effective_models(&config, &sc);
+    drop(sc);
+    let client = LLMClient::new(&config.llm_router_url, &config.llm_api_key, &config.llm_client_id, &models.fast_model)
         .map_err(|e| CommandError::Network(e))?;
     client.list_models().await.map_err(|e| CommandError::Network(e))
 }
@@ -66,12 +116,17 @@ pub async fn list_ollama_models() -> Result<Vec<String>, CommandError> {
 /// This is especially useful for auto-session detection where speed is critical.
 /// Should be called on app startup or when LLM settings change.
 #[tauri::command]
-pub async fn prewarm_ollama_model() -> Result<(), CommandError> {
+pub async fn prewarm_ollama_model(
+    server_config: tauri::State<'_, SharedServerConfig>,
+) -> Result<(), CommandError> {
     let config = Config::load_or_default();
-    let client = LLMClient::new(&config.llm_router_url, &config.llm_api_key, &config.llm_client_id, &config.fast_model)
+    let sc = server_config.read().await;
+    let models = resolve_effective_models(&config, &sc);
+    drop(sc);
+    let client = LLMClient::new(&config.llm_router_url, &config.llm_api_key, &config.llm_client_id, &models.fast_model)
         .map_err(|e| CommandError::Network(e))?;
     // Pre-warm the fast model (used for greeting detection)
-    client.prewarm_model(&config.fast_model).await.map_err(|e| CommandError::Network(e))
+    client.prewarm_model(&models.fast_model).await.map_err(|e| CommandError::Network(e))
 }
 
 /// Generate a SOAP note from the given transcript
@@ -93,6 +148,7 @@ pub async fn generate_soap_note(
     speaker_context: Option<Vec<SpeakerInfo>>,
     patient_label: Option<String>,
     model_override: Option<String>,
+    server_config: tauri::State<'_, SharedServerConfig>,
 ) -> Result<SoapNote, CommandError> {
     info!(
         "Generating SOAP note for transcript of {} chars, {} audio events, {} speakers, patient_label: {:?}, model_override: {:?}, options: {:?}",
@@ -111,7 +167,12 @@ pub async fn generate_soap_note(
     }
 
     let config = Config::load_or_default();
-    let client = LLMClient::new(&config.llm_router_url, &config.llm_api_key, &config.llm_client_id, &config.fast_model)
+    // Phase 3: resolve the four model aliases via precedence rule.
+    let sc = server_config.read().await;
+    let models = resolve_effective_models(&config, &sc);
+    drop(sc);
+
+    let client = LLMClient::new(&config.llm_router_url, &config.llm_api_key, &config.llm_client_id, &models.fast_model)
         .map_err(|e| CommandError::Network(e))?;
 
     // Count words for logging and model selection
@@ -124,9 +185,8 @@ pub async fn generate_soap_note(
         ctx
     });
 
-    // Use model override if provided, otherwise select default
-    let default_model = select_soap_model(&config, word_count).to_string();
-    let selected_model = model_override.as_deref().unwrap_or(&default_model);
+    // Use model override if provided, otherwise select default (effective soap_model).
+    let selected_model = model_override.as_deref().unwrap_or(&models.soap_model);
     let start_time = std::time::Instant::now();
 
     // When a patient_label is provided, scope the SOAP note to that patient only
@@ -256,7 +316,14 @@ pub async fn generate_soap_note_auto_detect(
     };
 
     let config = Config::load_or_default();
-    let client = LLMClient::new(&config.llm_router_url, &config.llm_api_key, &config.llm_client_id, &config.fast_model)
+    // Phase 3: resolve all four model aliases + threshold in one lock read.
+    let (models, multi_patient_detect_word_threshold) = {
+        let sc = server_config.read().await;
+        let m = resolve_effective_models(&config, &sc);
+        let thr = sc.thresholds.multi_patient_detect_word_threshold;
+        (m, thr)
+    };
+    let client = LLMClient::new(&config.llm_router_url, &config.llm_api_key, &config.llm_client_id, &models.fast_model)
         .map_err(|e| CommandError::Network(e))?;
 
     // Count words for logging and model selection
@@ -269,19 +336,14 @@ pub async fn generate_soap_note_auto_detect(
         ctx
     });
 
-    // Use model override if provided, otherwise select default
-    let default_model = select_soap_model(&config, word_count).to_string();
-    let selected_model = model_override.as_deref().unwrap_or(&default_model);
+    // Use model override if provided, otherwise the effective soap_model.
+    let selected_model = model_override.as_deref().unwrap_or(&models.soap_model);
 
     // Run multi-patient detection if transcript is long enough
     // T5: threshold sourced from server-configurable DetectionThresholds.
-    let multi_patient_detect_word_threshold = {
-        let sc = server_config.read().await;
-        sc.thresholds.multi_patient_detect_word_threshold
-    };
     let multi_patient_detection = if word_count >= multi_patient_detect_word_threshold {
         info!("Running multi-patient detection for session-mode SOAP ({} words)", word_count);
-        client.run_multi_patient_detection(&config.fast_model, &transcript).await.detection
+        client.run_multi_patient_detection(&models.fast_model, &transcript).await.detection
     } else {
         None
     };
@@ -369,6 +431,7 @@ pub async fn generate_soap_note_auto_detect(
 #[tauri::command]
 pub async fn generate_patient_handout(
     transcript: String,
+    server_config: tauri::State<'_, SharedServerConfig>,
 ) -> Result<String, CommandError> {
     info!(
         "Generating patient handout for transcript of {} chars",
@@ -382,11 +445,15 @@ pub async fn generate_patient_handout(
     }
 
     let config = Config::load_or_default();
+    // Phase 3: resolve soap_model via precedence rule.
+    let sc = server_config.read().await;
+    let models = resolve_effective_models(&config, &sc);
+    drop(sc);
     let client = LLMClient::new(
         &config.llm_router_url,
         &config.llm_api_key,
         &config.llm_client_id,
-        &config.soap_model,
+        &models.soap_model,
     )
     .map_err(|e| CommandError::Network(e))?;
 
@@ -396,7 +463,7 @@ pub async fn generate_patient_handout(
     let result = tokio::time::timeout(
         std::time::Duration::from_secs(90),
         client.generate(
-            &config.soap_model,
+            &models.soap_model,
             &system_prompt,
             &transcript,
             "patient_handout",
@@ -454,7 +521,10 @@ pub struct ImageConcept {
 /// Generate a predictive hint and image concepts based on the current transcript
 /// Returns both a clinical hint and MIIS image search concepts
 #[tauri::command]
-pub async fn generate_predictive_hint(transcript: String) -> Result<PredictiveHintResponse, CommandError> {
+pub async fn generate_predictive_hint(
+    transcript: String,
+    server_config: tauri::State<'_, SharedServerConfig>,
+) -> Result<PredictiveHintResponse, CommandError> {
     let empty_response = PredictiveHintResponse {
         hint: String::new(),
         concepts: Vec::new(),
@@ -467,11 +537,15 @@ pub async fn generate_predictive_hint(transcript: String) -> Result<PredictiveHi
     }
 
     let config = Config::load_or_default();
+    // Phase 3: resolve soap_model via precedence rule.
+    let sc = server_config.read().await;
+    let models = resolve_effective_models(&config, &sc);
+    drop(sc);
     let client = LLMClient::new(
         &config.llm_router_url,
         &config.llm_api_key,
         &config.llm_client_id,
-        &config.soap_model,
+        &models.soap_model,
     )
     .map_err(|e| CommandError::Network(e))?;
 
@@ -527,7 +601,7 @@ RULES for differential_diagnoses:
     let user_content = format!("Current transcript:\n\n{}", truncated);
 
     match client
-        .generate(&config.soap_model, system_prompt, &user_content, "predictive_hint")
+        .generate(&models.soap_model, system_prompt, &user_content, "predictive_hint")
         .await
     {
         Ok(response) => {
@@ -585,6 +659,7 @@ pub async fn generate_vision_soap_note(
     session_id: Option<String>,
     image_path: Option<String>,
     screenshot_state: tauri::State<'_, SharedScreenCaptureState>,
+    server_config: tauri::State<'_, SharedServerConfig>,
 ) -> Result<SoapNote, CommandError> {
     info!(
         "Generating vision SOAP note for transcript of {} chars, image_path: {:?}",
@@ -634,11 +709,16 @@ pub async fn generate_vision_soap_note(
 
     // Create LLM client and generate
     let config = Config::load_or_default();
+    // Phase 3: fast_model resolved via precedence (used only to construct the
+    // client — the actual inference model below is hard-coded "vision-model").
+    let sc = server_config.read().await;
+    let models = resolve_effective_models(&config, &sc);
+    drop(sc);
     let client = LLMClient::new(
         &config.llm_router_url,
         &config.llm_api_key,
         &config.llm_client_id,
-        &config.fast_model,
+        &models.fast_model,
     )
     .map_err(|e| CommandError::Network(e))?;
 
@@ -821,6 +901,7 @@ pub struct ExperimentResultSummary {
 #[tauri::command]
 pub async fn run_vision_experiments(
     request: VisionExperimentRequest,
+    server_config: tauri::State<'_, SharedServerConfig>,
 ) -> Result<VisionExperimentSummary, CommandError> {
     let strategy_count = if request.strategies.is_empty() {
         "all".to_string()
@@ -848,12 +929,17 @@ pub async fn run_vision_experiments(
     let image_base64 = base64::engine::general_purpose::STANDARD.encode(&image_data);
 
     // Create LLM client
+    // Phase 3: fast_model resolved via precedence (client is constructed but
+    // inference uses hard-coded "vision-model").
     let config = Config::load_or_default();
+    let sc = server_config.read().await;
+    let models = resolve_effective_models(&config, &sc);
+    drop(sc);
     let client = LLMClient::new(
         &config.llm_router_url,
         &config.llm_api_key,
         &config.llm_client_id,
-        &config.fast_model,
+        &models.fast_model,
     )
     .map_err(|e| CommandError::Network(e))?;
 
@@ -1004,6 +1090,7 @@ pub async fn merge_patient_soaps(
     new_label: String,
     transcript: String,
     all_patients: Vec<serde_json::Value>, // [{index, label, content}]
+    server_config: tauri::State<'_, SharedServerConfig>,
 ) -> Result<String, CommandError> {
     if merged_indices.len() < 2 {
         return Err(CommandError::Validation(
@@ -1031,13 +1118,18 @@ pub async fn merge_patient_soaps(
 
     // Get LLM client and model from config — follows the same pattern as generate_soap_note
     let config = Config::load_or_default();
+    // Phase 3: resolve all model aliases via precedence rule.
+    let sc = server_config.read().await;
+    let models = resolve_effective_models(&config, &sc);
+    drop(sc);
     let word_count = transcript.split_whitespace().count();
-    let soap_model = select_soap_model(&config, word_count);
+    let soap_model = &models.soap_model;
+    let _ = word_count; // retained for parity with original log context
     let client = LLMClient::new(
         &config.llm_router_url,
         &config.llm_api_key,
         &config.llm_client_id,
-        &config.fast_model,
+        &models.fast_model,
     )
     .map_err(|e| CommandError::Network(e))?;
 
@@ -1110,35 +1202,75 @@ pub async fn generate_clinical_feedback(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::server_config::{compiled_defaults, OperationalDefaults, ServerConfig};
+
+    fn server_with_defaults(defaults: OperationalDefaults) -> ServerConfig {
+        ServerConfig {
+            defaults,
+            ..compiled_defaults()
+        }
+    }
 
     #[test]
-    fn test_select_soap_model_returns_config_soap_model() {
+    fn test_resolve_effective_models_picks_server_when_no_user_edits() {
+        // No fields in user_edited_fields → server values win for all four aliases.
         let config = Config::default();
-        let result = select_soap_model(&config, 100);
-        assert_eq!(result, &config.soap_model);
+        let server = server_with_defaults(OperationalDefaults {
+            soap_model: "srv-soap".into(),
+            soap_model_fast: "srv-soap-fast".into(),
+            fast_model: "srv-fast".into(),
+            encounter_detection_model: "srv-detect".into(),
+            ..OperationalDefaults::default()
+        });
+
+        let models = resolve_effective_models(&config, &server);
+
+        assert_eq!(models.soap_model, "srv-soap");
+        assert_eq!(models.soap_model_fast, "srv-soap-fast");
+        assert_eq!(models.fast_model, "srv-fast");
+        assert_eq!(models.encounter_detection_model, "srv-detect");
     }
 
     #[test]
-    fn test_select_soap_model_ignores_word_count() {
+    fn test_resolve_effective_models_local_wins_when_user_edited() {
+        // Simulates the clinic scenario that motivated Phase 3:
+        //   - Server pushes "clinic-fast" as the fast_model default.
+        //   - Physician has locally tuned `fast_model` to "custom-dev".
+        //   - Physician has NOT tuned the SOAP model.
+        // Expected: fast_model stays on local "custom-dev"; soap_model takes
+        // the server push "clinic-soap".
+        let mut config = Config::default();
+        config.fast_model = "custom-dev".into();
+        config.soap_model = "local-untouched".into();
+        config.user_edited_fields = vec!["fast_model".into()];
+        let server = server_with_defaults(OperationalDefaults {
+            soap_model: "clinic-soap".into(),
+            fast_model: "clinic-fast".into(),
+            ..OperationalDefaults::default()
+        });
+
+        let models = resolve_effective_models(&config, &server);
+
+        assert_eq!(models.fast_model, "custom-dev", "user-edited local value must win");
+        assert_eq!(models.soap_model, "clinic-soap", "non-edited field takes server value");
+    }
+
+    #[test]
+    fn test_resolve_effective_models_compiled_defaults_roundtrip() {
+        // Sanity: default Config + compiled-default server returns all four
+        // compiled-default aliases. Guards against a drift between Settings
+        // compiled defaults and OperationalDefaults compiled defaults.
         let config = Config::default();
-        let small = select_soap_model(&config, 50);
-        let large = select_soap_model(&config, 10_000);
-        assert_eq!(small, large);
-    }
+        let server = compiled_defaults();
 
-    #[test]
-    fn test_select_soap_model_custom_value() {
-        let mut config = Config::default();
-        config.soap_model = "my-custom-model".to_string();
-        assert_eq!(select_soap_model(&config, 500), "my-custom-model");
-    }
+        let models = resolve_effective_models(&config, &server);
 
-    #[test]
-    fn test_select_soap_model_ignores_soap_model_fast() {
-        let mut config = Config::default();
-        config.soap_model = "primary-model".to_string();
-        config.soap_model_fast = "fast-model".to_string();
-        // Should return soap_model, not soap_model_fast
-        assert_eq!(select_soap_model(&config, 200), "primary-model");
+        assert_eq!(models.soap_model, server.defaults.soap_model);
+        assert_eq!(models.soap_model_fast, server.defaults.soap_model_fast);
+        assert_eq!(models.fast_model, server.defaults.fast_model);
+        assert_eq!(
+            models.encounter_detection_model,
+            server.defaults.encounter_detection_model
+        );
     }
 }

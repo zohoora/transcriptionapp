@@ -465,6 +465,8 @@ async fn process_job(
         let word_count = encounter_transcript.split_whitespace().count();
 
         // Generate SOAP
+        // TODO(phase3): wire to server config when CLI gets SharedServerConfig access.
+        // Currently reads from local Config directly; see Task 6 scope note.
         let soap = generate_soap(
             llm_client,
             encounter_transcript,

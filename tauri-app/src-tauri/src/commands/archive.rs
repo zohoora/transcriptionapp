@@ -1,6 +1,7 @@
 //! Archive command handlers for local session history
 
 use super::CommandError;
+use crate::commands::physicians::SharedServerConfig;
 use crate::commands::{SharedActivePhysician, SharedProfileClient};
 use crate::config::Config;
 use crate::local_archive::{
@@ -8,6 +9,7 @@ use crate::local_archive::{
 };
 use crate::ollama::LLMClient;
 use crate::profile_client::ProfileClient;
+use crate::server_config_resolve::resolve;
 use serde::Serialize;
 use std::future::Future;
 use std::path::PathBuf;
@@ -609,6 +611,7 @@ pub fn build_split_user_prompt(lines: &[String]) -> String {
 pub async fn suggest_split_points(
     session_id: String,
     date: String,
+    server_config: State<'_, SharedServerConfig>,
 ) -> Result<Vec<SuggestedSplit>, CommandError> {
     info!("Suggesting split points for session: {} on {}", session_id, date);
 
@@ -618,18 +621,27 @@ pub async fn suggest_split_points(
     }
 
     let config = Config::load_or_default();
+    // Phase 3: resolve fast_model via precedence rule.
+    let sc = server_config.read().await;
+    let effective_fast_model = resolve(
+        Some(&sc.defaults.fast_model),
+        &config.fast_model,
+        "fast_model",
+        &config.user_edited_fields,
+    );
+    drop(sc);
     let client = LLMClient::new(
         &config.llm_router_url,
         &config.llm_api_key,
         &config.llm_client_id,
-        &config.fast_model,
+        &effective_fast_model,
     )?;
 
     let user_prompt = build_split_user_prompt(&lines);
 
     let response = client
         .generate(
-            &config.fast_model,
+            &effective_fast_model,
             SPLIT_DETECTION_PROMPT,
             &user_prompt,
             "split_detection",

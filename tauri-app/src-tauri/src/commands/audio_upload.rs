@@ -13,9 +13,11 @@ use tracing::{info, warn};
 
 use super::{CommandError, SharedActivePhysician, SharedProfileClient};
 use crate::audio_processing;
+use crate::commands::physicians::SharedServerConfig;
 use crate::config::Config;
 use crate::llm_client::{LLMClient, SoapFormat, SoapOptions};
 use crate::local_archive::{self, ArchiveMetadata};
+use crate::server_config_resolve::resolve;
 use crate::whisper_server::WhisperServerClient;
 
 /// Result of processing an uploaded audio file.
@@ -89,6 +91,7 @@ pub async fn process_audio_upload(
     recording_date: String,
     active_physician: State<'_, SharedActivePhysician>,
     profile_client: State<'_, SharedProfileClient>,
+    server_config: State<'_, SharedServerConfig>,
 ) -> Result<AudioUploadResult, CommandError> {
     // ── Validate inputs ──────────────────────────────────────────────────
     let input_path = PathBuf::from(&file_path)
@@ -212,11 +215,27 @@ pub async fn process_audio_upload(
     info!("Detected {encounter_count} encounter(s)");
 
     // ── Generate SOAP + archive per encounter ────────────────────────────
+    // Phase 3: model aliases resolved via precedence rule. Snapshot once per
+    // upload call — changes take effect on next upload.
+    let sc = server_config.read().await;
+    let effective_fast_model = resolve(
+        Some(&sc.defaults.fast_model),
+        &config.fast_model,
+        "fast_model",
+        &config.user_edited_fields,
+    );
+    let effective_soap_model = resolve(
+        Some(&sc.defaults.soap_model),
+        &config.soap_model,
+        "soap_model",
+        &config.user_edited_fields,
+    );
+    drop(sc);
     let llm_client = LLMClient::new(
         &config.llm_router_url,
         &config.llm_api_key,
         &config.llm_client_id,
-        &config.fast_model,
+        &effective_fast_model,
     )
     .map_err(|e| CommandError::Network(e))?;
 
@@ -264,7 +283,7 @@ pub async fn process_audio_upload(
         if word_count >= 50 {
             match llm_client
                 .generate_soap_note(
-                    &config.soap_model,
+                    &effective_soap_model,
                     encounter_transcript,
                     None,
                     Some(&soap_options),
