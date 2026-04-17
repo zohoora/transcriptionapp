@@ -519,7 +519,6 @@ mod tests {
     /// exist, the function should not panic and should return a valid time.
     #[test]
     fn test_compute_resume_at_handles_dst_spring_forward_gap() {
-        use chrono::TimeZone;
         // Verify the LocalResult::None path is handled — pick hour 2 which is the
         // typical DST gap. compute_resume_at internally falls back via shifting +1h.
         // We can't easily inject a fake "now" here, so we just verify the code path

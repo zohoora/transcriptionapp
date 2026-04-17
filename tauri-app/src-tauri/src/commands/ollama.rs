@@ -1122,9 +1122,7 @@ pub async fn merge_patient_soaps(
     let sc = server_config.read().await;
     let models = resolve_effective_models(&config, &sc);
     drop(sc);
-    let word_count = transcript.split_whitespace().count();
     let soap_model = &models.soap_model;
-    let _ = word_count; // retained for parity with original log context
     let client = LLMClient::new(
         &config.llm_router_url,
         &config.llm_api_key,
