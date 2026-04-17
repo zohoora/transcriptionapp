@@ -165,7 +165,12 @@ pub async fn run_screenshot_task(cfg: ScreenshotTaskConfig) {
         ];
 
         let vision_start = Instant::now();
-        let vision_future = client.generate_vision(
+        // v0.10.38: switch to generate_vision_timed to get per-call CallMetrics
+        // (scheduling_ms / network_ms / concurrent_at_start / retry_count). The
+        // metrics are merged into the vision_extraction pipeline_log context via
+        // `m.attach_to(&mut ctx)` — same facility the 4 text-LLM paths got in
+        // v0.10.36.
+        let vision_future = client.generate_vision_timed(
             "vision-model",
             &system_prompt,
             content_parts,
@@ -177,7 +182,7 @@ pub async fn run_screenshot_task(cfg: ScreenshotTaskConfig) {
         );
 
         match tokio::time::timeout(tokio::time::Duration::from_secs(30), vision_future).await {
-            Ok(Ok(response)) => {
+            Ok((Ok(response), metrics)) => {
                 let vision_latency = vision_start.elapsed().as_millis() as u64;
                 let (parsed_name, parsed_dob) = parse_vision_response(&response);
 
@@ -198,6 +203,13 @@ pub async fn run_screenshot_task(cfg: ScreenshotTaskConfig) {
                     );
 
                     if let Ok(mut logger) = cfg.pipeline_logger.lock() {
+                        let mut ctx = serde_json::json!({
+                            "parsed_name": name,
+                            "parsed_dob": parsed_dob,
+                            "screenshot_blank": false,
+                            "is_stale": is_stale,
+                        });
+                        metrics.attach_to(&mut ctx);
                         logger.log_vision(
                             "vision-model",
                             &system_prompt_log,
@@ -206,12 +218,7 @@ pub async fn run_screenshot_task(cfg: ScreenshotTaskConfig) {
                             vision_latency,
                             true,
                             None,
-                            serde_json::json!({
-                                "parsed_name": name,
-                                "parsed_dob": parsed_dob,
-                                "screenshot_blank": false,
-                                "is_stale": is_stale,
-                            }),
+                            ctx,
                         );
                     }
                     if let Ok(mut bundle) = cfg.replay_bundle.lock() {
@@ -256,6 +263,12 @@ pub async fn run_screenshot_task(cfg: ScreenshotTaskConfig) {
                     }
                 } else {
                     if let Ok(mut logger) = cfg.pipeline_logger.lock() {
+                        let mut ctx = serde_json::json!({
+                            "parsed_name": serde_json::Value::Null,
+                            "screenshot_blank": false,
+                            "not_found": true,
+                        });
+                        metrics.attach_to(&mut ctx);
                         logger.log_vision(
                             "vision-model",
                             &system_prompt_log,
@@ -264,11 +277,7 @@ pub async fn run_screenshot_task(cfg: ScreenshotTaskConfig) {
                             vision_latency,
                             true,
                             None,
-                            serde_json::json!({
-                                "parsed_name": serde_json::Value::Null,
-                                "screenshot_blank": false,
-                                "not_found": true,
-                            }),
+                            ctx,
                         );
                     }
                     if let Ok(mut bundle) = cfg.replay_bundle.lock() {
@@ -277,9 +286,11 @@ pub async fn run_screenshot_task(cfg: ScreenshotTaskConfig) {
                     debug!("Vision did not find a patient name on screen");
                 }
             }
-            Ok(Err(e)) => {
+            Ok((Err(e), metrics)) => {
                 let vision_latency = vision_start.elapsed().as_millis() as u64;
                 if let Ok(mut logger) = cfg.pipeline_logger.lock() {
+                    let mut ctx = serde_json::json!({"llm_error": true});
+                    metrics.attach_to(&mut ctx);
                     logger.log_vision(
                         "vision-model",
                         &system_prompt_log,
@@ -288,7 +299,7 @@ pub async fn run_screenshot_task(cfg: ScreenshotTaskConfig) {
                         vision_latency,
                         false,
                         Some(&e.to_string()),
-                        serde_json::json!({"llm_error": true}),
+                        ctx,
                     );
                 }
                 if let Ok(mut bundle) = cfg.replay_bundle.lock() {

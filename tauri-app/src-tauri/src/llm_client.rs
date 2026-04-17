@@ -1372,6 +1372,9 @@ Respond ONLY with JSON: {{"is_greeting": true/false, "confidence": 0.0-1.0, "det
     /// Generate text using the LLM with a multimodal user message (text + images).
     /// The system prompt is sent as a plain text message, but the user message
     /// uses a content array with ContentPart items.
+    ///
+    /// Thin wrapper over [`generate_vision_timed`] for callers that don't need
+    /// per-call metrics.
     pub async fn generate_vision(
         &self,
         model: &str,
@@ -1383,8 +1386,43 @@ Respond ONLY with JSON: {{"is_greeting": true/false, "confidence": 0.0-1.0, "det
         repetition_penalty: Option<f32>,
         repetition_context_size: Option<u32>,
     ) -> Result<String, String> {
+        self.generate_vision_timed(
+            model, system_prompt, user_content, task,
+            temperature, max_tokens, repetition_penalty, repetition_context_size,
+        ).await.0
+    }
+
+    /// Multimodal (text + image) version of [`generate_timed`]. Returns the
+    /// usual `Result<String>` alongside a `CallMetrics` so the screenshot task
+    /// can attach scheduling/network/concurrency detail to its pipeline_log
+    /// events — same facility the text paths (encounter_detection, billing,
+    /// merge, clinical_content_check) got in v0.10.36.
+    pub async fn generate_vision_timed(
+        &self,
+        model: &str,
+        system_prompt: &str,
+        user_content: Vec<ContentPart>,
+        task: &str,
+        temperature: Option<f32>,
+        max_tokens: Option<u32>,
+        repetition_penalty: Option<f32>,
+        repetition_context_size: Option<u32>,
+    ) -> (Result<String, String>, CallMetrics) {
+        let entry_ts = Instant::now();
+        let concurrent_at_start = self.in_flight.fetch_add(1, Ordering::Relaxed);
+        let _guard = InFlightGuard { counter: &self.in_flight };
+
         if model.trim().is_empty() {
-            return Err("Model name cannot be empty".to_string());
+            return (
+                Err("Model name cannot be empty".to_string()),
+                CallMetrics {
+                    wall_ms: entry_ts.elapsed().as_millis() as u64,
+                    scheduling_ms: entry_ts.elapsed().as_millis() as u64,
+                    network_ms: 0,
+                    concurrent_at_start,
+                    retry_count: 0,
+                },
+            );
         }
 
         let url = format!("{}/v1/chat/completions", self.base_url);
@@ -1415,9 +1453,13 @@ Respond ONLY with JSON: {{"is_greeting": true/false, "confidence": 0.0-1.0, "det
         };
 
         let mut last_error = String::new();
+        let mut network_ms_total: u64 = 0;
+        let mut retry_count: u32 = 0;
+        let mut scheduling_ms: Option<u64> = None;
 
         for attempt in 0..DEFAULT_MAX_RETRIES {
             if attempt > 0 {
+                retry_count = attempt;
                 let backoff = calculate_backoff(attempt - 1);
                 warn!(
                     "Vision generate attempt {} failed, retrying in {:?}",
@@ -1426,21 +1468,40 @@ Respond ONLY with JSON: {{"is_greeting": true/false, "confidence": 0.0-1.0, "det
                 tokio::time::sleep(backoff).await;
             }
 
-            match self.client
+            let http_start = Instant::now();
+            if scheduling_ms.is_none() {
+                scheduling_ms = Some(entry_ts.elapsed().as_millis() as u64);
+            }
+
+            let result = self.client
                 .post(&url)
                 .headers(self.auth_headers(task))
                 .json(&request)
                 .send()
-                .await
-            {
+                .await;
+
+            match result {
                 Ok(response) => {
                     if response.status().is_success() {
-                        match response.json::<ChatCompletionResponse>().await {
+                        let body_result = response.json::<ChatCompletionResponse>().await;
+                        network_ms_total = network_ms_total.saturating_add(http_start.elapsed().as_millis() as u64);
+                        match body_result {
                             Ok(chat_response) => {
-                                if let Some(choice) = chat_response.choices.first() {
-                                    return Ok(choice.message.content.as_text().to_string());
-                                }
-                                return Err("No response choices returned".to_string());
+                                let res = if let Some(choice) = chat_response.choices.first() {
+                                    Ok(choice.message.content.as_text().to_string())
+                                } else {
+                                    Err("No response choices returned".to_string())
+                                };
+                                return (
+                                    res,
+                                    CallMetrics {
+                                        wall_ms: entry_ts.elapsed().as_millis() as u64,
+                                        scheduling_ms: scheduling_ms.unwrap_or(0),
+                                        network_ms: network_ms_total,
+                                        concurrent_at_start,
+                                        retry_count,
+                                    },
+                                );
                             }
                             Err(e) => {
                                 last_error = format!("Failed to parse LLM response: {}", e);
@@ -1450,22 +1511,43 @@ Respond ONLY with JSON: {{"is_greeting": true/false, "confidence": 0.0-1.0, "det
                     } else if is_retryable_status(response.status()) {
                         let status = response.status();
                         let body = response.text().await.unwrap_or_default();
+                        network_ms_total = network_ms_total.saturating_add(http_start.elapsed().as_millis() as u64);
                         last_error = format!("LLM router returned error: {} - {}", status, truncate_error_body(&body, 200));
                         continue;
                     } else {
                         let status = response.status();
                         let body = response.text().await.unwrap_or_default();
+                        network_ms_total = network_ms_total.saturating_add(http_start.elapsed().as_millis() as u64);
                         let truncated = truncate_error_body(&body, 200);
                         error!("Vision generate failed: {} - {}", status, truncated);
-                        return Err(format!("LLM router returned error: {} - {}", status, truncated));
+                        return (
+                            Err(format!("LLM router returned error: {} - {}", status, truncated)),
+                            CallMetrics {
+                                wall_ms: entry_ts.elapsed().as_millis() as u64,
+                                scheduling_ms: scheduling_ms.unwrap_or(0),
+                                network_ms: network_ms_total,
+                                concurrent_at_start,
+                                retry_count,
+                            },
+                        );
                     }
                 }
                 Err(e) => {
+                    network_ms_total = network_ms_total.saturating_add(http_start.elapsed().as_millis() as u64);
                     if is_retryable_error(&e) {
                         last_error = format!("Failed to connect to LLM router: {}", e);
                         continue;
                     } else {
-                        return Err(format!("Failed to connect to LLM router: {}", e));
+                        return (
+                            Err(format!("Failed to connect to LLM router: {}", e)),
+                            CallMetrics {
+                                wall_ms: entry_ts.elapsed().as_millis() as u64,
+                                scheduling_ms: scheduling_ms.unwrap_or(0),
+                                network_ms: network_ms_total,
+                                concurrent_at_start,
+                                retry_count,
+                            },
+                        );
                     }
                 }
             }
@@ -1475,7 +1557,16 @@ Respond ONLY with JSON: {{"is_greeting": true/false, "confidence": 0.0-1.0, "det
             "Vision generate failed after {} attempts: {}",
             DEFAULT_MAX_RETRIES, last_error
         );
-        Err(last_error)
+        (
+            Err(last_error),
+            CallMetrics {
+                wall_ms: entry_ts.elapsed().as_millis() as u64,
+                scheduling_ms: scheduling_ms.unwrap_or(entry_ts.elapsed().as_millis() as u64),
+                network_ms: network_ms_total,
+                concurrent_at_start,
+                retry_count,
+            },
+        )
     }
 
     /// Generate a SOAP note from a clinical transcript + screenshot composite.
