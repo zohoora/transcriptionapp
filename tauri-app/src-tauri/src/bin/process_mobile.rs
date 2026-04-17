@@ -465,8 +465,8 @@ async fn process_job(
         let word_count = encounter_transcript.split_whitespace().count();
 
         // Generate SOAP
-        // TODO(phase3): wire to server config when CLI gets SharedServerConfig access.
-        // Currently reads from local Config directly; see Task 6 scope note.
+        // TODO(phase3): wire to server config — see ADR-0023 "Future work".
+        // CLI binary lacks Tauri managed state; needs non-Tauri access pattern for SharedServerConfig.
         let soap = generate_soap(
             llm_client,
             encounter_transcript,

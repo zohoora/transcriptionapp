@@ -306,3 +306,25 @@ A second round of fixes addressed 16 additional findings across backend and fron
 - **Finding #16** (lint): **FIXED** — `no-useless-escape` errors in ClinicalChat.tsx fixed; `no-console` rule turned off (desktop app — console is primary debug output); `exhaustive-deps` false positives suppressed with explanations; `_isPendingConfirmation` unused var removed. 0 errors, 0 warnings
 - **Finding #17** (test stability): **Resolved** — Rust tests 764 passed / 0 failed (31 ignored); frontend 450 passed / 0 skipped
 - **Finding #18** (App.tsx size): Unchanged at ~921 lines (was ~840 at initial review)
+
+---
+
+## Phase 3 Server-Configurable Data — Followups (2026-04-17)
+
+Final cross-cutting review of `feat/server-config-phase3` (ADR-0023 Phase 3, 17 commits). Branch approved to merge with three followups tracked here.
+
+### P3-1: Clear-then-save race in `user_edited_fields`
+- Evidence: `commands/settings.rs::merge_user_edited_fields` doc comment (lines ~96-111) documents the race. After `clear_user_edited_field("X")` runs, if the frontend issues `set_settings` from a stale pre-clear snapshot and X's value differs from current on-disk, the diff-on-save logic re-adds X to `user_edited_fields`.
+- Current mitigation: `App.tsx::onClearUserEditedField` calls `reloadSettings()` immediately, which narrows the window to a single async RTT.
+- Impact: Low. Failure mode is benign (the cleared field is re-added to tracking, which just means the user's tune is honored again until they click Reset again).
+- Proposed fix: add a monotonic version counter to `user_edited_fields` so `set_settings` can detect and reject payloads built from stale snapshots. Track as a Phase 4 item.
+
+### P3-2: Cache staleness edge case during Phase 3 server rollout
+- Evidence: `server_config.rs::fetch_from_server` short-circuits refetch when cached version >= server version. A pre-Phase-3 cache with `defaults: OperationalDefaults::default()` can match a fresh-install server version=1, causing the client to use compiled defaults even after the admin has pushed real defaults.
+- Deploy mitigation: After shipping the Phase 3 server, issue one dummy `PUT /config/defaults` to bump the shared version past any stale client cache.
+- Long-term: Already addressed — any real `PUT /config/defaults` post-deploy bumps version and triggers refetch on all clients within 60s.
+
+### P3-3: `process_mobile` CLI still reads model aliases from local config
+- Evidence: `bin/process_mobile.rs:468` TODO comment. CLI binary lacks Tauri managed state; needs a non-Tauri access pattern for `SharedServerConfig`.
+- Impact: Mobile processing CLI doesn't benefit from server-side model-alias rollouts. Workaround: edit `~/.transcriptionapp/config.json` on the MacBook where `process_mobile` runs.
+- Proposed fix: Add a direct `load_server_config()` call at CLI startup, re-load on polling loop iterations. Track as followup.
