@@ -1,9 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { invoke } from '@tauri-apps/api/core';
 import { SettingsDrawer } from './SettingsDrawer';
 import type { PendingSettings } from '../hooks/useSettings';
-import type { Device, AuthState } from '../types';
+import type { Device, AuthState, OperationalDefaults, Settings } from '../types';
+
+const mockInvoke = vi.mocked(invoke);
 
 const mockDevices: Device[] = [
   { id: 'device-1', name: 'Built-in Microphone', is_default: true },
@@ -42,6 +45,20 @@ const defaultPendingSettings: PendingSettings = {
   presence_csv_log_enabled: true,
   encounter_merge_enabled: false,
   soap_custom_instructions: '',
+};
+
+const mockOperationalDefaults: OperationalDefaults = {
+  version: 1,
+  sleep_start_hour: 22,
+  sleep_end_hour: 6,
+  thermal_hot_pixel_threshold_c: 28.0,
+  co2_baseline_ppm: 420.0,
+  encounter_check_interval_secs: 120,
+  encounter_silence_trigger_secs: 45,
+  soap_model: 'server-soap',
+  soap_model_fast: 'server-soap-fast',
+  fast_model: 'server-fast',
+  encounter_detection_model: 'server-detect',
 };
 
 const defaultAuthState: AuthState = {
@@ -166,6 +183,105 @@ describe('SettingsDrawer', () => {
       render(<SettingsDrawer {...defaultProps} />);
       await user.click(screen.getByRole('button', { name: 'Manage Speaker Profiles' }));
       expect(screen.getByText(/Back to Settings/)).toBeInTheDocument();
+    });
+  });
+
+  describe('operational defaults (Phase 3)', () => {
+    it('shows "Clinic default: …" line when local soap_model differs from server', () => {
+      const settings = { user_edited_fields: ['soap_model'] } as unknown as Settings;
+      render(
+        <SettingsDrawer
+          {...defaultProps}
+          pendingSettings={{ ...defaultPendingSettings, soap_model: 'local-tune' }}
+          operationalDefaults={mockOperationalDefaults}
+          settings={settings}
+          onClearUserEditedField={vi.fn()}
+        />,
+      );
+      // Hint text appears under the soap model input.
+      expect(screen.getByText(/Clinic default:\s*server-soap\b/)).toBeInTheDocument();
+    });
+
+    it('renders "Reset to clinic default" link when field is user-edited and differs', () => {
+      const settings = { user_edited_fields: ['soap_model'] } as unknown as Settings;
+      render(
+        <SettingsDrawer
+          {...defaultProps}
+          pendingSettings={{ ...defaultPendingSettings, soap_model: 'local-tune' }}
+          operationalDefaults={mockOperationalDefaults}
+          settings={settings}
+          onClearUserEditedField={vi.fn()}
+        />,
+      );
+      expect(screen.getByText('Reset to clinic default')).toBeInTheDocument();
+    });
+
+    it('hides the "Reset" link when field is not in user_edited_fields (value differs but not user-tuned)', () => {
+      const settings = { user_edited_fields: [] } as unknown as Settings;
+      render(
+        <SettingsDrawer
+          {...defaultProps}
+          pendingSettings={{ ...defaultPendingSettings, soap_model: 'local-tune' }}
+          operationalDefaults={mockOperationalDefaults}
+          settings={settings}
+          onClearUserEditedField={vi.fn()}
+        />,
+      );
+      // Hint still visible because pending != server, but no reset affordance.
+      expect(screen.getByText(/Clinic default:\s*server-soap\b/)).toBeInTheDocument();
+      expect(screen.queryByText('Reset to clinic default')).not.toBeInTheDocument();
+    });
+
+    it('hides the "Clinic default" hint when local value matches the server', () => {
+      const settings = { user_edited_fields: ['soap_model'] } as unknown as Settings;
+      render(
+        <SettingsDrawer
+          {...defaultProps}
+          pendingSettings={{
+            ...defaultPendingSettings,
+            // Align both Cat B fields with the server so neither hint renders.
+            soap_model: 'server-soap',
+            fast_model: 'server-fast',
+          }}
+          operationalDefaults={mockOperationalDefaults}
+          settings={settings}
+          onClearUserEditedField={vi.fn()}
+        />,
+      );
+      // No hint shown when values match — no drift to surface.
+      expect(screen.queryByText(/Clinic default:/)).not.toBeInTheDocument();
+    });
+
+    it('calls clear_user_edited_field and resets pending value when "Reset" clicked', async () => {
+      const user = userEvent.setup();
+      mockInvoke.mockReset();
+      mockInvoke.mockResolvedValue(undefined);
+      const onSettingsChange = vi.fn();
+      const onClearUserEditedField = vi.fn();
+      const settings = { user_edited_fields: ['soap_model'] } as unknown as Settings;
+
+      render(
+        <SettingsDrawer
+          {...defaultProps}
+          pendingSettings={{ ...defaultPendingSettings, soap_model: 'local-tune' }}
+          onSettingsChange={onSettingsChange}
+          operationalDefaults={mockOperationalDefaults}
+          settings={settings}
+          onClearUserEditedField={onClearUserEditedField}
+        />,
+      );
+
+      await user.click(screen.getByText('Reset to clinic default'));
+
+      expect(mockInvoke).toHaveBeenCalledWith('clear_user_edited_field', {
+        fieldName: 'soap_model',
+      });
+      // Pending should be rewritten to the server value so the UI reflects the
+      // reset even before the parent's `reloadSettings` round-trips.
+      expect(onSettingsChange).toHaveBeenCalledWith(
+        expect.objectContaining({ soap_model: 'server-soap' }),
+      );
+      expect(onClearUserEditedField).toHaveBeenCalledWith('soap_model');
     });
   });
 

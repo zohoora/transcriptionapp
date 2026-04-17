@@ -1,8 +1,19 @@
 import { memo, useState } from 'react';
-import type { Device, AuthState, SpeakerRole } from '../types';
+import { invoke } from '@tauri-apps/api/core';
+import type { Device, AuthState, SpeakerRole, OperationalDefaults, Settings } from '../types';
 import { SPEAKER_ROLE_LABELS, DETAIL_LEVEL_LABELS, VISIT_SETTING_OPTIONS } from '../types';
 import type { PendingSettings } from '../hooks/useSettings';
 import { SpeakerEnrollment } from './SpeakerEnrollment';
+
+// Phase 3 note: the operational-defaults UI below (clinic-default line +
+// "Reset to clinic default" link) is wired only for the Cat B fields that are
+// actually rendered as inputs in this drawer — currently `soap_model` and
+// `fast_model`. The remaining Cat B fields (`sleep_*`, `encounter_*`,
+// `soap_model_fast`, `encounter_detection_model`, `thermal_hot_pixel_threshold_c`,
+// `co2_baseline_ppm`) stay server-controllable via `PUT /config/defaults` on
+// the profile service, but they have no UI surface in this drawer until a
+// future phase (e.g. the admin panel gets the same treatment for sensor
+// baselines, or Advanced grows more fields).
 
 interface SettingsDrawerProps {
   isOpen: boolean;
@@ -23,6 +34,14 @@ interface SettingsDrawerProps {
   roomName?: string | null;
   profileServerUrl?: string | null;
   onChangeRoom?: () => void;
+
+  // Server-pushed operational defaults (Phase 3)
+  operationalDefaults?: OperationalDefaults | null;
+  // Settings (for reading `user_edited_fields` tracking)
+  settings?: Settings | null;
+  // Called after a successful `clear_user_edited_field` so the parent can
+  // re-sync settings + operational defaults state.
+  onClearUserEditedField?: (fieldName: string) => void;
 }
 
 export const SettingsDrawer = memo(function SettingsDrawer({
@@ -40,8 +59,38 @@ export const SettingsDrawer = memo(function SettingsDrawer({
   roomName,
   profileServerUrl,
   onChangeRoom,
+  operationalDefaults,
+  settings,
+  onClearUserEditedField,
 }: SettingsDrawerProps) {
   const [showSpeakerProfiles, setShowSpeakerProfiles] = useState(false);
+
+  // Helper: given a Cat B field with a string value, is the pending value
+  // different from the server's clinic default? Empty/undefined default means
+  // "no server value known" — we treat that as "no hint to show".
+  const hasClinicDefault = (defaultValue: string | undefined): defaultValue is string =>
+    typeof defaultValue === 'string' && defaultValue.length > 0;
+
+  const isUserEdited = (fieldName: string): boolean =>
+    Array.isArray(settings?.user_edited_fields) &&
+    settings!.user_edited_fields!.includes(fieldName);
+
+  // Calls the backend to clear the field from `user_edited_fields` and resets
+  // the local pending value to the server default. Fail-open: errors are
+  // surfaced to the console but don't block — the user can re-type the value.
+  const resetCatBField = async (
+    fieldName: 'soap_model' | 'fast_model',
+    serverValue: string,
+  ) => {
+    if (!pendingSettings) return;
+    try {
+      await invoke('clear_user_edited_field', { fieldName });
+      onSettingsChange({ ...pendingSettings, [fieldName]: serverValue });
+      onClearUserEditedField?.(fieldName);
+    } catch (e) {
+      console.error(`Failed to reset ${fieldName} to clinic default:`, e);
+    }
+  };
 
   if (!isOpen) return null;
 
@@ -219,6 +268,78 @@ export const SettingsDrawer = memo(function SettingsDrawer({
                     </label>
                   </div>
                   <span className="settings-hint">Suppresses tray fees (E542A, E430A) — hospitals cover supplies via global budget</span>
+                </div>
+
+                {/* Advanced — LLM model aliases (Cat B operational defaults) */}
+                <div className="settings-divider" />
+                <h4 className="settings-sub-header">Advanced</h4>
+
+                {/* SOAP Model */}
+                <div className="settings-group">
+                  <label className="settings-label" htmlFor="soap-model-input">SOAP Model</label>
+                  <input
+                    id="soap-model-input"
+                    type="text"
+                    className="settings-input"
+                    value={pendingSettings.soap_model}
+                    onChange={(e) => onSettingsChange({ ...pendingSettings, soap_model: e.target.value })}
+                    placeholder="soap-model-fast"
+                  />
+                  {hasClinicDefault(operationalDefaults?.soap_model)
+                    && operationalDefaults!.soap_model !== pendingSettings.soap_model && (
+                    <span className="settings-hint" style={{ opacity: 0.6 }}>
+                      Clinic default: {operationalDefaults!.soap_model}
+                      {isUserEdited('soap_model') && (
+                        <>
+                          {' — '}
+                          <a
+                            href="#"
+                            onClick={(e) => {
+                              e.preventDefault();
+                              void resetCatBField('soap_model', operationalDefaults!.soap_model);
+                            }}
+                            style={{ color: 'var(--color-accent, #4a90e2)', textDecoration: 'underline' }}
+                          >
+                            Reset to clinic default
+                          </a>
+                        </>
+                      )}
+                    </span>
+                  )}
+                </div>
+
+                {/* Fast Model */}
+                <div className="settings-group">
+                  <label className="settings-label" htmlFor="fast-model-input">Fast Model</label>
+                  <input
+                    id="fast-model-input"
+                    type="text"
+                    className="settings-input"
+                    value={pendingSettings.fast_model}
+                    onChange={(e) => onSettingsChange({ ...pendingSettings, fast_model: e.target.value })}
+                    placeholder="fast-model"
+                  />
+                  {hasClinicDefault(operationalDefaults?.fast_model)
+                    && operationalDefaults!.fast_model !== pendingSettings.fast_model && (
+                    <span className="settings-hint" style={{ opacity: 0.6 }}>
+                      Clinic default: {operationalDefaults!.fast_model}
+                      {isUserEdited('fast_model') && (
+                        <>
+                          {' — '}
+                          <a
+                            href="#"
+                            onClick={(e) => {
+                              e.preventDefault();
+                              void resetCatBField('fast_model', operationalDefaults!.fast_model);
+                            }}
+                            style={{ color: 'var(--color-accent, #4a90e2)', textDecoration: 'underline' }}
+                          >
+                            Reset to clinic default
+                          </a>
+                        </>
+                      )}
+                    </span>
+                  )}
                 </div>
 
                 {/* Session Automation (session mode only) */}

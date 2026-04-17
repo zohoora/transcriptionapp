@@ -32,6 +32,7 @@ import {
   useConnectionTests,
   useRoomConfig,
   usePhysicianProfiles,
+  useOperationalDefaults,
 } from './hooks';
 import { useAppUpdater } from './hooks/useAppUpdater';
 import { useAudioUpload } from './hooks/useAudioUpload';
@@ -123,7 +124,16 @@ function App() {
     pendingSettings,
     setPendingSettings,
     saveSettings,
+    reloadSettings,
   } = useSettings();
+
+  // Phase 3: server-pushed operational defaults (Cat B clinic-wide defaults).
+  // Refreshed after settings save + after reset-to-clinic-default so the
+  // drawer hints stay in sync with the current clinic policy.
+  const {
+    defaults: operationalDefaults,
+    refresh: refreshOperationalDefaults,
+  } = useOperationalDefaults();
 
   // Devices from hook
   const { devices } = useDevices();
@@ -474,9 +484,13 @@ function App() {
           pendingSettings.soap_custom_instructions !== soapOptions.custom_instructions) {
         updateSoapCustomInstructions(pendingSettings.soap_custom_instructions);
       }
+      // Phase 3: re-fetch operational defaults in case a save promoted a
+      // field into `user_edited_fields` (affects whether the reset link is
+      // shown on subsequent drawer opens).
+      void refreshOperationalDefaults();
       setShowSettings(false);
     }
-  }, [saveSettings, continuous.isActive, settings?.charting_mode, pendingSettings?.charting_mode, pendingSettings?.soap_custom_instructions, soapOptions.custom_instructions, updateSoapCustomInstructions]);
+  }, [saveSettings, continuous.isActive, settings?.charting_mode, pendingSettings?.charting_mode, pendingSettings?.soap_custom_instructions, soapOptions.custom_instructions, updateSoapCustomInstructions, refreshOperationalDefaults]);
 
   // Generate SOAP note (includes audio events like coughs, laughs for clinical context)
   // If already synced to Medplum, auto-add SOAP to the encounter
@@ -986,6 +1000,15 @@ function App() {
         roomName={roomConfig?.room_name}
         profileServerUrl={roomConfig?.profile_server_url}
         onChangeRoom={handleChangeRoom}
+        operationalDefaults={operationalDefaults}
+        settings={settings}
+        onClearUserEditedField={() => {
+          // Reload settings so `user_edited_fields` reflects the cleared entry,
+          // then refresh operational defaults in case the server pushed a newer
+          // version in the meantime.
+          void reloadSettings();
+          void refreshOperationalDefaults();
+        }}
       />
     </div>
   );

@@ -130,6 +130,39 @@ export interface Settings {
   // Multi-sensor suite settings (thermal + CO2 analysis)
   thermal_hot_pixel_threshold_c: number;
   co2_baseline_ppm: number;
+  // Phase 3 server-config: field names the user has locally tuned.
+  // Server pushes of OperationalDefaults (Cat B fields) skip values listed here.
+  // Populated by legacy migration (first load after upgrade) and by `set_settings`
+  // diff-on-save. Cleared via the `clear_user_edited_field` command.
+  user_edited_fields?: string[];
+}
+
+// ── Server-managed operational defaults (Phase 3) ────────────────
+//
+// Mirrors `server_config::OperationalDefaults` in Rust — keep field names in
+// lockstep with the backend (serde leaves them snake_case, so TS uses snake_case
+// too). These are the ten Cat B fields the profile service can push from
+// `PUT /config/defaults`. Fetched via `invoke('get_operational_defaults')`.
+//
+// UI note: only a subset (the fields visible in `SettingsDrawer.tsx`) currently
+// surface the clinic default to the user. The rest are pushed + applied but
+// without a user-facing control.
+export interface OperationalDefaults {
+  version: number;
+  // Sleep mode
+  sleep_start_hour: number;
+  sleep_end_hour: number;
+  // Sensor baselines
+  thermal_hot_pixel_threshold_c: number;
+  co2_baseline_ppm: number;
+  // Encounter detection timing
+  encounter_check_interval_secs: number;
+  encounter_silence_trigger_secs: number;
+  // LLM model aliases
+  soap_model: string;
+  soap_model_fast: string;
+  fast_model: string;
+  encounter_detection_model: string;
 }
 
 // ── Server-managed settings overlays ──────────────────────────────

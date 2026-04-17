@@ -65,3 +65,6 @@ export type { UsePhysicianProfilesResult } from './usePhysicianProfiles';
 
 export { useAdminPanel } from './useAdminPanel';
 export type { UseAdminPanelResult } from './useAdminPanel';
+
+export { useOperationalDefaults } from './useOperationalDefaults';
+export type { UseOperationalDefaultsResult } from './useOperationalDefaults';

@@ -1,7 +1,10 @@
 //! Settings commands
 
 use super::CommandError;
+use crate::commands::physicians::SharedServerConfig;
 use crate::config::{cat_b_field_eq, Config, Settings, CAT_B_FIELD_NAMES};
+use crate::server_config::OperationalDefaults;
+use tauri::State;
 
 /// Get current settings
 #[tauri::command]
@@ -62,6 +65,26 @@ pub fn clear_user_edited_field(field_name: String) -> Result<Settings, CommandEr
             .map_err(|e| CommandError::Config(e.to_string()))?;
     }
     Ok(config.to_settings())
+}
+
+/// Return the current server-supplied `OperationalDefaults`.
+///
+/// Reads from the Tauri-managed `SharedServerConfig` — which itself falls back
+/// through cache → compiled defaults, so this command always succeeds. Used by
+/// the Settings UI to show "Clinic default: …" hints next to Cat B inputs and
+/// to power the "Reset to clinic default" link.
+///
+/// Phase 3 note: only the four Cat B fields that have visible inputs in the
+/// settings drawer currently surface this value to the user. The remaining six
+/// Cat B fields (`sleep_*`, `encounter_*`, `soap_model_fast`,
+/// `encounter_detection_model`) are still server-controllable via
+/// `PUT /config/defaults` on the profile service — they just lack a UI surface
+/// until a future phase.
+#[tauri::command]
+pub async fn get_operational_defaults(
+    server_config: State<'_, SharedServerConfig>,
+) -> Result<OperationalDefaults, CommandError> {
+    Ok(server_config.read().await.defaults.clone())
 }
 
 /// Merges changed-field tracking from `previous` into `new`:

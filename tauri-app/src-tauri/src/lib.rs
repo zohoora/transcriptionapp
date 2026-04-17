@@ -417,6 +417,7 @@ pub fn run() {
             commands::get_settings,
             commands::set_settings,
             commands::clear_user_edited_field,
+            commands::get_operational_defaults,
             commands::start_session,
             commands::stop_session,
             commands::reset_session,
