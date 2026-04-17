@@ -392,10 +392,11 @@ impl ProfileClient {
         if !resp.status().is_success() {
             let status = resp.status();
             let text = resp.text().await.unwrap_or_default();
+            let end = text.ceil_char_boundary(200);
             anyhow::bail!(
                 "Update config defaults failed: {} - {}",
                 status,
-                &text[..text.len().min(200)]
+                &text[..end]
             );
         }
         Ok(resp.json().await?)

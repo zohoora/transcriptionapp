@@ -345,16 +345,16 @@ impl Default for OperationalDefaults {
     fn default() -> Self {
         Self {
             version: 0,
-            sleep_start_hour: 22,
-            sleep_end_hour: 6,
-            thermal_hot_pixel_threshold_c: 28.0,
-            co2_baseline_ppm: 420.0,
-            encounter_check_interval_secs: 120,
-            encounter_silence_trigger_secs: 45,
-            soap_model: "soap-model-fast".to_string(),
-            soap_model_fast: "soap-model-fast".to_string(),
-            fast_model: "fast-model".to_string(),
-            encounter_detection_model: "fast-model".to_string(),
+            sleep_start_hour: default_sleep_start_hour(),
+            sleep_end_hour: default_sleep_end_hour(),
+            thermal_hot_pixel_threshold_c: default_thermal_hot_pixel_threshold_c(),
+            co2_baseline_ppm: default_co2_baseline_ppm(),
+            encounter_check_interval_secs: default_encounter_check_interval_secs(),
+            encounter_silence_trigger_secs: default_encounter_silence_trigger_secs(),
+            soap_model: default_soap_model(),
+            soap_model_fast: default_soap_model_fast(),
+            fast_model: default_fast_model(),
+            encounter_detection_model: default_encounter_detection_model(),
         }
     }
 }
