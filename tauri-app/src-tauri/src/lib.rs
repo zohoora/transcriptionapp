@@ -415,6 +415,7 @@ pub fn run() {
             commands::list_input_devices,
             commands::get_settings,
             commands::set_settings,
+            commands::clear_user_edited_field,
             commands::start_session,
             commands::stop_session,
             commands::reset_session,

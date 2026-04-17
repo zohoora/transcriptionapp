@@ -1,7 +1,7 @@
 //! Settings commands
 
 use super::CommandError;
-use crate::config::{Config, Settings};
+use crate::config::{Config, Settings, CAT_B_FIELD_NAMES};
 
 /// Get current settings
 #[tauri::command]
@@ -10,9 +10,14 @@ pub fn get_settings() -> Result<Settings, CommandError> {
     Ok(config.to_settings())
 }
 
-/// Update settings
+/// Update settings.
+///
+/// Phase 3 diff-on-save: before writing, compare each Cat B field against the
+/// currently-stored value. Any field whose value changed is appended to
+/// `user_edited_fields` (dedup'd). This lets server-pushed
+/// `OperationalDefaults` skip user-tuned values on future refreshes.
 #[tauri::command]
-pub fn set_settings(settings: Settings) -> Result<Settings, CommandError> {
+pub fn set_settings(mut settings: Settings) -> Result<Settings, CommandError> {
     // Validate settings before saving
     let validation_errors = settings.validate();
     if !validation_errors.is_empty() {
@@ -24,10 +29,197 @@ pub fn set_settings(settings: Settings) -> Result<Settings, CommandError> {
         )));
     }
 
-    let mut config = Config::load_or_default();
+    // Diff-on-save: find Cat B fields whose value changed vs. currently-stored
+    // settings and record them as user-edited. Uses the existing settings on
+    // disk as the reference.
+    let existing = Config::load_or_default();
+    merge_user_edited_fields(&mut settings, &existing.settings);
+
+    let mut config = existing;
     config.update_from_settings(&settings);
     config
         .save()
         .map_err(|e| CommandError::Config(e.to_string()))?;
     Ok(config.to_settings())
+}
+
+/// Clear a field name from `user_edited_fields`.
+///
+/// After calling this the server-configurable resolver treats the field as
+/// "reset to server/compiled default" — subsequent server pushes are free to
+/// overwrite the local value. No-op if the field isn't tracked.
+#[tauri::command]
+pub fn clear_user_edited_field(field_name: String) -> Result<Settings, CommandError> {
+    let mut config = Config::load_or_default();
+    let before = config.settings.user_edited_fields.len();
+    config
+        .settings
+        .user_edited_fields
+        .retain(|f| f != &field_name);
+    if config.settings.user_edited_fields.len() != before {
+        config
+            .save()
+            .map_err(|e| CommandError::Config(e.to_string()))?;
+    }
+    Ok(config.to_settings())
+}
+
+/// Merge `user_edited_fields` from `previous` into `new` and append any Cat B
+/// fields whose value changed between them. Dedup'd so repeated edits don't
+/// create duplicates.
+///
+/// The frontend isn't aware of `user_edited_fields` yet (T3 ships backend
+/// only), so the incoming `new.user_edited_fields` is typically empty. Taking
+/// the union with `previous.user_edited_fields` preserves the existing
+/// tracking instead of wiping it on every save.
+fn merge_user_edited_fields(new: &mut Settings, previous: &Settings) {
+    // Start from the existing list so an oblivious frontend doesn't erase it.
+    for field in &previous.user_edited_fields {
+        if !new.user_edited_fields.iter().any(|f| f == field) {
+            new.user_edited_fields.push(field.clone());
+        }
+    }
+    // Diff Cat B fields and append any that changed.
+    for &field in CAT_B_FIELD_NAMES {
+        if cat_b_field_changed(new, previous, field)
+            && !new.user_edited_fields.iter().any(|f| f == field)
+        {
+            new.user_edited_fields.push(field.to_string());
+        }
+    }
+}
+
+/// Returns true if the given Cat B field differs between `a` and `b`.
+fn cat_b_field_changed(a: &Settings, b: &Settings, field: &str) -> bool {
+    match field {
+        "sleep_start_hour" => a.sleep_start_hour != b.sleep_start_hour,
+        "sleep_end_hour" => a.sleep_end_hour != b.sleep_end_hour,
+        "thermal_hot_pixel_threshold_c" => {
+            a.thermal_hot_pixel_threshold_c != b.thermal_hot_pixel_threshold_c
+        }
+        "co2_baseline_ppm" => a.co2_baseline_ppm != b.co2_baseline_ppm,
+        "encounter_check_interval_secs" => {
+            a.encounter_check_interval_secs != b.encounter_check_interval_secs
+        }
+        "encounter_silence_trigger_secs" => {
+            a.encounter_silence_trigger_secs != b.encounter_silence_trigger_secs
+        }
+        "soap_model" => a.soap_model != b.soap_model,
+        "soap_model_fast" => a.soap_model_fast != b.soap_model_fast,
+        "fast_model" => a.fast_model != b.fast_model,
+        "encounter_detection_model" => a.encounter_detection_model != b.encounter_detection_model,
+        _ => false,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_set_settings_adds_changed_field_to_user_edited() {
+        let previous = Settings::default();
+        let mut new = previous.clone();
+        new.thermal_hot_pixel_threshold_c = 29.0;
+
+        merge_user_edited_fields(&mut new, &previous);
+
+        assert!(new
+            .user_edited_fields
+            .iter()
+            .any(|f| f == "thermal_hot_pixel_threshold_c"));
+    }
+
+    #[test]
+    fn test_set_settings_dedup() {
+        let previous = Settings::default();
+        let mut new = previous.clone();
+        new.thermal_hot_pixel_threshold_c = 29.0;
+
+        // First pass seeds the field
+        merge_user_edited_fields(&mut new, &previous);
+        assert_eq!(
+            new.user_edited_fields
+                .iter()
+                .filter(|f| f.as_str() == "thermal_hot_pixel_threshold_c")
+                .count(),
+            1
+        );
+
+        // Second pass on the same inputs must NOT add a duplicate
+        merge_user_edited_fields(&mut new, &previous);
+        assert_eq!(
+            new.user_edited_fields
+                .iter()
+                .filter(|f| f.as_str() == "thermal_hot_pixel_threshold_c")
+                .count(),
+            1,
+            "merge should be idempotent — no duplicate entries"
+        );
+    }
+
+    #[test]
+    fn test_set_settings_preserves_existing_when_frontend_omits_field() {
+        // Simulates an older frontend that doesn't know about
+        // user_edited_fields: incoming Settings has an empty Vec, but the
+        // previously-saved Settings has tracking state we must keep.
+        let mut previous = Settings::default();
+        previous
+            .user_edited_fields
+            .push("sleep_start_hour".to_string());
+
+        let mut new = previous.clone();
+        new.user_edited_fields.clear();
+        // No Cat B value changed in this payload — the only reason the list
+        // should end up non-empty is preservation from `previous`.
+
+        merge_user_edited_fields(&mut new, &previous);
+
+        assert_eq!(new.user_edited_fields, vec!["sleep_start_hour"]);
+    }
+
+    #[test]
+    fn test_clear_user_edited_field_removes_entry() {
+        let mut settings = Settings::default();
+        settings
+            .user_edited_fields
+            .push("thermal_hot_pixel_threshold_c".to_string());
+        settings
+            .user_edited_fields
+            .push("sleep_start_hour".to_string());
+
+        // Emulate the command body (the tauri::command wrapper isn't callable
+        // as a plain function, but the logic we want to cover is the
+        // retain + save decision).
+        let before = settings.user_edited_fields.len();
+        settings
+            .user_edited_fields
+            .retain(|f| f != "thermal_hot_pixel_threshold_c");
+        let changed = settings.user_edited_fields.len() != before;
+
+        assert!(changed, "should have removed the entry");
+        assert!(!settings
+            .user_edited_fields
+            .iter()
+            .any(|f| f == "thermal_hot_pixel_threshold_c"));
+        assert!(settings
+            .user_edited_fields
+            .iter()
+            .any(|f| f == "sleep_start_hour"));
+    }
+
+    #[test]
+    fn test_clear_user_edited_field_noop_on_missing() {
+        let mut settings = Settings::default();
+        settings
+            .user_edited_fields
+            .push("sleep_start_hour".to_string());
+
+        let before = settings.user_edited_fields.len();
+        settings.user_edited_fields.retain(|f| f != "does_not_exist");
+        let changed = settings.user_edited_fields.len() != before;
+
+        assert!(!changed, "missing field should be a silent no-op");
+        assert_eq!(settings.user_edited_fields, vec!["sleep_start_hour"]);
+    }
 }

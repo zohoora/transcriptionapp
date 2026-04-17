@@ -212,6 +212,79 @@ pub struct Settings {
     pub thermal_hot_pixel_threshold_c: f32,
     #[serde(default = "default_co2_baseline_ppm")]
     pub co2_baseline_ppm: f32,
+    // Phase 3 server-config: field names the user has locally tuned.
+    // Server pushes of OperationalDefaults (Cat B fields) must NOT stomp
+    // values listed here. Populated by legacy migration (first load after
+    // upgrade) and by `set_settings` diff-on-save. Cleared via
+    // `clear_user_edited_field`. See T3 plan + CAT_B_FIELD_NAMES.
+    #[serde(default)]
+    pub user_edited_fields: Vec<String>,
+}
+
+// ── Phase 3 server-config: Cat B field list ──────────────────────────
+//
+// These 10 field names are pushed by the server as `OperationalDefaults`
+// (see `server_config.rs` — field names must stay in lockstep with
+// `OperationalDefaults`). Both the legacy migration in `load_or_default`
+// and the diff-on-save in `set_settings` consult this list.
+pub const CAT_B_FIELD_NAMES: &[&str] = &[
+    "sleep_start_hour",
+    "sleep_end_hour",
+    "thermal_hot_pixel_threshold_c",
+    "co2_baseline_ppm",
+    "encounter_check_interval_secs",
+    "encounter_silence_trigger_secs",
+    "soap_model",
+    "soap_model_fast",
+    "fast_model",
+    "encounter_detection_model",
+];
+
+/// Phase 3 legacy migration: if `user_edited_fields` is empty, seed it with
+/// every Cat B field whose current value differs from the compiled default.
+/// Returns `true` if the Vec grew (caller should persist to disk).
+///
+/// Idempotent: once the Vec is non-empty we assume migration has already run,
+/// so a second call is a no-op.
+pub fn migrate_user_edited_fields(settings: &mut Settings) -> bool {
+    if !settings.user_edited_fields.is_empty() {
+        return false;
+    }
+    for &field in CAT_B_FIELD_NAMES {
+        if !is_cat_b_field_default(settings, field) {
+            settings.user_edited_fields.push(field.to_string());
+        }
+    }
+    !settings.user_edited_fields.is_empty()
+}
+
+/// Returns true if `settings.<field>` currently equals the compiled default.
+///
+/// Only handles the 10 Cat B field names. Unknown names return `true`
+/// (conservative: we don't seed fields we don't know about).
+pub fn is_cat_b_field_default(settings: &Settings, field: &str) -> bool {
+    let def = Settings::default();
+    match field {
+        "sleep_start_hour" => settings.sleep_start_hour == def.sleep_start_hour,
+        "sleep_end_hour" => settings.sleep_end_hour == def.sleep_end_hour,
+        "thermal_hot_pixel_threshold_c" => {
+            settings.thermal_hot_pixel_threshold_c == def.thermal_hot_pixel_threshold_c
+        }
+        "co2_baseline_ppm" => settings.co2_baseline_ppm == def.co2_baseline_ppm,
+        "encounter_check_interval_secs" => {
+            settings.encounter_check_interval_secs == def.encounter_check_interval_secs
+        }
+        "encounter_silence_trigger_secs" => {
+            settings.encounter_silence_trigger_secs == def.encounter_silence_trigger_secs
+        }
+        "soap_model" => settings.soap_model == def.soap_model,
+        "soap_model_fast" => settings.soap_model_fast == def.soap_model_fast,
+        "fast_model" => settings.fast_model == def.fast_model,
+        "encounter_detection_model" => {
+            settings.encounter_detection_model == def.encounter_detection_model
+        }
+        _ => true,
+    }
 }
 
 fn default_idle_encounter_timeout_secs() -> u32 {
@@ -461,6 +534,7 @@ impl Default for Settings {
             idle_encounter_timeout_secs: default_idle_encounter_timeout_secs(),
             thermal_hot_pixel_threshold_c: default_thermal_hot_pixel_threshold_c(),
             co2_baseline_ppm: default_co2_baseline_ppm(),
+            user_edited_fields: Vec::new(),
         }
     }
 }
@@ -1166,6 +1240,14 @@ impl Config {
             config.image_source = "miis".to_string();
         }
 
+        // Phase 3 legacy migration: seed user_edited_fields on first load after
+        // upgrade. See `migrate_user_edited_fields` for the logic.
+        if migrate_user_edited_fields(&mut config.settings) {
+            if let Err(e) = config.save() {
+                debug!("Failed to persist migrated user_edited_fields: {}", e);
+            }
+        }
+
         config
     }
 
@@ -1510,6 +1592,7 @@ mod tests {
             billing_default_visit_setting: default_billing_visit_setting(),
             billing_counselling_exhausted: false,
             billing_is_hospital: false,
+            user_edited_fields: Vec::new(),
         };
 
         let mut config = Config::default();
@@ -1643,6 +1726,7 @@ mod tests {
             billing_default_visit_setting: default_billing_visit_setting(),
             billing_counselling_exhausted: false,
             billing_is_hospital: false,
+            user_edited_fields: Vec::new(),
         };
 
         let mut config = Config::default();
@@ -2270,5 +2354,139 @@ mod tests {
         assert_eq!(obj["encounter_detection_model"], "custom-model");
         assert_eq!(obj["soap_detail_level"], 8);
         assert_eq!(obj["encounter_check_interval_secs"], 90);
+    }
+
+    // ========================================================================
+    // Phase 3: user_edited_fields migration tests
+    // ========================================================================
+
+    #[test]
+    fn test_legacy_migration_seeds_user_edited_fields_for_tuned_values() {
+        let mut settings = Settings::default();
+        // Simulate an existing config from before Phase 3: user had tuned
+        // `sleep_start_hour` but the Vec hasn't been seeded yet.
+        settings.sleep_start_hour = 23;
+        settings.user_edited_fields.clear();
+
+        let grew = migrate_user_edited_fields(&mut settings);
+
+        assert!(grew, "migration should report that Vec grew");
+        assert!(settings
+            .user_edited_fields
+            .iter()
+            .any(|f| f == "sleep_start_hour"));
+    }
+
+    #[test]
+    fn test_legacy_migration_noop_when_all_default() {
+        let mut settings = Settings::default();
+        settings.user_edited_fields.clear();
+
+        let grew = migrate_user_edited_fields(&mut settings);
+
+        assert!(!grew, "migration must not grow when all values are default");
+        assert!(
+            settings.user_edited_fields.is_empty(),
+            "user_edited_fields should stay empty for all-default Settings"
+        );
+    }
+
+    #[test]
+    fn test_legacy_migration_idempotent() {
+        let mut settings = Settings::default();
+        settings.sleep_start_hour = 21;
+        settings.user_edited_fields.clear();
+
+        // First pass: seeds the Vec.
+        let grew1 = migrate_user_edited_fields(&mut settings);
+        assert!(grew1);
+        let count_after_first = settings
+            .user_edited_fields
+            .iter()
+            .filter(|f| f.as_str() == "sleep_start_hour")
+            .count();
+        assert_eq!(count_after_first, 1);
+
+        // Second pass: Vec is non-empty so migration should early-exit
+        // and NOT duplicate entries.
+        let grew2 = migrate_user_edited_fields(&mut settings);
+        assert!(!grew2, "second call must be a no-op");
+        let count_after_second = settings
+            .user_edited_fields
+            .iter()
+            .filter(|f| f.as_str() == "sleep_start_hour")
+            .count();
+        assert_eq!(count_after_second, 1, "no duplicates on re-run");
+    }
+
+    #[test]
+    fn test_legacy_migration_covers_all_cat_b_fields() {
+        // For each Cat B field, set ONLY that field to a non-default value
+        // and verify it gets seeded. Catches typos/missing match arms in
+        // `is_cat_b_field_default`.
+        for &field in CAT_B_FIELD_NAMES {
+            let mut settings = Settings::default();
+            settings.user_edited_fields.clear();
+
+            match field {
+                "sleep_start_hour" => settings.sleep_start_hour = 21,
+                "sleep_end_hour" => settings.sleep_end_hour = 7,
+                "thermal_hot_pixel_threshold_c" => {
+                    settings.thermal_hot_pixel_threshold_c = 29.5
+                }
+                "co2_baseline_ppm" => settings.co2_baseline_ppm = 450.0,
+                "encounter_check_interval_secs" => {
+                    settings.encounter_check_interval_secs = 90
+                }
+                "encounter_silence_trigger_secs" => {
+                    settings.encounter_silence_trigger_secs = 60
+                }
+                "soap_model" => settings.soap_model = "custom-soap".to_string(),
+                "soap_model_fast" => {
+                    settings.soap_model_fast = "custom-soap-fast".to_string()
+                }
+                "fast_model" => settings.fast_model = "custom-fast".to_string(),
+                "encounter_detection_model" => {
+                    settings.encounter_detection_model = "custom-detect".to_string()
+                }
+                other => panic!("unhandled Cat B field in test: {}", other),
+            }
+
+            let grew = migrate_user_edited_fields(&mut settings);
+            assert!(grew, "field {} should have triggered migration", field);
+            assert!(
+                settings.user_edited_fields.iter().any(|f| f == field),
+                "field {} not seeded — likely missing from is_cat_b_field_default match",
+                field
+            );
+            assert_eq!(
+                settings.user_edited_fields.len(),
+                1,
+                "only field {} was tuned, but got extras: {:?}",
+                field,
+                settings.user_edited_fields
+            );
+        }
+    }
+
+    #[test]
+    fn test_cat_b_field_names_matches_operational_defaults() {
+        // Guardrail: the Cat B list in config.rs must stay in lockstep with
+        // OperationalDefaults in server_config.rs. If this test fails after
+        // editing OperationalDefaults, update CAT_B_FIELD_NAMES (and the
+        // two match helpers) to match.
+        let expected = [
+            "sleep_start_hour",
+            "sleep_end_hour",
+            "thermal_hot_pixel_threshold_c",
+            "co2_baseline_ppm",
+            "encounter_check_interval_secs",
+            "encounter_silence_trigger_secs",
+            "soap_model",
+            "soap_model_fast",
+            "fast_model",
+            "encounter_detection_model",
+        ];
+        assert_eq!(CAT_B_FIELD_NAMES, &expected);
     }
 }

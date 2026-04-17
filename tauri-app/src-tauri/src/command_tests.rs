@@ -91,6 +91,7 @@ mod tests {
             billing_default_visit_setting: "in_office".to_string(),
             billing_counselling_exhausted: false,
             billing_is_hospital: false,
+            user_edited_fields: Vec::new(),
         };
 
         // Serialize to JSON
