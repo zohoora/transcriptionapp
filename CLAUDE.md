@@ -136,14 +136,15 @@ Design spec: `docs/superpowers/specs/2026-04-13-mobile-app-v1-design.md`
 
 Same pipeline as mobile, but invoked from the desktop UI. "Upload Recording" link in both ReadyMode and ContinuousMode opens an `AudioUploadModal` where the user picks an audio file (mp3/wav/m4a/aac/flac/ogg/wma/webm) and a date. Backend uses the same `audio_processing` module as `process_mobile` (ffmpeg → STT batch → encounter detection → SOAP). Sessions are written to the local archive under the user-selected date with `charting_mode = "upload"`. Progress events stream to the UI via `audio_upload_progress` Tauri events.
 
-## Server-Configurable Data (Phase 1)
+## Server-Configurable Data
 
-Three categories of operational data can be updated centrally without app rebuilds:
-- **Prompt templates** — `PUT /config/prompts` on profile service. All LLM prompt builders accept `Option<&PromptTemplates>` and override the compiled default with the server value when present.
+Four categories of operational data are pushed centrally without app rebuilds (Phase 1 + 2 + 3, all live):
+- **Prompt templates** — `PUT /config/prompts`. LLM prompt builders accept `Option<&PromptTemplates>`.
 - **Billing data** — `PUT /config/billing`. Rule engine accepts `Option<&BillingData>`.
-- **Detection thresholds** — `PUT /config/thresholds`. Wired into `DetectionEvalContext.server_thresholds` (currently always `None` in production; Phase 2 work).
+- **Detection thresholds** — `PUT /config/thresholds`. Populated on `DetectionEvalContext.server_thresholds` at continuous-mode start; also covers Cat A algorithm constants (vision K/cap, multi-patient detect, screenshot grace, Gemini timeout).
+- **Operational defaults** — `PUT /config/defaults` (`OperationalDefaults`: sleep hours, thermal/CO2 baselines, encounter intervals, 4 model aliases). Precedence: `compiled default < server < local (if user-edited)`, tracked via `Settings.user_edited_fields: Vec<String>` so compiled-default drift can't silently stomp workstations.
 
-Three-tier fallback: server fetch (on startup + version-bump check) → `~/.transcriptionapp/server_config_cache.json` → compiled defaults. Stored as `SharedServerConfig` (Arc<RwLock>) in Tauri managed state.
+Three-tier fallback unchanged: server fetch (startup + version-bump poll) → `~/.transcriptionapp/server_config_cache.json` → compiled defaults. `SharedServerConfig` (Arc<RwLock>) in Tauri managed state. Full detail in `tauri-app/docs/adr/0023-server-configurable-data.md`.
 
 ## Auto-Deploy (Profile Service)
 
