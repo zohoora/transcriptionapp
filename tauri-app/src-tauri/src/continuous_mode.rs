@@ -16,7 +16,6 @@ use serde::{Deserialize, Serialize};
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
-use tokio::sync::mpsc;
 use tracing::{debug, error, info, warn};
 
 use crate::config::{Config, EncounterDetectionMode, ShadowActiveMethod};
@@ -24,7 +23,7 @@ use crate::continuous_mode_events::ContinuousModeEvent;
 use crate::encounter_experiment::strip_hallucinations;
 use crate::llm_client::LLMClient;
 use crate::local_archive;
-use crate::pipeline::{start_pipeline, PipelineConfig, PipelineMessage};
+use crate::pipeline::{PipelineConfig, PipelineMessage};
 use crate::server_sync::ServerSyncContext;
 
 // Re-export submodule types for backward compatibility
@@ -477,14 +476,12 @@ impl ContinuousModeHandle {
 /// Run continuous mode: starts the pipeline, buffers segments, detects encounters.
 ///
 /// This function runs indefinitely until the stop_flag is set.
-pub async fn run_continuous_mode(
-    app: tauri::AppHandle,
+pub async fn run_continuous_mode<C: crate::run_context::RunContext>(
+    ctx: C,
     handle: Arc<ContinuousModeHandle>,
     config: Config,
     sync_ctx: ServerSyncContext,
 ) -> Result<(), String> {
-    use tauri::Emitter;
-
     // Read server-configurable data (prompts, billing rules, thresholds, defaults).
     // Snapshot at start of continuous mode — changes take effect on next restart.
     // Arc-wrapped to share between detector task and flush-on-stop path without cloning.
@@ -496,9 +493,7 @@ pub async fn run_continuous_mode(
     // instead of `config.*` directly. Sleep hours are handled separately in the
     // outer loop (re-resolved every tick); the 8 remaining fields snapshot here.
     let (templates, billing_data, detector_thresholds, operational) = {
-        use tauri::Manager;
-        let shared = app.state::<crate::commands::SharedServerConfig>();
-        let sc = shared.read().await;
+        let sc = ctx.server_config_snapshot();
         let op = crate::server_config_resolve::resolve_operational(
             &config.settings,
             Some(&sc.defaults),
@@ -535,7 +530,7 @@ pub async fn run_continuous_mode(
             warn!("Could not create recordings directory: {}", e);
             None
         } else {
-            let timestamp = Utc::now().format("%Y%m%d_%H%M%S").to_string();
+            let timestamp = ctx.now_utc().format("%Y%m%d_%H%M%S").to_string();
             Some(recordings_dir.join(format!("continuous_{}.wav", timestamp)))
         }
     };
@@ -550,21 +545,19 @@ pub async fn run_continuous_mode(
         0,
     );
 
-    // Create message channel
-    let (tx, mut rx) = mpsc::channel::<PipelineMessage>(32);
-
-    // Start the pipeline
-    let pipeline_handle = match start_pipeline(pipeline_config, tx) {
-        Ok(h) => h,
+    // Start the pipeline via RunContext — production delegates to start_pipeline
+    // from pipeline.rs; tests return a pre-loaded channel + a minimal handle.
+    let (pipeline_handle, mut rx) = match ctx.start_pipeline(pipeline_config) {
+        Ok(pair) => pair,
         Err(e) => {
             error!("Failed to start continuous mode pipeline: {}", e);
             if let Ok(mut state) = handle.state.lock() {
-                *state = ContinuousState::Error(e.to_string());
+                *state = ContinuousState::Error(e.clone());
             } else {
                 warn!("State lock poisoned while setting error state");
             }
-            ContinuousModeEvent::Error { error: e.to_string() }.emit(&app);
-            return Err(e.to_string());
+            ContinuousModeEvent::Error { error: e.clone() }.emit_via(&ctx);
+            return Err(e);
         }
     };
 
@@ -579,7 +572,7 @@ pub async fn run_continuous_mode(
     } else {
         warn!("State lock poisoned while setting recording state");
     }
-    ContinuousModeEvent::Started.emit(&app);
+    ContinuousModeEvent::Started.emit_via(&ctx);
 
     // Tag the buffer with this pipeline's generation so stale segments are rejected
     let pipeline_generation: u64 = 1; // Single pipeline per continuous mode run
@@ -602,7 +595,7 @@ pub async fn run_continuous_mode(
     // Clone handles for the segment consumer task
     let buffer_for_consumer = handle.transcript_buffer.clone();
     let stop_for_consumer = handle.stop_flag.clone();
-    let app_for_consumer = app.clone();
+    let ctx_for_consumer = ctx.clone();
 
     // Track silence duration for trigger
     let silence_start = Arc::new(Mutex::new(Option::<std::time::Instant>::None));
@@ -669,7 +662,7 @@ pub async fn run_continuous_mode(
                     }
                     if let Ok(mut bundle) = bundle_for_consumer.lock() {
                         bundle.add_segment(crate::replay_bundle::ReplaySegment {
-                            ts: Utc::now().to_rfc3339(),
+                            ts: ctx_for_consumer.now_utc().to_rfc3339(),
                             index: seg_index,
                             start_ms: segment.start_ms,
                             end_ms: segment.end_ms,
@@ -691,7 +684,7 @@ pub async fn run_continuous_mode(
                         } else {
                             text
                         };
-                        let _ = app_for_consumer.emit("continuous_transcript_preview", serde_json::json!({
+                        let _ = ctx_for_consumer.emit_json("continuous_transcript_preview", serde_json::json!({
                             "finalized_text": preview,
                             "draft_text": null,
                             "segment_count": 0
@@ -740,7 +733,7 @@ pub async fn run_continuous_mode(
                             );
                             ContinuousModeEvent::TranscriptionStalled {
                                 speech_secs: cumulative_speech_secs + active_secs,
-                            }.emit(&app_for_consumer);
+                            }.emit_via(&ctx_for_consumer);
                             stall_warned = true;
                         }
 
@@ -750,10 +743,16 @@ pub async fn run_continuous_mode(
                     }
                 }
                 PipelineMessage::Biomarker(update) => {
-                    let _ = app_for_consumer.emit("biomarker_update", update);
+                    ctx_for_consumer.emit_json(
+                        "biomarker_update",
+                        serde_json::to_value(update).unwrap_or_default(),
+                    );
                 }
                 PipelineMessage::AudioQuality(snapshot) => {
-                    let _ = app_for_consumer.emit("audio_quality", snapshot);
+                    ctx_for_consumer.emit_json(
+                        "audio_quality",
+                        serde_json::to_value(snapshot).unwrap_or_default(),
+                    );
                 }
                 PipelineMessage::Stopped => {
                     info!("Continuous mode pipeline stopped");
@@ -765,7 +764,7 @@ pub async fn run_continuous_mode(
                 }
                 PipelineMessage::TranscriptChunk { text } => {
                     // Emit streaming chunk as draft_text for live preview
-                    let _ = app_for_consumer.emit("continuous_transcript_preview", serde_json::json!({
+                    let _ = ctx_for_consumer.emit_json("continuous_transcript_preview", serde_json::json!({
                         "finalized_text": null,
                         "draft_text": text,
                         "segment_count": 0
@@ -837,7 +836,7 @@ pub async fn run_continuous_mode(
                 }
 
                 // Emit sensor status event
-                ContinuousModeEvent::SensorStatus { connected: true, state: "unknown".into() }.emit(&app);
+                ContinuousModeEvent::SensorStatus { connected: true, state: "unknown".into() }.emit_via(&ctx);
 
                 // Get a dedicated state receiver for shadow sensor observer
                 shadow_sensor_state_rx = Some(sensor.subscribe_state());
@@ -849,7 +848,7 @@ pub async fn run_continuous_mode(
             }
             Err(e) => {
                 info!("Presence sensor not available: {}. Running with LLM-only detection.", e);
-                ContinuousModeEvent::SensorStatus { connected: false, state: "not_configured".into() }.emit(&app);
+                ContinuousModeEvent::SensorStatus { connected: false, state: "not_configured".into() }.emit_via(&ctx);
                 // Fall back: create a dummy Notify that never fires
                 sensor_absence_trigger = Arc::new(tokio::sync::Notify::new());
             }
@@ -878,7 +877,7 @@ pub async fn run_continuous_mode(
         let mut state_rx = sensor.subscribe_state();
         let mut status_rx = sensor.subscribe_status();
         let stop_for_monitor = handle.stop_flag.clone();
-        let app_for_monitor = app.clone();
+        let ctx_for_monitor = ctx.clone();
 
         Some(tokio::spawn(async move {
             loop {
@@ -895,12 +894,12 @@ pub async fn run_continuous_mode(
                             crate::presence_sensor::PresenceState::Unknown => "unknown",
                         };
                         info!("Sensor state changed: {}", state_str);
-                        ContinuousModeEvent::SensorStatus { connected: true, state: state_str.into() }.emit(&app_for_monitor);
+                        ContinuousModeEvent::SensorStatus { connected: true, state: state_str.into() }.emit_via(&ctx_for_monitor);
                     }
                     Ok(()) = status_rx.changed() => {
                         let status = status_rx.borrow_and_update().clone();
                         let connected = matches!(status, crate::presence_sensor::SensorStatus::Connected);
-                        ContinuousModeEvent::SensorStatus { connected, state: "unknown".into() }.emit(&app_for_monitor);
+                        ContinuousModeEvent::SensorStatus { connected, state: "unknown".into() }.emit_via(&ctx_for_monitor);
                         if !connected {
                             warn!("Sensor disconnected: {:?}", status);
                         }
@@ -932,7 +931,7 @@ pub async fn run_continuous_mode(
             handle.last_shadow_decision.clone(),
             shadow_sensor_state_rx.take(),
             silence_trigger_rx.clone(),
-            app.clone(),
+            ctx.raw_tauri_app().expect("shadow mode requires a concrete Tauri AppHandle — not available in test contexts"),
         )
     } else {
         None
@@ -948,7 +947,7 @@ pub async fn run_continuous_mode(
     let name_tracker_for_detector = handle.name_tracker.clone();
     let last_split_time_for_detector = handle.last_split_time.clone();
     let screenshot_buffer_for_detector = handle.screenshot_buffer.clone();
-    let app_for_detector = app.clone();
+    let ctx_for_detector = ctx.clone();
     let check_interval = operational.encounter_check_interval_secs;
     let idle_timeout_secs = config.idle_encounter_timeout_secs;
 
@@ -1029,7 +1028,7 @@ pub async fn run_continuous_mode(
     // Log continuous mode start with config snapshot
     if let Some(ref dl) = *day_logger {
         dl.log(crate::day_log::DayEvent::ContinuousModeStarted {
-            ts: Utc::now().to_rfc3339(),
+            ts: ctx.now_utc().to_rfc3339(),
             config: config.replay_snapshot(),
         });
     }
@@ -1086,7 +1085,7 @@ pub async fn run_continuous_mode(
                     continue;
                 };
                 tokio::select! {
-                    _ = tokio::time::sleep(tokio::time::Duration::from_secs(check_interval as u64)) => {
+                    _ = ctx_for_detector.sleep(tokio::time::Duration::from_secs(check_interval as u64)) => {
                         // Regular timer — handles back-to-back encounters without physical departure
                         (false, false)
                     }
@@ -1108,7 +1107,7 @@ pub async fn run_continuous_mode(
                                 if old_state != new_state {
                                     if let Ok(mut bundle) = bundle_for_detector.lock() {
                                         bundle.add_sensor_transition(crate::replay_bundle::SensorTransition {
-                                            ts: Utc::now().to_rfc3339(),
+                                            ts: ctx_for_detector.now_utc().to_rfc3339(),
                                             from: old_state.as_str().to_string(),
                                             to: new_state.as_str().to_string(),
                                         });
@@ -1117,7 +1116,7 @@ pub async fn run_continuous_mode(
                                 match (old_state, new_state) {
                                     (crate::presence_sensor::PresenceState::Present,
                                      crate::presence_sensor::PresenceState::Absent) => {
-                                        sensor_absent_since = Some(Utc::now());
+                                        sensor_absent_since = Some(ctx_for_detector.now_utc());
                                         sensor_continuous_present = false;
                                         info!("Hybrid: sensor detected departure (Present→Absent), accelerating LLM check");
                                         (false, true) // sensor_triggered → accelerate LLM check (NOT force-split)
@@ -1136,7 +1135,7 @@ pub async fn run_continuous_mode(
                                 warn!("Hybrid: sensor watch channel closed — sensor disconnected. Falling back to LLM-only.");
                                 sensor_available = false;
                                 sensor_absent_since = None;
-                                ContinuousModeEvent::SensorStatus { connected: false, state: "unknown".into() }.emit(&app_for_detector);
+                                ContinuousModeEvent::SensorStatus { connected: false, state: "unknown".into() }.emit_via(&ctx_for_detector);
                                 continue; // Re-enter loop; next iteration uses LLM-only path
                             }
                         }
@@ -1145,7 +1144,7 @@ pub async fn run_continuous_mode(
             } else if is_hybrid_mode {
                 // Hybrid mode without sensor (sensor failed/disconnected): pure LLM fallback
                 tokio::select! {
-                    _ = tokio::time::sleep(tokio::time::Duration::from_secs(check_interval as u64)) => {
+                    _ = ctx_for_detector.sleep(tokio::time::Duration::from_secs(check_interval as u64)) => {
                         (false, false)
                     }
                     _ = silence_trigger_rx.notified() => {
@@ -1172,7 +1171,7 @@ pub async fn run_continuous_mode(
             } else {
                 // LLM / Shadow mode: wait for timer, silence, or manual trigger
                 tokio::select! {
-                    _ = tokio::time::sleep(tokio::time::Duration::from_secs(check_interval as u64)) => {
+                    _ = ctx_for_detector.sleep(tokio::time::Duration::from_secs(check_interval as u64)) => {
                         (false, false)
                     }
                     _ = silence_trigger_rx.notified() => {
@@ -1204,7 +1203,7 @@ pub async fn run_continuous_mode(
             // Idle buffer detection: discard ambient noise that accumulates between encounters.
             if idle_timeout_secs > 0 && !is_empty && !manual_triggered && !sensor_triggered {
                 if let Some(first_time) = first_ts {
-                    let buffer_age_secs = (Utc::now() - first_time).num_seconds();
+                    let buffer_age_secs = (ctx_for_detector.now_utc() - first_time).num_seconds();
                     if buffer_age_secs > idle_timeout_secs as i64
                         && word_count < IDLE_ENCOUNTER_MAX_WORDS
                     {
@@ -1214,7 +1213,7 @@ pub async fn run_continuous_mode(
                         );
                         if let Some(ref dl) = *day_logger_for_detector {
                             dl.log(crate::day_log::DayEvent::IdleBufferCleared {
-                                ts: Utc::now().to_rfc3339(),
+                                ts: ctx_for_detector.now_utc().to_rfc3339(),
                                 word_count,
                                 buffer_age_secs,
                             });
@@ -1222,7 +1221,7 @@ pub async fn run_continuous_mode(
                         if let Ok(mut buffer) = buffer_for_detector.lock() {
                             buffer.clear();
                         }
-                        ContinuousModeEvent::IdleBufferCleared { word_count, buffer_age_secs }.emit(&app_for_detector);
+                        ContinuousModeEvent::IdleBufferCleared { word_count, buffer_age_secs }.emit_via(&ctx_for_detector);
                         continue;
                     }
                 }
@@ -1296,7 +1295,7 @@ pub async fn run_continuous_mode(
                 // Minimum encounter duration: 2 minutes (unless force_check)
                 if !force_check {
                     if let Some(first_time) = first_ts {
-                        let buffer_age_secs = (Utc::now() - first_time).num_seconds();
+                        let buffer_age_secs = (ctx_for_detector.now_utc() - first_time).num_seconds();
                         if buffer_age_secs < 120 {
                             debug!("Skipping detection: buffer_age={}s (minimum 120s), word_count={}", buffer_age_secs, word_count);
                             continue;
@@ -1315,7 +1314,7 @@ pub async fn run_continuous_mode(
             } else {
                 warn!("State lock poisoned while setting checking state");
             }
-            ContinuousModeEvent::Checking.emit(&app_for_detector);
+            ContinuousModeEvent::Checking.emit_via(&ctx_for_detector);
 
             // Run encounter detection via LLM (with 60s timeout to prevent blocking)
             // Manual trigger or pure-sensor trigger: skip LLM — directly split
@@ -1395,7 +1394,7 @@ pub async fn run_continuous_mode(
                 });
                 // Pre-compute replay bundle fields shared across all detection outcomes
                 let replay_buffer_age = first_ts
-                    .map(|t| (Utc::now() - t).num_seconds() as f64).unwrap_or(0.0);
+                    .map(|t| (ctx_for_detector.now_utc() - t).num_seconds() as f64).unwrap_or(0.0);
                 let replay_sensor_absent = sensor_absent_since.map(|t| t.to_rfc3339());
                 let replay_sensor_ctx = crate::replay_bundle::SensorContext::new(
                     detection_context.sensor_departed, detection_context.sensor_present,
@@ -1503,7 +1502,7 @@ pub async fn run_continuous_mode(
                         } else {
                             warn!("Last error lock poisoned, error state not updated");
                         }
-                        ContinuousModeEvent::Error { error: "Encounter detection failed".into() }.emit(&app_for_detector);
+                        ContinuousModeEvent::Error { error: "Encounter detection failed".into() }.emit_via(&ctx_for_detector);
                         None
                     }
                     Err(_elapsed) => {
@@ -1556,7 +1555,7 @@ pub async fn run_continuous_mode(
 
             // Evaluate detection decision via pure function (single source of truth)
             let buffer_age_mins = first_ts
-                .map(|t| (Utc::now() - t).num_minutes())
+                .map(|t| (ctx_for_detector.now_utc() - t).num_minutes())
                 .unwrap_or(0);
             let eval_ctx = DetectionEvalContext {
                 detection_result,
@@ -1568,7 +1567,7 @@ pub async fn run_continuous_mode(
                 manual_triggered,
                 sensor_triggered,
                 is_hybrid_mode,
-                sensor_absent_secs: sensor_absent_since.map(|t| (Utc::now() - t).num_seconds() as u64),
+                sensor_absent_secs: sensor_absent_since.map(|t| (ctx_for_detector.now_utc() - t).num_seconds() as u64),
                 hybrid_confirm_window_secs,
                 hybrid_min_words_for_sensor_split,
                 sensor_continuous_present,
@@ -1721,7 +1720,7 @@ pub async fn run_continuous_mode(
                         // Compute duration from first-to-last segment (not Utc::now which includes LLM processing time)
                         let encounter_duration_ms_computed = match (encounter_start, encounter_end) {
                             (Some(s), Some(e)) => (e - s).num_milliseconds().max(0) as u64,
-                            (Some(s), None) => (Utc::now() - s).num_milliseconds().max(0) as u64,
+                            (Some(s), None) => (ctx_for_detector.now_utc() - s).num_milliseconds().max(0) as u64,
                             _ => 0,
                         };
 
@@ -1740,7 +1739,7 @@ pub async fn run_continuous_mode(
                         }
 
                         // Set pipeline logger and segment logger to write to this session's archive folder
-                        if let Ok(session_dir) = local_archive::get_session_archive_dir(&session_id, &Utc::now()) {
+                        if let Ok(session_dir) = local_archive::get_session_archive_dir(&session_id, &ctx_for_detector.now_utc()) {
                             if let Ok(mut logger) = logger_for_detector.lock() {
                                 logger.set_session(&session_dir);
                             }
@@ -1756,7 +1755,7 @@ pub async fn run_continuous_mode(
                         // Set split decision on replay bundle
                         if let Ok(mut bundle) = bundle_for_detector.lock() {
                             bundle.set_split_decision(crate::replay_bundle::SplitDecision {
-                                ts: Utc::now().to_rfc3339(),
+                                ts: ctx_for_detector.now_utc().to_rfc3339(),
                                 trigger: detection_method_str.to_string(),
                                 word_count: encounter_word_count,
                                 cleaned_word_count,
@@ -1767,7 +1766,7 @@ pub async fn run_continuous_mode(
                         // Log encounter split to day log
                         if let Some(ref dl) = *day_logger_for_detector {
                             dl.log(crate::day_log::DayEvent::EncounterSplit {
-                                ts: Utc::now().to_rfc3339(),
+                                ts: ctx_for_detector.now_utc().to_rfc3339(),
                                 session_id: session_id.clone(),
                                 encounter_number,
                                 trigger: detection_method_str.to_string(),
@@ -1777,7 +1776,7 @@ pub async fn run_continuous_mode(
                         }
 
                         // Update archive metadata with continuous mode info
-                        if let Ok(session_dir) = local_archive::get_session_archive_dir(&session_id, &Utc::now()) {
+                        if let Ok(session_dir) = local_archive::get_session_archive_dir(&session_id, &ctx_for_detector.now_utc()) {
                             let date_path = session_dir.join("metadata.json");
                             if date_path.exists() {
                                 if let Ok(content) = std::fs::read_to_string(&date_path) {
@@ -1804,10 +1803,10 @@ pub async fn run_continuous_mode(
                                                 })
                                                 .clone();
 
-                                            let active_split_at = Utc::now().to_rfc3339();
+                                            let active_split_at = ctx_for_detector.now_utc().to_rfc3339();
 
                                             // Check if shadow agreed: any "would_split" decision in last 5 minutes
-                                            let now = Utc::now();
+                                            let now = ctx_for_detector.now_utc();
                                             let shadow_agreed = if decisions.is_empty() {
                                                 None
                                             } else {
@@ -1842,7 +1841,7 @@ pub async fn run_continuous_mode(
 
                         // Server sync: upload session to profile server
                         {
-                            let today = Utc::now().format("%Y-%m-%d").to_string();
+                            let today = ctx_for_detector.now_utc().format("%Y-%m-%d").to_string();
                             sync_ctx_for_detector.sync_session(&session_id, &today);
                         }
 
@@ -1873,7 +1872,7 @@ pub async fn run_continuous_mode(
 
                         // Record split timestamp (for stale screenshot detection)
                         if let Ok(mut t) = last_split_time_for_detector.lock() {
-                            *t = Utc::now();
+                            *t = ctx_for_detector.now_utc();
                         }
 
                         // Read encounter notes AND clear atomically (SOAP generation needs them)
@@ -1900,7 +1899,7 @@ pub async fn run_continuous_mode(
                         if let Ok(mut recent) = recent_encounters_for_detector.lock() {
                             recent.insert(0, RecentEncounter {
                                 session_id: session_id.clone(),
-                                time: Utc::now().to_rfc3339(),
+                                time: ctx_for_detector.now_utc().to_rfc3339(),
                                 patient_name: encounter_patient_name.clone(),
                             });
                             recent.truncate(3); // Keep only the 3 most recent
@@ -1913,7 +1912,7 @@ pub async fn run_continuous_mode(
                             session_id: session_id.clone(),
                             word_count: encounter_word_count,
                             patient_name: encounter_patient_name.clone(),
-                        }.emit(&app_for_detector);
+                        }.emit_via(&ctx_for_detector);
 
                         // Clinical content check: flag non-clinical encounters
                         let is_clinical = if let Some(ref client) = llm_client {
@@ -1934,14 +1933,14 @@ pub async fn run_continuous_mode(
                         if !is_clinical {
                             crate::encounter_pipeline::mark_non_clinical(&session_id);
                             // Sync non-clinical status to server (initial upload didn't have it)
-                            let today = Utc::now().format("%Y-%m-%d").to_string();
+                            let today = ctx_for_detector.now_utc().format("%Y-%m-%d").to_string();
                             sync_ctx_for_detector.sync_session(&session_id, &today);
                         }
 
                         // Log clinical check result to replay bundle + day log
                         if let Ok(mut bundle) = bundle_for_detector.lock() {
                             bundle.set_clinical_check(crate::replay_bundle::ClinicalCheck {
-                                ts: Utc::now().to_rfc3339(),
+                                ts: ctx_for_detector.now_utc().to_rfc3339(),
                                 is_clinical,
                                 latency_ms: 0, // Clinical check latency already logged via pipeline_logger
                                 success: true,
@@ -1950,7 +1949,7 @@ pub async fn run_continuous_mode(
                         }
                         if let Some(ref dl) = *day_logger_for_detector {
                             dl.log(crate::day_log::DayEvent::ClinicalCheckResult {
-                                ts: Utc::now().to_rfc3339(),
+                                ts: ctx_for_detector.now_utc().to_rfc3339(),
                                 session_id: session_id.clone(),
                                 is_clinical,
                             });
@@ -2040,7 +2039,7 @@ pub async fn run_continuous_mode(
                                 .map_or(false, |d| d.patient_count >= 2);
 
                             info!("Generating SOAP for encounter #{}", encounter_number);
-                            let soap_now = Utc::now();
+                            let soap_now = ctx_for_detector.now_utc();
                             let soap_outcome = crate::encounter_pipeline::generate_and_archive_soap(
                                 client, &soap_model, &filtered_encounter_text,
                                 &session_id, &soap_now,
@@ -2064,13 +2063,13 @@ pub async fn run_continuous_mode(
                                         session_id: session_id.clone(),
                                         patient_count: Some(patient_count),
                                         recovered: None,
-                                    }.emit(&app_for_detector);
+                                    }.emit_via(&ctx_for_detector);
                                     info!("SOAP generated for encounter #{} ({} patient notes)", encounter_number, patient_count);
                                     // Server sync: upload SOAP
                                     sync_ctx_for_detector.sync_soap(&session_id, content, soap_detail_level, &soap_format);
                                     if let Ok(mut bundle) = bundle_for_detector.lock() {
                                         bundle.set_soap_result(crate::replay_bundle::SoapResult {
-                                            ts: Utc::now().to_rfc3339(),
+                                            ts: ctx_for_detector.now_utc().to_rfc3339(),
                                             latency_ms, success: true,
                                             word_count: encounter_word_count, error: None,
                                             patient_count: if patient_count > 1 { Some(patient_count) } else { None },
@@ -2078,7 +2077,7 @@ pub async fn run_continuous_mode(
                                     }
                                     if let Some(ref dl) = *day_logger_for_detector {
                                         dl.log(crate::day_log::DayEvent::SoapGenerated {
-                                            ts: Utc::now().to_rfc3339(),
+                                            ts: ctx_for_detector.now_utc().to_rfc3339(),
                                             session_id: session_id.clone(),
                                             latency_ms, success: true,
                                         });
@@ -2112,7 +2111,7 @@ pub async fn run_continuous_mode(
                                             Ok(record) => {
                                                 if let Some(ref dl) = *day_logger_for_detector {
                                                     dl.log(crate::day_log::DayEvent::BillingExtracted {
-                                                        ts: Utc::now().to_rfc3339(),
+                                                        ts: ctx_for_detector.now_utc().to_rfc3339(),
                                                         session_id: session_id.clone(),
                                                         codes_count: record.codes.len() as u32,
                                                         total_amount_cents: record.total_amount_cents,
@@ -2122,7 +2121,7 @@ pub async fn run_continuous_mode(
                                                 }
                                                 if let Ok(mut bundle) = bundle_for_detector.lock() {
                                                     bundle.set_billing_result(crate::replay_bundle::BillingResult {
-                                                        ts: Utc::now().to_rfc3339(),
+                                                        ts: ctx_for_detector.now_utc().to_rfc3339(),
                                                         latency_ms: billing_latency,
                                                         success: true,
                                                         codes_count: Some(record.codes.len()),
@@ -2136,7 +2135,7 @@ pub async fn run_continuous_mode(
                                                 warn!("Billing extraction failed for encounter #{}: {}", encounter_number, e);
                                                 if let Some(ref dl) = *day_logger_for_detector {
                                                     dl.log(crate::day_log::DayEvent::BillingExtracted {
-                                                        ts: Utc::now().to_rfc3339(),
+                                                        ts: ctx_for_detector.now_utc().to_rfc3339(),
                                                         session_id: session_id.clone(),
                                                         codes_count: 0,
                                                         total_amount_cents: 0,
@@ -2146,7 +2145,7 @@ pub async fn run_continuous_mode(
                                                 }
                                                 if let Ok(mut bundle) = bundle_for_detector.lock() {
                                                     bundle.set_billing_result(crate::replay_bundle::BillingResult {
-                                                        ts: Utc::now().to_rfc3339(),
+                                                        ts: ctx_for_detector.now_utc().to_rfc3339(),
                                                         latency_ms: billing_latency,
                                                         success: false,
                                                         codes_count: None,
@@ -2162,7 +2161,7 @@ pub async fn run_continuous_mode(
                                 crate::encounter_pipeline::SoapGenerationOutcome::Failed { latency_ms, ref error } => {
                                     if let Ok(mut bundle) = bundle_for_detector.lock() {
                                         bundle.set_soap_result(crate::replay_bundle::SoapResult {
-                                            ts: Utc::now().to_rfc3339(),
+                                            ts: ctx_for_detector.now_utc().to_rfc3339(),
                                             latency_ms, success: false,
                                             word_count: encounter_word_count,
                                             error: Some(error.clone()),
@@ -2177,10 +2176,10 @@ pub async fn run_continuous_mode(
                                     ContinuousModeEvent::SoapFailed {
                                         session_id: session_id.clone(),
                                         error: error.clone(),
-                                    }.emit(&app_for_detector);
+                                    }.emit_via(&ctx_for_detector);
                                     if let Some(ref dl) = *day_logger_for_detector {
                                         dl.log(crate::day_log::DayEvent::SoapGenerated {
-                                            ts: Utc::now().to_rfc3339(),
+                                            ts: ctx_for_detector.now_utc().to_rfc3339(),
                                             session_id: session_id.clone(),
                                             latency_ms, success: false,
                                         });
@@ -2233,7 +2232,7 @@ pub async fn run_continuous_mode(
                                     // Log merge check to replay bundle
                                     if let Ok(mut bundle) = bundle_for_detector.lock() {
                                         bundle.set_merge_check(crate::replay_bundle::MergeCheck {
-                                            ts: Utc::now().to_rfc3339(),
+                                            ts: ctx_for_detector.now_utc().to_rfc3339(),
                                             prev_session_id: prev_id.clone(),
                                             prev_tail_excerpt: String::new(),
                                             curr_head_excerpt: String::new(),
@@ -2250,7 +2249,7 @@ pub async fn run_continuous_mode(
                                     }
                                     if let Some(ref dl) = *day_logger_for_detector {
                                         dl.log(crate::day_log::DayEvent::EncounterMerged {
-                                            ts: Utc::now().to_rfc3339(),
+                                            ts: ctx_for_detector.now_utc().to_rfc3339(),
                                             new_session_id: session_id.clone(),
                                             prev_session_id: prev_id.clone(),
                                             reason: "small_orphan_auto_merge".to_string(),
@@ -2266,7 +2265,7 @@ pub async fn run_continuous_mode(
                                     };
                                     let merged_wc = merged_text.split_whitespace().count();
                                     let merged_duration = encounter_start
-                                        .map(|s| (Utc::now() - s).num_milliseconds().max(0) as u64)
+                                        .map(|s| (ctx_for_detector.now_utc() - s).num_milliseconds().max(0) as u64)
                                         .unwrap_or(0);
                                     let merge_vision_name = name_tracker_for_detector
                                         .lock()
@@ -2285,7 +2284,7 @@ pub async fn run_continuous_mode(
                                     } else {
                                         // Sync merge to server: delete orphan, re-upload surviving session
                                         {
-                                            let today = Utc::now().format("%Y-%m-%d").to_string();
+                                            let today = ctx_for_detector.now_utc().format("%Y-%m-%d").to_string();
                                             sync_ctx_for_detector.sync_merge(&session_id, prev_id, &today);
                                         }
                                         // Regenerate SOAP for the merged encounter
@@ -2321,7 +2320,7 @@ pub async fn run_continuous_mode(
                                             merged_into_session_id: None,
                                             removed_session_id: session_id.clone(),
                                             reason: Some(format!("small orphan ({} words) with sensor present", encounter_word_count)),
-                                        }.emit(&app_for_detector);
+                                        }.emit_via(&ctx_for_detector);
 
                                         finalize_merged_bundle(
                                             &bundle_for_detector,
@@ -2373,7 +2372,7 @@ pub async fn run_continuous_mode(
                                     // Log to replay bundle
                                     if let Ok(mut bundle) = bundle_for_detector.lock() {
                                         bundle.set_merge_check(crate::replay_bundle::MergeCheck {
-                                            ts: Utc::now().to_rfc3339(),
+                                            ts: ctx_for_detector.now_utc().to_rfc3339(),
                                             prev_session_id: prev_id.clone(),
                                             prev_tail_excerpt: filtered_prev_tail.clone(),
                                             curr_head_excerpt: filtered_curr_head.clone(),
@@ -2392,7 +2391,7 @@ pub async fn run_continuous_mode(
                                     if merge_outcome.same_encounter == Some(true) {
                                         if let Some(ref dl) = *day_logger_for_detector {
                                             dl.log(crate::day_log::DayEvent::EncounterMerged {
-                                                ts: Utc::now().to_rfc3339(),
+                                                ts: ctx_for_detector.now_utc().to_rfc3339(),
                                                 new_session_id: session_id.clone(),
                                                 prev_session_id: prev_id.clone(),
                                                 reason: format!("{:?}", merge_outcome.reason),
@@ -2411,7 +2410,7 @@ pub async fn run_continuous_mode(
                                         };
                                         let merged_wc = merged_text.split_whitespace().count();
                                         let merged_duration = encounter_start
-                                            .map(|s| (Utc::now() - s).num_milliseconds().max(0) as u64)
+                                            .map(|s| (ctx_for_detector.now_utc() - s).num_milliseconds().max(0) as u64)
                                             .unwrap_or(0);
 
                                         let merge_vision_name = name_tracker_for_detector
@@ -2427,7 +2426,7 @@ pub async fn run_continuous_mode(
                                         } else {
                                             // Sync merge to server: delete merged-away session, re-upload surviving
                                             {
-                                                let today = Utc::now().format("%Y-%m-%d").to_string();
+                                                let today = ctx_for_detector.now_utc().format("%Y-%m-%d").to_string();
                                                 sync_ctx_for_detector.sync_merge(&session_id, prev_id, &today);
                                             }
                                             // Regenerate SOAP for the merged encounter
@@ -2460,7 +2459,7 @@ pub async fn run_continuous_mode(
                                                 merged_into_session_id: Some(prev_id.clone()),
                                                 removed_session_id: session_id.clone(),
                                                 reason: None,
-                                            }.emit(&app_for_detector);
+                                            }.emit_via(&ctx_for_detector);
 
                                             // Escalate confidence threshold for next detection
                                             merge_back_count += 1;
@@ -2648,7 +2647,7 @@ pub async fn run_continuous_mode(
                                         detection.patient_count, encounter_number
                                     );
                                     let (filtered, _) = strip_hallucinations(&encounter_text, 5);
-                                    let soap_now = Utc::now();
+                                    let soap_now = ctx_for_detector.now_utc();
                                     let regen_outcome =
                                         crate::encounter_pipeline::generate_and_archive_soap(
                                             client,
@@ -2721,7 +2720,7 @@ pub async fn run_continuous_mode(
                                 detection_method: trigger,
                             });
                             // Write replay_bundle.json and reset for next encounter
-                            if let Ok(session_dir) = local_archive::get_session_archive_dir(&session_id, &Utc::now()) {
+                            if let Ok(session_dir) = local_archive::get_session_archive_dir(&session_id, &ctx_for_detector.now_utc()) {
                                 bundle.build_and_reset(&session_dir);
                             }
                         }
@@ -2734,7 +2733,7 @@ pub async fn run_continuous_mode(
                         prev_encounter_session_id = Some(session_id.clone());
                         prev_encounter_text = Some(encounter_text);
                         prev_encounter_text_rich = Some(encounter_text_rich);
-                        prev_encounter_date = Some(Utc::now());
+                        prev_encounter_date = Some(ctx_for_detector.now_utc());
                         prev_encounter_is_clinical = is_clinical;
                         prev_encounter_patient_name = encounter_patient_name.clone();
             }
@@ -2791,7 +2790,7 @@ pub async fn run_continuous_mode(
         if handle.is_stopped() {
             break;
         }
-        tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+        ctx.sleep(tokio::time::Duration::from_millis(500)).await;
     }
 
     // Cleanup: stop presence sensor if active
@@ -2827,7 +2826,10 @@ pub async fn run_continuous_mode(
     }
 
     // ---- Orphaned SOAP recovery ----
-    if let Some(ref client) = flush_llm_client {
+    // Gated on a real Tauri AppHandle: the recovery helper emits events via
+    // AppHandle directly. In test contexts (no AppHandle) the orchestrator
+    // archive state can be verified directly without this recovery path.
+    if let (Some(ref client), Some(app_handle)) = (flush_llm_client.as_ref(), ctx.raw_tauri_app()) {
         crate::encounter_pipeline::recover_orphaned_soap(
             client,
             &flush_soap_model,
@@ -2835,7 +2837,7 @@ pub async fn run_continuous_mode(
             &flush_soap_format,
             &flush_soap_custom_instructions,
             &logger_for_flush,
-            &app,
+            &app_handle,
             &sync_ctx,
         ).await;
     }
@@ -2877,7 +2879,7 @@ pub async fn run_continuous_mode(
             // Compute duration from first-to-last segment
             let flush_duration_ms_computed = match (flush_encounter_start, flush_encounter_end) {
                 (Some(s), Some(e)) => (e - s).num_milliseconds().max(0) as u64,
-                (Some(s), None) => (Utc::now() - s).num_milliseconds().max(0) as u64,
+                (Some(s), None) => (ctx.now_utc() - s).num_milliseconds().max(0) as u64,
                 _ => 0,
             };
             if let Err(e) = local_archive::save_session(
@@ -2893,7 +2895,7 @@ pub async fn run_continuous_mode(
                 warn!("Failed to archive final buffer: {}", e);
             } else {
                 // Point logger to flush session's archive folder
-                if let Ok(flush_session_dir) = local_archive::get_session_archive_dir(&session_id, &Utc::now()) {
+                if let Ok(flush_session_dir) = local_archive::get_session_archive_dir(&session_id, &ctx.now_utc()) {
                     if let Ok(mut logger) = logger_for_flush.lock() {
                         logger.set_session(&flush_session_dir);
                     }
@@ -2907,7 +2909,7 @@ pub async fn run_continuous_mode(
                 flush_session_id_for_log = Some(session_id.clone());
 
                 // Cache today's sessions (used for encounter number + merge check)
-                let flush_today_str = Utc::now().format("%Y-%m-%d").to_string();
+                let flush_today_str = ctx.now_utc().format("%Y-%m-%d").to_string();
                 let flush_today_sessions = local_archive::list_sessions_by_date(&flush_today_str).ok();
 
                 // Update archive metadata with continuous mode info (match normal encounter path).
@@ -2922,7 +2924,7 @@ pub async fn run_continuous_mode(
                     .and_then(|sessions| sessions.iter().rev().find(|s| s.session_id != session_id))
                     .and_then(|prev| prev.encounter_number.map(|n| n + 1))
                     .unwrap_or(1);
-                if let Ok(session_dir) = local_archive::get_session_archive_dir(&session_id, &Utc::now()) {
+                if let Ok(session_dir) = local_archive::get_session_archive_dir(&session_id, &ctx.now_utc()) {
                     let meta_path = session_dir.join("metadata.json");
                     if meta_path.exists() {
                         if let Ok(content) = std::fs::read_to_string(&meta_path) {
@@ -2948,7 +2950,7 @@ pub async fn run_continuous_mode(
 
                 // Server sync: upload flushed session (after metadata enrichment so server gets full metadata)
                 {
-                    let today = Utc::now().format("%Y-%m-%d").to_string();
+                    let today = ctx.now_utc().format("%Y-%m-%d").to_string();
                     sync_ctx.sync_session(&session_id, &today);
                 }
 
@@ -2971,7 +2973,7 @@ pub async fn run_continuous_mode(
                 if !is_clinical {
                     crate::encounter_pipeline::mark_non_clinical(&session_id);
                     // Re-sync so server gets the non-clinical flag
-                    let today = Utc::now().format("%Y-%m-%d").to_string();
+                    let today = ctx.now_utc().format("%Y-%m-%d").to_string();
                     sync_ctx.sync_session(&session_id, &today);
                 }
 
@@ -3017,7 +3019,7 @@ pub async fn run_continuous_mode(
                                             );
                                             let merged_text = format!("{}\n{}", prev_transcript, text);
                                             let merged_wc = merged_text.split_whitespace().count();
-                                            let now = Utc::now();
+                                            let now = ctx.now_utc();
                                             if let Err(e) = local_archive::merge_encounters(
                                                 &prev_summary.session_id,
                                                 &session_id,
@@ -3031,7 +3033,7 @@ pub async fn run_continuous_mode(
                                             } else {
                                                 // Sync merge to server
                                                 {
-                                                    let today = Utc::now().format("%Y-%m-%d").to_string();
+                                                    let today = ctx.now_utc().format("%Y-%m-%d").to_string();
                                                     sync_ctx.sync_merge(&session_id, &prev_summary.session_id, &today);
                                                 }
                                                 flush_was_merged = true;
@@ -3056,7 +3058,7 @@ pub async fn run_continuous_mode(
                                                     merged_into_session_id: Some(prev_summary.session_id.clone()),
                                                     removed_session_id: session_id.clone(),
                                                     reason: None,
-                                                }.emit(&app);
+                                                }.emit_via(&ctx);
                                             }
                                         } else if let Some(false) = merge_outcome.same_encounter {
                                             info!(
@@ -3084,7 +3086,7 @@ pub async fn run_continuous_mode(
                     info!("Generating SOAP for flushed buffer ({} words)", word_count);
                     let outcome = crate::encounter_pipeline::generate_and_archive_soap(
                         client, &flush_soap_model, &filtered_text,
-                        &session_id, &Utc::now(),
+                        &session_id, &ctx.now_utc(),
                         flush_soap_detail_level, &flush_soap_format, &flush_soap_custom_instructions,
                         flush_notes, word_count, None,
                         &logger_for_flush,
@@ -3099,12 +3101,12 @@ pub async fn run_continuous_mode(
                             session_id: session_id.clone(),
                             patient_count: None,
                             recovered: None,
-                        }.emit(&app);
+                        }.emit_via(&ctx);
 
                         // Billing extraction (fail-open)
                         {
                             let flush_duration_ms = flush_duration_ms_computed;
-                            let flush_now = Utc::now();
+                            let flush_now = ctx.now_utc();
                             let flush_after_hours = crate::encounter_pipeline::is_after_hours(&flush_now);
                             let flush_patient_name = handle.name_tracker
                                 .lock()
@@ -3134,7 +3136,7 @@ pub async fn run_continuous_mode(
                                 Ok(record) => {
                                     if let Some(ref dl) = *day_logger_for_flush {
                                         dl.log(crate::day_log::DayEvent::BillingExtracted {
-                                            ts: Utc::now().to_rfc3339(),
+                                            ts: ctx.now_utc().to_rfc3339(),
                                             session_id: session_id.clone(),
                                             codes_count: record.codes.len() as u32,
                                             total_amount_cents: record.total_amount_cents,
@@ -3147,7 +3149,7 @@ pub async fn run_continuous_mode(
                                     warn!("Billing extraction failed for flush encounter: {}", e);
                                     if let Some(ref dl) = *day_logger_for_flush {
                                         dl.log(crate::day_log::DayEvent::BillingExtracted {
-                                            ts: Utc::now().to_rfc3339(),
+                                            ts: ctx.now_utc().to_rfc3339(),
                                             session_id: session_id.clone(),
                                             codes_count: 0,
                                             total_amount_cents: 0,
@@ -3167,7 +3169,7 @@ pub async fn run_continuous_mode(
     // Log continuous mode stopped event
     if let Some(ref dl) = *day_logger_for_flush {
         dl.log(crate::day_log::DayEvent::ContinuousModeStopped {
-            ts: Utc::now().to_rfc3339(),
+            ts: ctx.now_utc().to_rfc3339(),
             total_encounters: handle.encounters_detected.load(Ordering::Relaxed),
             flush_session_id: flush_session_id_for_log,
         });
@@ -3187,7 +3189,7 @@ pub async fn run_continuous_mode(
         warn!("State lock poisoned while setting idle state on shutdown");
     }
 
-    ContinuousModeEvent::Stopped.emit(&app);
+    ContinuousModeEvent::Stopped.emit_via(&ctx);
 
     info!("Continuous mode stopped");
     Ok(())

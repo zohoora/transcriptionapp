@@ -52,6 +52,7 @@ pub mod listening;
 pub mod gemini_client;
 pub mod llm_backend;
 pub mod llm_client;
+pub mod run_context;
 pub mod mcp;
 pub mod medplum;
 pub mod models;

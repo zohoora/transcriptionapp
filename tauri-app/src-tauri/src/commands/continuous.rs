@@ -239,9 +239,40 @@ pub async fn start_continuous_mode(
                 None
             };
 
-            // Run continuous mode (blocks until stop)
-            let result = crate::continuous_mode::run_continuous_mode(
+            // Run continuous mode (blocks until stop).
+            //
+            // TauriRunContext bundles the AppHandle + archive root + LLM
+            // backend so the orchestrator reaches all of them through the
+            // RunContext trait — same code path production and tests use.
+            let archive_root = crate::local_archive::get_archive_dir()
+                .unwrap_or_else(|_| std::path::PathBuf::from("/tmp/transcriptionapp-archive"));
+            let llm_backend: std::sync::Arc<dyn crate::llm_backend::LlmBackend> =
+                match crate::llm_client::LLMClient::new(
+                    &config.llm_router_url,
+                    &config.llm_api_key,
+                    &config.llm_client_id,
+                    &config.fast_model,
+                ) {
+                    Ok(c) => std::sync::Arc::new(c),
+                    Err(_) => {
+                        // Fallback so TauriRunContext can always be constructed;
+                        // orchestrator's internal LLMClient::new calls handle
+                        // invalid URLs independently by setting flush_llm_client
+                        // to None.
+                        std::sync::Arc::new(
+                            crate::llm_client::LLMClient::new(
+                                "http://localhost:8080", "", "dummy", "dummy",
+                            ).expect("localhost URL is valid"),
+                        )
+                    }
+                };
+            let ctx = crate::run_context::TauriRunContext::new(
                 app.clone(),
+                archive_root,
+                llm_backend,
+            );
+            let result = crate::continuous_mode::run_continuous_mode(
+                ctx,
                 handle_for_task.clone(),
                 config,
                 sync_ctx.clone(),

@@ -74,10 +74,17 @@ pub enum ContinuousModeEvent {
 }
 
 impl ContinuousModeEvent {
-    /// Emit this event on the `"continuous_mode_event"` channel.
+    /// Emit this event on the `"continuous_mode_event"` channel (Tauri path).
     pub fn emit(&self, app: &tauri::AppHandle) {
         use tauri::Emitter;
         let _ = app.emit("continuous_mode_event", self);
+    }
+
+    /// Emit this event via a RunContext. Used by run_continuous_mode so the
+    /// same call site works in both production (TauriRunContext forwards to
+    /// app.emit) and tests (RecordingRunContext records the event in a Vec).
+    pub fn emit_via<C: crate::run_context::RunContext>(&self, ctx: &C) {
+        ctx.emit_continuous_event(self);
     }
 }
 
