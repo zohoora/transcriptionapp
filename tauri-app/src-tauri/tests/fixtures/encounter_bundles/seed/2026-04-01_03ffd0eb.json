@@ -1,0 +1,2128 @@
+{
+  "clinical_check": {
+    "is_clinical": true,
+    "latency_ms": 0,
+    "success": true,
+    "ts": "2026-04-01T15:24:44.096759+00:00"
+  },
+  "config": {
+    "co2_baseline_ppm": 420.0,
+    "encounter_check_interval_secs": 120,
+    "encounter_detection_mode": "hybrid",
+    "encounter_detection_model": "fast-model",
+    "encounter_detection_nothink": false,
+    "encounter_merge_enabled": true,
+    "encounter_silence_trigger_secs": 45,
+    "fast_model": "fast-model",
+    "hybrid_confirm_window_secs": 180,
+    "hybrid_min_words_for_sensor_split": 500,
+    "idle_encounter_timeout_secs": 900,
+    "presence_absence_threshold_secs": 180,
+    "presence_debounce_secs": 10,
+    "presence_sensor_port": "",
+    "presence_sensor_url": "http://172.16.100.37",
+    "screen_capture_enabled": true,
+    "screen_capture_interval_secs": 60,
+    "shadow_active_method": "llm",
+    "sleep_end_hour": 6,
+    "sleep_mode_enabled": true,
+    "sleep_start_hour": 22,
+    "soap_custom_instructions": "I am a family physician in Ontario Canada. The medications, tests and such are what’s available in Canada. Do not repeat terms such as ‘The patient…’ I prefer clean and crisp notes. Do not start a stentence with ‘Patient reports’ - point form can be simple phrases. So instead of ‘The patient reports low back pain’ say ‘low back pain’. Use the past tense. Do not put procedures under ‘O’ and instead put them in either the ‘P’ section or a separate procedure note. ",
+    "soap_detail_level": 4,
+    "soap_format": "problem_based",
+    "soap_model": "soap-model",
+    "soap_model_fast": "soap-model",
+    "thermal_hot_pixel_threshold_c": 28.0
+  },
+  "detection_checks": [
+    {
+      "cleaned_word_count": 123,
+      "latency_ms": 1431,
+      "loop_state": {
+        "buffer_age_secs": 323.0,
+        "consecutive_failures": 0,
+        "manual_triggered": false,
+        "merge_back_count": 0,
+        "sensor_continuous_present": false,
+        "sensor_triggered": false
+      },
+      "parsed_complete": false,
+      "parsed_confidence": 0.95,
+      "parsed_end_index": null,
+      "prompt_system": "You MUST respond in English with ONLY a JSON object. No other text, no explanations, no markdown.\n\nYou are analyzing a continuous transcript from a medical office where the microphone records all day.\n\nYour task: determine if there is a TRANSITION POINT where one patient encounter ends and another begins, or where a patient encounter has clearly concluded.\n\nA completed encounter typically includes a clinical discussion and a concluding plan (e.g., medication changes, follow-up timing, referrals, or instructions). A short transcript that contains only vitals, greetings, or brief exchanges — with no clinical discussion or plan — is likely a pre-visit assessment still in progress, not a completed encounter. A nurse or medical assistant may see the patient before the doctor arrives to take vitals or ask initial questions — this is part of the same encounter, not a separate visit.\n\nEach segment includes elapsed time (MM:SS) from the start of the recording. Large gaps between timestamps may indicate silence, examination, or the room being empty between patients.\n\nIf you find a transition point or completed encounter, return:\n{\"complete\": true, \"end_segment_index\": <last segment index of the CONCLUDED encounter>, \"confidence\": <0.0-1.0>}\n\nIf the current discussion is still one ongoing encounter with no transition, return:\n{\"complete\": false, \"confidence\": <0.0-1.0>}\n\nRespond with ONLY the JSON object.",
+      "prompt_user": "Transcript (segments numbered with speaker labels):\n[566] (00:00) (Speaker 4 (76%)): Yeah. [567] (00:28) (Speaker 4 (72%)): I got changed. [568] (00:29) (Speaker 4 (82%)): First, second. [569] (00:35) (Speaker 4 (52%)): Hi Sam. Good, how are you? [570] (00:37) (Speaker 4 (63%)): Yeah. [571] (00:38) (Speaker 4 (47%)): Are humans. [572] (00:40) (Speaker 4 (36%)): Needle appointment. [573] (00:41) (Speaker 4 (77%)): Hi. [574] (00:54) (Speaker 4 (46%)): It's a restaurant. [575] (00:55) (Speaker 4 (56%)): Sure. [576] (00:58) (Speaker 4 (66%)): Yeah, sure. [577] (01:29) (Speaker 4 (67%)): One forty-two over eighty-three. [578] (01:39) (Speaker 4 (69%)): Scale. We'll update your weight. [579] (01:41) (Speaker 4 (72%)): Yes. [580] (01:42) (Speaker 4 (62%)): Yeah. [581] (01:43) (Speaker 4 (57%)): Yeah. Okay, let me show you the back now. Do I need to do like a sample? Yeah. [582] (01:49) (Speaker 4 (64%)): Just a small. [583] (01:51) (Speaker 4 (81%)): Okay. [584] (03:02) (Speaker 4 (74%)): I can't find it. [585] (03:03) (Speaker 4 (80%)): Wait. [586] (03:04) (Speaker 4 (75%)): No. [587] (03:06) (Speaker 4 (86%)): Oh, there's your. [588] (03:10) (Speaker 4 (82%)): Oh. [589] (03:26) (Speaker 4 (78%)): They paid for our currency. [590] (03:27) (Speaker 4 (75%)): I. [591] (03:30) (Speaker 4 (50%)): Three on the right. [592] (03:31) (Speaker 4 (72%)): Okay. [593] (03:34) (Speaker 4 (57%)): How's it going? Good. Thank you. How are you? [594] (03:39) (Speaker 4 (74%)): Keep it on your toes. [595] (03:54) (Speaker 4 (76%)): I promise. [596] (03:55) (Speaker 4 (37%)): So we stand on that. [597] (04:06) (Speaker 4 (65%)): Sorry, do you mind coming right in? [598] (04:10) (Speaker 4 (75%)): I'm so sorry. [599] (04:18) (Speaker 4 (61%)): She was human. [600] (04:20) (Speaker 4 (68%)): About the house. [601] (04:22) (Speaker 4 (72%)): Thank you. [602] (04:36) (Speaker 4 (72%)): I. [603] (04:37) (Speaker 4 (39%)): What are you talking about?\n\nReal-time context signals:\nCONTEXT: The presence sensor confirms someone is still in the room. Topic changes or pauses within the same visit are NOT transitions. Only split if there is strong evidence of a different patient (new name, new history intake, greeting a new person).",
+      "response_raw": "{\"complete\": false, \"confidence\": 0.95}",
+      "segment_range": [
+        566,
+        603
+      ],
+      "sensor_context": {
+        "departed": false,
+        "present": true,
+        "unknown": false
+      },
+      "success": true,
+      "ts": "2026-04-01T14:59:27.518715+00:00",
+      "word_count": 123
+    },
+    {
+      "cleaned_word_count": 123,
+      "latency_ms": 1407,
+      "loop_state": {
+        "buffer_age_secs": 369.0,
+        "consecutive_failures": 0,
+        "manual_triggered": false,
+        "merge_back_count": 0,
+        "sensor_continuous_present": false,
+        "sensor_triggered": false
+      },
+      "parsed_complete": false,
+      "parsed_confidence": 0.95,
+      "parsed_end_index": null,
+      "prompt_system": "You MUST respond in English with ONLY a JSON object. No other text, no explanations, no markdown.\n\nYou are analyzing a continuous transcript from a medical office where the microphone records all day.\n\nYour task: determine if there is a TRANSITION POINT where one patient encounter ends and another begins, or where a patient encounter has clearly concluded.\n\nA completed encounter typically includes a clinical discussion and a concluding plan (e.g., medication changes, follow-up timing, referrals, or instructions). A short transcript that contains only vitals, greetings, or brief exchanges — with no clinical discussion or plan — is likely a pre-visit assessment still in progress, not a completed encounter. A nurse or medical assistant may see the patient before the doctor arrives to take vitals or ask initial questions — this is part of the same encounter, not a separate visit.\n\nEach segment includes elapsed time (MM:SS) from the start of the recording. Large gaps between timestamps may indicate silence, examination, or the room being empty between patients.\n\nIf you find a transition point or completed encounter, return:\n{\"complete\": true, \"end_segment_index\": <last segment index of the CONCLUDED encounter>, \"confidence\": <0.0-1.0>}\n\nIf the current discussion is still one ongoing encounter with no transition, return:\n{\"complete\": false, \"confidence\": <0.0-1.0>}\n\nRespond with ONLY the JSON object.",
+      "prompt_user": "Transcript (segments numbered with speaker labels):\n[566] (00:00) (Speaker 4 (76%)): Yeah. [567] (00:28) (Speaker 4 (72%)): I got changed. [568] (00:29) (Speaker 4 (82%)): First, second. [569] (00:35) (Speaker 4 (52%)): Hi Sam. Good, how are you? [570] (00:37) (Speaker 4 (63%)): Yeah. [571] (00:38) (Speaker 4 (47%)): Are humans. [572] (00:40) (Speaker 4 (36%)): Needle appointment. [573] (00:41) (Speaker 4 (77%)): Hi. [574] (00:54) (Speaker 4 (46%)): It's a restaurant. [575] (00:55) (Speaker 4 (56%)): Sure. [576] (00:58) (Speaker 4 (66%)): Yeah, sure. [577] (01:29) (Speaker 4 (67%)): One forty-two over eighty-three. [578] (01:39) (Speaker 4 (69%)): Scale. We'll update your weight. [579] (01:41) (Speaker 4 (72%)): Yes. [580] (01:42) (Speaker 4 (62%)): Yeah. [581] (01:43) (Speaker 4 (57%)): Yeah. Okay, let me show you the back now. Do I need to do like a sample? Yeah. [582] (01:49) (Speaker 4 (64%)): Just a small. [583] (01:51) (Speaker 4 (81%)): Okay. [584] (03:02) (Speaker 4 (74%)): I can't find it. [585] (03:03) (Speaker 4 (80%)): Wait. [586] (03:04) (Speaker 4 (75%)): No. [587] (03:06) (Speaker 4 (86%)): Oh, there's your. [588] (03:10) (Speaker 4 (82%)): Oh. [589] (03:26) (Speaker 4 (78%)): They paid for our currency. [590] (03:27) (Speaker 4 (75%)): I. [591] (03:30) (Speaker 4 (50%)): Three on the right. [592] (03:31) (Speaker 4 (72%)): Okay. [593] (03:34) (Speaker 4 (57%)): How's it going? Good. Thank you. How are you? [594] (03:39) (Speaker 4 (74%)): Keep it on your toes. [595] (03:54) (Speaker 4 (76%)): I promise. [596] (03:55) (Speaker 4 (37%)): So we stand on that. [597] (04:06) (Speaker 4 (65%)): Sorry, do you mind coming right in? [598] (04:10) (Speaker 4 (75%)): I'm so sorry. [599] (04:18) (Speaker 4 (61%)): She was human. [600] (04:20) (Speaker 4 (68%)): About the house. [601] (04:22) (Speaker 4 (72%)): Thank you. [602] (04:36) (Speaker 4 (72%)): I. [603] (04:37) (Speaker 4 (39%)): What are you talking about?\n\nReal-time context signals:\nCONTEXT: The presence sensor confirms someone is still in the room. Topic changes or pauses within the same visit are NOT transitions. Only split if there is strong evidence of a different patient (new name, new history intake, greeting a new person).",
+      "response_raw": "{\"complete\": false, \"confidence\": 0.95}",
+      "segment_range": [
+        566,
+        603
+      ],
+      "sensor_context": {
+        "departed": false,
+        "present": true,
+        "unknown": false
+      },
+      "success": true,
+      "ts": "2026-04-01T15:00:13.251246+00:00",
+      "word_count": 123
+    },
+    {
+      "cleaned_word_count": 123,
+      "latency_ms": 1447,
+      "loop_state": {
+        "buffer_age_secs": 415.0,
+        "consecutive_failures": 0,
+        "manual_triggered": false,
+        "merge_back_count": 0,
+        "sensor_continuous_present": false,
+        "sensor_triggered": false
+      },
+      "parsed_complete": false,
+      "parsed_confidence": 0.95,
+      "parsed_end_index": null,
+      "prompt_system": "You MUST respond in English with ONLY a JSON object. No other text, no explanations, no markdown.\n\nYou are analyzing a continuous transcript from a medical office where the microphone records all day.\n\nYour task: determine if there is a TRANSITION POINT where one patient encounter ends and another begins, or where a patient encounter has clearly concluded.\n\nA completed encounter typically includes a clinical discussion and a concluding plan (e.g., medication changes, follow-up timing, referrals, or instructions). A short transcript that contains only vitals, greetings, or brief exchanges — with no clinical discussion or plan — is likely a pre-visit assessment still in progress, not a completed encounter. A nurse or medical assistant may see the patient before the doctor arrives to take vitals or ask initial questions — this is part of the same encounter, not a separate visit.\n\nEach segment includes elapsed time (MM:SS) from the start of the recording. Large gaps between timestamps may indicate silence, examination, or the room being empty between patients.\n\nIf you find a transition point or completed encounter, return:\n{\"complete\": true, \"end_segment_index\": <last segment index of the CONCLUDED encounter>, \"confidence\": <0.0-1.0>}\n\nIf the current discussion is still one ongoing encounter with no transition, return:\n{\"complete\": false, \"confidence\": <0.0-1.0>}\n\nRespond with ONLY the JSON object.",
+      "prompt_user": "Transcript (segments numbered with speaker labels):\n[566] (00:00) (Speaker 4 (76%)): Yeah. [567] (00:28) (Speaker 4 (72%)): I got changed. [568] (00:29) (Speaker 4 (82%)): First, second. [569] (00:35) (Speaker 4 (52%)): Hi Sam. Good, how are you? [570] (00:37) (Speaker 4 (63%)): Yeah. [571] (00:38) (Speaker 4 (47%)): Are humans. [572] (00:40) (Speaker 4 (36%)): Needle appointment. [573] (00:41) (Speaker 4 (77%)): Hi. [574] (00:54) (Speaker 4 (46%)): It's a restaurant. [575] (00:55) (Speaker 4 (56%)): Sure. [576] (00:58) (Speaker 4 (66%)): Yeah, sure. [577] (01:29) (Speaker 4 (67%)): One forty-two over eighty-three. [578] (01:39) (Speaker 4 (69%)): Scale. We'll update your weight. [579] (01:41) (Speaker 4 (72%)): Yes. [580] (01:42) (Speaker 4 (62%)): Yeah. [581] (01:43) (Speaker 4 (57%)): Yeah. Okay, let me show you the back now. Do I need to do like a sample? Yeah. [582] (01:49) (Speaker 4 (64%)): Just a small. [583] (01:51) (Speaker 4 (81%)): Okay. [584] (03:02) (Speaker 4 (74%)): I can't find it. [585] (03:03) (Speaker 4 (80%)): Wait. [586] (03:04) (Speaker 4 (75%)): No. [587] (03:06) (Speaker 4 (86%)): Oh, there's your. [588] (03:10) (Speaker 4 (82%)): Oh. [589] (03:26) (Speaker 4 (78%)): They paid for our currency. [590] (03:27) (Speaker 4 (75%)): I. [591] (03:30) (Speaker 4 (50%)): Three on the right. [592] (03:31) (Speaker 4 (72%)): Okay. [593] (03:34) (Speaker 4 (57%)): How's it going? Good. Thank you. How are you? [594] (03:39) (Speaker 4 (74%)): Keep it on your toes. [595] (03:54) (Speaker 4 (76%)): I promise. [596] (03:55) (Speaker 4 (37%)): So we stand on that. [597] (04:06) (Speaker 4 (65%)): Sorry, do you mind coming right in? [598] (04:10) (Speaker 4 (75%)): I'm so sorry. [599] (04:18) (Speaker 4 (61%)): She was human. [600] (04:20) (Speaker 4 (68%)): About the house. [601] (04:22) (Speaker 4 (72%)): Thank you. [602] (04:36) (Speaker 4 (72%)): I. [603] (04:37) (Speaker 4 (39%)): What are you talking about?\n\nReal-time context signals:\nCONTEXT: The presence sensor confirms someone is still in the room. Topic changes or pauses within the same visit are NOT transitions. Only split if there is strong evidence of a different patient (new name, new history intake, greeting a new person).",
+      "response_raw": "{\"complete\": false, \"confidence\": 0.95}",
+      "segment_range": [
+        566,
+        603
+      ],
+      "sensor_context": {
+        "departed": false,
+        "present": true,
+        "unknown": false
+      },
+      "success": true,
+      "ts": "2026-04-01T15:00:59.062557+00:00",
+      "word_count": 123
+    },
+    {
+      "cleaned_word_count": 123,
+      "latency_ms": 1461,
+      "loop_state": {
+        "buffer_age_secs": 460.0,
+        "consecutive_failures": 0,
+        "manual_triggered": false,
+        "merge_back_count": 0,
+        "sensor_continuous_present": false,
+        "sensor_triggered": false
+      },
+      "parsed_complete": false,
+      "parsed_confidence": 0.95,
+      "parsed_end_index": null,
+      "prompt_system": "You MUST respond in English with ONLY a JSON object. No other text, no explanations, no markdown.\n\nYou are analyzing a continuous transcript from a medical office where the microphone records all day.\n\nYour task: determine if there is a TRANSITION POINT where one patient encounter ends and another begins, or where a patient encounter has clearly concluded.\n\nA completed encounter typically includes a clinical discussion and a concluding plan (e.g., medication changes, follow-up timing, referrals, or instructions). A short transcript that contains only vitals, greetings, or brief exchanges — with no clinical discussion or plan — is likely a pre-visit assessment still in progress, not a completed encounter. A nurse or medical assistant may see the patient before the doctor arrives to take vitals or ask initial questions — this is part of the same encounter, not a separate visit.\n\nEach segment includes elapsed time (MM:SS) from the start of the recording. Large gaps between timestamps may indicate silence, examination, or the room being empty between patients.\n\nIf you find a transition point or completed encounter, return:\n{\"complete\": true, \"end_segment_index\": <last segment index of the CONCLUDED encounter>, \"confidence\": <0.0-1.0>}\n\nIf the current discussion is still one ongoing encounter with no transition, return:\n{\"complete\": false, \"confidence\": <0.0-1.0>}\n\nRespond with ONLY the JSON object.",
+      "prompt_user": "Transcript (segments numbered with speaker labels):\n[566] (00:00) (Speaker 4 (76%)): Yeah. [567] (00:28) (Speaker 4 (72%)): I got changed. [568] (00:29) (Speaker 4 (82%)): First, second. [569] (00:35) (Speaker 4 (52%)): Hi Sam. Good, how are you? [570] (00:37) (Speaker 4 (63%)): Yeah. [571] (00:38) (Speaker 4 (47%)): Are humans. [572] (00:40) (Speaker 4 (36%)): Needle appointment. [573] (00:41) (Speaker 4 (77%)): Hi. [574] (00:54) (Speaker 4 (46%)): It's a restaurant. [575] (00:55) (Speaker 4 (56%)): Sure. [576] (00:58) (Speaker 4 (66%)): Yeah, sure. [577] (01:29) (Speaker 4 (67%)): One forty-two over eighty-three. [578] (01:39) (Speaker 4 (69%)): Scale. We'll update your weight. [579] (01:41) (Speaker 4 (72%)): Yes. [580] (01:42) (Speaker 4 (62%)): Yeah. [581] (01:43) (Speaker 4 (57%)): Yeah. Okay, let me show you the back now. Do I need to do like a sample? Yeah. [582] (01:49) (Speaker 4 (64%)): Just a small. [583] (01:51) (Speaker 4 (81%)): Okay. [584] (03:02) (Speaker 4 (74%)): I can't find it. [585] (03:03) (Speaker 4 (80%)): Wait. [586] (03:04) (Speaker 4 (75%)): No. [587] (03:06) (Speaker 4 (86%)): Oh, there's your. [588] (03:10) (Speaker 4 (82%)): Oh. [589] (03:26) (Speaker 4 (78%)): They paid for our currency. [590] (03:27) (Speaker 4 (75%)): I. [591] (03:30) (Speaker 4 (50%)): Three on the right. [592] (03:31) (Speaker 4 (72%)): Okay. [593] (03:34) (Speaker 4 (57%)): How's it going? Good. Thank you. How are you? [594] (03:39) (Speaker 4 (74%)): Keep it on your toes. [595] (03:54) (Speaker 4 (76%)): I promise. [596] (03:55) (Speaker 4 (37%)): So we stand on that. [597] (04:06) (Speaker 4 (65%)): Sorry, do you mind coming right in? [598] (04:10) (Speaker 4 (75%)): I'm so sorry. [599] (04:18) (Speaker 4 (61%)): She was human. [600] (04:20) (Speaker 4 (68%)): About the house. [601] (04:22) (Speaker 4 (72%)): Thank you. [602] (04:36) (Speaker 4 (72%)): I. [603] (04:37) (Speaker 4 (39%)): What are you talking about?\n\nReal-time context signals:\nCONTEXT: The presence sensor confirms someone is still in the room. Topic changes or pauses within the same visit are NOT transitions. Only split if there is strong evidence of a different patient (new name, new history intake, greeting a new person).",
+      "response_raw": "{\"complete\": false, \"confidence\": 0.95}",
+      "segment_range": [
+        566,
+        603
+      ],
+      "sensor_context": {
+        "departed": false,
+        "present": true,
+        "unknown": false
+      },
+      "success": true,
+      "ts": "2026-04-01T15:01:44.879424+00:00",
+      "word_count": 123
+    },
+    {
+      "cleaned_word_count": 123,
+      "latency_ms": 1372,
+      "loop_state": {
+        "buffer_age_secs": 506.0,
+        "consecutive_failures": 0,
+        "manual_triggered": false,
+        "merge_back_count": 0,
+        "sensor_continuous_present": false,
+        "sensor_triggered": false
+      },
+      "parsed_complete": false,
+      "parsed_confidence": 0.95,
+      "parsed_end_index": null,
+      "prompt_system": "You MUST respond in English with ONLY a JSON object. No other text, no explanations, no markdown.\n\nYou are analyzing a continuous transcript from a medical office where the microphone records all day.\n\nYour task: determine if there is a TRANSITION POINT where one patient encounter ends and another begins, or where a patient encounter has clearly concluded.\n\nA completed encounter typically includes a clinical discussion and a concluding plan (e.g., medication changes, follow-up timing, referrals, or instructions). A short transcript that contains only vitals, greetings, or brief exchanges — with no clinical discussion or plan — is likely a pre-visit assessment still in progress, not a completed encounter. A nurse or medical assistant may see the patient before the doctor arrives to take vitals or ask initial questions — this is part of the same encounter, not a separate visit.\n\nEach segment includes elapsed time (MM:SS) from the start of the recording. Large gaps between timestamps may indicate silence, examination, or the room being empty between patients.\n\nIf you find a transition point or completed encounter, return:\n{\"complete\": true, \"end_segment_index\": <last segment index of the CONCLUDED encounter>, \"confidence\": <0.0-1.0>}\n\nIf the current discussion is still one ongoing encounter with no transition, return:\n{\"complete\": false, \"confidence\": <0.0-1.0>}\n\nRespond with ONLY the JSON object.",
+      "prompt_user": "Transcript (segments numbered with speaker labels):\n[566] (00:00) (Speaker 4 (76%)): Yeah. [567] (00:28) (Speaker 4 (72%)): I got changed. [568] (00:29) (Speaker 4 (82%)): First, second. [569] (00:35) (Speaker 4 (52%)): Hi Sam. Good, how are you? [570] (00:37) (Speaker 4 (63%)): Yeah. [571] (00:38) (Speaker 4 (47%)): Are humans. [572] (00:40) (Speaker 4 (36%)): Needle appointment. [573] (00:41) (Speaker 4 (77%)): Hi. [574] (00:54) (Speaker 4 (46%)): It's a restaurant. [575] (00:55) (Speaker 4 (56%)): Sure. [576] (00:58) (Speaker 4 (66%)): Yeah, sure. [577] (01:29) (Speaker 4 (67%)): One forty-two over eighty-three. [578] (01:39) (Speaker 4 (69%)): Scale. We'll update your weight. [579] (01:41) (Speaker 4 (72%)): Yes. [580] (01:42) (Speaker 4 (62%)): Yeah. [581] (01:43) (Speaker 4 (57%)): Yeah. Okay, let me show you the back now. Do I need to do like a sample? Yeah. [582] (01:49) (Speaker 4 (64%)): Just a small. [583] (01:51) (Speaker 4 (81%)): Okay. [584] (03:02) (Speaker 4 (74%)): I can't find it. [585] (03:03) (Speaker 4 (80%)): Wait. [586] (03:04) (Speaker 4 (75%)): No. [587] (03:06) (Speaker 4 (86%)): Oh, there's your. [588] (03:10) (Speaker 4 (82%)): Oh. [589] (03:26) (Speaker 4 (78%)): They paid for our currency. [590] (03:27) (Speaker 4 (75%)): I. [591] (03:30) (Speaker 4 (50%)): Three on the right. [592] (03:31) (Speaker 4 (72%)): Okay. [593] (03:34) (Speaker 4 (57%)): How's it going? Good. Thank you. How are you? [594] (03:39) (Speaker 4 (74%)): Keep it on your toes. [595] (03:54) (Speaker 4 (76%)): I promise. [596] (03:55) (Speaker 4 (37%)): So we stand on that. [597] (04:06) (Speaker 4 (65%)): Sorry, do you mind coming right in? [598] (04:10) (Speaker 4 (75%)): I'm so sorry. [599] (04:18) (Speaker 4 (61%)): She was human. [600] (04:20) (Speaker 4 (68%)): About the house. [601] (04:22) (Speaker 4 (72%)): Thank you. [602] (04:36) (Speaker 4 (72%)): I. [603] (04:37) (Speaker 4 (39%)): What are you talking about?\n\nReal-time context signals:\nCONTEXT: The presence sensor confirms someone is still in the room. Topic changes or pauses within the same visit are NOT transitions. Only split if there is strong evidence of a different patient (new name, new history intake, greeting a new person).",
+      "response_raw": "{\"complete\": false, \"confidence\": 0.95}",
+      "segment_range": [
+        566,
+        603
+      ],
+      "sensor_context": {
+        "departed": false,
+        "present": true,
+        "unknown": false
+      },
+      "success": true,
+      "ts": "2026-04-01T15:02:30.608236+00:00",
+      "word_count": 123
+    },
+    {
+      "cleaned_word_count": 123,
+      "latency_ms": 1630,
+      "loop_state": {
+        "buffer_age_secs": 552.0,
+        "consecutive_failures": 0,
+        "manual_triggered": false,
+        "merge_back_count": 0,
+        "sensor_continuous_present": false,
+        "sensor_triggered": false
+      },
+      "parsed_complete": false,
+      "parsed_confidence": 0.95,
+      "parsed_end_index": null,
+      "prompt_system": "You MUST respond in English with ONLY a JSON object. No other text, no explanations, no markdown.\n\nYou are analyzing a continuous transcript from a medical office where the microphone records all day.\n\nYour task: determine if there is a TRANSITION POINT where one patient encounter ends and another begins, or where a patient encounter has clearly concluded.\n\nA completed encounter typically includes a clinical discussion and a concluding plan (e.g., medication changes, follow-up timing, referrals, or instructions). A short transcript that contains only vitals, greetings, or brief exchanges — with no clinical discussion or plan — is likely a pre-visit assessment still in progress, not a completed encounter. A nurse or medical assistant may see the patient before the doctor arrives to take vitals or ask initial questions — this is part of the same encounter, not a separate visit.\n\nEach segment includes elapsed time (MM:SS) from the start of the recording. Large gaps between timestamps may indicate silence, examination, or the room being empty between patients.\n\nIf you find a transition point or completed encounter, return:\n{\"complete\": true, \"end_segment_index\": <last segment index of the CONCLUDED encounter>, \"confidence\": <0.0-1.0>}\n\nIf the current discussion is still one ongoing encounter with no transition, return:\n{\"complete\": false, \"confidence\": <0.0-1.0>}\n\nRespond with ONLY the JSON object.",
+      "prompt_user": "Transcript (segments numbered with speaker labels):\n[566] (00:00) (Speaker 4 (76%)): Yeah. [567] (00:28) (Speaker 4 (72%)): I got changed. [568] (00:29) (Speaker 4 (82%)): First, second. [569] (00:35) (Speaker 4 (52%)): Hi Sam. Good, how are you? [570] (00:37) (Speaker 4 (63%)): Yeah. [571] (00:38) (Speaker 4 (47%)): Are humans. [572] (00:40) (Speaker 4 (36%)): Needle appointment. [573] (00:41) (Speaker 4 (77%)): Hi. [574] (00:54) (Speaker 4 (46%)): It's a restaurant. [575] (00:55) (Speaker 4 (56%)): Sure. [576] (00:58) (Speaker 4 (66%)): Yeah, sure. [577] (01:29) (Speaker 4 (67%)): One forty-two over eighty-three. [578] (01:39) (Speaker 4 (69%)): Scale. We'll update your weight. [579] (01:41) (Speaker 4 (72%)): Yes. [580] (01:42) (Speaker 4 (62%)): Yeah. [581] (01:43) (Speaker 4 (57%)): Yeah. Okay, let me show you the back now. Do I need to do like a sample? Yeah. [582] (01:49) (Speaker 4 (64%)): Just a small. [583] (01:51) (Speaker 4 (81%)): Okay. [584] (03:02) (Speaker 4 (74%)): I can't find it. [585] (03:03) (Speaker 4 (80%)): Wait. [586] (03:04) (Speaker 4 (75%)): No. [587] (03:06) (Speaker 4 (86%)): Oh, there's your. [588] (03:10) (Speaker 4 (82%)): Oh. [589] (03:26) (Speaker 4 (78%)): They paid for our currency. [590] (03:27) (Speaker 4 (75%)): I. [591] (03:30) (Speaker 4 (50%)): Three on the right. [592] (03:31) (Speaker 4 (72%)): Okay. [593] (03:34) (Speaker 4 (57%)): How's it going? Good. Thank you. How are you? [594] (03:39) (Speaker 4 (74%)): Keep it on your toes. [595] (03:54) (Speaker 4 (76%)): I promise. [596] (03:55) (Speaker 4 (37%)): So we stand on that. [597] (04:06) (Speaker 4 (65%)): Sorry, do you mind coming right in? [598] (04:10) (Speaker 4 (75%)): I'm so sorry. [599] (04:18) (Speaker 4 (61%)): She was human. [600] (04:20) (Speaker 4 (68%)): About the house. [601] (04:22) (Speaker 4 (72%)): Thank you. [602] (04:36) (Speaker 4 (72%)): I. [603] (04:37) (Speaker 4 (39%)): What are you talking about?\n\nReal-time context signals:\nCONTEXT: The presence sensor confirms someone is still in the room. Topic changes or pauses within the same visit are NOT transitions. Only split if there is strong evidence of a different patient (new name, new history intake, greeting a new person).",
+      "response_raw": "{\"complete\": false, \"confidence\": 0.95}",
+      "segment_range": [
+        566,
+        603
+      ],
+      "sensor_context": {
+        "departed": false,
+        "present": true,
+        "unknown": false
+      },
+      "success": true,
+      "ts": "2026-04-01T15:03:16.665393+00:00",
+      "word_count": 123
+    },
+    {
+      "cleaned_word_count": 123,
+      "latency_ms": 1948,
+      "loop_state": {
+        "buffer_age_secs": 598.0,
+        "consecutive_failures": 0,
+        "manual_triggered": false,
+        "merge_back_count": 0,
+        "sensor_continuous_present": false,
+        "sensor_triggered": false
+      },
+      "parsed_complete": false,
+      "parsed_confidence": 0.95,
+      "parsed_end_index": null,
+      "prompt_system": "You MUST respond in English with ONLY a JSON object. No other text, no explanations, no markdown.\n\nYou are analyzing a continuous transcript from a medical office where the microphone records all day.\n\nYour task: determine if there is a TRANSITION POINT where one patient encounter ends and another begins, or where a patient encounter has clearly concluded.\n\nA completed encounter typically includes a clinical discussion and a concluding plan (e.g., medication changes, follow-up timing, referrals, or instructions). A short transcript that contains only vitals, greetings, or brief exchanges — with no clinical discussion or plan — is likely a pre-visit assessment still in progress, not a completed encounter. A nurse or medical assistant may see the patient before the doctor arrives to take vitals or ask initial questions — this is part of the same encounter, not a separate visit.\n\nEach segment includes elapsed time (MM:SS) from the start of the recording. Large gaps between timestamps may indicate silence, examination, or the room being empty between patients.\n\nIf you find a transition point or completed encounter, return:\n{\"complete\": true, \"end_segment_index\": <last segment index of the CONCLUDED encounter>, \"confidence\": <0.0-1.0>}\n\nIf the current discussion is still one ongoing encounter with no transition, return:\n{\"complete\": false, \"confidence\": <0.0-1.0>}\n\nRespond with ONLY the JSON object.",
+      "prompt_user": "Transcript (segments numbered with speaker labels):\n[566] (00:00) (Speaker 4 (76%)): Yeah. [567] (00:28) (Speaker 4 (72%)): I got changed. [568] (00:29) (Speaker 4 (82%)): First, second. [569] (00:35) (Speaker 4 (52%)): Hi Sam. Good, how are you? [570] (00:37) (Speaker 4 (63%)): Yeah. [571] (00:38) (Speaker 4 (47%)): Are humans. [572] (00:40) (Speaker 4 (36%)): Needle appointment. [573] (00:41) (Speaker 4 (77%)): Hi. [574] (00:54) (Speaker 4 (46%)): It's a restaurant. [575] (00:55) (Speaker 4 (56%)): Sure. [576] (00:58) (Speaker 4 (66%)): Yeah, sure. [577] (01:29) (Speaker 4 (67%)): One forty-two over eighty-three. [578] (01:39) (Speaker 4 (69%)): Scale. We'll update your weight. [579] (01:41) (Speaker 4 (72%)): Yes. [580] (01:42) (Speaker 4 (62%)): Yeah. [581] (01:43) (Speaker 4 (57%)): Yeah. Okay, let me show you the back now. Do I need to do like a sample? Yeah. [582] (01:49) (Speaker 4 (64%)): Just a small. [583] (01:51) (Speaker 4 (81%)): Okay. [584] (03:02) (Speaker 4 (74%)): I can't find it. [585] (03:03) (Speaker 4 (80%)): Wait. [586] (03:04) (Speaker 4 (75%)): No. [587] (03:06) (Speaker 4 (86%)): Oh, there's your. [588] (03:10) (Speaker 4 (82%)): Oh. [589] (03:26) (Speaker 4 (78%)): They paid for our currency. [590] (03:27) (Speaker 4 (75%)): I. [591] (03:30) (Speaker 4 (50%)): Three on the right. [592] (03:31) (Speaker 4 (72%)): Okay. [593] (03:34) (Speaker 4 (57%)): How's it going? Good. Thank you. How are you? [594] (03:39) (Speaker 4 (74%)): Keep it on your toes. [595] (03:54) (Speaker 4 (76%)): I promise. [596] (03:55) (Speaker 4 (37%)): So we stand on that. [597] (04:06) (Speaker 4 (65%)): Sorry, do you mind coming right in? [598] (04:10) (Speaker 4 (75%)): I'm so sorry. [599] (04:18) (Speaker 4 (61%)): She was human. [600] (04:20) (Speaker 4 (68%)): About the house. [601] (04:22) (Speaker 4 (72%)): Thank you. [602] (04:36) (Speaker 4 (72%)): I. [603] (04:37) (Speaker 4 (39%)): What are you talking about?\n\nReal-time context signals:\nCONTEXT: The presence sensor confirms someone is still in the room. Topic changes or pauses within the same visit are NOT transitions. Only split if there is strong evidence of a different patient (new name, new history intake, greeting a new person).",
+      "response_raw": "{\"complete\": false, \"confidence\": 0.95}",
+      "segment_range": [
+        566,
+        603
+      ],
+      "sensor_context": {
+        "departed": false,
+        "present": true,
+        "unknown": false
+      },
+      "success": true,
+      "ts": "2026-04-01T15:04:02.761199+00:00",
+      "word_count": 123
+    },
+    {
+      "cleaned_word_count": 123,
+      "latency_ms": 1456,
+      "loop_state": {
+        "buffer_age_secs": 644.0,
+        "consecutive_failures": 0,
+        "manual_triggered": false,
+        "merge_back_count": 0,
+        "sensor_continuous_present": false,
+        "sensor_triggered": false
+      },
+      "parsed_complete": false,
+      "parsed_confidence": 0.95,
+      "parsed_end_index": null,
+      "prompt_system": "You MUST respond in English with ONLY a JSON object. No other text, no explanations, no markdown.\n\nYou are analyzing a continuous transcript from a medical office where the microphone records all day.\n\nYour task: determine if there is a TRANSITION POINT where one patient encounter ends and another begins, or where a patient encounter has clearly concluded.\n\nA completed encounter typically includes a clinical discussion and a concluding plan (e.g., medication changes, follow-up timing, referrals, or instructions). A short transcript that contains only vitals, greetings, or brief exchanges — with no clinical discussion or plan — is likely a pre-visit assessment still in progress, not a completed encounter. A nurse or medical assistant may see the patient before the doctor arrives to take vitals or ask initial questions — this is part of the same encounter, not a separate visit.\n\nEach segment includes elapsed time (MM:SS) from the start of the recording. Large gaps between timestamps may indicate silence, examination, or the room being empty between patients.\n\nIf you find a transition point or completed encounter, return:\n{\"complete\": true, \"end_segment_index\": <last segment index of the CONCLUDED encounter>, \"confidence\": <0.0-1.0>}\n\nIf the current discussion is still one ongoing encounter with no transition, return:\n{\"complete\": false, \"confidence\": <0.0-1.0>}\n\nRespond with ONLY the JSON object.",
+      "prompt_user": "Transcript (segments numbered with speaker labels):\n[566] (00:00) (Speaker 4 (76%)): Yeah. [567] (00:28) (Speaker 4 (72%)): I got changed. [568] (00:29) (Speaker 4 (82%)): First, second. [569] (00:35) (Speaker 4 (52%)): Hi Sam. Good, how are you? [570] (00:37) (Speaker 4 (63%)): Yeah. [571] (00:38) (Speaker 4 (47%)): Are humans. [572] (00:40) (Speaker 4 (36%)): Needle appointment. [573] (00:41) (Speaker 4 (77%)): Hi. [574] (00:54) (Speaker 4 (46%)): It's a restaurant. [575] (00:55) (Speaker 4 (56%)): Sure. [576] (00:58) (Speaker 4 (66%)): Yeah, sure. [577] (01:29) (Speaker 4 (67%)): One forty-two over eighty-three. [578] (01:39) (Speaker 4 (69%)): Scale. We'll update your weight. [579] (01:41) (Speaker 4 (72%)): Yes. [580] (01:42) (Speaker 4 (62%)): Yeah. [581] (01:43) (Speaker 4 (57%)): Yeah. Okay, let me show you the back now. Do I need to do like a sample? Yeah. [582] (01:49) (Speaker 4 (64%)): Just a small. [583] (01:51) (Speaker 4 (81%)): Okay. [584] (03:02) (Speaker 4 (74%)): I can't find it. [585] (03:03) (Speaker 4 (80%)): Wait. [586] (03:04) (Speaker 4 (75%)): No. [587] (03:06) (Speaker 4 (86%)): Oh, there's your. [588] (03:10) (Speaker 4 (82%)): Oh. [589] (03:26) (Speaker 4 (78%)): They paid for our currency. [590] (03:27) (Speaker 4 (75%)): I. [591] (03:30) (Speaker 4 (50%)): Three on the right. [592] (03:31) (Speaker 4 (72%)): Okay. [593] (03:34) (Speaker 4 (57%)): How's it going? Good. Thank you. How are you? [594] (03:39) (Speaker 4 (74%)): Keep it on your toes. [595] (03:54) (Speaker 4 (76%)): I promise. [596] (03:55) (Speaker 4 (37%)): So we stand on that. [597] (04:06) (Speaker 4 (65%)): Sorry, do you mind coming right in? [598] (04:10) (Speaker 4 (75%)): I'm so sorry. [599] (04:18) (Speaker 4 (61%)): She was human. [600] (04:20) (Speaker 4 (68%)): About the house. [601] (04:22) (Speaker 4 (72%)): Thank you. [602] (04:36) (Speaker 4 (72%)): I. [603] (04:37) (Speaker 4 (39%)): What are you talking about?\n\nReal-time context signals:\nCONTEXT: The presence sensor confirms someone is still in the room. Topic changes or pauses within the same visit are NOT transitions. Only split if there is strong evidence of a different patient (new name, new history intake, greeting a new person).",
+      "response_raw": "{\"complete\": false, \"confidence\": 0.95}",
+      "segment_range": [
+        566,
+        603
+      ],
+      "sensor_context": {
+        "departed": false,
+        "present": true,
+        "unknown": false
+      },
+      "success": true,
+      "ts": "2026-04-01T15:04:48.118671+00:00",
+      "word_count": 123
+    },
+    {
+      "cleaned_word_count": 123,
+      "latency_ms": 1390,
+      "loop_state": {
+        "buffer_age_secs": 689.0,
+        "consecutive_failures": 0,
+        "manual_triggered": false,
+        "merge_back_count": 0,
+        "sensor_absent_since": "2026-04-01T15:05:23.151114+00:00",
+        "sensor_continuous_present": false,
+        "sensor_triggered": false
+      },
+      "parsed_complete": false,
+      "parsed_confidence": 0.95,
+      "parsed_end_index": null,
+      "prompt_system": "You MUST respond in English with ONLY a JSON object. No other text, no explanations, no markdown.\n\nYou are analyzing a continuous transcript from a medical office where the microphone records all day.\n\nYour task: determine if there is a TRANSITION POINT where one patient encounter ends and another begins, or where a patient encounter has clearly concluded.\n\nA completed encounter typically includes a clinical discussion and a concluding plan (e.g., medication changes, follow-up timing, referrals, or instructions). A short transcript that contains only vitals, greetings, or brief exchanges — with no clinical discussion or plan — is likely a pre-visit assessment still in progress, not a completed encounter. A nurse or medical assistant may see the patient before the doctor arrives to take vitals or ask initial questions — this is part of the same encounter, not a separate visit.\n\nEach segment includes elapsed time (MM:SS) from the start of the recording. Large gaps between timestamps may indicate silence, examination, or the room being empty between patients.\n\nIf you find a transition point or completed encounter, return:\n{\"complete\": true, \"end_segment_index\": <last segment index of the CONCLUDED encounter>, \"confidence\": <0.0-1.0>}\n\nIf the current discussion is still one ongoing encounter with no transition, return:\n{\"complete\": false, \"confidence\": <0.0-1.0>}\n\nRespond with ONLY the JSON object.",
+      "prompt_user": "Transcript (segments numbered with speaker labels):\n[566] (00:00) (Speaker 4 (76%)): Yeah. [567] (00:28) (Speaker 4 (72%)): I got changed. [568] (00:29) (Speaker 4 (82%)): First, second. [569] (00:35) (Speaker 4 (52%)): Hi Sam. Good, how are you? [570] (00:37) (Speaker 4 (63%)): Yeah. [571] (00:38) (Speaker 4 (47%)): Are humans. [572] (00:40) (Speaker 4 (36%)): Needle appointment. [573] (00:41) (Speaker 4 (77%)): Hi. [574] (00:54) (Speaker 4 (46%)): It's a restaurant. [575] (00:55) (Speaker 4 (56%)): Sure. [576] (00:58) (Speaker 4 (66%)): Yeah, sure. [577] (01:29) (Speaker 4 (67%)): One forty-two over eighty-three. [578] (01:39) (Speaker 4 (69%)): Scale. We'll update your weight. [579] (01:41) (Speaker 4 (72%)): Yes. [580] (01:42) (Speaker 4 (62%)): Yeah. [581] (01:43) (Speaker 4 (57%)): Yeah. Okay, let me show you the back now. Do I need to do like a sample? Yeah. [582] (01:49) (Speaker 4 (64%)): Just a small. [583] (01:51) (Speaker 4 (81%)): Okay. [584] (03:02) (Speaker 4 (74%)): I can't find it. [585] (03:03) (Speaker 4 (80%)): Wait. [586] (03:04) (Speaker 4 (75%)): No. [587] (03:06) (Speaker 4 (86%)): Oh, there's your. [588] (03:10) (Speaker 4 (82%)): Oh. [589] (03:26) (Speaker 4 (78%)): They paid for our currency. [590] (03:27) (Speaker 4 (75%)): I. [591] (03:30) (Speaker 4 (50%)): Three on the right. [592] (03:31) (Speaker 4 (72%)): Okay. [593] (03:34) (Speaker 4 (57%)): How's it going? Good. Thank you. How are you? [594] (03:39) (Speaker 4 (74%)): Keep it on your toes. [595] (03:54) (Speaker 4 (76%)): I promise. [596] (03:55) (Speaker 4 (37%)): So we stand on that. [597] (04:06) (Speaker 4 (65%)): Sorry, do you mind coming right in? [598] (04:10) (Speaker 4 (75%)): I'm so sorry. [599] (04:18) (Speaker 4 (61%)): She was human. [600] (04:20) (Speaker 4 (68%)): About the house. [601] (04:22) (Speaker 4 (72%)): Thank you. [602] (04:36) (Speaker 4 (72%)): I. [603] (04:37) (Speaker 4 (39%)): What are you talking about?\n\nReal-time context signals:\nCONTEXT: The presence sensor detected possible movement away from the room. Note: brief departures during medical visits are common (hand washing, supplies, injection preparation, bathroom). Evaluate the TRANSCRIPT CONTENT to determine if the encounter has actually concluded — a sensor departure alone is not sufficient. IMPORTANT: Transcript timestamps are more reliable than the sensor. If segments show continuous or very recent speech (no large time gap), the encounter is likely still active regardless of the sensor signal.",
+      "response_raw": "{\"complete\": false, \"confidence\": 0.95}",
+      "segment_range": [
+        566,
+        603
+      ],
+      "sensor_context": {
+        "departed": true,
+        "present": false,
+        "unknown": false
+      },
+      "success": true,
+      "ts": "2026-04-01T15:05:33.874293+00:00",
+      "word_count": 123
+    },
+    {
+      "cleaned_word_count": 123,
+      "latency_ms": 1365,
+      "loop_state": {
+        "buffer_age_secs": 735.0,
+        "consecutive_failures": 0,
+        "manual_triggered": false,
+        "merge_back_count": 0,
+        "sensor_absent_since": "2026-04-01T15:05:23.151114+00:00",
+        "sensor_continuous_present": false,
+        "sensor_triggered": false
+      },
+      "parsed_complete": false,
+      "parsed_confidence": 0.95,
+      "parsed_end_index": null,
+      "prompt_system": "You MUST respond in English with ONLY a JSON object. No other text, no explanations, no markdown.\n\nYou are analyzing a continuous transcript from a medical office where the microphone records all day.\n\nYour task: determine if there is a TRANSITION POINT where one patient encounter ends and another begins, or where a patient encounter has clearly concluded.\n\nA completed encounter typically includes a clinical discussion and a concluding plan (e.g., medication changes, follow-up timing, referrals, or instructions). A short transcript that contains only vitals, greetings, or brief exchanges — with no clinical discussion or plan — is likely a pre-visit assessment still in progress, not a completed encounter. A nurse or medical assistant may see the patient before the doctor arrives to take vitals or ask initial questions — this is part of the same encounter, not a separate visit.\n\nEach segment includes elapsed time (MM:SS) from the start of the recording. Large gaps between timestamps may indicate silence, examination, or the room being empty between patients.\n\nIf you find a transition point or completed encounter, return:\n{\"complete\": true, \"end_segment_index\": <last segment index of the CONCLUDED encounter>, \"confidence\": <0.0-1.0>}\n\nIf the current discussion is still one ongoing encounter with no transition, return:\n{\"complete\": false, \"confidence\": <0.0-1.0>}\n\nRespond with ONLY the JSON object.",
+      "prompt_user": "Transcript (segments numbered with speaker labels):\n[566] (00:00) (Speaker 4 (76%)): Yeah. [567] (00:28) (Speaker 4 (72%)): I got changed. [568] (00:29) (Speaker 4 (82%)): First, second. [569] (00:35) (Speaker 4 (52%)): Hi Sam. Good, how are you? [570] (00:37) (Speaker 4 (63%)): Yeah. [571] (00:38) (Speaker 4 (47%)): Are humans. [572] (00:40) (Speaker 4 (36%)): Needle appointment. [573] (00:41) (Speaker 4 (77%)): Hi. [574] (00:54) (Speaker 4 (46%)): It's a restaurant. [575] (00:55) (Speaker 4 (56%)): Sure. [576] (00:58) (Speaker 4 (66%)): Yeah, sure. [577] (01:29) (Speaker 4 (67%)): One forty-two over eighty-three. [578] (01:39) (Speaker 4 (69%)): Scale. We'll update your weight. [579] (01:41) (Speaker 4 (72%)): Yes. [580] (01:42) (Speaker 4 (62%)): Yeah. [581] (01:43) (Speaker 4 (57%)): Yeah. Okay, let me show you the back now. Do I need to do like a sample? Yeah. [582] (01:49) (Speaker 4 (64%)): Just a small. [583] (01:51) (Speaker 4 (81%)): Okay. [584] (03:02) (Speaker 4 (74%)): I can't find it. [585] (03:03) (Speaker 4 (80%)): Wait. [586] (03:04) (Speaker 4 (75%)): No. [587] (03:06) (Speaker 4 (86%)): Oh, there's your. [588] (03:10) (Speaker 4 (82%)): Oh. [589] (03:26) (Speaker 4 (78%)): They paid for our currency. [590] (03:27) (Speaker 4 (75%)): I. [591] (03:30) (Speaker 4 (50%)): Three on the right. [592] (03:31) (Speaker 4 (72%)): Okay. [593] (03:34) (Speaker 4 (57%)): How's it going? Good. Thank you. How are you? [594] (03:39) (Speaker 4 (74%)): Keep it on your toes. [595] (03:54) (Speaker 4 (76%)): I promise. [596] (03:55) (Speaker 4 (37%)): So we stand on that. [597] (04:06) (Speaker 4 (65%)): Sorry, do you mind coming right in? [598] (04:10) (Speaker 4 (75%)): I'm so sorry. [599] (04:18) (Speaker 4 (61%)): She was human. [600] (04:20) (Speaker 4 (68%)): About the house. [601] (04:22) (Speaker 4 (72%)): Thank you. [602] (04:36) (Speaker 4 (72%)): I. [603] (04:37) (Speaker 4 (39%)): What are you talking about?\n\nReal-time context signals:\nCONTEXT: The presence sensor detected possible movement away from the room. Note: brief departures during medical visits are common (hand washing, supplies, injection preparation, bathroom). Evaluate the TRANSCRIPT CONTENT to determine if the encounter has actually concluded — a sensor departure alone is not sufficient. IMPORTANT: Transcript timestamps are more reliable than the sensor. If segments show continuous or very recent speech (no large time gap), the encounter is likely still active regardless of the sensor signal.",
+      "response_raw": "{\"complete\": false, \"confidence\": 0.95}",
+      "segment_range": [
+        566,
+        603
+      ],
+      "sensor_context": {
+        "departed": true,
+        "present": false,
+        "unknown": false
+      },
+      "success": true,
+      "ts": "2026-04-01T15:06:19.677903+00:00",
+      "word_count": 123
+    },
+    {
+      "cleaned_word_count": 123,
+      "latency_ms": 1432,
+      "loop_state": {
+        "buffer_age_secs": 781.0,
+        "consecutive_failures": 0,
+        "manual_triggered": false,
+        "merge_back_count": 0,
+        "sensor_absent_since": "2026-04-01T15:05:23.151114+00:00",
+        "sensor_continuous_present": false,
+        "sensor_triggered": false
+      },
+      "parsed_complete": false,
+      "parsed_confidence": 0.95,
+      "parsed_end_index": null,
+      "prompt_system": "You MUST respond in English with ONLY a JSON object. No other text, no explanations, no markdown.\n\nYou are analyzing a continuous transcript from a medical office where the microphone records all day.\n\nYour task: determine if there is a TRANSITION POINT where one patient encounter ends and another begins, or where a patient encounter has clearly concluded.\n\nA completed encounter typically includes a clinical discussion and a concluding plan (e.g., medication changes, follow-up timing, referrals, or instructions). A short transcript that contains only vitals, greetings, or brief exchanges — with no clinical discussion or plan — is likely a pre-visit assessment still in progress, not a completed encounter. A nurse or medical assistant may see the patient before the doctor arrives to take vitals or ask initial questions — this is part of the same encounter, not a separate visit.\n\nEach segment includes elapsed time (MM:SS) from the start of the recording. Large gaps between timestamps may indicate silence, examination, or the room being empty between patients.\n\nIf you find a transition point or completed encounter, return:\n{\"complete\": true, \"end_segment_index\": <last segment index of the CONCLUDED encounter>, \"confidence\": <0.0-1.0>}\n\nIf the current discussion is still one ongoing encounter with no transition, return:\n{\"complete\": false, \"confidence\": <0.0-1.0>}\n\nRespond with ONLY the JSON object.",
+      "prompt_user": "Transcript (segments numbered with speaker labels):\n[566] (00:00) (Speaker 4 (76%)): Yeah. [567] (00:28) (Speaker 4 (72%)): I got changed. [568] (00:29) (Speaker 4 (82%)): First, second. [569] (00:35) (Speaker 4 (52%)): Hi Sam. Good, how are you? [570] (00:37) (Speaker 4 (63%)): Yeah. [571] (00:38) (Speaker 4 (47%)): Are humans. [572] (00:40) (Speaker 4 (36%)): Needle appointment. [573] (00:41) (Speaker 4 (77%)): Hi. [574] (00:54) (Speaker 4 (46%)): It's a restaurant. [575] (00:55) (Speaker 4 (56%)): Sure. [576] (00:58) (Speaker 4 (66%)): Yeah, sure. [577] (01:29) (Speaker 4 (67%)): One forty-two over eighty-three. [578] (01:39) (Speaker 4 (69%)): Scale. We'll update your weight. [579] (01:41) (Speaker 4 (72%)): Yes. [580] (01:42) (Speaker 4 (62%)): Yeah. [581] (01:43) (Speaker 4 (57%)): Yeah. Okay, let me show you the back now. Do I need to do like a sample? Yeah. [582] (01:49) (Speaker 4 (64%)): Just a small. [583] (01:51) (Speaker 4 (81%)): Okay. [584] (03:02) (Speaker 4 (74%)): I can't find it. [585] (03:03) (Speaker 4 (80%)): Wait. [586] (03:04) (Speaker 4 (75%)): No. [587] (03:06) (Speaker 4 (86%)): Oh, there's your. [588] (03:10) (Speaker 4 (82%)): Oh. [589] (03:26) (Speaker 4 (78%)): They paid for our currency. [590] (03:27) (Speaker 4 (75%)): I. [591] (03:30) (Speaker 4 (50%)): Three on the right. [592] (03:31) (Speaker 4 (72%)): Okay. [593] (03:34) (Speaker 4 (57%)): How's it going? Good. Thank you. How are you? [594] (03:39) (Speaker 4 (74%)): Keep it on your toes. [595] (03:54) (Speaker 4 (76%)): I promise. [596] (03:55) (Speaker 4 (37%)): So we stand on that. [597] (04:06) (Speaker 4 (65%)): Sorry, do you mind coming right in? [598] (04:10) (Speaker 4 (75%)): I'm so sorry. [599] (04:18) (Speaker 4 (61%)): She was human. [600] (04:20) (Speaker 4 (68%)): About the house. [601] (04:22) (Speaker 4 (72%)): Thank you. [602] (04:36) (Speaker 4 (72%)): I. [603] (04:37) (Speaker 4 (39%)): What are you talking about?\n\nReal-time context signals:\nCONTEXT: The presence sensor detected possible movement away from the room. Note: brief departures during medical visits are common (hand washing, supplies, injection preparation, bathroom). Evaluate the TRANSCRIPT CONTENT to determine if the encounter has actually concluded — a sensor departure alone is not sufficient. IMPORTANT: Transcript timestamps are more reliable than the sensor. If segments show continuous or very recent speech (no large time gap), the encounter is likely still active regardless of the sensor signal.",
+      "response_raw": "{\"complete\": false, \"confidence\": 0.95}",
+      "segment_range": [
+        566,
+        603
+      ],
+      "sensor_context": {
+        "departed": true,
+        "present": false,
+        "unknown": false
+      },
+      "success": true,
+      "ts": "2026-04-01T15:07:05.570783+00:00",
+      "word_count": 123
+    },
+    {
+      "cleaned_word_count": 123,
+      "latency_ms": 1394,
+      "loop_state": {
+        "buffer_age_secs": 827.0,
+        "consecutive_failures": 0,
+        "manual_triggered": false,
+        "merge_back_count": 0,
+        "sensor_absent_since": "2026-04-01T15:05:23.151114+00:00",
+        "sensor_continuous_present": false,
+        "sensor_triggered": false
+      },
+      "parsed_complete": false,
+      "parsed_confidence": 0.95,
+      "parsed_end_index": null,
+      "prompt_system": "You MUST respond in English with ONLY a JSON object. No other text, no explanations, no markdown.\n\nYou are analyzing a continuous transcript from a medical office where the microphone records all day.\n\nYour task: determine if there is a TRANSITION POINT where one patient encounter ends and another begins, or where a patient encounter has clearly concluded.\n\nA completed encounter typically includes a clinical discussion and a concluding plan (e.g., medication changes, follow-up timing, referrals, or instructions). A short transcript that contains only vitals, greetings, or brief exchanges — with no clinical discussion or plan — is likely a pre-visit assessment still in progress, not a completed encounter. A nurse or medical assistant may see the patient before the doctor arrives to take vitals or ask initial questions — this is part of the same encounter, not a separate visit.\n\nEach segment includes elapsed time (MM:SS) from the start of the recording. Large gaps between timestamps may indicate silence, examination, or the room being empty between patients.\n\nIf you find a transition point or completed encounter, return:\n{\"complete\": true, \"end_segment_index\": <last segment index of the CONCLUDED encounter>, \"confidence\": <0.0-1.0>}\n\nIf the current discussion is still one ongoing encounter with no transition, return:\n{\"complete\": false, \"confidence\": <0.0-1.0>}\n\nRespond with ONLY the JSON object.",
+      "prompt_user": "Transcript (segments numbered with speaker labels):\n[566] (00:00) (Speaker 4 (76%)): Yeah. [567] (00:28) (Speaker 4 (72%)): I got changed. [568] (00:29) (Speaker 4 (82%)): First, second. [569] (00:35) (Speaker 4 (52%)): Hi Sam. Good, how are you? [570] (00:37) (Speaker 4 (63%)): Yeah. [571] (00:38) (Speaker 4 (47%)): Are humans. [572] (00:40) (Speaker 4 (36%)): Needle appointment. [573] (00:41) (Speaker 4 (77%)): Hi. [574] (00:54) (Speaker 4 (46%)): It's a restaurant. [575] (00:55) (Speaker 4 (56%)): Sure. [576] (00:58) (Speaker 4 (66%)): Yeah, sure. [577] (01:29) (Speaker 4 (67%)): One forty-two over eighty-three. [578] (01:39) (Speaker 4 (69%)): Scale. We'll update your weight. [579] (01:41) (Speaker 4 (72%)): Yes. [580] (01:42) (Speaker 4 (62%)): Yeah. [581] (01:43) (Speaker 4 (57%)): Yeah. Okay, let me show you the back now. Do I need to do like a sample? Yeah. [582] (01:49) (Speaker 4 (64%)): Just a small. [583] (01:51) (Speaker 4 (81%)): Okay. [584] (03:02) (Speaker 4 (74%)): I can't find it. [585] (03:03) (Speaker 4 (80%)): Wait. [586] (03:04) (Speaker 4 (75%)): No. [587] (03:06) (Speaker 4 (86%)): Oh, there's your. [588] (03:10) (Speaker 4 (82%)): Oh. [589] (03:26) (Speaker 4 (78%)): They paid for our currency. [590] (03:27) (Speaker 4 (75%)): I. [591] (03:30) (Speaker 4 (50%)): Three on the right. [592] (03:31) (Speaker 4 (72%)): Okay. [593] (03:34) (Speaker 4 (57%)): How's it going? Good. Thank you. How are you? [594] (03:39) (Speaker 4 (74%)): Keep it on your toes. [595] (03:54) (Speaker 4 (76%)): I promise. [596] (03:55) (Speaker 4 (37%)): So we stand on that. [597] (04:06) (Speaker 4 (65%)): Sorry, do you mind coming right in? [598] (04:10) (Speaker 4 (75%)): I'm so sorry. [599] (04:18) (Speaker 4 (61%)): She was human. [600] (04:20) (Speaker 4 (68%)): About the house. [601] (04:22) (Speaker 4 (72%)): Thank you. [602] (04:36) (Speaker 4 (72%)): I. [603] (04:37) (Speaker 4 (39%)): What are you talking about?\n\nReal-time context signals:\nCONTEXT: The presence sensor detected possible movement away from the room. Note: brief departures during medical visits are common (hand washing, supplies, injection preparation, bathroom). Evaluate the TRANSCRIPT CONTENT to determine if the encounter has actually concluded — a sensor departure alone is not sufficient. IMPORTANT: Transcript timestamps are more reliable than the sensor. If segments show continuous or very recent speech (no large time gap), the encounter is likely still active regardless of the sensor signal.",
+      "response_raw": "{\"complete\": false, \"confidence\": 0.95}",
+      "segment_range": [
+        566,
+        603
+      ],
+      "sensor_context": {
+        "departed": true,
+        "present": false,
+        "unknown": false
+      },
+      "success": true,
+      "ts": "2026-04-01T15:07:51.358699+00:00",
+      "word_count": 123
+    },
+    {
+      "cleaned_word_count": 123,
+      "latency_ms": 1712,
+      "loop_state": {
+        "buffer_age_secs": 873.0,
+        "consecutive_failures": 0,
+        "manual_triggered": false,
+        "merge_back_count": 0,
+        "sensor_absent_since": "2026-04-01T15:05:23.151114+00:00",
+        "sensor_continuous_present": false,
+        "sensor_triggered": false
+      },
+      "parsed_complete": false,
+      "parsed_confidence": 0.95,
+      "parsed_end_index": null,
+      "prompt_system": "You MUST respond in English with ONLY a JSON object. No other text, no explanations, no markdown.\n\nYou are analyzing a continuous transcript from a medical office where the microphone records all day.\n\nYour task: determine if there is a TRANSITION POINT where one patient encounter ends and another begins, or where a patient encounter has clearly concluded.\n\nA completed encounter typically includes a clinical discussion and a concluding plan (e.g., medication changes, follow-up timing, referrals, or instructions). A short transcript that contains only vitals, greetings, or brief exchanges — with no clinical discussion or plan — is likely a pre-visit assessment still in progress, not a completed encounter. A nurse or medical assistant may see the patient before the doctor arrives to take vitals or ask initial questions — this is part of the same encounter, not a separate visit.\n\nEach segment includes elapsed time (MM:SS) from the start of the recording. Large gaps between timestamps may indicate silence, examination, or the room being empty between patients.\n\nIf you find a transition point or completed encounter, return:\n{\"complete\": true, \"end_segment_index\": <last segment index of the CONCLUDED encounter>, \"confidence\": <0.0-1.0>}\n\nIf the current discussion is still one ongoing encounter with no transition, return:\n{\"complete\": false, \"confidence\": <0.0-1.0>}\n\nRespond with ONLY the JSON object.",
+      "prompt_user": "Transcript (segments numbered with speaker labels):\n[566] (00:00) (Speaker 4 (76%)): Yeah. [567] (00:28) (Speaker 4 (72%)): I got changed. [568] (00:29) (Speaker 4 (82%)): First, second. [569] (00:35) (Speaker 4 (52%)): Hi Sam. Good, how are you? [570] (00:37) (Speaker 4 (63%)): Yeah. [571] (00:38) (Speaker 4 (47%)): Are humans. [572] (00:40) (Speaker 4 (36%)): Needle appointment. [573] (00:41) (Speaker 4 (77%)): Hi. [574] (00:54) (Speaker 4 (46%)): It's a restaurant. [575] (00:55) (Speaker 4 (56%)): Sure. [576] (00:58) (Speaker 4 (66%)): Yeah, sure. [577] (01:29) (Speaker 4 (67%)): One forty-two over eighty-three. [578] (01:39) (Speaker 4 (69%)): Scale. We'll update your weight. [579] (01:41) (Speaker 4 (72%)): Yes. [580] (01:42) (Speaker 4 (62%)): Yeah. [581] (01:43) (Speaker 4 (57%)): Yeah. Okay, let me show you the back now. Do I need to do like a sample? Yeah. [582] (01:49) (Speaker 4 (64%)): Just a small. [583] (01:51) (Speaker 4 (81%)): Okay. [584] (03:02) (Speaker 4 (74%)): I can't find it. [585] (03:03) (Speaker 4 (80%)): Wait. [586] (03:04) (Speaker 4 (75%)): No. [587] (03:06) (Speaker 4 (86%)): Oh, there's your. [588] (03:10) (Speaker 4 (82%)): Oh. [589] (03:26) (Speaker 4 (78%)): They paid for our currency. [590] (03:27) (Speaker 4 (75%)): I. [591] (03:30) (Speaker 4 (50%)): Three on the right. [592] (03:31) (Speaker 4 (72%)): Okay. [593] (03:34) (Speaker 4 (57%)): How's it going? Good. Thank you. How are you? [594] (03:39) (Speaker 4 (74%)): Keep it on your toes. [595] (03:54) (Speaker 4 (76%)): I promise. [596] (03:55) (Speaker 4 (37%)): So we stand on that. [597] (04:06) (Speaker 4 (65%)): Sorry, do you mind coming right in? [598] (04:10) (Speaker 4 (75%)): I'm so sorry. [599] (04:18) (Speaker 4 (61%)): She was human. [600] (04:20) (Speaker 4 (68%)): About the house. [601] (04:22) (Speaker 4 (72%)): Thank you. [602] (04:36) (Speaker 4 (72%)): I. [603] (04:37) (Speaker 4 (39%)): What are you talking about?\n\nReal-time context signals:\nCONTEXT: The presence sensor detected possible movement away from the room. Note: brief departures during medical visits are common (hand washing, supplies, injection preparation, bathroom). Evaluate the TRANSCRIPT CONTENT to determine if the encounter has actually concluded — a sensor departure alone is not sufficient. IMPORTANT: Transcript timestamps are more reliable than the sensor. If segments show continuous or very recent speech (no large time gap), the encounter is likely still active regardless of the sensor signal.",
+      "response_raw": "{\"complete\": false, \"confidence\": 0.95}",
+      "segment_range": [
+        566,
+        603
+      ],
+      "sensor_context": {
+        "departed": true,
+        "present": false,
+        "unknown": false
+      },
+      "success": true,
+      "ts": "2026-04-01T15:08:37.508986+00:00",
+      "word_count": 123
+    },
+    {
+      "cleaned_word_count": 216,
+      "latency_ms": 1744,
+      "loop_state": {
+        "buffer_age_secs": 423.0,
+        "consecutive_failures": 0,
+        "manual_triggered": false,
+        "merge_back_count": 0,
+        "sensor_continuous_present": false,
+        "sensor_triggered": false
+      },
+      "parsed_complete": false,
+      "parsed_confidence": 0.95,
+      "parsed_end_index": null,
+      "prompt_system": "You MUST respond in English with ONLY a JSON object. No other text, no explanations, no markdown.\n\nYou are analyzing a continuous transcript from a medical office where the microphone records all day.\n\nYour task: determine if there is a TRANSITION POINT where one patient encounter ends and another begins, or where a patient encounter has clearly concluded.\n\nA completed encounter typically includes a clinical discussion and a concluding plan (e.g., medication changes, follow-up timing, referrals, or instructions). A short transcript that contains only vitals, greetings, or brief exchanges — with no clinical discussion or plan — is likely a pre-visit assessment still in progress, not a completed encounter. A nurse or medical assistant may see the patient before the doctor arrives to take vitals or ask initial questions — this is part of the same encounter, not a separate visit.\n\nEach segment includes elapsed time (MM:SS) from the start of the recording. Large gaps between timestamps may indicate silence, examination, or the room being empty between patients.\n\nIf you find a transition point or completed encounter, return:\n{\"complete\": true, \"end_segment_index\": <last segment index of the CONCLUDED encounter>, \"confidence\": <0.0-1.0>}\n\nIf the current discussion is still one ongoing encounter with no transition, return:\n{\"complete\": false, \"confidence\": <0.0-1.0>}\n\nRespond with ONLY the JSON object.",
+      "prompt_user": "Transcript (segments numbered with speaker labels):\n[604] (00:00) (Speaker 4 (66%)): They all. [605] (00:10) (Speaker 4 (70%)): I'm good. [606] (04:54) (Speaker 1 (52%)): Hello, hello. Sorry about the wait. [607] (04:56) (Speaker 1 (60%)): How things been? [608] (04:58) (Speaker 4 (67%)): I'm kind of good. [609] (04:59) (Speaker 1 (62%)): Excellent. How's the nausea then? [610] (05:03) (Speaker 1 (64%)): It's not as horrible as, as it was. I'm taking the pills so. [611] (05:09) (Speaker 1 (69%)): It's ah, the room is a bit cold. Isn't it? Sorry about that. I kind of like it because I'm like overheating all the time. [612] (05:17) (Dr Zohoor (63%)): And then do Do we get an appointment for you, or you have doctor's exam on April? [613] (05:22) (Speaker 4 (72%)): Yes. [614] (05:24) (Dr Zohoor (73%)): Okay, so what I'm going to do. [615] (05:29) (Speaker 4 (58%)): It is. [616] (05:31) (Dr Zohoor (85%)): I'm just gonna print out a couple things for you to take to your appointment. So it's nine days from now, right? [617] (05:38) (Speaker 4 (84%)): Yes. [618] (05:39) (Speaker 1 (51%)): Yeah, today's the first. [619] (05:44) (Speaker 4 (82%)): Yes. [620] (05:45) (Speaker 4 (83%)): That. [621] (05:52) (Speaker 3 (50%)): Moment, sorry. [622] (06:08) (Dr Zohoor (74%)): So the the last few times that I've seen you, your blood pressure has been slightly on the higher end and. [623] (06:16) (Dr Zohoor (64%)): Your urine has had a tiny bit of protein, and for the most part. [624] (06:21) (Dr Zohoor (69%)): We normally just kind of launch it at this stage. [625] (06:24) (Speaker 3 (52%)): Um. [626] (06:26) (Speaker 4 (59%)): And. [627] (06:29) (Dr Zohoor (64%)): So I, I wouldn't you know it's different trimesters of pregnancy. [628] (06:34) (Dr Zohoor (72%)): Just worry about different things. We go about things differently. [629] (06:39) (Speaker 1 (63%)): But. [630] (06:44) (Speaker 1 (59%)): The um. [631] (06:49) (Speaker 1 (64%)): We sent them. [632] (06:51) (Dr Zohoor (66%)): Everything else. So we sent them the, yeah. [633] (06:53) (Dr Zohoor (63%)): We actually sent them the ultrasound as well. We sent them [634] (06:56) (Dr Zohoor (67%)): Your. [635] (06:59) (Speaker 1 (59%)): Blog work results and.\n\nReal-time context signals:\nCONTEXT: The presence sensor confirms someone is still in the room. Topic changes or pauses within the same visit are NOT transitions. Only split if there is strong evidence of a different patient (new name, new history intake, greeting a new person).",
+      "response_raw": "{\"complete\": false, \"confidence\": 0.95}",
+      "segment_range": [
+        604,
+        635
+      ],
+      "sensor_context": {
+        "departed": false,
+        "present": true,
+        "unknown": false
+      },
+      "success": true,
+      "ts": "2026-04-01T15:16:28.452073+00:00",
+      "word_count": 216
+    },
+    {
+      "cleaned_word_count": 517,
+      "latency_ms": 2645,
+      "loop_state": {
+        "buffer_age_secs": 545.0,
+        "consecutive_failures": 0,
+        "manual_triggered": false,
+        "merge_back_count": 0,
+        "sensor_continuous_present": false,
+        "sensor_triggered": false
+      },
+      "parsed_complete": false,
+      "parsed_confidence": 0.95,
+      "parsed_end_index": null,
+      "prompt_system": "You MUST respond in English with ONLY a JSON object. No other text, no explanations, no markdown.\n\nYou are analyzing a continuous transcript from a medical office where the microphone records all day.\n\nYour task: determine if there is a TRANSITION POINT where one patient encounter ends and another begins, or where a patient encounter has clearly concluded.\n\nA completed encounter typically includes a clinical discussion and a concluding plan (e.g., medication changes, follow-up timing, referrals, or instructions). A short transcript that contains only vitals, greetings, or brief exchanges — with no clinical discussion or plan — is likely a pre-visit assessment still in progress, not a completed encounter. A nurse or medical assistant may see the patient before the doctor arrives to take vitals or ask initial questions — this is part of the same encounter, not a separate visit.\n\nEach segment includes elapsed time (MM:SS) from the start of the recording. Large gaps between timestamps may indicate silence, examination, or the room being empty between patients.\n\nIf you find a transition point or completed encounter, return:\n{\"complete\": true, \"end_segment_index\": <last segment index of the CONCLUDED encounter>, \"confidence\": <0.0-1.0>}\n\nIf the current discussion is still one ongoing encounter with no transition, return:\n{\"complete\": false, \"confidence\": <0.0-1.0>}\n\nRespond with ONLY the JSON object.",
+      "prompt_user": "Transcript (segments numbered with speaker labels):\n[604] (00:00) (Speaker 4 (66%)): They all. [605] (00:10) (Speaker 4 (70%)): I'm good. [606] (04:54) (Speaker 1 (52%)): Hello, hello. Sorry about the wait. [607] (04:56) (Speaker 1 (60%)): How things been? [608] (04:58) (Speaker 4 (67%)): I'm kind of good. [609] (04:59) (Speaker 1 (62%)): Excellent. How's the nausea then? [610] (05:03) (Speaker 1 (64%)): It's not as horrible as, as it was. I'm taking the pills so. [611] (05:09) (Speaker 1 (69%)): It's ah, the room is a bit cold. Isn't it? Sorry about that. I kind of like it because I'm like overheating all the time. [612] (05:17) (Dr Zohoor (63%)): And then do Do we get an appointment for you, or you have doctor's exam on April? [613] (05:22) (Speaker 4 (72%)): Yes. [614] (05:24) (Dr Zohoor (73%)): Okay, so what I'm going to do. [615] (05:29) (Speaker 4 (58%)): It is. [616] (05:31) (Dr Zohoor (85%)): I'm just gonna print out a couple things for you to take to your appointment. So it's nine days from now, right? [617] (05:38) (Speaker 4 (84%)): Yes. [618] (05:39) (Speaker 1 (51%)): Yeah, today's the first. [619] (05:44) (Speaker 4 (82%)): Yes. [620] (05:45) (Speaker 4 (83%)): That. [621] (05:52) (Speaker 3 (50%)): Moment, sorry. [622] (06:08) (Dr Zohoor (74%)): So the the last few times that I've seen you, your blood pressure has been slightly on the higher end and. [623] (06:16) (Dr Zohoor (64%)): Your urine has had a tiny bit of protein, and for the most part. [624] (06:21) (Dr Zohoor (69%)): We normally just kind of launch it at this stage. [625] (06:24) (Speaker 3 (52%)): Um. [626] (06:26) (Speaker 4 (59%)): And. [627] (06:29) (Dr Zohoor (64%)): So I, I wouldn't you know it's different trimesters of pregnancy. [628] (06:34) (Dr Zohoor (72%)): Just worry about different things. We go about things differently. [629] (06:39) (Speaker 1 (63%)): But. [630] (06:44) (Speaker 1 (59%)): The um. [631] (06:49) (Speaker 1 (64%)): We sent them. [632] (06:51) (Dr Zohoor (66%)): Everything else. So we sent them the, yeah. [633] (06:53) (Dr Zohoor (63%)): We actually sent them the ultrasound as well. We sent them [634] (06:56) (Dr Zohoor (67%)): Your. [635] (06:59) (Speaker 1 (59%)): Blog work results and. [636] (07:01) (Dr Zohoor (74%)): All the, the swaps. This nads and everything along [637] (07:05) (Dr Zohoor (76%)): To him, so he has all those things. Um, what he doesn't have is like today's block after reading and so on. Again, I'm not trying to scare you by any means. What does it like mean if it's like? Doesn't mean anything at this stage. Okay, it's more that [638] (07:20) (Dr Zohoor (62%)): He doesn't have this as a background, so when he sees you and. [639] (07:24) (Dr Zohoor (81%)): He's gonna wonder whether this is a one-time thing or this an ongoing, where how's it trending. So this just gives him the history behind it so he can be like okay, this is where she's been yeah whatnot um Is there like something that makes it like higher? Or the urine things Yeah. So this is This is all we consider as normal pregnancy Um [640] (07:48) (Speaker 1 (49%)): The. [641] (07:50) (Speaker 1 (61%)): But what happens sometimes? So. [642] (07:51) (Dr Zohoor (67%)): There are women who have high blood pressure before they get pregnant. Yeah, and [643] (07:57) (Dr Zohoor (75%)): They we don't know sometimes kind of whether so somebody somebody has a very high blood pressure. We don't know if that's their normal, yeah or if that's that's their you know so [644] (08:08) (Speaker 1 (69%)): This lets us know. [645] (08:10) (Dr Zohoor (67%)): This stage of pregnancy, this is where things are. So that even in the third trimester, the number is a little bit up from this. Okay? Yeah. [646] (08:18) (Dr Zohoor (77%)): Whereas, if it's significantly higher the P O four yeah. [647] (08:24) (Speaker 1 (61%)): The. [648] (08:25) (Dr Zohoor (67%)): He wouldn't. He wouldn't. Um, he wouldn't change anything now. The reason it happens in pregnancy is because the fetus [649] (08:33) (Dr Zohoor (74%)): Changes how your blood vessels operate. The fetus is literally like [650] (08:39) (Dr Zohoor (79%)): A gigantic parasite feeding off you. So it's, it sends signals throughout your body and changes everything. Yeah. So it's so in doing that, it changes kind of the mechanics of how your gut will operate. [651] (08:58) (Speaker 4 (54%)): Um.\n\nReal-time context signals:\nCONTEXT: The presence sensor confirms someone is still in the room. Topic changes or pauses within the same visit are NOT transitions. Only split if there is strong evidence of a different patient (new name, new history intake, greeting a new person).",
+      "response_raw": "{\"complete\": false, \"confidence\": 0.95}",
+      "segment_range": [
+        604,
+        651
+      ],
+      "sensor_context": {
+        "departed": false,
+        "present": true,
+        "unknown": false
+      },
+      "success": true,
+      "ts": "2026-04-01T15:18:31.125728+00:00",
+      "word_count": 517
+    },
+    {
+      "cleaned_word_count": 884,
+      "latency_ms": 2273,
+      "loop_state": {
+        "buffer_age_secs": 668.0,
+        "consecutive_failures": 0,
+        "manual_triggered": false,
+        "merge_back_count": 0,
+        "sensor_continuous_present": false,
+        "sensor_triggered": false
+      },
+      "parsed_complete": false,
+      "parsed_confidence": 0.95,
+      "parsed_end_index": null,
+      "prompt_system": "You MUST respond in English with ONLY a JSON object. No other text, no explanations, no markdown.\n\nYou are analyzing a continuous transcript from a medical office where the microphone records all day.\n\nYour task: determine if there is a TRANSITION POINT where one patient encounter ends and another begins, or where a patient encounter has clearly concluded.\n\nA completed encounter typically includes a clinical discussion and a concluding plan (e.g., medication changes, follow-up timing, referrals, or instructions). A short transcript that contains only vitals, greetings, or brief exchanges — with no clinical discussion or plan — is likely a pre-visit assessment still in progress, not a completed encounter. A nurse or medical assistant may see the patient before the doctor arrives to take vitals or ask initial questions — this is part of the same encounter, not a separate visit.\n\nEach segment includes elapsed time (MM:SS) from the start of the recording. Large gaps between timestamps may indicate silence, examination, or the room being empty between patients.\n\nIf you find a transition point or completed encounter, return:\n{\"complete\": true, \"end_segment_index\": <last segment index of the CONCLUDED encounter>, \"confidence\": <0.0-1.0>}\n\nIf the current discussion is still one ongoing encounter with no transition, return:\n{\"complete\": false, \"confidence\": <0.0-1.0>}\n\nRespond with ONLY the JSON object.",
+      "prompt_user": "Transcript (segments numbered with speaker labels):\n[604] (00:00) (Speaker 4 (66%)): They all. [605] (00:10) (Speaker 4 (70%)): I'm good. [606] (04:54) (Speaker 1 (52%)): Hello, hello. Sorry about the wait. [607] (04:56) (Speaker 1 (60%)): How things been? [608] (04:58) (Speaker 4 (67%)): I'm kind of good. [609] (04:59) (Speaker 1 (62%)): Excellent. How's the nausea then? [610] (05:03) (Speaker 1 (64%)): It's not as horrible as, as it was. I'm taking the pills so. [611] (05:09) (Speaker 1 (69%)): It's ah, the room is a bit cold. Isn't it? Sorry about that. I kind of like it because I'm like overheating all the time. [612] (05:17) (Dr Zohoor (63%)): And then do Do we get an appointment for you, or you have doctor's exam on April? [613] (05:22) (Speaker 4 (72%)): Yes. [614] (05:24) (Dr Zohoor (73%)): Okay, so what I'm going to do. [615] (05:29) (Speaker 4 (58%)): It is. [616] (05:31) (Dr Zohoor (85%)): I'm just gonna print out a couple things for you to take to your appointment. So it's nine days from now, right? [617] (05:38) (Speaker 4 (84%)): Yes. [618] (05:39) (Speaker 1 (51%)): Yeah, today's the first. [619] (05:44) (Speaker 4 (82%)): Yes. [620] (05:45) (Speaker 4 (83%)): That. [621] (05:52) (Speaker 3 (50%)): Moment, sorry. [622] (06:08) (Dr Zohoor (74%)): So the the last few times that I've seen you, your blood pressure has been slightly on the higher end and. [623] (06:16) (Dr Zohoor (64%)): Your urine has had a tiny bit of protein, and for the most part. [624] (06:21) (Dr Zohoor (69%)): We normally just kind of launch it at this stage. [625] (06:24) (Speaker 3 (52%)): Um. [626] (06:26) (Speaker 4 (59%)): And. [627] (06:29) (Dr Zohoor (64%)): So I, I wouldn't you know it's different trimesters of pregnancy. [628] (06:34) (Dr Zohoor (72%)): Just worry about different things. We go about things differently. [629] (06:39) (Speaker 1 (63%)): But. [630] (06:44) (Speaker 1 (59%)): The um. [631] (06:49) (Speaker 1 (64%)): We sent them. [632] (06:51) (Dr Zohoor (66%)): Everything else. So we sent them the, yeah. [633] (06:53) (Dr Zohoor (63%)): We actually sent them the ultrasound as well. We sent them [634] (06:56) (Dr Zohoor (67%)): Your. [635] (06:59) (Speaker 1 (59%)): Blog work results and. [636] (07:01) (Dr Zohoor (74%)): All the, the swaps. This nads and everything along [637] (07:05) (Dr Zohoor (76%)): To him, so he has all those things. Um, what he doesn't have is like today's block after reading and so on. Again, I'm not trying to scare you by any means. What does it like mean if it's like? Doesn't mean anything at this stage. Okay, it's more that [638] (07:20) (Dr Zohoor (62%)): He doesn't have this as a background, so when he sees you and. [639] (07:24) (Dr Zohoor (81%)): He's gonna wonder whether this is a one-time thing or this an ongoing, where how's it trending. So this just gives him the history behind it so he can be like okay, this is where she's been yeah whatnot um Is there like something that makes it like higher? Or the urine things Yeah. So this is This is all we consider as normal pregnancy Um [640] (07:48) (Speaker 1 (49%)): The. [641] (07:50) (Speaker 1 (61%)): But what happens sometimes? So. [642] (07:51) (Dr Zohoor (67%)): There are women who have high blood pressure before they get pregnant. Yeah, and [643] (07:57) (Dr Zohoor (75%)): They we don't know sometimes kind of whether so somebody somebody has a very high blood pressure. We don't know if that's their normal, yeah or if that's that's their you know so [644] (08:08) (Speaker 1 (69%)): This lets us know. [645] (08:10) (Dr Zohoor (67%)): This stage of pregnancy, this is where things are. So that even in the third trimester, the number is a little bit up from this. Okay? Yeah. [646] (08:18) (Dr Zohoor (77%)): Whereas, if it's significantly higher the P O four yeah. [647] (08:24) (Speaker 1 (61%)): The. [648] (08:25) (Dr Zohoor (67%)): He wouldn't. He wouldn't. Um, he wouldn't change anything now. The reason it happens in pregnancy is because the fetus [649] (08:33) (Dr Zohoor (74%)): Changes how your blood vessels operate. The fetus is literally like [650] (08:39) (Dr Zohoor (79%)): A gigantic parasite feeding off you. So it's, it sends signals throughout your body and changes everything. Yeah. So it's so in doing that, it changes kind of the mechanics of how your gut will operate. [651] (08:58) (Speaker 4 (54%)): Um. [652] (08:59) (Dr Zohoor (78%)): Again, we for the most part wouldn't react to this. Which is why I didn't brought it up. Yeah. [653] (09:05) (Dr Zohoor (77%)): But if you see him and he checks your blood pressure, it's way higher. He's gonna say, \"Well, is this like where it's been? Is it going to was it lower or what?\" Was it Yeah, I wouldn't know so This So that's good yeah . So It'S just more so that he knows And then the last ultrasound that you had are included because he knows where Where things were left. I've sent them everything else If you're going there in a few days , then [654] (09:29) (Speaker 5 (49%)): You can just give that to him. [655] (09:31) (Speaker 1 (63%)): So it's just like my last one with you, and then I continue with him. Correct? Yeah. So the... And what he does is he uh [656] (09:40) (Speaker 1 (51%)): Again, I'm. [657] (09:42) (Dr Zohoor (64%)): I'm always here. Yeah, um, but [658] (09:45) (Dr Zohoor (69%)): Every obstetrician typically does things slightly differently, and so what happens is they'll. [659] (09:51) (Dr Zohoor (64%)): If if there's. [660] (09:54) (Dr Zohoor (76%)): They they prefer to just be owning it, yeah. And and then there you know there's no mixed messaging. There's no everybody is on the same page and so on but [661] (10:04) (Dr Zohoor (62%)): If anything comes along. [662] (10:06) (Speaker 1 (73%)): Sometimes they'll say, you know, you'll say, \"Hey, listen! Like the skin thing going on. There's other things going on.\" [663] (10:12) (Dr Zohoor (75%)): Say, you'll see a family dog. Like it's not pregnancy thing. So it's only like the pregnancy part that I go in exactly so. So his focus is and sometimes you won't be sure. You're like funny stuffs happening? Is this yeah pregnancy And he will say no um [664] (10:28) (Dr Zohoor (66%)): The other time, so so often I'll see patients even when they're being followed by psychiatrists speak Hazav. [665] (10:34) (Speaker 1 (81%)): Stuff that comes up, wealth-wise. The other reason is sometimes [666] (10:39) (Dr Zohoor (67%)): Let's say doctors am suggest something or says something, or something is just unclear. Patients will come to me and say [667] (10:47) (Dr Zohoor (77%)): Like this is what the specialist said. What are your thoughts? So they kind of come in to just understand, yeah, what's going on or just the situation that we're sure what [668] (10:57) (Speaker 1 (60%)): What something meant. Yeah. [669] (10:59) (Dr Zohoor (67%)): So I'm also often here as like a. [670] (11:02) (Speaker 1 (69%)): As a, as a you know someone.\n\nReal-time context signals:\nCONTEXT: The presence sensor confirms someone is still in the room. Topic changes or pauses within the same visit are NOT transitions. Only split if there is strong evidence of a different patient (new name, new history intake, greeting a new person).",
+      "response_raw": "{\"complete\": false, \"confidence\": 0.95}",
+      "segment_range": [
+        604,
+        670
+      ],
+      "sensor_context": {
+        "departed": false,
+        "present": true,
+        "unknown": false
+      },
+      "success": true,
+      "ts": "2026-04-01T15:20:33.431622+00:00",
+      "word_count": 884
+    },
+    {
+      "cleaned_word_count": 1188,
+      "latency_ms": 3186,
+      "loop_state": {
+        "buffer_age_secs": 790.0,
+        "consecutive_failures": 0,
+        "manual_triggered": false,
+        "merge_back_count": 0,
+        "sensor_continuous_present": false,
+        "sensor_triggered": false
+      },
+      "parsed_complete": false,
+      "parsed_confidence": 0.95,
+      "parsed_end_index": null,
+      "prompt_system": "You MUST respond in English with ONLY a JSON object. No other text, no explanations, no markdown.\n\nYou are analyzing a continuous transcript from a medical office where the microphone records all day.\n\nYour task: determine if there is a TRANSITION POINT where one patient encounter ends and another begins, or where a patient encounter has clearly concluded.\n\nA completed encounter typically includes a clinical discussion and a concluding plan (e.g., medication changes, follow-up timing, referrals, or instructions). A short transcript that contains only vitals, greetings, or brief exchanges — with no clinical discussion or plan — is likely a pre-visit assessment still in progress, not a completed encounter. A nurse or medical assistant may see the patient before the doctor arrives to take vitals or ask initial questions — this is part of the same encounter, not a separate visit.\n\nEach segment includes elapsed time (MM:SS) from the start of the recording. Large gaps between timestamps may indicate silence, examination, or the room being empty between patients.\n\nIf you find a transition point or completed encounter, return:\n{\"complete\": true, \"end_segment_index\": <last segment index of the CONCLUDED encounter>, \"confidence\": <0.0-1.0>}\n\nIf the current discussion is still one ongoing encounter with no transition, return:\n{\"complete\": false, \"confidence\": <0.0-1.0>}\n\nRespond with ONLY the JSON object.",
+      "prompt_user": "Transcript (segments numbered with speaker labels):\n[604] (00:00) (Speaker 4 (66%)): They all. [605] (00:10) (Speaker 4 (70%)): I'm good. [606] (04:54) (Speaker 1 (52%)): Hello, hello. Sorry about the wait. [607] (04:56) (Speaker 1 (60%)): How things been? [608] (04:58) (Speaker 4 (67%)): I'm kind of good. [609] (04:59) (Speaker 1 (62%)): Excellent. How's the nausea then? [610] (05:03) (Speaker 1 (64%)): It's not as horrible as, as it was. I'm taking the pills so. [611] (05:09) (Speaker 1 (69%)): It's ah, the room is a bit cold. Isn't it? Sorry about that. I kind of like it because I'm like overheating all the time. [612] (05:17) (Dr Zohoor (63%)): And then do Do we get an appointment for you, or you have doctor's exam on April? [613] (05:22) (Speaker 4 (72%)): Yes. [614] (05:24) (Dr Zohoor (73%)): Okay, so what I'm going to do. [615] (05:29) (Speaker 4 (58%)): It is. [616] (05:31) (Dr Zohoor (85%)): I'm just gonna print out a couple things for you to take to your appointment. So it's nine days from now, right? [617] (05:38) (Speaker 4 (84%)): Yes. [618] (05:39) (Speaker 1 (51%)): Yeah, today's the first. [619] (05:44) (Speaker 4 (82%)): Yes. [620] (05:45) (Speaker 4 (83%)): That. [621] (05:52) (Speaker 3 (50%)): Moment, sorry. [622] (06:08) (Dr Zohoor (74%)): So the the last few times that I've seen you, your blood pressure has been slightly on the higher end and. [623] (06:16) (Dr Zohoor (64%)): Your urine has had a tiny bit of protein, and for the most part. [624] (06:21) (Dr Zohoor (69%)): We normally just kind of launch it at this stage. [625] (06:24) (Speaker 3 (52%)): Um. [626] (06:26) (Speaker 4 (59%)): And. [627] (06:29) (Dr Zohoor (64%)): So I, I wouldn't you know it's different trimesters of pregnancy. [628] (06:34) (Dr Zohoor (72%)): Just worry about different things. We go about things differently. [629] (06:39) (Speaker 1 (63%)): But. [630] (06:44) (Speaker 1 (59%)): The um. [631] (06:49) (Speaker 1 (64%)): We sent them. [632] (06:51) (Dr Zohoor (66%)): Everything else. So we sent them the, yeah. [633] (06:53) (Dr Zohoor (63%)): We actually sent them the ultrasound as well. We sent them [634] (06:56) (Dr Zohoor (67%)): Your. [635] (06:59) (Speaker 1 (59%)): Blog work results and. [636] (07:01) (Dr Zohoor (74%)): All the, the swaps. This nads and everything along [637] (07:05) (Dr Zohoor (76%)): To him, so he has all those things. Um, what he doesn't have is like today's block after reading and so on. Again, I'm not trying to scare you by any means. What does it like mean if it's like? Doesn't mean anything at this stage. Okay, it's more that [638] (07:20) (Dr Zohoor (62%)): He doesn't have this as a background, so when he sees you and. [639] (07:24) (Dr Zohoor (81%)): He's gonna wonder whether this is a one-time thing or this an ongoing, where how's it trending. So this just gives him the history behind it so he can be like okay, this is where she's been yeah whatnot um Is there like something that makes it like higher? Or the urine things Yeah. So this is This is all we consider as normal pregnancy Um [640] (07:48) (Speaker 1 (49%)): The. [641] (07:50) (Speaker 1 (61%)): But what happens sometimes? So. [642] (07:51) (Dr Zohoor (67%)): There are women who have high blood pressure before they get pregnant. Yeah, and [643] (07:57) (Dr Zohoor (75%)): They we don't know sometimes kind of whether so somebody somebody has a very high blood pressure. We don't know if that's their normal, yeah or if that's that's their you know so [644] (08:08) (Speaker 1 (69%)): This lets us know. [645] (08:10) (Dr Zohoor (67%)): This stage of pregnancy, this is where things are. So that even in the third trimester, the number is a little bit up from this. Okay? Yeah. [646] (08:18) (Dr Zohoor (77%)): Whereas, if it's significantly higher the P O four yeah. [647] (08:24) (Speaker 1 (61%)): The. [648] (08:25) (Dr Zohoor (67%)): He wouldn't. He wouldn't. Um, he wouldn't change anything now. The reason it happens in pregnancy is because the fetus [649] (08:33) (Dr Zohoor (74%)): Changes how your blood vessels operate. The fetus is literally like [650] (08:39) (Dr Zohoor (79%)): A gigantic parasite feeding off you. So it's, it sends signals throughout your body and changes everything. Yeah. So it's so in doing that, it changes kind of the mechanics of how your gut will operate. [651] (08:58) (Speaker 4 (54%)): Um. [652] (08:59) (Dr Zohoor (78%)): Again, we for the most part wouldn't react to this. Which is why I didn't brought it up. Yeah. [653] (09:05) (Dr Zohoor (77%)): But if you see him and he checks your blood pressure, it's way higher. He's gonna say, \"Well, is this like where it's been? Is it going to was it lower or what?\" Was it Yeah, I wouldn't know so This So that's good yeah . So It'S just more so that he knows And then the last ultrasound that you had are included because he knows where Where things were left. I've sent them everything else If you're going there in a few days , then [654] (09:29) (Speaker 5 (49%)): You can just give that to him. [655] (09:31) (Speaker 1 (63%)): So it's just like my last one with you, and then I continue with him. Correct? Yeah. So the... And what he does is he uh [656] (09:40) (Speaker 1 (51%)): Again, I'm. [657] (09:42) (Dr Zohoor (64%)): I'm always here. Yeah, um, but [658] (09:45) (Dr Zohoor (69%)): Every obstetrician typically does things slightly differently, and so what happens is they'll. [659] (09:51) (Dr Zohoor (64%)): If if there's. [660] (09:54) (Dr Zohoor (76%)): They they prefer to just be owning it, yeah. And and then there you know there's no mixed messaging. There's no everybody is on the same page and so on but [661] (10:04) (Dr Zohoor (62%)): If anything comes along. [662] (10:06) (Speaker 1 (73%)): Sometimes they'll say, you know, you'll say, \"Hey, listen! Like the skin thing going on. There's other things going on.\" [663] (10:12) (Dr Zohoor (75%)): Say, you'll see a family dog. Like it's not pregnancy thing. So it's only like the pregnancy part that I go in exactly so. So his focus is and sometimes you won't be sure. You're like funny stuffs happening? Is this yeah pregnancy And he will say no um [664] (10:28) (Dr Zohoor (66%)): The other time, so so often I'll see patients even when they're being followed by psychiatrists speak Hazav. [665] (10:34) (Speaker 1 (81%)): Stuff that comes up, wealth-wise. The other reason is sometimes [666] (10:39) (Dr Zohoor (67%)): Let's say doctors am suggest something or says something, or something is just unclear. Patients will come to me and say [667] (10:47) (Dr Zohoor (77%)): Like this is what the specialist said. What are your thoughts? So they kind of come in to just understand, yeah, what's going on or just the situation that we're sure what [668] (10:57) (Speaker 1 (60%)): What something meant. Yeah. [669] (10:59) (Dr Zohoor (67%)): So I'm also often here as like a. [670] (11:02) (Speaker 1 (69%)): As a, as a you know someone. [671] (11:05) (Dr Zohoor (80%)): People come and say, \"Hey,\" like he said. I should take this this way, but I'm not really sure; like is it actually safe? Like I write different things yeah Yeah so So it's kind of like so so sometimes people even if It's pregnancy related they'll still come see me just to get a second sort of opinion about what that's on their mind Yeah Um So I'm always here But in terms of the primary pregnancy care And as soon as the baby's delivered [672] (11:30) (Speaker 4 (65%)): Yeah. [673] (11:31) (Dr Zohoor (75%)): Your sun disappears. Yeah, okay. So um so then everything else after afterwards now I often I'm gonna see you anyway because of the baby yeah and then um we we then kind [674] (11:46) (Dr Zohoor (73%)): You know the postnatal care. Sometimes they will see you a few weeks after just conversation, but then other stuff that comes up: contraception, speaking to adults or something. Yeah. Um yeah I was gonna ask like this may be obvious but like once we have baby like are going to be like his doctor? Okay. Yeah They'll ask you for sure there There are scenarios where [675] (12:11) (Speaker 1 (64%)): That's not the case, but for the most part. [676] (12:15) (Speaker 1 (66%)): Even though I'm technically not accepting. [677] (12:18) (Dr Zohoor (61%)): We chance having a family together. Yeah, it's no big deal. And let's have one. [678] (12:26) (Dr Zohoor (66%)): I think it's more just because I love listening to fetuses. Come on, yeah! I want to do so only the [679] (12:31) (Dr Zohoor (69%)): Always nice to hear them. [680] (12:34) (Speaker 1 (75%)): How has have you been feeling? [681] (12:37) (Speaker 1 (77%)): A little one. I can't remember the name yet. [682] (12:40) (Speaker 4 (65%)): Ips. [683] (12:41) (Speaker 4 (41%)): Think that we're gonna pick the name Gunner? Gunnar. Did you guys get off with it though? [684] (12:48) (Speaker 4 (57%)): Just came up like reading names, and then we were both like, \"Oh, that's cute,\" and it's like different. I don't know; I liked it—the strong name. [685] (12:58) (Speaker 4 (62%)): Um.\n\nReal-time context signals:\nCONTEXT: The presence sensor confirms someone is still in the room. Topic changes or pauses within the same visit are NOT transitions. Only split if there is strong evidence of a different patient (new name, new history intake, greeting a new person).",
+      "response_raw": "{\"complete\": false, \"confidence\": 0.95}",
+      "segment_range": [
+        604,
+        685
+      ],
+      "sensor_context": {
+        "departed": false,
+        "present": true,
+        "unknown": false
+      },
+      "success": true,
+      "ts": "2026-04-01T15:22:36.667639+00:00",
+      "word_count": 1188
+    },
+    {
+      "cleaned_word_count": 1451,
+      "latency_ms": 3285,
+      "loop_state": {
+        "buffer_age_secs": 913.0,
+        "consecutive_failures": 0,
+        "manual_triggered": false,
+        "merge_back_count": 0,
+        "sensor_continuous_present": false,
+        "sensor_triggered": false
+      },
+      "parsed_complete": true,
+      "parsed_confidence": 0.92,
+      "parsed_end_index": 702,
+      "prompt_system": "You MUST respond in English with ONLY a JSON object. No other text, no explanations, no markdown.\n\nYou are analyzing a continuous transcript from a medical office where the microphone records all day.\n\nYour task: determine if there is a TRANSITION POINT where one patient encounter ends and another begins, or where a patient encounter has clearly concluded.\n\nA completed encounter typically includes a clinical discussion and a concluding plan (e.g., medication changes, follow-up timing, referrals, or instructions). A short transcript that contains only vitals, greetings, or brief exchanges — with no clinical discussion or plan — is likely a pre-visit assessment still in progress, not a completed encounter. A nurse or medical assistant may see the patient before the doctor arrives to take vitals or ask initial questions — this is part of the same encounter, not a separate visit.\n\nEach segment includes elapsed time (MM:SS) from the start of the recording. Large gaps between timestamps may indicate silence, examination, or the room being empty between patients.\n\nIf you find a transition point or completed encounter, return:\n{\"complete\": true, \"end_segment_index\": <last segment index of the CONCLUDED encounter>, \"confidence\": <0.0-1.0>}\n\nIf the current discussion is still one ongoing encounter with no transition, return:\n{\"complete\": false, \"confidence\": <0.0-1.0>}\n\nRespond with ONLY the JSON object.",
+      "prompt_user": "Transcript (segments numbered with speaker labels):\n[604] (00:00) (Speaker 4 (66%)): They all. [605] (00:10) (Speaker 4 (70%)): I'm good. [606] (04:54) (Speaker 1 (52%)): Hello, hello. Sorry about the wait. [607] (04:56) (Speaker 1 (60%)): How things been? [608] (04:58) (Speaker 4 (67%)): I'm kind of good. [609] (04:59) (Speaker 1 (62%)): Excellent. How's the nausea then? [610] (05:03) (Speaker 1 (64%)): It's not as horrible as, as it was. I'm taking the pills so. [611] (05:09) (Speaker 1 (69%)): It's ah, the room is a bit cold. Isn't it? Sorry about that. I kind of like it because I'm like overheating all the time. [612] (05:17) (Dr Zohoor (63%)): And then do Do we get an appointment for you, or you have doctor's exam on April? [613] (05:22) (Speaker 4 (72%)): Yes. [614] (05:24) (Dr Zohoor (73%)): Okay, so what I'm going to do. [615] (05:29) (Speaker 4 (58%)): It is. [616] (05:31) (Dr Zohoor (85%)): I'm just gonna print out a couple things for you to take to your appointment. So it's nine days from now, right? [617] (05:38) (Speaker 4 (84%)): Yes. [618] (05:39) (Speaker 1 (51%)): Yeah, today's the first. [619] (05:44) (Speaker 4 (82%)): Yes. [620] (05:45) (Speaker 4 (83%)): That. [621] (05:52) (Speaker 3 (50%)): Moment, sorry. [622] (06:08) (Dr Zohoor (74%)): So the the last few times that I've seen you, your blood pressure has been slightly on the higher end and. [623] (06:16) (Dr Zohoor (64%)): Your urine has had a tiny bit of protein, and for the most part. [624] (06:21) (Dr Zohoor (69%)): We normally just kind of launch it at this stage. [625] (06:24) (Speaker 3 (52%)): Um. [626] (06:26) (Speaker 4 (59%)): And. [627] (06:29) (Dr Zohoor (64%)): So I, I wouldn't you know it's different trimesters of pregnancy. [628] (06:34) (Dr Zohoor (72%)): Just worry about different things. We go about things differently. [629] (06:39) (Speaker 1 (63%)): But. [630] (06:44) (Speaker 1 (59%)): The um. [631] (06:49) (Speaker 1 (64%)): We sent them. [632] (06:51) (Dr Zohoor (66%)): Everything else. So we sent them the, yeah. [633] (06:53) (Dr Zohoor (63%)): We actually sent them the ultrasound as well. We sent them [634] (06:56) (Dr Zohoor (67%)): Your. [635] (06:59) (Speaker 1 (59%)): Blog work results and. [636] (07:01) (Dr Zohoor (74%)): All the, the swaps. This nads and everything along [637] (07:05) (Dr Zohoor (76%)): To him, so he has all those things. Um, what he doesn't have is like today's block after reading and so on. Again, I'm not trying to scare you by any means. What does it like mean if it's like? Doesn't mean anything at this stage. Okay, it's more that [638] (07:20) (Dr Zohoor (62%)): He doesn't have this as a background, so when he sees you and. [639] (07:24) (Dr Zohoor (81%)): He's gonna wonder whether this is a one-time thing or this an ongoing, where how's it trending. So this just gives him the history behind it so he can be like okay, this is where she's been yeah whatnot um Is there like something that makes it like higher? Or the urine things Yeah. So this is This is all we consider as normal pregnancy Um [640] (07:48) (Speaker 1 (49%)): The. [641] (07:50) (Speaker 1 (61%)): But what happens sometimes? So. [642] (07:51) (Dr Zohoor (67%)): There are women who have high blood pressure before they get pregnant. Yeah, and [643] (07:57) (Dr Zohoor (75%)): They we don't know sometimes kind of whether so somebody somebody has a very high blood pressure. We don't know if that's their normal, yeah or if that's that's their you know so [644] (08:08) (Speaker 1 (69%)): This lets us know. [645] (08:10) (Dr Zohoor (67%)): This stage of pregnancy, this is where things are. So that even in the third trimester, the number is a little bit up from this. Okay? Yeah. [646] (08:18) (Dr Zohoor (77%)): Whereas, if it's significantly higher the P O four yeah. [647] (08:24) (Speaker 1 (61%)): The. [648] (08:25) (Dr Zohoor (67%)): He wouldn't. He wouldn't. Um, he wouldn't change anything now. The reason it happens in pregnancy is because the fetus [649] (08:33) (Dr Zohoor (74%)): Changes how your blood vessels operate. The fetus is literally like [650] (08:39) (Dr Zohoor (79%)): A gigantic parasite feeding off you. So it's, it sends signals throughout your body and changes everything. Yeah. So it's so in doing that, it changes kind of the mechanics of how your gut will operate. [651] (08:58) (Speaker 4 (54%)): Um. [652] (08:59) (Dr Zohoor (78%)): Again, we for the most part wouldn't react to this. Which is why I didn't brought it up. Yeah. [653] (09:05) (Dr Zohoor (77%)): But if you see him and he checks your blood pressure, it's way higher. He's gonna say, \"Well, is this like where it's been? Is it going to was it lower or what?\" Was it Yeah, I wouldn't know so This So that's good yeah . So It'S just more so that he knows And then the last ultrasound that you had are included because he knows where Where things were left. I've sent them everything else If you're going there in a few days , then [654] (09:29) (Speaker 5 (49%)): You can just give that to him. [655] (09:31) (Speaker 1 (63%)): So it's just like my last one with you, and then I continue with him. Correct? Yeah. So the... And what he does is he uh [656] (09:40) (Speaker 1 (51%)): Again, I'm. [657] (09:42) (Dr Zohoor (64%)): I'm always here. Yeah, um, but [658] (09:45) (Dr Zohoor (69%)): Every obstetrician typically does things slightly differently, and so what happens is they'll. [659] (09:51) (Dr Zohoor (64%)): If if there's. [660] (09:54) (Dr Zohoor (76%)): They they prefer to just be owning it, yeah. And and then there you know there's no mixed messaging. There's no everybody is on the same page and so on but [661] (10:04) (Dr Zohoor (62%)): If anything comes along. [662] (10:06) (Speaker 1 (73%)): Sometimes they'll say, you know, you'll say, \"Hey, listen! Like the skin thing going on. There's other things going on.\" [663] (10:12) (Dr Zohoor (75%)): Say, you'll see a family dog. Like it's not pregnancy thing. So it's only like the pregnancy part that I go in exactly so. So his focus is and sometimes you won't be sure. You're like funny stuffs happening? Is this yeah pregnancy And he will say no um [664] (10:28) (Dr Zohoor (66%)): The other time, so so often I'll see patients even when they're being followed by psychiatrists speak Hazav. [665] (10:34) (Speaker 1 (81%)): Stuff that comes up, wealth-wise. The other reason is sometimes [666] (10:39) (Dr Zohoor (67%)): Let's say doctors am suggest something or says something, or something is just unclear. Patients will come to me and say [667] (10:47) (Dr Zohoor (77%)): Like this is what the specialist said. What are your thoughts? So they kind of come in to just understand, yeah, what's going on or just the situation that we're sure what [668] (10:57) (Speaker 1 (60%)): What something meant. Yeah. [669] (10:59) (Dr Zohoor (67%)): So I'm also often here as like a. [670] (11:02) (Speaker 1 (69%)): As a, as a you know someone. [671] (11:05) (Dr Zohoor (80%)): People come and say, \"Hey,\" like he said. I should take this this way, but I'm not really sure; like is it actually safe? Like I write different things yeah Yeah so So it's kind of like so so sometimes people even if It's pregnancy related they'll still come see me just to get a second sort of opinion about what that's on their mind Yeah Um So I'm always here But in terms of the primary pregnancy care And as soon as the baby's delivered [672] (11:30) (Speaker 4 (65%)): Yeah. [673] (11:31) (Dr Zohoor (75%)): Your sun disappears. Yeah, okay. So um so then everything else after afterwards now I often I'm gonna see you anyway because of the baby yeah and then um we we then kind [674] (11:46) (Dr Zohoor (73%)): You know the postnatal care. Sometimes they will see you a few weeks after just conversation, but then other stuff that comes up: contraception, speaking to adults or something. Yeah. Um yeah I was gonna ask like this may be obvious but like once we have baby like are going to be like his doctor? Okay. Yeah They'll ask you for sure there There are scenarios where [675] (12:11) (Speaker 1 (64%)): That's not the case, but for the most part. [676] (12:15) (Speaker 1 (66%)): Even though I'm technically not accepting. [677] (12:18) (Dr Zohoor (61%)): We chance having a family together. Yeah, it's no big deal. And let's have one. [678] (12:26) (Dr Zohoor (66%)): I think it's more just because I love listening to fetuses. Come on, yeah! I want to do so only the [679] (12:31) (Dr Zohoor (69%)): Always nice to hear them. [680] (12:34) (Speaker 1 (75%)): How has have you been feeling? [681] (12:37) (Speaker 1 (77%)): A little one. I can't remember the name yet. [682] (12:40) (Speaker 4 (65%)): Ips. [683] (12:41) (Speaker 4 (41%)): Think that we're gonna pick the name Gunner? Gunnar. Did you guys get off with it though? [684] (12:48) (Speaker 4 (57%)): Just came up like reading names, and then we were both like, \"Oh, that's cute,\" and it's like different. I don't know; I liked it—the strong name. [685] (12:58) (Speaker 4 (62%)): Um. [686] (12:59) (Speaker 4 (64%)): I was gonna ask you. I decided that I can't do my daily work; it's like so hard. If I don't know, I didn't want to say anything because it's pulling my back hurt so bad. So I was going to ask for help now. [687] (13:13) (Speaker 4 (57%)): Yeah. [688] (13:23) (Speaker 4 (67%)): Hey. [689] (13:36) (Speaker 4 (58%)): That's different. [690] (13:42) (Dr Zohoor (63%)): One second. Let me just clear up how we do. [691] (13:52) (Speaker 4 (65%)): That's okay. Okay. [692] (13:54) (Speaker 1 (60%)): Go. [693] (14:01) (Speaker 4 (63%)): You know. [694] (14:05) (Speaker 1 (79%)): So this is just, just the stuff for Doctor Zan. Yes, then I have to give you a note now. [695] (14:10) (Speaker 1 (63%)): Depending on what place I'm in, may not have. [696] (14:13) (Speaker 1 (64%)): Payble for pregnancy, etc. I don't know. Yeah no. [697] (14:17) (Dr Zohoor (79%)): Just gonna see if I get a fund for EI. Yeah, so talk to Ei and they will. So what I'm going to put down is just the due date because they will yeah typically want to hope it's pregnancy related. Yes. So like do you know what? Like What do I apply for Is it like the um If you go to yeah. So if you go to ei They'll To be honest with you The easiest is just simply Because when you're there [698] (14:40) (Dr Zohoor (80%)): They know what the funding. No, they'll guide you like on the website. Um, I think you can go on the website. I haven't looked it um and You can also just ask them Like he can The offices will Just same office for all of It a new note with every office Yeah There's one thing just up On Wayne Gretzky actually [699] (15:00) (Speaker 4 (62%)): Um. [700] (15:02) (Speaker 5 (51%)): This is. [701] (15:04) (Speaker 5 (68%)): We confirm that this patient. [702] (15:07) (Speaker 5 (68%)): Currently unable to work.\n\nReal-time context signals:\nCONTEXT: The presence sensor confirms someone is still in the room. Topic changes or pauses within the same visit are NOT transitions. Only split if there is strong evidence of a different patient (new name, new history intake, greeting a new person).",
+      "response_raw": "{\"complete\": true, \"end_segment_index\": 702, \"confidence\": 0.92}",
+      "segment_range": [
+        604,
+        702
+      ],
+      "sensor_context": {
+        "departed": false,
+        "present": true,
+        "unknown": false
+      },
+      "success": true,
+      "ts": "2026-04-01T15:24:40.021890+00:00",
+      "word_count": 1451
+    }
+  ],
+  "merge_check": {
+    "curr_head_excerpt": "Speaker 4 (66%): They all. Speaker 4 (70%): I'm good. Speaker 1 (52%): Hello, hello. Sorry about the wait. Speaker 1 (60%): How things been? Speaker 4 (67%): I'm kind of good. Speaker 1 (62%): Excellent. How's the nausea then? Speaker 1 (64%): It's not as horrible as, as it was. I'm taking the pills so. Speaker 1 (69%): It's ah, the room is a bit cold. Isn't it? Sorry about that. I kind of like it because I'm like overheating all the time. Dr Zohoor (63%): And then do Do we get an appointment for you, or you have doctor's exam on April? Speaker 4 (72%): Yes. Dr Zohoor (73%): Okay, so what I'm going to do. Speaker 4 (58%): It is. Dr Zohoor (85%): I'm just gonna print out a couple things for you to take to your appointment. So it's nine days from now, right? Speaker 4 (84%): Yes. Speaker 1 (51%): Yeah, today's the first. Speaker 4 (82%): Yes. Speaker 4 (83%): That. Speaker 3 (50%): Moment, sorry. Dr Zohoor (74%): So the the last few times that I've seen you, your blood pressure has been slightly on the higher end and. Dr Zohoor (64%): Your urine has had a tiny bit of protein, and for the most part. Dr Zohoor (69%): We normally just kind of launch it at this stage. Speaker 3 (52%): Um. Speaker 4 (59%): And. Dr Zohoor (64%): So I, I wouldn't you know it's different trimesters of pregnancy. Dr Zohoor (72%): Just worry about different things. We go about things differently. Speaker 1 (63%): But. Speaker 1 (59%): The um. Speaker 1 (64%): We sent them. Dr Zohoor (66%): Everything else. So we sent them the, yeah. Dr Zohoor (63%): We actually sent them the ultrasound as well. We sent them Dr Zohoor (67%): Your. Speaker 1 (59%): Blog work results and. Dr Zohoor (74%): All the, the swaps. This nads and everything along Dr Zohoor (76%): To him, so he has all those things. Um, what he doesn't have is like today's block after reading and so on. Again, I'm not trying to scare you by any means. What does it like mean if it's like? Doesn't mean anything at this stage. Okay, it's more that Dr Zohoor (62%): He doesn't have this as a background, so when he sees you and. Dr Zohoor (81%): He's gonna wonder whether this is a one-time thing or this an ongoing, where how's it trending. So this just gives him the history behind it so he can be like okay, this is where she's been yeah whatnot um Is there like something that makes it like higher? Or the urine things Yeah. So this is This is all we consider as normal pregnancy Um Speaker 1 (49%): The. Speaker 1 (61%): But what happens sometimes? So. Dr Zohoor (67%): There are women who have high blood pressure before they get pregnant. Yeah, and Dr Zohoor (75%): They we don't know sometimes kind",
+    "latency_ms": 2475,
+    "parsed_reason": "\"The first excerpt ends with a clear conclusion and farewell ('I'll see you in a month'), discussing a post-procedure bowel complication. The second excerpt begins with a new greeting ('Sorry about the wait') and immediately shifts to a completely different clinical topic (pregnancy, blood pressure, and protein in urine) with different speaker identifiers, indicating a separate patient visit.\"",
+    "parsed_same_encounter": false,
+    "prev_session_id": "bcdc61f8-023b-42c8-983d-c86367368797",
+    "prev_tail_excerpt": "and so on. So forth. So the um. Dr Zohoor (75%): So in terms of the, in terms of the procedure, it always feels like someone was in there just like punching away. But that I mean I can't wait but that physically yeah um Speaker 2 (77%): Is the sutures removed? No, no. They're still are we removing them or they I think there I think they had the big patches over top and then they just said to just let them come off on their own actually do okay yeah that's what they say sure so There's no suturez already Okay I don't believe So no okay no nice Yeah so That's good Yeah right The blood work is in two weeks Okay that's good so that one Dr Zohoor (61%): You know, um. You have a chance to recover a bit. Dr Zohoor (70%): We know your patterns, so I'm not you know. Oh yeah! Some other scenarios, I would be more worried and out of them need to do it much sooner. But I think Dr Zohoor (76%): In your case, if we do it too soon, wouldn't have fully normalized. So and two weeks gives you time to discover yeah and get the proper diet. The big thing is um bowel movements so the biggest complication is if Dr Zohoor (61%): As the healing is happening, as things scar down. Dr Zohoor (65%): Basically, put if you're like. Dr Zohoor (75%): Oh my God! I just can't eat anything. I'm just throwing everything up if you eat something, and you just Speaker 1 (60%): Right back up. Dr Zohoor (65%): And that's persistent. Dr Zohoor (72%): Then, then what has happened is that as the healing has been happening, the the bowel has scarred down a little bit. Okay, and so it's kind of creating a blockage there. Speaker 1 (55%): It will not be subtle. Speaker 1 (53%): You're like. Dr Zohoor (76%): Okay, I'm just vomiting again. And then what they do is they just kind of Dr Zohoor (73%): Loosen that scarring a little bit. It only happens in two percent of the cases. Dr Zohoor (73%): So, not saying this to scare you. Dr Zohoor (72%): If you're like, what should I be watching for? Dr Zohoor (74%): Everybody says this and that, and so on. Really, what you are watching for is that am I not? I feel projectile vomiting; everything it's persistent. Then you do need to go back to the hospital say Hey guys.\" Yeah, yeah. But otherwise, for most part, you'll get through it. Yeah, I've had a little bit of diarrhea like gotta go Like there is no no waiting holding nothing It will help me. And so that's okay. Speaker 2 (78%): I'm happy about that though, because he's done nothing before. Exactly okay, so I'm good. Yeah, thank you. Oh yeah. Speaker 2 (69%): I'll see you in a month. Okay, perfect. Thank you.",
+    "prompt_system": "You are reviewing two consecutive transcript excerpts from a medical office where a microphone records all day.\n\nThe system split these into two separate encounters, but they may actually be the SAME patient visit that was incorrectly split (e.g., due to a pause, phone call, or silence during an examination).\n\nDetermine if both excerpts are from the SAME patient encounter or DIFFERENT encounters.\n\nSigns they are the SAME encounter:\n- Same patient name or context referenced\n- Continuation of the same clinical discussion\n- No farewell/greeting between them\n- Natural pause (examination, looking at charts) rather than patient change\n- Same medical condition being discussed from different angles\n\nSigns they are DIFFERENT encounters:\n- Different patient names or contexts\n- A farewell followed by a new greeting\n- Clearly different clinical topics with no continuity\n\nReturn JSON:\n{\"same_encounter\": true, \"reason\": \"brief explanation\"}\nor\n{\"same_encounter\": false, \"reason\": \"brief explanation\"}\n\nReturn ONLY the JSON object, nothing else.",
+    "prompt_user": "EXCERPT FROM END OF PREVIOUS ENCOUNTER:\nand so on. So forth. So the um. Dr Zohoor (75%): So in terms of the, in terms of the procedure, it always feels like someone was in there just like punching away. But that I mean I can't wait but that physically yeah um Speaker 2 (77%): Is the sutures removed? No, no. They're still are we removing them or they I think there I think they had the big patches over top and then they just said to just let them come off on their own actually do okay yeah that's what they say sure so There's no suturez already Okay I don't believe So no okay no nice Yeah so That's good Yeah right The blood work is in two weeks Okay that's good so that one Dr Zohoor (61%): You know, um. You have a chance to recover a bit. Dr Zohoor (70%): We know your patterns, so I'm not you know. Oh yeah! Some other scenarios, I would be more worried and out of them need to do it much sooner. But I think Dr Zohoor (76%): In your case, if we do it too soon, wouldn't have fully normalized. So and two weeks gives you time to discover yeah and get the proper diet. The big thing is um bowel movements so the biggest complication is if Dr Zohoor (61%): As the healing is happening, as things scar down. Dr Zohoor (65%): Basically, put if you're like. Dr Zohoor (75%): Oh my God! I just can't eat anything. I'm just throwing everything up if you eat something, and you just Speaker 1 (60%): Right back up. Dr Zohoor (65%): And that's persistent. Dr Zohoor (72%): Then, then what has happened is that as the healing has been happening, the the bowel has scarred down a little bit. Okay, and so it's kind of creating a blockage there. Speaker 1 (55%): It will not be subtle. Speaker 1 (53%): You're like. Dr Zohoor (76%): Okay, I'm just vomiting again. And then what they do is they just kind of Dr Zohoor (73%): Loosen that scarring a little bit. It only happens in two percent of the cases. Dr Zohoor (73%): So, not saying this to scare you. Dr Zohoor (72%): If you're like, what should I be watching for? Dr Zohoor (74%): Everybody says this and that, and so on. Really, what you are watching for is that am I not? I feel projectile vomiting; everything it's persistent. Then you do need to go back to the hospital say Hey guys.\" Yeah, yeah. But otherwise, for most part, you'll get through it. Yeah, I've had a little bit of diarrhea like gotta go Like there is no no waiting holding nothing It will help me. And so that's okay. Speaker 2 (78%): I'm happy about that though, because he's done nothing before. Exactly okay, so I'm good. Yeah, thank you. Oh yeah. Speaker 2 (69%): I'll see you in a month. Okay, perfect. Thank you.\n\n---\n\nEXCERPT FROM START OF NEXT ENCOUNTER:\nSpeaker 4 (66%): They all. Speaker 4 (70%): I'm good. Speaker 1 (52%): Hello, hello. Sorry about the wait. Speaker 1 (60%): How things been? Speaker 4 (67%): I'm kind of good. Speaker 1 (62%): Excellent. How's the nausea then? Speaker 1 (64%): It's not as horrible as, as it was. I'm taking the pills so. Speaker 1 (69%): It's ah, the room is a bit cold. Isn't it? Sorry about that. I kind of like it because I'm like overheating all the time. Dr Zohoor (63%): And then do Do we get an appointment for you, or you have doctor's exam on April? Speaker 4 (72%): Yes. Dr Zohoor (73%): Okay, so what I'm going to do. Speaker 4 (58%): It is. Dr Zohoor (85%): I'm just gonna print out a couple things for you to take to your appointment. So it's nine days from now, right? Speaker 4 (84%): Yes. Speaker 1 (51%): Yeah, today's the first. Speaker 4 (82%): Yes. Speaker 4 (83%): That. Speaker 3 (50%): Moment, sorry. Dr Zohoor (74%): So the the last few times that I've seen you, your blood pressure has been slightly on the higher end and. Dr Zohoor (64%): Your urine has had a tiny bit of protein, and for the most part. Dr Zohoor (69%): We normally just kind of launch it at this stage. Speaker 3 (52%): Um. Speaker 4 (59%): And. Dr Zohoor (64%): So I, I wouldn't you know it's different trimesters of pregnancy. Dr Zohoor (72%): Just worry about different things. We go about things differently. Speaker 1 (63%): But. Speaker 1 (59%): The um. Speaker 1 (64%): We sent them. Dr Zohoor (66%): Everything else. So we sent them the, yeah. Dr Zohoor (63%): We actually sent them the ultrasound as well. We sent them Dr Zohoor (67%): Your. Speaker 1 (59%): Blog work results and. Dr Zohoor (74%): All the, the swaps. This nads and everything along Dr Zohoor (76%): To him, so he has all those things. Um, what he doesn't have is like today's block after reading and so on. Again, I'm not trying to scare you by any means. What does it like mean if it's like? Doesn't mean anything at this stage. Okay, it's more that Dr Zohoor (62%): He doesn't have this as a background, so when he sees you and. Dr Zohoor (81%): He's gonna wonder whether this is a one-time thing or this an ongoing, where how's it trending. So this just gives him the history behind it so he can be like okay, this is where she's been yeah whatnot um Is there like something that makes it like higher? Or the urine things Yeah. So this is This is all we consider as normal pregnancy Um Speaker 1 (49%): The. Speaker 1 (61%): But what happens sometimes? So. Dr Zohoor (67%): There are women who have high blood pressure before they get pregnant. Yeah, and Dr Zohoor (75%): They we don't know sometimes kind",
+    "response_raw": "{\n  \"same_encounter\": false,\n  \"reason\": \"The first excerpt ends with a clear conclusion and farewell ('I'll see you in a month'), discussing a post-procedure bowel complication. The second excerpt begins with a new greeting ('Sorry about the wait') and immediately shifts to a completely different clinical topic (pregnancy, blood pressure, and protein in urine) with different speaker identifiers, indicating a separate patient visit.\"\n}",
+    "success": true,
+    "ts": "2026-04-01T15:24:57.546125+00:00"
+  },
+  "name_tracker": {
+    "majority_name": "Megan Brett",
+    "unique_names": [
+      "Megan Brett"
+    ],
+    "vote_count": 13
+  },
+  "outcome": {
+    "detection_method": "hybrid_llm",
+    "encounter_number": 5,
+    "is_clinical": true,
+    "patient_name": "Megan Brett",
+    "session_id": "03ffd0eb-e133-4211-ba79-f355ee9a94f4",
+    "was_merged": false,
+    "word_count": 1748
+  },
+  "schema_version": 2,
+  "segments": [
+    {
+      "end_ms": 5052832,
+      "index": 567,
+      "speaker_confidence": 0.71998656,
+      "speaker_id": "Speaker 4",
+      "start_ms": 5051764,
+      "text": "I got changed.",
+      "ts": "2026-04-01T14:54:29.772588+00:00"
+    },
+    {
+      "end_ms": 5053440,
+      "index": 568,
+      "speaker_confidence": 0.82056034,
+      "speaker_id": "Speaker 4",
+      "start_ms": 5052596,
+      "text": "First, second.",
+      "ts": "2026-04-01T14:54:30.360586+00:00"
+    },
+    {
+      "end_ms": 5061120,
+      "index": 569,
+      "speaker_confidence": 0.5166211,
+      "speaker_id": "Speaker 4",
+      "start_ms": 5058804,
+      "text": "Hi Sam. Good, how are you?",
+      "ts": "2026-04-01T14:54:38.257842+00:00"
+    },
+    {
+      "end_ms": 5062176,
+      "index": 570,
+      "speaker_confidence": 0.6298913,
+      "speaker_id": "Speaker 4",
+      "start_ms": 5061012,
+      "text": "Yeah.",
+      "ts": "2026-04-01T14:54:39.094682+00:00"
+    },
+    {
+      "end_ms": 5063200,
+      "index": 571,
+      "speaker_confidence": 0.47007552,
+      "speaker_id": "Speaker 4",
+      "start_ms": 5062036,
+      "text": "Are humans.",
+      "ts": "2026-04-01T14:54:40.113033+00:00"
+    },
+    {
+      "end_ms": 5065280,
+      "index": 572,
+      "speaker_confidence": 0.36181372,
+      "speaker_id": "Speaker 4",
+      "start_ms": 5063924,
+      "text": "Needle appointment.",
+      "ts": "2026-04-01T14:54:42.301107+00:00"
+    },
+    {
+      "end_ms": 5066048,
+      "index": 573,
+      "speaker_confidence": 0.77045625,
+      "speaker_id": "Speaker 4",
+      "start_ms": 5065172,
+      "text": "Hi.",
+      "ts": "2026-04-01T14:54:42.952770+00:00"
+    },
+    {
+      "end_ms": 5079648,
+      "index": 574,
+      "speaker_confidence": 0.45550674,
+      "speaker_id": "Speaker 4",
+      "start_ms": 5078388,
+      "text": "It's a restaurant.",
+      "ts": "2026-04-01T14:54:56.605150+00:00"
+    },
+    {
+      "end_ms": 5080320,
+      "index": 575,
+      "speaker_confidence": 0.5595648,
+      "speaker_id": "Speaker 4",
+      "start_ms": 5079380,
+      "text": "Sure.",
+      "ts": "2026-04-01T14:54:57.217743+00:00"
+    },
+    {
+      "end_ms": 5083968,
+      "index": 576,
+      "speaker_confidence": 0.6616148,
+      "speaker_id": "Speaker 4",
+      "start_ms": 5082164,
+      "text": "Yeah, sure.",
+      "ts": "2026-04-01T14:55:01.042077+00:00"
+    },
+    {
+      "end_ms": 5114848,
+      "index": 577,
+      "speaker_confidence": 0.67457217,
+      "speaker_id": "Speaker 4",
+      "start_ms": 5112532,
+      "text": "One forty-two over eighty-three.",
+      "ts": "2026-04-01T14:55:31.873321+00:00"
+    },
+    {
+      "end_ms": 5125248,
+      "index": 578,
+      "speaker_confidence": 0.6889463,
+      "speaker_id": "Speaker 4",
+      "start_ms": 5123156,
+      "text": "Scale. We'll update your weight.",
+      "ts": "2026-04-01T14:55:42.262309+00:00"
+    },
+    {
+      "end_ms": 5126304,
+      "index": 579,
+      "speaker_confidence": 0.7244938,
+      "speaker_id": "Speaker 4",
+      "start_ms": 5125076,
+      "text": "Yes.",
+      "ts": "2026-04-01T14:55:43.250193+00:00"
+    },
+    {
+      "end_ms": 5127072,
+      "index": 580,
+      "speaker_confidence": 0.619828,
+      "speaker_id": "Speaker 4",
+      "start_ms": 5126228,
+      "text": "Yeah.",
+      "ts": "2026-04-01T14:55:44.038440+00:00"
+    },
+    {
+      "end_ms": 5131360,
+      "index": 581,
+      "speaker_confidence": 0.57272744,
+      "speaker_id": "Speaker 4",
+      "start_ms": 5126900,
+      "text": "Yeah. Okay, let me show you the back now. Do I need to do like a sample? Yeah.",
+      "ts": "2026-04-01T14:55:48.720261+00:00"
+    },
+    {
+      "end_ms": 5134720,
+      "index": 582,
+      "speaker_confidence": 0.64299995,
+      "speaker_id": "Speaker 4",
+      "start_ms": 5133268,
+      "text": "Just a small.",
+      "ts": "2026-04-01T14:55:51.678066+00:00"
+    },
+    {
+      "end_ms": 5136576,
+      "index": 583,
+      "speaker_confidence": 0.8086523,
+      "speaker_id": "Speaker 4",
+      "start_ms": 5134548,
+      "text": "Okay.",
+      "ts": "2026-04-01T14:55:53.522519+00:00"
+    },
+    {
+      "end_ms": 5206592,
+      "index": 584,
+      "speaker_confidence": 0.74464494,
+      "speaker_id": "Speaker 4",
+      "start_ms": 5205652,
+      "text": "I can't find it.",
+      "ts": "2026-04-01T14:57:03.569099+00:00"
+    },
+    {
+      "end_ms": 5207744,
+      "index": 585,
+      "speaker_confidence": 0.8047176,
+      "speaker_id": "Speaker 4",
+      "start_ms": 5206740,
+      "text": "Wait.",
+      "ts": "2026-04-01T14:57:04.652930+00:00"
+    },
+    {
+      "end_ms": 5208640,
+      "index": 586,
+      "speaker_confidence": 0.7474551,
+      "speaker_id": "Speaker 4",
+      "start_ms": 5207764,
+      "text": "No.",
+      "ts": "2026-04-01T14:57:05.534886+00:00"
+    },
+    {
+      "end_ms": 5210688,
+      "index": 587,
+      "speaker_confidence": 0.86252093,
+      "speaker_id": "Speaker 4",
+      "start_ms": 5209556,
+      "text": "Oh, there's your.",
+      "ts": "2026-04-01T14:57:07.745777+00:00"
+    },
+    {
+      "end_ms": 5215520,
+      "index": 588,
+      "speaker_confidence": 0.82114893,
+      "speaker_id": "Speaker 4",
+      "start_ms": 5214292,
+      "text": "Oh.",
+      "ts": "2026-04-01T14:57:12.464809+00:00"
+    },
+    {
+      "end_ms": 5231008,
+      "index": 589,
+      "speaker_confidence": 0.7783163,
+      "speaker_id": "Speaker 4",
+      "start_ms": 5229492,
+      "text": "They paid for our currency.",
+      "ts": "2026-04-01T14:57:27.976798+00:00"
+    },
+    {
+      "end_ms": 5231872,
+      "index": 590,
+      "speaker_confidence": 0.7528356,
+      "speaker_id": "Speaker 4",
+      "start_ms": 5230836,
+      "text": "I.",
+      "ts": "2026-04-01T14:57:28.770424+00:00"
+    },
+    {
+      "end_ms": 5234816,
+      "index": 591,
+      "speaker_confidence": 0.5044527,
+      "speaker_id": "Speaker 4",
+      "start_ms": 5233460,
+      "text": "Three on the right.",
+      "ts": "2026-04-01T14:57:31.791588+00:00"
+    },
+    {
+      "end_ms": 5235872,
+      "index": 592,
+      "speaker_confidence": 0.7214637,
+      "speaker_id": "Speaker 4",
+      "start_ms": 5234836,
+      "text": "Okay.",
+      "ts": "2026-04-01T14:57:32.766601+00:00"
+    },
+    {
+      "end_ms": 5240000,
+      "index": 593,
+      "speaker_confidence": 0.56508917,
+      "speaker_id": "Speaker 4",
+      "start_ms": 5237972,
+      "text": "How's it going? Good. Thank you. How are you?",
+      "ts": "2026-04-01T14:57:37.248902+00:00"
+    },
+    {
+      "end_ms": 5244192,
+      "index": 594,
+      "speaker_confidence": 0.74103177,
+      "speaker_id": "Speaker 4",
+      "start_ms": 5242868,
+      "text": "Keep it on your toes.",
+      "ts": "2026-04-01T14:57:41.288639+00:00"
+    },
+    {
+      "end_ms": 5258720,
+      "index": 595,
+      "speaker_confidence": 0.75876534,
+      "speaker_id": "Speaker 4",
+      "start_ms": 5257428,
+      "text": "I promise.",
+      "ts": "2026-04-01T14:57:55.618080+00:00"
+    },
+    {
+      "end_ms": 5261024,
+      "index": 596,
+      "speaker_confidence": 0.37255305,
+      "speaker_id": "Speaker 4",
+      "start_ms": 5259380,
+      "text": "So we stand on that.",
+      "ts": "2026-04-01T14:57:57.966399+00:00"
+    },
+    {
+      "end_ms": 5273664,
+      "index": 597,
+      "speaker_confidence": 0.65167767,
+      "speaker_id": "Speaker 4",
+      "start_ms": 5269524,
+      "text": "Sorry, do you mind coming right in?",
+      "ts": "2026-04-01T14:58:10.828780+00:00"
+    },
+    {
+      "end_ms": 5277984,
+      "index": 598,
+      "speaker_confidence": 0.75063723,
+      "speaker_id": "Speaker 4",
+      "start_ms": 5274356,
+      "text": "I'm so sorry.",
+      "ts": "2026-04-01T14:58:15.188904+00:00"
+    },
+    {
+      "end_ms": 5283840,
+      "index": 599,
+      "speaker_confidence": 0.60960644,
+      "speaker_id": "Speaker 4",
+      "start_ms": 5281844,
+      "text": "She was human.",
+      "ts": "2026-04-01T14:58:20.814118+00:00"
+    },
+    {
+      "end_ms": 5285568,
+      "index": 600,
+      "speaker_confidence": 0.6825453,
+      "speaker_id": "Speaker 4",
+      "start_ms": 5284308,
+      "text": "About the house.",
+      "ts": "2026-04-01T14:58:22.499643+00:00"
+    },
+    {
+      "end_ms": 5287776,
+      "index": 601,
+      "speaker_confidence": 0.7167745,
+      "speaker_id": "Speaker 4",
+      "start_ms": 5286068,
+      "text": "Thank you.",
+      "ts": "2026-04-01T14:58:24.764050+00:00"
+    },
+    {
+      "end_ms": 5301056,
+      "index": 602,
+      "speaker_confidence": 0.71596634,
+      "speaker_id": "Speaker 4",
+      "start_ms": 5300084,
+      "text": "I.",
+      "ts": "2026-04-01T14:58:38.126216+00:00"
+    },
+    {
+      "end_ms": 5303680,
+      "index": 603,
+      "speaker_confidence": 0.38791773,
+      "speaker_id": "Speaker 4",
+      "start_ms": 5300948,
+      "text": "What are you talking about?",
+      "ts": "2026-04-01T14:58:40.794503+00:00"
+    },
+    {
+      "end_ms": 5945696,
+      "index": 604,
+      "speaker_confidence": 0.658835,
+      "speaker_id": "Speaker 4",
+      "start_ms": 5944724,
+      "text": "They all.",
+      "ts": "2026-04-01T15:09:22.863800+00:00"
+    },
+    {
+      "end_ms": 5955776,
+      "index": 605,
+      "speaker_confidence": 0.6988724,
+      "speaker_id": "Speaker 4",
+      "start_ms": 5954836,
+      "text": "I'm good.",
+      "ts": "2026-04-01T15:09:32.694903+00:00"
+    },
+    {
+      "end_ms": 6241344,
+      "index": 606,
+      "speaker_confidence": 0.5238546,
+      "speaker_id": "Speaker 1",
+      "start_ms": 6238900,
+      "text": "Hello, hello. Sorry about the wait.",
+      "ts": "2026-04-01T15:14:18.496423+00:00"
+    },
+    {
+      "end_ms": 6243744,
+      "index": 607,
+      "speaker_confidence": 0.6029082,
+      "speaker_id": "Speaker 1",
+      "start_ms": 6241556,
+      "text": "How things been?",
+      "ts": "2026-04-01T15:14:20.753025+00:00"
+    },
+    {
+      "end_ms": 6244960,
+      "index": 608,
+      "speaker_confidence": 0.6662102,
+      "speaker_id": "Speaker 4",
+      "start_ms": 6243476,
+      "text": "I'm kind of good.",
+      "ts": "2026-04-01T15:14:21.921251+00:00"
+    },
+    {
+      "end_ms": 6246848,
+      "index": 609,
+      "speaker_confidence": 0.62432057,
+      "speaker_id": "Speaker 1",
+      "start_ms": 6244660,
+      "text": "Excellent. How's the nausea then?",
+      "ts": "2026-04-01T15:14:23.985136+00:00"
+    },
+    {
+      "end_ms": 6254432,
+      "index": 610,
+      "speaker_confidence": 0.63549036,
+      "speaker_id": "Speaker 1",
+      "start_ms": 6247860,
+      "text": "It's not as horrible as, as it was. I'm taking the pills so.",
+      "ts": "2026-04-01T15:14:31.868084+00:00"
+    },
+    {
+      "end_ms": 6262432,
+      "index": 611,
+      "speaker_confidence": 0.69164157,
+      "speaker_id": "Speaker 1",
+      "start_ms": 6254484,
+      "text": "It's ah, the room is a bit cold. Isn't it? Sorry about that. I kind of like it because I'm like overheating all the time.",
+      "ts": "2026-04-01T15:14:41.098095+00:00"
+    },
+    {
+      "end_ms": 6267872,
+      "index": 612,
+      "speaker_confidence": 0.6334532,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 6262228,
+      "text": "And then do Do we get an appointment for you, or you have doctor's exam on April?",
+      "ts": "2026-04-01T15:14:45.947574+00:00"
+    },
+    {
+      "end_ms": 6268800,
+      "index": 613,
+      "speaker_confidence": 0.7245466,
+      "speaker_id": "Speaker 4",
+      "start_ms": 6267668,
+      "text": "Yes.",
+      "ts": "2026-04-01T15:14:46.146169+00:00"
+    },
+    {
+      "end_ms": 6271424,
+      "index": 614,
+      "speaker_confidence": 0.7335056,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 6268788,
+      "text": "Okay, so what I'm going to do.",
+      "ts": "2026-04-01T15:14:49.096985+00:00"
+    },
+    {
+      "end_ms": 6276128,
+      "index": 615,
+      "speaker_confidence": 0.5817205,
+      "speaker_id": "Speaker 4",
+      "start_ms": 6274580,
+      "text": "It is.",
+      "ts": "2026-04-01T15:14:53.408936+00:00"
+    },
+    {
+      "end_ms": 6282624,
+      "index": 616,
+      "speaker_confidence": 0.8485072,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 6276500,
+      "text": "I'm just gonna print out a couple things for you to take to your appointment. So it's nine days from now, right?",
+      "ts": "2026-04-01T15:15:01.043329+00:00"
+    },
+    {
+      "end_ms": 6284544,
+      "index": 617,
+      "speaker_confidence": 0.8405665,
+      "speaker_id": "Speaker 4",
+      "start_ms": 6283700,
+      "text": "Yes.",
+      "ts": "2026-04-01T15:15:01.670391+00:00"
+    },
+    {
+      "end_ms": 6287264,
+      "index": 618,
+      "speaker_confidence": 0.51132333,
+      "speaker_id": "Speaker 1",
+      "start_ms": 6284660,
+      "text": "Yeah, today's the first.",
+      "ts": "2026-04-01T15:15:04.517357+00:00"
+    },
+    {
+      "end_ms": 6289792,
+      "index": 619,
+      "speaker_confidence": 0.822894,
+      "speaker_id": "Speaker 4",
+      "start_ms": 6288820,
+      "text": "Yes.",
+      "ts": "2026-04-01T15:15:06.781850+00:00"
+    },
+    {
+      "end_ms": 6291744,
+      "index": 620,
+      "speaker_confidence": 0.8251714,
+      "speaker_id": "Speaker 4",
+      "start_ms": 6290388,
+      "text": "That.",
+      "ts": "2026-04-01T15:15:08.793332+00:00"
+    },
+    {
+      "end_ms": 6299424,
+      "index": 621,
+      "speaker_confidence": 0.49699906,
+      "speaker_id": "Speaker 3",
+      "start_ms": 6297556,
+      "text": "Moment, sorry.",
+      "ts": "2026-04-01T15:15:16.902547+00:00"
+    },
+    {
+      "end_ms": 6321664,
+      "index": 622,
+      "speaker_confidence": 0.73686314,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 6313556,
+      "text": "So the the last few times that I've seen you, your blood pressure has been slightly on the higher end and.",
+      "ts": "2026-04-01T15:15:39.233322+00:00"
+    },
+    {
+      "end_ms": 6326656,
+      "index": 623,
+      "speaker_confidence": 0.637116,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 6321684,
+      "text": "Your urine has had a tiny bit of protein, and for the most part.",
+      "ts": "2026-04-01T15:15:44.032930+00:00"
+    },
+    {
+      "end_ms": 6329568,
+      "index": 624,
+      "speaker_confidence": 0.68729776,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 6326516,
+      "text": "We normally just kind of launch it at this stage.",
+      "ts": "2026-04-01T15:15:46.786576+00:00"
+    },
+    {
+      "end_ms": 6330656,
+      "index": 625,
+      "speaker_confidence": 0.52022207,
+      "speaker_id": "Speaker 3",
+      "start_ms": 6329332,
+      "text": "Um.",
+      "ts": "2026-04-01T15:15:47.788815+00:00"
+    },
+    {
+      "end_ms": 6333184,
+      "index": 626,
+      "speaker_confidence": 0.590138,
+      "speaker_id": "Speaker 4",
+      "start_ms": 6331636,
+      "text": "And.",
+      "ts": "2026-04-01T15:15:50.155319+00:00"
+    },
+    {
+      "end_ms": 6339232,
+      "index": 627,
+      "speaker_confidence": 0.63841677,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 6334004,
+      "text": "So I, I wouldn't you know it's different trimesters of pregnancy.",
+      "ts": "2026-04-01T15:15:56.589950+00:00"
+    },
+    {
+      "end_ms": 6343712,
+      "index": 628,
+      "speaker_confidence": 0.71673715,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 6339060,
+      "text": "Just worry about different things. We go about things differently.",
+      "ts": "2026-04-01T15:16:01.043721+00:00"
+    },
+    {
+      "end_ms": 6345504,
+      "index": 629,
+      "speaker_confidence": 0.63128376,
+      "speaker_id": "Speaker 1",
+      "start_ms": 6344244,
+      "text": "But.",
+      "ts": "2026-04-01T15:16:02.515176+00:00"
+    },
+    {
+      "end_ms": 6350592,
+      "index": 630,
+      "speaker_confidence": 0.5880966,
+      "speaker_id": "Speaker 1",
+      "start_ms": 6349012,
+      "text": "The um.",
+      "ts": "2026-04-01T15:16:07.660893+00:00"
+    },
+    {
+      "end_ms": 6355712,
+      "index": 631,
+      "speaker_confidence": 0.6402364,
+      "speaker_id": "Speaker 1",
+      "start_ms": 6354324,
+      "text": "We sent them.",
+      "ts": "2026-04-01T15:16:12.694505+00:00"
+    },
+    {
+      "end_ms": 6358304,
+      "index": 632,
+      "speaker_confidence": 0.6584432,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 6355892,
+      "text": "Everything else. So we sent them the, yeah.",
+      "ts": "2026-04-01T15:16:15.414680+00:00"
+    },
+    {
+      "end_ms": 6360992,
+      "index": 633,
+      "speaker_confidence": 0.63460475,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 6358100,
+      "text": "We actually sent them the ultrasound as well. We sent them",
+      "ts": "2026-04-01T15:16:18.163986+00:00"
+    },
+    {
+      "end_ms": 6362912,
+      "index": 634,
+      "speaker_confidence": 0.66577333,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 6360756,
+      "text": "Your.",
+      "ts": "2026-04-01T15:16:20.307087+00:00"
+    },
+    {
+      "end_ms": 6366304,
+      "index": 635,
+      "speaker_confidence": 0.59186137,
+      "speaker_id": "Speaker 1",
+      "start_ms": 6363828,
+      "text": "Blog work results and.",
+      "ts": "2026-04-01T15:16:23.337088+00:00"
+    },
+    {
+      "end_ms": 6370880,
+      "index": 636,
+      "speaker_confidence": 0.7354218,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 6366164,
+      "text": "All the, the swaps. This nads and everything along",
+      "ts": "2026-04-01T15:16:28.461160+00:00"
+    },
+    {
+      "end_ms": 6385056,
+      "index": 637,
+      "speaker_confidence": 0.75756425,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 6370644,
+      "text": "To him, so he has all those things. Um, what he doesn't have is like today's block after reading and so on. Again, I'm not trying to scare you by any means. What does it like mean if it's like? Doesn't mean anything at this stage. Okay, it's more that",
+      "ts": "2026-04-01T15:16:43.404263+00:00"
+    },
+    {
+      "end_ms": 6388896,
+      "index": 638,
+      "speaker_confidence": 0.62001467,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 6384916,
+      "text": "He doesn't have this as a background, so when he sees you and.",
+      "ts": "2026-04-01T15:16:46.199307+00:00"
+    },
+    {
+      "end_ms": 6413120,
+      "index": 639,
+      "speaker_confidence": 0.81249523,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 6388724,
+      "text": "He's gonna wonder whether this is a one-time thing or this an ongoing, where how's it trending. So this just gives him the history behind it so he can be like okay, this is where she's been yeah whatnot um Is there like something that makes it like higher? Or the urine things Yeah. So this is This is all we consider as normal pregnancy Um",
+      "ts": "2026-04-01T15:17:12.158870+00:00"
+    },
+    {
+      "end_ms": 6414592,
+      "index": 640,
+      "speaker_confidence": 0.49416602,
+      "speaker_id": "Speaker 1",
+      "start_ms": 6413300,
+      "text": "The.",
+      "ts": "2026-04-01T15:17:12.409324+00:00"
+    },
+    {
+      "end_ms": 6416928,
+      "index": 641,
+      "speaker_confidence": 0.61065686,
+      "speaker_id": "Speaker 1",
+      "start_ms": 6414772,
+      "text": "But what happens sometimes? So.",
+      "ts": "2026-04-01T15:17:13.948590+00:00"
+    },
+    {
+      "end_ms": 6422208,
+      "index": 642,
+      "speaker_confidence": 0.66846013,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 6416628,
+      "text": "There are women who have high blood pressure before they get pregnant. Yeah, and",
+      "ts": "2026-04-01T15:17:19.624761+00:00"
+    },
+    {
+      "end_ms": 6433440,
+      "index": 643,
+      "speaker_confidence": 0.7488961,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 6422388,
+      "text": "They we don't know sometimes kind of whether so somebody somebody has a very high blood pressure. We don't know if that's their normal, yeah or if that's that's their you know so",
+      "ts": "2026-04-01T15:17:31.323663+00:00"
+    },
+    {
+      "end_ms": 6435040,
+      "index": 644,
+      "speaker_confidence": 0.6871854,
+      "speaker_id": "Speaker 1",
+      "start_ms": 6433204,
+      "text": "This lets us know.",
+      "ts": "2026-04-01T15:17:32.003867+00:00"
+    },
+    {
+      "end_ms": 6443872,
+      "index": 645,
+      "speaker_confidence": 0.6697079,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 6434740,
+      "text": "This stage of pregnancy, this is where things are. So that even in the third trimester, the number is a little bit up from this. Okay? Yeah.",
+      "ts": "2026-04-01T15:17:41.634072+00:00"
+    },
+    {
+      "end_ms": 6449312,
+      "index": 646,
+      "speaker_confidence": 0.7722782,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 6443636,
+      "text": "Whereas, if it's significantly higher the P O four yeah.",
+      "ts": "2026-04-01T15:17:46.644752+00:00"
+    },
+    {
+      "end_ms": 6450624,
+      "index": 647,
+      "speaker_confidence": 0.60712886,
+      "speaker_id": "Speaker 1",
+      "start_ms": 6449268,
+      "text": "The.",
+      "ts": "2026-04-01T15:17:47.574960+00:00"
+    },
+    {
+      "end_ms": 6458688,
+      "index": 648,
+      "speaker_confidence": 0.6745357,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 6450516,
+      "text": "He wouldn't. He wouldn't. Um, he wouldn't change anything now. The reason it happens in pregnancy is because the fetus",
+      "ts": "2026-04-01T15:17:56.970224+00:00"
+    },
+    {
+      "end_ms": 6463872,
+      "index": 649,
+      "speaker_confidence": 0.7359104,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 6458388,
+      "text": "Changes how your blood vessels operate. The fetus is literally like",
+      "ts": "2026-04-01T15:18:01.228797+00:00"
+    },
+    {
+      "end_ms": 6483232,
+      "index": 650,
+      "speaker_confidence": 0.78775716,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 6463860,
+      "text": "A gigantic parasite feeding off you. So it's, it sends signals throughout your body and changes everything. Yeah. So it's so in doing that, it changes kind of the mechanics of how your gut will operate.",
+      "ts": "2026-04-01T15:18:21.708134+00:00"
+    },
+    {
+      "end_ms": 6483904,
+      "index": 651,
+      "speaker_confidence": 0.5379479,
+      "speaker_id": "Speaker 4",
+      "start_ms": 6482964,
+      "text": "Um.",
+      "ts": "2026-04-01T15:18:21.931405+00:00"
+    },
+    {
+      "end_ms": 6490592,
+      "index": 652,
+      "speaker_confidence": 0.7806421,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 6484116,
+      "text": "Again, we for the most part wouldn't react to this. Which is why I didn't brought it up. Yeah.",
+      "ts": "2026-04-01T15:18:28.655151+00:00"
+    },
+    {
+      "end_ms": 6514048,
+      "index": 653,
+      "speaker_confidence": 0.7736601,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 6490420,
+      "text": "But if you see him and he checks your blood pressure, it's way higher. He's gonna say, \"Well, is this like where it's been? Is it going to was it lower or what?\" Was it Yeah, I wouldn't know so This So that's good yeah . So It'S just more so that he knows And then the last ultrasound that you had are included because he knows where Where things were left. I've sent them everything else If you're going there in a few days , then",
+      "ts": "2026-04-01T15:18:53.241104+00:00"
+    },
+    {
+      "end_ms": 6516480,
+      "index": 654,
+      "speaker_confidence": 0.48504752,
+      "speaker_id": "Speaker 5",
+      "start_ms": 6513812,
+      "text": "You can just give that to him.",
+      "ts": "2026-04-01T15:18:53.650465+00:00"
+    },
+    {
+      "end_ms": 6525056,
+      "index": 655,
+      "speaker_confidence": 0.6344704,
+      "speaker_id": "Speaker 1",
+      "start_ms": 6516596,
+      "text": "So it's just like my last one with you, and then I continue with him. Correct? Yeah. So the... And what he does is he uh",
+      "ts": "2026-04-01T15:19:02.781767+00:00"
+    },
+    {
+      "end_ms": 6527072,
+      "index": 656,
+      "speaker_confidence": 0.5099027,
+      "speaker_id": "Speaker 1",
+      "start_ms": 6525620,
+      "text": "Again, I'm.",
+      "ts": "2026-04-01T15:19:04.051336+00:00"
+    },
+    {
+      "end_ms": 6530400,
+      "index": 657,
+      "speaker_confidence": 0.6391338,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 6527060,
+      "text": "I'm always here. Yeah, um, but",
+      "ts": "2026-04-01T15:19:07.547798+00:00"
+    },
+    {
+      "end_ms": 6536448,
+      "index": 658,
+      "speaker_confidence": 0.68884736,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 6530100,
+      "text": "Every obstetrician typically does things slightly differently, and so what happens is they'll.",
+      "ts": "2026-04-01T15:19:13.865354+00:00"
+    },
+    {
+      "end_ms": 6538080,
+      "index": 659,
+      "speaker_confidence": 0.63790154,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 6536244,
+      "text": "If if there's.",
+      "ts": "2026-04-01T15:19:15.074935+00:00"
+    },
+    {
+      "end_ms": 6549152,
+      "index": 660,
+      "speaker_confidence": 0.7550651,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 6538868,
+      "text": "They they prefer to just be owning it, yeah. And and then there you know there's no mixed messaging. There's no everybody is on the same page and so on but",
+      "ts": "2026-04-01T15:19:27.046054+00:00"
+    },
+    {
+      "end_ms": 6551488,
+      "index": 661,
+      "speaker_confidence": 0.61996305,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 6549268,
+      "text": "If anything comes along.",
+      "ts": "2026-04-01T15:19:28.533581+00:00"
+    },
+    {
+      "end_ms": 6556832,
+      "index": 662,
+      "speaker_confidence": 0.72953147,
+      "speaker_id": "Speaker 1",
+      "start_ms": 6551508,
+      "text": "Sometimes they'll say, you know, you'll say, \"Hey, listen! Like the skin thing going on. There's other things going on.\"",
+      "ts": "2026-04-01T15:19:34.260898+00:00"
+    },
+    {
+      "end_ms": 6573152,
+      "index": 663,
+      "speaker_confidence": 0.74937594,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 6557108,
+      "text": "Say, you'll see a family dog. Like it's not pregnancy thing. So it's only like the pregnancy part that I go in exactly so. So his focus is and sometimes you won't be sure. You're like funny stuffs happening? Is this yeah pregnancy And he will say no um",
+      "ts": "2026-04-01T15:19:51.513086+00:00"
+    },
+    {
+      "end_ms": 6578976,
+      "index": 664,
+      "speaker_confidence": 0.6644932,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 6573140,
+      "text": "The other time, so so often I'll see patients even when they're being followed by psychiatrists speak Hazav.",
+      "ts": "2026-04-01T15:19:56.485870+00:00"
+    },
+    {
+      "end_ms": 6584000,
+      "index": 665,
+      "speaker_confidence": 0.80750656,
+      "speaker_id": "Speaker 1",
+      "start_ms": 6579284,
+      "text": "Stuff that comes up, wealth-wise. The other reason is sometimes",
+      "ts": "2026-04-01T15:20:01.305290+00:00"
+    },
+    {
+      "end_ms": 6592160,
+      "index": 666,
+      "speaker_confidence": 0.66517603,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 6584244,
+      "text": "Let's say doctors am suggest something or says something, or something is just unclear. Patients will come to me and say",
+      "ts": "2026-04-01T15:20:09.793359+00:00"
+    },
+    {
+      "end_ms": 6602432,
+      "index": 667,
+      "speaker_confidence": 0.77164185,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 6592116,
+      "text": "Like this is what the specialist said. What are your thoughts? So they kind of come in to just understand, yeah, what's going on or just the situation that we're sure what",
+      "ts": "2026-04-01T15:20:20.376675+00:00"
+    },
+    {
+      "end_ms": 6604352,
+      "index": 668,
+      "speaker_confidence": 0.59909034,
+      "speaker_id": "Speaker 1",
+      "start_ms": 6602164,
+      "text": "What something meant. Yeah.",
+      "ts": "2026-04-01T15:20:21.392830+00:00"
+    },
+    {
+      "end_ms": 6607424,
+      "index": 669,
+      "speaker_confidence": 0.6705113,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 6604340,
+      "text": "So I'm also often here as like a.",
+      "ts": "2026-04-01T15:20:24.618349+00:00"
+    },
+    {
+      "end_ms": 6609888,
+      "index": 670,
+      "speaker_confidence": 0.68685853,
+      "speaker_id": "Speaker 1",
+      "start_ms": 6607220,
+      "text": "As a, as a you know someone.",
+      "ts": "2026-04-01T15:20:26.990791+00:00"
+    },
+    {
+      "end_ms": 6635360,
+      "index": 671,
+      "speaker_confidence": 0.8046309,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 6610356,
+      "text": "People come and say, \"Hey,\" like he said. I should take this this way, but I'm not really sure; like is it actually safe? Like I write different things yeah Yeah so So it's kind of like so so sometimes people even if It's pregnancy related they'll still come see me just to get a second sort of opinion about what that's on their mind Yeah Um So I'm always here But in terms of the primary pregnancy care And as soon as the baby's delivered",
+      "ts": "2026-04-01T15:20:54.818983+00:00"
+    },
+    {
+      "end_ms": 6635872,
+      "index": 672,
+      "speaker_confidence": 0.6535751,
+      "speaker_id": "Speaker 4",
+      "start_ms": 6635060,
+      "text": "Yeah.",
+      "ts": "2026-04-01T15:20:55.035751+00:00"
+    },
+    {
+      "end_ms": 6650976,
+      "index": 673,
+      "speaker_confidence": 0.7531937,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 6635796,
+      "text": "Your sun disappears. Yeah, okay. So um so then everything else after afterwards now I often I'm gonna see you anyway because of the baby yeah and then um we we then kind",
+      "ts": "2026-04-01T15:21:09.123391+00:00"
+    },
+    {
+      "end_ms": 6676256,
+      "index": 674,
+      "speaker_confidence": 0.73221153,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 6651252,
+      "text": "You know the postnatal care. Sometimes they will see you a few weeks after just conversation, but then other stuff that comes up: contraception, speaking to adults or something. Yeah. Um yeah I was gonna ask like this may be obvious but like once we have baby like are going to be like his doctor? Okay. Yeah They'll ask you for sure there There are scenarios where",
+      "ts": "2026-04-01T15:21:35.479523+00:00"
+    },
+    {
+      "end_ms": 6678688,
+      "index": 675,
+      "speaker_confidence": 0.63703626,
+      "speaker_id": "Speaker 1",
+      "start_ms": 6675956,
+      "text": "That's not the case, but for the most part.",
+      "ts": "2026-04-01T15:21:36.403343+00:00"
+    },
+    {
+      "end_ms": 6683328,
+      "index": 676,
+      "speaker_confidence": 0.65537196,
+      "speaker_id": "Speaker 1",
+      "start_ms": 6680372,
+      "text": "Even though I'm technically not accepting.",
+      "ts": "2026-04-01T15:21:40.461513+00:00"
+    },
+    {
+      "end_ms": 6690592,
+      "index": 677,
+      "speaker_confidence": 0.6081758,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 6683284,
+      "text": "We chance having a family together. Yeah, it's no big deal. And let's have one.",
+      "ts": "2026-04-01T15:21:48.144773+00:00"
+    },
+    {
+      "end_ms": 6696352,
+      "index": 678,
+      "speaker_confidence": 0.65897775,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 6690740,
+      "text": "I think it's more just because I love listening to fetuses. Come on, yeah! I want to do so only the",
+      "ts": "2026-04-01T15:21:53.774033+00:00"
+    },
+    {
+      "end_ms": 6699072,
+      "index": 679,
+      "speaker_confidence": 0.6919164,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 6696052,
+      "text": "Always nice to hear them.",
+      "ts": "2026-04-01T15:21:56.225787+00:00"
+    },
+    {
+      "end_ms": 6702368,
+      "index": 680,
+      "speaker_confidence": 0.75306773,
+      "speaker_id": "Speaker 1",
+      "start_ms": 6699636,
+      "text": "How has have you been feeling?",
+      "ts": "2026-04-01T15:21:59.475940+00:00"
+    },
+    {
+      "end_ms": 6705312,
+      "index": 681,
+      "speaker_confidence": 0.7728976,
+      "speaker_id": "Speaker 1",
+      "start_ms": 6702484,
+      "text": "A little one. I can't remember the name yet.",
+      "ts": "2026-04-01T15:22:02.467659+00:00"
+    },
+    {
+      "end_ms": 6706400,
+      "index": 682,
+      "speaker_confidence": 0.6549634,
+      "speaker_id": "Speaker 4",
+      "start_ms": 6705332,
+      "text": "Ips.",
+      "ts": "2026-04-01T15:22:03.299897+00:00"
+    },
+    {
+      "end_ms": 6712960,
+      "index": 683,
+      "speaker_confidence": 0.41018575,
+      "speaker_id": "Speaker 4",
+      "start_ms": 6706580,
+      "text": "Think that we're gonna pick the name Gunner? Gunnar. Did you guys get off with it though?",
+      "ts": "2026-04-01T15:22:10.582966+00:00"
+    },
+    {
+      "end_ms": 6722528,
+      "index": 684,
+      "speaker_confidence": 0.570034,
+      "speaker_id": "Speaker 4",
+      "start_ms": 6712852,
+      "text": "Just came up like reading names, and then we were both like, \"Oh, that's cute,\" and it's like different. I don't know; I liked it—the strong name.",
+      "ts": "2026-04-01T15:22:20.422996+00:00"
+    },
+    {
+      "end_ms": 6723712,
+      "index": 685,
+      "speaker_confidence": 0.62226725,
+      "speaker_id": "Speaker 4",
+      "start_ms": 6722740,
+      "text": "Um.",
+      "ts": "2026-04-01T15:22:20.611377+00:00"
+    },
+    {
+      "end_ms": 6737536,
+      "index": 686,
+      "speaker_confidence": 0.6366323,
+      "speaker_id": "Speaker 4",
+      "start_ms": 6724052,
+      "text": "I was gonna ask you. I decided that I can't do my daily work; it's like so hard. If I don't know, I didn't want to say anything because it's pulling my back hurt so bad. So I was going to ask for help now.",
+      "ts": "2026-04-01T15:22:36.982725+00:00"
+    },
+    {
+      "end_ms": 6739072,
+      "index": 687,
+      "speaker_confidence": 0.5689675,
+      "speaker_id": "Speaker 4",
+      "start_ms": 6737748,
+      "text": "Yeah.",
+      "ts": "2026-04-01T15:22:37.212757+00:00"
+    },
+    {
+      "end_ms": 6749056,
+      "index": 688,
+      "speaker_confidence": 0.6722739,
+      "speaker_id": "Speaker 4",
+      "start_ms": 6748084,
+      "text": "Hey.",
+      "ts": "2026-04-01T15:22:46.051689+00:00"
+    },
+    {
+      "end_ms": 6762048,
+      "index": 689,
+      "speaker_confidence": 0.5750936,
+      "speaker_id": "Speaker 4",
+      "start_ms": 6760980,
+      "text": "That's different.",
+      "ts": "2026-04-01T15:22:59.063851+00:00"
+    },
+    {
+      "end_ms": 6769888,
+      "index": 690,
+      "speaker_confidence": 0.6309418,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 6767380,
+      "text": "One second. Let me just clear up how we do.",
+      "ts": "2026-04-01T15:23:06.989023+00:00"
+    },
+    {
+      "end_ms": 6778880,
+      "index": 691,
+      "speaker_confidence": 0.6458369,
+      "speaker_id": "Speaker 4",
+      "start_ms": 6776916,
+      "text": "That's okay. Okay.",
+      "ts": "2026-04-01T15:23:15.996028+00:00"
+    },
+    {
+      "end_ms": 6780672,
+      "index": 692,
+      "speaker_confidence": 0.59532446,
+      "speaker_id": "Speaker 1",
+      "start_ms": 6779668,
+      "text": "Go.",
+      "ts": "2026-04-01T15:23:17.608070+00:00"
+    },
+    {
+      "end_ms": 6787264,
+      "index": 693,
+      "speaker_confidence": 0.63083655,
+      "speaker_id": "Speaker 4",
+      "start_ms": 6786356,
+      "text": "You know.",
+      "ts": "2026-04-01T15:23:24.206069+00:00"
+    },
+    {
+      "end_ms": 6795744,
+      "index": 694,
+      "speaker_confidence": 0.7854891,
+      "speaker_id": "Speaker 1",
+      "start_ms": 6789844,
+      "text": "So this is just, just the stuff for Doctor Zan. Yes, then I have to give you a note now.",
+      "ts": "2026-04-01T15:23:33.270613+00:00"
+    },
+    {
+      "end_ms": 6798496,
+      "index": 695,
+      "speaker_confidence": 0.63304317,
+      "speaker_id": "Speaker 1",
+      "start_ms": 6795604,
+      "text": "Depending on what place I'm in, may not have.",
+      "ts": "2026-04-01T15:23:35.660535+00:00"
+    },
+    {
+      "end_ms": 6802208,
+      "index": 696,
+      "speaker_confidence": 0.63931245,
+      "speaker_id": "Speaker 1",
+      "start_ms": 6798708,
+      "text": "Payble for pregnancy, etc. I don't know. Yeah no.",
+      "ts": "2026-04-01T15:23:39.402943+00:00"
+    },
+    {
+      "end_ms": 6825056,
+      "index": 697,
+      "speaker_confidence": 0.78603595,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 6802068,
+      "text": "Just gonna see if I get a fund for EI. Yeah, so talk to Ei and they will. So what I'm going to put down is just the due date because they will yeah typically want to hope it's pregnancy related. Yes. So like do you know what? Like What do I apply for Is it like the um If you go to yeah. So if you go to ei They'll To be honest with you The easiest is just simply Because when you're there",
+      "ts": "2026-04-01T15:24:04.157498+00:00"
+    },
+    {
+      "end_ms": 6845088,
+      "index": 698,
+      "speaker_confidence": 0.8029425,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 6825076,
+      "text": "They know what the funding. No, they'll guide you like on the website. Um, I think you can go on the website. I haven't looked it um and You can also just ask them Like he can The offices will Just same office for all of It a new note with every office Yeah There's one thing just up On Wayne Gretzky actually",
+      "ts": "2026-04-01T15:24:23.843588+00:00"
+    },
+    {
+      "end_ms": 6846784,
+      "index": 699,
+      "speaker_confidence": 0.6169797,
+      "speaker_id": "Speaker 4",
+      "start_ms": 6845684,
+      "text": "Um.",
+      "ts": "2026-04-01T15:24:24.067348+00:00"
+    },
+    {
+      "end_ms": 6848800,
+      "index": 700,
+      "speaker_confidence": 0.5056957,
+      "speaker_id": "Speaker 5",
+      "start_ms": 6846932,
+      "text": "This is.",
+      "ts": "2026-04-01T15:24:25.799722+00:00"
+    },
+    {
+      "end_ms": 6851616,
+      "index": 701,
+      "speaker_confidence": 0.67515886,
+      "speaker_id": "Speaker 5",
+      "start_ms": 6848884,
+      "text": "We confirm that this patient.",
+      "ts": "2026-04-01T15:24:28.671939+00:00"
+    },
+    {
+      "end_ms": 6855264,
+      "index": 702,
+      "speaker_confidence": 0.6761755,
+      "speaker_id": "Speaker 5",
+      "start_ms": 6852532,
+      "text": "Currently unable to work.",
+      "ts": "2026-04-01T15:24:32.324646+00:00"
+    },
+    {
+      "end_ms": 6860576,
+      "index": 703,
+      "speaker_confidence": 0.60780287,
+      "speaker_id": "Speaker 5",
+      "start_ms": 6858516,
+      "text": "It's your pregnancy.",
+      "ts": "2026-04-01T15:24:37.940106+00:00"
+    },
+    {
+      "end_ms": 6864256,
+      "index": 704,
+      "speaker_confidence": 0.6662268,
+      "speaker_id": "Speaker 5",
+      "start_ms": 6860852,
+      "text": "Our duty is.",
+      "ts": "2026-04-01T15:24:42.183279+00:00"
+    },
+    {
+      "end_ms": 6866240,
+      "index": 705,
+      "speaker_confidence": 0.5767218,
+      "speaker_id": "Speaker 1",
+      "start_ms": 6863988,
+      "text": "We decided on.",
+      "ts": "2026-04-01T15:24:43.497893+00:00"
+    },
+    {
+      "end_ms": 6872768,
+      "index": 706,
+      "speaker_confidence": 0.3873209,
+      "speaker_id": "Speaker 4",
+      "start_ms": 6866196,
+      "text": "Eleventh, right? I think it was the fifteenth. That it—it was—the first one was the eleventh and that changed to fifteen. Okay.",
+      "ts": "2026-04-01T15:24:51.635009+00:00"
+    },
+    {
+      "end_ms": 6874368,
+      "index": 707,
+      "speaker_confidence": 0.6441034,
+      "speaker_id": "Speaker 5",
+      "start_ms": 6872692,
+      "text": "Need.",
+      "ts": "2026-04-01T15:24:52.143196+00:00"
+    },
+    {
+      "end_ms": 6875936,
+      "index": 708,
+      "speaker_confidence": 0.6710988,
+      "speaker_id": "Speaker 4",
+      "start_ms": 6874100,
+      "text": "Fix.",
+      "ts": "2026-04-01T15:24:52.878012+00:00"
+    },
+    {
+      "end_ms": 6878112,
+      "index": 709,
+      "speaker_confidence": 0.49594578,
+      "speaker_id": "Speaker 4",
+      "start_ms": 6876564,
+      "text": "Feel like I.",
+      "ts": "2026-04-01T15:24:55.122321+00:00"
+    }
+  ],
+  "sensor_transitions": [
+    {
+      "from": "present",
+      "to": "absent",
+      "ts": "2026-04-01T14:56:25.347193+00:00"
+    },
+    {
+      "from": "absent",
+      "to": "present",
+      "ts": "2026-04-01T14:58:07.738406+00:00"
+    },
+    {
+      "from": "present",
+      "to": "absent",
+      "ts": "2026-04-01T15:05:23.151111+00:00"
+    },
+    {
+      "from": "absent",
+      "to": "present",
+      "ts": "2026-04-01T15:10:11.745676+00:00"
+    },
+    {
+      "from": "present",
+      "to": "absent",
+      "ts": "2026-04-01T15:10:40.800802+00:00"
+    },
+    {
+      "from": "absent",
+      "to": "present",
+      "ts": "2026-04-01T15:12:45.930091+00:00"
+    },
+    {
+      "from": "present",
+      "to": "absent",
+      "ts": "2026-04-01T15:13:07.341030+00:00"
+    },
+    {
+      "from": "absent",
+      "to": "present",
+      "ts": "2026-04-01T15:14:26.698848+00:00"
+    }
+  ],
+  "soap_result": {
+    "latency_ms": 5569,
+    "success": true,
+    "ts": "2026-04-01T15:24:55.040493+00:00",
+    "word_count": 1748
+  },
+  "split_decision": {
+    "cleaned_word_count": 1451,
+    "end_segment_index": 702,
+    "trigger": "hybrid_llm",
+    "ts": "2026-04-01T15:24:40.071054+00:00",
+    "word_count": 1748
+  },
+  "vision_results": [
+    {
+      "is_blank": false,
+      "is_stale": false,
+      "latency_ms": 1657,
+      "parsed_name": "Megan Brett",
+      "ts": "2026-04-01T14:54:51.406472+00:00"
+    },
+    {
+      "is_blank": false,
+      "is_stale": false,
+      "latency_ms": 1686,
+      "parsed_name": "Megan Brett",
+      "ts": "2026-04-01T14:55:53.268685+00:00"
+    },
+    {
+      "is_blank": false,
+      "is_stale": false,
+      "latency_ms": 1610,
+      "parsed_name": "Megan Brett",
+      "ts": "2026-04-01T14:56:55.104088+00:00"
+    },
+    {
+      "is_blank": false,
+      "is_stale": false,
+      "latency_ms": 1637,
+      "parsed_name": "Megan Brett",
+      "ts": "2026-04-01T14:57:56.917798+00:00"
+    },
+    {
+      "is_blank": false,
+      "is_stale": false,
+      "latency_ms": 1669,
+      "parsed_name": null,
+      "ts": "2026-04-01T14:58:58.847670+00:00"
+    },
+    {
+      "is_blank": false,
+      "is_stale": false,
+      "latency_ms": 1270,
+      "parsed_name": null,
+      "ts": "2026-04-01T15:00:00.384554+00:00"
+    },
+    {
+      "is_blank": false,
+      "is_stale": false,
+      "latency_ms": 965,
+      "parsed_name": null,
+      "ts": "2026-04-01T15:01:01.610379+00:00"
+    },
+    {
+      "is_blank": false,
+      "is_stale": false,
+      "latency_ms": 1291,
+      "parsed_name": null,
+      "ts": "2026-04-01T15:02:03.149068+00:00"
+    },
+    {
+      "is_blank": false,
+      "is_stale": false,
+      "latency_ms": 1264,
+      "parsed_name": null,
+      "ts": "2026-04-01T15:03:04.677098+00:00"
+    },
+    {
+      "is_blank": false,
+      "is_stale": false,
+      "latency_ms": 1502,
+      "parsed_name": null,
+      "ts": "2026-04-01T15:04:06.460322+00:00"
+    },
+    {
+      "is_blank": false,
+      "is_stale": false,
+      "latency_ms": 1593,
+      "parsed_name": null,
+      "ts": "2026-04-01T15:05:08.311426+00:00"
+    },
+    {
+      "is_blank": false,
+      "is_stale": false,
+      "latency_ms": 1340,
+      "parsed_name": null,
+      "ts": "2026-04-01T15:06:09.911971+00:00"
+    },
+    {
+      "is_blank": false,
+      "is_stale": false,
+      "latency_ms": 1303,
+      "parsed_name": null,
+      "ts": "2026-04-01T15:07:11.472752+00:00"
+    },
+    {
+      "is_blank": false,
+      "is_stale": false,
+      "latency_ms": 1298,
+      "parsed_name": null,
+      "ts": "2026-04-01T15:08:13.013375+00:00"
+    },
+    {
+      "is_blank": false,
+      "is_stale": false,
+      "latency_ms": 3904,
+      "parsed_name": "Megan Brett",
+      "ts": "2026-04-01T15:15:24.477972+00:00"
+    },
+    {
+      "is_blank": false,
+      "is_stale": false,
+      "latency_ms": 1715,
+      "parsed_name": "Megan Brett",
+      "ts": "2026-04-01T15:16:26.411910+00:00"
+    },
+    {
+      "is_blank": false,
+      "is_stale": false,
+      "latency_ms": 1646,
+      "parsed_name": "Megan Brett",
+      "ts": "2026-04-01T15:17:28.257852+00:00"
+    },
+    {
+      "is_blank": false,
+      "is_stale": false,
+      "latency_ms": 2450,
+      "parsed_name": "Megan Brett",
+      "ts": "2026-04-01T15:18:30.893535+00:00"
+    },
+    {
+      "is_blank": false,
+      "is_stale": false,
+      "latency_ms": 2007,
+      "parsed_name": "Megan Brett",
+      "ts": "2026-04-01T15:19:33.099681+00:00"
+    },
+    {
+      "is_blank": false,
+      "is_stale": false,
+      "latency_ms": 1572,
+      "parsed_name": "Megan Brett",
+      "ts": "2026-04-01T15:20:34.860560+00:00"
+    },
+    {
+      "is_blank": false,
+      "is_stale": false,
+      "latency_ms": 1737,
+      "parsed_name": "Megan Brett",
+      "ts": "2026-04-01T15:21:36.796835+00:00"
+    },
+    {
+      "is_blank": false,
+      "is_stale": false,
+      "latency_ms": 1612,
+      "parsed_name": "Megan Brett",
+      "ts": "2026-04-01T15:22:38.598729+00:00"
+    },
+    {
+      "is_blank": false,
+      "is_stale": false,
+      "latency_ms": 1675,
+      "parsed_name": "Megan Brett",
+      "ts": "2026-04-01T15:23:40.488852+00:00"
+    },
+    {
+      "is_blank": false,
+      "is_stale": true,
+      "latency_ms": 2855,
+      "parsed_name": "Megan Brett",
+      "ts": "2026-04-01T15:24:43.441857+00:00"
+    }
+  ]
+}

@@ -127,11 +127,6 @@ impl RunContext for RecordingRunContext {
         &self,
         _config: PipelineConfig,
     ) -> Result<(PipelineHandle, mpsc::Receiver<PipelineMessage>), String> {
-        let (tx, rx) = mpsc::channel::<PipelineMessage>(256);
-
-        // Drain pending messages into the channel. Synchronous write via
-        // try_send is fine here because we sized the channel to hold them
-        // all. If a bundle ever has > 256 segments, bump the channel size.
         let pending = self
             .pending_messages
             .lock()
@@ -139,17 +134,23 @@ impl RunContext for RecordingRunContext {
             .take()
             .unwrap_or_default();
 
+        // Channel sized to hold every pre-loaded message so try_send never
+        // backpressures. For small margins, +16 also leaves room for any
+        // late messages the orchestrator internally mixes in (none today,
+        // but defensive).
+        let capacity = (pending.len() + 16).max(32);
+        let (tx, rx) = mpsc::channel::<PipelineMessage>(capacity);
+
         for msg in pending {
-            if tx.try_send(msg).is_err() {
-                return Err(
-                    "ScriptedPipeline: channel full; bundle has more than 256 messages".into(),
-                );
+            // try_send cannot fail here because capacity is sized to fit.
+            if let Err(e) = tx.try_send(msg) {
+                return Err(format!("ScriptedPipeline: internal try_send error: {:?}", e));
             }
         }
 
         // Drop the sender so the receiver naturally closes when drained.
-        // This makes the orchestrator's rx.recv().await return None after
-        // the last scripted message, which triggers its shutdown path.
+        // The orchestrator's `rx.recv().await` returns None after the last
+        // scripted message, triggering its shutdown path.
         drop(tx);
 
         let handle = fake_pipeline_handle();

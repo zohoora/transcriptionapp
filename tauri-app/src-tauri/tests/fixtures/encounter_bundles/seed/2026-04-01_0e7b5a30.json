@@ -1,0 +1,1711 @@
+{
+  "clinical_check": {
+    "is_clinical": true,
+    "latency_ms": 0,
+    "success": true,
+    "ts": "2026-04-01T17:44:24.688481+00:00"
+  },
+  "config": {
+    "co2_baseline_ppm": 420.0,
+    "encounter_check_interval_secs": 120,
+    "encounter_detection_mode": "hybrid",
+    "encounter_detection_model": "fast-model",
+    "encounter_detection_nothink": false,
+    "encounter_merge_enabled": true,
+    "encounter_silence_trigger_secs": 45,
+    "fast_model": "fast-model",
+    "hybrid_confirm_window_secs": 180,
+    "hybrid_min_words_for_sensor_split": 500,
+    "idle_encounter_timeout_secs": 900,
+    "presence_absence_threshold_secs": 180,
+    "presence_debounce_secs": 10,
+    "presence_sensor_port": "",
+    "presence_sensor_url": "http://172.16.100.37",
+    "screen_capture_enabled": true,
+    "screen_capture_interval_secs": 60,
+    "shadow_active_method": "llm",
+    "sleep_end_hour": 6,
+    "sleep_mode_enabled": true,
+    "sleep_start_hour": 22,
+    "soap_custom_instructions": "I am a family physician in Ontario Canada. The medications, tests and such are what’s available in Canada. Do not repeat terms such as ‘The patient…’ I prefer clean and crisp notes. Do not start a stentence with ‘Patient reports’ - point form can be simple phrases. So instead of ‘The patient reports low back pain’ say ‘low back pain’. Use the past tense. Do not put procedures under ‘O’ and instead put them in either the ‘P’ section or a separate procedure note. ",
+    "soap_detail_level": 4,
+    "soap_format": "problem_based",
+    "soap_model": "soap-model",
+    "soap_model_fast": "soap-model",
+    "thermal_hot_pixel_threshold_c": 28.0
+  },
+  "detection_checks": [
+    {
+      "cleaned_word_count": 106,
+      "latency_ms": 1184,
+      "loop_state": {
+        "buffer_age_secs": 414.0,
+        "consecutive_failures": 0,
+        "manual_triggered": false,
+        "merge_back_count": 0,
+        "sensor_continuous_present": false,
+        "sensor_triggered": false
+      },
+      "parsed_complete": true,
+      "parsed_confidence": 0.95,
+      "parsed_end_index": 1080,
+      "prompt_system": "You MUST respond in English with ONLY a JSON object. No other text, no explanations, no markdown.\n\nYou are analyzing a continuous transcript from a medical office where the microphone records all day.\n\nYour task: determine if there is a TRANSITION POINT where one patient encounter ends and another begins, or where a patient encounter has clearly concluded.\n\nA completed encounter typically includes a clinical discussion and a concluding plan (e.g., medication changes, follow-up timing, referrals, or instructions). A short transcript that contains only vitals, greetings, or brief exchanges — with no clinical discussion or plan — is likely a pre-visit assessment still in progress, not a completed encounter. A nurse or medical assistant may see the patient before the doctor arrives to take vitals or ask initial questions — this is part of the same encounter, not a separate visit.\n\nEach segment includes elapsed time (MM:SS) from the start of the recording. Large gaps between timestamps may indicate silence, examination, or the room being empty between patients.\n\nIf you find a transition point or completed encounter, return:\n{\"complete\": true, \"end_segment_index\": <last segment index of the CONCLUDED encounter>, \"confidence\": <0.0-1.0>}\n\nIf the current discussion is still one ongoing encounter with no transition, return:\n{\"complete\": false, \"confidence\": <0.0-1.0>}\n\nRespond with ONLY the JSON object.",
+      "prompt_user": "Transcript (segments numbered with speaker labels):\n[1071] (00:00) (Dr Zohoor (62%)): The the yeah so your white count is kind of fluctuated, but again it's not something that we actively worry about. [1072] (00:07) (Dr Zohoor (61%)): And then your. [1073] (00:09) (Dr Zohoor (64%)): The the your red blood cells are small because they're low iron. [1074] (00:13) (Dr Zohoor (71%)): Um and the because the iron is low because of the bleeding, and then um your. [1075] (00:23) (Speaker 1 (73%)): Apart from that. [1076] (00:24) (Dr Zohoor (68%)): Your sugars, thyroid. Everything else looks fine. Cholesterol, et cetera. Everything else works okay. [1077] (00:31) (Speaker 1 (81%)): So hopefully the pill helps, and then. [1078] (00:34) (Speaker 1 (61%)): Hopefully, the iron. [1079] (00:36) (Dr Zohoor (67%)): As well, and if I can help with the other stuff, let me know. [1080] (00:40) (Dr Zohoor (63%)): You keep well. Take good care. [1081] (06:14) (Speaker 5 (58%)): No, that's a problem. Also, they're like.\n\nReal-time context signals:\nCONTEXT: The presence sensor confirms someone is still in the room. Topic changes or pauses within the same visit are NOT transitions. Only split if there is strong evidence of a different patient (new name, new history intake, greeting a new person).",
+      "response_raw": "{\"complete\": true, \"end_segment_index\": 1080, \"confidence\": 0.95}",
+      "segment_range": [
+        1071,
+        1081
+      ],
+      "sensor_context": {
+        "departed": false,
+        "present": true,
+        "unknown": false
+      },
+      "success": true,
+      "ts": "2026-04-01T17:32:55.189260+00:00",
+      "word_count": 106
+    },
+    {
+      "cleaned_word_count": 281,
+      "latency_ms": 1935,
+      "loop_state": {
+        "buffer_age_secs": 606.0,
+        "consecutive_failures": 0,
+        "manual_triggered": false,
+        "merge_back_count": 0,
+        "sensor_continuous_present": false,
+        "sensor_triggered": false
+      },
+      "parsed_complete": true,
+      "parsed_confidence": 0.95,
+      "parsed_end_index": 1080,
+      "prompt_system": "You MUST respond in English with ONLY a JSON object. No other text, no explanations, no markdown.\n\nYou are analyzing a continuous transcript from a medical office where the microphone records all day.\n\nYour task: determine if there is a TRANSITION POINT where one patient encounter ends and another begins, or where a patient encounter has clearly concluded.\n\nA completed encounter typically includes a clinical discussion and a concluding plan (e.g., medication changes, follow-up timing, referrals, or instructions). A short transcript that contains only vitals, greetings, or brief exchanges — with no clinical discussion or plan — is likely a pre-visit assessment still in progress, not a completed encounter. A nurse or medical assistant may see the patient before the doctor arrives to take vitals or ask initial questions — this is part of the same encounter, not a separate visit.\n\nEach segment includes elapsed time (MM:SS) from the start of the recording. Large gaps between timestamps may indicate silence, examination, or the room being empty between patients.\n\nIf you find a transition point or completed encounter, return:\n{\"complete\": true, \"end_segment_index\": <last segment index of the CONCLUDED encounter>, \"confidence\": <0.0-1.0>}\n\nIf the current discussion is still one ongoing encounter with no transition, return:\n{\"complete\": false, \"confidence\": <0.0-1.0>}\n\nRespond with ONLY the JSON object.",
+      "prompt_user": "Transcript (segments numbered with speaker labels):\n[1071] (00:00) (Dr Zohoor (62%)): The the yeah so your white count is kind of fluctuated, but again it's not something that we actively worry about. [1072] (00:07) (Dr Zohoor (61%)): And then your. [1073] (00:09) (Dr Zohoor (64%)): The the your red blood cells are small because they're low iron. [1074] (00:13) (Dr Zohoor (71%)): Um and the because the iron is low because of the bleeding, and then um your. [1075] (00:23) (Speaker 1 (73%)): Apart from that. [1076] (00:24) (Dr Zohoor (68%)): Your sugars, thyroid. Everything else looks fine. Cholesterol, et cetera. Everything else works okay. [1077] (00:31) (Speaker 1 (81%)): So hopefully the pill helps, and then. [1078] (00:34) (Speaker 1 (61%)): Hopefully, the iron. [1079] (00:36) (Dr Zohoor (67%)): As well, and if I can help with the other stuff, let me know. [1080] (00:40) (Dr Zohoor (63%)): You keep well. Take good care. [1081] (06:14) (Speaker 5 (58%)): No, that's a problem. Also, they're like. [1082] (07:25) (Speaker 5 (61%)): Hi, Sam. [1083] (07:27) (Speaker 5 (49%)): Hi, this is the Rose Office calling. Who are you? [1084] (07:32) (Speaker 5 (66%)): Just do for a mammogram. [1085] (07:34) (Speaker 5 (69%)): Can you get that book for you? [1086] (07:47) (Speaker 5 (71%)): What's that going? Okay. [1087] (07:50) (Speaker 5 (68%)): Okay. [1088] (07:51) (Speaker 5 (73%)): I'll get a sense of you call you the next time, okay? [1089] (08:14) (Speaker 5 (71%)): Okay. [1090] (08:18) (Speaker 5 (75%)): Yeah, so do you see a rule? [1091] (08:21) (Speaker 5 (66%)): Jane, what was you said to me? Stay for a second. [1092] (08:24) (Speaker 5 (61%)): Okay. [1093] (08:35) (Speaker 5 (67%)): Make up. [1094] (08:38) (Speaker 5 (74%)): We sent it elsewhere. We sent it, or have declined it? [1095] (08:44) (Speaker 5 (65%)): Start research. [1096] (08:49) (Speaker 5 (58%)): We can get. [1097] (08:56) (Speaker 5 (70%)): Yeah. [1098] (08:59) (Speaker 4 (34%)): I think it's a different. [1099] (09:00) (Speaker 5 (54%)): vehicle still. [1100] (09:02) (Speaker 5 (52%)): How are you doing today? [1101] (09:04) (Speaker 4 (57%)): I haven't been good for the last week or weeks. What's going on? [1102] (09:12) (Speaker 4 (64%)): Here, I don't know. [1103] (09:14) (Speaker 5 (53%)): Well. [1104] (09:15) (Speaker 4 (60%)): Friend. [1105] (09:17) (Speaker 4 (37%)): She was up to emergency last week. Thursday, I think it was. We probably got a bunch of notes from that. [1106] (09:28) (Speaker 4 (70%)): I think it was Thursday. [1107] (09:32) (Speaker 5 (62%)): Okay. [1108] (09:33) (Speaker 4 (63%)): There is a clinic. Yeah, right here you can go on. There's a garbage just right here too. [1109] (09:42) (Speaker 5 (54%)): It'll be in shortly. Okay, thank you. You're welcome. [1110] (09:46) (Speaker 4 (62%)): You have to try today. [1111] (09:48) (Speaker 4 (66%)): Oh yeah, yes. [1112] (09:52) (Speaker 5 (76%)): I. [1113] (09:57) (Speaker 4 (67%)): Okay.\n\nReal-time context signals:\nCONTEXT: The presence sensor confirms someone is still in the room. Topic changes or pauses within the same visit are NOT transitions. Only split if there is strong evidence of a different patient (new name, new history intake, greeting a new person).",
+      "response_raw": "{\"complete\": true, \"end_segment_index\": 1080, \"confidence\": 0.95}",
+      "segment_range": [
+        1071,
+        1113
+      ],
+      "sensor_context": {
+        "departed": false,
+        "present": true,
+        "unknown": false
+      },
+      "success": true,
+      "ts": "2026-04-01T17:36:07.169055+00:00",
+      "word_count": 281
+    },
+    {
+      "cleaned_word_count": 446,
+      "latency_ms": 2851,
+      "loop_state": {
+        "buffer_age_secs": 728.0,
+        "consecutive_failures": 0,
+        "manual_triggered": false,
+        "merge_back_count": 0,
+        "sensor_continuous_present": false,
+        "sensor_triggered": false
+      },
+      "parsed_complete": true,
+      "parsed_confidence": 0.95,
+      "parsed_end_index": 1080,
+      "prompt_system": "You MUST respond in English with ONLY a JSON object. No other text, no explanations, no markdown.\n\nYou are analyzing a continuous transcript from a medical office where the microphone records all day.\n\nYour task: determine if there is a TRANSITION POINT where one patient encounter ends and another begins, or where a patient encounter has clearly concluded.\n\nA completed encounter typically includes a clinical discussion and a concluding plan (e.g., medication changes, follow-up timing, referrals, or instructions). A short transcript that contains only vitals, greetings, or brief exchanges — with no clinical discussion or plan — is likely a pre-visit assessment still in progress, not a completed encounter. A nurse or medical assistant may see the patient before the doctor arrives to take vitals or ask initial questions — this is part of the same encounter, not a separate visit.\n\nEach segment includes elapsed time (MM:SS) from the start of the recording. Large gaps between timestamps may indicate silence, examination, or the room being empty between patients.\n\nIf you find a transition point or completed encounter, return:\n{\"complete\": true, \"end_segment_index\": <last segment index of the CONCLUDED encounter>, \"confidence\": <0.0-1.0>}\n\nIf the current discussion is still one ongoing encounter with no transition, return:\n{\"complete\": false, \"confidence\": <0.0-1.0>}\n\nRespond with ONLY the JSON object.",
+      "prompt_user": "Transcript (segments numbered with speaker labels):\n[1071] (00:00) (Dr Zohoor (62%)): The the yeah so your white count is kind of fluctuated, but again it's not something that we actively worry about. [1072] (00:07) (Dr Zohoor (61%)): And then your. [1073] (00:09) (Dr Zohoor (64%)): The the your red blood cells are small because they're low iron. [1074] (00:13) (Dr Zohoor (71%)): Um and the because the iron is low because of the bleeding, and then um your. [1075] (00:23) (Speaker 1 (73%)): Apart from that. [1076] (00:24) (Dr Zohoor (68%)): Your sugars, thyroid. Everything else looks fine. Cholesterol, et cetera. Everything else works okay. [1077] (00:31) (Speaker 1 (81%)): So hopefully the pill helps, and then. [1078] (00:34) (Speaker 1 (61%)): Hopefully, the iron. [1079] (00:36) (Dr Zohoor (67%)): As well, and if I can help with the other stuff, let me know. [1080] (00:40) (Dr Zohoor (63%)): You keep well. Take good care. [1081] (06:14) (Speaker 5 (58%)): No, that's a problem. Also, they're like. [1082] (07:25) (Speaker 5 (61%)): Hi, Sam. [1083] (07:27) (Speaker 5 (49%)): Hi, this is the Rose Office calling. Who are you? [1084] (07:32) (Speaker 5 (66%)): Just do for a mammogram. [1085] (07:34) (Speaker 5 (69%)): Can you get that book for you? [1086] (07:47) (Speaker 5 (71%)): What's that going? Okay. [1087] (07:50) (Speaker 5 (68%)): Okay. [1088] (07:51) (Speaker 5 (73%)): I'll get a sense of you call you the next time, okay? [1089] (08:14) (Speaker 5 (71%)): Okay. [1090] (08:18) (Speaker 5 (75%)): Yeah, so do you see a rule? [1091] (08:21) (Speaker 5 (66%)): Jane, what was you said to me? Stay for a second. [1092] (08:24) (Speaker 5 (61%)): Okay. [1093] (08:35) (Speaker 5 (67%)): Make up. [1094] (08:38) (Speaker 5 (74%)): We sent it elsewhere. We sent it, or have declined it? [1095] (08:44) (Speaker 5 (65%)): Start research. [1096] (08:49) (Speaker 5 (58%)): We can get. [1097] (08:56) (Speaker 5 (70%)): Yeah. [1098] (08:59) (Speaker 4 (34%)): I think it's a different. [1099] (09:00) (Speaker 5 (54%)): vehicle still. [1100] (09:02) (Speaker 5 (52%)): How are you doing today? [1101] (09:04) (Speaker 4 (57%)): I haven't been good for the last week or weeks. What's going on? [1102] (09:12) (Speaker 4 (64%)): Here, I don't know. [1103] (09:14) (Speaker 5 (53%)): Well. [1104] (09:15) (Speaker 4 (60%)): Friend. [1105] (09:17) (Speaker 4 (37%)): She was up to emergency last week. Thursday, I think it was. We probably got a bunch of notes from that. [1106] (09:28) (Speaker 4 (70%)): I think it was Thursday. [1107] (09:32) (Speaker 5 (62%)): Okay. [1108] (09:33) (Speaker 4 (63%)): There is a clinic. Yeah, right here you can go on. There's a garbage just right here too. [1109] (09:42) (Speaker 5 (54%)): It'll be in shortly. Okay, thank you. You're welcome. [1110] (09:46) (Speaker 4 (62%)): You have to try today. [1111] (09:48) (Speaker 4 (66%)): Oh yeah, yes. [1112] (09:52) (Speaker 5 (76%)): I. [1113] (09:57) (Speaker 4 (67%)): Okay. [1114] (10:22) (Speaker 5 (79%)): 嗯。 [1115] (10:42) (Speaker 4 (53%)): So happy, baby. [1116] (10:45) (Speaker 4 (57%)): Somebody get my needles. He didn't mean it. [1117] (10:50) (Speaker 4 (64%)): And. [1118] (10:51) (Speaker 5 (48%)): Oh my. [1119] (10:55) (Speaker 5 (50%)): Okay. [1120] (10:56) (Speaker 4 (37%)): Oh, they cute. [1121] (10:58) (Speaker 4 (43%)): The girls here. [1122] (10:59) (Speaker 4 (61%)): Easter jacket and stuff. [1123] (11:03) (Speaker 4 (71%)): She got to push the button on the elevator coming up. So [1124] (11:08) (Speaker 4 (60%)): That guy said. [1125] (11:09) (Speaker 4 (70%)): Says there was a battle. I push the buttons, they said what? Says time to go down. [1126] (11:13) (Speaker 4 (75%)): She could come out, and the guy went. Yeah. [1127] (11:17) (Speaker 4 (42%)): all for yeah. [1128] (11:18) (Speaker 4 (54%)): I turn to go down. [1129] (11:22) (Speaker 5 (47%)): So cute. [1130] (11:24) (Speaker 4 (66%)): That's the key. [1131] (11:26) (Speaker 5 (56%)): Turn up nose. [1132] (11:42) (Speaker 4 (61%)): This is a, like. [1133] (11:45) (Speaker 4 (57%)): to her in. [1134] (11:47) (Speaker 4 (65%)): Investing advice. She's got really interesting. [1135] (11:49) (Speaker 4 (73%)): Newsletter that she puts out, and then it says a. [1136] (11:53) (Speaker 4 (58%)): With a. [1137] (11:54) (Speaker 4 (63%)): With a bunch of people. [1138] (11:55) (Speaker 4 (63%)): But she always tell. She starts the story of the day. [1139] (11:59) (Speaker 4 (84%)): Before she gets in the investment option, she tells a story about her family. [1140] (12:03) (Speaker 4 (84%)): Oh, and she's got a couple of kids. Says the kids and I piled into bed with the windows open listening to the even thunderstorm last night.\n\nReal-time context signals:\nCONTEXT: The presence sensor confirms someone is still in the room. Topic changes or pauses within the same visit are NOT transitions. Only split if there is strong evidence of a different patient (new name, new history intake, greeting a new person).",
+      "response_raw": "{\"complete\": true, \"end_segment_index\": 1080, \"confidence\": 0.95}",
+      "segment_range": [
+        1071,
+        1140
+      ],
+      "sensor_context": {
+        "departed": false,
+        "present": true,
+        "unknown": false
+      },
+      "success": true,
+      "ts": "2026-04-01T17:38:10.042535+00:00",
+      "word_count": 446
+    },
+    {
+      "cleaned_word_count": 629,
+      "latency_ms": 3107,
+      "loop_state": {
+        "buffer_age_secs": 851.0,
+        "consecutive_failures": 0,
+        "manual_triggered": false,
+        "merge_back_count": 0,
+        "sensor_continuous_present": false,
+        "sensor_triggered": false
+      },
+      "parsed_complete": false,
+      "parsed_confidence": 0.95,
+      "parsed_end_index": null,
+      "prompt_system": "You MUST respond in English with ONLY a JSON object. No other text, no explanations, no markdown.\n\nYou are analyzing a continuous transcript from a medical office where the microphone records all day.\n\nYour task: determine if there is a TRANSITION POINT where one patient encounter ends and another begins, or where a patient encounter has clearly concluded.\n\nA completed encounter typically includes a clinical discussion and a concluding plan (e.g., medication changes, follow-up timing, referrals, or instructions). A short transcript that contains only vitals, greetings, or brief exchanges — with no clinical discussion or plan — is likely a pre-visit assessment still in progress, not a completed encounter. A nurse or medical assistant may see the patient before the doctor arrives to take vitals or ask initial questions — this is part of the same encounter, not a separate visit.\n\nEach segment includes elapsed time (MM:SS) from the start of the recording. Large gaps between timestamps may indicate silence, examination, or the room being empty between patients.\n\nIf you find a transition point or completed encounter, return:\n{\"complete\": true, \"end_segment_index\": <last segment index of the CONCLUDED encounter>, \"confidence\": <0.0-1.0>}\n\nIf the current discussion is still one ongoing encounter with no transition, return:\n{\"complete\": false, \"confidence\": <0.0-1.0>}\n\nRespond with ONLY the JSON object.",
+      "prompt_user": "Transcript (segments numbered with speaker labels):\n[1071] (00:00) (Dr Zohoor (62%)): The the yeah so your white count is kind of fluctuated, but again it's not something that we actively worry about. [1072] (00:07) (Dr Zohoor (61%)): And then your. [1073] (00:09) (Dr Zohoor (64%)): The the your red blood cells are small because they're low iron. [1074] (00:13) (Dr Zohoor (71%)): Um and the because the iron is low because of the bleeding, and then um your. [1075] (00:23) (Speaker 1 (73%)): Apart from that. [1076] (00:24) (Dr Zohoor (68%)): Your sugars, thyroid. Everything else looks fine. Cholesterol, et cetera. Everything else works okay. [1077] (00:31) (Speaker 1 (81%)): So hopefully the pill helps, and then. [1078] (00:34) (Speaker 1 (61%)): Hopefully, the iron. [1079] (00:36) (Dr Zohoor (67%)): As well, and if I can help with the other stuff, let me know. [1080] (00:40) (Dr Zohoor (63%)): You keep well. Take good care. [1081] (06:14) (Speaker 5 (58%)): No, that's a problem. Also, they're like. [1082] (07:25) (Speaker 5 (61%)): Hi, Sam. [1083] (07:27) (Speaker 5 (49%)): Hi, this is the Rose Office calling. Who are you? [1084] (07:32) (Speaker 5 (66%)): Just do for a mammogram. [1085] (07:34) (Speaker 5 (69%)): Can you get that book for you? [1086] (07:47) (Speaker 5 (71%)): What's that going? Okay. [1087] (07:50) (Speaker 5 (68%)): Okay. [1088] (07:51) (Speaker 5 (73%)): I'll get a sense of you call you the next time, okay? [1089] (08:14) (Speaker 5 (71%)): Okay. [1090] (08:18) (Speaker 5 (75%)): Yeah, so do you see a rule? [1091] (08:21) (Speaker 5 (66%)): Jane, what was you said to me? Stay for a second. [1092] (08:24) (Speaker 5 (61%)): Okay. [1093] (08:35) (Speaker 5 (67%)): Make up. [1094] (08:38) (Speaker 5 (74%)): We sent it elsewhere. We sent it, or have declined it? [1095] (08:44) (Speaker 5 (65%)): Start research. [1096] (08:49) (Speaker 5 (58%)): We can get. [1097] (08:56) (Speaker 5 (70%)): Yeah. [1098] (08:59) (Speaker 4 (34%)): I think it's a different. [1099] (09:00) (Speaker 5 (54%)): vehicle still. [1100] (09:02) (Speaker 5 (52%)): How are you doing today? [1101] (09:04) (Speaker 4 (57%)): I haven't been good for the last week or weeks. What's going on? [1102] (09:12) (Speaker 4 (64%)): Here, I don't know. [1103] (09:14) (Speaker 5 (53%)): Well. [1104] (09:15) (Speaker 4 (60%)): Friend. [1105] (09:17) (Speaker 4 (37%)): She was up to emergency last week. Thursday, I think it was. We probably got a bunch of notes from that. [1106] (09:28) (Speaker 4 (70%)): I think it was Thursday. [1107] (09:32) (Speaker 5 (62%)): Okay. [1108] (09:33) (Speaker 4 (63%)): There is a clinic. Yeah, right here you can go on. There's a garbage just right here too. [1109] (09:42) (Speaker 5 (54%)): It'll be in shortly. Okay, thank you. You're welcome. [1110] (09:46) (Speaker 4 (62%)): You have to try today. [1111] (09:48) (Speaker 4 (66%)): Oh yeah, yes. [1112] (09:52) (Speaker 5 (76%)): I. [1113] (09:57) (Speaker 4 (67%)): Okay. [1114] (10:22) (Speaker 5 (79%)): 嗯。 [1115] (10:42) (Speaker 4 (53%)): So happy, baby. [1116] (10:45) (Speaker 4 (57%)): Somebody get my needles. He didn't mean it. [1117] (10:50) (Speaker 4 (64%)): And. [1118] (10:51) (Speaker 5 (48%)): Oh my. [1119] (10:55) (Speaker 5 (50%)): Okay. [1120] (10:56) (Speaker 4 (37%)): Oh, they cute. [1121] (10:58) (Speaker 4 (43%)): The girls here. [1122] (10:59) (Speaker 4 (61%)): Easter jacket and stuff. [1123] (11:03) (Speaker 4 (71%)): She got to push the button on the elevator coming up. So [1124] (11:08) (Speaker 4 (60%)): That guy said. [1125] (11:09) (Speaker 4 (70%)): Says there was a battle. I push the buttons, they said what? Says time to go down. [1126] (11:13) (Speaker 4 (75%)): She could come out, and the guy went. Yeah. [1127] (11:17) (Speaker 4 (42%)): all for yeah. [1128] (11:18) (Speaker 4 (54%)): I turn to go down. [1129] (11:22) (Speaker 5 (47%)): So cute. [1130] (11:24) (Speaker 4 (66%)): That's the key. [1131] (11:26) (Speaker 5 (56%)): Turn up nose. [1132] (11:42) (Speaker 4 (61%)): This is a, like. [1133] (11:45) (Speaker 4 (57%)): to her in. [1134] (11:47) (Speaker 4 (65%)): Investing advice. She's got really interesting. [1135] (11:49) (Speaker 4 (73%)): Newsletter that she puts out, and then it says a. [1136] (11:53) (Speaker 4 (58%)): With a. [1137] (11:54) (Speaker 4 (63%)): With a bunch of people. [1138] (11:55) (Speaker 4 (63%)): But she always tell. She starts the story of the day. [1139] (11:59) (Speaker 4 (84%)): Before she gets in the investment option, she tells a story about her family. [1140] (12:03) (Speaker 4 (84%)): Oh, and she's got a couple of kids. Says the kids and I piled into bed with the windows open listening to the even thunderstorm last night. [1141] (12:10) (Speaker 4 (78%)): With each flash of lightning and boom of thunder, sent them into delightful little shrieks. [1142] (12:15) (Speaker 4 (81%)): When the storm started to fade, my eldest turned on me annoyed, asking if I could make more thunder. [1143] (12:20) (Speaker 4 (83%)): When I told her I had no control over the weather, she pounded. I was ruining her life. [1144] (12:26) (Speaker 4 (51%)): Yes, sir. [1145] (12:27) (Speaker 4 (63%)): A preview of the teenage years. [1146] (12:30) (Speaker 5 (66%)): Yeah. [1147] (12:31) (Speaker 5 (48%)): Oh. [1148] (12:32) (Speaker 5 (54%)): Yeah. [1149] (12:40) (Speaker 5 (46%)): Hmm. [1150] (12:51) (Speaker 5 (45%)): Like the Edward Four. [1151] (12:55) (Speaker 5 (52%)): Alex Warner. [1152] (12:57) (Speaker 4 (72%)): I say he works nights, and I was gonna bring the kids in. He's dropping off. [1153] (13:02) (Speaker 4 (79%)): And his wife has, his wife has picked him up to take him. [1154] (13:06) (Speaker 4 (77%)): Take him back. He's got to go work. [1155] (13:09) (Speaker 4 (66%)): Oh my God. [1156] (13:14) (Speaker 4 (76%)): He've started four kids in a couple years. [1157] (13:18) (Speaker 4 (70%)): I don't have a lot of I don't have a lot of sympathy for guys like that. [1158] (13:22) (Speaker 4 (65%)): Keep your pants on, buddy. [1159] (13:26) (Speaker 5 (64%)): You know. [1160] (13:27) (Speaker 5 (49%)): My name. [1161] (13:29) (Speaker 4 (67%)): Yeah, true enough. [1162] (13:30) (Speaker 4 (44%)): Sure. [1163] (13:32) (Speaker 5 (41%)): Yeah. [1164] (13:50) (Speaker 5 (64%)): Hmm. [1165] (13:57) (Speaker 5 (45%)): I did that. [1166] (13:58) (Speaker 5 (48%)): He said. [1167] (14:00) (Speaker 5 (41%)): I don't remember. [1168] (14:02) (Speaker 4 (39%)): Emergency. [1169] (14:03) (Speaker 5 (55%)): Just use it. [1170] (14:05) (Speaker 4 (62%)): You said you had a. [1171] (14:07) (Speaker 4 (57%)): Urinary tract infection. [1172] (14:07) (Speaker 4 (52%)): Infection. [1173] (14:09) (Speaker 4 (61%)): And that was what the. [1174] (14:11) (Speaker 4 (66%)): Antibiotics for. [1175] (14:13) (Speaker 4 (58%)): But I've never heard like.\n\nReal-time context signals:\nCONTEXT: The presence sensor confirms someone is still in the room. Topic changes or pauses within the same visit are NOT transitions. Only split if there is strong evidence of a different patient (new name, new history intake, greeting a new person).",
+      "response_raw": "{\"complete\": false, \"confidence\": 0.95}",
+      "segment_range": [
+        1071,
+        1175
+      ],
+      "sensor_context": {
+        "departed": false,
+        "present": true,
+        "unknown": false
+      },
+      "success": true,
+      "ts": "2026-04-01T17:40:13.201444+00:00",
+      "word_count": 629
+    },
+    {
+      "cleaned_word_count": 753,
+      "latency_ms": 2988,
+      "loop_state": {
+        "buffer_age_secs": 974.0,
+        "consecutive_failures": 0,
+        "manual_triggered": false,
+        "merge_back_count": 0,
+        "sensor_continuous_present": false,
+        "sensor_triggered": false
+      },
+      "parsed_complete": true,
+      "parsed_confidence": 0.95,
+      "parsed_end_index": 1080,
+      "prompt_system": "You MUST respond in English with ONLY a JSON object. No other text, no explanations, no markdown.\n\nYou are analyzing a continuous transcript from a medical office where the microphone records all day.\n\nYour task: determine if there is a TRANSITION POINT where one patient encounter ends and another begins, or where a patient encounter has clearly concluded.\n\nA completed encounter typically includes a clinical discussion and a concluding plan (e.g., medication changes, follow-up timing, referrals, or instructions). A short transcript that contains only vitals, greetings, or brief exchanges — with no clinical discussion or plan — is likely a pre-visit assessment still in progress, not a completed encounter. A nurse or medical assistant may see the patient before the doctor arrives to take vitals or ask initial questions — this is part of the same encounter, not a separate visit.\n\nEach segment includes elapsed time (MM:SS) from the start of the recording. Large gaps between timestamps may indicate silence, examination, or the room being empty between patients.\n\nIf you find a transition point or completed encounter, return:\n{\"complete\": true, \"end_segment_index\": <last segment index of the CONCLUDED encounter>, \"confidence\": <0.0-1.0>}\n\nIf the current discussion is still one ongoing encounter with no transition, return:\n{\"complete\": false, \"confidence\": <0.0-1.0>}\n\nRespond with ONLY the JSON object.",
+      "prompt_user": "Transcript (segments numbered with speaker labels):\n[1071] (00:00) (Dr Zohoor (62%)): The the yeah so your white count is kind of fluctuated, but again it's not something that we actively worry about. [1072] (00:07) (Dr Zohoor (61%)): And then your. [1073] (00:09) (Dr Zohoor (64%)): The the your red blood cells are small because they're low iron. [1074] (00:13) (Dr Zohoor (71%)): Um and the because the iron is low because of the bleeding, and then um your. [1075] (00:23) (Speaker 1 (73%)): Apart from that. [1076] (00:24) (Dr Zohoor (68%)): Your sugars, thyroid. Everything else looks fine. Cholesterol, et cetera. Everything else works okay. [1077] (00:31) (Speaker 1 (81%)): So hopefully the pill helps, and then. [1078] (00:34) (Speaker 1 (61%)): Hopefully, the iron. [1079] (00:36) (Dr Zohoor (67%)): As well, and if I can help with the other stuff, let me know. [1080] (00:40) (Dr Zohoor (63%)): You keep well. Take good care. [1081] (06:14) (Speaker 5 (58%)): No, that's a problem. Also, they're like. [1082] (07:25) (Speaker 5 (61%)): Hi, Sam. [1083] (07:27) (Speaker 5 (49%)): Hi, this is the Rose Office calling. Who are you? [1084] (07:32) (Speaker 5 (66%)): Just do for a mammogram. [1085] (07:34) (Speaker 5 (69%)): Can you get that book for you? [1086] (07:47) (Speaker 5 (71%)): What's that going? Okay. [1087] (07:50) (Speaker 5 (68%)): Okay. [1088] (07:51) (Speaker 5 (73%)): I'll get a sense of you call you the next time, okay? [1089] (08:14) (Speaker 5 (71%)): Okay. [1090] (08:18) (Speaker 5 (75%)): Yeah, so do you see a rule? [1091] (08:21) (Speaker 5 (66%)): Jane, what was you said to me? Stay for a second. [1092] (08:24) (Speaker 5 (61%)): Okay. [1093] (08:35) (Speaker 5 (67%)): Make up. [1094] (08:38) (Speaker 5 (74%)): We sent it elsewhere. We sent it, or have declined it? [1095] (08:44) (Speaker 5 (65%)): Start research. [1096] (08:49) (Speaker 5 (58%)): We can get. [1097] (08:56) (Speaker 5 (70%)): Yeah. [1098] (08:59) (Speaker 4 (34%)): I think it's a different. [1099] (09:00) (Speaker 5 (54%)): vehicle still. [1100] (09:02) (Speaker 5 (52%)): How are you doing today? [1101] (09:04) (Speaker 4 (57%)): I haven't been good for the last week or weeks. What's going on? [1102] (09:12) (Speaker 4 (64%)): Here, I don't know. [1103] (09:14) (Speaker 5 (53%)): Well. [1104] (09:15) (Speaker 4 (60%)): Friend. [1105] (09:17) (Speaker 4 (37%)): She was up to emergency last week. Thursday, I think it was. We probably got a bunch of notes from that. [1106] (09:28) (Speaker 4 (70%)): I think it was Thursday. [1107] (09:32) (Speaker 5 (62%)): Okay. [1108] (09:33) (Speaker 4 (63%)): There is a clinic. Yeah, right here you can go on. There's a garbage just right here too. [1109] (09:42) (Speaker 5 (54%)): It'll be in shortly. Okay, thank you. You're welcome. [1110] (09:46) (Speaker 4 (62%)): You have to try today. [1111] (09:48) (Speaker 4 (66%)): Oh yeah, yes. [1112] (09:52) (Speaker 5 (76%)): I. [1113] (09:57) (Speaker 4 (67%)): Okay. [1114] (10:22) (Speaker 5 (79%)): 嗯。 [1115] (10:42) (Speaker 4 (53%)): So happy, baby. [1116] (10:45) (Speaker 4 (57%)): Somebody get my needles. He didn't mean it. [1117] (10:50) (Speaker 4 (64%)): And. [1118] (10:51) (Speaker 5 (48%)): Oh my. [1119] (10:55) (Speaker 5 (50%)): Okay. [1120] (10:56) (Speaker 4 (37%)): Oh, they cute. [1121] (10:58) (Speaker 4 (43%)): The girls here. [1122] (10:59) (Speaker 4 (61%)): Easter jacket and stuff. [1123] (11:03) (Speaker 4 (71%)): She got to push the button on the elevator coming up. So [1124] (11:08) (Speaker 4 (60%)): That guy said. [1125] (11:09) (Speaker 4 (70%)): Says there was a battle. I push the buttons, they said what? Says time to go down. [1126] (11:13) (Speaker 4 (75%)): She could come out, and the guy went. Yeah. [1127] (11:17) (Speaker 4 (42%)): all for yeah. [1128] (11:18) (Speaker 4 (54%)): I turn to go down. [1129] (11:22) (Speaker 5 (47%)): So cute. [1130] (11:24) (Speaker 4 (66%)): That's the key. [1131] (11:26) (Speaker 5 (56%)): Turn up nose. [1132] (11:42) (Speaker 4 (61%)): This is a, like. [1133] (11:45) (Speaker 4 (57%)): to her in. [1134] (11:47) (Speaker 4 (65%)): Investing advice. She's got really interesting. [1135] (11:49) (Speaker 4 (73%)): Newsletter that she puts out, and then it says a. [1136] (11:53) (Speaker 4 (58%)): With a. [1137] (11:54) (Speaker 4 (63%)): With a bunch of people. [1138] (11:55) (Speaker 4 (63%)): But she always tell. She starts the story of the day. [1139] (11:59) (Speaker 4 (84%)): Before she gets in the investment option, she tells a story about her family. [1140] (12:03) (Speaker 4 (84%)): Oh, and she's got a couple of kids. Says the kids and I piled into bed with the windows open listening to the even thunderstorm last night. [1141] (12:10) (Speaker 4 (78%)): With each flash of lightning and boom of thunder, sent them into delightful little shrieks. [1142] (12:15) (Speaker 4 (81%)): When the storm started to fade, my eldest turned on me annoyed, asking if I could make more thunder. [1143] (12:20) (Speaker 4 (83%)): When I told her I had no control over the weather, she pounded. I was ruining her life. [1144] (12:26) (Speaker 4 (51%)): Yes, sir. [1145] (12:27) (Speaker 4 (63%)): A preview of the teenage years. [1146] (12:30) (Speaker 5 (66%)): Yeah. [1147] (12:31) (Speaker 5 (48%)): Oh. [1148] (12:32) (Speaker 5 (54%)): Yeah. [1149] (12:40) (Speaker 5 (46%)): Hmm. [1150] (12:51) (Speaker 5 (45%)): Like the Edward Four. [1151] (12:55) (Speaker 5 (52%)): Alex Warner. [1152] (12:57) (Speaker 4 (72%)): I say he works nights, and I was gonna bring the kids in. He's dropping off. [1153] (13:02) (Speaker 4 (79%)): And his wife has, his wife has picked him up to take him. [1154] (13:06) (Speaker 4 (77%)): Take him back. He's got to go work. [1155] (13:09) (Speaker 4 (66%)): Oh my God. [1156] (13:14) (Speaker 4 (76%)): He've started four kids in a couple years. [1157] (13:18) (Speaker 4 (70%)): I don't have a lot of I don't have a lot of sympathy for guys like that. [1158] (13:22) (Speaker 4 (65%)): Keep your pants on, buddy. [1159] (13:26) (Speaker 5 (64%)): You know. [1160] (13:27) (Speaker 5 (49%)): My name. [1161] (13:29) (Speaker 4 (67%)): Yeah, true enough. [1162] (13:30) (Speaker 4 (44%)): Sure. [1163] (13:32) (Speaker 5 (41%)): Yeah. [1164] (13:50) (Speaker 5 (64%)): Hmm. [1165] (13:57) (Speaker 5 (45%)): I did that. [1166] (13:58) (Speaker 5 (48%)): He said. [1167] (14:00) (Speaker 5 (41%)): I don't remember. [1168] (14:02) (Speaker 4 (39%)): Emergency. [1169] (14:03) (Speaker 5 (55%)): Just use it. [1170] (14:05) (Speaker 4 (62%)): You said you had a. [1171] (14:07) (Speaker 4 (57%)): Urinary tract infection. [1172] (14:07) (Speaker 4 (52%)): Infection. [1173] (14:09) (Speaker 4 (61%)): And that was what the. [1174] (14:11) (Speaker 4 (66%)): Antibiotics for. [1175] (14:13) (Speaker 4 (58%)): But I've never heard like. [1176] (14:15) (Speaker 4 (81%)): You've been a little confused at times recently, but and that's that. That can be resulted with urinary tract infection? Yeah. Yeah yeah. But usually it hurts when you pee. Have you had any of that? [1177] (14:25) (Speaker 5 (54%)): Nobody had an infection. [1178] (14:29) (Speaker 4 (74%)): Yeah, well they're fairly common. We should close what is heading? Shelley's heading. [1179] (14:35) (Speaker 4 (51%)): Um. [1180] (14:36) (Speaker 2 (48%)): This doesn't hurt. [1181] (14:37) (Speaker 4 (71%)): They really get. This seems to be more burned. [1182] (14:41) (Speaker 4 (58%)): Kidney. [1183] (14:42) (Speaker 5 (69%)): Hey. [1184] (14:43) (Speaker 4 (74%)): So it's interesting to see what the results of your cat scan were because they did that just to see if you had any kidney stones. [1185] (14:52) (Speaker 4 (71%)): And I wonder if the results where he had a urinary tract infection, so they treated that. [1186] (14:58) (Speaker 4 (71%)): Anyway, we'll see. We'll see what it says. [1187] (15:06) (Speaker 5 (75%)): We're not. [1188] (15:20) (Speaker 5 (82%)): Yeah. [1189] (15:56) (Speaker 5 (66%)): Like that.\n\nReal-time context signals:\nCONTEXT: The presence sensor confirms someone is still in the room. Topic changes or pauses within the same visit are NOT transitions. Only split if there is strong evidence of a different patient (new name, new history intake, greeting a new person).",
+      "response_raw": "{\"complete\": true, \"end_segment_index\": 1080, \"confidence\": 0.95}",
+      "segment_range": [
+        1071,
+        1189
+      ],
+      "sensor_context": {
+        "departed": false,
+        "present": true,
+        "unknown": false
+      },
+      "success": true,
+      "ts": "2026-04-01T17:42:16.230072+00:00",
+      "word_count": 753
+    },
+    {
+      "cleaned_word_count": 850,
+      "latency_ms": 4605,
+      "loop_state": {
+        "buffer_age_secs": 1097.0,
+        "consecutive_failures": 0,
+        "manual_triggered": false,
+        "merge_back_count": 0,
+        "sensor_continuous_present": false,
+        "sensor_triggered": false
+      },
+      "parsed_complete": true,
+      "parsed_confidence": 0.95,
+      "parsed_end_index": 1208,
+      "prompt_system": "You MUST respond in English with ONLY a JSON object. No other text, no explanations, no markdown.\n\nYou are analyzing a continuous transcript from a medical office where the microphone records all day.\n\nYour task: determine if there is a TRANSITION POINT where one patient encounter ends and another begins, or where a patient encounter has clearly concluded.\n\nA completed encounter typically includes a clinical discussion and a concluding plan (e.g., medication changes, follow-up timing, referrals, or instructions). A short transcript that contains only vitals, greetings, or brief exchanges — with no clinical discussion or plan — is likely a pre-visit assessment still in progress, not a completed encounter. A nurse or medical assistant may see the patient before the doctor arrives to take vitals or ask initial questions — this is part of the same encounter, not a separate visit.\n\nEach segment includes elapsed time (MM:SS) from the start of the recording. Large gaps between timestamps may indicate silence, examination, or the room being empty between patients.\n\nIf you find a transition point or completed encounter, return:\n{\"complete\": true, \"end_segment_index\": <last segment index of the CONCLUDED encounter>, \"confidence\": <0.0-1.0>}\n\nIf the current discussion is still one ongoing encounter with no transition, return:\n{\"complete\": false, \"confidence\": <0.0-1.0>}\n\nRespond with ONLY the JSON object.",
+      "prompt_user": "Transcript (segments numbered with speaker labels):\n[1071] (00:00) (Dr Zohoor (62%)): The the yeah so your white count is kind of fluctuated, but again it's not something that we actively worry about. [1072] (00:07) (Dr Zohoor (61%)): And then your. [1073] (00:09) (Dr Zohoor (64%)): The the your red blood cells are small because they're low iron. [1074] (00:13) (Dr Zohoor (71%)): Um and the because the iron is low because of the bleeding, and then um your. [1075] (00:23) (Speaker 1 (73%)): Apart from that. [1076] (00:24) (Dr Zohoor (68%)): Your sugars, thyroid. Everything else looks fine. Cholesterol, et cetera. Everything else works okay. [1077] (00:31) (Speaker 1 (81%)): So hopefully the pill helps, and then. [1078] (00:34) (Speaker 1 (61%)): Hopefully, the iron. [1079] (00:36) (Dr Zohoor (67%)): As well, and if I can help with the other stuff, let me know. [1080] (00:40) (Dr Zohoor (63%)): You keep well. Take good care. [1081] (06:14) (Speaker 5 (58%)): No, that's a problem. Also, they're like. [1082] (07:25) (Speaker 5 (61%)): Hi, Sam. [1083] (07:27) (Speaker 5 (49%)): Hi, this is the Rose Office calling. Who are you? [1084] (07:32) (Speaker 5 (66%)): Just do for a mammogram. [1085] (07:34) (Speaker 5 (69%)): Can you get that book for you? [1086] (07:47) (Speaker 5 (71%)): What's that going? Okay. [1087] (07:50) (Speaker 5 (68%)): Okay. [1088] (07:51) (Speaker 5 (73%)): I'll get a sense of you call you the next time, okay? [1089] (08:14) (Speaker 5 (71%)): Okay. [1090] (08:18) (Speaker 5 (75%)): Yeah, so do you see a rule? [1091] (08:21) (Speaker 5 (66%)): Jane, what was you said to me? Stay for a second. [1092] (08:24) (Speaker 5 (61%)): Okay. [1093] (08:35) (Speaker 5 (67%)): Make up. [1094] (08:38) (Speaker 5 (74%)): We sent it elsewhere. We sent it, or have declined it? [1095] (08:44) (Speaker 5 (65%)): Start research. [1096] (08:49) (Speaker 5 (58%)): We can get. [1097] (08:56) (Speaker 5 (70%)): Yeah. [1098] (08:59) (Speaker 4 (34%)): I think it's a different. [1099] (09:00) (Speaker 5 (54%)): vehicle still. [1100] (09:02) (Speaker 5 (52%)): How are you doing today? [1101] (09:04) (Speaker 4 (57%)): I haven't been good for the last week or weeks. What's going on? [1102] (09:12) (Speaker 4 (64%)): Here, I don't know. [1103] (09:14) (Speaker 5 (53%)): Well. [1104] (09:15) (Speaker 4 (60%)): Friend. [1105] (09:17) (Speaker 4 (37%)): She was up to emergency last week. Thursday, I think it was. We probably got a bunch of notes from that. [1106] (09:28) (Speaker 4 (70%)): I think it was Thursday. [1107] (09:32) (Speaker 5 (62%)): Okay. [1108] (09:33) (Speaker 4 (63%)): There is a clinic. Yeah, right here you can go on. There's a garbage just right here too. [1109] (09:42) (Speaker 5 (54%)): It'll be in shortly. Okay, thank you. You're welcome. [1110] (09:46) (Speaker 4 (62%)): You have to try today. [1111] (09:48) (Speaker 4 (66%)): Oh yeah, yes. [1112] (09:52) (Speaker 5 (76%)): I. [1113] (09:57) (Speaker 4 (67%)): Okay. [1114] (10:22) (Speaker 5 (79%)): 嗯。 [1115] (10:42) (Speaker 4 (53%)): So happy, baby. [1116] (10:45) (Speaker 4 (57%)): Somebody get my needles. He didn't mean it. [1117] (10:50) (Speaker 4 (64%)): And. [1118] (10:51) (Speaker 5 (48%)): Oh my. [1119] (10:55) (Speaker 5 (50%)): Okay. [1120] (10:56) (Speaker 4 (37%)): Oh, they cute. [1121] (10:58) (Speaker 4 (43%)): The girls here. [1122] (10:59) (Speaker 4 (61%)): Easter jacket and stuff. [1123] (11:03) (Speaker 4 (71%)): She got to push the button on the elevator coming up. So [1124] (11:08) (Speaker 4 (60%)): That guy said. [1125] (11:09) (Speaker 4 (70%)): Says there was a battle. I push the buttons, they said what? Says time to go down. [1126] (11:13) (Speaker 4 (75%)): She could come out, and the guy went. Yeah. [1127] (11:17) (Speaker 4 (42%)): all for yeah. [1128] (11:18) (Speaker 4 (54%)): I turn to go down. [1129] (11:22) (Speaker 5 (47%)): So cute. [1130] (11:24) (Speaker 4 (66%)): That's the key. [1131] (11:26) (Speaker 5 (56%)): Turn up nose. [1132] (11:42) (Speaker 4 (61%)): This is a, like. [1133] (11:45) (Speaker 4 (57%)): to her in. [1134] (11:47) (Speaker 4 (65%)): Investing advice. She's got really interesting. [1135] (11:49) (Speaker 4 (73%)): Newsletter that she puts out, and then it says a. [1136] (11:53) (Speaker 4 (58%)): With a. [1137] (11:54) (Speaker 4 (63%)): With a bunch of people. [1138] (11:55) (Speaker 4 (63%)): But she always tell. She starts the story of the day. [1139] (11:59) (Speaker 4 (84%)): Before she gets in the investment option, she tells a story about her family. [1140] (12:03) (Speaker 4 (84%)): Oh, and she's got a couple of kids. Says the kids and I piled into bed with the windows open listening to the even thunderstorm last night. [1141] (12:10) (Speaker 4 (78%)): With each flash of lightning and boom of thunder, sent them into delightful little shrieks. [1142] (12:15) (Speaker 4 (81%)): When the storm started to fade, my eldest turned on me annoyed, asking if I could make more thunder. [1143] (12:20) (Speaker 4 (83%)): When I told her I had no control over the weather, she pounded. I was ruining her life. [1144] (12:26) (Speaker 4 (51%)): Yes, sir. [1145] (12:27) (Speaker 4 (63%)): A preview of the teenage years. [1146] (12:30) (Speaker 5 (66%)): Yeah. [1147] (12:31) (Speaker 5 (48%)): Oh. [1148] (12:32) (Speaker 5 (54%)): Yeah. [1149] (12:40) (Speaker 5 (46%)): Hmm. [1150] (12:51) (Speaker 5 (45%)): Like the Edward Four. [1151] (12:55) (Speaker 5 (52%)): Alex Warner. [1152] (12:57) (Speaker 4 (72%)): I say he works nights, and I was gonna bring the kids in. He's dropping off. [1153] (13:02) (Speaker 4 (79%)): And his wife has, his wife has picked him up to take him. [1154] (13:06) (Speaker 4 (77%)): Take him back. He's got to go work. [1155] (13:09) (Speaker 4 (66%)): Oh my God. [1156] (13:14) (Speaker 4 (76%)): He've started four kids in a couple years. [1157] (13:18) (Speaker 4 (70%)): I don't have a lot of I don't have a lot of sympathy for guys like that. [1158] (13:22) (Speaker 4 (65%)): Keep your pants on, buddy. [1159] (13:26) (Speaker 5 (64%)): You know. [1160] (13:27) (Speaker 5 (49%)): My name. [1161] (13:29) (Speaker 4 (67%)): Yeah, true enough. [1162] (13:30) (Speaker 4 (44%)): Sure. [1163] (13:32) (Speaker 5 (41%)): Yeah. [1164] (13:50) (Speaker 5 (64%)): Hmm. [1165] (13:57) (Speaker 5 (45%)): I did that. [1166] (13:58) (Speaker 5 (48%)): He said. [1167] (14:00) (Speaker 5 (41%)): I don't remember. [1168] (14:02) (Speaker 4 (39%)): Emergency. [1169] (14:03) (Speaker 5 (55%)): Just use it. [1170] (14:05) (Speaker 4 (62%)): You said you had a. [1171] (14:07) (Speaker 4 (57%)): Urinary tract infection. [1172] (14:07) (Speaker 4 (52%)): Infection. [1173] (14:09) (Speaker 4 (61%)): And that was what the. [1174] (14:11) (Speaker 4 (66%)): Antibiotics for. [1175] (14:13) (Speaker 4 (58%)): But I've never heard like. [1176] (14:15) (Speaker 4 (81%)): You've been a little confused at times recently, but and that's that. That can be resulted with urinary tract infection? Yeah. Yeah yeah. But usually it hurts when you pee. Have you had any of that? [1177] (14:25) (Speaker 5 (54%)): Nobody had an infection. [1178] (14:29) (Speaker 4 (74%)): Yeah, well they're fairly common. We should close what is heading? Shelley's heading. [1179] (14:35) (Speaker 4 (51%)): Um. [1180] (14:36) (Speaker 2 (48%)): This doesn't hurt. [1181] (14:37) (Speaker 4 (71%)): They really get. This seems to be more burned. [1182] (14:41) (Speaker 4 (58%)): Kidney. [1183] (14:42) (Speaker 5 (69%)): Hey. [1184] (14:43) (Speaker 4 (74%)): So it's interesting to see what the results of your cat scan were because they did that just to see if you had any kidney stones. [1185] (14:52) (Speaker 4 (71%)): And I wonder if the results where he had a urinary tract infection, so they treated that. [1186] (14:58) (Speaker 4 (71%)): Anyway, we'll see. We'll see what it says. [1187] (15:06) (Speaker 5 (75%)): We're not. [1188] (15:20) (Speaker 5 (82%)): Yeah. [1189] (15:56) (Speaker 5 (66%)): Like that. [1190] (16:34) (Speaker 5 (86%)): Hmm. [1191] (16:49) (Speaker 4 (66%)): Kind of the least two words anymore is your. [1192] (16:52) (Speaker 4 (49%)): Deepening. [1193] (16:53) (Speaker 5 (52%)): Thanks. [1194] (16:55) (Speaker 4 (57%)): Yeah, I don't even think about that much anymore. [1195] (16:59) (Speaker 4 (73%)): Turn your back and your stomach. [1196] (17:28) (Speaker 5 (72%)): English. [1197] (17:46) (Speaker 2 (53%)): Team, I sure. [1198] (17:48) (Dr Zohoor (68%)): I've been doing a long time. I know this room is freezing. [1199] (17:52) (Dr Zohoor (69%)): Been you've been away. I guess they don't have an easier time getting in and out of the storm. How are you? Been doing all right, man. [1200] (17:58) (Speaker 5 (56%)): Oh. [1201] (17:59) (Speaker 2 (51%)): I heard. I can't. [1202] (18:02) (Speaker 2 (59%)): Just in general care. [1203] (18:04) (Speaker 2 (37%)): The most. [1204] (18:06) (Speaker 5 (35%)): Like. [1205] (18:10) (Speaker 2 (49%)): Not good, eh? [1206] (18:13) (Speaker 5 (58%)): And tough, I can take it. [1207] (18:17) (Speaker 5 (62%)): Yes. [1208] (18:19) (Speaker 1 (56%)): Are your bowels moving okay?\n\nReal-time context signals:\nCONTEXT: The presence sensor confirms someone is still in the room. Topic changes or pauses within the same visit are NOT transitions. Only split if there is strong evidence of a different patient (new name, new history intake, greeting a new person).",
+      "response_raw": "{\"complete\": true, \"end_segment_index\": 1208, \"confidence\": 0.95}",
+      "segment_range": [
+        1071,
+        1208
+      ],
+      "sensor_context": {
+        "departed": false,
+        "present": true,
+        "unknown": false
+      },
+      "success": true,
+      "ts": "2026-04-01T17:44:20.869177+00:00",
+      "word_count": 850
+    }
+  ],
+  "merge_check": {
+    "curr_head_excerpt": "Dr Zohoor (62%): The the yeah so your white count is kind of fluctuated, but again it's not something that we actively worry about. Dr Zohoor (61%): And then your. Dr Zohoor (64%): The the your red blood cells are small because they're low iron. Dr Zohoor (71%): Um and the because the iron is low because of the bleeding, and then um your. Speaker 1 (73%): Apart from that. Dr Zohoor (68%): Your sugars, thyroid. Everything else looks fine. Cholesterol, et cetera. Everything else works okay. Speaker 1 (81%): So hopefully the pill helps, and then. Speaker 1 (61%): Hopefully, the iron. Dr Zohoor (67%): As well, and if I can help with the other stuff, let me know. Dr Zohoor (63%): You keep well. Take good care. Speaker 5 (58%): No, that's a problem. Also, they're like. Speaker 5 (61%): Hi, Sam. Speaker 5 (49%): Hi, this is the Rose Office calling. Who are you? Speaker 5 (66%): Just do for a mammogram. Speaker 5 (69%): Can you get that book for you? Speaker 5 (71%): What's that going? Okay. Speaker 5 (68%): Okay. Speaker 5 (73%): I'll get a sense of you call you the next time, okay? Speaker 5 (71%): Okay. Speaker 5 (75%): Yeah, so do you see a rule? Speaker 5 (66%): Jane, what was you said to me? Stay for a second. Speaker 5 (61%): Okay. Speaker 5 (67%): Make up. Speaker 5 (74%): We sent it elsewhere. We sent it, or have declined it? Speaker 5 (65%): Start research. Speaker 5 (58%): We can get. Speaker 5 (70%): Yeah. Speaker 4 (34%): I think it's a different. Speaker 5 (54%): vehicle still. Speaker 5 (52%): How are you doing today? Speaker 4 (57%): I haven't been good for the last week or weeks. What's going on? Speaker 4 (64%): Here, I don't know. Speaker 5 (53%): Well. Speaker 4 (60%): Friend. Speaker 4 (37%): She was up to emergency last week. Thursday, I think it was. We probably got a bunch of notes from that. Speaker 4 (70%): I think it was Thursday. Speaker 5 (62%): Okay. Speaker 4 (63%): There is a clinic. Yeah, right here you can go on. There's a garbage just right here too. Speaker 5 (54%): It'll be in shortly. Okay, thank you. You're welcome. Speaker 4 (62%): You have to try today. Speaker 4 (66%): Oh yeah, yes. Speaker 5 (76%): I. Speaker 4 (67%): Okay. Speaker 5 (79%): 嗯。 Speaker 4 (53%): So happy, baby. Speaker 4 (57%): Somebody get my needles. He didn't mean it. Speaker 4 (64%): And. Speaker 5 (48%): Oh my. Speaker 5 (50%): Okay. Speaker 4 (37%): Oh, they cute. Speaker 4 (43%): The girls here. Speaker 4 (61%): Easter jacket and stuff. Speaker 4 (71%): She got to push the button on the elevator coming up. So Speaker 4 (60%): That guy said. Speaker 4 (70%): Says there was a battle. I push the buttons, they said what? Says",
+    "latency_ms": 3320,
+    "parsed_reason": "\"The first excerpt concludes a specific medical discussion and prescription plan (iron, Advil, hormonal control) with the patient, ending with 'I'm glad I've won this matter.' The second excerpt begins with a new patient greeting ('How are you doing today?') and immediately shifts to a completely different clinical topic (white count, mammogram, emergency visit history) with no continuity to the previous discussion.\"",
+    "parsed_same_encounter": false,
+    "prev_session_id": "b75905e0-80c8-431e-9e98-4df591b9e306",
+    "prev_tail_excerpt": "Zohoor (64%): Like anti-inflammatories, so Advil obviously is one of them. There's one other medication that sometimes works a bit better if you wanted to try it where you take it and it may help with the bleeding and pain a bit more. Speaker 3 (75%): Um. Speaker 1 (69%): But the real way of kind of settling it. Speaker 1 (54%): Is to con, to control the cycle. Speaker 1 (74%): So I'm not sure. Are they? Speaker 1 (79%): Are they are they heavy enough that. Speaker 1 (73%): They're an issue right now. Speaker 5 (67%): Okay. Speaker 1 (69%): Yeah. So. Dr Zohoor (63%): But those are, those are the options. The three options: either hormonal control and IUD really or Speaker 1 (63%): Slightly different pill. Speaker 3 (68%): Um. Speaker 1 (59%): So I just. Dr Zohoor (68%): There's so much background conversation, so I'm not sure what your thoughts on. Is this something? Dr Zohoor (63%): Can you hear me? Okay. Speaker 5 (82%): Okay. Dr Zohoor (69%): No, I'm just hearing all the conversation behind you. So it's just—I'm—I'm just not sure if there's a lot of Speaker 5 (54%): So what are. Speaker 1 (61%): What are your thoughts? Speaker 5 (56%): Okay, is there. Dr Zohoor (62%): Is there a pharmacy you tend to go to? Speaker 1 (63%): Which which one? Speaker 5 (54%): Yes. Speaker 5 (64%): Alright, sure. Speaker 5 (65%): Sure. Speaker 5 (78%): Okay. Dr Zohoor (68%): So what I'll do is, I'll fax over the prescription there. There's only really one other med apart from Advil to try, and I'm not sure in your case obviously how much better it works. Dr Zohoor (67%): Or you know whether, whether it will—it will how much it will help compared to Advil. But if it's covered, you can—you can give it a try. Speaker 3 (76%): Um. Dr Zohoor (73%): And then the other thing would be to consider taking an iron supplement because your iron's low from the, from the bleeding. Dr Zohoor (71%): And that often worsens anxiety symptoms. Dr Zohoor (76%): So it's something to consider. Um, have you been on? Yeah, definitely. Have you been on iron before? Speaker 1 (73%): Iron tablet. Iron supplements. Speaker 5 (78%): Okay. Speaker 1 (85%): So what I'll do is, I'll fax over a prescription for some iron supplements. The problem with iron supplements is that often Speaker 1 (56%): It does affect your house. Dr Zohoor (68%): But a lot of people tolerate. Okay, some people. But in short, if you find that your Dr Zohoor (70%): Kind of gives you cramping or diarrhea, constipation. You can stop taking it. Dr Zohoor (76%): But if you tolerate okay, then it may help. Um, just overall. Speaker 1 (68%): Is that okay? Speaker 1 (79%): And then, if anything else comes up, let me know. Yeah. Speaker 1 (56%): I'm glad I've won this matter.",
+    "prompt_system": "You are reviewing two consecutive transcript excerpts from a medical office where a microphone records all day.\n\nThe system split these into two separate encounters, but they may actually be the SAME patient visit that was incorrectly split (e.g., due to a pause, phone call, or silence during an examination).\n\nDetermine if both excerpts are from the SAME patient encounter or DIFFERENT encounters.\n\nSigns they are the SAME encounter:\n- Same patient name or context referenced\n- Continuation of the same clinical discussion\n- No farewell/greeting between them\n- Natural pause (examination, looking at charts) rather than patient change\n- Same medical condition being discussed from different angles\n\nSigns they are DIFFERENT encounters:\n- Different patient names or contexts\n- A farewell followed by a new greeting\n- Clearly different clinical topics with no continuity\n\nReturn JSON:\n{\"same_encounter\": true, \"reason\": \"brief explanation\"}\nor\n{\"same_encounter\": false, \"reason\": \"brief explanation\"}\n\nReturn ONLY the JSON object, nothing else.",
+    "prompt_user": "EXCERPT FROM END OF PREVIOUS ENCOUNTER:\nZohoor (64%): Like anti-inflammatories, so Advil obviously is one of them. There's one other medication that sometimes works a bit better if you wanted to try it where you take it and it may help with the bleeding and pain a bit more. Speaker 3 (75%): Um. Speaker 1 (69%): But the real way of kind of settling it. Speaker 1 (54%): Is to con, to control the cycle. Speaker 1 (74%): So I'm not sure. Are they? Speaker 1 (79%): Are they are they heavy enough that. Speaker 1 (73%): They're an issue right now. Speaker 5 (67%): Okay. Speaker 1 (69%): Yeah. So. Dr Zohoor (63%): But those are, those are the options. The three options: either hormonal control and IUD really or Speaker 1 (63%): Slightly different pill. Speaker 3 (68%): Um. Speaker 1 (59%): So I just. Dr Zohoor (68%): There's so much background conversation, so I'm not sure what your thoughts on. Is this something? Dr Zohoor (63%): Can you hear me? Okay. Speaker 5 (82%): Okay. Dr Zohoor (69%): No, I'm just hearing all the conversation behind you. So it's just—I'm—I'm just not sure if there's a lot of Speaker 5 (54%): So what are. Speaker 1 (61%): What are your thoughts? Speaker 5 (56%): Okay, is there. Dr Zohoor (62%): Is there a pharmacy you tend to go to? Speaker 1 (63%): Which which one? Speaker 5 (54%): Yes. Speaker 5 (64%): Alright, sure. Speaker 5 (65%): Sure. Speaker 5 (78%): Okay. Dr Zohoor (68%): So what I'll do is, I'll fax over the prescription there. There's only really one other med apart from Advil to try, and I'm not sure in your case obviously how much better it works. Dr Zohoor (67%): Or you know whether, whether it will—it will how much it will help compared to Advil. But if it's covered, you can—you can give it a try. Speaker 3 (76%): Um. Dr Zohoor (73%): And then the other thing would be to consider taking an iron supplement because your iron's low from the, from the bleeding. Dr Zohoor (71%): And that often worsens anxiety symptoms. Dr Zohoor (76%): So it's something to consider. Um, have you been on? Yeah, definitely. Have you been on iron before? Speaker 1 (73%): Iron tablet. Iron supplements. Speaker 5 (78%): Okay. Speaker 1 (85%): So what I'll do is, I'll fax over a prescription for some iron supplements. The problem with iron supplements is that often Speaker 1 (56%): It does affect your house. Dr Zohoor (68%): But a lot of people tolerate. Okay, some people. But in short, if you find that your Dr Zohoor (70%): Kind of gives you cramping or diarrhea, constipation. You can stop taking it. Dr Zohoor (76%): But if you tolerate okay, then it may help. Um, just overall. Speaker 1 (68%): Is that okay? Speaker 1 (79%): And then, if anything else comes up, let me know. Yeah. Speaker 1 (56%): I'm glad I've won this matter.\n\n---\n\nEXCERPT FROM START OF NEXT ENCOUNTER:\nDr Zohoor (62%): The the yeah so your white count is kind of fluctuated, but again it's not something that we actively worry about. Dr Zohoor (61%): And then your. Dr Zohoor (64%): The the your red blood cells are small because they're low iron. Dr Zohoor (71%): Um and the because the iron is low because of the bleeding, and then um your. Speaker 1 (73%): Apart from that. Dr Zohoor (68%): Your sugars, thyroid. Everything else looks fine. Cholesterol, et cetera. Everything else works okay. Speaker 1 (81%): So hopefully the pill helps, and then. Speaker 1 (61%): Hopefully, the iron. Dr Zohoor (67%): As well, and if I can help with the other stuff, let me know. Dr Zohoor (63%): You keep well. Take good care. Speaker 5 (58%): No, that's a problem. Also, they're like. Speaker 5 (61%): Hi, Sam. Speaker 5 (49%): Hi, this is the Rose Office calling. Who are you? Speaker 5 (66%): Just do for a mammogram. Speaker 5 (69%): Can you get that book for you? Speaker 5 (71%): What's that going? Okay. Speaker 5 (68%): Okay. Speaker 5 (73%): I'll get a sense of you call you the next time, okay? Speaker 5 (71%): Okay. Speaker 5 (75%): Yeah, so do you see a rule? Speaker 5 (66%): Jane, what was you said to me? Stay for a second. Speaker 5 (61%): Okay. Speaker 5 (67%): Make up. Speaker 5 (74%): We sent it elsewhere. We sent it, or have declined it? Speaker 5 (65%): Start research. Speaker 5 (58%): We can get. Speaker 5 (70%): Yeah. Speaker 4 (34%): I think it's a different. Speaker 5 (54%): vehicle still. Speaker 5 (52%): How are you doing today? Speaker 4 (57%): I haven't been good for the last week or weeks. What's going on? Speaker 4 (64%): Here, I don't know. Speaker 5 (53%): Well. Speaker 4 (60%): Friend. Speaker 4 (37%): She was up to emergency last week. Thursday, I think it was. We probably got a bunch of notes from that. Speaker 4 (70%): I think it was Thursday. Speaker 5 (62%): Okay. Speaker 4 (63%): There is a clinic. Yeah, right here you can go on. There's a garbage just right here too. Speaker 5 (54%): It'll be in shortly. Okay, thank you. You're welcome. Speaker 4 (62%): You have to try today. Speaker 4 (66%): Oh yeah, yes. Speaker 5 (76%): I. Speaker 4 (67%): Okay. Speaker 5 (79%): 嗯。 Speaker 4 (53%): So happy, baby. Speaker 4 (57%): Somebody get my needles. He didn't mean it. Speaker 4 (64%): And. Speaker 5 (48%): Oh my. Speaker 5 (50%): Okay. Speaker 4 (37%): Oh, they cute. Speaker 4 (43%): The girls here. Speaker 4 (61%): Easter jacket and stuff. Speaker 4 (71%): She got to push the button on the elevator coming up. So Speaker 4 (60%): That guy said. Speaker 4 (70%): Says there was a battle. I push the buttons, they said what? Says",
+    "response_raw": "{\n  \"same_encounter\": false,\n  \"reason\": \"The first excerpt concludes a specific medical discussion and prescription plan (iron, Advil, hormonal control) with the patient, ending with 'I'm glad I've won this matter.' The second excerpt begins with a new patient greeting ('How are you doing today?') and immediately shifts to a completely different clinical topic (white count, mammogram, emergency visit history) with no continuity to the previous discussion.\"\n}",
+    "success": true,
+    "ts": "2026-04-01T17:44:50.280377+00:00"
+  },
+  "name_tracker": {
+    "majority_name": "Charlotte Jane (jane) Mcarthur",
+    "unique_names": [
+      "Rhianna Horvath-jackson",
+      "Charlotte Jane (jane) Mcarthur"
+    ],
+    "vote_count": 3
+  },
+  "outcome": {
+    "detection_method": "hybrid_llm",
+    "encounter_number": 8,
+    "is_clinical": true,
+    "patient_name": "Charlotte Jane (jane) Mcarthur",
+    "session_id": "0e7b5a30-6004-4d96-ba42-9d38b89c41f6",
+    "was_merged": false,
+    "word_count": 1264
+  },
+  "schema_version": 2,
+  "segments": [
+    {
+      "end_ms": 14155936,
+      "index": 1074,
+      "speaker_confidence": 0.70751554,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 14147284,
+      "text": "Um and the because the iron is low because of the bleeding, and then um your.",
+      "ts": "2026-04-01T17:26:13.568137+00:00"
+    },
+    {
+      "end_ms": 14158944,
+      "index": 1075,
+      "speaker_confidence": 0.73033214,
+      "speaker_id": "Speaker 1",
+      "start_ms": 14157044,
+      "text": "Apart from that.",
+      "ts": "2026-04-01T17:26:16.027674+00:00"
+    },
+    {
+      "end_ms": 14165280,
+      "index": 1076,
+      "speaker_confidence": 0.6830896,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 14158932,
+      "text": "Your sugars, thyroid. Everything else looks fine. Cholesterol, et cetera. Everything else works okay.",
+      "ts": "2026-04-01T17:26:22.736773+00:00"
+    },
+    {
+      "end_ms": 14168736,
+      "index": 1077,
+      "speaker_confidence": 0.80719966,
+      "speaker_id": "Speaker 1",
+      "start_ms": 14165236,
+      "text": "So hopefully the pill helps, and then.",
+      "ts": "2026-04-01T17:26:25.926624+00:00"
+    },
+    {
+      "end_ms": 14170368,
+      "index": 1078,
+      "speaker_confidence": 0.61311394,
+      "speaker_id": "Speaker 1",
+      "start_ms": 14168596,
+      "text": "Hopefully, the iron.",
+      "ts": "2026-04-01T17:26:27.371629+00:00"
+    },
+    {
+      "end_ms": 14173056,
+      "index": 1079,
+      "speaker_confidence": 0.6701597,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 14170100,
+      "text": "As well, and if I can help with the other stuff, let me know.",
+      "ts": "2026-04-01T17:26:30.234684+00:00"
+    },
+    {
+      "end_ms": 14176320,
+      "index": 1080,
+      "speaker_confidence": 0.6336245,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 14174132,
+      "text": "You keep well. Take good care.",
+      "ts": "2026-04-01T17:26:33.626038+00:00"
+    },
+    {
+      "end_ms": 14511392,
+      "index": 1081,
+      "speaker_confidence": 0.5781879,
+      "speaker_id": "Speaker 5",
+      "start_ms": 14508596,
+      "text": "No, that's a problem. Also, they're like.",
+      "ts": "2026-04-01T17:32:08.713632+00:00"
+    },
+    {
+      "end_ms": 14580736,
+      "index": 1082,
+      "speaker_confidence": 0.6075131,
+      "speaker_id": "Speaker 5",
+      "start_ms": 14579252,
+      "text": "Hi, Sam.",
+      "ts": "2026-04-01T17:33:17.711317+00:00"
+    },
+    {
+      "end_ms": 14584160,
+      "index": 1083,
+      "speaker_confidence": 0.4930219,
+      "speaker_id": "Speaker 5",
+      "start_ms": 14581588,
+      "text": "Hi, this is the Rose Office calling. Who are you?",
+      "ts": "2026-04-01T17:33:21.378271+00:00"
+    },
+    {
+      "end_ms": 14588672,
+      "index": 1084,
+      "speaker_confidence": 0.66345143,
+      "speaker_id": "Speaker 5",
+      "start_ms": 14586100,
+      "text": "Just do for a mammogram.",
+      "ts": "2026-04-01T17:33:25.749961+00:00"
+    },
+    {
+      "end_ms": 14590784,
+      "index": 1085,
+      "speaker_confidence": 0.69455713,
+      "speaker_id": "Speaker 5",
+      "start_ms": 14588884,
+      "text": "Can you get that book for you?",
+      "ts": "2026-04-01T17:33:27.896593+00:00"
+    },
+    {
+      "end_ms": 14603520,
+      "index": 1086,
+      "speaker_confidence": 0.71391934,
+      "speaker_id": "Speaker 5",
+      "start_ms": 14601460,
+      "text": "What's that going? Okay.",
+      "ts": "2026-04-01T17:33:40.599860+00:00"
+    },
+    {
+      "end_ms": 14605472,
+      "index": 1087,
+      "speaker_confidence": 0.6771203,
+      "speaker_id": "Speaker 5",
+      "start_ms": 14604596,
+      "text": "Okay.",
+      "ts": "2026-04-01T17:33:42.399651+00:00"
+    },
+    {
+      "end_ms": 14608224,
+      "index": 1088,
+      "speaker_confidence": 0.72601557,
+      "speaker_id": "Speaker 5",
+      "start_ms": 14605204,
+      "text": "I'll get a sense of you call you the next time, okay?",
+      "ts": "2026-04-01T17:33:45.410505+00:00"
+    },
+    {
+      "end_ms": 14629216,
+      "index": 1089,
+      "speaker_confidence": 0.7100011,
+      "speaker_id": "Speaker 5",
+      "start_ms": 14628052,
+      "text": "Okay.",
+      "ts": "2026-04-01T17:34:06.350491+00:00"
+    },
+    {
+      "end_ms": 14636160,
+      "index": 1090,
+      "speaker_confidence": 0.7451279,
+      "speaker_id": "Speaker 5",
+      "start_ms": 14632660,
+      "text": "Yeah, so do you see a rule?",
+      "ts": "2026-04-01T17:34:13.486764+00:00"
+    },
+    {
+      "end_ms": 14638720,
+      "index": 1091,
+      "speaker_confidence": 0.6606263,
+      "speaker_id": "Speaker 5",
+      "start_ms": 14635956,
+      "text": "Jane, what was you said to me? Stay for a second.",
+      "ts": "2026-04-01T17:34:15.909319+00:00"
+    },
+    {
+      "end_ms": 14639520,
+      "index": 1092,
+      "speaker_confidence": 0.6107688,
+      "speaker_id": "Speaker 5",
+      "start_ms": 14638580,
+      "text": "Okay.",
+      "ts": "2026-04-01T17:34:16.424649+00:00"
+    },
+    {
+      "end_ms": 14649952,
+      "index": 1093,
+      "speaker_confidence": 0.66870356,
+      "speaker_id": "Speaker 5",
+      "start_ms": 14649044,
+      "text": "Make up.",
+      "ts": "2026-04-01T17:34:26.869844+00:00"
+    },
+    {
+      "end_ms": 14656992,
+      "index": 1094,
+      "speaker_confidence": 0.7405607,
+      "speaker_id": "Speaker 5",
+      "start_ms": 14652084,
+      "text": "We sent it elsewhere. We sent it, or have declined it?",
+      "ts": "2026-04-01T17:34:34.291860+00:00"
+    },
+    {
+      "end_ms": 14660512,
+      "index": 1095,
+      "speaker_confidence": 0.6474749,
+      "speaker_id": "Speaker 5",
+      "start_ms": 14658260,
+      "text": "Start research.",
+      "ts": "2026-04-01T17:34:37.522832+00:00"
+    },
+    {
+      "end_ms": 14664864,
+      "index": 1096,
+      "speaker_confidence": 0.58199483,
+      "speaker_id": "Speaker 5",
+      "start_ms": 14663476,
+      "text": "We can get.",
+      "ts": "2026-04-01T17:34:41.897617+00:00"
+    },
+    {
+      "end_ms": 14671840,
+      "index": 1097,
+      "speaker_confidence": 0.70300895,
+      "speaker_id": "Speaker 5",
+      "start_ms": 14670932,
+      "text": "Yeah.",
+      "ts": "2026-04-01T17:34:48.779400+00:00"
+    },
+    {
+      "end_ms": 14674016,
+      "index": 1098,
+      "speaker_confidence": 0.34061956,
+      "speaker_id": "Speaker 4",
+      "start_ms": 14673044,
+      "text": "I think it's a different.",
+      "ts": "2026-04-01T17:34:50.974828+00:00"
+    },
+    {
+      "end_ms": 14675296,
+      "index": 1099,
+      "speaker_confidence": 0.5358516,
+      "speaker_id": "Speaker 5",
+      "start_ms": 14674388,
+      "text": "vehicle still.",
+      "ts": "2026-04-01T17:34:52.252615+00:00"
+    },
+    {
+      "end_ms": 14678400,
+      "index": 1100,
+      "speaker_confidence": 0.52474874,
+      "speaker_id": "Speaker 5",
+      "start_ms": 14676276,
+      "text": "How are you doing today?",
+      "ts": "2026-04-01T17:34:55.451510+00:00"
+    },
+    {
+      "end_ms": 14685696,
+      "index": 1101,
+      "speaker_confidence": 0.5717455,
+      "speaker_id": "Speaker 4",
+      "start_ms": 14678996,
+      "text": "I haven't been good for the last week or weeks. What's going on?",
+      "ts": "2026-04-01T17:35:03.382835+00:00"
+    },
+    {
+      "end_ms": 14688736,
+      "index": 1102,
+      "speaker_confidence": 0.6418828,
+      "speaker_id": "Speaker 4",
+      "start_ms": 14686004,
+      "text": "Here, I don't know.",
+      "ts": "2026-04-01T17:35:06.053636+00:00"
+    },
+    {
+      "end_ms": 14689504,
+      "index": 1103,
+      "speaker_confidence": 0.5281318,
+      "speaker_id": "Speaker 5",
+      "start_ms": 14688628,
+      "text": "Well.",
+      "ts": "2026-04-01T17:35:06.378165+00:00"
+    },
+    {
+      "end_ms": 14690656,
+      "index": 1104,
+      "speaker_confidence": 0.59889996,
+      "speaker_id": "Speaker 4",
+      "start_ms": 14689396,
+      "text": "Friend.",
+      "ts": "2026-04-01T17:35:07.596365+00:00"
+    },
+    {
+      "end_ms": 14698624,
+      "index": 1105,
+      "speaker_confidence": 0.37277672,
+      "speaker_id": "Speaker 4",
+      "start_ms": 14691028,
+      "text": "She was up to emergency last week. Thursday, I think it was. We probably got a bunch of notes from that.",
+      "ts": "2026-04-01T17:35:16.132313+00:00"
+    },
+    {
+      "end_ms": 14703968,
+      "index": 1106,
+      "speaker_confidence": 0.701407,
+      "speaker_id": "Speaker 4",
+      "start_ms": 14702164,
+      "text": "I think it was Thursday.",
+      "ts": "2026-04-01T17:35:21.039870+00:00"
+    },
+    {
+      "end_ms": 14707712,
+      "index": 1107,
+      "speaker_confidence": 0.6168785,
+      "speaker_id": "Speaker 5",
+      "start_ms": 14706420,
+      "text": "Okay.",
+      "ts": "2026-04-01T17:35:24.734211+00:00"
+    },
+    {
+      "end_ms": 14715872,
+      "index": 1108,
+      "speaker_confidence": 0.6250203,
+      "speaker_id": "Speaker 4",
+      "start_ms": 14707444,
+      "text": "There is a clinic. Yeah, right here you can go on. There's a garbage just right here too.",
+      "ts": "2026-04-01T17:35:33.652485+00:00"
+    },
+    {
+      "end_ms": 14720352,
+      "index": 1109,
+      "speaker_confidence": 0.5383633,
+      "speaker_id": "Speaker 5",
+      "start_ms": 14716052,
+      "text": "It'll be in shortly. Okay, thank you. You're welcome.",
+      "ts": "2026-04-01T17:35:37.635207+00:00"
+    },
+    {
+      "end_ms": 14722720,
+      "index": 1110,
+      "speaker_confidence": 0.6199567,
+      "speaker_id": "Speaker 4",
+      "start_ms": 14720724,
+      "text": "You have to try today.",
+      "ts": "2026-04-01T17:35:40.037262+00:00"
+    },
+    {
+      "end_ms": 14726176,
+      "index": 1111,
+      "speaker_confidence": 0.6618804,
+      "speaker_id": "Speaker 4",
+      "start_ms": 14722516,
+      "text": "Oh yeah, yes.",
+      "ts": "2026-04-01T17:35:43.360464+00:00"
+    },
+    {
+      "end_ms": 14728928,
+      "index": 1112,
+      "speaker_confidence": 0.7584681,
+      "speaker_id": "Speaker 5",
+      "start_ms": 14726964,
+      "text": "I.",
+      "ts": "2026-04-01T17:35:45.988743+00:00"
+    },
+    {
+      "end_ms": 14732480,
+      "index": 1113,
+      "speaker_confidence": 0.66948736,
+      "speaker_id": "Speaker 4",
+      "start_ms": 14731572,
+      "text": "Okay.",
+      "ts": "2026-04-01T17:35:49.415154+00:00"
+    },
+    {
+      "end_ms": 14757760,
+      "index": 1114,
+      "speaker_confidence": 0.7891907,
+      "speaker_id": "Speaker 5",
+      "start_ms": 14756852,
+      "text": "嗯。",
+      "ts": "2026-04-01T17:36:14.714083+00:00"
+    },
+    {
+      "end_ms": 14779360,
+      "index": 1115,
+      "speaker_confidence": 0.52743393,
+      "speaker_id": "Speaker 4",
+      "start_ms": 14776852,
+      "text": "So happy, baby.",
+      "ts": "2026-04-01T17:36:36.386416+00:00"
+    },
+    {
+      "end_ms": 14782144,
+      "index": 1116,
+      "speaker_confidence": 0.5699828,
+      "speaker_id": "Speaker 4",
+      "start_ms": 14779476,
+      "text": "Somebody get my needles. He didn't mean it.",
+      "ts": "2026-04-01T17:36:39.356991+00:00"
+    },
+    {
+      "end_ms": 14786016,
+      "index": 1117,
+      "speaker_confidence": 0.63524616,
+      "speaker_id": "Speaker 4",
+      "start_ms": 14784980,
+      "text": "And.",
+      "ts": "2026-04-01T17:36:43.033483+00:00"
+    },
+    {
+      "end_ms": 14786784,
+      "index": 1118,
+      "speaker_confidence": 0.478396,
+      "speaker_id": "Speaker 5",
+      "start_ms": 14785940,
+      "text": "Oh my.",
+      "ts": "2026-04-01T17:36:43.693986+00:00"
+    },
+    {
+      "end_ms": 14790496,
+      "index": 1119,
+      "speaker_confidence": 0.4981492,
+      "speaker_id": "Speaker 5",
+      "start_ms": 14789460,
+      "text": "Okay.",
+      "ts": "2026-04-01T17:36:47.406817+00:00"
+    },
+    {
+      "end_ms": 14792064,
+      "index": 1120,
+      "speaker_confidence": 0.3735934,
+      "speaker_id": "Speaker 4",
+      "start_ms": 14790708,
+      "text": "Oh, they cute.",
+      "ts": "2026-04-01T17:36:49.075200+00:00"
+    },
+    {
+      "end_ms": 14794016,
+      "index": 1121,
+      "speaker_confidence": 0.4253195,
+      "speaker_id": "Speaker 4",
+      "start_ms": 14792468,
+      "text": "The girls here.",
+      "ts": "2026-04-01T17:36:51.055580+00:00"
+    },
+    {
+      "end_ms": 14796864,
+      "index": 1122,
+      "speaker_confidence": 0.61007667,
+      "speaker_id": "Speaker 4",
+      "start_ms": 14793908,
+      "text": "Easter jacket and stuff.",
+      "ts": "2026-04-01T17:36:53.952150+00:00"
+    },
+    {
+      "end_ms": 14801664,
+      "index": 1123,
+      "speaker_confidence": 0.70586604,
+      "speaker_id": "Speaker 4",
+      "start_ms": 14797620,
+      "text": "She got to push the button on the elevator coming up. So",
+      "ts": "2026-04-01T17:36:58.879460+00:00"
+    },
+    {
+      "end_ms": 14803488,
+      "index": 1124,
+      "speaker_confidence": 0.60334015,
+      "speaker_id": "Speaker 4",
+      "start_ms": 14802292,
+      "text": "That guy said.",
+      "ts": "2026-04-01T17:37:00.447714+00:00"
+    },
+    {
+      "end_ms": 14807744,
+      "index": 1125,
+      "speaker_confidence": 0.69579655,
+      "speaker_id": "Speaker 4",
+      "start_ms": 14803220,
+      "text": "Says there was a battle. I push the buttons, they said what? Says time to go down.",
+      "ts": "2026-04-01T17:37:05.097356+00:00"
+    },
+    {
+      "end_ms": 14810560,
+      "index": 1126,
+      "speaker_confidence": 0.7509408,
+      "speaker_id": "Speaker 4",
+      "start_ms": 14807540,
+      "text": "She could come out, and the guy went. Yeah.",
+      "ts": "2026-04-01T17:37:07.722686+00:00"
+    },
+    {
+      "end_ms": 14813088,
+      "index": 1127,
+      "speaker_confidence": 0.42206365,
+      "speaker_id": "Speaker 4",
+      "start_ms": 14811092,
+      "text": "all for yeah.",
+      "ts": "2026-04-01T17:37:10.178636+00:00"
+    },
+    {
+      "end_ms": 14814656,
+      "index": 1128,
+      "speaker_confidence": 0.53631794,
+      "speaker_id": "Speaker 4",
+      "start_ms": 14812788,
+      "text": "I turn to go down.",
+      "ts": "2026-04-01T17:37:11.757657+00:00"
+    },
+    {
+      "end_ms": 14817696,
+      "index": 1129,
+      "speaker_confidence": 0.46636102,
+      "speaker_id": "Speaker 5",
+      "start_ms": 14816020,
+      "text": "So cute.",
+      "ts": "2026-04-01T17:37:15.029451+00:00"
+    },
+    {
+      "end_ms": 14820064,
+      "index": 1130,
+      "speaker_confidence": 0.6620575,
+      "speaker_id": "Speaker 4",
+      "start_ms": 14818132,
+      "text": "That's the key.",
+      "ts": "2026-04-01T17:37:17.438062+00:00"
+    },
+    {
+      "end_ms": 14822208,
+      "index": 1131,
+      "speaker_confidence": 0.5614089,
+      "speaker_id": "Speaker 5",
+      "start_ms": 14820372,
+      "text": "Turn up nose.",
+      "ts": "2026-04-01T17:37:19.490159+00:00"
+    },
+    {
+      "end_ms": 14838240,
+      "index": 1132,
+      "speaker_confidence": 0.61204475,
+      "speaker_id": "Speaker 4",
+      "start_ms": 14836500,
+      "text": "This is a, like.",
+      "ts": "2026-04-01T17:37:35.844677+00:00"
+    },
+    {
+      "end_ms": 14841152,
+      "index": 1133,
+      "speaker_confidence": 0.5686054,
+      "speaker_id": "Speaker 4",
+      "start_ms": 14839860,
+      "text": "to her in.",
+      "ts": "2026-04-01T17:37:38.392481+00:00"
+    },
+    {
+      "end_ms": 14843648,
+      "index": 1134,
+      "speaker_confidence": 0.64528793,
+      "speaker_id": "Speaker 4",
+      "start_ms": 14841012,
+      "text": "Investing advice. She's got really interesting.",
+      "ts": "2026-04-01T17:37:42.081086+00:00"
+    },
+    {
+      "end_ms": 14846464,
+      "index": 1135,
+      "speaker_confidence": 0.732837,
+      "speaker_id": "Speaker 4",
+      "start_ms": 14843668,
+      "text": "Newsletter that she puts out, and then it says a.",
+      "ts": "2026-04-01T17:37:44.418500+00:00"
+    },
+    {
+      "end_ms": 14848512,
+      "index": 1136,
+      "speaker_confidence": 0.5837743,
+      "speaker_id": "Speaker 4",
+      "start_ms": 14847636,
+      "text": "With a.",
+      "ts": "2026-04-01T17:37:46.013840+00:00"
+    },
+    {
+      "end_ms": 14849152,
+      "index": 1137,
+      "speaker_confidence": 0.63416374,
+      "speaker_id": "Speaker 4",
+      "start_ms": 14848276,
+      "text": "With a bunch of people.",
+      "ts": "2026-04-01T17:37:47.058458+00:00"
+    },
+    {
+      "end_ms": 14852384,
+      "index": 1138,
+      "speaker_confidence": 0.6299146,
+      "speaker_id": "Speaker 4",
+      "start_ms": 14849428,
+      "text": "But she always tell. She starts the story of the day.",
+      "ts": "2026-04-01T17:37:49.822961+00:00"
+    },
+    {
+      "end_ms": 14857792,
+      "index": 1139,
+      "speaker_confidence": 0.83726156,
+      "speaker_id": "Speaker 4",
+      "start_ms": 14853140,
+      "text": "Before she gets in the investment option, she tells a story about her family.",
+      "ts": "2026-04-01T17:37:55.394925+00:00"
+    },
+    {
+      "end_ms": 14864832,
+      "index": 1140,
+      "speaker_confidence": 0.8352083,
+      "speaker_id": "Speaker 4",
+      "start_ms": 14857684,
+      "text": "Oh, and she's got a couple of kids. Says the kids and I piled into bed with the windows open listening to the even thunderstorm last night.",
+      "ts": "2026-04-01T17:38:02.662959+00:00"
+    },
+    {
+      "end_ms": 14869664,
+      "index": 1141,
+      "speaker_confidence": 0.7808649,
+      "speaker_id": "Speaker 4",
+      "start_ms": 14864884,
+      "text": "With each flash of lightning and boom of thunder, sent them into delightful little shrieks.",
+      "ts": "2026-04-01T17:38:07.215227+00:00"
+    },
+    {
+      "end_ms": 14874720,
+      "index": 1142,
+      "speaker_confidence": 0.81448996,
+      "speaker_id": "Speaker 4",
+      "start_ms": 14869492,
+      "text": "When the storm started to fade, my eldest turned on me annoyed, asking if I could make more thunder.",
+      "ts": "2026-04-01T17:38:12.343536+00:00"
+    },
+    {
+      "end_ms": 14879296,
+      "index": 1143,
+      "speaker_confidence": 0.83161753,
+      "speaker_id": "Speaker 4",
+      "start_ms": 14874484,
+      "text": "When I told her I had no control over the weather, she pounded. I was ruining her life.",
+      "ts": "2026-04-01T17:38:16.900692+00:00"
+    },
+    {
+      "end_ms": 14881216,
+      "index": 1144,
+      "speaker_confidence": 0.5129586,
+      "speaker_id": "Speaker 4",
+      "start_ms": 14880180,
+      "text": "Yes, sir.",
+      "ts": "2026-04-01T17:38:18.494315+00:00"
+    },
+    {
+      "end_ms": 14883488,
+      "index": 1145,
+      "speaker_confidence": 0.6293653,
+      "speaker_id": "Speaker 4",
+      "start_ms": 14881012,
+      "text": "A preview of the teenage years.",
+      "ts": "2026-04-01T17:38:20.819569+00:00"
+    },
+    {
+      "end_ms": 14885664,
+      "index": 1146,
+      "speaker_confidence": 0.658896,
+      "speaker_id": "Speaker 5",
+      "start_ms": 14884756,
+      "text": "Yeah.",
+      "ts": "2026-04-01T17:38:22.920186+00:00"
+    },
+    {
+      "end_ms": 14886912,
+      "index": 1147,
+      "speaker_confidence": 0.48257792,
+      "speaker_id": "Speaker 5",
+      "start_ms": 14885908,
+      "text": "Oh.",
+      "ts": "2026-04-01T17:38:24.141052+00:00"
+    },
+    {
+      "end_ms": 14888000,
+      "index": 1148,
+      "speaker_confidence": 0.5382515,
+      "speaker_id": "Speaker 5",
+      "start_ms": 14886996,
+      "text": "Yeah.",
+      "ts": "2026-04-01T17:38:25.191808+00:00"
+    },
+    {
+      "end_ms": 14895840,
+      "index": 1149,
+      "speaker_confidence": 0.46152666,
+      "speaker_id": "Speaker 5",
+      "start_ms": 14894836,
+      "text": "Hmm.",
+      "ts": "2026-04-01T17:38:33.130726+00:00"
+    },
+    {
+      "end_ms": 14907328,
+      "index": 1150,
+      "speaker_confidence": 0.45348278,
+      "speaker_id": "Speaker 5",
+      "start_ms": 14905844,
+      "text": "Like the Edward Four.",
+      "ts": "2026-04-01T17:38:44.681633+00:00"
+    },
+    {
+      "end_ms": 14911520,
+      "index": 1151,
+      "speaker_confidence": 0.5152392,
+      "speaker_id": "Speaker 5",
+      "start_ms": 14909780,
+      "text": "Alex Warner.",
+      "ts": "2026-04-01T17:38:48.827303+00:00"
+    },
+    {
+      "end_ms": 14916448,
+      "index": 1152,
+      "speaker_confidence": 0.72184235,
+      "speaker_id": "Speaker 4",
+      "start_ms": 14911860,
+      "text": "I say he works nights, and I was gonna bring the kids in. He's dropping off.",
+      "ts": "2026-04-01T17:38:54.098213+00:00"
+    },
+    {
+      "end_ms": 14920512,
+      "index": 1153,
+      "speaker_confidence": 0.78571296,
+      "speaker_id": "Speaker 4",
+      "start_ms": 14916148,
+      "text": "And his wife has, his wife has picked him up to take him.",
+      "ts": "2026-04-01T17:38:58.058654+00:00"
+    },
+    {
+      "end_ms": 14923360,
+      "index": 1154,
+      "speaker_confidence": 0.77030355,
+      "speaker_id": "Speaker 4",
+      "start_ms": 14920948,
+      "text": "Take him back. He's got to go work.",
+      "ts": "2026-04-01T17:39:00.850050+00:00"
+    },
+    {
+      "end_ms": 14924480,
+      "index": 1155,
+      "speaker_confidence": 0.6580364,
+      "speaker_id": "Speaker 4",
+      "start_ms": 14923412,
+      "text": "Oh my God.",
+      "ts": "2026-04-01T17:39:01.708519+00:00"
+    },
+    {
+      "end_ms": 14931712,
+      "index": 1156,
+      "speaker_confidence": 0.763908,
+      "speaker_id": "Speaker 4",
+      "start_ms": 14928724,
+      "text": "He've started four kids in a couple years.",
+      "ts": "2026-04-01T17:39:09.111930+00:00"
+    },
+    {
+      "end_ms": 14935744,
+      "index": 1157,
+      "speaker_confidence": 0.6974631,
+      "speaker_id": "Speaker 4",
+      "start_ms": 14932500,
+      "text": "I don't have a lot of I don't have a lot of sympathy for guys like that.",
+      "ts": "2026-04-01T17:39:13.229524+00:00"
+    },
+    {
+      "end_ms": 14937824,
+      "index": 1158,
+      "speaker_confidence": 0.65338224,
+      "speaker_id": "Speaker 4",
+      "start_ms": 14936148,
+      "text": "Keep your pants on, buddy.",
+      "ts": "2026-04-01T17:39:15.090963+00:00"
+    },
+    {
+      "end_ms": 14941376,
+      "index": 1159,
+      "speaker_confidence": 0.6377506,
+      "speaker_id": "Speaker 5",
+      "start_ms": 14940308,
+      "text": "You know.",
+      "ts": "2026-04-01T17:39:18.674135+00:00"
+    },
+    {
+      "end_ms": 14943584,
+      "index": 1160,
+      "speaker_confidence": 0.48569065,
+      "speaker_id": "Speaker 5",
+      "start_ms": 14941748,
+      "text": "My name.",
+      "ts": "2026-04-01T17:39:20.835485+00:00"
+    },
+    {
+      "end_ms": 14944736,
+      "index": 1161,
+      "speaker_confidence": 0.66838163,
+      "speaker_id": "Speaker 4",
+      "start_ms": 14943348,
+      "text": "Yeah, true enough.",
+      "ts": "2026-04-01T17:39:21.955120+00:00"
+    },
+    {
+      "end_ms": 14945472,
+      "index": 1162,
+      "speaker_confidence": 0.43781835,
+      "speaker_id": "Speaker 4",
+      "start_ms": 14944564,
+      "text": "Sure.",
+      "ts": "2026-04-01T17:39:22.661241+00:00"
+    },
+    {
+      "end_ms": 14947488,
+      "index": 1163,
+      "speaker_confidence": 0.41308615,
+      "speaker_id": "Speaker 5",
+      "start_ms": 14946228,
+      "text": "Yeah.",
+      "ts": "2026-04-01T17:39:24.683608+00:00"
+    },
+    {
+      "end_ms": 14964992,
+      "index": 1164,
+      "speaker_confidence": 0.6436975,
+      "speaker_id": "Speaker 5",
+      "start_ms": 14964052,
+      "text": "Hmm.",
+      "ts": "2026-04-01T17:39:42.252369+00:00"
+    },
+    {
+      "end_ms": 14972608,
+      "index": 1165,
+      "speaker_confidence": 0.45499393,
+      "speaker_id": "Speaker 5",
+      "start_ms": 14971476,
+      "text": "I did that.",
+      "ts": "2026-04-01T17:39:49.838107+00:00"
+    },
+    {
+      "end_ms": 14973728,
+      "index": 1166,
+      "speaker_confidence": 0.48387456,
+      "speaker_id": "Speaker 5",
+      "start_ms": 14972788,
+      "text": "He said.",
+      "ts": "2026-04-01T17:39:50.920158+00:00"
+    },
+    {
+      "end_ms": 14975232,
+      "index": 1167,
+      "speaker_confidence": 0.412982,
+      "speaker_id": "Speaker 5",
+      "start_ms": 14974004,
+      "text": "I don't remember.",
+      "ts": "2026-04-01T17:39:52.561915+00:00"
+    },
+    {
+      "end_ms": 14977792,
+      "index": 1168,
+      "speaker_confidence": 0.39475316,
+      "speaker_id": "Speaker 4",
+      "start_ms": 14976948,
+      "text": "Emergency.",
+      "ts": "2026-04-01T17:39:54.997591+00:00"
+    },
+    {
+      "end_ms": 14978560,
+      "index": 1169,
+      "speaker_confidence": 0.550063,
+      "speaker_id": "Speaker 5",
+      "start_ms": 14977492,
+      "text": "Just use it.",
+      "ts": "2026-04-01T17:39:55.747134+00:00"
+    },
+    {
+      "end_ms": 14980960,
+      "index": 1170,
+      "speaker_confidence": 0.62078744,
+      "speaker_id": "Speaker 4",
+      "start_ms": 14979060,
+      "text": "You said you had a.",
+      "ts": "2026-04-01T17:39:58.302054+00:00"
+    },
+    {
+      "end_ms": 14982144,
+      "index": 1171,
+      "speaker_confidence": 0.5679884,
+      "speaker_id": "Speaker 4",
+      "start_ms": 14981012,
+      "text": "Urinary tract infection.",
+      "ts": "2026-04-01T17:39:59.353693+00:00"
+    },
+    {
+      "end_ms": 14982976,
+      "index": 1172,
+      "speaker_confidence": 0.5150709,
+      "speaker_id": "Speaker 4",
+      "start_ms": 14981972,
+      "text": "Infection.",
+      "ts": "2026-04-01T17:40:00.174936+00:00"
+    },
+    {
+      "end_ms": 14985504,
+      "index": 1173,
+      "speaker_confidence": 0.60603166,
+      "speaker_id": "Speaker 4",
+      "start_ms": 14983604,
+      "text": "And that was what the.",
+      "ts": "2026-04-01T17:40:02.860947+00:00"
+    },
+    {
+      "end_ms": 14987136,
+      "index": 1174,
+      "speaker_confidence": 0.6627454,
+      "speaker_id": "Speaker 4",
+      "start_ms": 14985364,
+      "text": "Antibiotics for.",
+      "ts": "2026-04-01T17:40:04.646422+00:00"
+    },
+    {
+      "end_ms": 14989280,
+      "index": 1175,
+      "speaker_confidence": 0.5752257,
+      "speaker_id": "Speaker 4",
+      "start_ms": 14987348,
+      "text": "But I've never heard like.",
+      "ts": "2026-04-01T17:40:06.615944+00:00"
+    },
+    {
+      "end_ms": 14999648,
+      "index": 1176,
+      "speaker_confidence": 0.8129622,
+      "speaker_id": "Speaker 4",
+      "start_ms": 14989300,
+      "text": "You've been a little confused at times recently, but and that's that. That can be resulted with urinary tract infection? Yeah. Yeah yeah. But usually it hurts when you pee. Have you had any of that?",
+      "ts": "2026-04-01T17:40:17.927430+00:00"
+    },
+    {
+      "end_ms": 15001792,
+      "index": 1177,
+      "speaker_confidence": 0.54147494,
+      "speaker_id": "Speaker 5",
+      "start_ms": 14999476,
+      "text": "Nobody had an infection.",
+      "ts": "2026-04-01T17:40:19.099885+00:00"
+    },
+    {
+      "end_ms": 15009312,
+      "index": 1178,
+      "speaker_confidence": 0.7444614,
+      "speaker_id": "Speaker 4",
+      "start_ms": 15003572,
+      "text": "Yeah, well they're fairly common. We should close what is heading? Shelley's heading.",
+      "ts": "2026-04-01T17:40:26.941973+00:00"
+    },
+    {
+      "end_ms": 15010272,
+      "index": 1179,
+      "speaker_confidence": 0.51264286,
+      "speaker_id": "Speaker 4",
+      "start_ms": 15009140,
+      "text": "Um.",
+      "ts": "2026-04-01T17:40:27.408633+00:00"
+    },
+    {
+      "end_ms": 15011712,
+      "index": 1180,
+      "speaker_confidence": 0.47553128,
+      "speaker_id": "Speaker 2",
+      "start_ms": 15010260,
+      "text": "This doesn't hurt.",
+      "ts": "2026-04-01T17:40:29.043435+00:00"
+    },
+    {
+      "end_ms": 15015552,
+      "index": 1181,
+      "speaker_confidence": 0.7134934,
+      "speaker_id": "Speaker 4",
+      "start_ms": 15011412,
+      "text": "They really get. This seems to be more burned.",
+      "ts": "2026-04-01T17:40:33.040478+00:00"
+    },
+    {
+      "end_ms": 15016704,
+      "index": 1182,
+      "speaker_confidence": 0.58284163,
+      "speaker_id": "Speaker 4",
+      "start_ms": 15015412,
+      "text": "Kidney.",
+      "ts": "2026-04-01T17:40:33.928603+00:00"
+    },
+    {
+      "end_ms": 15017504,
+      "index": 1183,
+      "speaker_confidence": 0.69366735,
+      "speaker_id": "Speaker 5",
+      "start_ms": 15016404,
+      "text": "Hey.",
+      "ts": "2026-04-01T17:40:34.669951+00:00"
+    },
+    {
+      "end_ms": 15025504,
+      "index": 1184,
+      "speaker_confidence": 0.7355943,
+      "speaker_id": "Speaker 4",
+      "start_ms": 15017844,
+      "text": "So it's interesting to see what the results of your cat scan were because they did that just to see if you had any kidney stones.",
+      "ts": "2026-04-01T17:40:43.857900+00:00"
+    },
+    {
+      "end_ms": 15031680,
+      "index": 1185,
+      "speaker_confidence": 0.71241415,
+      "speaker_id": "Speaker 4",
+      "start_ms": 15026420,
+      "text": "And I wonder if the results where he had a urinary tract infection, so they treated that.",
+      "ts": "2026-04-01T17:40:49.353319+00:00"
+    },
+    {
+      "end_ms": 15035424,
+      "index": 1186,
+      "speaker_confidence": 0.7098125,
+      "speaker_id": "Speaker 4",
+      "start_ms": 15032276,
+      "text": "Anyway, we'll see. We'll see what it says.",
+      "ts": "2026-04-01T17:40:52.944041+00:00"
+    },
+    {
+      "end_ms": 15042016,
+      "index": 1187,
+      "speaker_confidence": 0.7486282,
+      "speaker_id": "Speaker 5",
+      "start_ms": 15040852,
+      "text": "We're not.",
+      "ts": "2026-04-01T17:40:59.491191+00:00"
+    },
+    {
+      "end_ms": 15056000,
+      "index": 1188,
+      "speaker_confidence": 0.81741315,
+      "speaker_id": "Speaker 5",
+      "start_ms": 15054932,
+      "text": "Yeah.",
+      "ts": "2026-04-01T17:41:13.338970+00:00"
+    },
+    {
+      "end_ms": 15091584,
+      "index": 1189,
+      "speaker_confidence": 0.66086143,
+      "speaker_id": "Speaker 5",
+      "start_ms": 15090644,
+      "text": "Like that.",
+      "ts": "2026-04-01T17:41:48.822396+00:00"
+    },
+    {
+      "end_ms": 15129760,
+      "index": 1190,
+      "speaker_confidence": 0.8631144,
+      "speaker_id": "Speaker 5",
+      "start_ms": 15128596,
+      "text": "Hmm.",
+      "ts": "2026-04-01T17:42:27.015838+00:00"
+    },
+    {
+      "end_ms": 15146080,
+      "index": 1191,
+      "speaker_confidence": 0.6584168,
+      "speaker_id": "Speaker 4",
+      "start_ms": 15143444,
+      "text": "Kind of the least two words anymore is your.",
+      "ts": "2026-04-01T17:42:43.645772+00:00"
+    },
+    {
+      "end_ms": 15147200,
+      "index": 1192,
+      "speaker_confidence": 0.4868331,
+      "speaker_id": "Speaker 4",
+      "start_ms": 15146036,
+      "text": "Deepening.",
+      "ts": "2026-04-01T17:42:44.710789+00:00"
+    },
+    {
+      "end_ms": 15149696,
+      "index": 1193,
+      "speaker_confidence": 0.51743126,
+      "speaker_id": "Speaker 5",
+      "start_ms": 15147988,
+      "text": "Thanks.",
+      "ts": "2026-04-01T17:42:47.000827+00:00"
+    },
+    {
+      "end_ms": 15153152,
+      "index": 1194,
+      "speaker_confidence": 0.5671371,
+      "speaker_id": "Speaker 4",
+      "start_ms": 15149524,
+      "text": "Yeah, I don't even think about that much anymore.",
+      "ts": "2026-04-01T17:42:50.648495+00:00"
+    },
+    {
+      "end_ms": 15155392,
+      "index": 1195,
+      "speaker_confidence": 0.73451203,
+      "speaker_id": "Speaker 4",
+      "start_ms": 15153140,
+      "text": "Turn your back and your stomach.",
+      "ts": "2026-04-01T17:42:52.752196+00:00"
+    },
+    {
+      "end_ms": 15182848,
+      "index": 1196,
+      "speaker_confidence": 0.7182233,
+      "speaker_id": "Speaker 5",
+      "start_ms": 15182004,
+      "text": "English.",
+      "ts": "2026-04-01T17:43:20.424129+00:00"
+    },
+    {
+      "end_ms": 15202656,
+      "index": 1197,
+      "speaker_confidence": 0.5258395,
+      "speaker_id": "Speaker 2",
+      "start_ms": 15200436,
+      "text": "Team, I sure.",
+      "ts": "2026-04-01T17:43:39.985894+00:00"
+    },
+    {
+      "end_ms": 15206432,
+      "index": 1198,
+      "speaker_confidence": 0.67660046,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 15202708,
+      "text": "I've been doing a long time. I know this room is freezing.",
+      "ts": "2026-04-01T17:43:43.987804+00:00"
+    },
+    {
+      "end_ms": 15212640,
+      "index": 1199,
+      "speaker_confidence": 0.69168645,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 15206804,
+      "text": "Been you've been away. I guess they don't have an easier time getting in and out of the storm. How are you? Been doing all right, man.",
+      "ts": "2026-04-01T17:43:50.455462+00:00"
+    },
+    {
+      "end_ms": 15213376,
+      "index": 1200,
+      "speaker_confidence": 0.5561451,
+      "speaker_id": "Speaker 5",
+      "start_ms": 15212372,
+      "text": "Oh.",
+      "ts": "2026-04-01T17:43:50.658850+00:00"
+    },
+    {
+      "end_ms": 15216224,
+      "index": 1201,
+      "speaker_confidence": 0.5125672,
+      "speaker_id": "Speaker 2",
+      "start_ms": 15213396,
+      "text": "I heard. I can't.",
+      "ts": "2026-04-01T17:43:53.617921+00:00"
+    },
+    {
+      "end_ms": 15218688,
+      "index": 1202,
+      "speaker_confidence": 0.5903753,
+      "speaker_id": "Speaker 2",
+      "start_ms": 15216628,
+      "text": "Just in general care.",
+      "ts": "2026-04-01T17:43:56.117401+00:00"
+    },
+    {
+      "end_ms": 15220576,
+      "index": 1203,
+      "speaker_confidence": 0.37491027,
+      "speaker_id": "Speaker 2",
+      "start_ms": 15218964,
+      "text": "The most.",
+      "ts": "2026-04-01T17:43:57.864922+00:00"
+    },
+    {
+      "end_ms": 15221728,
+      "index": 1204,
+      "speaker_confidence": 0.3473812,
+      "speaker_id": "Speaker 5",
+      "start_ms": 15220404,
+      "text": "Like.",
+      "ts": "2026-04-01T17:43:58.963008+00:00"
+    },
+    {
+      "end_ms": 15225792,
+      "index": 1205,
+      "speaker_confidence": 0.4881754,
+      "speaker_id": "Speaker 2",
+      "start_ms": 15224116,
+      "text": "Not good, eh?",
+      "ts": "2026-04-01T17:44:03.431346+00:00"
+    },
+    {
+      "end_ms": 15230784,
+      "index": 1206,
+      "speaker_confidence": 0.58289117,
+      "speaker_id": "Speaker 5",
+      "start_ms": 15227156,
+      "text": "And tough, I can take it.",
+      "ts": "2026-04-01T17:44:08.708801+00:00"
+    },
+    {
+      "end_ms": 15233088,
+      "index": 1207,
+      "speaker_confidence": 0.62388223,
+      "speaker_id": "Speaker 5",
+      "start_ms": 15231540,
+      "text": "Yes.",
+      "ts": "2026-04-01T17:44:10.590495+00:00"
+    },
+    {
+      "end_ms": 15235936,
+      "index": 1208,
+      "speaker_confidence": 0.56332725,
+      "speaker_id": "Speaker 1",
+      "start_ms": 15233716,
+      "text": "Are your bowels moving okay?",
+      "ts": "2026-04-01T17:44:13.284717+00:00"
+    },
+    {
+      "end_ms": 15241248,
+      "index": 1209,
+      "speaker_confidence": 0.61391723,
+      "speaker_id": "Speaker 5",
+      "start_ms": 15237844,
+      "text": "I said, \"It's very different.\"",
+      "ts": "2026-04-01T17:44:19.134513+00:00"
+    },
+    {
+      "end_ms": 15243776,
+      "index": 1210,
+      "speaker_confidence": 0.522402,
+      "speaker_id": "Speaker 5",
+      "start_ms": 15241364,
+      "text": "Gotta spend it. I don't know.",
+      "ts": "2026-04-01T17:44:21.348569+00:00"
+    },
+    {
+      "end_ms": 15245120,
+      "index": 1211,
+      "speaker_confidence": 0.5984622,
+      "speaker_id": "Speaker 5",
+      "start_ms": 15243764,
+      "text": "Too much.",
+      "ts": "2026-04-01T17:44:22.684891+00:00"
+    },
+    {
+      "end_ms": 15248800,
+      "index": 1212,
+      "speaker_confidence": 0.68264604,
+      "speaker_id": "Speaker 5",
+      "start_ms": 15246228,
+      "text": "Group size.",
+      "ts": "2026-04-01T17:44:26.448976+00:00"
+    },
+    {
+      "end_ms": 15257280,
+      "index": 1213,
+      "speaker_confidence": 0.70146894,
+      "speaker_id": "Speaker 1",
+      "start_ms": 15249044,
+      "text": "How how often are you going? Are having a barb move on every day, every other day. Not every other maybe every three days. Okay.",
+      "ts": "2026-04-01T17:44:36.093885+00:00"
+    },
+    {
+      "end_ms": 15259680,
+      "index": 1214,
+      "speaker_confidence": 0.54404104,
+      "speaker_id": "Speaker 1",
+      "start_ms": 15257684,
+      "text": "And.",
+      "ts": "2026-04-01T17:44:37.086410+00:00"
+    },
+    {
+      "end_ms": 15263712,
+      "index": 1215,
+      "speaker_confidence": 0.64984536,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 15259444,
+      "text": "Any bladder sometimes any burning when you pee or going often.",
+      "ts": "2026-04-01T17:44:41.318169+00:00"
+    },
+    {
+      "end_ms": 15265728,
+      "index": 1216,
+      "speaker_confidence": 0.5644626,
+      "speaker_id": "Speaker 2",
+      "start_ms": 15264308,
+      "text": "I'll sleep.",
+      "ts": "2026-04-01T17:44:43.642604+00:00"
+    },
+    {
+      "end_ms": 15269472,
+      "index": 1217,
+      "speaker_confidence": 0.665857,
+      "speaker_id": "Speaker 5",
+      "start_ms": 15267124,
+      "text": "is to get.",
+      "ts": "2026-04-01T17:44:46.827+00:00"
+    },
+    {
+      "end_ms": 15272384,
+      "index": 1218,
+      "speaker_confidence": 0.5159945,
+      "speaker_id": "Speaker 2",
+      "start_ms": 15269748,
+      "text": "Can you hear it?",
+      "ts": "2026-04-01T17:44:49.790530+00:00"
+    }
+  ],
+  "sensor_transitions": [
+    {
+      "from": "present",
+      "to": "absent",
+      "ts": "2026-04-01T17:33:35.481699+00:00"
+    },
+    {
+      "from": "absent",
+      "to": "present",
+      "ts": "2026-04-01T17:34:05.214627+00:00"
+    }
+  ],
+  "soap_result": {
+    "latency_ms": 13074,
+    "patient_count": 2,
+    "success": true,
+    "ts": "2026-04-01T17:44:46.941851+00:00",
+    "word_count": 1264
+  },
+  "split_decision": {
+    "cleaned_word_count": 850,
+    "end_segment_index": 1208,
+    "trigger": "hybrid_llm",
+    "ts": "2026-04-01T17:44:20.890357+00:00",
+    "word_count": 1264
+  },
+  "vision_results": [
+    {
+      "is_blank": false,
+      "is_stale": true,
+      "latency_ms": 1605,
+      "parsed_name": "Rhianna Horvath-jackson",
+      "ts": "2026-04-01T17:27:00.714205+00:00"
+    },
+    {
+      "is_blank": false,
+      "is_stale": false,
+      "latency_ms": 1958,
+      "parsed_name": null,
+      "ts": "2026-04-01T17:28:02.846081+00:00"
+    },
+    {
+      "is_blank": false,
+      "is_stale": false,
+      "latency_ms": 1780,
+      "parsed_name": null,
+      "ts": "2026-04-01T17:29:04.852159+00:00"
+    },
+    {
+      "is_blank": false,
+      "is_stale": false,
+      "latency_ms": 1466,
+      "parsed_name": "Rhianna Horvath-jackson",
+      "ts": "2026-04-01T17:30:06.503057+00:00"
+    },
+    {
+      "is_blank": false,
+      "is_stale": false,
+      "latency_ms": 1350,
+      "parsed_name": null,
+      "ts": "2026-04-01T17:31:08.144934+00:00"
+    },
+    {
+      "is_blank": false,
+      "is_stale": false,
+      "latency_ms": 1752,
+      "parsed_name": null,
+      "ts": "2026-04-01T17:32:10.035676+00:00"
+    },
+    {
+      "is_blank": false,
+      "is_stale": false,
+      "latency_ms": 1679,
+      "parsed_name": "Rhianna Horvath-jackson",
+      "ts": "2026-04-01T17:33:11.999517+00:00"
+    },
+    {
+      "is_blank": false,
+      "is_stale": false,
+      "latency_ms": 1267,
+      "parsed_name": null,
+      "ts": "2026-04-01T17:34:13.349969+00:00"
+    },
+    {
+      "is_blank": false,
+      "is_stale": false,
+      "latency_ms": 1724,
+      "parsed_name": "Charlotte Jane (jane) Mcarthur",
+      "ts": "2026-04-01T17:35:15.275615+00:00"
+    },
+    {
+      "is_blank": false,
+      "is_stale": false,
+      "latency_ms": 1287,
+      "parsed_name": null,
+      "ts": "2026-04-01T17:36:16.865721+00:00"
+    },
+    {
+      "is_blank": false,
+      "is_stale": false,
+      "latency_ms": 1347,
+      "parsed_name": null,
+      "ts": "2026-04-01T17:37:18.485947+00:00"
+    },
+    {
+      "is_blank": false,
+      "is_stale": false,
+      "latency_ms": 1281,
+      "parsed_name": null,
+      "ts": "2026-04-01T17:38:20.047979+00:00"
+    },
+    {
+      "is_blank": false,
+      "is_stale": false,
+      "latency_ms": 1381,
+      "parsed_name": null,
+      "ts": "2026-04-01T17:39:21.678226+00:00"
+    },
+    {
+      "is_blank": false,
+      "is_stale": false,
+      "latency_ms": 1449,
+      "parsed_name": null,
+      "ts": "2026-04-01T17:40:23.373711+00:00"
+    },
+    {
+      "is_blank": false,
+      "is_stale": false,
+      "latency_ms": 1288,
+      "parsed_name": null,
+      "ts": "2026-04-01T17:41:25.054491+00:00"
+    },
+    {
+      "is_blank": false,
+      "is_stale": false,
+      "latency_ms": 1394,
+      "parsed_name": null,
+      "ts": "2026-04-01T17:42:26.715454+00:00"
+    },
+    {
+      "is_blank": false,
+      "is_stale": false,
+      "latency_ms": 1389,
+      "parsed_name": null,
+      "ts": "2026-04-01T17:43:28.370904+00:00"
+    },
+    {
+      "is_blank": false,
+      "is_stale": true,
+      "latency_ms": 5144,
+      "parsed_name": "Charlotte Jane (jane) Mcarthur",
+      "ts": "2026-04-01T17:44:33.680218+00:00"
+    }
+  ]
+}

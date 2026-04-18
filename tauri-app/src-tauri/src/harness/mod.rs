@@ -19,5 +19,6 @@ pub mod encounter_harness;
 pub mod day_harness;
 
 pub use captured_event::CapturedEvent;
-pub use policies::{EquivalencePolicy, PromptPolicy};
+pub use encounter_harness::EncounterHarness;
 pub use mismatch_report::{MismatchKind, MismatchReport, Verdict};
+pub use policies::{EquivalencePolicy, PromptPolicy};

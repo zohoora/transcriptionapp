@@ -1,0 +1,985 @@
+{
+  "clinical_check": {
+    "is_clinical": true,
+    "latency_ms": 0,
+    "success": true,
+    "ts": "2026-04-01T13:56:45.418734+00:00"
+  },
+  "config": {
+    "co2_baseline_ppm": 420.0,
+    "encounter_check_interval_secs": 120,
+    "encounter_detection_mode": "hybrid",
+    "encounter_detection_model": "fast-model",
+    "encounter_detection_nothink": false,
+    "encounter_merge_enabled": true,
+    "encounter_silence_trigger_secs": 45,
+    "fast_model": "fast-model",
+    "hybrid_confirm_window_secs": 180,
+    "hybrid_min_words_for_sensor_split": 500,
+    "idle_encounter_timeout_secs": 900,
+    "presence_absence_threshold_secs": 180,
+    "presence_debounce_secs": 10,
+    "presence_sensor_port": "",
+    "presence_sensor_url": "http://172.16.100.37",
+    "screen_capture_enabled": true,
+    "screen_capture_interval_secs": 60,
+    "shadow_active_method": "llm",
+    "sleep_end_hour": 6,
+    "sleep_mode_enabled": true,
+    "sleep_start_hour": 22,
+    "soap_custom_instructions": "I am a family physician in Ontario Canada. The medications, tests and such are what’s available in Canada. Do not repeat terms such as ‘The patient…’ I prefer clean and crisp notes. Do not start a stentence with ‘Patient reports’ - point form can be simple phrases. So instead of ‘The patient reports low back pain’ say ‘low back pain’. Use the past tense. Do not put procedures under ‘O’ and instead put them in either the ‘P’ section or a separate procedure note. ",
+    "soap_detail_level": 4,
+    "soap_format": "problem_based",
+    "soap_model": "soap-model",
+    "soap_model_fast": "soap-model",
+    "thermal_hot_pixel_threshold_c": 28.0
+  },
+  "detection_checks": [
+    {
+      "cleaned_word_count": 182,
+      "latency_ms": 1351,
+      "loop_state": {
+        "buffer_age_secs": 141.0,
+        "consecutive_failures": 0,
+        "manual_triggered": false,
+        "merge_back_count": 0,
+        "sensor_continuous_present": false,
+        "sensor_triggered": false
+      },
+      "parsed_complete": false,
+      "parsed_confidence": 0.95,
+      "parsed_end_index": null,
+      "prompt_system": "You MUST respond in English with ONLY a JSON object. No other text, no explanations, no markdown.\n\nYou are analyzing a continuous transcript from a medical office where the microphone records all day.\n\nYour task: determine if there is a TRANSITION POINT where one patient encounter ends and another begins, or where a patient encounter has clearly concluded.\n\nA completed encounter typically includes a clinical discussion and a concluding plan (e.g., medication changes, follow-up timing, referrals, or instructions). A short transcript that contains only vitals, greetings, or brief exchanges — with no clinical discussion or plan — is likely a pre-visit assessment still in progress, not a completed encounter. A nurse or medical assistant may see the patient before the doctor arrives to take vitals or ask initial questions — this is part of the same encounter, not a separate visit.\n\nEach segment includes elapsed time (MM:SS) from the start of the recording. Large gaps between timestamps may indicate silence, examination, or the room being empty between patients.\n\nIf you find a transition point or completed encounter, return:\n{\"complete\": true, \"end_segment_index\": <last segment index of the CONCLUDED encounter>, \"confidence\": <0.0-1.0>}\n\nIf the current discussion is still one ongoing encounter with no transition, return:\n{\"complete\": false, \"confidence\": <0.0-1.0>}\n\nRespond with ONLY the JSON object.",
+      "prompt_user": "Transcript (segments numbered with speaker labels):\n[114] (00:00) (Speaker 1 (59%)): Instead of me putting your bank to the mortgage. [115] (00:06) (Speaker 1 (62%)): Because in that way you're not, you know we're not. [116] (00:09) (Speaker 4 (61%)): Your things. [117] (00:11) (Speaker 4 (59%)): Hmm. [118] (00:17) (Speaker 1 (74%)): We have enough to make at least one good treatment. We're going to do that. [119] (00:22) (Dr Zohoor (63%)): Technically speaking. [120] (00:37) (Speaker 1 (65%)): Lots of bandages. [121] (00:43) (Speaker 1 (59%)): People know about. [122] (00:49) (Speaker 2 (50%)): So very close. [123] (00:51) (Speaker 1 (55%)): Five C's. One, yeah. Let's make one good reading. Thanks a lot for that. [124] (00:56) (Speaker 2 (51%)): Very sweetie. [125] (01:07) (Dr Zohoor (67%)): So let's get the. [126] (01:10) (Speaker 1 (67%)): Recognition for the actual treatment. [127] (01:15) (Speaker 1 (47%)): Here about. [128] (01:24) (Speaker 2 (52%)): Who is? [129] (01:27) (Speaker 1 (45%)): Connecting and reconnecting. [130] (01:39) (Dr Zohoor (65%)): You prefer Dave or David? Ah, Dave. [131] (01:47) (Dr Zohoor (69%)): The difficulty, of course, is that it's ah it's all shortened week. So day of the week [132] (01:52) (Dr Zohoor (73%)): The time of the day that's easiest for you. [133] (01:55) (Speaker 4 (61%)): 嗯。 [134] (01:58) (Speaker 2 (60%)): It doesn't really. [135] (01:59) (Speaker 5 (46%)): Really matter? I. It's even [136] (02:01) (Speaker 5 (73%)): Morning is actually like early in the morning. Is the nicest cause, you know I can get some of my drive done before the day starts and [137] (02:09) (Speaker 4 (62%)): And then you know. [138] (02:10) (Speaker 5 (65%)): That we struggle with. Okay. [139] (02:13) (Dr Zohoor (80%)): So next week, because it's a short week, it's. [140] (02:19) (Speaker 1 (51%)): I do wanna. [141] (02:20) (Dr Zohoor (70%)): Like if we're gonna do this. [142] (02:22) (Dr Zohoor (69%)): Just get going with it. [143] (02:24) (Speaker 1 (50%)): Um.\n\nReal-time context signals:\nCONTEXT: The presence sensor confirms someone is still in the room. Topic changes or pauses within the same visit are NOT transitions. Only split if there is strong evidence of a different patient (new name, new history intake, greeting a new person).",
+      "response_raw": "{\"complete\": false, \"confidence\": 0.95}",
+      "segment_range": [
+        114,
+        143
+      ],
+      "sensor_context": {
+        "departed": false,
+        "present": true,
+        "unknown": false
+      },
+      "success": true,
+      "ts": "2026-04-01T13:50:36.392645+00:00",
+      "word_count": 182
+    },
+    {
+      "cleaned_word_count": 432,
+      "latency_ms": 1728,
+      "loop_state": {
+        "buffer_age_secs": 263.0,
+        "consecutive_failures": 0,
+        "manual_triggered": false,
+        "merge_back_count": 0,
+        "sensor_continuous_present": false,
+        "sensor_triggered": false
+      },
+      "parsed_complete": false,
+      "parsed_confidence": 0.95,
+      "parsed_end_index": null,
+      "prompt_system": "You MUST respond in English with ONLY a JSON object. No other text, no explanations, no markdown.\n\nYou are analyzing a continuous transcript from a medical office where the microphone records all day.\n\nYour task: determine if there is a TRANSITION POINT where one patient encounter ends and another begins, or where a patient encounter has clearly concluded.\n\nA completed encounter typically includes a clinical discussion and a concluding plan (e.g., medication changes, follow-up timing, referrals, or instructions). A short transcript that contains only vitals, greetings, or brief exchanges — with no clinical discussion or plan — is likely a pre-visit assessment still in progress, not a completed encounter. A nurse or medical assistant may see the patient before the doctor arrives to take vitals or ask initial questions — this is part of the same encounter, not a separate visit.\n\nEach segment includes elapsed time (MM:SS) from the start of the recording. Large gaps between timestamps may indicate silence, examination, or the room being empty between patients.\n\nIf you find a transition point or completed encounter, return:\n{\"complete\": true, \"end_segment_index\": <last segment index of the CONCLUDED encounter>, \"confidence\": <0.0-1.0>}\n\nIf the current discussion is still one ongoing encounter with no transition, return:\n{\"complete\": false, \"confidence\": <0.0-1.0>}\n\nRespond with ONLY the JSON object.",
+      "prompt_user": "Transcript (segments numbered with speaker labels):\n[114] (00:00) (Speaker 1 (59%)): Instead of me putting your bank to the mortgage. [115] (00:06) (Speaker 1 (62%)): Because in that way you're not, you know we're not. [116] (00:09) (Speaker 4 (61%)): Your things. [117] (00:11) (Speaker 4 (59%)): Hmm. [118] (00:17) (Speaker 1 (74%)): We have enough to make at least one good treatment. We're going to do that. [119] (00:22) (Dr Zohoor (63%)): Technically speaking. [120] (00:37) (Speaker 1 (65%)): Lots of bandages. [121] (00:43) (Speaker 1 (59%)): People know about. [122] (00:49) (Speaker 2 (50%)): So very close. [123] (00:51) (Speaker 1 (55%)): Five C's. One, yeah. Let's make one good reading. Thanks a lot for that. [124] (00:56) (Speaker 2 (51%)): Very sweetie. [125] (01:07) (Dr Zohoor (67%)): So let's get the. [126] (01:10) (Speaker 1 (67%)): Recognition for the actual treatment. [127] (01:15) (Speaker 1 (47%)): Here about. [128] (01:24) (Speaker 2 (52%)): Who is? [129] (01:27) (Speaker 1 (45%)): Connecting and reconnecting. [130] (01:39) (Dr Zohoor (65%)): You prefer Dave or David? Ah, Dave. [131] (01:47) (Dr Zohoor (69%)): The difficulty, of course, is that it's ah it's all shortened week. So day of the week [132] (01:52) (Dr Zohoor (73%)): The time of the day that's easiest for you. [133] (01:55) (Speaker 4 (61%)): 嗯。 [134] (01:58) (Speaker 2 (60%)): It doesn't really. [135] (01:59) (Speaker 5 (46%)): Really matter? I. It's even [136] (02:01) (Speaker 5 (73%)): Morning is actually like early in the morning. Is the nicest cause, you know I can get some of my drive done before the day starts and [137] (02:09) (Speaker 4 (62%)): And then you know. [138] (02:10) (Speaker 5 (65%)): That we struggle with. Okay. [139] (02:13) (Dr Zohoor (80%)): So next week, because it's a short week, it's. [140] (02:19) (Speaker 1 (51%)): I do wanna. [141] (02:20) (Dr Zohoor (70%)): Like if we're gonna do this. [142] (02:22) (Dr Zohoor (69%)): Just get going with it. [143] (02:24) (Speaker 1 (50%)): Um. [144] (02:29) (Speaker 5 (55%)): Will be Friday. Does that work? [145] (02:34) (Speaker 2 (61%)): Thirteen. [146] (02:42) (Dr Zohoor (71%)): The the one thing is that now. [147] (02:44) (Dr Zohoor (67%)): To be honest, I don't think it should be a big factor. But although I'll do my best to numb [148] (02:49) (Speaker 1 (60%)): Some month, it's still like. [149] (02:52) (Dr Zohoor (80%)): The only way of numbing it is to inject numbing medication, which also burns. Yeah. So there's no way of making this pain-free. Um, it isn't that they're doing numbing sprays and stuff; It's that they just so [150] (03:08) (Dr Zohoor (71%)): But at the same time, you've gone through so much and care in this matter. I think you're aware; this is a painful situation. Yeah. [151] (03:16) (Dr Zohoor (71%)): Now, when it gets better. I didn't mention this last time, but I'll mention it. [152] (03:23) (Speaker 1 (69%)): Now, just as a FYI. [153] (03:25) (Speaker 1 (70%)): April tenth. [154] (03:29) (Speaker 1 (42%)): So this will go. [155] (03:31) (Speaker 4 (78%)): um. [156] (03:34) (Dr Zohoor (77%)): We are gonna also do a blood draw on this appointment, so just so you know in terms of hydration stuff. The [157] (03:42) (Speaker 4 (78%)): Um. [158] (03:45) (Dr Zohoor (66%)): If the if the wounds are healing well, we find that. [159] (03:49) (Dr Zohoor (79%)): Either we really give it a good try, and just not the treatment that works. Yeah, and a lot of it is dependent on the immunology; look how the [160] (03:59) (Dr Zohoor (71%)): What underlying disease condition is, and we. [161] (04:02) (Dr Zohoor (81%)): We just won't know until we're doing it, and I'm really hopeful because we've had good success with a lot of patients who have immune conditions for various reasons in various situations. But still. [162] (04:16) (Dr Zohoor (82%)): You know, ten years from now, a condition like lupus will probably be considered in different conditions.\n\nReal-time context signals:\nCONTEXT: The presence sensor confirms someone is still in the room. Topic changes or pauses within the same visit are NOT transitions. Only split if there is strong evidence of a different patient (new name, new history intake, greeting a new person).",
+      "response_raw": "{\"complete\": false, \"confidence\": 0.95}",
+      "segment_range": [
+        114,
+        162
+      ],
+      "sensor_context": {
+        "departed": false,
+        "present": true,
+        "unknown": false
+      },
+      "success": true,
+      "ts": "2026-04-01T13:52:38.143851+00:00",
+      "word_count": 432
+    },
+    {
+      "cleaned_word_count": 745,
+      "latency_ms": 2494,
+      "loop_state": {
+        "buffer_age_secs": 385.0,
+        "consecutive_failures": 0,
+        "manual_triggered": false,
+        "merge_back_count": 0,
+        "sensor_continuous_present": false,
+        "sensor_triggered": false
+      },
+      "parsed_complete": false,
+      "parsed_confidence": 0.95,
+      "parsed_end_index": null,
+      "prompt_system": "You MUST respond in English with ONLY a JSON object. No other text, no explanations, no markdown.\n\nYou are analyzing a continuous transcript from a medical office where the microphone records all day.\n\nYour task: determine if there is a TRANSITION POINT where one patient encounter ends and another begins, or where a patient encounter has clearly concluded.\n\nA completed encounter typically includes a clinical discussion and a concluding plan (e.g., medication changes, follow-up timing, referrals, or instructions). A short transcript that contains only vitals, greetings, or brief exchanges — with no clinical discussion or plan — is likely a pre-visit assessment still in progress, not a completed encounter. A nurse or medical assistant may see the patient before the doctor arrives to take vitals or ask initial questions — this is part of the same encounter, not a separate visit.\n\nEach segment includes elapsed time (MM:SS) from the start of the recording. Large gaps between timestamps may indicate silence, examination, or the room being empty between patients.\n\nIf you find a transition point or completed encounter, return:\n{\"complete\": true, \"end_segment_index\": <last segment index of the CONCLUDED encounter>, \"confidence\": <0.0-1.0>}\n\nIf the current discussion is still one ongoing encounter with no transition, return:\n{\"complete\": false, \"confidence\": <0.0-1.0>}\n\nRespond with ONLY the JSON object.",
+      "prompt_user": "Transcript (segments numbered with speaker labels):\n[114] (00:00) (Speaker 1 (59%)): Instead of me putting your bank to the mortgage. [115] (00:06) (Speaker 1 (62%)): Because in that way you're not, you know we're not. [116] (00:09) (Speaker 4 (61%)): Your things. [117] (00:11) (Speaker 4 (59%)): Hmm. [118] (00:17) (Speaker 1 (74%)): We have enough to make at least one good treatment. We're going to do that. [119] (00:22) (Dr Zohoor (63%)): Technically speaking. [120] (00:37) (Speaker 1 (65%)): Lots of bandages. [121] (00:43) (Speaker 1 (59%)): People know about. [122] (00:49) (Speaker 2 (50%)): So very close. [123] (00:51) (Speaker 1 (55%)): Five C's. One, yeah. Let's make one good reading. Thanks a lot for that. [124] (00:56) (Speaker 2 (51%)): Very sweetie. [125] (01:07) (Dr Zohoor (67%)): So let's get the. [126] (01:10) (Speaker 1 (67%)): Recognition for the actual treatment. [127] (01:15) (Speaker 1 (47%)): Here about. [128] (01:24) (Speaker 2 (52%)): Who is? [129] (01:27) (Speaker 1 (45%)): Connecting and reconnecting. [130] (01:39) (Dr Zohoor (65%)): You prefer Dave or David? Ah, Dave. [131] (01:47) (Dr Zohoor (69%)): The difficulty, of course, is that it's ah it's all shortened week. So day of the week [132] (01:52) (Dr Zohoor (73%)): The time of the day that's easiest for you. [133] (01:55) (Speaker 4 (61%)): 嗯。 [134] (01:58) (Speaker 2 (60%)): It doesn't really. [135] (01:59) (Speaker 5 (46%)): Really matter? I. It's even [136] (02:01) (Speaker 5 (73%)): Morning is actually like early in the morning. Is the nicest cause, you know I can get some of my drive done before the day starts and [137] (02:09) (Speaker 4 (62%)): And then you know. [138] (02:10) (Speaker 5 (65%)): That we struggle with. Okay. [139] (02:13) (Dr Zohoor (80%)): So next week, because it's a short week, it's. [140] (02:19) (Speaker 1 (51%)): I do wanna. [141] (02:20) (Dr Zohoor (70%)): Like if we're gonna do this. [142] (02:22) (Dr Zohoor (69%)): Just get going with it. [143] (02:24) (Speaker 1 (50%)): Um. [144] (02:29) (Speaker 5 (55%)): Will be Friday. Does that work? [145] (02:34) (Speaker 2 (61%)): Thirteen. [146] (02:42) (Dr Zohoor (71%)): The the one thing is that now. [147] (02:44) (Dr Zohoor (67%)): To be honest, I don't think it should be a big factor. But although I'll do my best to numb [148] (02:49) (Speaker 1 (60%)): Some month, it's still like. [149] (02:52) (Dr Zohoor (80%)): The only way of numbing it is to inject numbing medication, which also burns. Yeah. So there's no way of making this pain-free. Um, it isn't that they're doing numbing sprays and stuff; It's that they just so [150] (03:08) (Dr Zohoor (71%)): But at the same time, you've gone through so much and care in this matter. I think you're aware; this is a painful situation. Yeah. [151] (03:16) (Dr Zohoor (71%)): Now, when it gets better. I didn't mention this last time, but I'll mention it. [152] (03:23) (Speaker 1 (69%)): Now, just as a FYI. [153] (03:25) (Speaker 1 (70%)): April tenth. [154] (03:29) (Speaker 1 (42%)): So this will go. [155] (03:31) (Speaker 4 (78%)): um. [156] (03:34) (Dr Zohoor (77%)): We are gonna also do a blood draw on this appointment, so just so you know in terms of hydration stuff. The [157] (03:42) (Speaker 4 (78%)): Um. [158] (03:45) (Dr Zohoor (66%)): If the if the wounds are healing well, we find that. [159] (03:49) (Dr Zohoor (79%)): Either we really give it a good try, and just not the treatment that works. Yeah, and a lot of it is dependent on the immunology; look how the [160] (03:59) (Dr Zohoor (71%)): What underlying disease condition is, and we. [161] (04:02) (Dr Zohoor (81%)): We just won't know until we're doing it, and I'm really hopeful because we've had good success with a lot of patients who have immune conditions for various reasons in various situations. But still. [162] (04:16) (Dr Zohoor (82%)): You know, ten years from now, a condition like lupus will probably be considered in different conditions. [163] (04:22) (Dr Zohoor (77%)): We're putting under one name, so you know it's one of those things where in medicine we are always finding that things are not exactly as we thought. And so I don't know, but let's imagine for a second that it goes well. [164] (04:37) (Dr Zohoor (79%)): Initially, the goal would be to get the most resistant ones. [165] (04:41) (Dr Zohoor (68%)): The place where traditional methods are useful. [166] (04:44) (Dr Zohoor (72%)): If at the moment they're just kind of holding it at bay, maybe or it's not worsening. But the goal is to just kind of reverse that tide and then get things moving. [167] (04:54) (Dr Zohoor (74%)): Let's imagine for a moment that we've done that, and the—and what—we—we now have mostly closed wounds. There is a device that we use; it's kind of like a [168] (05:04) (Speaker 1 (62%)): Pressure washer. [169] (05:06) (Dr Zohoor (64%)): So we can put a medication in it. [170] (05:08) (Speaker 1 (54%)): And it, it, it. [171] (05:11) (Dr Zohoor (74%)): It's like a pressure washer, meaning that it embeds it deep into the wall. [172] (05:14) (Dr Zohoor (82%)): It's developed for the burn unit, where people have horrible burns and they're getting regular. [173] (05:23) (Speaker 1 (55%)): You know, cleaning and. [174] (05:26) (Speaker 1 (73%)): All that stuff, yeah. [175] (05:28) (Speaker 1 (60%)): And it's horribly painful. [176] (05:30) (Dr Zohoor (70%)): So this was developed as a way of doing that work far more. [177] (05:35) (Dr Zohoor (63%)): In a far less painful way. [178] (05:38) (Speaker 1 (62%)): And. [179] (05:39) (Dr Zohoor (82%)): So it kind of helps both with the cleansing because this can really be clean, if you will. And also, uh, we we have the option putting medication through it so it's [180] (05:50) (Dr Zohoor (83%)): Few millimeters into the interdental area, and so it will help exactly. So then we can not use needles um and just do it that way. I'm only mentioning it because there is a up to certain point t here.'s a much far less painful on more i guess painless way [181] (06:10) (Speaker 2 (49%)): Doing it. [182] (06:11) (Dr Zohoor (73%)): I didn't mention it because at the moment, first thing is just knowing that this is. [183] (06:18) (Dr Zohoor (78%)): Going to be the thing that helps or not, and we don't know that.\n\nReal-time context signals:\nCONTEXT: The presence sensor confirms someone is still in the room. Topic changes or pauses within the same visit are NOT transitions. Only split if there is strong evidence of a different patient (new name, new history intake, greeting a new person).",
+      "response_raw": "{\"complete\": false, \"confidence\": 0.95}",
+      "segment_range": [
+        114,
+        183
+      ],
+      "sensor_context": {
+        "departed": false,
+        "present": true,
+        "unknown": false
+      },
+      "success": true,
+      "ts": "2026-04-01T13:54:40.671843+00:00",
+      "word_count": 745
+    },
+    {
+      "cleaned_word_count": 1037,
+      "latency_ms": 2750,
+      "loop_state": {
+        "buffer_age_secs": 507.0,
+        "consecutive_failures": 0,
+        "manual_triggered": false,
+        "merge_back_count": 0,
+        "sensor_continuous_present": false,
+        "sensor_triggered": false
+      },
+      "parsed_complete": true,
+      "parsed_confidence": 0.92,
+      "parsed_end_index": 197,
+      "prompt_system": "You MUST respond in English with ONLY a JSON object. No other text, no explanations, no markdown.\n\nYou are analyzing a continuous transcript from a medical office where the microphone records all day.\n\nYour task: determine if there is a TRANSITION POINT where one patient encounter ends and another begins, or where a patient encounter has clearly concluded.\n\nA completed encounter typically includes a clinical discussion and a concluding plan (e.g., medication changes, follow-up timing, referrals, or instructions). A short transcript that contains only vitals, greetings, or brief exchanges — with no clinical discussion or plan — is likely a pre-visit assessment still in progress, not a completed encounter. A nurse or medical assistant may see the patient before the doctor arrives to take vitals or ask initial questions — this is part of the same encounter, not a separate visit.\n\nEach segment includes elapsed time (MM:SS) from the start of the recording. Large gaps between timestamps may indicate silence, examination, or the room being empty between patients.\n\nIf you find a transition point or completed encounter, return:\n{\"complete\": true, \"end_segment_index\": <last segment index of the CONCLUDED encounter>, \"confidence\": <0.0-1.0>}\n\nIf the current discussion is still one ongoing encounter with no transition, return:\n{\"complete\": false, \"confidence\": <0.0-1.0>}\n\nRespond with ONLY the JSON object.",
+      "prompt_user": "Transcript (segments numbered with speaker labels):\n[114] (00:00) (Speaker 1 (59%)): Instead of me putting your bank to the mortgage. [115] (00:06) (Speaker 1 (62%)): Because in that way you're not, you know we're not. [116] (00:09) (Speaker 4 (61%)): Your things. [117] (00:11) (Speaker 4 (59%)): Hmm. [118] (00:17) (Speaker 1 (74%)): We have enough to make at least one good treatment. We're going to do that. [119] (00:22) (Dr Zohoor (63%)): Technically speaking. [120] (00:37) (Speaker 1 (65%)): Lots of bandages. [121] (00:43) (Speaker 1 (59%)): People know about. [122] (00:49) (Speaker 2 (50%)): So very close. [123] (00:51) (Speaker 1 (55%)): Five C's. One, yeah. Let's make one good reading. Thanks a lot for that. [124] (00:56) (Speaker 2 (51%)): Very sweetie. [125] (01:07) (Dr Zohoor (67%)): So let's get the. [126] (01:10) (Speaker 1 (67%)): Recognition for the actual treatment. [127] (01:15) (Speaker 1 (47%)): Here about. [128] (01:24) (Speaker 2 (52%)): Who is? [129] (01:27) (Speaker 1 (45%)): Connecting and reconnecting. [130] (01:39) (Dr Zohoor (65%)): You prefer Dave or David? Ah, Dave. [131] (01:47) (Dr Zohoor (69%)): The difficulty, of course, is that it's ah it's all shortened week. So day of the week [132] (01:52) (Dr Zohoor (73%)): The time of the day that's easiest for you. [133] (01:55) (Speaker 4 (61%)): 嗯。 [134] (01:58) (Speaker 2 (60%)): It doesn't really. [135] (01:59) (Speaker 5 (46%)): Really matter? I. It's even [136] (02:01) (Speaker 5 (73%)): Morning is actually like early in the morning. Is the nicest cause, you know I can get some of my drive done before the day starts and [137] (02:09) (Speaker 4 (62%)): And then you know. [138] (02:10) (Speaker 5 (65%)): That we struggle with. Okay. [139] (02:13) (Dr Zohoor (80%)): So next week, because it's a short week, it's. [140] (02:19) (Speaker 1 (51%)): I do wanna. [141] (02:20) (Dr Zohoor (70%)): Like if we're gonna do this. [142] (02:22) (Dr Zohoor (69%)): Just get going with it. [143] (02:24) (Speaker 1 (50%)): Um. [144] (02:29) (Speaker 5 (55%)): Will be Friday. Does that work? [145] (02:34) (Speaker 2 (61%)): Thirteen. [146] (02:42) (Dr Zohoor (71%)): The the one thing is that now. [147] (02:44) (Dr Zohoor (67%)): To be honest, I don't think it should be a big factor. But although I'll do my best to numb [148] (02:49) (Speaker 1 (60%)): Some month, it's still like. [149] (02:52) (Dr Zohoor (80%)): The only way of numbing it is to inject numbing medication, which also burns. Yeah. So there's no way of making this pain-free. Um, it isn't that they're doing numbing sprays and stuff; It's that they just so [150] (03:08) (Dr Zohoor (71%)): But at the same time, you've gone through so much and care in this matter. I think you're aware; this is a painful situation. Yeah. [151] (03:16) (Dr Zohoor (71%)): Now, when it gets better. I didn't mention this last time, but I'll mention it. [152] (03:23) (Speaker 1 (69%)): Now, just as a FYI. [153] (03:25) (Speaker 1 (70%)): April tenth. [154] (03:29) (Speaker 1 (42%)): So this will go. [155] (03:31) (Speaker 4 (78%)): um. [156] (03:34) (Dr Zohoor (77%)): We are gonna also do a blood draw on this appointment, so just so you know in terms of hydration stuff. The [157] (03:42) (Speaker 4 (78%)): Um. [158] (03:45) (Dr Zohoor (66%)): If the if the wounds are healing well, we find that. [159] (03:49) (Dr Zohoor (79%)): Either we really give it a good try, and just not the treatment that works. Yeah, and a lot of it is dependent on the immunology; look how the [160] (03:59) (Dr Zohoor (71%)): What underlying disease condition is, and we. [161] (04:02) (Dr Zohoor (81%)): We just won't know until we're doing it, and I'm really hopeful because we've had good success with a lot of patients who have immune conditions for various reasons in various situations. But still. [162] (04:16) (Dr Zohoor (82%)): You know, ten years from now, a condition like lupus will probably be considered in different conditions. [163] (04:22) (Dr Zohoor (77%)): We're putting under one name, so you know it's one of those things where in medicine we are always finding that things are not exactly as we thought. And so I don't know, but let's imagine for a second that it goes well. [164] (04:37) (Dr Zohoor (79%)): Initially, the goal would be to get the most resistant ones. [165] (04:41) (Dr Zohoor (68%)): The place where traditional methods are useful. [166] (04:44) (Dr Zohoor (72%)): If at the moment they're just kind of holding it at bay, maybe or it's not worsening. But the goal is to just kind of reverse that tide and then get things moving. [167] (04:54) (Dr Zohoor (74%)): Let's imagine for a moment that we've done that, and the—and what—we—we now have mostly closed wounds. There is a device that we use; it's kind of like a [168] (05:04) (Speaker 1 (62%)): Pressure washer. [169] (05:06) (Dr Zohoor (64%)): So we can put a medication in it. [170] (05:08) (Speaker 1 (54%)): And it, it, it. [171] (05:11) (Dr Zohoor (74%)): It's like a pressure washer, meaning that it embeds it deep into the wall. [172] (05:14) (Dr Zohoor (82%)): It's developed for the burn unit, where people have horrible burns and they're getting regular. [173] (05:23) (Speaker 1 (55%)): You know, cleaning and. [174] (05:26) (Speaker 1 (73%)): All that stuff, yeah. [175] (05:28) (Speaker 1 (60%)): And it's horribly painful. [176] (05:30) (Dr Zohoor (70%)): So this was developed as a way of doing that work far more. [177] (05:35) (Dr Zohoor (63%)): In a far less painful way. [178] (05:38) (Speaker 1 (62%)): And. [179] (05:39) (Dr Zohoor (82%)): So it kind of helps both with the cleansing because this can really be clean, if you will. And also, uh, we we have the option putting medication through it so it's [180] (05:50) (Dr Zohoor (83%)): Few millimeters into the interdental area, and so it will help exactly. So then we can not use needles um and just do it that way. I'm only mentioning it because there is a up to certain point t here.'s a much far less painful on more i guess painless way [181] (06:10) (Speaker 2 (49%)): Doing it. [182] (06:11) (Dr Zohoor (73%)): I didn't mention it because at the moment, first thing is just knowing that this is. [183] (06:18) (Dr Zohoor (78%)): Going to be the thing that helps or not, and we don't know that. [184] (06:22) (Dr Zohoor (75%)): Fine, it helps. There's just a lot of different options in terms of where we go with it. Okay. So I just wanted to mention because then you know [185] (06:29) (Dr Zohoor (79%)): I create these things, and then we try it. And we're like, \"Well, that didn't work.\" That yeah was not cool, right? Yes, sir. There are there are other ways for treatments so that won't exactly. So um, so I booked it on Friday next week. Um, and then we'll do we'll do the treatment is actually relatively quick. We just kind of if you don't mind bringing the because we just don't have home care stuff here. [186] (06:54) (Dr Zohoor (63%)): If you're wondering, yeah. Because that, yeah, and then um. [187] (06:59) (Speaker 1 (54%)): Then we'll do the treatment. [188] (07:01) (Dr Zohoor (77%)): And most of it is actually, most of the time, is taking dressing up and dressing back on as a full step for three hundred steps out. Exactly, exactly. And then um, and then the goal would be if we can [189] (07:14) (Speaker 1 (56%)): To be on top of it weekly or biweekly. [190] (07:17) (Dr Zohoor (64%)): Just to keep the, the signaling going. Um. [191] (07:21) (Dr Zohoor (77%)): And then the so schedule something like that. [192] (07:24) (Speaker 4 (69%)): Wow. [193] (07:25) (Speaker 1 (50%)): Yeah. [194] (07:26) (Dr Zohoor (75%)): If we're finding good response, we're seeing yes. This area seems to be shrinking somewhat; this other margin is you know this other one's a bit smaller and so on. [195] (07:36) (Dr Zohoor (66%)): That then gives us a sense of okay, yes. This is a way that we can yeah We can do this and take it forward And then and then we just fine tune it Just like everything else to make it work better [196] (07:48) (Speaker 5 (49%)): See you next week. All right, have a good long weekend. Yeah, see you later. [197] (07:52) (Speaker 4 (63%)): Thank you. [198] (07:56) (Speaker 2 (63%)): Oh, it's straight through there. [199] (08:01) (Speaker 4 (74%)): Okay. [200] (08:07) (Speaker 4 (75%)): I just turn over to okay.\n\nReal-time context signals:\nCONTEXT: The presence sensor confirms someone is still in the room. Topic changes or pauses within the same visit are NOT transitions. Only split if there is strong evidence of a different patient (new name, new history intake, greeting a new person).",
+      "response_raw": "{\"complete\": true, \"end_segment_index\": 197, \"confidence\": 0.92}",
+      "segment_range": [
+        114,
+        200
+      ],
+      "sensor_context": {
+        "departed": false,
+        "present": true,
+        "unknown": false
+      },
+      "success": true,
+      "ts": "2026-04-01T13:56:43.448261+00:00",
+      "word_count": 1037
+    }
+  ],
+  "merge_check": {
+    "curr_head_excerpt": "Speaker 1 (59%): Instead of me putting your bank to the mortgage. Speaker 1 (62%): Because in that way you're not, you know we're not. Speaker 4 (61%): Your things. Speaker 4 (59%): Hmm. Speaker 1 (74%): We have enough to make at least one good treatment. We're going to do that. Dr Zohoor (63%): Technically speaking. Speaker 1 (65%): Lots of bandages. Speaker 1 (59%): People know about. Speaker 2 (50%): So very close. Speaker 1 (55%): Five C's. One, yeah. Let's make one good reading. Thanks a lot for that. Speaker 2 (51%): Very sweetie. Dr Zohoor (67%): So let's get the. Speaker 1 (67%): Recognition for the actual treatment. Speaker 1 (47%): Here about. Speaker 2 (52%): Who is? Speaker 1 (45%): Connecting and reconnecting. Dr Zohoor (65%): You prefer Dave or David? Ah, Dave. Dr Zohoor (69%): The difficulty, of course, is that it's ah it's all shortened week. So day of the week Dr Zohoor (73%): The time of the day that's easiest for you. Speaker 4 (61%): 嗯。 Speaker 2 (60%): It doesn't really. Speaker 5 (46%): Really matter? I. It's even Speaker 5 (73%): Morning is actually like early in the morning. Is the nicest cause, you know I can get some of my drive done before the day starts and Speaker 4 (62%): And then you know. Speaker 5 (65%): That we struggle with. Okay. Dr Zohoor (80%): So next week, because it's a short week, it's. Speaker 1 (51%): I do wanna. Dr Zohoor (70%): Like if we're gonna do this. Dr Zohoor (69%): Just get going with it. Speaker 1 (50%): Um. Speaker 5 (55%): Will be Friday. Does that work? Speaker 2 (61%): Thirteen. Dr Zohoor (71%): The the one thing is that now. Dr Zohoor (67%): To be honest, I don't think it should be a big factor. But although I'll do my best to numb Speaker 1 (60%): Some month, it's still like. Dr Zohoor (80%): The only way of numbing it is to inject numbing medication, which also burns. Yeah. So there's no way of making this pain-free. Um, it isn't that they're doing numbing sprays and stuff; It's that they just so Dr Zohoor (71%): But at the same time, you've gone through so much and care in this matter. I think you're aware; this is a painful situation. Yeah. Dr Zohoor (71%): Now, when it gets better. I didn't mention this last time, but I'll mention it. Speaker 1 (69%): Now, just as a FYI. Speaker 1 (70%): April tenth. Speaker 1 (42%): So this will go. Speaker 4 (78%): um. Dr Zohoor (77%): We are gonna also do a blood draw on this appointment, so just so you know in terms of hydration stuff. The Speaker 4 (78%): Um. Dr Zohoor (66%): If the if the wounds are healing well, we find that. Dr Zohoor (79%): Either we really give it a good try, and just not the treatment that works. Yeah, and",
+    "latency_ms": 2957,
+    "parsed_reason": "\"The first excerpt concludes with a clear farewell ('We'll do this next time I see you') and the scheduling of a future appointment, indicating the end of a visit. The second excerpt begins with disjointed, unrelated conversation ('Instead of me putting your bank to the mortgage') and a new greeting phase where the doctor asks for the patient's preferred name ('Dave or David'), suggesting a different patient or a completely new encounter rather than a continuation of the previous one.\"",
+    "parsed_same_encounter": false,
+    "prev_session_id": "c3ac36bc-822c-4e60-937b-0fe50a7cf9b6",
+    "prev_tail_excerpt": "Zohoor (84%): We start with the most resistant ones and the largest ones. If we're going to go through this, you need to know that. Dr Zohoor (66%): This is going to help with the things that, usually put us right like. Dr Zohoor (75%): It helps you a small wound that difficult wounds get what. That's not why you're here. Dr Zohoor (64%): As the wounds get smaller, though. Dr Zohoor (60%): Each treatment then goes further. Dr Zohoor (60%): So we can then use. Dr Zohoor (68%): You can you can target more as we go along. Dr Zohoor (75%): The first, the first couple treatments is really to be honest proof of concept to show that. Dr Zohoor (65%): This does help with your particular situation. Dr Zohoor (61%): If we can show that, then. Dr Zohoor (74%): The rest is just purely a matter of optimization. It becomes a matter of how frequently we treat, what volume, how far whether it's as long as we know that this treatment is effective in terms of that then the rest is just purely Speaker 1 (65%): Figuring out the parameters of it. Dr Zohoor (76%): Because each, each patient is quite different in these scenarios. Speaker 1 (62%): I will drive this morning. Speaker 2 (62%): Okay. Speaker 1 (55%): Not too much. Speaker 1 (64%): I may just switch lanes. Speaker 2 (66%): Struggle. Speaker 1 (61%): Anant. Speaker 4 (52%): Over. Speaker 2 (55%): There's a lot of blood drawn. Speaker 2 (47%): Well. Speaker 5 (43%): Well, a lot of blood work. Speaker 1 (55%): I just had a different opportunity to take that. Speaker 1 (59%): Take your time, give me thoughts. Speaker 1 (57%): It's just that there's a lot of good information. Speaker 1 (49%): That's it. Speaker 1 (63%): Or veins probably been targeted a few times. Speaker 2 (68%): Just don't say. Speaker 1 (50%): So that about all the producing today. Speaker 1 (57%): Things that are. Dr Zohoor (67%): I can see why you needed the varicose vein stripping for. Speaker 1 (51%): Pretty bad. Speaker 2 (65%): You can tell that by. Speaker 2 (63%): A few. Speaker 1 (58%): But your veins have. Speaker 1 (62%): Valves of them are leaking. Dr Zohoor (64%): So obviously, the with the legs because of gravity is more obvious. Speaker 2 (61%): I'm gonna draw every time. Speaker 4 (60%): I remember love. Speaker 1 (51%): Huh. Speaker 1 (72%): Oh, give me enough for the one treatment. Speaker 1 (60%): Let me do that. Speaker 1 (43%): Ideally, we like a minute. Speaker 1 (61%): How often do you let go? Speaker 1 (68%): And I think it's. It was more. Dr Zohoor (76%): Nina, doing good job today. But we'll do this next time I see you. We'll do a treatment book you for a treatment when that visit. We're also going to do another blood draw.",
+    "prompt_system": "You are reviewing two consecutive transcript excerpts from a medical office where a microphone records all day.\n\nThe system split these into two separate encounters, but they may actually be the SAME patient visit that was incorrectly split (e.g., due to a pause, phone call, or silence during an examination).\n\nDetermine if both excerpts are from the SAME patient encounter or DIFFERENT encounters.\n\nSigns they are the SAME encounter:\n- Same patient name or context referenced\n- Continuation of the same clinical discussion\n- No farewell/greeting between them\n- Natural pause (examination, looking at charts) rather than patient change\n- Same medical condition being discussed from different angles\n\nSigns they are DIFFERENT encounters:\n- Different patient names or contexts\n- A farewell followed by a new greeting\n- Clearly different clinical topics with no continuity\n\nReturn JSON:\n{\"same_encounter\": true, \"reason\": \"brief explanation\"}\nor\n{\"same_encounter\": false, \"reason\": \"brief explanation\"}\n\nReturn ONLY the JSON object, nothing else.",
+    "prompt_user": "EXCERPT FROM END OF PREVIOUS ENCOUNTER:\nZohoor (84%): We start with the most resistant ones and the largest ones. If we're going to go through this, you need to know that. Dr Zohoor (66%): This is going to help with the things that, usually put us right like. Dr Zohoor (75%): It helps you a small wound that difficult wounds get what. That's not why you're here. Dr Zohoor (64%): As the wounds get smaller, though. Dr Zohoor (60%): Each treatment then goes further. Dr Zohoor (60%): So we can then use. Dr Zohoor (68%): You can you can target more as we go along. Dr Zohoor (75%): The first, the first couple treatments is really to be honest proof of concept to show that. Dr Zohoor (65%): This does help with your particular situation. Dr Zohoor (61%): If we can show that, then. Dr Zohoor (74%): The rest is just purely a matter of optimization. It becomes a matter of how frequently we treat, what volume, how far whether it's as long as we know that this treatment is effective in terms of that then the rest is just purely Speaker 1 (65%): Figuring out the parameters of it. Dr Zohoor (76%): Because each, each patient is quite different in these scenarios. Speaker 1 (62%): I will drive this morning. Speaker 2 (62%): Okay. Speaker 1 (55%): Not too much. Speaker 1 (64%): I may just switch lanes. Speaker 2 (66%): Struggle. Speaker 1 (61%): Anant. Speaker 4 (52%): Over. Speaker 2 (55%): There's a lot of blood drawn. Speaker 2 (47%): Well. Speaker 5 (43%): Well, a lot of blood work. Speaker 1 (55%): I just had a different opportunity to take that. Speaker 1 (59%): Take your time, give me thoughts. Speaker 1 (57%): It's just that there's a lot of good information. Speaker 1 (49%): That's it. Speaker 1 (63%): Or veins probably been targeted a few times. Speaker 2 (68%): Just don't say. Speaker 1 (50%): So that about all the producing today. Speaker 1 (57%): Things that are. Dr Zohoor (67%): I can see why you needed the varicose vein stripping for. Speaker 1 (51%): Pretty bad. Speaker 2 (65%): You can tell that by. Speaker 2 (63%): A few. Speaker 1 (58%): But your veins have. Speaker 1 (62%): Valves of them are leaking. Dr Zohoor (64%): So obviously, the with the legs because of gravity is more obvious. Speaker 2 (61%): I'm gonna draw every time. Speaker 4 (60%): I remember love. Speaker 1 (51%): Huh. Speaker 1 (72%): Oh, give me enough for the one treatment. Speaker 1 (60%): Let me do that. Speaker 1 (43%): Ideally, we like a minute. Speaker 1 (61%): How often do you let go? Speaker 1 (68%): And I think it's. It was more. Dr Zohoor (76%): Nina, doing good job today. But we'll do this next time I see you. We'll do a treatment book you for a treatment when that visit. We're also going to do another blood draw.\n\n---\n\nEXCERPT FROM START OF NEXT ENCOUNTER:\nSpeaker 1 (59%): Instead of me putting your bank to the mortgage. Speaker 1 (62%): Because in that way you're not, you know we're not. Speaker 4 (61%): Your things. Speaker 4 (59%): Hmm. Speaker 1 (74%): We have enough to make at least one good treatment. We're going to do that. Dr Zohoor (63%): Technically speaking. Speaker 1 (65%): Lots of bandages. Speaker 1 (59%): People know about. Speaker 2 (50%): So very close. Speaker 1 (55%): Five C's. One, yeah. Let's make one good reading. Thanks a lot for that. Speaker 2 (51%): Very sweetie. Dr Zohoor (67%): So let's get the. Speaker 1 (67%): Recognition for the actual treatment. Speaker 1 (47%): Here about. Speaker 2 (52%): Who is? Speaker 1 (45%): Connecting and reconnecting. Dr Zohoor (65%): You prefer Dave or David? Ah, Dave. Dr Zohoor (69%): The difficulty, of course, is that it's ah it's all shortened week. So day of the week Dr Zohoor (73%): The time of the day that's easiest for you. Speaker 4 (61%): 嗯。 Speaker 2 (60%): It doesn't really. Speaker 5 (46%): Really matter? I. It's even Speaker 5 (73%): Morning is actually like early in the morning. Is the nicest cause, you know I can get some of my drive done before the day starts and Speaker 4 (62%): And then you know. Speaker 5 (65%): That we struggle with. Okay. Dr Zohoor (80%): So next week, because it's a short week, it's. Speaker 1 (51%): I do wanna. Dr Zohoor (70%): Like if we're gonna do this. Dr Zohoor (69%): Just get going with it. Speaker 1 (50%): Um. Speaker 5 (55%): Will be Friday. Does that work? Speaker 2 (61%): Thirteen. Dr Zohoor (71%): The the one thing is that now. Dr Zohoor (67%): To be honest, I don't think it should be a big factor. But although I'll do my best to numb Speaker 1 (60%): Some month, it's still like. Dr Zohoor (80%): The only way of numbing it is to inject numbing medication, which also burns. Yeah. So there's no way of making this pain-free. Um, it isn't that they're doing numbing sprays and stuff; It's that they just so Dr Zohoor (71%): But at the same time, you've gone through so much and care in this matter. I think you're aware; this is a painful situation. Yeah. Dr Zohoor (71%): Now, when it gets better. I didn't mention this last time, but I'll mention it. Speaker 1 (69%): Now, just as a FYI. Speaker 1 (70%): April tenth. Speaker 1 (42%): So this will go. Speaker 4 (78%): um. Dr Zohoor (77%): We are gonna also do a blood draw on this appointment, so just so you know in terms of hydration stuff. The Speaker 4 (78%): Um. Dr Zohoor (66%): If the if the wounds are healing well, we find that. Dr Zohoor (79%): Either we really give it a good try, and just not the treatment that works. Yeah, and",
+    "response_raw": "{\"same_encounter\": false, \"reason\": \"The first excerpt concludes with a clear farewell ('We'll do this next time I see you') and the scheduling of a future appointment, indicating the end of a visit. The second excerpt begins with disjointed, unrelated conversation ('Instead of me putting your bank to the mortgage') and a new greeting phase where the doctor asks for the patient's preferred name ('Dave or David'), suggesting a different patient or a completely new encounter rather than a continuation of the previous one.\"}",
+    "success": true,
+    "ts": "2026-04-01T13:56:57.475504+00:00"
+  },
+  "name_tracker": {
+    "majority_name": "David Albert William Krabbe",
+    "unique_names": [
+      "David Albert William Krabbe"
+    ],
+    "vote_count": 6
+  },
+  "outcome": {
+    "detection_method": "hybrid_llm",
+    "encounter_number": 2,
+    "is_clinical": true,
+    "patient_name": "David Albert William Krabbe",
+    "session_id": "573e02a8-4e6e-47a4-9fdd-0b34e5ac0695",
+    "was_merged": false,
+    "word_count": 1277
+  },
+  "schema_version": 2,
+  "segments": [
+    {
+      "end_ms": 1112160,
+      "index": 120,
+      "speaker_confidence": 0.65466523,
+      "speaker_id": "Speaker 1",
+      "start_ms": 1110228,
+      "text": "Lots of bandages.",
+      "ts": "2026-04-01T13:48:49.027843+00:00"
+    },
+    {
+      "end_ms": 1117728,
+      "index": 121,
+      "speaker_confidence": 0.5882851,
+      "speaker_id": "Speaker 1",
+      "start_ms": 1116020,
+      "text": "People know about.",
+      "ts": "2026-04-01T13:48:54.613198+00:00"
+    },
+    {
+      "end_ms": 1124416,
+      "index": 122,
+      "speaker_confidence": 0.50056285,
+      "speaker_id": "Speaker 2",
+      "start_ms": 1122356,
+      "text": "So very close.",
+      "ts": "2026-04-01T13:49:01.285773+00:00"
+    },
+    {
+      "end_ms": 1128320,
+      "index": 123,
+      "speaker_confidence": 0.5487669,
+      "speaker_id": "Speaker 1",
+      "start_ms": 1124244,
+      "text": "Five C's. One, yeah. Let's make one good reading. Thanks a lot for that.",
+      "ts": "2026-04-01T13:49:05.445267+00:00"
+    },
+    {
+      "end_ms": 1130528,
+      "index": 124,
+      "speaker_confidence": 0.51325,
+      "speaker_id": "Speaker 2",
+      "start_ms": 1128436,
+      "text": "Very sweetie.",
+      "ts": "2026-04-01T13:49:07.340949+00:00"
+    },
+    {
+      "end_ms": 1142592,
+      "index": 125,
+      "speaker_confidence": 0.67287934,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 1140372,
+      "text": "So let's get the.",
+      "ts": "2026-04-01T13:49:19.828809+00:00"
+    },
+    {
+      "end_ms": 1145024,
+      "index": 126,
+      "speaker_confidence": 0.66683817,
+      "speaker_id": "Speaker 1",
+      "start_ms": 1142484,
+      "text": "Recognition for the actual treatment.",
+      "ts": "2026-04-01T13:49:21.980729+00:00"
+    },
+    {
+      "end_ms": 1148960,
+      "index": 127,
+      "speaker_confidence": 0.4746407,
+      "speaker_id": "Speaker 1",
+      "start_ms": 1147764,
+      "text": "Here about.",
+      "ts": "2026-04-01T13:49:25.905482+00:00"
+    },
+    {
+      "end_ms": 1157728,
+      "index": 128,
+      "speaker_confidence": 0.5232592,
+      "speaker_id": "Speaker 2",
+      "start_ms": 1156500,
+      "text": "Who is?",
+      "ts": "2026-04-01T13:49:34.609005+00:00"
+    },
+    {
+      "end_ms": 1161024,
+      "index": 129,
+      "speaker_confidence": 0.45182246,
+      "speaker_id": "Speaker 1",
+      "start_ms": 1159604,
+      "text": "Connecting and reconnecting.",
+      "ts": "2026-04-01T13:49:37.888990+00:00"
+    },
+    {
+      "end_ms": 1175168,
+      "index": 130,
+      "speaker_confidence": 0.6534098,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 1172116,
+      "text": "You prefer Dave or David? Ah, Dave.",
+      "ts": "2026-04-01T13:49:52.218304+00:00"
+    },
+    {
+      "end_ms": 1184704,
+      "index": 131,
+      "speaker_confidence": 0.68674874,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 1179796,
+      "text": "The difficulty, of course, is that it's ah it's all shortened week. So day of the week",
+      "ts": "2026-04-01T13:50:02.046357+00:00"
+    },
+    {
+      "end_ms": 1187392,
+      "index": 132,
+      "speaker_confidence": 0.7339891,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 1184724,
+      "text": "The time of the day that's easiest for you.",
+      "ts": "2026-04-01T13:50:04.420089+00:00"
+    },
+    {
+      "end_ms": 1188288,
+      "index": 133,
+      "speaker_confidence": 0.6129764,
+      "speaker_id": "Speaker 4",
+      "start_ms": 1187444,
+      "text": "嗯。",
+      "ts": "2026-04-01T13:50:05.116674+00:00"
+    },
+    {
+      "end_ms": 1191968,
+      "index": 134,
+      "speaker_confidence": 0.6021081,
+      "speaker_id": "Speaker 2",
+      "start_ms": 1190804,
+      "text": "It doesn't really.",
+      "ts": "2026-04-01T13:50:08.868010+00:00"
+    },
+    {
+      "end_ms": 1194112,
+      "index": 135,
+      "speaker_confidence": 0.45751968,
+      "speaker_id": "Speaker 5",
+      "start_ms": 1191732,
+      "text": "Really matter? I. It's even",
+      "ts": "2026-04-01T13:50:11.065170+00:00"
+    },
+    {
+      "end_ms": 1201600,
+      "index": 136,
+      "speaker_confidence": 0.7330522,
+      "speaker_id": "Speaker 5",
+      "start_ms": 1193812,
+      "text": "Morning is actually like early in the morning. Is the nicest cause, you know I can get some of my drive done before the day starts and",
+      "ts": "2026-04-01T13:50:19.122903+00:00"
+    },
+    {
+      "end_ms": 1203136,
+      "index": 137,
+      "speaker_confidence": 0.61655354,
+      "speaker_id": "Speaker 4",
+      "start_ms": 1201780,
+      "text": "And then you know.",
+      "ts": "2026-04-01T13:50:20.006140+00:00"
+    },
+    {
+      "end_ms": 1206144,
+      "index": 138,
+      "speaker_confidence": 0.65410066,
+      "speaker_id": "Speaker 5",
+      "start_ms": 1202932,
+      "text": "That we struggle with. Okay.",
+      "ts": "2026-04-01T13:50:23.168382+00:00"
+    },
+    {
+      "end_ms": 1210496,
+      "index": 139,
+      "speaker_confidence": 0.79898846,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 1206196,
+      "text": "So next week, because it's a short week, it's.",
+      "ts": "2026-04-01T13:50:27.723168+00:00"
+    },
+    {
+      "end_ms": 1213280,
+      "index": 140,
+      "speaker_confidence": 0.5136218,
+      "speaker_id": "Speaker 1",
+      "start_ms": 1211764,
+      "text": "I do wanna.",
+      "ts": "2026-04-01T13:50:30.199167+00:00"
+    },
+    {
+      "end_ms": 1214944,
+      "index": 141,
+      "speaker_confidence": 0.70227253,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 1212980,
+      "text": "Like if we're gonna do this.",
+      "ts": "2026-04-01T13:50:31.847209+00:00"
+    },
+    {
+      "end_ms": 1217088,
+      "index": 142,
+      "speaker_confidence": 0.69185823,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 1214964,
+      "text": "Just get going with it.",
+      "ts": "2026-04-01T13:50:34.032780+00:00"
+    },
+    {
+      "end_ms": 1217824,
+      "index": 143,
+      "speaker_confidence": 0.49909174,
+      "speaker_id": "Speaker 1",
+      "start_ms": 1216948,
+      "text": "Um.",
+      "ts": "2026-04-01T13:50:34.609489+00:00"
+    },
+    {
+      "end_ms": 1224512,
+      "index": 144,
+      "speaker_confidence": 0.5533301,
+      "speaker_id": "Speaker 5",
+      "start_ms": 1222196,
+      "text": "Will be Friday. Does that work?",
+      "ts": "2026-04-01T13:50:41.467291+00:00"
+    },
+    {
+      "end_ms": 1227872,
+      "index": 145,
+      "speaker_confidence": 0.6103202,
+      "speaker_id": "Speaker 2",
+      "start_ms": 1226740,
+      "text": "Thirteen.",
+      "ts": "2026-04-01T13:50:44.802313+00:00"
+    },
+    {
+      "end_ms": 1236832,
+      "index": 146,
+      "speaker_confidence": 0.7106078,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 1234516,
+      "text": "The the one thing is that now.",
+      "ts": "2026-04-01T13:50:53.877570+00:00"
+    },
+    {
+      "end_ms": 1241888,
+      "index": 147,
+      "speaker_confidence": 0.6691621,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 1236788,
+      "text": "To be honest, I don't think it should be a big factor. But although I'll do my best to numb",
+      "ts": "2026-04-01T13:50:59.213987+00:00"
+    },
+    {
+      "end_ms": 1244800,
+      "index": 148,
+      "speaker_confidence": 0.60062796,
+      "speaker_id": "Speaker 1",
+      "start_ms": 1241588,
+      "text": "Some month, it's still like.",
+      "ts": "2026-04-01T13:51:01.827991+00:00"
+    },
+    {
+      "end_ms": 1260896,
+      "index": 149,
+      "speaker_confidence": 0.80336624,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 1245044,
+      "text": "The only way of numbing it is to inject numbing medication, which also burns. Yeah. So there's no way of making this pain-free. Um, it isn't that they're doing numbing sprays and stuff; It's that they just so",
+      "ts": "2026-04-01T13:51:19.152466+00:00"
+    },
+    {
+      "end_ms": 1268640,
+      "index": 150,
+      "speaker_confidence": 0.7084984,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 1260596,
+      "text": "But at the same time, you've gone through so much and care in this matter. I think you're aware; this is a painful situation. Yeah.",
+      "ts": "2026-04-01T13:51:26.249407+00:00"
+    },
+    {
+      "end_ms": 1275008,
+      "index": 151,
+      "speaker_confidence": 0.71079665,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 1269108,
+      "text": "Now, when it gets better. I didn't mention this last time, but I'll mention it.",
+      "ts": "2026-04-01T13:51:32.312377+00:00"
+    },
+    {
+      "end_ms": 1278560,
+      "index": 152,
+      "speaker_confidence": 0.687719,
+      "speaker_id": "Speaker 1",
+      "start_ms": 1275668,
+      "text": "Now, just as a FYI.",
+      "ts": "2026-04-01T13:51:35.532114+00:00"
+    },
+    {
+      "end_ms": 1280864,
+      "index": 153,
+      "speaker_confidence": 0.7042596,
+      "speaker_id": "Speaker 1",
+      "start_ms": 1278388,
+      "text": "April tenth.",
+      "ts": "2026-04-01T13:51:37.777702+00:00"
+    },
+    {
+      "end_ms": 1283360,
+      "index": 154,
+      "speaker_confidence": 0.4178555,
+      "speaker_id": "Speaker 1",
+      "start_ms": 1281524,
+      "text": "So this will go.",
+      "ts": "2026-04-01T13:51:40.296336+00:00"
+    },
+    {
+      "end_ms": 1284768,
+      "index": 155,
+      "speaker_confidence": 0.77774936,
+      "speaker_id": "Speaker 4",
+      "start_ms": 1283636,
+      "text": "um.",
+      "ts": "2026-04-01T13:51:41.583732+00:00"
+    },
+    {
+      "end_ms": 1295232,
+      "index": 156,
+      "speaker_confidence": 0.7715684,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 1287380,
+      "text": "We are gonna also do a blood draw on this appointment, so just so you know in terms of hydration stuff. The",
+      "ts": "2026-04-01T13:51:52.694447+00:00"
+    },
+    {
+      "end_ms": 1295840,
+      "index": 157,
+      "speaker_confidence": 0.7819435,
+      "speaker_id": "Speaker 4",
+      "start_ms": 1294964,
+      "text": "Um.",
+      "ts": "2026-04-01T13:51:52.886347+00:00"
+    },
+    {
+      "end_ms": 1301920,
+      "index": 158,
+      "speaker_confidence": 0.6552683,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 1297460,
+      "text": "If the if the wounds are healing well, we find that.",
+      "ts": "2026-04-01T13:51:59.145249+00:00"
+    },
+    {
+      "end_ms": 1311648,
+      "index": 159,
+      "speaker_confidence": 0.7941975,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 1301620,
+      "text": "Either we really give it a good try, and just not the treatment that works. Yeah, and a lot of it is dependent on the immunology; look how the",
+      "ts": "2026-04-01T13:52:09.351574+00:00"
+    },
+    {
+      "end_ms": 1315680,
+      "index": 160,
+      "speaker_confidence": 0.7142954,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 1311764,
+      "text": "What underlying disease condition is, and we.",
+      "ts": "2026-04-01T13:52:12.783975+00:00"
+    },
+    {
+      "end_ms": 1328608,
+      "index": 161,
+      "speaker_confidence": 0.8126465,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 1315380,
+      "text": "We just won't know until we're doing it, and I'm really hopeful because we've had good success with a lot of patients who have immune conditions for various reasons in various situations. But still.",
+      "ts": "2026-04-01T13:52:26.630285+00:00"
+    },
+    {
+      "end_ms": 1335008,
+      "index": 162,
+      "speaker_confidence": 0.8176693,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 1329332,
+      "text": "You know, ten years from now, a condition like lupus will probably be considered in different conditions.",
+      "ts": "2026-04-01T13:52:32.310697+00:00"
+    },
+    {
+      "end_ms": 1349632,
+      "index": 163,
+      "speaker_confidence": 0.76794285,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 1334772,
+      "text": "We're putting under one name, so you know it's one of those things where in medicine we are always finding that things are not exactly as we thought. And so I don't know, but let's imagine for a second that it goes well.",
+      "ts": "2026-04-01T13:52:47.886253+00:00"
+    },
+    {
+      "end_ms": 1353888,
+      "index": 164,
+      "speaker_confidence": 0.792342,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 1349844,
+      "text": "Initially, the goal would be to get the most resistant ones.",
+      "ts": "2026-04-01T13:52:51.031082+00:00"
+    },
+    {
+      "end_ms": 1356736,
+      "index": 165,
+      "speaker_confidence": 0.6785749,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 1353620,
+      "text": "The place where traditional methods are useful.",
+      "ts": "2026-04-01T13:52:53.724715+00:00"
+    },
+    {
+      "end_ms": 1366720,
+      "index": 166,
+      "speaker_confidence": 0.7166161,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 1356628,
+      "text": "If at the moment they're just kind of holding it at bay, maybe or it's not worsening. But the goal is to just kind of reverse that tide and then get things moving.",
+      "ts": "2026-04-01T13:53:04.446680+00:00"
+    },
+    {
+      "end_ms": 1377088,
+      "index": 167,
+      "speaker_confidence": 0.7410537,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 1366484,
+      "text": "Let's imagine for a moment that we've done that, and the—and what—we—we now have mostly closed wounds. There is a device that we use; it's kind of like a",
+      "ts": "2026-04-01T13:53:14.903212+00:00"
+    },
+    {
+      "end_ms": 1378656,
+      "index": 168,
+      "speaker_confidence": 0.62140995,
+      "speaker_id": "Speaker 1",
+      "start_ms": 1377076,
+      "text": "Pressure washer.",
+      "ts": "2026-04-01T13:53:15.524497+00:00"
+    },
+    {
+      "end_ms": 1381312,
+      "index": 169,
+      "speaker_confidence": 0.64432436,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 1379124,
+      "text": "So we can put a medication in it.",
+      "ts": "2026-04-01T13:53:18.283271+00:00"
+    },
+    {
+      "end_ms": 1384000,
+      "index": 170,
+      "speaker_confidence": 0.5359221,
+      "speaker_id": "Speaker 1",
+      "start_ms": 1381428,
+      "text": "And it, it, it.",
+      "ts": "2026-04-01T13:53:20.977642+00:00"
+    },
+    {
+      "end_ms": 1387552,
+      "index": 171,
+      "speaker_confidence": 0.74137115,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 1383700,
+      "text": "It's like a pressure washer, meaning that it embeds it deep into the wall.",
+      "ts": "2026-04-01T13:53:24.688401+00:00"
+    },
+    {
+      "end_ms": 1396160,
+      "index": 172,
+      "speaker_confidence": 0.8232102,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 1387316,
+      "text": "It's developed for the burn unit, where people have horrible burns and they're getting regular.",
+      "ts": "2026-04-01T13:53:33.696273+00:00"
+    },
+    {
+      "end_ms": 1398624,
+      "index": 173,
+      "speaker_confidence": 0.5469924,
+      "speaker_id": "Speaker 1",
+      "start_ms": 1396116,
+      "text": "You know, cleaning and.",
+      "ts": "2026-04-01T13:53:35.624511+00:00"
+    },
+    {
+      "end_ms": 1401024,
+      "index": 174,
+      "speaker_confidence": 0.73307186,
+      "speaker_id": "Speaker 1",
+      "start_ms": 1398580,
+      "text": "All that stuff, yeah.",
+      "ts": "2026-04-01T13:53:37.986866+00:00"
+    },
+    {
+      "end_ms": 1402784,
+      "index": 175,
+      "speaker_confidence": 0.5956902,
+      "speaker_id": "Speaker 1",
+      "start_ms": 1400724,
+      "text": "And it's horribly painful.",
+      "ts": "2026-04-01T13:53:39.707258+00:00"
+    },
+    {
+      "end_ms": 1407840,
+      "index": 176,
+      "speaker_confidence": 0.69993436,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 1402676,
+      "text": "So this was developed as a way of doing that work far more.",
+      "ts": "2026-04-01T13:53:45.054596+00:00"
+    },
+    {
+      "end_ms": 1410080,
+      "index": 177,
+      "speaker_confidence": 0.63226056,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 1407604,
+      "text": "In a far less painful way.",
+      "ts": "2026-04-01T13:53:47.049222+00:00"
+    },
+    {
+      "end_ms": 1412256,
+      "index": 178,
+      "speaker_confidence": 0.62042964,
+      "speaker_id": "Speaker 1",
+      "start_ms": 1410612,
+      "text": "And.",
+      "ts": "2026-04-01T13:53:49.122326+00:00"
+    },
+    {
+      "end_ms": 1422368,
+      "index": 179,
+      "speaker_confidence": 0.8158449,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 1411956,
+      "text": "So it kind of helps both with the cleansing because this can really be clean, if you will. And also, uh, we we have the option putting medication through it so it's",
+      "ts": "2026-04-01T13:54:00.121517+00:00"
+    },
+    {
+      "end_ms": 1442560,
+      "index": 180,
+      "speaker_confidence": 0.83060503,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 1422644,
+      "text": "Few millimeters into the interdental area, and so it will help exactly. So then we can not use needles um and just do it that way. I'm only mentioning it because there is a up to certain point t here.'s a much far less painful on more i guess painless way",
+      "ts": "2026-04-01T13:54:21.542268+00:00"
+    },
+    {
+      "end_ms": 1443456,
+      "index": 181,
+      "speaker_confidence": 0.48859656,
+      "speaker_id": "Speaker 2",
+      "start_ms": 1442516,
+      "text": "Doing it.",
+      "ts": "2026-04-01T13:54:21.738986+00:00"
+    },
+    {
+      "end_ms": 1451040,
+      "index": 182,
+      "speaker_confidence": 0.72649735,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 1444372,
+      "text": "I didn't mention it because at the moment, first thing is just knowing that this is.",
+      "ts": "2026-04-01T13:54:28.361399+00:00"
+    },
+    {
+      "end_ms": 1454752,
+      "index": 183,
+      "speaker_confidence": 0.77828026,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 1451156,
+      "text": "Going to be the thing that helps or not, and we don't know that.",
+      "ts": "2026-04-01T13:54:31.924608+00:00"
+    },
+    {
+      "end_ms": 1462400,
+      "index": 184,
+      "speaker_confidence": 0.7515141,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 1455028,
+      "text": "Fine, it helps. There's just a lot of different options in terms of where we go with it. Okay. So I just wanted to mention because then you know",
+      "ts": "2026-04-01T13:54:40.733149+00:00"
+    },
+    {
+      "end_ms": 1487008,
+      "index": 185,
+      "speaker_confidence": 0.78803813,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 1462388,
+      "text": "I create these things, and then we try it. And we're like, \"Well, that didn't work.\" That yeah was not cool, right? Yes, sir. There are there are other ways for treatments so that won't exactly. So um, so I booked it on Friday next week. Um, and then we'll do we'll do the treatment is actually relatively quick. We just kind of if you don't mind bringing the because we just don't have home care stuff here.",
+      "ts": "2026-04-01T13:55:06.241756+00:00"
+    },
+    {
+      "end_ms": 1491936,
+      "index": 186,
+      "speaker_confidence": 0.63187575,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 1486900,
+      "text": "If you're wondering, yeah. Because that, yeah, and then um.",
+      "ts": "2026-04-01T13:55:09.106068+00:00"
+    },
+    {
+      "end_ms": 1493856,
+      "index": 187,
+      "speaker_confidence": 0.53836066,
+      "speaker_id": "Speaker 1",
+      "start_ms": 1491924,
+      "text": "Then we'll do the treatment.",
+      "ts": "2026-04-01T13:55:10.845980+00:00"
+    },
+    {
+      "end_ms": 1506976,
+      "index": 188,
+      "speaker_confidence": 0.77355325,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 1493620,
+      "text": "And most of it is actually, most of the time, is taking dressing up and dressing back on as a full step for three hundred steps out. Exactly, exactly. And then um, and then the goal would be if we can",
+      "ts": "2026-04-01T13:55:25.076826+00:00"
+    },
+    {
+      "end_ms": 1510368,
+      "index": 189,
+      "speaker_confidence": 0.55787516,
+      "speaker_id": "Speaker 1",
+      "start_ms": 1506900,
+      "text": "To be on top of it weekly or biweekly.",
+      "ts": "2026-04-01T13:55:27.431617+00:00"
+    },
+    {
+      "end_ms": 1513408,
+      "index": 190,
+      "speaker_confidence": 0.64026743,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 1510132,
+      "text": "Just to keep the, the signaling going. Um.",
+      "ts": "2026-04-01T13:55:30.453419+00:00"
+    },
+    {
+      "end_ms": 1517600,
+      "index": 191,
+      "speaker_confidence": 0.7721599,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 1513460,
+      "text": "And then the so schedule something like that.",
+      "ts": "2026-04-01T13:55:34.692407+00:00"
+    },
+    {
+      "end_ms": 1518208,
+      "index": 192,
+      "speaker_confidence": 0.6940422,
+      "speaker_id": "Speaker 4",
+      "start_ms": 1517364,
+      "text": "Wow.",
+      "ts": "2026-04-01T13:55:34.995876+00:00"
+    },
+    {
+      "end_ms": 1519360,
+      "index": 193,
+      "speaker_confidence": 0.49577716,
+      "speaker_id": "Speaker 1",
+      "start_ms": 1518324,
+      "text": "Yeah.",
+      "ts": "2026-04-01T13:55:36.187132+00:00"
+    },
+    {
+      "end_ms": 1528992,
+      "index": 194,
+      "speaker_confidence": 0.7527956,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 1519220,
+      "text": "If we're finding good response, we're seeing yes. This area seems to be shrinking somewhat; this other margin is you know this other one's a bit smaller and so on.",
+      "ts": "2026-04-01T13:55:46.659150+00:00"
+    },
+    {
+      "end_ms": 1540160,
+      "index": 195,
+      "speaker_confidence": 0.65891916,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 1529108,
+      "text": "That then gives us a sense of okay, yes. This is a way that we can yeah We can do this and take it forward And then and then we just fine tune it Just like everything else to make it work better",
+      "ts": "2026-04-01T13:55:58.003203+00:00"
+    },
+    {
+      "end_ms": 1545184,
+      "index": 196,
+      "speaker_confidence": 0.49153528,
+      "speaker_id": "Speaker 5",
+      "start_ms": 1540788,
+      "text": "See you next week. All right, have a good long weekend. Yeah, see you later.",
+      "ts": "2026-04-01T13:56:02.353926+00:00"
+    },
+    {
+      "end_ms": 1546240,
+      "index": 197,
+      "speaker_confidence": 0.6280075,
+      "speaker_id": "Speaker 4",
+      "start_ms": 1545012,
+      "text": "Thank you.",
+      "ts": "2026-04-01T13:56:03.073174+00:00"
+    },
+    {
+      "end_ms": 1551232,
+      "index": 198,
+      "speaker_confidence": 0.62606436,
+      "speaker_id": "Speaker 2",
+      "start_ms": 1549396,
+      "text": "Oh, it's straight through there.",
+      "ts": "2026-04-01T13:56:08.501966+00:00"
+    },
+    {
+      "end_ms": 1554848,
+      "index": 199,
+      "speaker_confidence": 0.737864,
+      "speaker_id": "Speaker 4",
+      "start_ms": 1553748,
+      "text": "Okay.",
+      "ts": "2026-04-01T13:56:11.731549+00:00"
+    },
+    {
+      "end_ms": 1562336,
+      "index": 200,
+      "speaker_confidence": 0.7502542,
+      "speaker_id": "Speaker 4",
+      "start_ms": 1560084,
+      "text": "I just turn over to okay.",
+      "ts": "2026-04-01T13:56:19.272978+00:00"
+    }
+  ],
+  "sensor_transitions": [],
+  "soap_result": {
+    "latency_ms": 5386,
+    "success": true,
+    "ts": "2026-04-01T13:56:54.482211+00:00",
+    "word_count": 1277
+  },
+  "split_decision": {
+    "cleaned_word_count": 1037,
+    "end_segment_index": 197,
+    "trigger": "hybrid_llm",
+    "ts": "2026-04-01T13:56:43.468394+00:00",
+    "word_count": 1277
+  },
+  "vision_results": [
+    {
+      "is_blank": false,
+      "is_stale": false,
+      "latency_ms": 1274,
+      "parsed_name": null,
+      "ts": "2026-04-01T13:49:56.983342+00:00"
+    },
+    {
+      "is_blank": false,
+      "is_stale": false,
+      "latency_ms": 1763,
+      "parsed_name": "David Albert William Krabbe",
+      "ts": "2026-04-01T13:50:58.921348+00:00"
+    },
+    {
+      "is_blank": false,
+      "is_stale": false,
+      "latency_ms": 1705,
+      "parsed_name": "David Albert William Krabbe",
+      "ts": "2026-04-01T13:52:00.829299+00:00"
+    },
+    {
+      "is_blank": false,
+      "is_stale": false,
+      "latency_ms": 1781,
+      "parsed_name": "David Albert William Krabbe",
+      "ts": "2026-04-01T13:53:02.800349+00:00"
+    },
+    {
+      "is_blank": false,
+      "is_stale": false,
+      "latency_ms": 1755,
+      "parsed_name": "David Albert William Krabbe",
+      "ts": "2026-04-01T13:54:04.729369+00:00"
+    },
+    {
+      "is_blank": false,
+      "is_stale": false,
+      "latency_ms": 1828,
+      "parsed_name": "David Albert William Krabbe",
+      "ts": "2026-04-01T13:55:06.735953+00:00"
+    },
+    {
+      "is_blank": false,
+      "is_stale": false,
+      "latency_ms": 1770,
+      "parsed_name": "David Albert William Krabbe",
+      "ts": "2026-04-01T13:56:08.726364+00:00"
+    }
+  ]
+}
