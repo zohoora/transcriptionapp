@@ -42,8 +42,18 @@ fn validate_session_id(session_id: &str) -> Result<(), String> {
     Ok(())
 }
 
-/// Get the archive base directory
+/// Get the archive base directory.
+///
+/// If the `TRANSCRIPTIONAPP_ARCHIVE_DIR` environment variable is set and
+/// non-empty, it overrides the default path. Used by the test harness to
+/// redirect archive writes into a tempdir, preventing accidental writes
+/// to a developer's real production archive during `cargo test`.
 pub fn get_archive_dir() -> Result<PathBuf, String> {
+    if let Ok(override_dir) = std::env::var("TRANSCRIPTIONAPP_ARCHIVE_DIR") {
+        if !override_dir.is_empty() {
+            return Ok(PathBuf::from(override_dir));
+        }
+    }
     let home = dirs::home_dir().ok_or("Could not determine home directory")?;
     Ok(home.join(".transcriptionapp").join("archive"))
 }

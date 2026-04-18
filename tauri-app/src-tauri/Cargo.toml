@@ -63,7 +63,7 @@ hound = "3.5"
 ndarray = "0.16"
 
 # Async runtime
-tokio = { version = "1", features = ["rt-multi-thread", "sync", "macros"] }
+tokio = { version = "1", features = ["rt-multi-thread", "sync", "macros", "test-util"] }
 async-trait = "0.1"
 
 # HTTP client for model downloads and Ollama API
@@ -119,11 +119,12 @@ chrono-tz = "0.10"
 # Directory paths
 dirs = "5"
 
+# Temporary directories (used by the harness module + test utilities)
+tempfile = "3"
+
 [dev-dependencies]
 # Property-based testing
 proptest = "1.5"
-# Temporary directories for tests
-tempfile = "3"
 # Benchmarking
 criterion = { version = "0.5", features = ["html_reports"] }
 # Serial test execution for tests with shared state
