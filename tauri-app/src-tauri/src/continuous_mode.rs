@@ -941,12 +941,7 @@ pub async fn run_continuous_mode<C: crate::run_context::RunContext>(
     let buffer_for_detector = handle.transcript_buffer.clone();
     let stop_for_detector = handle.stop_flag.clone();
     let state_for_detector = handle.state.clone();
-    let encounters_for_detector = handle.encounters_detected.clone();
-    let recent_encounters_for_detector = handle.recent_encounters.clone();
     let last_error_for_detector = handle.last_error.clone();
-    let name_tracker_for_detector = handle.name_tracker.clone();
-    let last_split_time_for_detector = handle.last_split_time.clone();
-    let screenshot_buffer_for_detector = handle.screenshot_buffer.clone();
     let ctx_for_detector = ctx.clone();
     let check_interval = operational.encounter_check_interval_secs;
     let idle_timeout_secs = config.idle_encounter_timeout_secs;
@@ -990,9 +985,6 @@ pub async fn run_continuous_mode<C: crate::run_context::RunContext>(
         None
     };
 
-    // Clone encounter notes for the detector task
-    let encounter_notes_for_detector = handle.encounter_notes.clone();
-
     // Clone manual trigger for the detector task
     let manual_trigger_rx = handle.encounter_manual_trigger.clone();
 
@@ -1007,9 +999,6 @@ pub async fn run_continuous_mode<C: crate::run_context::RunContext>(
 
     // Clone sensor trigger for detector task
     let sensor_trigger_for_detector = sensor_absence_trigger.clone();
-
-    // Clone shadow state for detector task
-    let handle_shadow_decisions = handle.shadow_decisions.clone();
 
     // Pipeline replay logger — writes JSONL to each session's archive folder
     let pipeline_logger = Arc::new(Mutex::new(crate::pipeline_log::PipelineLogger::new()));
@@ -1075,7 +1064,7 @@ pub async fn run_continuous_mode<C: crate::run_context::RunContext>(
         // Build long-lived deps for the merge-back coordinator once. Borrowed
         // by reference each iteration (no per-encounter Arc cloning).
         let merge_back_deps = crate::continuous_mode_merge_back::MergeBackDeps {
-            handle: handle_for_detector,
+            handle: handle_for_detector.clone(),
             logger: Arc::clone(&logger_for_detector),
             bundle: Arc::clone(&bundle_for_detector),
             segment_logger: Arc::clone(&segment_logger_for_detector),
@@ -1094,6 +1083,19 @@ pub async fn run_continuous_mode<C: crate::run_context::RunContext>(
             soap_generation_timeout_secs,
             billing_counselling_exhausted,
             merge_enabled,
+        };
+
+        // Long-lived deps for the splitter. Borrowed per encounter.
+        let splitter_deps = crate::continuous_mode_splitter::SplitterDeps {
+            handle: handle_for_detector,
+            logger: Arc::clone(&logger_for_detector),
+            bundle: Arc::clone(&bundle_for_detector),
+            segment_logger: Arc::clone(&segment_logger_for_detector),
+            day_logger: Arc::clone(&day_logger_for_detector),
+            sync_ctx: sync_ctx_for_detector.clone(),
+            reset_bio_flag: reset_bio_flag.clone(),
+            is_shadow_mode,
+            shadow_active_method,
         };
 
         // Hybrid mode: sensor absence tracking
@@ -1725,235 +1727,36 @@ pub async fn run_continuous_mode<C: crate::run_context::RunContext>(
                             loop_state.encounter_number, end_index
                         );
 
-                        // Extract encounter segments from buffer
-                        let (encounter_text, encounter_text_rich, encounter_word_count, encounter_start, encounter_end, encounter_segment_count) = {
-                            let mut buffer = match buffer_for_detector.lock() {
-                                Ok(b) => b,
-                                Err(_) => continue,
-                            };
-                            let drained = buffer.drain_through(end_index);
-                            let seg_count = drained.len();
-                            let text: String = drained
-                                .iter()
-                                .map(|s| {
-                                    if s.speaker_id.is_some() {
-                                        let label = crate::transcript_buffer::format_speaker_label(
-                                            s.speaker_id.as_deref(),
-                                            s.speaker_confidence,
-                                        );
-                                        format!("{}: {}", label, s.text)
-                                    } else {
-                                        s.text.clone()
-                                    }
-                                })
-                                .collect::<Vec<_>>()
-                                .join("\n");
-                            let text_rich = crate::transcript_buffer::format_segments_for_detection(&drained);
-                            let wc = text.split_whitespace().count();
-                            let start = drained.first().map(|s| s.started_at);
-                            let end = drained.last().map(|s| s.started_at);
-                            (text, text_rich, wc, start, end, seg_count)
-                        };
-
-                        // Generate session ID for this encounter
-                        let session_id = uuid::Uuid::new_v4().to_string();
-
-                        // Compute duration from first-to-last segment (not Utc::now which includes LLM processing time)
-                        let encounter_duration_ms_computed = match (encounter_start, encounter_end) {
-                            (Some(s), Some(e)) => (e - s).num_milliseconds().max(0) as u64,
-                            (Some(s), None) => (ctx_for_detector.now_utc() - s).num_milliseconds().max(0) as u64,
-                            _ => 0,
-                        };
-
-                        // Archive the encounter transcript (pass actual start time for accurate duration)
-                        if let Err(e) = local_archive::save_session(
-                            &session_id,
-                            &encounter_text,
-                            encounter_duration_ms_computed,
-                            None, // No per-encounter audio in continuous mode
-                            false,
-                            None,
-                            encounter_start, // actual encounter start time for started_at metadata
-                            Some(encounter_segment_count),
-                        ) {
-                            warn!("Failed to archive encounter: {}", e);
-                        }
-
-                        // Set pipeline logger and segment logger to write to this session's archive folder
-                        if let Ok(session_dir) = local_archive::get_session_archive_dir(&session_id, &ctx_for_detector.now_utc()) {
-                            if let Ok(mut logger) = logger_for_detector.lock() {
-                                logger.set_session(&session_dir);
-                            }
-                            if let Ok(mut sl) = segment_logger_for_detector.lock() {
-                                sl.set_session(&session_dir);
-                            }
-                            // Flush buffered screenshots to session archive
-                            crate::screenshot_task::flush_screenshots_to_session(
-                                &screenshot_buffer_for_detector, &session_dir,
-                            );
-                        }
-
-                        // Set split decision on replay bundle
-                        if let Ok(mut bundle) = bundle_for_detector.lock() {
-                            bundle.set_split_decision(crate::replay_bundle::SplitDecision {
-                                ts: ctx_for_detector.now_utc().to_rfc3339(),
-                                trigger: detection_method_str.to_string(),
-                                word_count: encounter_word_count,
+                        // Delegate buffer drain + archival + metadata + events to the splitter component.
+                        // See crate::continuous_mode_splitter for details.
+                        let split_ctx = match crate::continuous_mode_splitter::split_encounter(
+                            &ctx_for_detector,
+                            &splitter_deps,
+                            crate::continuous_mode_splitter::SplitterCall {
+                                end_index,
+                                detection_method: detection_method_str,
                                 cleaned_word_count,
-                                end_segment_index: Some(end_index),
-                            });
-                        }
-
-                        // Log encounter split to day log
-                        if let Some(ref dl) = *day_logger_for_detector {
-                            dl.log(crate::day_log::DayEvent::EncounterSplit {
-                                ts: ctx_for_detector.now_utc().to_rfc3339(),
-                                session_id: session_id.clone(),
-                                encounter_number: loop_state.encounter_number,
-                                trigger: detection_method_str.to_string(),
-                                word_count: encounter_word_count,
-                                detection_method: detection_method_str.to_string(),
-                            });
-                        }
-
-                        // Update archive metadata with continuous mode info
-                        if let Ok(session_dir) = local_archive::get_session_archive_dir(&session_id, &ctx_for_detector.now_utc()) {
-                            let date_path = session_dir.join("metadata.json");
-                            if date_path.exists() {
-                                if let Ok(content) = std::fs::read_to_string(&date_path) {
-                                    if let Ok(mut metadata) = serde_json::from_str::<local_archive::ArchiveMetadata>(&content) {
-                                        metadata.charting_mode = Some("continuous".to_string());
-                                        metadata.encounter_number = Some(loop_state.encounter_number);
-                                        // Record how this encounter was detected (reuse pre-computed value)
-                                        metadata.detection_method = Some(detection_method_str.to_string());
-                                        // Add patient name and DOB from vision extraction
-                                        if let Ok(tracker) = name_tracker_for_detector.lock() {
-                                            metadata.patient_name = tracker.majority_name();
-                                            metadata.patient_dob = tracker.dob().map(|s| s.to_string());
-                                        } else {
-                                            warn!("Name tracker lock poisoned, patient name/dob not written to metadata");
-                                        }
-                                        // Add shadow comparison data if in shadow mode
-                                        if is_shadow_mode {
-                                            let shadow_method = if shadow_active_method == ShadowActiveMethod::Sensor { "llm" } else { "sensor" };
-                                            let decisions: Vec<crate::shadow_log::ShadowDecisionSummary> = handle_shadow_decisions
-                                                .lock()
-                                                .unwrap_or_else(|e| {
-                                                    warn!("Shadow decisions lock poisoned, recovering data");
-                                                    e.into_inner()
-                                                })
-                                                .clone();
-
-                                            let active_split_at = ctx_for_detector.now_utc().to_rfc3339();
-
-                                            // Check if shadow agreed: any "would_split" decision in last 5 minutes
-                                            let now = ctx_for_detector.now_utc();
-                                            let shadow_agreed = if decisions.is_empty() {
-                                                None
-                                            } else {
-                                                let agreed = decisions.iter().any(|d| {
-                                                    d.outcome == "would_split" && {
-                                                        chrono::DateTime::parse_from_rfc3339(&d.timestamp)
-                                                            .map(|ts| (now - ts.with_timezone(&Utc)).num_seconds().abs() < 300)
-                                                            .unwrap_or(false)
-                                                    }
-                                                });
-                                                Some(agreed)
-                                            };
-
-                                            metadata.shadow_comparison = Some(crate::shadow_log::ShadowEncounterComparison {
-                                                shadow_method: shadow_method.to_string(),
-                                                decisions,
-                                                active_split_at,
-                                                shadow_agreed,
-                                            });
-                                        }
-
-                                        // Add physician/room context (multi-user)
-                                        sync_ctx_for_detector.enrich_metadata(&mut metadata);
-
-                                        if let Ok(json) = serde_json::to_string_pretty(&metadata) {
-                                            let _ = std::fs::write(&date_path, json);
-                                        }
-                                    }
-                                }
-                            }
-                        }
-
-                        // Server sync: upload session to profile server
+                            },
+                            &loop_state,
+                        )
+                        .await
                         {
-                            let today = ctx_for_detector.now_utc().format("%Y-%m-%d").to_string();
-                            sync_ctx_for_detector.sync_session(&session_id, &today);
-                        }
-
-                        // Clear shadow decisions for next encounter (if in shadow mode)
-                        if is_shadow_mode {
-                            if let Ok(mut decisions) = handle_shadow_decisions.lock() {
-                                decisions.clear();
-                            }
-                        }
-
-                        // Extract patient name and full tracker state before resetting.
-                        // The replay bundle needs this data too — capturing after reset
-                        // would see an empty tracker (was the cause of replay_bundle
-                        // always showing majority_name=None, vote_count=0).
-                        let (encounter_patient_name, tracker_snapshot) = match name_tracker_for_detector.lock() {
-                            Ok(mut tracker) => {
-                                let name = tracker.majority_name();
-                                let votes: usize = tracker.vote_count();
-                                let unique: Vec<String> = tracker.votes().keys().cloned().collect();
-                                tracker.reset();
-                                (name.clone(), (name, votes, unique))
-                            }
+                            Ok(s) => s,
                             Err(e) => {
-                                warn!("Name tracker lock poisoned: {}", e);
-                                (None, (None, 0, vec![]))
+                                warn!("Splitter failed: {}", e);
+                                continue;
                             }
                         };
-
-                        // Record split timestamp (for stale screenshot detection)
-                        if let Ok(mut t) = last_split_time_for_detector.lock() {
-                            *t = ctx_for_detector.now_utc();
-                        }
-
-                        // Read encounter notes AND clear atomically (SOAP generation needs them)
-                        let notes_text = match encounter_notes_for_detector.lock() {
-                            Ok(mut notes) => {
-                                let text = notes.clone();
-                                notes.clear();
-                                text
-                            }
-                            Err(e) => {
-                                warn!("Encounter notes lock poisoned, using recovered value: {}", e);
-                                let mut notes = e.into_inner();
-                                let text = notes.clone();
-                                notes.clear();
-                                text
-                            }
-                        };
-
-                        // Reset biomarker accumulators for the new encounter
-                        reset_bio_flag.store(true, std::sync::atomic::Ordering::SeqCst);
-
-                        // Update stats
-                        encounters_for_detector.fetch_add(1, Ordering::Relaxed);
-                        if let Ok(mut recent) = recent_encounters_for_detector.lock() {
-                            recent.insert(0, RecentEncounter {
-                                session_id: session_id.clone(),
-                                time: ctx_for_detector.now_utc().to_rfc3339(),
-                                patient_name: encounter_patient_name.clone(),
-                            });
-                            recent.truncate(3); // Keep only the 3 most recent
-                        } else {
-                            warn!("Recent encounters lock poisoned, stats not updated");
-                        }
-
-                        // Emit encounter detected event
-                        ContinuousModeEvent::EncounterDetected {
-                            session_id: session_id.clone(),
-                            word_count: encounter_word_count,
-                            patient_name: encounter_patient_name.clone(),
-                        }.emit_via(&ctx_for_detector);
+                        // Unpack SplitContext into locals read by post_split + merge_back + finalize block.
+                        let session_id = split_ctx.session_id;
+                        let encounter_text = split_ctx.encounter_text;
+                        let encounter_text_rich = split_ctx.encounter_text_rich;
+                        let encounter_word_count = split_ctx.encounter_word_count;
+                        let encounter_start = split_ctx.encounter_start;
+                        let encounter_duration_ms_computed = split_ctx.encounter_duration_ms;
+                        let notes_text = split_ctx.notes_text;
+                        let tracker_snapshot = split_ctx.tracker_snapshot;
+                        let encounter_patient_name = split_ctx.encounter_patient_name;
 
                         // Clinical content check: flag non-clinical encounters
                         let is_clinical = if let Some(ref client) = llm_client {
