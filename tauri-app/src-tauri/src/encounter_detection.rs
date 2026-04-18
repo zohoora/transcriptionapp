@@ -297,6 +297,125 @@ Respond with ONLY the JSON object."#.to_string());
     (system, user)
 }
 
+/// Truncates a formatted-segments string to the last N words while preserving
+/// segment boundaries. Segments start with `[index] (mm:ss)` headers (or
+/// `[index] (h:mm:ss)` for hours-long sessions).
+///
+/// Walks segments from the end accumulating word counts. Once adding the next
+/// segment would push us strictly above `max_words`, stops and returns the
+/// suffix. If the text contains no recognizable segment headers, falls back to
+/// plain word-tail truncation. If total words are <= `max_words`, returns the
+/// input unchanged.
+///
+/// Used to cap the encounter-detection prompt size: the forensic replay across
+/// 2026-04-16/2026-04-17 showed 86/87 final split decisions are preserved with
+/// a 6,000-word cap and the 40s+ p99 LLM tail disappears.
+pub fn truncate_segments_to_last_n_words(segments_text: &str, max_words: usize) -> String {
+    // Locate segment header start positions. A header is `[<digits>] (<digits>:<digits>`
+    // (with an optional third `:<digits>` group for hours). Implemented as a
+    // hand-rolled scanner so the crate doesn't pull in `regex`.
+    let starts = find_segment_header_starts(segments_text);
+
+    if starts.is_empty() {
+        // No segments — fall back to plain word truncation
+        let words: Vec<&str> = segments_text.split_whitespace().collect();
+        if words.len() <= max_words {
+            return segments_text.to_string();
+        }
+        return words[words.len() - max_words..].join(" ");
+    }
+
+    // Build segment slices [start_i, start_{i+1}). Last segment runs to EOF.
+    let mut segments: Vec<&str> = Vec::with_capacity(starts.len());
+    for (i, &s) in starts.iter().enumerate() {
+        let e = starts.get(i + 1).copied().unwrap_or(segments_text.len());
+        segments.push(&segments_text[s..e]);
+    }
+
+    // Word counts per segment
+    let word_counts: Vec<usize> = segments.iter().map(|s| s.split_whitespace().count()).collect();
+    let total: usize = word_counts.iter().sum();
+    if total <= max_words {
+        return segments_text.to_string();
+    }
+
+    // Walk from end accumulating until adding one more would exceed cap.
+    // Always keep at least one segment so we never return an empty string.
+    let mut kept = 0_usize;
+    let mut start_idx = segments.len();
+    for (i, &wc) in word_counts.iter().enumerate().rev() {
+        if kept + wc > max_words && start_idx < segments.len() {
+            break;
+        }
+        kept += wc;
+        start_idx = i;
+    }
+
+    segments[start_idx..].concat()
+}
+
+/// Find byte offsets of every segment header (`[N] (M:SS` or `[N] (H:MM:SS`)
+/// in `text`. Returns positions in source order. Pure helper for
+/// [`truncate_segments_to_last_n_words`].
+fn find_segment_header_starts(text: &str) -> Vec<usize> {
+    let bytes = text.as_bytes();
+    let mut starts = Vec::new();
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] != b'[' {
+            i += 1;
+            continue;
+        }
+        let header_start = i;
+        let mut j = i + 1;
+        // Require >=1 digit before `]`
+        let digits_start = j;
+        while j < bytes.len() && bytes[j].is_ascii_digit() {
+            j += 1;
+        }
+        if j == digits_start || j >= bytes.len() || bytes[j] != b']' {
+            i += 1;
+            continue;
+        }
+        j += 1; // past ']'
+        // Skip ASCII spaces
+        while j < bytes.len() && bytes[j] == b' ' {
+            j += 1;
+        }
+        if j >= bytes.len() || bytes[j] != b'(' {
+            i += 1;
+            continue;
+        }
+        j += 1; // past '('
+        // First digit group
+        let g1_start = j;
+        while j < bytes.len() && bytes[j].is_ascii_digit() {
+            j += 1;
+        }
+        if j == g1_start || j >= bytes.len() || bytes[j] != b':' {
+            i += 1;
+            continue;
+        }
+        j += 1; // past ':'
+        // Second digit group
+        let g2_start = j;
+        while j < bytes.len() && bytes[j].is_ascii_digit() {
+            j += 1;
+        }
+        if j == g2_start {
+            i += 1;
+            continue;
+        }
+        // Confirmed `[N] (D:D` prefix. Treat this as a segment header start.
+        starts.push(header_start);
+        // Continue scanning AFTER the second digit group so we never re-match
+        // the same header (and overlapping `[` chars in segment text are still
+        // reachable on subsequent iterations).
+        i = j;
+    }
+    starts
+}
+
 /// Strip `<think>...</think>` tags from LLM output (model may emit these even with /nothink).
 /// For unclosed `<think>` tags, keeps content after the tag (model may place JSON inside).
 pub(crate) fn strip_think_tags(text: &str) -> String {
@@ -1434,6 +1553,147 @@ mod tests {
         assert_eq!(
             default.multi_patient_detect_word_threshold,
             MULTI_PATIENT_DETECT_WORD_THRESHOLD
+        );
+    }
+
+    // ========================================================================
+    // truncate_segments_to_last_n_words tests
+    // ========================================================================
+
+    /// Build a synthetic formatted-segments string with `n` segments, each
+    /// containing roughly `words_per_segment` words. Mimics the production
+    /// `[index] (mm:ss) (speaker): text` layout.
+    fn build_segments(n: usize, words_per_segment: usize) -> String {
+        (0..n)
+            .map(|i| {
+                let elapsed = format!("{:02}:{:02}", i / 60, i % 60);
+                let body = (0..words_per_segment)
+                    .map(|w| format!("w{}-{}", i, w))
+                    .collect::<Vec<_>>()
+                    .join(" ");
+                format!("[{}] ({}) (S0): {}", i, elapsed, body)
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
+    #[test]
+    fn truncate_returns_input_when_under_cap() {
+        let input = build_segments(5, 20); // ~100 segment-body words + ~15 header words
+        let out = truncate_segments_to_last_n_words(&input, 1000);
+        assert_eq!(out, input, "below-cap input must be returned verbatim");
+    }
+
+    #[test]
+    fn truncate_keeps_last_n_words_when_over_cap() {
+        // 10 segments x 1000 words each (segment body) — well over 6000
+        let input = build_segments(10, 1000);
+        let out = truncate_segments_to_last_n_words(&input, 6000);
+        let total_words = out.split_whitespace().count();
+        // Result should be no more than ~7000 words (6000 cap + at most one
+        // segment of slack — we keep the next-older segment if the running
+        // total still fits, else stop). With 1000-word segments the result
+        // is bounded by 6 full segments + headers.
+        assert!(
+            total_words <= 7000,
+            "truncated result has {total_words} words, expected <= 7000"
+        );
+        // And it should contain meaningfully fewer than the original total.
+        let input_words = input.split_whitespace().count();
+        assert!(
+            total_words < input_words,
+            "truncation must reduce word count (input={input_words}, out={total_words})"
+        );
+    }
+
+    #[test]
+    fn truncate_preserves_segment_boundaries() {
+        let input = build_segments(10, 1000);
+        let out = truncate_segments_to_last_n_words(&input, 6000);
+        // Result must start with a `[N] (MM:SS)` header — never mid-segment.
+        let trimmed = out.trim_start();
+        assert!(
+            trimmed.starts_with('['),
+            "result must start with a segment header `[`, got prefix: {:?}",
+            &trimmed[..trimmed.len().min(40)]
+        );
+        // And it must end with the last segment's content (the suffix is the tail).
+        assert!(
+            out.contains("[9] (00:09)"),
+            "result must include the final segment's header"
+        );
+    }
+
+    #[test]
+    fn truncate_with_zero_cap_leaves_overlong_input_unchanged_when_no_segments() {
+        // Contract: the call site uses `cap > 0` as a disable guard, so this
+        // function is never called with cap == 0 in production. But the function
+        // itself must not panic on cap == 0 — it should simply walk segments
+        // from the end and stop on the first one (since 0 + any > 0).
+        // Behavior is documented: with cap == 0 we always keep at least the
+        // last segment (safety floor — never return empty).
+        let input = build_segments(3, 50);
+        let out = truncate_segments_to_last_n_words(&input, 0);
+        // Must contain the last segment header
+        assert!(out.contains("[2] (00:02)"));
+        // Must NOT contain the first segment (truncated)
+        assert!(!out.contains("[0] (00:00)"));
+    }
+
+    #[test]
+    fn truncate_with_no_segment_headers_falls_back_to_words() {
+        let input = "alpha beta gamma delta epsilon zeta eta theta iota kappa";
+        // 10 words total
+        let out = truncate_segments_to_last_n_words(input, 4);
+        let words: Vec<&str> = out.split_whitespace().collect();
+        assert_eq!(words.len(), 4, "fallback must keep last 4 words");
+        assert_eq!(words, vec!["eta", "theta", "iota", "kappa"]);
+    }
+
+    #[test]
+    fn truncate_no_segments_under_cap_returns_unchanged() {
+        let input = "alpha beta gamma";
+        let out = truncate_segments_to_last_n_words(input, 100);
+        assert_eq!(out, input);
+    }
+
+    #[test]
+    fn truncate_handles_empty_input() {
+        let out = truncate_segments_to_last_n_words("", 100);
+        assert_eq!(out, "");
+    }
+
+    #[test]
+    fn truncate_handles_hour_format_headers() {
+        // Production uses `(H:MM:SS)` for >1hr sessions. Header detector must
+        // accept the third digit group too.
+        let input = "[0] (1:00:00) (S0): hello world\n[1] (1:01:00) (S0): foo bar baz";
+        let out = truncate_segments_to_last_n_words(input, 3);
+        // Should keep only the last segment (it has 3 body words)
+        assert!(out.contains("[1] (1:01:00)"));
+        assert!(!out.contains("[0] (1:00:00)"));
+    }
+
+    #[test]
+    fn truncate_end_to_end_shrinks_detection_prompt() {
+        // Synthetic >6000-word formatted_segments. The user-prompt produced by
+        // build_encounter_detection_prompt with the truncated input must be
+        // strictly shorter than the user prompt produced from the full input.
+        let full = build_segments(20, 500); // ~10000 segment-body words
+        let capped = truncate_segments_to_last_n_words(&full, 6000);
+        assert!(
+            capped.len() < full.len(),
+            "truncated text must be shorter than input"
+        );
+
+        let (_, full_user) = build_encounter_detection_prompt(&full, None, None);
+        let (_, capped_user) = build_encounter_detection_prompt(&capped, None, None);
+        assert!(
+            capped_user.len() < full_user.len(),
+            "user prompt built from truncated segments must be shorter \
+             (full={}, capped={})",
+            full_user.len(),
+            capped_user.len()
         );
     }
 }

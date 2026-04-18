@@ -40,6 +40,7 @@ async fn get_default_thresholds() {
     assert_eq!(json["vision_skip_streak_k"], 5);
     assert_eq!(json["vision_skip_call_cap"], 30);
     assert_eq!(json["gemini_generation_timeout_secs"], 45);
+    assert_eq!(json["detection_prompt_max_words"], 6000);
 }
 
 #[tokio::test]
@@ -54,6 +55,7 @@ async fn detection_thresholds_back_compat_cat_a_extensions() {
     assert_eq!(parsed.vision_skip_streak_k, 5);
     assert_eq!(parsed.vision_skip_call_cap, 30);
     assert_eq!(parsed.gemini_generation_timeout_secs, 45);
+    assert_eq!(parsed.detection_prompt_max_words, 6000);
     // Sanity-check an existing field — defense against accidental renames
     // collapsing back-compat for the whole struct.
     assert_eq!(parsed.force_check_word_threshold, 3000);

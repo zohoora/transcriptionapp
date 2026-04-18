@@ -995,6 +995,11 @@ pub struct DetectionThresholds {
     /// Gemini image generation HTTP timeout in seconds (default: 45)
     #[serde(default = "default_gemini_generation_timeout_secs")]
     pub gemini_generation_timeout_secs: u64,
+    /// Cap on how many words of formatted segments are sent to the encounter
+    /// detection LLM. Truncates to the LAST N words while preserving segment
+    /// boundaries. Set to 0 to disable the cap. (default: 6000)
+    #[serde(default = "default_detection_prompt_max_words")]
+    pub detection_prompt_max_words: usize,
 }
 
 // Serde default value functions for DetectionThresholds
@@ -1020,6 +1025,7 @@ fn default_mp_detect_word_threshold() -> usize { 500 }
 fn default_vision_skip_streak_k() -> usize { 5 }
 fn default_vision_skip_call_cap() -> usize { 30 }
 fn default_gemini_generation_timeout_secs() -> u64 { 45 }
+fn default_detection_prompt_max_words() -> usize { 6000 }
 
 impl Default for DetectionThresholds {
     fn default() -> Self {
@@ -1050,6 +1056,7 @@ impl Default for DetectionThresholds {
             vision_skip_streak_k: 5,
             vision_skip_call_cap: 30,
             gemini_generation_timeout_secs: 45,
+            detection_prompt_max_words: 6000,
         }
     }
 }

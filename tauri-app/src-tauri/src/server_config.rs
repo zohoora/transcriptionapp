@@ -231,6 +231,8 @@ pub struct DetectionThresholds {
     pub vision_skip_call_cap: usize,
     #[serde(default = "default_gemini_generation_timeout_secs")]
     pub gemini_generation_timeout_secs: u64,
+    #[serde(default = "default_detection_prompt_max_words")]
+    pub detection_prompt_max_words: usize,
 }
 
 fn default_3000() -> usize { 3000 }
@@ -255,6 +257,7 @@ fn default_mp_detect_word_threshold() -> usize { 500 }
 fn default_vision_skip_streak_k() -> usize { 5 }
 fn default_vision_skip_call_cap() -> usize { 30 }
 fn default_gemini_generation_timeout_secs() -> u64 { 45 }
+fn default_detection_prompt_max_words() -> usize { 6000 }
 
 impl Default for DetectionThresholds {
     fn default() -> Self {
@@ -285,6 +288,7 @@ impl Default for DetectionThresholds {
             vision_skip_streak_k: 5,
             vision_skip_call_cap: 30,
             gemini_generation_timeout_secs: 45,
+            detection_prompt_max_words: 6000,
         }
     }
 }
@@ -693,6 +697,7 @@ mod tests {
         assert_eq!(parsed.vision_skip_streak_k, 5);
         assert_eq!(parsed.vision_skip_call_cap, 30);
         assert_eq!(parsed.gemini_generation_timeout_secs, 45);
+        assert_eq!(parsed.detection_prompt_max_words, 6000);
         // And an existing field — defense against accidental renames collapsing
         // back-compat for the whole struct.
         assert_eq!(parsed.force_check_word_threshold, 3000);
@@ -705,6 +710,7 @@ mod tests {
         assert_eq!(config.thresholds.vision_skip_streak_k, 5);
         assert_eq!(config.thresholds.vision_skip_call_cap, 30);
         assert_eq!(config.thresholds.gemini_generation_timeout_secs, 45);
+        assert_eq!(config.thresholds.detection_prompt_max_words, 6000);
     }
 
     // ── Three-tier fallback integration tests ────────────────────────

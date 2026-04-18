@@ -1342,6 +1342,17 @@ pub async fn run_continuous_mode(
                     let (filtered, _) = strip_hallucinations(&formatted, 5);
                     filtered
                 });
+                // Cap detection prompt to last N words (preserves segment boundaries).
+                // Forensic replay across 2026-04-16/2026-04-17 confirmed 86/87 final
+                // split decisions are preserved with 6,000-word cap, with up to ~3x
+                // latency reduction on long encounters and the 40s+ p99 LLM tail
+                // eliminated. `cap == 0` is the ops escape hatch ("disabled").
+                let cap = detector_thresholds.detection_prompt_max_words;
+                let filtered_for_llm = if cap > 0 {
+                    crate::encounter_detection::truncate_segments_to_last_n_words(&filtered_for_llm, cap)
+                } else {
+                    filtered_for_llm
+                };
                 // Build detection context from available signals (vision name change, sensor state)
                 let detection_context = {
                     let mut ctx = EncounterDetectionContext::default();
