@@ -40,7 +40,7 @@ Three typed structs live in `profile-service/src/types.rs` (mirrored in tauri's 
 |--------|-----------|-------------|
 | `PromptTemplates` | All LLM prompt builder defaults | Every builder accepts `Option<&PromptTemplates>` and uses `unwrap_or_else` for the default |
 | `BillingData` | OHIP codes, companion mappings, rule engine tables | Rule engine accepts `Option<&BillingData>` |
-| `DetectionThresholds` | `ABSOLUTE_WORD_CAP`, `FORCE_SPLIT_WORD_THRESHOLD`, force-split consecutive limit, confidence gates, `MIN_WORDS_FOR_CLINICAL_CHECK`, `MULTI_PATIENT_CHECK_WORD_THRESHOLD`, SOAP + billing timeouts | Wired into `DetectionEvalContext.server_thresholds` (evaluate_detection) and into runtime branches in `continuous_mode.rs` via primitive captures; `check_clinical_content`, `generate_and_archive_soap`, `extract_and_archive_billing` accept `Option<usize/u64>` threshold overrides |
+| `DetectionThresholds` | `ABSOLUTE_WORD_CAP`, `FORCE_SPLIT_WORD_THRESHOLD`, force-split consecutive limit, confidence gates, `MIN_WORDS_FOR_CLINICAL_CHECK`, `MULTI_PATIENT_CHECK_WORD_THRESHOLD`, SOAP + billing timeouts, `detection_prompt_max_words` | Wired into `DetectionEvalContext.server_thresholds` (evaluate_detection) and into runtime branches in `continuous_mode.rs` via primitive captures; `check_clinical_content`, `generate_and_archive_soap`, `extract_and_archive_billing` accept `Option<usize/u64>` threshold overrides |
 | `OperationalDefaults` | Sleep hours, thermal/CO2 baselines, encounter intervals, model aliases (4) | Resolved via `server_config_resolve::resolve_operational()` honoring `Settings.user_edited_fields` — local wins when user-edited, else server, else compiled default |
 
 Each struct has a **version counter**. A shared `config_version.json` increments every time any of the three is updated. Clients fetch `GET /config/version` cheaply and only pull the body when the version differs from their cached value.
@@ -118,7 +118,7 @@ For `PromptTemplates`, an *empty string* in a field means "use the compiled defa
 | `soap_model` / `soap_model_fast` / `fast_model` / `encounter_detection_model` | Every LLM call site (resolved at call time via `resolve_effective_models`) | Cheap; propagates model rollouts without restart |
 | Cat A threshold fields (vision K/cap, multi-patient detect, gemini timeout, screenshot grace) | Continuous-mode start | Same cadence as all Phase 2 thresholds |
 
-- **Cat A finishing**: four algorithm constants (`SCREENSHOT_STALE_GRACE_SECS`, `MULTI_PATIENT_DETECT_WORD_THRESHOLD`, vision early-stop `K`/cap, Gemini timeout) were previously hardcoded and are now fields on `DetectionThresholds`, wired through the same Phase 2 snapshot path. The compiled consts remain as source-of-truth for the `Default` impl.
+- **Cat A finishing**: five algorithm constants (`SCREENSHOT_STALE_GRACE_SECS`, `MULTI_PATIENT_DETECT_WORD_THRESHOLD`, vision early-stop `K`/cap, Gemini timeout, `detection_prompt_max_words: 6000`) were previously hardcoded and are now fields on `DetectionThresholds`, wired through the same Phase 2 snapshot path. The compiled consts remain as source-of-truth for the `Default` impl. The 6,000-word detection-prompt cap was validated by forensic replay across 2026-04-16/2026-04-17 (86/87 final decisions preserved, ~3× faster on long encounters, 40s+ p99 tail eliminated).
 
 - **Restart semantics**:
 

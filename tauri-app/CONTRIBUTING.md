@@ -118,19 +118,19 @@ refactor: extract audio resampling into separate module
 
 The full test architecture is documented in **[../docs/TESTING.md](../docs/TESTING.md)** — read it first for context on the 7 test layers, replay tools, labeled corpus, and benchmark fixtures.
 
-Current coverage: 585 frontend tests, 1,076 Rust lib tests, 46 profile-service tests, 192 replay bundles, 68 labeled bundles. All PRs must pass `cargo test --lib`, `pnpm test:run`, and `./scripts/preflight.sh --full`.
+Current coverage: 594 frontend tests, 1,125 Rust lib tests, 66 profile-service tests, 192 replay bundles, 68 labeled bundles. All PRs must pass `cargo test --lib`, `pnpm test:run`, and `./scripts/preflight.sh --full`.
 
 ### Running Tests
 
 ```bash
-# Frontend (Vitest, 31 files)
+# Frontend (Vitest, 32 files)
 pnpm test:run
 
-# Rust backend (~1,076 lib tests)
+# Rust backend (~1,125 lib tests)
 cd src-tauri
 cargo test --lib
 
-# Profile service (46 tests)
+# Profile service (66 tests)
 cd ../../profile-service
 cargo test
 
@@ -340,7 +340,7 @@ proptest! {
 | `performance_summary` | Writes `performance_summary.json` per day at continuous-mode stop. Per-step latency percentiles + scheduling/network split + peak concurrency + failure counts |
 | `transcript_buffer` | Timestamped segment buffer (continuous mode) |
 | `audio_processing` | Shared ffmpeg + WAV helpers used by manual audio upload + mobile CLI |
-| `billing/` | FHO+ billing engine (234 OHIP codes, 562 diagnostic codes, two-stage extraction) |
+| `billing/` | FHO+ billing engine (235 OHIP codes, 562 diagnostic codes, two-stage extraction) |
 | `server_sync` | `ServerSyncContext` — fire-and-forget session upload + 30s delayed re-sync |
 | `server_config` | Server-configurable prompts/billing/thresholds (3-tier fallback: server → cache → defaults) |
 | `room_config` | Room config (room name, profile server URL, fallback URLs, room ID) |

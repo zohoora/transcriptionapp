@@ -15,7 +15,7 @@ Ambient Medical Intelligence — a real-time speech-to-text transcription deskto
 ### Clinical
 - **SOAP note generation** — AI-powered via OpenAI-compatible LLM router with explicit S/O/A/P section definitions
 - **Multi-patient SOAP** — supports up to 4 patients per visit with auto patient/physician detection
-- **FHO+ Billing Engine** — two-stage extraction (LLM clinical features → deterministic OHIP rule engine); 234 OHIP codes; auto K013A→K033A overflow at 4+ counselling units; per-patient billing; diagnostic-code cross-validation
+- **FHO+ Billing Engine** — two-stage extraction (LLM clinical features → deterministic OHIP rule engine); 235 OHIP codes; auto K013A→K033A overflow at 4+ counselling units; per-patient billing; diagnostic-code cross-validation
 - **Patient handout** — plain-language visit summary (5th–8th grade reading level); included as context in SOAP generation
 - **Differential diagnosis** — top 3 DDx with cardinal symptoms, refreshed every 30s during continuous mode
 - **Clinical assistant chat** — `clinical-assistant` LLM alias for live questions during recording; chat history persisted per session (continuous mode)

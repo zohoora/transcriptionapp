@@ -160,8 +160,9 @@ npx tsc --noEmit                 # TypeScript typecheck
 cd src-tauri && cargo check      # Rust compile check
 
 # Tests
-pnpm test:run                    # Frontend (Vitest)
-cd src-tauri && cargo test       # Rust
+pnpm test:run                    # Frontend (Vitest, 594 passing across 32 files)
+cd src-tauri && cargo test --lib # Rust lib (1,125 passing, 30 ignored)
+cd ../profile-service && cargo test  # Profile service (66 passing across 7 test files)
 
 # Daily preflight (verifies STT + LLM + Archive before clinic)
 ./scripts/preflight.sh           # Quick (~10s): layers 1-3
@@ -174,7 +175,7 @@ cd src-tauri && cargo test       # Rust
 
 | Task | Files to Modify |
 |------|-----------------|
-| Add new setting | `config.rs`, `types/index.ts`; if UI-visible: also `useSettings.ts` (PendingSettings + `buildMergedSettings()`), `SettingsDrawer.tsx` (Zone 1 or Zone 3 Advanced) |
+| Add new setting | `config.rs`, `types/index.ts`; if user-tunable Cat B (sleep/sensor/encounter/model alias): also add to `CAT_B_FIELD_NAMES` + `cat_b_field_eq()` in config.rs, mirror in `OperationalDefaults` (server_config.rs + profile-service/types.rs), extend `resolve_operational()`; if UI-visible: also `useSettings.ts` (PendingSettings + `buildMergedSettings()`), `SettingsDrawer.tsx` (Zone 1 or Zone 3 Advanced — Advanced section pulls `useOperationalDefaults` for clinic-default hints + reset links via `clear_user_edited_field`) |
 | Modify transcription | `pipeline.rs`, `whisper_server.rs` (STT Router streaming), `transcription.rs` (types) |
 | Change SOAP prompt | `llm_client.rs` (prompt builders accept `Option<&PromptTemplates>`), or update server-wide via profile service `PUT /config/prompts` |
 | Modify server config (prompts/billing/thresholds) | `server_config.rs` (client types + fetch), `profile_client.rs` (4 fetch methods), profile service `PUT /config/*` endpoints |
@@ -208,12 +209,12 @@ cd src-tauri && cargo test       # Rust
 | Modify manual audio upload | `commands/audio_upload.rs` (Tauri commands + pipeline orchestration), `audio_processing.rs` (shared ffmpeg helpers), `useAudioUpload.ts` (React state + event listener), `AudioUploadModal.tsx` (UI). Both `ReadyMode.tsx` and `ContinuousMode.tsx` expose the trigger |
 | Modify shared audio helpers | `audio_processing.rs` — used by both `process_mobile` CLI and `commands/audio_upload.rs`. Changes propagate to both pipelines |
 
-## IPC Commands (~144 total across 21 modules)
+## IPC Commands (~146 total across 20 modules)
 
 | Module | Commands | Source |
 |--------|----------|--------|
 | Session (5) | `start_session`, `stop_session`, `reset_session`, `get_audio_file_path`, `reset_silence_timer` | `commands/session.rs` |
-| Settings (2) | `get_settings`, `set_settings` | `commands/settings.rs` |
+| Settings (4) | `get_settings`, `set_settings`, `clear_user_edited_field`, `get_operational_defaults` | `commands/settings.rs` |
 | Audio (1) | `list_input_devices` | `commands/audio.rs` |
 | Models (12) | `check_model_status`, `ensure_models`, `download_*_model`, `get_whisper_models`, etc. | `commands/models.rs` |
 | LLM/SOAP (6) | `check_ollama_status`, `list_ollama_models`, `prewarm_ollama_model`, `generate_soap_note` (supports `model_override`), `generate_soap_note_auto_detect` (supports `model_override`), `generate_predictive_hint` | `commands/ollama.rs` |
@@ -226,7 +227,7 @@ cd src-tauri && cargo test       # Rust
 | Clinical Chat (1) | `clinical_chat_send` | `commands/clinical_chat.rs` |
 | MIIS (3) | `miis_suggest`, `miis_send_usage`, `generate_ai_image` | `commands/miis.rs`, `commands/images.rs` |
 | Screenshot (7) | `check_screen_recording_permission`, `open_screen_recording_settings`, `start/stop_screen_capture`, `get_screen_capture_status`, `get_screenshot_paths`, `get_screenshot_thumbnails` | `commands/screenshot.rs` |
-| Continuous (7) | `start/stop_continuous_mode`, `get_continuous_mode_status`, `trigger_new_patient`, `set_continuous_encounter_notes`, `list_serial_ports`, `set_stt_language` | `commands/continuous.rs` |
+| Continuous (8) | `start/stop_continuous_mode`, `get_continuous_mode_status`, `get_continuous_transcript`, `get_current_encounter_transcript`, `trigger_new_patient`, `set_continuous_encounter_notes`, `list_serial_ports` | `commands/continuous.rs` |
 | Vision (5) | `generate_vision_soap_note`, `run_vision_experiments`, `get_vision_experiment_results`, `get_vision_experiment_report`, `list_vision_experiment_strategies` | `commands/ollama.rs` |
 | Physicians (18) | `get_room_config`, `save_room_config`, `test_profile_server`, `get_physicians`, `select_physician`, `get_active_physician`, `deselect_physician`, `sync_speaker_profiles`, `create_physician`, `update_physician`, `delete_physician`, `get_rooms`, `create_room`, `update_room`, `delete_room`, `sync_settings_from_server`, `sync_infrastructure_settings`, `sync_room_settings` | `commands/physicians.rs` |
 | Calibration (4) | `start_co2_calibration`, `stop_co2_calibration`, `advance_calibration_phase`, `get_calibration_status` | `commands/calibration.rs` |
@@ -283,7 +284,7 @@ Idle → Preparing → Recording → Stopping → Completed
 | Settings validation after update | `clamp_values()` called after `update_from_settings()` in config.rs — safety net for user-edited JSON |
 | Encounter notes: clone before clear | In continuous mode detector, clone accumulated notes before clearing buffer to avoid data loss |
 | Audio quality shared util | `getAudioQualityLevel()` in utils.ts — shared across RecordingMode, ReviewMode, ContinuousMode |
-| Force-split constants | Named constants in encounter_detection.rs: `FORCE_CHECK_WORD_THRESHOLD` (3K), `FORCE_SPLIT_WORD_THRESHOLD` (5K), `FORCE_SPLIT_CONSECUTIVE_LIMIT` (3), `ABSOLUTE_WORD_CAP` (25K). Graduated force-split only counts consecutive LLM failures/timeouts (not confident "no split" responses). Both FORCE_CHECK and FORCE_SPLIT use `cleaned_word_count` (hallucination-stripped) to avoid STT phrase loops inflating past thresholds. Retrospective: `MULTI_PATIENT_CHECK_WORD_THRESHOLD` (2500), `MULTI_PATIENT_SPLIT_MIN_WORDS` (500). Clinical content check: `MIN_WORDS_FOR_CLINICAL_CHECK` (100) — transcripts below this threshold skip the LLM clinical check |
+| Force-split constants | Named constants in encounter_detection.rs: `FORCE_CHECK_WORD_THRESHOLD` (3K), `FORCE_SPLIT_WORD_THRESHOLD` (5K), `FORCE_SPLIT_CONSECUTIVE_LIMIT` (3), `ABSOLUTE_WORD_CAP` (25K). Graduated force-split only counts consecutive LLM failures/timeouts (not confident "no split" responses). Both FORCE_CHECK and FORCE_SPLIT use `cleaned_word_count` (hallucination-stripped) to avoid STT phrase loops inflating past thresholds. Retrospective: `MULTI_PATIENT_CHECK_WORD_THRESHOLD` (2500), `MULTI_PATIENT_SPLIT_MIN_WORDS` (500). Clinical content check: `MIN_WORDS_FOR_CLINICAL_CHECK` (100) — transcripts below this threshold skip the LLM clinical check. Detection prompt cap: `truncate_segments_to_last_n_words` in `encounter_detection.rs` called before `build_encounter_detection_prompt` caps the transcript to the last `detection_prompt_max_words` words (default 6,000) — validated by forensic replay to preserve 86/87 split decisions with ~3× faster long-encounter latency |
 | Presence sensor auto-detect | `auto_detect_port()` in presence_sensor/sources/serial.rs scans USB-serial devices when configured port fails |
 | Screen recording permission | Use `CGPreflightScreenCaptureAccess()` (not 1x1 pixel capture) — old check always passed even without permission. `is_blank_capture()` heuristic detects blanked-out window content |
 | SOAP JSON repair | Pipeline: `fix_json_newlines` → `remove_leading_commas` → `remove_trailing_commas` → `fix_truncated_json` (closes unclosed strings + missing brackets) → filter empty strings. Raw-JSON fallback returns structured placeholder instead of broken JSON |
@@ -306,7 +307,7 @@ Idle → Preparing → Recording → Stopping → Completed
 | Profile cache fallback | `physician_cache.rs` — server fetch with local JSON cache fallback. Cache updated on every successful server fetch |
 | Server config three-tier fallback | `server_config.rs` — `load_server_config()` fetches from profile service `/config/*`, caches to `server_config_cache.json`, falls back to compiled defaults. Version-based staleness check avoids unnecessary refetch. `SharedServerConfig` (Arc<RwLock>) in Tauri managed state, initialized to compiled defaults then updated async |
 | Prompt template override | All prompt builders accept `Option<&PromptTemplates>`. Non-empty server field overrides hardcoded default. Pattern: `templates.and_then(\|t\| (!t.field.is_empty()).then(\|\| t.field.clone())).unwrap_or_else(\|\| HARDCODED.to_string())`. Billing rule engine uses same pattern with `Option<&BillingData>` |
-| Detection threshold override | `DetectionEvalContext.server_thresholds: Option<DetectionThresholds>` — when set, `evaluate_detection()` reads thresholds from it via `.as_ref().map_or(COMPILED_DEFAULT, \|t\| t.field)`. Populated in production (Phase 2 + Phase 3): snapshotted from `SharedServerConfig.thresholds` into an `Arc<DetectionThresholds>` at continuous-mode start; also covers Cat A constants (vision K/cap, multi-patient detect, screenshot grace, Gemini timeout) |
+| Detection threshold override | `DetectionEvalContext.server_thresholds: Option<DetectionThresholds>` — when set, `evaluate_detection()` reads thresholds from it via `.as_ref().map_or(COMPILED_DEFAULT, \|t\| t.field)`. Populated in production (Phase 2 + Phase 3): snapshotted from `SharedServerConfig.thresholds` into an `Arc<DetectionThresholds>` at continuous-mode start; also covers Cat A constants (vision K/cap, multi-patient detect, screenshot grace, Gemini timeout, `detection_prompt_max_words`). `ScreenshotTaskConfig` now carries a single `thresholds: Arc<DetectionThresholds>` field (replacing the 3 prior primitive fields) |
 | Operational defaults override | `OperationalDefaults` (sleep hours, sensor baselines, encounter intervals, 4 model aliases) resolved via `server_config_resolve::resolve(server, local, field_name, user_edited)` — pointwise at call sites, aggregated via `resolve_operational(settings, server)` for the snapshot path. `resolve_effective_models()` re-reads every LLM call for cheap model-alias rollout. Precedence: `compiled default < server < local (only if user-edited)`; `Settings.user_edited_fields: Vec<String>` tracks intent. Legacy migration on first load seeds the Vec by comparing each Cat B field against the compiled default (idempotent) |
 | Profile server failover | `ProfileClient` stores multiple base URLs (`base_urls: Vec<String>`) with `AtomicUsize` active index. `select_best_url()` probes `/health` on each URL (2s timeout). `connect_timeout(3s)` on main client for fast connection failure detection. `save_room_config` preserves `fallback_server_urls` from existing config |
 | Gemini retry | `gemini_client.rs` — single retry with 2s backoff on network errors (DNS, connection, TLS). HTTP errors (4xx/5xx) are not retried |
@@ -376,6 +377,8 @@ Idle → Preparing → Recording → Stopping → Completed
 - Recent encounters: `recent_encounters` list (max 3) tracks last split sessions with click-to-copy SOAP. Merged sessions are removed from the list after merge to prevent stale session ID references
 - Day log midnight rotation: `DayLogger` checks date on each `log()` call; if `Local::now()` date differs from stored date, closes current file and opens new one under the correct date directory
 - Sensor-continuity gate: `sensor_continuous_present` bool tracks whether sensor has shown unbroken presence since last split. Set `true` after successful split when sensor is present; cleared on Present→Absent transition. When true, LLM-only splits require confidence ≥0.99 via `DetectionEvalContext`
+- Operational defaults snapshot: at continuous-mode start, `resolve_operational()` resolves Cat B fields (sensor baselines, encounter intervals, 4 model aliases) using precedence `compiled default < server < local(only if user-edited)`. 8 non-sleep Cat B values snapshot into the run; sleep hours re-resolve every outer-loop tick via `resolve_sleep_hours()` so server pushes take effect within ~60s without a restart
+- Effective model aliases: `resolve_effective_models()` is re-evaluated on every LLM command via `load_effective_models_and_client()` helper — server-pushed model alias changes apply on next LLM call without app restart
 
 ## Settings Schema
 
@@ -384,6 +387,8 @@ Source of truth: `src-tauri/src/config.rs` (Rust) / `src/types/index.ts` (TypeSc
 Key settings groups: STT Router (whisper_server_url, stt_alias=`"medical-streaming"`, stt_postprocess=true, language=`"auto"` (auto-detect, default since Gemma 4 STT migration)), Audio (VAD, diarization, enhancement), LLM Router (soap_model=`"soap-model-fast"`, soap_model_fast=`"soap-model-fast"`, fast_model=`"fast-model"`), Medplum (OAuth, auto_sync), Auto-detection (auto_start, auto_end_silence_ms=180000), SOAP (detail_level 1-10, format, custom_instructions), Images (image_source=`"ai"` (default)|`"miis"`|`"off"`, gemini_api_key), MIIS, Screen Capture, Continuous Mode (charting_mode, encounter_check_interval_secs=120, encounter_silence_trigger_secs=45, encounter_merge_enabled, encounter_detection_model=`"fast-model"`, encounter_detection_nothink=false), Sleep Mode (sleep_mode_enabled=true, sleep_start_hour=22, sleep_end_hour=6 — hours in EST, clamped 0-23), Presence Sensor (encounter_detection_mode=`"hybrid"`, presence_sensor_port, presence_absence_threshold_secs=180, presence_debounce_secs=15, presence_csv_log_enabled=true, thermal_hot_pixel_threshold_c=28.0, co2_baseline_ppm=420.0), Shadow Mode (shadow_active_method=`"sensor"`, shadow_csv_log_enabled=true), Hybrid Detection (hybrid_confirm_window_secs=180, hybrid_min_words_for_sensor_split=500), Screen Capture (screen_capture_enabled, screen_capture_interval_secs=30, requires Screen Recording permission), Debug.
 
 Multi-user: profile_server_url + fallback_server_urls (in room_config.json), active_physician_id.
+
+Cat B fields (sleep hours, thermal/CO2 baselines, encounter intervals, 4 model aliases — 10 total) flow through `OperationalDefaults` precedence; local value only wins when listed in `Settings.user_edited_fields`.
 
 ## File Locations
 
@@ -505,7 +510,7 @@ Multi-user: profile_server_url + fallback_server_urls (in room_config.json), act
 - `useSessionState` - Recording state, transcript, biomarkers
 - `useSoapNote` - SOAP generation
 - `useMedplumSync` - EMR sync with encounter tracking
-- `useSettings` - Configuration management (`PendingSettings` = 25 UI-editable fields, subset of full `Settings`; `diarization_enabled`/`whisper_mode` hardcoded in save, not in pending). Exports `buildMergedSettings()` shared helper for PendingSettings→Settings conversion
+- `useSettings` - Configuration management (`PendingSettings` = 35 UI-editable fields, subset of full `Settings`; `diarization_enabled`/`whisper_mode` hardcoded in save, not in pending). Exports `buildMergedSettings()` shared helper for PendingSettings→Settings conversion
 - `useAutoDetection` - Listening mode
 - `useSpeakerProfiles` - Speaker enrollment CRUD operations
 - `useClinicalChat` - Clinical assistant chat during recording
@@ -679,7 +684,7 @@ Intermediate results are cached at `/tmp/replay_YYYY-MM-DD/` so re-runs are chea
 
 ## Adding New Features
 
-1. **Config**: Add field to `config.rs`, `types/index.ts`. If UI-visible: also add to `PendingSettings` in `useSettings.ts` + `buildMergedSettings()` + `SettingsDrawer.tsx` (Zone 1 for clinical, Zone 3 Advanced for IT/infra). Config-only settings: edit `~/.transcriptionapp/config.json` directly
+1. **Config**: Add field to `config.rs`, `types/index.ts`. If user-tunable Cat B (sleep/sensor/encounter/model alias): also add to `CAT_B_FIELD_NAMES` + `cat_b_field_eq()` in config.rs, mirror in `OperationalDefaults` (server_config.rs + profile-service/types.rs), and extend `resolve_operational()`. If UI-visible: also add to `PendingSettings` in `useSettings.ts` + `buildMergedSettings()` + `SettingsDrawer.tsx` (Zone 1 for clinical, Zone 3 Advanced for IT/infra — Advanced section pulls `useOperationalDefaults` for clinic-default hints + reset links via `clear_user_edited_field`). Config-only settings: edit `~/.transcriptionapp/config.json` directly
 2. **Model**: Add URL/download in `commands/models.rs`, check in `checklist.rs`
 3. **Command**: Add to `commands/*.rs`, register in `lib.rs`
 4. **Pipeline**: Add provider initialization in `pipeline.rs`

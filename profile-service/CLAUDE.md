@@ -21,10 +21,10 @@ src/
 ├── error.rs           # ApiError enum → HTTP status mapping
 ├── types.rs           # All data structures + validation methods
 ├── routes/
-│   ├── mod.rs         # build_router() — 31 route registrations across 8 resource groups
+│   ├── mod.rs         # build_router() — 32 route registrations across 8 resource groups
 │   ├── health.rs      # GET /health
 │   ├── infrastructure.rs  # Clinic-wide settings (singleton)
-│   ├── config_data.rs # GET/PUT for prompts, billing, thresholds + version check (7 handlers)
+│   ├── config_data.rs # GET/PUT for prompts, billing, thresholds + version check (9 handlers)
 │   ├── mobile.rs      # Mobile job upload, status, CRUD (6 handlers)
 │   ├── physicians.rs  # Physician CRUD
 │   ├── rooms.rs       # Room CRUD
@@ -32,7 +32,7 @@ src/
 │   └── speakers.rs    # Speaker profile CRUD
 └── store/
     ├── mod.rs         # AppState (6 RwLock<Manager> + SessionStore)
-    ├── config_data.rs # ConfigDataStore — prompts, billing rules, thresholds; version counter
+    ├── config_data.rs # ConfigDataStore — prompts, billing rules, thresholds, operational defaults; version counter
     ├── mobile_jobs.rs # Mobile job store (in-memory HashMap + JSON persistence)
     ├── physicians.rs  # In-memory Vec + atomic JSON persistence
     ├── rooms.rs       # Same pattern as physicians
@@ -50,7 +50,7 @@ Middleware stack (outermost → innermost): CORS → body limit (500 MB) → aut
 | Atomic writes | `atomic_write()` — UUID-suffixed temp file + rename. Used for transcript, SOAP, metadata, all JSON stores |
 | Session cache | `session_cache: HashMap<(physician_id, session_id), PathBuf>` — avoids O(N) directory walk per lookup. Populated lazily, invalidated on delete/split/merge |
 | Path traversal | `validate_id()` rejects `/`, `\`, `..`, `\0`, empty strings. Called on all physician_id and session_id inputs |
-| File allowlist | `is_allowed_session_file()` in `store/sessions.rs` — explicit allowlist for auxiliary files. Currently allows: `pipeline_log.jsonl`, `replay_bundle.json`, `segments.jsonl`, `billing.json`, and `screenshots/*.jpg`. **Note**: `patient_handout.txt` is stored alongside other session files but is NOT in the allowlist — it can only be created via the dedicated `PUT /sessions/.../patient-handout` route, not via the generic file upload route. Same applies to `feedback.json`, `patient_labels.json` (each has its own typed route). Adding new aux file types requires updating both the allowlist and the tauri-side `server_sync.rs::SYNCED_AUX_FILES` |
+| File allowlist | `is_allowed_session_file()` in `store/sessions.rs` — explicit allowlist for auxiliary files. Currently allows: `pipeline_log.jsonl`, `replay_bundle.json`, `segments.jsonl`, `billing.json`, `patient_handout.txt`, and `screenshots/*.jpg`. **Note**: `feedback.json` and `patient_labels.json` are not in the allowlist — they have dedicated typed routes. Adding new aux file types requires updating both the allowlist and the tauri-side `server_sync.rs::SYNCED_AUX_FILES` |
 | Metadata patch (JSON merge) | `patch_metadata()` accepts `serde_json::Value` (raw JSON object) and merges non-null fields into existing metadata. Replaced the v0.10.30 typed-struct approach so new tauri-side metadata fields propagate without requiring a profile-service rebuild. Tradeoff: no compile-time type checking on patch keys — bad keys are silently merged. The store re-serializes after merge so unknown fields persist for future tauri reads |
 | Input validation | `validate()` methods on all Create/Update request types — name 500 chars, instructions 10K, etc. |
 | Backup safety | Split/merge operations create `.bak` files before modifying transcripts, removed on success |
@@ -61,18 +61,26 @@ Middleware stack (outermost → innermost): CORS → body limit (500 MB) → aut
 
 ## API Routes
 
-31 `.route()` registrations (each with multiple HTTP methods, ~52 handler functions total) across 8 resource groups. Session routes scoped under `/physicians/:id/sessions/...`. Mobile routes under `/mobile/...`. Config routes under `/config/...`.
+32 `.route()` registrations (each with multiple HTTP methods, ~52 handler functions total) across 8 resource groups. Session routes scoped under `/physicians/:id/sessions/...`. Mobile routes under `/mobile/...`. Config routes under `/config/...`.
 
 | Resource | Endpoints |
 |----------|-----------|
 | Health | `GET /health` |
 | Infrastructure | `GET/PUT /infrastructure` |
-| Config Data | `GET /config/version`, `GET/PUT /config/prompts`, `GET/PUT /config/billing`, `GET/PUT /config/thresholds` |
+| Config Data | `GET /config/version`, `GET/PUT /config/prompts`, `GET/PUT /config/billing`, `GET/PUT /config/thresholds`, `GET/PUT /config/defaults` |
 | Mobile Jobs | `POST /mobile/upload`, `GET /mobile/jobs`, `GET/PUT/DELETE /mobile/jobs/:job_id`, `GET /mobile/uploads/:job_id` |
 | Physicians | `GET/POST /physicians`, `GET/PUT/DELETE /physicians/:id` |
 | Rooms | `GET/POST /rooms`, `GET/PUT/DELETE /rooms/:id` |
 | Speakers | `GET/POST /speakers`, `GET/PUT/DELETE /speakers/:id` |
 | Sessions | dates, list, get, upload, delete, split, merge, renumber, metadata, soap, feedback, patient-name, transcript-lines, audio, files, screenshots, day-log |
+
+## Server Config Categories
+
+Four independent config sections share `config_version.json` (single shared counter, bumped on any update):
+- **PromptTemplates** (`prompt_templates.json`) — LLM prompt overrides
+- **BillingData** (`billing_data.json`) — OHIP codes + rule tables
+- **DetectionThresholds** (`detection_thresholds.json`) — algorithm internals: word thresholds (force-check/split, absolute cap, multi-patient), confidence gates, timeouts, Cat A extensions (`multi_patient_detect_word_threshold`, `vision_skip_streak_k`, `vision_skip_call_cap`, `gemini_generation_timeout_secs`, `detection_prompt_max_words`)
+- **OperationalDefaults** (`operational_defaults.json`) — admin-facing knobs: sleep hours (start/end), thermal/CO2 baselines, encounter intervals (check/silence), 4 model aliases (soap_model, soap_model_fast, fast_model, encounter_detection_model). `validate()` enforces bounds (sleep hours 0-23 and must differ; thermal 20-40°C; CO2 300-600 ppm; check interval 10-3600s; silence trigger 5-600s; non-empty model aliases) — invalid PUT returns 400.
 
 ## Data Storage
 
@@ -87,6 +95,7 @@ profile-data/
 ├── prompt_templates.json    # Server-configurable LLM prompt templates
 ├── billing_data.json        # Server-configurable billing rules (OHIP codes, mappings, etc.)
 ├── detection_thresholds.json # Server-configurable detection thresholds
+├── operational_defaults.json # Server-configurable operational knobs (sleep hours, sensor baselines, model aliases, encounter timing)
 ├── config_version.json      # Shared config version counter (bumped on any config change)
 ├── mobile_jobs.json         # Mobile recording job queue + status
 ├── mobile_uploads/          # Uploaded mobile audio files ({job_id}.m4a)
@@ -116,11 +125,12 @@ profile-data/
 | Add room setting | `types.rs` (RoomOverlay + Create/UpdateRoomRequest + validate), `store/rooms.rs` |
 | Add session endpoint | `routes/sessions.rs` (handler), `store/sessions.rs` (logic), `routes/mod.rs` (register) |
 | Add mobile job field | `store/mobile_jobs.rs` (MobileJob struct + UpdateJobRequest), `routes/mobile.rs` (handlers) |
-| Modify file allowlist | `store/sessions.rs` (`is_allowed_session_file()`) — currently allows: pipeline_log, replay_bundle, segments, screenshots/*.jpg, billing.json. Update tauri-side `SYNCED_AUX_FILES` in `server_sync.rs` to match |
+| Modify file allowlist | `store/sessions.rs` (`is_allowed_session_file()`) — currently allows: pipeline_log, replay_bundle, segments, screenshots/*.jpg, billing.json, patient_handout.txt. Update tauri-side `SYNCED_AUX_FILES` in `server_sync.rs` to match |
 | Add/update prompt template | `types.rs` (PromptTemplates struct), `PUT /config/prompts` with full replacement body |
 | Add/update billing rule | `types.rs` (BillingData or nested structs), `PUT /config/billing` with full replacement body |
 | Add detection threshold | `types.rs` (DetectionThresholds struct + `default_N()` fn + Default impl), `PUT /config/thresholds` |
-| Update server config | PUT to `/config/prompts`, `/config/billing`, or `/config/thresholds`. Version auto-bumps. Clients re-fetch on next startup |
+| Add operational default | `types.rs` (extend `OperationalDefaults` struct + `default_N()` fn + `Default` impl + `validate()` bounds), `PUT /config/defaults` with full replacement body. Validation runs in `update_defaults()` before mutation; bad PUT returns 400 |
+| Update server config | PUT to `/config/prompts`, `/config/billing`, `/config/thresholds`, or `/config/defaults`. Version auto-bumps. Clients re-fetch on next startup |
 
 ## ArchiveMetadata Notes
 

@@ -34,7 +34,7 @@ Ambient Medical Intelligence — a clinical ambient scribe for physicians. Real-
 - **MCP Server** - JSON-RPC 2.0 server on port 7101 for external tool integration
 - **Mobile House Call Recording** - iOS app records offline, auto-uploads when on network, server processes via shared Rust pipeline
 - **Manual Audio Upload** - Upload an audio file (mp3/wav/m4a/aac/flac/ogg/wma/webm) directly from the desktop and run it through the same continuous-mode pipeline (ffmpeg → STT batch → encounter detection → SOAP)
-- **FHO+ Billing Engine** - Two-stage billing extraction (LLM clinical features → deterministic OHIP rule engine); 234 OHIP codes; auto K013A→K033A overflow at 4+ counselling units; diagnostic-code cross-validation; per-patient billing for multi-patient encounters
+- **FHO+ Billing Engine** - Two-stage billing extraction (LLM clinical features → deterministic OHIP rule engine); 235 OHIP codes; auto K013A→K033A overflow at 4+ counselling units; diagnostic-code cross-validation; per-patient billing for multi-patient encounters
 - **Patient Handout** - Plain-language visit summary (5th–8th grade reading level); included as context in SOAP generation
 - **Differential Diagnosis** - Top 3 DDx with cardinal symptoms, refreshed every 30s during continuous mode
 - **Auto-Update** - Tauri updater + GitHub Releases with Ed25519 signing; running apps see an update banner on next launch
@@ -142,7 +142,7 @@ open "src-tauri/target/debug/bundle/macos/AMI Assist.app"
 | Audio Preprocessing | biquad + dagc |
 | SOAP Generation | OpenAI-compatible LLM router |
 | EMR Integration | Medplum FHIR (OAuth 2.0) |
-| FHO+ Billing | 234 OHIP codes + 562 diagnostic codes; two-stage LLM + rule engine |
+| FHO+ Billing | 235 OHIP codes + 562 diagnostic codes; two-stage LLM + rule engine |
 
 ## Testing
 

@@ -72,8 +72,8 @@ cd tauri-app && npx tsc --noEmit          # Frontend
 cd tauri-app/src-tauri && cargo check     # Backend
 
 # Tests
-cd tauri-app && pnpm test:run             # Frontend (Vitest, 585 passing across 31 files)
-cd tauri-app/src-tauri && cargo test --lib   # Backend lib (1,076 passing, 30 ignored)
+cd tauri-app && pnpm test:run             # Frontend (Vitest, 594 passing across 32 files)
+cd tauri-app/src-tauri && cargo test --lib   # Backend lib (1,125 passing, 30 ignored)
 
 # E2E (requires live STT + LLM Router)
 cd tauri-app/src-tauri && cargo test e2e_ -- --ignored --nocapture
@@ -89,7 +89,7 @@ cd tauri-app/src-tauri && cargo run --bin benchmark_runner -- --all --trials 3
 
 # Profile service
 cd profile-service && cargo check          # Type check
-cd profile-service && cargo test           # Tests
+cd profile-service && cargo test           # Tests (66 passing across integration + lib)
 
 # Mobile processing CLI
 cd tauri-app/src-tauri && cargo check --bin process_mobile   # Type check
@@ -141,10 +141,12 @@ Same pipeline as mobile, but invoked from the desktop UI. "Upload Recording" lin
 Four categories of operational data are pushed centrally without app rebuilds (Phase 1 + 2 + 3, all live):
 - **Prompt templates** — `PUT /config/prompts`. LLM prompt builders accept `Option<&PromptTemplates>`.
 - **Billing data** — `PUT /config/billing`. Rule engine accepts `Option<&BillingData>`.
-- **Detection thresholds** — `PUT /config/thresholds`. Populated on `DetectionEvalContext.server_thresholds` at continuous-mode start; also covers Cat A algorithm constants (vision K/cap, multi-patient detect, screenshot grace, Gemini timeout).
+- **Detection thresholds** — `PUT /config/thresholds`. Populated on `DetectionEvalContext.server_thresholds` at continuous-mode start; also covers Cat A algorithm constants (vision K/cap, multi-patient detect, screenshot grace, Gemini timeout, `detection_prompt_max_words`).
 - **Operational defaults** — `PUT /config/defaults` (`OperationalDefaults`: sleep hours, thermal/CO2 baselines, encounter intervals, 4 model aliases). Precedence: `compiled default < server < local (if user-edited)`, tracked via `Settings.user_edited_fields: Vec<String>` so compiled-default drift can't silently stomp workstations.
 
 Three-tier fallback unchanged: server fetch (startup + version-bump poll) → `~/.transcriptionapp/server_config_cache.json` → compiled defaults. `SharedServerConfig` (Arc<RwLock>) in Tauri managed state. Full detail in `tauri-app/docs/adr/0023-server-configurable-data.md`.
+
+Resolver lives in `tauri-app/src-tauri/src/server_config_resolve.rs` (`resolve()`, `resolve_operational()`, `resolve_effective_models()`); `get_operational_defaults` and `clear_user_edited_field` Tauri commands + the `useOperationalDefaults` frontend hook drive the "Clinic default: X / Reset to clinic default" UI in SettingsDrawer.
 
 ## Auto-Deploy (Profile Service)
 

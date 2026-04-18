@@ -102,7 +102,7 @@ pnpm tauri build --debug
 
 # Run with ONNX Runtime
 ORT_DYLIB_PATH=$(./scripts/setup-ort.sh) \
-  "src-tauri/target/debug/bundle/macos/Transcription App.app/Contents/MacOS/transcription-app"
+  "src-tauri/target/debug/bundle/macos/AMI Assist.app/Contents/MacOS/transcription-app"
 ```
 
 **Why not `tauri dev`?**
@@ -114,7 +114,7 @@ ORT_DYLIB_PATH=$(./scripts/setup-ort.sh) \
 
 ## Testing
 
-### Frontend Tests (437 tests)
+### Frontend Tests (594 tests)
 
 ```bash
 cd tauri-app
@@ -123,7 +123,7 @@ pnpm test              # Watch mode
 pnpm test:coverage     # With coverage
 ```
 
-### Rust Tests (670 tests, 29 ignored)
+### Rust Tests (1,125 tests, 30 ignored)
 
 ```bash
 cd tauri-app/src-tauri
