@@ -14,12 +14,13 @@
 
 use super::archive_comparator::ArchiveComparator;
 use super::driver::drive_encounter_bundle_smoke;
+use super::event_comparator::compare_events_snapshot;
 use super::mismatch_report::{MismatchKind, MismatchReport};
 use super::policies::{EquivalencePolicy, PromptPolicy};
 use crate::replay_bundle::ReplayBundle;
 use std::path::{Path, PathBuf};
 
-/// Return the baseline sidecar path for a given bundle path.
+/// Return the archive baseline sidecar path for a given bundle path.
 /// Example: "foo/bar.json" → "foo/bar.baseline.json"
 fn baseline_path_for(bundle_path: &Path) -> PathBuf {
     let parent = bundle_path.parent().unwrap_or(Path::new("."));
@@ -30,13 +31,23 @@ fn baseline_path_for(bundle_path: &Path) -> PathBuf {
     parent.join(format!("{}.baseline.json", stem))
 }
 
+/// Return the event-sequence baseline sidecar path for a given bundle path.
+/// Example: "foo/bar.json" → "foo/bar.events.baseline.json"
+fn events_baseline_path_for(bundle_path: &Path) -> PathBuf {
+    let parent = bundle_path.parent().unwrap_or(Path::new("."));
+    let stem = bundle_path
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("bundle");
+    parent.join(format!("{}.events.baseline.json", stem))
+}
+
 pub struct EncounterHarness {
     bundle: ReplayBundle,
     bundle_path: PathBuf,
     test_id: String,
-    #[allow(dead_code)] // Used when EventSequence comparator arrives (Phase 5)
     equivalence: EquivalencePolicy,
-    #[allow(dead_code)] // Used when PromptPolicy plumbing arrives (Phase 5 expansion)
+    #[allow(dead_code)] // Plumbed through when the harness threads prompt policy into the replay LLM construction
     prompt: PromptPolicy,
 }
 
@@ -96,13 +107,27 @@ impl EncounterHarness {
             );
         }
 
-        // Snapshot-style comparison. Baseline sidecar file:
-        //   tests/fixtures/encounter_bundles/seed/2026-04-01_03ffd0eb.baseline.json
+        // Snapshot-style comparison. Baseline sidecar files:
+        //   <bundle>.baseline.json         (archive state — always checked)
+        //   <bundle>.events.baseline.json  (event sequence — only under EventSequence policy)
         // First run (or HARNESS_RECORD_BASELINES=1) records; subsequent runs
-        // verify the orchestrator still produces the same archive state.
+        // verify the orchestrator still produces the same state.
         let baseline_path = baseline_path_for(&self.bundle_path);
         let comparator = ArchiveComparator::default();
-        let compare_res = comparator.compare_snapshot(outcome.archive_dir.path(), &baseline_path);
+        let mut compare_res =
+            comparator.compare_snapshot(outcome.archive_dir.path(), &baseline_path);
+
+        // If archive check passed AND EventSequence policy is active, run the
+        // event-sequence comparison next. Per first-divergence semantics we
+        // surface archive errors first, but a clean archive with divergent
+        // events is still divergent.
+        if matches!(compare_res, Ok(ref v) if v.is_empty())
+            && matches!(self.equivalence, EquivalencePolicy::EventSequence)
+        {
+            let events_baseline_path = events_baseline_path_for(&self.bundle_path);
+            compare_res =
+                compare_events_snapshot(&outcome.ctx.captured_events(), &events_baseline_path);
+        }
 
         match compare_res {
             Ok(mismatches) if mismatches.is_empty() => {
