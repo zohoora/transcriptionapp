@@ -50,6 +50,7 @@ pub mod local_archive;
 pub mod enhancement;
 pub mod listening;
 pub mod gemini_client;
+pub mod llm_backend;
 pub mod llm_client;
 pub mod mcp;
 pub mod medplum;
