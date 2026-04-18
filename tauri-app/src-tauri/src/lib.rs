@@ -40,6 +40,7 @@ pub mod co2_calibration;
 mod commands;
 pub mod config;
 pub mod continuous_mode;
+pub mod continuous_mode_flush_on_stop;
 pub mod transcript_buffer;
 pub mod encounter_detection;
 pub mod encounter_merge;
