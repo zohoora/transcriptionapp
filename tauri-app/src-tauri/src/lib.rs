@@ -42,6 +42,7 @@ pub mod config;
 pub mod continuous_mode;
 pub mod continuous_mode_flush_on_stop;
 pub mod continuous_mode_merge_back;
+pub mod continuous_mode_post_split;
 pub mod continuous_mode_splitter;
 pub mod continuous_mode_types;
 pub mod transcript_buffer;

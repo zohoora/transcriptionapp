@@ -1098,6 +1098,29 @@ pub async fn run_continuous_mode<C: crate::run_context::RunContext>(
             shadow_active_method,
         };
 
+        // Long-lived deps for the post_split pipeline. Borrowed per encounter.
+        // Shares the detector's own llm_client via reference (unlike merge_back
+        // which builds a dedicated LLMClient — see MergeBackDeps docs).
+        let post_split_deps = crate::continuous_mode_post_split::PostSplitDeps {
+            logger: Arc::clone(&logger_for_detector),
+            bundle: Arc::clone(&bundle_for_detector),
+            day_logger: Arc::clone(&day_logger_for_detector),
+            sync_ctx: sync_ctx_for_detector.clone(),
+            last_error: Arc::clone(&last_error_for_detector),
+            templates: templates.clone(),
+            billing_data: billing_data.clone(),
+            fast_model: fast_model.clone(),
+            soap_model: soap_model.clone(),
+            soap_detail_level,
+            soap_format: soap_format.clone(),
+            soap_custom_instructions: soap_custom_instructions.clone(),
+            min_words_for_clinical_check,
+            multi_patient_detect_word_threshold,
+            soap_generation_timeout_secs,
+            billing_extraction_timeout_secs,
+            billing_counselling_exhausted,
+        };
+
         // Hybrid mode: sensor absence tracking
         let mut sensor_absent_since: Option<DateTime<Utc>> = None;
         let mut prev_sensor_state = crate::presence_sensor::PresenceState::Unknown;
@@ -1729,7 +1752,7 @@ pub async fn run_continuous_mode<C: crate::run_context::RunContext>(
 
                         // Delegate buffer drain + archival + metadata + events to the splitter component.
                         // See crate::continuous_mode_splitter for details.
-                        let split_ctx = match crate::continuous_mode_splitter::split_encounter(
+                        let split_ctx_for_post = match crate::continuous_mode_splitter::split_encounter(
                             &ctx_for_detector,
                             &splitter_deps,
                             crate::continuous_mode_splitter::SplitterCall {
@@ -1747,290 +1770,30 @@ pub async fn run_continuous_mode<C: crate::run_context::RunContext>(
                                 continue;
                             }
                         };
-                        // Unpack SplitContext into locals read by post_split + merge_back + finalize block.
-                        let session_id = split_ctx.session_id;
-                        let encounter_text = split_ctx.encounter_text;
-                        let encounter_text_rich = split_ctx.encounter_text_rich;
-                        let encounter_word_count = split_ctx.encounter_word_count;
-                        let encounter_start = split_ctx.encounter_start;
-                        let encounter_duration_ms_computed = split_ctx.encounter_duration_ms;
-                        let notes_text = split_ctx.notes_text;
-                        let tracker_snapshot = split_ctx.tracker_snapshot;
-                        let encounter_patient_name = split_ctx.encounter_patient_name;
+                        // Locals read by merge_back + finalize block. Clones/copies (not
+                        // moves) so post_split can borrow split_ctx_for_post below.
+                        let session_id = split_ctx_for_post.session_id.clone();
+                        let encounter_text = split_ctx_for_post.encounter_text.clone();
+                        let encounter_text_rich = split_ctx_for_post.encounter_text_rich.clone();
+                        let encounter_word_count = split_ctx_for_post.encounter_word_count;
+                        let encounter_start = split_ctx_for_post.encounter_start;
+                        let notes_text = split_ctx_for_post.notes_text.clone();
+                        let tracker_snapshot = split_ctx_for_post.tracker_snapshot.clone();
+                        let encounter_patient_name = split_ctx_for_post.encounter_patient_name.clone();
 
-                        // Clinical content check: flag non-clinical encounters
-                        let is_clinical = if let Some(ref client) = llm_client {
-                            crate::encounter_pipeline::check_clinical_content(
-                                client, &fast_model, &encounter_text, encounter_word_count,
-                                &logger_for_detector,
-                                serde_json::json!({
-                                    "encounter_number": loop_state.encounter_number,
-                                    "word_count": encounter_word_count,
-                                }),
-                                Some(&templates),
-                                Some(min_words_for_clinical_check),
-                            ).await
-                        } else {
-                            encounter_word_count >= min_words_for_clinical_check
-                        };
-
-                        if !is_clinical {
-                            crate::encounter_pipeline::mark_non_clinical(&session_id);
-                            // Sync non-clinical status to server (initial upload didn't have it)
-                            let today = ctx_for_detector.now_utc().format("%Y-%m-%d").to_string();
-                            sync_ctx_for_detector.sync_session(&session_id, &today);
-                        }
-
-                        // Log clinical check result to replay bundle + day log
-                        if let Ok(mut bundle) = bundle_for_detector.lock() {
-                            bundle.set_clinical_check(crate::replay_bundle::ClinicalCheck {
-                                ts: ctx_for_detector.now_utc().to_rfc3339(),
-                                is_clinical,
-                                latency_ms: 0, // Clinical check latency already logged via pipeline_logger
-                                success: true,
-                                error: None,
-                            });
-                        }
-                        if let Some(ref dl) = *day_logger_for_detector {
-                            dl.log(crate::day_log::DayEvent::ClinicalCheckResult {
-                                ts: ctx_for_detector.now_utc().to_rfc3339(),
-                                session_id: session_id.clone(),
-                                is_clinical,
-                            });
-                        }
-
-                        // Whether the pre-SOAP multi-patient detector already found
-                        // 2+ patients for this encounter. Used later to gate the
-                        // "standalone safety net" check — no point re-detecting what
-                        // we already confirmed (saves a 30s-timeout LLM call on long
-                        // encounters, as seen in the Apr 16 2026 Room 6 audit where
-                        // Brown + Wicks each ran a redundant standalone check that
-                        // burned the full 30s timeout after pre_soap had already
-                        // succeeded).
-                        let mut pre_soap_found_multi_patient = false;
-
-                        // Generate SOAP note (with 120s timeout — SOAP is heavier than detection)
-                        // Skip SOAP for non-clinical encounters to prevent hallucinated clinical content
-                        if !is_clinical {
-                            info!("Skipping SOAP for non-clinical encounter #{}", loop_state.encounter_number);
-                        } else if let Some(ref client) = llm_client {
-                            // ── Multi-patient detection ──────────────────────────
-                            // Run before SOAP to detect couples/family visits.
-                            let multi_patient_detection = if encounter_word_count >= multi_patient_detect_word_threshold {
-                                info!("Running multi-patient detection for encounter #{} ({} words)", loop_state.encounter_number, encounter_word_count);
-                                let outcome = client.run_multi_patient_detection(&fast_model, &encounter_text_rich).await;
-                                if let Ok(mut logger) = logger_for_detector.lock() {
-                                    let det_context = match &outcome.detection {
-                                        Some(d) => serde_json::json!({
-                                            "patient_count": d.patient_count,
-                                            "confidence": d.confidence,
-                                            "reasoning": d.reasoning,
-                                            "patients": d.patients.iter()
-                                                .map(|p| serde_json::json!({"label": p.label, "summary": p.summary}))
-                                                .collect::<Vec<_>>(),
-                                            "word_count": encounter_word_count,
-                                        }),
-                                        None => serde_json::json!({
-                                            "patient_count": 1,
-                                            "word_count": encounter_word_count,
-                                            "accepted": false,
-                                        }),
-                                    };
-                                    logger.log_llm_call(
-                                        "multi_patient_detect",
-                                        &outcome.model,
-                                        &outcome.system_prompt,
-                                        &outcome.user_prompt,
-                                        outcome.response_raw.as_deref(),
-                                        outcome.latency_ms,
-                                        outcome.success,
-                                        outcome.error.as_deref(),
-                                        det_context,
-                                    );
-                                }
-                                if let Ok(mut bundle) = bundle_for_detector.lock() {
-                                    bundle.add_multi_patient_detection(multi_patient_from_outcome(
-                                        &outcome,
-                                        crate::replay_bundle::MultiPatientStage::PreSoap,
-                                        encounter_word_count,
-                                    ));
-                                }
-                                outcome.detection
-                            } else {
-                                None
-                            };
-
-                            // Strip hallucinated repetitions before SOAP generation
-                            let (filtered_encounter_text, soap_filter_report) = strip_hallucinations(&encounter_text, 5);
-                            if !soap_filter_report.repetitions.is_empty() || !soap_filter_report.phrase_repetitions.is_empty() {
-                                if let Ok(mut logger) = logger_for_detector.lock() {
-                                    logger.log_hallucination_filter(serde_json::json!({
-                                        "call_site": "soap_prep",
-                                        "original_words": soap_filter_report.original_word_count,
-                                        "cleaned_words": soap_filter_report.cleaned_word_count,
-                                        "single_word_reps": soap_filter_report.repetitions.iter()
-                                            .map(|r| &r.word).collect::<Vec<_>>(),
-                                        "phrase_reps": soap_filter_report.phrase_repetitions.iter()
-                                            .map(|r| &r.phrase).collect::<Vec<_>>(),
-                                    }));
-                                }
-                            }
-
-                            // Propagate pre_soap's multi-patient result into the outer
-                            // scope so the standalone safety-net check can skip.
-                            pre_soap_found_multi_patient = multi_patient_detection
-                                .as_ref()
-                                .map_or(false, |d| d.patient_count >= 2);
-
-                            info!("Generating SOAP for encounter #{}", loop_state.encounter_number);
-                            let soap_now = ctx_for_detector.now_utc();
-                            let soap_outcome = crate::encounter_pipeline::generate_and_archive_soap(
-                                client, &soap_model, &filtered_encounter_text,
-                                &session_id, &soap_now,
-                                soap_detail_level, &soap_format, &soap_custom_instructions,
-                                notes_text.clone(), encounter_word_count,
-                                multi_patient_detection.as_ref(),
-                                &logger_for_detector,
-                                serde_json::json!({
-                                    "encounter_number": loop_state.encounter_number,
-                                    "word_count": encounter_word_count,
-                                    "has_notes": !notes_text.is_empty(),
-                                }),
-                                Some(&templates),
-                                Some(soap_generation_timeout_secs),
-                            ).await;
-
-                            match soap_outcome {
-                                crate::encounter_pipeline::SoapGenerationOutcome::Success { ref result, ref content, latency_ms } => {
-                                    let patient_count = result.notes.len();
-                                    ContinuousModeEvent::SoapGenerated {
-                                        session_id: session_id.clone(),
-                                        patient_count: Some(patient_count),
-                                        recovered: None,
-                                    }.emit_via(&ctx_for_detector);
-                                    info!("SOAP generated for encounter #{} ({} patient notes)", loop_state.encounter_number, patient_count);
-                                    // Server sync: upload SOAP
-                                    sync_ctx_for_detector.sync_soap(&session_id, content, soap_detail_level, &soap_format);
-                                    if let Ok(mut bundle) = bundle_for_detector.lock() {
-                                        bundle.set_soap_result(crate::replay_bundle::SoapResult {
-                                            ts: ctx_for_detector.now_utc().to_rfc3339(),
-                                            latency_ms, success: true,
-                                            word_count: encounter_word_count, error: None,
-                                            patient_count: if patient_count > 1 { Some(patient_count) } else { None },
-                                        });
-                                    }
-                                    if let Some(ref dl) = *day_logger_for_detector {
-                                        dl.log(crate::day_log::DayEvent::SoapGenerated {
-                                            ts: ctx_for_detector.now_utc().to_rfc3339(),
-                                            session_id: session_id.clone(),
-                                            latency_ms, success: true,
-                                        });
-                                    }
-
-                                    // Billing extraction (fail-open)
-                                    {
-                                        let encounter_duration_ms = encounter_duration_ms_computed;
-                                        let after_hours = crate::encounter_pipeline::is_after_hours(&soap_now);
-                                        let billing_start = std::time::Instant::now();
-                                        let billing_result = crate::encounter_pipeline::extract_and_archive_billing(
-                                            client,
-                                            &fast_model,
-                                            content,
-                                            &filtered_encounter_text,
-                                            "", // no physician-provided context in auto-extraction
-                                            &session_id,
-                                            &soap_now,
-                                            encounter_duration_ms,
-                                            encounter_patient_name.as_deref(),
-                                            after_hours,
-                                            &crate::billing::RuleEngineContext { counselling_exhausted: billing_counselling_exhausted, ..Default::default() },
-                                            &logger_for_detector,
-                                            Some(&templates),
-                                            Some(&billing_data),
-                                            Some(billing_extraction_timeout_secs),
-                                        ).await;
-                                        let billing_latency = billing_start.elapsed().as_millis() as u64;
-
-                                        match &billing_result {
-                                            Ok(record) => {
-                                                if let Some(ref dl) = *day_logger_for_detector {
-                                                    dl.log(crate::day_log::DayEvent::BillingExtracted {
-                                                        ts: ctx_for_detector.now_utc().to_rfc3339(),
-                                                        session_id: session_id.clone(),
-                                                        codes_count: record.codes.len() as u32,
-                                                        total_amount_cents: record.total_amount_cents,
-                                                        latency_ms: billing_latency,
-                                                        success: true,
-                                                    });
-                                                }
-                                                if let Ok(mut bundle) = bundle_for_detector.lock() {
-                                                    bundle.set_billing_result(crate::replay_bundle::BillingResult {
-                                                        ts: ctx_for_detector.now_utc().to_rfc3339(),
-                                                        latency_ms: billing_latency,
-                                                        success: true,
-                                                        codes_count: Some(record.codes.len()),
-                                                        total_amount_cents: Some(record.total_amount_cents),
-                                                        selected_codes: Some(record.codes.iter().map(|c| c.code.clone()).collect()),
-                                                        error: None,
-                                                    });
-                                                }
-                                            }
-                                            Err(e) => {
-                                                warn!("Billing extraction failed for encounter #{}: {}", loop_state.encounter_number, e);
-                                                if let Some(ref dl) = *day_logger_for_detector {
-                                                    dl.log(crate::day_log::DayEvent::BillingExtracted {
-                                                        ts: ctx_for_detector.now_utc().to_rfc3339(),
-                                                        session_id: session_id.clone(),
-                                                        codes_count: 0,
-                                                        total_amount_cents: 0,
-                                                        latency_ms: billing_latency,
-                                                        success: false,
-                                                    });
-                                                }
-                                                if let Ok(mut bundle) = bundle_for_detector.lock() {
-                                                    bundle.set_billing_result(crate::replay_bundle::BillingResult {
-                                                        ts: ctx_for_detector.now_utc().to_rfc3339(),
-                                                        latency_ms: billing_latency,
-                                                        success: false,
-                                                        codes_count: None,
-                                                        total_amount_cents: None,
-                                                        selected_codes: None,
-                                                        error: Some(e.clone()),
-                                                    });
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                                crate::encounter_pipeline::SoapGenerationOutcome::Failed { latency_ms, ref error } => {
-                                    if let Ok(mut bundle) = bundle_for_detector.lock() {
-                                        bundle.set_soap_result(crate::replay_bundle::SoapResult {
-                                            ts: ctx_for_detector.now_utc().to_rfc3339(),
-                                            latency_ms, success: false,
-                                            word_count: encounter_word_count,
-                                            error: Some(error.clone()),
-                                            patient_count: None,
-                                        });
-                                    }
-                                    if let Ok(mut err) = last_error_for_detector.lock() {
-                                        *err = Some(format!("SOAP generation failed: {}", error));
-                                    } else {
-                                        warn!("Last error lock poisoned, error state not updated");
-                                    }
-                                    ContinuousModeEvent::SoapFailed {
-                                        session_id: session_id.clone(),
-                                        error: error.clone(),
-                                    }.emit_via(&ctx_for_detector);
-                                    if let Some(ref dl) = *day_logger_for_detector {
-                                        dl.log(crate::day_log::DayEvent::SoapGenerated {
-                                            ts: ctx_for_detector.now_utc().to_rfc3339(),
-                                            session_id: session_id.clone(),
-                                            latency_ms, success: false,
-                                        });
-                                    }
-                                }
-                            }
-                        }
+                        // Delegate clinical content check + multi-patient detection +
+                        // SOAP generation + billing extraction to the post_split component.
+                        // See crate::continuous_mode_post_split for details.
+                        let post_split_outcome = crate::continuous_mode_post_split::run(
+                            &ctx_for_detector,
+                            &post_split_deps,
+                            &llm_client,
+                            &split_ctx_for_post,
+                            loop_state.encounter_number,
+                        )
+                        .await;
+                        let is_clinical = post_split_outcome.is_clinical;
+                        let pre_soap_found_multi_patient = post_split_outcome.pre_soap_found_multi_patient;
 
                         // ---- Post-split safety nets (merge-back coordinator) ----
                         // Runs the four post-split safety nets out-of-line:
