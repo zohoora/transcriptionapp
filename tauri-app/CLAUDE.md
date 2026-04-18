@@ -56,7 +56,12 @@ Rust Backend
 ├── listening.rs       # Auto-session detection
 ├── speaker_profiles.rs # Speaker enrollment storage
 ├── local_archive.rs   # Local session storage
-├── continuous_mode.rs # Continuous charting mode (end-of-day)
+├── continuous_mode.rs # Continuous charting mode shell (orchestration + detector loop; sub-components split out into continuous_mode_*.rs)
+├── continuous_mode_splitter.rs # Encounter splitter — buffer drain, archive, metadata enrichment, EncounterDetected event (regions 3+4)
+├── continuous_mode_post_split.rs # Post-split pipeline — clinical content check, pre-SOAP multi-patient detection, SOAP generation, billing extraction (regions 5+6)
+├── continuous_mode_merge_back.rs # Merge-back coordinator — small-orphan auto-merge, LLM merge check, retrospective multi-patient split, standalone multi-patient check (regions 7-10, eliminates scatter-tax from cd2acc3+d77d691)
+├── continuous_mode_flush_on_stop.rs # Shutdown + final-flush pipeline — task cleanup, orphan SOAP/billing recovery, flush-remaining-buffer, Stopped event
+├── continuous_mode_types.rs # Shared types across continuous_mode_* modules (LoopState: encounter_number + merge_back_count)
 ├── presence_sensor/   # Multi-sensor presence detection suite
 │   ├── mod.rs             # PresenceSensorSuite orchestrator, fusion task, public API
 │   ├── types.rs           # PresenceState, SensorType, SensorReading, FusedState, configs
@@ -192,7 +197,7 @@ cd ../profile-service && cargo test  # Profile service (66 passing across 7 test
 | Modify SOAP options | `useSoapNote.ts` (hook), `llm_client.rs` (prompt building), `local_archive.rs` (metadata) |
 | Modify MIIS integration | `commands/miis.rs`, `useMiisImages.ts`, `ImageSuggestions.tsx`, `usePredictiveHint.ts` |
 | Modify AI images | `gemini_client.rs`, `commands/images.rs`, `useAiImages.ts`, `usePredictiveHint.ts`, `ImageSuggestions.tsx` |
-| Modify continuous mode | `continuous_mode.rs`, `encounter_detection.rs` (detection prompts + retrospective check), `encounter_merge.rs` (merge prompts), `encounter_pipeline.rs` (shared SOAP generation + merge check helpers), `commands/continuous.rs`, `useContinuousMode.ts`, `ContinuousMode.tsx` |
+| Modify continuous mode | Pick the right module: `continuous_mode.rs` (detector-loop shell + trigger select! + top-level orchestration), `continuous_mode_splitter.rs` (encounter extraction/archival/enrichment), `continuous_mode_post_split.rs` (clinical check + SOAP + billing), `continuous_mode_merge_back.rs` (small-orphan merge + LLM merge + retrospective/standalone multi-patient), `continuous_mode_flush_on_stop.rs` (shutdown + flush), `continuous_mode_types.rs` (LoopState). Plus: `encounter_detection.rs` (detection prompts + retrospective check), `encounter_merge.rs` (merge prompts), `encounter_pipeline.rs` (shared SOAP/billing/merge-check helpers), `commands/continuous.rs`, `useContinuousMode.ts`, `ContinuousMode.tsx` |
 | Modify presence sensor | `presence_sensor/` (module directory), `config.rs` (sensor fields), `commands/continuous.rs`, `SettingsDrawer.tsx` (Zone 3 Advanced → Continuous Mode), `ContinuousMode.tsx` |
 | Modify patient biomarkers | `usePatientBiomarkers.ts`, `PatientPulse.tsx`, `PatientVoiceMonitor.tsx` |
 | Modify session cleanup (history) | `commands/archive.rs`, `HistoryWindow.tsx`, `components/cleanup/` (CleanupActionBar, DeleteConfirmDialog, EditNameDialog, MergeConfirmDialog, SplitView), `SplitWindow.tsx` (standalone split window) |

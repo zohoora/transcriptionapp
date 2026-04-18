@@ -1,7 +1,7 @@
 {
   "name": "transcription-app",
   "private": true,
-  "version": "0.10.38",
+  "version": "0.10.39",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -18,7 +18,7 @@
     "soak:1h": "cd src-tauri && SOAK_DURATION_SECS=3600 cargo test --release soak_test_extended -- --ignored --nocapture"
   },
   "dependencies": {
-    "@tauri-apps/api": "^2.0.0",
+    "@tauri-apps/api": "^2.10.0",
     "@tauri-apps/plugin-clipboard-manager": "^2.0.0",
     "@tauri-apps/plugin-deep-link": "^2.4.5",
     "@tauri-apps/plugin-dialog": "^2.0.0",
