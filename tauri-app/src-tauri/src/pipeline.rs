@@ -299,6 +299,18 @@ impl PipelineHandle {
     pub fn is_running(&self) -> bool {
         !self.stop_flag.load(Ordering::Relaxed)
     }
+
+    /// Construct a no-op PipelineHandle for tests. No audio thread is spawned;
+    /// stop/join are no-ops. The reset_biomarkers_flag is a real Arc<AtomicBool>
+    /// so callers that `.clone()` it for reset signaling still work.
+    pub fn for_testing() -> Self {
+        Self {
+            stop_flag: Arc::new(AtomicBool::new(false)),
+            reset_silence_flag: Arc::new(AtomicBool::new(false)),
+            reset_biomarkers_flag: Arc::new(AtomicBool::new(false)),
+            processor_handle: None,
+        }
+    }
 }
 
 impl Drop for PipelineHandle {
