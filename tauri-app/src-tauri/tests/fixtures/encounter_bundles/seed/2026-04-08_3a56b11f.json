@@ -1,0 +1,1367 @@
+{
+  "billing_result": {
+    "codes_count": 1,
+    "latency_ms": 10810,
+    "selected_codes": [
+      "A102A"
+    ],
+    "success": true,
+    "total_amount_cents": 2150,
+    "ts": "2026-04-08T16:16:53.128909+00:00"
+  },
+  "clinical_check": {
+    "is_clinical": true,
+    "latency_ms": 0,
+    "success": true,
+    "ts": "2026-04-08T16:16:31.354935+00:00"
+  },
+  "config": {
+    "co2_baseline_ppm": 420.0,
+    "encounter_check_interval_secs": 120,
+    "encounter_detection_mode": "hybrid",
+    "encounter_detection_model": "fast-model",
+    "encounter_detection_nothink": false,
+    "encounter_merge_enabled": true,
+    "encounter_silence_trigger_secs": 45,
+    "fast_model": "fast-model",
+    "hybrid_confirm_window_secs": 180,
+    "hybrid_min_words_for_sensor_split": 500,
+    "idle_encounter_timeout_secs": 900,
+    "presence_absence_threshold_secs": 180,
+    "presence_debounce_secs": 10,
+    "presence_sensor_port": "",
+    "presence_sensor_url": "http://172.16.100.37",
+    "screen_capture_enabled": true,
+    "screen_capture_interval_secs": 60,
+    "shadow_active_method": "llm",
+    "sleep_end_hour": 6,
+    "sleep_mode_enabled": true,
+    "sleep_start_hour": 22,
+    "soap_custom_instructions": "I am a family physician in Ontario Canada. The medications, tests and such are what’s available in Canada. Do not repeat terms such as ‘The patient…’ I prefer clean and crisp notes. Do not start a stentence with ‘Patient reports’ - point form can be simple phrases. So instead of ‘The patient reports low back pain’ say ‘low back pain’. Use the past tense. Do not put procedures under ‘O’ and instead put them in either the ‘P’ section or a separate procedure note. ",
+    "soap_detail_level": 6,
+    "soap_format": "comprehensive",
+    "soap_model": "soap-model",
+    "soap_model_fast": "soap-model",
+    "thermal_hot_pixel_threshold_c": 28.0
+  },
+  "detection_checks": [
+    {
+      "cleaned_word_count": 199,
+      "latency_ms": 3432,
+      "loop_state": {
+        "buffer_age_secs": 202.0,
+        "consecutive_failures": 0,
+        "manual_triggered": false,
+        "merge_back_count": 0,
+        "sensor_continuous_present": false,
+        "sensor_triggered": false
+      },
+      "parsed_complete": false,
+      "parsed_confidence": 0.8,
+      "parsed_end_index": null,
+      "prompt_system": "You MUST respond in English with ONLY a JSON object. No other text, no explanations, no markdown.\n\nYou are analyzing a continuous transcript from a medical office where the microphone records all day.\n\nYour task: determine if there is a TRANSITION POINT where one patient encounter ends and another begins, or where a patient encounter has clearly concluded.\n\nA completed encounter typically includes a clinical discussion and a concluding plan (e.g., medication changes, follow-up timing, referrals, or instructions). A short transcript that contains only vitals, greetings, or brief exchanges — with no clinical discussion or plan — is likely a pre-visit assessment still in progress, not a completed encounter. A nurse or medical assistant may see the patient before the doctor arrives to take vitals or ask initial questions — this is part of the same encounter, not a separate visit.\n\nEach segment includes elapsed time (MM:SS) from the start of the recording. Large gaps between timestamps may indicate silence, examination, or the room being empty between patients.\n\nIf you find a transition point or completed encounter, return:\n{\"complete\": true, \"end_segment_index\": <last segment index of the CONCLUDED encounter>, \"confidence\": <0.0-1.0>}\n\nIf the current discussion is still one ongoing encounter with no transition, return:\n{\"complete\": false, \"confidence\": <0.0-1.0>}\n\nRespond with ONLY the JSON object.",
+      "prompt_user": "Transcript (segments numbered with speaker labels):\n[0] (00:00) (Speaker 1 (100%)): Hi there doctors who were calling [1] (00:06) (Speaker 1 (64%)): its her calling is this can [2] (00:20) (Speaker 1 (71%)): Karen, Ken, how are you feeling? [3] (00:25) (Speaker 1 (79%)): Oh I'm glad to hear it. Do you sound you sound much better than last time. [4] (00:34) (Speaker 1 (76%)): Yesterday was not good [5] (00:37) (Dr Zohoor (67%)): However, it's really good. So so yesterday and today are much better. [6] (00:42) (Dr Zohoor (61%)): I'm glad to hear it. How how's it been with your bowels? [7] (00:58) (Speaker 1 (69%)): any more accidents [8] (01:01) (Speaker 1 (53%)): Okay. [9] (01:02) (Speaker 1 (81%)): Have you had any more falling can how are you doing with your balance [10] (01:10) (Speaker 2 (100%)): Okay. [11] (01:13) (Speaker 1 (52%)): glad [12] (01:15) (Speaker 1 (67%)): It's also that you see more clear today. [13] (01:23) (Speaker 1 (85%)): Yeah, my sense is that, you know, because you were a bit cloudy a lot at the beginning. So the [14] (01:29) (Dr Zohoor (63%)): the last two days i'm hearing you you've been feeling better overall is that right [15] (01:36) (Speaker 3 (100%)): a [16] (01:38) (Speaker 1 (78%)): How are you doing with walking? [17] (01:51) (Speaker 1 (53%)): Okay. [18] (01:53) (Speaker 1 (81%)): how's your how's your pain been overall pekan [19] (02:07) (Speaker 4 (100%)): Yeah but [20] (02:12) (Speaker 1 (65%)): I'm glad and [21] (02:13) (Speaker 1 (79%)): we dealing with your bladder [22] (02:18) (Speaker 1 (62%)): gen okay [23] (02:20) (Speaker 1 (72%)): Okay, I [24] (02:22) (Speaker 1 (82%)): happy to hear it so overall the last 2 days have been better or draw is that is that fair to say [25] (02:29) (Speaker 1 (60%)): Okay [26] (02:32) (Speaker 1 (54%)): yeah well [27] (02:34) (Speaker 1 (63%)): you you want [28] (02:36) (Speaker 1 (71%)): You had a bit of a rough patch there. [29] (02:46) (Speaker 5 (100%)): Yeah [30] (03:01) (Speaker 3 (70%)): Oh [31] (03:10) (Speaker 1 (67%)): I understand it's frustrating though.\n\nReal-time context signals:\nCONTEXT: The presence sensor confirms someone is still in the room. Topic changes or pauses within the same visit are NOT transitions. Discussing a different family member or patient who is part of the same visit/call is NOT a transition — couples visits, family visits, and phone calls to households often involve the physician addressing multiple people's medical issues in a single encounter. Only split if there is a clear farewell, departure, AND arrival of a completely unrelated new patient.",
+      "response_raw": "{\"complete\": false, \"confidence\": 0.8}",
+      "segment_range": [
+        0,
+        31
+      ],
+      "sensor_context": {
+        "departed": false,
+        "present": true,
+        "unknown": false
+      },
+      "success": true,
+      "ts": "2026-04-08T16:08:16.776320+00:00",
+      "word_count": 199
+    },
+    {
+      "cleaned_word_count": 357,
+      "latency_ms": 1777,
+      "loop_state": {
+        "buffer_age_secs": 326.0,
+        "consecutive_failures": 0,
+        "manual_triggered": false,
+        "merge_back_count": 0,
+        "sensor_continuous_present": false,
+        "sensor_triggered": false
+      },
+      "parsed_complete": false,
+      "parsed_confidence": 0.8,
+      "parsed_end_index": null,
+      "prompt_system": "You MUST respond in English with ONLY a JSON object. No other text, no explanations, no markdown.\n\nYou are analyzing a continuous transcript from a medical office where the microphone records all day.\n\nYour task: determine if there is a TRANSITION POINT where one patient encounter ends and another begins, or where a patient encounter has clearly concluded.\n\nA completed encounter typically includes a clinical discussion and a concluding plan (e.g., medication changes, follow-up timing, referrals, or instructions). A short transcript that contains only vitals, greetings, or brief exchanges — with no clinical discussion or plan — is likely a pre-visit assessment still in progress, not a completed encounter. A nurse or medical assistant may see the patient before the doctor arrives to take vitals or ask initial questions — this is part of the same encounter, not a separate visit.\n\nEach segment includes elapsed time (MM:SS) from the start of the recording. Large gaps between timestamps may indicate silence, examination, or the room being empty between patients.\n\nIf you find a transition point or completed encounter, return:\n{\"complete\": true, \"end_segment_index\": <last segment index of the CONCLUDED encounter>, \"confidence\": <0.0-1.0>}\n\nIf the current discussion is still one ongoing encounter with no transition, return:\n{\"complete\": false, \"confidence\": <0.0-1.0>}\n\nRespond with ONLY the JSON object.",
+      "prompt_user": "Transcript (segments numbered with speaker labels):\n[0] (00:00) (Speaker 1 (100%)): Hi there doctors who were calling [1] (00:06) (Speaker 1 (64%)): its her calling is this can [2] (00:20) (Speaker 1 (71%)): Karen, Ken, how are you feeling? [3] (00:25) (Speaker 1 (79%)): Oh I'm glad to hear it. Do you sound you sound much better than last time. [4] (00:34) (Speaker 1 (76%)): Yesterday was not good [5] (00:37) (Dr Zohoor (67%)): However, it's really good. So so yesterday and today are much better. [6] (00:42) (Dr Zohoor (61%)): I'm glad to hear it. How how's it been with your bowels? [7] (00:58) (Speaker 1 (69%)): any more accidents [8] (01:01) (Speaker 1 (53%)): Okay. [9] (01:02) (Speaker 1 (81%)): Have you had any more falling can how are you doing with your balance [10] (01:10) (Speaker 2 (100%)): Okay. [11] (01:13) (Speaker 1 (52%)): glad [12] (01:15) (Speaker 1 (67%)): It's also that you see more clear today. [13] (01:23) (Speaker 1 (85%)): Yeah, my sense is that, you know, because you were a bit cloudy a lot at the beginning. So the [14] (01:29) (Dr Zohoor (63%)): the last two days i'm hearing you you've been feeling better overall is that right [15] (01:36) (Speaker 3 (100%)): a [16] (01:38) (Speaker 1 (78%)): How are you doing with walking? [17] (01:51) (Speaker 1 (53%)): Okay. [18] (01:53) (Speaker 1 (81%)): how's your how's your pain been overall pekan [19] (02:07) (Speaker 4 (100%)): Yeah but [20] (02:12) (Speaker 1 (65%)): I'm glad and [21] (02:13) (Speaker 1 (79%)): we dealing with your bladder [22] (02:18) (Speaker 1 (62%)): gen okay [23] (02:20) (Speaker 1 (72%)): Okay, I [24] (02:22) (Speaker 1 (82%)): happy to hear it so overall the last 2 days have been better or draw is that is that fair to say [25] (02:29) (Speaker 1 (60%)): Okay [26] (02:32) (Speaker 1 (54%)): yeah well [27] (02:34) (Speaker 1 (63%)): you you want [28] (02:36) (Speaker 1 (71%)): You had a bit of a rough patch there. [29] (02:46) (Speaker 5 (100%)): Yeah [30] (03:01) (Speaker 3 (70%)): Oh [31] (03:10) (Speaker 1 (67%)): I understand it's frustrating though. [32] (03:21) (Dr Zohoor (71%)): I get it and it's a you know it really affects your independence right your ability to do things [33] (03:34) (Speaker 1 (74%)): Oh they didn't do it because it a kitchen thing. [34] (03:37) (Dr Zohoor (60%)): It was not before that [35] (03:53) (Speaker 1 (81%)): Yes can is doing much better than them [36] (03:55) (Speaker 1 (81%)): before from when when people are upset about their driving license i know they're doing better [37] (04:01) (Speaker 1 (49%)): So I'm [38] (04:02) (Dr Zohoor (71%)): I'm so glad that he seems to be doing better. I don't know how you have been finding him. [39] (04:25) (Dr Zohoor (75%)): Now I I it was the like it was delight talking to him and is definitely a lot more clear in his speech right which was really affecting you yeah [40] (04:38) (Speaker 1 (76%)): yeah my guess is that here a bit of delirium [41] (04:41) (Dr Zohoor (61%)): there there's this kind of fog confusion that that happens [42] (04:46) (Dr Zohoor (70%)): and that it's now clearing and when that happens it's like watching people come back to life it's dramatic [43] (04:58) (Speaker 3 (54%)): yeah [44] (04:59) (Speaker 1 (69%)): How how are you been doing today? [45] (05:27) (Speaker 1 (58%)): the pharmacy\n\nReal-time context signals:\nCONTEXT: The presence sensor confirms someone is still in the room. Topic changes or pauses within the same visit are NOT transitions. Discussing a different family member or patient who is part of the same visit/call is NOT a transition — couples visits, family visits, and phone calls to households often involve the physician addressing multiple people's medical issues in a single encounter. Only split if there is a clear farewell, departure, AND arrival of a completely unrelated new patient.",
+      "response_raw": "{\"complete\": false, \"confidence\": 0.8}",
+      "segment_range": [
+        0,
+        45
+      ],
+      "sensor_context": {
+        "departed": false,
+        "present": true,
+        "unknown": false
+      },
+      "success": true,
+      "ts": "2026-04-08T16:10:18.563498+00:00",
+      "word_count": 357
+    },
+    {
+      "cleaned_word_count": 551,
+      "latency_ms": 2182,
+      "loop_state": {
+        "buffer_age_secs": 447.0,
+        "consecutive_failures": 0,
+        "manual_triggered": false,
+        "merge_back_count": 0,
+        "sensor_continuous_present": false,
+        "sensor_triggered": false
+      },
+      "parsed_complete": false,
+      "parsed_confidence": 0.9,
+      "parsed_end_index": null,
+      "prompt_system": "You MUST respond in English with ONLY a JSON object. No other text, no explanations, no markdown.\n\nYou are analyzing a continuous transcript from a medical office where the microphone records all day.\n\nYour task: determine if there is a TRANSITION POINT where one patient encounter ends and another begins, or where a patient encounter has clearly concluded.\n\nA completed encounter typically includes a clinical discussion and a concluding plan (e.g., medication changes, follow-up timing, referrals, or instructions). A short transcript that contains only vitals, greetings, or brief exchanges — with no clinical discussion or plan — is likely a pre-visit assessment still in progress, not a completed encounter. A nurse or medical assistant may see the patient before the doctor arrives to take vitals or ask initial questions — this is part of the same encounter, not a separate visit.\n\nEach segment includes elapsed time (MM:SS) from the start of the recording. Large gaps between timestamps may indicate silence, examination, or the room being empty between patients.\n\nIf you find a transition point or completed encounter, return:\n{\"complete\": true, \"end_segment_index\": <last segment index of the CONCLUDED encounter>, \"confidence\": <0.0-1.0>}\n\nIf the current discussion is still one ongoing encounter with no transition, return:\n{\"complete\": false, \"confidence\": <0.0-1.0>}\n\nRespond with ONLY the JSON object.",
+      "prompt_user": "Transcript (segments numbered with speaker labels):\n[0] (00:00) (Speaker 1 (100%)): Hi there doctors who were calling [1] (00:06) (Speaker 1 (64%)): its her calling is this can [2] (00:20) (Speaker 1 (71%)): Karen, Ken, how are you feeling? [3] (00:25) (Speaker 1 (79%)): Oh I'm glad to hear it. Do you sound you sound much better than last time. [4] (00:34) (Speaker 1 (76%)): Yesterday was not good [5] (00:37) (Dr Zohoor (67%)): However, it's really good. So so yesterday and today are much better. [6] (00:42) (Dr Zohoor (61%)): I'm glad to hear it. How how's it been with your bowels? [7] (00:58) (Speaker 1 (69%)): any more accidents [8] (01:01) (Speaker 1 (53%)): Okay. [9] (01:02) (Speaker 1 (81%)): Have you had any more falling can how are you doing with your balance [10] (01:10) (Speaker 2 (100%)): Okay. [11] (01:13) (Speaker 1 (52%)): glad [12] (01:15) (Speaker 1 (67%)): It's also that you see more clear today. [13] (01:23) (Speaker 1 (85%)): Yeah, my sense is that, you know, because you were a bit cloudy a lot at the beginning. So the [14] (01:29) (Dr Zohoor (63%)): the last two days i'm hearing you you've been feeling better overall is that right [15] (01:36) (Speaker 3 (100%)): a [16] (01:38) (Speaker 1 (78%)): How are you doing with walking? [17] (01:51) (Speaker 1 (53%)): Okay. [18] (01:53) (Speaker 1 (81%)): how's your how's your pain been overall pekan [19] (02:07) (Speaker 4 (100%)): Yeah but [20] (02:12) (Speaker 1 (65%)): I'm glad and [21] (02:13) (Speaker 1 (79%)): we dealing with your bladder [22] (02:18) (Speaker 1 (62%)): gen okay [23] (02:20) (Speaker 1 (72%)): Okay, I [24] (02:22) (Speaker 1 (82%)): happy to hear it so overall the last 2 days have been better or draw is that is that fair to say [25] (02:29) (Speaker 1 (60%)): Okay [26] (02:32) (Speaker 1 (54%)): yeah well [27] (02:34) (Speaker 1 (63%)): you you want [28] (02:36) (Speaker 1 (71%)): You had a bit of a rough patch there. [29] (02:46) (Speaker 5 (100%)): Yeah [30] (03:01) (Speaker 3 (70%)): Oh [31] (03:10) (Speaker 1 (67%)): I understand it's frustrating though. [32] (03:21) (Dr Zohoor (71%)): I get it and it's a you know it really affects your independence right your ability to do things [33] (03:34) (Speaker 1 (74%)): Oh they didn't do it because it a kitchen thing. [34] (03:37) (Dr Zohoor (60%)): It was not before that [35] (03:53) (Speaker 1 (81%)): Yes can is doing much better than them [36] (03:55) (Speaker 1 (81%)): before from when when people are upset about their driving license i know they're doing better [37] (04:01) (Speaker 1 (49%)): So I'm [38] (04:02) (Dr Zohoor (71%)): I'm so glad that he seems to be doing better. I don't know how you have been finding him. [39] (04:25) (Dr Zohoor (75%)): Now I I it was the like it was delight talking to him and is definitely a lot more clear in his speech right which was really affecting you yeah [40] (04:38) (Speaker 1 (76%)): yeah my guess is that here a bit of delirium [41] (04:41) (Dr Zohoor (61%)): there there's this kind of fog confusion that that happens [42] (04:46) (Dr Zohoor (70%)): and that it's now clearing and when that happens it's like watching people come back to life it's dramatic [43] (04:58) (Speaker 3 (54%)): yeah [44] (04:59) (Speaker 1 (69%)): How how are you been doing today? [45] (05:27) (Speaker 1 (58%)): the pharmacy [46] (05:29) (Dr Zohoor (63%)): The pharmacy did say to me that you were using our Clomazepam more. [47] (05:34) (Speaker 1 (54%)): and [48] (05:37) (Speaker 1 (82%)): It's in your it's in a packet bad time [49] (05:45) (Speaker 1 (69%)): okay i don't i don't [50] (05:47) (Speaker 1 (86%)): I don't know what the confusion is then but what they asked me was whether or not I could release it early on Friday instead of Monday [51] (05:56) (Dr Zohoor (65%)): um and i said that's fine they can they can release it early on friday they faxed me about it yesterday so i'm not sure exactly like the confusion there [52] (06:05) (Dr Zohoor (66%)): um but in terms of the you know in terms of the overall picture [53] (06:10) (Dr Zohoor (68%)): um were you in the emergency or no that was that was something different i apologize how um [54] (06:16) (Speaker 1 (53%)): how [55] (06:18) (Speaker 1 (76%)): and i understand that the feeling of tension will will come back to that it may be related [56] (06:25) (Speaker 1 (76%)): due to the fact that i reduced some of your medications [57] (06:29) (Dr Zohoor (62%)): because i i um [58] (06:31) (Speaker 1 (76%)): because last time we talked [59] (06:34) (Speaker 1 (81%)): Your ankle swelling was worse? [60] (06:44) (Dr Zohoor (66%)): Okay so you're on your way there soon okay i will be quick then how's the ankle swelling been lately [61] (07:00) (Dr Zohoor (62%)): but the but ankles falling's pretty bad still right [62] (07:04) (Speaker 1 (77%)): How's your breathing back?\n\nReal-time context signals:\nCONTEXT: The presence sensor confirms someone is still in the room. Topic changes or pauses within the same visit are NOT transitions. Discussing a different family member or patient who is part of the same visit/call is NOT a transition — couples visits, family visits, and phone calls to households often involve the physician addressing multiple people's medical issues in a single encounter. Only split if there is a clear farewell, departure, AND arrival of a completely unrelated new patient.",
+      "response_raw": "{\"complete\": false, \"confidence\": 0.9}",
+      "segment_range": [
+        0,
+        62
+      ],
+      "sensor_context": {
+        "departed": false,
+        "present": true,
+        "unknown": false
+      },
+      "success": true,
+      "ts": "2026-04-08T16:12:20.765888+00:00",
+      "word_count": 551
+    },
+    {
+      "cleaned_word_count": 843,
+      "latency_ms": 3367,
+      "loop_state": {
+        "buffer_age_secs": 570.0,
+        "consecutive_failures": 0,
+        "manual_triggered": false,
+        "merge_back_count": 0,
+        "sensor_continuous_present": false,
+        "sensor_triggered": false
+      },
+      "parsed_complete": false,
+      "parsed_confidence": 0.9,
+      "parsed_end_index": null,
+      "prompt_system": "You MUST respond in English with ONLY a JSON object. No other text, no explanations, no markdown.\n\nYou are analyzing a continuous transcript from a medical office where the microphone records all day.\n\nYour task: determine if there is a TRANSITION POINT where one patient encounter ends and another begins, or where a patient encounter has clearly concluded.\n\nA completed encounter typically includes a clinical discussion and a concluding plan (e.g., medication changes, follow-up timing, referrals, or instructions). A short transcript that contains only vitals, greetings, or brief exchanges — with no clinical discussion or plan — is likely a pre-visit assessment still in progress, not a completed encounter. A nurse or medical assistant may see the patient before the doctor arrives to take vitals or ask initial questions — this is part of the same encounter, not a separate visit.\n\nEach segment includes elapsed time (MM:SS) from the start of the recording. Large gaps between timestamps may indicate silence, examination, or the room being empty between patients.\n\nIf you find a transition point or completed encounter, return:\n{\"complete\": true, \"end_segment_index\": <last segment index of the CONCLUDED encounter>, \"confidence\": <0.0-1.0>}\n\nIf the current discussion is still one ongoing encounter with no transition, return:\n{\"complete\": false, \"confidence\": <0.0-1.0>}\n\nRespond with ONLY the JSON object.",
+      "prompt_user": "Transcript (segments numbered with speaker labels):\n[0] (00:00) (Speaker 1 (100%)): Hi there doctors who were calling [1] (00:06) (Speaker 1 (64%)): its her calling is this can [2] (00:20) (Speaker 1 (71%)): Karen, Ken, how are you feeling? [3] (00:25) (Speaker 1 (79%)): Oh I'm glad to hear it. Do you sound you sound much better than last time. [4] (00:34) (Speaker 1 (76%)): Yesterday was not good [5] (00:37) (Dr Zohoor (67%)): However, it's really good. So so yesterday and today are much better. [6] (00:42) (Dr Zohoor (61%)): I'm glad to hear it. How how's it been with your bowels? [7] (00:58) (Speaker 1 (69%)): any more accidents [8] (01:01) (Speaker 1 (53%)): Okay. [9] (01:02) (Speaker 1 (81%)): Have you had any more falling can how are you doing with your balance [10] (01:10) (Speaker 2 (100%)): Okay. [11] (01:13) (Speaker 1 (52%)): glad [12] (01:15) (Speaker 1 (67%)): It's also that you see more clear today. [13] (01:23) (Speaker 1 (85%)): Yeah, my sense is that, you know, because you were a bit cloudy a lot at the beginning. So the [14] (01:29) (Dr Zohoor (63%)): the last two days i'm hearing you you've been feeling better overall is that right [15] (01:36) (Speaker 3 (100%)): a [16] (01:38) (Speaker 1 (78%)): How are you doing with walking? [17] (01:51) (Speaker 1 (53%)): Okay. [18] (01:53) (Speaker 1 (81%)): how's your how's your pain been overall pekan [19] (02:07) (Speaker 4 (100%)): Yeah but [20] (02:12) (Speaker 1 (65%)): I'm glad and [21] (02:13) (Speaker 1 (79%)): we dealing with your bladder [22] (02:18) (Speaker 1 (62%)): gen okay [23] (02:20) (Speaker 1 (72%)): Okay, I [24] (02:22) (Speaker 1 (82%)): happy to hear it so overall the last 2 days have been better or draw is that is that fair to say [25] (02:29) (Speaker 1 (60%)): Okay [26] (02:32) (Speaker 1 (54%)): yeah well [27] (02:34) (Speaker 1 (63%)): you you want [28] (02:36) (Speaker 1 (71%)): You had a bit of a rough patch there. [29] (02:46) (Speaker 5 (100%)): Yeah [30] (03:01) (Speaker 3 (70%)): Oh [31] (03:10) (Speaker 1 (67%)): I understand it's frustrating though. [32] (03:21) (Dr Zohoor (71%)): I get it and it's a you know it really affects your independence right your ability to do things [33] (03:34) (Speaker 1 (74%)): Oh they didn't do it because it a kitchen thing. [34] (03:37) (Dr Zohoor (60%)): It was not before that [35] (03:53) (Speaker 1 (81%)): Yes can is doing much better than them [36] (03:55) (Speaker 1 (81%)): before from when when people are upset about their driving license i know they're doing better [37] (04:01) (Speaker 1 (49%)): So I'm [38] (04:02) (Dr Zohoor (71%)): I'm so glad that he seems to be doing better. I don't know how you have been finding him. [39] (04:25) (Dr Zohoor (75%)): Now I I it was the like it was delight talking to him and is definitely a lot more clear in his speech right which was really affecting you yeah [40] (04:38) (Speaker 1 (76%)): yeah my guess is that here a bit of delirium [41] (04:41) (Dr Zohoor (61%)): there there's this kind of fog confusion that that happens [42] (04:46) (Dr Zohoor (70%)): and that it's now clearing and when that happens it's like watching people come back to life it's dramatic [43] (04:58) (Speaker 3 (54%)): yeah [44] (04:59) (Speaker 1 (69%)): How how are you been doing today? [45] (05:27) (Speaker 1 (58%)): the pharmacy [46] (05:29) (Dr Zohoor (63%)): The pharmacy did say to me that you were using our Clomazepam more. [47] (05:34) (Speaker 1 (54%)): and [48] (05:37) (Speaker 1 (82%)): It's in your it's in a packet bad time [49] (05:45) (Speaker 1 (69%)): okay i don't i don't [50] (05:47) (Speaker 1 (86%)): I don't know what the confusion is then but what they asked me was whether or not I could release it early on Friday instead of Monday [51] (05:56) (Dr Zohoor (65%)): um and i said that's fine they can they can release it early on friday they faxed me about it yesterday so i'm not sure exactly like the confusion there [52] (06:05) (Dr Zohoor (66%)): um but in terms of the you know in terms of the overall picture [53] (06:10) (Dr Zohoor (68%)): um were you in the emergency or no that was that was something different i apologize how um [54] (06:16) (Speaker 1 (53%)): how [55] (06:18) (Speaker 1 (76%)): and i understand that the feeling of tension will will come back to that it may be related [56] (06:25) (Speaker 1 (76%)): due to the fact that i reduced some of your medications [57] (06:29) (Dr Zohoor (62%)): because i i um [58] (06:31) (Speaker 1 (76%)): because last time we talked [59] (06:34) (Speaker 1 (81%)): Your ankle swelling was worse? [60] (06:44) (Dr Zohoor (66%)): Okay so you're on your way there soon okay i will be quick then how's the ankle swelling been lately [61] (07:00) (Dr Zohoor (62%)): but the but ankles falling's pretty bad still right [62] (07:04) (Speaker 1 (77%)): How's your breathing back? [63] (07:23) (Speaker 1 (90%)): Yeah so I'm not sure again I don't know like what happened there it's possible that with the [64] (07:30) (Speaker 1 (92%)): um because you because of the because of the hospital discharge and this and that like i'm not sure whether that caused the confusion or or what's gone on [65] (07:39) (Speaker 3 (52%)): um [66] (07:40) (Speaker 1 (90%)): It's tricky because some of your medications that make the swelling worse. [67] (07:45) (Dr Zohoor (61%)): also make you feel less anxious [68] (07:48) (Dr Zohoor (71%)): So because your spelling was worse I had to reduce some of the maths [69] (07:53) (Dr Zohoor (73%)): and that would make your anxiety if it worse that [70] (07:59) (Speaker 1 (90%)): yeah and it's it's often a little bit of a tricky back and forth [71] (08:04) (Speaker 3 (65%)): Um [72] (08:05) (Speaker 1 (89%)): So did you when are your next so the your medications you're picking up on Friday is that right [73] (08:14) (Speaker 1 (89%)): Okay and the water pill right now you're taking 4 a day [74] (08:22) (Speaker 2 (63%)): Okay. [75] (08:24) (Dr Zohoor (71%)): and so the 20 milligrams i'm taking in the full hour so i feel i'll be able to so the dose needs to be changed [76] (08:31) (Speaker 1 (92%)): okay and then um and then what i was hoping was that by stopping the one pill the swelling would go down stopping a blood pressure pill [77] (08:41) (Speaker 1 (85%)): but what i'm hearing as a dad has not has not happened right [78] (08:46) (Speaker 1 (85%)): Okay. When I made the changes last time, so we talked in less than a week ago, [79] (08:52) (Speaker 1 (81%)): When I made the changes did the pharmacy send you a new pack [80] (08:56) (Speaker 3 (53%)): or [81] (08:57) (Speaker 1 (89%)): or have like have those changes actually happened or they have not happened [82] (09:04) (Speaker 2 (65%)): Okay [83] (09:05) (Dr Zohoor (67%)): so that that's because it's a little tricky because i'm assuming that the changes were made and that's why things are the way they are [84] (09:13) (Dr Zohoor (69%)): but i'm hearing that that's not the case that the the medication changes have actually happened is that right [85] (09:21) (Speaker 2 (73%)): Okay.\n\nReal-time context signals:\nCONTEXT: The presence sensor confirms someone is still in the room. Topic changes or pauses within the same visit are NOT transitions. Discussing a different family member or patient who is part of the same visit/call is NOT a transition — couples visits, family visits, and phone calls to households often involve the physician addressing multiple people's medical issues in a single encounter. Only split if there is a clear farewell, departure, AND arrival of a completely unrelated new patient.",
+      "response_raw": "{\"complete\": false, \"confidence\": 0.9}",
+      "segment_range": [
+        0,
+        85
+      ],
+      "sensor_context": {
+        "departed": false,
+        "present": true,
+        "unknown": false
+      },
+      "success": true,
+      "ts": "2026-04-08T16:14:24.161300+00:00",
+      "word_count": 843
+    },
+    {
+      "cleaned_word_count": 1220,
+      "latency_ms": 4097,
+      "loop_state": {
+        "buffer_age_secs": 693.0,
+        "consecutive_failures": 0,
+        "manual_triggered": false,
+        "merge_back_count": 0,
+        "sensor_continuous_present": false,
+        "sensor_triggered": false
+      },
+      "parsed_complete": true,
+      "parsed_confidence": 0.9,
+      "parsed_end_index": 108,
+      "prompt_system": "You MUST respond in English with ONLY a JSON object. No other text, no explanations, no markdown.\n\nYou are analyzing a continuous transcript from a medical office where the microphone records all day.\n\nYour task: determine if there is a TRANSITION POINT where one patient encounter ends and another begins, or where a patient encounter has clearly concluded.\n\nA completed encounter typically includes a clinical discussion and a concluding plan (e.g., medication changes, follow-up timing, referrals, or instructions). A short transcript that contains only vitals, greetings, or brief exchanges — with no clinical discussion or plan — is likely a pre-visit assessment still in progress, not a completed encounter. A nurse or medical assistant may see the patient before the doctor arrives to take vitals or ask initial questions — this is part of the same encounter, not a separate visit.\n\nEach segment includes elapsed time (MM:SS) from the start of the recording. Large gaps between timestamps may indicate silence, examination, or the room being empty between patients.\n\nIf you find a transition point or completed encounter, return:\n{\"complete\": true, \"end_segment_index\": <last segment index of the CONCLUDED encounter>, \"confidence\": <0.0-1.0>}\n\nIf the current discussion is still one ongoing encounter with no transition, return:\n{\"complete\": false, \"confidence\": <0.0-1.0>}\n\nRespond with ONLY the JSON object.",
+      "prompt_user": "Transcript (segments numbered with speaker labels):\n[0] (00:00) (Speaker 1 (100%)): Hi there doctors who were calling [1] (00:06) (Speaker 1 (64%)): its her calling is this can [2] (00:20) (Speaker 1 (71%)): Karen, Ken, how are you feeling? [3] (00:25) (Speaker 1 (79%)): Oh I'm glad to hear it. Do you sound you sound much better than last time. [4] (00:34) (Speaker 1 (76%)): Yesterday was not good [5] (00:37) (Dr Zohoor (67%)): However, it's really good. So so yesterday and today are much better. [6] (00:42) (Dr Zohoor (61%)): I'm glad to hear it. How how's it been with your bowels? [7] (00:58) (Speaker 1 (69%)): any more accidents [8] (01:01) (Speaker 1 (53%)): Okay. [9] (01:02) (Speaker 1 (81%)): Have you had any more falling can how are you doing with your balance [10] (01:10) (Speaker 2 (100%)): Okay. [11] (01:13) (Speaker 1 (52%)): glad [12] (01:15) (Speaker 1 (67%)): It's also that you see more clear today. [13] (01:23) (Speaker 1 (85%)): Yeah, my sense is that, you know, because you were a bit cloudy a lot at the beginning. So the [14] (01:29) (Dr Zohoor (63%)): the last two days i'm hearing you you've been feeling better overall is that right [15] (01:36) (Speaker 3 (100%)): a [16] (01:38) (Speaker 1 (78%)): How are you doing with walking? [17] (01:51) (Speaker 1 (53%)): Okay. [18] (01:53) (Speaker 1 (81%)): how's your how's your pain been overall pekan [19] (02:07) (Speaker 4 (100%)): Yeah but [20] (02:12) (Speaker 1 (65%)): I'm glad and [21] (02:13) (Speaker 1 (79%)): we dealing with your bladder [22] (02:18) (Speaker 1 (62%)): gen okay [23] (02:20) (Speaker 1 (72%)): Okay, I [24] (02:22) (Speaker 1 (82%)): happy to hear it so overall the last 2 days have been better or draw is that is that fair to say [25] (02:29) (Speaker 1 (60%)): Okay [26] (02:32) (Speaker 1 (54%)): yeah well [27] (02:34) (Speaker 1 (63%)): you you want [28] (02:36) (Speaker 1 (71%)): You had a bit of a rough patch there. [29] (02:46) (Speaker 5 (100%)): Yeah [30] (03:01) (Speaker 3 (70%)): Oh [31] (03:10) (Speaker 1 (67%)): I understand it's frustrating though. [32] (03:21) (Dr Zohoor (71%)): I get it and it's a you know it really affects your independence right your ability to do things [33] (03:34) (Speaker 1 (74%)): Oh they didn't do it because it a kitchen thing. [34] (03:37) (Dr Zohoor (60%)): It was not before that [35] (03:53) (Speaker 1 (81%)): Yes can is doing much better than them [36] (03:55) (Speaker 1 (81%)): before from when when people are upset about their driving license i know they're doing better [37] (04:01) (Speaker 1 (49%)): So I'm [38] (04:02) (Dr Zohoor (71%)): I'm so glad that he seems to be doing better. I don't know how you have been finding him. [39] (04:25) (Dr Zohoor (75%)): Now I I it was the like it was delight talking to him and is definitely a lot more clear in his speech right which was really affecting you yeah [40] (04:38) (Speaker 1 (76%)): yeah my guess is that here a bit of delirium [41] (04:41) (Dr Zohoor (61%)): there there's this kind of fog confusion that that happens [42] (04:46) (Dr Zohoor (70%)): and that it's now clearing and when that happens it's like watching people come back to life it's dramatic [43] (04:58) (Speaker 3 (54%)): yeah [44] (04:59) (Speaker 1 (69%)): How how are you been doing today? [45] (05:27) (Speaker 1 (58%)): the pharmacy [46] (05:29) (Dr Zohoor (63%)): The pharmacy did say to me that you were using our Clomazepam more. [47] (05:34) (Speaker 1 (54%)): and [48] (05:37) (Speaker 1 (82%)): It's in your it's in a packet bad time [49] (05:45) (Speaker 1 (69%)): okay i don't i don't [50] (05:47) (Speaker 1 (86%)): I don't know what the confusion is then but what they asked me was whether or not I could release it early on Friday instead of Monday [51] (05:56) (Dr Zohoor (65%)): um and i said that's fine they can they can release it early on friday they faxed me about it yesterday so i'm not sure exactly like the confusion there [52] (06:05) (Dr Zohoor (66%)): um but in terms of the you know in terms of the overall picture [53] (06:10) (Dr Zohoor (68%)): um were you in the emergency or no that was that was something different i apologize how um [54] (06:16) (Speaker 1 (53%)): how [55] (06:18) (Speaker 1 (76%)): and i understand that the feeling of tension will will come back to that it may be related [56] (06:25) (Speaker 1 (76%)): due to the fact that i reduced some of your medications [57] (06:29) (Dr Zohoor (62%)): because i i um [58] (06:31) (Speaker 1 (76%)): because last time we talked [59] (06:34) (Speaker 1 (81%)): Your ankle swelling was worse? [60] (06:44) (Dr Zohoor (66%)): Okay so you're on your way there soon okay i will be quick then how's the ankle swelling been lately [61] (07:00) (Dr Zohoor (62%)): but the but ankles falling's pretty bad still right [62] (07:04) (Speaker 1 (77%)): How's your breathing back? [63] (07:23) (Speaker 1 (90%)): Yeah so I'm not sure again I don't know like what happened there it's possible that with the [64] (07:30) (Speaker 1 (92%)): um because you because of the because of the hospital discharge and this and that like i'm not sure whether that caused the confusion or or what's gone on [65] (07:39) (Speaker 3 (52%)): um [66] (07:40) (Speaker 1 (90%)): It's tricky because some of your medications that make the swelling worse. [67] (07:45) (Dr Zohoor (61%)): also make you feel less anxious [68] (07:48) (Dr Zohoor (71%)): So because your spelling was worse I had to reduce some of the maths [69] (07:53) (Dr Zohoor (73%)): and that would make your anxiety if it worse that [70] (07:59) (Speaker 1 (90%)): yeah and it's it's often a little bit of a tricky back and forth [71] (08:04) (Speaker 3 (65%)): Um [72] (08:05) (Speaker 1 (89%)): So did you when are your next so the your medications you're picking up on Friday is that right [73] (08:14) (Speaker 1 (89%)): Okay and the water pill right now you're taking 4 a day [74] (08:22) (Speaker 2 (63%)): Okay. [75] (08:24) (Dr Zohoor (71%)): and so the 20 milligrams i'm taking in the full hour so i feel i'll be able to so the dose needs to be changed [76] (08:31) (Speaker 1 (92%)): okay and then um and then what i was hoping was that by stopping the one pill the swelling would go down stopping a blood pressure pill [77] (08:41) (Speaker 1 (85%)): but what i'm hearing as a dad has not has not happened right [78] (08:46) (Speaker 1 (85%)): Okay. When I made the changes last time, so we talked in less than a week ago, [79] (08:52) (Speaker 1 (81%)): When I made the changes did the pharmacy send you a new pack [80] (08:56) (Speaker 3 (53%)): or [81] (08:57) (Speaker 1 (89%)): or have like have those changes actually happened or they have not happened [82] (09:04) (Speaker 2 (65%)): Okay [83] (09:05) (Dr Zohoor (67%)): so that that's because it's a little tricky because i'm assuming that the changes were made and that's why things are the way they are [84] (09:13) (Dr Zohoor (69%)): but i'm hearing that that's not the case that the the medication changes have actually happened is that right [85] (09:21) (Speaker 2 (73%)): Okay. [86] (09:22) (Dr Zohoor (68%)): I think what I'm going to do today is I'm going to have my assistant call the pharmacy and just sort out exactly because it's just kind of confusing to me you run meds before the hospital [87] (09:34) (Dr Zohoor (63%)): the hospital sent me a list of meds the nurse who visited you sent me a different list of meds [88] (09:39) (Speaker 1 (70%)): and and any changes [89] (09:41) (Speaker 1 (65%)): and then it's like [90] (09:45) (Dr Zohoor (68%)): and it's been a week and i'm and i'm hearing that that the changes didn't happen so i'm kind of confused so what i'm going to do is i'm going to have my my assistant call the pharmacy clarify exactly what you're currently on [91] (09:59) (Speaker 1 (63%)): and then [92] (10:00) (Dr Zohoor (68%)): the and and and make the changes to to the maths and have them send the mail to you [93] (10:08) (Speaker 3 (42%)): so that [94] (10:09) (Dr Zohoor (71%)): what I you know because I made the change six weeks ago to try to help with the breathing and the swelling [95] (10:15) (Speaker 1 (80%)): and and obviously that has not happened right [96] (10:18) (Speaker 1 (82%)): so okay so i'm going to have i'm going to have to assist and work on that this afternoon to just kind of [97] (10:24) (Dr Zohoor (68%)): get things figured out in terms of what you're actually taking [98] (10:29) (Speaker 1 (81%)): That's all okay. So I will I'll have them call the pharmacy, get a list, update the list. I will go through it. [99] (10:36) (Dr Zohoor (62%)): I work on helping with the the tension as well as with the swelling. [100] (10:41) (Speaker 1 (88%)): they connect to each other um and so you know and then and then um [101] (10:47) (Dr Zohoor (61%)): And then he'll call let you know what happened after he talked to the fundusit. [102] (10:57) (Speaker 2 (58%)): Okay. [103] (10:57) (Dr Zohoor (64%)): no worries if if we if you don't hear from us just assume that that we've made the changes and the pharmacy should be [104] (11:05) (Speaker 1 (81%)): I'm sending you the new pack. [105] (11:07) (Dr Zohoor (65%)): um let me um i do want before you let you go i know you're going to be in hurry to get to the to the to your appointment um let me book the next appointment because i think the plan was for me to either do a house call or call you [106] (11:22) (Speaker 3 (59%)): Um [107] (11:23) (Dr Zohoor (65%)): I think what I'll do is see if I can do a house call because in that way I can see what exactly you're picking or not taking [108] (11:31) (Speaker 3 (77%)): um\n\nReal-time context signals:\nCONTEXT: The presence sensor confirms someone is still in the room. Topic changes or pauses within the same visit are NOT transitions. Discussing a different family member or patient who is part of the same visit/call is NOT a transition — couples visits, family visits, and phone calls to households often involve the physician addressing multiple people's medical issues in a single encounter. Only split if there is a clear farewell, departure, AND arrival of a completely unrelated new patient.",
+      "response_raw": "```json\n{\"complete\": true, \"end_segment_index\": 108, \"confidence\": 0.9}\n```",
+      "segment_range": [
+        0,
+        108
+      ],
+      "sensor_context": {
+        "departed": false,
+        "present": true,
+        "unknown": false
+      },
+      "success": true,
+      "ts": "2026-04-08T16:16:28.298133+00:00",
+      "word_count": 1220
+    }
+  ],
+  "merge_check": {
+    "curr_head_excerpt": "Speaker 1 (100%): Hi there doctors who were calling Speaker 1 (64%): its her calling is this can Speaker 1 (71%): Karen, Ken, how are you feeling? Speaker 1 (79%): Oh I'm glad to hear it. Do you sound you sound much better than last time. Speaker 1 (76%): Yesterday was not good Dr Zohoor (67%): However, it's really good. So so yesterday and today are much better. Dr Zohoor (61%): I'm glad to hear it. How how's it been with your bowels? Speaker 1 (69%): any more accidents Speaker 1 (53%): Okay. Speaker 1 (81%): Have you had any more falling can how are you doing with your balance Speaker 2 (100%): Okay. Speaker 1 (52%): glad Speaker 1 (67%): It's also that you see more clear today. Speaker 1 (85%): Yeah, my sense is that, you know, because you were a bit cloudy a lot at the beginning. So the Dr Zohoor (63%): the last two days i'm hearing you you've been feeling better overall is that right Speaker 3 (100%): a Speaker 1 (78%): How are you doing with walking? Speaker 1 (53%): Okay. Speaker 1 (81%): how's your how's your pain been overall pekan Speaker 4 (100%): Yeah but Speaker 1 (65%): I'm glad and Speaker 1 (79%): we dealing with your bladder Speaker 1 (62%): gen okay Speaker 1 (72%): Okay, I Speaker 1 (82%): happy to hear it so overall the last 2 days have been better or draw is that is that fair to say Speaker 1 (60%): Okay Speaker 1 (54%): yeah well Speaker 1 (63%): you you want Speaker 1 (71%): You had a bit of a rough patch there. Speaker 5 (100%): Yeah Speaker 3 (70%): Oh Speaker 1 (67%): I understand it's frustrating though. Dr Zohoor (71%): I get it and it's a you know it really affects your independence right your ability to do things Speaker 1 (74%): Oh they didn't do it because it a kitchen thing. Dr Zohoor (60%): It was not before that Speaker 1 (81%): Yes can is doing much better than them Speaker 1 (81%): before from when when people are upset about their driving license i know they're doing better Speaker 1 (49%): So I'm Dr Zohoor (71%): I'm so glad that he seems to be doing better. I don't know how you have been finding him. Dr Zohoor (75%): Now I I it was the like it was delight talking to him and is definitely a lot more clear in his speech right which was really affecting you yeah Speaker 1 (76%): yeah my guess is that here a bit of delirium Dr Zohoor (61%): there there's this kind of fog confusion that that happens Dr Zohoor (70%): and that it's now clearing and when that happens it's like watching people come back to life it's dramatic Speaker 3 (54%): yeah Speaker 1 (69%): How how are you been doing today? Speaker 1 (58%): the pharmacy Dr Zohoor (63%): The pharmacy",
+    "latency_ms": 4437,
+    "parsed_reason": "\"The first excerpt ends with a doctor mentioning they have other patients to see ('من مریض های دیگه دارم'), and the second excerpt begins with a new greeting and a clinical assessment of a patient's recent improvement ('Yesterday was not good... today are much better'), indicating a transition to a new patient.\"",
+    "parsed_same_encounter": false,
+    "patient_name": "Judith Arlene Croft",
+    "prev_session_id": "883690dd-d090-4559-8ba0-1a201923bdf4",
+    "prev_tail_excerpt": "mà team em hay 50 sao ấy các Dr Zohoor (76%): az sobish to de yoi budan ke istifade mikardan mardan vaghte ke in mikoshkare yey ro dashtan Dr Zohoor (76%): am ama nem midonasan ki chera ay tur hast ama midonasan ki tasay ki diframe foran shatar Speaker 5 (66%): but um Dr Zohoor (84%): so tazegi we memin don't seem to care so in turn as but now we know that in heterozygous genetically has this Speaker 5 (50%): e Speaker 1 (57%): no he podido Speaker 1 (58%): شنا می رسام Speaker 5 (54%): bam Speaker 5 (55%): اولا فکر کردم که برای بیشتر این مردم Dr Zohoor (70%): vayiki sa yorlu mu bola has age tam paşın dardı ki ona muhimnistiş Speaker 5 (77%): الان ما یاد گرفتیم که نه این همه لگ‌های بدن برام میکنه Dr Zohoor (74%): ہے جو ان کا یعنی 2312 ہمیں آگاہیت بعد ان Dr Zohoor (74%): um we think مثلا we try to cross come to a free fikir bezish to chi nemishe et dast bezari az yat nemishe to chisi Speaker 5 (63%): graeni hastash Speaker 5 (69%): um haaloon man ino um Dr Zohoor (66%): این رو به داورخانه فرستادم امیدوارم که این این دغدغه فر کم بکنه Speaker 5 (61%): Hello Amon Dr Zohoor (70%): intemalar şuma hanüs z elektronlarıyla birlikte boş şey doğru söyleyerek Dr Zohoor (73%): जी से जाती नहीं सासा Speaker 4 (69%): Tak zawsze będę się odmieniał, nie, chyba i doktor. Speaker 4 (67%): on to go comment می‌کند Speaker 5 (71%): and then pom scan ki kablan karam Speaker 5 (70%): तो करम बिनांत Speaker 5 (55%): schon nicht fühlen Speaker 5 (63%): انا فكران Dr Zohoor (73%): قبلا اکستر کردیم تازگی اکستر کردیم وقتی که Dr Zohoor (71%): fiktsodoktardit ons scan karim Dr Zohoor (74%): مع فلسه دست راست میفری درد Speaker 5 (49%): બોલો બુડ Dr Zohoor (65%): a potem CT wykonam zażalenia Speaker 5 (64%): থাকনাম দবারে Dr Zohoor (70%): उसके ऊपर अपना नहीं है Speaker 4 (68%): the plus in the chip of the picture and the sat and the receiver of the picture Speaker 1 (35%): हेलो Dr Zohoor (66%): اینم مثلا سن خوندم زیاد میگه این هفته حتماً میتونم یه ذره همه درد کم کنه بعد من قرار سی سی بکنم سونوتو ببین Speaker 1 (56%): we been at us Speaker 4 (70%): da bitte werde ich schweigen also da kommen wir gefege für iranisch Dr Zohoor (65%): tüf fisinet pe da kerdan besit pe e bir ketir o pe hal sira hakak ba ba bele ema ha ba de ha ho torku aka rafte didi khub ha sen doktora fobi has Dr Zohoor (68%): اگه چیزا اسمشون من بدید که من مریض های دیگه دارم اونم بفهمم اگه دقیقیت خوبه پس اول همین یه حسی میگم نه تو فریز هست بی زنده ان میگم فریز زنده است بس چه چه بسن شاید آها چون علاوه افت فکر کنم جلایم کرد بس چون یه دفعه یه",
+    "prompt_system": "You are reviewing two consecutive transcript excerpts from a medical office where a microphone records all day.\n\nThe system split these into two separate encounters, but they may actually be the SAME patient visit that was incorrectly split (e.g., due to a pause, phone call, or silence during an examination).\n\nDetermine if both excerpts are from the SAME patient encounter or DIFFERENT encounters.\n\nSigns they are the SAME encounter:\n- Same patient name or context referenced\n- Continuation of the same clinical discussion\n- No farewell/greeting between them\n- Natural pause (examination, looking at charts) rather than patient change\n- Same medical condition being discussed from different angles\n\nSigns they are DIFFERENT encounters:\n- Different patient names or contexts\n- A farewell followed by a new greeting\n- Clearly different clinical topics with no continuity\n\nCONTEXT: The patient being seen is Judith Arlene Croft. If both excerpts reference this patient or the same clinical context, they are almost certainly the same encounter.\n\nReturn JSON:\n{\"same_encounter\": true, \"reason\": \"brief explanation\"}\nor\n{\"same_encounter\": false, \"reason\": \"brief explanation\"}\n\nReturn ONLY the JSON object, nothing else.",
+    "prompt_user": "EXCERPT FROM END OF PREVIOUS ENCOUNTER:\nmà team em hay 50 sao ấy các Dr Zohoor (76%): az sobish to de yoi budan ke istifade mikardan mardan vaghte ke in mikoshkare yey ro dashtan Dr Zohoor (76%): am ama nem midonasan ki chera ay tur hast ama midonasan ki tasay ki diframe foran shatar Speaker 5 (66%): but um Dr Zohoor (84%): so tazegi we memin don't seem to care so in turn as but now we know that in heterozygous genetically has this Speaker 5 (50%): e Speaker 1 (57%): no he podido Speaker 1 (58%): شنا می رسام Speaker 5 (54%): bam Speaker 5 (55%): اولا فکر کردم که برای بیشتر این مردم Dr Zohoor (70%): vayiki sa yorlu mu bola has age tam paşın dardı ki ona muhimnistiş Speaker 5 (77%): الان ما یاد گرفتیم که نه این همه لگ‌های بدن برام میکنه Dr Zohoor (74%): ہے جو ان کا یعنی 2312 ہمیں آگاہیت بعد ان Dr Zohoor (74%): um we think مثلا we try to cross come to a free fikir bezish to chi nemishe et dast bezari az yat nemishe to chisi Speaker 5 (63%): graeni hastash Speaker 5 (69%): um haaloon man ino um Dr Zohoor (66%): این رو به داورخانه فرستادم امیدوارم که این این دغدغه فر کم بکنه Speaker 5 (61%): Hello Amon Dr Zohoor (70%): intemalar şuma hanüs z elektronlarıyla birlikte boş şey doğru söyleyerek Dr Zohoor (73%): जी से जाती नहीं सासा Speaker 4 (69%): Tak zawsze będę się odmieniał, nie, chyba i doktor. Speaker 4 (67%): on to go comment می‌کند Speaker 5 (71%): and then pom scan ki kablan karam Speaker 5 (70%): तो करम बिनांत Speaker 5 (55%): schon nicht fühlen Speaker 5 (63%): انا فكران Dr Zohoor (73%): قبلا اکستر کردیم تازگی اکستر کردیم وقتی که Dr Zohoor (71%): fiktsodoktardit ons scan karim Dr Zohoor (74%): مع فلسه دست راست میفری درد Speaker 5 (49%): બોલો બુડ Dr Zohoor (65%): a potem CT wykonam zażalenia Speaker 5 (64%): থাকনাম দবারে Dr Zohoor (70%): उसके ऊपर अपना नहीं है Speaker 4 (68%): the plus in the chip of the picture and the sat and the receiver of the picture Speaker 1 (35%): हेलो Dr Zohoor (66%): اینم مثلا سن خوندم زیاد میگه این هفته حتماً میتونم یه ذره همه درد کم کنه بعد من قرار سی سی بکنم سونوتو ببین Speaker 1 (56%): we been at us Speaker 4 (70%): da bitte werde ich schweigen also da kommen wir gefege für iranisch Dr Zohoor (65%): tüf fisinet pe da kerdan besit pe e bir ketir o pe hal sira hakak ba ba bele ema ha ba de ha ho torku aka rafte didi khub ha sen doktora fobi has Dr Zohoor (68%): اگه چیزا اسمشون من بدید که من مریض های دیگه دارم اونم بفهمم اگه دقیقیت خوبه پس اول همین یه حسی میگم نه تو فریز هست بی زنده ان میگم فریز زنده است بس چه چه بسن شاید آها چون علاوه افت فکر کنم جلایم کرد بس چون یه دفعه یه\n\n---\n\nEXCERPT FROM START OF NEXT ENCOUNTER:\nSpeaker 1 (100%): Hi there doctors who were calling Speaker 1 (64%): its her calling is this can Speaker 1 (71%): Karen, Ken, how are you feeling? Speaker 1 (79%): Oh I'm glad to hear it. Do you sound you sound much better than last time. Speaker 1 (76%): Yesterday was not good Dr Zohoor (67%): However, it's really good. So so yesterday and today are much better. Dr Zohoor (61%): I'm glad to hear it. How how's it been with your bowels? Speaker 1 (69%): any more accidents Speaker 1 (53%): Okay. Speaker 1 (81%): Have you had any more falling can how are you doing with your balance Speaker 2 (100%): Okay. Speaker 1 (52%): glad Speaker 1 (67%): It's also that you see more clear today. Speaker 1 (85%): Yeah, my sense is that, you know, because you were a bit cloudy a lot at the beginning. So the Dr Zohoor (63%): the last two days i'm hearing you you've been feeling better overall is that right Speaker 3 (100%): a Speaker 1 (78%): How are you doing with walking? Speaker 1 (53%): Okay. Speaker 1 (81%): how's your how's your pain been overall pekan Speaker 4 (100%): Yeah but Speaker 1 (65%): I'm glad and Speaker 1 (79%): we dealing with your bladder Speaker 1 (62%): gen okay Speaker 1 (72%): Okay, I Speaker 1 (82%): happy to hear it so overall the last 2 days have been better or draw is that is that fair to say Speaker 1 (60%): Okay Speaker 1 (54%): yeah well Speaker 1 (63%): you you want Speaker 1 (71%): You had a bit of a rough patch there. Speaker 5 (100%): Yeah Speaker 3 (70%): Oh Speaker 1 (67%): I understand it's frustrating though. Dr Zohoor (71%): I get it and it's a you know it really affects your independence right your ability to do things Speaker 1 (74%): Oh they didn't do it because it a kitchen thing. Dr Zohoor (60%): It was not before that Speaker 1 (81%): Yes can is doing much better than them Speaker 1 (81%): before from when when people are upset about their driving license i know they're doing better Speaker 1 (49%): So I'm Dr Zohoor (71%): I'm so glad that he seems to be doing better. I don't know how you have been finding him. Dr Zohoor (75%): Now I I it was the like it was delight talking to him and is definitely a lot more clear in his speech right which was really affecting you yeah Speaker 1 (76%): yeah my guess is that here a bit of delirium Dr Zohoor (61%): there there's this kind of fog confusion that that happens Dr Zohoor (70%): and that it's now clearing and when that happens it's like watching people come back to life it's dramatic Speaker 3 (54%): yeah Speaker 1 (69%): How how are you been doing today? Speaker 1 (58%): the pharmacy Dr Zohoor (63%): The pharmacy",
+    "response_raw": "```json\n{\"same_encounter\": false, \"reason\": \"The first excerpt ends with a doctor mentioning they have other patients to see ('من مریض های دیگه دارم'), and the second excerpt begins with a new greeting and a clinical assessment of a patient's recent improvement ('Yesterday was not good... today are much better'), indicating a transition to a new patient.\"}\n```",
+    "success": true,
+    "ts": "2026-04-08T16:16:57.622020+00:00"
+  },
+  "name_tracker": {
+    "majority_name": "Judith Arlene (judy) Croft",
+    "unique_names": [
+      "Judith Arlene Croft",
+      "Kenneth Robert Craft",
+      "Judith Arlene (judy) Croft",
+      "Kenneth Robert Croft"
+    ],
+    "vote_count": 11
+  },
+  "outcome": {
+    "detection_method": "hybrid_llm",
+    "encounter_number": 1,
+    "is_clinical": true,
+    "patient_name": "Judith Arlene (judy) Croft",
+    "session_id": "3a56b11f-789b-4103-84ce-724e2597828f",
+    "was_merged": false,
+    "word_count": 1547
+  },
+  "schema_version": 2,
+  "segments": [
+    {
+      "end_ms": 36512,
+      "index": 0,
+      "speaker_confidence": 1.0,
+      "speaker_id": "Speaker 1",
+      "start_ms": 33556,
+      "text": "Hi there doctors who were calling",
+      "ts": "2026-04-08T16:04:50.594668+00:00"
+    },
+    {
+      "end_ms": 42080,
+      "index": 1,
+      "speaker_confidence": 0.63862675,
+      "speaker_id": "Speaker 1",
+      "start_ms": 39732,
+      "text": "its her calling is this can",
+      "ts": "2026-04-08T16:04:56.090267+00:00"
+    },
+    {
+      "end_ms": 56800,
+      "index": 2,
+      "speaker_confidence": 0.7105737,
+      "speaker_id": "Speaker 1",
+      "start_ms": 54452,
+      "text": "Karen, Ken, how are you feeling?",
+      "ts": "2026-04-08T16:05:10.865080+00:00"
+    },
+    {
+      "end_ms": 63360,
+      "index": 3,
+      "speaker_confidence": 0.79205155,
+      "speaker_id": "Speaker 1",
+      "start_ms": 58996,
+      "text": "Oh I'm glad to hear it. Do you sound you sound much better than last time.",
+      "ts": "2026-04-08T16:05:17.739821+00:00"
+    },
+    {
+      "end_ms": 69792,
+      "index": 4,
+      "speaker_confidence": 0.7561311,
+      "speaker_id": "Speaker 1",
+      "start_ms": 67700,
+      "text": "Yesterday was not good",
+      "ts": "2026-04-08T16:05:23.777167+00:00"
+    },
+    {
+      "end_ms": 74784,
+      "index": 5,
+      "speaker_confidence": 0.6663633,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 70900,
+      "text": "However, it's really good. So so yesterday and today are much better.",
+      "ts": "2026-04-08T16:05:29.105223+00:00"
+    },
+    {
+      "end_ms": 81984,
+      "index": 6,
+      "speaker_confidence": 0.6068233,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 76148,
+      "text": "I'm glad to hear it. How how's it been with your bowels?",
+      "ts": "2026-04-08T16:05:36.450290+00:00"
+    },
+    {
+      "end_ms": 93856,
+      "index": 7,
+      "speaker_confidence": 0.6871446,
+      "speaker_id": "Speaker 1",
+      "start_ms": 91700,
+      "text": "any more accidents",
+      "ts": "2026-04-08T16:05:47.785938+00:00"
+    },
+    {
+      "end_ms": 96352,
+      "index": 8,
+      "speaker_confidence": 0.52599466,
+      "speaker_id": "Speaker 1",
+      "start_ms": 95092,
+      "text": "Okay.",
+      "ts": "2026-04-08T16:05:50.211629+00:00"
+    },
+    {
+      "end_ms": 100960,
+      "index": 9,
+      "speaker_confidence": 0.811722,
+      "speaker_id": "Speaker 1",
+      "start_ms": 96340,
+      "text": "Have you had any more falling can how are you doing with your balance",
+      "ts": "2026-04-08T16:05:55.298269+00:00"
+    },
+    {
+      "end_ms": 105696,
+      "index": 10,
+      "speaker_confidence": 1.0,
+      "speaker_id": "Speaker 2",
+      "start_ms": 104532,
+      "text": "Okay.",
+      "ts": "2026-04-08T16:05:59.543567+00:00"
+    },
+    {
+      "end_ms": 107712,
+      "index": 11,
+      "speaker_confidence": 0.51923794,
+      "speaker_id": "Speaker 1",
+      "start_ms": 106804,
+      "text": "glad",
+      "ts": "2026-04-08T16:06:01.533838+00:00"
+    },
+    {
+      "end_ms": 112256,
+      "index": 12,
+      "speaker_confidence": 0.6715882,
+      "speaker_id": "Speaker 1",
+      "start_ms": 109236,
+      "text": "It's also that you see more clear today.",
+      "ts": "2026-04-08T16:06:06.393789+00:00"
+    },
+    {
+      "end_ms": 123008,
+      "index": 13,
+      "speaker_confidence": 0.8501029,
+      "speaker_id": "Speaker 1",
+      "start_ms": 117396,
+      "text": "Yeah, my sense is that, you know, because you were a bit cloudy a lot at the beginning. So the",
+      "ts": "2026-04-08T16:06:18.795332+00:00"
+    },
+    {
+      "end_ms": 127808,
+      "index": 14,
+      "speaker_confidence": 0.62922645,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 122740,
+      "text": "the last two days i'm hearing you you've been feeling better overall is that right",
+      "ts": "2026-04-08T16:06:22.227520+00:00"
+    },
+    {
+      "end_ms": 131040,
+      "index": 15,
+      "speaker_confidence": 1.0,
+      "speaker_id": "Speaker 3",
+      "start_ms": 130132,
+      "text": "a",
+      "ts": "2026-04-08T16:06:24.885279+00:00"
+    },
+    {
+      "end_ms": 134560,
+      "index": 16,
+      "speaker_confidence": 0.78111684,
+      "speaker_id": "Speaker 1",
+      "start_ms": 132244,
+      "text": "How are you doing with walking?",
+      "ts": "2026-04-08T16:06:28.598875+00:00"
+    },
+    {
+      "end_ms": 146368,
+      "index": 17,
+      "speaker_confidence": 0.53489614,
+      "speaker_id": "Speaker 1",
+      "start_ms": 145204,
+      "text": "Okay.",
+      "ts": "2026-04-08T16:06:40.215894+00:00"
+    },
+    {
+      "end_ms": 150240,
+      "index": 18,
+      "speaker_confidence": 0.8118286,
+      "speaker_id": "Speaker 1",
+      "start_ms": 146612,
+      "text": "how's your how's your pain been overall pekan",
+      "ts": "2026-04-08T16:06:44.682616+00:00"
+    },
+    {
+      "end_ms": 161920,
+      "index": 19,
+      "speaker_confidence": 1.0,
+      "speaker_id": "Speaker 4",
+      "start_ms": 160564,
+      "text": "Yeah but",
+      "ts": "2026-04-08T16:06:55.789095+00:00"
+    },
+    {
+      "end_ms": 167680,
+      "index": 20,
+      "speaker_confidence": 0.6477139,
+      "speaker_id": "Speaker 1",
+      "start_ms": 166292,
+      "text": "I'm glad and",
+      "ts": "2026-04-08T16:07:01.644233+00:00"
+    },
+    {
+      "end_ms": 169760,
+      "index": 21,
+      "speaker_confidence": 0.7892048,
+      "speaker_id": "Speaker 1",
+      "start_ms": 167508,
+      "text": "we dealing with your bladder",
+      "ts": "2026-04-08T16:07:03.753529+00:00"
+    },
+    {
+      "end_ms": 173536,
+      "index": 22,
+      "speaker_confidence": 0.620972,
+      "speaker_id": "Speaker 1",
+      "start_ms": 172084,
+      "text": "gen okay",
+      "ts": "2026-04-08T16:07:07.415804+00:00"
+    },
+    {
+      "end_ms": 175552,
+      "index": 23,
+      "speaker_confidence": 0.7187916,
+      "speaker_id": "Speaker 1",
+      "start_ms": 174420,
+      "text": "Okay, I",
+      "ts": "2026-04-08T16:07:09.425384+00:00"
+    },
+    {
+      "end_ms": 182112,
+      "index": 24,
+      "speaker_confidence": 0.82399976,
+      "speaker_id": "Speaker 1",
+      "start_ms": 176180,
+      "text": "happy to hear it so overall the last 2 days have been better or draw is that is that fair to say",
+      "ts": "2026-04-08T16:07:16.629617+00:00"
+    },
+    {
+      "end_ms": 184032,
+      "index": 25,
+      "speaker_confidence": 0.6026889,
+      "speaker_id": "Speaker 1",
+      "start_ms": 182900,
+      "text": "Okay",
+      "ts": "2026-04-08T16:07:17.766308+00:00"
+    },
+    {
+      "end_ms": 187040,
+      "index": 26,
+      "speaker_confidence": 0.5384247,
+      "speaker_id": "Speaker 1",
+      "start_ms": 185844,
+      "text": "yeah well",
+      "ts": "2026-04-08T16:07:21.063127+00:00"
+    },
+    {
+      "end_ms": 189024,
+      "index": 27,
+      "speaker_confidence": 0.630385,
+      "speaker_id": "Speaker 1",
+      "start_ms": 187732,
+      "text": "you you want",
+      "ts": "2026-04-08T16:07:22.862108+00:00"
+    },
+    {
+      "end_ms": 192672,
+      "index": 28,
+      "speaker_confidence": 0.70898604,
+      "speaker_id": "Speaker 1",
+      "start_ms": 190324,
+      "text": "You had a bit of a rough patch there.",
+      "ts": "2026-04-08T16:07:26.808424+00:00"
+    },
+    {
+      "end_ms": 201472,
+      "index": 29,
+      "speaker_confidence": 1.0,
+      "speaker_id": "Speaker 5",
+      "start_ms": 200340,
+      "text": "Yeah",
+      "ts": "2026-04-08T16:07:35.335048+00:00"
+    },
+    {
+      "end_ms": 216544,
+      "index": 30,
+      "speaker_confidence": 0.70049244,
+      "speaker_id": "Speaker 3",
+      "start_ms": 215444,
+      "text": "Oh",
+      "ts": "2026-04-08T16:07:50.412068+00:00"
+    },
+    {
+      "end_ms": 226240,
+      "index": 31,
+      "speaker_confidence": 0.67053515,
+      "speaker_id": "Speaker 1",
+      "start_ms": 224052,
+      "text": "I understand it's frustrating though.",
+      "ts": "2026-04-08T16:08:00.259574+00:00"
+    },
+    {
+      "end_ms": 241024,
+      "index": 32,
+      "speaker_confidence": 0.70801353,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 235540,
+      "text": "I get it and it's a you know it really affects your independence right your ability to do things",
+      "ts": "2026-04-08T16:08:15.628182+00:00"
+    },
+    {
+      "end_ms": 250560,
+      "index": 33,
+      "speaker_confidence": 0.7399912,
+      "speaker_id": "Speaker 1",
+      "start_ms": 247604,
+      "text": "Oh they didn't do it because it a kitchen thing.",
+      "ts": "2026-04-08T16:08:24.709072+00:00"
+    },
+    {
+      "end_ms": 252672,
+      "index": 34,
+      "speaker_confidence": 0.60408425,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 250644,
+      "text": "It was not before that",
+      "ts": "2026-04-08T16:08:26.654471+00:00"
+    },
+    {
+      "end_ms": 269504,
+      "index": 35,
+      "speaker_confidence": 0.8115421,
+      "speaker_id": "Speaker 1",
+      "start_ms": 266804,
+      "text": "Yes can is doing much better than them",
+      "ts": "2026-04-08T16:08:43.583480+00:00"
+    },
+    {
+      "end_ms": 274144,
+      "index": 36,
+      "speaker_confidence": 0.8118892,
+      "speaker_id": "Speaker 1",
+      "start_ms": 269396,
+      "text": "before from when when people are upset about their driving license i know they're doing better",
+      "ts": "2026-04-08T16:08:48.488449+00:00"
+    },
+    {
+      "end_ms": 276480,
+      "index": 37,
+      "speaker_confidence": 0.48563612,
+      "speaker_id": "Speaker 1",
+      "start_ms": 275316,
+      "text": "So I'm",
+      "ts": "2026-04-08T16:08:50.399746+00:00"
+    },
+    {
+      "end_ms": 281248,
+      "index": 38,
+      "speaker_confidence": 0.70751494,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 276180,
+      "text": "I'm so glad that he seems to be doing better. I don't know how you have been finding him.",
+      "ts": "2026-04-08T16:08:55.774086+00:00"
+    },
+    {
+      "end_ms": 308960,
+      "index": 39,
+      "speaker_confidence": 0.7541375,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 299188,
+      "text": "Now I I it was the like it was delight talking to him and is definitely a lot more clear in his speech right which was really affecting you yeah",
+      "ts": "2026-04-08T16:09:23.937459+00:00"
+    },
+    {
+      "end_ms": 315360,
+      "index": 40,
+      "speaker_confidence": 0.76279116,
+      "speaker_id": "Speaker 1",
+      "start_ms": 312244,
+      "text": "yeah my guess is that here a bit of delirium",
+      "ts": "2026-04-08T16:09:29.466310+00:00"
+    },
+    {
+      "end_ms": 320416,
+      "index": 41,
+      "speaker_confidence": 0.6089114,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 315508,
+      "text": "there there's this kind of fog confusion that that happens",
+      "ts": "2026-04-08T16:09:34.775559+00:00"
+    },
+    {
+      "end_ms": 327712,
+      "index": 42,
+      "speaker_confidence": 0.69697237,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 320116,
+      "text": "and that it's now clearing and when that happens it's like watching people come back to life it's dramatic",
+      "ts": "2026-04-08T16:09:42.406074+00:00"
+    },
+    {
+      "end_ms": 332704,
+      "index": 43,
+      "speaker_confidence": 0.544706,
+      "speaker_id": "Speaker 3",
+      "start_ms": 331732,
+      "text": "yeah",
+      "ts": "2026-04-08T16:09:46.528734+00:00"
+    },
+    {
+      "end_ms": 335904,
+      "index": 44,
+      "speaker_confidence": 0.69453096,
+      "speaker_id": "Speaker 1",
+      "start_ms": 332948,
+      "text": "How how are you been doing today?",
+      "ts": "2026-04-08T16:09:50.025120+00:00"
+    },
+    {
+      "end_ms": 362912,
+      "index": 45,
+      "speaker_confidence": 0.58442223,
+      "speaker_id": "Speaker 1",
+      "start_ms": 361236,
+      "text": "the pharmacy",
+      "ts": "2026-04-08T16:10:16.768304+00:00"
+    },
+    {
+      "end_ms": 368000,
+      "index": 46,
+      "speaker_confidence": 0.6289907,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 363060,
+      "text": "The pharmacy did say to me that you were using our Clomazepam more.",
+      "ts": "2026-04-08T16:10:22.363828+00:00"
+    },
+    {
+      "end_ms": 369408,
+      "index": 47,
+      "speaker_confidence": 0.5390448,
+      "speaker_id": "Speaker 1",
+      "start_ms": 368020,
+      "text": "and",
+      "ts": "2026-04-08T16:10:23.163829+00:00"
+    },
+    {
+      "end_ms": 374432,
+      "index": 48,
+      "speaker_confidence": 0.8188047,
+      "speaker_id": "Speaker 1",
+      "start_ms": 371508,
+      "text": "It's in your it's in a packet bad time",
+      "ts": "2026-04-08T16:10:28.780476+00:00"
+    },
+    {
+      "end_ms": 380704,
+      "index": 49,
+      "speaker_confidence": 0.6945473,
+      "speaker_id": "Speaker 1",
+      "start_ms": 378932,
+      "text": "okay i don't i don't",
+      "ts": "2026-04-08T16:10:34.667819+00:00"
+    },
+    {
+      "end_ms": 389536,
+      "index": 50,
+      "speaker_confidence": 0.8627568,
+      "speaker_id": "Speaker 1",
+      "start_ms": 381076,
+      "text": "I don't know what the confusion is then but what they asked me was whether or not I could release it early on Friday instead of Monday",
+      "ts": "2026-04-08T16:10:44.968739+00:00"
+    },
+    {
+      "end_ms": 398976,
+      "index": 51,
+      "speaker_confidence": 0.6531434,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 389588,
+      "text": "um and i said that's fine they can they can release it early on friday they faxed me about it yesterday so i'm not sure exactly like the confusion there",
+      "ts": "2026-04-08T16:10:53.994009+00:00"
+    },
+    {
+      "end_ms": 403904,
+      "index": 52,
+      "speaker_confidence": 0.6607912,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 398708,
+      "text": "um but in terms of the you know in terms of the overall picture",
+      "ts": "2026-04-08T16:10:58.315312+00:00"
+    },
+    {
+      "end_ms": 410272,
+      "index": 53,
+      "speaker_confidence": 0.6754543,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 403828,
+      "text": "um were you in the emergency or no that was that was something different i apologize how um",
+      "ts": "2026-04-08T16:11:04.764949+00:00"
+    },
+    {
+      "end_ms": 411648,
+      "index": 54,
+      "speaker_confidence": 0.53070194,
+      "speaker_id": "Speaker 1",
+      "start_ms": 410388,
+      "text": "how",
+      "ts": "2026-04-08T16:11:05.415140+00:00"
+    },
+    {
+      "end_ms": 419136,
+      "index": 55,
+      "speaker_confidence": 0.75562954,
+      "speaker_id": "Speaker 1",
+      "start_ms": 412308,
+      "text": "and i understand that the feeling of tension will will come back to that it may be related",
+      "ts": "2026-04-08T16:11:13.690783+00:00"
+    },
+    {
+      "end_ms": 422336,
+      "index": 56,
+      "speaker_confidence": 0.7639951,
+      "speaker_id": "Speaker 1",
+      "start_ms": 418868,
+      "text": "due to the fact that i reduced some of your medications",
+      "ts": "2026-04-08T16:11:16.477640+00:00"
+    },
+    {
+      "end_ms": 425600,
+      "index": 57,
+      "speaker_confidence": 0.6171082,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 423060,
+      "text": "because i i um",
+      "ts": "2026-04-08T16:11:19.639167+00:00"
+    },
+    {
+      "end_ms": 427712,
+      "index": 58,
+      "speaker_confidence": 0.7565541,
+      "speaker_id": "Speaker 1",
+      "start_ms": 425428,
+      "text": "because last time we talked",
+      "ts": "2026-04-08T16:11:21.731010+00:00"
+    },
+    {
+      "end_ms": 430720,
+      "index": 59,
+      "speaker_confidence": 0.8137305,
+      "speaker_id": "Speaker 1",
+      "start_ms": 427604,
+      "text": "Your ankle swelling was worse?",
+      "ts": "2026-04-08T16:11:24.819197+00:00"
+    },
+    {
+      "end_ms": 445280,
+      "index": 60,
+      "speaker_confidence": 0.66288966,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 438324,
+      "text": "Okay so you're on your way there soon okay i will be quick then how's the ankle swelling been lately",
+      "ts": "2026-04-08T16:11:39.976876+00:00"
+    },
+    {
+      "end_ms": 457408,
+      "index": 61,
+      "speaker_confidence": 0.62213236,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 453780,
+      "text": "but the but ankles falling's pretty bad still right",
+      "ts": "2026-04-08T16:11:51.657209+00:00"
+    },
+    {
+      "end_ms": 460448,
+      "index": 62,
+      "speaker_confidence": 0.7743598,
+      "speaker_id": "Speaker 1",
+      "start_ms": 458452,
+      "text": "How's your breathing back?",
+      "ts": "2026-04-08T16:11:54.445622+00:00"
+    },
+    {
+      "end_ms": 484160,
+      "index": 63,
+      "speaker_confidence": 0.89922655,
+      "speaker_id": "Speaker 1",
+      "start_ms": 477268,
+      "text": "Yeah so I'm not sure again I don't know like what happened there it's possible that with the",
+      "ts": "2026-04-08T16:12:18.818845+00:00"
+    },
+    {
+      "end_ms": 492928,
+      "index": 64,
+      "speaker_confidence": 0.9242354,
+      "speaker_id": "Speaker 1",
+      "start_ms": 484244,
+      "text": "um because you because of the because of the hospital discharge and this and that like i'm not sure whether that caused the confusion or or what's gone on",
+      "ts": "2026-04-08T16:12:27.871126+00:00"
+    },
+    {
+      "end_ms": 494272,
+      "index": 65,
+      "speaker_confidence": 0.5159755,
+      "speaker_id": "Speaker 3",
+      "start_ms": 493300,
+      "text": "um",
+      "ts": "2026-04-08T16:12:28.152606+00:00"
+    },
+    {
+      "end_ms": 498912,
+      "index": 66,
+      "speaker_confidence": 0.8995413,
+      "speaker_id": "Speaker 1",
+      "start_ms": 494004,
+      "text": "It's tricky because some of your medications that make the swelling worse.",
+      "ts": "2026-04-08T16:12:34.308485+00:00"
+    },
+    {
+      "end_ms": 502176,
+      "index": 67,
+      "speaker_confidence": 0.6055426,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 499028,
+      "text": "also make you feel less anxious",
+      "ts": "2026-04-08T16:12:36.233149+00:00"
+    },
+    {
+      "end_ms": 506592,
+      "index": 68,
+      "speaker_confidence": 0.7126611,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 501908,
+      "text": "So because your spelling was worse I had to reduce some of the maths",
+      "ts": "2026-04-08T16:12:40.976410+00:00"
+    },
+    {
+      "end_ms": 512672,
+      "index": 69,
+      "speaker_confidence": 0.7348661,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 507156,
+      "text": "and that would make your anxiety if it worse that",
+      "ts": "2026-04-08T16:12:46.994571+00:00"
+    },
+    {
+      "end_ms": 518016,
+      "index": 70,
+      "speaker_confidence": 0.90259266,
+      "speaker_id": "Speaker 1",
+      "start_ms": 513044,
+      "text": "yeah and it's it's often a little bit of a tricky back and forth",
+      "ts": "2026-04-08T16:12:52.435066+00:00"
+    },
+    {
+      "end_ms": 519040,
+      "index": 71,
+      "speaker_confidence": 0.6477115,
+      "speaker_id": "Speaker 3",
+      "start_ms": 517780,
+      "text": "Um",
+      "ts": "2026-04-08T16:12:52.781015+00:00"
+    },
+    {
+      "end_ms": 524960,
+      "index": 72,
+      "speaker_confidence": 0.88916665,
+      "speaker_id": "Speaker 1",
+      "start_ms": 519284,
+      "text": "So did you when are your next so the your medications you're picking up on Friday is that right",
+      "ts": "2026-04-08T16:12:59.460489+00:00"
+    },
+    {
+      "end_ms": 532320,
+      "index": 73,
+      "speaker_confidence": 0.8932525,
+      "speaker_id": "Speaker 1",
+      "start_ms": 527668,
+      "text": "Okay and the water pill right now you're taking 4 a day",
+      "ts": "2026-04-08T16:13:06.632329+00:00"
+    },
+    {
+      "end_ms": 537408,
+      "index": 74,
+      "speaker_confidence": 0.6342539,
+      "speaker_id": "Speaker 2",
+      "start_ms": 536180,
+      "text": "Okay.",
+      "ts": "2026-04-08T16:13:11.299351+00:00"
+    },
+    {
+      "end_ms": 545312,
+      "index": 75,
+      "speaker_confidence": 0.71465915,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 537780,
+      "text": "and so the 20 milligrams i'm taking in the full hour so i feel i'll be able to so the dose needs to be changed",
+      "ts": "2026-04-08T16:13:20.138069+00:00"
+    },
+    {
+      "end_ms": 555008,
+      "index": 76,
+      "speaker_confidence": 0.91561764,
+      "speaker_id": "Speaker 1",
+      "start_ms": 545268,
+      "text": "okay and then um and then what i was hoping was that by stopping the one pill the swelling would go down stopping a blood pressure pill",
+      "ts": "2026-04-08T16:13:29.895623+00:00"
+    },
+    {
+      "end_ms": 559808,
+      "index": 77,
+      "speaker_confidence": 0.8476927,
+      "speaker_id": "Speaker 1",
+      "start_ms": 554708,
+      "text": "but what i'm hearing as a dad has not has not happened right",
+      "ts": "2026-04-08T16:13:34.201334+00:00"
+    },
+    {
+      "end_ms": 565632,
+      "index": 78,
+      "speaker_confidence": 0.8495735,
+      "speaker_id": "Speaker 1",
+      "start_ms": 560084,
+      "text": "Okay. When I made the changes last time, so we talked in less than a week ago,",
+      "ts": "2026-04-08T16:13:40.103517+00:00"
+    },
+    {
+      "end_ms": 569856,
+      "index": 79,
+      "speaker_confidence": 0.8128112,
+      "speaker_id": "Speaker 1",
+      "start_ms": 565716,
+      "text": "When I made the changes did the pharmacy send you a new pack",
+      "ts": "2026-04-08T16:13:44.578871+00:00"
+    },
+    {
+      "end_ms": 571104,
+      "index": 80,
+      "speaker_confidence": 0.53022283,
+      "speaker_id": "Speaker 3",
+      "start_ms": 570036,
+      "text": "or",
+      "ts": "2026-04-08T16:13:44.888027+00:00"
+    },
+    {
+      "end_ms": 575264,
+      "index": 81,
+      "speaker_confidence": 0.88584197,
+      "speaker_id": "Speaker 1",
+      "start_ms": 570868,
+      "text": "or have like have those changes actually happened or they have not happened",
+      "ts": "2026-04-08T16:13:49.539317+00:00"
+    },
+    {
+      "end_ms": 579008,
+      "index": 82,
+      "speaker_confidence": 0.65229535,
+      "speaker_id": "Speaker 2",
+      "start_ms": 577780,
+      "text": "Okay",
+      "ts": "2026-04-08T16:13:52.893198+00:00"
+    },
+    {
+      "end_ms": 587136,
+      "index": 83,
+      "speaker_confidence": 0.6718558,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 579188,
+      "text": "so that that's because it's a little tricky because i'm assuming that the changes were made and that's why things are the way they are",
+      "ts": "2026-04-08T16:14:01.996204+00:00"
+    },
+    {
+      "end_ms": 593504,
+      "index": 84,
+      "speaker_confidence": 0.6868705,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 587220,
+      "text": "but i'm hearing that that's not the case that the the medication changes have actually happened is that right",
+      "ts": "2026-04-08T16:14:08.050714+00:00"
+    },
+    {
+      "end_ms": 596000,
+      "index": 85,
+      "speaker_confidence": 0.7258521,
+      "speaker_id": "Speaker 2",
+      "start_ms": 594868,
+      "text": "Okay.",
+      "ts": "2026-04-08T16:14:09.855019+00:00"
+    },
+    {
+      "end_ms": 607776,
+      "index": 86,
+      "speaker_confidence": 0.6766337,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 595860,
+      "text": "I think what I'm going to do today is I'm going to have my assistant call the pharmacy and just sort out exactly because it's just kind of confusing to me you run meds before the hospital",
+      "ts": "2026-04-08T16:14:24.636702+00:00"
+    },
+    {
+      "end_ms": 613280,
+      "index": 87,
+      "speaker_confidence": 0.6272975,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 607604,
+      "text": "the hospital sent me a list of meds the nurse who visited you sent me a different list of meds",
+      "ts": "2026-04-08T16:14:27.812181+00:00"
+    },
+    {
+      "end_ms": 615328,
+      "index": 88,
+      "speaker_confidence": 0.700596,
+      "speaker_id": "Speaker 1",
+      "start_ms": 613204,
+      "text": "and and any changes",
+      "ts": "2026-04-08T16:14:29.186847+00:00"
+    },
+    {
+      "end_ms": 618080,
+      "index": 89,
+      "speaker_confidence": 0.65322566,
+      "speaker_id": "Speaker 1",
+      "start_ms": 615380,
+      "text": "and then it's like",
+      "ts": "2026-04-08T16:14:32.105908+00:00"
+    },
+    {
+      "end_ms": 632800,
+      "index": 90,
+      "speaker_confidence": 0.6803225,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 618868,
+      "text": "and it's been a week and i'm and i'm hearing that that the changes didn't happen so i'm kind of confused so what i'm going to do is i'm going to have my my assistant call the pharmacy clarify exactly what you're currently on",
+      "ts": "2026-04-08T16:14:48.583506+00:00"
+    },
+    {
+      "end_ms": 634176,
+      "index": 91,
+      "speaker_confidence": 0.632823,
+      "speaker_id": "Speaker 1",
+      "start_ms": 632660,
+      "text": "and then",
+      "ts": "2026-04-08T16:14:48.921366+00:00"
+    },
+    {
+      "end_ms": 640960,
+      "index": 92,
+      "speaker_confidence": 0.67592806,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 633876,
+      "text": "the and and and make the changes to to the maths and have them send the mail to you",
+      "ts": "2026-04-08T16:14:55.568633+00:00"
+    },
+    {
+      "end_ms": 643136,
+      "index": 93,
+      "speaker_confidence": 0.41549274,
+      "speaker_id": "Speaker 3",
+      "start_ms": 641876,
+      "text": "so that",
+      "ts": "2026-04-08T16:14:56.961113+00:00"
+    },
+    {
+      "end_ms": 648768,
+      "index": 94,
+      "speaker_confidence": 0.70940936,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 642932,
+      "text": "what I you know because I made the change six weeks ago to try to help with the breathing and the swelling",
+      "ts": "2026-04-08T16:15:03.271935+00:00"
+    },
+    {
+      "end_ms": 651776,
+      "index": 95,
+      "speaker_confidence": 0.79709375,
+      "speaker_id": "Speaker 1",
+      "start_ms": 648724,
+      "text": "and and obviously that has not happened right",
+      "ts": "2026-04-08T16:15:05.863254+00:00"
+    },
+    {
+      "end_ms": 658176,
+      "index": 96,
+      "speaker_confidence": 0.81812584,
+      "speaker_id": "Speaker 1",
+      "start_ms": 652372,
+      "text": "so okay so i'm going to have i'm going to have to assist and work on that this afternoon to just kind of",
+      "ts": "2026-04-08T16:15:12.772908+00:00"
+    },
+    {
+      "end_ms": 662176,
+      "index": 97,
+      "speaker_confidence": 0.67833596,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 658164,
+      "text": "get things figured out in terms of what you're actually taking",
+      "ts": "2026-04-08T16:15:16.427394+00:00"
+    },
+    {
+      "end_ms": 669920,
+      "index": 98,
+      "speaker_confidence": 0.80672514,
+      "speaker_id": "Speaker 1",
+      "start_ms": 663284,
+      "text": "That's all okay. So I will I'll have them call the pharmacy, get a list, update the list. I will go through it.",
+      "ts": "2026-04-08T16:15:24.686494+00:00"
+    },
+    {
+      "end_ms": 675008,
+      "index": 99,
+      "speaker_confidence": 0.62041867,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 669684,
+      "text": "I work on helping with the the tension as well as with the swelling.",
+      "ts": "2026-04-08T16:15:29.408220+00:00"
+    },
+    {
+      "end_ms": 681216,
+      "index": 100,
+      "speaker_confidence": 0.8795501,
+      "speaker_id": "Speaker 1",
+      "start_ms": 675188,
+      "text": "they connect to each other um and so you know and then and then um",
+      "ts": "2026-04-08T16:15:35.655711+00:00"
+    },
+    {
+      "end_ms": 686048,
+      "index": 101,
+      "speaker_confidence": 0.60581696,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 681460,
+      "text": "And then he'll call let you know what happened after he talked to the fundusit.",
+      "ts": "2026-04-08T16:15:40.407658+00:00"
+    },
+    {
+      "end_ms": 691584,
+      "index": 102,
+      "speaker_confidence": 0.58354557,
+      "speaker_id": "Speaker 2",
+      "start_ms": 690676,
+      "text": "Okay.",
+      "ts": "2026-04-08T16:15:45.408023+00:00"
+    },
+    {
+      "end_ms": 699072,
+      "index": 103,
+      "speaker_confidence": 0.63892376,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 691380,
+      "text": "no worries if if we if you don't hear from us just assume that that we've made the changes and the pharmacy should be",
+      "ts": "2026-04-08T16:15:53.866531+00:00"
+    },
+    {
+      "end_ms": 700992,
+      "index": 104,
+      "speaker_confidence": 0.80841374,
+      "speaker_id": "Speaker 1",
+      "start_ms": 698836,
+      "text": "I'm sending you the new pack.",
+      "ts": "2026-04-08T16:15:54.911180+00:00"
+    },
+    {
+      "end_ms": 716320,
+      "index": 105,
+      "speaker_confidence": 0.65257686,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 701364,
+      "text": "um let me um i do want before you let you go i know you're going to be in hurry to get to the to the to your appointment um let me book the next appointment because i think the plan was for me to either do a house call or call you",
+      "ts": "2026-04-08T16:16:12.081067+00:00"
+    },
+    {
+      "end_ms": 717248,
+      "index": 106,
+      "speaker_confidence": 0.5912651,
+      "speaker_id": "Speaker 3",
+      "start_ms": 716276,
+      "text": "Um",
+      "ts": "2026-04-08T16:16:12.361896+00:00"
+    },
+    {
+      "end_ms": 725152,
+      "index": 107,
+      "speaker_confidence": 0.6467038,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 717268,
+      "text": "I think what I'll do is see if I can do a house call because in that way I can see what exactly you're picking or not taking",
+      "ts": "2026-04-08T16:16:20.023662+00:00"
+    },
+    {
+      "end_ms": 726144,
+      "index": 108,
+      "speaker_confidence": 0.7675367,
+      "speaker_id": "Speaker 3",
+      "start_ms": 724980,
+      "text": "um",
+      "ts": "2026-04-08T16:16:20.325172+00:00"
+    },
+    {
+      "end_ms": 733184,
+      "index": 109,
+      "speaker_confidence": 0.8486589,
+      "speaker_id": "Speaker 1",
+      "start_ms": 726388,
+      "text": "So maybe what I'll do is I'll book it for Friday next or it's going to be a little tricky but I'll try my best. So",
+      "ts": "2026-04-08T16:16:28.482231+00:00"
+    },
+    {
+      "end_ms": 737728,
+      "index": 110,
+      "speaker_confidence": 0.61547184,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 732980,
+      "text": "it's after an easter weekend everything is it's always a",
+      "ts": "2026-04-08T16:16:33.524096+00:00"
+    },
+    {
+      "end_ms": 745248,
+      "index": 111,
+      "speaker_confidence": 0.60173845,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 737940,
+      "text": "it's always a bit of a mess so the at the moment all the lunches are taken up so be Friday April 17th",
+      "ts": "2026-04-08T16:16:40.331507+00:00"
+    },
+    {
+      "end_ms": 750624,
+      "index": 112,
+      "speaker_confidence": 0.89427656,
+      "speaker_id": "Speaker 1",
+      "start_ms": 745940,
+      "text": "and i'll try to if i if i'm running really late i may just call and do it",
+      "ts": "2026-04-08T16:16:48.616500+00:00"
+    },
+    {
+      "end_ms": 761344,
+      "index": 113,
+      "speaker_confidence": 0.69758016,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 750324,
+      "text": "over phone because then I actually have more time but otherwise i will do what i can to to come visit you guys and see um see how you're doing",
+      "ts": "2026-04-08T16:16:57.223068+00:00"
+    }
+  ],
+  "sensor_transitions": [
+    {
+      "from": "unknown",
+      "to": "present",
+      "ts": "2026-04-08T16:04:13.329253+00:00"
+    }
+  ],
+  "soap_result": {
+    "latency_ms": 5683,
+    "success": true,
+    "ts": "2026-04-08T16:16:42.301852+00:00",
+    "word_count": 1547
+  },
+  "split_decision": {
+    "cleaned_word_count": 1220,
+    "end_segment_index": 108,
+    "trigger": "hybrid_llm",
+    "ts": "2026-04-08T16:16:28.307671+00:00",
+    "word_count": 1547
+  },
+  "vision_results": [
+    {
+      "is_blank": false,
+      "is_stale": false,
+      "latency_ms": 2608,
+      "parsed_name": "Judith Arlene Croft",
+      "ts": "2026-04-08T16:05:16.042511+00:00"
+    },
+    {
+      "is_blank": false,
+      "is_stale": false,
+      "latency_ms": 2781,
+      "parsed_name": "Kenneth Robert Croft",
+      "ts": "2026-04-08T16:06:18.991748+00:00"
+    },
+    {
+      "is_blank": false,
+      "is_stale": false,
+      "latency_ms": 2075,
+      "parsed_name": "Kenneth Robert Craft",
+      "ts": "2026-04-08T16:07:21.325208+00:00"
+    },
+    {
+      "is_blank": false,
+      "is_stale": false,
+      "latency_ms": 1864,
+      "parsed_name": "Kenneth Robert Craft",
+      "ts": "2026-04-08T16:08:23.449021+00:00"
+    },
+    {
+      "is_blank": false,
+      "is_stale": false,
+      "latency_ms": 2420,
+      "parsed_name": "Judith Arlene Croft",
+      "ts": "2026-04-08T16:09:26.037752+00:00"
+    },
+    {
+      "is_blank": false,
+      "is_stale": false,
+      "latency_ms": 2706,
+      "parsed_name": "Judith Arlene Croft",
+      "ts": "2026-04-08T16:10:28.913006+00:00"
+    },
+    {
+      "is_blank": false,
+      "is_stale": false,
+      "latency_ms": 2438,
+      "parsed_name": "Judith Arlene Croft",
+      "ts": "2026-04-08T16:11:31.519018+00:00"
+    },
+    {
+      "is_blank": false,
+      "is_stale": false,
+      "latency_ms": 2922,
+      "parsed_name": "Judith Arlene (judy) Croft",
+      "ts": "2026-04-08T16:12:34.578148+00:00"
+    },
+    {
+      "is_blank": false,
+      "is_stale": false,
+      "latency_ms": 2582,
+      "parsed_name": "Judith Arlene (judy) Croft",
+      "ts": "2026-04-08T16:13:37.312425+00:00"
+    },
+    {
+      "is_blank": false,
+      "is_stale": false,
+      "latency_ms": 2599,
+      "parsed_name": "Judith Arlene (judy) Croft",
+      "ts": "2026-04-08T16:14:40.069381+00:00"
+    },
+    {
+      "is_blank": false,
+      "is_stale": false,
+      "latency_ms": 2579,
+      "parsed_name": "Judith Arlene (judy) Croft",
+      "ts": "2026-04-08T16:15:42.801877+00:00"
+    },
+    {
+      "is_blank": false,
+      "is_stale": false,
+      "latency_ms": 7896,
+      "parsed_name": "Judith Arlene Croft",
+      "ts": "2026-04-08T16:16:50.797351+00:00"
+    }
+  ]
+}

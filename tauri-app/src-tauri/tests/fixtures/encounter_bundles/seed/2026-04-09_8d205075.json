@@ -1,0 +1,1213 @@
+{
+  "billing_result": {
+    "codes_count": 1,
+    "latency_ms": 10266,
+    "selected_codes": [
+      "A007A"
+    ],
+    "success": true,
+    "total_amount_cents": 3336,
+    "ts": "2026-04-09T18:42:15.106632+00:00"
+  },
+  "clinical_check": {
+    "is_clinical": true,
+    "latency_ms": 0,
+    "success": true,
+    "ts": "2026-04-09T18:41:51.946941+00:00"
+  },
+  "config": {
+    "co2_baseline_ppm": 420.0,
+    "encounter_check_interval_secs": 120,
+    "encounter_detection_mode": "hybrid",
+    "encounter_detection_model": "fast-model",
+    "encounter_detection_nothink": false,
+    "encounter_merge_enabled": true,
+    "encounter_silence_trigger_secs": 45,
+    "fast_model": "fast-model",
+    "hybrid_confirm_window_secs": 180,
+    "hybrid_min_words_for_sensor_split": 500,
+    "idle_encounter_timeout_secs": 900,
+    "presence_absence_threshold_secs": 180,
+    "presence_debounce_secs": 10,
+    "presence_sensor_port": "/dev/cu.usbmodem21201",
+    "presence_sensor_url": "",
+    "screen_capture_enabled": true,
+    "screen_capture_interval_secs": 60,
+    "shadow_active_method": "llm",
+    "sleep_end_hour": 6,
+    "sleep_mode_enabled": true,
+    "sleep_start_hour": 22,
+    "soap_custom_instructions": "I am a family physician in Ontario Canada. The medications, tests and such are what’s available in Canada. Do not repeat terms such as ‘The patient…’ I prefer clean and crisp notes. Do not start a stentence with ‘Patient reports’ - point form can be simple phrases. So instead of ‘The patient reports low back pain’ say ‘low back pain’. Use the past tense. Do not put procedures under ‘O’ and instead put them in either the ‘P’ section or a separate procedure note. ",
+    "soap_detail_level": 5,
+    "soap_format": "comprehensive",
+    "soap_model": "soap-model",
+    "soap_model_fast": "soap-model",
+    "thermal_hot_pixel_threshold_c": 28.0
+  },
+  "detection_checks": [
+    {
+      "cleaned_word_count": 500,
+      "latency_ms": 6646,
+      "loop_state": {
+        "buffer_age_secs": 222.0,
+        "consecutive_failures": 0,
+        "manual_triggered": false,
+        "merge_back_count": 0,
+        "sensor_continuous_present": false,
+        "sensor_triggered": false
+      },
+      "parsed_complete": false,
+      "parsed_confidence": 0.85,
+      "parsed_end_index": null,
+      "prompt_system": "You MUST respond in English with ONLY a JSON object. No other text, no explanations, no markdown.\n\nYou are analyzing a continuous transcript from a medical office where the microphone records all day.\n\nYour task: determine if there is a TRANSITION POINT where one patient encounter ends and another begins, or where a patient encounter has clearly concluded.\n\nA completed encounter typically includes a clinical discussion and a concluding plan (e.g., medication changes, follow-up timing, referrals, or instructions). A short transcript that contains only vitals, greetings, or brief exchanges — with no clinical discussion or plan — is likely a pre-visit assessment still in progress, not a completed encounter. A nurse or medical assistant may see the patient before the doctor arrives to take vitals or ask initial questions — this is part of the same encounter, not a separate visit.\n\nEach segment includes elapsed time (MM:SS) from the start of the recording. Large gaps between timestamps may indicate silence, examination, or the room being empty between patients.\n\nIf you find a transition point or completed encounter, return:\n{\"complete\": true, \"end_segment_index\": <last segment index of the CONCLUDED encounter>, \"confidence\": <0.0-1.0>}\n\nIf the current discussion is still one ongoing encounter with no transition, return:\n{\"complete\": false, \"confidence\": <0.0-1.0>}\n\nRespond with ONLY the JSON object.",
+      "prompt_user": "Transcript (segments numbered with speaker labels):\n[0] (00:00) (Speaker 1 (100%)): park [1] (00:03) (Speaker 1 (76%)): by [2] (00:04) (Speaker 1 (52%)): so [3] (00:10) (Speaker 2 (100%)): it is see korea [4] (00:12) (Speaker 3 (100%)): so and the [5] (00:14) (Speaker 2 (53%)): नमस्कार हिसाब एम में [6] (00:17) (Speaker 4 (100%)): If you want it, it's pretty easy. [7] (00:20) (Dr Zohoor (68%)): how things been think i got a mail from the surgical team [8] (00:25) (Speaker 5 (100%)): how did it go with the surgical team they at the beginning was kind of unknown i think you you had to do pc rooms like that but then we were talking and they decided that i [9] (00:38) (Speaker 5 (71%)): they want to do a injection there is an anesthetic i think it is and and depends on how it works [10] (00:45) (Speaker 2 (42%)): ले स्क्रिप्ट च्या सोबत [11] (00:48) (Speaker 5 (32%)): I had caught three times and nothing [12] (00:50) (Speaker 5 (78%)): They were they didn't answer I left a little message and I have an appointment for the 12 like he said he wants to see me 2 weeks after injection [13] (01:01) (Speaker 1 (52%)): So [14] (01:02) (Speaker 2 (45%)): hello um [15] (01:05) (Dr Zohoor (63%)): and we had a fifth sextrail at some point [16] (01:08) (Speaker 5 (49%)): Oh yeah that was the uh [17] (01:11) (Speaker 1 (52%)): Hi [18] (01:12) (Speaker 5 (78%)): um and is this is happening right out there help me that sometimes i feel like i'm chewing brains [19] (01:19) (Speaker 5 (83%)): and it's i feel like it's my lungs and my arteries where it's humid more than when it's cold and it happens sometimes like and i feel like the prodena yeah the thing it's like i i think it's it's like a cold paris no i never get sick [20] (01:35) (Speaker 1 (48%)): and [21] (01:36) (Dr Zohoor (72%)): and it happened it started after you had covid yes and any problem how long was [22] (01:42) (Speaker 2 (42%)): uh 2023 from full power for the good these episodes um [23] (01:49) (Speaker 1 (55%)): I would say [24] (01:51) (Speaker 5 (85%)): it sometimes is like it's tough for a little bit and like in the winter time was better but now that's getting escape now I'm feeling like every week i'm on surprise weeks of the year [25] (02:03) (Speaker 2 (73%)): have we find a puff from before con here see whether we can observe [26] (02:08) (Speaker 1 (51%)): I have a [27] (02:09) (Speaker 5 (78%)): I forget the chess no just when I was sick [28] (02:16) (Dr Zohoor (75%)): uh I I it's always happening at least once a week right yeah [29] (02:20) (Speaker 2 (73%)): How long does an episode last? [30] (02:22) (Speaker 1 (57%)): I've been for her hours. You know, this day I can feel like yeah. [31] (02:28) (Speaker 5 (81%)): but they think also that i never like told you something because i told maybe was related with this stomach sure because i i feel maybe something that i i have like [32] (02:42) (Speaker 5 (77%)): like i feel sometimes also that it is kind of have something stuck in here so i don't i've is really related with the psych or is yes so it's fair it is it is sometimes hard to know um [33] (02:57) (Dr Zohoor (61%)): this affects covid because covid does affect um [34] (03:03) (Speaker 2 (66%)): a bit tissue um [35] (03:05) (Dr Zohoor (73%)): and it's it's not so much that there's covid in the lung it's that the immune system is the lung is fighting [36] (03:12) (Dr Zohoor (75%)): it just it just because covid fights the immune system so they sort of camouflages so that the the immune system sort of attacks some cells sometimes it's equivalent flight um [37] (03:27) (Dr Zohoor (71%)): and um you can try it and see it's a simple form of something we use for\n\nReal-time context signals:\nCONTEXT: The presence sensor confirms someone is still in the room. Topic changes or pauses within the same visit are NOT transitions. Discussing a different family member or patient who is part of the same visit/call is NOT a transition — couples visits, family visits, and phone calls to households often involve the physician addressing multiple people's medical issues in a single encounter. Only split if there is a clear farewell, departure, AND arrival of a completely unrelated new patient.",
+      "response_raw": "{\"complete\": false, \"confidence\": 0.85}",
+      "segment_range": [
+        0,
+        37
+      ],
+      "sensor_context": {
+        "departed": false,
+        "present": true,
+        "unknown": false
+      },
+      "success": true,
+      "ts": "2026-04-09T18:35:39.720185+00:00",
+      "word_count": 500
+    },
+    {
+      "cleaned_word_count": 818,
+      "latency_ms": 2653,
+      "loop_state": {
+        "buffer_age_secs": 349.0,
+        "consecutive_failures": 0,
+        "manual_triggered": false,
+        "merge_back_count": 0,
+        "sensor_continuous_present": false,
+        "sensor_triggered": false
+      },
+      "parsed_complete": false,
+      "parsed_confidence": 0.9,
+      "parsed_end_index": null,
+      "prompt_system": "You MUST respond in English with ONLY a JSON object. No other text, no explanations, no markdown.\n\nYou are analyzing a continuous transcript from a medical office where the microphone records all day.\n\nYour task: determine if there is a TRANSITION POINT where one patient encounter ends and another begins, or where a patient encounter has clearly concluded.\n\nA completed encounter typically includes a clinical discussion and a concluding plan (e.g., medication changes, follow-up timing, referrals, or instructions). A short transcript that contains only vitals, greetings, or brief exchanges — with no clinical discussion or plan — is likely a pre-visit assessment still in progress, not a completed encounter. A nurse or medical assistant may see the patient before the doctor arrives to take vitals or ask initial questions — this is part of the same encounter, not a separate visit.\n\nEach segment includes elapsed time (MM:SS) from the start of the recording. Large gaps between timestamps may indicate silence, examination, or the room being empty between patients.\n\nIf you find a transition point or completed encounter, return:\n{\"complete\": true, \"end_segment_index\": <last segment index of the CONCLUDED encounter>, \"confidence\": <0.0-1.0>}\n\nIf the current discussion is still one ongoing encounter with no transition, return:\n{\"complete\": false, \"confidence\": <0.0-1.0>}\n\nRespond with ONLY the JSON object.",
+      "prompt_user": "Transcript (segments numbered with speaker labels):\n[0] (00:00) (Speaker 1 (100%)): park [1] (00:03) (Speaker 1 (76%)): by [2] (00:04) (Speaker 1 (52%)): so [3] (00:10) (Speaker 2 (100%)): it is see korea [4] (00:12) (Speaker 3 (100%)): so and the [5] (00:14) (Speaker 2 (53%)): नमस्कार हिसाब एम में [6] (00:17) (Speaker 4 (100%)): If you want it, it's pretty easy. [7] (00:20) (Dr Zohoor (68%)): how things been think i got a mail from the surgical team [8] (00:25) (Speaker 5 (100%)): how did it go with the surgical team they at the beginning was kind of unknown i think you you had to do pc rooms like that but then we were talking and they decided that i [9] (00:38) (Speaker 5 (71%)): they want to do a injection there is an anesthetic i think it is and and depends on how it works [10] (00:45) (Speaker 2 (42%)): ले स्क्रिप्ट च्या सोबत [11] (00:48) (Speaker 5 (32%)): I had caught three times and nothing [12] (00:50) (Speaker 5 (78%)): They were they didn't answer I left a little message and I have an appointment for the 12 like he said he wants to see me 2 weeks after injection [13] (01:01) (Speaker 1 (52%)): So [14] (01:02) (Speaker 2 (45%)): hello um [15] (01:05) (Dr Zohoor (63%)): and we had a fifth sextrail at some point [16] (01:08) (Speaker 5 (49%)): Oh yeah that was the uh [17] (01:11) (Speaker 1 (52%)): Hi [18] (01:12) (Speaker 5 (78%)): um and is this is happening right out there help me that sometimes i feel like i'm chewing brains [19] (01:19) (Speaker 5 (83%)): and it's i feel like it's my lungs and my arteries where it's humid more than when it's cold and it happens sometimes like and i feel like the prodena yeah the thing it's like i i think it's it's like a cold paris no i never get sick [20] (01:35) (Speaker 1 (48%)): and [21] (01:36) (Dr Zohoor (72%)): and it happened it started after you had covid yes and any problem how long was [22] (01:42) (Speaker 2 (42%)): uh 2023 from full power for the good these episodes um [23] (01:49) (Speaker 1 (55%)): I would say [24] (01:51) (Speaker 5 (85%)): it sometimes is like it's tough for a little bit and like in the winter time was better but now that's getting escape now I'm feeling like every week i'm on surprise weeks of the year [25] (02:03) (Speaker 2 (73%)): have we find a puff from before con here see whether we can observe [26] (02:08) (Speaker 1 (51%)): I have a [27] (02:09) (Speaker 5 (78%)): I forget the chess no just when I was sick [28] (02:16) (Dr Zohoor (75%)): uh I I it's always happening at least once a week right yeah [29] (02:20) (Speaker 2 (73%)): How long does an episode last? [30] (02:22) (Speaker 1 (57%)): I've been for her hours. You know, this day I can feel like yeah. [31] (02:28) (Speaker 5 (81%)): but they think also that i never like told you something because i told maybe was related with this stomach sure because i i feel maybe something that i i have like [32] (02:42) (Speaker 5 (77%)): like i feel sometimes also that it is kind of have something stuck in here so i don't i've is really related with the psych or is yes so it's fair it is it is sometimes hard to know um [33] (02:57) (Dr Zohoor (61%)): this affects covid because covid does affect um [34] (03:03) (Speaker 2 (66%)): a bit tissue um [35] (03:05) (Dr Zohoor (73%)): and it's it's not so much that there's covid in the lung it's that the immune system is the lung is fighting [36] (03:12) (Dr Zohoor (75%)): it just it just because covid fights the immune system so they sort of camouflages so that the the immune system sort of attacks some cells sometimes it's equivalent flight um [37] (03:27) (Dr Zohoor (71%)): and um you can try it and see it's a simple form of something we use for [38] (03:33) (Dr Zohoor (81%)): i sometimes say we use it for cpds sometimes it's basically an anti inflammatory similar to kind of nasal sprays you have like that um to just reduce that lung inflammation [39] (03:46) (Dr Zohoor (80%)): when you use you don't feel any difference you think that it's not this immediate really any sort you might what this is nothing but [40] (03:55) (Speaker 2 (44%)): um [41] (03:55) (Dr Zohoor (69%)): what you can do is so if you're getting it once a week it'll be easy to [42] (04:00) (Dr Zohoor (74%)): have feel full you just can't use it every day have it twice a day [43] (04:04) (Dr Zohoor (62%)): specifically in the minimum we talk [44] (04:08) (Dr Zohoor (66%)): if you're doing okay with it [45] (04:10) (Dr Zohoor (80%)): just just use it every day for a few weeks and be like weird so I mean once a week and have it once every three weeks or something and you know that is how it is the promise because it's a work quickly if you just take it every day [46] (04:26) (Dr Zohoor (75%)): it may happen to know whether or not it's helpful so what is the theory you're just using at now [47] (04:32) (Dr Zohoor (76%)): you user you know like it you like this is making me feel funny and so on [48] (04:36) (Speaker 2 (58%)): friend [49] (04:37) (Dr Zohoor (79%)): just switch to using it only on those days where you sense it see whether it'll short out um [50] (04:44) (Dr Zohoor (67%)): a species of inflammatory for the lungs [51] (04:47) (Dr Zohoor (70%)): and another thing is if you have an this copper prescribed back in 2019 but if you um [52] (04:55) (Speaker 5 (67%)): because we have to use to send the forms and think it's still my task my like no long time go yeah [53] (05:02) (Speaker 5 (83%)): yeah we could see like i i don't think nothing's coming is coming it's like a powder i think you need to know he was really doing right but i just he exams are the perhaps how bad have it bad [54] (05:16) (Speaker 1 (74%)): um [55] (05:19) (Speaker 5 (80%)): eco sleep go go and sometimes when i exercise it feels better if i over do it feels parous and\n\nReal-time context signals:\nCONTEXT: The presence sensor confirms someone is still in the room. Topic changes or pauses within the same visit are NOT transitions. Discussing a different family member or patient who is part of the same visit/call is NOT a transition — couples visits, family visits, and phone calls to households often involve the physician addressing multiple people's medical issues in a single encounter. Only split if there is a clear farewell, departure, AND arrival of a completely unrelated new patient.",
+      "response_raw": "{\"complete\": false, \"confidence\": 0.9}",
+      "segment_range": [
+        0,
+        55
+      ],
+      "sensor_context": {
+        "departed": false,
+        "present": true,
+        "unknown": false
+      },
+      "success": true,
+      "ts": "2026-04-09T18:37:42.398470+00:00",
+      "word_count": 818
+    },
+    {
+      "cleaned_word_count": 1218,
+      "latency_ms": 2866,
+      "loop_state": {
+        "buffer_age_secs": 471.0,
+        "consecutive_failures": 0,
+        "manual_triggered": false,
+        "merge_back_count": 0,
+        "sensor_continuous_present": false,
+        "sensor_triggered": false
+      },
+      "parsed_complete": false,
+      "parsed_confidence": 0.8,
+      "parsed_end_index": null,
+      "prompt_system": "You MUST respond in English with ONLY a JSON object. No other text, no explanations, no markdown.\n\nYou are analyzing a continuous transcript from a medical office where the microphone records all day.\n\nYour task: determine if there is a TRANSITION POINT where one patient encounter ends and another begins, or where a patient encounter has clearly concluded.\n\nA completed encounter typically includes a clinical discussion and a concluding plan (e.g., medication changes, follow-up timing, referrals, or instructions). A short transcript that contains only vitals, greetings, or brief exchanges — with no clinical discussion or plan — is likely a pre-visit assessment still in progress, not a completed encounter. A nurse or medical assistant may see the patient before the doctor arrives to take vitals or ask initial questions — this is part of the same encounter, not a separate visit.\n\nEach segment includes elapsed time (MM:SS) from the start of the recording. Large gaps between timestamps may indicate silence, examination, or the room being empty between patients.\n\nIf you find a transition point or completed encounter, return:\n{\"complete\": true, \"end_segment_index\": <last segment index of the CONCLUDED encounter>, \"confidence\": <0.0-1.0>}\n\nIf the current discussion is still one ongoing encounter with no transition, return:\n{\"complete\": false, \"confidence\": <0.0-1.0>}\n\nRespond with ONLY the JSON object.",
+      "prompt_user": "Transcript (segments numbered with speaker labels):\n[0] (00:00) (Speaker 1 (100%)): park [1] (00:03) (Speaker 1 (76%)): by [2] (00:04) (Speaker 1 (52%)): so [3] (00:10) (Speaker 2 (100%)): it is see korea [4] (00:12) (Speaker 3 (100%)): so and the [5] (00:14) (Speaker 2 (53%)): नमस्कार हिसाब एम में [6] (00:17) (Speaker 4 (100%)): If you want it, it's pretty easy. [7] (00:20) (Dr Zohoor (68%)): how things been think i got a mail from the surgical team [8] (00:25) (Speaker 5 (100%)): how did it go with the surgical team they at the beginning was kind of unknown i think you you had to do pc rooms like that but then we were talking and they decided that i [9] (00:38) (Speaker 5 (71%)): they want to do a injection there is an anesthetic i think it is and and depends on how it works [10] (00:45) (Speaker 2 (42%)): ले स्क्रिप्ट च्या सोबत [11] (00:48) (Speaker 5 (32%)): I had caught three times and nothing [12] (00:50) (Speaker 5 (78%)): They were they didn't answer I left a little message and I have an appointment for the 12 like he said he wants to see me 2 weeks after injection [13] (01:01) (Speaker 1 (52%)): So [14] (01:02) (Speaker 2 (45%)): hello um [15] (01:05) (Dr Zohoor (63%)): and we had a fifth sextrail at some point [16] (01:08) (Speaker 5 (49%)): Oh yeah that was the uh [17] (01:11) (Speaker 1 (52%)): Hi [18] (01:12) (Speaker 5 (78%)): um and is this is happening right out there help me that sometimes i feel like i'm chewing brains [19] (01:19) (Speaker 5 (83%)): and it's i feel like it's my lungs and my arteries where it's humid more than when it's cold and it happens sometimes like and i feel like the prodena yeah the thing it's like i i think it's it's like a cold paris no i never get sick [20] (01:35) (Speaker 1 (48%)): and [21] (01:36) (Dr Zohoor (72%)): and it happened it started after you had covid yes and any problem how long was [22] (01:42) (Speaker 2 (42%)): uh 2023 from full power for the good these episodes um [23] (01:49) (Speaker 1 (55%)): I would say [24] (01:51) (Speaker 5 (85%)): it sometimes is like it's tough for a little bit and like in the winter time was better but now that's getting escape now I'm feeling like every week i'm on surprise weeks of the year [25] (02:03) (Speaker 2 (73%)): have we find a puff from before con here see whether we can observe [26] (02:08) (Speaker 1 (51%)): I have a [27] (02:09) (Speaker 5 (78%)): I forget the chess no just when I was sick [28] (02:16) (Dr Zohoor (75%)): uh I I it's always happening at least once a week right yeah [29] (02:20) (Speaker 2 (73%)): How long does an episode last? [30] (02:22) (Speaker 1 (57%)): I've been for her hours. You know, this day I can feel like yeah. [31] (02:28) (Speaker 5 (81%)): but they think also that i never like told you something because i told maybe was related with this stomach sure because i i feel maybe something that i i have like [32] (02:42) (Speaker 5 (77%)): like i feel sometimes also that it is kind of have something stuck in here so i don't i've is really related with the psych or is yes so it's fair it is it is sometimes hard to know um [33] (02:57) (Dr Zohoor (61%)): this affects covid because covid does affect um [34] (03:03) (Speaker 2 (66%)): a bit tissue um [35] (03:05) (Dr Zohoor (73%)): and it's it's not so much that there's covid in the lung it's that the immune system is the lung is fighting [36] (03:12) (Dr Zohoor (75%)): it just it just because covid fights the immune system so they sort of camouflages so that the the immune system sort of attacks some cells sometimes it's equivalent flight um [37] (03:27) (Dr Zohoor (71%)): and um you can try it and see it's a simple form of something we use for [38] (03:33) (Dr Zohoor (81%)): i sometimes say we use it for cpds sometimes it's basically an anti inflammatory similar to kind of nasal sprays you have like that um to just reduce that lung inflammation [39] (03:46) (Dr Zohoor (80%)): when you use you don't feel any difference you think that it's not this immediate really any sort you might what this is nothing but [40] (03:55) (Speaker 2 (44%)): um [41] (03:55) (Dr Zohoor (69%)): what you can do is so if you're getting it once a week it'll be easy to [42] (04:00) (Dr Zohoor (74%)): have feel full you just can't use it every day have it twice a day [43] (04:04) (Dr Zohoor (62%)): specifically in the minimum we talk [44] (04:08) (Dr Zohoor (66%)): if you're doing okay with it [45] (04:10) (Dr Zohoor (80%)): just just use it every day for a few weeks and be like weird so I mean once a week and have it once every three weeks or something and you know that is how it is the promise because it's a work quickly if you just take it every day [46] (04:26) (Dr Zohoor (75%)): it may happen to know whether or not it's helpful so what is the theory you're just using at now [47] (04:32) (Dr Zohoor (76%)): you user you know like it you like this is making me feel funny and so on [48] (04:36) (Speaker 2 (58%)): friend [49] (04:37) (Dr Zohoor (79%)): just switch to using it only on those days where you sense it see whether it'll short out um [50] (04:44) (Dr Zohoor (67%)): a species of inflammatory for the lungs [51] (04:47) (Dr Zohoor (70%)): and another thing is if you have an this copper prescribed back in 2019 but if you um [52] (04:55) (Speaker 5 (67%)): because we have to use to send the forms and think it's still my task my like no long time go yeah [53] (05:02) (Speaker 5 (83%)): yeah we could see like i i don't think nothing's coming is coming it's like a powder i think you need to know he was really doing right but i just he exams are the perhaps how bad have it bad [54] (05:16) (Speaker 1 (74%)): um [55] (05:19) (Speaker 5 (80%)): eco sleep go go and sometimes when i exercise it feels better if i over do it feels parous and [56] (05:30) (Speaker 5 (81%)): I think it's I don't know really if I mean it's like I want to go back to what I used to do not maybe everything but at least be with football or strength training and if I go on vacation I can go for hiking like I don't know for a long walk and I feel like now for sake I couldn't do that [57] (05:48) (Speaker 2 (64%)): so that's why is why was the last time you tried [58] (05:52) (Speaker 5 (84%)): Uh the day I was working in the thriftming and I did junking a little bit and then I was with the dumpster yeah yeah [59] (06:01) (Speaker 2 (62%)): so doctor [60] (06:03) (Dr Zohoor (75%)): um so that rn is resident so the first you saw you with like a first year resident [61] (06:10) (Dr Zohoor (64%)): now hey there the radiator um [62] (06:15) (Speaker 2 (48%)): في [63] (06:16) (Speaker 2 (53%)): and and you know [64] (06:18) (Dr Zohoor (73%)): what the note said because he said you know [65] (06:22) (Speaker 5 (83%)): so i now he would reach out to explain diagnostic injection about perhaps they basically want just numbing injected um so that you guess what the doctor came in at the yeah cuz uh i was kind of no i won this this and then the person would the doctor he came back in and i said um he said there is five things that i take to really see if you are a candidate [66] (06:47) (Speaker 5 (85%)): for the surgery and to say you have four so the fifth is the injection and i'm going to see if that really helps then [67] (06:54) (Speaker 5 (63%)): would you will be a candidate but yeah now [68] (06:58) (Dr Zohoor (62%)): Wesley who did your injections i think we have [69] (07:01) (Dr Zohoor (78%)): used to work for him for 5 years so he did all this injections and doing at that time [70] (07:07) (Dr Zohoor (77%)): and there's it is that we can so let's say do an injection today if you want to or whenever and you can do any um [71] (07:16) (Speaker 2 (59%)): the [72] (07:17) (Dr Zohoor (76%)): there're quirky things sometimes with these things is they don't fuss others doing it [73] (07:22) (Speaker 2 (41%)): so other [74] (07:24) (Dr Zohoor (67%)): was the same human being whether he's working here or he's working there [75] (07:28) (Dr Zohoor (76%)): santa's soldiers just you know they don't know they don't know the the story draft exactly what happened and so on support [76] (07:35) (Dr Zohoor (68%)): and it's not the logical of time so you know [77] (07:38) (Dr Zohoor (71%)): you know the same MRI scanner in two hospital service side and surgeon will say i want this person scanned in our scanner like at the machines yeah but there's this weird sense of\n\nReal-time context signals:\nCONTEXT: The presence sensor confirms someone is still in the room. Topic changes or pauses within the same visit are NOT transitions. Discussing a different family member or patient who is part of the same visit/call is NOT a transition — couples visits, family visits, and phone calls to households often involve the physician addressing multiple people's medical issues in a single encounter. Only split if there is a clear farewell, departure, AND arrival of a completely unrelated new patient.",
+      "response_raw": "{\"complete\": false, \"confidence\": 0.8}",
+      "segment_range": [
+        0,
+        77
+      ],
+      "sensor_context": {
+        "departed": false,
+        "present": true,
+        "unknown": false
+      },
+      "success": true,
+      "ts": "2026-04-09T18:39:45.312148+00:00",
+      "word_count": 1218
+    },
+    {
+      "cleaned_word_count": 1548,
+      "latency_ms": 3622,
+      "loop_state": {
+        "buffer_age_secs": 594.0,
+        "consecutive_failures": 0,
+        "manual_triggered": false,
+        "merge_back_count": 0,
+        "sensor_continuous_present": false,
+        "sensor_triggered": false
+      },
+      "parsed_complete": true,
+      "parsed_confidence": 0.9,
+      "parsed_end_index": 98,
+      "prompt_system": "You MUST respond in English with ONLY a JSON object. No other text, no explanations, no markdown.\n\nYou are analyzing a continuous transcript from a medical office where the microphone records all day.\n\nYour task: determine if there is a TRANSITION POINT where one patient encounter ends and another begins, or where a patient encounter has clearly concluded.\n\nA completed encounter typically includes a clinical discussion and a concluding plan (e.g., medication changes, follow-up timing, referrals, or instructions). A short transcript that contains only vitals, greetings, or brief exchanges — with no clinical discussion or plan — is likely a pre-visit assessment still in progress, not a completed encounter. A nurse or medical assistant may see the patient before the doctor arrives to take vitals or ask initial questions — this is part of the same encounter, not a separate visit.\n\nEach segment includes elapsed time (MM:SS) from the start of the recording. Large gaps between timestamps may indicate silence, examination, or the room being empty between patients.\n\nIf you find a transition point or completed encounter, return:\n{\"complete\": true, \"end_segment_index\": <last segment index of the CONCLUDED encounter>, \"confidence\": <0.0-1.0>}\n\nIf the current discussion is still one ongoing encounter with no transition, return:\n{\"complete\": false, \"confidence\": <0.0-1.0>}\n\nRespond with ONLY the JSON object.",
+      "prompt_user": "Transcript (segments numbered with speaker labels):\n[0] (00:00) (Speaker 1 (100%)): park [1] (00:03) (Speaker 1 (76%)): by [2] (00:04) (Speaker 1 (52%)): so [3] (00:10) (Speaker 2 (100%)): it is see korea [4] (00:12) (Speaker 3 (100%)): so and the [5] (00:14) (Speaker 2 (53%)): नमस्कार हिसाब एम में [6] (00:17) (Speaker 4 (100%)): If you want it, it's pretty easy. [7] (00:20) (Dr Zohoor (68%)): how things been think i got a mail from the surgical team [8] (00:25) (Speaker 5 (100%)): how did it go with the surgical team they at the beginning was kind of unknown i think you you had to do pc rooms like that but then we were talking and they decided that i [9] (00:38) (Speaker 5 (71%)): they want to do a injection there is an anesthetic i think it is and and depends on how it works [10] (00:45) (Speaker 2 (42%)): ले स्क्रिप्ट च्या सोबत [11] (00:48) (Speaker 5 (32%)): I had caught three times and nothing [12] (00:50) (Speaker 5 (78%)): They were they didn't answer I left a little message and I have an appointment for the 12 like he said he wants to see me 2 weeks after injection [13] (01:01) (Speaker 1 (52%)): So [14] (01:02) (Speaker 2 (45%)): hello um [15] (01:05) (Dr Zohoor (63%)): and we had a fifth sextrail at some point [16] (01:08) (Speaker 5 (49%)): Oh yeah that was the uh [17] (01:11) (Speaker 1 (52%)): Hi [18] (01:12) (Speaker 5 (78%)): um and is this is happening right out there help me that sometimes i feel like i'm chewing brains [19] (01:19) (Speaker 5 (83%)): and it's i feel like it's my lungs and my arteries where it's humid more than when it's cold and it happens sometimes like and i feel like the prodena yeah the thing it's like i i think it's it's like a cold paris no i never get sick [20] (01:35) (Speaker 1 (48%)): and [21] (01:36) (Dr Zohoor (72%)): and it happened it started after you had covid yes and any problem how long was [22] (01:42) (Speaker 2 (42%)): uh 2023 from full power for the good these episodes um [23] (01:49) (Speaker 1 (55%)): I would say [24] (01:51) (Speaker 5 (85%)): it sometimes is like it's tough for a little bit and like in the winter time was better but now that's getting escape now I'm feeling like every week i'm on surprise weeks of the year [25] (02:03) (Speaker 2 (73%)): have we find a puff from before con here see whether we can observe [26] (02:08) (Speaker 1 (51%)): I have a [27] (02:09) (Speaker 5 (78%)): I forget the chess no just when I was sick [28] (02:16) (Dr Zohoor (75%)): uh I I it's always happening at least once a week right yeah [29] (02:20) (Speaker 2 (73%)): How long does an episode last? [30] (02:22) (Speaker 1 (57%)): I've been for her hours. You know, this day I can feel like yeah. [31] (02:28) (Speaker 5 (81%)): but they think also that i never like told you something because i told maybe was related with this stomach sure because i i feel maybe something that i i have like [32] (02:42) (Speaker 5 (77%)): like i feel sometimes also that it is kind of have something stuck in here so i don't i've is really related with the psych or is yes so it's fair it is it is sometimes hard to know um [33] (02:57) (Dr Zohoor (61%)): this affects covid because covid does affect um [34] (03:03) (Speaker 2 (66%)): a bit tissue um [35] (03:05) (Dr Zohoor (73%)): and it's it's not so much that there's covid in the lung it's that the immune system is the lung is fighting [36] (03:12) (Dr Zohoor (75%)): it just it just because covid fights the immune system so they sort of camouflages so that the the immune system sort of attacks some cells sometimes it's equivalent flight um [37] (03:27) (Dr Zohoor (71%)): and um you can try it and see it's a simple form of something we use for [38] (03:33) (Dr Zohoor (81%)): i sometimes say we use it for cpds sometimes it's basically an anti inflammatory similar to kind of nasal sprays you have like that um to just reduce that lung inflammation [39] (03:46) (Dr Zohoor (80%)): when you use you don't feel any difference you think that it's not this immediate really any sort you might what this is nothing but [40] (03:55) (Speaker 2 (44%)): um [41] (03:55) (Dr Zohoor (69%)): what you can do is so if you're getting it once a week it'll be easy to [42] (04:00) (Dr Zohoor (74%)): have feel full you just can't use it every day have it twice a day [43] (04:04) (Dr Zohoor (62%)): specifically in the minimum we talk [44] (04:08) (Dr Zohoor (66%)): if you're doing okay with it [45] (04:10) (Dr Zohoor (80%)): just just use it every day for a few weeks and be like weird so I mean once a week and have it once every three weeks or something and you know that is how it is the promise because it's a work quickly if you just take it every day [46] (04:26) (Dr Zohoor (75%)): it may happen to know whether or not it's helpful so what is the theory you're just using at now [47] (04:32) (Dr Zohoor (76%)): you user you know like it you like this is making me feel funny and so on [48] (04:36) (Speaker 2 (58%)): friend [49] (04:37) (Dr Zohoor (79%)): just switch to using it only on those days where you sense it see whether it'll short out um [50] (04:44) (Dr Zohoor (67%)): a species of inflammatory for the lungs [51] (04:47) (Dr Zohoor (70%)): and another thing is if you have an this copper prescribed back in 2019 but if you um [52] (04:55) (Speaker 5 (67%)): because we have to use to send the forms and think it's still my task my like no long time go yeah [53] (05:02) (Speaker 5 (83%)): yeah we could see like i i don't think nothing's coming is coming it's like a powder i think you need to know he was really doing right but i just he exams are the perhaps how bad have it bad [54] (05:16) (Speaker 1 (74%)): um [55] (05:19) (Speaker 5 (80%)): eco sleep go go and sometimes when i exercise it feels better if i over do it feels parous and [56] (05:30) (Speaker 5 (81%)): I think it's I don't know really if I mean it's like I want to go back to what I used to do not maybe everything but at least be with football or strength training and if I go on vacation I can go for hiking like I don't know for a long walk and I feel like now for sake I couldn't do that [57] (05:48) (Speaker 2 (64%)): so that's why is why was the last time you tried [58] (05:52) (Speaker 5 (84%)): Uh the day I was working in the thriftming and I did junking a little bit and then I was with the dumpster yeah yeah [59] (06:01) (Speaker 2 (62%)): so doctor [60] (06:03) (Dr Zohoor (75%)): um so that rn is resident so the first you saw you with like a first year resident [61] (06:10) (Dr Zohoor (64%)): now hey there the radiator um [62] (06:15) (Speaker 2 (48%)): في [63] (06:16) (Speaker 2 (53%)): and and you know [64] (06:18) (Dr Zohoor (73%)): what the note said because he said you know [65] (06:22) (Speaker 5 (83%)): so i now he would reach out to explain diagnostic injection about perhaps they basically want just numbing injected um so that you guess what the doctor came in at the yeah cuz uh i was kind of no i won this this and then the person would the doctor he came back in and i said um he said there is five things that i take to really see if you are a candidate [66] (06:47) (Speaker 5 (85%)): for the surgery and to say you have four so the fifth is the injection and i'm going to see if that really helps then [67] (06:54) (Speaker 5 (63%)): would you will be a candidate but yeah now [68] (06:58) (Dr Zohoor (62%)): Wesley who did your injections i think we have [69] (07:01) (Dr Zohoor (78%)): used to work for him for 5 years so he did all this injections and doing at that time [70] (07:07) (Dr Zohoor (77%)): and there's it is that we can so let's say do an injection today if you want to or whenever and you can do any um [71] (07:16) (Speaker 2 (59%)): the [72] (07:17) (Dr Zohoor (76%)): there're quirky things sometimes with these things is they don't fuss others doing it [73] (07:22) (Speaker 2 (41%)): so other [74] (07:24) (Dr Zohoor (67%)): was the same human being whether he's working here or he's working there [75] (07:28) (Dr Zohoor (76%)): santa's soldiers just you know they don't know they don't know the the story draft exactly what happened and so on support [76] (07:35) (Dr Zohoor (68%)): and it's not the logical of time so you know [77] (07:38) (Dr Zohoor (71%)): you know the same MRI scanner in two hospital service side and surgeon will say i want this person scanned in our scanner like at the machines yeah but there's this weird sense of [78] (07:50) (Dr Zohoor (67%)): I think the reality was exactly what describe um [79] (07:56) (Speaker 2 (62%)): So [80] (07:57) (Dr Zohoor (71%)): Objectively looking at it [81] (07:59) (Speaker 2 (61%)): it's like you know you have a deployment coming up and [82] (08:03) (Dr Zohoor (64%)): if you haven't had the treatments if you haven't had the diagnostic tests it's not [83] (08:09) (Dr Zohoor (66%)): any is spoken um [84] (08:12) (Speaker 5 (83%)): we did have the injection for the back i think so we can do that if you'd like um did you want to do that today how's the back back it it goes like to get i going feel the the pain in my hip as the back too sometimes i feel more the back than the hip it is more like the left side when it goes to the lower yeah [85] (08:35) (Dr Zohoor (62%)): कौन से है कौन से फॉलो पैरामीटर्स हैं ठीक है अभी है कि [86] (08:40) (Dr Zohoor (70%)): so three is the nine so same it come much away okay so one are we one are we do this um one are we do the back if you know the here for the we will get it down we will see um [87] (08:53) (Dr Zohoor (72%)): It's long enough away that you will have a good sense of to how much the injection helps alone [88] (08:59) (Speaker 2 (60%)): if along the way [89] (09:01) (Speaker 2 (60%)): um and and [90] (09:03) (Dr Zohoor (80%)): we can always do the like what they can always do the dynamic attractive mass in the field [91] (09:10) (Dr Zohoor (68%)): what I'm hoping for is that Hoffman reaches out to you and they do have injections before that appointment um [92] (09:17) (Dr Zohoor (63%)): because there [93] (09:19) (Speaker 2 (79%)): chances are i'll find out um [94] (09:23) (Speaker 2 (47%)): So [95] (09:24) (Dr Zohoor (71%)): normally what I thought I'll objectively it just makes sense like here was is the same person it's that [96] (09:31) (Dr Zohoor (78%)): you are going to have a lot more comfort to keep it was their team that the injection it sounds really awful yeah it's just it's just there emotional um it's just one of one of things um so [97] (09:44) (Speaker 2 (63%)): again [98] (09:45) (Dr Zohoor (67%)): if you think about it and you're like you know i just want the the name injection done so that the so that my comments\n\nReal-time context signals:\nCONTEXT: The presence sensor confirms someone is still in the room. Topic changes or pauses within the same visit are NOT transitions. Discussing a different family member or patient who is part of the same visit/call is NOT a transition — couples visits, family visits, and phone calls to households often involve the physician addressing multiple people's medical issues in a single encounter. Only split if there is a clear farewell, departure, AND arrival of a completely unrelated new patient.",
+      "response_raw": "{\"complete\": true, \"end_segment_index\": 98, \"confidence\": 0.9}",
+      "segment_range": [
+        0,
+        98
+      ],
+      "sensor_context": {
+        "departed": false,
+        "present": true,
+        "unknown": false
+      },
+      "success": true,
+      "ts": "2026-04-09T18:41:48.972148+00:00",
+      "word_count": 1548
+    }
+  ],
+  "merge_check": {
+    "curr_head_excerpt": "Speaker 1 (100%): park Speaker 1 (76%): by Speaker 1 (52%): so Speaker 2 (100%): it is see korea Speaker 3 (100%): so and the Speaker 2 (53%): नमस्कार हिसाब एम में Speaker 4 (100%): If you want it, it's pretty easy. Dr Zohoor (68%): how things been think i got a mail from the surgical team Speaker 5 (100%): how did it go with the surgical team they at the beginning was kind of unknown i think you you had to do pc rooms like that but then we were talking and they decided that i Speaker 5 (71%): they want to do a injection there is an anesthetic i think it is and and depends on how it works Speaker 2 (42%): ले स्क्रिप्ट च्या सोबत Speaker 5 (32%): I had caught three times and nothing Speaker 5 (78%): They were they didn't answer I left a little message and I have an appointment for the 12 like he said he wants to see me 2 weeks after injection Speaker 1 (52%): So Speaker 2 (45%): hello um Dr Zohoor (63%): and we had a fifth sextrail at some point Speaker 5 (49%): Oh yeah that was the uh Speaker 1 (52%): Hi Speaker 5 (78%): um and is this is happening right out there help me that sometimes i feel like i'm chewing brains Speaker 5 (83%): and it's i feel like it's my lungs and my arteries where it's humid more than when it's cold and it happens sometimes like and i feel like the prodena yeah the thing it's like i i think it's it's like a cold paris no i never get sick Speaker 1 (48%): and Dr Zohoor (72%): and it happened it started after you had covid yes and any problem how long was Speaker 2 (42%): uh 2023 from full power for the good these episodes um Speaker 1 (55%): I would say Speaker 5 (85%): it sometimes is like it's tough for a little bit and like in the winter time was better but now that's getting escape now I'm feeling like every week i'm on surprise weeks of the year Speaker 2 (73%): have we find a puff from before con here see whether we can observe Speaker 1 (51%): I have a Speaker 5 (78%): I forget the chess no just when I was sick Dr Zohoor (75%): uh I I it's always happening at least once a week right yeah Speaker 2 (73%): How long does an episode last? Speaker 1 (57%): I've been for her hours. You know, this day I can feel like yeah. Speaker 5 (81%): but they think also that i never like told you something because i told maybe was related with this stomach sure because i i feel maybe something that i i have like Speaker 5 (77%): like i feel sometimes also that it is kind of have something stuck in here so i don't i've is really related with",
+    "latency_ms": 2659,
+    "parsed_reason": "\"The first excerpt consists of fragmented, nonsensical speech and appears to be the end of a previous session or a recording of ambient noise/unrelated chatter. The second excerpt is a clear, structured clinical encounter involving Dr. Zohoor and a patient discussing surgical follow-ups, injections, and respiratory/chest symptoms.\"",
+    "parsed_same_encounter": false,
+    "prev_session_id": "54f39eac-894b-4e6a-aa31-79c73a424b1f",
+    "prev_tail_excerpt": "Speaker 1 (72%): a healthy tissue Speaker 1 (56%): so many I was just getting silly like Speaker 1 (56%): au Speaker 1 (65%): I Speaker 1 (71%): ready ready Speaker 1 (76%): Yeah Speaker 1 (86%): I think I'm going I suddenly Speaker 1 (73%): it was fine Speaker 1 (81%): I it I just said Speaker 1 (80%): and that Speaker 1 (72%): okay Speaker 1 (76%): seeing my parents Speaker 1 (73%): is yeah graduation yeah Speaker 1 (58%): you know you Speaker 1 (75%): like my tapper like shake take me to Speaker 1 (72%): and these are Speaker 1 (69%): they block when ends off the hashtag Speaker 1 (64%): it just felt like Speaker 1 (75%): 45 and Speaker 1 (65%): prospect Speaker 1 (72%): कोइ था Speaker 1 (71%): this makes sense Speaker 1 (80%): really not good Speaker 1 (80%): is really looking at the my locker Speaker 1 (67%): next is Speaker 1 (70%): difference in this order Speaker 1 (66%): she like this Speaker 1 (67%): just name so for Speaker 1 (75%): I want to say that there is no choice for Speaker 1 (75%): Please okay Speaker 1 (51%): have Speaker 1 (68%): 7 Speaker 1 (80%): The new doctor was nice. Overlooked a lot of the alterations. Speaker 1 (76%): Hi right now. How do you can I call? Speaker 1 (73%): Okay Speaker 1 (76%): I don't know. Speaker 1 (76%): you got a fiction Speaker 1 (75%): J'ai pas le steeringer non mais Speaker 1 (54%): extremely Speaker 1 (73%): Okay, I'm there. Speaker 1 (55%): really Speaker 1 (71%): Yeah Speaker 1 (65%): you just started answering Speaker 1 (66%): from right Speaker 1 (54%): face of vision in the game I like it Speaker 1 (51%): are hanging here Speaker 1 (56%): can't catch Speaker 1 (71%): a difference thing of the Speaker 1 (72%): my yeah Speaker 1 (61%): it could i was in peace Speaker 1 (79%): like come here Speaker 1 (75%): normal Speaker 1 (74%): 3 Speaker 1 (73%): Are you ready? Speaker 1 (65%): it was so nice Speaker 1 (63%): I go to",
+    "prompt_system": "You are reviewing two consecutive transcript excerpts from a medical office where a microphone records all day.\n\nThe system split these into two separate encounters, but they may actually be the SAME patient visit that was incorrectly split (e.g., due to a pause, phone call, or silence during an examination).\n\nDetermine if both excerpts are from the SAME patient encounter or DIFFERENT encounters.\n\nSigns they are the SAME encounter:\n- Same patient name or context referenced\n- Continuation of the same clinical discussion\n- No farewell/greeting between them\n- Natural pause (examination, looking at charts) rather than patient change\n- Same medical condition being discussed from different angles\n\nSigns they are DIFFERENT encounters:\n- Different patient names or contexts\n- A farewell followed by a new greeting\n- Clearly different clinical topics with no continuity\n\nReturn JSON:\n{\"same_encounter\": true, \"reason\": \"brief explanation\"}\nor\n{\"same_encounter\": false, \"reason\": \"brief explanation\"}\n\nReturn ONLY the JSON object, nothing else.",
+    "prompt_user": "EXCERPT FROM END OF PREVIOUS ENCOUNTER:\nSpeaker 1 (72%): a healthy tissue Speaker 1 (56%): so many I was just getting silly like Speaker 1 (56%): au Speaker 1 (65%): I Speaker 1 (71%): ready ready Speaker 1 (76%): Yeah Speaker 1 (86%): I think I'm going I suddenly Speaker 1 (73%): it was fine Speaker 1 (81%): I it I just said Speaker 1 (80%): and that Speaker 1 (72%): okay Speaker 1 (76%): seeing my parents Speaker 1 (73%): is yeah graduation yeah Speaker 1 (58%): you know you Speaker 1 (75%): like my tapper like shake take me to Speaker 1 (72%): and these are Speaker 1 (69%): they block when ends off the hashtag Speaker 1 (64%): it just felt like Speaker 1 (75%): 45 and Speaker 1 (65%): prospect Speaker 1 (72%): कोइ था Speaker 1 (71%): this makes sense Speaker 1 (80%): really not good Speaker 1 (80%): is really looking at the my locker Speaker 1 (67%): next is Speaker 1 (70%): difference in this order Speaker 1 (66%): she like this Speaker 1 (67%): just name so for Speaker 1 (75%): I want to say that there is no choice for Speaker 1 (75%): Please okay Speaker 1 (51%): have Speaker 1 (68%): 7 Speaker 1 (80%): The new doctor was nice. Overlooked a lot of the alterations. Speaker 1 (76%): Hi right now. How do you can I call? Speaker 1 (73%): Okay Speaker 1 (76%): I don't know. Speaker 1 (76%): you got a fiction Speaker 1 (75%): J'ai pas le steeringer non mais Speaker 1 (54%): extremely Speaker 1 (73%): Okay, I'm there. Speaker 1 (55%): really Speaker 1 (71%): Yeah Speaker 1 (65%): you just started answering Speaker 1 (66%): from right Speaker 1 (54%): face of vision in the game I like it Speaker 1 (51%): are hanging here Speaker 1 (56%): can't catch Speaker 1 (71%): a difference thing of the Speaker 1 (72%): my yeah Speaker 1 (61%): it could i was in peace Speaker 1 (79%): like come here Speaker 1 (75%): normal Speaker 1 (74%): 3 Speaker 1 (73%): Are you ready? Speaker 1 (65%): it was so nice Speaker 1 (63%): I go to\n\n---\n\nEXCERPT FROM START OF NEXT ENCOUNTER:\nSpeaker 1 (100%): park Speaker 1 (76%): by Speaker 1 (52%): so Speaker 2 (100%): it is see korea Speaker 3 (100%): so and the Speaker 2 (53%): नमस्कार हिसाब एम में Speaker 4 (100%): If you want it, it's pretty easy. Dr Zohoor (68%): how things been think i got a mail from the surgical team Speaker 5 (100%): how did it go with the surgical team they at the beginning was kind of unknown i think you you had to do pc rooms like that but then we were talking and they decided that i Speaker 5 (71%): they want to do a injection there is an anesthetic i think it is and and depends on how it works Speaker 2 (42%): ले स्क्रिप्ट च्या सोबत Speaker 5 (32%): I had caught three times and nothing Speaker 5 (78%): They were they didn't answer I left a little message and I have an appointment for the 12 like he said he wants to see me 2 weeks after injection Speaker 1 (52%): So Speaker 2 (45%): hello um Dr Zohoor (63%): and we had a fifth sextrail at some point Speaker 5 (49%): Oh yeah that was the uh Speaker 1 (52%): Hi Speaker 5 (78%): um and is this is happening right out there help me that sometimes i feel like i'm chewing brains Speaker 5 (83%): and it's i feel like it's my lungs and my arteries where it's humid more than when it's cold and it happens sometimes like and i feel like the prodena yeah the thing it's like i i think it's it's like a cold paris no i never get sick Speaker 1 (48%): and Dr Zohoor (72%): and it happened it started after you had covid yes and any problem how long was Speaker 2 (42%): uh 2023 from full power for the good these episodes um Speaker 1 (55%): I would say Speaker 5 (85%): it sometimes is like it's tough for a little bit and like in the winter time was better but now that's getting escape now I'm feeling like every week i'm on surprise weeks of the year Speaker 2 (73%): have we find a puff from before con here see whether we can observe Speaker 1 (51%): I have a Speaker 5 (78%): I forget the chess no just when I was sick Dr Zohoor (75%): uh I I it's always happening at least once a week right yeah Speaker 2 (73%): How long does an episode last? Speaker 1 (57%): I've been for her hours. You know, this day I can feel like yeah. Speaker 5 (81%): but they think also that i never like told you something because i told maybe was related with this stomach sure because i i feel maybe something that i i have like Speaker 5 (77%): like i feel sometimes also that it is kind of have something stuck in here so i don't i've is really related with",
+    "response_raw": "```json\n{\"same_encounter\": false, \"reason\": \"The first excerpt consists of fragmented, nonsensical speech and appears to be the end of a previous session or a recording of ambient noise/unrelated chatter. The second excerpt is a clear, structured clinical encounter involving Dr. Zohoor and a patient discussing surgical follow-ups, injections, and respiratory/chest symptoms.\"}\n```",
+    "success": true,
+    "ts": "2026-04-09T18:42:17.804862+00:00"
+  },
+  "name_tracker": {
+    "majority_name": "Claudia Marcela Zamorano Sanchez",
+    "unique_names": [
+      "Claudia Zamorano Sanchez",
+      "Claudia Marcela Zamoran Sanchez",
+      "Claudia Marcela Zamorano Sanchez"
+    ],
+    "vote_count": 9
+  },
+  "outcome": {
+    "detection_method": "hybrid_llm",
+    "encounter_number": 1,
+    "is_clinical": true,
+    "patient_name": "Claudia Marcela Zamorano Sanchez",
+    "session_id": "8d205075-f426-4175-817e-d6445cf9a02e",
+    "was_merged": false,
+    "word_count": 1845
+  },
+  "schema_version": 2,
+  "segments": [
+    {
+      "end_ms": 17024,
+      "index": 0,
+      "speaker_confidence": 1.0,
+      "speaker_id": "Speaker 1",
+      "start_ms": 15828,
+      "text": "park",
+      "ts": "2026-04-09T18:31:50.604990+00:00"
+    },
+    {
+      "end_ms": 20448,
+      "index": 1,
+      "speaker_confidence": 0.75881916,
+      "speaker_id": "Speaker 1",
+      "start_ms": 19444,
+      "text": "by",
+      "ts": "2026-04-09T18:31:53.998701+00:00"
+    },
+    {
+      "end_ms": 21376,
+      "index": 2,
+      "speaker_confidence": 0.519354,
+      "speaker_id": "Speaker 1",
+      "start_ms": 20468,
+      "text": "so",
+      "ts": "2026-04-09T18:31:54.815985+00:00"
+    },
+    {
+      "end_ms": 28800,
+      "index": 3,
+      "speaker_confidence": 1.0,
+      "speaker_id": "Speaker 2",
+      "start_ms": 26740,
+      "text": "it is see korea",
+      "ts": "2026-04-09T18:32:02.472072+00:00"
+    },
+    {
+      "end_ms": 30272,
+      "index": 4,
+      "speaker_confidence": 1.0,
+      "speaker_id": "Speaker 3",
+      "start_ms": 28692,
+      "text": "so and the",
+      "ts": "2026-04-09T18:32:03.827229+00:00"
+    },
+    {
+      "end_ms": 32864,
+      "index": 5,
+      "speaker_confidence": 0.5321033,
+      "speaker_id": "Speaker 2",
+      "start_ms": 30004,
+      "text": "नमस्कार हिसाब एम में",
+      "ts": "2026-04-09T18:32:06.612780+00:00"
+    },
+    {
+      "end_ms": 36032,
+      "index": 6,
+      "speaker_confidence": 1.0,
+      "speaker_id": "Speaker 4",
+      "start_ms": 33396,
+      "text": "If you want it, it's pretty easy.",
+      "ts": "2026-04-09T18:32:09.852076+00:00"
+    },
+    {
+      "end_ms": 41216,
+      "index": 7,
+      "speaker_confidence": 0.67581576,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 36148,
+      "text": "how things been think i got a mail from the surgical team",
+      "ts": "2026-04-09T18:32:15.276683+00:00"
+    },
+    {
+      "end_ms": 54240,
+      "index": 8,
+      "speaker_confidence": 1.0,
+      "speaker_id": "Speaker 5",
+      "start_ms": 41076,
+      "text": "how did it go with the surgical team they at the beginning was kind of unknown i think you you had to do pc rooms like that but then we were talking and they decided that i",
+      "ts": "2026-04-09T18:32:29.305725+00:00"
+    },
+    {
+      "end_ms": 61600,
+      "index": 9,
+      "speaker_confidence": 0.70856255,
+      "speaker_id": "Speaker 5",
+      "start_ms": 54100,
+      "text": "they want to do a injection there is an anesthetic i think it is and and depends on how it works",
+      "ts": "2026-04-09T18:32:36.543236+00:00"
+    },
+    {
+      "end_ms": 64384,
+      "index": 10,
+      "speaker_confidence": 0.4187828,
+      "speaker_id": "Speaker 2",
+      "start_ms": 61460,
+      "text": "ले स्क्रिप्ट च्या सोबत",
+      "ts": "2026-04-09T18:32:38.123669+00:00"
+    },
+    {
+      "end_ms": 66560,
+      "index": 11,
+      "speaker_confidence": 0.3190333,
+      "speaker_id": "Speaker 5",
+      "start_ms": 64212,
+      "text": "I had caught three times and nothing",
+      "ts": "2026-04-09T18:32:40.344085+00:00"
+    },
+    {
+      "end_ms": 77216,
+      "index": 12,
+      "speaker_confidence": 0.7816626,
+      "speaker_id": "Speaker 5",
+      "start_ms": 66292,
+      "text": "They were they didn't answer I left a little message and I have an appointment for the 12 like he said he wants to see me 2 weeks after injection",
+      "ts": "2026-04-09T18:32:52.118125+00:00"
+    },
+    {
+      "end_ms": 77856,
+      "index": 13,
+      "speaker_confidence": 0.51883125,
+      "speaker_id": "Speaker 1",
+      "start_ms": 76948,
+      "text": "So",
+      "ts": "2026-04-09T18:32:52.375506+00:00"
+    },
+    {
+      "end_ms": 80512,
+      "index": 14,
+      "speaker_confidence": 0.45217043,
+      "speaker_id": "Speaker 2",
+      "start_ms": 78580,
+      "text": "hello um",
+      "ts": "2026-04-09T18:32:54.185894+00:00"
+    },
+    {
+      "end_ms": 84352,
+      "index": 15,
+      "speaker_confidence": 0.625245,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 81300,
+      "text": "and we had a fifth sextrail at some point",
+      "ts": "2026-04-09T18:32:58.203667+00:00"
+    },
+    {
+      "end_ms": 87104,
+      "index": 16,
+      "speaker_confidence": 0.48975414,
+      "speaker_id": "Speaker 5",
+      "start_ms": 84148,
+      "text": "Oh yeah that was the uh",
+      "ts": "2026-04-09T18:33:00.878405+00:00"
+    },
+    {
+      "end_ms": 88224,
+      "index": 17,
+      "speaker_confidence": 0.5230174,
+      "speaker_id": "Speaker 1",
+      "start_ms": 87124,
+      "text": "Hi",
+      "ts": "2026-04-09T18:33:01.683028+00:00"
+    },
+    {
+      "end_ms": 95072,
+      "index": 18,
+      "speaker_confidence": 0.7823202,
+      "speaker_id": "Speaker 5",
+      "start_ms": 87956,
+      "text": "um and is this is happening right out there help me that sometimes i feel like i'm chewing brains",
+      "ts": "2026-04-09T18:33:09.423025+00:00"
+    },
+    {
+      "end_ms": 111168,
+      "index": 19,
+      "speaker_confidence": 0.8287262,
+      "speaker_id": "Speaker 5",
+      "start_ms": 94964,
+      "text": "and it's i feel like it's my lungs and my arteries where it's humid more than when it's cold and it happens sometimes like and i feel like the prodena yeah the thing it's like i i think it's it's like a cold paris no i never get sick",
+      "ts": "2026-04-09T18:33:26.921177+00:00"
+    },
+    {
+      "end_ms": 112640,
+      "index": 20,
+      "speaker_confidence": 0.4830402,
+      "speaker_id": "Speaker 1",
+      "start_ms": 111156,
+      "text": "and",
+      "ts": "2026-04-09T18:33:27.241326+00:00"
+    },
+    {
+      "end_ms": 118656,
+      "index": 21,
+      "speaker_confidence": 0.72113675,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 112436,
+      "text": "and it happened it started after you had covid yes and any problem how long was",
+      "ts": "2026-04-09T18:33:32.854612+00:00"
+    },
+    {
+      "end_ms": 124416,
+      "index": 22,
+      "speaker_confidence": 0.41991422,
+      "speaker_id": "Speaker 2",
+      "start_ms": 118548,
+      "text": "uh 2023 from full power for the good these episodes um",
+      "ts": "2026-04-09T18:33:39.236025+00:00"
+    },
+    {
+      "end_ms": 127040,
+      "index": 23,
+      "speaker_confidence": 0.55058515,
+      "speaker_id": "Speaker 1",
+      "start_ms": 125236,
+      "text": "I would say",
+      "ts": "2026-04-09T18:33:40.582458+00:00"
+    },
+    {
+      "end_ms": 139552,
+      "index": 24,
+      "speaker_confidence": 0.8513544,
+      "speaker_id": "Speaker 5",
+      "start_ms": 127668,
+      "text": "it sometimes is like it's tough for a little bit and like in the winter time was better but now that's getting escape now I'm feeling like every week i'm on surprise weeks of the year",
+      "ts": "2026-04-09T18:33:54.671719+00:00"
+    },
+    {
+      "end_ms": 144416,
+      "index": 25,
+      "speaker_confidence": 0.7250972,
+      "speaker_id": "Speaker 2",
+      "start_ms": 139380,
+      "text": "have we find a puff from before con here see whether we can observe",
+      "ts": "2026-04-09T18:33:58.515297+00:00"
+    },
+    {
+      "end_ms": 145888,
+      "index": 26,
+      "speaker_confidence": 0.507354,
+      "speaker_id": "Speaker 1",
+      "start_ms": 144116,
+      "text": "I have a",
+      "ts": "2026-04-09T18:33:59.413017+00:00"
+    },
+    {
+      "end_ms": 149504,
+      "index": 27,
+      "speaker_confidence": 0.7834595,
+      "speaker_id": "Speaker 5",
+      "start_ms": 145652,
+      "text": "I forget the chess no just when I was sick",
+      "ts": "2026-04-09T18:34:03.440256+00:00"
+    },
+    {
+      "end_ms": 156032,
+      "index": 28,
+      "speaker_confidence": 0.7460598,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 152052,
+      "text": "uh I I it's always happening at least once a week right yeah",
+      "ts": "2026-04-09T18:34:10.036016+00:00"
+    },
+    {
+      "end_ms": 159008,
+      "index": 29,
+      "speaker_confidence": 0.72528297,
+      "speaker_id": "Speaker 2",
+      "start_ms": 156756,
+      "text": "How long does an episode last?",
+      "ts": "2026-04-09T18:34:12.795472+00:00"
+    },
+    {
+      "end_ms": 164192,
+      "index": 30,
+      "speaker_confidence": 0.5661033,
+      "speaker_id": "Speaker 1",
+      "start_ms": 158740,
+      "text": "I've been for her hours. You know, this day I can feel like yeah.",
+      "ts": "2026-04-09T18:34:18.372932+00:00"
+    },
+    {
+      "end_ms": 178176,
+      "index": 31,
+      "speaker_confidence": 0.8079673,
+      "speaker_id": "Speaker 5",
+      "start_ms": 164244,
+      "text": "but they think also that i never like told you something because i told maybe was related with this stomach sure because i i feel maybe something that i i have like",
+      "ts": "2026-04-09T18:34:33.317787+00:00"
+    },
+    {
+      "end_ms": 193632,
+      "index": 32,
+      "speaker_confidence": 0.76979434,
+      "speaker_id": "Speaker 5",
+      "start_ms": 178004,
+      "text": "like i feel sometimes also that it is kind of have something stuck in here so i don't i've is really related with the psych or is yes so it's fair it is it is sometimes hard to know um",
+      "ts": "2026-04-09T18:34:49.068022+00:00"
+    },
+    {
+      "end_ms": 198368,
+      "index": 33,
+      "speaker_confidence": 0.6054819,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 193556,
+      "text": "this affects covid because covid does affect um",
+      "ts": "2026-04-09T18:34:52.372729+00:00"
+    },
+    {
+      "end_ms": 201312,
+      "index": 34,
+      "speaker_confidence": 0.66151184,
+      "speaker_id": "Speaker 2",
+      "start_ms": 198868,
+      "text": "a bit tissue um",
+      "ts": "2026-04-09T18:34:55.052033+00:00"
+    },
+    {
+      "end_ms": 208064,
+      "index": 35,
+      "speaker_confidence": 0.72678804,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 201428,
+      "text": "and it's it's not so much that there's covid in the lung it's that the immune system is the lung is fighting",
+      "ts": "2026-04-09T18:35:02.480634+00:00"
+    },
+    {
+      "end_ms": 223296,
+      "index": 36,
+      "speaker_confidence": 0.74768806,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 208340,
+      "text": "it just it just because covid fights the immune system so they sort of camouflages so that the the immune system sort of attacks some cells sometimes it's equivalent flight um",
+      "ts": "2026-04-09T18:35:18.485032+00:00"
+    },
+    {
+      "end_ms": 229824,
+      "index": 37,
+      "speaker_confidence": 0.71349144,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 223508,
+      "text": "and um you can try it and see it's a simple form of something we use for",
+      "ts": "2026-04-09T18:35:24.087036+00:00"
+    },
+    {
+      "end_ms": 242144,
+      "index": 38,
+      "speaker_confidence": 0.8135651,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 229812,
+      "text": "i sometimes say we use it for cpds sometimes it's basically an anti inflammatory similar to kind of nasal sprays you have like that um to just reduce that lung inflammation",
+      "ts": "2026-04-09T18:35:37.324229+00:00"
+    },
+    {
+      "end_ms": 251040,
+      "index": 39,
+      "speaker_confidence": 0.79609495,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 242324,
+      "text": "when you use you don't feel any difference you think that it's not this immediate really any sort you might what this is nothing but",
+      "ts": "2026-04-09T18:35:45.631993+00:00"
+    },
+    {
+      "end_ms": 251968,
+      "index": 40,
+      "speaker_confidence": 0.43825835,
+      "speaker_id": "Speaker 2",
+      "start_ms": 250996,
+      "text": "um",
+      "ts": "2026-04-09T18:35:45.920979+00:00"
+    },
+    {
+      "end_ms": 256064,
+      "index": 41,
+      "speaker_confidence": 0.6920368,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 251668,
+      "text": "what you can do is so if you're getting it once a week it'll be easy to",
+      "ts": "2026-04-09T18:35:50.235385+00:00"
+    },
+    {
+      "end_ms": 260864,
+      "index": 42,
+      "speaker_confidence": 0.74396724,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 255988,
+      "text": "have feel full you just can't use it every day have it twice a day",
+      "ts": "2026-04-09T18:35:54.972787+00:00"
+    },
+    {
+      "end_ms": 264512,
+      "index": 43,
+      "speaker_confidence": 0.6245597,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 260660,
+      "text": "specifically in the minimum we talk",
+      "ts": "2026-04-09T18:35:58.389648+00:00"
+    },
+    {
+      "end_ms": 266368,
+      "index": 44,
+      "speaker_confidence": 0.65653443,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 264244,
+      "text": "if you're doing okay with it",
+      "ts": "2026-04-09T18:36:00.121381+00:00"
+    },
+    {
+      "end_ms": 282176,
+      "index": 45,
+      "speaker_confidence": 0.7987287,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 266196,
+      "text": "just just use it every day for a few weeks and be like weird so I mean once a week and have it once every three weeks or something and you know that is how it is the promise because it's a work quickly if you just take it every day",
+      "ts": "2026-04-09T18:36:17.767113+00:00"
+    },
+    {
+      "end_ms": 288128,
+      "index": 46,
+      "speaker_confidence": 0.753427,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 282356,
+      "text": "it may happen to know whether or not it's helpful so what is the theory you're just using at now",
+      "ts": "2026-04-09T18:36:22.418020+00:00"
+    },
+    {
+      "end_ms": 292512,
+      "index": 47,
+      "speaker_confidence": 0.7572229,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 287956,
+      "text": "you user you know like it you like this is making me feel funny and so on",
+      "ts": "2026-04-09T18:36:26.575170+00:00"
+    },
+    {
+      "end_ms": 293568,
+      "index": 48,
+      "speaker_confidence": 0.5798617,
+      "speaker_id": "Speaker 2",
+      "start_ms": 292308,
+      "text": "friend",
+      "ts": "2026-04-09T18:36:27.029188+00:00"
+    },
+    {
+      "end_ms": 300704,
+      "index": 49,
+      "speaker_confidence": 0.788242,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 293332,
+      "text": "just switch to using it only on those days where you sense it see whether it'll short out um",
+      "ts": "2026-04-09T18:36:35.104685+00:00"
+    },
+    {
+      "end_ms": 303840,
+      "index": 50,
+      "speaker_confidence": 0.66827375,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 300532,
+      "text": "a species of inflammatory for the lungs",
+      "ts": "2026-04-09T18:36:37.717624+00:00"
+    },
+    {
+      "end_ms": 311616,
+      "index": 51,
+      "speaker_confidence": 0.6954372,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 303796,
+      "text": "and another thing is if you have an this copper prescribed back in 2019 but if you um",
+      "ts": "2026-04-09T18:36:47.020674+00:00"
+    },
+    {
+      "end_ms": 318848,
+      "index": 52,
+      "speaker_confidence": 0.67005783,
+      "speaker_id": "Speaker 5",
+      "start_ms": 311636,
+      "text": "because we have to use to send the forms and think it's still my task my like no long time go yeah",
+      "ts": "2026-04-09T18:36:53.239609+00:00"
+    },
+    {
+      "end_ms": 332096,
+      "index": 53,
+      "speaker_confidence": 0.8274064,
+      "speaker_id": "Speaker 5",
+      "start_ms": 318676,
+      "text": "yeah we could see like i i don't think nothing's coming is coming it's like a powder i think you need to know he was really doing right but i just he exams are the perhaps how bad have it bad",
+      "ts": "2026-04-09T18:37:07.330543+00:00"
+    },
+    {
+      "end_ms": 333248,
+      "index": 54,
+      "speaker_confidence": 0.7430089,
+      "speaker_id": "Speaker 1",
+      "start_ms": 332340,
+      "text": "um",
+      "ts": "2026-04-09T18:37:07.574553+00:00"
+    },
+    {
+      "end_ms": 346016,
+      "index": 55,
+      "speaker_confidence": 0.8018981,
+      "speaker_id": "Speaker 5",
+      "start_ms": 335252,
+      "text": "eco sleep go go and sometimes when i exercise it feels better if i over do it feels parous and",
+      "ts": "2026-04-09T18:37:20.716083+00:00"
+    },
+    {
+      "end_ms": 364800,
+      "index": 56,
+      "speaker_confidence": 0.810854,
+      "speaker_id": "Speaker 5",
+      "start_ms": 345844,
+      "text": "I think it's I don't know really if I mean it's like I want to go back to what I used to do not maybe everything but at least be with football or strength training and if I go on vacation I can go for hiking like I don't know for a long walk and I feel like now for sake I couldn't do that",
+      "ts": "2026-04-09T18:37:41.399408+00:00"
+    },
+    {
+      "end_ms": 368096,
+      "index": 57,
+      "speaker_confidence": 0.63806,
+      "speaker_id": "Speaker 2",
+      "start_ms": 364500,
+      "text": "so that's why is why was the last time you tried",
+      "ts": "2026-04-09T18:37:42.422049+00:00"
+    },
+    {
+      "end_ms": 377504,
+      "index": 58,
+      "speaker_confidence": 0.8415054,
+      "speaker_id": "Speaker 5",
+      "start_ms": 368564,
+      "text": "Uh the day I was working in the thriftming and I did junking a little bit and then I was with the dumpster yeah yeah",
+      "ts": "2026-04-09T18:37:52.075904+00:00"
+    },
+    {
+      "end_ms": 379648,
+      "index": 59,
+      "speaker_confidence": 0.62224126,
+      "speaker_id": "Speaker 2",
+      "start_ms": 377396,
+      "text": "so doctor",
+      "ts": "2026-04-09T18:37:53.424628+00:00"
+    },
+    {
+      "end_ms": 386304,
+      "index": 60,
+      "speaker_confidence": 0.75303805,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 379604,
+      "text": "um so that rn is resident so the first you saw you with like a first year resident",
+      "ts": "2026-04-09T18:38:00.568710+00:00"
+    },
+    {
+      "end_ms": 390880,
+      "index": 61,
+      "speaker_confidence": 0.6389675,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 386388,
+      "text": "now hey there the radiator um",
+      "ts": "2026-04-09T18:38:04.805986+00:00"
+    },
+    {
+      "end_ms": 392384,
+      "index": 62,
+      "speaker_confidence": 0.48127288,
+      "speaker_id": "Speaker 2",
+      "start_ms": 390964,
+      "text": "في",
+      "ts": "2026-04-09T18:38:05.866386+00:00"
+    },
+    {
+      "end_ms": 394144,
+      "index": 63,
+      "speaker_confidence": 0.5257683,
+      "speaker_id": "Speaker 2",
+      "start_ms": 392404,
+      "text": "and and you know",
+      "ts": "2026-04-09T18:38:07.845577+00:00"
+    },
+    {
+      "end_ms": 398048,
+      "index": 64,
+      "speaker_confidence": 0.72876287,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 394324,
+      "text": "what the note said because he said you know",
+      "ts": "2026-04-09T18:38:11.938660+00:00"
+    },
+    {
+      "end_ms": 423136,
+      "index": 65,
+      "speaker_confidence": 0.8314353,
+      "speaker_id": "Speaker 5",
+      "start_ms": 398132,
+      "text": "so i now he would reach out to explain diagnostic injection about perhaps they basically want just numbing injected um so that you guess what the doctor came in at the yeah cuz uh i was kind of no i won this this and then the person would the doctor he came back in and i said um he said there is five things that i take to really see if you are a candidate",
+      "ts": "2026-04-09T18:38:39.723059+00:00"
+    },
+    {
+      "end_ms": 429824,
+      "index": 66,
+      "speaker_confidence": 0.8467884,
+      "speaker_id": "Speaker 5",
+      "start_ms": 422836,
+      "text": "for the surgery and to say you have four so the fifth is the injection and i'm going to see if that really helps then",
+      "ts": "2026-04-09T18:38:44.247865+00:00"
+    },
+    {
+      "end_ms": 434496,
+      "index": 67,
+      "speaker_confidence": 0.6333183,
+      "speaker_id": "Speaker 5",
+      "start_ms": 429908,
+      "text": "would you will be a candidate but yeah now",
+      "ts": "2026-04-09T18:38:48.482898+00:00"
+    },
+    {
+      "end_ms": 437792,
+      "index": 68,
+      "speaker_confidence": 0.6239973,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 434548,
+      "text": "Wesley who did your injections i think we have",
+      "ts": "2026-04-09T18:38:52.473513+00:00"
+    },
+    {
+      "end_ms": 443808,
+      "index": 69,
+      "speaker_confidence": 0.7781492,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 437492,
+      "text": "used to work for him for 5 years so he did all this injections and doing at that time",
+      "ts": "2026-04-09T18:38:58.060646+00:00"
+    },
+    {
+      "end_ms": 452256,
+      "index": 70,
+      "speaker_confidence": 0.76707274,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 443508,
+      "text": "and there's it is that we can so let's say do an injection today if you want to or whenever and you can do any um",
+      "ts": "2026-04-09T18:39:06.894297+00:00"
+    },
+    {
+      "end_ms": 453824,
+      "index": 71,
+      "speaker_confidence": 0.5917375,
+      "speaker_id": "Speaker 2",
+      "start_ms": 452500,
+      "text": "the",
+      "ts": "2026-04-09T18:39:07.292858+00:00"
+    },
+    {
+      "end_ms": 458464,
+      "index": 72,
+      "speaker_confidence": 0.7569737,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 453652,
+      "text": "there're quirky things sometimes with these things is they don't fuss others doing it",
+      "ts": "2026-04-09T18:39:12.574251+00:00"
+    },
+    {
+      "end_ms": 460160,
+      "index": 73,
+      "speaker_confidence": 0.4119452,
+      "speaker_id": "Speaker 2",
+      "start_ms": 458580,
+      "text": "so other",
+      "ts": "2026-04-09T18:39:13.668750+00:00"
+    },
+    {
+      "end_ms": 464096,
+      "index": 74,
+      "speaker_confidence": 0.6714403,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 460116,
+      "text": "was the same human being whether he's working here or he's working there",
+      "ts": "2026-04-09T18:39:18.125632+00:00"
+    },
+    {
+      "end_ms": 470752,
+      "index": 75,
+      "speaker_confidence": 0.7643118,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 464052,
+      "text": "santa's soldiers just you know they don't know they don't know the the story draft exactly what happened and so on support",
+      "ts": "2026-04-09T18:39:25.144708+00:00"
+    },
+    {
+      "end_ms": 474528,
+      "index": 76,
+      "speaker_confidence": 0.6780239,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 470900,
+      "text": "and it's not the logical of time so you know",
+      "ts": "2026-04-09T18:39:28.455083+00:00"
+    },
+    {
+      "end_ms": 486240,
+      "index": 77,
+      "speaker_confidence": 0.70700943,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 474420,
+      "text": "you know the same MRI scanner in two hospital service side and surgeon will say i want this person scanned in our scanner like at the machines yeah but there's this weird sense of",
+      "ts": "2026-04-09T18:39:41.208990+00:00"
+    },
+    {
+      "end_ms": 492256,
+      "index": 78,
+      "speaker_confidence": 0.67408127,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 486612,
+      "text": "I think the reality was exactly what describe um",
+      "ts": "2026-04-09T18:39:46.300195+00:00"
+    },
+    {
+      "end_ms": 493056,
+      "index": 79,
+      "speaker_confidence": 0.6211099,
+      "speaker_id": "Speaker 2",
+      "start_ms": 491956,
+      "text": "So",
+      "ts": "2026-04-09T18:39:46.584678+00:00"
+    },
+    {
+      "end_ms": 495840,
+      "index": 80,
+      "speaker_confidence": 0.7147975,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 493460,
+      "text": "Objectively looking at it",
+      "ts": "2026-04-09T18:39:49.614960+00:00"
+    },
+    {
+      "end_ms": 499296,
+      "index": 81,
+      "speaker_confidence": 0.6069621,
+      "speaker_id": "Speaker 2",
+      "start_ms": 495636,
+      "text": "it's like you know you have a deployment coming up and",
+      "ts": "2026-04-09T18:39:53.241290+00:00"
+    },
+    {
+      "end_ms": 505632,
+      "index": 82,
+      "speaker_confidence": 0.63994926,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 498996,
+      "text": "if you haven't had the treatments if you haven't had the diagnostic tests it's not",
+      "ts": "2026-04-09T18:39:59.933156+00:00"
+    },
+    {
+      "end_ms": 508544,
+      "index": 83,
+      "speaker_confidence": 0.655687,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 505460,
+      "text": "any is spoken um",
+      "ts": "2026-04-09T18:40:02.364371+00:00"
+    },
+    {
+      "end_ms": 531392,
+      "index": 84,
+      "speaker_confidence": 0.8279441,
+      "speaker_id": "Speaker 5",
+      "start_ms": 508724,
+      "text": "we did have the injection for the back i think so we can do that if you'd like um did you want to do that today how's the back back it it goes like to get i going feel the the pain in my hip as the back too sometimes i feel more the back than the hip it is more like the left side when it goes to the lower yeah",
+      "ts": "2026-04-09T18:40:27.867376+00:00"
+    },
+    {
+      "end_ms": 536320,
+      "index": 85,
+      "speaker_confidence": 0.61885154,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 531540,
+      "text": "कौन से है कौन से फॉलो पैरामीटर्स हैं ठीक है अभी है कि",
+      "ts": "2026-04-09T18:40:30.425845+00:00"
+    },
+    {
+      "end_ms": 549344,
+      "index": 86,
+      "speaker_confidence": 0.69677633,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 536180,
+      "text": "so three is the nine so same it come much away okay so one are we one are we do this um one are we do the back if you know the here for the we will get it down we will see um",
+      "ts": "2026-04-09T18:40:44.554935+00:00"
+    },
+    {
+      "end_ms": 555872,
+      "index": 87,
+      "speaker_confidence": 0.71576166,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 549332,
+      "text": "It's long enough away that you will have a good sense of to how much the injection helps alone",
+      "ts": "2026-04-09T18:40:50.144392+00:00"
+    },
+    {
+      "end_ms": 557696,
+      "index": 88,
+      "speaker_confidence": 0.5990759,
+      "speaker_id": "Speaker 2",
+      "start_ms": 555604,
+      "text": "if along the way",
+      "ts": "2026-04-09T18:40:51.275655+00:00"
+    },
+    {
+      "end_ms": 559456,
+      "index": 89,
+      "speaker_confidence": 0.60059345,
+      "speaker_id": "Speaker 2",
+      "start_ms": 557588,
+      "text": "um and and",
+      "ts": "2026-04-09T18:40:53.098672+00:00"
+    },
+    {
+      "end_ms": 566464,
+      "index": 90,
+      "speaker_confidence": 0.8008217,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 559700,
+      "text": "we can always do the like what they can always do the dynamic attractive mass in the field",
+      "ts": "2026-04-09T18:41:00.737937+00:00"
+    },
+    {
+      "end_ms": 573312,
+      "index": 91,
+      "speaker_confidence": 0.6815969,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 566164,
+      "text": "what I'm hoping for is that Hoffman reaches out to you and they do have injections before that appointment um",
+      "ts": "2026-04-09T18:41:07.699113+00:00"
+    },
+    {
+      "end_ms": 575104,
+      "index": 92,
+      "speaker_confidence": 0.6323501,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 573236,
+      "text": "because there",
+      "ts": "2026-04-09T18:41:08.633203+00:00"
+    },
+    {
+      "end_ms": 579488,
+      "index": 93,
+      "speaker_confidence": 0.78798884,
+      "speaker_id": "Speaker 2",
+      "start_ms": 575412,
+      "text": "chances are i'll find out um",
+      "ts": "2026-04-09T18:41:13.426860+00:00"
+    },
+    {
+      "end_ms": 580320,
+      "index": 94,
+      "speaker_confidence": 0.47054473,
+      "speaker_id": "Speaker 2",
+      "start_ms": 579252,
+      "text": "So",
+      "ts": "2026-04-09T18:41:13.851222+00:00"
+    },
+    {
+      "end_ms": 587008,
+      "index": 95,
+      "speaker_confidence": 0.7144491,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 580020,
+      "text": "normally what I thought I'll objectively it just makes sense like here was is the same person it's that",
+      "ts": "2026-04-09T18:41:21.349777+00:00"
+    },
+    {
+      "end_ms": 600992,
+      "index": 96,
+      "speaker_confidence": 0.784758,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 587316,
+      "text": "you are going to have a lot more comfort to keep it was their team that the injection it sounds really awful yeah it's just it's just there emotional um it's just one of one of things um so",
+      "ts": "2026-04-09T18:41:36.175919+00:00"
+    },
+    {
+      "end_ms": 602016,
+      "index": 97,
+      "speaker_confidence": 0.6269548,
+      "speaker_id": "Speaker 2",
+      "start_ms": 600724,
+      "text": "again",
+      "ts": "2026-04-09T18:41:36.478513+00:00"
+    },
+    {
+      "end_ms": 609920,
+      "index": 98,
+      "speaker_confidence": 0.67486006,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 601716,
+      "text": "if you think about it and you're like you know i just want the the name injection done so that the so that my comments",
+      "ts": "2026-04-09T18:41:44.468521+00:00"
+    },
+    {
+      "end_ms": 611872,
+      "index": 99,
+      "speaker_confidence": 0.68029135,
+      "speaker_id": "Speaker 2",
+      "start_ms": 609716,
+      "text": "smart the round",
+      "ts": "2026-04-09T18:41:45.421535+00:00"
+    },
+    {
+      "end_ms": 625088,
+      "index": 100,
+      "speaker_confidence": 0.69559705,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 612148,
+      "text": "is not wasted and so on it can call and say and I have a rejection requestly and instead of using the the kia or what that do just do the fixed diagnostic rejection um",
+      "ts": "2026-04-09T18:42:02.195675+00:00"
+    },
+    {
+      "end_ms": 628064,
+      "index": 101,
+      "speaker_confidence": 0.5997293,
+      "speaker_id": "Speaker 2",
+      "start_ms": 625492,
+      "text": "if the what",
+      "ts": "2026-04-09T18:42:02.696804+00:00"
+    }
+  ],
+  "sensor_transitions": [
+    {
+      "from": "unknown",
+      "to": "present",
+      "ts": "2026-04-09T18:31:33.045553+00:00"
+    }
+  ],
+  "soap_result": {
+    "latency_ms": 7559,
+    "success": true,
+    "ts": "2026-04-09T18:42:04.831717+00:00",
+    "word_count": 1845
+  },
+  "split_decision": {
+    "cleaned_word_count": 1548,
+    "end_segment_index": 98,
+    "trigger": "hybrid_llm",
+    "ts": "2026-04-09T18:41:49.003854+00:00",
+    "word_count": 1845
+  },
+  "vision_results": [
+    {
+      "is_blank": false,
+      "is_stale": false,
+      "latency_ms": 3243,
+      "parsed_name": "Claudia Marcela Zamorano Sanchez",
+      "ts": "2026-04-09T18:32:36.415827+00:00"
+    },
+    {
+      "is_blank": false,
+      "is_stale": false,
+      "latency_ms": 2796,
+      "parsed_name": "Claudia Marcela Zamorano Sanchez",
+      "ts": "2026-04-09T18:33:39.384929+00:00"
+    },
+    {
+      "is_blank": false,
+      "is_stale": false,
+      "latency_ms": 1887,
+      "parsed_name": "Claudia Zamorano Sanchez",
+      "ts": "2026-04-09T18:34:41.362273+00:00"
+    },
+    {
+      "is_blank": false,
+      "is_stale": false,
+      "latency_ms": 2497,
+      "parsed_name": "Claudia Marcela Zamoran Sanchez",
+      "ts": "2026-04-09T18:35:44.027468+00:00"
+    },
+    {
+      "is_blank": false,
+      "is_stale": false,
+      "latency_ms": 2900,
+      "parsed_name": "Claudia Marcela Zamorano Sanchez",
+      "ts": "2026-04-09T18:36:47.091446+00:00"
+    },
+    {
+      "is_blank": false,
+      "is_stale": false,
+      "latency_ms": 2617,
+      "parsed_name": "Claudia Marcela Zamorano Sanchez",
+      "ts": "2026-04-09T18:37:49.846673+00:00"
+    },
+    {
+      "is_blank": false,
+      "is_stale": false,
+      "latency_ms": 2812,
+      "parsed_name": "Claudia Marcela Zamorano Sanchez",
+      "ts": "2026-04-09T18:38:52.821901+00:00"
+    },
+    {
+      "is_blank": false,
+      "is_stale": false,
+      "latency_ms": 2568,
+      "parsed_name": "Claudia Marcela Zamorano Sanchez",
+      "ts": "2026-04-09T18:39:55.538474+00:00"
+    },
+    {
+      "is_blank": false,
+      "is_stale": false,
+      "latency_ms": 2565,
+      "parsed_name": "Claudia Marcela Zamorano Sanchez",
+      "ts": "2026-04-09T18:40:58.282474+00:00"
+    },
+    {
+      "is_blank": false,
+      "is_stale": false,
+      "latency_ms": 3196,
+      "parsed_name": null,
+      "ts": "2026-04-09T18:42:01.501683+00:00"
+    }
+  ]
+}

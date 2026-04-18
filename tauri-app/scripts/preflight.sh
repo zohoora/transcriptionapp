@@ -37,11 +37,14 @@ while [[ $# -gt 0 ]]; do
             echo "Usage: $0 [--full] [--layer N]"
             echo ""
             echo "Layers:"
-            echo "  1  STT Router    — health, alias, WebSocket streaming"
-            echo "  2  LLM Router    — SOAP generation, encounter detection, hybrid model"
-            echo "  3  Local Archive — save/retrieve, continuous mode metadata"
-            echo "  4  Session Mode  — full Audio → STT → SOAP → Archive → History"
-            echo "  5  Continuous    — full Audio → STT → Detection → SOAP → Archive"
+            echo "  1  STT Router        — health, alias, WebSocket streaming"
+            echo "  2  LLM Router        — SOAP generation, encounter detection, hybrid model"
+            echo "  3  Local Archive     — save/retrieve, continuous mode metadata"
+            echo "  4  Session Mode      — full Audio → STT → SOAP → Archive → History"
+            echo "  5  Continuous        — full Audio → STT → Detection → SOAP → Archive"
+            echo "  6  Detection Replay  — offline evaluate_detection replay"
+            echo "  7  Golden Day        — labeled clinic days vs production archive"
+            echo "  8  Harness           — orchestrator equivalence (run_continuous_mode snapshot)"
             echo ""
             echo "Options:"
             echo "  --full      Run all 5 layers (default: layers 1-3)"
@@ -155,6 +158,27 @@ if [[ -z "$LAYER" || "$LAYER" == "7" ]]; then
         tail -10 /tmp/preflight_golden.log | sed 's/^/    /'
         FAILED=$((FAILED + 1))
         cd ..
+    fi
+    echo ""
+fi
+
+# Layer 8: Orchestrator equivalence harness (offline, per-encounter)
+# Drives run_continuous_mode through RecordingRunContext and compares the
+# archive output to snapshot baselines. Fails if the orchestrator's observable
+# behavior differs from the recorded reference. See:
+#   docs/superpowers/specs/2026-04-18-continuous-mode-test-harness-design.md
+if [[ -z "$LAYER" || "$LAYER" == "8" ]]; then
+    echo -e "${YELLOW}Layer 8: Orchestrator Equivalence Harness${NC}"
+    echo -n "  Verifying run_continuous_mode behavior against snapshot baselines... "
+    if cargo test --test harness_per_encounter --quiet > /tmp/preflight_harness.log 2>&1; then
+        echo -e "${GREEN}PASS${NC}"
+        grep "test result:" /tmp/preflight_harness.log | sed 's/^/    /'
+        PASSED=$((PASSED + 1))
+    else
+        echo -e "${RED}FAIL${NC}"
+        grep -E "FAILED|panicked|harness detected" /tmp/preflight_harness.log | head -10 | sed 's/^/    /'
+        echo "    Full reports: target/harness-report/*.json"
+        FAILED=$((FAILED + 1))
     fi
     echo ""
 fi

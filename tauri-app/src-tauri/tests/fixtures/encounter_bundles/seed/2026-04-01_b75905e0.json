@@ -1,0 +1,1455 @@
+{
+  "clinical_check": {
+    "is_clinical": true,
+    "latency_ms": 0,
+    "success": true,
+    "ts": "2026-04-01T17:25:51.243429+00:00"
+  },
+  "config": {
+    "co2_baseline_ppm": 420.0,
+    "encounter_check_interval_secs": 120,
+    "encounter_detection_mode": "hybrid",
+    "encounter_detection_model": "fast-model",
+    "encounter_detection_nothink": false,
+    "encounter_merge_enabled": true,
+    "encounter_silence_trigger_secs": 45,
+    "fast_model": "fast-model",
+    "hybrid_confirm_window_secs": 180,
+    "hybrid_min_words_for_sensor_split": 500,
+    "idle_encounter_timeout_secs": 900,
+    "presence_absence_threshold_secs": 180,
+    "presence_debounce_secs": 10,
+    "presence_sensor_port": "",
+    "presence_sensor_url": "http://172.16.100.37",
+    "screen_capture_enabled": true,
+    "screen_capture_interval_secs": 60,
+    "shadow_active_method": "llm",
+    "sleep_end_hour": 6,
+    "sleep_mode_enabled": true,
+    "sleep_start_hour": 22,
+    "soap_custom_instructions": "I am a family physician in Ontario Canada. The medications, tests and such are what’s available in Canada. Do not repeat terms such as ‘The patient…’ I prefer clean and crisp notes. Do not start a stentence with ‘Patient reports’ - point form can be simple phrases. So instead of ‘The patient reports low back pain’ say ‘low back pain’. Use the past tense. Do not put procedures under ‘O’ and instead put them in either the ‘P’ section or a separate procedure note. ",
+    "soap_detail_level": 4,
+    "soap_format": "problem_based",
+    "soap_model": "soap-model",
+    "soap_model_fast": "soap-model",
+    "thermal_hot_pixel_threshold_c": 28.0
+  },
+  "detection_checks": [
+    {
+      "cleaned_word_count": 262,
+      "latency_ms": 1457,
+      "loop_state": {
+        "buffer_age_secs": 206.0,
+        "consecutive_failures": 0,
+        "manual_triggered": false,
+        "merge_back_count": 0,
+        "sensor_continuous_present": false,
+        "sensor_triggered": false
+      },
+      "parsed_complete": false,
+      "parsed_confidence": 0.95,
+      "parsed_end_index": null,
+      "prompt_system": "You MUST respond in English with ONLY a JSON object. No other text, no explanations, no markdown.\n\nYou are analyzing a continuous transcript from a medical office where the microphone records all day.\n\nYour task: determine if there is a TRANSITION POINT where one patient encounter ends and another begins, or where a patient encounter has clearly concluded.\n\nA completed encounter typically includes a clinical discussion and a concluding plan (e.g., medication changes, follow-up timing, referrals, or instructions). A short transcript that contains only vitals, greetings, or brief exchanges — with no clinical discussion or plan — is likely a pre-visit assessment still in progress, not a completed encounter. A nurse or medical assistant may see the patient before the doctor arrives to take vitals or ask initial questions — this is part of the same encounter, not a separate visit.\n\nEach segment includes elapsed time (MM:SS) from the start of the recording. Large gaps between timestamps may indicate silence, examination, or the room being empty between patients.\n\nIf you find a transition point or completed encounter, return:\n{\"complete\": true, \"end_segment_index\": <last segment index of the CONCLUDED encounter>, \"confidence\": <0.0-1.0>}\n\nIf the current discussion is still one ongoing encounter with no transition, return:\n{\"complete\": false, \"confidence\": <0.0-1.0>}\n\nRespond with ONLY the JSON object.",
+      "prompt_user": "Transcript (segments numbered with speaker labels):\n[980] (00:00) (Speaker 1 (58%)): Dr. Zagor. [981] (00:01) (Speaker 1 (63%)): About blood work. [982] (00:16) (Speaker 1 (59%)): Hi, Riana. [983] (00:18) (Speaker 1 (76%)): It's Doctor Zor her calling. Is this an okay moment? [984] (00:27) (Speaker 1 (79%)): Hello! Hi. [985] (00:29) (Dr Zohoor (63%)): I'm just calling. I think we... I'm calling to one see how you're doing, and the other one was Sigori of Bloodwork. [986] (00:36) (Speaker 1 (81%)): Um. How how things been going? [987] (00:49) (Speaker 5 (68%)): Uh huh. [988] (00:58) (Dr Zohoor (79%)): I'm glad to. I'm glad it's settled. [989] (01:00) (Speaker 1 (77%)): How'd it go with um? How's the wound doing. [990] (01:13) (Speaker 5 (43%)): Right here. [991] (01:15) (Speaker 1 (66%)): Any more? Any more. [992] (01:17) (Speaker 1 (44%)): Um. [993] (01:18) (Speaker 1 (69%)): Any more wounds of any sort since we last talked? [994] (01:23) (Speaker 5 (78%)): Okay. [995] (01:24) (Speaker 1 (74%)): So things have been okay in that, on that respect. [996] (01:28) (Speaker 1 (59%)): I'm glad to hear it. [997] (01:30) (Speaker 1 (71%)): And then the. [998] (01:33) (Dr Zohoor (73%)): And then you mentioned your periods are still pretty heavy, right? [999] (01:38) (Speaker 5 (61%)): Okay. [1000] (01:39) (Dr Zohoor (67%)): And remind me if the periods have been heavy for a very long time, or it's just more recent thing. [1001] (02:02) (Speaker 3 (65%)): Yeah. [1002] (02:06) (Speaker 1 (64%)): Fair enough. [1003] (02:07) (Speaker 1 (74%)): But overall, like over the last year, have most of them been pretty heavy? [1004] (02:13) (Speaker 1 (51%)): Okay. [1005] (02:14) (Speaker 1 (66%)): And then, um. What's been the [1006] (02:17) (Speaker 1 (72%)): What's been the decision in terms of? [1007] (02:20) (Speaker 1 (69%)): In terms of kind of. [1008] (02:23) (Dr Zohoor (68%)): How to manage that? Like I ask because your iron level is a little bit low. [1009] (02:27) (Dr Zohoor (73%)): And which is coming mostly because of the heavy bleeding. [1010] (02:31) (Speaker 1 (66%)): And um. [1011] (02:33) (Dr Zohoor (65%)): I'm trying to. Has has anybody kind of talked to you about options in terms of, in terms of reducing the bleeding? [1012] (02:45) (Speaker 1 (60%)): Okay. [1013] (02:47) (Dr Zohoor (72%)): Fair enough. What have you been taking when the bleeding has been heavy? [1014] (02:58) (Speaker 1 (71%)): Sure. What which pain meds have you been taking? [1015] (03:06) (Speaker 1 (69%)): Okay, does it seem to help? [1016] (03:16) (Speaker 5 (68%)): Okay. [1017] (03:22) (Dr Zohoor (65%)): So there are basically, you know, three ways of trying to control bleeding.\n\nReal-time context signals:\nCONTEXT: The presence sensor confirms someone is still in the room. Topic changes or pauses within the same visit are NOT transitions. Only split if there is strong evidence of a different patient (new name, new history intake, greeting a new person).",
+      "response_raw": "{\"complete\": false, \"confidence\": 0.95}",
+      "segment_range": [
+        980,
+        1017
+      ],
+      "sensor_context": {
+        "departed": false,
+        "present": true,
+        "unknown": false
+      },
+      "success": true,
+      "ts": "2026-04-01T17:21:44.658922+00:00",
+      "word_count": 262
+    },
+    {
+      "cleaned_word_count": 478,
+      "latency_ms": 2026,
+      "loop_state": {
+        "buffer_age_secs": 328.0,
+        "consecutive_failures": 0,
+        "manual_triggered": false,
+        "merge_back_count": 0,
+        "sensor_continuous_present": false,
+        "sensor_triggered": false
+      },
+      "parsed_complete": false,
+      "parsed_confidence": 0.95,
+      "parsed_end_index": null,
+      "prompt_system": "You MUST respond in English with ONLY a JSON object. No other text, no explanations, no markdown.\n\nYou are analyzing a continuous transcript from a medical office where the microphone records all day.\n\nYour task: determine if there is a TRANSITION POINT where one patient encounter ends and another begins, or where a patient encounter has clearly concluded.\n\nA completed encounter typically includes a clinical discussion and a concluding plan (e.g., medication changes, follow-up timing, referrals, or instructions). A short transcript that contains only vitals, greetings, or brief exchanges — with no clinical discussion or plan — is likely a pre-visit assessment still in progress, not a completed encounter. A nurse or medical assistant may see the patient before the doctor arrives to take vitals or ask initial questions — this is part of the same encounter, not a separate visit.\n\nEach segment includes elapsed time (MM:SS) from the start of the recording. Large gaps between timestamps may indicate silence, examination, or the room being empty between patients.\n\nIf you find a transition point or completed encounter, return:\n{\"complete\": true, \"end_segment_index\": <last segment index of the CONCLUDED encounter>, \"confidence\": <0.0-1.0>}\n\nIf the current discussion is still one ongoing encounter with no transition, return:\n{\"complete\": false, \"confidence\": <0.0-1.0>}\n\nRespond with ONLY the JSON object.",
+      "prompt_user": "Transcript (segments numbered with speaker labels):\n[980] (00:00) (Speaker 1 (58%)): Dr. Zagor. [981] (00:01) (Speaker 1 (63%)): About blood work. [982] (00:16) (Speaker 1 (59%)): Hi, Riana. [983] (00:18) (Speaker 1 (76%)): It's Doctor Zor her calling. Is this an okay moment? [984] (00:27) (Speaker 1 (79%)): Hello! Hi. [985] (00:29) (Dr Zohoor (63%)): I'm just calling. I think we... I'm calling to one see how you're doing, and the other one was Sigori of Bloodwork. [986] (00:36) (Speaker 1 (81%)): Um. How how things been going? [987] (00:49) (Speaker 5 (68%)): Uh huh. [988] (00:58) (Dr Zohoor (79%)): I'm glad to. I'm glad it's settled. [989] (01:00) (Speaker 1 (77%)): How'd it go with um? How's the wound doing. [990] (01:13) (Speaker 5 (43%)): Right here. [991] (01:15) (Speaker 1 (66%)): Any more? Any more. [992] (01:17) (Speaker 1 (44%)): Um. [993] (01:18) (Speaker 1 (69%)): Any more wounds of any sort since we last talked? [994] (01:23) (Speaker 5 (78%)): Okay. [995] (01:24) (Speaker 1 (74%)): So things have been okay in that, on that respect. [996] (01:28) (Speaker 1 (59%)): I'm glad to hear it. [997] (01:30) (Speaker 1 (71%)): And then the. [998] (01:33) (Dr Zohoor (73%)): And then you mentioned your periods are still pretty heavy, right? [999] (01:38) (Speaker 5 (61%)): Okay. [1000] (01:39) (Dr Zohoor (67%)): And remind me if the periods have been heavy for a very long time, or it's just more recent thing. [1001] (02:02) (Speaker 3 (65%)): Yeah. [1002] (02:06) (Speaker 1 (64%)): Fair enough. [1003] (02:07) (Speaker 1 (74%)): But overall, like over the last year, have most of them been pretty heavy? [1004] (02:13) (Speaker 1 (51%)): Okay. [1005] (02:14) (Speaker 1 (66%)): And then, um. What's been the [1006] (02:17) (Speaker 1 (72%)): What's been the decision in terms of? [1007] (02:20) (Speaker 1 (69%)): In terms of kind of. [1008] (02:23) (Dr Zohoor (68%)): How to manage that? Like I ask because your iron level is a little bit low. [1009] (02:27) (Dr Zohoor (73%)): And which is coming mostly because of the heavy bleeding. [1010] (02:31) (Speaker 1 (66%)): And um. [1011] (02:33) (Dr Zohoor (65%)): I'm trying to. Has has anybody kind of talked to you about options in terms of, in terms of reducing the bleeding? [1012] (02:45) (Speaker 1 (60%)): Okay. [1013] (02:47) (Dr Zohoor (72%)): Fair enough. What have you been taking when the bleeding has been heavy? [1014] (02:58) (Speaker 1 (71%)): Sure. What which pain meds have you been taking? [1015] (03:06) (Speaker 1 (69%)): Okay, does it seem to help? [1016] (03:16) (Speaker 5 (68%)): Okay. [1017] (03:22) (Dr Zohoor (65%)): So there are basically, you know, three ways of trying to control bleeding. [1018] (03:27) (Speaker 1 (66%)): One is to use. [1019] (03:31) (Dr Zohoor (65%)): Use systemic hormones, meaning that hormone. Hello? [1020] (03:36) (Speaker 1 (65%)): Hello. [1021] (03:38) (Speaker 1 (72%)): Is there is, Is this an okay time? [1022] (03:45) (Speaker 1 (51%)): It's okay. [1023] (03:47) (Dr Zohoor (62%)): So one option is hormonal control using birth controls, where we basically are pausing your period. [1024] (03:53) (Speaker 1 (75%)): The second option is an IUD. [1025] (03:57) (Dr Zohoor (61%)): Where we um. [1026] (04:00) (Dr Zohoor (69%)): Put a tiny little plastic thing in the uterus. [1027] (04:03) (Dr Zohoor (65%)): Reduces the bleeding. The third option is [1028] (04:08) (Speaker 3 (75%)): Um. [1029] (04:10) (Dr Zohoor (64%)): Like anti-inflammatories, so Advil obviously is one of them. There's one other medication that sometimes works a bit better if you wanted to try it where you take it and it may help with the bleeding and pain a bit more. [1030] (04:22) (Speaker 3 (75%)): Um. [1031] (04:23) (Speaker 1 (69%)): But the real way of kind of settling it. [1032] (04:26) (Speaker 1 (54%)): Is to con, to control the cycle. [1033] (04:29) (Speaker 1 (74%)): So I'm not sure. Are they? [1034] (04:34) (Speaker 1 (79%)): Are they are they heavy enough that. [1035] (04:37) (Speaker 1 (73%)): They're an issue right now. [1036] (04:42) (Speaker 5 (67%)): Okay. [1037] (04:45) (Speaker 1 (69%)): Yeah. So. [1038] (04:48) (Dr Zohoor (63%)): But those are, those are the options. The three options: either hormonal control and IUD really or [1039] (04:56) (Speaker 1 (63%)): Slightly different pill. [1040] (04:58) (Speaker 3 (68%)): Um. [1041] (05:00) (Speaker 1 (59%)): So I just. [1042] (05:02) (Dr Zohoor (68%)): There's so much background conversation, so I'm not sure what your thoughts on. Is this something? [1043] (05:10) (Dr Zohoor (63%)): Can you hear me? Okay. [1044] (05:13) (Speaker 5 (82%)): Okay. [1045] (05:15) (Dr Zohoor (69%)): No, I'm just hearing all the conversation behind you. So it's just—I'm—I'm just not sure if there's a lot of [1046] (05:21) (Speaker 5 (54%)): So what are. [1047] (05:23) (Speaker 1 (61%)): What are your thoughts?\n\nReal-time context signals:\nCONTEXT: The presence sensor confirms someone is still in the room. Topic changes or pauses within the same visit are NOT transitions. Only split if there is strong evidence of a different patient (new name, new history intake, greeting a new person).",
+      "response_raw": "{\"complete\": false, \"confidence\": 0.95}",
+      "segment_range": [
+        980,
+        1047
+      ],
+      "sensor_context": {
+        "departed": false,
+        "present": true,
+        "unknown": false
+      },
+      "success": true,
+      "ts": "2026-04-01T17:23:46.707225+00:00",
+      "word_count": 478
+    },
+    {
+      "cleaned_word_count": 695,
+      "latency_ms": 2643,
+      "loop_state": {
+        "buffer_age_secs": 450.0,
+        "consecutive_failures": 0,
+        "manual_triggered": false,
+        "merge_back_count": 0,
+        "sensor_continuous_present": false,
+        "sensor_triggered": false
+      },
+      "parsed_complete": true,
+      "parsed_confidence": 0.95,
+      "parsed_end_index": 1070,
+      "prompt_system": "You MUST respond in English with ONLY a JSON object. No other text, no explanations, no markdown.\n\nYou are analyzing a continuous transcript from a medical office where the microphone records all day.\n\nYour task: determine if there is a TRANSITION POINT where one patient encounter ends and another begins, or where a patient encounter has clearly concluded.\n\nA completed encounter typically includes a clinical discussion and a concluding plan (e.g., medication changes, follow-up timing, referrals, or instructions). A short transcript that contains only vitals, greetings, or brief exchanges — with no clinical discussion or plan — is likely a pre-visit assessment still in progress, not a completed encounter. A nurse or medical assistant may see the patient before the doctor arrives to take vitals or ask initial questions — this is part of the same encounter, not a separate visit.\n\nEach segment includes elapsed time (MM:SS) from the start of the recording. Large gaps between timestamps may indicate silence, examination, or the room being empty between patients.\n\nIf you find a transition point or completed encounter, return:\n{\"complete\": true, \"end_segment_index\": <last segment index of the CONCLUDED encounter>, \"confidence\": <0.0-1.0>}\n\nIf the current discussion is still one ongoing encounter with no transition, return:\n{\"complete\": false, \"confidence\": <0.0-1.0>}\n\nRespond with ONLY the JSON object.",
+      "prompt_user": "Transcript (segments numbered with speaker labels):\n[980] (00:00) (Speaker 1 (58%)): Dr. Zagor. [981] (00:01) (Speaker 1 (63%)): About blood work. [982] (00:16) (Speaker 1 (59%)): Hi, Riana. [983] (00:18) (Speaker 1 (76%)): It's Doctor Zor her calling. Is this an okay moment? [984] (00:27) (Speaker 1 (79%)): Hello! Hi. [985] (00:29) (Dr Zohoor (63%)): I'm just calling. I think we... I'm calling to one see how you're doing, and the other one was Sigori of Bloodwork. [986] (00:36) (Speaker 1 (81%)): Um. How how things been going? [987] (00:49) (Speaker 5 (68%)): Uh huh. [988] (00:58) (Dr Zohoor (79%)): I'm glad to. I'm glad it's settled. [989] (01:00) (Speaker 1 (77%)): How'd it go with um? How's the wound doing. [990] (01:13) (Speaker 5 (43%)): Right here. [991] (01:15) (Speaker 1 (66%)): Any more? Any more. [992] (01:17) (Speaker 1 (44%)): Um. [993] (01:18) (Speaker 1 (69%)): Any more wounds of any sort since we last talked? [994] (01:23) (Speaker 5 (78%)): Okay. [995] (01:24) (Speaker 1 (74%)): So things have been okay in that, on that respect. [996] (01:28) (Speaker 1 (59%)): I'm glad to hear it. [997] (01:30) (Speaker 1 (71%)): And then the. [998] (01:33) (Dr Zohoor (73%)): And then you mentioned your periods are still pretty heavy, right? [999] (01:38) (Speaker 5 (61%)): Okay. [1000] (01:39) (Dr Zohoor (67%)): And remind me if the periods have been heavy for a very long time, or it's just more recent thing. [1001] (02:02) (Speaker 3 (65%)): Yeah. [1002] (02:06) (Speaker 1 (64%)): Fair enough. [1003] (02:07) (Speaker 1 (74%)): But overall, like over the last year, have most of them been pretty heavy? [1004] (02:13) (Speaker 1 (51%)): Okay. [1005] (02:14) (Speaker 1 (66%)): And then, um. What's been the [1006] (02:17) (Speaker 1 (72%)): What's been the decision in terms of? [1007] (02:20) (Speaker 1 (69%)): In terms of kind of. [1008] (02:23) (Dr Zohoor (68%)): How to manage that? Like I ask because your iron level is a little bit low. [1009] (02:27) (Dr Zohoor (73%)): And which is coming mostly because of the heavy bleeding. [1010] (02:31) (Speaker 1 (66%)): And um. [1011] (02:33) (Dr Zohoor (65%)): I'm trying to. Has has anybody kind of talked to you about options in terms of, in terms of reducing the bleeding? [1012] (02:45) (Speaker 1 (60%)): Okay. [1013] (02:47) (Dr Zohoor (72%)): Fair enough. What have you been taking when the bleeding has been heavy? [1014] (02:58) (Speaker 1 (71%)): Sure. What which pain meds have you been taking? [1015] (03:06) (Speaker 1 (69%)): Okay, does it seem to help? [1016] (03:16) (Speaker 5 (68%)): Okay. [1017] (03:22) (Dr Zohoor (65%)): So there are basically, you know, three ways of trying to control bleeding. [1018] (03:27) (Speaker 1 (66%)): One is to use. [1019] (03:31) (Dr Zohoor (65%)): Use systemic hormones, meaning that hormone. Hello? [1020] (03:36) (Speaker 1 (65%)): Hello. [1021] (03:38) (Speaker 1 (72%)): Is there is, Is this an okay time? [1022] (03:45) (Speaker 1 (51%)): It's okay. [1023] (03:47) (Dr Zohoor (62%)): So one option is hormonal control using birth controls, where we basically are pausing your period. [1024] (03:53) (Speaker 1 (75%)): The second option is an IUD. [1025] (03:57) (Dr Zohoor (61%)): Where we um. [1026] (04:00) (Dr Zohoor (69%)): Put a tiny little plastic thing in the uterus. [1027] (04:03) (Dr Zohoor (65%)): Reduces the bleeding. The third option is [1028] (04:08) (Speaker 3 (75%)): Um. [1029] (04:10) (Dr Zohoor (64%)): Like anti-inflammatories, so Advil obviously is one of them. There's one other medication that sometimes works a bit better if you wanted to try it where you take it and it may help with the bleeding and pain a bit more. [1030] (04:22) (Speaker 3 (75%)): Um. [1031] (04:23) (Speaker 1 (69%)): But the real way of kind of settling it. [1032] (04:26) (Speaker 1 (54%)): Is to con, to control the cycle. [1033] (04:29) (Speaker 1 (74%)): So I'm not sure. Are they? [1034] (04:34) (Speaker 1 (79%)): Are they are they heavy enough that. [1035] (04:37) (Speaker 1 (73%)): They're an issue right now. [1036] (04:42) (Speaker 5 (67%)): Okay. [1037] (04:45) (Speaker 1 (69%)): Yeah. So. [1038] (04:48) (Dr Zohoor (63%)): But those are, those are the options. The three options: either hormonal control and IUD really or [1039] (04:56) (Speaker 1 (63%)): Slightly different pill. [1040] (04:58) (Speaker 3 (68%)): Um. [1041] (05:00) (Speaker 1 (59%)): So I just. [1042] (05:02) (Dr Zohoor (68%)): There's so much background conversation, so I'm not sure what your thoughts on. Is this something? [1043] (05:10) (Dr Zohoor (63%)): Can you hear me? Okay. [1044] (05:13) (Speaker 5 (82%)): Okay. [1045] (05:15) (Dr Zohoor (69%)): No, I'm just hearing all the conversation behind you. So it's just—I'm—I'm just not sure if there's a lot of [1046] (05:21) (Speaker 5 (54%)): So what are. [1047] (05:23) (Speaker 1 (61%)): What are your thoughts? [1048] (05:33) (Speaker 5 (56%)): Okay, is there. [1049] (05:35) (Dr Zohoor (62%)): Is there a pharmacy you tend to go to? [1050] (05:41) (Speaker 1 (63%)): Which which one? [1051] (05:57) (Speaker 5 (54%)): Yes. [1052] (05:59) (Speaker 5 (64%)): Alright, sure. [1053] (06:06) (Speaker 5 (65%)): Sure. [1054] (06:13) (Speaker 5 (78%)): Okay. [1055] (06:14) (Dr Zohoor (68%)): So what I'll do is, I'll fax over the prescription there. There's only really one other med apart from Advil to try, and I'm not sure in your case obviously how much better it works. [1056] (06:24) (Dr Zohoor (67%)): Or you know whether, whether it will—it will how much it will help compared to Advil. But if it's covered, you can—you can give it a try. [1057] (06:32) (Speaker 3 (76%)): Um. [1058] (06:33) (Dr Zohoor (73%)): And then the other thing would be to consider taking an iron supplement because your iron's low from the, from the bleeding. [1059] (06:40) (Dr Zohoor (71%)): And that often worsens anxiety symptoms. [1060] (06:44) (Dr Zohoor (76%)): So it's something to consider. Um, have you been on? Yeah, definitely. Have you been on iron before? [1061] (06:53) (Speaker 1 (73%)): Iron tablet. Iron supplements. [1062] (06:56) (Speaker 5 (78%)): Okay. [1063] (07:00) (Speaker 1 (85%)): So what I'll do is, I'll fax over a prescription for some iron supplements. The problem with iron supplements is that often [1064] (07:07) (Speaker 1 (56%)): It does affect your house. [1065] (07:10) (Dr Zohoor (68%)): But a lot of people tolerate. Okay, some people. But in short, if you find that your [1066] (07:16) (Dr Zohoor (70%)): Kind of gives you cramping or diarrhea, constipation. You can stop taking it. [1067] (07:20) (Dr Zohoor (76%)): But if you tolerate okay, then it may help. Um, just overall. [1068] (07:26) (Speaker 1 (68%)): Is that okay? [1069] (07:27) (Speaker 1 (79%)): And then, if anything else comes up, let me know. Yeah.\n\nReal-time context signals:\nCONTEXT: The presence sensor confirms someone is still in the room. Topic changes or pauses within the same visit are NOT transitions. Only split if there is strong evidence of a different patient (new name, new history intake, greeting a new person).",
+      "response_raw": "{\"complete\": true, \"end_segment_index\": 1070, \"confidence\": 0.95}",
+      "segment_range": [
+        980,
+        1069
+      ],
+      "sensor_context": {
+        "departed": false,
+        "present": true,
+        "unknown": false
+      },
+      "success": true,
+      "ts": "2026-04-01T17:25:49.392052+00:00",
+      "word_count": 695
+    }
+  ],
+  "merge_check": {
+    "curr_head_excerpt": "Speaker 1 (58%): Dr. Zagor. Speaker 1 (63%): About blood work. Speaker 1 (59%): Hi, Riana. Speaker 1 (76%): It's Doctor Zor her calling. Is this an okay moment? Speaker 1 (79%): Hello! Hi. Dr Zohoor (63%): I'm just calling. I think we... I'm calling to one see how you're doing, and the other one was Sigori of Bloodwork. Speaker 1 (81%): Um. How how things been going? Speaker 5 (68%): Uh huh. Dr Zohoor (79%): I'm glad to. I'm glad it's settled. Speaker 1 (77%): How'd it go with um? How's the wound doing. Speaker 5 (43%): Right here. Speaker 1 (66%): Any more? Any more. Speaker 1 (44%): Um. Speaker 1 (69%): Any more wounds of any sort since we last talked? Speaker 5 (78%): Okay. Speaker 1 (74%): So things have been okay in that, on that respect. Speaker 1 (59%): I'm glad to hear it. Speaker 1 (71%): And then the. Dr Zohoor (73%): And then you mentioned your periods are still pretty heavy, right? Speaker 5 (61%): Okay. Dr Zohoor (67%): And remind me if the periods have been heavy for a very long time, or it's just more recent thing. Speaker 3 (65%): Yeah. Speaker 1 (64%): Fair enough. Speaker 1 (74%): But overall, like over the last year, have most of them been pretty heavy? Speaker 1 (51%): Okay. Speaker 1 (66%): And then, um. What's been the Speaker 1 (72%): What's been the decision in terms of? Speaker 1 (69%): In terms of kind of. Dr Zohoor (68%): How to manage that? Like I ask because your iron level is a little bit low. Dr Zohoor (73%): And which is coming mostly because of the heavy bleeding. Speaker 1 (66%): And um. Dr Zohoor (65%): I'm trying to. Has has anybody kind of talked to you about options in terms of, in terms of reducing the bleeding? Speaker 1 (60%): Okay. Dr Zohoor (72%): Fair enough. What have you been taking when the bleeding has been heavy? Speaker 1 (71%): Sure. What which pain meds have you been taking? Speaker 1 (69%): Okay, does it seem to help? Speaker 5 (68%): Okay. Dr Zohoor (65%): So there are basically, you know, three ways of trying to control bleeding. Speaker 1 (66%): One is to use. Dr Zohoor (65%): Use systemic hormones, meaning that hormone. Hello? Speaker 1 (65%): Hello. Speaker 1 (72%): Is there is, Is this an okay time? Speaker 1 (51%): It's okay. Dr Zohoor (62%): So one option is hormonal control using birth controls, where we basically are pausing your period. Speaker 1 (75%): The second option is an IUD. Dr Zohoor (61%): Where we um. Dr Zohoor (69%): Put a tiny little plastic thing in the uterus. Dr Zohoor (65%): Reduces the bleeding. The third option is Speaker 3 (75%): Um. Dr Zohoor (64%): Like anti-inflammatories, so Advil obviously is one of them. There's one other medication that sometimes works a bit better if you wanted to try",
+    "latency_ms": 6223,
+    "parsed_reason": "\"The first excerpt concludes with a clear farewell ('Thank you so much for coming in') and a wrap-up of a therapy session regarding anger. The second excerpt begins with a phone call initiation ('Is this an okay moment?') to a different patient (identified as 'Riana' or 'Sigori' in the transcript errors) to discuss blood work and heavy periods, indicating a distinct, separate encounter.\"",
+    "parsed_same_encounter": false,
+    "prev_session_id": "25e3e90b-58a0-4915-ab50-3c7a22139b8b",
+    "prev_tail_excerpt": "with that feeling when it happens? Speaker 1 (69%): Can I make a suggestion? Speaker 1 (75%): I'm going to suggest you thank the anchor. Speaker 1 (65%): Safety yourself. Safety that part of yourself. Dr Zohoor (66%): Thank you, anger. Thank you for trying to protect me. Speaker 1 (83%): Anger is the part of us that tries to defend us. Dr Zohoor (71%): Sounds really weird, but that's his main job. But the angry part of you is like Dr Zohoor (64%): Hey, this isn't. This is not. It's not cool. Like you just... Just upset? Right. Speaker 3 (60%): Um. Dr Zohoor (64%): It's a way of that part is just trying to protect you, and. Speaker 1 (71%): Like thank you. Speaker 1 (58%): Now. Speaker 1 (65%): I don't. I'm not. Dr Zohoor (63%): Doesn't feel right. The right place to like, shop. Speaker 5 (52%): Show it, right? Dr Zohoor (76%): And that's fine if you're angry and you decide to just hold it inside. Speaker 3 (81%): Um. Dr Zohoor (72%): And you just and it feels really weird to, to not. Dr Zohoor (68%): Tell people you're angry. Dr Zohoor (64%): But within you, just know that it's not a bad thing. Dr Zohoor (67%): It's that it socially makes things difficult sometimes, right? Dr Zohoor (66%): So you just want to be thankful for that anchor. Dr Zohoor (61%): When, when you feel it inside that part of you. Speaker 1 (75%): Does that make sense? Speaker 1 (56%): It's weird, isn't it? Dr Zohoor (80%): If it helps, um. The goal isn't for anger to go away as much as we all wanted to, you know? Because it's very uncomfortable, right? It's like a bitter taste. Dr Zohoor (75%): The goal is to have a good relationship with our anger. Like if anger was a friend of ours, that's always feels you know it's upset and so on and and so on; just trying to protect us. Dr Zohoor (68%): We'll be like, okay. Thank you. I appreciate your part of me. Thank you for trying to protect me. Dr Zohoor (67%): This situation, we're going to take it a bit easy. Dr Zohoor (73%): And you can still be friends with that friend, and so on. So anger is uncomfortable. Dr Zohoor (67%): But it has a role to play. It's because sometimes the situations will come up where it saves your life, right? Speaker 1 (63%): Protect you, or what is why. Speaker 1 (71%): I'll leave it. Is that all? Speaker 1 (65%): Okay, why don't we leave the Mets be then. Dr Zohoor (65%): Sounds like at the moment there's no major side effects. We're we're doing okay, and then we will give it six weeks. Okay? Speaker 5 (76%): Okay. Speaker 1 (59%): You keep going. Speaker 1 (80%): Thank you so much for coming in. I know these things are stressful, I appreciate it.",
+    "prompt_system": "You are reviewing two consecutive transcript excerpts from a medical office where a microphone records all day.\n\nThe system split these into two separate encounters, but they may actually be the SAME patient visit that was incorrectly split (e.g., due to a pause, phone call, or silence during an examination).\n\nDetermine if both excerpts are from the SAME patient encounter or DIFFERENT encounters.\n\nSigns they are the SAME encounter:\n- Same patient name or context referenced\n- Continuation of the same clinical discussion\n- No farewell/greeting between them\n- Natural pause (examination, looking at charts) rather than patient change\n- Same medical condition being discussed from different angles\n\nSigns they are DIFFERENT encounters:\n- Different patient names or contexts\n- A farewell followed by a new greeting\n- Clearly different clinical topics with no continuity\n\nReturn JSON:\n{\"same_encounter\": true, \"reason\": \"brief explanation\"}\nor\n{\"same_encounter\": false, \"reason\": \"brief explanation\"}\n\nReturn ONLY the JSON object, nothing else.",
+    "prompt_user": "EXCERPT FROM END OF PREVIOUS ENCOUNTER:\nwith that feeling when it happens? Speaker 1 (69%): Can I make a suggestion? Speaker 1 (75%): I'm going to suggest you thank the anchor. Speaker 1 (65%): Safety yourself. Safety that part of yourself. Dr Zohoor (66%): Thank you, anger. Thank you for trying to protect me. Speaker 1 (83%): Anger is the part of us that tries to defend us. Dr Zohoor (71%): Sounds really weird, but that's his main job. But the angry part of you is like Dr Zohoor (64%): Hey, this isn't. This is not. It's not cool. Like you just... Just upset? Right. Speaker 3 (60%): Um. Dr Zohoor (64%): It's a way of that part is just trying to protect you, and. Speaker 1 (71%): Like thank you. Speaker 1 (58%): Now. Speaker 1 (65%): I don't. I'm not. Dr Zohoor (63%): Doesn't feel right. The right place to like, shop. Speaker 5 (52%): Show it, right? Dr Zohoor (76%): And that's fine if you're angry and you decide to just hold it inside. Speaker 3 (81%): Um. Dr Zohoor (72%): And you just and it feels really weird to, to not. Dr Zohoor (68%): Tell people you're angry. Dr Zohoor (64%): But within you, just know that it's not a bad thing. Dr Zohoor (67%): It's that it socially makes things difficult sometimes, right? Dr Zohoor (66%): So you just want to be thankful for that anchor. Dr Zohoor (61%): When, when you feel it inside that part of you. Speaker 1 (75%): Does that make sense? Speaker 1 (56%): It's weird, isn't it? Dr Zohoor (80%): If it helps, um. The goal isn't for anger to go away as much as we all wanted to, you know? Because it's very uncomfortable, right? It's like a bitter taste. Dr Zohoor (75%): The goal is to have a good relationship with our anger. Like if anger was a friend of ours, that's always feels you know it's upset and so on and and so on; just trying to protect us. Dr Zohoor (68%): We'll be like, okay. Thank you. I appreciate your part of me. Thank you for trying to protect me. Dr Zohoor (67%): This situation, we're going to take it a bit easy. Dr Zohoor (73%): And you can still be friends with that friend, and so on. So anger is uncomfortable. Dr Zohoor (67%): But it has a role to play. It's because sometimes the situations will come up where it saves your life, right? Speaker 1 (63%): Protect you, or what is why. Speaker 1 (71%): I'll leave it. Is that all? Speaker 1 (65%): Okay, why don't we leave the Mets be then. Dr Zohoor (65%): Sounds like at the moment there's no major side effects. We're we're doing okay, and then we will give it six weeks. Okay? Speaker 5 (76%): Okay. Speaker 1 (59%): You keep going. Speaker 1 (80%): Thank you so much for coming in. I know these things are stressful, I appreciate it.\n\n---\n\nEXCERPT FROM START OF NEXT ENCOUNTER:\nSpeaker 1 (58%): Dr. Zagor. Speaker 1 (63%): About blood work. Speaker 1 (59%): Hi, Riana. Speaker 1 (76%): It's Doctor Zor her calling. Is this an okay moment? Speaker 1 (79%): Hello! Hi. Dr Zohoor (63%): I'm just calling. I think we... I'm calling to one see how you're doing, and the other one was Sigori of Bloodwork. Speaker 1 (81%): Um. How how things been going? Speaker 5 (68%): Uh huh. Dr Zohoor (79%): I'm glad to. I'm glad it's settled. Speaker 1 (77%): How'd it go with um? How's the wound doing. Speaker 5 (43%): Right here. Speaker 1 (66%): Any more? Any more. Speaker 1 (44%): Um. Speaker 1 (69%): Any more wounds of any sort since we last talked? Speaker 5 (78%): Okay. Speaker 1 (74%): So things have been okay in that, on that respect. Speaker 1 (59%): I'm glad to hear it. Speaker 1 (71%): And then the. Dr Zohoor (73%): And then you mentioned your periods are still pretty heavy, right? Speaker 5 (61%): Okay. Dr Zohoor (67%): And remind me if the periods have been heavy for a very long time, or it's just more recent thing. Speaker 3 (65%): Yeah. Speaker 1 (64%): Fair enough. Speaker 1 (74%): But overall, like over the last year, have most of them been pretty heavy? Speaker 1 (51%): Okay. Speaker 1 (66%): And then, um. What's been the Speaker 1 (72%): What's been the decision in terms of? Speaker 1 (69%): In terms of kind of. Dr Zohoor (68%): How to manage that? Like I ask because your iron level is a little bit low. Dr Zohoor (73%): And which is coming mostly because of the heavy bleeding. Speaker 1 (66%): And um. Dr Zohoor (65%): I'm trying to. Has has anybody kind of talked to you about options in terms of, in terms of reducing the bleeding? Speaker 1 (60%): Okay. Dr Zohoor (72%): Fair enough. What have you been taking when the bleeding has been heavy? Speaker 1 (71%): Sure. What which pain meds have you been taking? Speaker 1 (69%): Okay, does it seem to help? Speaker 5 (68%): Okay. Dr Zohoor (65%): So there are basically, you know, three ways of trying to control bleeding. Speaker 1 (66%): One is to use. Dr Zohoor (65%): Use systemic hormones, meaning that hormone. Hello? Speaker 1 (65%): Hello. Speaker 1 (72%): Is there is, Is this an okay time? Speaker 1 (51%): It's okay. Dr Zohoor (62%): So one option is hormonal control using birth controls, where we basically are pausing your period. Speaker 1 (75%): The second option is an IUD. Dr Zohoor (61%): Where we um. Dr Zohoor (69%): Put a tiny little plastic thing in the uterus. Dr Zohoor (65%): Reduces the bleeding. The third option is Speaker 3 (75%): Um. Dr Zohoor (64%): Like anti-inflammatories, so Advil obviously is one of them. There's one other medication that sometimes works a bit better if you wanted to try",
+    "response_raw": "{\"same_encounter\": false, \"reason\": \"The first excerpt concludes with a clear farewell ('Thank you so much for coming in') and a wrap-up of a therapy session regarding anger. The second excerpt begins with a phone call initiation ('Is this an okay moment?') to a different patient (identified as 'Riana' or 'Sigori' in the transcript errors) to discuss blood work and heavy periods, indicating a distinct, separate encounter.\"}",
+    "success": true,
+    "ts": "2026-04-01T17:26:05.763089+00:00"
+  },
+  "name_tracker": {
+    "majority_name": "Rhianna Horvath-jackson",
+    "unique_names": [
+      "David Albert William Krabbe",
+      "Rhianna Horvath-jackson",
+      "Karin Smits",
+      "Charlotte Jane (jane) Mcarthur",
+      "Aubrey Amanda Lyn Ludwig"
+    ],
+    "vote_count": 14
+  },
+  "outcome": {
+    "detection_method": "hybrid_llm",
+    "encounter_number": 7,
+    "is_clinical": true,
+    "patient_name": "Rhianna Horvath-jackson",
+    "session_id": "b75905e0-80c8-431e-9e98-4df591b9e306",
+    "was_merged": false,
+    "word_count": 974
+  },
+  "schema_version": 2,
+  "segments": [
+    {
+      "end_ms": 8839136,
+      "index": 956,
+      "speaker_confidence": 0.74534243,
+      "speaker_id": "Speaker 5",
+      "start_ms": 8838196,
+      "text": "Okay.",
+      "ts": "2026-04-01T15:57:36.129822+00:00"
+    },
+    {
+      "end_ms": 9036288,
+      "index": 957,
+      "speaker_confidence": 0.67193544,
+      "speaker_id": "Speaker 5",
+      "start_ms": 9035380,
+      "text": "Oh my.",
+      "ts": "2026-04-01T16:00:53.239634+00:00"
+    },
+    {
+      "end_ms": 9047072,
+      "index": 958,
+      "speaker_confidence": 0.70445377,
+      "speaker_id": "Speaker 5",
+      "start_ms": 9045460,
+      "text": "Okay, let's just count.",
+      "ts": "2026-04-01T16:01:04.030112+00:00"
+    },
+    {
+      "end_ms": 9174944,
+      "index": 959,
+      "speaker_confidence": 0.85891336,
+      "speaker_id": "Speaker 5",
+      "start_ms": 9174100,
+      "text": "Right.",
+      "ts": "2026-04-01T16:03:11.910750+00:00"
+    },
+    {
+      "end_ms": 10155264,
+      "index": 960,
+      "speaker_confidence": 0.64019716,
+      "speaker_id": "Speaker 5",
+      "start_ms": 10154388,
+      "text": "Yeah.",
+      "ts": "2026-04-01T16:19:32.614512+00:00"
+    },
+    {
+      "end_ms": 12298240,
+      "index": 961,
+      "speaker_confidence": 0.79674,
+      "speaker_id": "Speaker 5",
+      "start_ms": 12297300,
+      "text": "Like.",
+      "ts": "2026-04-01T16:55:15.935864+00:00"
+    },
+    {
+      "end_ms": 12301248,
+      "index": 962,
+      "speaker_confidence": 0.811801,
+      "speaker_id": "Speaker 5",
+      "start_ms": 12298100,
+      "text": "I think we have next question.",
+      "ts": "2026-04-01T16:55:18.818541+00:00"
+    },
+    {
+      "end_ms": 12302560,
+      "index": 963,
+      "speaker_confidence": 0.47980282,
+      "speaker_id": "Speaker 5",
+      "start_ms": 12301012,
+      "text": "I just pay.",
+      "ts": "2026-04-01T16:55:19.697979+00:00"
+    },
+    {
+      "end_ms": 12303552,
+      "index": 964,
+      "speaker_confidence": 0.6038325,
+      "speaker_id": "Speaker 5",
+      "start_ms": 12302260,
+      "text": "Back down.",
+      "ts": "2026-04-01T16:55:20.501039+00:00"
+    },
+    {
+      "end_ms": 12305600,
+      "index": 965,
+      "speaker_confidence": 0.7714658,
+      "speaker_id": "Speaker 5",
+      "start_ms": 12303924,
+      "text": "Okay.",
+      "ts": "2026-04-01T16:55:22.629160+00:00"
+    },
+    {
+      "end_ms": 12307424,
+      "index": 966,
+      "speaker_confidence": 0.5465937,
+      "speaker_id": "Speaker 5",
+      "start_ms": 12305492,
+      "text": "I can't see anything.",
+      "ts": "2026-04-01T16:55:24.510152+00:00"
+    },
+    {
+      "end_ms": 12311232,
+      "index": 967,
+      "speaker_confidence": 0.73818207,
+      "speaker_id": "Speaker 5",
+      "start_ms": 12310324,
+      "text": "Okay.",
+      "ts": "2026-04-01T16:55:28.164493+00:00"
+    },
+    {
+      "end_ms": 12449120,
+      "index": 968,
+      "speaker_confidence": 0.7254082,
+      "speaker_id": "Speaker 5",
+      "start_ms": 12447732,
+      "text": "We're going to be fine.",
+      "ts": "2026-04-01T16:57:46.245860+00:00"
+    },
+    {
+      "end_ms": 12530848,
+      "index": 969,
+      "speaker_confidence": 0.7799384,
+      "speaker_id": "Speaker 5",
+      "start_ms": 12529108,
+      "text": "So I'm gonna be in.",
+      "ts": "2026-04-01T16:59:07.948907+00:00"
+    },
+    {
+      "end_ms": 12542048,
+      "index": 970,
+      "speaker_confidence": 0.6094175,
+      "speaker_id": "Speaker 5",
+      "start_ms": 12539636,
+      "text": "It is so good here.",
+      "ts": "2026-04-01T16:59:19.072482+00:00"
+    },
+    {
+      "end_ms": 12703584,
+      "index": 971,
+      "speaker_confidence": 0.7511514,
+      "speaker_id": "Speaker 5",
+      "start_ms": 12701332,
+      "text": "I'm gonna do it.",
+      "ts": "2026-04-01T17:02:00.749949+00:00"
+    },
+    {
+      "end_ms": 12713984,
+      "index": 972,
+      "speaker_confidence": 0.66114706,
+      "speaker_id": "Speaker 5",
+      "start_ms": 12712244,
+      "text": "It's probably for Johnny Depp.",
+      "ts": "2026-04-01T17:02:11.026789+00:00"
+    },
+    {
+      "end_ms": 12719072,
+      "index": 973,
+      "speaker_confidence": 0.59661204,
+      "speaker_id": "Speaker 5",
+      "start_ms": 12717108,
+      "text": "I think Carrie put it there.",
+      "ts": "2026-04-01T17:02:16.115143+00:00"
+    },
+    {
+      "end_ms": 12730336,
+      "index": 974,
+      "speaker_confidence": 0.7529606,
+      "speaker_id": "Speaker 5",
+      "start_ms": 12729268,
+      "text": "Three.",
+      "ts": "2026-04-01T17:02:27.370135+00:00"
+    },
+    {
+      "end_ms": 12923456,
+      "index": 975,
+      "speaker_confidence": 0.83575195,
+      "speaker_id": "Speaker 5",
+      "start_ms": 12922612,
+      "text": "Hey.",
+      "ts": "2026-04-01T17:05:40.513751+00:00"
+    },
+    {
+      "end_ms": 13133856,
+      "index": 976,
+      "speaker_confidence": 0.59322697,
+      "speaker_id": "Speaker 5",
+      "start_ms": 13129524,
+      "text": "You need your kids to have a surprise when you go home. You know, tell them it's over at noon.",
+      "ts": "2026-04-01T17:09:11.231418+00:00"
+    },
+    {
+      "end_ms": 13134752,
+      "index": 977,
+      "speaker_confidence": 0.72977144,
+      "speaker_id": "Speaker 3",
+      "start_ms": 13133844,
+      "text": "No.",
+      "ts": "2026-04-01T17:09:11.676869+00:00"
+    },
+    {
+      "end_ms": 13137504,
+      "index": 978,
+      "speaker_confidence": 0.79972845,
+      "speaker_id": "Speaker 5",
+      "start_ms": 13136660,
+      "text": "That's it.",
+      "ts": "2026-04-01T17:09:14.426297+00:00"
+    },
+    {
+      "end_ms": 13142912,
+      "index": 979,
+      "speaker_confidence": 0.5464142,
+      "speaker_id": "Speaker 5",
+      "start_ms": 13138676,
+      "text": "I think it's just the grandparent.",
+      "ts": "2026-04-01T17:09:20.153744+00:00"
+    },
+    {
+      "end_ms": 13679136,
+      "index": 980,
+      "speaker_confidence": 0.5833919,
+      "speaker_id": "Speaker 1",
+      "start_ms": 13677204,
+      "text": "Dr. Zagor.",
+      "ts": "2026-04-01T17:18:16.366706+00:00"
+    },
+    {
+      "end_ms": 13680160,
+      "index": 981,
+      "speaker_confidence": 0.62564474,
+      "speaker_id": "Speaker 1",
+      "start_ms": 13678996,
+      "text": "About blood work.",
+      "ts": "2026-04-01T17:18:17.097378+00:00"
+    },
+    {
+      "end_ms": 13694944,
+      "index": 982,
+      "speaker_confidence": 0.58567625,
+      "speaker_id": "Speaker 1",
+      "start_ms": 13693684,
+      "text": "Hi, Riana.",
+      "ts": "2026-04-01T17:18:31.931701+00:00"
+    },
+    {
+      "end_ms": 13699456,
+      "index": 983,
+      "speaker_confidence": 0.7631981,
+      "speaker_id": "Speaker 1",
+      "start_ms": 13695988,
+      "text": "It's Doctor Zor her calling. Is this an okay moment?",
+      "ts": "2026-04-01T17:18:36.678259+00:00"
+    },
+    {
+      "end_ms": 13706528,
+      "index": 984,
+      "speaker_confidence": 0.7914825,
+      "speaker_id": "Speaker 1",
+      "start_ms": 13705076,
+      "text": "Hello! Hi.",
+      "ts": "2026-04-01T17:18:43.506483+00:00"
+    },
+    {
+      "end_ms": 13712992,
+      "index": 985,
+      "speaker_confidence": 0.62661207,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 13706356,
+      "text": "I'm just calling. I think we... I'm calling to one see how you're doing, and the other one was Sigori of Bloodwork.",
+      "ts": "2026-04-01T17:18:50.590836+00:00"
+    },
+    {
+      "end_ms": 13716416,
+      "index": 986,
+      "speaker_confidence": 0.8058732,
+      "speaker_id": "Speaker 1",
+      "start_ms": 13713268,
+      "text": "Um. How how things been going?",
+      "ts": "2026-04-01T17:18:53.554972+00:00"
+    },
+    {
+      "end_ms": 13728064,
+      "index": 987,
+      "speaker_confidence": 0.6843892,
+      "speaker_id": "Speaker 5",
+      "start_ms": 13727028,
+      "text": "Uh huh.",
+      "ts": "2026-04-01T17:19:05.085743+00:00"
+    },
+    {
+      "end_ms": 13737824,
+      "index": 988,
+      "speaker_confidence": 0.78794646,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 13735316,
+      "text": "I'm glad to. I'm glad it's settled.",
+      "ts": "2026-04-01T17:19:14.954115+00:00"
+    },
+    {
+      "end_ms": 13741088,
+      "index": 989,
+      "speaker_confidence": 0.7678151,
+      "speaker_id": "Speaker 1",
+      "start_ms": 13737652,
+      "text": "How'd it go with um? How's the wound doing.",
+      "ts": "2026-04-01T17:19:18.293331+00:00"
+    },
+    {
+      "end_ms": 13752416,
+      "index": 990,
+      "speaker_confidence": 0.43248093,
+      "speaker_id": "Speaker 5",
+      "start_ms": 13751092,
+      "text": "Right here.",
+      "ts": "2026-04-01T17:19:29.453568+00:00"
+    },
+    {
+      "end_ms": 13754592,
+      "index": 991,
+      "speaker_confidence": 0.65557426,
+      "speaker_id": "Speaker 1",
+      "start_ms": 13752212,
+      "text": "Any more? Any more.",
+      "ts": "2026-04-01T17:19:31.662445+00:00"
+    },
+    {
+      "end_ms": 13755552,
+      "index": 992,
+      "speaker_confidence": 0.4417502,
+      "speaker_id": "Speaker 1",
+      "start_ms": 13754356,
+      "text": "Um.",
+      "ts": "2026-04-01T17:19:32.492546+00:00"
+    },
+    {
+      "end_ms": 13759168,
+      "index": 993,
+      "speaker_confidence": 0.6939012,
+      "speaker_id": "Speaker 1",
+      "start_ms": 13755828,
+      "text": "Any more wounds of any sort since we last talked?",
+      "ts": "2026-04-01T17:19:36.340852+00:00"
+    },
+    {
+      "end_ms": 13761632,
+      "index": 994,
+      "speaker_confidence": 0.7825989,
+      "speaker_id": "Speaker 5",
+      "start_ms": 13760596,
+      "text": "Okay.",
+      "ts": "2026-04-01T17:19:38.535111+00:00"
+    },
+    {
+      "end_ms": 13764576,
+      "index": 995,
+      "speaker_confidence": 0.7360707,
+      "speaker_id": "Speaker 1",
+      "start_ms": 13761716,
+      "text": "So things have been okay in that, on that respect.",
+      "ts": "2026-04-01T17:19:41.728573+00:00"
+    },
+    {
+      "end_ms": 13767616,
+      "index": 996,
+      "speaker_confidence": 0.58777523,
+      "speaker_id": "Speaker 1",
+      "start_ms": 13766100,
+      "text": "I'm glad to hear it.",
+      "ts": "2026-04-01T17:19:44.643893+00:00"
+    },
+    {
+      "end_ms": 13770560,
+      "index": 997,
+      "speaker_confidence": 0.71334034,
+      "speaker_id": "Speaker 1",
+      "start_ms": 13767636,
+      "text": "And then the.",
+      "ts": "2026-04-01T17:19:47.650037+00:00"
+    },
+    {
+      "end_ms": 13773824,
+      "index": 998,
+      "speaker_confidence": 0.73025817,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 13770484,
+      "text": "And then you mentioned your periods are still pretty heavy, right?",
+      "ts": "2026-04-01T17:19:51.041747+00:00"
+    },
+    {
+      "end_ms": 13776672,
+      "index": 999,
+      "speaker_confidence": 0.6133679,
+      "speaker_id": "Speaker 5",
+      "start_ms": 13775796,
+      "text": "Okay.",
+      "ts": "2026-04-01T17:19:53.639019+00:00"
+    },
+    {
+      "end_ms": 13782880,
+      "index": 1000,
+      "speaker_confidence": 0.6707858,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 13776724,
+      "text": "And remind me if the periods have been heavy for a very long time, or it's just more recent thing.",
+      "ts": "2026-04-01T17:20:00.404322+00:00"
+    },
+    {
+      "end_ms": 13801312,
+      "index": 1001,
+      "speaker_confidence": 0.6470421,
+      "speaker_id": "Speaker 3",
+      "start_ms": 13800148,
+      "text": "Yeah.",
+      "ts": "2026-04-01T17:20:18.289134+00:00"
+    },
+    {
+      "end_ms": 13804384,
+      "index": 1002,
+      "speaker_confidence": 0.63525224,
+      "speaker_id": "Speaker 1",
+      "start_ms": 13803252,
+      "text": "Fair enough.",
+      "ts": "2026-04-01T17:20:21.336533+00:00"
+    },
+    {
+      "end_ms": 13808768,
+      "index": 1003,
+      "speaker_confidence": 0.7425066,
+      "speaker_id": "Speaker 1",
+      "start_ms": 13804212,
+      "text": "But overall, like over the last year, have most of them been pretty heavy?",
+      "ts": "2026-04-01T17:20:26.086828+00:00"
+    },
+    {
+      "end_ms": 13811424,
+      "index": 1004,
+      "speaker_confidence": 0.5148401,
+      "speaker_id": "Speaker 1",
+      "start_ms": 13810516,
+      "text": "Okay.",
+      "ts": "2026-04-01T17:20:28.393634+00:00"
+    },
+    {
+      "end_ms": 13814432,
+      "index": 1005,
+      "speaker_confidence": 0.6563744,
+      "speaker_id": "Speaker 1",
+      "start_ms": 13811444,
+      "text": "And then, um. What's been the",
+      "ts": "2026-04-01T17:20:31.541333+00:00"
+    },
+    {
+      "end_ms": 13817504,
+      "index": 1006,
+      "speaker_confidence": 0.7214308,
+      "speaker_id": "Speaker 1",
+      "start_ms": 13814260,
+      "text": "What's been the decision in terms of?",
+      "ts": "2026-04-01T17:20:34.644018+00:00"
+    },
+    {
+      "end_ms": 13819936,
+      "index": 1007,
+      "speaker_confidence": 0.69198143,
+      "speaker_id": "Speaker 1",
+      "start_ms": 13818100,
+      "text": "In terms of kind of.",
+      "ts": "2026-04-01T17:20:36.956598+00:00"
+    },
+    {
+      "end_ms": 13824864,
+      "index": 1008,
+      "speaker_confidence": 0.68435884,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 13820244,
+      "text": "How to manage that? Like I ask because your iron level is a little bit low.",
+      "ts": "2026-04-01T17:20:42.145801+00:00"
+    },
+    {
+      "end_ms": 13828800,
+      "index": 1009,
+      "speaker_confidence": 0.728398,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 13824820,
+      "text": "And which is coming mostly because of the heavy bleeding.",
+      "ts": "2026-04-01T17:20:46.044450+00:00"
+    },
+    {
+      "end_ms": 13830592,
+      "index": 1010,
+      "speaker_confidence": 0.6607581,
+      "speaker_id": "Speaker 1",
+      "start_ms": 13828596,
+      "text": "And um.",
+      "ts": "2026-04-01T17:20:47.605006+00:00"
+    },
+    {
+      "end_ms": 13836896,
+      "index": 1011,
+      "speaker_confidence": 0.64850146,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 13831092,
+      "text": "I'm trying to. Has has anybody kind of talked to you about options in terms of, in terms of reducing the bleeding?",
+      "ts": "2026-04-01T17:20:54.415066+00:00"
+    },
+    {
+      "end_ms": 13844224,
+      "index": 1012,
+      "speaker_confidence": 0.60083854,
+      "speaker_id": "Speaker 1",
+      "start_ms": 13843188,
+      "text": "Okay.",
+      "ts": "2026-04-01T17:21:01.263933+00:00"
+    },
+    {
+      "end_ms": 13849536,
+      "index": 1013,
+      "speaker_confidence": 0.7197458,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 13845044,
+      "text": "Fair enough. What have you been taking when the bleeding has been heavy?",
+      "ts": "2026-04-01T17:21:06.823024+00:00"
+    },
+    {
+      "end_ms": 13858784,
+      "index": 1014,
+      "speaker_confidence": 0.7071714,
+      "speaker_id": "Speaker 1",
+      "start_ms": 13855796,
+      "text": "Sure. What which pain meds have you been taking?",
+      "ts": "2026-04-01T17:21:15.923499+00:00"
+    },
+    {
+      "end_ms": 13866304,
+      "index": 1015,
+      "speaker_confidence": 0.6912398,
+      "speaker_id": "Speaker 1",
+      "start_ms": 13863668,
+      "text": "Okay, does it seem to help?",
+      "ts": "2026-04-01T17:21:23.428274+00:00"
+    },
+    {
+      "end_ms": 13875104,
+      "index": 1016,
+      "speaker_confidence": 0.680682,
+      "speaker_id": "Speaker 5",
+      "start_ms": 13874196,
+      "text": "Okay.",
+      "ts": "2026-04-01T17:21:32.124603+00:00"
+    },
+    {
+      "end_ms": 13884800,
+      "index": 1017,
+      "speaker_confidence": 0.6523223,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 13880180,
+      "text": "So there are basically, you know, three ways of trying to control bleeding.",
+      "ts": "2026-04-01T17:21:42.119743+00:00"
+    },
+    {
+      "end_ms": 13888256,
+      "index": 1018,
+      "speaker_confidence": 0.656068,
+      "speaker_id": "Speaker 1",
+      "start_ms": 13884596,
+      "text": "One is to use.",
+      "ts": "2026-04-01T17:21:45.368983+00:00"
+    },
+    {
+      "end_ms": 13892192,
+      "index": 1019,
+      "speaker_confidence": 0.64533293,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 13888436,
+      "text": "Use systemic hormones, meaning that hormone. Hello?",
+      "ts": "2026-04-01T17:21:49.452928+00:00"
+    },
+    {
+      "end_ms": 13895232,
+      "index": 1020,
+      "speaker_confidence": 0.6464564,
+      "speaker_id": "Speaker 1",
+      "start_ms": 13894004,
+      "text": "Hello.",
+      "ts": "2026-04-01T17:21:52.371713+00:00"
+    },
+    {
+      "end_ms": 13898656,
+      "index": 1021,
+      "speaker_confidence": 0.71524227,
+      "speaker_id": "Speaker 1",
+      "start_ms": 13895412,
+      "text": "Is there is, Is this an okay time?",
+      "ts": "2026-04-01T17:21:55.786345+00:00"
+    },
+    {
+      "end_ms": 13904032,
+      "index": 1022,
+      "speaker_confidence": 0.5096165,
+      "speaker_id": "Speaker 1",
+      "start_ms": 13902708,
+      "text": "It's okay.",
+      "ts": "2026-04-01T17:22:01.007710+00:00"
+    },
+    {
+      "end_ms": 13911232,
+      "index": 1023,
+      "speaker_confidence": 0.6190188,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 13904660,
+      "text": "So one option is hormonal control using birth controls, where we basically are pausing your period.",
+      "ts": "2026-04-01T17:22:08.753903+00:00"
+    },
+    {
+      "end_ms": 13914592,
+      "index": 1024,
+      "speaker_confidence": 0.7477852,
+      "speaker_id": "Speaker 1",
+      "start_ms": 13911060,
+      "text": "The second option is an IUD.",
+      "ts": "2026-04-01T17:22:11.735939+00:00"
+    },
+    {
+      "end_ms": 13917216,
+      "index": 1025,
+      "speaker_confidence": 0.608541,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 13914420,
+      "text": "Where we um.",
+      "ts": "2026-04-01T17:22:14.279657+00:00"
+    },
+    {
+      "end_ms": 13920992,
+      "index": 1026,
+      "speaker_confidence": 0.6869998,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 13917236,
+      "text": "Put a tiny little plastic thing in the uterus.",
+      "ts": "2026-04-01T17:22:18.168298+00:00"
+    },
+    {
+      "end_ms": 13925408,
+      "index": 1027,
+      "speaker_confidence": 0.65162516,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 13920756,
+      "text": "Reduces the bleeding. The third option is",
+      "ts": "2026-04-01T17:22:22.649682+00:00"
+    },
+    {
+      "end_ms": 13926912,
+      "index": 1028,
+      "speaker_confidence": 0.74995077,
+      "speaker_id": "Speaker 3",
+      "start_ms": 13925332,
+      "text": "Um.",
+      "ts": "2026-04-01T17:22:23.908331+00:00"
+    },
+    {
+      "end_ms": 13939840,
+      "index": 1029,
+      "speaker_confidence": 0.6386998,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 13927444,
+      "text": "Like anti-inflammatories, so Advil obviously is one of them. There's one other medication that sometimes works a bit better if you wanted to try it where you take it and it may help with the bleeding and pain a bit more.",
+      "ts": "2026-04-01T17:22:37.982987+00:00"
+    },
+    {
+      "end_ms": 13940768,
+      "index": 1030,
+      "speaker_confidence": 0.7522454,
+      "speaker_id": "Speaker 3",
+      "start_ms": 13939540,
+      "text": "Um.",
+      "ts": "2026-04-01T17:22:38.184723+00:00"
+    },
+    {
+      "end_ms": 13943552,
+      "index": 1031,
+      "speaker_confidence": 0.68501335,
+      "speaker_id": "Speaker 1",
+      "start_ms": 13940820,
+      "text": "But the real way of kind of settling it.",
+      "ts": "2026-04-01T17:22:40.682069+00:00"
+    },
+    {
+      "end_ms": 13946144,
+      "index": 1032,
+      "speaker_confidence": 0.54352784,
+      "speaker_id": "Speaker 1",
+      "start_ms": 13943444,
+      "text": "Is to con, to control the cycle.",
+      "ts": "2026-04-01T17:22:43.271504+00:00"
+    },
+    {
+      "end_ms": 13950240,
+      "index": 1033,
+      "speaker_confidence": 0.7421426,
+      "speaker_id": "Speaker 1",
+      "start_ms": 13946996,
+      "text": "So I'm not sure. Are they?",
+      "ts": "2026-04-01T17:22:47.385596+00:00"
+    },
+    {
+      "end_ms": 13954432,
+      "index": 1034,
+      "speaker_confidence": 0.78801626,
+      "speaker_id": "Speaker 1",
+      "start_ms": 13951668,
+      "text": "Are they are they heavy enough that.",
+      "ts": "2026-04-01T17:22:51.546083+00:00"
+    },
+    {
+      "end_ms": 13956256,
+      "index": 1035,
+      "speaker_confidence": 0.72637844,
+      "speaker_id": "Speaker 1",
+      "start_ms": 13954260,
+      "text": "They're an issue right now.",
+      "ts": "2026-04-01T17:22:53.282814+00:00"
+    },
+    {
+      "end_ms": 13960832,
+      "index": 1036,
+      "speaker_confidence": 0.66940814,
+      "speaker_id": "Speaker 5",
+      "start_ms": 13959700,
+      "text": "Okay.",
+      "ts": "2026-04-01T17:22:57.769869+00:00"
+    },
+    {
+      "end_ms": 13964416,
+      "index": 1037,
+      "speaker_confidence": 0.6863989,
+      "speaker_id": "Speaker 1",
+      "start_ms": 13963124,
+      "text": "Yeah. So.",
+      "ts": "2026-04-01T17:23:01.440057+00:00"
+    },
+    {
+      "end_ms": 13973632,
+      "index": 1038,
+      "speaker_confidence": 0.6264717,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 13965492,
+      "text": "But those are, those are the options. The three options: either hormonal control and IUD really or",
+      "ts": "2026-04-01T17:23:11.250648+00:00"
+    },
+    {
+      "end_ms": 13975744,
+      "index": 1039,
+      "speaker_confidence": 0.6250327,
+      "speaker_id": "Speaker 1",
+      "start_ms": 13973972,
+      "text": "Slightly different pill.",
+      "ts": "2026-04-01T17:23:12.787757+00:00"
+    },
+    {
+      "end_ms": 13977024,
+      "index": 1040,
+      "speaker_confidence": 0.67916447,
+      "speaker_id": "Speaker 3",
+      "start_ms": 13975860,
+      "text": "Um.",
+      "ts": "2026-04-01T17:23:14.006220+00:00"
+    },
+    {
+      "end_ms": 13979264,
+      "index": 1041,
+      "speaker_confidence": 0.5883584,
+      "speaker_id": "Speaker 1",
+      "start_ms": 13977780,
+      "text": "So I just.",
+      "ts": "2026-04-01T17:23:16.251253+00:00"
+    },
+    {
+      "end_ms": 13985728,
+      "index": 1042,
+      "speaker_confidence": 0.6768052,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 13979220,
+      "text": "There's so much background conversation, so I'm not sure what your thoughts on. Is this something?",
+      "ts": "2026-04-01T17:23:23.216239+00:00"
+    },
+    {
+      "end_ms": 13989440,
+      "index": 1043,
+      "speaker_confidence": 0.62628525,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 13987412,
+      "text": "Can you hear me? Okay.",
+      "ts": "2026-04-01T17:23:26.492919+00:00"
+    },
+    {
+      "end_ms": 13991520,
+      "index": 1044,
+      "speaker_confidence": 0.8245072,
+      "speaker_id": "Speaker 5",
+      "start_ms": 13990516,
+      "text": "Okay.",
+      "ts": "2026-04-01T17:23:28.459451+00:00"
+    },
+    {
+      "end_ms": 13998976,
+      "index": 1045,
+      "speaker_confidence": 0.69389457,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 13992884,
+      "text": "No, I'm just hearing all the conversation behind you. So it's just—I'm—I'm just not sure if there's a lot of",
+      "ts": "2026-04-01T17:23:36.481987+00:00"
+    },
+    {
+      "end_ms": 14000288,
+      "index": 1046,
+      "speaker_confidence": 0.53689414,
+      "speaker_id": "Speaker 5",
+      "start_ms": 13998740,
+      "text": "So what are.",
+      "ts": "2026-04-01T17:23:37.249424+00:00"
+    },
+    {
+      "end_ms": 14002176,
+      "index": 1047,
+      "speaker_confidence": 0.61309123,
+      "speaker_id": "Speaker 1",
+      "start_ms": 14000340,
+      "text": "What are your thoughts?",
+      "ts": "2026-04-01T17:23:39.199617+00:00"
+    },
+    {
+      "end_ms": 14012480,
+      "index": 1048,
+      "speaker_confidence": 0.5578163,
+      "speaker_id": "Speaker 5",
+      "start_ms": 14010260,
+      "text": "Okay, is there.",
+      "ts": "2026-04-01T17:23:49.604879+00:00"
+    },
+    {
+      "end_ms": 14015136,
+      "index": 1049,
+      "speaker_confidence": 0.61946493,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 14012276,
+      "text": "Is there a pharmacy you tend to go to?",
+      "ts": "2026-04-01T17:23:52.272335+00:00"
+    },
+    {
+      "end_ms": 14020160,
+      "index": 1050,
+      "speaker_confidence": 0.6316176,
+      "speaker_id": "Speaker 1",
+      "start_ms": 14018676,
+      "text": "Which which one?",
+      "ts": "2026-04-01T17:23:57.170565+00:00"
+    },
+    {
+      "end_ms": 14035456,
+      "index": 1051,
+      "speaker_confidence": 0.5387992,
+      "speaker_id": "Speaker 5",
+      "start_ms": 14034324,
+      "text": "Yes.",
+      "ts": "2026-04-01T17:24:12.431271+00:00"
+    },
+    {
+      "end_ms": 14037632,
+      "index": 1052,
+      "speaker_confidence": 0.6397856,
+      "speaker_id": "Speaker 5",
+      "start_ms": 14036212,
+      "text": "Alright, sure.",
+      "ts": "2026-04-01T17:24:14.692500+00:00"
+    },
+    {
+      "end_ms": 14044384,
+      "index": 1053,
+      "speaker_confidence": 0.6488357,
+      "speaker_id": "Speaker 5",
+      "start_ms": 14043380,
+      "text": "Sure.",
+      "ts": "2026-04-01T17:24:21.285379+00:00"
+    },
+    {
+      "end_ms": 14051552,
+      "index": 1054,
+      "speaker_confidence": 0.7837867,
+      "speaker_id": "Speaker 5",
+      "start_ms": 14050708,
+      "text": "Okay.",
+      "ts": "2026-04-01T17:24:28.476092+00:00"
+    },
+    {
+      "end_ms": 14061728,
+      "index": 1055,
+      "speaker_confidence": 0.6776722,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 14051892,
+      "text": "So what I'll do is, I'll fax over the prescription there. There's only really one other med apart from Advil to try, and I'm not sure in your case obviously how much better it works.",
+      "ts": "2026-04-01T17:24:39.599440+00:00"
+    },
+    {
+      "end_ms": 14069568,
+      "index": 1056,
+      "speaker_confidence": 0.6663813,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 14061588,
+      "text": "Or you know whether, whether it will—it will how much it will help compared to Advil. But if it's covered, you can—you can give it a try.",
+      "ts": "2026-04-01T17:24:47.237169+00:00"
+    },
+    {
+      "end_ms": 14070624,
+      "index": 1057,
+      "speaker_confidence": 0.7640011,
+      "speaker_id": "Speaker 3",
+      "start_ms": 14069300,
+      "text": "Um.",
+      "ts": "2026-04-01T17:24:47.540949+00:00"
+    },
+    {
+      "end_ms": 14077952,
+      "index": 1058,
+      "speaker_confidence": 0.7291154,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 14070484,
+      "text": "And then the other thing would be to consider taking an iron supplement because your iron's low from the, from the bleeding.",
+      "ts": "2026-04-01T17:24:55.503251+00:00"
+    },
+    {
+      "end_ms": 14081632,
+      "index": 1059,
+      "speaker_confidence": 0.7067662,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 14077684,
+      "text": "And that often worsens anxiety symptoms.",
+      "ts": "2026-04-01T17:24:58.989085+00:00"
+    },
+    {
+      "end_ms": 14088480,
+      "index": 1060,
+      "speaker_confidence": 0.75655895,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 14081716,
+      "text": "So it's something to consider. Um, have you been on? Yeah, definitely. Have you been on iron before?",
+      "ts": "2026-04-01T17:25:06.076583+00:00"
+    },
+    {
+      "end_ms": 14093344,
+      "index": 1061,
+      "speaker_confidence": 0.7277517,
+      "speaker_id": "Speaker 1",
+      "start_ms": 14090516,
+      "text": "Iron tablet. Iron supplements.",
+      "ts": "2026-04-01T17:25:10.425800+00:00"
+    },
+    {
+      "end_ms": 14094912,
+      "index": 1062,
+      "speaker_confidence": 0.7791415,
+      "speaker_id": "Speaker 5",
+      "start_ms": 14094068,
+      "text": "Okay.",
+      "ts": "2026-04-01T17:25:11.898216+00:00"
+    },
+    {
+      "end_ms": 14104960,
+      "index": 1063,
+      "speaker_confidence": 0.8548258,
+      "speaker_id": "Speaker 1",
+      "start_ms": 14097940,
+      "text": "So what I'll do is, I'll fax over a prescription for some iron supplements. The problem with iron supplements is that often",
+      "ts": "2026-04-01T17:25:22.555755+00:00"
+    },
+    {
+      "end_ms": 14107584,
+      "index": 1064,
+      "speaker_confidence": 0.55528206,
+      "speaker_id": "Speaker 1",
+      "start_ms": 14104820,
+      "text": "It does affect your house.",
+      "ts": "2026-04-01T17:25:24.686783+00:00"
+    },
+    {
+      "end_ms": 14113696,
+      "index": 1065,
+      "speaker_confidence": 0.6767474,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 14107316,
+      "text": "But a lot of people tolerate. Okay, some people. But in short, if you find that your",
+      "ts": "2026-04-01T17:25:31.107912+00:00"
+    },
+    {
+      "end_ms": 14118048,
+      "index": 1066,
+      "speaker_confidence": 0.6966023,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 14113460,
+      "text": "Kind of gives you cramping or diarrhea, constipation. You can stop taking it.",
+      "ts": "2026-04-01T17:25:35.341842+00:00"
+    },
+    {
+      "end_ms": 14122656,
+      "index": 1067,
+      "speaker_confidence": 0.7624654,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 14117748,
+      "text": "But if you tolerate okay, then it may help. Um, just overall.",
+      "ts": "2026-04-01T17:25:40.005855+00:00"
+    },
+    {
+      "end_ms": 14124704,
+      "index": 1068,
+      "speaker_confidence": 0.6766449,
+      "speaker_id": "Speaker 1",
+      "start_ms": 14123316,
+      "text": "Is that okay?",
+      "ts": "2026-04-01T17:25:41.686130+00:00"
+    },
+    {
+      "end_ms": 14128064,
+      "index": 1069,
+      "speaker_confidence": 0.7879047,
+      "speaker_id": "Speaker 1",
+      "start_ms": 14124852,
+      "text": "And then, if anything else comes up, let me know. Yeah.",
+      "ts": "2026-04-01T17:25:45.248583+00:00"
+    },
+    {
+      "end_ms": 14130272,
+      "index": 1070,
+      "speaker_confidence": 0.55642486,
+      "speaker_id": "Speaker 1",
+      "start_ms": 14128404,
+      "text": "I'm glad I've won this matter.",
+      "ts": "2026-04-01T17:25:47.308807+00:00"
+    },
+    {
+      "end_ms": 14141248,
+      "index": 1071,
+      "speaker_confidence": 0.6192341,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 14134004,
+      "text": "The the yeah so your white count is kind of fluctuated, but again it's not something that we actively worry about.",
+      "ts": "2026-04-01T17:25:59.004507+00:00"
+    },
+    {
+      "end_ms": 14143712,
+      "index": 1072,
+      "speaker_confidence": 0.6129648,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 14141620,
+      "text": "And then your.",
+      "ts": "2026-04-01T17:26:01.337183+00:00"
+    },
+    {
+      "end_ms": 14147552,
+      "index": 1073,
+      "speaker_confidence": 0.64397013,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 14143444,
+      "text": "The the your red blood cells are small because they're low iron.",
+      "ts": "2026-04-01T17:26:04.926166+00:00"
+    }
+  ],
+  "sensor_transitions": [
+    {
+      "from": "absent",
+      "to": "present",
+      "ts": "2026-04-01T16:55:03.214247+00:00"
+    },
+    {
+      "from": "present",
+      "to": "absent",
+      "ts": "2026-04-01T17:04:08.212569+00:00"
+    },
+    {
+      "from": "absent",
+      "to": "present",
+      "ts": "2026-04-01T17:10:26.745717+00:00"
+    }
+  ],
+  "soap_result": {
+    "latency_ms": 5120,
+    "success": true,
+    "ts": "2026-04-01T17:25:59.510581+00:00",
+    "word_count": 974
+  },
+  "split_decision": {
+    "cleaned_word_count": 695,
+    "end_segment_index": 1070,
+    "trigger": "hybrid_llm",
+    "ts": "2026-04-01T17:25:49.426036+00:00",
+    "word_count": 974
+  },
+  "vision_results": [
+    {
+      "is_blank": false,
+      "is_stale": true,
+      "latency_ms": 1614,
+      "parsed_name": "Aubrey Amanda Lyn Ludwig",
+      "ts": "2026-04-01T15:56:39.836443+00:00"
+    },
+    {
+      "is_blank": false,
+      "is_stale": false,
+      "latency_ms": 2023,
+      "parsed_name": "Aubrey Amanda Lyn Ludwig",
+      "ts": "2026-04-01T15:57:42.068229+00:00"
+    },
+    {
+      "is_blank": false,
+      "is_stale": false,
+      "latency_ms": 1702,
+      "parsed_name": "Aubrey Amanda Lyn Ludwig",
+      "ts": "2026-04-01T15:58:43.956770+00:00"
+    },
+    {
+      "is_blank": false,
+      "is_stale": false,
+      "latency_ms": 3307,
+      "parsed_name": "Aubrey Amanda Lyn Ludwig",
+      "ts": "2026-04-01T15:59:47.461573+00:00"
+    },
+    {
+      "is_blank": false,
+      "is_stale": false,
+      "latency_ms": 1697,
+      "parsed_name": "Aubrey Amanda Lyn Ludwig",
+      "ts": "2026-04-01T16:00:49.375999+00:00"
+    },
+    {
+      "is_blank": false,
+      "is_stale": false,
+      "latency_ms": 2041,
+      "parsed_name": "David Albert William Krabbe",
+      "ts": "2026-04-01T16:55:19.634892+00:00"
+    },
+    {
+      "is_blank": false,
+      "is_stale": false,
+      "latency_ms": 1742,
+      "parsed_name": null,
+      "ts": "2026-04-01T16:56:21.587537+00:00"
+    },
+    {
+      "is_blank": false,
+      "is_stale": false,
+      "latency_ms": 1600,
+      "parsed_name": "Karin Smits",
+      "ts": "2026-04-01T16:57:23.385044+00:00"
+    },
+    {
+      "is_blank": false,
+      "is_stale": false,
+      "latency_ms": 1743,
+      "parsed_name": null,
+      "ts": "2026-04-01T16:58:25.294878+00:00"
+    },
+    {
+      "is_blank": false,
+      "is_stale": false,
+      "latency_ms": 1212,
+      "parsed_name": null,
+      "ts": "2026-04-01T16:59:26.582635+00:00"
+    },
+    {
+      "is_blank": false,
+      "is_stale": false,
+      "latency_ms": 1699,
+      "parsed_name": null,
+      "ts": "2026-04-01T17:00:28.520714+00:00"
+    },
+    {
+      "is_blank": false,
+      "is_stale": false,
+      "latency_ms": 1713,
+      "parsed_name": null,
+      "ts": "2026-04-01T17:01:30.358995+00:00"
+    },
+    {
+      "is_blank": false,
+      "is_stale": false,
+      "latency_ms": 1710,
+      "parsed_name": null,
+      "ts": "2026-04-01T17:02:32.217961+00:00"
+    },
+    {
+      "is_blank": false,
+      "is_stale": false,
+      "latency_ms": 1363,
+      "parsed_name": null,
+      "ts": "2026-04-01T17:03:33.816071+00:00"
+    },
+    {
+      "is_blank": false,
+      "is_stale": false,
+      "latency_ms": 1332,
+      "parsed_name": null,
+      "ts": "2026-04-01T17:04:35.417649+00:00"
+    },
+    {
+      "is_blank": false,
+      "is_stale": false,
+      "latency_ms": 1333,
+      "parsed_name": null,
+      "ts": "2026-04-01T17:05:37.006455+00:00"
+    },
+    {
+      "is_blank": false,
+      "is_stale": false,
+      "latency_ms": 1363,
+      "parsed_name": null,
+      "ts": "2026-04-01T17:06:38.674273+00:00"
+    },
+    {
+      "is_blank": false,
+      "is_stale": false,
+      "latency_ms": 1332,
+      "parsed_name": null,
+      "ts": "2026-04-01T17:07:40.267928+00:00"
+    },
+    {
+      "is_blank": false,
+      "is_stale": false,
+      "latency_ms": 1327,
+      "parsed_name": null,
+      "ts": "2026-04-01T17:08:41.843994+00:00"
+    },
+    {
+      "is_blank": false,
+      "is_stale": false,
+      "latency_ms": 1408,
+      "parsed_name": null,
+      "ts": "2026-04-01T17:09:43.512264+00:00"
+    },
+    {
+      "is_blank": false,
+      "is_stale": false,
+      "latency_ms": 1645,
+      "parsed_name": "Charlotte Jane (jane) Mcarthur",
+      "ts": "2026-04-01T17:10:45.366405+00:00"
+    },
+    {
+      "is_blank": false,
+      "is_stale": false,
+      "latency_ms": 1643,
+      "parsed_name": "Rhianna Horvath-jackson",
+      "ts": "2026-04-01T17:18:47.220871+00:00"
+    },
+    {
+      "is_blank": false,
+      "is_stale": false,
+      "latency_ms": 1665,
+      "parsed_name": "Rhianna Horvath-jackson",
+      "ts": "2026-04-01T17:19:49.093901+00:00"
+    },
+    {
+      "is_blank": false,
+      "is_stale": false,
+      "latency_ms": 1657,
+      "parsed_name": "Rhianna Horvath-jackson",
+      "ts": "2026-04-01T17:20:50.963342+00:00"
+    },
+    {
+      "is_blank": false,
+      "is_stale": false,
+      "latency_ms": 1716,
+      "parsed_name": "Rhianna Horvath-jackson",
+      "ts": "2026-04-01T17:21:52.890360+00:00"
+    },
+    {
+      "is_blank": false,
+      "is_stale": false,
+      "latency_ms": 1681,
+      "parsed_name": "Rhianna Horvath-jackson",
+      "ts": "2026-04-01T17:22:54.756644+00:00"
+    },
+    {
+      "is_blank": false,
+      "is_stale": false,
+      "latency_ms": 2091,
+      "parsed_name": "Rhianna Horvath-jackson",
+      "ts": "2026-04-01T17:23:57.012579+00:00"
+    },
+    {
+      "is_blank": false,
+      "is_stale": false,
+      "latency_ms": 1817,
+      "parsed_name": "Rhianna Horvath-jackson",
+      "ts": "2026-04-01T17:24:58.928001+00:00"
+    }
+  ]
+}

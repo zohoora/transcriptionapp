@@ -1,0 +1,2379 @@
+{
+  "billing_result": {
+    "codes_count": 1,
+    "latency_ms": 13925,
+    "selected_codes": [
+      "K013A"
+    ],
+    "success": true,
+    "total_amount_cents": 6400,
+    "ts": "2026-04-09T15:41:36.890562+00:00"
+  },
+  "clinical_check": {
+    "is_clinical": true,
+    "latency_ms": 0,
+    "success": true,
+    "ts": "2026-04-09T15:41:05.905934+00:00"
+  },
+  "config": {
+    "co2_baseline_ppm": 420.0,
+    "encounter_check_interval_secs": 120,
+    "encounter_detection_mode": "hybrid",
+    "encounter_detection_model": "fast-model",
+    "encounter_detection_nothink": false,
+    "encounter_merge_enabled": true,
+    "encounter_silence_trigger_secs": 45,
+    "fast_model": "fast-model",
+    "hybrid_confirm_window_secs": 180,
+    "hybrid_min_words_for_sensor_split": 500,
+    "idle_encounter_timeout_secs": 900,
+    "presence_absence_threshold_secs": 180,
+    "presence_debounce_secs": 10,
+    "presence_sensor_port": "/dev/cu.usbmodem21201",
+    "presence_sensor_url": "",
+    "screen_capture_enabled": true,
+    "screen_capture_interval_secs": 60,
+    "shadow_active_method": "llm",
+    "sleep_end_hour": 6,
+    "sleep_mode_enabled": true,
+    "sleep_start_hour": 22,
+    "soap_custom_instructions": "I am a family physician in Ontario Canada. The medications, tests and such are what’s available in Canada. Do not repeat terms such as ‘The patient…’ I prefer clean and crisp notes. Do not start a stentence with ‘Patient reports’ - point form can be simple phrases. So instead of ‘The patient reports low back pain’ say ‘low back pain’. Use the past tense. Do not put procedures under ‘O’ and instead put them in either the ‘P’ section or a separate procedure note. ",
+    "soap_detail_level": 5,
+    "soap_format": "comprehensive",
+    "soap_model": "soap-model",
+    "soap_model_fast": "soap-model",
+    "thermal_hot_pixel_threshold_c": 28.0
+  },
+  "detection_checks": [
+    {
+      "cleaned_word_count": 108,
+      "latency_ms": 1351,
+      "loop_state": {
+        "buffer_age_secs": 523.0,
+        "consecutive_failures": 0,
+        "manual_triggered": false,
+        "merge_back_count": 0,
+        "sensor_continuous_present": false,
+        "sensor_triggered": false
+      },
+      "parsed_complete": false,
+      "parsed_confidence": 0.4,
+      "parsed_end_index": null,
+      "prompt_system": "You MUST respond in English with ONLY a JSON object. No other text, no explanations, no markdown.\n\nYou are analyzing a continuous transcript from a medical office where the microphone records all day.\n\nYour task: determine if there is a TRANSITION POINT where one patient encounter ends and another begins, or where a patient encounter has clearly concluded.\n\nA completed encounter typically includes a clinical discussion and a concluding plan (e.g., medication changes, follow-up timing, referrals, or instructions). A short transcript that contains only vitals, greetings, or brief exchanges — with no clinical discussion or plan — is likely a pre-visit assessment still in progress, not a completed encounter. A nurse or medical assistant may see the patient before the doctor arrives to take vitals or ask initial questions — this is part of the same encounter, not a separate visit.\n\nEach segment includes elapsed time (MM:SS) from the start of the recording. Large gaps between timestamps may indicate silence, examination, or the room being empty between patients.\n\nIf you find a transition point or completed encounter, return:\n{\"complete\": true, \"end_segment_index\": <last segment index of the CONCLUDED encounter>, \"confidence\": <0.0-1.0>}\n\nIf the current discussion is still one ongoing encounter with no transition, return:\n{\"complete\": false, \"confidence\": <0.0-1.0>}\n\nRespond with ONLY the JSON object.",
+      "prompt_user": "Transcript (segments numbered with speaker labels):\n[0] (00:00) (Speaker 1 (100%)): pour faire parler derrière [1] (00:18) (Speaker 1 (59%)): and like that [2] (00:20) (Speaker 1 (70%)): said after like next week first or whatever [3] (00:26) (Speaker 1 (60%)): you're right mother [4] (00:30) (Speaker 1 (72%)): Are you okay to wait on that? [5] (00:32) (Speaker 1 (80%)): and [6] (00:34) (Speaker 1 (80%)): Hi Karen, yeah, everything was alright. I'm talking to [7] (00:42) (Speaker 1 (80%)): they have answer 300 [8] (00:47) (Speaker 1 (76%)): it goes [9] (00:48) (Speaker 1 (79%)): it [10] (02:27) (Speaker 1 (87%)): are you [11] (02:31) (Speaker 1 (76%)): Okay, provision 3 they are on your request. [12] (03:25) (Speaker 1 (79%)): come [13] (05:09) (Speaker 1 (77%)): right [14] (06:25) (Speaker 1 (74%)): I go [15] (06:50) (Speaker 2 (100%)): and in the court she was [16] (07:12) (Speaker 1 (86%)): hello [17] (07:12) (Speaker 1 (63%)): one to burn six okay [18] (07:21) (Speaker 1 (53%)): How are you? [19] (07:24) (Speaker 3 (100%)): مشکلی هیچ پلتفرمی در بیا و اینس [20] (07:28) (Speaker 1 (50%)): heads [21] (07:37) (Speaker 4 (100%)): မြေပြ [22] (07:49) (Speaker 5 (100%)): just going to go tight okay [23] (08:02) (Speaker 3 (48%)): 134/66 [24] (08:04) (Speaker 3 (61%)): this reason for last [25] (08:10) (Speaker 3 (63%)): Alright, Dr. Zobel is free, okay? [26] (08:39) (Speaker 1 (46%)): We live here. [27] (08:40) (Speaker 1 (44%)): measures of this [28] (08:43) (Speaker 1 (34%)): we went to the night\n\nReal-time context signals:\nCONTEXT: The presence sensor confirms someone is still in the room. Topic changes or pauses within the same visit are NOT transitions. Discussing a different family member or patient who is part of the same visit/call is NOT a transition — couples visits, family visits, and phone calls to households often involve the physician addressing multiple people's medical issues in a single encounter. Only split if there is a clear farewell, departure, AND arrival of a completely unrelated new patient.",
+      "response_raw": "{\"complete\": false, \"confidence\": 0.4}",
+      "segment_range": [
+        0,
+        28
+      ],
+      "sensor_context": {
+        "departed": false,
+        "present": true,
+        "unknown": false
+      },
+      "success": true,
+      "ts": "2026-04-09T15:26:34.585009+00:00",
+      "word_count": 108
+    },
+    {
+      "cleaned_word_count": 345,
+      "latency_ms": 2331,
+      "loop_state": {
+        "buffer_age_secs": 644.0,
+        "consecutive_failures": 0,
+        "manual_triggered": false,
+        "merge_back_count": 0,
+        "sensor_continuous_present": false,
+        "sensor_triggered": false
+      },
+      "parsed_complete": false,
+      "parsed_confidence": 0.85,
+      "parsed_end_index": null,
+      "prompt_system": "You MUST respond in English with ONLY a JSON object. No other text, no explanations, no markdown.\n\nYou are analyzing a continuous transcript from a medical office where the microphone records all day.\n\nYour task: determine if there is a TRANSITION POINT where one patient encounter ends and another begins, or where a patient encounter has clearly concluded.\n\nA completed encounter typically includes a clinical discussion and a concluding plan (e.g., medication changes, follow-up timing, referrals, or instructions). A short transcript that contains only vitals, greetings, or brief exchanges — with no clinical discussion or plan — is likely a pre-visit assessment still in progress, not a completed encounter. A nurse or medical assistant may see the patient before the doctor arrives to take vitals or ask initial questions — this is part of the same encounter, not a separate visit.\n\nEach segment includes elapsed time (MM:SS) from the start of the recording. Large gaps between timestamps may indicate silence, examination, or the room being empty between patients.\n\nIf you find a transition point or completed encounter, return:\n{\"complete\": true, \"end_segment_index\": <last segment index of the CONCLUDED encounter>, \"confidence\": <0.0-1.0>}\n\nIf the current discussion is still one ongoing encounter with no transition, return:\n{\"complete\": false, \"confidence\": <0.0-1.0>}\n\nRespond with ONLY the JSON object.",
+      "prompt_user": "Transcript (segments numbered with speaker labels):\n[0] (00:00) (Speaker 1 (100%)): pour faire parler derrière [1] (00:18) (Speaker 1 (59%)): and like that [2] (00:20) (Speaker 1 (70%)): said after like next week first or whatever [3] (00:26) (Speaker 1 (60%)): you're right mother [4] (00:30) (Speaker 1 (72%)): Are you okay to wait on that? [5] (00:32) (Speaker 1 (80%)): and [6] (00:34) (Speaker 1 (80%)): Hi Karen, yeah, everything was alright. I'm talking to [7] (00:42) (Speaker 1 (80%)): they have answer 300 [8] (00:47) (Speaker 1 (76%)): it goes [9] (00:48) (Speaker 1 (79%)): it [10] (02:27) (Speaker 1 (87%)): are you [11] (02:31) (Speaker 1 (76%)): Okay, provision 3 they are on your request. [12] (03:25) (Speaker 1 (79%)): come [13] (05:09) (Speaker 1 (77%)): right [14] (06:25) (Speaker 1 (74%)): I go [15] (06:50) (Speaker 2 (100%)): and in the court she was [16] (07:12) (Speaker 1 (86%)): hello [17] (07:12) (Speaker 1 (63%)): one to burn six okay [18] (07:21) (Speaker 1 (53%)): How are you? [19] (07:24) (Speaker 3 (100%)): مشکلی هیچ پلتفرمی در بیا و اینس [20] (07:28) (Speaker 1 (50%)): heads [21] (07:37) (Speaker 4 (100%)): မြေပြ [22] (07:49) (Speaker 5 (100%)): just going to go tight okay [23] (08:02) (Speaker 3 (48%)): 134/66 [24] (08:04) (Speaker 3 (61%)): this reason for last [25] (08:10) (Speaker 3 (63%)): Alright, Dr. Zobel is free, okay? [26] (08:39) (Speaker 1 (46%)): We live here. [27] (08:40) (Speaker 1 (44%)): measures of this [28] (08:43) (Speaker 1 (34%)): we went to the night [29] (08:44) (Speaker 1 (48%)): Ah [30] (08:46) (Speaker 1 (50%)): right now [31] (08:48) (Speaker 1 (45%)): how are i doing [32] (08:50) (Speaker 1 (45%)): mai aayi thi pagal bag mein chhatay [33] (08:53) (Dr Zohoor (63%)): are good idea if anything [34] (08:57) (Speaker 1 (47%)): any interest that happened materials since i thought [35] (09:00) (Speaker 1 (56%)): I think since [36] (09:03) (Speaker 1 (63%)): hit the laser on form room sensitive to light so [37] (09:08) (Dr Zohoor (67%)): I don't forget a dimmer like because I had adaptation struggle with that. [38] (09:13) (Speaker 1 (69%)): How are you doing today, Ade? Um like some of the numbers aren't too bad, but I never very bad spell in here, I don't know it. [39] (09:23) (Speaker 1 (68%)): was gone and after the horse walked out [40] (09:29) (Speaker 1 (49%)): now [41] (09:30) (Dr Zohoor (67%)): So that's really too rough and [42] (09:34) (Speaker 1 (46%)): so [43] (09:36) (Dr Zohoor (67%)): So you took [44] (09:38) (Speaker 1 (42%)): perpetually twice as fertile as a yeah [45] (09:45) (Speaker 1 (52%)): for a bit [46] (09:47) (Speaker 1 (63%)): it slowly kind of [47] (09:50) (Speaker 1 (56%)): all back to right [48] (09:53) (Speaker 3 (40%)): I think I'm very stressed. [49] (09:56) (Speaker 1 (48%)): How about we talk about the stress a little bit? [50] (09:59) (Speaker 3 (55%)): I don't know if I'll still hurt my eye. [51] (10:03) (Speaker 3 (51%)): I just don't know I'm scared feel like um [52] (10:07) (Speaker 3 (75%)): That's mine out down here but this is the guests Dr Sharma [53] (10:12) (Speaker 3 (81%)): I like I I just want her to put me right out I don't want to be awake [54] (10:17) (Speaker 3 (60%)): and she's still in [55] (10:21) (Speaker 3 (70%)): She needs to know about my heart and blood pressure and [56] (10:29) (Speaker 1 (45%)): so the [57] (10:30) (Dr Zohoor (63%)): I can do that but the sound is a sensitive background a little bit [58] (10:33) (Dr Zohoor (77%)): she the person that saw you before at the high staff [59] (10:37) (Dr Zohoor (69%)): and I said you're going back to see her [60] (10:40) (Speaker 3 (66%)): Do you really have a consultation?\n\nReal-time context signals:\nCONTEXT: The presence sensor confirms someone is still in the room. Topic changes or pauses within the same visit are NOT transitions. Discussing a different family member or patient who is part of the same visit/call is NOT a transition — couples visits, family visits, and phone calls to households often involve the physician addressing multiple people's medical issues in a single encounter. Only split if there is a clear farewell, departure, AND arrival of a completely unrelated new patient.",
+      "response_raw": "```json\n{\"complete\": false, \"confidence\": 0.85}\n```",
+      "segment_range": [
+        0,
+        60
+      ],
+      "sensor_context": {
+        "departed": false,
+        "present": true,
+        "unknown": false
+      },
+      "success": true,
+      "ts": "2026-04-09T15:28:36.942452+00:00",
+      "word_count": 345
+    },
+    {
+      "cleaned_word_count": 608,
+      "latency_ms": 2483,
+      "loop_state": {
+        "buffer_age_secs": 767.0,
+        "consecutive_failures": 0,
+        "manual_triggered": false,
+        "merge_back_count": 0,
+        "sensor_continuous_present": false,
+        "sensor_triggered": false
+      },
+      "parsed_complete": false,
+      "parsed_confidence": 0.85,
+      "parsed_end_index": null,
+      "prompt_system": "You MUST respond in English with ONLY a JSON object. No other text, no explanations, no markdown.\n\nYou are analyzing a continuous transcript from a medical office where the microphone records all day.\n\nYour task: determine if there is a TRANSITION POINT where one patient encounter ends and another begins, or where a patient encounter has clearly concluded.\n\nA completed encounter typically includes a clinical discussion and a concluding plan (e.g., medication changes, follow-up timing, referrals, or instructions). A short transcript that contains only vitals, greetings, or brief exchanges — with no clinical discussion or plan — is likely a pre-visit assessment still in progress, not a completed encounter. A nurse or medical assistant may see the patient before the doctor arrives to take vitals or ask initial questions — this is part of the same encounter, not a separate visit.\n\nEach segment includes elapsed time (MM:SS) from the start of the recording. Large gaps between timestamps may indicate silence, examination, or the room being empty between patients.\n\nIf you find a transition point or completed encounter, return:\n{\"complete\": true, \"end_segment_index\": <last segment index of the CONCLUDED encounter>, \"confidence\": <0.0-1.0>}\n\nIf the current discussion is still one ongoing encounter with no transition, return:\n{\"complete\": false, \"confidence\": <0.0-1.0>}\n\nRespond with ONLY the JSON object.",
+      "prompt_user": "Transcript (segments numbered with speaker labels):\n[0] (00:00) (Speaker 1 (100%)): pour faire parler derrière [1] (00:18) (Speaker 1 (59%)): and like that [2] (00:20) (Speaker 1 (70%)): said after like next week first or whatever [3] (00:26) (Speaker 1 (60%)): you're right mother [4] (00:30) (Speaker 1 (72%)): Are you okay to wait on that? [5] (00:32) (Speaker 1 (80%)): and [6] (00:34) (Speaker 1 (80%)): Hi Karen, yeah, everything was alright. I'm talking to [7] (00:42) (Speaker 1 (80%)): they have answer 300 [8] (00:47) (Speaker 1 (76%)): it goes [9] (00:48) (Speaker 1 (79%)): it [10] (02:27) (Speaker 1 (87%)): are you [11] (02:31) (Speaker 1 (76%)): Okay, provision 3 they are on your request. [12] (03:25) (Speaker 1 (79%)): come [13] (05:09) (Speaker 1 (77%)): right [14] (06:25) (Speaker 1 (74%)): I go [15] (06:50) (Speaker 2 (100%)): and in the court she was [16] (07:12) (Speaker 1 (86%)): hello [17] (07:12) (Speaker 1 (63%)): one to burn six okay [18] (07:21) (Speaker 1 (53%)): How are you? [19] (07:24) (Speaker 3 (100%)): مشکلی هیچ پلتفرمی در بیا و اینس [20] (07:28) (Speaker 1 (50%)): heads [21] (07:37) (Speaker 4 (100%)): မြေပြ [22] (07:49) (Speaker 5 (100%)): just going to go tight okay [23] (08:02) (Speaker 3 (48%)): 134/66 [24] (08:04) (Speaker 3 (61%)): this reason for last [25] (08:10) (Speaker 3 (63%)): Alright, Dr. Zobel is free, okay? [26] (08:39) (Speaker 1 (46%)): We live here. [27] (08:40) (Speaker 1 (44%)): measures of this [28] (08:43) (Speaker 1 (34%)): we went to the night [29] (08:44) (Speaker 1 (48%)): Ah [30] (08:46) (Speaker 1 (50%)): right now [31] (08:48) (Speaker 1 (45%)): how are i doing [32] (08:50) (Speaker 1 (45%)): mai aayi thi pagal bag mein chhatay [33] (08:53) (Dr Zohoor (63%)): are good idea if anything [34] (08:57) (Speaker 1 (47%)): any interest that happened materials since i thought [35] (09:00) (Speaker 1 (56%)): I think since [36] (09:03) (Speaker 1 (63%)): hit the laser on form room sensitive to light so [37] (09:08) (Dr Zohoor (67%)): I don't forget a dimmer like because I had adaptation struggle with that. [38] (09:13) (Speaker 1 (69%)): How are you doing today, Ade? Um like some of the numbers aren't too bad, but I never very bad spell in here, I don't know it. [39] (09:23) (Speaker 1 (68%)): was gone and after the horse walked out [40] (09:29) (Speaker 1 (49%)): now [41] (09:30) (Dr Zohoor (67%)): So that's really too rough and [42] (09:34) (Speaker 1 (46%)): so [43] (09:36) (Dr Zohoor (67%)): So you took [44] (09:38) (Speaker 1 (42%)): perpetually twice as fertile as a yeah [45] (09:45) (Speaker 1 (52%)): for a bit [46] (09:47) (Speaker 1 (63%)): it slowly kind of [47] (09:50) (Speaker 1 (56%)): all back to right [48] (09:53) (Speaker 3 (40%)): I think I'm very stressed. [49] (09:56) (Speaker 1 (48%)): How about we talk about the stress a little bit? [50] (09:59) (Speaker 3 (55%)): I don't know if I'll still hurt my eye. [51] (10:03) (Speaker 3 (51%)): I just don't know I'm scared feel like um [52] (10:07) (Speaker 3 (75%)): That's mine out down here but this is the guests Dr Sharma [53] (10:12) (Speaker 3 (81%)): I like I I just want her to put me right out I don't want to be awake [54] (10:17) (Speaker 3 (60%)): and she's still in [55] (10:21) (Speaker 3 (70%)): She needs to know about my heart and blood pressure and [56] (10:29) (Speaker 1 (45%)): so the [57] (10:30) (Dr Zohoor (63%)): I can do that but the sound is a sensitive background a little bit [58] (10:33) (Dr Zohoor (77%)): she the person that saw you before at the high staff [59] (10:37) (Dr Zohoor (69%)): and I said you're going back to see her [60] (10:40) (Speaker 3 (66%)): Do you really have a consultation? [61] (10:44) (Speaker 3 (71%)): And now I'll show the signature. [62] (10:47) (Speaker 3 (79%)): and then holding I'm just afraid it's going to end up worse than it is and then I've gone through all this for nothing [63] (10:56) (Speaker 1 (65%)): I got hurt because met someone [64] (11:00) (Dr Zohoor (74%)): collaboration to make it fresh what i understand it's not for nothing i thought but i hear the fear now if it is heavy right it's exhausting [65] (11:13) (Speaker 3 (71%)): just like the journey and it's just been put off so long and [66] (11:17) (Speaker 3 (69%)): Now I have an information and [67] (11:21) (Speaker 3 (80%)): Then my my rain just goes on and the drops make it worse [68] (11:27) (Speaker 1 (71%)): okay now when you draw box over [69] (11:32) (Dr Zohoor (65%)): their know wasn't clear but they said that their [70] (11:36) (Dr Zohoor (71%)): that the surgery is done with general anesthesia which she said was an afternoon procedure [71] (11:43) (Speaker 1 (77%)): it's possible that i i'm [72] (11:46) (Dr Zohoor (67%)): is password field or field end [73] (11:48) (Dr Zohoor (70%)): Um let me just figure out what they typically do. [74] (11:52) (Dr Zohoor (64%)): you one moment there is a surgery that i don't normally like i'm not not supposed to ask [75] (11:58) (Speaker 1 (71%)): i just want to make sure that i have [76] (12:02) (Dr Zohoor (73%)): um so if you are request this hey can you make how everything seems to able to to help [77] (12:09) (Dr Zohoor (73%)): before the out for this i just want to see whether or not [78] (12:15) (Speaker 3 (77%)): the film toast dr browns associate he said what shall do is shall probe [79] (12:23) (Speaker 3 (65%)): to try and find of the vault [80] (12:27) (Speaker 3 (79%)): And then they could announce them. [81] (12:30) (Speaker 3 (56%)): I don't know, I guess. [82] (12:32) (Speaker 3 (83%)): to keep though the pressure down and keep the fluid moving [83] (12:40) (Dr Zohoor (80%)): looking for the name of the particular circuitry he had suggested and all that\n\nReal-time context signals:\nCONTEXT: The presence sensor confirms someone is still in the room. Topic changes or pauses within the same visit are NOT transitions. Discussing a different family member or patient who is part of the same visit/call is NOT a transition — couples visits, family visits, and phone calls to households often involve the physician addressing multiple people's medical issues in a single encounter. Only split if there is a clear farewell, departure, AND arrival of a completely unrelated new patient.",
+      "response_raw": "{\"complete\": false, \"confidence\": 0.85}",
+      "segment_range": [
+        0,
+        83
+      ],
+      "sensor_context": {
+        "departed": false,
+        "present": true,
+        "unknown": false
+      },
+      "success": true,
+      "ts": "2026-04-09T15:30:39.449612+00:00",
+      "word_count": 608
+    },
+    {
+      "cleaned_word_count": 770,
+      "latency_ms": 2972,
+      "loop_state": {
+        "buffer_age_secs": 889.0,
+        "consecutive_failures": 0,
+        "manual_triggered": false,
+        "merge_back_count": 0,
+        "sensor_continuous_present": false,
+        "sensor_triggered": false
+      },
+      "parsed_complete": false,
+      "parsed_confidence": 0.9,
+      "parsed_end_index": null,
+      "prompt_system": "You MUST respond in English with ONLY a JSON object. No other text, no explanations, no markdown.\n\nYou are analyzing a continuous transcript from a medical office where the microphone records all day.\n\nYour task: determine if there is a TRANSITION POINT where one patient encounter ends and another begins, or where a patient encounter has clearly concluded.\n\nA completed encounter typically includes a clinical discussion and a concluding plan (e.g., medication changes, follow-up timing, referrals, or instructions). A short transcript that contains only vitals, greetings, or brief exchanges — with no clinical discussion or plan — is likely a pre-visit assessment still in progress, not a completed encounter. A nurse or medical assistant may see the patient before the doctor arrives to take vitals or ask initial questions — this is part of the same encounter, not a separate visit.\n\nEach segment includes elapsed time (MM:SS) from the start of the recording. Large gaps between timestamps may indicate silence, examination, or the room being empty between patients.\n\nIf you find a transition point or completed encounter, return:\n{\"complete\": true, \"end_segment_index\": <last segment index of the CONCLUDED encounter>, \"confidence\": <0.0-1.0>}\n\nIf the current discussion is still one ongoing encounter with no transition, return:\n{\"complete\": false, \"confidence\": <0.0-1.0>}\n\nRespond with ONLY the JSON object.",
+      "prompt_user": "Transcript (segments numbered with speaker labels):\n[0] (00:00) (Speaker 1 (100%)): pour faire parler derrière [1] (00:18) (Speaker 1 (59%)): and like that [2] (00:20) (Speaker 1 (70%)): said after like next week first or whatever [3] (00:26) (Speaker 1 (60%)): you're right mother [4] (00:30) (Speaker 1 (72%)): Are you okay to wait on that? [5] (00:32) (Speaker 1 (80%)): and [6] (00:34) (Speaker 1 (80%)): Hi Karen, yeah, everything was alright. I'm talking to [7] (00:42) (Speaker 1 (80%)): they have answer 300 [8] (00:47) (Speaker 1 (76%)): it goes [9] (00:48) (Speaker 1 (79%)): it [10] (02:27) (Speaker 1 (87%)): are you [11] (02:31) (Speaker 1 (76%)): Okay, provision 3 they are on your request. [12] (03:25) (Speaker 1 (79%)): come [13] (05:09) (Speaker 1 (77%)): right [14] (06:25) (Speaker 1 (74%)): I go [15] (06:50) (Speaker 2 (100%)): and in the court she was [16] (07:12) (Speaker 1 (86%)): hello [17] (07:12) (Speaker 1 (63%)): one to burn six okay [18] (07:21) (Speaker 1 (53%)): How are you? [19] (07:24) (Speaker 3 (100%)): مشکلی هیچ پلتفرمی در بیا و اینس [20] (07:28) (Speaker 1 (50%)): heads [21] (07:37) (Speaker 4 (100%)): မြေပြ [22] (07:49) (Speaker 5 (100%)): just going to go tight okay [23] (08:02) (Speaker 3 (48%)): 134/66 [24] (08:04) (Speaker 3 (61%)): this reason for last [25] (08:10) (Speaker 3 (63%)): Alright, Dr. Zobel is free, okay? [26] (08:39) (Speaker 1 (46%)): We live here. [27] (08:40) (Speaker 1 (44%)): measures of this [28] (08:43) (Speaker 1 (34%)): we went to the night [29] (08:44) (Speaker 1 (48%)): Ah [30] (08:46) (Speaker 1 (50%)): right now [31] (08:48) (Speaker 1 (45%)): how are i doing [32] (08:50) (Speaker 1 (45%)): mai aayi thi pagal bag mein chhatay [33] (08:53) (Dr Zohoor (63%)): are good idea if anything [34] (08:57) (Speaker 1 (47%)): any interest that happened materials since i thought [35] (09:00) (Speaker 1 (56%)): I think since [36] (09:03) (Speaker 1 (63%)): hit the laser on form room sensitive to light so [37] (09:08) (Dr Zohoor (67%)): I don't forget a dimmer like because I had adaptation struggle with that. [38] (09:13) (Speaker 1 (69%)): How are you doing today, Ade? Um like some of the numbers aren't too bad, but I never very bad spell in here, I don't know it. [39] (09:23) (Speaker 1 (68%)): was gone and after the horse walked out [40] (09:29) (Speaker 1 (49%)): now [41] (09:30) (Dr Zohoor (67%)): So that's really too rough and [42] (09:34) (Speaker 1 (46%)): so [43] (09:36) (Dr Zohoor (67%)): So you took [44] (09:38) (Speaker 1 (42%)): perpetually twice as fertile as a yeah [45] (09:45) (Speaker 1 (52%)): for a bit [46] (09:47) (Speaker 1 (63%)): it slowly kind of [47] (09:50) (Speaker 1 (56%)): all back to right [48] (09:53) (Speaker 3 (40%)): I think I'm very stressed. [49] (09:56) (Speaker 1 (48%)): How about we talk about the stress a little bit? [50] (09:59) (Speaker 3 (55%)): I don't know if I'll still hurt my eye. [51] (10:03) (Speaker 3 (51%)): I just don't know I'm scared feel like um [52] (10:07) (Speaker 3 (75%)): That's mine out down here but this is the guests Dr Sharma [53] (10:12) (Speaker 3 (81%)): I like I I just want her to put me right out I don't want to be awake [54] (10:17) (Speaker 3 (60%)): and she's still in [55] (10:21) (Speaker 3 (70%)): She needs to know about my heart and blood pressure and [56] (10:29) (Speaker 1 (45%)): so the [57] (10:30) (Dr Zohoor (63%)): I can do that but the sound is a sensitive background a little bit [58] (10:33) (Dr Zohoor (77%)): she the person that saw you before at the high staff [59] (10:37) (Dr Zohoor (69%)): and I said you're going back to see her [60] (10:40) (Speaker 3 (66%)): Do you really have a consultation? [61] (10:44) (Speaker 3 (71%)): And now I'll show the signature. [62] (10:47) (Speaker 3 (79%)): and then holding I'm just afraid it's going to end up worse than it is and then I've gone through all this for nothing [63] (10:56) (Speaker 1 (65%)): I got hurt because met someone [64] (11:00) (Dr Zohoor (74%)): collaboration to make it fresh what i understand it's not for nothing i thought but i hear the fear now if it is heavy right it's exhausting [65] (11:13) (Speaker 3 (71%)): just like the journey and it's just been put off so long and [66] (11:17) (Speaker 3 (69%)): Now I have an information and [67] (11:21) (Speaker 3 (80%)): Then my my rain just goes on and the drops make it worse [68] (11:27) (Speaker 1 (71%)): okay now when you draw box over [69] (11:32) (Dr Zohoor (65%)): their know wasn't clear but they said that their [70] (11:36) (Dr Zohoor (71%)): that the surgery is done with general anesthesia which she said was an afternoon procedure [71] (11:43) (Speaker 1 (77%)): it's possible that i i'm [72] (11:46) (Dr Zohoor (67%)): is password field or field end [73] (11:48) (Dr Zohoor (70%)): Um let me just figure out what they typically do. [74] (11:52) (Dr Zohoor (64%)): you one moment there is a surgery that i don't normally like i'm not not supposed to ask [75] (11:58) (Speaker 1 (71%)): i just want to make sure that i have [76] (12:02) (Dr Zohoor (73%)): um so if you are request this hey can you make how everything seems to able to to help [77] (12:09) (Dr Zohoor (73%)): before the out for this i just want to see whether or not [78] (12:15) (Speaker 3 (77%)): the film toast dr browns associate he said what shall do is shall probe [79] (12:23) (Speaker 3 (65%)): to try and find of the vault [80] (12:27) (Speaker 3 (79%)): And then they could announce them. [81] (12:30) (Speaker 3 (56%)): I don't know, I guess. [82] (12:32) (Speaker 3 (83%)): to keep though the pressure down and keep the fluid moving [83] (12:40) (Dr Zohoor (80%)): looking for the name of the particular circuitry he had suggested and all that [84] (12:55) (Dr Zohoor (64%)): I passed over the message also through another feature [85] (12:59) (Dr Zohoor (71%)): there naturally the cpc.ip support 455 enterprise [86] (13:04) (Dr Zohoor (81%)): need to restart the control interface okay so they works as atv's one second [87] (13:11) (Speaker 1 (46%)): to be clean [88] (13:13) (Speaker 1 (49%)): let to see what the subscription is [89] (13:19) (Dr Zohoor (71%)): figure surgery is 18e because it's safe [90] (13:22) (Speaker 1 (69%)): protectable and uh [91] (13:27) (Speaker 1 (40%)): to kick off the [92] (13:28) (Speaker 1 (42%)): so [93] (13:38) (Speaker 1 (61%)): specification in New York [94] (13:41) (Speaker 1 (39%)): local [95] (13:52) (Speaker 1 (38%)): I want to I want to make sure so [96] (13:56) (Dr Zohoor (67%)): So the first thing is that the surgeon [97] (14:00) (Speaker 1 (57%)): cousins decide [98] (14:02) (Dr Zohoor (71%)): whether or not to do general anesthesia [99] (14:05) (Dr Zohoor (71%)): as the asset keeper so let's say so just say yes [100] (14:09) (Speaker 3 (69%)): if you want happen it's easier put your out it they suggest sometimes they do yeah i talked to Zoey called me and she said sometimes they do [101] (14:24) (Speaker 3 (75%)): and i don't know if my heart can take all this like [102] (14:28) (Speaker 3 (36%)): just to [103] (14:34) (Speaker 1 (61%)): Duration is about 90 mins. [104] (14:36) (Dr Zohoor (67%)): absolutely for five in an at corporate time [105] (14:40) (Dr Zohoor (73%)): so it's kind of 45 9 ms [106] (14:44) (Speaker 1 (61%)): to just see\n\nReal-time context signals:\nCONTEXT: The presence sensor confirms someone is still in the room. Topic changes or pauses within the same visit are NOT transitions. Discussing a different family member or patient who is part of the same visit/call is NOT a transition — couples visits, family visits, and phone calls to households often involve the physician addressing multiple people's medical issues in a single encounter. Only split if there is a clear farewell, departure, AND arrival of a completely unrelated new patient.",
+      "response_raw": "{\"complete\": false, \"confidence\": 0.9}",
+      "segment_range": [
+        0,
+        106
+      ],
+      "sensor_context": {
+        "departed": false,
+        "present": true,
+        "unknown": false
+      },
+      "success": true,
+      "ts": "2026-04-09T15:32:42.462468+00:00",
+      "word_count": 770
+    },
+    {
+      "cleaned_word_count": 1000,
+      "latency_ms": 4913,
+      "loop_state": {
+        "buffer_age_secs": 1012.0,
+        "consecutive_failures": 0,
+        "manual_triggered": false,
+        "merge_back_count": 0,
+        "sensor_continuous_present": false,
+        "sensor_triggered": false
+      },
+      "parsed_complete": false,
+      "parsed_confidence": 0.9,
+      "parsed_end_index": null,
+      "prompt_system": "You MUST respond in English with ONLY a JSON object. No other text, no explanations, no markdown.\n\nYou are analyzing a continuous transcript from a medical office where the microphone records all day.\n\nYour task: determine if there is a TRANSITION POINT where one patient encounter ends and another begins, or where a patient encounter has clearly concluded.\n\nA completed encounter typically includes a clinical discussion and a concluding plan (e.g., medication changes, follow-up timing, referrals, or instructions). A short transcript that contains only vitals, greetings, or brief exchanges — with no clinical discussion or plan — is likely a pre-visit assessment still in progress, not a completed encounter. A nurse or medical assistant may see the patient before the doctor arrives to take vitals or ask initial questions — this is part of the same encounter, not a separate visit.\n\nEach segment includes elapsed time (MM:SS) from the start of the recording. Large gaps between timestamps may indicate silence, examination, or the room being empty between patients.\n\nIf you find a transition point or completed encounter, return:\n{\"complete\": true, \"end_segment_index\": <last segment index of the CONCLUDED encounter>, \"confidence\": <0.0-1.0>}\n\nIf the current discussion is still one ongoing encounter with no transition, return:\n{\"complete\": false, \"confidence\": <0.0-1.0>}\n\nRespond with ONLY the JSON object.",
+      "prompt_user": "Transcript (segments numbered with speaker labels):\n[0] (00:00) (Speaker 1 (100%)): pour faire parler derrière [1] (00:18) (Speaker 1 (59%)): and like that [2] (00:20) (Speaker 1 (70%)): said after like next week first or whatever [3] (00:26) (Speaker 1 (60%)): you're right mother [4] (00:30) (Speaker 1 (72%)): Are you okay to wait on that? [5] (00:32) (Speaker 1 (80%)): and [6] (00:34) (Speaker 1 (80%)): Hi Karen, yeah, everything was alright. I'm talking to [7] (00:42) (Speaker 1 (80%)): they have answer 300 [8] (00:47) (Speaker 1 (76%)): it goes [9] (00:48) (Speaker 1 (79%)): it [10] (02:27) (Speaker 1 (87%)): are you [11] (02:31) (Speaker 1 (76%)): Okay, provision 3 they are on your request. [12] (03:25) (Speaker 1 (79%)): come [13] (05:09) (Speaker 1 (77%)): right [14] (06:25) (Speaker 1 (74%)): I go [15] (06:50) (Speaker 2 (100%)): and in the court she was [16] (07:12) (Speaker 1 (86%)): hello [17] (07:12) (Speaker 1 (63%)): one to burn six okay [18] (07:21) (Speaker 1 (53%)): How are you? [19] (07:24) (Speaker 3 (100%)): مشکلی هیچ پلتفرمی در بیا و اینس [20] (07:28) (Speaker 1 (50%)): heads [21] (07:37) (Speaker 4 (100%)): မြေပြ [22] (07:49) (Speaker 5 (100%)): just going to go tight okay [23] (08:02) (Speaker 3 (48%)): 134/66 [24] (08:04) (Speaker 3 (61%)): this reason for last [25] (08:10) (Speaker 3 (63%)): Alright, Dr. Zobel is free, okay? [26] (08:39) (Speaker 1 (46%)): We live here. [27] (08:40) (Speaker 1 (44%)): measures of this [28] (08:43) (Speaker 1 (34%)): we went to the night [29] (08:44) (Speaker 1 (48%)): Ah [30] (08:46) (Speaker 1 (50%)): right now [31] (08:48) (Speaker 1 (45%)): how are i doing [32] (08:50) (Speaker 1 (45%)): mai aayi thi pagal bag mein chhatay [33] (08:53) (Dr Zohoor (63%)): are good idea if anything [34] (08:57) (Speaker 1 (47%)): any interest that happened materials since i thought [35] (09:00) (Speaker 1 (56%)): I think since [36] (09:03) (Speaker 1 (63%)): hit the laser on form room sensitive to light so [37] (09:08) (Dr Zohoor (67%)): I don't forget a dimmer like because I had adaptation struggle with that. [38] (09:13) (Speaker 1 (69%)): How are you doing today, Ade? Um like some of the numbers aren't too bad, but I never very bad spell in here, I don't know it. [39] (09:23) (Speaker 1 (68%)): was gone and after the horse walked out [40] (09:29) (Speaker 1 (49%)): now [41] (09:30) (Dr Zohoor (67%)): So that's really too rough and [42] (09:34) (Speaker 1 (46%)): so [43] (09:36) (Dr Zohoor (67%)): So you took [44] (09:38) (Speaker 1 (42%)): perpetually twice as fertile as a yeah [45] (09:45) (Speaker 1 (52%)): for a bit [46] (09:47) (Speaker 1 (63%)): it slowly kind of [47] (09:50) (Speaker 1 (56%)): all back to right [48] (09:53) (Speaker 3 (40%)): I think I'm very stressed. [49] (09:56) (Speaker 1 (48%)): How about we talk about the stress a little bit? [50] (09:59) (Speaker 3 (55%)): I don't know if I'll still hurt my eye. [51] (10:03) (Speaker 3 (51%)): I just don't know I'm scared feel like um [52] (10:07) (Speaker 3 (75%)): That's mine out down here but this is the guests Dr Sharma [53] (10:12) (Speaker 3 (81%)): I like I I just want her to put me right out I don't want to be awake [54] (10:17) (Speaker 3 (60%)): and she's still in [55] (10:21) (Speaker 3 (70%)): She needs to know about my heart and blood pressure and [56] (10:29) (Speaker 1 (45%)): so the [57] (10:30) (Dr Zohoor (63%)): I can do that but the sound is a sensitive background a little bit [58] (10:33) (Dr Zohoor (77%)): she the person that saw you before at the high staff [59] (10:37) (Dr Zohoor (69%)): and I said you're going back to see her [60] (10:40) (Speaker 3 (66%)): Do you really have a consultation? [61] (10:44) (Speaker 3 (71%)): And now I'll show the signature. [62] (10:47) (Speaker 3 (79%)): and then holding I'm just afraid it's going to end up worse than it is and then I've gone through all this for nothing [63] (10:56) (Speaker 1 (65%)): I got hurt because met someone [64] (11:00) (Dr Zohoor (74%)): collaboration to make it fresh what i understand it's not for nothing i thought but i hear the fear now if it is heavy right it's exhausting [65] (11:13) (Speaker 3 (71%)): just like the journey and it's just been put off so long and [66] (11:17) (Speaker 3 (69%)): Now I have an information and [67] (11:21) (Speaker 3 (80%)): Then my my rain just goes on and the drops make it worse [68] (11:27) (Speaker 1 (71%)): okay now when you draw box over [69] (11:32) (Dr Zohoor (65%)): their know wasn't clear but they said that their [70] (11:36) (Dr Zohoor (71%)): that the surgery is done with general anesthesia which she said was an afternoon procedure [71] (11:43) (Speaker 1 (77%)): it's possible that i i'm [72] (11:46) (Dr Zohoor (67%)): is password field or field end [73] (11:48) (Dr Zohoor (70%)): Um let me just figure out what they typically do. [74] (11:52) (Dr Zohoor (64%)): you one moment there is a surgery that i don't normally like i'm not not supposed to ask [75] (11:58) (Speaker 1 (71%)): i just want to make sure that i have [76] (12:02) (Dr Zohoor (73%)): um so if you are request this hey can you make how everything seems to able to to help [77] (12:09) (Dr Zohoor (73%)): before the out for this i just want to see whether or not [78] (12:15) (Speaker 3 (77%)): the film toast dr browns associate he said what shall do is shall probe [79] (12:23) (Speaker 3 (65%)): to try and find of the vault [80] (12:27) (Speaker 3 (79%)): And then they could announce them. [81] (12:30) (Speaker 3 (56%)): I don't know, I guess. [82] (12:32) (Speaker 3 (83%)): to keep though the pressure down and keep the fluid moving [83] (12:40) (Dr Zohoor (80%)): looking for the name of the particular circuitry he had suggested and all that [84] (12:55) (Dr Zohoor (64%)): I passed over the message also through another feature [85] (12:59) (Dr Zohoor (71%)): there naturally the cpc.ip support 455 enterprise [86] (13:04) (Dr Zohoor (81%)): need to restart the control interface okay so they works as atv's one second [87] (13:11) (Speaker 1 (46%)): to be clean [88] (13:13) (Speaker 1 (49%)): let to see what the subscription is [89] (13:19) (Dr Zohoor (71%)): figure surgery is 18e because it's safe [90] (13:22) (Speaker 1 (69%)): protectable and uh [91] (13:27) (Speaker 1 (40%)): to kick off the [92] (13:28) (Speaker 1 (42%)): so [93] (13:38) (Speaker 1 (61%)): specification in New York [94] (13:41) (Speaker 1 (39%)): local [95] (13:52) (Speaker 1 (38%)): I want to I want to make sure so [96] (13:56) (Dr Zohoor (67%)): So the first thing is that the surgeon [97] (14:00) (Speaker 1 (57%)): cousins decide [98] (14:02) (Dr Zohoor (71%)): whether or not to do general anesthesia [99] (14:05) (Dr Zohoor (71%)): as the asset keeper so let's say so just say yes [100] (14:09) (Speaker 3 (69%)): if you want happen it's easier put your out it they suggest sometimes they do yeah i talked to Zoey called me and she said sometimes they do [101] (14:24) (Speaker 3 (75%)): and i don't know if my heart can take all this like [102] (14:28) (Speaker 3 (36%)): just to [103] (14:34) (Speaker 1 (61%)): Duration is about 90 mins. [104] (14:36) (Dr Zohoor (67%)): absolutely for five in an at corporate time [105] (14:40) (Dr Zohoor (73%)): so it's kind of 45 9 ms [106] (14:44) (Speaker 1 (61%)): to just see [107] (14:53) (Speaker 1 (46%)): says [108] (15:14) (Dr Zohoor (77%)): for I what I don't want I want to make sure that that new dress is because [109] (15:19) (Dr Zohoor (70%)): I don't want this to get [110] (15:21) (Dr Zohoor (64%)): I want you to go there for a consult. [111] (15:24) (Dr Zohoor (84%)): and it get delayed a lot because of anesthesia artifacts because there's usually three options so normally there's a local or just intracranial nerve the fist eye the whole eye bulb [112] (15:38) (Dr Zohoor (79%)): you find local hemodynamic drops in the eye right this is different there they de-economing of the nerve of the eye so local eye becomes now [113] (15:48) (Speaker 1 (74%)): so that is the safest option [114] (15:51) (Dr Zohoor (61%)): it's just style [115] (15:54) (Dr Zohoor (80%)): there's a second option is really also adaptation to us so they give you medications intermittently so that your your [116] (16:03) (Dr Zohoor (67%)): you are the stated state [117] (16:05) (Dr Zohoor (73%)): we're running the emergency room so if a drop comes in they need their onsets it's a taken for procedure [118] (16:12) (Dr Zohoor (70%)): strong anesthesia in operated in patient it in the operating on a same why [119] (16:18) (Speaker 1 (64%)): the risks there are are lower [120] (16:21) (Speaker 1 (36%)): um [121] (16:22) (Dr Zohoor (69%)): and and the four exercises where the person is on a breathing tube and all that stuff [122] (16:28) (Speaker 1 (62%)): so the [123] (16:30) (Speaker 1 (37%)): um [124] (16:34) (Dr Zohoor (77%)): so although for the abert person experiences if they do a local block if they just do an nerve block [125] (16:41) (Speaker 1 (58%)): come [126] (16:43) (Dr Zohoor (78%)): person the patient feels pressure and tightness but not any sharp pain [127] (16:47) (Dr Zohoor (77%)): and the most uncomfortable is the act of naming that they do\n\nReal-time context signals:\nCONTEXT: The presence sensor confirms someone is still in the room. Topic changes or pauses within the same visit are NOT transitions. Discussing a different family member or patient who is part of the same visit/call is NOT a transition — couples visits, family visits, and phone calls to households often involve the physician addressing multiple people's medical issues in a single encounter. Only split if there is a clear farewell, departure, AND arrival of a completely unrelated new patient.",
+      "response_raw": "{\"complete\": false, \"confidence\": 0.9}",
+      "segment_range": [
+        0,
+        127
+      ],
+      "sensor_context": {
+        "departed": false,
+        "present": true,
+        "unknown": false
+      },
+      "success": true,
+      "ts": "2026-04-09T15:34:47.409632+00:00",
+      "word_count": 1000
+    },
+    {
+      "cleaned_word_count": 1301,
+      "latency_ms": 4409,
+      "loop_state": {
+        "buffer_age_secs": 1137.0,
+        "consecutive_failures": 0,
+        "manual_triggered": false,
+        "merge_back_count": 0,
+        "sensor_continuous_present": false,
+        "sensor_triggered": false
+      },
+      "parsed_complete": false,
+      "parsed_confidence": 0.85,
+      "parsed_end_index": null,
+      "prompt_system": "You MUST respond in English with ONLY a JSON object. No other text, no explanations, no markdown.\n\nYou are analyzing a continuous transcript from a medical office where the microphone records all day.\n\nYour task: determine if there is a TRANSITION POINT where one patient encounter ends and another begins, or where a patient encounter has clearly concluded.\n\nA completed encounter typically includes a clinical discussion and a concluding plan (e.g., medication changes, follow-up timing, referrals, or instructions). A short transcript that contains only vitals, greetings, or brief exchanges — with no clinical discussion or plan — is likely a pre-visit assessment still in progress, not a completed encounter. A nurse or medical assistant may see the patient before the doctor arrives to take vitals or ask initial questions — this is part of the same encounter, not a separate visit.\n\nEach segment includes elapsed time (MM:SS) from the start of the recording. Large gaps between timestamps may indicate silence, examination, or the room being empty between patients.\n\nIf you find a transition point or completed encounter, return:\n{\"complete\": true, \"end_segment_index\": <last segment index of the CONCLUDED encounter>, \"confidence\": <0.0-1.0>}\n\nIf the current discussion is still one ongoing encounter with no transition, return:\n{\"complete\": false, \"confidence\": <0.0-1.0>}\n\nRespond with ONLY the JSON object.",
+      "prompt_user": "Transcript (segments numbered with speaker labels):\n[0] (00:00) (Speaker 1 (100%)): pour faire parler derrière [1] (00:18) (Speaker 1 (59%)): and like that [2] (00:20) (Speaker 1 (70%)): said after like next week first or whatever [3] (00:26) (Speaker 1 (60%)): you're right mother [4] (00:30) (Speaker 1 (72%)): Are you okay to wait on that? [5] (00:32) (Speaker 1 (80%)): and [6] (00:34) (Speaker 1 (80%)): Hi Karen, yeah, everything was alright. I'm talking to [7] (00:42) (Speaker 1 (80%)): they have answer 300 [8] (00:47) (Speaker 1 (76%)): it goes [9] (00:48) (Speaker 1 (79%)): it [10] (02:27) (Speaker 1 (87%)): are you [11] (02:31) (Speaker 1 (76%)): Okay, provision 3 they are on your request. [12] (03:25) (Speaker 1 (79%)): come [13] (05:09) (Speaker 1 (77%)): right [14] (06:25) (Speaker 1 (74%)): I go [15] (06:50) (Speaker 2 (100%)): and in the court she was [16] (07:12) (Speaker 1 (86%)): hello [17] (07:12) (Speaker 1 (63%)): one to burn six okay [18] (07:21) (Speaker 1 (53%)): How are you? [19] (07:24) (Speaker 3 (100%)): مشکلی هیچ پلتفرمی در بیا و اینس [20] (07:28) (Speaker 1 (50%)): heads [21] (07:37) (Speaker 4 (100%)): မြေပြ [22] (07:49) (Speaker 5 (100%)): just going to go tight okay [23] (08:02) (Speaker 3 (48%)): 134/66 [24] (08:04) (Speaker 3 (61%)): this reason for last [25] (08:10) (Speaker 3 (63%)): Alright, Dr. Zobel is free, okay? [26] (08:39) (Speaker 1 (46%)): We live here. [27] (08:40) (Speaker 1 (44%)): measures of this [28] (08:43) (Speaker 1 (34%)): we went to the night [29] (08:44) (Speaker 1 (48%)): Ah [30] (08:46) (Speaker 1 (50%)): right now [31] (08:48) (Speaker 1 (45%)): how are i doing [32] (08:50) (Speaker 1 (45%)): mai aayi thi pagal bag mein chhatay [33] (08:53) (Dr Zohoor (63%)): are good idea if anything [34] (08:57) (Speaker 1 (47%)): any interest that happened materials since i thought [35] (09:00) (Speaker 1 (56%)): I think since [36] (09:03) (Speaker 1 (63%)): hit the laser on form room sensitive to light so [37] (09:08) (Dr Zohoor (67%)): I don't forget a dimmer like because I had adaptation struggle with that. [38] (09:13) (Speaker 1 (69%)): How are you doing today, Ade? Um like some of the numbers aren't too bad, but I never very bad spell in here, I don't know it. [39] (09:23) (Speaker 1 (68%)): was gone and after the horse walked out [40] (09:29) (Speaker 1 (49%)): now [41] (09:30) (Dr Zohoor (67%)): So that's really too rough and [42] (09:34) (Speaker 1 (46%)): so [43] (09:36) (Dr Zohoor (67%)): So you took [44] (09:38) (Speaker 1 (42%)): perpetually twice as fertile as a yeah [45] (09:45) (Speaker 1 (52%)): for a bit [46] (09:47) (Speaker 1 (63%)): it slowly kind of [47] (09:50) (Speaker 1 (56%)): all back to right [48] (09:53) (Speaker 3 (40%)): I think I'm very stressed. [49] (09:56) (Speaker 1 (48%)): How about we talk about the stress a little bit? [50] (09:59) (Speaker 3 (55%)): I don't know if I'll still hurt my eye. [51] (10:03) (Speaker 3 (51%)): I just don't know I'm scared feel like um [52] (10:07) (Speaker 3 (75%)): That's mine out down here but this is the guests Dr Sharma [53] (10:12) (Speaker 3 (81%)): I like I I just want her to put me right out I don't want to be awake [54] (10:17) (Speaker 3 (60%)): and she's still in [55] (10:21) (Speaker 3 (70%)): She needs to know about my heart and blood pressure and [56] (10:29) (Speaker 1 (45%)): so the [57] (10:30) (Dr Zohoor (63%)): I can do that but the sound is a sensitive background a little bit [58] (10:33) (Dr Zohoor (77%)): she the person that saw you before at the high staff [59] (10:37) (Dr Zohoor (69%)): and I said you're going back to see her [60] (10:40) (Speaker 3 (66%)): Do you really have a consultation? [61] (10:44) (Speaker 3 (71%)): And now I'll show the signature. [62] (10:47) (Speaker 3 (79%)): and then holding I'm just afraid it's going to end up worse than it is and then I've gone through all this for nothing [63] (10:56) (Speaker 1 (65%)): I got hurt because met someone [64] (11:00) (Dr Zohoor (74%)): collaboration to make it fresh what i understand it's not for nothing i thought but i hear the fear now if it is heavy right it's exhausting [65] (11:13) (Speaker 3 (71%)): just like the journey and it's just been put off so long and [66] (11:17) (Speaker 3 (69%)): Now I have an information and [67] (11:21) (Speaker 3 (80%)): Then my my rain just goes on and the drops make it worse [68] (11:27) (Speaker 1 (71%)): okay now when you draw box over [69] (11:32) (Dr Zohoor (65%)): their know wasn't clear but they said that their [70] (11:36) (Dr Zohoor (71%)): that the surgery is done with general anesthesia which she said was an afternoon procedure [71] (11:43) (Speaker 1 (77%)): it's possible that i i'm [72] (11:46) (Dr Zohoor (67%)): is password field or field end [73] (11:48) (Dr Zohoor (70%)): Um let me just figure out what they typically do. [74] (11:52) (Dr Zohoor (64%)): you one moment there is a surgery that i don't normally like i'm not not supposed to ask [75] (11:58) (Speaker 1 (71%)): i just want to make sure that i have [76] (12:02) (Dr Zohoor (73%)): um so if you are request this hey can you make how everything seems to able to to help [77] (12:09) (Dr Zohoor (73%)): before the out for this i just want to see whether or not [78] (12:15) (Speaker 3 (77%)): the film toast dr browns associate he said what shall do is shall probe [79] (12:23) (Speaker 3 (65%)): to try and find of the vault [80] (12:27) (Speaker 3 (79%)): And then they could announce them. [81] (12:30) (Speaker 3 (56%)): I don't know, I guess. [82] (12:32) (Speaker 3 (83%)): to keep though the pressure down and keep the fluid moving [83] (12:40) (Dr Zohoor (80%)): looking for the name of the particular circuitry he had suggested and all that [84] (12:55) (Dr Zohoor (64%)): I passed over the message also through another feature [85] (12:59) (Dr Zohoor (71%)): there naturally the cpc.ip support 455 enterprise [86] (13:04) (Dr Zohoor (81%)): need to restart the control interface okay so they works as atv's one second [87] (13:11) (Speaker 1 (46%)): to be clean [88] (13:13) (Speaker 1 (49%)): let to see what the subscription is [89] (13:19) (Dr Zohoor (71%)): figure surgery is 18e because it's safe [90] (13:22) (Speaker 1 (69%)): protectable and uh [91] (13:27) (Speaker 1 (40%)): to kick off the [92] (13:28) (Speaker 1 (42%)): so [93] (13:38) (Speaker 1 (61%)): specification in New York [94] (13:41) (Speaker 1 (39%)): local [95] (13:52) (Speaker 1 (38%)): I want to I want to make sure so [96] (13:56) (Dr Zohoor (67%)): So the first thing is that the surgeon [97] (14:00) (Speaker 1 (57%)): cousins decide [98] (14:02) (Dr Zohoor (71%)): whether or not to do general anesthesia [99] (14:05) (Dr Zohoor (71%)): as the asset keeper so let's say so just say yes [100] (14:09) (Speaker 3 (69%)): if you want happen it's easier put your out it they suggest sometimes they do yeah i talked to Zoey called me and she said sometimes they do [101] (14:24) (Speaker 3 (75%)): and i don't know if my heart can take all this like [102] (14:28) (Speaker 3 (36%)): just to [103] (14:34) (Speaker 1 (61%)): Duration is about 90 mins. [104] (14:36) (Dr Zohoor (67%)): absolutely for five in an at corporate time [105] (14:40) (Dr Zohoor (73%)): so it's kind of 45 9 ms [106] (14:44) (Speaker 1 (61%)): to just see [107] (14:53) (Speaker 1 (46%)): says [108] (15:14) (Dr Zohoor (77%)): for I what I don't want I want to make sure that that new dress is because [109] (15:19) (Dr Zohoor (70%)): I don't want this to get [110] (15:21) (Dr Zohoor (64%)): I want you to go there for a consult. [111] (15:24) (Dr Zohoor (84%)): and it get delayed a lot because of anesthesia artifacts because there's usually three options so normally there's a local or just intracranial nerve the fist eye the whole eye bulb [112] (15:38) (Dr Zohoor (79%)): you find local hemodynamic drops in the eye right this is different there they de-economing of the nerve of the eye so local eye becomes now [113] (15:48) (Speaker 1 (74%)): so that is the safest option [114] (15:51) (Dr Zohoor (61%)): it's just style [115] (15:54) (Dr Zohoor (80%)): there's a second option is really also adaptation to us so they give you medications intermittently so that your your [116] (16:03) (Dr Zohoor (67%)): you are the stated state [117] (16:05) (Dr Zohoor (73%)): we're running the emergency room so if a drop comes in they need their onsets it's a taken for procedure [118] (16:12) (Dr Zohoor (70%)): strong anesthesia in operated in patient it in the operating on a same why [119] (16:18) (Speaker 1 (64%)): the risks there are are lower [120] (16:21) (Speaker 1 (36%)): um [121] (16:22) (Dr Zohoor (69%)): and and the four exercises where the person is on a breathing tube and all that stuff [122] (16:28) (Speaker 1 (62%)): so the [123] (16:30) (Speaker 1 (37%)): um [124] (16:34) (Dr Zohoor (77%)): so although for the abert person experiences if they do a local block if they just do an nerve block [125] (16:41) (Speaker 1 (58%)): come [126] (16:43) (Dr Zohoor (78%)): person the patient feels pressure and tightness but not any sharp pain [127] (16:47) (Dr Zohoor (77%)): and the most uncomfortable is the act of naming that they do [128] (16:52) (Dr Zohoor (75%)): afterwards the way you gonna feel the sensations and stuff [129] (16:56) (Dr Zohoor (77%)): Most patients subscribe as more uncomfortable cataracts are pretty but not severely painful and takes about a week or two to fully heal [130] (17:05) (Speaker 1 (61%)): and then [131] (17:09) (Speaker 1 (62%)): I've had car surgery. How was that experience? It was fine. [132] (17:13) (Dr Zohoor (69%)): So it's done in a very similar way. It's done with the laser. [133] (17:20) (Speaker 3 (65%)): a few years ago [134] (17:26) (Speaker 1 (44%)): So [135] (17:27) (Dr Zohoor (66%)): or out the marias i will you want me to write the letter and give it to you for your appointment or is it something that you do that's a tumor [136] (17:36) (Speaker 3 (68%)): I would like to call so to Dr. Groon. [137] (17:41) (Speaker 1 (57%)): So that her when [138] (17:43) (Speaker 3 (82%)): and this is especially about my heart and blood pressure blood I stay don't really understand so [139] (17:52) (Dr Zohoor (73%)): what i'll say is that you aren't high risk for general anesthesia so general anesthesia is where let's say they're picking out a gallbladder and they have to put you fully out [140] (18:03) (Dr Zohoor (81%)): because then your life support so they they there's a tube in your lining breathing for you etc etc and you have both heart and lung condition cpd at weight perfect has the highest stress on your system [141] (18:19) (Speaker 1 (72%)): So in my world [142] (18:23) (Speaker 1 (49%)): che cola più buona è situata [143] (18:26) (Speaker 1 (56%)): to be full the honest [144] (18:28) (Speaker 1 (44%)): um [145] (18:29) (Dr Zohoor (71%)): but you do what you think is right but I mean column the two and the wire the person who makes a decision is the initiator so let's say that the insurance says yeah let's just what you fully out for it and that [146] (18:41) (Dr Zohoor (75%)): they do that they do that for some people who let's say someone has parkinsons and they're constantly shaking or let's say someone has a pile or someone who it's going to be very costly like things like that [147] (18:54) (Speaker 1 (73%)): they can but people fully out um\n\nReal-time context signals:\nCONTEXT: The presence sensor confirms someone is still in the room. Topic changes or pauses within the same visit are NOT transitions. Discussing a different family member or patient who is part of the same visit/call is NOT a transition — couples visits, family visits, and phone calls to households often involve the physician addressing multiple people's medical issues in a single encounter. Only split if there is a clear farewell, departure, AND arrival of a completely unrelated new patient.",
+      "response_raw": "{\"complete\": false, \"confidence\": 0.85}",
+      "segment_range": [
+        0,
+        147
+      ],
+      "sensor_context": {
+        "departed": false,
+        "present": true,
+        "unknown": false
+      },
+      "success": true,
+      "ts": "2026-04-09T15:36:51.858862+00:00",
+      "word_count": 1301
+    },
+    {
+      "cleaned_word_count": 1602,
+      "latency_ms": 4695,
+      "loop_state": {
+        "buffer_age_secs": 1262.0,
+        "consecutive_failures": 0,
+        "manual_triggered": false,
+        "merge_back_count": 0,
+        "sensor_continuous_present": false,
+        "sensor_triggered": false
+      },
+      "parsed_complete": false,
+      "parsed_confidence": 0.85,
+      "parsed_end_index": null,
+      "prompt_system": "You MUST respond in English with ONLY a JSON object. No other text, no explanations, no markdown.\n\nYou are analyzing a continuous transcript from a medical office where the microphone records all day.\n\nYour task: determine if there is a TRANSITION POINT where one patient encounter ends and another begins, or where a patient encounter has clearly concluded.\n\nA completed encounter typically includes a clinical discussion and a concluding plan (e.g., medication changes, follow-up timing, referrals, or instructions). A short transcript that contains only vitals, greetings, or brief exchanges — with no clinical discussion or plan — is likely a pre-visit assessment still in progress, not a completed encounter. A nurse or medical assistant may see the patient before the doctor arrives to take vitals or ask initial questions — this is part of the same encounter, not a separate visit.\n\nEach segment includes elapsed time (MM:SS) from the start of the recording. Large gaps between timestamps may indicate silence, examination, or the room being empty between patients.\n\nIf you find a transition point or completed encounter, return:\n{\"complete\": true, \"end_segment_index\": <last segment index of the CONCLUDED encounter>, \"confidence\": <0.0-1.0>}\n\nIf the current discussion is still one ongoing encounter with no transition, return:\n{\"complete\": false, \"confidence\": <0.0-1.0>}\n\nRespond with ONLY the JSON object.",
+      "prompt_user": "Transcript (segments numbered with speaker labels):\n[0] (00:00) (Speaker 1 (100%)): pour faire parler derrière [1] (00:18) (Speaker 1 (59%)): and like that [2] (00:20) (Speaker 1 (70%)): said after like next week first or whatever [3] (00:26) (Speaker 1 (60%)): you're right mother [4] (00:30) (Speaker 1 (72%)): Are you okay to wait on that? [5] (00:32) (Speaker 1 (80%)): and [6] (00:34) (Speaker 1 (80%)): Hi Karen, yeah, everything was alright. I'm talking to [7] (00:42) (Speaker 1 (80%)): they have answer 300 [8] (00:47) (Speaker 1 (76%)): it goes [9] (00:48) (Speaker 1 (79%)): it [10] (02:27) (Speaker 1 (87%)): are you [11] (02:31) (Speaker 1 (76%)): Okay, provision 3 they are on your request. [12] (03:25) (Speaker 1 (79%)): come [13] (05:09) (Speaker 1 (77%)): right [14] (06:25) (Speaker 1 (74%)): I go [15] (06:50) (Speaker 2 (100%)): and in the court she was [16] (07:12) (Speaker 1 (86%)): hello [17] (07:12) (Speaker 1 (63%)): one to burn six okay [18] (07:21) (Speaker 1 (53%)): How are you? [19] (07:24) (Speaker 3 (100%)): مشکلی هیچ پلتفرمی در بیا و اینس [20] (07:28) (Speaker 1 (50%)): heads [21] (07:37) (Speaker 4 (100%)): မြေပြ [22] (07:49) (Speaker 5 (100%)): just going to go tight okay [23] (08:02) (Speaker 3 (48%)): 134/66 [24] (08:04) (Speaker 3 (61%)): this reason for last [25] (08:10) (Speaker 3 (63%)): Alright, Dr. Zobel is free, okay? [26] (08:39) (Speaker 1 (46%)): We live here. [27] (08:40) (Speaker 1 (44%)): measures of this [28] (08:43) (Speaker 1 (34%)): we went to the night [29] (08:44) (Speaker 1 (48%)): Ah [30] (08:46) (Speaker 1 (50%)): right now [31] (08:48) (Speaker 1 (45%)): how are i doing [32] (08:50) (Speaker 1 (45%)): mai aayi thi pagal bag mein chhatay [33] (08:53) (Dr Zohoor (63%)): are good idea if anything [34] (08:57) (Speaker 1 (47%)): any interest that happened materials since i thought [35] (09:00) (Speaker 1 (56%)): I think since [36] (09:03) (Speaker 1 (63%)): hit the laser on form room sensitive to light so [37] (09:08) (Dr Zohoor (67%)): I don't forget a dimmer like because I had adaptation struggle with that. [38] (09:13) (Speaker 1 (69%)): How are you doing today, Ade? Um like some of the numbers aren't too bad, but I never very bad spell in here, I don't know it. [39] (09:23) (Speaker 1 (68%)): was gone and after the horse walked out [40] (09:29) (Speaker 1 (49%)): now [41] (09:30) (Dr Zohoor (67%)): So that's really too rough and [42] (09:34) (Speaker 1 (46%)): so [43] (09:36) (Dr Zohoor (67%)): So you took [44] (09:38) (Speaker 1 (42%)): perpetually twice as fertile as a yeah [45] (09:45) (Speaker 1 (52%)): for a bit [46] (09:47) (Speaker 1 (63%)): it slowly kind of [47] (09:50) (Speaker 1 (56%)): all back to right [48] (09:53) (Speaker 3 (40%)): I think I'm very stressed. [49] (09:56) (Speaker 1 (48%)): How about we talk about the stress a little bit? [50] (09:59) (Speaker 3 (55%)): I don't know if I'll still hurt my eye. [51] (10:03) (Speaker 3 (51%)): I just don't know I'm scared feel like um [52] (10:07) (Speaker 3 (75%)): That's mine out down here but this is the guests Dr Sharma [53] (10:12) (Speaker 3 (81%)): I like I I just want her to put me right out I don't want to be awake [54] (10:17) (Speaker 3 (60%)): and she's still in [55] (10:21) (Speaker 3 (70%)): She needs to know about my heart and blood pressure and [56] (10:29) (Speaker 1 (45%)): so the [57] (10:30) (Dr Zohoor (63%)): I can do that but the sound is a sensitive background a little bit [58] (10:33) (Dr Zohoor (77%)): she the person that saw you before at the high staff [59] (10:37) (Dr Zohoor (69%)): and I said you're going back to see her [60] (10:40) (Speaker 3 (66%)): Do you really have a consultation? [61] (10:44) (Speaker 3 (71%)): And now I'll show the signature. [62] (10:47) (Speaker 3 (79%)): and then holding I'm just afraid it's going to end up worse than it is and then I've gone through all this for nothing [63] (10:56) (Speaker 1 (65%)): I got hurt because met someone [64] (11:00) (Dr Zohoor (74%)): collaboration to make it fresh what i understand it's not for nothing i thought but i hear the fear now if it is heavy right it's exhausting [65] (11:13) (Speaker 3 (71%)): just like the journey and it's just been put off so long and [66] (11:17) (Speaker 3 (69%)): Now I have an information and [67] (11:21) (Speaker 3 (80%)): Then my my rain just goes on and the drops make it worse [68] (11:27) (Speaker 1 (71%)): okay now when you draw box over [69] (11:32) (Dr Zohoor (65%)): their know wasn't clear but they said that their [70] (11:36) (Dr Zohoor (71%)): that the surgery is done with general anesthesia which she said was an afternoon procedure [71] (11:43) (Speaker 1 (77%)): it's possible that i i'm [72] (11:46) (Dr Zohoor (67%)): is password field or field end [73] (11:48) (Dr Zohoor (70%)): Um let me just figure out what they typically do. [74] (11:52) (Dr Zohoor (64%)): you one moment there is a surgery that i don't normally like i'm not not supposed to ask [75] (11:58) (Speaker 1 (71%)): i just want to make sure that i have [76] (12:02) (Dr Zohoor (73%)): um so if you are request this hey can you make how everything seems to able to to help [77] (12:09) (Dr Zohoor (73%)): before the out for this i just want to see whether or not [78] (12:15) (Speaker 3 (77%)): the film toast dr browns associate he said what shall do is shall probe [79] (12:23) (Speaker 3 (65%)): to try and find of the vault [80] (12:27) (Speaker 3 (79%)): And then they could announce them. [81] (12:30) (Speaker 3 (56%)): I don't know, I guess. [82] (12:32) (Speaker 3 (83%)): to keep though the pressure down and keep the fluid moving [83] (12:40) (Dr Zohoor (80%)): looking for the name of the particular circuitry he had suggested and all that [84] (12:55) (Dr Zohoor (64%)): I passed over the message also through another feature [85] (12:59) (Dr Zohoor (71%)): there naturally the cpc.ip support 455 enterprise [86] (13:04) (Dr Zohoor (81%)): need to restart the control interface okay so they works as atv's one second [87] (13:11) (Speaker 1 (46%)): to be clean [88] (13:13) (Speaker 1 (49%)): let to see what the subscription is [89] (13:19) (Dr Zohoor (71%)): figure surgery is 18e because it's safe [90] (13:22) (Speaker 1 (69%)): protectable and uh [91] (13:27) (Speaker 1 (40%)): to kick off the [92] (13:28) (Speaker 1 (42%)): so [93] (13:38) (Speaker 1 (61%)): specification in New York [94] (13:41) (Speaker 1 (39%)): local [95] (13:52) (Speaker 1 (38%)): I want to I want to make sure so [96] (13:56) (Dr Zohoor (67%)): So the first thing is that the surgeon [97] (14:00) (Speaker 1 (57%)): cousins decide [98] (14:02) (Dr Zohoor (71%)): whether or not to do general anesthesia [99] (14:05) (Dr Zohoor (71%)): as the asset keeper so let's say so just say yes [100] (14:09) (Speaker 3 (69%)): if you want happen it's easier put your out it they suggest sometimes they do yeah i talked to Zoey called me and she said sometimes they do [101] (14:24) (Speaker 3 (75%)): and i don't know if my heart can take all this like [102] (14:28) (Speaker 3 (36%)): just to [103] (14:34) (Speaker 1 (61%)): Duration is about 90 mins. [104] (14:36) (Dr Zohoor (67%)): absolutely for five in an at corporate time [105] (14:40) (Dr Zohoor (73%)): so it's kind of 45 9 ms [106] (14:44) (Speaker 1 (61%)): to just see [107] (14:53) (Speaker 1 (46%)): says [108] (15:14) (Dr Zohoor (77%)): for I what I don't want I want to make sure that that new dress is because [109] (15:19) (Dr Zohoor (70%)): I don't want this to get [110] (15:21) (Dr Zohoor (64%)): I want you to go there for a consult. [111] (15:24) (Dr Zohoor (84%)): and it get delayed a lot because of anesthesia artifacts because there's usually three options so normally there's a local or just intracranial nerve the fist eye the whole eye bulb [112] (15:38) (Dr Zohoor (79%)): you find local hemodynamic drops in the eye right this is different there they de-economing of the nerve of the eye so local eye becomes now [113] (15:48) (Speaker 1 (74%)): so that is the safest option [114] (15:51) (Dr Zohoor (61%)): it's just style [115] (15:54) (Dr Zohoor (80%)): there's a second option is really also adaptation to us so they give you medications intermittently so that your your [116] (16:03) (Dr Zohoor (67%)): you are the stated state [117] (16:05) (Dr Zohoor (73%)): we're running the emergency room so if a drop comes in they need their onsets it's a taken for procedure [118] (16:12) (Dr Zohoor (70%)): strong anesthesia in operated in patient it in the operating on a same why [119] (16:18) (Speaker 1 (64%)): the risks there are are lower [120] (16:21) (Speaker 1 (36%)): um [121] (16:22) (Dr Zohoor (69%)): and and the four exercises where the person is on a breathing tube and all that stuff [122] (16:28) (Speaker 1 (62%)): so the [123] (16:30) (Speaker 1 (37%)): um [124] (16:34) (Dr Zohoor (77%)): so although for the abert person experiences if they do a local block if they just do an nerve block [125] (16:41) (Speaker 1 (58%)): come [126] (16:43) (Dr Zohoor (78%)): person the patient feels pressure and tightness but not any sharp pain [127] (16:47) (Dr Zohoor (77%)): and the most uncomfortable is the act of naming that they do [128] (16:52) (Dr Zohoor (75%)): afterwards the way you gonna feel the sensations and stuff [129] (16:56) (Dr Zohoor (77%)): Most patients subscribe as more uncomfortable cataracts are pretty but not severely painful and takes about a week or two to fully heal [130] (17:05) (Speaker 1 (61%)): and then [131] (17:09) (Speaker 1 (62%)): I've had car surgery. How was that experience? It was fine. [132] (17:13) (Dr Zohoor (69%)): So it's done in a very similar way. It's done with the laser. [133] (17:20) (Speaker 3 (65%)): a few years ago [134] (17:26) (Speaker 1 (44%)): So [135] (17:27) (Dr Zohoor (66%)): or out the marias i will you want me to write the letter and give it to you for your appointment or is it something that you do that's a tumor [136] (17:36) (Speaker 3 (68%)): I would like to call so to Dr. Groon. [137] (17:41) (Speaker 1 (57%)): So that her when [138] (17:43) (Speaker 3 (82%)): and this is especially about my heart and blood pressure blood I stay don't really understand so [139] (17:52) (Dr Zohoor (73%)): what i'll say is that you aren't high risk for general anesthesia so general anesthesia is where let's say they're picking out a gallbladder and they have to put you fully out [140] (18:03) (Dr Zohoor (81%)): because then your life support so they they there's a tube in your lining breathing for you etc etc and you have both heart and lung condition cpd at weight perfect has the highest stress on your system [141] (18:19) (Speaker 1 (72%)): So in my world [142] (18:23) (Speaker 1 (49%)): che cola più buona è situata [143] (18:26) (Speaker 1 (56%)): to be full the honest [144] (18:28) (Speaker 1 (44%)): um [145] (18:29) (Dr Zohoor (71%)): but you do what you think is right but I mean column the two and the wire the person who makes a decision is the initiator so let's say that the insurance says yeah let's just what you fully out for it and that [146] (18:41) (Dr Zohoor (75%)): they do that they do that for some people who let's say someone has parkinsons and they're constantly shaking or let's say someone has a pile or someone who it's going to be very costly like things like that [147] (18:54) (Speaker 1 (73%)): they can but people fully out um [148] (18:57) (Dr Zohoor (72%)): in my mind it's not the best scenario because the um [149] (19:02) (Speaker 1 (57%)): it was to be higher [150] (19:04) (Dr Zohoor (60%)): the middle ground or the subtissue [151] (19:08) (Speaker 1 (47%)): you're like [152] (19:10) (Speaker 1 (67%)): all feito and wake up [153] (19:11) (Speaker 1 (68%)): but they don't paralyze you [154] (19:14) (Dr Zohoor (64%)): you could prove by yourself [155] (19:16) (Dr Zohoor (75%)): este is more of the sweet spot because you don't remember any of it you're totally out have you had a colonoscopy before [156] (19:25) (Dr Zohoor (74%)): so for colonoscopies i have few so for colonoscopies is for doing a sedation in middle ground so no device breathing for you [157] (19:33) (Speaker 3 (66%)): should not fully away for either like actually away the first two I I think Dr. Gomez and then there [158] (19:42) (Speaker 3 (46%)): I was right out [159] (19:44) (Dr Zohoor (78%)): and but and it's true because depending on the dose you can be out and you'll have amnesia many can remember it [160] (19:52) (Dr Zohoor (78%)): but they didn't have to put a breathing tube down. I know she's so. Why didn't have that? So you're you're dehydrated and unconscious. Do not paralyzed. [161] (20:02) (Dr Zohoor (78%)): as rough as it is that's the because then the person's breathing is under effect on the heart and stuff now [162] (20:09) (Dr Zohoor (72%)): Another third option is it just to the block just to injection into nerve [163] (20:14) (Dr Zohoor (60%)): and I've all found [164] (20:17) (Speaker 1 (74%)): It's like a cataracts really. [165] (20:19) (Speaker 1 (47%)): and [166] (20:19) (Speaker 3 (57%)): aitamu mm mm [167] (20:21) (Dr Zohoor (74%)): it may could they may not have gotten um they may just put dummy stuff on there [168] (20:28) (Dr Zohoor (76%)): the benefit of that is that there's no risk at all there's no risk to your life or your heart at all [169] (20:34) (Speaker 3 (75%)): I have the laser. [170] (20:37) (Dr Zohoor (69%)): They actually injected into my eye. How was that? Terrible. The injection was painful. There it is. Yeah. That was probably the name they injected. [171] (20:47) (Dr Zohoor (67%)): before to sort the laser [172] (20:50) (Dr Zohoor (64%)): The laser was very painful. Oh, it wasn't. I can see it. They gave him took a block. [173] (20:55) (Speaker 1 (39%)): Please it [174] (20:57) (Speaker 3 (60%)): because um\n\nReal-time context signals:\nCONTEXT: The presence sensor confirms someone is still in the room. Topic changes or pauses within the same visit are NOT transitions. Discussing a different family member or patient who is part of the same visit/call is NOT a transition — couples visits, family visits, and phone calls to households often involve the physician addressing multiple people's medical issues in a single encounter. Only split if there is a clear farewell, departure, AND arrival of a completely unrelated new patient.",
+      "response_raw": "{\"complete\": false, \"confidence\": 0.85}",
+      "segment_range": [
+        0,
+        174
+      ],
+      "sensor_context": {
+        "departed": false,
+        "present": true,
+        "unknown": false
+      },
+      "success": true,
+      "ts": "2026-04-09T15:38:56.600382+00:00",
+      "word_count": 1602
+    },
+    {
+      "cleaned_word_count": 1911,
+      "latency_ms": 5781,
+      "loop_state": {
+        "buffer_age_secs": 1386.0,
+        "consecutive_failures": 0,
+        "manual_triggered": false,
+        "merge_back_count": 0,
+        "sensor_continuous_present": false,
+        "sensor_triggered": false
+      },
+      "parsed_complete": true,
+      "parsed_confidence": 0.9,
+      "parsed_end_index": 197,
+      "prompt_system": "You MUST respond in English with ONLY a JSON object. No other text, no explanations, no markdown.\n\nYou are analyzing a continuous transcript from a medical office where the microphone records all day.\n\nYour task: determine if there is a TRANSITION POINT where one patient encounter ends and another begins, or where a patient encounter has clearly concluded.\n\nA completed encounter typically includes a clinical discussion and a concluding plan (e.g., medication changes, follow-up timing, referrals, or instructions). A short transcript that contains only vitals, greetings, or brief exchanges — with no clinical discussion or plan — is likely a pre-visit assessment still in progress, not a completed encounter. A nurse or medical assistant may see the patient before the doctor arrives to take vitals or ask initial questions — this is part of the same encounter, not a separate visit.\n\nEach segment includes elapsed time (MM:SS) from the start of the recording. Large gaps between timestamps may indicate silence, examination, or the room being empty between patients.\n\nIf you find a transition point or completed encounter, return:\n{\"complete\": true, \"end_segment_index\": <last segment index of the CONCLUDED encounter>, \"confidence\": <0.0-1.0>}\n\nIf the current discussion is still one ongoing encounter with no transition, return:\n{\"complete\": false, \"confidence\": <0.0-1.0>}\n\nRespond with ONLY the JSON object.",
+      "prompt_user": "Transcript (segments numbered with speaker labels):\n[0] (00:00) (Speaker 1 (100%)): pour faire parler derrière [1] (00:18) (Speaker 1 (59%)): and like that [2] (00:20) (Speaker 1 (70%)): said after like next week first or whatever [3] (00:26) (Speaker 1 (60%)): you're right mother [4] (00:30) (Speaker 1 (72%)): Are you okay to wait on that? [5] (00:32) (Speaker 1 (80%)): and [6] (00:34) (Speaker 1 (80%)): Hi Karen, yeah, everything was alright. I'm talking to [7] (00:42) (Speaker 1 (80%)): they have answer 300 [8] (00:47) (Speaker 1 (76%)): it goes [9] (00:48) (Speaker 1 (79%)): it [10] (02:27) (Speaker 1 (87%)): are you [11] (02:31) (Speaker 1 (76%)): Okay, provision 3 they are on your request. [12] (03:25) (Speaker 1 (79%)): come [13] (05:09) (Speaker 1 (77%)): right [14] (06:25) (Speaker 1 (74%)): I go [15] (06:50) (Speaker 2 (100%)): and in the court she was [16] (07:12) (Speaker 1 (86%)): hello [17] (07:12) (Speaker 1 (63%)): one to burn six okay [18] (07:21) (Speaker 1 (53%)): How are you? [19] (07:24) (Speaker 3 (100%)): مشکلی هیچ پلتفرمی در بیا و اینس [20] (07:28) (Speaker 1 (50%)): heads [21] (07:37) (Speaker 4 (100%)): မြေပြ [22] (07:49) (Speaker 5 (100%)): just going to go tight okay [23] (08:02) (Speaker 3 (48%)): 134/66 [24] (08:04) (Speaker 3 (61%)): this reason for last [25] (08:10) (Speaker 3 (63%)): Alright, Dr. Zobel is free, okay? [26] (08:39) (Speaker 1 (46%)): We live here. [27] (08:40) (Speaker 1 (44%)): measures of this [28] (08:43) (Speaker 1 (34%)): we went to the night [29] (08:44) (Speaker 1 (48%)): Ah [30] (08:46) (Speaker 1 (50%)): right now [31] (08:48) (Speaker 1 (45%)): how are i doing [32] (08:50) (Speaker 1 (45%)): mai aayi thi pagal bag mein chhatay [33] (08:53) (Dr Zohoor (63%)): are good idea if anything [34] (08:57) (Speaker 1 (47%)): any interest that happened materials since i thought [35] (09:00) (Speaker 1 (56%)): I think since [36] (09:03) (Speaker 1 (63%)): hit the laser on form room sensitive to light so [37] (09:08) (Dr Zohoor (67%)): I don't forget a dimmer like because I had adaptation struggle with that. [38] (09:13) (Speaker 1 (69%)): How are you doing today, Ade? Um like some of the numbers aren't too bad, but I never very bad spell in here, I don't know it. [39] (09:23) (Speaker 1 (68%)): was gone and after the horse walked out [40] (09:29) (Speaker 1 (49%)): now [41] (09:30) (Dr Zohoor (67%)): So that's really too rough and [42] (09:34) (Speaker 1 (46%)): so [43] (09:36) (Dr Zohoor (67%)): So you took [44] (09:38) (Speaker 1 (42%)): perpetually twice as fertile as a yeah [45] (09:45) (Speaker 1 (52%)): for a bit [46] (09:47) (Speaker 1 (63%)): it slowly kind of [47] (09:50) (Speaker 1 (56%)): all back to right [48] (09:53) (Speaker 3 (40%)): I think I'm very stressed. [49] (09:56) (Speaker 1 (48%)): How about we talk about the stress a little bit? [50] (09:59) (Speaker 3 (55%)): I don't know if I'll still hurt my eye. [51] (10:03) (Speaker 3 (51%)): I just don't know I'm scared feel like um [52] (10:07) (Speaker 3 (75%)): That's mine out down here but this is the guests Dr Sharma [53] (10:12) (Speaker 3 (81%)): I like I I just want her to put me right out I don't want to be awake [54] (10:17) (Speaker 3 (60%)): and she's still in [55] (10:21) (Speaker 3 (70%)): She needs to know about my heart and blood pressure and [56] (10:29) (Speaker 1 (45%)): so the [57] (10:30) (Dr Zohoor (63%)): I can do that but the sound is a sensitive background a little bit [58] (10:33) (Dr Zohoor (77%)): she the person that saw you before at the high staff [59] (10:37) (Dr Zohoor (69%)): and I said you're going back to see her [60] (10:40) (Speaker 3 (66%)): Do you really have a consultation? [61] (10:44) (Speaker 3 (71%)): And now I'll show the signature. [62] (10:47) (Speaker 3 (79%)): and then holding I'm just afraid it's going to end up worse than it is and then I've gone through all this for nothing [63] (10:56) (Speaker 1 (65%)): I got hurt because met someone [64] (11:00) (Dr Zohoor (74%)): collaboration to make it fresh what i understand it's not for nothing i thought but i hear the fear now if it is heavy right it's exhausting [65] (11:13) (Speaker 3 (71%)): just like the journey and it's just been put off so long and [66] (11:17) (Speaker 3 (69%)): Now I have an information and [67] (11:21) (Speaker 3 (80%)): Then my my rain just goes on and the drops make it worse [68] (11:27) (Speaker 1 (71%)): okay now when you draw box over [69] (11:32) (Dr Zohoor (65%)): their know wasn't clear but they said that their [70] (11:36) (Dr Zohoor (71%)): that the surgery is done with general anesthesia which she said was an afternoon procedure [71] (11:43) (Speaker 1 (77%)): it's possible that i i'm [72] (11:46) (Dr Zohoor (67%)): is password field or field end [73] (11:48) (Dr Zohoor (70%)): Um let me just figure out what they typically do. [74] (11:52) (Dr Zohoor (64%)): you one moment there is a surgery that i don't normally like i'm not not supposed to ask [75] (11:58) (Speaker 1 (71%)): i just want to make sure that i have [76] (12:02) (Dr Zohoor (73%)): um so if you are request this hey can you make how everything seems to able to to help [77] (12:09) (Dr Zohoor (73%)): before the out for this i just want to see whether or not [78] (12:15) (Speaker 3 (77%)): the film toast dr browns associate he said what shall do is shall probe [79] (12:23) (Speaker 3 (65%)): to try and find of the vault [80] (12:27) (Speaker 3 (79%)): And then they could announce them. [81] (12:30) (Speaker 3 (56%)): I don't know, I guess. [82] (12:32) (Speaker 3 (83%)): to keep though the pressure down and keep the fluid moving [83] (12:40) (Dr Zohoor (80%)): looking for the name of the particular circuitry he had suggested and all that [84] (12:55) (Dr Zohoor (64%)): I passed over the message also through another feature [85] (12:59) (Dr Zohoor (71%)): there naturally the cpc.ip support 455 enterprise [86] (13:04) (Dr Zohoor (81%)): need to restart the control interface okay so they works as atv's one second [87] (13:11) (Speaker 1 (46%)): to be clean [88] (13:13) (Speaker 1 (49%)): let to see what the subscription is [89] (13:19) (Dr Zohoor (71%)): figure surgery is 18e because it's safe [90] (13:22) (Speaker 1 (69%)): protectable and uh [91] (13:27) (Speaker 1 (40%)): to kick off the [92] (13:28) (Speaker 1 (42%)): so [93] (13:38) (Speaker 1 (61%)): specification in New York [94] (13:41) (Speaker 1 (39%)): local [95] (13:52) (Speaker 1 (38%)): I want to I want to make sure so [96] (13:56) (Dr Zohoor (67%)): So the first thing is that the surgeon [97] (14:00) (Speaker 1 (57%)): cousins decide [98] (14:02) (Dr Zohoor (71%)): whether or not to do general anesthesia [99] (14:05) (Dr Zohoor (71%)): as the asset keeper so let's say so just say yes [100] (14:09) (Speaker 3 (69%)): if you want happen it's easier put your out it they suggest sometimes they do yeah i talked to Zoey called me and she said sometimes they do [101] (14:24) (Speaker 3 (75%)): and i don't know if my heart can take all this like [102] (14:28) (Speaker 3 (36%)): just to [103] (14:34) (Speaker 1 (61%)): Duration is about 90 mins. [104] (14:36) (Dr Zohoor (67%)): absolutely for five in an at corporate time [105] (14:40) (Dr Zohoor (73%)): so it's kind of 45 9 ms [106] (14:44) (Speaker 1 (61%)): to just see [107] (14:53) (Speaker 1 (46%)): says [108] (15:14) (Dr Zohoor (77%)): for I what I don't want I want to make sure that that new dress is because [109] (15:19) (Dr Zohoor (70%)): I don't want this to get [110] (15:21) (Dr Zohoor (64%)): I want you to go there for a consult. [111] (15:24) (Dr Zohoor (84%)): and it get delayed a lot because of anesthesia artifacts because there's usually three options so normally there's a local or just intracranial nerve the fist eye the whole eye bulb [112] (15:38) (Dr Zohoor (79%)): you find local hemodynamic drops in the eye right this is different there they de-economing of the nerve of the eye so local eye becomes now [113] (15:48) (Speaker 1 (74%)): so that is the safest option [114] (15:51) (Dr Zohoor (61%)): it's just style [115] (15:54) (Dr Zohoor (80%)): there's a second option is really also adaptation to us so they give you medications intermittently so that your your [116] (16:03) (Dr Zohoor (67%)): you are the stated state [117] (16:05) (Dr Zohoor (73%)): we're running the emergency room so if a drop comes in they need their onsets it's a taken for procedure [118] (16:12) (Dr Zohoor (70%)): strong anesthesia in operated in patient it in the operating on a same why [119] (16:18) (Speaker 1 (64%)): the risks there are are lower [120] (16:21) (Speaker 1 (36%)): um [121] (16:22) (Dr Zohoor (69%)): and and the four exercises where the person is on a breathing tube and all that stuff [122] (16:28) (Speaker 1 (62%)): so the [123] (16:30) (Speaker 1 (37%)): um [124] (16:34) (Dr Zohoor (77%)): so although for the abert person experiences if they do a local block if they just do an nerve block [125] (16:41) (Speaker 1 (58%)): come [126] (16:43) (Dr Zohoor (78%)): person the patient feels pressure and tightness but not any sharp pain [127] (16:47) (Dr Zohoor (77%)): and the most uncomfortable is the act of naming that they do [128] (16:52) (Dr Zohoor (75%)): afterwards the way you gonna feel the sensations and stuff [129] (16:56) (Dr Zohoor (77%)): Most patients subscribe as more uncomfortable cataracts are pretty but not severely painful and takes about a week or two to fully heal [130] (17:05) (Speaker 1 (61%)): and then [131] (17:09) (Speaker 1 (62%)): I've had car surgery. How was that experience? It was fine. [132] (17:13) (Dr Zohoor (69%)): So it's done in a very similar way. It's done with the laser. [133] (17:20) (Speaker 3 (65%)): a few years ago [134] (17:26) (Speaker 1 (44%)): So [135] (17:27) (Dr Zohoor (66%)): or out the marias i will you want me to write the letter and give it to you for your appointment or is it something that you do that's a tumor [136] (17:36) (Speaker 3 (68%)): I would like to call so to Dr. Groon. [137] (17:41) (Speaker 1 (57%)): So that her when [138] (17:43) (Speaker 3 (82%)): and this is especially about my heart and blood pressure blood I stay don't really understand so [139] (17:52) (Dr Zohoor (73%)): what i'll say is that you aren't high risk for general anesthesia so general anesthesia is where let's say they're picking out a gallbladder and they have to put you fully out [140] (18:03) (Dr Zohoor (81%)): because then your life support so they they there's a tube in your lining breathing for you etc etc and you have both heart and lung condition cpd at weight perfect has the highest stress on your system [141] (18:19) (Speaker 1 (72%)): So in my world [142] (18:23) (Speaker 1 (49%)): che cola più buona è situata [143] (18:26) (Speaker 1 (56%)): to be full the honest [144] (18:28) (Speaker 1 (44%)): um [145] (18:29) (Dr Zohoor (71%)): but you do what you think is right but I mean column the two and the wire the person who makes a decision is the initiator so let's say that the insurance says yeah let's just what you fully out for it and that [146] (18:41) (Dr Zohoor (75%)): they do that they do that for some people who let's say someone has parkinsons and they're constantly shaking or let's say someone has a pile or someone who it's going to be very costly like things like that [147] (18:54) (Speaker 1 (73%)): they can but people fully out um [148] (18:57) (Dr Zohoor (72%)): in my mind it's not the best scenario because the um [149] (19:02) (Speaker 1 (57%)): it was to be higher [150] (19:04) (Dr Zohoor (60%)): the middle ground or the subtissue [151] (19:08) (Speaker 1 (47%)): you're like [152] (19:10) (Speaker 1 (67%)): all feito and wake up [153] (19:11) (Speaker 1 (68%)): but they don't paralyze you [154] (19:14) (Dr Zohoor (64%)): you could prove by yourself [155] (19:16) (Dr Zohoor (75%)): este is more of the sweet spot because you don't remember any of it you're totally out have you had a colonoscopy before [156] (19:25) (Dr Zohoor (74%)): so for colonoscopies i have few so for colonoscopies is for doing a sedation in middle ground so no device breathing for you [157] (19:33) (Speaker 3 (66%)): should not fully away for either like actually away the first two I I think Dr. Gomez and then there [158] (19:42) (Speaker 3 (46%)): I was right out [159] (19:44) (Dr Zohoor (78%)): and but and it's true because depending on the dose you can be out and you'll have amnesia many can remember it [160] (19:52) (Dr Zohoor (78%)): but they didn't have to put a breathing tube down. I know she's so. Why didn't have that? So you're you're dehydrated and unconscious. Do not paralyzed. [161] (20:02) (Dr Zohoor (78%)): as rough as it is that's the because then the person's breathing is under effect on the heart and stuff now [162] (20:09) (Dr Zohoor (72%)): Another third option is it just to the block just to injection into nerve [163] (20:14) (Dr Zohoor (60%)): and I've all found [164] (20:17) (Speaker 1 (74%)): It's like a cataracts really. [165] (20:19) (Speaker 1 (47%)): and [166] (20:19) (Speaker 3 (57%)): aitamu mm mm [167] (20:21) (Dr Zohoor (74%)): it may could they may not have gotten um they may just put dummy stuff on there [168] (20:28) (Dr Zohoor (76%)): the benefit of that is that there's no risk at all there's no risk to your life or your heart at all [169] (20:34) (Speaker 3 (75%)): I have the laser. [170] (20:37) (Dr Zohoor (69%)): They actually injected into my eye. How was that? Terrible. The injection was painful. There it is. Yeah. That was probably the name they injected. [171] (20:47) (Dr Zohoor (67%)): before to sort the laser [172] (20:50) (Dr Zohoor (64%)): The laser was very painful. Oh, it wasn't. I can see it. They gave him took a block. [173] (20:55) (Speaker 1 (39%)): Please it [174] (20:57) (Speaker 3 (60%)): because um [175] (20:59) (Speaker 3 (80%)): the this the doctor on this side was doing the laser and dr sharon was over here and she was holding on to make counting damn [176] (21:11) (Speaker 3 (76%)): to get my mind over it and i remember shaken [177] (21:16) (Speaker 1 (52%)): ce match [178] (21:17) (Speaker 1 (49%)): So [179] (21:18) (Speaker 1 (60%)): I will write out a letter, I'll fax it to both of them. I'll summarize things like I'll summarize the [180] (21:27) (Speaker 1 (70%)): how summarize the medical conditions and the risks [181] (21:31) (Dr Zohoor (68%)): and our said my suggestion is what we call conscious sedation meaning that [182] (21:36) (Dr Zohoor (62%)): you breathing in your own [183] (21:38) (Dr Zohoor (75%)): She breathing for you. [184] (21:40) (Dr Zohoor (69%)): but you are sedated exactly like we do for colonoscopy for example [185] (21:45) (Dr Zohoor (61%)): and aspects were you're out [186] (21:48) (Speaker 1 (68%)): you now you now but [187] (21:51) (Dr Zohoor (67%)): you are do take the risk and the hard minds are super long I can them all before [188] (21:58) (Dr Zohoor (72%)): and and talking on the the arthroscopy and the sinus is doing that like won't be the i first [189] (22:05) (Dr Zohoor (81%)): I don't want to touch the imaging but the the need to this will then come to a middle ground as basically what I do not know is whether the hospital allows for it but I imagine so because there will be patients where they they just die so I will write out a note of applicability for them [190] (22:26) (Speaker 1 (58%)): height [191] (22:27) (Dr Zohoor (76%)): the language you want to use when you talk to her is that you want some salvation but you don't want to be we don't need to be completely out in paralysis [192] (22:38) (Speaker 4 (53%)): Okay. [193] (22:38) (Dr Zohoor (77%)): and i'm sure now but i prefer if we can do it and then [194] (22:46) (Dr Zohoor (62%)): in there there the hospital where procedures like scopes and stuff are done [195] (22:50) (Dr Zohoor (76%)): So there on need a full operating the main user is already off I do not think okay happy to [196] (22:57) (Speaker 1 (51%)): Um [197] (22:58) (Speaker 1 (71%)): Okay so I will send that note along maybe you can have that Are you sure Okay a pool [198] (23:07) (Speaker 1 (46%)): Um\n\nReal-time context signals:\nCONTEXT: The presence sensor confirms someone is still in the room. Topic changes or pauses within the same visit are NOT transitions. Discussing a different family member or patient who is part of the same visit/call is NOT a transition — couples visits, family visits, and phone calls to households often involve the physician addressing multiple people's medical issues in a single encounter. Only split if there is a clear farewell, departure, AND arrival of a completely unrelated new patient.",
+      "response_raw": "{\"complete\": true, \"end_segment_index\": 197, \"confidence\": 0.9}",
+      "segment_range": [
+        0,
+        198
+      ],
+      "sensor_context": {
+        "departed": false,
+        "present": true,
+        "unknown": false
+      },
+      "success": true,
+      "ts": "2026-04-09T15:41:02.431428+00:00",
+      "word_count": 1911
+    }
+  ],
+  "merge_check": {
+    "curr_head_excerpt": "Speaker 1 (100%): pour faire parler derrière Speaker 1 (59%): and like that Speaker 1 (70%): said after like next week first or whatever Speaker 1 (60%): you're right mother Speaker 1 (72%): Are you okay to wait on that? Speaker 1 (80%): and Speaker 1 (80%): Hi Karen, yeah, everything was alright. I'm talking to Speaker 1 (80%): they have answer 300 Speaker 1 (76%): it goes Speaker 1 (79%): it Speaker 1 (87%): are you Speaker 1 (76%): Okay, provision 3 they are on your request. Speaker 1 (79%): come Speaker 1 (77%): right Speaker 1 (74%): I go Speaker 2 (100%): and in the court she was Speaker 1 (86%): hello Speaker 1 (63%): one to burn six okay Speaker 1 (53%): How are you? Speaker 3 (100%): مشکلی هیچ پلتفرمی در بیا و اینس Speaker 1 (50%): heads Speaker 4 (100%): မြေပြ Speaker 5 (100%): just going to go tight okay Speaker 3 (48%): 134/66 Speaker 3 (61%): this reason for last Speaker 3 (63%): Alright, Dr. Zobel is free, okay? Speaker 1 (46%): We live here. Speaker 1 (44%): measures of this Speaker 1 (34%): we went to the night Speaker 1 (48%): Ah Speaker 1 (50%): right now Speaker 1 (45%): how are i doing Speaker 1 (45%): mai aayi thi pagal bag mein chhatay Dr Zohoor (63%): are good idea if anything Speaker 1 (47%): any interest that happened materials since i thought Speaker 1 (56%): I think since Speaker 1 (63%): hit the laser on form room sensitive to light so Dr Zohoor (67%): I don't forget a dimmer like because I had adaptation struggle with that. Speaker 1 (69%): How are you doing today, Ade? Um like some of the numbers aren't too bad, but I never very bad spell in here, I don't know it. Speaker 1 (68%): was gone and after the horse walked out Speaker 1 (49%): now Dr Zohoor (67%): So that's really too rough and Speaker 1 (46%): so Dr Zohoor (67%): So you took Speaker 1 (42%): perpetually twice as fertile as a yeah Speaker 1 (52%): for a bit Speaker 1 (63%): it slowly kind of Speaker 1 (56%): all back to right Speaker 3 (40%): I think I'm very stressed. Speaker 1 (48%): How about we talk about the stress a little bit? Speaker 3 (55%): I don't know if I'll still hurt my eye. Speaker 3 (51%): I just don't know I'm scared feel like um Speaker 3 (75%): That's mine out down here but this is the guests Dr Sharma Speaker 3 (81%): I like I I just want her to put me right out I don't want to be awake Speaker 3 (60%): and she's still in Speaker 3 (70%): She needs to know about my heart and blood pressure and Speaker 1 (45%): so the Dr Zohoor (63%): I can do that but the sound is a sensitive background a little bit Dr Zohoor (77%): she the person that",
+    "latency_ms": 3283,
+    "parsed_reason": "\"The first excerpt ends with incoherent/fragmented speech and no clear patient context, while the second excerpt begins with a new greeting ('Hi Karen') and transitions into a formal clinical encounter with Dr. Zohoor and a patient named Ade, discussing specific medical concerns like light sensitivity and stress.\"",
+    "parsed_same_encounter": false,
+    "prev_session_id": "54f39eac-894b-4e6a-aa31-79c73a424b1f",
+    "prev_tail_excerpt": "Speaker 1 (72%): a healthy tissue Speaker 1 (56%): so many I was just getting silly like Speaker 1 (56%): au Speaker 1 (65%): I Speaker 1 (71%): ready ready Speaker 1 (76%): Yeah Speaker 1 (86%): I think I'm going I suddenly Speaker 1 (73%): it was fine Speaker 1 (81%): I it I just said Speaker 1 (80%): and that Speaker 1 (72%): okay Speaker 1 (76%): seeing my parents Speaker 1 (73%): is yeah graduation yeah Speaker 1 (58%): you know you Speaker 1 (75%): like my tapper like shake take me to Speaker 1 (72%): and these are Speaker 1 (69%): they block when ends off the hashtag Speaker 1 (64%): it just felt like Speaker 1 (75%): 45 and Speaker 1 (65%): prospect Speaker 1 (72%): कोइ था Speaker 1 (71%): this makes sense Speaker 1 (80%): really not good Speaker 1 (80%): is really looking at the my locker Speaker 1 (67%): next is Speaker 1 (70%): difference in this order Speaker 1 (66%): she like this Speaker 1 (67%): just name so for Speaker 1 (75%): I want to say that there is no choice for Speaker 1 (75%): Please okay Speaker 1 (51%): have Speaker 1 (68%): 7 Speaker 1 (80%): The new doctor was nice. Overlooked a lot of the alterations. Speaker 1 (76%): Hi right now. How do you can I call? Speaker 1 (73%): Okay Speaker 1 (76%): I don't know. Speaker 1 (76%): you got a fiction Speaker 1 (75%): J'ai pas le steeringer non mais Speaker 1 (54%): extremely Speaker 1 (73%): Okay, I'm there. Speaker 1 (55%): really Speaker 1 (71%): Yeah Speaker 1 (65%): you just started answering Speaker 1 (66%): from right Speaker 1 (54%): face of vision in the game I like it Speaker 1 (51%): are hanging here Speaker 1 (56%): can't catch Speaker 1 (71%): a difference thing of the Speaker 1 (72%): my yeah Speaker 1 (61%): it could i was in peace Speaker 1 (79%): like come here Speaker 1 (75%): normal Speaker 1 (74%): 3 Speaker 1 (73%): Are you ready? Speaker 1 (65%): it was so nice Speaker 1 (63%): I go to",
+    "prompt_system": "You are reviewing two consecutive transcript excerpts from a medical office where a microphone records all day.\n\nThe system split these into two separate encounters, but they may actually be the SAME patient visit that was incorrectly split (e.g., due to a pause, phone call, or silence during an examination).\n\nDetermine if both excerpts are from the SAME patient encounter or DIFFERENT encounters.\n\nSigns they are the SAME encounter:\n- Same patient name or context referenced\n- Continuation of the same clinical discussion\n- No farewell/greeting between them\n- Natural pause (examination, looking at charts) rather than patient change\n- Same medical condition being discussed from different angles\n\nSigns they are DIFFERENT encounters:\n- Different patient names or contexts\n- A farewell followed by a new greeting\n- Clearly different clinical topics with no continuity\n\nReturn JSON:\n{\"same_encounter\": true, \"reason\": \"brief explanation\"}\nor\n{\"same_encounter\": false, \"reason\": \"brief explanation\"}\n\nReturn ONLY the JSON object, nothing else.",
+    "prompt_user": "EXCERPT FROM END OF PREVIOUS ENCOUNTER:\nSpeaker 1 (72%): a healthy tissue Speaker 1 (56%): so many I was just getting silly like Speaker 1 (56%): au Speaker 1 (65%): I Speaker 1 (71%): ready ready Speaker 1 (76%): Yeah Speaker 1 (86%): I think I'm going I suddenly Speaker 1 (73%): it was fine Speaker 1 (81%): I it I just said Speaker 1 (80%): and that Speaker 1 (72%): okay Speaker 1 (76%): seeing my parents Speaker 1 (73%): is yeah graduation yeah Speaker 1 (58%): you know you Speaker 1 (75%): like my tapper like shake take me to Speaker 1 (72%): and these are Speaker 1 (69%): they block when ends off the hashtag Speaker 1 (64%): it just felt like Speaker 1 (75%): 45 and Speaker 1 (65%): prospect Speaker 1 (72%): कोइ था Speaker 1 (71%): this makes sense Speaker 1 (80%): really not good Speaker 1 (80%): is really looking at the my locker Speaker 1 (67%): next is Speaker 1 (70%): difference in this order Speaker 1 (66%): she like this Speaker 1 (67%): just name so for Speaker 1 (75%): I want to say that there is no choice for Speaker 1 (75%): Please okay Speaker 1 (51%): have Speaker 1 (68%): 7 Speaker 1 (80%): The new doctor was nice. Overlooked a lot of the alterations. Speaker 1 (76%): Hi right now. How do you can I call? Speaker 1 (73%): Okay Speaker 1 (76%): I don't know. Speaker 1 (76%): you got a fiction Speaker 1 (75%): J'ai pas le steeringer non mais Speaker 1 (54%): extremely Speaker 1 (73%): Okay, I'm there. Speaker 1 (55%): really Speaker 1 (71%): Yeah Speaker 1 (65%): you just started answering Speaker 1 (66%): from right Speaker 1 (54%): face of vision in the game I like it Speaker 1 (51%): are hanging here Speaker 1 (56%): can't catch Speaker 1 (71%): a difference thing of the Speaker 1 (72%): my yeah Speaker 1 (61%): it could i was in peace Speaker 1 (79%): like come here Speaker 1 (75%): normal Speaker 1 (74%): 3 Speaker 1 (73%): Are you ready? Speaker 1 (65%): it was so nice Speaker 1 (63%): I go to\n\n---\n\nEXCERPT FROM START OF NEXT ENCOUNTER:\nSpeaker 1 (100%): pour faire parler derrière Speaker 1 (59%): and like that Speaker 1 (70%): said after like next week first or whatever Speaker 1 (60%): you're right mother Speaker 1 (72%): Are you okay to wait on that? Speaker 1 (80%): and Speaker 1 (80%): Hi Karen, yeah, everything was alright. I'm talking to Speaker 1 (80%): they have answer 300 Speaker 1 (76%): it goes Speaker 1 (79%): it Speaker 1 (87%): are you Speaker 1 (76%): Okay, provision 3 they are on your request. Speaker 1 (79%): come Speaker 1 (77%): right Speaker 1 (74%): I go Speaker 2 (100%): and in the court she was Speaker 1 (86%): hello Speaker 1 (63%): one to burn six okay Speaker 1 (53%): How are you? Speaker 3 (100%): مشکلی هیچ پلتفرمی در بیا و اینس Speaker 1 (50%): heads Speaker 4 (100%): မြေပြ Speaker 5 (100%): just going to go tight okay Speaker 3 (48%): 134/66 Speaker 3 (61%): this reason for last Speaker 3 (63%): Alright, Dr. Zobel is free, okay? Speaker 1 (46%): We live here. Speaker 1 (44%): measures of this Speaker 1 (34%): we went to the night Speaker 1 (48%): Ah Speaker 1 (50%): right now Speaker 1 (45%): how are i doing Speaker 1 (45%): mai aayi thi pagal bag mein chhatay Dr Zohoor (63%): are good idea if anything Speaker 1 (47%): any interest that happened materials since i thought Speaker 1 (56%): I think since Speaker 1 (63%): hit the laser on form room sensitive to light so Dr Zohoor (67%): I don't forget a dimmer like because I had adaptation struggle with that. Speaker 1 (69%): How are you doing today, Ade? Um like some of the numbers aren't too bad, but I never very bad spell in here, I don't know it. Speaker 1 (68%): was gone and after the horse walked out Speaker 1 (49%): now Dr Zohoor (67%): So that's really too rough and Speaker 1 (46%): so Dr Zohoor (67%): So you took Speaker 1 (42%): perpetually twice as fertile as a yeah Speaker 1 (52%): for a bit Speaker 1 (63%): it slowly kind of Speaker 1 (56%): all back to right Speaker 3 (40%): I think I'm very stressed. Speaker 1 (48%): How about we talk about the stress a little bit? Speaker 3 (55%): I don't know if I'll still hurt my eye. Speaker 3 (51%): I just don't know I'm scared feel like um Speaker 3 (75%): That's mine out down here but this is the guests Dr Sharma Speaker 3 (81%): I like I I just want her to put me right out I don't want to be awake Speaker 3 (60%): and she's still in Speaker 3 (70%): She needs to know about my heart and blood pressure and Speaker 1 (45%): so the Dr Zohoor (63%): I can do that but the sound is a sensitive background a little bit Dr Zohoor (77%): she the person that",
+    "response_raw": "```json\n{\"same_encounter\": false, \"reason\": \"The first excerpt ends with incoherent/fragmented speech and no clear patient context, while the second excerpt begins with a new greeting ('Hi Karen') and transitions into a formal clinical encounter with Dr. Zohoor and a patient named Ade, discussing specific medical concerns like light sensitivity and stress.\"}\n```",
+    "success": true,
+    "ts": "2026-04-09T15:41:40.206679+00:00"
+  },
+  "name_tracker": {
+    "majority_name": "Mary Margaret Hegedus",
+    "unique_names": [
+      "Mary Margaret Hegedus",
+      "Mary Hegedus",
+      "K M Anisur M Anisur Rahman",
+      "K M Anisur Rahman"
+    ],
+    "vote_count": 13
+  },
+  "outcome": {
+    "detection_method": "hybrid_llm",
+    "encounter_number": 1,
+    "is_clinical": true,
+    "patient_name": "Mary Margaret Hegedus",
+    "session_id": "b25f029c-ccd3-4962-bd5a-bc45e08ce850",
+    "was_merged": false,
+    "word_count": 2504
+  },
+  "schema_version": 2,
+  "segments": [
+    {
+      "end_ms": 9792,
+      "index": 0,
+      "speaker_confidence": 1.0,
+      "speaker_id": "Speaker 1",
+      "start_ms": 7956,
+      "text": "pour faire parler derrière",
+      "ts": "2026-04-09T15:17:49.900234+00:00"
+    },
+    {
+      "end_ms": 27264,
+      "index": 1,
+      "speaker_confidence": 0.587925,
+      "speaker_id": "Speaker 1",
+      "start_ms": 26388,
+      "text": "and like that",
+      "ts": "2026-04-09T15:18:07.231190+00:00"
+    },
+    {
+      "end_ms": 30592,
+      "index": 2,
+      "speaker_confidence": 0.69787234,
+      "speaker_id": "Speaker 1",
+      "start_ms": 28020,
+      "text": "said after like next week first or whatever",
+      "ts": "2026-04-09T15:18:10.785269+00:00"
+    },
+    {
+      "end_ms": 35520,
+      "index": 3,
+      "speaker_confidence": 0.59817517,
+      "speaker_id": "Speaker 1",
+      "start_ms": 34100,
+      "text": "you're right mother",
+      "ts": "2026-04-09T15:18:15.583738+00:00"
+    },
+    {
+      "end_ms": 40256,
+      "index": 4,
+      "speaker_confidence": 0.7180646,
+      "speaker_id": "Speaker 1",
+      "start_ms": 38292,
+      "text": "Are you okay to wait on that?",
+      "ts": "2026-04-09T15:18:20.404463+00:00"
+    },
+    {
+      "end_ms": 41056,
+      "index": 5,
+      "speaker_confidence": 0.79847884,
+      "speaker_id": "Speaker 1",
+      "start_ms": 39988,
+      "text": "and",
+      "ts": "2026-04-09T15:18:20.916713+00:00"
+    },
+    {
+      "end_ms": 46208,
+      "index": 6,
+      "speaker_confidence": 0.8022571,
+      "speaker_id": "Speaker 1",
+      "start_ms": 42708,
+      "text": "Hi Karen, yeah, everything was alright. I'm talking to",
+      "ts": "2026-04-09T15:18:26.572483+00:00"
+    },
+    {
+      "end_ms": 53664,
+      "index": 7,
+      "speaker_confidence": 0.7950169,
+      "speaker_id": "Speaker 1",
+      "start_ms": 50836,
+      "text": "they have answer 300",
+      "ts": "2026-04-09T15:18:33.891679+00:00"
+    },
+    {
+      "end_ms": 56192,
+      "index": 8,
+      "speaker_confidence": 0.7598219,
+      "speaker_id": "Speaker 1",
+      "start_ms": 55124,
+      "text": "it goes",
+      "ts": "2026-04-09T15:18:36.186023+00:00"
+    },
+    {
+      "end_ms": 56832,
+      "index": 9,
+      "speaker_confidence": 0.7878286,
+      "speaker_id": "Speaker 1",
+      "start_ms": 55988,
+      "text": "it",
+      "ts": "2026-04-09T15:18:36.684450+00:00"
+    },
+    {
+      "end_ms": 156800,
+      "index": 10,
+      "speaker_confidence": 0.8685953,
+      "speaker_id": "Speaker 1",
+      "start_ms": 155732,
+      "text": "are you",
+      "ts": "2026-04-09T15:20:16.899337+00:00"
+    },
+    {
+      "end_ms": 162048,
+      "index": 11,
+      "speaker_confidence": 0.76249564,
+      "speaker_id": "Speaker 1",
+      "start_ms": 159380,
+      "text": "Okay, provision 3 they are on your request.",
+      "ts": "2026-04-09T15:20:22.328778+00:00"
+    },
+    {
+      "end_ms": 214080,
+      "index": 12,
+      "speaker_confidence": 0.794099,
+      "speaker_id": "Speaker 1",
+      "start_ms": 213108,
+      "text": "come",
+      "ts": "2026-04-09T15:21:14.109661+00:00"
+    },
+    {
+      "end_ms": 318496,
+      "index": 13,
+      "speaker_confidence": 0.76968473,
+      "speaker_id": "Speaker 1",
+      "start_ms": 317332,
+      "text": "right",
+      "ts": "2026-04-09T15:22:58.539855+00:00"
+    },
+    {
+      "end_ms": 394656,
+      "index": 14,
+      "speaker_confidence": 0.7400167,
+      "speaker_id": "Speaker 1",
+      "start_ms": 393812,
+      "text": "I go",
+      "ts": "2026-04-09T15:24:14.651483+00:00"
+    },
+    {
+      "end_ms": 420288,
+      "index": 15,
+      "speaker_confidence": 1.0,
+      "speaker_id": "Speaker 2",
+      "start_ms": 418228,
+      "text": "and in the court she was",
+      "ts": "2026-04-09T15:24:40.432163+00:00"
+    },
+    {
+      "end_ms": 441056,
+      "index": 16,
+      "speaker_confidence": 0.8629387,
+      "speaker_id": "Speaker 1",
+      "start_ms": 440116,
+      "text": "hello",
+      "ts": "2026-04-09T15:25:01.053383+00:00"
+    },
+    {
+      "end_ms": 442816,
+      "index": 17,
+      "speaker_confidence": 0.6305412,
+      "speaker_id": "Speaker 1",
+      "start_ms": 440788,
+      "text": "one to burn six okay",
+      "ts": "2026-04-09T15:25:02.938228+00:00"
+    },
+    {
+      "end_ms": 450944,
+      "index": 18,
+      "speaker_confidence": 0.52931285,
+      "speaker_id": "Speaker 1",
+      "start_ms": 449652,
+      "text": "How are you?",
+      "ts": "2026-04-09T15:25:11.403358+00:00"
+    },
+    {
+      "end_ms": 456096,
+      "index": 19,
+      "speaker_confidence": 1.0,
+      "speaker_id": "Speaker 3",
+      "start_ms": 452884,
+      "text": "مشکلی هیچ پلتفرمی در بیا و اینس",
+      "ts": "2026-04-09T15:25:16.406596+00:00"
+    },
+    {
+      "end_ms": 457632,
+      "index": 20,
+      "speaker_confidence": 0.5013379,
+      "speaker_id": "Speaker 1",
+      "start_ms": 456500,
+      "text": "heads",
+      "ts": "2026-04-09T15:25:17.508899+00:00"
+    },
+    {
+      "end_ms": 466336,
+      "index": 21,
+      "speaker_confidence": 1.0,
+      "speaker_id": "Speaker 4",
+      "start_ms": 465076,
+      "text": "မြေပြ",
+      "ts": "2026-04-09T15:25:26.404451+00:00"
+    },
+    {
+      "end_ms": 479680,
+      "index": 22,
+      "speaker_confidence": 1.0,
+      "speaker_id": "Speaker 5",
+      "start_ms": 477588,
+      "text": "just going to go tight okay",
+      "ts": "2026-04-09T15:25:39.826505+00:00"
+    },
+    {
+      "end_ms": 492704,
+      "index": 23,
+      "speaker_confidence": 0.4842049,
+      "speaker_id": "Speaker 3",
+      "start_ms": 490132,
+      "text": "134/66",
+      "ts": "2026-04-09T15:25:52.900701+00:00"
+    },
+    {
+      "end_ms": 494656,
+      "index": 24,
+      "speaker_confidence": 0.6090761,
+      "speaker_id": "Speaker 3",
+      "start_ms": 492724,
+      "text": "this reason for last",
+      "ts": "2026-04-09T15:25:55.300141+00:00"
+    },
+    {
+      "end_ms": 501632,
+      "index": 25,
+      "speaker_confidence": 0.6292439,
+      "speaker_id": "Speaker 3",
+      "start_ms": 498772,
+      "text": "Alright, Dr. Zobel is free, okay?",
+      "ts": "2026-04-09T15:26:01.926174+00:00"
+    },
+    {
+      "end_ms": 528736,
+      "index": 26,
+      "speaker_confidence": 0.4597122,
+      "speaker_id": "Speaker 1",
+      "start_ms": 527284,
+      "text": "We live here.",
+      "ts": "2026-04-09T15:26:28.835553+00:00"
+    },
+    {
+      "end_ms": 530624,
+      "index": 27,
+      "speaker_confidence": 0.4390076,
+      "speaker_id": "Speaker 1",
+      "start_ms": 528756,
+      "text": "measures of this",
+      "ts": "2026-04-09T15:26:30.695904+00:00"
+    },
+    {
+      "end_ms": 532800,
+      "index": 28,
+      "speaker_confidence": 0.34371305,
+      "speaker_id": "Speaker 1",
+      "start_ms": 531444,
+      "text": "we went to the night",
+      "ts": "2026-04-09T15:26:32.863651+00:00"
+    },
+    {
+      "end_ms": 533792,
+      "index": 29,
+      "speaker_confidence": 0.47706103,
+      "speaker_id": "Speaker 1",
+      "start_ms": 532948,
+      "text": "Ah",
+      "ts": "2026-04-09T15:26:33.630121+00:00"
+    },
+    {
+      "end_ms": 536064,
+      "index": 30,
+      "speaker_confidence": 0.5046308,
+      "speaker_id": "Speaker 1",
+      "start_ms": 534292,
+      "text": "right now",
+      "ts": "2026-04-09T15:26:36.081534+00:00"
+    },
+    {
+      "end_ms": 538176,
+      "index": 31,
+      "speaker_confidence": 0.45268497,
+      "speaker_id": "Speaker 1",
+      "start_ms": 536372,
+      "text": "how are i doing",
+      "ts": "2026-04-09T15:26:38.300617+00:00"
+    },
+    {
+      "end_ms": 541568,
+      "index": 32,
+      "speaker_confidence": 0.4515579,
+      "speaker_id": "Speaker 1",
+      "start_ms": 538452,
+      "text": "mai aayi thi pagal bag mein chhatay",
+      "ts": "2026-04-09T15:26:41.883669+00:00"
+    },
+    {
+      "end_ms": 545344,
+      "index": 33,
+      "speaker_confidence": 0.6282445,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 541844,
+      "text": "are good idea if anything",
+      "ts": "2026-04-09T15:26:45.630515+00:00"
+    },
+    {
+      "end_ms": 549056,
+      "index": 34,
+      "speaker_confidence": 0.46918985,
+      "speaker_id": "Speaker 1",
+      "start_ms": 545556,
+      "text": "any interest that happened materials since i thought",
+      "ts": "2026-04-09T15:26:49.339595+00:00"
+    },
+    {
+      "end_ms": 550944,
+      "index": 35,
+      "speaker_confidence": 0.5569763,
+      "speaker_id": "Speaker 1",
+      "start_ms": 548852,
+      "text": "I think since",
+      "ts": "2026-04-09T15:26:51.041319+00:00"
+    },
+    {
+      "end_ms": 556416,
+      "index": 36,
+      "speaker_confidence": 0.6322058,
+      "speaker_id": "Speaker 1",
+      "start_ms": 551092,
+      "text": "hit the laser on form room sensitive to light so",
+      "ts": "2026-04-09T15:26:56.893072+00:00"
+    },
+    {
+      "end_ms": 562080,
+      "index": 37,
+      "speaker_confidence": 0.6678705,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 556852,
+      "text": "I don't forget a dimmer like because I had adaptation struggle with that.",
+      "ts": "2026-04-09T15:27:02.610896+00:00"
+    },
+    {
+      "end_ms": 570976,
+      "index": 38,
+      "speaker_confidence": 0.690317,
+      "speaker_id": "Speaker 1",
+      "start_ms": 561812,
+      "text": "How are you doing today, Ade? Um like some of the numbers aren't too bad, but I never very bad spell in here, I don't know it.",
+      "ts": "2026-04-09T15:27:12.168586+00:00"
+    },
+    {
+      "end_ms": 574944,
+      "index": 39,
+      "speaker_confidence": 0.6790603,
+      "speaker_id": "Speaker 1",
+      "start_ms": 571124,
+      "text": "was gone and after the horse walked out",
+      "ts": "2026-04-09T15:27:15.327708+00:00"
+    },
+    {
+      "end_ms": 577984,
+      "index": 40,
+      "speaker_confidence": 0.4928077,
+      "speaker_id": "Speaker 1",
+      "start_ms": 577140,
+      "text": "now",
+      "ts": "2026-04-09T15:27:17.955024+00:00"
+    },
+    {
+      "end_ms": 582464,
+      "index": 41,
+      "speaker_confidence": 0.66821176,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 578676,
+      "text": "So that's really too rough and",
+      "ts": "2026-04-09T15:27:22.843567+00:00"
+    },
+    {
+      "end_ms": 583744,
+      "index": 42,
+      "speaker_confidence": 0.46349853,
+      "speaker_id": "Speaker 1",
+      "start_ms": 582900,
+      "text": "so",
+      "ts": "2026-04-09T15:27:23.603753+00:00"
+    },
+    {
+      "end_ms": 586176,
+      "index": 43,
+      "speaker_confidence": 0.6727407,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 584756,
+      "text": "So you took",
+      "ts": "2026-04-09T15:27:26.246984+00:00"
+    },
+    {
+      "end_ms": 589472,
+      "index": 44,
+      "speaker_confidence": 0.42003548,
+      "speaker_id": "Speaker 1",
+      "start_ms": 586004,
+      "text": "perpetually twice as fertile as a yeah",
+      "ts": "2026-04-09T15:27:29.749786+00:00"
+    },
+    {
+      "end_ms": 594624,
+      "index": 45,
+      "speaker_confidence": 0.5210587,
+      "speaker_id": "Speaker 1",
+      "start_ms": 593396,
+      "text": "for a bit",
+      "ts": "2026-04-09T15:27:34.656374+00:00"
+    },
+    {
+      "end_ms": 598016,
+      "index": 46,
+      "speaker_confidence": 0.6342208,
+      "speaker_id": "Speaker 1",
+      "start_ms": 595892,
+      "text": "it slowly kind of",
+      "ts": "2026-04-09T15:27:38.106729+00:00"
+    },
+    {
+      "end_ms": 600992,
+      "index": 47,
+      "speaker_confidence": 0.56434506,
+      "speaker_id": "Speaker 1",
+      "start_ms": 598772,
+      "text": "all back to right",
+      "ts": "2026-04-09T15:27:41.133368+00:00"
+    },
+    {
+      "end_ms": 604000,
+      "index": 48,
+      "speaker_confidence": 0.40023834,
+      "speaker_id": "Speaker 3",
+      "start_ms": 601332,
+      "text": "I think I'm very stressed.",
+      "ts": "2026-04-09T15:27:44.219703+00:00"
+    },
+    {
+      "end_ms": 606752,
+      "index": 49,
+      "speaker_confidence": 0.48376742,
+      "speaker_id": "Speaker 1",
+      "start_ms": 604276,
+      "text": "How about we talk about the stress a little bit?",
+      "ts": "2026-04-09T15:27:47.032426+00:00"
+    },
+    {
+      "end_ms": 611456,
+      "index": 50,
+      "speaker_confidence": 0.5465227,
+      "speaker_id": "Speaker 3",
+      "start_ms": 607732,
+      "text": "I don't know if I'll still hurt my eye.",
+      "ts": "2026-04-09T15:27:51.880132+00:00"
+    },
+    {
+      "end_ms": 615008,
+      "index": 51,
+      "speaker_confidence": 0.5148831,
+      "speaker_id": "Speaker 3",
+      "start_ms": 611380,
+      "text": "I just don't know I'm scared feel like um",
+      "ts": "2026-04-09T15:27:55.377255+00:00"
+    },
+    {
+      "end_ms": 620000,
+      "index": 52,
+      "speaker_confidence": 0.74927336,
+      "speaker_id": "Speaker 3",
+      "start_ms": 615028,
+      "text": "That's mine out down here but this is the guests Dr Sharma",
+      "ts": "2026-04-09T15:28:01.488585+00:00"
+    },
+    {
+      "end_ms": 625440,
+      "index": 53,
+      "speaker_confidence": 0.8113322,
+      "speaker_id": "Speaker 3",
+      "start_ms": 620020,
+      "text": "I like I I just want her to put me right out I don't want to be awake",
+      "ts": "2026-04-09T15:28:06.042673+00:00"
+    },
+    {
+      "end_ms": 627712,
+      "index": 54,
+      "speaker_confidence": 0.6010089,
+      "speaker_id": "Speaker 3",
+      "start_ms": 625716,
+      "text": "and she's still in",
+      "ts": "2026-04-09T15:28:07.920875+00:00"
+    },
+    {
+      "end_ms": 633792,
+      "index": 55,
+      "speaker_confidence": 0.700168,
+      "speaker_id": "Speaker 3",
+      "start_ms": 629716,
+      "text": "She needs to know about my heart and blood pressure and",
+      "ts": "2026-04-09T15:28:14.149917+00:00"
+    },
+    {
+      "end_ms": 638944,
+      "index": 56,
+      "speaker_confidence": 0.4455142,
+      "speaker_id": "Speaker 1",
+      "start_ms": 636980,
+      "text": "so the",
+      "ts": "2026-04-09T15:28:19.079669+00:00"
+    },
+    {
+      "end_ms": 641792,
+      "index": 57,
+      "speaker_confidence": 0.63315153,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 638644,
+      "text": "I can do that but the sound is a sensitive background a little bit",
+      "ts": "2026-04-09T15:28:22.157586+00:00"
+    },
+    {
+      "end_ms": 645728,
+      "index": 58,
+      "speaker_confidence": 0.77289075,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 641844,
+      "text": "she the person that saw you before at the high staff",
+      "ts": "2026-04-09T15:28:26.092766+00:00"
+    },
+    {
+      "end_ms": 648768,
+      "index": 59,
+      "speaker_confidence": 0.6866575,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 645748,
+      "text": "and I said you're going back to see her",
+      "ts": "2026-04-09T15:28:29.089167+00:00"
+    },
+    {
+      "end_ms": 652256,
+      "index": 60,
+      "speaker_confidence": 0.65689063,
+      "speaker_id": "Speaker 3",
+      "start_ms": 648468,
+      "text": "Do you really have a consultation?",
+      "ts": "2026-04-09T15:28:32.542727+00:00"
+    },
+    {
+      "end_ms": 655552,
+      "index": 61,
+      "speaker_confidence": 0.7120867,
+      "speaker_id": "Speaker 3",
+      "start_ms": 652308,
+      "text": "And now I'll show the signature.",
+      "ts": "2026-04-09T15:28:36.732659+00:00"
+    },
+    {
+      "end_ms": 664320,
+      "index": 62,
+      "speaker_confidence": 0.785306,
+      "speaker_id": "Speaker 3",
+      "start_ms": 655412,
+      "text": "and then holding I'm just afraid it's going to end up worse than it is and then I've gone through all this for nothing",
+      "ts": "2026-04-09T15:28:45.376167+00:00"
+    },
+    {
+      "end_ms": 668032,
+      "index": 63,
+      "speaker_confidence": 0.6487703,
+      "speaker_id": "Speaker 1",
+      "start_ms": 664372,
+      "text": "I got hurt because met someone",
+      "ts": "2026-04-09T15:28:48.365957+00:00"
+    },
+    {
+      "end_ms": 680992,
+      "index": 64,
+      "speaker_confidence": 0.73854804,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 668852,
+      "text": "collaboration to make it fresh what i understand it's not for nothing i thought but i hear the fear now if it is heavy right it's exhausting",
+      "ts": "2026-04-09T15:29:02.288632+00:00"
+    },
+    {
+      "end_ms": 686048,
+      "index": 65,
+      "speaker_confidence": 0.7138308,
+      "speaker_id": "Speaker 3",
+      "start_ms": 681140,
+      "text": "just like the journey and it's just been put off so long and",
+      "ts": "2026-04-09T15:29:06.553105+00:00"
+    },
+    {
+      "end_ms": 689120,
+      "index": 66,
+      "speaker_confidence": 0.68674135,
+      "speaker_id": "Speaker 3",
+      "start_ms": 685780,
+      "text": "Now I have an information and",
+      "ts": "2026-04-09T15:29:09.426901+00:00"
+    },
+    {
+      "end_ms": 695392,
+      "index": 67,
+      "speaker_confidence": 0.80060416,
+      "speaker_id": "Speaker 3",
+      "start_ms": 689172,
+      "text": "Then my my rain just goes on and the drops make it worse",
+      "ts": "2026-04-09T15:29:15.998809+00:00"
+    },
+    {
+      "end_ms": 700608,
+      "index": 68,
+      "speaker_confidence": 0.7104535,
+      "speaker_id": "Speaker 1",
+      "start_ms": 695572,
+      "text": "okay now when you draw box over",
+      "ts": "2026-04-09T15:29:21.027325+00:00"
+    },
+    {
+      "end_ms": 704000,
+      "index": 69,
+      "speaker_confidence": 0.65336883,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 700372,
+      "text": "their know wasn't clear but they said that their",
+      "ts": "2026-04-09T15:29:24.357907+00:00"
+    },
+    {
+      "end_ms": 709504,
+      "index": 70,
+      "speaker_confidence": 0.71299547,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 704052,
+      "text": "that the surgery is done with general anesthesia which she said was an afternoon procedure",
+      "ts": "2026-04-09T15:29:30.074737+00:00"
+    },
+    {
+      "end_ms": 714560,
+      "index": 71,
+      "speaker_confidence": 0.77468,
+      "speaker_id": "Speaker 1",
+      "start_ms": 711412,
+      "text": "it's possible that i i'm",
+      "ts": "2026-04-09T15:29:34.834235+00:00"
+    },
+    {
+      "end_ms": 716992,
+      "index": 72,
+      "speaker_confidence": 0.6681326,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 714324,
+      "text": "is password field or field end",
+      "ts": "2026-04-09T15:29:37.189668+00:00"
+    },
+    {
+      "end_ms": 720704,
+      "index": 73,
+      "speaker_confidence": 0.7023322,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 716724,
+      "text": "Um let me just figure out what they typically do.",
+      "ts": "2026-04-09T15:29:41.089956+00:00"
+    },
+    {
+      "end_ms": 726912,
+      "index": 74,
+      "speaker_confidence": 0.63713074,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 720756,
+      "text": "you one moment there is a surgery that i don't normally like i'm not not supposed to ask",
+      "ts": "2026-04-09T15:29:47.654018+00:00"
+    },
+    {
+      "end_ms": 729824,
+      "index": 75,
+      "speaker_confidence": 0.70771796,
+      "speaker_id": "Speaker 1",
+      "start_ms": 726708,
+      "text": "i just want to make sure that i have",
+      "ts": "2026-04-09T15:29:50.103097+00:00"
+    },
+    {
+      "end_ms": 737216,
+      "index": 76,
+      "speaker_confidence": 0.72720885,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 730932,
+      "text": "um so if you are request this hey can you make how everything seems to able to to help",
+      "ts": "2026-04-09T15:29:57.912194+00:00"
+    },
+    {
+      "end_ms": 741664,
+      "index": 77,
+      "speaker_confidence": 0.7257944,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 737012,
+      "text": "before the out for this i just want to see whether or not",
+      "ts": "2026-04-09T15:30:02.090810+00:00"
+    },
+    {
+      "end_ms": 751104,
+      "index": 78,
+      "speaker_confidence": 0.7724243,
+      "speaker_id": "Speaker 3",
+      "start_ms": 743892,
+      "text": "the film toast dr browns associate he said what shall do is shall probe",
+      "ts": "2026-04-09T15:30:11.792860+00:00"
+    },
+    {
+      "end_ms": 754880,
+      "index": 79,
+      "speaker_confidence": 0.65069616,
+      "speaker_id": "Speaker 3",
+      "start_ms": 751444,
+      "text": "to try and find of the vault",
+      "ts": "2026-04-09T15:30:15.170477+00:00"
+    },
+    {
+      "end_ms": 758080,
+      "index": 80,
+      "speaker_confidence": 0.7924241,
+      "speaker_id": "Speaker 3",
+      "start_ms": 754964,
+      "text": "And then they could announce them.",
+      "ts": "2026-04-09T15:30:18.349259+00:00"
+    },
+    {
+      "end_ms": 760384,
+      "index": 81,
+      "speaker_confidence": 0.55911285,
+      "speaker_id": "Speaker 3",
+      "start_ms": 758132,
+      "text": "I don't know, I guess.",
+      "ts": "2026-04-09T15:30:20.600651+00:00"
+    },
+    {
+      "end_ms": 765856,
+      "index": 82,
+      "speaker_confidence": 0.826929,
+      "speaker_id": "Speaker 3",
+      "start_ms": 760404,
+      "text": "to keep though the pressure down and keep the fluid moving",
+      "ts": "2026-04-09T15:30:26.362324+00:00"
+    },
+    {
+      "end_ms": 775328,
+      "index": 83,
+      "speaker_confidence": 0.79549617,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 768180,
+      "text": "looking for the name of the particular circuitry he had suggested and all that",
+      "ts": "2026-04-09T15:30:36.007324+00:00"
+    },
+    {
+      "end_ms": 787456,
+      "index": 84,
+      "speaker_confidence": 0.6447129,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 783860,
+      "text": "I passed over the message also through another feature",
+      "ts": "2026-04-09T15:30:47.812754+00:00"
+    },
+    {
+      "end_ms": 792512,
+      "index": 85,
+      "speaker_confidence": 0.7129303,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 787604,
+      "text": "there naturally the cpc.ip support 455 enterprise",
+      "ts": "2026-04-09T15:30:53.010660+00:00"
+    },
+    {
+      "end_ms": 799040,
+      "index": 86,
+      "speaker_confidence": 0.8067484,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 792628,
+      "text": "need to restart the control interface okay so they works as atv's one second",
+      "ts": "2026-04-09T15:30:59.724716+00:00"
+    },
+    {
+      "end_ms": 801248,
+      "index": 87,
+      "speaker_confidence": 0.4606736,
+      "speaker_id": "Speaker 1",
+      "start_ms": 799188,
+      "text": "to be clean",
+      "ts": "2026-04-09T15:31:01.321798+00:00"
+    },
+    {
+      "end_ms": 803648,
+      "index": 88,
+      "speaker_confidence": 0.49089727,
+      "speaker_id": "Speaker 1",
+      "start_ms": 801076,
+      "text": "let to see what the subscription is",
+      "ts": "2026-04-09T15:31:03.862487+00:00"
+    },
+    {
+      "end_ms": 810368,
+      "index": 89,
+      "speaker_confidence": 0.714614,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 806996,
+      "text": "figure surgery is 18e because it's safe",
+      "ts": "2026-04-09T15:31:10.676708+00:00"
+    },
+    {
+      "end_ms": 813536,
+      "index": 90,
+      "speaker_confidence": 0.691868,
+      "speaker_id": "Speaker 1",
+      "start_ms": 810804,
+      "text": "protectable and uh",
+      "ts": "2026-04-09T15:31:13.753730+00:00"
+    },
+    {
+      "end_ms": 816928,
+      "index": 91,
+      "speaker_confidence": 0.4008545,
+      "speaker_id": "Speaker 1",
+      "start_ms": 815348,
+      "text": "to kick off the",
+      "ts": "2026-04-09T15:31:16.992944+00:00"
+    },
+    {
+      "end_ms": 817760,
+      "index": 92,
+      "speaker_confidence": 0.4162869,
+      "speaker_id": "Speaker 1",
+      "start_ms": 816756,
+      "text": "so",
+      "ts": "2026-04-09T15:31:17.669373+00:00"
+    },
+    {
+      "end_ms": 829440,
+      "index": 93,
+      "speaker_confidence": 0.6108236,
+      "speaker_id": "Speaker 1",
+      "start_ms": 826676,
+      "text": "specification in New York",
+      "ts": "2026-04-09T15:31:29.662396+00:00"
+    },
+    {
+      "end_ms": 830528,
+      "index": 94,
+      "speaker_confidence": 0.3861729,
+      "speaker_id": "Speaker 1",
+      "start_ms": 829172,
+      "text": "local",
+      "ts": "2026-04-09T15:31:30.441027+00:00"
+    },
+    {
+      "end_ms": 843200,
+      "index": 95,
+      "speaker_confidence": 0.37908068,
+      "speaker_id": "Speaker 1",
+      "start_ms": 840852,
+      "text": "I want to I want to make sure so",
+      "ts": "2026-04-09T15:31:43.545941+00:00"
+    },
+    {
+      "end_ms": 847424,
+      "index": 96,
+      "speaker_confidence": 0.6663186,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 844852,
+      "text": "So the first thing is that the surgeon",
+      "ts": "2026-04-09T15:31:47.658840+00:00"
+    },
+    {
+      "end_ms": 849952,
+      "index": 97,
+      "speaker_confidence": 0.56973994,
+      "speaker_id": "Speaker 1",
+      "start_ms": 848084,
+      "text": "cousins decide",
+      "ts": "2026-04-09T15:31:50.067554+00:00"
+    },
+    {
+      "end_ms": 853024,
+      "index": 98,
+      "speaker_confidence": 0.7060333,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 850068,
+      "text": "whether or not to do general anesthesia",
+      "ts": "2026-04-09T15:31:53.258844+00:00"
+    },
+    {
+      "end_ms": 857472,
+      "index": 99,
+      "speaker_confidence": 0.7130536,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 853236,
+      "text": "as the asset keeper so let's say so just say yes",
+      "ts": "2026-04-09T15:31:57.906224+00:00"
+    },
+    {
+      "end_ms": 869280,
+      "index": 100,
+      "speaker_confidence": 0.6889828,
+      "speaker_id": "Speaker 3",
+      "start_ms": 857684,
+      "text": "if you want happen it's easier put your out it they suggest sometimes they do yeah i talked to Zoey called me and she said sometimes they do",
+      "ts": "2026-04-09T15:32:11.545830+00:00"
+    },
+    {
+      "end_ms": 876352,
+      "index": 101,
+      "speaker_confidence": 0.746185,
+      "speaker_id": "Speaker 3",
+      "start_ms": 872276,
+      "text": "and i don't know if my heart can take all this like",
+      "ts": "2026-04-09T15:32:16.821201+00:00"
+    },
+    {
+      "end_ms": 878080,
+      "index": 102,
+      "speaker_confidence": 0.3612931,
+      "speaker_id": "Speaker 3",
+      "start_ms": 876596,
+      "text": "just to",
+      "ts": "2026-04-09T15:32:18.014624+00:00"
+    },
+    {
+      "end_ms": 884960,
+      "index": 103,
+      "speaker_confidence": 0.6062015,
+      "speaker_id": "Speaker 1",
+      "start_ms": 882164,
+      "text": "Duration is about 90 mins.",
+      "ts": "2026-04-09T15:32:25.236543+00:00"
+    },
+    {
+      "end_ms": 888672,
+      "index": 104,
+      "speaker_confidence": 0.6722507,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 884756,
+      "text": "absolutely for five in an at corporate time",
+      "ts": "2026-04-09T15:32:29.046280+00:00"
+    },
+    {
+      "end_ms": 892096,
+      "index": 105,
+      "speaker_confidence": 0.7339246,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 888916,
+      "text": "so it's kind of 45 9 ms",
+      "ts": "2026-04-09T15:32:32.435062+00:00"
+    },
+    {
+      "end_ms": 894528,
+      "index": 106,
+      "speaker_confidence": 0.60793424,
+      "speaker_id": "Speaker 1",
+      "start_ms": 892788,
+      "text": "to just see",
+      "ts": "2026-04-09T15:32:34.597607+00:00"
+    },
+    {
+      "end_ms": 902688,
+      "index": 107,
+      "speaker_confidence": 0.4598814,
+      "speaker_id": "Speaker 1",
+      "start_ms": 901332,
+      "text": "says",
+      "ts": "2026-04-09T15:32:42.790856+00:00"
+    },
+    {
+      "end_ms": 927008,
+      "index": 108,
+      "speaker_confidence": 0.7661259,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 922132,
+      "text": "for I what I don't want I want to make sure that that new dress is because",
+      "ts": "2026-04-09T15:33:07.559294+00:00"
+    },
+    {
+      "end_ms": 929568,
+      "index": 109,
+      "speaker_confidence": 0.69863576,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 927572,
+      "text": "I don't want this to get",
+      "ts": "2026-04-09T15:33:09.769315+00:00"
+    },
+    {
+      "end_ms": 932160,
+      "index": 110,
+      "speaker_confidence": 0.639792,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 929748,
+      "text": "I want you to go there for a consult.",
+      "ts": "2026-04-09T15:33:13.409944+00:00"
+    },
+    {
+      "end_ms": 946816,
+      "index": 111,
+      "speaker_confidence": 0.8386708,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 932180,
+      "text": "and it get delayed a lot because of anesthesia artifacts because there's usually three options so normally there's a local or just intracranial nerve the fist eye the whole eye bulb",
+      "ts": "2026-04-09T15:33:28.401813+00:00"
+    },
+    {
+      "end_ms": 956608,
+      "index": 112,
+      "speaker_confidence": 0.79275674,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 946708,
+      "text": "you find local hemodynamic drops in the eye right this is different there they de-economing of the nerve of the eye so local eye becomes now",
+      "ts": "2026-04-09T15:33:37.791551+00:00"
+    },
+    {
+      "end_ms": 959200,
+      "index": 113,
+      "speaker_confidence": 0.7363581,
+      "speaker_id": "Speaker 1",
+      "start_ms": 956660,
+      "text": "so that is the safest option",
+      "ts": "2026-04-09T15:33:39.451690+00:00"
+    },
+    {
+      "end_ms": 961984,
+      "index": 114,
+      "speaker_confidence": 0.60964936,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 959028,
+      "text": "it's just style",
+      "ts": "2026-04-09T15:33:42.211709+00:00"
+    },
+    {
+      "end_ms": 972032,
+      "index": 115,
+      "speaker_confidence": 0.7952648,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 962292,
+      "text": "there's a second option is really also adaptation to us so they give you medications intermittently so that your your",
+      "ts": "2026-04-09T15:33:53.027930+00:00"
+    },
+    {
+      "end_ms": 974144,
+      "index": 116,
+      "speaker_confidence": 0.67471224,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 971796,
+      "text": "you are the stated state",
+      "ts": "2026-04-09T15:33:54.208678+00:00"
+    },
+    {
+      "end_ms": 981248,
+      "index": 117,
+      "speaker_confidence": 0.7334177,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 973940,
+      "text": "we're running the emergency room so if a drop comes in they need their onsets it's a taken for procedure",
+      "ts": "2026-04-09T15:34:02.057848+00:00"
+    },
+    {
+      "end_ms": 986336,
+      "index": 118,
+      "speaker_confidence": 0.70151025,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 980948,
+      "text": "strong anesthesia in operated in patient it in the operating on a same why",
+      "ts": "2026-04-09T15:34:06.884408+00:00"
+    },
+    {
+      "end_ms": 989216,
+      "index": 119,
+      "speaker_confidence": 0.6447525,
+      "speaker_id": "Speaker 1",
+      "start_ms": 986036,
+      "text": "the risks there are are lower",
+      "ts": "2026-04-09T15:34:09.458880+00:00"
+    },
+    {
+      "end_ms": 990112,
+      "index": 120,
+      "speaker_confidence": 0.35951972,
+      "speaker_id": "Speaker 1",
+      "start_ms": 989012,
+      "text": "um",
+      "ts": "2026-04-09T15:34:09.988571+00:00"
+    },
+    {
+      "end_ms": 996416,
+      "index": 121,
+      "speaker_confidence": 0.690403,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 990324,
+      "text": "and and the four exercises where the person is on a breathing tube and all that stuff",
+      "ts": "2026-04-09T15:34:17.056851+00:00"
+    },
+    {
+      "end_ms": 998432,
+      "index": 122,
+      "speaker_confidence": 0.6211188,
+      "speaker_id": "Speaker 1",
+      "start_ms": 996212,
+      "text": "so the",
+      "ts": "2026-04-09T15:34:18.473675+00:00"
+    },
+    {
+      "end_ms": 999552,
+      "index": 123,
+      "speaker_confidence": 0.3695109,
+      "speaker_id": "Speaker 1",
+      "start_ms": 998644,
+      "text": "um",
+      "ts": "2026-04-09T15:34:19.433278+00:00"
+    },
+    {
+      "end_ms": 1009632,
+      "index": 124,
+      "speaker_confidence": 0.7725975,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 1002132,
+      "text": "so although for the abert person experiences if they do a local block if they just do an nerve block",
+      "ts": "2026-04-09T15:34:30.491310+00:00"
+    },
+    {
+      "end_ms": 1010912,
+      "index": 125,
+      "speaker_confidence": 0.5837808,
+      "speaker_id": "Speaker 1",
+      "start_ms": 1009908,
+      "text": "come",
+      "ts": "2026-04-09T15:34:30.784889+00:00"
+    },
+    {
+      "end_ms": 1015744,
+      "index": 126,
+      "speaker_confidence": 0.7764624,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 1011028,
+      "text": "person the patient feels pressure and tightness but not any sharp pain",
+      "ts": "2026-04-09T15:34:36.251572+00:00"
+    },
+    {
+      "end_ms": 1019616,
+      "index": 127,
+      "speaker_confidence": 0.77076936,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 1015604,
+      "text": "and the most uncomfortable is the act of naming that they do",
+      "ts": "2026-04-09T15:34:40.012415+00:00"
+    },
+    {
+      "end_ms": 1024192,
+      "index": 128,
+      "speaker_confidence": 0.7471628,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 1020276,
+      "text": "afterwards the way you gonna feel the sensations and stuff",
+      "ts": "2026-04-09T15:34:45.713018+00:00"
+    },
+    {
+      "end_ms": 1032256,
+      "index": 129,
+      "speaker_confidence": 0.7741734,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 1024116,
+      "text": "Most patients subscribe as more uncomfortable cataracts are pretty but not severely painful and takes about a week or two to fully heal",
+      "ts": "2026-04-09T15:34:53.142817+00:00"
+    },
+    {
+      "end_ms": 1034976,
+      "index": 130,
+      "speaker_confidence": 0.6104129,
+      "speaker_id": "Speaker 1",
+      "start_ms": 1033428,
+      "text": "and then",
+      "ts": "2026-04-09T15:34:55.012747+00:00"
+    },
+    {
+      "end_ms": 1041952,
+      "index": 131,
+      "speaker_confidence": 0.6167826,
+      "speaker_id": "Speaker 1",
+      "start_ms": 1037044,
+      "text": "I've had car surgery. How was that experience? It was fine.",
+      "ts": "2026-04-09T15:35:02.469230+00:00"
+    },
+    {
+      "end_ms": 1047104,
+      "index": 132,
+      "speaker_confidence": 0.6939045,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 1041780,
+      "text": "So it's done in a very similar way. It's done with the laser.",
+      "ts": "2026-04-09T15:35:07.723438+00:00"
+    },
+    {
+      "end_ms": 1050432,
+      "index": 133,
+      "speaker_confidence": 0.65019035,
+      "speaker_id": "Speaker 3",
+      "start_ms": 1048340,
+      "text": "a few years ago",
+      "ts": "2026-04-09T15:35:10.542984+00:00"
+    },
+    {
+      "end_ms": 1055072,
+      "index": 134,
+      "speaker_confidence": 0.43733263,
+      "speaker_id": "Speaker 1",
+      "start_ms": 1054100,
+      "text": "So",
+      "ts": "2026-04-09T15:35:15.068581+00:00"
+    },
+    {
+      "end_ms": 1064544,
+      "index": 135,
+      "speaker_confidence": 0.65731883,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 1055540,
+      "text": "or out the marias i will you want me to write the letter and give it to you for your appointment or is it something that you do that's a tumor",
+      "ts": "2026-04-09T15:35:25.671461+00:00"
+    },
+    {
+      "end_ms": 1068416,
+      "index": 136,
+      "speaker_confidence": 0.6825825,
+      "speaker_id": "Speaker 3",
+      "start_ms": 1064660,
+      "text": "I would like to call so to Dr. Groon.",
+      "ts": "2026-04-09T15:35:28.817670+00:00"
+    },
+    {
+      "end_ms": 1071488,
+      "index": 137,
+      "speaker_confidence": 0.5673271,
+      "speaker_id": "Speaker 1",
+      "start_ms": 1069044,
+      "text": "So that her when",
+      "ts": "2026-04-09T15:35:31.679019+00:00"
+    },
+    {
+      "end_ms": 1080736,
+      "index": 138,
+      "speaker_confidence": 0.82060266,
+      "speaker_id": "Speaker 3",
+      "start_ms": 1071188,
+      "text": "and this is especially about my heart and blood pressure blood I stay don't really understand so",
+      "ts": "2026-04-09T15:35:41.702860+00:00"
+    },
+    {
+      "end_ms": 1091616,
+      "index": 139,
+      "speaker_confidence": 0.7349437,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 1080628,
+      "text": "what i'll say is that you aren't high risk for general anesthesia so general anesthesia is where let's say they're picking out a gallbladder and they have to put you fully out",
+      "ts": "2026-04-09T15:35:52.980231+00:00"
+    },
+    {
+      "end_ms": 1107872,
+      "index": 140,
+      "speaker_confidence": 0.8143208,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 1091508,
+      "text": "because then your life support so they they there's a tube in your lining breathing for you etc etc and you have both heart and lung condition cpd at weight perfect has the highest stress on your system",
+      "ts": "2026-04-09T15:36:09.687606+00:00"
+    },
+    {
+      "end_ms": 1111040,
+      "index": 141,
+      "speaker_confidence": 0.7235901,
+      "speaker_id": "Speaker 1",
+      "start_ms": 1107700,
+      "text": "So in my world",
+      "ts": "2026-04-09T15:36:11.252116+00:00"
+    },
+    {
+      "end_ms": 1114432,
+      "index": 142,
+      "speaker_confidence": 0.48757657,
+      "speaker_id": "Speaker 1",
+      "start_ms": 1111540,
+      "text": "che cola più buona è situata",
+      "ts": "2026-04-09T15:36:14.711529+00:00"
+    },
+    {
+      "end_ms": 1116256,
+      "index": 143,
+      "speaker_confidence": 0.56474346,
+      "speaker_id": "Speaker 1",
+      "start_ms": 1114708,
+      "text": "to be full the honest",
+      "ts": "2026-04-09T15:36:16.302139+00:00"
+    },
+    {
+      "end_ms": 1117088,
+      "index": 144,
+      "speaker_confidence": 0.43884873,
+      "speaker_id": "Speaker 1",
+      "start_ms": 1116180,
+      "text": "um",
+      "ts": "2026-04-09T15:36:16.920356+00:00"
+    },
+    {
+      "end_ms": 1129824,
+      "index": 145,
+      "speaker_confidence": 0.70850927,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 1117044,
+      "text": "but you do what you think is right but I mean column the two and the wire the person who makes a decision is the initiator so let's say that the insurance says yeah let's just what you fully out for it and that",
+      "ts": "2026-04-09T15:36:31.429344+00:00"
+    },
+    {
+      "end_ms": 1142880,
+      "index": 146,
+      "speaker_confidence": 0.7531195,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 1129588,
+      "text": "they do that they do that for some people who let's say someone has parkinsons and they're constantly shaking or let's say someone has a pile or someone who it's going to be very costly like things like that",
+      "ts": "2026-04-09T15:36:44.876190+00:00"
+    },
+    {
+      "end_ms": 1145600,
+      "index": 147,
+      "speaker_confidence": 0.72738725,
+      "speaker_id": "Speaker 1",
+      "start_ms": 1142580,
+      "text": "they can but people fully out um",
+      "ts": "2026-04-09T15:36:45.822932+00:00"
+    },
+    {
+      "end_ms": 1151040,
+      "index": 148,
+      "speaker_confidence": 0.72128224,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 1145492,
+      "text": "in my mind it's not the best scenario because the um",
+      "ts": "2026-04-09T15:36:51.953577+00:00"
+    },
+    {
+      "end_ms": 1152544,
+      "index": 149,
+      "speaker_confidence": 0.5709691,
+      "speaker_id": "Speaker 1",
+      "start_ms": 1150932,
+      "text": "it was to be higher",
+      "ts": "2026-04-09T15:36:52.530679+00:00"
+    },
+    {
+      "end_ms": 1156864,
+      "index": 150,
+      "speaker_confidence": 0.6021235,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 1152596,
+      "text": "the middle ground or the subtissue",
+      "ts": "2026-04-09T15:36:57.265747+00:00"
+    },
+    {
+      "end_ms": 1158048,
+      "index": 151,
+      "speaker_confidence": 0.4692913,
+      "speaker_id": "Speaker 1",
+      "start_ms": 1156564,
+      "text": "you're like",
+      "ts": "2026-04-09T15:36:58.007654+00:00"
+    },
+    {
+      "end_ms": 1160064,
+      "index": 152,
+      "speaker_confidence": 0.6666843,
+      "speaker_id": "Speaker 1",
+      "start_ms": 1158068,
+      "text": "all feito and wake up",
+      "ts": "2026-04-09T15:37:00.175563+00:00"
+    },
+    {
+      "end_ms": 1162240,
+      "index": 153,
+      "speaker_confidence": 0.67530787,
+      "speaker_id": "Speaker 1",
+      "start_ms": 1159892,
+      "text": "but they don't paralyze you",
+      "ts": "2026-04-09T15:37:02.448209+00:00"
+    },
+    {
+      "end_ms": 1164640,
+      "index": 154,
+      "speaker_confidence": 0.63711077,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 1162036,
+      "text": "you could prove by yourself",
+      "ts": "2026-04-09T15:37:04.832592+00:00"
+    },
+    {
+      "end_ms": 1173280,
+      "index": 155,
+      "speaker_confidence": 0.7533176,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 1164756,
+      "text": "este is more of the sweet spot because you don't remember any of it you're totally out have you had a colonoscopy before",
+      "ts": "2026-04-09T15:37:14.411131+00:00"
+    },
+    {
+      "end_ms": 1181920,
+      "index": 156,
+      "speaker_confidence": 0.7443039,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 1173556,
+      "text": "so for colonoscopies i have few so for colonoscopies is for doing a sedation in middle ground so no device breathing for you",
+      "ts": "2026-04-09T15:37:23.425362+00:00"
+    },
+    {
+      "end_ms": 1190560,
+      "index": 157,
+      "speaker_confidence": 0.66218066,
+      "speaker_id": "Speaker 3",
+      "start_ms": 1181876,
+      "text": "should not fully away for either like actually away the first two I I think Dr. Gomez and then there",
+      "ts": "2026-04-09T15:37:31.473281+00:00"
+    },
+    {
+      "end_ms": 1192544,
+      "index": 158,
+      "speaker_confidence": 0.4632439,
+      "speaker_id": "Speaker 3",
+      "start_ms": 1190388,
+      "text": "I was right out",
+      "ts": "2026-04-09T15:37:32.566355+00:00"
+    },
+    {
+      "end_ms": 1200928,
+      "index": 159,
+      "speaker_confidence": 0.7787359,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 1192532,
+      "text": "and but and it's true because depending on the dose you can be out and you'll have amnesia many can remember it",
+      "ts": "2026-04-09T15:37:41.964364+00:00"
+    },
+    {
+      "end_ms": 1210944,
+      "index": 160,
+      "speaker_confidence": 0.7841599,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 1200692,
+      "text": "but they didn't have to put a breathing tube down. I know she's so. Why didn't have that? So you're you're dehydrated and unconscious. Do not paralyzed.",
+      "ts": "2026-04-09T15:37:52.293777+00:00"
+    },
+    {
+      "end_ms": 1217792,
+      "index": 161,
+      "speaker_confidence": 0.7756537,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 1210868,
+      "text": "as rough as it is that's the because then the person's breathing is under effect on the heart and stuff now",
+      "ts": "2026-04-09T15:37:58.645043+00:00"
+    },
+    {
+      "end_ms": 1222432,
+      "index": 162,
+      "speaker_confidence": 0.72124976,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 1217588,
+      "text": "Another third option is it just to the block just to injection into nerve",
+      "ts": "2026-04-09T15:38:02.946482+00:00"
+    },
+    {
+      "end_ms": 1225376,
+      "index": 163,
+      "speaker_confidence": 0.601907,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 1222228,
+      "text": "and I've all found",
+      "ts": "2026-04-09T15:38:05.624507+00:00"
+    },
+    {
+      "end_ms": 1227424,
+      "index": 164,
+      "speaker_confidence": 0.7408188,
+      "speaker_id": "Speaker 1",
+      "start_ms": 1225140,
+      "text": "It's like a cataracts really.",
+      "ts": "2026-04-09T15:38:07.615121+00:00"
+    },
+    {
+      "end_ms": 1228192,
+      "index": 165,
+      "speaker_confidence": 0.46937153,
+      "speaker_id": "Speaker 1",
+      "start_ms": 1227124,
+      "text": "and",
+      "ts": "2026-04-09T15:38:08.072466+00:00"
+    },
+    {
+      "end_ms": 1230080,
+      "index": 166,
+      "speaker_confidence": 0.5742521,
+      "speaker_id": "Speaker 3",
+      "start_ms": 1227892,
+      "text": "aitamu mm mm",
+      "ts": "2026-04-09T15:38:10.188304+00:00"
+    },
+    {
+      "end_ms": 1236576,
+      "index": 167,
+      "speaker_confidence": 0.7443144,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 1229844,
+      "text": "it may could they may not have gotten um they may just put dummy stuff on there",
+      "ts": "2026-04-09T15:38:17.236785+00:00"
+    },
+    {
+      "end_ms": 1243136,
+      "index": 168,
+      "speaker_confidence": 0.75690424,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 1236756,
+      "text": "the benefit of that is that there's no risk at all there's no risk to your life or your heart at all",
+      "ts": "2026-04-09T15:38:23.980758+00:00"
+    },
+    {
+      "end_ms": 1245600,
+      "index": 169,
+      "speaker_confidence": 0.7450154,
+      "speaker_id": "Speaker 3",
+      "start_ms": 1242836,
+      "text": "I have the laser.",
+      "ts": "2026-04-09T15:38:26.440990+00:00"
+    },
+    {
+      "end_ms": 1255680,
+      "index": 170,
+      "speaker_confidence": 0.6862116,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 1245300,
+      "text": "They actually injected into my eye. How was that? Terrible. The injection was painful. There it is. Yeah. That was probably the name they injected.",
+      "ts": "2026-04-09T15:38:36.875561+00:00"
+    },
+    {
+      "end_ms": 1257760,
+      "index": 171,
+      "speaker_confidence": 0.6680219,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 1255636,
+      "text": "before to sort the laser",
+      "ts": "2026-04-09T15:38:37.772844+00:00"
+    },
+    {
+      "end_ms": 1263936,
+      "index": 172,
+      "speaker_confidence": 0.6437093,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 1258068,
+      "text": "The laser was very painful. Oh, it wasn't. I can see it. They gave him took a block.",
+      "ts": "2026-04-09T15:38:44.659789+00:00"
+    },
+    {
+      "end_ms": 1265568,
+      "index": 173,
+      "speaker_confidence": 0.38649085,
+      "speaker_id": "Speaker 1",
+      "start_ms": 1263796,
+      "text": "Please it",
+      "ts": "2026-04-09T15:38:45.533156+00:00"
+    },
+    {
+      "end_ms": 1267520,
+      "index": 174,
+      "speaker_confidence": 0.60387754,
+      "speaker_id": "Speaker 3",
+      "start_ms": 1265428,
+      "text": "because um",
+      "ts": "2026-04-09T15:38:47.657217+00:00"
+    },
+    {
+      "end_ms": 1279424,
+      "index": 175,
+      "speaker_confidence": 0.8031591,
+      "speaker_id": "Speaker 3",
+      "start_ms": 1267860,
+      "text": "the this the doctor on this side was doing the laser and dr sharon was over here and she was holding on to make counting damn",
+      "ts": "2026-04-09T15:39:00.618647+00:00"
+    },
+    {
+      "end_ms": 1284384,
+      "index": 176,
+      "speaker_confidence": 0.7616045,
+      "speaker_id": "Speaker 3",
+      "start_ms": 1279508,
+      "text": "to get my mind over it and i remember shaken",
+      "ts": "2026-04-09T15:39:04.820564+00:00"
+    },
+    {
+      "end_ms": 1285440,
+      "index": 177,
+      "speaker_confidence": 0.5158037,
+      "speaker_id": "Speaker 1",
+      "start_ms": 1284468,
+      "text": "ce match",
+      "ts": "2026-04-09T15:39:05.334049+00:00"
+    },
+    {
+      "end_ms": 1286432,
+      "index": 178,
+      "speaker_confidence": 0.49026504,
+      "speaker_id": "Speaker 1",
+      "start_ms": 1285332,
+      "text": "So",
+      "ts": "2026-04-09T15:39:06.319316+00:00"
+    },
+    {
+      "end_ms": 1295584,
+      "index": 179,
+      "speaker_confidence": 0.60218424,
+      "speaker_id": "Speaker 1",
+      "start_ms": 1286292,
+      "text": "I will write out a letter, I'll fax it to both of them. I'll summarize things like I'll summarize the",
+      "ts": "2026-04-09T15:39:16.645628+00:00"
+    },
+    {
+      "end_ms": 1298912,
+      "index": 180,
+      "speaker_confidence": 0.6986274,
+      "speaker_id": "Speaker 1",
+      "start_ms": 1295284,
+      "text": "how summarize the medical conditions and the risks",
+      "ts": "2026-04-09T15:39:19.216239+00:00"
+    },
+    {
+      "end_ms": 1304704,
+      "index": 181,
+      "speaker_confidence": 0.6769768,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 1298996,
+      "text": "and our said my suggestion is what we call conscious sedation meaning that",
+      "ts": "2026-04-09T15:39:25.278676+00:00"
+    },
+    {
+      "end_ms": 1306528,
+      "index": 182,
+      "speaker_confidence": 0.6228776,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 1304404,
+      "text": "you breathing in your own",
+      "ts": "2026-04-09T15:39:26.625386+00:00"
+    },
+    {
+      "end_ms": 1308672,
+      "index": 183,
+      "speaker_confidence": 0.74822366,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 1306612,
+      "text": "She breathing for you.",
+      "ts": "2026-04-09T15:39:29.347838+00:00"
+    },
+    {
+      "end_ms": 1313664,
+      "index": 184,
+      "speaker_confidence": 0.68780255,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 1308532,
+      "text": "but you are sedated exactly like we do for colonoscopy for example",
+      "ts": "2026-04-09T15:39:34.196134+00:00"
+    },
+    {
+      "end_ms": 1316832,
+      "index": 185,
+      "speaker_confidence": 0.6117369,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 1313524,
+      "text": "and aspects were you're out",
+      "ts": "2026-04-09T15:39:37.132694+00:00"
+    },
+    {
+      "end_ms": 1318816,
+      "index": 186,
+      "speaker_confidence": 0.67642486,
+      "speaker_id": "Speaker 1",
+      "start_ms": 1316628,
+      "text": "you now you now but",
+      "ts": "2026-04-09T15:39:38.937362+00:00"
+    },
+    {
+      "end_ms": 1326400,
+      "index": 187,
+      "speaker_confidence": 0.66616535,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 1319124,
+      "text": "you are do take the risk and the hard minds are super long I can them all before",
+      "ts": "2026-04-09T15:39:47.172710+00:00"
+    },
+    {
+      "end_ms": 1333472,
+      "index": 188,
+      "speaker_confidence": 0.721935,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 1326388,
+      "text": "and and talking on the the arthroscopy and the sinus is doing that like won't be the i first",
+      "ts": "2026-04-09T15:39:54.230154+00:00"
+    },
+    {
+      "end_ms": 1353280,
+      "index": 189,
+      "speaker_confidence": 0.8124341,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 1333172,
+      "text": "I don't want to touch the imaging but the the need to this will then come to a middle ground as basically what I do not know is whether the hospital allows for it but I imagine so because there will be patients where they they just die so I will write out a note of applicability for them",
+      "ts": "2026-04-09T15:40:16.091618+00:00"
+    },
+    {
+      "end_ms": 1355744,
+      "index": 190,
+      "speaker_confidence": 0.58150274,
+      "speaker_id": "Speaker 1",
+      "start_ms": 1354516,
+      "text": "height",
+      "ts": "2026-04-09T15:40:16.642800+00:00"
+    },
+    {
+      "end_ms": 1365920,
+      "index": 191,
+      "speaker_confidence": 0.7596385,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 1355860,
+      "text": "the language you want to use when you talk to her is that you want some salvation but you don't want to be we don't need to be completely out in paralysis",
+      "ts": "2026-04-09T15:40:27.148779+00:00"
+    },
+    {
+      "end_ms": 1367072,
+      "index": 192,
+      "speaker_confidence": 0.526949,
+      "speaker_id": "Speaker 4",
+      "start_ms": 1365972,
+      "text": "Okay.",
+      "ts": "2026-04-09T15:40:27.457688+00:00"
+    },
+    {
+      "end_ms": 1373568,
+      "index": 193,
+      "speaker_confidence": 0.7726846,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 1366932,
+      "text": "and i'm sure now but i prefer if we can do it and then",
+      "ts": "2026-04-09T15:40:34.232582+00:00"
+    },
+    {
+      "end_ms": 1379008,
+      "index": 194,
+      "speaker_confidence": 0.62231064,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 1374292,
+      "text": "in there there the hospital where procedures like scopes and stuff are done",
+      "ts": "2026-04-09T15:40:39.531563+00:00"
+    },
+    {
+      "end_ms": 1385856,
+      "index": 195,
+      "speaker_confidence": 0.76230633,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 1378740,
+      "text": "So there on need a full operating the main user is already off I do not think okay happy to",
+      "ts": "2026-04-09T15:40:46.622923+00:00"
+    },
+    {
+      "end_ms": 1386720,
+      "index": 196,
+      "speaker_confidence": 0.5146854,
+      "speaker_id": "Speaker 1",
+      "start_ms": 1385620,
+      "text": "Um",
+      "ts": "2026-04-09T15:40:46.922300+00:00"
+    },
+    {
+      "end_ms": 1395328,
+      "index": 197,
+      "speaker_confidence": 0.7059426,
+      "speaker_id": "Speaker 1",
+      "start_ms": 1386644,
+      "text": "Okay so I will send that note along maybe you can have that Are you sure Okay a pool",
+      "ts": "2026-04-09T15:40:56.210879+00:00"
+    },
+    {
+      "end_ms": 1396544,
+      "index": 198,
+      "speaker_confidence": 0.46100804,
+      "speaker_id": "Speaker 1",
+      "start_ms": 1395316,
+      "text": "Um",
+      "ts": "2026-04-09T15:40:56.521168+00:00"
+    },
+    {
+      "end_ms": 1401856,
+      "index": 199,
+      "speaker_confidence": 0.66877145,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 1396884,
+      "text": "Now I agree with you that this could be stress related but",
+      "ts": "2026-04-09T15:41:02.457441+00:00"
+    },
+    {
+      "end_ms": 1406368,
+      "index": 200,
+      "speaker_confidence": 0.6037195,
+      "speaker_id": "Speaker 1",
+      "start_ms": 1401908,
+      "text": "and I was say every time i see you you had at least one or two",
+      "ts": "2026-04-09T15:41:08.695471+00:00"
+    },
+    {
+      "end_ms": 1408864,
+      "index": 201,
+      "speaker_confidence": 0.66057384,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 1406100,
+      "text": "times where you've used perhaps the lawn",
+      "ts": "2026-04-09T15:41:10.451226+00:00"
+    },
+    {
+      "end_ms": 1413600,
+      "index": 202,
+      "speaker_confidence": 0.73664004,
+      "speaker_id": "Dr Zohoor",
+      "start_ms": 1408596,
+      "text": "about the idea the number you know it's not every day to fusing ads",
+      "ts": "2026-04-09T15:41:14.280755+00:00"
+    },
+    {
+      "end_ms": 1424320,
+      "index": 203,
+      "speaker_confidence": 0.6040923,
+      "speaker_id": "Speaker 1",
+      "start_ms": 1413332,
+      "text": "but my sense was a sense said this was a lot worse than previous episode oh it was a bad one because i had chest pain and into my jaw",
+      "ts": "2026-04-09T15:41:28.771705+00:00"
+    },
+    {
+      "end_ms": 1429920,
+      "index": 204,
+      "speaker_confidence": 0.678785,
+      "speaker_id": "Speaker 1",
+      "start_ms": 1424148,
+      "text": "it's dramaticing yes it's it's a wild ride",
+      "ts": "2026-04-09T15:41:32.257375+00:00"
+    },
+    {
+      "end_ms": 1434816,
+      "index": 205,
+      "speaker_confidence": 0.60309464,
+      "speaker_id": "Speaker 1",
+      "start_ms": 1432308,
+      "text": "just quickly",
+      "ts": "2026-04-09T15:41:35.452290+00:00"
+    },
+    {
+      "end_ms": 1437536,
+      "index": 206,
+      "speaker_confidence": 0.5078537,
+      "speaker_id": "Speaker 1",
+      "start_ms": 1436628,
+      "text": "See what they",
+      "ts": "2026-04-09T15:41:38.237226+00:00"
+    },
+    {
+      "end_ms": 1438144,
+      "index": 207,
+      "speaker_confidence": 0.6255904,
+      "speaker_id": "Speaker 1",
+      "start_ms": 1437236,
+      "text": "I can",
+      "ts": "2026-04-09T15:41:39.110977+00:00"
+    }
+  ],
+  "sensor_transitions": [
+    {
+      "from": "unknown",
+      "to": "present",
+      "ts": "2026-04-09T15:17:39.313941+00:00"
+    }
+  ],
+  "soap_result": {
+    "latency_ms": 7943,
+    "success": true,
+    "ts": "2026-04-09T15:41:22.958427+00:00",
+    "word_count": 2504
+  },
+  "split_decision": {
+    "cleaned_word_count": 1911,
+    "end_segment_index": 197,
+    "trigger": "hybrid_llm",
+    "ts": "2026-04-09T15:41:02.449892+00:00",
+    "word_count": 2504
+  },
+  "vision_results": [
+    {
+      "is_blank": false,
+      "is_stale": false,
+      "latency_ms": 2891,
+      "parsed_name": "K M Anisur Rahman",
+      "ts": "2026-04-09T15:18:42.341655+00:00"
+    },
+    {
+      "is_blank": false,
+      "is_stale": false,
+      "latency_ms": 1644,
+      "parsed_name": null,
+      "ts": "2026-04-09T15:19:44.079219+00:00"
+    },
+    {
+      "is_blank": false,
+      "is_stale": false,
+      "latency_ms": 1718,
+      "parsed_name": null,
+      "ts": "2026-04-09T15:20:45.874593+00:00"
+    },
+    {
+      "is_blank": false,
+      "is_stale": false,
+      "latency_ms": 1610,
+      "parsed_name": null,
+      "ts": "2026-04-09T15:21:47.561680+00:00"
+    },
+    {
+      "is_blank": false,
+      "is_stale": false,
+      "latency_ms": 2488,
+      "parsed_name": "K M Anisur M Anisur Rahman",
+      "ts": "2026-04-09T15:22:50.212102+00:00"
+    },
+    {
+      "is_blank": false,
+      "is_stale": false,
+      "latency_ms": 1363,
+      "parsed_name": null,
+      "ts": "2026-04-09T15:23:51.631252+00:00"
+    },
+    {
+      "is_blank": false,
+      "is_stale": false,
+      "latency_ms": 1634,
+      "parsed_name": null,
+      "ts": "2026-04-09T15:24:53.344720+00:00"
+    },
+    {
+      "is_blank": false,
+      "is_stale": false,
+      "latency_ms": 2617,
+      "parsed_name": "Mary Margaret Hegedus",
+      "ts": "2026-04-09T15:25:56.120884+00:00"
+    },
+    {
+      "is_blank": false,
+      "is_stale": false,
+      "latency_ms": 2461,
+      "parsed_name": "Mary Margaret Hegedus",
+      "ts": "2026-04-09T15:26:58.746176+00:00"
+    },
+    {
+      "is_blank": false,
+      "is_stale": false,
+      "latency_ms": 2768,
+      "parsed_name": "Mary Margaret Hegedus",
+      "ts": "2026-04-09T15:28:01.704340+00:00"
+    },
+    {
+      "is_blank": false,
+      "is_stale": false,
+      "latency_ms": 2462,
+      "parsed_name": "Mary Margaret Hegedus",
+      "ts": "2026-04-09T15:29:04.327468+00:00"
+    },
+    {
+      "is_blank": false,
+      "is_stale": false,
+      "latency_ms": 2431,
+      "parsed_name": "Mary Hegedus",
+      "ts": "2026-04-09T15:30:06.890864+00:00"
+    },
+    {
+      "is_blank": false,
+      "is_stale": false,
+      "latency_ms": 1887,
+      "parsed_name": null,
+      "ts": "2026-04-09T15:31:08.875080+00:00"
+    },
+    {
+      "is_blank": false,
+      "is_stale": false,
+      "latency_ms": 2341,
+      "parsed_name": null,
+      "ts": "2026-04-09T15:32:11.314856+00:00"
+    },
+    {
+      "is_blank": false,
+      "is_stale": false,
+      "latency_ms": 2748,
+      "parsed_name": null,
+      "ts": "2026-04-09T15:33:14.165158+00:00"
+    },
+    {
+      "is_blank": false,
+      "is_stale": false,
+      "latency_ms": 2075,
+      "parsed_name": null,
+      "ts": "2026-04-09T15:34:16.343980+00:00"
+    },
+    {
+      "is_blank": false,
+      "is_stale": false,
+      "latency_ms": 2441,
+      "parsed_name": "Mary Margaret Hegedus",
+      "ts": "2026-04-09T15:35:18.941464+00:00"
+    },
+    {
+      "is_blank": false,
+      "is_stale": false,
+      "latency_ms": 2477,
+      "parsed_name": "Mary Margaret Hegedus",
+      "ts": "2026-04-09T15:36:21.588566+00:00"
+    },
+    {
+      "is_blank": false,
+      "is_stale": false,
+      "latency_ms": 2613,
+      "parsed_name": "Mary Margaret Hegedus",
+      "ts": "2026-04-09T15:37:24.363622+00:00"
+    },
+    {
+      "is_blank": false,
+      "is_stale": false,
+      "latency_ms": 2635,
+      "parsed_name": "Mary Margaret Hegedus",
+      "ts": "2026-04-09T15:38:27.174666+00:00"
+    },
+    {
+      "is_blank": false,
+      "is_stale": false,
+      "latency_ms": 2608,
+      "parsed_name": "Mary Margaret Hegedus",
+      "ts": "2026-04-09T15:39:29.961890+00:00"
+    },
+    {
+      "is_blank": false,
+      "is_stale": false,
+      "latency_ms": 2454,
+      "parsed_name": "Mary Margaret Hegedus",
+      "ts": "2026-04-09T15:40:32.595692+00:00"
+    },
+    {
+      "is_blank": false,
+      "is_stale": true,
+      "latency_ms": 3827,
+      "parsed_name": "Mary Margaret Hegedus",
+      "ts": "2026-04-09T15:41:36.620314+00:00"
+    }
+  ]
+}

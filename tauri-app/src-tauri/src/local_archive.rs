@@ -1619,7 +1619,15 @@ mod tests {
 
     #[test]
     fn test_get_archive_dir() {
+        // Check the default path shape by temporarily clearing the override.
+        // Other tests (harness) may have set TRANSCRIPTIONAPP_ARCHIVE_DIR to
+        // a tempdir that doesn't contain "archive" in its path.
+        let saved = std::env::var("TRANSCRIPTIONAPP_ARCHIVE_DIR").ok();
+        std::env::remove_var("TRANSCRIPTIONAPP_ARCHIVE_DIR");
         let result = get_archive_dir();
+        if let Some(v) = saved {
+            std::env::set_var("TRANSCRIPTIONAPP_ARCHIVE_DIR", v);
+        }
         assert!(result.is_ok());
         let path = result.unwrap();
         assert!(path.to_string_lossy().contains("archive"));

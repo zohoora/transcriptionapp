@@ -6,12 +6,13 @@ This document describes the AMI Assist test infrastructure: what's tested, where
 
 | Surface | Files | Tests | Runner |
 |---------|-------|-------|--------|
-| Rust backend (lib) | ~118 | 1,125 | `cd tauri-app/src-tauri && cargo test --lib` |
+| Rust backend (lib) | ~119 | 1,149 (incl. 24 harness) | `cd tauri-app/src-tauri && cargo test --lib` |
 | Rust CLI tool tests | 13 binaries | ~46 inline | `cargo test --bins` |
 | Profile service | 7 | 66 | `cd profile-service && cargo test` |
 | Frontend (React + TS) | 32 | 594 | `cd tauri-app && pnpm test:run` |
 | E2E (live services) | 1 file, 11 tests | All `#[ignore]` | `./scripts/preflight.sh --full` |
 | Replay regressions | 6 CLIs | Run against archive | See "Replay tools" below |
+| Orchestrator harness | 10 per-encounter tests | Snapshot baselines | `cargo test --test harness_per_encounter` |
 
 ## Test layers
 
@@ -43,6 +44,18 @@ The most powerful layer — uses real archived production data as test inputs.
 
 ### Layer 6: Golden day regression
 End-to-end labeled day from the archive. Compares production's actual outcomes to documented "correct" outcomes for one fully reviewed clinic day.
+
+### Layer 7: Orchestrator equivalence harness
+Drives the real `run_continuous_mode` function through a `RecordingRunContext` seeded from archived replay_bundle.json data. Snapshot-based: each bundle fixture has a `*.baseline.json` sidecar capturing the archive state the harness produces; subsequent runs verify equivalence.
+
+- **Source:** `tauri-app/src-tauri/src/harness/` (module), `tests/harness_per_encounter.rs` (tests), `tests/fixtures/encounter_bundles/seed/` (fixtures).
+- **Design spec:** `docs/superpowers/specs/2026-04-18-continuous-mode-test-harness-design.md`.
+- **What it catches:** any orchestration regression that changes which sessions are produced, their metadata fields (encounter_number, has_soap_note, detection_method, etc.), or — under `EquivalencePolicy::EventSequence` — the emitted event sequence.
+- **What it doesn't catch:** prompt-level drift (strict prompt matching is too fragile for cross-run replay; the existing replay CLIs cover this), sensor-triggered flows (sensor-source injection through RunContext is deferred), SOAP content (non-deterministic).
+- **Failure UX:** structured `MismatchReport` written to `target/harness-report/<test_id>.json` with first-divergence details + preceding events + re-runnable drill-in command. One-liner to stderr.
+- **Baseline management:** first run records. Re-record via `HARNESS_RECORD_BASELINES=1 cargo test --test harness_per_encounter`. Review `git diff tests/fixtures/encounter_bundles/seed/*.baseline.json` before committing.
+- **Adding a fixture:** copy a `replay_bundle.json` from `~/.transcriptionapp/archive/YYYY/MM/DD/<session_id>/` into `tests/fixtures/encounter_bundles/seed/`, add a `harness_test!` entry in `tests/harness_per_encounter.rs`, run tests to capture the baseline.
+- **Runtime:** ~1s for all 10 current tests. Wired into `preflight.sh` as Layer 8.
 
 ## Replay tools
 

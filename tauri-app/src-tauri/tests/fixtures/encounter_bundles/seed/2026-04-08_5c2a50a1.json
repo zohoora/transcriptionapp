@@ -1,0 +1,182 @@
+{
+  "billing_result": {
+    "codes_count": 1,
+    "latency_ms": 12208,
+    "selected_codes": [
+      "A001A"
+    ],
+    "success": true,
+    "total_amount_cents": 804,
+    "ts": "2026-04-08T18:05:01.568149+00:00"
+  },
+  "clinical_check": {
+    "is_clinical": true,
+    "latency_ms": 0,
+    "success": true,
+    "ts": "2026-04-08T18:04:46.744719+00:00"
+  },
+  "config": {
+    "co2_baseline_ppm": 420.0,
+    "encounter_check_interval_secs": 120,
+    "encounter_detection_mode": "hybrid",
+    "encounter_detection_model": "fast-model",
+    "encounter_detection_nothink": false,
+    "encounter_merge_enabled": true,
+    "encounter_silence_trigger_secs": 45,
+    "fast_model": "fast-model",
+    "hybrid_confirm_window_secs": 180,
+    "hybrid_min_words_for_sensor_split": 500,
+    "idle_encounter_timeout_secs": 900,
+    "presence_absence_threshold_secs": 180,
+    "presence_debounce_secs": 10,
+    "presence_sensor_port": "",
+    "presence_sensor_url": "http://172.16.100.37",
+    "screen_capture_enabled": true,
+    "screen_capture_interval_secs": 60,
+    "shadow_active_method": "llm",
+    "sleep_end_hour": 6,
+    "sleep_mode_enabled": true,
+    "sleep_start_hour": 22,
+    "soap_custom_instructions": "I am a family physician in Ontario Canada. The medications, tests and such are what’s available in Canada. Do not repeat terms such as ‘The patient…’ I prefer clean and crisp notes. Do not start a stentence with ‘Patient reports’ - point form can be simple phrases. So instead of ‘The patient reports low back pain’ say ‘low back pain’. Use the past tense. Do not put procedures under ‘O’ and instead put them in either the ‘P’ section or a separate procedure note. ",
+    "soap_detail_level": 6,
+    "soap_format": "comprehensive",
+    "soap_model": "soap-model",
+    "soap_model_fast": "soap-model",
+    "thermal_hot_pixel_threshold_c": 28.0
+  },
+  "detection_checks": [
+    {
+      "cleaned_word_count": 359,
+      "latency_ms": 1853,
+      "loop_state": {
+        "buffer_age_secs": 232.0,
+        "consecutive_failures": 0,
+        "manual_triggered": false,
+        "merge_back_count": 0,
+        "sensor_absent_since": "2026-04-08T18:04:14.429611+00:00",
+        "sensor_continuous_present": false,
+        "sensor_triggered": false
+      },
+      "parsed_complete": true,
+      "parsed_confidence": 0.85,
+      "parsed_end_index": 356,
+      "prompt_system": "You MUST respond in English with ONLY a JSON object. No other text, no explanations, no markdown.\n\nYou are analyzing a continuous transcript from a medical office where the microphone records all day.\n\nYour task: determine if there is a TRANSITION POINT where one patient encounter ends and another begins, or where a patient encounter has clearly concluded.\n\nA completed encounter typically includes a clinical discussion and a concluding plan (e.g., medication changes, follow-up timing, referrals, or instructions). A short transcript that contains only vitals, greetings, or brief exchanges — with no clinical discussion or plan — is likely a pre-visit assessment still in progress, not a completed encounter. A nurse or medical assistant may see the patient before the doctor arrives to take vitals or ask initial questions — this is part of the same encounter, not a separate visit.\n\nEach segment includes elapsed time (MM:SS) from the start of the recording. Large gaps between timestamps may indicate silence, examination, or the room being empty between patients.\n\nIf you find a transition point or completed encounter, return:\n{\"complete\": true, \"end_segment_index\": <last segment index of the CONCLUDED encounter>, \"confidence\": <0.0-1.0>}\n\nIf the current discussion is still one ongoing encounter with no transition, return:\n{\"complete\": false, \"confidence\": <0.0-1.0>}\n\nRespond with ONLY the JSON object.",
+      "prompt_user": "Transcript (segments numbered with speaker labels):\n[326] (00:00) (Speaker 1 (79%)): so we go for happy too one more thing the cultures yeah i have hang right i think doesn't go very some resource i was wondering if there is any film or something that covered porohar [327] (00:12) (Speaker 3 (57%)): for the for the shoulders right so for the shoulder we do yeah [328] (00:18) (Dr Zohoor (74%)): do you know unfortunately i can check to see if this changes give me one second now have you tried any over the counter creams before [329] (00:28) (Speaker 1 (76%)): I tried one thing and what I found for the world in one month it was a big conversation it really worked for me [330] (00:37) (Speaker 4 (59%)): I think this would be nice. [331] (00:40) (Dr Zohoor (71%)): is face obvious one i think i just called the pharmacy about generic pain and they said no no so none of the none of the the ones i just looked at is like [332] (00:52) (Dr Zohoor (71%)): eight medications and none of them are are unfortunately okay [333] (00:56) (Speaker 3 (68%)): covered um [334] (00:59) (Dr Zohoor (70%)): Give me one second. Let me just check and see if I have any samples. I like all the way. No. [335] (01:06) (Speaker 4 (58%)): Hey, welcome here. [336] (01:08) (Speaker 4 (65%)): I think he's saying [337] (01:10) (Speaker 4 (48%)): あ 、 そう です か 。 [338] (01:11) (Speaker 1 (33%)): Yeah we just get yeah [339] (01:15) (Speaker 1 (44%)): project [340] (01:17) (Speaker 1 (43%)): Okay [341] (01:22) (Speaker 1 (46%)): I'm going to get you [342] (01:25) (Speaker 1 (40%)): I didn't want to talk. [343] (01:34) (Speaker 4 (35%)): Yeah [344] (01:36) (Speaker 1 (43%)): with the king [345] (01:37) (Speaker 1 (49%)): the was [346] (01:43) (Speaker 4 (60%)): लंसिया री वेस माई [347] (01:50) (Speaker 2 (71%)): I think I could just try to set the pharmacy down soon. I just asked them from hey, Oklahoma is working. Okay. [348] (02:00) (Speaker 1 (53%)): yeah maybe [349] (02:02) (Speaker 1 (60%)): I think that smart city is from Europe. [350] (02:06) (Speaker 2 (67%)): anything i can think of i mean it probably isn't going to work [351] (02:10) (Speaker 4 (48%)): uh maybe [352] (02:11) (Speaker 1 (52%)): well [353] (02:14) (Speaker 1 (67%)): counter [354] (02:16) (Dr Zohoor (64%)): process this isn't like a over the counter patch that they sell and it has a bit of [355] (02:21) (Dr Zohoor (75%)): cooling and some anti-inflammatory [356] (02:24) (Dr Zohoor (73%)): I't for something I have but you you at least know whether it's it's horrible okay totally helps is then um if you don't mind coordinating just booking an appointment for yourself on the way out okay sure but I'm also on a local okay okay I get under [357] (02:42) (Speaker 2 (59%)): Actually my backpack has more space but [358] (02:47) (Speaker 3 (48%)): अच्छा [359] (02:49) (Speaker 2 (71%)): So I have to get this prescription. [360] (03:08) (Speaker 1 (65%)): on the phone [361] (03:10) (Speaker 1 (51%)): professor [362] (03:13) (Speaker 2 (50%)): yang inang gaurman [363] (03:17) (Speaker 2 (65%)): I think he no no\n\nReal-time context signals:\nCONTEXT: The presence sensor detected possible movement away from the room. Note: brief departures during medical visits are common (hand washing, supplies, injection preparation, bathroom). Evaluate the TRANSCRIPT CONTENT to determine if the encounter has actually concluded — a sensor departure alone is not sufficient. IMPORTANT: Transcript timestamps are more reliable than the sensor. If segments show continuous or very recent speech (no large time gap), the encounter is likely still active regardless of the sensor signal.",
+      "response_raw": "{\"complete\": true, \"end_segment_index\": 356, \"confidence\": 0.85}",
+      "segment_range": [
+        326,
+        363
+      ],
+      "sensor_context": {
+        "departed": true,
+        "present": false,
+        "unknown": false
+      },
+      "success": true,
+      "ts": "2026-04-08T18:04:45.460570+00:00",
+      "word_count": 359
+    }
+  ],
+  "merge_check": {
+    "curr_head_excerpt": "Speaker 1 (79%): so we go for happy too one more thing the cultures yeah i have hang right i think doesn't go very some resource i was wondering if there is any film or something that covered porohar Speaker 3 (57%): for the for the shoulders right so for the shoulder we do yeah Dr Zohoor (74%): do you know unfortunately i can check to see if this changes give me one second now have you tried any over the counter creams before Speaker 1 (76%): I tried one thing and what I found for the world in one month it was a big conversation it really worked for me Speaker 4 (59%): I think this would be nice. Dr Zohoor (71%): is face obvious one i think i just called the pharmacy about generic pain and they said no no so none of the none of the the ones i just looked at is like Dr Zohoor (71%): eight medications and none of them are are unfortunately okay Speaker 3 (68%): covered um Dr Zohoor (70%): Give me one second. Let me just check and see if I have any samples. I like all the way. No. Speaker 4 (58%): Hey, welcome here. Speaker 4 (65%): I think he's saying Speaker 4 (48%): あ 、 そう です か 。 Speaker 1 (33%): Yeah we just get yeah Speaker 1 (44%): project Speaker 1 (43%): Okay Speaker 1 (46%): I'm going to get you Speaker 1 (40%): I didn't want to talk. Speaker 4 (35%): Yeah Speaker 1 (43%): with the king Speaker 1 (49%): the was Speaker 4 (60%): लंसिया री वेस माई Speaker 2 (71%): I think I could just try to set the pharmacy down soon. I just asked them from hey, Oklahoma is working. Okay. Speaker 1 (53%): yeah maybe Speaker 1 (60%): I think that smart city is from Europe. Speaker 2 (67%): anything i can think of i mean it probably isn't going to work Speaker 4 (48%): uh maybe Speaker 1 (52%): well Speaker 1 (67%): counter Dr Zohoor (64%): process this isn't like a over the counter patch that they sell and it has a bit of Dr Zohoor (75%): cooling and some anti-inflammatory Dr Zohoor (73%): I't for something I have but you you at least know whether it's it's horrible okay totally helps is then um if you don't mind coordinating just booking an appointment for yourself on the way out okay sure but I'm also on a local okay okay I get under",
+    "latency_ms": 9008,
+    "parsed_reason": "\"The first encounter is a psychological/counseling discussion regarding trauma and mental health goals. The second encounter is a physical medical discussion regarding shoulder pain and over-the-counter medication/creams. There is a distinct shift in clinical topic and patient presentation.\"",
+    "parsed_same_encounter": false,
+    "prev_session_id": "8183743c-b652-4760-a16d-7a916ad0ac0d",
+    "prev_tail_excerpt": "you so that's okay and then that way we're Dr Zohoor (80%): just because otherwise it's going to be really tough so what i'm going to get you to think about there's no formula but Dr Zohoor (61%): so sometimes they will come and say Dr Zohoor (76%): i am scared of i don't know let me think of a recent example Dr Zohoor (60%): people conformity Dr Zohoor (68%): and I I a phobia of that and I specifically want to forget that Dr Zohoor (73%): and then it's enough the medical cobbler enough somebody coming and saying i have knee pain can it just stop work Dr Zohoor (74%): so and psychologically for some people they have very specific things they want to work on Speaker 3 (58%): the Dr Zohoor (67%): and and the other times there was just this general sense of Dr Zohoor (72%): everything feels so overwhelming that's going on there's all these layers Dr Zohoor (77%): and that's also fine so it's more just like i just feel on edge i i don't feel um Dr Zohoor (79%): comfortable with just knowing where to go back after Dr Zohoor (74%): and then we it changes how we go about about the work Dr Zohoor (70%): often times Dr Zohoor (67%): courts talk patients in counseling Dr Zohoor (77%): sometimes it's and the the reasons are diverse Speaker 3 (54%): and so Dr Zohoor (67%): because of that people come and they say okay i've been told i need counseling Speaker 3 (50%): For me Dr Zohoor (66%): If you're going to go through it, you want to get the most out of it. Speaker 4 (74%): yeah cuz i was thinking the judge um he really articulated and i know the same thing but for different reasons that he seemed to exercise poor judgment under stress like i noticed that like there's not really i I think it's a good theory i had some problems with the fact i want to see if it could help you know issue justice judge said Dr Zohoor (66%): yeah so and now be the other thing that and sometimes we were come and say that I've had a lot of traumas in my life I've had a lot of just stressful stuff happen um Dr Zohoor (71%): and that is also homophobic and we can we can work on that so i just want to make sure that Speaker 3 (66%): in when it comes to Dr Zohoor (61%): so so nothing is Dr Zohoor (66%): that has to be more important mental health and nothing in terms of help more Dr Zohoor (62%): by counseling us so um Dr Zohoor (75%): the goal isn't for you to kind of come and say this is this particular thing but if you have a feel for whether it's a very narrow versus more a broad that's helpful in in kind of going over Speaker 3 (40%): Yeah.",
+    "prompt_system": "You are reviewing two consecutive transcript excerpts from a medical office where a microphone records all day.\n\nThe system split these into two separate encounters, but they may actually be the SAME patient visit that was incorrectly split (e.g., due to a pause, phone call, or silence during an examination).\n\nDetermine if both excerpts are from the SAME patient encounter or DIFFERENT encounters.\n\nSigns they are the SAME encounter:\n- Same patient name or context referenced\n- Continuation of the same clinical discussion\n- No farewell/greeting between them\n- Natural pause (examination, looking at charts) rather than patient change\n- Same medical condition being discussed from different angles\n\nSigns they are DIFFERENT encounters:\n- Different patient names or contexts\n- A farewell followed by a new greeting\n- Clearly different clinical topics with no continuity\n\nReturn JSON:\n{\"same_encounter\": true, \"reason\": \"brief explanation\"}\nor\n{\"same_encounter\": false, \"reason\": \"brief explanation\"}\n\nReturn ONLY the JSON object, nothing else.",
+    "prompt_user": "EXCERPT FROM END OF PREVIOUS ENCOUNTER:\nyou so that's okay and then that way we're Dr Zohoor (80%): just because otherwise it's going to be really tough so what i'm going to get you to think about there's no formula but Dr Zohoor (61%): so sometimes they will come and say Dr Zohoor (76%): i am scared of i don't know let me think of a recent example Dr Zohoor (60%): people conformity Dr Zohoor (68%): and I I a phobia of that and I specifically want to forget that Dr Zohoor (73%): and then it's enough the medical cobbler enough somebody coming and saying i have knee pain can it just stop work Dr Zohoor (74%): so and psychologically for some people they have very specific things they want to work on Speaker 3 (58%): the Dr Zohoor (67%): and and the other times there was just this general sense of Dr Zohoor (72%): everything feels so overwhelming that's going on there's all these layers Dr Zohoor (77%): and that's also fine so it's more just like i just feel on edge i i don't feel um Dr Zohoor (79%): comfortable with just knowing where to go back after Dr Zohoor (74%): and then we it changes how we go about about the work Dr Zohoor (70%): often times Dr Zohoor (67%): courts talk patients in counseling Dr Zohoor (77%): sometimes it's and the the reasons are diverse Speaker 3 (54%): and so Dr Zohoor (67%): because of that people come and they say okay i've been told i need counseling Speaker 3 (50%): For me Dr Zohoor (66%): If you're going to go through it, you want to get the most out of it. Speaker 4 (74%): yeah cuz i was thinking the judge um he really articulated and i know the same thing but for different reasons that he seemed to exercise poor judgment under stress like i noticed that like there's not really i I think it's a good theory i had some problems with the fact i want to see if it could help you know issue justice judge said Dr Zohoor (66%): yeah so and now be the other thing that and sometimes we were come and say that I've had a lot of traumas in my life I've had a lot of just stressful stuff happen um Dr Zohoor (71%): and that is also homophobic and we can we can work on that so i just want to make sure that Speaker 3 (66%): in when it comes to Dr Zohoor (61%): so so nothing is Dr Zohoor (66%): that has to be more important mental health and nothing in terms of help more Dr Zohoor (62%): by counseling us so um Dr Zohoor (75%): the goal isn't for you to kind of come and say this is this particular thing but if you have a feel for whether it's a very narrow versus more a broad that's helpful in in kind of going over Speaker 3 (40%): Yeah.\n\n---\n\nEXCERPT FROM START OF NEXT ENCOUNTER:\nSpeaker 1 (79%): so we go for happy too one more thing the cultures yeah i have hang right i think doesn't go very some resource i was wondering if there is any film or something that covered porohar Speaker 3 (57%): for the for the shoulders right so for the shoulder we do yeah Dr Zohoor (74%): do you know unfortunately i can check to see if this changes give me one second now have you tried any over the counter creams before Speaker 1 (76%): I tried one thing and what I found for the world in one month it was a big conversation it really worked for me Speaker 4 (59%): I think this would be nice. Dr Zohoor (71%): is face obvious one i think i just called the pharmacy about generic pain and they said no no so none of the none of the the ones i just looked at is like Dr Zohoor (71%): eight medications and none of them are are unfortunately okay Speaker 3 (68%): covered um Dr Zohoor (70%): Give me one second. Let me just check and see if I have any samples. I like all the way. No. Speaker 4 (58%): Hey, welcome here. Speaker 4 (65%): I think he's saying Speaker 4 (48%): あ 、 そう です か 。 Speaker 1 (33%): Yeah we just get yeah Speaker 1 (44%): project Speaker 1 (43%): Okay Speaker 1 (46%): I'm going to get you Speaker 1 (40%): I didn't want to talk. Speaker 4 (35%): Yeah Speaker 1 (43%): with the king Speaker 1 (49%): the was Speaker 4 (60%): लंसिया री वेस माई Speaker 2 (71%): I think I could just try to set the pharmacy down soon. I just asked them from hey, Oklahoma is working. Okay. Speaker 1 (53%): yeah maybe Speaker 1 (60%): I think that smart city is from Europe. Speaker 2 (67%): anything i can think of i mean it probably isn't going to work Speaker 4 (48%): uh maybe Speaker 1 (52%): well Speaker 1 (67%): counter Dr Zohoor (64%): process this isn't like a over the counter patch that they sell and it has a bit of Dr Zohoor (75%): cooling and some anti-inflammatory Dr Zohoor (73%): I't for something I have but you you at least know whether it's it's horrible okay totally helps is then um if you don't mind coordinating just booking an appointment for yourself on the way out okay sure but I'm also on a local okay okay I get under",
+    "response_raw": "```json\n{\"same_encounter\": false, \"reason\": \"The first encounter is a psychological/counseling discussion regarding trauma and mental health goals. The second encounter is a physical medical discussion regarding shoulder pain and over-the-counter medication/creams. There is a distinct shift in clinical topic and patient presentation.\"}\n```",
+    "success": true,
+    "ts": "2026-04-08T18:05:10.589877+00:00"
+  },
+  "name_tracker": {
+    "majority_name": "Hussein Esmaili Seyghalahi",
+    "unique_names": [
+      "Hussein Esmaili Seyghalahi"
+    ],
+    "vote_count": 1
+  },
+  "outcome": {
+    "detection_method": "hybrid_llm",
+    "encounter_number": 3,
+    "is_clinical": true,
+    "patient_name": "Hussein Esmaili Seyghalahi",
+    "session_id": "5c2a50a1-87da-46b6-9b14-f19dad8572a2",
+    "was_merged": false,
+    "word_count": 425
+  },
+  "schema_version": 2,
+  "segments": [
+    {
+      "end_ms": 2752192,
+      "index": 364,
+      "speaker_confidence": 0.41186583,
+      "speaker_id": "Speaker 4",
+      "start_ms": 2750868,
+      "text": "Yeah, so yeah.",
+      "ts": "2026-04-08T18:05:00.001288+00:00"
+    },
+    {
+      "end_ms": 2753632,
+      "index": 365,
+      "speaker_confidence": 0.5188802,
+      "speaker_id": "Speaker 4",
+      "start_ms": 2752116,
+      "text": "जी ट्राई कौन जी",
+      "ts": "2026-04-08T18:05:00.568952+00:00"
+    },
+    {
+      "end_ms": 2756640,
+      "index": 366,
+      "speaker_confidence": 0.46386346,
+      "speaker_id": "Speaker 4",
+      "start_ms": 2755764,
+      "text": "got back",
+      "ts": "2026-04-08T18:05:04.873341+00:00"
+    },
+    {
+      "end_ms": 2762112,
+      "index": 367,
+      "speaker_confidence": 0.5801295,
+      "speaker_id": "Speaker 4",
+      "start_ms": 2759156,
+      "text": "I's are the Collins division. Okay. All right.",
+      "ts": "2026-04-08T18:05:09.294452+00:00"
+    }
+  ],
+  "sensor_transitions": [
+    {
+      "from": "absent",
+      "to": "present",
+      "ts": "2026-04-08T18:04:03.606141+00:00"
+    },
+    {
+      "from": "present",
+      "to": "absent",
+      "ts": "2026-04-08T18:04:14.429606+00:00"
+    }
+  ],
+  "soap_result": {
+    "latency_ms": 2575,
+    "success": true,
+    "ts": "2026-04-08T18:04:49.348697+00:00",
+    "word_count": 425
+  },
+  "split_decision": {
+    "cleaned_word_count": 359,
+    "end_segment_index": 356,
+    "trigger": "hybrid_llm",
+    "ts": "2026-04-08T18:04:45.472699+00:00",
+    "word_count": 425
+  },
+  "vision_results": [
+    {
+      "is_blank": false,
+      "is_stale": true,
+      "latency_ms": 7042,
+      "parsed_name": "Hussein Esmaili Seyghalahi",
+      "ts": "2026-04-08T18:05:08.554372+00:00"
+    }
+  ]
+}

@@ -1,0 +1,293 @@
+{
+  "schema_version": 3,
+  "config": {
+    "co2_baseline_ppm": 420.0,
+    "encounter_check_interval_secs": 120,
+    "encounter_detection_mode": "hybrid",
+    "encounter_detection_model": "fast-model",
+    "encounter_detection_nothink": false,
+    "encounter_merge_enabled": true,
+    "encounter_silence_trigger_secs": 45,
+    "fast_model": "fast-model",
+    "hybrid_confirm_window_secs": 180,
+    "hybrid_min_words_for_sensor_split": 500,
+    "idle_encounter_timeout_secs": 900,
+    "presence_absence_threshold_secs": 180,
+    "presence_debounce_secs": 10,
+    "presence_sensor_port": "/dev/cu.usbmodem21201",
+    "presence_sensor_url": "",
+    "screen_capture_enabled": true,
+    "screen_capture_interval_secs": 60,
+    "shadow_active_method": "llm",
+    "sleep_end_hour": 6,
+    "sleep_mode_enabled": true,
+    "sleep_start_hour": 22,
+    "soap_custom_instructions": "I am a family physician in Ontario Canada. The medications, tests and such are what’s available in Canada. Do not repeat terms such as ‘The patient…’ I prefer clean and crisp notes. Do not start a stentence with ‘Patient reports’ - point form can be simple phrases. So instead of ‘The patient reports low back pain’ say ‘low back pain’. Use the past tense. Do not put procedures under ‘O’ and instead put them in either the ‘P’ section or a separate procedure note. ",
+    "soap_detail_level": 5,
+    "soap_format": "comprehensive",
+    "soap_model": "soap-model",
+    "soap_model_fast": "soap-model",
+    "thermal_hot_pixel_threshold_c": 28.0
+  },
+  "segments": [
+    {
+      "ts": "2026-04-17T15:49:53.356944+00:00",
+      "index": 1064,
+      "start_ms": 8186964,
+      "end_ms": 8196320,
+      "text": "Already so. So you can get like if you're welcome and a care the treatment she was, she'll be able to have great role. Thank you.",
+      "speaker_id": "Speaker 1",
+      "speaker_confidence": 0.7762334
+    },
+    {
+      "ts": "2026-04-17T15:49:55.781185+00:00",
+      "index": 1065,
+      "start_ms": 8196180,
+      "end_ms": 8199264,
+      "text": "You can grab just over the counter at a pharmacy.",
+      "speaker_id": "Speaker 1",
+      "speaker_confidence": 0.7919802
+    },
+    {
+      "ts": "2026-04-17T15:49:58.023224+00:00",
+      "index": 1066,
+      "start_ms": 8200372,
+      "end_ms": 8201472,
+      "text": "And that's it.",
+      "speaker_id": "Speaker 1",
+      "speaker_confidence": 0.7363201
+    },
+    {
+      "ts": "2026-04-17T15:50:08.021152+00:00",
+      "index": 1067,
+      "start_ms": 8202164,
+      "end_ms": 8211072,
+      "text": "And that might help you more with like the external irritation and settle that feeling down. So I would try both.",
+      "speaker_id": "Speaker 1",
+      "speaker_confidence": 0.80973536
+    },
+    {
+      "ts": "2026-04-17T15:50:14.531827+00:00",
+      "index": 1068,
+      "start_ms": 8210868,
+      "end_ms": 8217632,
+      "text": "And then over the weekend, and then see how you are next week. If it's not better at all, I need to take a break.",
+      "speaker_id": "Speaker 1",
+      "speaker_confidence": 0.8233935
+    },
+    {
+      "ts": "2026-04-17T15:50:18.004175+00:00",
+      "index": 1069,
+      "start_ms": 8219956,
+      "end_ms": 8221664,
+      "text": "Okay. Take care.",
+      "speaker_id": "Speaker 1",
+      "speaker_confidence": 0.72757983
+    },
+    {
+      "ts": "2026-04-17T15:50:25.544663+00:00",
+      "index": 1070,
+      "start_ms": 8227380,
+      "end_ms": 8229152,
+      "text": "The thing I just yeah.",
+      "speaker_id": "Speaker 1",
+      "speaker_confidence": 0.4702714
+    },
+    {
+      "ts": "2026-04-17T15:50:34.475006+00:00",
+      "index": 1071,
+      "start_ms": 8236948,
+      "end_ms": 8238112,
+      "text": "For sure.",
+      "speaker_id": "Speaker 1",
+      "speaker_confidence": 0.65538675
+    },
+    {
+      "ts": "2026-04-17T15:50:41.379663+00:00",
+      "index": 1072,
+      "start_ms": 8243284,
+      "end_ms": 8245024,
+      "text": "He was saying, so yeah.",
+      "speaker_id": "Speaker 1",
+      "speaker_confidence": 0.5562533
+    },
+    {
+      "ts": "2026-04-17T15:50:52.054405+00:00",
+      "index": 1073,
+      "start_ms": 8253588,
+      "end_ms": 8255552,
+      "text": "Crazy, maybe it could.",
+      "speaker_id": "Speaker 1",
+      "speaker_confidence": 0.6215687
+    },
+    {
+      "ts": "2026-04-17T15:50:56.975183+00:00",
+      "index": 1074,
+      "start_ms": 8257172,
+      "end_ms": 8260512,
+      "text": "I want to drive with music driving.",
+      "speaker_id": "Speaker 1",
+      "speaker_confidence": 0.57795423
+    },
+    {
+      "ts": "2026-04-17T15:50:59.664942+00:00",
+      "index": 1075,
+      "start_ms": 8262260,
+      "end_ms": 8263360,
+      "text": "Right.",
+      "speaker_id": "Speaker 1",
+      "speaker_confidence": 0.71804345
+    },
+    {
+      "ts": "2026-04-17T15:51:45.754081+00:00",
+      "index": 1076,
+      "start_ms": 8308020,
+      "end_ms": 8309376,
+      "text": "I see.",
+      "speaker_id": "Speaker 1",
+      "speaker_confidence": 0.64725703
+    },
+    {
+      "ts": "2026-04-17T15:51:49.278221+00:00",
+      "index": 1077,
+      "start_ms": 8309524,
+      "end_ms": 8312704,
+      "text": "Yeah, weekend. Yeah, moving weekends are in running when you guys get a bit of",
+      "speaker_id": "Speaker 1",
+      "speaker_confidence": 0.5441011
+    },
+    {
+      "ts": "2026-04-17T15:51:52.192415+00:00",
+      "index": 1078,
+      "start_ms": 8314484,
+      "end_ms": 8315840,
+      "text": "I grew up with.",
+      "speaker_id": "Speaker 1",
+      "speaker_confidence": 0.66519266
+    },
+    {
+      "ts": "2026-04-17T15:51:54.136206+00:00",
+      "index": 1079,
+      "start_ms": 8316884,
+      "end_ms": 8317856,
+      "text": "反正。",
+      "speaker_id": "Speaker 1",
+      "speaker_confidence": 0.7367251
+    },
+    {
+      "ts": "2026-04-17T15:51:55.935069+00:00",
+      "index": 1080,
+      "start_ms": 8318388,
+      "end_ms": 8319360,
+      "text": "We begin.",
+      "speaker_id": "Speaker 1",
+      "speaker_confidence": 0.5557178
+    },
+    {
+      "ts": "2026-04-17T15:51:57.749738+00:00",
+      "index": 1081,
+      "start_ms": 8319540,
+      "end_ms": 8320768,
+      "text": "हा�� हा��",
+      "speaker_id": "Speaker 1",
+      "speaker_confidence": 0.5998504
+    }
+  ],
+  "sensor_transitions": [],
+  "vision_results": [
+    {
+      "ts": "2026-04-17T15:50:16.831773+00:00",
+      "parsed_name": "Judith Arlene Croft",
+      "is_stale": true,
+      "is_blank": false,
+      "latency_ms": 2349
+    }
+  ],
+  "detection_checks": [
+    {
+      "ts": "2026-04-17T15:51:52.257231+00:00",
+      "segment_range": [
+        1059,
+        1077
+      ],
+      "word_count": 166,
+      "cleaned_word_count": 166,
+      "sensor_context": {
+        "departed": false,
+        "present": false,
+        "unknown": true
+      },
+      "prompt_system": "You MUST respond in English with ONLY a JSON object. No other text, no explanations, no markdown.\n\nYou are analyzing a continuous transcript from a medical office where the microphone records all day.\n\nYour task: determine if there is a TRANSITION POINT where one patient encounter ends and another begins, or where a patient encounter has clearly concluded.\n\nA completed encounter typically includes a clinical discussion and a concluding plan (e.g., medication changes, follow-up timing, referrals, or instructions). A short transcript that contains only vitals, greetings, or brief exchanges — with no clinical discussion or plan — is likely a pre-visit assessment still in progress, not a completed encounter. A nurse or medical assistant may see the patient before the doctor arrives to take vitals or ask initial questions — this is part of the same encounter, not a separate visit.\n\nEach segment includes elapsed time (MM:SS) from the start of the recording. Large gaps between timestamps may indicate silence, examination, or the room being empty between patients.\n\nIf you find a transition point or completed encounter, return:\n{\"complete\": true, \"end_segment_index\": <last segment index of the CONCLUDED encounter>, \"confidence\": <0.0-1.0>}\n\nIf the current discussion is still one ongoing encounter with no transition, return:\n{\"complete\": false, \"confidence\": <0.0-1.0>}\n\nRespond with ONLY the JSON object.",
+      "prompt_user": "Transcript (segments numbered with speaker labels):\n[1059] (00:00) (Speaker 1 (66%)): Yes. Yeah, the lights turn on at nine thirty. [1060] (00:03) (Speaker 1 (76%)): Okay, so if anything comes up, I can give me a call. But otherwise, yeah, just comment. [1061] (00:08) (Speaker 1 (64%)): If you do need a prescription. [1062] (00:11) (Speaker 1 (64%)): Well, but I just. [1063] (00:13) (Speaker 1 (62%)): Right. [1064] (00:15) (Speaker 1 (78%)): Already so. So you can get like if you're welcome and a care the treatment she was, she'll be able to have great role. Thank you. [1065] (00:24) (Speaker 1 (79%)): You can grab just over the counter at a pharmacy. [1066] (00:29) (Speaker 1 (74%)): And that's it. [1067] (00:30) (Speaker 1 (81%)): And that might help you more with like the external irritation and settle that feeling down. So I would try both. [1068] (00:39) (Speaker 1 (82%)): And then over the weekend, and then see how you are next week. If it's not better at all, I need to take a break. [1069] (00:48) (Speaker 1 (73%)): Okay. Take care. [1070] (00:56) (Speaker 1 (47%)): The thing I just yeah. [1071] (01:05) (Speaker 1 (66%)): For sure. [1072] (01:12) (Speaker 1 (56%)): He was saying, so yeah. [1073] (01:22) (Speaker 1 (62%)): Crazy, maybe it could. [1074] (01:25) (Speaker 1 (58%)): I want to drive with music driving. [1075] (01:30) (Speaker 1 (72%)): Right. [1076] (02:16) (Speaker 1 (65%)): I see. [1077] (02:18) (Speaker 1 (54%)): Yeah, weekend. Yeah, moving weekends are in running when you guys get a bit of",
+      "response_raw": "{\"complete\": true, \"end_segment_index\": 1069, \"confidence\": 0.92}",
+      "parsed_complete": true,
+      "parsed_confidence": 0.92,
+      "parsed_end_index": 1069,
+      "latency_ms": 1367,
+      "success": true,
+      "loop_state": {
+        "consecutive_failures": 0,
+        "merge_back_count": 0,
+        "buffer_age_secs": 140.0,
+        "sensor_continuous_present": false,
+        "sensor_triggered": false,
+        "manual_triggered": false
+      }
+    }
+  ],
+  "split_decision": {
+    "ts": "2026-04-17T15:51:52.263292+00:00",
+    "trigger": "hybrid_llm",
+    "word_count": 158,
+    "cleaned_word_count": 166,
+    "end_segment_index": 1069
+  },
+  "clinical_check": {
+    "ts": "2026-04-17T15:51:53.231777+00:00",
+    "is_clinical": true,
+    "latency_ms": 0,
+    "success": true
+  },
+  "merge_check": {
+    "ts": "2026-04-17T15:52:02.268164+00:00",
+    "prev_session_id": "d2af6aee-43ac-43b2-907a-8df276940c0a",
+    "prev_tail_excerpt": "(59%): Yeah. Okay. Speaker 1 (78%): 我不会copying。 Speaker 1 (84%): More sugar than the sweetness. Speaker 1 (79%): Especially furniture and these. Speaker 1 (78%): Short. Speaker 1 (71%): Out in there. Speaker 1 (70%): Okay. Speaker 1 (64%): 是啊，现在都是暑假了。 Speaker 1 (73%): Just call me a clown. Speaker 1 (65%): Sheets regularly. Speaker 1 (60%): 你怎么知道？ Speaker 1 (73%): Biggest text. Speaker 1 (67%): To make tickets. Speaker 1 (73%): Instead of indulging religious devotion through. Speaker 1 (61%): We are. Speaker 1 (45%): Yeah. Speaker 1 (65%): So many various facilities across the world. Speaker 1 (67%): High-cost nutrition centers. Speaker 1 (75%): Okay. Speaker 1 (73%): That kind of. Speaker 1 (81%): 老师。 Speaker 1 (85%): And we just. Speaker 1 (64%): Over one year of age is one tablet. Speaker 1 (78%): You. Speaker 1 (74%): saya rasa Speaker 1 (45%): zum Medizinstudium. Speaker 1 (62%): We're gonna need a little. Speaker 1 (67%): So you're. Speaker 1 (73%): 就那个。 Speaker 1 (65%): Likely to listen. Speaker 1 (71%): They're contaminating. Speaker 1 (62%): Like this, the extramaterial. Speaker 1 (64%): Okay. Speaker 1 (73%): Okay. Speaker 1 (77%): But. Speaker 1 (65%): Sounds good to me too. Yeah, a little bit of a process. Yeah, I know. Speaker 1 (59%): Hi, Laura. Speaker 1 (81%): Dr. Dorsey's office. Speaker 1 (68%): So I chatted with Doctor Borsey. So you can actually just get the treatment, um. Speaker 1 (57%): Found out. Speaker 1 (69%): Or she can do it prescription. But yeah, you just get over there and try to find a name. I'll give you the name of it if yes Speaker 1 (61%): So let's try. Speaker 1 (68%): Right, like I don't think there's a hard finishing. Speaker 1 (60%): 对呀。 Speaker 1 (35%): Those are the biggest things too. Speaker 1 (62%): It's a feminist movement. Speaker 1 (69%): Well, uh. Speaker 1 (80%): Which is a lot of like. Speaker 1 (73%): 后嘴。 Speaker 1 (79%): They just see it's not about you. It's if, but not so cleaning. Speaker 1 (53%): Check figures. There's a lot of cleaning and keeping everything. Speaker 1 (84%): So the over-the-counter thing, yeah. So it's I P O so ear p y r like the skin right? Ear containing e o a t so Speaker 1 (91%): Sometimes with digital branding is hard to say. I think some CEO, the name of that reputation when you're patient B A M. I think it's worth a shot and then T R if not definitely everybody picks up the general uh from having an actual single brand naming definitely makes a call ah Speaker 1 (81%): Treatment and then just really wanted to get as far as like a coughing fever. Speaker 1 (75%): Her movement. Speaker 1 (65%): Okay. Speaker 1 (68%): And then if there's anything else on the queue over the weekend, we have an after hours tomorrow. Speaker 1 (70%): 喂。",
+    "curr_head_excerpt": "Speaker 1 (66%): Yes. Yeah, the lights turn on at nine thirty. Speaker 1 (76%): Okay, so if anything comes up, I can give me a call. But otherwise, yeah, just comment. Speaker 1 (64%): If you do need a prescription. Speaker 1 (64%): Well, but I just. Speaker 1 (62%): Right. Speaker 1 (78%): Already so. So you can get like if you're welcome and a care the treatment she was, she'll be able to have great role. Thank you. Speaker 1 (79%): You can grab just over the counter at a pharmacy. Speaker 1 (74%): And that's it. Speaker 1 (81%): And that might help you more with like the external irritation and settle that feeling down. So I would try both. Speaker 1 (82%): And then over the weekend, and then see how you are next week. If it's not better at all, I need to take a break. Speaker 1 (73%): Okay. Take care.",
+    "prompt_system": "You are reviewing two consecutive transcript excerpts from a medical office where a microphone records all day.\n\nThe system split these into two separate encounters, but they may actually be the SAME patient visit that was incorrectly split (e.g., due to a pause, phone call, or silence during an examination).\n\nDetermine if both excerpts are from the SAME patient encounter or DIFFERENT encounters.\n\nSigns they are the SAME encounter:\n- Same patient name or context referenced\n- Continuation of the same clinical discussion\n- No farewell/greeting between them\n- Natural pause (examination, looking at charts) rather than patient change\n- Same medical condition being discussed from different angles\n\nSigns they are DIFFERENT encounters:\n- Different patient names or contexts\n- A farewell followed by a new greeting\n- Clearly different clinical topics with no continuity\n\nReturn JSON:\n{\"same_encounter\": true, \"reason\": \"brief explanation\"}\nor\n{\"same_encounter\": false, \"reason\": \"brief explanation\"}\n\nReturn ONLY the JSON object, nothing else.",
+    "prompt_user": "EXCERPT FROM END OF PREVIOUS ENCOUNTER:\n(59%): Yeah. Okay. Speaker 1 (78%): 我不会copying。 Speaker 1 (84%): More sugar than the sweetness. Speaker 1 (79%): Especially furniture and these. Speaker 1 (78%): Short. Speaker 1 (71%): Out in there. Speaker 1 (70%): Okay. Speaker 1 (64%): 是啊，现在都是暑假了。 Speaker 1 (73%): Just call me a clown. Speaker 1 (65%): Sheets regularly. Speaker 1 (60%): 你怎么知道？ Speaker 1 (73%): Biggest text. Speaker 1 (67%): To make tickets. Speaker 1 (73%): Instead of indulging religious devotion through. Speaker 1 (61%): We are. Speaker 1 (45%): Yeah. Speaker 1 (65%): So many various facilities across the world. Speaker 1 (67%): High-cost nutrition centers. Speaker 1 (75%): Okay. Speaker 1 (73%): That kind of. Speaker 1 (81%): 老师。 Speaker 1 (85%): And we just. Speaker 1 (64%): Over one year of age is one tablet. Speaker 1 (78%): You. Speaker 1 (74%): saya rasa Speaker 1 (45%): zum Medizinstudium. Speaker 1 (62%): We're gonna need a little. Speaker 1 (67%): So you're. Speaker 1 (73%): 就那个。 Speaker 1 (65%): Likely to listen. Speaker 1 (71%): They're contaminating. Speaker 1 (62%): Like this, the extramaterial. Speaker 1 (64%): Okay. Speaker 1 (73%): Okay. Speaker 1 (77%): But. Speaker 1 (65%): Sounds good to me too. Yeah, a little bit of a process. Yeah, I know. Speaker 1 (59%): Hi, Laura. Speaker 1 (81%): Dr. Dorsey's office. Speaker 1 (68%): So I chatted with Doctor Borsey. So you can actually just get the treatment, um. Speaker 1 (57%): Found out. Speaker 1 (69%): Or she can do it prescription. But yeah, you just get over there and try to find a name. I'll give you the name of it if yes Speaker 1 (61%): So let's try. Speaker 1 (68%): Right, like I don't think there's a hard finishing. Speaker 1 (60%): 对呀。 Speaker 1 (35%): Those are the biggest things too. Speaker 1 (62%): It's a feminist movement. Speaker 1 (69%): Well, uh. Speaker 1 (80%): Which is a lot of like. Speaker 1 (73%): 后嘴。 Speaker 1 (79%): They just see it's not about you. It's if, but not so cleaning. Speaker 1 (53%): Check figures. There's a lot of cleaning and keeping everything. Speaker 1 (84%): So the over-the-counter thing, yeah. So it's I P O so ear p y r like the skin right? Ear containing e o a t so Speaker 1 (91%): Sometimes with digital branding is hard to say. I think some CEO, the name of that reputation when you're patient B A M. I think it's worth a shot and then T R if not definitely everybody picks up the general uh from having an actual single brand naming definitely makes a call ah Speaker 1 (81%): Treatment and then just really wanted to get as far as like a coughing fever. Speaker 1 (75%): Her movement. Speaker 1 (65%): Okay. Speaker 1 (68%): And then if there's anything else on the queue over the weekend, we have an after hours tomorrow. Speaker 1 (70%): 喂。\n\n---\n\nEXCERPT FROM START OF NEXT ENCOUNTER:\nSpeaker 1 (66%): Yes. Yeah, the lights turn on at nine thirty. Speaker 1 (76%): Okay, so if anything comes up, I can give me a call. But otherwise, yeah, just comment. Speaker 1 (64%): If you do need a prescription. Speaker 1 (64%): Well, but I just. Speaker 1 (62%): Right. Speaker 1 (78%): Already so. So you can get like if you're welcome and a care the treatment she was, she'll be able to have great role. Thank you. Speaker 1 (79%): You can grab just over the counter at a pharmacy. Speaker 1 (74%): And that's it. Speaker 1 (81%): And that might help you more with like the external irritation and settle that feeling down. So I would try both. Speaker 1 (82%): And then over the weekend, and then see how you are next week. If it's not better at all, I need to take a break. Speaker 1 (73%): Okay. Take care.",
+    "response_raw": "{\"same_encounter\": false, \"reason\": \"The first excerpt ends with a greeting identifying the speaker as 'Dr. Dorsey's office' and discusses administrative topics, while the second excerpt begins with logistical details about office hours and concludes with a clear farewell ('Take care'), indicating a distinct patient visit.\"}",
+    "parsed_same_encounter": false,
+    "parsed_reason": "\"The first excerpt ends with a greeting identifying the speaker as 'Dr. Dorsey's office' and discusses administrative topics, while the second excerpt begins with logistical details about office hours and concludes with a clear farewell ('Take care'), indicating a distinct patient visit.\"",
+    "latency_ms": 2486,
+    "success": true
+  },
+  "soap_result": {
+    "ts": "2026-04-17T15:51:54.396210+00:00",
+    "latency_ms": 1149,
+    "success": true,
+    "word_count": 158
+  },
+  "billing_result": {
+    "ts": "2026-04-17T15:51:59.753522+00:00",
+    "latency_ms": 5346,
+    "success": true,
+    "codes_count": 1,
+    "total_amount_cents": 402,
+    "selected_codes": [
+      "A008A"
+    ]
+  },
+  "name_tracker": {
+    "majority_name": null,
+    "vote_count": 0,
+    "unique_names": []
+  },
+  "outcome": {
+    "session_id": "beba1f94-c79d-44c7-bf15-87eef529412d",
+    "encounter_number": 9,
+    "word_count": 158,
+    "is_clinical": true,
+    "was_merged": false,
+    "detection_method": "hybrid_llm"
+  }
+}

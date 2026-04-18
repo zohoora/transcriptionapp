@@ -32,7 +32,14 @@ pub async fn drive_encounter_bundle_smoke(
 ) -> Result<SmokeDriveOutcome, String> {
     // Tempdir for archive output. Set as env var so local_archive::get_archive_dir()
     // returns this path instead of the user's real ~/.transcriptionapp/archive.
+    //
+    // CAREFUL: this env var is process-wide. Tests that drive the orchestrator
+    // must use #[serial] (from serial_test crate) to avoid interfering with
+    // other tests that observe the default archive path. We save+restore the
+    // prior value here so non-serial tests in the same binary run that happen
+    // to be interleaved at the thread level see the original.
     let archive_dir = tempfile::tempdir().map_err(|e| e.to_string())?;
+    let prior_env = std::env::var("TRANSCRIPTIONAPP_ARCHIVE_DIR").ok();
     std::env::set_var("TRANSCRIPTIONAPP_ARCHIVE_DIR", archive_dir.path());
 
     // Build a test-safe Config: no live LLM/STT/sensor, sleep mode off.
@@ -75,6 +82,14 @@ pub async fn drive_encounter_bundle_smoke(
         Err(_) => Err("orchestrator task did not complete within 10s wall time".into()),
     };
 
+    // Restore prior env var so other tests in the same binary run observe
+    // the default archive path. (The SmokeDriveOutcome's TempDir holds the
+    // actual data; nothing else references the env var after this point.)
+    match prior_env {
+        Some(v) => std::env::set_var("TRANSCRIPTIONAPP_ARCHIVE_DIR", v),
+        None => std::env::remove_var("TRANSCRIPTIONAPP_ARCHIVE_DIR"),
+    }
+
     Ok(SmokeDriveOutcome {
         archive_dir,
         ctx,
@@ -107,36 +122,11 @@ pub(crate) fn _orchestrator_dropped() -> PathBuf {
     PathBuf::new()
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn empty_bundle() -> ReplayBundle {
-        ReplayBundle {
-            schema_version: 3,
-            config: serde_json::json!({}),
-            segments: vec![],
-            sensor_transitions: vec![],
-            vision_results: vec![],
-            detection_checks: vec![],
-            split_decision: None,
-            clinical_check: None,
-            merge_check: None,
-            soap_result: None,
-            billing_result: None,
-            multi_patient_detections: vec![],
-            name_tracker: None,
-            outcome: None,
-        }
-    }
-
-    #[tokio::test(flavor = "current_thread", start_paused = true)]
-    async fn drive_empty_bundle_terminates_cleanly() {
-        let bundle = empty_bundle();
-        let outcome = drive_encounter_bundle_smoke(&bundle).await.expect("drive");
-        // With an empty bundle, the orchestrator should have shut down without
-        // panicking. run_result may be Ok or an Err string; what matters is
-        // it completed rather than hanging.
-        let _ = outcome.run_result;
-    }
-}
+// NB: no unit test here. `drive_encounter_bundle_smoke` sets a process-wide
+// env var (TRANSCRIPTIONAPP_ARCHIVE_DIR) to redirect archive writes; running
+// it as a lib unit test would cause cross-contamination with other lib tests
+// that observe the default archive path.
+//
+// Integration coverage lives at `tests/harness_per_encounter.rs`, which runs
+// as a separate test binary — env vars there are isolated from the lib
+// binary's test pool.

@@ -1,0 +1,14 @@
+{
+  "session_count": 1,
+  "sessions": [
+    {
+      "encounter_number": null,
+      "has_soap_note": false,
+      "was_merged": null,
+      "charting_mode": null,
+      "detection_method": null,
+      "likely_non_clinical": null,
+      "patient_count": null
+    }
+  ]
+}
