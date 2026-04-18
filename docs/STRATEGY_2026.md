@@ -164,7 +164,7 @@ Detector / SOAP / billing / vision / clinical-content-check all fail together wh
 ### 4.4 Technical debt that is actually OK
 
 - `billing/ohip_codes.rs` at 2,667 LOC — mostly data tables. Not a smell; it's a dataset.
-- Rust test coverage (1,076 lib tests, 82 files with tests) — healthy.
+- Rust test coverage (1,125 lib tests, 118 source files) — healthy.
 - Auto-deploy via launchd — well-designed, canonical in repo.
 - Replay logging architecture — solid, under-exploited.
 
