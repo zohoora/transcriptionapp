@@ -86,7 +86,7 @@ pub const MIN_SENSOR_HYBRID_WORDS: usize = 500;
 /// — i.e. the encounter number of the merged-away encounter, which is one
 /// more than the surviving encounter's number after `encounter_number -= 1`.
 #[allow(clippy::too_many_arguments)]
-fn finalize_merged_bundle(
+pub(crate) fn finalize_merged_bundle(
     bundle_mutex: &Arc<Mutex<crate::replay_bundle::ReplayBundleBuilder>>,
     segment_logger_mutex: &Arc<Mutex<crate::segment_log::SegmentLogger>>,
     tracker_snapshot: &(Option<String>, usize, Vec<String>),
@@ -133,7 +133,7 @@ fn finalize_merged_bundle(
 
 /// Convert a `MultiPatientDetectionOutcome` from `llm_client` into a
 /// `MultiPatientDetection` for the replay bundle.
-fn multi_patient_from_outcome(
+pub(crate) fn multi_patient_from_outcome(
     outcome: &crate::llm_client::MultiPatientDetectionOutcome,
     stage: crate::replay_bundle::MultiPatientStage,
     word_count: usize,
@@ -1047,13 +1047,54 @@ pub async fn run_continuous_mode<C: crate::run_context::RunContext>(
     // Move the hybrid sensor receiver into the detector task
     let mut hybrid_sensor_rx = hybrid_sensor_state_rx;
 
+    // Dedicated LLM client for the merge-back coordinator (LLMClient is !Clone,
+    // and the detector task keeps the primary `llm_client` for detection + SOAP).
+    let merge_back_llm_client = if !config.llm_router_url.is_empty() {
+        LLMClient::new(
+            &config.llm_router_url,
+            &config.llm_api_key,
+            &config.llm_client_id,
+            &operational.fast_model,
+        )
+        .ok()
+    } else {
+        None
+    };
+
+    // Clone handle for the detector task (screenshot / sensor tasks spawned
+    // later still need the original `handle`).
+    let handle_for_detector = handle.clone();
+
     let detector_task = tokio::spawn(async move {
-        let mut encounter_number: u32 = 0;
+        // `encounter_number` + `merge_back_count` live on `loop_state` so the
+        // merge-back coordinator can mutate them in-place without a tuple
+        // return. See `continuous_mode_types::LoopState`.
+        let mut loop_state = crate::continuous_mode_types::LoopState::new();
         let mut consecutive_llm_failures: u32 = 0;
-        // Tracks how many times a split was merged back into the previous encounter.
-        // Each merge-back escalates the confidence threshold by +0.05, making
-        // repeated false-positive splits on long sessions increasingly unlikely.
-        let mut merge_back_count: u32 = 0;
+
+        // Build long-lived deps for the merge-back coordinator once. Borrowed
+        // by reference each iteration (no per-encounter Arc cloning).
+        let merge_back_deps = crate::continuous_mode_merge_back::MergeBackDeps {
+            handle: handle_for_detector,
+            logger: Arc::clone(&logger_for_detector),
+            bundle: Arc::clone(&bundle_for_detector),
+            segment_logger: Arc::clone(&segment_logger_for_detector),
+            day_logger: Arc::clone(&day_logger_for_detector),
+            sync_ctx: sync_ctx_for_detector.clone(),
+            llm_client: merge_back_llm_client,
+            templates: templates.clone(),
+            billing_data: billing_data.clone(),
+            fast_model: fast_model.clone(),
+            soap_model: soap_model.clone(),
+            soap_detail_level,
+            soap_format: soap_format.clone(),
+            soap_custom_instructions: soap_custom_instructions.clone(),
+            multi_patient_check_word_threshold,
+            multi_patient_detect_word_threshold,
+            soap_generation_timeout_secs,
+            billing_counselling_exhausted,
+            merge_enabled,
+        };
 
         // Hybrid mode: sensor absence tracking
         let mut sensor_absent_since: Option<DateTime<Utc>> = None;
@@ -1429,7 +1470,7 @@ pub async fn run_continuous_mode<C: crate::run_context::RunContext>(
                                     let mut check = crate::replay_bundle::DetectionCheck::new(
                                         (first_seg_idx, last_seg_idx), word_count, cleaned_word_count,
                                         replay_sensor_ctx.clone(), system_prompt.clone(), user_prompt.clone(),
-                                        latency, consecutive_llm_failures, merge_back_count,
+                                        latency, consecutive_llm_failures, loop_state.merge_back_count,
                                         replay_buffer_age, replay_sensor_absent.clone(),
                                         sensor_continuous_present, sensor_triggered, manual_triggered,
                                     );
@@ -1457,7 +1498,7 @@ pub async fn run_continuous_mode<C: crate::run_context::RunContext>(
                                     let mut check = crate::replay_bundle::DetectionCheck::new(
                                         (first_seg_idx, last_seg_idx), word_count, cleaned_word_count,
                                         replay_sensor_ctx.clone(), system_prompt.clone(), user_prompt.clone(),
-                                        latency, consecutive_llm_failures, merge_back_count,
+                                        latency, consecutive_llm_failures, loop_state.merge_back_count,
                                         replay_buffer_age, replay_sensor_absent.clone(),
                                         sensor_continuous_present, sensor_triggered, manual_triggered,
                                     );
@@ -1490,7 +1531,7 @@ pub async fn run_continuous_mode<C: crate::run_context::RunContext>(
                             let mut check = crate::replay_bundle::DetectionCheck::new(
                                 (first_seg_idx, last_seg_idx), word_count, cleaned_word_count,
                                 replay_sensor_ctx.clone(), system_prompt.clone(), user_prompt.clone(),
-                                latency, consecutive_llm_failures, merge_back_count,
+                                latency, consecutive_llm_failures, loop_state.merge_back_count,
                                 replay_buffer_age, replay_sensor_absent.clone(),
                                 sensor_continuous_present, sensor_triggered, manual_triggered,
                             );
@@ -1520,7 +1561,7 @@ pub async fn run_continuous_mode<C: crate::run_context::RunContext>(
                             let mut check = crate::replay_bundle::DetectionCheck::new(
                                 (first_seg_idx, last_seg_idx), word_count, cleaned_word_count,
                                 replay_sensor_ctx, system_prompt.clone(), user_prompt.clone(),
-                                latency, consecutive_llm_failures, merge_back_count,
+                                latency, consecutive_llm_failures, loop_state.merge_back_count,
                                 replay_buffer_age, replay_sensor_absent,
                                 sensor_continuous_present, sensor_triggered, manual_triggered,
                             );
@@ -1560,7 +1601,7 @@ pub async fn run_continuous_mode<C: crate::run_context::RunContext>(
             let eval_ctx = DetectionEvalContext {
                 detection_result,
                 buffer_age_mins,
-                merge_back_count: merge_back_count as usize,
+                merge_back_count: loop_state.merge_back_count as usize,
                 word_count,
                 cleaned_word_count,
                 consecutive_llm_failures,
@@ -1623,13 +1664,13 @@ pub async fn run_continuous_mode<C: crate::run_context::RunContext>(
                 DetectionOutcome::BelowThreshold { confidence, threshold } => {
                     info!(
                         "Confidence gate rejected: confidence={:.2}, threshold={:.2}, merge_backs={}, buffer_age_mins={}, word_count={}",
-                        confidence, threshold, merge_back_count, buffer_age_mins, word_count
+                        confidence, threshold, loop_state.merge_back_count, buffer_age_mins, word_count
                     );
                     if let Ok(mut logger) = logger_for_detector.lock() {
                         logger.log_confidence_gate(serde_json::json!({
                             "confidence": confidence,
                             "threshold": threshold,
-                            "merge_back_count": merge_back_count,
+                            "merge_back_count": loop_state.merge_back_count,
                             "buffer_age_mins": buffer_age_mins,
                             "word_count": word_count,
                             "consecutive_llm_failures": consecutive_llm_failures,
@@ -1670,7 +1711,7 @@ pub async fn run_continuous_mode<C: crate::run_context::RunContext>(
 
             // Split decided — extract encounter
             {
-                        encounter_number += 1;
+                        loop_state.encounter_number += 1;
                         // Clear hybrid sensor tracking on successful split
                         if is_hybrid_mode {
                             sensor_absent_since = None;
@@ -1681,7 +1722,7 @@ pub async fn run_continuous_mode<C: crate::run_context::RunContext>(
                         }
                         info!(
                             "Encounter #{} detected (end_segment_index={})",
-                            encounter_number, end_index
+                            loop_state.encounter_number, end_index
                         );
 
                         // Extract encounter segments from buffer
@@ -1768,7 +1809,7 @@ pub async fn run_continuous_mode<C: crate::run_context::RunContext>(
                             dl.log(crate::day_log::DayEvent::EncounterSplit {
                                 ts: ctx_for_detector.now_utc().to_rfc3339(),
                                 session_id: session_id.clone(),
-                                encounter_number,
+                                encounter_number: loop_state.encounter_number,
                                 trigger: detection_method_str.to_string(),
                                 word_count: encounter_word_count,
                                 detection_method: detection_method_str.to_string(),
@@ -1782,7 +1823,7 @@ pub async fn run_continuous_mode<C: crate::run_context::RunContext>(
                                 if let Ok(content) = std::fs::read_to_string(&date_path) {
                                     if let Ok(mut metadata) = serde_json::from_str::<local_archive::ArchiveMetadata>(&content) {
                                         metadata.charting_mode = Some("continuous".to_string());
-                                        metadata.encounter_number = Some(encounter_number);
+                                        metadata.encounter_number = Some(loop_state.encounter_number);
                                         // Record how this encounter was detected (reuse pre-computed value)
                                         metadata.detection_method = Some(detection_method_str.to_string());
                                         // Add patient name and DOB from vision extraction
@@ -1920,7 +1961,7 @@ pub async fn run_continuous_mode<C: crate::run_context::RunContext>(
                                 client, &fast_model, &encounter_text, encounter_word_count,
                                 &logger_for_detector,
                                 serde_json::json!({
-                                    "encounter_number": encounter_number,
+                                    "encounter_number": loop_state.encounter_number,
                                     "word_count": encounter_word_count,
                                 }),
                                 Some(&templates),
@@ -1968,12 +2009,12 @@ pub async fn run_continuous_mode<C: crate::run_context::RunContext>(
                         // Generate SOAP note (with 120s timeout — SOAP is heavier than detection)
                         // Skip SOAP for non-clinical encounters to prevent hallucinated clinical content
                         if !is_clinical {
-                            info!("Skipping SOAP for non-clinical encounter #{}", encounter_number);
+                            info!("Skipping SOAP for non-clinical encounter #{}", loop_state.encounter_number);
                         } else if let Some(ref client) = llm_client {
                             // ── Multi-patient detection ──────────────────────────
                             // Run before SOAP to detect couples/family visits.
                             let multi_patient_detection = if encounter_word_count >= multi_patient_detect_word_threshold {
-                                info!("Running multi-patient detection for encounter #{} ({} words)", encounter_number, encounter_word_count);
+                                info!("Running multi-patient detection for encounter #{} ({} words)", loop_state.encounter_number, encounter_word_count);
                                 let outcome = client.run_multi_patient_detection(&fast_model, &encounter_text_rich).await;
                                 if let Ok(mut logger) = logger_for_detector.lock() {
                                     let det_context = match &outcome.detection {
@@ -2038,7 +2079,7 @@ pub async fn run_continuous_mode<C: crate::run_context::RunContext>(
                                 .as_ref()
                                 .map_or(false, |d| d.patient_count >= 2);
 
-                            info!("Generating SOAP for encounter #{}", encounter_number);
+                            info!("Generating SOAP for encounter #{}", loop_state.encounter_number);
                             let soap_now = ctx_for_detector.now_utc();
                             let soap_outcome = crate::encounter_pipeline::generate_and_archive_soap(
                                 client, &soap_model, &filtered_encounter_text,
@@ -2048,7 +2089,7 @@ pub async fn run_continuous_mode<C: crate::run_context::RunContext>(
                                 multi_patient_detection.as_ref(),
                                 &logger_for_detector,
                                 serde_json::json!({
-                                    "encounter_number": encounter_number,
+                                    "encounter_number": loop_state.encounter_number,
                                     "word_count": encounter_word_count,
                                     "has_notes": !notes_text.is_empty(),
                                 }),
@@ -2064,7 +2105,7 @@ pub async fn run_continuous_mode<C: crate::run_context::RunContext>(
                                         patient_count: Some(patient_count),
                                         recovered: None,
                                     }.emit_via(&ctx_for_detector);
-                                    info!("SOAP generated for encounter #{} ({} patient notes)", encounter_number, patient_count);
+                                    info!("SOAP generated for encounter #{} ({} patient notes)", loop_state.encounter_number, patient_count);
                                     // Server sync: upload SOAP
                                     sync_ctx_for_detector.sync_soap(&session_id, content, soap_detail_level, &soap_format);
                                     if let Ok(mut bundle) = bundle_for_detector.lock() {
@@ -2132,7 +2173,7 @@ pub async fn run_continuous_mode<C: crate::run_context::RunContext>(
                                                 }
                                             }
                                             Err(e) => {
-                                                warn!("Billing extraction failed for encounter #{}: {}", encounter_number, e);
+                                                warn!("Billing extraction failed for encounter #{}: {}", loop_state.encounter_number, e);
                                                 if let Some(ref dl) = *day_logger_for_detector {
                                                     dl.log(crate::day_log::DayEvent::BillingExtracted {
                                                         ts: ctx_for_detector.now_utc().to_rfc3339(),
@@ -2188,515 +2229,56 @@ pub async fn run_continuous_mode<C: crate::run_context::RunContext>(
                             }
                         }
 
-                        // ---- Retrospective merge check ----
-                        // After archiving + SOAP for encounter N, check if it should merge with N-1.
-                        // Only runs when prev_encounter_session_id is set (i.e., a prior encounter
-                        // was split within this same continuous session). First encounters after
-                        // restart or manual "New Patient" trigger are never merge-checked — the
-                        // user's explicit action (restart / new patient) means a new session.
-                        if merge_enabled {
-                            if let (Some(ref prev_id), Some(ref prev_text), Some(ref prev_date)) =
-                                (&prev_encounter_session_id, &prev_encounter_text, &prev_encounter_date)
-                            {
-                                // ── Small-orphan auto-merge gate ──────────────────────────
-                                // If the new encounter is very short (<500 words) and the
-                                // sensor confirms someone was present, it's almost certainly
-                                // a post-procedure tail (aftercare, scheduling) that was
-                                // incorrectly split. Auto-merge without asking the LLM.
-                                // Requires sensor data — without it we can't distinguish a
-                                // short clinical tail from background noise / non-patient chatter.
-                                const SMALL_ORPHAN_WORD_THRESHOLD: usize = 500;
-                                let sensor_confirmed_present = sensor_available
-                                    && prev_sensor_state == crate::presence_sensor::PresenceState::Present;
-
-                                if encounter_word_count < SMALL_ORPHAN_WORD_THRESHOLD && sensor_confirmed_present {
-                                    info!(
-                                        "Small-orphan auto-merge: encounter {} has {} words with sensor present — merging into {} without LLM check",
-                                        session_id, encounter_word_count, prev_id
-                                    );
-                                    if let Ok(mut logger) = logger_for_detector.lock() {
-                                        logger.log_merge_check(
-                                            "auto_merge_small_orphan", "", "",
-                                            Some(&format!("{{\"same_encounter\": true, \"reason\": \"small orphan ({} words) with sensor present\"}}", encounter_word_count)),
-                                            0, true, None,
-                                            serde_json::json!({
-                                                "prev_session_id": prev_id,
-                                                "curr_session_id": session_id,
-                                                "encounter_word_count": encounter_word_count,
-                                                "sensor_state": format!("{:?}", prev_sensor_state),
-                                                "gate": "small_orphan_auto_merge",
-                                            }),
-                                        );
-                                    }
-
-                                    // Log merge check to replay bundle
-                                    if let Ok(mut bundle) = bundle_for_detector.lock() {
-                                        bundle.set_merge_check(crate::replay_bundle::MergeCheck {
-                                            ts: ctx_for_detector.now_utc().to_rfc3339(),
-                                            prev_session_id: prev_id.clone(),
-                                            prev_tail_excerpt: String::new(),
-                                            curr_head_excerpt: String::new(),
-                                            patient_name: None,
-                                            prompt_system: String::new(),
-                                            prompt_user: String::new(),
-                                            response_raw: None,
-                                            parsed_same_encounter: Some(true),
-                                            parsed_reason: Some(format!("small orphan ({} words) with sensor present", encounter_word_count)),
-                                            latency_ms: 0,
-                                            success: true,
-                                            auto_merge_gate: Some("small_orphan_auto_merge".to_string()),
-                                        });
-                                    }
-                                    if let Some(ref dl) = *day_logger_for_detector {
-                                        dl.log(crate::day_log::DayEvent::EncounterMerged {
-                                            ts: ctx_for_detector.now_utc().to_rfc3339(),
-                                            new_session_id: session_id.clone(),
-                                            prev_session_id: prev_id.clone(),
-                                            reason: "small_orphan_auto_merge".to_string(),
-                                            gate_type: Some("small_orphan".to_string()),
-                                        });
-                                    }
-
-                                    // Perform the merge (same logic as LLM-confirmed merge below)
-                                    let merged_text = format!("{}\n{}", prev_text, encounter_text);
-                                    let merged_text_rich = match &prev_encounter_text_rich {
-                                        Some(prev_rich) => format!("{}\n{}", prev_rich, encounter_text_rich),
-                                        None => format!("{}\n{}", prev_text, encounter_text_rich),
-                                    };
-                                    let merged_wc = merged_text.split_whitespace().count();
-                                    let merged_duration = encounter_start
-                                        .map(|s| (ctx_for_detector.now_utc() - s).num_milliseconds().max(0) as u64)
-                                        .unwrap_or(0);
-                                    let merge_vision_name = name_tracker_for_detector
-                                        .lock()
-                                        .ok()
-                                        .and_then(|t| t.majority_name());
-                                    if let Err(e) = local_archive::merge_encounters(
-                                        prev_id,
-                                        &session_id,
-                                        prev_date,
-                                        &merged_text,
-                                        merged_wc,
-                                        merged_duration,
-                                        merge_vision_name.as_deref(),
-                                    ) {
-                                        warn!("Failed to auto-merge small orphan: {}", e);
-                                    } else {
-                                        // Sync merge to server: delete orphan, re-upload surviving session
-                                        {
-                                            let today = ctx_for_detector.now_utc().format("%Y-%m-%d").to_string();
-                                            sync_ctx_for_detector.sync_merge(&session_id, prev_id, &today);
-                                        }
-                                        // Regenerate SOAP for the merged encounter
-                                        if let Some(ref client) = llm_client {
-                                            let merge_notes = encounter_notes_for_detector
-                                                .lock()
-                                                .map(|n| n.clone())
-                                                .unwrap_or_default();
-                                            crate::encounter_pipeline::regen_soap_after_merge(
-                                                client, &merged_text, prev_id, prev_date,
-                                                prev_encounter_patient_name.as_deref(),
-                                                &soap_model, soap_detail_level, &soap_format, &soap_custom_instructions,
-                                                merge_notes, prev_encounter_is_clinical, is_clinical,
-                                                &logger_for_detector, &sync_ctx_for_detector,
-                                                "auto_merge_soap_regen",
-                                                Some(&fast_model), merged_duration, billing_counselling_exhausted,
-                                                Some(&templates), Some(&billing_data),
-                                            ).await;
-                                        }
-
-                                        merge_back_count += 1;
-                                        encounter_number -= 1;
-                                        info!("Auto-merge complete (merge_back_count now {}, encounter_number now {})", merge_back_count, encounter_number);
-
-                                        // Remove merged session from recent encounters list
-                                        if let Ok(mut recent) = recent_encounters_for_detector.lock() {
-                                            recent.retain(|e| e.session_id != session_id);
-                                        }
-
-                                        // Emit merge event to frontend
-                                        ContinuousModeEvent::EncounterMerged {
-                                            kept_session_id: Some(prev_id.clone()),
-                                            merged_into_session_id: None,
-                                            removed_session_id: session_id.clone(),
-                                            reason: Some(format!("small orphan ({} words) with sensor present", encounter_word_count)),
-                                        }.emit_via(&ctx_for_detector);
-
-                                        finalize_merged_bundle(
-                                            &bundle_for_detector,
-                                            &segment_logger_for_detector,
-                                            &tracker_snapshot,
-                                            &session_id,
-                                            encounter_number + 1,
-                                            encounter_word_count,
-                                            is_clinical,
-                                            prev_id,
-                                            prev_date,
-                                        );
-
-                                        // Update prev tracking to the merged encounter
-                                        prev_encounter_text = Some(merged_text);
-                                        prev_encounter_text_rich = Some(merged_text_rich);
-                                        prev_encounter_is_clinical = is_clinical || prev_encounter_is_clinical;
-                                        continue; // Skip updating prev to current since we merged
-                                    }
-                                }
-
-                                // ── LLM merge check (normal path) ────────────────────────
-                                let prev_tail = tail_words(prev_text, MERGE_EXCERPT_WORDS);
-                                let curr_head = head_words(&encounter_text, MERGE_EXCERPT_WORDS);
-
-                                if let Some(ref client) = llm_client {
-                                    let (filtered_prev_tail, _) = strip_hallucinations(&prev_tail, 5);
-                                    let (filtered_curr_head, _) = strip_hallucinations(&curr_head, 5);
-                                    let merge_patient_name = name_tracker_for_detector
-                                        .lock()
-                                        .ok()
-                                        .and_then(|t| t.majority_name());
-
-                                    let merge_outcome = crate::encounter_pipeline::run_merge_check(
-                                        client, &fast_model,
-                                        &filtered_prev_tail, &filtered_curr_head,
-                                        merge_patient_name.as_deref(),
-                                        &logger_for_detector,
-                                        serde_json::json!({
-                                            "prev_session_id": prev_id,
-                                            "curr_session_id": session_id,
-                                            "patient_name": merge_patient_name,
-                                            "prev_tail_words": filtered_prev_tail.split_whitespace().count(),
-                                            "curr_head_words": filtered_curr_head.split_whitespace().count(),
-                                        }),
-                                        Some(&templates),
-                                    ).await;
-
-                                    // Log to replay bundle
-                                    if let Ok(mut bundle) = bundle_for_detector.lock() {
-                                        bundle.set_merge_check(crate::replay_bundle::MergeCheck {
-                                            ts: ctx_for_detector.now_utc().to_rfc3339(),
-                                            prev_session_id: prev_id.clone(),
-                                            prev_tail_excerpt: filtered_prev_tail.clone(),
-                                            curr_head_excerpt: filtered_curr_head.clone(),
-                                            patient_name: merge_patient_name.clone(),
-                                            prompt_system: merge_outcome.prompt_system.clone(),
-                                            prompt_user: merge_outcome.prompt_user.clone(),
-                                            response_raw: merge_outcome.response_raw.clone(),
-                                            parsed_same_encounter: merge_outcome.same_encounter,
-                                            parsed_reason: merge_outcome.reason.as_ref().map(|r| format!("{:?}", r)),
-                                            latency_ms: merge_outcome.latency_ms,
-                                            success: merge_outcome.error.is_none(),
-                                            auto_merge_gate: None,
-                                        });
-                                    }
-
-                                    if merge_outcome.same_encounter == Some(true) {
-                                        if let Some(ref dl) = *day_logger_for_detector {
-                                            dl.log(crate::day_log::DayEvent::EncounterMerged {
-                                                ts: ctx_for_detector.now_utc().to_rfc3339(),
-                                                new_session_id: session_id.clone(),
-                                                prev_session_id: prev_id.clone(),
-                                                reason: format!("{:?}", merge_outcome.reason),
-                                                gate_type: None,
-                                            });
-                                        }
-                                        info!(
-                                            "Merge check: encounters are the same visit (reason: {:?}). Merging {} into {}",
-                                            merge_outcome.reason, session_id, prev_id
-                                        );
-
-                                        let merged_text = format!("{}\n{}", prev_text, encounter_text);
-                                        let merged_text_rich = match &prev_encounter_text_rich {
-                                            Some(prev_rich) => format!("{}\n{}", prev_rich, encounter_text_rich),
-                                            None => format!("{}\n{}", prev_text, encounter_text_rich),
-                                        };
-                                        let merged_wc = merged_text.split_whitespace().count();
-                                        let merged_duration = encounter_start
-                                            .map(|s| (ctx_for_detector.now_utc() - s).num_milliseconds().max(0) as u64)
-                                            .unwrap_or(0);
-
-                                        let merge_vision_name = name_tracker_for_detector
-                                            .lock()
-                                            .ok()
-                                            .and_then(|t| t.majority_name());
-                                        if let Err(e) = local_archive::merge_encounters(
-                                            prev_id, &session_id, prev_date,
-                                            &merged_text, merged_wc, merged_duration,
-                                            merge_vision_name.as_deref(),
-                                        ) {
-                                            warn!("Failed to merge encounters: {}", e);
-                                        } else {
-                                            // Sync merge to server: delete merged-away session, re-upload surviving
-                                            {
-                                                let today = ctx_for_detector.now_utc().format("%Y-%m-%d").to_string();
-                                                sync_ctx_for_detector.sync_merge(&session_id, prev_id, &today);
-                                            }
-                                            // Regenerate SOAP for the merged encounter
-                                            if let Some(ref client) = llm_client {
-                                                let merge_notes = encounter_notes_for_detector
-                                                    .lock()
-                                                    .map(|n| n.clone())
-                                                    .unwrap_or_default();
-                                                crate::encounter_pipeline::regen_soap_after_merge(
-                                                    client, &merged_text, prev_id, prev_date,
-                                                    prev_encounter_patient_name.as_deref(),
-                                                    &soap_model, soap_detail_level, &soap_format, &soap_custom_instructions,
-                                                    merge_notes, prev_encounter_is_clinical, is_clinical,
-                                                    &logger_for_detector, &sync_ctx_for_detector,
-                                                    "merge_soap_regen",
-                                                    Some(&fast_model), merged_duration, billing_counselling_exhausted,
-                                                    Some(&templates), Some(&billing_data),
-                                                ).await;
-                                            }
-
-                                            encounter_number -= 1;
-
-                                            // Remove merged session from recent encounters list
-                                            if let Ok(mut recent) = recent_encounters_for_detector.lock() {
-                                                recent.retain(|e| e.session_id != session_id);
-                                            }
-
-                                            ContinuousModeEvent::EncounterMerged {
-                                                kept_session_id: None,
-                                                merged_into_session_id: Some(prev_id.clone()),
-                                                removed_session_id: session_id.clone(),
-                                                reason: None,
-                                            }.emit_via(&ctx_for_detector);
-
-                                            // Escalate confidence threshold for next detection
-                                            merge_back_count += 1;
-                                            info!("Merge-back #{}: next confidence threshold escalated by +{:.2}", merge_back_count, merge_back_count as f64 * 0.05);
-
-                                            // Finalize the merged-away encounter's bundle
-                                            // BEFORE the retrospective multi-patient check
-                                            // below — that check's LLM call lands in the
-                                            // freshly-cleared builder and flows into the
-                                            // surviving encounter's bundle, matching
-                                            // production's pipeline_log routing.
-                                            finalize_merged_bundle(
-                                                &bundle_for_detector,
-                                                &segment_logger_for_detector,
-                                                &tracker_snapshot,
-                                                &session_id,
-                                                encounter_number + 1,
-                                                encounter_word_count,
-                                                is_clinical,
-                                                prev_id,
-                                                prev_date,
-                                            );
-
-                                            // ── Retrospective multi-patient check ──
-                                            if merged_wc >= multi_patient_detect_word_threshold {
-                                                if let Some(ref client) = llm_client {
-                                                    info!("Retrospective multi-patient detect on {} ({} words)", prev_id, merged_wc);
-                                                    // Log to the surviving session's pipeline log
-                                                    let retro_outcome = client.run_multi_patient_detection(&fast_model, &merged_text_rich).await;
-                                                    if let Ok(mut logger) = logger_for_detector.lock() {
-                                                        // Point logger at surviving session dir so this entry is preserved
-                                                        if let Ok(prev_dir) = local_archive::get_session_archive_dir(prev_id, prev_date) {
-                                                            logger.set_session(&prev_dir);
-                                                        }
-                                                        let det_context = match &retro_outcome.detection {
-                                                            Some(d) => serde_json::json!({
-                                                                "stage": "retrospective",
-                                                                "patient_count": d.patient_count,
-                                                                "confidence": d.confidence,
-                                                                "reasoning": d.reasoning,
-                                                                "patients": d.patients.iter()
-                                                                    .map(|p| serde_json::json!({"label": p.label, "summary": p.summary}))
-                                                                    .collect::<Vec<_>>(),
-                                                                "word_count": merged_wc,
-                                                            }),
-                                                            None => serde_json::json!({
-                                                                "stage": "retrospective",
-                                                                "patient_count": 1,
-                                                                "word_count": merged_wc,
-                                                                "accepted": false,
-                                                            }),
-                                                        };
-                                                        logger.log_llm_call(
-                                                            "multi_patient_detect",
-                                                            &retro_outcome.model,
-                                                            &retro_outcome.system_prompt,
-                                                            &retro_outcome.user_prompt,
-                                                            retro_outcome.response_raw.as_deref(),
-                                                            retro_outcome.latency_ms,
-                                                            retro_outcome.success,
-                                                            retro_outcome.error.as_deref(),
-                                                            det_context,
-                                                        );
-                                                    }
-                                                    // Lands in the post-`finalize_merged_bundle`
-                                                    // builder, so it flows into the surviving
-                                                    // encounter's replay_bundle.json on its
-                                                    // next finalization.
-                                                    if let Ok(mut bundle) = bundle_for_detector.lock() {
-                                                        bundle.add_multi_patient_detection(multi_patient_from_outcome(
-                                                            &retro_outcome,
-                                                            crate::replay_bundle::MultiPatientStage::Retrospective,
-                                                            merged_wc,
-                                                        ));
-                                                    }
-                                                    if let Some(detection) = retro_outcome.detection {
-                                                        info!("Retrospective: {} patients detected, regenerating per-patient SOAP for {}",
-                                                            detection.patient_count, prev_id);
-                                                        let (filtered, _) = strip_hallucinations(&merged_text, 5);
-                                                        let regen_notes = encounter_notes_for_detector
-                                                            .lock().map(|n| n.clone()).unwrap_or_default();
-                                                        let regen_outcome = crate::encounter_pipeline::generate_and_archive_soap(
-                                                            client, &soap_model, &filtered,
-                                                            prev_id, prev_date,
-                                                            soap_detail_level, &soap_format, &soap_custom_instructions,
-                                                            regen_notes, merged_wc,
-                                                            Some(&detection),
-                                                            &logger_for_detector,
-                                                            serde_json::json!({
-                                                                "stage": "retrospective_multi_patient_soap",
-                                                                "session_id": prev_id,
-                                                                "detection_confidence": detection.confidence,
-                                                            }),
-                                                            Some(&templates),
-                                                            Some(soap_generation_timeout_secs),
-                                                        ).await;
-                                                        if let crate::encounter_pipeline::SoapGenerationOutcome::Success { ref result, ref content, .. } = regen_outcome {
-                                                            // Server sync: upload retrospective SOAP
-                                                            sync_ctx_for_detector.sync_soap(prev_id, content, soap_detail_level, &soap_format);
-                                                            info!(
-                                                                "Retrospective per-patient SOAP regenerated for {} ({} notes, {} chars)",
-                                                                prev_id, result.notes.len(), content.len()
-                                                            );
-                                                        }
-                                                    }
-                                                }
-                                            }
-
-                                            // Update prev tracking to the merged encounter
-                                            prev_encounter_text = Some(merged_text);
-                                            prev_encounter_text_rich = Some(merged_text_rich);
-                                            prev_encounter_is_clinical = is_clinical || prev_encounter_is_clinical;
-                                            continue; // Skip updating prev to current since we merged
-                                        }
-                                    } else if let Some(false) = merge_outcome.same_encounter {
-                                        info!(
-                                            "Merge check: different encounters (reason: {:?})",
-                                            merge_outcome.reason
-                                        );
-                                    }
-                                }
-                            }
-                        }
-
-                        // ── Standalone multi-patient check for large encounters ──
-                        // Safety net: if the inline multi-patient detection (run before
-                        // SOAP at ≥500 words) missed a multi-patient encounter, this
-                        // second pass catches it for large encounters (≥2,500 words).
-                        // Runs after the merge check to avoid wasted work on encounters
-                        // that will be merged back.
-                        //
-                        // Skip when pre_soap already confirmed 2+ patients — the pre_soap
-                        // and standalone prompts are identical, and re-running just burns
-                        // the LLM budget (Brown + Wicks in the Apr 16 audit each ran a
-                        // redundant standalone call that timed out at 30s after pre_soap
-                        // had already succeeded).
-                        if is_clinical
-                            && encounter_word_count >= multi_patient_check_word_threshold
-                            && !pre_soap_found_multi_patient
+                        // ---- Post-split safety nets (merge-back coordinator) ----
+                        // Runs the four post-split safety nets out-of-line:
+                        // small-orphan auto-merge, LLM merge check, retrospective
+                        // multi-patient split, standalone multi-patient check.
+                        // See crate::continuous_mode_merge_back for details.
+                        let merge_call = crate::continuous_mode_merge_back::MergeBackCall {
+                            session_id: &session_id,
+                            encounter_text: &encounter_text,
+                            encounter_text_rich: &encounter_text_rich,
+                            encounter_word_count,
+                            encounter_start,
+                            is_clinical,
+                            pre_soap_found_multi_patient,
+                            notes_text: &notes_text,
+                            tracker_snapshot: tracker_snapshot.clone(),
+                            prev_encounter_session_id: prev_encounter_session_id.as_deref(),
+                            prev_encounter_text: prev_encounter_text.as_deref(),
+                            prev_encounter_text_rich: prev_encounter_text_rich.as_deref(),
+                            prev_encounter_date: prev_encounter_date.as_ref(),
+                            prev_encounter_is_clinical,
+                            prev_encounter_patient_name: prev_encounter_patient_name.as_deref(),
+                            sensor_available,
+                            sensor_present_now: prev_sensor_state
+                                == crate::presence_sensor::PresenceState::Present,
+                        };
+                        let merge_outcome = crate::continuous_mode_merge_back::run(
+                            &ctx_for_detector,
+                            &merge_back_deps,
+                            merge_call,
+                            &mut loop_state,
+                        )
+                        .await;
+                        if let crate::continuous_mode_merge_back::MergeBackOutcome::Merged {
+                            merged_text,
+                            merged_text_rich,
+                            merged_is_clinical,
+                        } = merge_outcome
                         {
-                            if let Some(ref client) = llm_client {
-                                info!(
-                                    "Standalone multi-patient check on encounter #{} ({} words)",
-                                    encounter_number, encounter_word_count
-                                );
-                                let mp_outcome = client
-                                    .run_multi_patient_detection(&fast_model, &encounter_text_rich)
-                                    .await;
-                                if let Ok(mut logger) = logger_for_detector.lock() {
-                                    let det_context = match &mp_outcome.detection {
-                                        Some(d) => serde_json::json!({
-                                            "stage": "standalone_multi_patient",
-                                            "patient_count": d.patient_count,
-                                            "confidence": d.confidence,
-                                            "word_count": encounter_word_count,
-                                        }),
-                                        None => serde_json::json!({
-                                            "stage": "standalone_multi_patient",
-                                            "patient_count": 1,
-                                            "word_count": encounter_word_count,
-                                        }),
-                                    };
-                                    logger.log_llm_call(
-                                        "multi_patient_detect",
-                                        &mp_outcome.model,
-                                        &mp_outcome.system_prompt,
-                                        &mp_outcome.user_prompt,
-                                        mp_outcome.response_raw.as_deref(),
-                                        mp_outcome.latency_ms,
-                                        mp_outcome.success,
-                                        mp_outcome.error.as_deref(),
-                                        det_context,
-                                    );
-                                }
-                                if let Ok(mut bundle) = bundle_for_detector.lock() {
-                                    bundle.add_multi_patient_detection(multi_patient_from_outcome(
-                                        &mp_outcome,
-                                        crate::replay_bundle::MultiPatientStage::Standalone,
-                                        encounter_word_count,
-                                    ));
-                                }
-                                if let Some(detection) = mp_outcome.detection {
-                                    info!(
-                                        "Standalone check: {} patients detected in encounter #{}, regenerating per-patient SOAP",
-                                        detection.patient_count, encounter_number
-                                    );
-                                    let (filtered, _) = strip_hallucinations(&encounter_text, 5);
-                                    let soap_now = ctx_for_detector.now_utc();
-                                    let regen_outcome =
-                                        crate::encounter_pipeline::generate_and_archive_soap(
-                                            client,
-                                            &soap_model,
-                                            &filtered,
-                                            &session_id,
-                                            &soap_now,
-                                            soap_detail_level,
-                                            &soap_format,
-                                            &soap_custom_instructions,
-                                            notes_text.clone(),
-                                            encounter_word_count,
-                                            Some(&detection),
-                                            &logger_for_detector,
-                                            serde_json::json!({
-                                                "stage": "standalone_multi_patient_soap",
-                                                "session_id": session_id,
-                                                "encounter_number": encounter_number,
-                                                "detection_confidence": detection.confidence,
-                                            }),
-                                            Some(&templates),
-                                            Some(soap_generation_timeout_secs),
-                                        )
-                                        .await;
-                                    if let crate::encounter_pipeline::SoapGenerationOutcome::Success {
-                                        ref result,
-                                        ref content,
-                                        ..
-                                    } = regen_outcome
-                                    {
-                                        sync_ctx_for_detector.sync_soap(
-                                            &session_id,
-                                            content,
-                                            soap_detail_level,
-                                            &soap_format,
-                                        );
-                                        info!(
-                                            "Standalone multi-patient SOAP regenerated for encounter #{} ({} notes)",
-                                            encounter_number, result.notes.len()
-                                        );
-                                    }
-                                }
-                            }
+                            // Update prev tracking to the merged encounter and
+                            // skip the rest of the finalize-and-update block.
+                            prev_encounter_text = Some(merged_text);
+                            prev_encounter_text_rich = Some(merged_text_rich);
+                            prev_encounter_is_clinical = merged_is_clinical;
+                            continue;
                         }
 
                         // Split stuck — reset merge-back escalation
-                        if merge_back_count > 0 {
-                            info!("Split confirmed, resetting merge_back_count from {} to 0", merge_back_count);
-                            merge_back_count = 0;
+                        if loop_state.merge_back_count > 0 {
+                            info!("Split confirmed, resetting merge_back_count from {} to 0", loop_state.merge_back_count);
+                            loop_state.merge_back_count = 0;
                         }
 
                         // Finalize replay bundle for this encounter
@@ -2711,7 +2293,7 @@ pub async fn run_continuous_mode<C: crate::run_context::RunContext>(
                             let trigger = bundle.split_decision_trigger();
                             bundle.set_outcome(crate::replay_bundle::Outcome {
                                 session_id: session_id.clone(),
-                                encounter_number,
+                                encounter_number: loop_state.encounter_number,
                                 word_count: encounter_word_count,
                                 is_clinical,
                                 was_merged: false,
