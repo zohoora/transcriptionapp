@@ -360,6 +360,12 @@ pub async fn run<C: RunContext>(
                                     error: None,
                                 });
                             }
+                            // Re-upload session to server so has_billing_record=true in
+                            // metadata.json propagates. The 30s sync_session delayed
+                            // re-sync can race with billing; this explicit hook fires
+                            // right after billing.json + metadata.json are persisted.
+                            let today = ctx.now_utc().format("%Y-%m-%d").to_string();
+                            deps.sync_ctx.resync_session(session_id, &today);
                         }
                         Err(e) => {
                             warn!(

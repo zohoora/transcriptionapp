@@ -193,6 +193,36 @@ impl ServerSyncContext {
         local_archive::get_date_dir_from_str(date_str)
     }
 
+    /// Fire-and-forget: re-upload the session (metadata + transcript + aux
+    /// files including billing.json) to pick up late writes.
+    ///
+    /// Intended call site: after billing extraction completes, so the server's
+    /// `has_billing_record` flag in metadata.json catches up. The built-in 30s
+    /// `sync_session` re-sync can race with billing (observed Room 6 on
+    /// 2026-04-20: 6 of 9 sessions had local has_billing_record=true but
+    /// server stuck at false). This method does not schedule a second delayed
+    /// re-sync — it's meant as a precise "something was written, re-upload
+    /// now" hook.
+    pub fn resync_session(&self, session_id: &str, date: &str) {
+        let Some(ref phys_id) = self.physician_id else { return };
+        let Some(ref client) = self.client else { return };
+        let phys_id = phys_id.clone();
+        let client = client.clone();
+        let sid = session_id.to_string();
+        let date = date.to_string();
+
+        tauri::async_runtime::spawn(async move {
+            if let Ok(details) = local_archive::get_session(&sid, &date) {
+                if let Ok(body) = serde_json::to_value(&details) {
+                    if let Err(e) = client.upload_session(&phys_id, &sid, &body).await {
+                        warn!("Server resync failed (upload_session {}): {e}", sid);
+                    }
+                }
+            }
+            Self::upload_aux_files(&client, &phys_id, &sid, &date).await;
+        });
+    }
+
     /// Fire-and-forget: upload SOAP note to server.
     pub fn sync_soap(&self, session_id: &str, soap_content: &str, detail_level: u8, format: &str) {
         let Some(ref phys_id) = self.physician_id else { return };

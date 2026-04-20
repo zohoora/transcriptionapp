@@ -231,8 +231,20 @@ pub(crate) fn parse_vision_response(response: &str) -> (Option<String>, Option<S
         return (None, None);
     }
 
-    // Try JSON parsing first
-    if let Ok(json) = serde_json::from_str::<serde_json::Value>(trimmed) {
+    // LLMs sometimes wrap JSON in markdown code fences (```json ... ```) or
+    // return multiple JSON blocks concatenated. Extract the first balanced
+    // {...} block and parse that. Falls back to whole-string parse for the
+    // common case where the LLM returns clean JSON.
+    //
+    // Apr 20 2026 fix: Room 6 encounter #2 today produced a response where
+    // two JSON objects were concatenated with markdown fences between them;
+    // the old serde_json::from_str(whole_response) failed, and the
+    // plain-text fallback dumped the entire mangled blob into patient_name
+    // (e.g. `"dob": "1945-04-08" } ``` ```json { "name": "...`). Scanning
+    // for the first balanced JSON object recovers cleanly.
+    let first_json = extract_first_json_object(trimmed).unwrap_or(trimmed);
+
+    if let Ok(json) = serde_json::from_str::<serde_json::Value>(first_json) {
         let name = json.get("name")
             .and_then(|v| v.as_str())
             .filter(|s| !s.is_empty() && !s.contains("NOT_FOUND"))
@@ -248,8 +260,50 @@ pub(crate) fn parse_vision_response(response: &str) -> (Option<String>, Option<S
         return (name, dob);
     }
 
-    // Fallback: plain-text parsing (backward compat)
+    // Fallback: plain-text parsing (backward compat, rare path now)
     (parse_patient_name(trimmed), None)
+}
+
+/// Find the first balanced `{...}` block in `s`, respecting string escaping.
+///
+/// Handles markdown-wrapped JSON, leading garbage, and multi-block responses.
+/// Returns the exact byte slice of the first complete object (including the
+/// outer braces), or None if no balanced object is found.
+fn extract_first_json_object(s: &str) -> Option<&str> {
+    let bytes = s.as_bytes();
+    let start = bytes.iter().position(|&b| b == b'{')?;
+
+    let mut depth = 0i32;
+    let mut in_string = false;
+    let mut escape = false;
+
+    for (idx, &b) in bytes[start..].iter().enumerate() {
+        if escape {
+            escape = false;
+            continue;
+        }
+        if in_string {
+            match b {
+                b'\\' => escape = true,
+                b'"' => in_string = false,
+                _ => {}
+            }
+            continue;
+        }
+        match b {
+            b'"' => in_string = true,
+            b'{' => depth += 1,
+            b'}' => {
+                depth -= 1;
+                if depth == 0 {
+                    let end = start + idx + 1;
+                    return Some(&s[start..end]);
+                }
+            }
+            _ => {}
+        }
+    }
+    None
 }
 
 /// Parse a plain-text vision response for a patient name.
@@ -695,5 +749,92 @@ mod tests {
         t.record("JOHN SMITH");
         t.record("john smith");
         assert_eq!(t.streak_count(), 3, "case-insensitive match extends streak");
+    }
+
+    // ── extract_first_json_object + markdown-wrapped vision responses ──
+
+    #[test]
+    fn extract_first_json_balanced_braces() {
+        let s = r#"{"a": 1, "b": {"c": 2}}"#;
+        assert_eq!(extract_first_json_object(s), Some(s));
+    }
+
+    #[test]
+    fn extract_first_json_leading_garbage() {
+        let s = r#"here is the json: {"name": "Jane Doe"}"#;
+        assert_eq!(
+            extract_first_json_object(s),
+            Some(r#"{"name": "Jane Doe"}"#)
+        );
+    }
+
+    #[test]
+    fn extract_first_json_markdown_fence() {
+        let s = "```json\n{\"name\": \"Jane Doe\", \"dob\": \"1990-01-01\"}\n```";
+        let got = extract_first_json_object(s).expect("found object");
+        let parsed: serde_json::Value = serde_json::from_str(got).expect("parses");
+        assert_eq!(parsed["name"], "Jane Doe");
+    }
+
+    #[test]
+    fn extract_first_json_two_blocks_returns_first() {
+        // Real-world Room 6 2026-04-20 encounter #2 shape: two JSON blocks
+        // concatenated between markdown fences.
+        let s = r#"```json
+{"name": "Judie Joan Guest", "dob": "1945-04-08"}
+```
+
+```json
+{"name": "judie Joan Guest", "dob": "1945-04-08"}
+```"#;
+        let got = extract_first_json_object(s).expect("found first object");
+        let parsed: serde_json::Value = serde_json::from_str(got).expect("parses");
+        assert_eq!(parsed["name"], "Judie Joan Guest");
+        assert_eq!(parsed["dob"], "1945-04-08");
+    }
+
+    #[test]
+    fn extract_first_json_handles_string_with_braces() {
+        // Escaped braces inside a string value should not prematurely close.
+        let s = r#"{"name": "Weird { Name }", "dob": "1990-01-01"}"#;
+        assert_eq!(extract_first_json_object(s), Some(s));
+    }
+
+    #[test]
+    fn extract_first_json_returns_none_on_unbalanced() {
+        assert_eq!(extract_first_json_object("{"), None);
+        assert_eq!(extract_first_json_object("{ \"a\": 1 "), None);
+        assert_eq!(extract_first_json_object("no braces here"), None);
+    }
+
+    #[test]
+    fn parse_vision_response_recovers_from_markdown_wrapped_json() {
+        // Repro of the Apr 20 2026 Room 6 encounter #2 bug:
+        // Old parser dumped the whole mangled string into patient_name.
+        // New parser finds the first balanced block and parses it.
+        let response = r#"```json
+{"name": "Judie Joan Guest", "dob": "1945-04-08"}
+```
+
+```json
+{"name": "judie Joan Guest", "dob": "1945-04-08"}
+```"#;
+        let (name, dob) = parse_vision_response(response);
+        assert_eq!(name, Some("Judie Joan Guest".to_string()));
+        assert_eq!(dob, Some("1945-04-08".to_string()));
+    }
+
+    #[test]
+    fn parse_vision_response_still_handles_clean_json() {
+        let (name, dob) = parse_vision_response(r#"{"name":"Jane Doe","dob":"1990-01-01"}"#);
+        assert_eq!(name, Some("Jane Doe".to_string()));
+        assert_eq!(dob, Some("1990-01-01".to_string()));
+    }
+
+    #[test]
+    fn parse_vision_response_not_found_still_returns_none() {
+        let (name, dob) = parse_vision_response(r#"{"name":"NOT_FOUND","dob":"NOT_FOUND"}"#);
+        assert_eq!(name, None);
+        assert_eq!(dob, None);
     }
 }

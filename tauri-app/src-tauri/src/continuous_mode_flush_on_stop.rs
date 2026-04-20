@@ -597,6 +597,10 @@ pub async fn run<C: RunContext>(
                                             success: true,
                                         });
                                     }
+                                    // Re-upload so server's has_billing_record catches up.
+                                    let _ = record;
+                                    let today = ctx.now_utc().format("%Y-%m-%d").to_string();
+                                    sync_ctx.resync_session(&session_id, &today);
                                 }
                                 Err(e) => {
                                     warn!(
