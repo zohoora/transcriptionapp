@@ -50,7 +50,7 @@ Middleware stack (outermost → innermost): CORS → body limit (500 MB) → aut
 | Pattern | Rule |
 |---------|------|
 | Atomic writes | `atomic_write()` — UUID-suffixed temp file + rename. Used for transcript, SOAP, metadata, all JSON stores |
-| Patient index (v0.10.46+) | Keyed by `(physician_id, name_normalized, dob)`; name normalization duplicated in `store/patients.rs::normalize_patient_name` with a parity test against the tauri-side `patient_name_tracker::normalize_patient_name` (~15 lines, byte-equivalent). Idempotent `confirm` — hit appends session_id (deduped), miss creates. Patient identity (`patient_id`) is Medplum FHIR ID when available, UUID fallback otherwise; later confirmations can reconcile a UUID → real Medplum ID. `patients.json` persisted via atomic rename, mode 0o600 |
+| Patient index (v0.10.46+) | Keyed by `(physician_id, name_normalized, dob)`; name normalization duplicated in `store/patients.rs::normalize_patient_name` with a parity test against the tauri-side `patient_name_tracker::normalize_patient_name` (~15 lines, byte-equivalent). Idempotent `confirm` — hit appends session_id (deduped), miss creates. Patient identity (`patient_id`) is Medplum FHIR ID when available, UUID fallback otherwise; later confirmations can reconcile a UUID → real Medplum ID. `patients.json` persisted via atomic rename, mode 0o600. The index is a navigation layer on top of the existing session storage — SOAP/transcript are NOT duplicated here; downstream code follows `session_ids` back-links into `sessions/{phys}/YYYY/MM/DD/{sid}/`. `delete()` removes a record and rebuilds both indices (Vec indexes shift after remove); used by the DELETE route for admin cleanup |
 | Session cache | `session_cache: HashMap<(physician_id, session_id), PathBuf>` — avoids O(N) directory walk per lookup. Populated lazily, invalidated on delete/split/merge |
 | Path traversal | `validate_id()` rejects `/`, `\`, `..`, `\0`, empty strings. Called on all physician_id and session_id inputs |
 | File allowlist | `is_allowed_session_file()` in `store/sessions.rs` — explicit allowlist for auxiliary files. Currently allows: `pipeline_log.jsonl`, `replay_bundle.json`, `segments.jsonl`, `billing.json`, `patient_handout.txt`, and `screenshots/*.jpg`. **Note**: `feedback.json` and `patient_labels.json` are not in the allowlist — they have dedicated typed routes. Adding new aux file types requires updating both the allowlist and the tauri-side `server_sync.rs::SYNCED_AUX_FILES` |
@@ -76,7 +76,7 @@ Middleware stack (outermost → innermost): CORS → body limit (500 MB) → aut
 | Rooms | `GET/POST /rooms`, `GET/PUT/DELETE /rooms/:id` |
 | Speakers | `GET/POST /speakers`, `GET/PUT/DELETE /speakers/:id` |
 | Sessions | dates, list, get, upload, delete, split, merge, renumber, metadata, soap, feedback, patient-name, transcript-lines, audio, files, screenshots, day-log |
-| Patients (v0.10.46+) | `POST /physicians/:id/patients/confirm`, `GET /physicians/:id/patients` (unqualified list OR `?name=&dob=` exact lookup), `GET /physicians/:id/patients/:patient_id` |
+| Patients (v0.10.46+) | `POST /physicians/:id/patients/confirm`, `GET /physicians/:id/patients` (unqualified list OR `?name=&dob=` exact lookup), `GET/DELETE /physicians/:id/patients/:patient_id` (DELETE added v0.10.47) |
 
 ## Server Config Categories
 

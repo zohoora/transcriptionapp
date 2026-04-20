@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted (Apr 2026, v0.10.46+)
+Accepted (Apr 2026, v0.10.46 — dedup fix in v0.10.47)
 
 ## Context
 
@@ -24,6 +24,12 @@ Add a clinician-triggered **confirm-and-dual-write** flow:
 - New Medplum method `sync_continuous_session(name, dob, soap, transcript, started_at, duration)` that orchestrates upsert Patient (search → create-or-match on name+DOB) → create Encounter → attach SOAP DocumentReference (LOINC 11506-3) → attach transcript DocumentReference (LOINC 75476-2) → complete Encounter with the real visit period.
 
 **Dual-write is the contract.** Both stores carry the same `medplum_patient_id` as the canonical cross-reference. When Medplum is unreachable, profile-service writes a UUID fallback and reconciles to the real Medplum FHIR ID on the next successful sync.
+
+### Relationship to existing profile-service storage
+
+Profile-service already mirrored every continuous-mode session's full clinical content to disk at `~/.fabricscribe/sessions/{physician_id}/YYYY/MM/DD/{session_id}/` (metadata.json, transcript.txt, soap_note.txt, segments.jsonl, pipeline_log.jsonl, screenshots/, billing.json) — the `ServerSyncContext` fire-and-forget path shipping since continuous mode + multi-user (ADR-0022/0023). The new `patients.json` is a **navigation layer on top of** that existing storage: it maps `(physician_id, name_normalized, dob) → patient_id → session_ids`. The SOAP note and transcript are NOT duplicated into `patients.json` — downstream code reads them from the session directory using the `sessionIds` back-link.
+
+Medplum holds a separate canonical copy of SOAP + transcript (base64-encoded as DocumentReferences) as the record-of-truth for FHIR-speaking consumers. Replay/simulation/debugging inside the app can stay single-store (profile-service); Medplum is for the clinician's EMR workflow and any external system that needs FHIR.
 
 ### What's NOT in this ADR
 
@@ -90,3 +96,32 @@ Profile-service `patch_metadata` already accepts untyped JSON merge, so no serve
 - Types: `PatientRecord`, `ConfirmPatientRequest`, `ConfirmPatientResult` mirrored in both backends + `src/types/index.ts`
 - Parity test: `profile-service/src/store/patients.rs::normalization_parity_with_tauri_client`
 - Related: ADR-0008 (Medplum EMR integration — original session-mode flow), ADR-0012 (Multi-patient SOAP — out of scope here), Apr 20 2026 Room 2 Shelley mislabel (memory file `project_forward_merge.md`)
+
+## Verification (Apr 20 2026, v0.10.47)
+
+End-to-end verification ran against the production Medplum server at `100.119.83.76:8103` using real Apr-20 session data for Cheryl Lynn Bond (session `b7f63064-...`):
+
+1. `POST /oauth2/token` client_credentials → 3600s access token
+2. `GET /Patient?name:contains=Cheryl%20Bond&birthdate=1958-10-06` → empty (first confirm)
+3. `POST /Patient` with full display name + DOB + `meta.tag="confirmed-patient"` → `Patient/fdfcbc1d-1540-4555-85e6-01886247119f`
+4. `POST /Encounter` with Patient subject + Practitioner participant + in-progress + visit period start → `Encounter/5a99e277-86cc-4a6c-848f-292a16db8efb`
+5. `POST /DocumentReference` LOINC 11506-3 SOAP, base64 2,744 bytes → `DocumentReference/73168d9c-...`
+6. `POST /DocumentReference` LOINC 75476-2 transcript, base64 35,244 bytes → `DocumentReference/3a7c9785-...`
+7. `PUT /Encounter/{id}` status=finished + period 14:04→14:30 → HTTP 200
+8. `GET /DocumentReference?encounter=Encounter/{id}` → both docs retrievable by encounter ✓
+9. `POST /physicians/{id}/patients/confirm` → `PatientRecord` created with `patientId === medplumPatientId === fdfcbc1d-...`
+10. **Round-trip verified byte-for-byte:** `GET /DocumentReference/{id}` → base64 decode → SHA-256 matches original session files. SOAP 2,009 bytes decoded = 2,009 bytes original (incl. bullet `•` and other UTF-8). Transcript 26,319 bytes decoded = 26,319 bytes original.
+
+### Dedup bug found + fixed (v0.10.47)
+
+The verification exposed a duplicate-Patient-on-re-confirm bug in v0.10.46:
+- `search_patients()` returned `Patient` objects whose `.name` was built by `extract_patient_name()` — which lossily uses only `given[0] + family`, dropping middle names. The stored "Cheryl Lynn Bond" (`given: ["Cheryl"], family: "Bond"`) came back into the client as `"Cheryl Bond"`.
+- `name_matches("Cheryl Bond", "Cheryl Lynn Bond")` → mismatch → no match → POST new Patient every re-confirm.
+
+**Fix in v0.10.47:**
+- Replaced `search_patients()` with a raw FHIR query `name:contains=...&birthdate=...` that returns full resources.
+- New helper `name_resource_matches()` — uses `name[0].text` as authoritative when present (preserves the clinical display string), falls back to `given.join(' ') + family` when `.text` is absent (preserves middles from the given array). Validated by 5 unit tests + live Medplum re-query (Cheryl's record correctly reused on 2nd run).
+
+### DELETE route (v0.10.47)
+
+Added `DELETE /physicians/:id/patients/:patient_id` + `PatientManager::delete()` for admin cleanup (test artifacts, mis-confirmations, DOB-typo duplicates). Index rebuild after remove preserves `(name_normalized, dob)` and `patient_id` lookups. 2 store tests + 2 integration tests.

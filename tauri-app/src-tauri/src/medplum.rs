@@ -2213,4 +2213,140 @@ mod tests {
         assert_eq!(metadata["fhirVersion"], "4.0.1");
         println!("FHIR R4 endpoint is available");
     }
+
+    /// End-to-end regression for the v0.10.47 dedup fix: confirm that the
+    /// FHIR search + `name_resource_matches` flow used by
+    /// `upsert_patient_by_name_dob` correctly reuses an existing Patient
+    /// (whose stored form has `given=["Cheryl"], family="Bond",
+    /// text="Cheryl Lynn Bond"`) when the caller supplies the full name
+    /// "Cheryl Lynn Bond". In v0.10.46 this test would have failed — the
+    /// client went through `search_patients`, which built the Patient.name
+    /// as "Cheryl Bond" (lossy `given[0]+family`), and `name_matches`
+    /// rejected the real match → would have POSTed a duplicate Patient.
+    ///
+    /// Requires `MEDPLUM_TEST_CLIENT_ID` + `MEDPLUM_TEST_CLIENT_SECRET`
+    /// env vars (a ClientApplication with `client_credentials` grant).
+    /// Run with: MEDPLUM_TEST_CLIENT_ID=... MEDPLUM_TEST_CLIENT_SECRET=...
+    ///           cargo test upsert_dedup_live -- --ignored
+    #[tokio::test]
+    #[ignore = "Requires live Medplum + MEDPLUM_TEST_CLIENT_{ID,SECRET} env vars"]
+    async fn upsert_dedup_live_reuses_existing_patient_with_middle_name() {
+        let client_id = std::env::var("MEDPLUM_TEST_CLIENT_ID")
+            .expect("MEDPLUM_TEST_CLIENT_ID required for live test");
+        let client_secret = std::env::var("MEDPLUM_TEST_CLIENT_SECRET")
+            .expect("MEDPLUM_TEST_CLIENT_SECRET required for live test");
+        let base = std::env::var("MEDPLUM_TEST_BASE_URL")
+            .unwrap_or_else(|_| "http://100.119.83.76:8103".to_string());
+
+        let http = reqwest::Client::new();
+
+        // Fetch a client_credentials access token.
+        let token: String = http
+            .post(format!("{base}/oauth2/token"))
+            .form(&[
+                ("grant_type", "client_credentials"),
+                ("client_id", client_id.as_str()),
+                ("client_secret", client_secret.as_str()),
+            ])
+            .send()
+            .await
+            .expect("oauth2 token request")
+            .json::<serde_json::Value>()
+            .await
+            .expect("token json")["access_token"]
+            .as_str()
+            .expect("access_token string")
+            .to_string();
+
+        // Per-run unique fixture — avoids collisions with prior test runs
+        // and real clinical records. We always POST fresh, assert, then
+        // DELETE in cleanup.
+        let run_id = uuid::Uuid::new_v4().simple().to_string();
+        let dob = "1901-02-03";
+        let full_name = format!("Fixture MiddleName {run_id}");
+        let given = "Fixture";
+        let family = run_id.clone();
+
+        // Create the fixture: lossy given list (only first name), full name
+        // only in `text`. This is the exact shape v0.10.46's
+        // `extract_patient_name` would mishandle (returning "Fixture {run_id}"
+        // and failing the caller-side name match).
+        let created: serde_json::Value = http
+            .post(format!("{base}/fhir/R4/Patient"))
+            .bearer_auth(&token)
+            .json(&serde_json::json!({
+                "resourceType": "Patient",
+                "name": [{
+                    "use": "official",
+                    "text": full_name,
+                    "given": [given],
+                    "family": family,
+                }],
+                "birthDate": dob,
+                "meta": {"tag": [{
+                    "system": "urn:fabricscribe",
+                    "code": "upsert-dedup-fixture",
+                }]},
+            }))
+            .send()
+            .await
+            .expect("create request")
+            .json()
+            .await
+            .expect("create json");
+        let patient_id = created["id"].as_str().expect("patient id").to_string();
+
+        // Replay the upsert search logic using the same URL shape +
+        // matcher as `upsert_patient_by_name_dob`.
+        let search_query = format!("{given} {family}");
+        let bundle: serde_json::Value = http
+            .get(format!(
+                "{base}/fhir/R4/Patient?name:contains={}&birthdate={}&_count=20",
+                urlencoding::encode(&search_query),
+                urlencoding::encode(dob),
+            ))
+            .bearer_auth(&token)
+            .send()
+            .await
+            .expect("dedup search request")
+            .json()
+            .await
+            .expect("dedup search json");
+
+        let mut matched_id: Option<String> = None;
+        if let Some(entries) = bundle["entry"].as_array() {
+            for e in entries {
+                let r = &e["resource"];
+                if r["birthDate"].as_str() != Some(dob) {
+                    continue;
+                }
+                if !MedplumClient::name_resource_matches(r, &full_name) {
+                    continue;
+                }
+                matched_id = r["id"].as_str().map(|s| s.to_string());
+                break;
+            }
+        }
+
+        let assertion = matched_id.as_deref() == Some(patient_id.as_str());
+
+        // Cleanup: delete the fixture regardless of assertion outcome.
+        let _ = http
+            .delete(format!("{base}/fhir/R4/Patient/{patient_id}"))
+            .bearer_auth(&token)
+            .send()
+            .await;
+
+        assert!(
+            assertion,
+            "upsert_patient_by_name_dob should reuse existing Patient with matching \
+             name[0].text even when given[0]+family alone would lose the middle name; \
+             expected {}, matched {:?}",
+            patient_id, matched_id
+        );
+        println!(
+            "✓ dedup correctly reuses Patient/{} for caller name \"{}\" with dob {}",
+            patient_id, full_name, dob
+        );
+    }
 }

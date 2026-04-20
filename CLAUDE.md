@@ -72,8 +72,8 @@ cd tauri-app && npx tsc --noEmit          # Frontend
 cd tauri-app/src-tauri && cargo check     # Backend
 
 # Tests
-cd tauri-app && pnpm test:run             # Frontend (Vitest, 594 passing across 32 files)
-cd tauri-app/src-tauri && cargo test --lib   # Backend lib (1,170 passing, 30 ignored)
+cd tauri-app && pnpm test:run             # Frontend (Vitest, 601 passing across 33 files)
+cd tauri-app/src-tauri && cargo test --lib   # Backend lib (1,179 passing, 30 ignored)
 cd tauri-app/src-tauri && cargo test --test harness_per_encounter  # Per-encounter snapshot harness (10 seed bundles)
 
 # E2E (requires live STT + LLM Router)
@@ -174,11 +174,13 @@ Rule: overlap-coefficient of A/P-section clinical terms ≥ 0.30, shared distinc
 
 Module: `continuous_mode_forward_merge.rs`. Emits `ForwardMergeFired` event and triggers `resync_session` on the cleaned-up prev session. Validated by 3-day replay simulation (Apr 16/17/20): 3 multi-patient sessions, 1 true positive, 0 false positives across 18 evaluated pairs.
 
-## Longitudinal patient memory — confirm-and-dual-write (v0.10.46+)
+## Longitudinal patient memory — confirm-and-dual-write (v0.10.46+, dedup fix v0.10.47)
 
-Clinician presses "Confirm Patient" on a session in the History Window → name + DOB (prefilled from vision extraction, DOB required) are atomically written to the local archive + Medplum FHIR (if authenticated) + profile-service patient index. Both remote stores carry the Medplum FHIR ID as the canonical `patient_id` so downstream code (replay, simulation, future SOAP-context injection) can resolve patients from either side without a second query.
+Clinician presses "Confirm Patient" on a session in the History Window → name + DOB (prefilled from vision extraction, DOB required) are atomically written to the local archive + Medplum FHIR (if authenticated) + profile-service's new patient index. Both remote stores carry the Medplum FHIR ID as the canonical `patient_id` so downstream code (replay, simulation, future SOAP-context injection) can resolve patients from either side without a second query.
 
-Idempotent on `(name_normalized, dob)` within a physician — repeated confirms append `session_id` (deduped). When Medplum is unreachable the profile-service writes a UUID fallback that reconciles to a real FHIR ID on next sync.
+The profile-service patient index (`patients.json`) is a navigation layer on top of the existing session storage — it maps `(physician_id, name_normalized, dob) → patient_id → session_ids` and does NOT duplicate SOAP/transcript content (those already live under `~/.fabricscribe/sessions/{phys}/YYYY/MM/DD/{sid}/` via the continuous-mode sync path that's shipped since multi-user). Medplum holds a separate canonical copy for FHIR-speaking consumers.
+
+Idempotent on `(name_normalized, dob)` within a physician — repeated confirms append `session_id` (deduped). Medplum dedup (v0.10.47) uses `name[0].text` as authoritative when present so middle names survive the round-trip (the v0.10.46 naïve match via `extract_patient_name`'s `given[0]+family` dropped middles and created duplicate Patients on re-confirm — verified + fixed end-to-end against production Medplum). When Medplum is unreachable, profile-service writes a UUID fallback that reconciles to a real FHIR ID on next sync. `DELETE /physicians/:id/patients/:patient_id` available for admin cleanup.
 
 Confirmation is the trust boundary — vision alone never auto-pushes to the EMR. Module: `continuous_mode_forward_merge.rs` covers one vision failure mode (false multi-patient); this feature covers the other (chart-stuck-on-wrong-patient) by giving the clinician a curated upload path. See ADR-0030.
 

@@ -6,7 +6,7 @@ This document describes the AMI Assist test infrastructure: what's tested, where
 
 | Surface | Files | Tests | Runner |
 |---------|-------|-------|--------|
-| Rust backend (lib) | ~119 | 1,170 (incl. 30 ignored) | `cd tauri-app/src-tauri && cargo test --lib` |
+| Rust backend (lib) | ~119 | 1,179 (incl. 30 ignored) | `cd tauri-app/src-tauri && cargo test --lib` |
 | Rust CLI tool tests | 13 binaries | ~46 inline | `cargo test --bins` |
 | Profile service | 7 | 66 | `cd profile-service && cargo test` |
 | Frontend (React + TS) | 32 | 594 | `cd tauri-app && pnpm test:run` |
@@ -179,7 +179,7 @@ Run the labeled regression with `cargo run --bin labeled_regression_cli -- --all
 
 | Surface | Target | Current |
 |---------|--------|---------|
-| Rust unit + integration | 1,000+ | 1,170 |
+| Rust unit + integration | 1,000+ | 1,179 |
 | Frontend hook + component | 600+ | 594 |
 | Profile service | 50+ | 66 |
 | Replay corpus (bundles) | 200+ | 192 |

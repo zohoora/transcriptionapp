@@ -257,3 +257,131 @@ async fn delete_nonexistent_returns_404() {
     let resp = app.delete("/physicians/phys-1/patients/nope").await;
     resp.assert_status(StatusCode::NOT_FOUND);
 }
+
+#[tokio::test]
+async fn delete_then_confirm_same_key_creates_fresh_record() {
+    // Admin workflow: delete a mis-confirmed record, then re-confirm the same
+    // patient; the fresh record should get a NEW patient_id (the previous one
+    // is gone from both indices).
+    let app = TestApp::new();
+    let first = app
+        .post_json(
+            "/physicians/phys-1/patients/confirm",
+            &serde_json::json!({
+                "name": "Judie Guest",
+                "dob": "1945-04-08",
+                "sessionId": "s1",
+            }),
+        )
+        .await;
+    first.assert_ok();
+    let pid_first = first.json()["patientId"].as_str().unwrap().to_string();
+    app.delete(&format!("/physicians/phys-1/patients/{pid_first}"))
+        .await
+        .assert_ok();
+
+    let second = app
+        .post_json(
+            "/physicians/phys-1/patients/confirm",
+            &serde_json::json!({
+                "name": "Judie Guest",
+                "dob": "1945-04-08",
+                "sessionId": "s2",
+            }),
+        )
+        .await;
+    second.assert_ok();
+    let body = second.json();
+    assert_eq!(body["created"], true, "post-delete confirm creates fresh record");
+    assert_ne!(
+        body["patientId"].as_str().unwrap(),
+        pid_first,
+        "new patient_id after delete"
+    );
+    assert_eq!(body["record"]["sessionIds"], serde_json::json!(["s2"]));
+}
+
+#[tokio::test]
+async fn different_dob_same_name_creates_separate_records() {
+    // DOB-typo guardrail: same full name but different DOB → two distinct
+    // patients (the profile-service key is (physician_id, name_normalized,
+    // dob), so records never merge across DOBs).
+    let app = TestApp::new();
+    let a = app
+        .post_json(
+            "/physicians/phys-1/patients/confirm",
+            &serde_json::json!({
+                "name": "John Smith",
+                "dob": "1970-01-01",
+                "sessionId": "sa",
+            }),
+        )
+        .await;
+    a.assert_ok();
+    let b = app
+        .post_json(
+            "/physicians/phys-1/patients/confirm",
+            &serde_json::json!({
+                "name": "John Smith",
+                "dob": "1970-01-02",
+                "sessionId": "sb",
+            }),
+        )
+        .await;
+    b.assert_ok();
+    assert_ne!(
+        a.json()["patientId"].as_str().unwrap(),
+        b.json()["patientId"].as_str().unwrap(),
+        "DOB differing by one day means distinct patients"
+    );
+    assert_eq!(b.json()["created"], true);
+}
+
+#[tokio::test]
+async fn list_after_delete_excludes_removed_record() {
+    let app = TestApp::new();
+    let a = app
+        .post_json(
+            "/physicians/phys-1/patients/confirm",
+            &serde_json::json!({
+                "name": "A",
+                "dob": "1970-01-01",
+                "sessionId": "s",
+            }),
+        )
+        .await;
+    let b = app
+        .post_json(
+            "/physicians/phys-1/patients/confirm",
+            &serde_json::json!({
+                "name": "B",
+                "dob": "1980-01-01",
+                "sessionId": "s",
+            }),
+        )
+        .await;
+    let pid_a = a.json()["patientId"].as_str().unwrap().to_string();
+    let pid_b = b.json()["patientId"].as_str().unwrap().to_string();
+
+    app.delete(&format!("/physicians/phys-1/patients/{pid_a}"))
+        .await
+        .assert_ok();
+
+    let list = app.get("/physicians/phys-1/patients").await;
+    list.assert_ok();
+    let names: Vec<String> = list
+        .json()
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|r| r["name"].as_str().unwrap().to_string())
+        .collect();
+    assert_eq!(names, vec!["B".to_string()]);
+
+    // And the B record is still reachable by id after the rebuild.
+    let still_b = app
+        .get(&format!("/physicians/phys-1/patients/{pid_b}"))
+        .await;
+    still_b.assert_ok();
+    assert_eq!(still_b.json()["name"], "B");
+}
