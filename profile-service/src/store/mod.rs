@@ -1,6 +1,7 @@
 pub mod config_data;
 pub mod infrastructure;
 pub mod mobile_jobs;
+pub mod patients;
 pub mod physicians;
 pub mod rooms;
 pub mod sessions;
@@ -17,5 +18,6 @@ pub struct AppState {
     pub sessions: sessions::SessionStore,
     pub mobile_jobs: RwLock<mobile_jobs::MobileJobStore>,
     pub config_data: RwLock<config_data::ConfigDataStore>,
+    pub patients: RwLock<patients::PatientManager>,
     pub data_dir: PathBuf,
 }

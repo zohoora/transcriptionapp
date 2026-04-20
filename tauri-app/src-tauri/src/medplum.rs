@@ -1563,6 +1563,300 @@ impl MedplumClient {
             }
         }
     }
+
+    // ── Longitudinal patient memory (v0.10.46+) ──────────────────────
+
+    /// Search for an existing Patient by name + DOB, or create one. Matches
+    /// strictly on normalized name AND birthDate (either both match → hit,
+    /// else miss). Returns the Medplum FHIR `Patient` resource.
+    ///
+    /// Called by `sync_continuous_session` during the confirm-patient flow.
+    pub async fn upsert_patient_by_name_dob(
+        &self,
+        name: &str,
+        dob: &str,
+    ) -> Result<Patient, MedplumError> {
+        // Extract given + family from "First Middle Last" — Medplum search
+        // matches on `name:contains` which looks at given + family + text.
+        let parts: Vec<&str> = name.split_whitespace().collect();
+        let given = parts.first().copied().unwrap_or("");
+        let family = parts.last().copied().unwrap_or("");
+        let search_query = if parts.len() >= 2 {
+            format!("{given} {family}")
+        } else {
+            name.to_string()
+        };
+
+        // 1. Search. Filter for matching birthDate.
+        let hits = self.search_patients(&search_query).await?;
+        let matched = hits
+            .into_iter()
+            .find(|p| p.birth_date.as_deref() == Some(dob) && Self::name_matches(&p.name, name));
+        if let Some(existing) = matched {
+            tracing::info!(
+                event = "medplum_patient_match",
+                patient_id = %existing.id,
+                "matched existing Medplum Patient"
+            );
+            return Ok(existing);
+        }
+
+        // 2. No hit → POST a new FHIR Patient tagged as confirmed by FabricScribe.
+        let token = self.get_valid_token().await?;
+        let mut name_obj = serde_json::json!({
+            "use": "official",
+            "text": name,
+        });
+        if parts.len() >= 2 {
+            name_obj["given"] = serde_json::json!([given]);
+            name_obj["family"] = serde_json::json!(family);
+            if parts.len() > 2 {
+                // Middle names → extra given entries.
+                let middles: Vec<&str> = parts[1..parts.len() - 1].to_vec();
+                let mut givens = vec![given.to_string()];
+                for m in middles {
+                    givens.push(m.to_string());
+                }
+                name_obj["given"] = serde_json::json!(givens);
+            }
+        }
+        let resource = serde_json::json!({
+            "resourceType": "Patient",
+            "name": [name_obj],
+            "birthDate": dob,
+            "meta": {
+                "tag": [{
+                    "system": "urn:fabricscribe",
+                    "code": "confirmed-patient",
+                }],
+            },
+        });
+
+        let response = self
+            .http_client
+            .post(&format!("{}/fhir/R4/Patient", self.base_url))
+            .bearer_auth(&token)
+            .json(&resource)
+            .send()
+            .await?;
+        let created: serde_json::Value = self.handle_response(response).await?;
+        let id = created["id"].as_str().unwrap_or_default().to_string();
+        tracing::info!(
+            event = "medplum_patient_created",
+            patient_id = %id,
+            "created new Medplum Patient"
+        );
+        Ok(Patient {
+            id,
+            name: name.to_string(),
+            mrn: None,
+            birth_date: Some(dob.to_string()),
+        })
+    }
+
+    /// One-shot sync for a continuous-mode archived session: upsert Patient →
+    /// create Encounter → attach SOAP DocumentReference (if present) → attach
+    /// transcript DocumentReference (if present) → mark Encounter finished
+    /// with the recorded start/end period.
+    ///
+    /// Fail-open on document attach failures (partial success still useful).
+    /// Returns the full sync record for the tauri-side to persist in
+    /// `ArchiveMetadata.medplum_patient_id`.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn sync_continuous_session(
+        &self,
+        _local_session_id: &str,
+        name: &str,
+        dob: &str,
+        soap_note: Option<&str>,
+        transcript: Option<&str>,
+        session_started_at_rfc3339: &str,
+        session_duration_ms: u64,
+    ) -> Result<MedplumSessionSync, MedplumError> {
+        let patient = self.upsert_patient_by_name_dob(name, dob).await?;
+        let encounter = self.create_encounter(&patient.id).await?;
+
+        let mut errors = Vec::new();
+        let mut transcript_doc_id = None;
+        let mut soap_doc_id = None;
+
+        if let Some(t) = transcript {
+            match self
+                .upload_transcript(&encounter.id, &encounter.id, &patient.id, t)
+                .await
+            {
+                Ok(id) => transcript_doc_id = Some(id),
+                Err(e) => errors.push(format!("transcript: {e}")),
+            }
+        }
+        if let Some(s) = soap_note {
+            match self
+                .upload_soap_note(&encounter.id, &encounter.id, &patient.id, s)
+                .await
+            {
+                Ok(id) => soap_doc_id = Some(id),
+                Err(e) => errors.push(format!("soap: {e}")),
+            }
+        }
+
+        // Complete encounter with period derived from session metadata so
+        // the EMR timeline reflects the actual visit window (not the API-call
+        // time). A failed complete doesn't invalidate the uploaded docs.
+        if let Err(e) = self
+            .complete_encounter_with_period(
+                &encounter.id,
+                session_started_at_rfc3339,
+                session_duration_ms,
+            )
+            .await
+        {
+            errors.push(format!("complete: {e}"));
+        }
+
+        Ok(MedplumSessionSync {
+            patient_id: patient.id,
+            encounter_id: encounter.id,
+            transcript_doc_id,
+            soap_doc_id,
+            errors,
+        })
+    }
+
+    /// Fetch the last N encounters for a patient (by Medplum FHIR ID).
+    ///
+    /// Delivered with the write-side but used by the follow-up SOAP-context
+    /// injection feature. The current PR calls this only in smoke tests.
+    pub async fn fetch_encounters_for_patient(
+        &self,
+        patient_fhir_id: &str,
+        limit: usize,
+    ) -> Result<Vec<EncounterSummary>, MedplumError> {
+        validate_fhir_id(patient_fhir_id)?;
+        let token = self.get_valid_token().await?;
+
+        let url = format!(
+            "{}/fhir/R4/Encounter?subject=Patient/{}&_sort=-date&_count={}",
+            self.base_url, patient_fhir_id, limit
+        );
+        let response = self.http_client.get(&url).bearer_auth(&token).send().await?;
+        let bundle: serde_json::Value = self.handle_response(response).await?;
+
+        let mut out = Vec::new();
+        if let Some(entries) = bundle["entry"].as_array() {
+            for entry in entries {
+                let r = &entry["resource"];
+                let Some(id) = r["id"].as_str() else { continue };
+                let start = r["period"]["start"].as_str().unwrap_or("").to_string();
+                let duration_minutes = {
+                    let end = r["period"]["end"].as_str();
+                    match (
+                        chrono::DateTime::parse_from_rfc3339(&start),
+                        end.and_then(|e| chrono::DateTime::parse_from_rfc3339(e).ok()),
+                    ) {
+                        (Ok(s), Some(e)) => Some((e - s).num_minutes()),
+                        _ => None,
+                    }
+                };
+                let patient_name = r["subject"]["display"]
+                    .as_str()
+                    .unwrap_or("Unknown")
+                    .to_string();
+                out.push(EncounterSummary {
+                    id: id.to_string(),
+                    fhir_id: id.to_string(),
+                    patient_name,
+                    date: start,
+                    duration_minutes,
+                    // Doc-presence flags not computed here — the follow-up
+                    // SOAP-context PR can batch-query DocumentReference if
+                    // needed; leaving as false keeps the network footprint
+                    // minimal for the common path.
+                    has_soap_note: false,
+                    has_audio: false,
+                });
+            }
+        }
+        Ok(out)
+    }
+
+    /// Complete encounter with an explicit period (start + derived end). Used
+    /// by `sync_continuous_session` so the EMR reflects the real visit time
+    /// rather than the moment the upload happened.
+    async fn complete_encounter_with_period(
+        &self,
+        encounter_fhir_id: &str,
+        started_at: &str,
+        duration_ms: u64,
+    ) -> Result<(), MedplumError> {
+        validate_fhir_id(encounter_fhir_id)?;
+        let token = self.get_valid_token().await?;
+
+        let get_response = self
+            .http_client
+            .get(&format!(
+                "{}/fhir/R4/Encounter/{}",
+                self.base_url, encounter_fhir_id
+            ))
+            .bearer_auth(&token)
+            .send()
+            .await?;
+        let mut encounter: serde_json::Value = self.handle_response(get_response).await?;
+
+        let end_time = chrono::DateTime::parse_from_rfc3339(started_at)
+            .ok()
+            .map(|t| t + chrono::Duration::milliseconds(duration_ms as i64))
+            .map(|t| t.to_rfc3339())
+            .unwrap_or_else(|| Utc::now().to_rfc3339());
+
+        encounter["status"] = serde_json::json!("finished");
+        encounter["period"]["start"] = serde_json::json!(started_at);
+        encounter["period"]["end"] = serde_json::json!(end_time);
+
+        let put_response = self
+            .http_client
+            .put(&format!(
+                "{}/fhir/R4/Encounter/{}",
+                self.base_url, encounter_fhir_id
+            ))
+            .bearer_auth(&token)
+            .json(&encounter)
+            .send()
+            .await?;
+        self.handle_response::<serde_json::Value>(put_response).await?;
+        Ok(())
+    }
+
+    /// Loose name match for dedup: normalize both sides, then compare as-is.
+    /// "Judie Joan Guest" vs "judie joan guest" → match. "Judie Guest" vs
+    /// "Judie Joan Guest" → NO match (different specificity is treated as a
+    /// different Patient — FabricScribe's confirm dialog carries the full
+    /// display name from vision, so this is the correct conservative rule).
+    fn name_matches(a: &str, b: &str) -> bool {
+        let norm = |s: &str| -> String {
+            s.split_whitespace()
+                .map(|w| w.to_lowercase())
+                .collect::<Vec<_>>()
+                .join(" ")
+        };
+        norm(a) == norm(b)
+    }
+}
+
+/// Result of `sync_continuous_session`. Returned to the tauri-side for
+/// persistence in `ArchiveMetadata.medplum_patient_id`.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MedplumSessionSync {
+    pub patient_id: String,
+    pub encounter_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub transcript_doc_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub soap_doc_id: Option<String>,
+    /// Non-fatal errors encountered during document uploads. An empty vec
+    /// means full success.
+    #[serde(default)]
+    pub errors: Vec<String>,
 }
 
 #[cfg(test)]
@@ -1709,6 +2003,45 @@ mod tests {
     #[test]
     fn test_truncate_error_body_empty() {
         assert_eq!(MedplumClient::truncate_error_body(""), "");
+    }
+
+    // ── upsert_patient_by_name_dob helpers (v0.10.46+) ─────────────
+
+    #[test]
+    fn name_matches_is_case_and_whitespace_insensitive() {
+        assert!(MedplumClient::name_matches(
+            "Judie Joan Guest",
+            "judie  joan  guest"
+        ));
+        assert!(MedplumClient::name_matches("John Smith", "  JOHN SMITH "));
+    }
+
+    #[test]
+    fn name_matches_rejects_different_specificity() {
+        // "Judie Guest" and "Judie Joan Guest" differ — Medplum should treat
+        // them as distinct Patients to avoid merging records with partial data.
+        assert!(!MedplumClient::name_matches("Judie Guest", "Judie Joan Guest"));
+    }
+
+    #[test]
+    fn name_matches_rejects_completely_different() {
+        assert!(!MedplumClient::name_matches("John Smith", "Jane Doe"));
+    }
+
+    #[test]
+    fn medplum_session_sync_serializes_with_camelcase_and_skips_none() {
+        let s = MedplumSessionSync {
+            patient_id: "p-1".into(),
+            encounter_id: "e-1".into(),
+            transcript_doc_id: Some("t-1".into()),
+            soap_doc_id: None,
+            errors: vec![],
+        };
+        let v: serde_json::Value = serde_json::to_value(&s).unwrap();
+        assert_eq!(v["patientId"], "p-1");
+        assert_eq!(v["encounterId"], "e-1");
+        assert_eq!(v["transcriptDocId"], "t-1");
+        assert!(v.get("soapDocId").is_none(), "None fields skipped");
     }
 
     /// Integration test to verify Medplum server connection

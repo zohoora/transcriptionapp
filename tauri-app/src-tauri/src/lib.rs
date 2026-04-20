@@ -511,6 +511,7 @@ pub fn run() {
             commands::split_local_session,
             commands::merge_local_sessions,
             commands::update_session_patient_name,
+            commands::confirm_session_patient,
             commands::renumber_local_encounters,
             commands::get_session_transcript_lines,
             commands::suggest_split_points,

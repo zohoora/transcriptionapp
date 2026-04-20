@@ -140,6 +140,18 @@ pub struct ArchiveMetadata {
     /// Whether billing codes have been extracted for this session
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub has_billing_record: Option<bool>,
+    /// RFC3339 timestamp when the clinician confirmed patient identity (name +
+    /// DOB) from the History Window, triggering the Medplum + profile-service
+    /// dual-write. `None` means the session has never been through the
+    /// confirmation flow. (v0.10.46+)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub patient_confirmed_at: Option<String>,
+    /// Medplum FHIR Patient ID linked to this session. Populated by a
+    /// successful Medplum upsert during patient confirmation. Used by replay
+    /// tools + future SOAP-context injection to fetch longitudinal history.
+    /// (v0.10.46+)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub medplum_patient_id: Option<String>,
 }
 
 impl ArchiveMetadata {
@@ -170,6 +182,8 @@ impl ArchiveMetadata {
             room_name: None,
             has_patient_handout: None,
             has_billing_record: None,
+            patient_confirmed_at: None,
+            medplum_patient_id: None,
         }
     }
 }
@@ -1141,6 +1155,8 @@ pub fn split_session(session_id: &str, date_str: &str, split_line: usize) -> Res
         room_name: original_meta.room_name.clone(),
         has_patient_handout: None,
         has_billing_record: None,
+        patient_confirmed_at: None,
+        medplum_patient_id: None,
     };
     let new_meta_json = serde_json::to_string_pretty(&new_meta)
         .map_err(|e| format!("Failed to serialize new metadata: {}", e))?;
@@ -1344,6 +1360,48 @@ pub fn update_patient_name(session_id: &str, date_str: &str, name: &str) -> Resu
         .map_err(|e| format!("Failed to write metadata: {}", e))?;
 
     info!(session_id = %session_id, patient_name = %trimmed, "Patient name updated");
+    Ok(())
+}
+
+/// Mark a session as patient-confirmed. Writes `patient_confirmed_at`,
+/// optionally `medplum_patient_id`, and updates `patient_dob` (since the
+/// clinician may correct the vision-extracted DOB at confirmation time).
+/// Used by the `confirm_session_patient` Tauri command after the Medplum +
+/// profile-service dual-write completes. (v0.10.46+)
+pub fn mark_patient_confirmed(
+    session_id: &str,
+    date_str: &str,
+    confirmed_at_rfc3339: &str,
+    medplum_patient_id: Option<&str>,
+    patient_dob: &str,
+) -> Result<(), String> {
+    let session_dir = get_session_dir_from_str(session_id, date_str)?;
+    if !session_dir.exists() {
+        return Err(format!("Session not found: {}", session_id));
+    }
+
+    let metadata_path = session_dir.join("metadata.json");
+    let content = fs::read_to_string(&metadata_path)
+        .map_err(|e| format!("Failed to read metadata: {}", e))?;
+    let mut metadata: ArchiveMetadata = serde_json::from_str(&content)
+        .map_err(|e| format!("Failed to parse metadata: {}", e))?;
+
+    metadata.patient_confirmed_at = Some(confirmed_at_rfc3339.to_string());
+    metadata.patient_dob = Some(patient_dob.to_string());
+    if let Some(id) = medplum_patient_id {
+        metadata.medplum_patient_id = Some(id.to_string());
+    }
+
+    let json = serde_json::to_string_pretty(&metadata)
+        .map_err(|e| format!("Failed to serialize metadata: {}", e))?;
+    fs::write(&metadata_path, json)
+        .map_err(|e| format!("Failed to write metadata: {}", e))?;
+
+    info!(
+        session_id = %session_id,
+        medplum_patient_id = ?medplum_patient_id,
+        "Session marked patient-confirmed"
+    );
     Ok(())
 }
 

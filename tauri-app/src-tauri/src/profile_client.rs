@@ -58,6 +58,42 @@ pub struct PhysicianProfile {
     pub updated_at: String,
 }
 
+/// Cross-session patient record mirroring `profile-service::types::PatientRecord`.
+/// Keyed server-side on (physician_id, name_normalized, dob). See
+/// ADR-0030 for the dual-write rationale.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PatientRecord {
+    pub patient_id: String,
+    pub physician_id: String,
+    pub name: String,
+    pub dob: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub medplum_patient_id: Option<String>,
+    #[serde(default)]
+    pub session_ids: Vec<String>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConfirmPatientRequestBody {
+    pub name: String,
+    pub dob: String,
+    pub session_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub medplum_patient_id: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConfirmPatientServerResponse {
+    pub patient_id: String,
+    pub created: bool,
+    pub record: PatientRecord,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SpeakerProfile {
     pub id: String,
@@ -525,6 +561,66 @@ impl ProfileClient {
             );
         }
         Ok(())
+    }
+
+    /// Confirm a patient (upsert into the cross-session patient index).
+    /// Idempotent server-side on (name_normalized, dob) within a physician.
+    pub async fn confirm_patient(
+        &self,
+        physician_id: &str,
+        body: &ConfirmPatientRequestBody,
+    ) -> Result<ConfirmPatientServerResponse> {
+        let url = format!(
+            "{}/physicians/{}/patients/confirm",
+            self.base_url(),
+            physician_id
+        );
+        let resp = self
+            .with_auth(self.client.post(&url))
+            .json(body)
+            .send()
+            .await?;
+        if !resp.status().is_success() {
+            let status = resp.status();
+            let text = resp.text().await.unwrap_or_default();
+            anyhow::bail!(
+                "Confirm patient failed: {} - {}",
+                status,
+                &text[..text.len().min(200)]
+            );
+        }
+        let out: ConfirmPatientServerResponse = resp.json().await?;
+        Ok(out)
+    }
+
+    /// Look up an existing patient by exact (name, dob). Returns None when
+    /// no match — used by the follow-up SOAP-context injection feature; not
+    /// called from the confirm path itself (server upserts via `confirm`).
+    pub async fn search_patient_by_name_dob(
+        &self,
+        physician_id: &str,
+        name: &str,
+        dob: &str,
+    ) -> Result<Option<PatientRecord>> {
+        let url = format!(
+            "{}/physicians/{}/patients?name={}&dob={}",
+            self.base_url(),
+            physician_id,
+            urlencoding::encode(name),
+            urlencoding::encode(dob)
+        );
+        let resp = self.with_auth(self.client.get(&url)).send().await?;
+        if !resp.status().is_success() {
+            let status = resp.status();
+            let text = resp.text().await.unwrap_or_default();
+            anyhow::bail!(
+                "Patient search failed: {} - {}",
+                status,
+                &text[..text.len().min(200)]
+            );
+        }
+        let list: Vec<PatientRecord> = resp.json().await?;
+        Ok(list.into_iter().next())
     }
 
     pub async fn delete_session(&self, physician_id: &str, session_id: &str) -> Result<()> {

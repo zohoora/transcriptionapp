@@ -778,9 +778,35 @@ export interface LocalArchiveMetadata {
   /** Whether a patient handout has been saved for this session */
   has_patient_handout?: boolean;
   has_billing_record?: boolean;
+  /** RFC3339 — set when clinician confirmed patient identity via History Window (v0.10.46+) */
+  patient_confirmed_at?: string | null;
+  /** Medplum FHIR Patient ID linked to this session (v0.10.46+) */
+  medplum_patient_id?: string | null;
   physician_id?: string | null;
   physician_name?: string | null;
   room_name?: string | null;
+}
+
+/** Cross-session patient record from the profile-service patient index (v0.10.46+). */
+export interface PatientRecord {
+  patientId: string;
+  physicianId: string;
+  name: string;
+  dob: string;
+  medplumPatientId?: string | null;
+  sessionIds: string[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** Outcome of `confirm_session_patient` — per-store sync status for inline display (v0.10.46+). */
+export interface ConfirmPatientResult {
+  medplumSynced: boolean;
+  profileServiceSynced: boolean;
+  patientId: string | null;
+  medplumPatientId: string | null;
+  confirmedAt: string;
+  errors: string[];
 }
 
 /** A single patient's SOAP note within a multi-patient encounter */

@@ -2,14 +2,15 @@
 
 use super::CommandError;
 use crate::commands::physicians::SharedServerConfig;
-use crate::commands::{SharedActivePhysician, SharedProfileClient};
+use crate::commands::{SharedActivePhysician, SharedMedplumClient, SharedProfileClient};
 use crate::config::Config;
 use crate::local_archive::{
     self, ArchiveDetails, ArchiveSummary, SessionFeedback,
 };
 use crate::ollama::LLMClient;
-use crate::profile_client::ProfileClient;
+use crate::profile_client::{ConfirmPatientRequestBody, ProfileClient};
 use crate::server_config_resolve::resolve;
+use chrono::Utc;
 use serde::Serialize;
 use std::future::Future;
 use std::path::PathBuf;
@@ -384,6 +385,198 @@ pub fn update_session_patient_name(
     );
 
     Ok(())
+}
+
+/// Per-store outcome of a `confirm_session_patient` call. Returned to the
+/// frontend so the UI can show inline status for each write (Medplum +
+/// profile-service).
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConfirmPatientResult {
+    pub medplum_synced: bool,
+    pub profile_service_synced: bool,
+    /// Canonical patient_id from the profile-service (Medplum FHIR ID when
+    /// available, else a UUID fallback). None if both writes failed.
+    pub patient_id: Option<String>,
+    pub medplum_patient_id: Option<String>,
+    pub confirmed_at: String,
+    /// Non-fatal errors from each store. Empty on full success.
+    pub errors: Vec<String>,
+}
+
+/// Confirm the patient for an archived session — writes to local archive,
+/// Medplum FHIR (if authenticated), and the profile-service patient index.
+/// Runs the three writes in-order so the UI can show per-store status.
+///
+/// Requires `patient_dob` in YYYY-MM-DD format. Use
+/// `update_session_patient_name` for name-only renames without DOB.
+#[tauri::command]
+pub async fn confirm_session_patient(
+    session_id: String,
+    date: String,
+    patient_name: String,
+    patient_dob: String,
+    soap_note: Option<String>,
+    transcript: Option<String>,
+    session_started_at: String,
+    session_duration_ms: u64,
+    active_physician: State<'_, SharedActivePhysician>,
+    profile_client: State<'_, SharedProfileClient>,
+    medplum_client: State<'_, SharedMedplumClient>,
+) -> Result<ConfirmPatientResult, CommandError> {
+    // Validate DOB format up-front so downstream stores don't have to.
+    if chrono::NaiveDate::parse_from_str(&patient_dob, "%Y-%m-%d").is_err() {
+        return Err(CommandError::Validation(format!(
+            "patient_dob must be YYYY-MM-DD, got {patient_dob}"
+        )));
+    }
+    if patient_name.trim().is_empty() {
+        return Err(CommandError::Validation("patient_name is empty".into()));
+    }
+
+    let now = Utc::now().to_rfc3339();
+    let mut errors: Vec<String> = Vec::new();
+    let mut medplum_patient_id: Option<String> = None;
+    let mut profile_patient_id: Option<String> = None;
+    let mut medplum_synced = false;
+    let mut profile_service_synced = false;
+
+    // Step A — local archive. Always runs. Updates name via the existing
+    // helper (which also invalidates stale billing), then patches the new
+    // confirmation fields via update_metadata_fields.
+    info!(
+        event = "confirm_patient_begin",
+        session_id = %session_id,
+        date = %date,
+        "patient confirmation started"
+    );
+    local_archive::update_patient_name(&session_id, &date, &patient_name)
+        .map_err(CommandError::Other)?;
+
+    // Step B — Medplum. Skip cleanly if unauthenticated or unreachable.
+    // MedplumClient is not Clone, so we hold the read-guard for the call.
+    {
+        let guard = medplum_client.read().await;
+        if let Some(client) = guard.as_ref() {
+            if client.is_authenticated().await {
+                match client
+                    .sync_continuous_session(
+                        &session_id,
+                        &patient_name,
+                        &patient_dob,
+                        soap_note.as_deref(),
+                        transcript.as_deref(),
+                        &session_started_at,
+                        session_duration_ms,
+                    )
+                    .await
+                {
+                    Ok(sync) => {
+                        medplum_synced = true;
+                        medplum_patient_id = Some(sync.patient_id.clone());
+                        for e in &sync.errors {
+                            errors.push(format!("medplum: {e}"));
+                        }
+                    }
+                    Err(e) => {
+                        warn!(event = "confirm_patient_medplum_failed", error = %e);
+                        errors.push(format!("medplum: {e}"));
+                    }
+                }
+            } else {
+                info!("Medplum not authenticated — skipping EMR write");
+            }
+        }
+    }
+
+    // Step C — profile-service. Always attempt; idempotent on (name, dob).
+    let physician_id = {
+        let guard = active_physician.read().await;
+        guard.as_ref().map(|p| p.id.clone())
+    };
+    let pf_client = profile_client.read().await.clone();
+    match (physician_id.clone(), pf_client) {
+        (Some(phys_id), Some(pf)) => {
+            let body = ConfirmPatientRequestBody {
+                name: patient_name.clone(),
+                dob: patient_dob.clone(),
+                session_id: session_id.clone(),
+                medplum_patient_id: medplum_patient_id.clone(),
+            };
+            match pf.confirm_patient(&phys_id, &body).await {
+                Ok(resp) => {
+                    profile_service_synced = true;
+                    profile_patient_id = Some(resp.patient_id);
+                }
+                Err(e) => {
+                    warn!(event = "confirm_patient_profile_service_failed", error = %e);
+                    errors.push(format!("profile_service: {e}"));
+                }
+            }
+        }
+        _ => errors.push("profile_service: no active physician or client".into()),
+    }
+
+    // Step D — back-fill local metadata with the confirmation state + the
+    // authoritative patient_id discovered above (prefer Medplum ID).
+    let canonical_patient_id = medplum_patient_id
+        .clone()
+        .or_else(|| profile_patient_id.clone());
+    if let Err(e) = local_archive::mark_patient_confirmed(
+        &session_id,
+        &date,
+        &now,
+        medplum_patient_id.as_deref(),
+        &patient_dob,
+    ) {
+        warn!(event = "confirm_patient_metadata_write_failed", error = %e);
+        errors.push(format!("local_metadata: {e}"));
+    }
+
+    // Step E — fire-and-forget server-sync so profile-service session
+    // metadata reflects the confirmation too (the PatientRecord is separate
+    // from the session's own patient_confirmed_at + medplum_patient_id
+    // fields in ArchiveMetadata). Uses the existing update_metadata patch.
+    let sid = session_id.clone();
+    let mp_id = medplum_patient_id.clone();
+    let confirmed_at = now.clone();
+    let pdob = patient_dob.clone();
+    spawn_sync(
+        active_physician.inner().clone(),
+        profile_client.inner().clone(),
+        "confirm_patient_metadata",
+        move |phys_id, client| async move {
+            let mut body = serde_json::json!({
+                "patient_confirmed_at": confirmed_at,
+                "patient_dob": pdob,
+            });
+            if let Some(id) = mp_id {
+                body["medplum_patient_id"] = serde_json::json!(id);
+            }
+            if let Err(e) = client.update_metadata(&phys_id, &sid, &body).await {
+                warn!("Server sync failed (confirm_patient_metadata): {e}");
+            }
+        },
+    );
+
+    info!(
+        event = "confirm_patient_complete",
+        session_id = %session_id,
+        medplum_synced,
+        profile_service_synced,
+        patient_id = ?canonical_patient_id,
+        errors = errors.len(),
+        "patient confirmation complete"
+    );
+
+    Ok(ConfirmPatientResult {
+        medplum_synced,
+        profile_service_synced,
+        patient_id: canonical_patient_id,
+        medplum_patient_id,
+        confirmed_at: now,
+        errors,
+    })
 }
 
 /// Renumber encounter numbers for continuous mode sessions on a date

@@ -174,6 +174,16 @@ Rule: overlap-coefficient of A/P-section clinical terms ≥ 0.30, shared distinc
 
 Module: `continuous_mode_forward_merge.rs`. Emits `ForwardMergeFired` event and triggers `resync_session` on the cleaned-up prev session. Validated by 3-day replay simulation (Apr 16/17/20): 3 multi-patient sessions, 1 true positive, 0 false positives across 18 evaluated pairs.
 
+## Longitudinal patient memory — confirm-and-dual-write (v0.10.46+)
+
+Clinician presses "Confirm Patient" on a session in the History Window → name + DOB (prefilled from vision extraction, DOB required) are atomically written to the local archive + Medplum FHIR (if authenticated) + profile-service patient index. Both remote stores carry the Medplum FHIR ID as the canonical `patient_id` so downstream code (replay, simulation, future SOAP-context injection) can resolve patients from either side without a second query.
+
+Idempotent on `(name_normalized, dob)` within a physician — repeated confirms append `session_id` (deduped). When Medplum is unreachable the profile-service writes a UUID fallback that reconciles to a real FHIR ID on next sync.
+
+Confirmation is the trust boundary — vision alone never auto-pushes to the EMR. Module: `continuous_mode_forward_merge.rs` covers one vision failure mode (false multi-patient); this feature covers the other (chart-stuck-on-wrong-patient) by giving the clinician a curated upload path. See ADR-0030.
+
+Not yet enabled (deferred): auto-sync on continuous-mode encounter completion, prior-SOAP injection into new-encounter prompt context.
+
 ## Detailed Context
 
 See **[tauri-app/CLAUDE.md](tauri-app/CLAUDE.md)** for full architecture, IPC commands, code patterns, gotchas, and troubleshooting. See **[docs/TESTING.md](docs/TESTING.md)** for the test architecture.

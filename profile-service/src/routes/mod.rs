@@ -2,6 +2,7 @@ pub mod config_data;
 pub mod health;
 pub mod infrastructure;
 pub mod mobile;
+pub mod patients;
 pub mod physicians;
 pub mod rooms;
 pub mod sessions;
@@ -131,6 +132,20 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         .route(
             "/physicians/:physician_id/day-log/:date",
             put(sessions::upload_day_log).get(sessions::download_day_log),
+        )
+        // Longitudinal patient memory (v0.10.46+) — /confirm must be registered
+        // before the /:patient_id route or it will be shadowed by the wildcard.
+        .route(
+            "/physicians/:physician_id/patients/confirm",
+            post(patients::confirm),
+        )
+        .route(
+            "/physicians/:physician_id/patients",
+            get(patients::list_or_search),
+        )
+        .route(
+            "/physicians/:physician_id/patients/:patient_id",
+            get(patients::get_by_id),
         )
         .with_state(state)
 }

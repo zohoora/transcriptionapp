@@ -15,6 +15,7 @@ import {
   EditNameDialog,
   MergeConfirmDialog,
 } from './cleanup';
+import ConfirmPatientDialog from './ConfirmPatientDialog';
 import FeedbackPanel from './FeedbackPanel';
 import { BillingTab, DailySummaryView, MonthlySummaryView } from './billing';
 import { formatDateForApi, formatLocalTime, formatLocalDateTime, formatDurationShort } from '../utils';
@@ -36,7 +37,7 @@ import { DETAIL_LEVEL_LABELS } from '../types';
 type DetailTab = 'transcript' | 'soap' | 'handout' | 'billing' | 'insights';
 type RightPaneMode = 'session' | 'daily_billing' | 'monthly_billing';
 type DataSource = 'local' | 'medplum';
-type CleanupDialog = 'none' | 'delete' | 'merge' | 'editName';
+type CleanupDialog = 'none' | 'delete' | 'merge' | 'editName' | 'confirmPatient';
 type SortField = 'time' | 'encounter' | 'patient' | 'words' | 'duration';
 type SortDir = 'asc' | 'desc';
 type FilterMode = 'all' | 'clinical' | 'non-clinical' | 'soap' | 'no-soap';
@@ -1354,6 +1355,12 @@ const HistoryWindow: React.FC = () => {
               onMerge={() => setCleanupDialog('merge')}
               onDelete={() => setCleanupDialog('delete')}
               onEditName={() => setCleanupDialog('editName')}
+              onConfirmPatient={() => setCleanupDialog('confirmPatient')}
+              canConfirmPatient={
+                selectedIds.size === 1 &&
+                selectedPatientIndex === null &&
+                !!selectedSession
+              }
               onSplit={openSplitWindow}
               onRegenSoap={handleRegenSoap}
             />
@@ -1928,6 +1935,26 @@ const HistoryWindow: React.FC = () => {
           onCancel={() => setCleanupDialog('none')}
         />
       )}
+      {cleanupDialog === 'confirmPatient' &&
+        selectedIds.size === 1 &&
+        selectedPatientIndex === null &&
+        selectedSession && (
+          <ConfirmPatientDialog
+            sessionId={selectedSession.session_id}
+            date={formatDateForApi(selectedDate)}
+            initialName={selectedSession.metadata.patient_name ?? null}
+            initialDob={selectedSession.metadata.patient_dob ?? null}
+            sessionStartedAt={selectedSession.metadata.started_at}
+            sessionDurationMs={selectedSession.metadata.duration_ms ?? 0}
+            soapNote={selectedSession.soap_note ?? null}
+            transcript={selectedSession.transcript ?? null}
+            onConfirmed={async () => {
+              setCleanupDialog('none');
+              await afterCleanupOp('Patient confirmed and synced to EMR');
+            }}
+            onCancel={() => setCleanupDialog('none')}
+          />
+        )}
 
       {/* Day Feedback Modal */}
       {showDayFeedback && (

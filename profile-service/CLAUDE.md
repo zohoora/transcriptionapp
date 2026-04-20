@@ -21,19 +21,21 @@ src/
 ├── error.rs           # ApiError enum → HTTP status mapping
 ├── types.rs           # All data structures + validation methods
 ├── routes/
-│   ├── mod.rs         # build_router() — 32 route registrations across 8 resource groups
+│   ├── mod.rs         # build_router() — 35 route registrations across 9 resource groups
 │   ├── health.rs      # GET /health
 │   ├── infrastructure.rs  # Clinic-wide settings (singleton)
 │   ├── config_data.rs # GET/PUT for prompts, billing, thresholds + version check (9 handlers)
 │   ├── mobile.rs      # Mobile job upload, status, CRUD (6 handlers)
+│   ├── patients.rs    # Longitudinal patient memory — confirm, search, get-by-id (3 handlers)
 │   ├── physicians.rs  # Physician CRUD
 │   ├── rooms.rs       # Room CRUD
 │   ├── sessions.rs    # Session storage, split, merge, audio, files, day-log
 │   └── speakers.rs    # Speaker profile CRUD
 └── store/
-    ├── mod.rs         # AppState (6 RwLock<Manager> + SessionStore)
+    ├── mod.rs         # AppState (7 RwLock<Manager> + SessionStore)
     ├── config_data.rs # ConfigDataStore — prompts, billing rules, thresholds, operational defaults; version counter
     ├── mobile_jobs.rs # Mobile job store (in-memory HashMap + JSON persistence)
+    ├── patients.rs    # PatientManager — cross-session index keyed (physician_id, name_normalized, dob) → PatientRecord (v0.10.46+)
     ├── physicians.rs  # In-memory Vec + atomic JSON persistence
     ├── rooms.rs       # Same pattern as physicians
     ├── speakers.rs    # Same pattern
@@ -48,6 +50,7 @@ Middleware stack (outermost → innermost): CORS → body limit (500 MB) → aut
 | Pattern | Rule |
 |---------|------|
 | Atomic writes | `atomic_write()` — UUID-suffixed temp file + rename. Used for transcript, SOAP, metadata, all JSON stores |
+| Patient index (v0.10.46+) | Keyed by `(physician_id, name_normalized, dob)`; name normalization duplicated in `store/patients.rs::normalize_patient_name` with a parity test against the tauri-side `patient_name_tracker::normalize_patient_name` (~15 lines, byte-equivalent). Idempotent `confirm` — hit appends session_id (deduped), miss creates. Patient identity (`patient_id`) is Medplum FHIR ID when available, UUID fallback otherwise; later confirmations can reconcile a UUID → real Medplum ID. `patients.json` persisted via atomic rename, mode 0o600 |
 | Session cache | `session_cache: HashMap<(physician_id, session_id), PathBuf>` — avoids O(N) directory walk per lookup. Populated lazily, invalidated on delete/split/merge |
 | Path traversal | `validate_id()` rejects `/`, `\`, `..`, `\0`, empty strings. Called on all physician_id and session_id inputs |
 | File allowlist | `is_allowed_session_file()` in `store/sessions.rs` — explicit allowlist for auxiliary files. Currently allows: `pipeline_log.jsonl`, `replay_bundle.json`, `segments.jsonl`, `billing.json`, `patient_handout.txt`, and `screenshots/*.jpg`. **Note**: `feedback.json` and `patient_labels.json` are not in the allowlist — they have dedicated typed routes. Adding new aux file types requires updating both the allowlist and the tauri-side `server_sync.rs::SYNCED_AUX_FILES` |
@@ -73,6 +76,7 @@ Middleware stack (outermost → innermost): CORS → body limit (500 MB) → aut
 | Rooms | `GET/POST /rooms`, `GET/PUT/DELETE /rooms/:id` |
 | Speakers | `GET/POST /speakers`, `GET/PUT/DELETE /speakers/:id` |
 | Sessions | dates, list, get, upload, delete, split, merge, renumber, metadata, soap, feedback, patient-name, transcript-lines, audio, files, screenshots, day-log |
+| Patients (v0.10.46+) | `POST /physicians/:id/patients/confirm`, `GET /physicians/:id/patients` (unqualified list OR `?name=&dob=` exact lookup), `GET /physicians/:id/patients/:patient_id` |
 
 ## Server Config Categories
 
@@ -92,6 +96,7 @@ profile-data/
 ├── rooms.json               # All room configs
 ├── speakers.json            # Speaker voice profiles
 ├── infrastructure.json      # Clinic-wide settings
+├── patients.json            # Cross-session patient index, keyed (physician_id, name_normalized, dob) → PatientRecord (v0.10.46+)
 ├── prompt_templates.json    # Server-configurable LLM prompt templates
 ├── billing_data.json        # Server-configurable billing rules (OHIP codes, mappings, etc.)
 ├── detection_thresholds.json # Server-configurable detection thresholds

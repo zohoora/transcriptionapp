@@ -616,6 +616,67 @@ pub struct UpdatePatientNameRequest {
     pub patient_name: String,
 }
 
+// ── Longitudinal patient memory (v0.10.46+) ──────────────────────────
+//
+// Clinician confirms patient identity from the History Window via name + DOB.
+// This writes a cross-session index here (physician_id, name_normalized, dob)
+// → PatientRecord and, when Medplum is reachable, mirrors the upsert there.
+// Both stores carry the Medplum FHIR ID so downstream code (replay/simulation/
+// SOAP-context injection) can resolve patients from either side.
+
+/// Cross-session patient record, keyed by (physician_id, name, dob).
+/// Idempotent on confirm — repeated confirmations append session_id (deduped).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PatientRecord {
+    /// Canonical patient identifier within this physician's namespace.
+    /// Mirrors Medplum's FHIR ID when available; falls back to UUID when the
+    /// Medplum upsert hasn't succeeded yet (reconciled on later sync).
+    pub patient_id: String,
+    pub physician_id: String,
+    /// Normalized display name (trimmed, title-cased; matches tauri-side
+    /// `PatientNameTracker::normalize_patient_name`).
+    pub name: String,
+    /// YYYY-MM-DD.
+    pub dob: String,
+    /// Medplum FHIR Patient ID. None until first successful Medplum sync.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub medplum_patient_id: Option<String>,
+    /// Session back-links. Deduped on confirm.
+    #[serde(default)]
+    pub session_ids: Vec<String>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+/// Request body for POST /physicians/:id/patients/confirm
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConfirmPatientRequest {
+    pub name: String,
+    pub dob: String,
+    pub session_id: String,
+    #[serde(default)]
+    pub medplum_patient_id: Option<String>,
+}
+
+/// Response from POST /physicians/:id/patients/confirm
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConfirmPatientResponse {
+    pub patient_id: String,
+    pub created: bool,
+    pub record: PatientRecord,
+}
+
+/// Query params for GET /physicians/:id/patients
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PatientSearchQuery {
+    pub name: String,
+    pub dob: String,
+}
+
 /// Request body for splitting a session
 #[derive(Debug, Deserialize)]
 pub struct SplitSessionRequest {

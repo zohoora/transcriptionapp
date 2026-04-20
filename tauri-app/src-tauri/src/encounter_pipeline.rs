@@ -1089,6 +1089,8 @@ mod tests {
             room_name: None,
             has_patient_handout: None,
             has_billing_record: None,
+            patient_confirmed_at: None,
+            medplum_patient_id: None,
         }
     }
 
