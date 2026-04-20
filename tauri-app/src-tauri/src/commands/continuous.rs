@@ -266,10 +266,20 @@ pub async fn start_continuous_mode(
                         )
                     }
                 };
+            // Snapshot server config here (in an async context where
+            // `.read().await` is safe) rather than inside the orchestrator.
+            // Previously TauriRunContext::server_config_snapshot used
+            // blocking_read on a tokio::sync::RwLock which deadlocked the
+            // detector task — observed in v0.10.39 as "Start Session does
+            // nothing + second click says Already running". Fixed in v0.10.40+.
+            let server_config_snapshot = std::sync::Arc::new(
+                server_config_for_task.read().await.clone(),
+            );
             let ctx = crate::run_context::TauriRunContext::new(
                 app.clone(),
                 archive_root,
                 llm_backend,
+                server_config_snapshot,
             );
             let result = crate::continuous_mode::run_continuous_mode(
                 ctx,

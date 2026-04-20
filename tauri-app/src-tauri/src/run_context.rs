@@ -83,11 +83,22 @@ pub struct TauriRunContext {
     pub app: AppHandle,
     pub archive_root: PathBuf,
     pub llm: Arc<dyn LlmBackend>,
+    /// Snapshot of server-configurable data taken at construction time
+    /// (in the async `start_continuous_mode` command, where we can `.await`
+    /// on the tokio RwLock). Stored as an Arc so `Clone` is cheap and
+    /// `server_config_snapshot()` never deadlocks on a blocking_read from
+    /// inside a tokio runtime thread.
+    pub server_config: Arc<ServerConfig>,
 }
 
 impl TauriRunContext {
-    pub fn new(app: AppHandle, archive_root: PathBuf, llm: Arc<dyn LlmBackend>) -> Self {
-        Self { app, archive_root, llm }
+    pub fn new(
+        app: AppHandle,
+        archive_root: PathBuf,
+        llm: Arc<dyn LlmBackend>,
+        server_config: Arc<ServerConfig>,
+    ) -> Self {
+        Self { app, archive_root, llm, server_config }
     }
 }
 
@@ -108,10 +119,7 @@ impl RunContext for TauriRunContext {
     }
 
     fn server_config_snapshot(&self) -> ServerConfig {
-        use tauri::Manager;
-        let shared = self.app.state::<crate::commands::physicians::SharedServerConfig>();
-        let guard = shared.blocking_read();
-        guard.clone()
+        (*self.server_config).clone()
     }
 
     fn llm(&self) -> Arc<dyn LlmBackend> {
