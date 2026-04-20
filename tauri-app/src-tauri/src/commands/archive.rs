@@ -441,17 +441,17 @@ pub async fn confirm_session_patient(
     let mut medplum_synced = false;
     let mut profile_service_synced = false;
 
-    // Step A — local archive. Always runs. Updates name via the existing
-    // helper (which also invalidates stale billing), then patches the new
-    // confirmation fields via update_metadata_fields.
     info!(
         event = "confirm_patient_begin",
         session_id = %session_id,
         date = %date,
         "patient confirmation started"
     );
+
+    // Step A — local archive. Side-effect: also invalidates stale billing
+    // since update_patient_name goes through add_soap_note's billing hook.
     local_archive::update_patient_name(&session_id, &date, &patient_name)
-        .map_err(CommandError::Other)?;
+        .map_err(|e| CommandError::Other(format!("local archive update_patient_name: {e}")))?;
 
     // Step B — Medplum. Skip cleanly if unauthenticated or unreachable.
     // MedplumClient is not Clone, so we hold the read-guard for the call.

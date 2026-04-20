@@ -89,10 +89,11 @@ describe('ConfirmPatientDialog', () => {
       expect(screen.getByText(/Medplum \(EMR\)/i)).toBeInTheDocument(),
     );
     expect(screen.getAllByText('✓')).toHaveLength(2);
-    expect(screen.getByText(/Patient\/mp-1/)).toBeInTheDocument();
+    expect(screen.getByText(/Patient ID:/i)).toBeInTheDocument();
+    expect(screen.getByText(/mp-1/)).toBeInTheDocument();
   });
 
-  it('shows partial-success status when only profile-service synced', async () => {
+  it('shows partial-success status with UUID reconciliation hint when Medplum fails', async () => {
     const user = userEvent.setup();
     mockInvoke.mockResolvedValueOnce({
       medplumSynced: false,
@@ -111,6 +112,8 @@ describe('ConfirmPatientDialog', () => {
     );
     expect(screen.getAllByText('·')).toHaveLength(1);
     expect(screen.getAllByText('✓')).toHaveLength(1);
+    expect(screen.getByText(/uuid-1/)).toBeInTheDocument();
+    expect(screen.getByText(/will reconcile on next Medplum sync/i)).toBeInTheDocument();
   });
 
   it('calls onConfirmed after successful sync', async () => {

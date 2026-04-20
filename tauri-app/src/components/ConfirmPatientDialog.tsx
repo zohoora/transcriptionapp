@@ -132,11 +132,7 @@ const ConfirmPatientDialog: React.FC<ConfirmPatientDialogProps> = ({
             </div>
           </form>
         )}
-        {status === 'syncing' && (
-          <div className="cleanup-dialog-syncing">
-            <p>Syncing…</p>
-          </div>
-        )}
+        {status === 'syncing' && <p className="cleanup-dialog-syncing">Syncing…</p>}
         {status === 'done' && result && (
           <div className="cleanup-dialog-result">
             <ul className="cleanup-dialog-status-list">
@@ -145,11 +141,6 @@ const ConfirmPatientDialog: React.FC<ConfirmPatientDialogProps> = ({
                   {result.medplumSynced ? '✓' : '·'}
                 </span>{' '}
                 Medplum (EMR)
-                {result.medplumPatientId && (
-                  <span className="cleanup-dialog-patient-id">
-                    {' — '}Patient/{result.medplumPatientId}
-                  </span>
-                )}
               </li>
               <li>
                 <span className={result.profileServiceSynced ? 'status-ok' : 'status-fail'}>
@@ -158,6 +149,12 @@ const ConfirmPatientDialog: React.FC<ConfirmPatientDialogProps> = ({
                 Profile service
               </li>
             </ul>
+            {result.patientId && (
+              <p className="cleanup-dialog-patient-id">
+                Patient&nbsp;ID: {result.patientId}
+                {!result.medplumPatientId && ' (local UUID — will reconcile on next Medplum sync)'}
+              </p>
+            )}
             {result.errors.length > 0 && (
               <details className="cleanup-dialog-errors">
                 <summary>{result.errors.length} non-fatal error(s)</summary>
