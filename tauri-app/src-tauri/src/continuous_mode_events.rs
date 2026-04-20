@@ -53,6 +53,17 @@ pub enum ContinuousModeEvent {
         #[serde(skip_serializing_if = "Option::is_none")]
         reason: Option<String>,
     },
+    /// Forward-merge cleaned up a previous encounter's false multi-patient
+    /// split because the current encounter is clearly the same patient as one
+    /// of the sub-SOAPs. See `continuous_mode_forward_merge` for the rule.
+    ForwardMergeFired {
+        prev_session_id: String,
+        curr_session_id: String,
+        removed_sub_idx: u32,
+        overlap_coef: f64,
+        shared_term_count: usize,
+        audio_gap_secs: f64,
+    },
     /// Speech detected by VAD but no transcription segments produced
     TranscriptionStalled {
         speech_secs: u64,

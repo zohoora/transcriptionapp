@@ -160,6 +160,14 @@ LLM calls emit per-call `CallMetrics` (wall_ms, scheduling_ms, network_ms, concu
 
 Screenshot task skips vision LLM calls once `PatientNameTracker` has K=5 consecutive matching votes (or cap=30 total per encounter). Screenshots still captured + archived for audit. Calibrated from the Apr 16 Room 6 audit: ~78% vision-call reduction (329 → ~70/day) with no downstream behavior change on stable encounters.
 
+## Forward-merge cleanup (v0.10.43+)
+
+Runs after an encounter splits and the merge-back coordinator returns `Separate`. If the PREVIOUS encounter had a pre-SOAP multi-patient split and one of its sub-SOAPs clinically matches the CURRENT encounter's primary SOAP, rewrites the previous session as single-patient. Fixes the "next patient's check-in audio leaks into prev session's tail → false multi-patient split" failure mode seen on Apr 20 Room 6 (Scott's session captured Cathy's intake at the reception desk; multi-patient detection fired producing a Cathy sub-SOAP in Scott's session alongside Cathy's own session).
+
+Rule: overlap-coefficient of A/P-section clinical terms ≥ 0.30, shared distinctive terms ≥ 5, audio gap (last non-doctor `end_ms` in prev → first non-doctor `start_ms` in curr) ≤ 300s. Audio gap is the load-bearing signal — wall-clock `ended_at`/`started_at` can be rewritten post-hoc by orphan recovery, but per-session audio timestamps are monotonic.
+
+Module: `continuous_mode_forward_merge.rs`. Emits `ForwardMergeFired` event and triggers `resync_session` on the cleaned-up prev session. Validated by 3-day replay simulation (Apr 16/17/20): 3 multi-patient sessions, 1 true positive, 0 false positives across 18 evaluated pairs.
+
 ## Detailed Context
 
 See **[tauri-app/CLAUDE.md](tauri-app/CLAUDE.md)** for full architecture, IPC commands, code patterns, gotchas, and troubleshooting. See **[docs/TESTING.md](docs/TESTING.md)** for the test architecture.

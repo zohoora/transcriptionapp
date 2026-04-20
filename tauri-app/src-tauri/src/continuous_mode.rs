@@ -1121,6 +1121,15 @@ pub async fn run_continuous_mode<C: crate::run_context::RunContext>(
             billing_counselling_exhausted,
         };
 
+        // Forward-merge cleanup: runs after merge-back returns Separate, to
+        // reverse a previous encounter's false multi-patient split when the
+        // current encounter is clearly the same patient as one of the
+        // sub-SOAPs. Thresholds validated by multi-day simulation.
+        let forward_merge_deps = crate::continuous_mode_forward_merge::ForwardMergeDeps::with_default_thresholds(
+            Arc::clone(&logger_for_detector),
+            sync_ctx_for_detector.clone(),
+        );
+
         // Hybrid mode: sensor absence tracking
         let mut sensor_absent_since: Option<DateTime<Utc>> = None;
         let mut prev_sensor_state = crate::presence_sensor::PresenceState::Unknown;
@@ -1875,6 +1884,30 @@ pub async fn run_continuous_mode<C: crate::run_context::RunContext>(
                         // Reset segment logger for next encounter
                         if let Ok(mut sl) = segment_logger_for_detector.lock() {
                             sl.clear_session();
+                        }
+
+                        // Forward-merge cleanup: if the PREVIOUS encounter had a
+                        // multi-patient split and one of its sub-SOAPs matches
+                        // the CURRENT encounter's primary SOAP (A/P-term
+                        // overlap + audio-contiguity), rewrite the previous
+                        // session as single-patient. See
+                        // continuous_mode_forward_merge for the rule.
+                        if let (Some(prev_sid), Some(prev_date)) = (
+                            prev_encounter_session_id.as_deref(),
+                            prev_encounter_date.as_ref().copied(),
+                        ) {
+                            let call = crate::continuous_mode_forward_merge::ForwardMergeCall {
+                                prev_session_id: prev_sid,
+                                prev_date,
+                                curr_session_id: &session_id,
+                                curr_date: ctx_for_detector.now_utc(),
+                            };
+                            let _ = crate::continuous_mode_forward_merge::run(
+                                &ctx_for_detector,
+                                &forward_merge_deps,
+                                call,
+                            )
+                            .await;
                         }
 
                         // Update prev encounter tracking for next iteration
