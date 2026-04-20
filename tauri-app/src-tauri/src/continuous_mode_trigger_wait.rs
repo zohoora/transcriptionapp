@@ -61,6 +61,13 @@ impl SensorLoopState {
             sensor_available,
         }
     }
+
+    /// True iff the sensor is attached and last reported `Present`. Callers
+    /// use this to inject `sensor_present=true` into the detection context
+    /// and to arm the sensor-continuity gate after a split.
+    pub fn is_currently_present(&self) -> bool {
+        self.sensor_available && self.prev_sensor_state == PresenceState::Present
+    }
 }
 
 /// Long-lived deps. Built once before the detector loop starts.

@@ -1359,7 +1359,7 @@ pub async fn run_continuous_mode<C: crate::run_context::RunContext>(
                     // Tell LLM when sensor confirms someone is still present (suppresses false splits).
                     // Require actual Present state — if sensor connected to wrong device and never
                     // received valid data, prev_sensor_state stays Unknown and we don't inject context.
-                    if sensor_state.sensor_available && !ctx.sensor_departed && sensor_state.prev_sensor_state == crate::presence_sensor::PresenceState::Present {
+                    if !ctx.sensor_departed && sensor_state.is_currently_present() {
                         ctx.sensor_present = true;
                     }
                     ctx
@@ -1672,8 +1672,7 @@ pub async fn run_continuous_mode<C: crate::run_context::RunContext>(
                             sensor_state.sensor_absent_since = None;
                             // If sensor is currently present, mark continuous presence for next encounter.
                             // This blocks LLM-only splits while the same person remains in the room.
-                            sensor_state.sensor_continuous_present = sensor_state.sensor_available
-                                && sensor_state.prev_sensor_state == crate::presence_sensor::PresenceState::Present;
+                            sensor_state.sensor_continuous_present = sensor_state.is_currently_present();
                         }
                         info!(
                             "Encounter #{} detected (end_segment_index={})",

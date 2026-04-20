@@ -34,6 +34,7 @@ use tracing::{info, warn};
 use crate::continuous_mode_events::ContinuousModeEvent;
 use crate::local_archive::ArchiveMetadata;
 use crate::pipeline_log::PipelineLogger;
+use crate::replay_bundle::ReplaySegment;
 use crate::run_context::RunContext;
 use crate::server_sync::ServerSyncContext;
 
@@ -249,46 +250,32 @@ fn compute_audio_gap_secs(prev_dir: &Path, curr_dir: &Path) -> Option<f64> {
     Some((curr_first as f64 - prev_last as f64) / 1000.0)
 }
 
-fn last_non_doctor_end_ms(session_dir: &Path) -> Option<u64> {
-    let path = session_dir.join("segments.jsonl");
-    let raw = fs::read_to_string(&path).ok()?;
-    let mut last: Option<u64> = None;
-    for line in raw.lines() {
-        let v: serde_json::Value = match serde_json::from_str(line) {
-            Ok(v) => v,
-            Err(_) => continue,
-        };
-        let sp = v.get("speaker_id").and_then(|s| s.as_str()).unwrap_or("");
-        if sp.is_empty() || sp.contains("Dr") {
-            continue;
-        }
-        if let Some(em) = v.get("end_ms").and_then(|n| n.as_u64()) {
-            last = Some(match last {
-                Some(prev) => prev.max(em),
-                None => em,
-            });
-        }
+fn is_non_doctor(seg: &ReplaySegment) -> bool {
+    // Speaker IDs from diarization take the form "Dr Zohoor" (doctor) or
+    // "Speaker N" (patient/companion). Enrolled physician matches start with
+    // "Dr "; anonymous doctor roles also use "Dr". Missing speaker_id is
+    // treated as doctor-or-unknown and excluded.
+    match &seg.speaker_id {
+        Some(sp) if !sp.is_empty() && !sp.contains("Dr") => true,
+        _ => false,
     }
-    last
+}
+
+fn last_non_doctor_end_ms(session_dir: &Path) -> Option<u64> {
+    let raw = fs::read_to_string(session_dir.join("segments.jsonl")).ok()?;
+    raw.lines()
+        .filter_map(|line| serde_json::from_str::<ReplaySegment>(line).ok())
+        .filter(is_non_doctor)
+        .map(|s| s.end_ms)
+        .max()
 }
 
 fn first_non_doctor_start_ms(session_dir: &Path) -> Option<u64> {
-    let path = session_dir.join("segments.jsonl");
-    let raw = fs::read_to_string(&path).ok()?;
-    for line in raw.lines() {
-        let v: serde_json::Value = match serde_json::from_str(line) {
-            Ok(v) => v,
-            Err(_) => continue,
-        };
-        let sp = v.get("speaker_id").and_then(|s| s.as_str()).unwrap_or("");
-        if sp.is_empty() || sp.contains("Dr") {
-            continue;
-        }
-        if let Some(sm) = v.get("start_ms").and_then(|n| n.as_u64()) {
-            return Some(sm);
-        }
-    }
-    None
+    let raw = fs::read_to_string(session_dir.join("segments.jsonl")).ok()?;
+    raw.lines()
+        .filter_map(|line| serde_json::from_str::<ReplaySegment>(line).ok())
+        .find(is_non_doctor)
+        .map(|s| s.start_ms)
 }
 
 /// Extract distinctive clinical terms from the A (Assessment) and P (Plan)
@@ -359,45 +346,50 @@ fn is_stopword(w: &str) -> bool {
 ///  4. Rewrite metadata.json with `patient_count = None` and
 ///     `patient_labels = None`.
 fn apply_cleanup(session_dir: &Path, labels: &[PatientLabelEntry]) -> Result<(), String> {
-    // Promote soap_patient_1.txt to soap_note.txt (if it exists).
-    let primary_sub = session_dir.join("soap_patient_1.txt");
-    if primary_sub.exists() {
-        let content = fs::read_to_string(&primary_sub)
-            .map_err(|e| format!("read soap_patient_1: {e}"))?;
-        fs::write(session_dir.join("soap_note.txt"), content)
-            .map_err(|e| format!("write soap_note: {e}"))?;
+    // Promote soap_patient_1.txt into soap_note.txt. If the primary sub-SOAP
+    // is missing (pathological / manually edited session), skip the promotion
+    // rather than failing the whole cleanup.
+    match fs::read_to_string(session_dir.join("soap_patient_1.txt")) {
+        Ok(content) => fs::write(session_dir.join("soap_note.txt"), content)
+            .map_err(|e| format!("write soap_note: {e}"))?,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+        Err(e) => return Err(format!("read soap_patient_1: {e}")),
     }
 
-    // Delete every sub-SOAP file we recorded a label for (primary included —
-    // we already promoted it above).
+    // Delete every sub-SOAP file and the labels manifest. remove_file returns
+    // NotFound on missing files; we discard that and only bubble up real I/O
+    // failures.
     for lbl in labels {
-        let p = session_dir.join(format!("soap_patient_{}.txt", lbl.index));
-        if p.exists() {
-            let _ = fs::remove_file(&p);
-        }
+        drop_file_if_present(&session_dir.join(format!("soap_patient_{}.txt", lbl.index)))?;
     }
+    drop_file_if_present(&session_dir.join("patient_labels.json"))?;
 
-    // Delete patient_labels.json.
-    let labels_path = session_dir.join("patient_labels.json");
-    if labels_path.exists() {
-        let _ = fs::remove_file(&labels_path);
-    }
-
-    // Update metadata.json.
+    // Rewrite metadata.json with patient_count cleared. A missing metadata
+    // file shouldn't happen post-split, but skip gracefully if it does.
     let metadata_path = session_dir.join("metadata.json");
-    if metadata_path.exists() {
-        let raw = fs::read_to_string(&metadata_path)
-            .map_err(|e| format!("read metadata: {e}"))?;
-        let mut metadata: ArchiveMetadata = serde_json::from_str(&raw)
-            .map_err(|e| format!("parse metadata: {e}"))?;
-        metadata.patient_count = None;
-        let out = serde_json::to_string_pretty(&metadata)
-            .map_err(|e| format!("serialize metadata: {e}"))?;
-        fs::write(&metadata_path, out)
-            .map_err(|e| format!("write metadata: {e}"))?;
+    match fs::read_to_string(&metadata_path) {
+        Ok(raw) => {
+            let mut metadata: ArchiveMetadata = serde_json::from_str(&raw)
+                .map_err(|e| format!("parse metadata: {e}"))?;
+            metadata.patient_count = None;
+            let out = serde_json::to_string_pretty(&metadata)
+                .map_err(|e| format!("serialize metadata: {e}"))?;
+            fs::write(&metadata_path, out)
+                .map_err(|e| format!("write metadata: {e}"))?;
+        }
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+        Err(e) => return Err(format!("read metadata: {e}")),
     }
 
     Ok(())
+}
+
+fn drop_file_if_present(path: &Path) -> Result<(), String> {
+    match fs::remove_file(path) {
+        Ok(()) => Ok(()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(e) => Err(format!("remove {}: {e}", path.display())),
+    }
 }
 
 #[cfg(test)]
@@ -412,8 +404,9 @@ mod tests {
         start_ms: u64,
         end_ms: u64,
     ) {
+        // Matches the ReplaySegment schema (ts, index, start_ms, end_ms, text, speaker_id).
         let line = format!(
-            r#"{{"speaker_id":"{speaker}","start_ms":{start_ms},"end_ms":{end_ms},"text":"x"}}"#
+            r#"{{"ts":"2026-04-20T14:17:17Z","index":0,"speaker_id":"{speaker}","start_ms":{start_ms},"end_ms":{end_ms},"text":"x"}}"#
         );
         writeln!(file, "{line}").unwrap();
     }
