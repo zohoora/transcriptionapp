@@ -1130,13 +1130,19 @@ pub async fn run_continuous_mode<C: crate::run_context::RunContext>(
             sync_ctx_for_detector.clone(),
         );
 
-        // Hybrid mode: sensor absence tracking
-        let mut sensor_absent_since: Option<DateTime<Utc>> = None;
-        let mut prev_sensor_state = crate::presence_sensor::PresenceState::Unknown;
-        let mut sensor_available = hybrid_sensor_rx.is_some();
-        // True when sensor has been continuously present since the last encounter split.
-        // Reset to false on any Present→Absent transition; set to true on split.
-        let mut sensor_continuous_present = false;
+        // Hybrid mode: sensor absence tracking (threaded through trigger_wait
+        // by &mut; each iteration reads/writes these fields).
+        let mut sensor_state = crate::continuous_mode_trigger_wait::SensorLoopState::new(
+            hybrid_sensor_rx.is_some(),
+        );
+
+        // Long-lived deps for the trigger waiter.
+        let trigger_wait_deps = crate::continuous_mode_trigger_wait::TriggerWaitDeps {
+            bundle: Arc::clone(&bundle_for_detector),
+            check_interval_secs: check_interval as u64,
+            is_hybrid_mode,
+            effective_sensor_mode,
+        };
 
         // Track previous encounter for retrospective merge checks
         let mut prev_encounter_session_id: Option<String> = None;
@@ -1150,114 +1156,29 @@ pub async fn run_continuous_mode<C: crate::run_context::RunContext>(
         let mut prev_encounter_patient_name: Option<String> = None;
 
         loop {
-            // Wait for trigger based on detection mode
-            // Returns (manual_triggered, sensor_triggered)
-            let (manual_triggered, sensor_triggered) = if is_hybrid_mode && sensor_available {
-                // Hybrid mode with sensor: timer + silence + manual + sensor
-                let Some(sensor_rx) = hybrid_sensor_rx.as_mut() else {
-                    warn!("Hybrid mode active but sensor receiver is None — falling back to timer-only");
-                    sensor_available = false;
-                    continue;
-                };
-                tokio::select! {
-                    _ = ctx_for_detector.sleep(tokio::time::Duration::from_secs(check_interval as u64)) => {
-                        // Regular timer — handles back-to-back encounters without physical departure
-                        (false, false)
-                    }
-                    _ = silence_trigger_rx.notified() => {
-                        info!("Hybrid: silence gap detected — triggering encounter check");
-                        (false, false)
-                    }
-                    _ = manual_trigger_rx.notified() => {
-                        info!("Manual new patient trigger received");
-                        (true, false)
-                    }
-                    result = sensor_rx.changed() => {
-                        match result {
-                            Ok(()) => {
-                                let new_state = *sensor_rx.borrow_and_update();
-                                let old_state = prev_sensor_state;
-                                prev_sensor_state = new_state;
-                                // Log sensor transitions to replay bundle
-                                if old_state != new_state {
-                                    if let Ok(mut bundle) = bundle_for_detector.lock() {
-                                        bundle.add_sensor_transition(crate::replay_bundle::SensorTransition {
-                                            ts: ctx_for_detector.now_utc().to_rfc3339(),
-                                            from: old_state.as_str().to_string(),
-                                            to: new_state.as_str().to_string(),
-                                        });
-                                    }
-                                }
-                                match (old_state, new_state) {
-                                    (crate::presence_sensor::PresenceState::Present,
-                                     crate::presence_sensor::PresenceState::Absent) => {
-                                        sensor_absent_since = Some(ctx_for_detector.now_utc());
-                                        sensor_continuous_present = false;
-                                        info!("Hybrid: sensor detected departure (Present→Absent), accelerating LLM check");
-                                        (false, true) // sensor_triggered → accelerate LLM check (NOT force-split)
-                                    }
-                                    (_, crate::presence_sensor::PresenceState::Present) => {
-                                        if sensor_absent_since.is_some() {
-                                            info!("Hybrid: person returned — cancelling sensor absence tracking");
-                                            sensor_absent_since = None;
-                                        }
-                                        continue; // No check needed
-                                    }
-                                    _ => continue, // Other transitions (Absent→Absent, Unknown→Absent, etc.)
-                                }
-                            }
-                            Err(_) => {
-                                warn!("Hybrid: sensor watch channel closed — sensor disconnected. Falling back to LLM-only.");
-                                sensor_available = false;
-                                sensor_absent_since = None;
-                                ContinuousModeEvent::SensorStatus { connected: false, state: "unknown".into() }.emit_via(&ctx_for_detector);
-                                continue; // Re-enter loop; next iteration uses LLM-only path
-                            }
-                        }
-                    }
-                }
-            } else if is_hybrid_mode {
-                // Hybrid mode without sensor (sensor failed/disconnected): pure LLM fallback
-                tokio::select! {
-                    _ = ctx_for_detector.sleep(tokio::time::Duration::from_secs(check_interval as u64)) => {
-                        (false, false)
-                    }
-                    _ = silence_trigger_rx.notified() => {
-                        info!("Hybrid (LLM fallback): silence gap detected — triggering encounter check");
-                        (false, false)
-                    }
-                    _ = manual_trigger_rx.notified() => {
-                        info!("Manual new patient trigger received");
-                        (true, false)
-                    }
-                }
-            } else if effective_sensor_mode {
-                // Pure sensor mode: wait for sensor absence threshold OR manual trigger
-                tokio::select! {
-                    _ = sensor_trigger_for_detector.notified() => {
-                        info!("Sensor: absence threshold reached — triggering encounter split");
-                        (false, true)
-                    }
-                    _ = manual_trigger_rx.notified() => {
-                        info!("Manual new patient trigger received");
-                        (true, false)
-                    }
-                }
-            } else {
-                // LLM / Shadow mode: wait for timer, silence, or manual trigger
-                tokio::select! {
-                    _ = ctx_for_detector.sleep(tokio::time::Duration::from_secs(check_interval as u64)) => {
-                        (false, false)
-                    }
-                    _ = silence_trigger_rx.notified() => {
-                        info!("Silence gap detected — triggering encounter check");
-                        (false, false)
-                    }
-                    _ = manual_trigger_rx.notified() => {
-                        info!("Manual new patient trigger received");
-                        (true, false)
-                    }
-                }
+            // Wait for the next trigger. The trigger_wait module owns the
+            // select! loop + sensor state transitions; mutations to
+            // `sensor_state` land here via &mut. See
+            // crate::continuous_mode_trigger_wait for the shape.
+            let trigger_chans = crate::continuous_mode_trigger_wait::TriggerChannels {
+                hybrid_sensor_rx: &mut hybrid_sensor_rx,
+                sensor_trigger_rx: &sensor_trigger_for_detector,
+                silence_trigger_rx: &silence_trigger_rx,
+                manual_trigger_rx: &manual_trigger_rx,
+            };
+            let (manual_triggered, sensor_triggered) = match crate::continuous_mode_trigger_wait::wait_for_trigger(
+                &ctx_for_detector,
+                &trigger_wait_deps,
+                &mut sensor_state,
+                trigger_chans,
+            )
+            .await
+            {
+                crate::continuous_mode_trigger_wait::TriggerOutcome::Proceed {
+                    manual_triggered,
+                    sensor_triggered,
+                } => (manual_triggered, sensor_triggered),
+                crate::continuous_mode_trigger_wait::TriggerOutcome::ContinueNoop => continue,
             };
 
             if stop_for_detector.load(Ordering::Relaxed) {
@@ -1432,13 +1353,13 @@ pub async fn run_continuous_mode<C: crate::run_context::RunContext>(
                     let mut ctx = EncounterDetectionContext::default();
                     if sensor_triggered {
                         ctx.sensor_departed = true;
-                    } else if sensor_absent_since.is_some() {
+                    } else if sensor_state.sensor_absent_since.is_some() {
                         ctx.sensor_departed = true;
                     }
                     // Tell LLM when sensor confirms someone is still present (suppresses false splits).
                     // Require actual Present state — if sensor connected to wrong device and never
                     // received valid data, prev_sensor_state stays Unknown and we don't inject context.
-                    if sensor_available && !ctx.sensor_departed && prev_sensor_state == crate::presence_sensor::PresenceState::Present {
+                    if sensor_state.sensor_available && !ctx.sensor_departed && sensor_state.prev_sensor_state == crate::presence_sensor::PresenceState::Present {
                         ctx.sensor_present = true;
                     }
                     ctx
@@ -1470,7 +1391,7 @@ pub async fn run_continuous_mode<C: crate::run_context::RunContext>(
                 // Pre-compute replay bundle fields shared across all detection outcomes
                 let replay_buffer_age = first_ts
                     .map(|t| (ctx_for_detector.now_utc() - t).num_seconds() as f64).unwrap_or(0.0);
-                let replay_sensor_absent = sensor_absent_since.map(|t| t.to_rfc3339());
+                let replay_sensor_absent = sensor_state.sensor_absent_since.map(|t| t.to_rfc3339());
                 let replay_sensor_ctx = crate::replay_bundle::SensorContext::new(
                     detection_context.sensor_departed, detection_context.sensor_present,
                 );
@@ -1506,7 +1427,7 @@ pub async fn run_continuous_mode<C: crate::run_context::RunContext>(
                                         replay_sensor_ctx.clone(), system_prompt.clone(), user_prompt.clone(),
                                         latency, consecutive_llm_failures, loop_state.merge_back_count,
                                         replay_buffer_age, replay_sensor_absent.clone(),
-                                        sensor_continuous_present, sensor_triggered, manual_triggered,
+                                        sensor_state.sensor_continuous_present, sensor_triggered, manual_triggered,
                                     );
                                     check.response_raw = Some(response.clone());
                                     check.parsed_complete = Some(result.complete);
@@ -1534,7 +1455,7 @@ pub async fn run_continuous_mode<C: crate::run_context::RunContext>(
                                         replay_sensor_ctx.clone(), system_prompt.clone(), user_prompt.clone(),
                                         latency, consecutive_llm_failures, loop_state.merge_back_count,
                                         replay_buffer_age, replay_sensor_absent.clone(),
-                                        sensor_continuous_present, sensor_triggered, manual_triggered,
+                                        sensor_state.sensor_continuous_present, sensor_triggered, manual_triggered,
                                     );
                                     check.response_raw = Some(response.clone());
                                     check.error = Some(e.clone());
@@ -1567,7 +1488,7 @@ pub async fn run_continuous_mode<C: crate::run_context::RunContext>(
                                 replay_sensor_ctx.clone(), system_prompt.clone(), user_prompt.clone(),
                                 latency, consecutive_llm_failures, loop_state.merge_back_count,
                                 replay_buffer_age, replay_sensor_absent.clone(),
-                                sensor_continuous_present, sensor_triggered, manual_triggered,
+                                sensor_state.sensor_continuous_present, sensor_triggered, manual_triggered,
                             );
                             check.error = Some(e.to_string());
                             bundle.add_detection_check(check);
@@ -1597,7 +1518,7 @@ pub async fn run_continuous_mode<C: crate::run_context::RunContext>(
                                 replay_sensor_ctx, system_prompt.clone(), user_prompt.clone(),
                                 latency, consecutive_llm_failures, loop_state.merge_back_count,
                                 replay_buffer_age, replay_sensor_absent,
-                                sensor_continuous_present, sensor_triggered, manual_triggered,
+                                sensor_state.sensor_continuous_present, sensor_triggered, manual_triggered,
                             );
                             check.error = Some("timeout_90s".to_string());
                             bundle.add_detection_check(check);
@@ -1617,13 +1538,13 @@ pub async fn run_continuous_mode<C: crate::run_context::RunContext>(
 
             // Re-check sensor state before evaluating — the sensor may have returned
             // to Present during a long LLM call (race between select! branches).
-            if sensor_absent_since.is_some() {
+            if sensor_state.sensor_absent_since.is_some() {
                 if let Some(ref mut rx) = hybrid_sensor_rx {
                     let current_sensor = *rx.borrow();
                     if current_sensor == crate::presence_sensor::PresenceState::Present {
                         info!("Hybrid: sensor returned to Present during LLM call — cancelling stale absence");
-                        sensor_absent_since = None;
-                        prev_sensor_state = current_sensor;
+                        sensor_state.sensor_absent_since = None;
+                        sensor_state.prev_sensor_state = current_sensor;
                     }
                 }
             }
@@ -1642,10 +1563,10 @@ pub async fn run_continuous_mode<C: crate::run_context::RunContext>(
                 manual_triggered,
                 sensor_triggered,
                 is_hybrid_mode,
-                sensor_absent_secs: sensor_absent_since.map(|t| (ctx_for_detector.now_utc() - t).num_seconds() as u64),
+                sensor_absent_secs: sensor_state.sensor_absent_since.map(|t| (ctx_for_detector.now_utc() - t).num_seconds() as u64),
                 hybrid_confirm_window_secs,
                 hybrid_min_words_for_sensor_split,
-                sensor_continuous_present,
+                sensor_continuous_present: sensor_state.sensor_continuous_present,
                 // Phase 2 wiring: server-configurable thresholds override the compiled
                 // constants inside evaluate_detection(). Snapshotted at continuous-mode
                 // start; new values take effect on next restart (same as prompts/billing).
@@ -1667,7 +1588,7 @@ pub async fn run_continuous_mode<C: crate::run_context::RunContext>(
                         }));
                     }
                     if trigger == TRIGGER_HYBRID_SENSOR_TIMEOUT {
-                        sensor_absent_since = None;
+                        sensor_state.sensor_absent_since = None;
                     }
                     let method = if is_hybrid_mode {
                         trigger.as_str() // "hybrid_sensor_timeout", "absolute_word_cap", etc.
@@ -1748,11 +1669,11 @@ pub async fn run_continuous_mode<C: crate::run_context::RunContext>(
                         loop_state.encounter_number += 1;
                         // Clear hybrid sensor tracking on successful split
                         if is_hybrid_mode {
-                            sensor_absent_since = None;
+                            sensor_state.sensor_absent_since = None;
                             // If sensor is currently present, mark continuous presence for next encounter.
                             // This blocks LLM-only splits while the same person remains in the room.
-                            sensor_continuous_present = sensor_available
-                                && prev_sensor_state == crate::presence_sensor::PresenceState::Present;
+                            sensor_state.sensor_continuous_present = sensor_state.sensor_available
+                                && sensor_state.prev_sensor_state == crate::presence_sensor::PresenceState::Present;
                         }
                         info!(
                             "Encounter #{} detected (end_segment_index={})",
@@ -1825,8 +1746,8 @@ pub async fn run_continuous_mode<C: crate::run_context::RunContext>(
                             prev_encounter_date: prev_encounter_date.as_ref(),
                             prev_encounter_is_clinical,
                             prev_encounter_patient_name: prev_encounter_patient_name.as_deref(),
-                            sensor_available,
-                            sensor_present_now: prev_sensor_state
+                            sensor_available: sensor_state.sensor_available,
+                            sensor_present_now: sensor_state.prev_sensor_state
                                 == crate::presence_sensor::PresenceState::Present,
                         };
                         let merge_outcome = crate::continuous_mode_merge_back::run(

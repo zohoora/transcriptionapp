@@ -45,6 +45,7 @@ pub mod continuous_mode_forward_merge;
 pub mod continuous_mode_merge_back;
 pub mod continuous_mode_post_split;
 pub mod continuous_mode_splitter;
+pub mod continuous_mode_trigger_wait;
 pub mod continuous_mode_types;
 pub mod transcript_buffer;
 pub mod encounter_detection;
