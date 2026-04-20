@@ -1587,22 +1587,56 @@ impl MedplumClient {
             name.to_string()
         };
 
-        // 1. Search. Filter for matching birthDate.
-        let hits = self.search_patients(&search_query).await?;
-        let matched = hits
-            .into_iter()
-            .find(|p| p.birth_date.as_deref() == Some(dob) && Self::name_matches(&p.name, name));
-        if let Some(existing) = matched {
-            tracing::info!(
-                event = "medplum_patient_match",
-                patient_id = %existing.id,
-                "matched existing Medplum Patient"
-            );
-            return Ok(existing);
+        // 1. Search raw FHIR resources (not via search_patients — that
+        //    helper strips middle names by returning only given[0]+family,
+        //    so "Cheryl Lynn Bond" arrives here as "Cheryl Bond" and
+        //    name_matches would reject the real match on every re-confirm,
+        //    creating duplicate Patients). We query with an explicit
+        //    birthdate filter so Medplum does the first cut and we only
+        //    name-match the birthday-matching candidates.
+        let token = self.get_valid_token().await?;
+        let search_url = format!(
+            "{}/fhir/R4/Patient?name:contains={}&birthdate={}&_count=20",
+            self.base_url,
+            urlencoding::encode(&search_query),
+            urlencoding::encode(dob),
+        );
+        let response = self
+            .http_client
+            .get(&search_url)
+            .bearer_auth(&token)
+            .send()
+            .await?;
+        let bundle: serde_json::Value = self.handle_response(response).await?;
+        if let Some(entries) = bundle["entry"].as_array() {
+            for entry in entries {
+                let resource = &entry["resource"];
+                if resource["birthDate"].as_str() != Some(dob) {
+                    continue;
+                }
+                if !Self::name_resource_matches(resource, name) {
+                    continue;
+                }
+                let id = resource["id"].as_str().unwrap_or_default().to_string();
+                if id.is_empty() {
+                    continue;
+                }
+                tracing::info!(
+                    event = "medplum_patient_match",
+                    patient_id = %id,
+                    "matched existing Medplum Patient"
+                );
+                return Ok(Patient {
+                    id,
+                    name: name.to_string(),
+                    mrn: None,
+                    birth_date: Some(dob.to_string()),
+                });
+            }
         }
 
         // 2. No hit → POST a new FHIR Patient tagged as confirmed by FabricScribe.
-        let token = self.get_valid_token().await?;
+        //    `token` already acquired above for the search; reuse it.
         let mut name_obj = serde_json::json!({
             "use": "official",
             "text": name,
@@ -1840,6 +1874,42 @@ impl MedplumClient {
         };
         norm(a) == norm(b)
     }
+
+    /// Compare a FHIR Patient resource's name against a caller-supplied full
+    /// name (e.g., "Cheryl Lynn Bond"). Uses `name[0].text` as authoritative
+    /// when present — that field carries the exact clinical display string.
+    /// Falls back to reconstructing `given.join(' ') + family` ONLY when
+    /// `.text` is absent (preserves middle names across the given array,
+    /// unlike `extract_patient_name` which lossily takes only
+    /// `given[0]+family` and caused the Apr 20 dedup bug).
+    fn name_resource_matches(resource: &serde_json::Value, caller: &str) -> bool {
+        let Some(name) = resource
+            .get("name")
+            .and_then(|n| n.as_array())
+            .and_then(|a| a.first())
+        else {
+            return false;
+        };
+        if let Some(text) = name.get("text").and_then(|v| v.as_str()) {
+            return Self::name_matches(text, caller);
+        }
+        let given_joined: String = name
+            .get("given")
+            .and_then(|g| g.as_array())
+            .map(|a| {
+                a.iter()
+                    .filter_map(|v| v.as_str())
+                    .collect::<Vec<_>>()
+                    .join(" ")
+            })
+            .unwrap_or_default();
+        let family = name.get("family").and_then(|v| v.as_str()).unwrap_or("");
+        let reconstructed = format!("{given_joined} {family}")
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" ");
+        Self::name_matches(&reconstructed, caller)
+    }
 }
 
 /// Result of `sync_continuous_session`. Returned to the tauri-side for
@@ -2026,6 +2096,59 @@ mod tests {
     #[test]
     fn name_matches_rejects_completely_different() {
         assert!(!MedplumClient::name_matches("John Smith", "Jane Doe"));
+    }
+
+    #[test]
+    fn name_resource_matches_prefers_text_field() {
+        // The Apr 20 bug repro: FHIR resource has name[0].text with the full
+        // display string, but extract_patient_name() lossily drops middles.
+        // name_resource_matches uses name[0].text first and picks up the
+        // match correctly.
+        let r = serde_json::json!({
+            "name": [{
+                "use": "official",
+                "text": "Cheryl Lynn Bond",
+                "given": ["Cheryl"],
+                "family": "Bond",
+            }]
+        });
+        assert!(MedplumClient::name_resource_matches(&r, "Cheryl Lynn Bond"));
+        assert!(!MedplumClient::name_resource_matches(&r, "Cheryl Bond"));
+    }
+
+    #[test]
+    fn name_resource_matches_falls_back_to_given_plus_family() {
+        // No .text → reconstruct from given list + family, preserving middles.
+        let r = serde_json::json!({
+            "name": [{
+                "use": "official",
+                "given": ["Cheryl", "Lynn"],
+                "family": "Bond",
+            }]
+        });
+        assert!(MedplumClient::name_resource_matches(&r, "Cheryl Lynn Bond"));
+        // Partial match rejected.
+        assert!(!MedplumClient::name_resource_matches(&r, "Cheryl Bond"));
+    }
+
+    #[test]
+    fn name_resource_matches_no_name_array_returns_false() {
+        let r = serde_json::json!({});
+        assert!(!MedplumClient::name_resource_matches(&r, "Anyone"));
+    }
+
+    #[test]
+    fn name_resource_matches_empty_name_array_returns_false() {
+        let r = serde_json::json!({ "name": [] });
+        assert!(!MedplumClient::name_resource_matches(&r, "Anyone"));
+    }
+
+    #[test]
+    fn name_resource_matches_case_and_whitespace_insensitive() {
+        let r = serde_json::json!({
+            "name": [{ "text": "  cheryl   LYNN   bond " }]
+        });
+        assert!(MedplumClient::name_resource_matches(&r, "Cheryl Lynn Bond"));
     }
 
     #[test]

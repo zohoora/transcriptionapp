@@ -227,3 +227,33 @@ async fn get_nonexistent_patient_returns_404() {
     let resp = app.get("/physicians/phys-1/patients/nope").await;
     resp.assert_status(StatusCode::NOT_FOUND);
 }
+
+#[tokio::test]
+async fn delete_removes_record() {
+    let app = TestApp::new();
+    let created = app
+        .post_json(
+            "/physicians/phys-1/patients/confirm",
+            &serde_json::json!({
+                "name": "A",
+                "dob": "1990-01-01",
+                "sessionId": "s1",
+            }),
+        )
+        .await;
+    created.assert_ok();
+    let pid = created.json()["patientId"].as_str().unwrap().to_string();
+    app.delete(&format!("/physicians/phys-1/patients/{pid}"))
+        .await
+        .assert_ok();
+    app.get(&format!("/physicians/phys-1/patients/{pid}"))
+        .await
+        .assert_status(StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn delete_nonexistent_returns_404() {
+    let app = TestApp::new();
+    let resp = app.delete("/physicians/phys-1/patients/nope").await;
+    resp.assert_status(StatusCode::NOT_FOUND);
+}

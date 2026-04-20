@@ -79,3 +79,15 @@ pub async fn get_by_id(
         .map(Json)
         .ok_or_else(|| ApiError::NotFound(format!("patient {patient_id}")))
 }
+
+pub async fn delete(
+    State(state): State<Arc<AppState>>,
+    Path((physician_id, patient_id)): Path<(String, String)>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    let mut mgr = state.patients.write().await;
+    let removed = mgr.delete(&physician_id, &patient_id)?;
+    if !removed {
+        return Err(ApiError::NotFound(format!("patient {patient_id}")));
+    }
+    Ok(Json(serde_json::json!({ "ok": true })))
+}

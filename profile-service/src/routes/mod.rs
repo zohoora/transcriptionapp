@@ -145,7 +145,7 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         )
         .route(
             "/physicians/:physician_id/patients/:patient_id",
-            get(patients::get_by_id),
+            get(patients::get_by_id).delete(patients::delete),
         )
         .with_state(state)
 }

@@ -204,6 +204,44 @@ impl PatientManager {
             .cloned()
             .collect()
     }
+
+    /// Remove a patient by (physician_id, patient_id). Used by the DELETE
+    /// route for admin/cleanup (e.g., removing test artifacts or merging two
+    /// PatientRecords that got created for the same person via DOB typo).
+    /// Returns Ok(true) if a record was removed, Ok(false) if not found.
+    pub fn delete(
+        &mut self,
+        physician_id: &str,
+        patient_id: &str,
+    ) -> Result<bool, ApiError> {
+        let Some(&idx) = self
+            .by_id
+            .get(&(physician_id.to_string(), patient_id.to_string()))
+        else {
+            return Ok(false);
+        };
+        let record = self.file.records.remove(idx);
+        // Rebuild indices — indices held Vec indexes which all shift after remove.
+        self.by_key.clear();
+        self.by_id.clear();
+        for (new_idx, r) in self.file.records.iter().enumerate() {
+            self.by_key.insert(
+                (r.physician_id.clone(), normalize_patient_name(&r.name), r.dob.clone()),
+                new_idx,
+            );
+            self.by_id
+                .insert((r.physician_id.clone(), r.patient_id.clone()), new_idx);
+        }
+        self.save()?;
+        tracing::info!(
+            event = "patient_deleted",
+            physician_id = %physician_id,
+            patient_id = %patient_id,
+            name = %record.name,
+            "patient record deleted"
+        );
+        Ok(true)
+    }
 }
 
 /// Parity with `tauri-app/src-tauri/src/patient_name_tracker.rs::normalize_patient_name`.
@@ -379,6 +417,28 @@ mod tests {
             Some(r.patient_id.clone())
         );
         assert!(m.get_by_name_dob("phys-1", "Other", "1945-04-08").is_none());
+    }
+
+    #[test]
+    fn delete_removes_record_and_reindexes() {
+        let (mut m, _tmp) = manager();
+        let (r1, _) = m.confirm("phys-1", "Alice", "1990-01-01", "s1", None).unwrap();
+        let (r2, _) = m.confirm("phys-1", "Bob", "1980-01-01", "s2", None).unwrap();
+        assert!(m.delete("phys-1", &r1.patient_id).unwrap());
+        // r1 gone, r2 still retrievable
+        assert!(m.get_by_patient_id("phys-1", &r1.patient_id).is_none());
+        assert_eq!(
+            m.get_by_patient_id("phys-1", &r2.patient_id).map(|r| r.name),
+            Some("Bob".to_string())
+        );
+        // Idempotent — second delete returns false
+        assert!(!m.delete("phys-1", &r1.patient_id).unwrap());
+    }
+
+    #[test]
+    fn delete_nonexistent_returns_false() {
+        let (mut m, _tmp) = manager();
+        assert!(!m.delete("phys-1", "nope").unwrap());
     }
 
     #[test]
