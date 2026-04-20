@@ -164,7 +164,7 @@ Detector / SOAP / billing / vision / clinical-content-check all fail together wh
 ### 4.4 Technical debt that is actually OK
 
 - `billing/ohip_codes.rs` at 2,667 LOC — mostly data tables. Not a smell; it's a dataset.
-- Rust test coverage (1,125 lib tests, 118 source files) — healthy.
+- Rust test coverage (1,170 lib tests + 10 harness tests, 119 source files) — healthy.
 - Auto-deploy via launchd — well-designed, canonical in repo.
 - Replay logging architecture — solid, under-exploited.
 
@@ -251,7 +251,7 @@ Within Path B, the most interesting specialty given the existing code is **chron
 ### Q2 2026 (next 90 days): Foundation + decision
 - **Weeks 1-2**: Market validation — interview 10 pain-management physicians (FHO+ and OHIP billing focus). Goal: confirm specialty wedge; identify 3-5 killer features they'd pay for
 - **Weeks 2-4**: Deprecate: AI images, MIIS, biomarkers, vision experiments (keep as dev CLI), clinical chat. Shed ~10K LOC. Ship as v0.11.0.
-- **Weeks 3-6**: Refactor `continuous_mode.rs` into phase modules. Pipeline bus pattern. No behavior change. Ship as v0.11.1.
+- ~~**Weeks 3-6**: Refactor `continuous_mode.rs` into phase modules.~~ **Done in v0.10.41–v0.10.44**: 7-module decomposition (trigger_wait, splitter, post_split, merge_back, forward_merge, flush_on_stop, events, types). `continuous_mode.rs` 3,610 → 2,345 lines, `run_continuous_mode` fn 2,700 → 1,454 lines. See ADR-0029.
 - **Weeks 4-8**: Oscar Pro integration (read-only first — labs, imaging, medication list, problem list). Ship as v0.12.0.
 - **Weeks 6-10**: Pain-specific SOAP template + protocol awareness. Ship as v0.12.x.
 - **Weeks 8-12**: Threat model + security architecture doc. Begin PIPEDA readiness plan.
@@ -312,7 +312,7 @@ Target removal: ~10-15K LOC. Frontend components: `ImageSuggestions.tsx` (437), 
 1. Validate the pain-specialty hypothesis by calling 5 pain clinicians (not surveys; calls). 2 days.
 2. Announce internally: "we are cutting AI images, biomarkers, MIIS, vision experiments, clinical chat — ship v0.11.0 in 2 weeks". 5 days execution.
 3. Ship the 136-commands audit + simplification. 2 days.
-4. Start the `continuous_mode.rs` decomposition. 5 days for Phase 1 (extract detector task).
+4. ~~Start the `continuous_mode.rs` decomposition.~~ **Done** (v0.10.41–v0.10.44, ADR-0029). Shell is now orchestration + outer trigger loop; 8 peer modules own phase logic.
 
 If the pain-clinician calls are lukewarm, pivot to another specialty or consider Path A seriously. But decide — don't add more scribe features to a generic-scribe surface in April 2026.
 

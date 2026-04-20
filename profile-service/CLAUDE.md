@@ -79,7 +79,7 @@ Middleware stack (outermost → innermost): CORS → body limit (500 MB) → aut
 Four independent config sections share `config_version.json` (single shared counter, bumped on any update):
 - **PromptTemplates** (`prompt_templates.json`) — LLM prompt overrides
 - **BillingData** (`billing_data.json`) — OHIP codes + rule tables
-- **DetectionThresholds** (`detection_thresholds.json`) — algorithm internals: word thresholds (force-check/split, absolute cap, multi-patient), confidence gates, timeouts, Cat A extensions (`multi_patient_detect_word_threshold`, `vision_skip_streak_k`, `vision_skip_call_cap`, `gemini_generation_timeout_secs`, `detection_prompt_max_words`)
+- **DetectionThresholds** (`detection_thresholds.json`) — algorithm internals: word thresholds (force-check/split, absolute cap, multi-patient), confidence gates, timeouts, Cat A extensions (`multi_patient_detect_word_threshold`, `vision_skip_streak_k`, `vision_skip_call_cap`, `vision_re_sample_interval_secs`, `gemini_generation_timeout_secs`, `detection_prompt_max_words`)
 - **OperationalDefaults** (`operational_defaults.json`) — admin-facing knobs: sleep hours (start/end), thermal/CO2 baselines, encounter intervals (check/silence), 4 model aliases (soap_model, soap_model_fast, fast_model, encounter_detection_model). `validate()` enforces bounds (sleep hours 0-23 and must differ; thermal 20-40°C; CO2 300-600 ppm; check interval 10-3600s; silence trigger 5-600s; non-empty model aliases) — invalid PUT returns 400.
 
 ## Data Storage

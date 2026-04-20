@@ -73,7 +73,8 @@ cd tauri-app/src-tauri && cargo check     # Backend
 
 # Tests
 cd tauri-app && pnpm test:run             # Frontend (Vitest, 594 passing across 32 files)
-cd tauri-app/src-tauri && cargo test --lib   # Backend lib (1,125 passing, 30 ignored)
+cd tauri-app/src-tauri && cargo test --lib   # Backend lib (1,170 passing, 30 ignored)
+cd tauri-app/src-tauri && cargo test --test harness_per_encounter  # Per-encounter snapshot harness (10 seed bundles)
 
 # E2E (requires live STT + LLM Router)
 cd tauri-app/src-tauri && cargo test e2e_ -- --ignored --nocapture
@@ -102,7 +103,7 @@ cd ios && xcodegen generate                # Regenerate Xcode project
 
 # Release (triggers auto-update for all rooms)
 # Bump version in tauri.conf.json + package.json + src-tauri/Cargo.toml, then:
-git tag v0.10.39   # use the next patch version
+git tag v0.10.46   # use the next patch version
 git push origin main --tags
 ```
 

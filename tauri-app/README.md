@@ -90,7 +90,7 @@ open "src-tauri/target/debug/bundle/macos/AMI Assist.app"
 
 ```bash
 # Bump version in tauri.conf.json + package.json + src-tauri/Cargo.toml, then:
-git tag v0.10.34
+git tag v0.10.46   # use the next patch version
 git push origin main --tags
 # GitHub Actions builds, signs, and publishes to Releases
 # All running rooms detect the update on next launch

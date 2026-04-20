@@ -168,7 +168,8 @@ cd src-tauri && cargo check      # Rust compile check
 
 # Tests
 pnpm test:run                    # Frontend (Vitest, 594 passing across 32 files)
-cd src-tauri && cargo test --lib # Rust lib (1,125 passing, 30 ignored)
+cd src-tauri && cargo test --lib # Rust lib (1,170 passing, 30 ignored)
+cd src-tauri && cargo test --test harness_per_encounter  # Per-encounter snapshot harness (10 seed bundles)
 cd ../profile-service && cargo test  # Profile service (66 passing across 7 test files)
 
 # Daily preflight (verifies STT + LLM + Archive before clinic)
@@ -724,3 +725,12 @@ See `docs/adr/` for Architecture Decision Records:
 | 0018 | MIIS medical illustration integration |
 | 0019 | Continuous charting mode (end of day) |
 | 0020 | STT Router streaming integration |
+| 0021 | FHO+ billing engine |
+| 0022 | Manual audio upload |
+| 0023 | Server-configurable data |
+| 0024 | Hybrid encounter detection |
+| 0025 | Multi-sensor presence suite |
+| 0026 | Sleep mode |
+| 0027 | Retrospective multi-patient check |
+| 0028 | Replay logging architecture |
+| 0029 | Continuous-mode detector decomposition |
