@@ -129,16 +129,22 @@ pub async fn run_screenshot_task(cfg: ScreenshotTaskConfig) {
             }
         };
 
-        // Vision early-stop gate (Apr 17 2026). Screenshots are already buffered
-        // above, so the audit trail is preserved — only the vision LLM call is
-        // skipped. Skip fires when either:
-        //   • the tracker has accumulated K consecutive matching votes (confident)
-        //   • the encounter has already burned the per-encounter cap
-        // Both state fields are reset by `PatientNameTracker::reset()` on split.
+        // Vision early-stop gate (Apr 17 2026) + re-sample throttle (v0.10.45).
+        // Screenshots are already buffered above, so the audit trail is preserved —
+        // only the vision LLM call is gated. Skip fires when EITHER
+        //   • streak_count ≥ vision_skip_streak_k (confident majority), OR
+        //   • vision_calls_attempted ≥ vision_skip_call_cap (pathological fallback)
+        // AND the last vision call is younger than vision_re_sample_interval_secs.
+        // The re-sample window lets mid-encounter chart switches be detected
+        // (Apr 20 2026 Room 2 Shelley/Richard mislabel). All tracker state is
+        // reset by `PatientNameTracker::reset()` on split.
+        let now = Utc::now();
         let should_skip = cfg.name_tracker.lock().ok()
             .map(|t| t.should_skip_vision(
                 cfg.thresholds.vision_skip_streak_k,
                 cfg.thresholds.vision_skip_call_cap,
+                now,
+                cfg.thresholds.vision_re_sample_interval_secs,
             ))
             .unwrap_or(false);
         if should_skip {
@@ -151,10 +157,11 @@ pub async fn run_screenshot_task(cfg: ScreenshotTaskConfig) {
             continue;
         }
 
-        // Bump the attempt counter BEFORE invoking vision so the cap counts
-        // failures too (a timed-out or unparseable response still burned LLM budget).
+        // Bump the attempt counter + stamp the call time BEFORE invoking vision
+        // so the cap counts failures too and the re-sample throttle sees the
+        // attempt (timed-out / unparseable responses still burned LLM budget).
         if let Ok(mut t) = cfg.name_tracker.lock() {
-            t.note_vision_attempt();
+            t.note_vision_attempt_at(now);
         }
 
         let (system_prompt, user_text) = build_patient_name_prompt(None);
@@ -191,9 +198,23 @@ pub async fn run_screenshot_task(cfg: ScreenshotTaskConfig) {
                 let vision_latency = vision_start.elapsed().as_millis() as u64;
                 let (parsed_name, parsed_dob) = parse_vision_response(&response);
 
-                // Store DOB if found (most recent extraction wins)
-                if let Some(ref dob) = parsed_dob {
-                    if let Ok(mut tracker) = cfg.name_tracker.lock() {
+                // DOB cross-check (v0.10.45). If the incoming DOB differs from
+                // the stored one, the EMR has switched patients mid-encounter —
+                // invalidate accumulated name votes so the new patient's name
+                // can win majority on its own (Apr 20 2026 Room 2 Shelley leak).
+                // Also updates the stored DOB via the standard most-recent-wins
+                // rule for downstream billing + archival.
+                if let Ok(mut tracker) = cfg.name_tracker.lock() {
+                    if tracker.invalidate_on_dob_mismatch(parsed_dob.as_deref()) {
+                        info!(
+                            event = "vision_dob_mismatch_invalidation",
+                            component = "screenshot_task",
+                            old_dob = ?tracker.dob(),
+                            new_dob = ?parsed_dob,
+                            "DOB changed mid-encounter — cleared name votes for fresh majority",
+                        );
+                    }
+                    if let Some(ref dob) = parsed_dob {
                         tracker.set_dob(dob.clone());
                     }
                 }

@@ -7,6 +7,8 @@
 
 use std::collections::HashMap;
 
+use chrono::{DateTime, Utc};
+
 /// Tracks patient name votes from periodic screenshot analysis.
 /// Uses recency-weighted voting: later screenshots count more than earlier ones,
 /// since clinicians often open the patient chart after the encounter starts.
@@ -30,11 +32,17 @@ pub struct PatientNameTracker {
     /// for them — the tracker only sees successful extractions.
     streak_count: usize,
     /// Total vision LLM calls attempted for this encounter (incremented by the
-    /// screenshot task via `note_vision_attempt()` BEFORE each call, including
+    /// screenshot task via `note_vision_attempt_at()` BEFORE each call, including
     /// ones that will fail or return empty). Used as a backstop cap so a
     /// pathological encounter with never-stable names doesn't burn unbounded
     /// LLM budget. Reset on `reset()`.
     vision_calls_attempted: usize,
+    /// Timestamp of the most recent vision call (set by
+    /// `note_vision_attempt_at`). `should_skip_vision` uses this to throttle
+    /// re-sampling after early-stop has fired — a chart-switch mid-encounter
+    /// (Apr 20 2026 Room 2 Shelley/Richard mislabel) would otherwise lock in
+    /// the pre-switch name forever.
+    last_vision_call_at: Option<DateTime<Utc>>,
 }
 
 impl PatientNameTracker {
@@ -47,6 +55,7 @@ impl PatientNameTracker {
             streak_name: None,
             streak_count: 0,
             vision_calls_attempted: 0,
+            last_vision_call_at: None,
         }
     }
 
@@ -68,11 +77,21 @@ impl PatientNameTracker {
         }
     }
 
-    /// Bump the attempted-call counter. The screenshot task calls this BEFORE
-    /// each vision LLM invocation so the cap counts failures, parse errors, and
-    /// empty responses too — all of which burn LLM budget even when they don't
-    /// result in a recorded vote.
-    pub fn note_vision_attempt(&mut self) {
+    /// Bump the attempted-call counter and stamp the call time. Callers invoke
+    /// this BEFORE each vision LLM request so the cap counts failures, parse
+    /// errors, and empty responses too — all of which burn LLM budget even
+    /// when they don't result in a recorded vote. The timestamp feeds
+    /// `should_skip_vision`'s re-sample cadence.
+    pub fn note_vision_attempt_at(&mut self, now: DateTime<Utc>) {
+        self.vision_calls_attempted += 1;
+        self.last_vision_call_at = Some(now);
+    }
+
+    /// Test-only shim: bumps the counter without touching the timestamp.
+    /// Production callers must use `note_vision_attempt_at` so re-sample
+    /// throttling works.
+    #[cfg(test)]
+    fn note_vision_attempt(&mut self) {
         self.vision_calls_attempted += 1;
     }
 
@@ -88,20 +107,39 @@ impl PatientNameTracker {
 
     /// Should the screenshot task skip the next vision LLM call?
     ///
-    /// Two conditions are OR'd:
-    ///   • `streak_count >= streak_k`: we've seen K consecutive recorded votes
-    ///     for the same name, so the tracker has high confidence in the majority.
-    ///   • `vision_calls_attempted >= cap`: pathological fallback — an encounter
-    ///     that keeps flipping between names would otherwise burn unbounded
-    ///     LLM budget. Stop after `cap` attempts regardless of agreement.
+    /// Early-stop fires when either:
+    ///   • `streak_count >= streak_k`: K consecutive recorded votes for the
+    ///     same name, so the tracker has high confidence in the majority.
+    ///   • `vision_calls_attempted >= cap`: pathological fallback — an
+    ///     encounter that keeps flipping between names would otherwise burn
+    ///     unbounded LLM budget.
     ///
-    /// Screenshots are still captured and archived when this returns true —
-    /// only the vision LLM call is skipped. Calibrated from the Apr 16 2026
-    /// forensic analysis: `streak_k=5, cap=30` cuts vision calls by ~78% on a
-    /// normal clinic day while preserving behavior on ambiguous (couples/
-    /// family) visits.
-    pub fn should_skip_vision(&self, streak_k: usize, cap: usize) -> bool {
-        self.streak_count >= streak_k || self.vision_calls_attempted >= cap
+    /// Once early-stop fires, calls are throttled rather than skipped
+    /// outright: if the most recent call is older than
+    /// `re_sample_interval_secs`, one additional call is allowed through so a
+    /// chart switch mid-encounter can re-open the voting (Apr 20 2026 Room 2
+    /// Shelley/Richard mislabel).
+    ///
+    /// Screenshots are still captured and archived either way — only the
+    /// vision LLM call is gated. Calibrated from Apr 16 2026: `streak_k=5,
+    /// cap=30` cut vision calls by ~78% on a stable clinic day; the
+    /// `re_sample_interval` adds back periodic chart-change detection.
+    pub fn should_skip_vision(
+        &self,
+        streak_k: usize,
+        cap: usize,
+        now: DateTime<Utc>,
+        re_sample_interval_secs: u64,
+    ) -> bool {
+        let early_stop_fired =
+            self.streak_count >= streak_k || self.vision_calls_attempted >= cap;
+        if !early_stop_fired {
+            return false;
+        }
+        match self.last_vision_call_at {
+            Some(last) => (now - last).num_seconds() < re_sample_interval_secs as i64,
+            None => false,
+        }
     }
 
     /// Returns the name with the highest recency-weighted total, or None if no votes recorded
@@ -142,6 +180,32 @@ impl PatientNameTracker {
         self.streak_name = None;
         self.streak_count = 0;
         self.vision_calls_attempted = 0;
+        self.last_vision_call_at = None;
+    }
+
+    /// If `new_dob` is Some and differs from the previously-stored DOB, clear
+    /// name votes + streak + majority (treat as an EMR chart switch mid-
+    /// encounter). Returns `true` iff the mismatch fired.
+    ///
+    /// `vision_calls_attempted` and `last_vision_call_at` are intentionally
+    /// preserved so the per-encounter cap still bounds LLM budget across the
+    /// invalidation. The caller is responsible for updating `dob` via
+    /// `set_dob()` after checking mismatch — this method deliberately leaves
+    /// the DOB field alone so tests can assert the pre/post invalidation
+    /// state.
+    pub fn invalidate_on_dob_mismatch(&mut self, new_dob: Option<&str>) -> bool {
+        let mismatch = matches!(
+            (self.dob.as_deref(), new_dob),
+            (Some(old), Some(new)) if old != new
+        );
+        if mismatch {
+            self.previous_name = self.majority_name();
+            self.votes.clear();
+            self.vote_seq = 0;
+            self.streak_name = None;
+            self.streak_count = 0;
+        }
+        mismatch
     }
 
     /// Store the patient's date of birth (most recent extraction wins, no voting needed).
@@ -693,15 +757,23 @@ mod tests {
         assert_eq!(t.streak_count(), 2, "streak preserved across failed attempts");
     }
 
+    /// Helper: drive one "successful vision call" — stamp the call time and
+    /// record a name. Mirrors production semantics in screenshot_task.rs.
+    fn record_with_attempt(t: &mut PatientNameTracker, name: &str, at: DateTime<Utc>) {
+        t.note_vision_attempt_at(at);
+        t.record(name);
+    }
+
     #[test]
     fn should_skip_vision_fires_at_streak_threshold() {
         let mut t = PatientNameTracker::new();
+        let now = Utc::now();
         for _ in 0..4 {
-            t.record("Pani");
-            assert!(!t.should_skip_vision(5, 30), "not yet at streak=5");
+            record_with_attempt(&mut t, "Pani", now);
+            assert!(!t.should_skip_vision(5, 30, now, 600), "not yet at streak=5");
         }
-        t.record("Pani");
-        assert!(t.should_skip_vision(5, 30), "streak=5 triggers skip");
+        record_with_attempt(&mut t, "Pani", now);
+        assert!(t.should_skip_vision(5, 30, now, 600), "streak=5 triggers skip");
     }
 
     #[test]
@@ -709,35 +781,107 @@ mod tests {
         // Worst case: names keep flipping so streak never reaches K, but we
         // still stop at the cap so LLM budget is bounded.
         let mut t = PatientNameTracker::new();
+        let now = Utc::now();
         for i in 0..30 {
-            t.note_vision_attempt();
-            // Alternate names so streak never exceeds 1
+            t.note_vision_attempt_at(now);
             t.record(if i % 2 == 0 { "A" } else { "B" });
         }
         assert_eq!(t.streak_count(), 1);
-        assert!(t.should_skip_vision(5, 30), "cap=30 reached");
+        assert!(t.should_skip_vision(5, 30, now, 600), "cap=30 reached");
     }
 
     #[test]
     fn reset_clears_streak_and_attempts() {
         let mut t = PatientNameTracker::new();
-        t.record("Pani");
-        t.record("Pani");
-        t.record("Pani");
-        t.note_vision_attempt();
-        t.note_vision_attempt();
+        let now = Utc::now();
+        record_with_attempt(&mut t, "Pani", now);
+        record_with_attempt(&mut t, "Pani", now);
+        record_with_attempt(&mut t, "Pani", now);
         t.reset();
         assert_eq!(t.streak_count(), 0);
         assert_eq!(t.vision_calls_attempted(), 0);
-        assert!(!t.should_skip_vision(5, 30));
+        assert!(!t.should_skip_vision(5, 30, now, 600));
     }
 
     #[test]
     fn should_skip_vision_uses_or_logic() {
         let mut t = PatientNameTracker::new();
-        // Five consecutive votes — streak fires independent of attempt count
-        for _ in 0..5 { t.record("Pani"); }
-        assert!(t.should_skip_vision(5, 100), "streak branch fires even with cap far away");
+        let now = Utc::now();
+        for _ in 0..5 { record_with_attempt(&mut t, "Pani", now); }
+        assert!(
+            t.should_skip_vision(5, 100, now, 600),
+            "streak branch fires even with cap far away"
+        );
+    }
+
+    // ── Re-sample throttle + DOB invalidation (v0.10.45) ──
+
+    #[test]
+    fn should_skip_vision_re_samples_after_interval() {
+        // Early-stop fires after K=5 matching votes. 10 minutes later (> the
+        // 600s re-sample interval), the gate should OPEN to allow one more
+        // call — this is the Apr 20 Room 2 Shelley fix.
+        let mut t = PatientNameTracker::new();
+        let start = Utc::now();
+        for _ in 0..5 { record_with_attempt(&mut t, "Richard", start); }
+        assert!(t.should_skip_vision(5, 30, start, 600), "locks immediately after streak");
+
+        let later = start + chrono::Duration::seconds(599);
+        assert!(t.should_skip_vision(5, 30, later, 600), "still locked at 599s");
+
+        let way_later = start + chrono::Duration::seconds(700);
+        assert!(
+            !t.should_skip_vision(5, 30, way_later, 600),
+            "re-sample gate opens past interval"
+        );
+    }
+
+    #[test]
+    fn should_skip_vision_does_not_skip_before_early_stop() {
+        // Throttle only applies AFTER early-stop fires. Below the threshold,
+        // every call goes through regardless of how recent the last one was.
+        let mut t = PatientNameTracker::new();
+        let now = Utc::now();
+        record_with_attempt(&mut t, "Pani", now);
+        assert!(!t.should_skip_vision(5, 30, now, 600), "no skip below streak threshold");
+    }
+
+    #[test]
+    fn dob_mismatch_invalidates_votes_and_streak() {
+        let mut t = PatientNameTracker::new();
+        let now = Utc::now();
+        for _ in 0..5 { record_with_attempt(&mut t, "Richard Mallett", now); }
+        t.set_dob("1950-01-15".into());
+        assert_eq!(t.streak_count(), 5);
+        assert_eq!(t.majority_name(), Some("Richard Mallett".to_string()));
+
+        let fired = t.invalidate_on_dob_mismatch(Some("1970-05-19"));
+        assert!(fired, "different DOB should trigger invalidation");
+        assert_eq!(t.streak_count(), 0, "streak cleared");
+        assert_eq!(t.majority_name(), None, "votes cleared");
+        assert_eq!(t.previous_name(), Some("Richard Mallett"), "outgoing saved");
+        assert_eq!(t.vision_calls_attempted(), 5, "attempt counter preserved");
+    }
+
+    #[test]
+    fn dob_mismatch_does_not_fire_for_same_dob() {
+        let mut t = PatientNameTracker::new();
+        record_with_attempt(&mut t, "Richard", Utc::now());
+        t.set_dob("1950-01-15".into());
+        assert!(!t.invalidate_on_dob_mismatch(Some("1950-01-15")), "same DOB: no-op");
+        assert_eq!(t.streak_count(), 1, "streak preserved");
+    }
+
+    #[test]
+    fn dob_mismatch_does_not_fire_for_none_or_first_read() {
+        let mut t = PatientNameTracker::new();
+        record_with_attempt(&mut t, "Shelley", Utc::now());
+        // First DOB ever seen: no previous value, so no mismatch.
+        assert!(!t.invalidate_on_dob_mismatch(Some("1970-05-19")));
+        t.set_dob("1970-05-19".into());
+        // None on a later call is ambiguous — don't invalidate.
+        assert!(!t.invalidate_on_dob_mismatch(None));
+        assert_eq!(t.streak_count(), 1, "streak preserved on None");
     }
 
     #[test]

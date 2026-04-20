@@ -992,6 +992,11 @@ pub struct DetectionThresholds {
     /// Pathological backstop cap on vision calls per encounter (default: 30)
     #[serde(default = "default_vision_skip_call_cap")]
     pub vision_skip_call_cap: usize,
+    /// Minimum seconds between vision LLM calls once early-stop has fired.
+    /// Allows mid-encounter chart switches to be re-sampled rather than
+    /// permanently locked to the first-settled name. Default: 600 (10 min).
+    #[serde(default = "default_vision_re_sample_interval_secs")]
+    pub vision_re_sample_interval_secs: u64,
     /// Gemini image generation HTTP timeout in seconds (default: 45)
     #[serde(default = "default_gemini_generation_timeout_secs")]
     pub gemini_generation_timeout_secs: u64,
@@ -1024,6 +1029,7 @@ fn default_28() -> u32 { 28 }
 fn default_mp_detect_word_threshold() -> usize { 500 }
 fn default_vision_skip_streak_k() -> usize { 5 }
 fn default_vision_skip_call_cap() -> usize { 30 }
+fn default_vision_re_sample_interval_secs() -> u64 { 600 }
 fn default_gemini_generation_timeout_secs() -> u64 { 45 }
 fn default_detection_prompt_max_words() -> usize { 6000 }
 
@@ -1055,6 +1061,7 @@ impl Default for DetectionThresholds {
             multi_patient_detect_word_threshold: 500,
             vision_skip_streak_k: 5,
             vision_skip_call_cap: 30,
+            vision_re_sample_interval_secs: 600,
             gemini_generation_timeout_secs: 45,
             detection_prompt_max_words: 6000,
         }

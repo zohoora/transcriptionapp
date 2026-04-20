@@ -156,9 +156,14 @@ The profile service on the MacBook is auto-deployed via launchd. The `com.fabric
 
 LLM calls emit per-call `CallMetrics` (wall_ms, scheduling_ms, network_ms, concurrent_at_start, retry_count) that's folded into each `pipeline_log.jsonl` event's context. At `continuous_mode_stopped` a `performance_summary.json` is written to `archive/YYYY/MM/DD/` with per-step latency percentiles, failure counts, and the scheduling-vs-network split. Makes tail attribution ("is the LLM slow or is our async runtime sleeping?") a one-file lookup instead of a per-session parse. Coverage: encounter_detection, billing_extraction, encounter_merge, clinical_content_check, vision_extraction. Not yet migrated: soap_generation, multi_patient_detect (go through higher-level client wrappers).
 
-## Vision early-stop (v0.10.37+)
+## Vision early-stop (v0.10.37, throttle + DOB invalidation in v0.10.45)
 
 Screenshot task skips vision LLM calls once `PatientNameTracker` has K=5 consecutive matching votes (or cap=30 total per encounter). Screenshots still captured + archived for audit. Calibrated from the Apr 16 Room 6 audit: ~78% vision-call reduction (329 → ~70/day) with no downstream behavior change on stable encounters.
+
+**v0.10.45 guards** against mid-encounter chart switches (Apr 20 Room 2 Shelley/Richard root cause):
+
+1. **Re-sample throttle**: even after early-stop fires, vision is re-sampled every `vision_re_sample_interval_secs` (default 600s / 10 min). A chart switch during a 40-minute encounter is detected within one interval instead of locked to the pre-switch name.
+2. **DOB invalidation**: when the vision-extracted DOB changes mid-encounter, name votes + streak are cleared — the EMR clearly switched patients, so the old majority no longer applies. `vision_calls_attempted` and `last_vision_call_at` are preserved so the per-encounter cap still bounds budget across the invalidation.
 
 ## Forward-merge cleanup (v0.10.43+)
 
