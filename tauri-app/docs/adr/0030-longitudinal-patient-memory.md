@@ -125,3 +125,19 @@ The verification exposed a duplicate-Patient-on-re-confirm bug in v0.10.46:
 ### DELETE route (v0.10.47)
 
 Added `DELETE /physicians/:id/patients/:patient_id` + `PatientManager::delete()` for admin cleanup (test artifacts, mis-confirmations, DOB-typo duplicates). Index rebuild after remove preserves `(name_normalized, dob)` and `patient_id` lookups. 2 store tests + 2 integration tests.
+
+### Medplum auth proxy (v0.10.49)
+
+Apr 21 clinic day exposed that interactive Medplum OAuth PKCE on every workstation is operationally fragile — Room 6's local auth state had no refresh_token and the first confirm attempt silently skipped the EMR step ("Medplum not authenticated"). Fix: added a `POST /medplum/token` route on profile-service that performs `client_credentials` grant using server-held `MEDPLUM_BASE_URL` / `MEDPLUM_CLIENT_ID` / `MEDPLUM_CLIENT_SECRET` env vars (configured in the launchd plist). In-memory token cache with a 60-second refresh margin avoids re-minting on every request.
+
+Tauri side: `ProfileClient::fetch_medplum_token` + `MedplumClient::inject_proxy_token` — when `confirm_session_patient` sees `is_authenticated() == false` it fetches a proxy token and injects it into the client's `auth_state` before the `sync_continuous_session` call. Client-credential tokens attribute operations to the ClientApplication by default, so the command ALSO threads the active physician's `medplum_practitioner_id` (a new field on `PhysicianProfile`) through `sync_continuous_session` → `create_encounter` so FHIR Encounter participants point at the real Practitioner even when running on a service-minted token.
+
+Server config:
+```
+MEDPLUM_BASE_URL=http://10.241.15.154:8103
+MEDPLUM_CLIENT_ID=<FabricEMR Default Client UUID>
+MEDPLUM_CLIENT_SECRET=<ClientApplication secret>
+```
+Stored in `~/Library/LaunchAgents/com.fabricscribe.profile-service.plist` under `EnvironmentVariables`. Secret lives on the MacBook only; rotating = edit plist + `launchctl kickstart -k`.
+
+Per-physician Practitioner resource: `PUT /physicians/:id` with `{"medplum_practitioner_id": "<fhir-id>"}`. Created manually for Dr Zohoor during rollout; for new physicians, the admin panel UI or a one-time bootstrap script writes this. Falls back gracefully when unset (FHIR resources still created, participant defaults to ClientApplication).

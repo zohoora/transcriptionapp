@@ -1,6 +1,7 @@
 pub mod config_data;
 pub mod health;
 pub mod infrastructure;
+pub mod medplum_auth;
 pub mod mobile;
 pub mod patients;
 pub mod physicians;
@@ -133,6 +134,10 @@ pub fn build_router(state: Arc<AppState>) -> Router {
             "/physicians/:physician_id/day-log/:date",
             put(sessions::upload_day_log).get(sessions::download_day_log),
         )
+        // Medplum client_credentials token proxy (v0.10.49+). Mints FHIR
+        // access tokens for rooms using server-held MEDPLUM_CLIENT_*
+        // env vars. Returns 500 if env vars not configured.
+        .route("/medplum/token", post(medplum_auth::token))
         // Longitudinal patient memory (v0.10.46+) — /confirm must be registered
         // before the /:patient_id route or it will be shadowed by the wildcard.
         .route(

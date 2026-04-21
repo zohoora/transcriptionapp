@@ -603,6 +603,35 @@ impl MedplumClient {
         AuthState::delete_file();
     }
 
+    /// Inject a token obtained via the profile-service proxy (v0.10.49+).
+    /// Used as a fallback when OAuth PKCE hasn't been done interactively on
+    /// this workstation. Sets `is_authenticated`, `access_token`, and
+    /// `token_expiry` so the existing `get_valid_token` path works; also
+    /// sets `practitioner_id` when supplied so `create_encounter` attributes
+    /// FHIR Encounter participants to the physician rather than the
+    /// ClientApplication. No `refresh_token` is stored (proxy tokens are
+    /// short-lived; the caller re-mints on next expiry).
+    pub async fn inject_proxy_token(
+        &self,
+        access_token: String,
+        expires_in_secs: u64,
+        practitioner_fhir_id: Option<String>,
+    ) -> Result<(), MedplumError> {
+        let mut state = self.auth_state.write().await;
+        state.is_authenticated = true;
+        state.access_token = Some(access_token);
+        state.refresh_token = None;
+        state.token_expiry = Some(Utc::now().timestamp() + expires_in_secs as i64);
+        if let Some(pid) = practitioner_fhir_id {
+            state.practitioner_id = Some(pid);
+        }
+        state.practitioner_name = state
+            .practitioner_name
+            .clone()
+            .or_else(|| Some("FabricScribe Service".to_string()));
+        Ok(())
+    }
+
     /// Get access token, refreshing if needed.
     /// Uses a double-check pattern with refresh_lock to prevent concurrent refresh attempts.
     async fn get_valid_token(&self) -> Result<String, MedplumError> {
@@ -1693,6 +1722,12 @@ impl MedplumClient {
     /// transcript DocumentReference (if present) → mark Encounter finished
     /// with the recorded start/end period.
     ///
+    /// `practitioner_fhir_id` (v0.10.49+) overrides the auth-state's
+    /// Practitioner reference when set — the confirm flow passes the active
+    /// physician's `medplum_practitioner_id` so FHIR Encounter participants
+    /// point at the real Practitioner even when we're using a
+    /// ClientApplication-owned access token via the profile-service proxy.
+    ///
     /// Fail-open on document attach failures (partial success still useful).
     /// Returns the full sync record for the tauri-side to persist in
     /// `ArchiveMetadata.medplum_patient_id`.
@@ -1706,7 +1741,16 @@ impl MedplumClient {
         transcript: Option<&str>,
         session_started_at_rfc3339: &str,
         session_duration_ms: u64,
+        practitioner_fhir_id: Option<&str>,
     ) -> Result<MedplumSessionSync, MedplumError> {
+        // If a Practitioner is supplied (via physician config), pin it into
+        // auth_state so create_encounter picks it up. Persists across the
+        // rest of the sync; no effect when None (falls back to auth-state
+        // as before).
+        if let Some(pid) = practitioner_fhir_id {
+            let mut state = self.auth_state.write().await;
+            state.practitioner_id = Some(pid.to_string());
+        }
         let patient = self.upsert_patient_by_name_dob(name, dob).await?;
         let encounter = self.create_encounter(&patient.id).await?;
 

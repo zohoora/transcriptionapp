@@ -593,6 +593,34 @@ impl ProfileClient {
         Ok(out)
     }
 
+    /// Mint a Medplum access token via the profile-service token proxy
+    /// (v0.10.49+). Used as a fallback when the local Medplum OAuth auth
+    /// state is missing/expired — the server holds the ClientApplication
+    /// secret and performs `client_credentials` grant on our behalf.
+    pub async fn fetch_medplum_token(&self) -> Result<(String, u64)> {
+        let url = format!("{}/medplum/token", self.base_url());
+        let resp = self
+            .with_auth(self.client.post(&url))
+            .send()
+            .await?;
+        if !resp.status().is_success() {
+            let status = resp.status();
+            let text = resp.text().await.unwrap_or_default();
+            anyhow::bail!(
+                "Medplum token proxy failed: {} - {}",
+                status,
+                &text[..text.len().min(200)]
+            );
+        }
+        let v: serde_json::Value = resp.json().await?;
+        let token = v["access_token"]
+            .as_str()
+            .ok_or_else(|| anyhow::anyhow!("proxy response missing access_token"))?
+            .to_string();
+        let expires_in = v["expires_in"].as_u64().unwrap_or(3600);
+        Ok((token, expires_in))
+    }
+
     /// Look up an existing patient by exact (name, dob). Returns None when
     /// no match — used by the follow-up SOAP-context injection feature; not
     /// called from the confirm path itself (server upserts via `confirm`).

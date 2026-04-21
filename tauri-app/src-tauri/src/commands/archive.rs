@@ -453,11 +453,58 @@ pub async fn confirm_session_patient(
     local_archive::update_patient_name(&session_id, &date, &patient_name)
         .map_err(|e| CommandError::Other(format!("local archive update_patient_name: {e}")))?;
 
-    // Step B — Medplum. Skip cleanly if unauthenticated or unreachable.
-    // MedplumClient is not Clone, so we hold the read-guard for the call.
+    // Pull the active physician's Medplum Practitioner ID (if configured)
+    // — threaded into sync_continuous_session so FHIR Encounter participants
+    // point at the physician rather than the ClientApplication even when
+    // we're running on a proxy-minted token.
+    let practitioner_fhir_id: Option<String> = {
+        let guard = active_physician.read().await;
+        guard.as_ref().and_then(|p| p.medplum_practitioner_id.clone())
+    };
+
+    // Step B — Medplum. If local OAuth auth isn't valid, try minting a
+    // token via the profile-service proxy (v0.10.49+). Skip the step
+    // entirely only when neither path is available.
     {
         let guard = medplum_client.read().await;
         if let Some(client) = guard.as_ref() {
+            // If local auth isn't usable, try the proxy path.
+            if !client.is_authenticated().await {
+                let pf = profile_client.read().await.clone();
+                if let Some(pf) = pf {
+                    match pf.fetch_medplum_token().await {
+                        Ok((token, expires_in)) => {
+                            if let Err(e) = client
+                                .inject_proxy_token(
+                                    token,
+                                    expires_in,
+                                    practitioner_fhir_id.clone(),
+                                )
+                                .await
+                            {
+                                warn!(
+                                    event = "confirm_patient_proxy_inject_failed",
+                                    error = %e
+                                );
+                                errors.push(format!("medplum_proxy_inject: {e}"));
+                            } else {
+                                info!(
+                                    event = "confirm_patient_proxy_token_minted",
+                                    "minted Medplum access token via profile-service proxy"
+                                );
+                            }
+                        }
+                        Err(e) => {
+                            warn!(
+                                event = "confirm_patient_proxy_mint_failed",
+                                error = %e
+                            );
+                            errors.push(format!("medplum_proxy_mint: {e}"));
+                        }
+                    }
+                }
+            }
+
             if client.is_authenticated().await {
                 match client
                     .sync_continuous_session(
@@ -468,6 +515,7 @@ pub async fn confirm_session_patient(
                         transcript.as_deref(),
                         &session_started_at,
                         session_duration_ms,
+                        practitioner_fhir_id.as_deref(),
                     )
                     .await
                 {
@@ -484,7 +532,7 @@ pub async fn confirm_session_patient(
                     }
                 }
             } else {
-                info!("Medplum not authenticated — skipping EMR write");
+                info!("Medplum not authenticated (local or proxy) — skipping EMR write");
             }
         }
     }

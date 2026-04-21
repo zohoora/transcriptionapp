@@ -38,6 +38,9 @@ pub fn create_app_state(data_dir: &Path) -> Arc<AppState> {
         .expect("Failed to load config data");
     let patients = store::patients::PatientManager::load(data_dir.join("patients.json"))
         .expect("Failed to load patients");
+    let medplum_auth = store::medplum_auth::MedplumAuthProxy::new(
+        store::medplum_auth::MedplumAuthConfig::from_env(),
+    );
 
     Arc::new(AppState {
         physicians: RwLock::new(physicians),
@@ -48,6 +51,7 @@ pub fn create_app_state(data_dir: &Path) -> Arc<AppState> {
         mobile_jobs: RwLock::new(mobile_jobs),
         config_data: RwLock::new(config_data),
         patients: RwLock::new(patients),
+        medplum_auth,
         data_dir: data_dir.to_path_buf(),
     })
 }

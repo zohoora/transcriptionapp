@@ -1,5 +1,6 @@
 pub mod config_data;
 pub mod infrastructure;
+pub mod medplum_auth;
 pub mod mobile_jobs;
 pub mod patients;
 pub mod physicians;
@@ -19,5 +20,6 @@ pub struct AppState {
     pub mobile_jobs: RwLock<mobile_jobs::MobileJobStore>,
     pub config_data: RwLock<config_data::ConfigDataStore>,
     pub patients: RwLock<patients::PatientManager>,
+    pub medplum_auth: medplum_auth::MedplumAuthProxy,
     pub data_dir: PathBuf,
 }
