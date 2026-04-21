@@ -40,41 +40,41 @@ const MergeConfirmDialog: React.FC<MergeConfirmDialogProps> = ({
     };
 
     return (
-      <div className="cleanup-dialog-overlay" onClick={onCancel}>
-        <div className="cleanup-dialog" onClick={(e) => e.stopPropagation()}>
+      <div className="history-dialog-overlay" onClick={onCancel}>
+        <div className="history-dialog" onClick={(e) => e.stopPropagation()}>
           <h3>Merge Patient Notes</h3>
-          <p className="cleanup-dialog-subtitle">
+          <p className="history-dialog-subtitle">
             These patients were detected in the same encounter. Merging will combine
             them into one patient note using AI to generate a unified SOAP note.
           </p>
-          <ul className="cleanup-dialog-list">
+          <ul className="history-dialog-list">
             {selectedPatientNames.map((name, i) => (
               <li key={i}>
                 <span className="dialog-session-info">{name}</span>
               </li>
             ))}
           </ul>
-          <div className="cleanup-dialog-field">
+          <div className="history-dialog-field">
             <label htmlFor="merged-label">Merged patient name:</label>
             <input
               id="merged-label"
               type="text"
               value={mergedLabel}
               onChange={(e) => setMergedLabel(e.target.value)}
-              className="cleanup-dialog-input"
+              className="history-dialog-input"
               autoFocus
             />
           </div>
-          <p className="cleanup-dialog-warning">
+          <p className="history-dialog-warning">
             A new SOAP note will be generated combining clinical content from all
             selected patients. This corrects the AI's multi-patient detection.
           </p>
-          <div className="cleanup-dialog-actions">
-            <button className="cleanup-dialog-btn cancel" onClick={onCancel} disabled={isMerging}>
+          <div className="history-dialog-actions">
+            <button className="history-dialog-btn cancel" onClick={onCancel} disabled={isMerging}>
               Cancel
             </button>
             <button
-              className="cleanup-dialog-btn confirm"
+              className="history-dialog-btn confirm"
               onClick={handlePatientMerge}
               disabled={isMerging || !mergedLabel.trim()}
             >
@@ -93,13 +93,13 @@ const MergeConfirmDialog: React.FC<MergeConfirmDialogProps> = ({
   const totalWords = sorted.reduce((sum, s) => sum + s.word_count, 0);
 
   return (
-    <div className="cleanup-dialog-overlay" onClick={onCancel}>
-      <div className="cleanup-dialog" onClick={(e) => e.stopPropagation()}>
+    <div className="history-dialog-overlay" onClick={onCancel}>
+      <div className="history-dialog" onClick={(e) => e.stopPropagation()}>
         <h3>Merge {sorted.length} Sessions</h3>
-        <p className="cleanup-dialog-subtitle">
+        <p className="history-dialog-subtitle">
           Sessions will be merged in chronological order. The earliest session survives.
         </p>
-        <ul className="cleanup-dialog-list">
+        <ul className="history-dialog-list">
           {sorted.map((s, i) => (
             <li key={s.session_id} className={i === 0 ? 'merge-target' : ''}>
               <span className="dialog-session-time">{formatLocalTime(s.date)}</span>
@@ -111,17 +111,17 @@ const MergeConfirmDialog: React.FC<MergeConfirmDialogProps> = ({
             </li>
           ))}
         </ul>
-        <div className="cleanup-dialog-meta">
+        <div className="history-dialog-meta">
           Combined: ~{totalWords} words
         </div>
         {sorted.some(s => s.has_soap_note) && (
-          <p className="cleanup-dialog-warning">
+          <p className="history-dialog-warning">
             Existing SOAP notes will be invalidated and need regeneration.
           </p>
         )}
-        <div className="cleanup-dialog-actions">
-          <button className="cleanup-dialog-btn cancel" onClick={onCancel}>Cancel</button>
-          <button className="cleanup-dialog-btn confirm" onClick={onConfirm}>
+        <div className="history-dialog-actions">
+          <button className="history-dialog-btn cancel" onClick={onCancel}>Cancel</button>
+          <button className="history-dialog-btn confirm" onClick={onConfirm}>
             Merge Sessions
           </button>
         </div>

@@ -10,12 +10,12 @@ import { useOllamaConnection } from '../hooks/useOllamaConnection';
 import Calendar from './Calendar';
 import AudioPlayer from './AudioPlayer';
 import {
-  CleanupActionBar,
+  HistoryActionBar,
   DeleteConfirmDialog,
   EditNameDialog,
   MergeConfirmDialog,
 } from './cleanup';
-import ConfirmPatientDialog from './ConfirmPatientDialog';
+import ConfirmPatientsBatchDialog from './ConfirmPatientsBatchDialog';
 import FeedbackPanel from './FeedbackPanel';
 import { BillingTab, DailySummaryView, MonthlySummaryView } from './billing';
 import { formatDateForApi, formatLocalTime, formatLocalDateTime, formatDurationShort } from '../utils';
@@ -37,7 +37,7 @@ import { DETAIL_LEVEL_LABELS } from '../types';
 type DetailTab = 'transcript' | 'soap' | 'handout' | 'billing' | 'insights';
 type RightPaneMode = 'session' | 'daily_billing' | 'monthly_billing';
 type DataSource = 'local' | 'medplum';
-type CleanupDialog = 'none' | 'delete' | 'merge' | 'editName' | 'confirmPatient';
+type ActiveDialog = 'none' | 'delete' | 'merge' | 'editName' | 'confirmPatient';
 type SortField = 'time' | 'encounter' | 'patient' | 'words' | 'duration';
 type SortDir = 'asc' | 'desc';
 type FilterMode = 'all' | 'clinical' | 'non-clinical' | 'soap' | 'no-soap';
@@ -297,11 +297,12 @@ const HistoryWindow: React.FC = () => {
   // Feedback state
   const [feedback, setFeedback] = useState<SessionFeedback | null>(null);
 
-  // Cleanup mode state
-  const [isCleanupMode, setIsCleanupMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const [cleanupDialog, setCleanupDialog] = useState<CleanupDialog>('none');
+  const [activeDialog, setActiveDialog] = useState<ActiveDialog>('none');
   const [cleanupMessage, setCleanupMessage] = useState<string | null>(null);
+  const [confirmPatientSessions, setConfirmPatientSessions] = useState<
+    LocalArchiveDetails[] | null
+  >(null);
 
   // Day feedback modal state
   const [showDayFeedback, setShowDayFeedback] = useState(false);
@@ -843,16 +844,27 @@ const HistoryWindow: React.FC = () => {
   // eslint-disable-next-line react-hooks/exhaustive-deps -- session_id is the meaningful dependency
   }, [activeTab, selectedSession?.session_id, selectedDate]);
 
-  // Escape key clears selection
+  // Escape: clear checkbox selection first, then close the detail pane.
+  // Refs keep the keydown listener stable across selection toggles so we don't
+  // add/remove a window listener on every checkbox click.
+  const selectedIdsRef = useRef(selectedIds);
+  selectedIdsRef.current = selectedIds;
+  const selectedSessionIdRef = useRef(selectedSessionId);
+  selectedSessionIdRef.current = selectedSessionId;
+  const clearSelectionRef = useRef(clearSelection);
+  clearSelectionRef.current = clearSelection;
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && selectedSessionId) {
-        clearSelection();
+      if (e.key !== 'Escape') return;
+      if (selectedIdsRef.current.size > 0) {
+        setSelectedIds(new Set());
+      } else if (selectedSessionIdRef.current) {
+        clearSelectionRef.current();
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [selectedSessionId, clearSelection]);
+  }, []);
 
   const handleCopy = async (text: string, field: string) => {
     try {
@@ -872,18 +884,6 @@ const HistoryWindow: React.FC = () => {
       console.error('Failed to close window:', e);
     }
   };
-
-  // Cleanup mode helpers
-  const toggleCleanupMode = useCallback(() => {
-    setIsCleanupMode(prev => {
-      if (prev) {
-        // Exiting cleanup mode — clear selection
-        setSelectedIds(new Set());
-        setCleanupDialog('none');
-      }
-      return !prev;
-    });
-  }, []);
 
   const toggleEntrySelection = useCallback((key: string) => {
     setSelectedIds(prev => {
@@ -909,7 +909,7 @@ const HistoryWindow: React.FC = () => {
 
   // Post-operation: refresh list, renumber, clear selection, show message
   const afterCleanupOp = useCallback(async (message: string) => {
-    setCleanupDialog('none');
+    setActiveDialog('none');
     setSelectedIds(new Set());
     clearSelection();
     setCleanupMessage(message);
@@ -955,7 +955,7 @@ const HistoryWindow: React.FC = () => {
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
-      setCleanupDialog('none');
+      setActiveDialog('none');
     }
   }, [selectedDate, selectedIds, selectedPatientIndex, selectedSession, afterCleanupOp]);
 
@@ -980,7 +980,7 @@ const HistoryWindow: React.FC = () => {
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       setError(msg);
-      setCleanupDialog('none');
+      setActiveDialog('none');
       // Clear selection so error is visible (error is hidden when a session is selected)
       clearSelection();
     }
@@ -1036,7 +1036,7 @@ const HistoryWindow: React.FC = () => {
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
-      setCleanupDialog('none');
+      setActiveDialog('none');
     }
   }, [selectedDate, selectedIds, afterCleanupOp]);
 
@@ -1060,7 +1060,7 @@ const HistoryWindow: React.FC = () => {
       await afterCleanupOp('Patient name updated');
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
-      setCleanupDialog('none');
+      setActiveDialog('none');
     }
   }, [selectedDate, selectedIds, selectedPatientIndex, selectedSession, afterCleanupOp]);
 
@@ -1160,8 +1160,31 @@ const HistoryWindow: React.FC = () => {
     await afterCleanupOp(`Regenerated SOAP for ${regenCount} session${regenCount !== 1 ? 's' : ''}`);
   }, [selectedDate, selectedSessionIds, soapOptions, generateSoapNote, afterCleanupOp]);
 
-  // Cleanup mode only works with local data source
-  const canCleanup = dataSource === 'local';
+  // Load full details for each selected session so the batch dialog has
+  // SOAP + transcript available for Medplum DocumentReference uploads.
+  const handleOpenConfirmPatient = useCallback(async () => {
+    const dateStr = formatDateForApi(selectedDate);
+    const ids = [...selectedSessionIds];
+    if (ids.length === 0) return;
+    const results = await Promise.all(
+      ids.map((id) =>
+        invoke<LocalArchiveDetails>('get_local_session_details', {
+          sessionId: id,
+          date: dateStr,
+        }).catch((e) => {
+          console.error(`Failed to load details for ${id}:`, e);
+          return null;
+        }),
+      ),
+    );
+    const loaded = results.filter((r): r is LocalArchiveDetails => r !== null);
+    if (loaded.length === 0) {
+      setError('Could not load any selected sessions');
+      return;
+    }
+    setConfirmPatientSessions(loaded);
+    setActiveDialog('confirmPatient');
+  }, [selectedDate, selectedSessionIds]);
 
   // Derived values
   const hasTranscript = editedTranscript.trim().length > 0;
@@ -1175,16 +1198,6 @@ const HistoryWindow: React.FC = () => {
       {/* Shared header */}
       <div className="history-header">
         <h1>Session History</h1>
-        {canCleanup && sessions.length > 0 && (
-          <button
-            className={`cleanup-toggle-btn ${isCleanupMode ? 'active' : ''}`}
-            onClick={toggleCleanupMode}
-            aria-label={isCleanupMode ? 'Exit cleanup mode' : 'Enter cleanup mode'}
-            title={isCleanupMode ? 'Exit cleanup mode' : 'Manage sessions'}
-          >
-            &#9998;
-          </button>
-        )}
         <button className="close-btn" onClick={handleClose} aria-label="Close">
           &times;
         </button>
@@ -1198,7 +1211,7 @@ const HistoryWindow: React.FC = () => {
           <div className="history-left-scroll">
           {/* Success message */}
           {cleanupMessage && (
-            <div className="cleanup-success-message">{cleanupMessage}</div>
+            <div className="history-success-message">{cleanupMessage}</div>
           )}
 
           <div className="calendar-with-today">
@@ -1274,33 +1287,28 @@ const HistoryWindow: React.FC = () => {
                   const multiPatientClasses = entry.patientIndex !== null
                     ? ` multi-patient-group${entry.isGroupFirst ? ' group-first' : ''}${entry.isGroupLast ? ' group-last' : ''}`
                     : '';
-                  const isActive = !isCleanupMode && selectedSessionId === entry.session_id && selectedPatientIndex === entry.patientIndex;
+                  const isActive = selectedSessionId === entry.session_id && selectedPatientIndex === entry.patientIndex;
                   const ek = entryKey(entry);
-                  const isSelected = isCleanupMode && selectedIds.has(ek);
+                  const isSelected = selectedIds.has(ek);
                   const displayName = entry.flattenedPatientName ?? entry.patient_name;
                   return (
                   <div
                     key={ek}
                     className={`session-item${isSelected ? ' selected' : ''}${isActive ? ' active' : ''}${multiPatientClasses}`}
                   >
-                    {isCleanupMode && (
-                      <label className="cleanup-checkbox" onClick={(e) => e.stopPropagation()}>
-                        <input
-                          type="checkbox"
-                          checked={selectedIds.has(ek)}
-                          onChange={() => toggleEntrySelection(ek)}
-                        />
-                      </label>
-                    )}
+                    <label className="history-checkbox" onClick={(e) => e.stopPropagation()}>
+                      <input
+                        type="checkbox"
+                        checked={isSelected}
+                        onChange={() => toggleEntrySelection(ek)}
+                        aria-label={`Select session ${displayName ?? entry.session_id}`}
+                      />
+                    </label>
                     <button
                       className="session-item-body"
                       onClick={() => {
-                        if (isCleanupMode) {
-                          toggleEntrySelection(ek);
-                        } else {
-                          setSelectedPatientIndex(entry.patientIndex);
-                          fetchSessionDetails(entry, entry.patientIndex);
-                        }
+                        setSelectedPatientIndex(entry.patientIndex);
+                        fetchSessionDetails(entry, entry.patientIndex);
                       }}
                     >
                       <div className="session-info">
@@ -1348,26 +1356,21 @@ const HistoryWindow: React.FC = () => {
             )}
           </div>
 
-          {/* Cleanup action bar */}
-          {isCleanupMode && (
-            <CleanupActionBar
+          {/* Contextual action bar — appears only when one or more rows selected */}
+          {selectedIds.size > 0 && (
+            <HistoryActionBar
               selectedCount={selectedIds.size}
-              onMerge={() => setCleanupDialog('merge')}
-              onDelete={() => setCleanupDialog('delete')}
-              onEditName={() => setCleanupDialog('editName')}
-              onConfirmPatient={() => setCleanupDialog('confirmPatient')}
-              canConfirmPatient={
-                selectedIds.size === 1 &&
-                selectedPatientIndex === null &&
-                !!selectedSession
-              }
+              onMerge={() => setActiveDialog('merge')}
+              onDelete={() => setActiveDialog('delete')}
+              onEditName={() => setActiveDialog('editName')}
+              onConfirmPatient={handleOpenConfirmPatient}
               onSplit={openSplitWindow}
               onRegenSoap={handleRegenSoap}
             />
           )}
 
           {/* Data source and auth status footer */}
-          {!authLoading && !isCleanupMode && (
+          {!authLoading && selectedIds.size === 0 && (
             <div className="history-footer">
               <span className="data-source-indicator">
                 {dataSource === 'local' ? '💾 Local Storage' : '☁️ Medplum'}
@@ -1387,7 +1390,7 @@ const HistoryWindow: React.FC = () => {
           </div>{/* end history-left-scroll */}
 
           {/* Day Feedback + Billing buttons — pinned to bottom of sidebar */}
-          {sessions.length > 0 && !isCleanupMode && (
+          {sessions.length > 0 && selectedIds.size === 0 && (
             <div className="history-left-bottom">
               <div className="billing-view-buttons">
                 <button
@@ -1900,18 +1903,18 @@ const HistoryWindow: React.FC = () => {
       </div>
 
       {/* Cleanup dialogs */}
-      {cleanupDialog === 'delete' && (
+      {activeDialog === 'delete' && (
         <DeleteConfirmDialog
           sessions={getSelectedSessions()}
           onConfirm={handleDeleteConfirm}
-          onCancel={() => setCleanupDialog('none')}
+          onCancel={() => setActiveDialog('none')}
         />
       )}
-      {cleanupDialog === 'merge' && (
+      {activeDialog === 'merge' && (
         <MergeConfirmDialog
           sessions={getSelectedSessions()}
           onConfirm={handleMergeConfirm}
-          onCancel={() => setCleanupDialog('none')}
+          onCancel={() => setActiveDialog('none')}
           isSameSessionPatientMerge={isSameSessionPatientMerge}
           selectedPatientNames={
             isSameSessionPatientMerge
@@ -1928,33 +1931,32 @@ const HistoryWindow: React.FC = () => {
           onPatientMergeConfirm={handlePatientMergeConfirm}
         />
       )}
-      {cleanupDialog === 'editName' && selectedIds.size === 1 && (
+      {activeDialog === 'editName' && selectedIds.size === 1 && (
         <EditNameDialog
           currentName={getSelectedSessions()[0]?.patient_name ?? null}
           onConfirm={handleEditNameConfirm}
-          onCancel={() => setCleanupDialog('none')}
+          onCancel={() => setActiveDialog('none')}
         />
       )}
-      {cleanupDialog === 'confirmPatient' &&
-        selectedIds.size === 1 &&
-        selectedPatientIndex === null &&
-        selectedSession && (
-          <ConfirmPatientDialog
-            sessionId={selectedSession.session_id}
-            date={formatDateForApi(selectedDate)}
-            initialName={selectedSession.metadata.patient_name ?? null}
-            initialDob={selectedSession.metadata.patient_dob ?? null}
-            sessionStartedAt={selectedSession.metadata.started_at}
-            sessionDurationMs={selectedSession.metadata.duration_ms ?? 0}
-            soapNote={selectedSession.soap_note ?? null}
-            transcript={selectedSession.transcript ?? null}
-            onConfirmed={async () => {
-              setCleanupDialog('none');
-              await afterCleanupOp('Patient confirmed and synced to EMR');
-            }}
-            onCancel={() => setCleanupDialog('none')}
-          />
-        )}
+      {activeDialog === 'confirmPatient' && confirmPatientSessions && (
+        <ConfirmPatientsBatchDialog
+          sessions={confirmPatientSessions}
+          date={formatDateForApi(selectedDate)}
+          onConfirmed={async () => {
+            setActiveDialog('none');
+            setConfirmPatientSessions(null);
+            await afterCleanupOp(
+              confirmPatientSessions.length === 1
+                ? 'Patient confirmed and synced to EMR'
+                : `${confirmPatientSessions.length} patients confirmed and synced to EMR`,
+            );
+          }}
+          onCancel={() => {
+            setActiveDialog('none');
+            setConfirmPatientSessions(null);
+          }}
+        />
+      )}
 
       {/* Day Feedback Modal */}
       {showDayFeedback && (

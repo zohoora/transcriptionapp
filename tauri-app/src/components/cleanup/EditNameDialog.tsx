@@ -19,23 +19,23 @@ const EditNameDialog: React.FC<EditNameDialogProps> = ({
   };
 
   return (
-    <div className="cleanup-dialog-overlay" onClick={onCancel}>
-      <div className="cleanup-dialog" onClick={(e) => e.stopPropagation()}>
+    <div className="history-dialog-overlay" onClick={onCancel}>
+      <div className="history-dialog" onClick={(e) => e.stopPropagation()}>
         <h3>Edit Patient Name</h3>
         <form onSubmit={handleSubmit}>
           <input
             type="text"
-            className="cleanup-dialog-input"
+            className="history-dialog-input"
             value={name}
             onChange={(e) => setName(e.target.value)}
             placeholder="Patient name (leave empty to clear)"
             autoFocus
           />
-          <div className="cleanup-dialog-actions">
-            <button type="button" className="cleanup-dialog-btn cancel" onClick={onCancel}>
+          <div className="history-dialog-actions">
+            <button type="button" className="history-dialog-btn cancel" onClick={onCancel}>
               Cancel
             </button>
-            <button type="submit" className="cleanup-dialog-btn confirm">
+            <button type="submit" className="history-dialog-btn confirm">
               Save
             </button>
           </div>

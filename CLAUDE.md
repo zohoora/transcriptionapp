@@ -72,7 +72,7 @@ cd tauri-app && npx tsc --noEmit          # Frontend
 cd tauri-app/src-tauri && cargo check     # Backend
 
 # Tests
-cd tauri-app && pnpm test:run             # Frontend (Vitest, 601 passing across 33 files)
+cd tauri-app && pnpm test:run             # Frontend (Vitest, 600 passing across 33 files)
 cd tauri-app/src-tauri && cargo test --lib   # Backend lib (1,179 passing, 30 ignored)
 cd tauri-app/src-tauri && cargo test --test harness_per_encounter  # Per-encounter snapshot harness (10 seed bundles)
 

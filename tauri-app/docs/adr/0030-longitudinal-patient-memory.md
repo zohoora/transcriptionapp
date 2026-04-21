@@ -141,3 +141,22 @@ MEDPLUM_CLIENT_SECRET=<ClientApplication secret>
 Stored in `~/Library/LaunchAgents/com.fabricscribe.profile-service.plist` under `EnvironmentVariables`. Secret lives on the MacBook only; rotating = edit plist + `launchctl kickstart -k`.
 
 Per-physician Practitioner resource: `PUT /physicians/:id` with `{"medplum_practitioner_id": "<fhir-id>"}`. Created manually for Dr Zohoor during rollout; for new physicians, the admin panel UI or a one-time bootstrap script writes this. Falls back gracefully when unset (FHIR resources still created, participant defaults to ClientApplication).
+
+### Modeless History Window + batch confirm (v0.10.50)
+
+Apr 21 clinic use exposed two UX frictions on top of the working dual-write:
+
+1. Every confirm-patient required entering and exiting a dedicated "cleanup mode" via a pencil ✎ toggle in the History Window header. Exiting via the window `×` button hit a macOS 26.3.1 WebKit race in `dispatchSetObscuredContentInsets` and crashed the app that morning.
+2. Confirm-Patient was gated on `selectedIds.size === 1`. A clinic with 3+ sessions of the same patient had no batch path; each session had to be confirmed one at a time.
+
+The v0.10.50 change removes cleanup mode entirely:
+
+- **Checkboxes render on every row.** Row-body click opens the detail pane (unchanged); checkbox click toggles selection. A `<label onClick={stopPropagation}>` wrapper isolates the click events so the two interactions don't race.
+- **Contextual action bar appears when `selectedIds.size > 0`.** Single-select shows Delete / Edit Name / Confirm Patient / Split / Regen SOAP. Multi-select shows Merge / Delete / Confirm Patient / Regen SOAP. No more "Select sessions to manage" hint at count 0 — the bar simply doesn't render.
+- **Escape is deselect-first, then close-detail.** One predictable handler: if any rows are selected, Escape clears the selection; otherwise it closes the detail pane.
+- **`ConfirmPatientsBatchDialog` replaces the single-session dialog.** One row per selected session, each with prefilled name + DOB inputs. "Confirm all" serializes `confirm_session_patient` invocations (concurrency=1 to avoid hammering the Medplum proxy) and transitions each row through idle → syncing → done. Per-row Medplum/profile-service status is shown inline; errors surface in a collapsible details dropdown without blocking the remaining rows. N=1 renders as a single-row table with the same status display, so the old single-session dialog is deleted rather than kept as a specialized path.
+- **Multi-patient sessions are filtered at the dialog boundary.** An inline note ("N multi-patient sessions skipped — confirm individually from each sub-patient's entry") replaces the previous "Confirm Patient" button-disable + tooltip pattern.
+
+No backend changes — `confirm_session_patient` is already idempotent on `(name_normalized, dob)` per this ADR, so the frontend batch loop is safe against partial failure and manual retry.
+
+Files: `components/HistoryWindow.tsx` (removed `isCleanupMode` state + pencil toggle; checkbox + action bar always render); `components/cleanup/HistoryActionBar.tsx` (renamed from `CleanupActionBar.tsx`; multi-select arm now includes Confirm Patient); `components/ConfirmPatientsBatchDialog.tsx` (new); `components/ConfirmPatientDialog.tsx` (deleted). CSS classes renamed `.cleanup-*` → `.history-*` across the history surface; `.cleanup-toggle-btn` / `.cleanup-hint` rules dropped.

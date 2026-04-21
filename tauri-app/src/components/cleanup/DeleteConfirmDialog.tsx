@@ -14,13 +14,13 @@ const DeleteConfirmDialog: React.FC<DeleteConfirmDialogProps> = ({
   onCancel,
 }) => {
   return (
-    <div className="cleanup-dialog-overlay" onClick={onCancel}>
-      <div className="cleanup-dialog" onClick={(e) => e.stopPropagation()}>
+    <div className="history-dialog-overlay" onClick={onCancel}>
+      <div className="history-dialog" onClick={(e) => e.stopPropagation()}>
         <h3>Delete {sessions.length === 1 ? 'Session' : `${sessions.length} Sessions`}?</h3>
-        <p className="cleanup-dialog-warning">
+        <p className="history-dialog-warning">
           This cannot be undone. The following sessions will be permanently deleted:
         </p>
-        <ul className="cleanup-dialog-list">
+        <ul className="history-dialog-list">
           {sessions.map((s) => (
             <li key={s.session_id}>
               <span className="dialog-session-time">{formatLocalTime(s.date)}</span>
@@ -33,9 +33,9 @@ const DeleteConfirmDialog: React.FC<DeleteConfirmDialogProps> = ({
             </li>
           ))}
         </ul>
-        <div className="cleanup-dialog-actions">
-          <button className="cleanup-dialog-btn cancel" onClick={onCancel}>Cancel</button>
-          <button className="cleanup-dialog-btn confirm-delete" onClick={onConfirm}>
+        <div className="history-dialog-actions">
+          <button className="history-dialog-btn cancel" onClick={onCancel}>Cancel</button>
+          <button className="history-dialog-btn confirm-delete" onClick={onConfirm}>
             Delete {sessions.length === 1 ? 'Session' : 'Sessions'}
           </button>
         </div>

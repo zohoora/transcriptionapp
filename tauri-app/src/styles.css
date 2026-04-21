@@ -8163,34 +8163,10 @@ button.review-section-header-left:focus {
 }
 
 /* ============================================================================
-   Session Cleanup Mode
+   History Window — selection + action bar + dialogs (modeless)
    ============================================================================ */
 
-/* Cleanup toggle button (pencil icon) in history header */
-.cleanup-toggle-btn {
-  background: none;
-  border: 1px solid transparent;
-  border-radius: 4px;
-  cursor: pointer;
-  font-size: 16px;
-  padding: 4px 8px;
-  color: var(--text-muted);
-  transition: all 0.15s ease;
-  line-height: 1;
-}
-
-.cleanup-toggle-btn:hover {
-  color: var(--text-primary);
-  background: var(--bg-hover);
-}
-
-.cleanup-toggle-btn.active {
-  color: var(--accent-blue);
-  background: rgba(59, 130, 246, 0.1);
-  border-color: var(--accent-blue);
-}
-
-/* Session item with checkbox layout in cleanup mode */
+/* Checkbox + row body layout */
 .session-item.selected {
   border-color: var(--accent-blue);
   background: rgba(59, 130, 246, 0.05);
@@ -8211,21 +8187,22 @@ button.review-section-header-left:focus {
   font: inherit;
 }
 
-.cleanup-checkbox {
+.history-checkbox {
   flex-shrink: 0;
   display: flex;
   align-items: center;
+  padding: 0 8px 0 4px;
 }
 
-.cleanup-checkbox input[type="checkbox"] {
+.history-checkbox input[type="checkbox"] {
   width: 16px;
   height: 16px;
   cursor: pointer;
   accent-color: var(--accent-blue);
 }
 
-/* Cleanup action bar (floating at bottom) */
-.cleanup-action-bar {
+/* Contextual action bar — visible only when selectedCount > 0 */
+.history-action-bar {
   position: sticky;
   bottom: 0;
   padding: 10px 16px;
@@ -8234,28 +8211,21 @@ button.review-section-header-left:focus {
   box-shadow: 0 -2px 8px rgba(0, 0, 0, 0.08);
 }
 
-.cleanup-hint {
-  font-size: 12px;
-  color: var(--text-muted);
-  text-align: center;
-  display: block;
-}
-
-.cleanup-actions {
+.history-actions {
   display: flex;
   align-items: center;
   gap: 6px;
   flex-wrap: wrap;
 }
 
-.cleanup-count {
+.history-action-count {
   font-size: 11px;
   font-weight: 600;
   color: var(--text-secondary);
   margin-right: 4px;
 }
 
-.cleanup-btn {
+.history-action-btn {
   padding: 5px 12px;
   font-size: 11px;
   font-weight: 500;
@@ -8267,33 +8237,33 @@ button.review-section-header-left:focus {
   transition: all 0.15s ease;
 }
 
-.cleanup-btn:hover {
+.history-action-btn:hover {
   background: var(--bg-hover);
   border-color: var(--accent-blue);
 }
 
-.cleanup-btn.delete {
+.history-action-btn.delete {
   color: #dc2626;
   border-color: rgba(220, 38, 38, 0.3);
 }
 
-.cleanup-btn.delete:hover {
+.history-action-btn.delete:hover {
   background: rgba(220, 38, 38, 0.08);
   border-color: #dc2626;
 }
 
-.cleanup-btn.merge {
+.history-action-btn.merge {
   color: var(--accent-blue);
   border-color: rgba(59, 130, 246, 0.3);
 }
 
-.cleanup-btn.merge:hover {
+.history-action-btn.merge:hover {
   background: rgba(59, 130, 246, 0.08);
   border-color: var(--accent-blue);
 }
 
-/* Success message */
-.cleanup-success-message {
+/* Post-action success flash */
+.history-success-message {
   padding: 8px 16px;
   background: rgba(34, 197, 94, 0.1);
   border: 1px solid rgba(34, 197, 94, 0.3);
@@ -8305,8 +8275,8 @@ button.review-section-header-left:focus {
   margin: 8px 16px 0;
 }
 
-/* Cleanup dialog overlay */
-.cleanup-dialog-overlay {
+/* Dialog overlay + shell */
+.history-dialog-overlay {
   position: fixed;
   top: 0;
   left: 0;
@@ -8320,7 +8290,7 @@ button.review-section-header-left:focus {
   padding: 16px;
 }
 
-.cleanup-dialog {
+.history-dialog {
   background: var(--bg-primary);
   border-radius: 12px;
   padding: 20px;
@@ -8331,24 +8301,39 @@ button.review-section-header-left:focus {
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
 }
 
-.cleanup-dialog.split-dialog {
+.history-dialog.split-dialog {
   max-width: 500px;
 }
 
-.cleanup-dialog h3 {
+/* Wide variant — batch confirm needs room for the session table */
+.history-dialog-wide {
+  max-width: 720px;
+}
+
+.history-dialog h3 {
   font-size: 16px;
   font-weight: 600;
   margin-bottom: 8px;
   color: var(--text-primary);
 }
 
-.cleanup-dialog-subtitle {
+.history-dialog-subtitle {
   font-size: 12px;
   color: var(--text-secondary);
   margin-bottom: 12px;
 }
 
-.cleanup-dialog-warning {
+.history-dialog-hint {
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin: 6px 0 12px;
+  padding: 6px 8px;
+  background: rgba(59, 130, 246, 0.05);
+  border-left: 3px solid rgba(59, 130, 246, 0.3);
+  border-radius: 3px;
+}
+
+.history-dialog-warning {
   font-size: 12px;
   color: #dc2626;
   margin: 8px 0;
@@ -8357,13 +8342,13 @@ button.review-section-header-left:focus {
   border-radius: 4px;
 }
 
-.cleanup-dialog-list {
+.history-dialog-list {
   list-style: none;
   padding: 0;
   margin: 12px 0;
 }
 
-.cleanup-dialog-list li {
+.history-dialog-list li {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -8372,7 +8357,7 @@ button.review-section-header-left:focus {
   font-size: 12px;
 }
 
-.cleanup-dialog-list li.merge-target {
+.history-dialog-list li.merge-target {
   background: rgba(59, 130, 246, 0.06);
 }
 
@@ -8402,20 +8387,20 @@ button.review-section-header-left:focus {
   flex-shrink: 0;
 }
 
-.cleanup-dialog-meta {
+.history-dialog-meta {
   font-size: 12px;
   color: var(--text-secondary);
   padding: 4px 0;
 }
 
-.cleanup-dialog-actions {
+.history-dialog-actions {
   display: flex;
   gap: 8px;
   justify-content: flex-end;
   margin-top: 16px;
 }
 
-.cleanup-dialog-btn {
+.history-dialog-btn {
   padding: 8px 16px;
   font-size: 12px;
   font-weight: 500;
@@ -8425,54 +8410,54 @@ button.review-section-header-left:focus {
   transition: all 0.15s ease;
 }
 
-.cleanup-dialog-btn.cancel {
+.history-dialog-btn.cancel {
   background: var(--bg-primary);
   color: var(--text-secondary);
 }
 
-.cleanup-dialog-btn.cancel:hover {
+.history-dialog-btn.cancel:hover {
   background: var(--bg-hover);
 }
 
-.cleanup-dialog-btn.confirm {
+.history-dialog-btn.confirm {
   background: var(--accent-blue);
   color: white;
   border-color: var(--accent-blue);
 }
 
-.cleanup-dialog-btn.confirm:hover {
+.history-dialog-btn.confirm:hover {
   opacity: 0.9;
 }
 
-.cleanup-dialog-btn.confirm:disabled {
+.history-dialog-btn.confirm:disabled {
   opacity: 0.5;
   cursor: not-allowed;
 }
 
-.cleanup-dialog-btn.confirm-delete {
+.history-dialog-btn.confirm-delete {
   background: #dc2626;
   color: white;
   border-color: #dc2626;
 }
 
-.cleanup-dialog-btn.confirm-delete:hover {
+.history-dialog-btn.confirm-delete:hover {
   opacity: 0.9;
 }
 
-.cleanup-dialog-field {
+.history-dialog-field {
   margin: 12px 0 8px;
 }
 
-.cleanup-dialog-field label {
+.history-dialog-field label {
   display: block;
   font-size: 12px;
   color: var(--text-muted);
   margin-bottom: 4px;
 }
 
-.cleanup-dialog-input {
+.history-dialog-input {
   width: 100%;
-  padding: 8px 12px;
+  padding: 6px 10px;
   font-size: 13px;
   border: 1px solid var(--border-color);
   border-radius: 6px;
@@ -8482,13 +8467,13 @@ button.review-section-header-left:focus {
   box-sizing: border-box;
 }
 
-.cleanup-dialog-input:focus {
+.history-dialog-input:focus {
   outline: none;
   border-color: var(--accent-blue);
   box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
 }
 
-.cleanup-dialog-loading {
+.history-dialog-loading {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -8497,6 +8482,61 @@ button.review-section-header-left:focus {
   font-size: 13px;
   justify-content: center;
 }
+
+/* Batch confirm dialog — per-session rows with per-row status */
+.history-batch-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+  margin: 8px 0 12px;
+}
+
+.history-batch-table th,
+.history-batch-table td {
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border-color);
+  text-align: left;
+  vertical-align: middle;
+}
+
+.history-batch-table th {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.history-batch-row-status {
+  font-size: 11px;
+  color: var(--text-secondary);
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.history-batch-row-errors {
+  display: inline;
+  margin-left: 6px;
+}
+
+.history-batch-row-errors summary {
+  cursor: pointer;
+  font-weight: 600;
+  color: #dc2626;
+}
+
+.history-batch-row-errors ul {
+  margin: 4px 0 0;
+  padding-left: 16px;
+  color: #dc2626;
+  font-size: 11px;
+}
+
+.status-ok { color: var(--accent-idle); font-weight: 600; }
+.status-fail { color: #dc2626; font-weight: 600; }
+.status-idle { color: var(--text-muted); }
+.status-syncing { color: var(--accent-blue); font-weight: 600; }
 
 /* Split view */
 .split-preview-stats {

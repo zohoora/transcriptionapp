@@ -49,9 +49,9 @@ const SplitView: React.FC<SplitViewProps> = ({
 
   if (loading) {
     return (
-      <div className="cleanup-dialog-overlay" onClick={onCancel}>
-        <div className="cleanup-dialog split-dialog" onClick={(e) => e.stopPropagation()}>
-          <div className="cleanup-dialog-loading"><div className="spinner-small" /> Loading transcript...</div>
+      <div className="history-dialog-overlay" onClick={onCancel}>
+        <div className="history-dialog split-dialog" onClick={(e) => e.stopPropagation()}>
+          <div className="history-dialog-loading"><div className="spinner-small" /> Loading transcript...</div>
         </div>
       </div>
     );
@@ -59,14 +59,14 @@ const SplitView: React.FC<SplitViewProps> = ({
 
   if (error || lines.length < 2) {
     return (
-      <div className="cleanup-dialog-overlay" onClick={onCancel}>
-        <div className="cleanup-dialog split-dialog" onClick={(e) => e.stopPropagation()}>
+      <div className="history-dialog-overlay" onClick={onCancel}>
+        <div className="history-dialog split-dialog" onClick={(e) => e.stopPropagation()}>
           <h3>Split Session</h3>
-          <p className="cleanup-dialog-warning">
+          <p className="history-dialog-warning">
             {error || 'Transcript must have at least 2 lines to split.'}
           </p>
-          <div className="cleanup-dialog-actions">
-            <button className="cleanup-dialog-btn cancel" onClick={onCancel}>Close</button>
+          <div className="history-dialog-actions">
+            <button className="history-dialog-btn cancel" onClick={onCancel}>Close</button>
           </div>
         </div>
       </div>
@@ -74,10 +74,10 @@ const SplitView: React.FC<SplitViewProps> = ({
   }
 
   return (
-    <div className="cleanup-dialog-overlay" onClick={onCancel}>
-      <div className="cleanup-dialog split-dialog" onClick={(e) => e.stopPropagation()}>
+    <div className="history-dialog-overlay" onClick={onCancel}>
+      <div className="history-dialog split-dialog" onClick={(e) => e.stopPropagation()}>
         <h3>Split Session</h3>
-        <p className="cleanup-dialog-subtitle">
+        <p className="history-dialog-subtitle">
           Click between lines to set the split point. Lines above stay in the original session.
         </p>
 
@@ -108,10 +108,10 @@ const SplitView: React.FC<SplitViewProps> = ({
           ))}
         </div>
 
-        <div className="cleanup-dialog-actions">
-          <button className="cleanup-dialog-btn cancel" onClick={onCancel}>Cancel</button>
+        <div className="history-dialog-actions">
+          <button className="history-dialog-btn cancel" onClick={onCancel}>Cancel</button>
           <button
-            className="cleanup-dialog-btn confirm"
+            className="history-dialog-btn confirm"
             onClick={() => splitLine !== null && onConfirm(splitLine)}
             disabled={splitLine === null}
           >

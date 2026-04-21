@@ -183,7 +183,7 @@ const SplitWindow: React.FC = () => {
           {error || 'Transcript must have at least 2 lines to split.'}
         </div>
         <div className="split-window-footer">
-          <button className="cleanup-dialog-btn cancel" onClick={handleCancel}>Close</button>
+          <button className="history-dialog-btn cancel" onClick={handleCancel}>Close</button>
         </div>
       </div>
     );
@@ -266,9 +266,9 @@ const SplitWindow: React.FC = () => {
 
       {/* Footer */}
       <div className="split-window-footer">
-        <button className="cleanup-dialog-btn cancel" onClick={handleCancel}>Cancel</button>
+        <button className="history-dialog-btn cancel" onClick={handleCancel}>Cancel</button>
         <button
-          className="cleanup-dialog-btn confirm"
+          className="history-dialog-btn confirm"
           onClick={handleConfirm}
           disabled={splitLine === null || splitting}
         >
