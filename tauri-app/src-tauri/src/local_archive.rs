@@ -1339,6 +1339,17 @@ pub fn merge_sessions(session_ids: &[String], date_str: &str) -> Result<String, 
 }
 
 /// Update the patient name for a session.
+/// Returns true when this machine holds the session's `metadata.json` —
+/// i.e. the session was recorded (or fully synced) here. Cross-machine
+/// sessions (e.g. Room 2 origin, Room 6 only has the billing rollup) return
+/// false, and callers should skip local-archive writes rather than error.
+pub fn has_local_metadata(session_id: &str, date_str: &str) -> bool {
+    match get_session_dir_from_str(session_id, date_str) {
+        Ok(dir) => dir.join("metadata.json").is_file(),
+        Err(_) => false,
+    }
+}
+
 pub fn update_patient_name(session_id: &str, date_str: &str, name: &str) -> Result<(), String> {
     let session_dir = get_session_dir_from_str(session_id, date_str)?;
     if !session_dir.exists() {
@@ -2120,6 +2131,41 @@ mod tests {
 
         // Cleanup
         let _ = fs::remove_dir_all(&surviving_dir);
+    }
+
+    #[test]
+    fn test_has_local_metadata_cross_machine_shapes() {
+        let date_str = "2024-07-09";
+        let date_dir = get_archive_dir().unwrap().join("2024").join("07").join("09");
+
+        // Missing directory entirely.
+        let absent_id = format!("test-hlm-absent-{}", Uuid::new_v4());
+        assert!(!has_local_metadata(&absent_id, date_str));
+
+        // Directory exists but only billing.json — the cross-machine shape
+        // (server mirrored billing down, origin machine kept the metadata).
+        let billing_only_id = format!("test-hlm-billing-{}", Uuid::new_v4());
+        let billing_dir = date_dir.join(&billing_only_id);
+        fs::create_dir_all(&billing_dir).unwrap();
+        fs::write(billing_dir.join("billing.json"), "{}").unwrap();
+        assert!(!has_local_metadata(&billing_only_id, date_str));
+
+        // Full local session — metadata.json present.
+        let full_id = format!("test-hlm-full-{}", Uuid::new_v4());
+        let full_dir = date_dir.join(&full_id);
+        fs::create_dir_all(&full_dir).unwrap();
+        fs::write(
+            full_dir.join("metadata.json"),
+            serde_json::to_string(&ArchiveMetadata::new(&full_id)).unwrap(),
+        )
+        .unwrap();
+        assert!(has_local_metadata(&full_id, date_str));
+
+        // Traversal/bad IDs never say true.
+        assert!(!has_local_metadata("../escape", date_str));
+
+        let _ = fs::remove_dir_all(&billing_dir);
+        let _ = fs::remove_dir_all(&full_dir);
     }
 
     #[test]

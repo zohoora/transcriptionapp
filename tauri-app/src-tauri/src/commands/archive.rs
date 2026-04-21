@@ -448,10 +448,22 @@ pub async fn confirm_session_patient(
         "patient confirmation started"
     );
 
-    // Step A — local archive. Side-effect: also invalidates stale billing
-    // since update_patient_name goes through add_soap_note's billing hook.
-    local_archive::update_patient_name(&session_id, &date, &patient_name)
-        .map_err(|e| CommandError::Other(format!("local archive update_patient_name: {e}")))?;
+    // Session may originate on a different machine (e.g. Room 2 recording
+    // mirrored here only for the daily billing rollup). When the local
+    // metadata.json is absent, skip the two local-archive writes and rely on
+    // EMR + profile-service as the canonical stores; the hybrid-history merge
+    // picks up the new name on the next fetch.
+    let has_local = local_archive::has_local_metadata(&session_id, &date);
+
+    // Step A — local archive. Best-effort: failures here don't block the
+    // canonical EMR + profile-service writes. Side-effect when it succeeds:
+    // invalidates stale billing via add_soap_note's billing hook.
+    if has_local {
+        if let Err(e) = local_archive::update_patient_name(&session_id, &date, &patient_name) {
+            warn!(event = "confirm_patient_local_name_failed", error = %e);
+            errors.push(format!("local_archive_name: {e}"));
+        }
+    }
 
     // Pull the active physician's Medplum Practitioner ID (if configured)
     // — threaded into sync_continuous_session so FHIR Encounter participants
@@ -566,19 +578,23 @@ pub async fn confirm_session_patient(
     }
 
     // Step D — back-fill local metadata with the confirmation state + the
-    // authoritative patient_id discovered above (prefer Medplum ID).
+    // authoritative patient_id discovered above (prefer Medplum ID). Skip for
+    // cross-machine sessions — Step E's server-sync propagates the same
+    // fields to profile-service, which the origin machine will pick up.
     let canonical_patient_id = medplum_patient_id
         .clone()
         .or_else(|| profile_patient_id.clone());
-    if let Err(e) = local_archive::mark_patient_confirmed(
-        &session_id,
-        &date,
-        &now,
-        medplum_patient_id.as_deref(),
-        &patient_dob,
-    ) {
-        warn!(event = "confirm_patient_metadata_write_failed", error = %e);
-        errors.push(format!("local_metadata: {e}"));
+    if has_local {
+        if let Err(e) = local_archive::mark_patient_confirmed(
+            &session_id,
+            &date,
+            &now,
+            medplum_patient_id.as_deref(),
+            &patient_dob,
+        ) {
+            warn!(event = "confirm_patient_metadata_write_failed", error = %e);
+            errors.push(format!("local_metadata: {e}"));
+        }
     }
 
     // Step E — fire-and-forget server-sync so profile-service session
