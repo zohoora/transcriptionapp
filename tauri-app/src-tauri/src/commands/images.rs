@@ -1,8 +1,9 @@
 //! AI image generation command.
 //!
 //! Routes to Gemini (Flash or Pro) or OpenAI (gpt-image-2 at low/medium/high
-//! quality) based on the resolved `image_model` key. See ADR-driven rollout
-//! (v0.10.53) for the provider/quality matrix.
+//! quality) based on the resolved `image_model` key. The canonical allowlist
+//! lives in `config::IMAGE_MODEL_ALLOWLIST` — `test_allowlist_and_router_stay_in_sync`
+//! asserts drift-free.
 
 use super::CommandError;
 use serde::{Deserialize, Serialize};
@@ -71,13 +72,11 @@ pub async fn generate_ai_image(
         ));
     }
 
-    // Override (per-call dropdown) beats the settings-persisted default.
     let effective_key = image_model.unwrap_or_else(|| config.image_model.clone());
     let backend = resolve_backend(&effective_key)?;
 
-    // Reuse the server-configurable Gemini timeout for both providers —
-    // the OpenAI `high` tier has a comparable 95th-percentile wall time and
-    // adding a separate knob for observability-only gains isn't worth it.
+    // OpenAI's `high` tier has a comparable 95th-percentile wall time to
+    // Gemini's, so one knob suffices for both providers.
     let timeout_secs = {
         let sc = server_config.read().await;
         sc.thresholds.gemini_generation_timeout_secs
@@ -160,12 +159,27 @@ mod tests {
 
     #[test]
     fn test_resolve_backend_unknown_rejected() {
-        let err = resolve_backend("gpt-5-mega");
-        assert!(err.is_err());
-        if let Err(CommandError::Validation(msg)) = err {
-            assert!(msg.contains("unknown image_model"), "msg={msg}");
-        } else {
-            panic!("expected Validation error");
+        for bad in ["", "gpt-5-mega", "gemini-flash ", "openai-"] {
+            let err = resolve_backend(bad);
+            assert!(err.is_err(), "expected err for {bad:?}");
+            if let Err(CommandError::Validation(msg)) = err {
+                assert!(msg.contains("unknown image_model"), "msg={msg}");
+            } else {
+                panic!("expected Validation error for {bad:?}");
+            }
+        }
+    }
+
+    /// Drift guard: every entry in `IMAGE_MODEL_ALLOWLIST` must route.
+    /// If you add a key to the allowlist, you must also add a router arm —
+    /// this test will fail loudly instead of silently rejecting at runtime.
+    #[test]
+    fn test_allowlist_and_router_stay_in_sync() {
+        for key in crate::config::IMAGE_MODEL_ALLOWLIST {
+            assert!(
+                resolve_backend(key).is_ok(),
+                "allowlist entry {key:?} has no router arm"
+            );
         }
     }
 }

@@ -125,12 +125,9 @@ impl GeminiClient {
         let status = response.status();
         if !status.is_success() {
             let error_body = response.text().await.unwrap_or_default();
-            // Truncate error body to avoid leaking sensitive data
-            let truncated = if error_body.len() > 200 {
-                &error_body[..200]
-            } else {
-                &error_body
-            };
+            // UTF-8-safe truncation via shared helper — proxy error pages can
+            // echo prompt text (PHI) back into their response body.
+            let truncated = crate::llm_client::truncate_error_body(&error_body, 200);
             return Err(format!("Gemini API error {}: {}", status, truncated));
         }
 

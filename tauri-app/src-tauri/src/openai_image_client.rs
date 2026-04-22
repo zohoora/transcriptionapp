@@ -57,12 +57,8 @@ struct OpenAIImageData {
 }
 
 impl OpenAIImageClient {
-    /// Construct an OpenAI image API client.
-    ///
-    /// `timeout_secs` — HTTP timeout applied per request. Reuses the same
-    /// server-configurable `gemini_generation_timeout_secs` threshold the
-    /// Gemini client reads today (the OpenAI tail is similar in the 95th
-    /// percentile), to avoid adding a second timeout knob for now.
+    /// Construct an OpenAI image API client. `timeout_secs` is shared with
+    /// the Gemini path (see `commands/images.rs`).
     pub fn new(api_key: &str, timeout_secs: u64) -> Result<Self, String> {
         if api_key.trim().is_empty() {
             return Err("OpenAI API key is required".to_string());
@@ -81,8 +77,7 @@ impl OpenAIImageClient {
     }
 
     pub fn build_request_body(prompt: &str, quality: OpenAIImageQuality) -> serde_json::Value {
-        // size "1024x1024" matches the default we use for Gemini today so
-        // the two providers remain comparable on a visual-quality A/B.
+        // 1024×1024 matches Gemini so the two providers stay visually comparable.
         serde_json::json!({
             "model": OPENAI_IMAGE_MODEL,
             "prompt": prompt,
@@ -130,12 +125,9 @@ impl OpenAIImageClient {
         let status = response.status();
         if !status.is_success() {
             let error_body = response.text().await.unwrap_or_default();
-            // Truncate to avoid leaking PHI from prompt echoes in error pages
-            let truncated = if error_body.len() > 200 {
-                &error_body[..200]
-            } else {
-                &error_body
-            };
+            // UTF-8-safe truncation via shared helper — OpenAI 4xx bodies can
+            // echo the clinician's prompt text (PHI-adjacent).
+            let truncated = crate::llm_client::truncate_error_body(&error_body, 200);
             return Err(format!("OpenAI API error {}: {}", status, truncated));
         }
 

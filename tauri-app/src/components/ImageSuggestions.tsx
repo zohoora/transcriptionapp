@@ -189,8 +189,6 @@ export const ImageSuggestions = memo(function ImageSuggestions({
           <span className="ai-image-title">Patient Illustration</span>
         </div>
 
-        {/* Model + quality picker. Settings-persisted; per-call override
-            applies on the next Generate click. */}
         <div className="ai-image-model-picker">
           <label className="ai-image-model-label">
             Model

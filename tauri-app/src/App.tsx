@@ -356,23 +356,22 @@ function App() {
   });
 
   const imageSource = (settings?.image_source ?? 'off') as 'off' | 'miis' | 'ai';
-  const imageModel = settings?.image_model ?? 'gemini-flash';
-  // Immediate-persist path for the image-gen model dropdowns. Writes a merged
-  // Settings object directly via set_settings (bypassing the usual
-  // pendingSettings→saveSettings round-trip the drawer uses) so a dropdown
-  // change sticks across app restarts without the clinician hunting for a
-  // save button. Also keeps pendingSettings in sync so the drawer reflects
-  // the choice on next open.
+  // Read the dropdown value from pendingSettings so setImageModel's
+  // setPendingSettings call re-renders the selection immediately. settings
+  // (saved) lags pendingSettings (optimistic UI) by one round-trip.
+  const imageModel = pendingSettings?.image_model ?? settings?.image_model ?? 'gemini-flash';
+  // One-click persist: merge any unsaved drawer edits, write, then update
+  // pendingSettings so the UI shows the new value without waiting for
+  // reloadSettings.
   const setImageModel = useCallback(
     (value: string) => {
-      if (!settings) return;
-      const next = { ...settings, image_model: value };
-      invoke('set_settings', { settings: next }).catch((e) =>
+      if (!settings || !pendingSettings) return;
+      const nextPending = { ...pendingSettings, image_model: value };
+      const merged = buildMergedSettings(settings, nextPending);
+      invoke('set_settings', { settings: merged }).catch((e) =>
         console.error('Failed to persist image_model:', e),
       );
-      if (pendingSettings) {
-        setPendingSettings({ ...pendingSettings, image_model: value });
-      }
+      setPendingSettings(nextPending);
     },
     [settings, pendingSettings, setPendingSettings],
   );

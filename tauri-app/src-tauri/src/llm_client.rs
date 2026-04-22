@@ -16,7 +16,8 @@ use crate::encounter_detection::MultiPatientDetectionResult;
 /// Proxy error pages (e.g. nginx 502) can echo request bodies containing
 /// patient transcripts; capping at `max_len` chars prevents that data from
 /// entering logs or error strings.
-fn truncate_error_body(body: &str, max_len: usize) -> &str {
+/// Shared across all HTTP clients (LLM, Gemini image, OpenAI image).
+pub fn truncate_error_body(body: &str, max_len: usize) -> &str {
     if body.len() <= max_len {
         body
     } else {
