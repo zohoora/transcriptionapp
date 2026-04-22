@@ -41,6 +41,9 @@ pub fn create_app_state(data_dir: &Path) -> Arc<AppState> {
     let medplum_auth = store::medplum_auth::MedplumAuthProxy::new(
         store::medplum_auth::MedplumAuthConfig::from_env(),
     );
+    let openai_image = store::openai_image::OpenAIImageProxy::new(
+        store::openai_image::OpenAIImageConfig::from_env(),
+    );
 
     Arc::new(AppState {
         physicians: RwLock::new(physicians),
@@ -52,6 +55,7 @@ pub fn create_app_state(data_dir: &Path) -> Arc<AppState> {
         config_data: RwLock::new(config_data),
         patients: RwLock::new(patients),
         medplum_auth,
+        openai_image,
         data_dir: data_dir.to_path_buf(),
     })
 }

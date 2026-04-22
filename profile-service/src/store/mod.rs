@@ -2,6 +2,7 @@ pub mod config_data;
 pub mod infrastructure;
 pub mod medplum_auth;
 pub mod mobile_jobs;
+pub mod openai_image;
 pub mod patients;
 pub mod physicians;
 pub mod rooms;
@@ -21,5 +22,6 @@ pub struct AppState {
     pub config_data: RwLock<config_data::ConfigDataStore>,
     pub patients: RwLock<patients::PatientManager>,
     pub medplum_auth: medplum_auth::MedplumAuthProxy,
+    pub openai_image: openai_image::OpenAIImageProxy,
     pub data_dir: PathBuf,
 }

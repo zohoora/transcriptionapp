@@ -625,6 +625,41 @@ impl ProfileClient {
         Ok((token, expires_in))
     }
 
+    /// Generate an image via the profile-service OpenAI proxy (v0.10.54+).
+    /// Server holds `OPENAI_API_KEY`; the workstation sends prompt + quality
+    /// and gets back the base64 PNG. Returns `Err` with "not configured"
+    /// message when the server has no key — caller can fall back to a local
+    /// key at that point.
+    pub async fn fetch_openai_image(
+        &self,
+        prompt: &str,
+        quality: &str,
+    ) -> Result<String> {
+        let url = format!("{}/openai/image", self.base_url());
+        let body = serde_json::json!({
+            "prompt": prompt,
+            "quality": quality,
+        });
+        let resp = self
+            .with_auth(self.client.post(&url).json(&body))
+            .send()
+            .await?;
+        if !resp.status().is_success() {
+            let status = resp.status();
+            let text = resp.text().await.unwrap_or_default();
+            anyhow::bail!(
+                "OpenAI image proxy failed: {} - {}",
+                status,
+                &text[..text.len().min(200)]
+            );
+        }
+        let v: serde_json::Value = resp.json().await?;
+        v["image_base64"]
+            .as_str()
+            .map(|s| s.to_string())
+            .ok_or_else(|| anyhow::anyhow!("proxy response missing image_base64"))
+    }
+
     /// Look up an existing patient by exact (name, dob). Returns None when
     /// no match — used by the follow-up SOAP-context injection feature; not
     /// called from the confirm path itself (server upserts via `confirm`).

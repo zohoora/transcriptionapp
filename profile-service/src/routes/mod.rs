@@ -3,6 +3,7 @@ pub mod health;
 pub mod infrastructure;
 pub mod medplum_auth;
 pub mod mobile;
+pub mod openai_image;
 pub mod patients;
 pub mod physicians;
 pub mod rooms;
@@ -138,6 +139,10 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         // access tokens for rooms using server-held MEDPLUM_CLIENT_*
         // env vars. Returns 500 if env vars not configured.
         .route("/medplum/token", post(medplum_auth::token))
+        // OpenAI image generation proxy (v0.10.54+). Routes image calls
+        // through server-held OPENAI_API_KEY so new workstations don't need
+        // per-machine key plumbing. Returns 500 if env var not configured.
+        .route("/openai/image", post(openai_image::generate))
         // Longitudinal patient memory (v0.10.46+) — /confirm must be registered
         // before the /:patient_id route or it will be shadowed by the wildcard.
         .route(
