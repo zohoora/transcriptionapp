@@ -57,6 +57,7 @@ pub mod local_archive;
 pub mod enhancement;
 pub mod listening;
 pub mod gemini_client;
+pub mod openai_image_client;
 pub mod harness;
 pub mod llm_backend;
 pub mod llm_client;

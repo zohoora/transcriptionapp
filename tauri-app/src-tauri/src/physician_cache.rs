@@ -78,6 +78,8 @@ mod tests {
             language: None,
             image_source: Some("ai".to_string()),
             gemini_api_key: None,
+            openai_api_key: None,
+            image_model: Some("gemini-flash".to_string()),
             auto_start_enabled: Some(true),
             auto_start_require_enrolled: Some(false),
             auto_start_required_role: None,

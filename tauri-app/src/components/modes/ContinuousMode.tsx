@@ -69,6 +69,8 @@ interface ContinuousModeProps {
   onAiGenerate?: (description: string) => void;
   onAiDismiss?: (index: number) => void;
   imageSource?: 'miis' | 'ai' | 'off';
+  imageModel?: string;
+  onImageModelChange?: (value: string) => void;
   /** Start continuous mode */
   onStart: () => void;
   /** Stop continuous mode */
@@ -185,6 +187,8 @@ export const ContinuousMode = memo(function ContinuousMode({
   onAiGenerate,
   onAiDismiss,
   imageSource = 'miis',
+  imageModel,
+  onImageModelChange,
   onStart,
   onStop,
   onNewPatient,
@@ -472,6 +476,8 @@ export const ContinuousMode = memo(function ContinuousMode({
           onAiGenerate={onAiGenerate}
           onAiDismiss={onAiDismiss}
           imageSource={imageSource}
+          imageModel={imageModel}
+          onImageModelChange={onImageModelChange}
         />
       )}
 

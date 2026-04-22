@@ -100,6 +100,9 @@ export interface Settings {
   // AI image generation
   image_source: string; // "off" | "miis" | "ai"
   gemini_api_key: string;
+  openai_api_key: string;
+  /** Provider + quality key. One of: "gemini-flash", "gemini-pro", "openai-low", "openai-medium", "openai-high". */
+  image_model: string;
   // Screen capture
   screen_capture_enabled: boolean;
   screen_capture_interval_secs: number;
@@ -1000,6 +1003,7 @@ export interface PhysicianProfile {
   soap_custom_instructions?: string | null;
   charting_mode?: string | null;
   image_source?: string | null;
+  image_model?: string | null;
   auto_start_enabled?: boolean | null;
   auto_end_enabled?: boolean | null;
   auto_end_silence_ms?: number | null;

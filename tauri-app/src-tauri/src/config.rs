@@ -151,6 +151,13 @@ pub struct Settings {
     pub image_source: String,
     #[serde(default)]
     pub gemini_api_key: String,
+    #[serde(default)]
+    pub openai_api_key: String,
+    /// Provider + quality for AI image generation. One of:
+    /// `gemini-flash`, `gemini-pro`, `openai-low`, `openai-medium`, `openai-high`.
+    /// Clamped to this allowlist on load.
+    #[serde(default = "default_image_model")]
+    pub image_model: String,
     // Screen capture settings
     #[serde(default)]
     pub screen_capture_enabled: bool,
@@ -394,6 +401,20 @@ fn default_image_source() -> String {
     "ai".to_string()
 }
 
+fn default_image_model() -> String {
+    "gemini-flash".to_string()
+}
+
+/// Allowlist for `image_model`. Kept in one place so the validator and
+/// the command-side router stay in sync.
+pub const IMAGE_MODEL_ALLOWLIST: &[&str] = &[
+    "gemini-flash",
+    "gemini-pro",
+    "openai-low",
+    "openai-medium",
+    "openai-high",
+];
+
 fn default_auto_end_enabled() -> bool {
     true // Auto-end enabled by default
 }
@@ -524,6 +545,8 @@ impl Default for Settings {
             miis_server_url: default_miis_server_url(),
             image_source: default_image_source(),
             gemini_api_key: String::new(),
+            openai_api_key: String::new(),
+            image_model: default_image_model(),
             screen_capture_enabled: false,
             screen_capture_interval_secs: default_screen_capture_interval_secs(),
             charting_mode: default_charting_mode(),
@@ -773,6 +796,10 @@ pub struct PhysicianSettings {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub gemini_api_key: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub openai_api_key: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub image_model: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub auto_start_enabled: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub auto_start_require_enrolled: Option<bool>,
@@ -815,6 +842,8 @@ impl From<&crate::profile_client::PhysicianProfile> for PhysicianSettings {
             charting_mode: p.charting_mode.clone(),
             image_source: p.image_source.clone(),
             gemini_api_key: p.gemini_api_key.clone(),
+            openai_api_key: p.openai_api_key.clone(),
+            image_model: p.image_model.clone(),
             auto_start_enabled: p.auto_start_enabled,
             auto_start_require_enrolled: p.auto_start_require_enrolled,
             auto_start_required_role: p.auto_start_required_role.clone(),
@@ -935,6 +964,8 @@ impl Settings {
             charting_mode: Some(self.charting_mode.to_string()),
             image_source: Some(self.image_source.clone()),
             gemini_api_key: if self.gemini_api_key.is_empty() { None } else { Some(self.gemini_api_key.clone()) },
+            openai_api_key: if self.openai_api_key.is_empty() { None } else { Some(self.openai_api_key.clone()) },
+            image_model: Some(self.image_model.clone()),
             auto_start_enabled: Some(self.auto_start_enabled),
             auto_start_require_enrolled: Some(self.auto_start_require_enrolled),
             auto_start_required_role: self.auto_start_required_role.clone(),
@@ -965,6 +996,8 @@ impl Settings {
         }
         if let Some(ref v) = phys.image_source { self.image_source = v.clone(); }
         if let Some(ref v) = phys.gemini_api_key { self.gemini_api_key = v.clone(); }
+        if let Some(ref v) = phys.openai_api_key { self.openai_api_key = v.clone(); }
+        if let Some(ref v) = phys.image_model { self.image_model = v.clone(); }
         if let Some(v) = phys.auto_start_enabled { self.auto_start_enabled = v; }
         if let Some(v) = phys.auto_start_require_enrolled { self.auto_start_require_enrolled = v; }
         if phys.auto_start_required_role.is_some() { self.auto_start_required_role = phys.auto_start_required_role.clone(); }
@@ -1114,7 +1147,7 @@ impl Settings {
         }
         // Physician
         for field in &["soap_custom_instructions", "soap_detail_level", "soap_format", "charting_mode",
-                       "image_source", "gemini_api_key", "auto_start_enabled",
+                       "image_source", "gemini_api_key", "openai_api_key", "image_model", "auto_start_enabled",
                        "auto_start_require_enrolled", "auto_start_required_role", "auto_end_enabled",
                        "auto_end_silence_ms", "output_format", "encounter_merge_enabled",
                        "encounter_check_interval_secs", "encounter_silence_trigger_secs",
@@ -1319,6 +1352,13 @@ impl Config {
         // image_source must be "off", "miis", or "ai"
         if !["off", "miis", "ai"].contains(&self.image_source.as_str()) {
             self.image_source = "off".to_string();
+        }
+
+        // image_model must match the provider/quality allowlist. Fall back to
+        // the default (Gemini Flash) on unknown values — e.g. after a
+        // config.json hand-edit or a downgrade from a future schema.
+        if !IMAGE_MODEL_ALLOWLIST.contains(&self.image_model.as_str()) {
+            self.image_model = default_image_model();
         }
     }
 
@@ -1577,6 +1617,8 @@ mod tests {
             miis_server_url: "http://100.119.83.76:7843".to_string(),
             image_source: "off".to_string(),
             gemini_api_key: String::new(),
+            openai_api_key: String::new(),
+            image_model: "gemini-flash".to_string(),
             screen_capture_enabled: false,
             screen_capture_interval_secs: 30,
             charting_mode: ChartingMode::Session,
@@ -1711,6 +1753,8 @@ mod tests {
             miis_server_url: default_miis_server_url(),
             image_source: default_image_source(),
             gemini_api_key: String::new(),
+            openai_api_key: String::new(),
+            image_model: default_image_model(),
             screen_capture_enabled: false,
             screen_capture_interval_secs: 30,
             charting_mode: default_charting_mode(),

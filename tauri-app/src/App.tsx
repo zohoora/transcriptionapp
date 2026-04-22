@@ -356,6 +356,26 @@ function App() {
   });
 
   const imageSource = (settings?.image_source ?? 'off') as 'off' | 'miis' | 'ai';
+  const imageModel = settings?.image_model ?? 'gemini-flash';
+  // Immediate-persist path for the image-gen model dropdowns. Writes a merged
+  // Settings object directly via set_settings (bypassing the usual
+  // pendingSettings→saveSettings round-trip the drawer uses) so a dropdown
+  // change sticks across app restarts without the clinician hunting for a
+  // save button. Also keeps pendingSettings in sync so the drawer reflects
+  // the choice on next open.
+  const setImageModel = useCallback(
+    (value: string) => {
+      if (!settings) return;
+      const next = { ...settings, image_model: value };
+      invoke('set_settings', { settings: next }).catch((e) =>
+        console.error('Failed to persist image_model:', e),
+      );
+      if (pendingSettings) {
+        setPendingSettings({ ...pendingSettings, image_model: value });
+      }
+    },
+    [settings, pendingSettings, setPendingSettings],
+  );
 
   // MIIS image suggestions (uses concepts from predictive hints)
   const {
@@ -840,6 +860,8 @@ function App() {
             onAiGenerate={continuous.onAiGenerate}
             onAiDismiss={continuous.onAiDismiss}
             imageSource={continuous.imageSource}
+            imageModel={imageModel}
+            onImageModelChange={setImageModel}
             onStart={continuous.onStart}
             onStop={continuous.onStop}
             onNewPatient={continuous.onNewPatient}
@@ -938,6 +960,8 @@ function App() {
             onAiGenerate={aiGenerate}
             onAiDismiss={aiDismiss}
             imageSource={imageSource}
+            imageModel={imageModel}
+            onImageModelChange={setImageModel}
             onGenerateHandout={handleGenerateHandout}
             isGeneratingHandout={isGeneratingHandout}
             autoEndEnabled={pendingSettings?.auto_end_enabled ?? true}

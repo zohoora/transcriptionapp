@@ -19,6 +19,30 @@ interface ImageSuggestionsProps {
   onAiGenerate?: (description: string) => void;
   onAiDismiss?: (index: number) => void;
   imageSource?: 'miis' | 'ai' | 'off';
+  /** Provider+quality key: "gemini-flash"|"gemini-pro"|"openai-low"|"openai-medium"|"openai-high". */
+  imageModel?: string;
+  onImageModelChange?: (value: string) => void;
+}
+
+type Provider = 'gemini' | 'openai';
+type GeminiQuality = 'flash' | 'pro';
+type OpenAIQuality = 'low' | 'medium' | 'high';
+
+/** Split a combined model key into provider + quality halves. */
+function splitModelKey(key: string): { provider: Provider; quality: string } {
+  if (key.startsWith('openai-')) {
+    return { provider: 'openai', quality: key.slice('openai-'.length) };
+  }
+  // Default to gemini for any unrecognized shape.
+  return {
+    provider: 'gemini',
+    quality: key.startsWith('gemini-') ? key.slice('gemini-'.length) : 'flash',
+  };
+}
+
+/** Re-join provider + quality into the flat key used by the backend. */
+function joinModelKey(provider: Provider, quality: string): string {
+  return `${provider}-${quality}`;
 }
 
 /**
@@ -39,7 +63,10 @@ export const ImageSuggestions = memo(function ImageSuggestions({
   onAiGenerate,
   onAiDismiss,
   imageSource = 'miis',
+  imageModel = 'gemini-flash',
+  onImageModelChange,
 }: ImageSuggestionsProps) {
+  const { provider, quality } = splitModelKey(imageModel);
   const [expandedImage, setExpandedImage] = useState<MiisSuggestion | null>(null);
   const [dismissedIds, setDismissedIds] = useState<Set<number>>(new Set());
   const impressionTracked = useRef<Set<number>>(new Set());
@@ -144,10 +171,61 @@ export const ImageSuggestions = memo(function ImageSuggestions({
     const activeError = aiError ?? null;
     const activeImages = aiImages ?? [];
 
+    const handleProviderChange = (next: Provider) => {
+      if (!onImageModelChange) return;
+      // Reset quality to each provider's sensible default on switch.
+      const nextQuality: GeminiQuality | OpenAIQuality =
+        next === 'gemini' ? 'flash' : 'low';
+      onImageModelChange(joinModelKey(next, nextQuality));
+    };
+    const handleQualityChange = (next: string) => {
+      if (!onImageModelChange) return;
+      onImageModelChange(joinModelKey(provider, next));
+    };
+
     return (
       <div className="ai-image-section">
         <div className="ai-image-header">
           <span className="ai-image-title">Patient Illustration</span>
+        </div>
+
+        {/* Model + quality picker. Settings-persisted; per-call override
+            applies on the next Generate click. */}
+        <div className="ai-image-model-picker">
+          <label className="ai-image-model-label">
+            Model
+            <select
+              className="ai-image-model-select"
+              value={provider}
+              onChange={(e) => handleProviderChange(e.target.value as Provider)}
+              disabled={activeLoading || !onImageModelChange}
+            >
+              <option value="gemini">Gemini</option>
+              <option value="openai">OpenAI</option>
+            </select>
+          </label>
+          <label className="ai-image-model-label">
+            Quality
+            <select
+              className="ai-image-model-select"
+              value={quality}
+              onChange={(e) => handleQualityChange(e.target.value)}
+              disabled={activeLoading || !onImageModelChange}
+            >
+              {provider === 'gemini' ? (
+                <>
+                  <option value="flash">Flash</option>
+                  <option value="pro">Pro</option>
+                </>
+              ) : (
+                <>
+                  <option value="low">Low</option>
+                  <option value="medium">Medium</option>
+                  <option value="high">High</option>
+                </>
+              )}
+            </select>
+          </label>
         </div>
 
         {/* Prompt input */}

@@ -10300,6 +10300,32 @@ button.review-section-header-left:focus {
   text-transform: uppercase;
   letter-spacing: 0.5px;
 }
+.ai-image-model-picker {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 6px;
+  font-size: 11px;
+  color: var(--text-secondary, #9ca3af);
+}
+.ai-image-model-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  letter-spacing: 0.3px;
+}
+.ai-image-model-select {
+  padding: 2px 6px;
+  font-size: 11px;
+  border-radius: 4px;
+  border: 1px solid var(--border-color, #374151);
+  background: var(--bg-primary, #1f2937);
+  color: var(--text-primary, #f9fafb);
+  cursor: pointer;
+}
+.ai-image-model-select:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
 .ai-image-form {
   display: flex;
   gap: 6px;

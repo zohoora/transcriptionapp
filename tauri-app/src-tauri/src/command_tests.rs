@@ -61,6 +61,8 @@ mod tests {
             miis_server_url: "http://100.119.83.76:7843".to_string(),
             image_source: "off".to_string(),
             gemini_api_key: String::new(),
+            openai_api_key: String::new(),
+            image_model: "gemini-flash".to_string(),
             screen_capture_enabled: false,
             screen_capture_interval_secs: 30,
             charting_mode: crate::config::ChartingMode::Session,

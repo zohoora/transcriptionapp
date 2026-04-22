@@ -66,6 +66,8 @@ interface RecordingModeProps {
   onAiGenerate?: (description: string) => void;
   onAiDismiss?: (index: number) => void;
   imageSource?: 'miis' | 'ai' | 'off';
+  imageModel?: string;
+  onImageModelChange?: (value: string) => void;
 
   // Auto-end toggle
   autoEndEnabled: boolean;
@@ -118,6 +120,8 @@ export const RecordingMode = memo(function RecordingMode({
   onAiGenerate,
   onAiDismiss,
   imageSource = 'miis',
+  imageModel,
+  onImageModelChange,
   onGenerateHandout,
   isGeneratingHandout,
   autoEndEnabled,
@@ -228,6 +232,8 @@ export const RecordingMode = memo(function RecordingMode({
           onAiGenerate={onAiGenerate}
           onAiDismiss={onAiDismiss}
           imageSource={imageSource}
+          imageModel={imageModel}
+          onImageModelChange={onImageModelChange}
         />
       )}
 

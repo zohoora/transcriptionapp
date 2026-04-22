@@ -25,6 +25,10 @@ pub struct PhysicianProfile {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub gemini_api_key: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub openai_api_key: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub image_model: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub auto_start_enabled: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub auto_start_require_enrolled: Option<bool>,

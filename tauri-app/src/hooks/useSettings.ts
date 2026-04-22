@@ -29,6 +29,8 @@ export interface PendingSettings {
   // AI image generation
   image_source: string;
   gemini_api_key: string;
+  openai_api_key: string;
+  image_model: string;
   // Screen capture
   screen_capture_enabled: boolean;
   // Continuous charting mode
@@ -83,6 +85,8 @@ export function buildMergedSettings(settings: Settings, pending: PendingSettings
     miis_enabled: pending.image_source === 'miis',
     image_source: pending.image_source,
     gemini_api_key: pending.gemini_api_key,
+    openai_api_key: pending.openai_api_key,
+    image_model: pending.image_model,
     screen_capture_enabled: pending.screen_capture_enabled,
     charting_mode: pending.charting_mode,
     encounter_merge_enabled: pending.encounter_merge_enabled,
@@ -152,6 +156,8 @@ export function useSettings(): UseSettingsResult {
     auto_end_enabled: s.auto_end_enabled,
     image_source: s.image_source,
     gemini_api_key: s.gemini_api_key,
+    openai_api_key: s.openai_api_key,
+    image_model: s.image_model,
     screen_capture_enabled: s.screen_capture_enabled,
     charting_mode: s.charting_mode,
     encounter_detection_mode: s.encounter_detection_mode,
@@ -215,6 +221,8 @@ export function useSettings(): UseSettingsResult {
       const physicianTierChanged =
         settings.image_source !== pendingSettings.image_source ||
         settings.gemini_api_key !== pendingSettings.gemini_api_key ||
+        settings.openai_api_key !== pendingSettings.openai_api_key ||
+        settings.image_model !== pendingSettings.image_model ||
         settings.auto_start_enabled !== pendingSettings.auto_start_enabled ||
         settings.auto_start_require_enrolled !== pendingSettings.auto_start_require_enrolled ||
         settings.auto_start_required_role !== pendingSettings.auto_start_required_role ||
@@ -237,6 +245,8 @@ export function useSettings(): UseSettingsResult {
               updates: {
                 image_source: pendingSettings.image_source,
                 gemini_api_key: pendingSettings.gemini_api_key,
+                openai_api_key: pendingSettings.openai_api_key,
+                image_model: pendingSettings.image_model,
                 auto_start_enabled: pendingSettings.auto_start_enabled,
                 auto_start_require_enrolled: pendingSettings.auto_start_require_enrolled,
                 auto_start_required_role: pendingSettings.auto_start_required_role,
@@ -360,6 +370,8 @@ export function useSettings(): UseSettingsResult {
       [settings.auto_end_enabled, pendingSettings.auto_end_enabled],
       [settings.image_source, pendingSettings.image_source],
       [settings.gemini_api_key, pendingSettings.gemini_api_key],
+      [settings.openai_api_key, pendingSettings.openai_api_key],
+      [settings.image_model, pendingSettings.image_model],
       [settings.screen_capture_enabled, pendingSettings.screen_capture_enabled],
       [settings.charting_mode, pendingSettings.charting_mode],
       [settings.encounter_merge_enabled, pendingSettings.encounter_merge_enabled],
