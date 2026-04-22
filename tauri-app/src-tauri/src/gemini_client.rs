@@ -10,7 +10,7 @@ use tracing::info;
 
 const GEMINI_ENDPOINT: &str = "https://generativelanguage.googleapis.com/v1beta/models";
 pub const GEMINI_FLASH_MODEL: &str = "gemini-3.1-flash-image-preview";
-pub const GEMINI_PRO_MODEL: &str = "gemini-3-pro-image";
+pub const GEMINI_PRO_MODEL: &str = "gemini-3-pro-image-preview";
 
 pub struct GeminiClient {
     client: reqwest::Client,
