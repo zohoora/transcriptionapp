@@ -1025,6 +1025,7 @@ pub async fn run_continuous_mode<C: crate::run_context::RunContext>(
     // Replay bundle clones for detector, screenshot, flush (Arc created before consumer task)
     let bundle_for_detector = Arc::clone(&replay_bundle);
     let bundle_for_screenshot = Arc::clone(&replay_bundle);
+    let bundle_for_flush = Arc::clone(&replay_bundle);
 
     // Server sync context clone for detector task (fire-and-forget uploads)
     let sync_ctx_for_detector = sync_ctx.clone();
@@ -1801,9 +1802,20 @@ pub async fn run_continuous_mode<C: crate::run_context::RunContext>(
                                 bundle.build_and_reset(&session_dir);
                             }
                         }
-                        // Reset segment logger for next encounter
+                        // Reset segment logger + pipeline logger for next encounter.
+                        // Clearing the pipeline-log path forces screenshot/vision
+                        // calls during the NEXT encounter to buffer in `pending`
+                        // until that encounter's split fires set_session(). Without
+                        // this, they'd land in the just-split encounter's
+                        // pipeline_log.jsonl (misattribution — see 2026-04-21
+                        // forensic: Maria had 0 entries, Joseph had 11 spillover
+                        // from Linda). Pending is empty here since the path was
+                        // set during post_split, so no log data is lost.
                         if let Ok(mut sl) = segment_logger_for_detector.lock() {
                             sl.clear_session();
+                        }
+                        if let Ok(mut pl) = logger_for_detector.lock() {
+                            pl.clear_session();
                         }
 
                         // Forward-merge cleanup: if the PREVIOUS encounter had a
@@ -1910,6 +1922,7 @@ pub async fn run_continuous_mode<C: crate::run_context::RunContext>(
         day_logger: day_logger_for_flush,
         templates: flush_templates,
         billing_data: flush_billing_data,
+        bundle: bundle_for_flush,
         min_words_for_clinical_check,
         merge_enabled,
         soap_generation_timeout_secs,

@@ -30,6 +30,7 @@ use crate::local_archive;
 use crate::pipeline::PipelineHandle;
 use crate::pipeline_log::PipelineLogger;
 use crate::presence_sensor::PresenceSensor;
+use crate::replay_bundle::ReplayBundleBuilder;
 use crate::run_context::RunContext;
 use crate::server_config::{BillingData, PromptTemplates};
 use crate::server_sync::ServerSyncContext;
@@ -50,6 +51,9 @@ pub struct FlushOnStopDeps {
     pub day_logger: Arc<Option<DayLogger>>,
     pub templates: Arc<PromptTemplates>,
     pub billing_data: Arc<BillingData>,
+    /// Shared replay-bundle builder. Populated during the run; finalized here
+    /// if the flush produces an encounter session (mirrors the splitter path).
+    pub bundle: Arc<std::sync::Mutex<ReplayBundleBuilder>>,
     pub min_words_for_clinical_check: usize,
     pub merge_enabled: bool,
     pub soap_generation_timeout_secs: u64,
@@ -91,6 +95,7 @@ pub async fn run<C: RunContext>(
         day_logger: day_logger_for_flush,
         templates: flush_templates,
         billing_data: flush_billing_data,
+        bundle: bundle_for_flush,
         min_words_for_clinical_check,
         merge_enabled,
         soap_generation_timeout_secs,
@@ -622,6 +627,58 @@ pub async fn run<C: RunContext>(
                                 }
                             }
                         }
+                    }
+                }
+
+                // Finalize replay bundle for the flushed encounter. Mirrors
+                // the splitter path (continuous_mode.rs:1779-1803) so this
+                // session gets the same offline-replay coverage — fixes the
+                // gap seen on 2026-04-21 where Spencer's flush-on-stop
+                // session had no replay_bundle.json. If the flush was
+                // merged into a previous session the surviving dir is gone,
+                // so we clear without writing (matches the merge path's
+                // fail-safe fallback).
+                if let Ok(mut bundle) = bundle_for_flush.lock() {
+                    let (tracker_majority, tracker_votes, tracker_unique) =
+                        if let Ok(tracker) = handle.name_tracker.lock() {
+                            (
+                                tracker.majority_name(),
+                                tracker.vote_count(),
+                                tracker.votes().keys().cloned().collect::<Vec<_>>(),
+                            )
+                        } else {
+                            (None, 0usize, Vec::new())
+                        };
+                    bundle.set_split_decision(crate::replay_bundle::SplitDecision {
+                        ts: ctx.now_utc().to_rfc3339(),
+                        trigger: "flush".to_string(),
+                        word_count,
+                        cleaned_word_count: word_count,
+                        end_segment_index: None,
+                    });
+                    bundle.set_name_tracker(crate::replay_bundle::NameTrackerState {
+                        majority_name: tracker_majority.clone(),
+                        vote_count: tracker_votes,
+                        unique_names: tracker_unique,
+                    });
+                    bundle.set_outcome(crate::replay_bundle::Outcome {
+                        session_id: session_id.clone(),
+                        encounter_number: flush_encounter_number,
+                        word_count,
+                        is_clinical,
+                        was_merged: flush_was_merged,
+                        merged_into: None,
+                        patient_name: tracker_majority,
+                        detection_method: Some("flush".to_string()),
+                    });
+                    if flush_was_merged {
+                        bundle.clear();
+                    } else if let Ok(dir) =
+                        local_archive::get_session_archive_dir(&session_id, &ctx.now_utc())
+                    {
+                        bundle.build_and_reset(&dir);
+                    } else {
+                        bundle.clear();
                     }
                 }
             }
