@@ -1,16 +1,10 @@
 //! OpenAI image generation proxy (v0.10.54+).
 //!
-//! Profile-service holds the `OPENAI_API_KEY` in a launchd env var and makes
-//! the image call on behalf of rooms. The workstation sends `{prompt, quality}`
-//! and gets back base64 PNG bytes; the secret never leaves this machine.
-//!
-//! Follows the same shape as `medplum_auth.rs` but without a token cache —
-//! OpenAI's API key IS the credential (no token-exchange grant), so every
-//! call goes straight to `/v1/images/generations`.
-//!
-//! If `OPENAI_API_KEY` is unset at startup, the `POST /openai/image` route
-//! returns `503` and clients are expected to fall back to a local key (or
-//! surface the "server has no key" error to the clinician).
+//! Server holds `OPENAI_API_KEY`; workstations POST `{prompt, quality}` and
+//! receive base64 PNG bytes. Unlike the Medplum proxy, there's no token
+//! cache — OpenAI uses the API key directly as the credential. When the env
+//! var is unset, `generate()` returns `ServiceUnavailable` (HTTP 503) so
+//! clients can fall back to a local key without treating it as a fault.
 
 use crate::error::ApiError;
 use serde::{Deserialize, Serialize};
@@ -55,13 +49,10 @@ pub struct OpenAIImageRequest {
     pub size: Option<String>,
 }
 
-/// Response shape. `image_base64` is the raw base64 PNG, same as what the
-/// Tauri command's `AiImageResponse` carries back to the frontend.
+/// Response shape. `image_base64` is the raw base64 PNG.
 #[derive(Debug, Clone, Serialize)]
 pub struct OpenAIImageResponse {
     pub image_base64: String,
-    pub model: String,
-    pub quality: String,
 }
 
 pub struct OpenAIImageProxy {
@@ -83,16 +74,12 @@ impl OpenAIImageProxy {
         }
     }
 
-    pub fn is_configured(&self) -> bool {
-        self.config.is_some()
-    }
-
     pub async fn generate(
         &self,
         req: &OpenAIImageRequest,
     ) -> Result<OpenAIImageResponse, ApiError> {
         let Some(cfg) = &self.config else {
-            return Err(ApiError::Internal(
+            return Err(ApiError::ServiceUnavailable(
                 "OpenAI image proxy not configured — set OPENAI_API_KEY".into(),
             ));
         };
@@ -154,11 +141,7 @@ impl OpenAIImageProxy {
             "generated image via OpenAI proxy"
         );
 
-        Ok(OpenAIImageResponse {
-            image_base64,
-            model: OPENAI_IMAGE_MODEL.to_string(),
-            quality: req.quality.clone(),
-        })
+        Ok(OpenAIImageResponse { image_base64 })
     }
 }
 
@@ -180,7 +163,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn generate_rejects_unconfigured() {
+    async fn generate_rejects_unconfigured_with_503() {
         let proxy = OpenAIImageProxy::new(None);
         let req = OpenAIImageRequest {
             prompt: "Test".into(),
@@ -190,8 +173,10 @@ mod tests {
         let r = proxy.generate(&req).await;
         assert!(r.is_err());
         match r.unwrap_err() {
-            ApiError::Internal(m) => assert!(m.contains("not configured"), "msg: {m}"),
-            e => panic!("unexpected error: {e:?}"),
+            ApiError::ServiceUnavailable(m) => {
+                assert!(m.contains("not configured"), "msg: {m}")
+            }
+            e => panic!("expected ServiceUnavailable, got: {e:?}"),
         }
     }
 
@@ -229,10 +214,4 @@ mod tests {
         }
     }
 
-    #[test]
-    fn is_configured_reports_state() {
-        assert!(!OpenAIImageProxy::new(None).is_configured());
-        let cfg = OpenAIImageConfig::from_value(Some("sk-test".into()));
-        assert!(OpenAIImageProxy::new(cfg).is_configured());
-    }
 }

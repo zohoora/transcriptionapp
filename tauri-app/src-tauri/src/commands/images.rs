@@ -14,6 +14,7 @@ use crate::commands::SharedProfileClient;
 use crate::config::Config;
 use crate::gemini_client::{GeminiClient, GEMINI_FLASH_MODEL, GEMINI_PRO_MODEL};
 use crate::openai_image_client::{OpenAIImageClient, OpenAIImageQuality};
+use crate::profile_client::ProxyImageOutcome;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -100,45 +101,26 @@ pub async fn generate_ai_image(
                 .map_err(CommandError::Network)?
         }
         ImageBackend::OpenAI { quality } => {
-            // Proxy-first: the profile-service holds OPENAI_API_KEY in a
-            // launchd env var (v0.10.54+) so new workstations don't need
-            // per-machine key plumbing. Fall back to the local key only if
-            // the proxy is unreachable/unconfigured AND a local key exists
-            // (dev/offline path). Proxy errors (OpenAI 4xx/5xx, auth, quota)
-            // bubble up without falling back — those aren't "proxy missing".
-            let proxy_client = profile_client.read().await.clone();
-            let proxy_result = if let Some(pf) = proxy_client {
-                Some(pf.fetch_openai_image(&prompt, quality.as_api_str()).await)
-            } else {
-                None
+            // Proxy-first; fall back to local key only when the proxy signals
+            // it has no key (HTTP 503 → `Unconfigured`). Real OpenAI errors
+            // bubble up.
+            let via_proxy = match profile_client.read().await.clone() {
+                Some(pf) => Some(
+                    pf.fetch_openai_image(&prompt, quality.as_api_str())
+                        .await
+                        .map_err(|e| CommandError::Network(e.to_string()))?,
+                ),
+                None => None,
             };
-            match proxy_result {
-                Some(Ok(bytes)) => bytes,
-                Some(Err(e)) => {
-                    let msg = e.to_string();
-                    let proxy_missing = msg.contains("not configured");
-                    if proxy_missing && !config.openai_api_key.trim().is_empty() {
-                        warn!(
-                            event = "openai_proxy_unconfigured_falling_back",
-                            "Profile-service has no OPENAI_API_KEY; using local key"
-                        );
-                        let client =
-                            OpenAIImageClient::new(&config.openai_api_key, timeout_secs)
-                                .map_err(CommandError::Config)?;
-                        client
-                            .generate_image(&prompt, quality)
-                            .await
-                            .map_err(CommandError::Network)?
-                    } else {
-                        return Err(CommandError::Network(msg));
-                    }
-                }
-                None => {
-                    // No profile client registered (unusual in prod). Local-key
-                    // path as last resort.
-                    let client =
-                        OpenAIImageClient::new(&config.openai_api_key, timeout_secs)
-                            .map_err(CommandError::Config)?;
+            match via_proxy {
+                Some(ProxyImageOutcome::Ok(bytes)) => bytes,
+                Some(ProxyImageOutcome::Unconfigured) | None => {
+                    warn!(
+                        event = "openai_proxy_unconfigured_falling_back",
+                        "Profile-service has no OPENAI_API_KEY; using local key"
+                    );
+                    let client = OpenAIImageClient::new(&config.openai_api_key, timeout_secs)
+                        .map_err(CommandError::Config)?;
                     client
                         .generate_image(&prompt, quality)
                         .await

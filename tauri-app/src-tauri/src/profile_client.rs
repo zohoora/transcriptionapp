@@ -196,6 +196,16 @@ impl From<&Room> for crate::config::RoomOverlay {
     }
 }
 
+/// Outcome of a `/openai/image` proxy call. `Unconfigured` is a typed signal
+/// (HTTP 503) that the server has no `OPENAI_API_KEY`; callers interpret it
+/// as "fall back to local key", distinct from real OpenAI errors (4xx/5xx)
+/// which bubble up as `Err`.
+#[derive(Debug)]
+pub enum ProxyImageOutcome {
+    Ok(String),
+    Unconfigured,
+}
+
 pub struct ProfileClient {
     base_urls: Vec<String>,
     active_index: AtomicUsize,
@@ -626,15 +636,11 @@ impl ProfileClient {
     }
 
     /// Generate an image via the profile-service OpenAI proxy (v0.10.54+).
-    /// Server holds `OPENAI_API_KEY`; the workstation sends prompt + quality
-    /// and gets back the base64 PNG. Returns `Err` with "not configured"
-    /// message when the server has no key — caller can fall back to a local
-    /// key at that point.
     pub async fn fetch_openai_image(
         &self,
         prompt: &str,
         quality: &str,
-    ) -> Result<String> {
+    ) -> Result<ProxyImageOutcome> {
         let url = format!("{}/openai/image", self.base_url());
         let body = serde_json::json!({
             "prompt": prompt,
@@ -644,8 +650,11 @@ impl ProfileClient {
             .with_auth(self.client.post(&url).json(&body))
             .send()
             .await?;
-        if !resp.status().is_success() {
-            let status = resp.status();
+        let status = resp.status();
+        if status == reqwest::StatusCode::SERVICE_UNAVAILABLE {
+            return Ok(ProxyImageOutcome::Unconfigured);
+        }
+        if !status.is_success() {
             let text = resp.text().await.unwrap_or_default();
             anyhow::bail!(
                 "OpenAI image proxy failed: {} - {}",
@@ -654,10 +663,11 @@ impl ProfileClient {
             );
         }
         let v: serde_json::Value = resp.json().await?;
-        v["image_base64"]
+        let b64 = v["image_base64"]
             .as_str()
             .map(|s| s.to_string())
-            .ok_or_else(|| anyhow::anyhow!("proxy response missing image_base64"))
+            .ok_or_else(|| anyhow::anyhow!("proxy response missing image_base64"))?;
+        Ok(ProxyImageOutcome::Ok(b64))
     }
 
     /// Look up an existing patient by exact (name, dob). Returns None when

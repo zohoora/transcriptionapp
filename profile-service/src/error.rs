@@ -19,6 +19,12 @@ pub enum ApiError {
 
     #[error("Internal error: {0}")]
     Internal(String),
+
+    /// Proxy endpoint is intentionally unconfigured (missing env var etc.).
+    /// Distinct from Internal so clients can decide to fall back to a local
+    /// credential rather than treat it as a server fault.
+    #[error("Service unavailable: {0}")]
+    ServiceUnavailable(String),
 }
 
 impl IntoResponse for ApiError {
@@ -29,6 +35,7 @@ impl IntoResponse for ApiError {
             ApiError::Conflict(msg) => (StatusCode::CONFLICT, msg.clone()),
             ApiError::Unauthorized(msg) => (StatusCode::UNAUTHORIZED, msg.clone()),
             ApiError::Internal(msg) => (StatusCode::INTERNAL_SERVER_ERROR, msg.clone()),
+            ApiError::ServiceUnavailable(msg) => (StatusCode::SERVICE_UNAVAILABLE, msg.clone()),
         };
         (status, Json(json!({ "error": message }))).into_response()
     }
