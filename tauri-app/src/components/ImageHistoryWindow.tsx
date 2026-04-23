@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { listen } from '@tauri-apps/api/event';
+import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow';
 import { downloadBase64Image } from '../utils';
 
 interface HistoryImage {
@@ -49,7 +50,11 @@ export default function ImageHistoryWindow() {
   }, [selected]);
 
   const handlePrint = useCallback(() => { window.print(); }, []);
-  const handleClose = useCallback(() => { window.close(); }, []);
+  const handleClose = useCallback(() => {
+    getCurrentWebviewWindow().close().catch((e) => {
+      console.error('Failed to close image history window:', e);
+    });
+  }, []);
 
   return (
     <div className="img-hist-container">

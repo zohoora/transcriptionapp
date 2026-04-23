@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { writeText } from '@tauri-apps/plugin-clipboard-manager';
+import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow';
 import { formatErrorMessage } from '../utils';
 
 // Parse URL params once at module level (window.location doesn't change)
@@ -53,7 +54,14 @@ export function PatientHandoutEditor() {
   }, [content]);
 
   const handlePrint = useCallback(() => { window.print(); }, []);
-  const handleClose = useCallback(() => { window.close(); }, []);
+  // `window.close()` is a no-op for Tauri webviews that weren't opened via
+  // `window.open()` — this editor is launched by WebviewWindow so we have
+  // to ask Tauri to close the current window directly.
+  const handleClose = useCallback(() => {
+    getCurrentWebviewWindow().close().catch((e) => {
+      console.error('Failed to close patient handout window:', e);
+    });
+  }, []);
 
   return (
     <>
