@@ -636,10 +636,16 @@ impl ProfileClient {
     }
 
     /// Generate an image via the profile-service OpenAI proxy (v0.10.54+).
+    ///
+    /// `timeout_secs` overrides the shared client's 10s default because OpenAI
+    /// image generation routinely takes 15–45s (server-side budget is 60s).
+    /// Callers pass `gemini_generation_timeout_secs + 15` so the workstation
+    /// waits past the server's OpenAI budget with margin for the return trip.
     pub async fn fetch_openai_image(
         &self,
         prompt: &str,
         quality: &str,
+        timeout_secs: u64,
     ) -> Result<ProxyImageOutcome> {
         let url = format!("{}/openai/image", self.base_url());
         let body = serde_json::json!({
@@ -647,7 +653,12 @@ impl ProfileClient {
             "quality": quality,
         });
         let resp = self
-            .with_auth(self.client.post(&url).json(&body))
+            .with_auth(
+                self.client
+                    .post(&url)
+                    .timeout(std::time::Duration::from_secs(timeout_secs))
+                    .json(&body),
+            )
             .send()
             .await?;
         let status = resp.status();

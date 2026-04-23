@@ -106,9 +106,13 @@ pub async fn generate_ai_image(
             // bubble up.
             let via_proxy = match profile_client.read().await.clone() {
                 Some(pf) => Some(
-                    pf.fetch_openai_image(&prompt, quality.as_api_str())
-                        .await
-                        .map_err(|e| CommandError::Network(e.to_string()))?,
+                    pf.fetch_openai_image(
+                        &prompt,
+                        quality.as_api_str(),
+                        timeout_secs.saturating_add(15),
+                    )
+                    .await
+                    .map_err(|e| CommandError::Network(e.to_string()))?,
                 ),
                 None => None,
             };
