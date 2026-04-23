@@ -708,6 +708,14 @@ pub fn check_screen_recording_permission() -> bool {
     true
 }
 
+/// Non-macOS stub — the macOS-only `CGRequestScreenCaptureAccess` path is
+/// inapplicable; other platforms don't gate screen capture behind a
+/// system prompt the app can trigger.
+#[cfg(not(target_os = "macos"))]
+pub fn request_screen_recording_permission() -> bool {
+    true
+}
+
 /// Open System Settings to Screen Recording privacy section (macOS)
 #[cfg(target_os = "macos")]
 pub fn open_screen_recording_settings() -> Result<(), String> {
