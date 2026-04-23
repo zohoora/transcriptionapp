@@ -27,7 +27,7 @@ const MERGED_BUNDLE_PREFIX: &str = "replay_bundle.merged_";
 /// v3 (2026-04): added `MultiPatientDetection.split_decision` to capture the
 /// multi-patient SPLIT prompt's parsed line_index for replay regression testing.
 /// Older bundles still load via `#[serde(default)]` — older replay tools see None.
-const SCHEMA_VERSION: u32 = 3;
+const SCHEMA_VERSION: u32 = 4;
 
 /// Self-contained replay test case for an encounter.
 #[derive(Debug, Serialize, Deserialize)]
@@ -227,6 +227,10 @@ pub struct ClinicalCheck {
 pub struct MergeCheck {
     pub ts: String,
     pub prev_session_id: String,
+    /// Last portion of the prev transcript. Always populated for auditability
+    /// even when the LLM actually saw the SOAP note — so replay tools can
+    /// compare what the SOAP-based check decided vs. what the tail-based check
+    /// would have decided on the same excerpt.
     pub prev_tail_excerpt: String,
     pub curr_head_excerpt: String,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -241,6 +245,17 @@ pub struct MergeCheck {
     pub success: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub auto_merge_gate: Option<String>,
+    /// Which prev-side input the LLM actually consumed: "soap_note" or
+    /// "transcript_tail" (or "auto_merge_small_orphan" when the auto-merge gate
+    /// short-circuited the LLM call). `None` for bundles written before the
+    /// SOAP-aware merge-check shipped (schema v3 and earlier).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub prev_source: Option<String>,
+    /// Verbatim prev SOAP fed to the merge LLM when `prev_source == "soap_note"`.
+    /// `None` when the tail path was used. Kept separate from `prev_tail_excerpt`
+    /// so replay tools can inspect either view without ambiguity.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub prev_soap_excerpt: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -800,6 +815,8 @@ mod tests {
             latency_ms: 1500,
             success: true,
             auto_merge_gate: Some("name_mismatch".to_string()),
+            prev_source: Some("transcript_tail".to_string()),
+            prev_soap_excerpt: None,
         });
 
         // Set SOAP result

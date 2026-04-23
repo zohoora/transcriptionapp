@@ -23,7 +23,7 @@ use transcription_app_lib::encounter_detection::{
     parse_clinical_content_check, parse_encounter_detection, parse_multi_patient_detection,
     parse_multi_patient_split,
 };
-use transcription_app_lib::encounter_merge::{build_encounter_merge_prompt, parse_merge_check};
+use transcription_app_lib::encounter_merge::{build_encounter_merge_prompt, parse_merge_check, PrevMergeInput};
 use transcription_app_lib::llm_client::LLMClient;
 
 #[derive(Debug, Deserialize)]
@@ -484,7 +484,14 @@ async fn run_encounter_merge(client: &LLMClient, bench: &BenchmarkFile, trials: 
             Some(s) => s,
             None => continue,
         };
-        let (system, user) = build_encounter_merge_prompt(prev, curr, tc.patient_name.as_deref(), None);
+        // Benchmark fixtures carry transcript-tail excerpts verbatim — keep the
+        // tail path so regression numbers stay comparable to historical runs.
+        let (system, user) = build_encounter_merge_prompt(
+            PrevMergeInput::TranscriptTail(prev),
+            curr,
+            tc.patient_name.as_deref(),
+            None,
+        );
 
         let mut votes: Vec<bool> = Vec::new();
         for _ in 0..trials {

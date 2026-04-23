@@ -100,6 +100,27 @@ pub struct BillingRecord {
     /// Description of the diagnostic code
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub diagnostic_description: Option<String>,
+    /// SOAP quote supporting the diagnostic code choice (present when resolved
+    /// via tools-model retrieval; absent when resolved by rule-engine fallback).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub diagnostic_evidence: Option<String>,
+    /// One-sentence rationale for the diagnostic code choice.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub diagnostic_reasoning: Option<String>,
+}
+
+/// Result of resolving a diagnostic code via tools-model (file_lookup + LLM pick).
+/// Passed from the pipeline layer into the rule engine as an override for Stage 1.
+#[derive(Clone, Debug)]
+pub struct ResolvedDiagnostic {
+    /// 3-digit OHIP diagnostic code, validated to exist in the code DB.
+    pub code: String,
+    /// Authoritative description from the code DB (not the model's paraphrase).
+    pub description: String,
+    /// Short quote from the SOAP supporting this choice.
+    pub evidence: String,
+    /// One-sentence rationale from the model.
+    pub reasoning: String,
 }
 
 impl BillingRecord {
@@ -256,6 +277,8 @@ mod tests {
             extracted_at: None,
             diagnostic_code: None,
             diagnostic_description: None,
+            diagnostic_evidence: None,
+            diagnostic_reasoning: None,
         }
     }
 

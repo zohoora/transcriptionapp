@@ -38,6 +38,26 @@ pub fn map_features_to_billing_with_context(
     ctx: &RuleEngineContext,
     billing_data: BillingDataRef<'_>,
 ) -> BillingRecord {
+    map_features_to_billing_with_tools_model(
+        features, session_id, date, duration_ms, patient_name, ctx, billing_data, None,
+    )
+}
+
+/// Same as `map_features_to_billing_with_context` but accepts a pre-resolved
+/// diagnostic code from tools-model retrieval. When `Some`, that code wins
+/// over the LLM's `suggestedDiagnosticCode` (Stage 1) and the text-match
+/// fallback (Stage 2). SOB constraints (Stage 4, IDD codes for K133A/K125A)
+/// still apply.
+pub fn map_features_to_billing_with_tools_model(
+    features: &ClinicalFeatures,
+    session_id: &str,
+    date: &str,
+    duration_ms: u64,
+    patient_name: Option<&str>,
+    ctx: &RuleEngineContext,
+    billing_data: BillingDataRef<'_>,
+    tools_model_resolved: Option<&ResolvedDiagnostic>,
+) -> BillingRecord {
     let mut codes: Vec<BillingCode> = Vec::new();
 
     // 1. Visit type -> assessment code
@@ -222,14 +242,24 @@ pub fn map_features_to_billing_with_context(
         extracted_at: Some(now),
         diagnostic_code: None,
         diagnostic_description: None,
+        diagnostic_evidence: None,
+        diagnostic_reasoning: None,
     };
 
-    // Resolve diagnostic code via 4-stage pipeline:
+    // Resolve diagnostic code via 5-stage pipeline:
+    // 0. Tools-model retrieval (Stage 0 — highest priority when provided)
     // 1. LLM's suggestedDiagnosticCode (if valid)
     // 2. Text-match primaryDiagnosis against 562-code database
     // 3. Billing-code-implied diagnosis (K030A→250, Q050A→428)
     // 4. SOB constraint (K133A/K125A require IDD codes)
-    resolve_diagnostic_code(features, &billing_code_strs, &assessment_code, &mut record, billing_data);
+    resolve_diagnostic_code(
+        features,
+        &billing_code_strs,
+        &assessment_code,
+        &mut record,
+        billing_data,
+        tools_model_resolved,
+    );
 
     record.recalculate_totals();
 
@@ -659,7 +689,10 @@ const IDD_CODES_K125: &[&str] = &["299", "319", "343", "741", "758"];
 const DX_TRUST_CONFIDENCE: f32 = 0.90;
 const DX_MIN_CONSIDER: f32 = 0.50;
 
-/// Resolve the diagnostic code for a billing record via a 4-stage pipeline:
+/// Resolve the diagnostic code for a billing record via a 5-stage pipeline:
+/// 0. If a tools-model resolution was provided, trust it (validated by the
+///    caller: code is known-good against the 562-entry DB). Evidence + reasoning
+///    are stamped onto the record for audit.
 /// 1. Try the LLM's `suggestedDiagnosticCode` — cross-validated against primaryDiagnosis
 /// 2. Fall back to text-matching `primaryDiagnosis` against the 562-code database
 /// 3. Apply billing-code signals (K030A→250, Q050A→428) as fallback
@@ -670,7 +703,25 @@ fn resolve_diagnostic_code(
     assessment_code: &str,
     record: &mut BillingRecord,
     billing_data: BillingDataRef<'_>,
+    tools_model_resolved: Option<&ResolvedDiagnostic>,
 ) {
+    // Stage 0: tools-model retrieval wins when present. The caller has already
+    // verified the code exists in the 562-entry DB; we re-look-up here to
+    // emit the authoritative description and to keep this function self-
+    // contained (tests can exercise it without a live router).
+    if let Some(rd) = tools_model_resolved {
+        if let Some(dc) = diagnostic_codes::get_diagnostic_code(&rd.code) {
+            set_diagnostic(record, dc);
+            if !rd.evidence.is_empty() {
+                record.diagnostic_evidence = Some(rd.evidence.clone());
+            }
+            if !rd.reasoning.is_empty() {
+                record.diagnostic_reasoning = Some(rd.reasoning.clone());
+            }
+            // Fall through to Stage 4 (IDD constraint) but skip Stages 1–3.
+        }
+    }
+
     // Stage 1: try the explicit code suggestion with confidence-aware policy.
     //
     // Background (Apr 16 2026 audit): the prior literal-word cross-validation
@@ -689,6 +740,9 @@ fn resolve_diagnostic_code(
     //     literal-word cross-validation as a guardrail.
     //   • confidence < DX_MIN_CONSIDER: skip the suggestion entirely; fall through
     //     to Stage 2 text match. (A low-confidence LLM output is noise.)
+    //
+    // Skipped entirely when Stage 0 already set a diagnostic via tools-model.
+    if record.diagnostic_code.is_none() {
     if let Some(ref suggested) = features.suggested_diagnostic_code {
         if let Some(dc) = diagnostic_codes::get_diagnostic_code(suggested.trim()) {
             let conf = features.confidence;
@@ -713,6 +767,7 @@ fn resolve_diagnostic_code(
             // conf < DX_MIN_CONSIDER: intentionally ignore the suggestion, fall through.
         }
     }
+    } // end Stage 1 tools-model skip guard
 
     // Stage 2: if no code yet, resolve from plain-text primaryDiagnosis
     if record.diagnostic_code.is_none() {

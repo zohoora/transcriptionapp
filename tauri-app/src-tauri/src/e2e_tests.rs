@@ -384,7 +384,7 @@ Speaker 1: Take care. We'll see you soon.";
             Speaker 2: I've been forgetting some days, to be honest.";
 
         let (merge_system, merge_user) = build_encounter_merge_prompt(
-            prev_tail,
+            crate::encounter_merge::PrevMergeInput::TranscriptTail(prev_tail),
             curr_head,
             Some("Test Patient"),
             None,

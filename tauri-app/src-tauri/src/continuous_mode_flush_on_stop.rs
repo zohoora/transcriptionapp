@@ -372,11 +372,24 @@ pub async fn run<C: RunContext>(
                                         let (filtered_curr_head, _) =
                                             strip_hallucinations(&curr_head, 5);
 
+                                        // Prefer prev SOAP; fall back to the transcript tail
+                                        // when prev has no usable SOAP.
+                                        let prev_soap_ok = prev_details
+                                            .soap_note
+                                            .as_deref()
+                                            .filter(|s| crate::llm_client::is_usable_soap(s));
+                                        let prev_input = match prev_soap_ok {
+                                            Some(s) => crate::encounter_merge::PrevMergeInput::SoapNote(s),
+                                            None => crate::encounter_merge::PrevMergeInput::TranscriptTail(
+                                                &filtered_prev_tail,
+                                            ),
+                                        };
+
                                         let merge_outcome =
                                             crate::encounter_pipeline::run_merge_check(
                                                 client,
                                                 &flush_fast_model,
-                                                &filtered_prev_tail,
+                                                prev_input,
                                                 &filtered_curr_head,
                                                 None, // No vision tracker at flush time
                                                 &logger_for_flush,

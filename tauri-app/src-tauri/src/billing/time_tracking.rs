@@ -341,6 +341,8 @@ mod tests {
             extracted_at: None,
             diagnostic_code: None,
             diagnostic_description: None,
+            diagnostic_evidence: None,
+            diagnostic_reasoning: None,
         }
     }
 

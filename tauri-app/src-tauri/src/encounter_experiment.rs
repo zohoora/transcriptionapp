@@ -22,7 +22,7 @@ use crate::continuous_mode::{
     build_encounter_detection_prompt, parse_encounter_detection,
     EncounterDetectionResult, MergeCheckResult,
 };
-use crate::encounter_merge::{build_encounter_merge_prompt, parse_merge_check};
+use crate::encounter_merge::{build_encounter_merge_prompt, parse_merge_check, PrevMergeInput};
 use crate::llm_client::LLMClient;
 
 // ============================================================================
@@ -625,23 +625,33 @@ pub fn build_merge_prompt(
         (prev_tail.to_string(), curr_head.to_string())
     };
 
+    // The experiment harness replays archived transcript tails against strategies
+    // that predate the SOAP-aware merge-check. Wrap in TranscriptTail so these
+    // experiments keep producing comparable results vs. historical fixtures.
     match strategy {
         MergeStrategy::Baseline => {
-            // Use the production prompt directly
-            build_encounter_merge_prompt(&clean_prev, &clean_curr, None, None)
+            build_encounter_merge_prompt(
+                PrevMergeInput::TranscriptTail(&clean_prev),
+                &clean_curr,
+                None,
+                None,
+            )
         }
         MergeStrategy::PatientNameWeighted => {
-            // Use the production prompt with patient name injection (M1 strategy)
             build_encounter_merge_prompt(
-                &clean_prev,
+                PrevMergeInput::TranscriptTail(&clean_prev),
                 &clean_curr,
                 config.patient_name.as_deref(),
                 None,
             )
         }
         MergeStrategy::HallucinationFiltered => {
-            // Same prompt as baseline, but excerpts are pre-filtered (done above)
-            build_encounter_merge_prompt(&clean_prev, &clean_curr, None, None)
+            build_encounter_merge_prompt(
+                PrevMergeInput::TranscriptTail(&clean_prev),
+                &clean_curr,
+                None,
+                None,
+            )
         }
     }
 }

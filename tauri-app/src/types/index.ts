@@ -1147,6 +1147,10 @@ export interface BillingRecord {
   diagnosticCode?: string | null;
   /** Description of the diagnostic code */
   diagnosticDescription?: string | null;
+  /** SOAP quote supporting the code choice (present when resolved via tools-model) */
+  diagnosticEvidence?: string | null;
+  /** One-sentence rationale for the code choice */
+  diagnosticReasoning?: string | null;
 }
 
 /** Search result from diagnostic code lookup */

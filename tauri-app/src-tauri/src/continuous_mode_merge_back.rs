@@ -64,6 +64,27 @@ use crate::segment_log::SegmentLogger;
 use crate::server_config::{BillingData, PromptTemplates};
 use crate::server_sync::ServerSyncContext;
 
+/// Upper bound on prev-SOAP text fed to the merge-check LLM. Multi-patient
+/// SOAPs can grow beyond this; truncating keeps the merge-prompt context
+/// bounded while still carrying S/O/A/P structure for the first patient(s).
+const PREV_SOAP_MERGE_CHAR_CAP: usize = 12_000;
+
+/// Prepare a prev session's SOAP for use as the "previous-encounter" side of
+/// the merge-check prompt. Returns `None` when the SOAP is missing, empty, or
+/// a malformed-output placeholder — the caller then falls back to the tail path.
+fn prepare_prev_soap_for_merge(raw: Option<&str>) -> Option<String> {
+    let soap = raw?;
+    if !crate::llm_client::is_usable_soap(soap) {
+        return None;
+    }
+    let trimmed = soap.trim();
+    if trimmed.len() <= PREV_SOAP_MERGE_CHAR_CAP {
+        return Some(trimmed.to_string());
+    }
+    let cut = trimmed.ceil_char_boundary(PREV_SOAP_MERGE_CHAR_CAP);
+    Some(format!("{}\n…[truncated]", &trimmed[..cut]))
+}
+
 /// Long-lived dependency bundle. Built once per continuous-mode run before
 /// the detector loop starts and borrowed into each merge-back call.
 pub struct MergeBackDeps {
@@ -243,6 +264,8 @@ pub async fn run<C: RunContext>(
                         latency_ms: 0,
                         success: true,
                         auto_merge_gate: Some("small_orphan_auto_merge".to_string()),
+                        prev_source: Some("auto_merge_small_orphan".to_string()),
+                        prev_soap_excerpt: None,
                     });
                 }
                 if let Some(ref dl) = *deps.day_logger {
@@ -387,10 +410,23 @@ pub async fn run<C: RunContext>(
                     .ok()
                     .and_then(|t| t.majority_name());
 
+                // Prefer prev's SOAP (carries patient labels + plan the tail
+                // lacks); fall back to transcript tail for non-clinical prev
+                // or when SOAP generation produced the malformed placeholder.
+                let prev_soap = prepare_prev_soap_for_merge(
+                    local_archive::read_session_soap(prev_id, prev_date).as_deref(),
+                );
+                let prev_input = match prev_soap.as_deref() {
+                    Some(s) => crate::encounter_merge::PrevMergeInput::SoapNote(s),
+                    None => crate::encounter_merge::PrevMergeInput::TranscriptTail(
+                        &filtered_prev_tail,
+                    ),
+                };
+
                 let merge_outcome = crate::encounter_pipeline::run_merge_check(
                     client,
                     &deps.fast_model,
-                    &filtered_prev_tail,
+                    prev_input,
                     &filtered_curr_head,
                     merge_patient_name.as_deref(),
                     &deps.logger,
@@ -424,6 +460,8 @@ pub async fn run<C: RunContext>(
                         latency_ms: merge_outcome.latency_ms,
                         success: merge_outcome.error.is_none(),
                         auto_merge_gate: None,
+                        prev_source: Some(prev_input.source_tag().to_string()),
+                        prev_soap_excerpt: prev_soap.clone(),
                     });
                 }
 
@@ -845,5 +883,52 @@ pub async fn run<C: RunContext>(
         } else {
             MergeBackOutcome::Skipped
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn prepare_prev_soap_none_when_missing() {
+        assert_eq!(prepare_prev_soap_for_merge(None), None);
+    }
+
+    #[test]
+    fn prepare_prev_soap_none_when_blank() {
+        assert_eq!(prepare_prev_soap_for_merge(Some("   \n\n")), None);
+    }
+
+    #[test]
+    fn prepare_prev_soap_none_when_malformed_sentinel_present() {
+        let placeholder = "S:\n- [SOAP generation produced malformed output — review transcript]";
+        assert_eq!(prepare_prev_soap_for_merge(Some(placeholder)), None);
+    }
+
+    #[test]
+    fn prepare_prev_soap_returns_trimmed_when_short() {
+        let soap = "  S: cough\nO: clear\nA: viral\nP: rest  ";
+        let out = prepare_prev_soap_for_merge(Some(soap)).unwrap();
+        assert_eq!(out, "S: cough\nO: clear\nA: viral\nP: rest");
+        assert!(!out.contains("[truncated]"));
+    }
+
+    #[test]
+    fn prepare_prev_soap_truncates_when_over_cap() {
+        let big = "S: ".to_string() + &"x".repeat(PREV_SOAP_MERGE_CHAR_CAP * 2);
+        let out = prepare_prev_soap_for_merge(Some(&big)).unwrap();
+        assert!(out.len() <= PREV_SOAP_MERGE_CHAR_CAP + 32);
+        assert!(out.ends_with("…[truncated]"));
+    }
+
+    #[test]
+    fn prepare_prev_soap_utf8_safe_at_boundary() {
+        // Force a multi-byte char to straddle PREV_SOAP_MERGE_CHAR_CAP.
+        let pad = "a".repeat(PREV_SOAP_MERGE_CHAR_CAP - 1);
+        let soap = format!("{pad}é{}", "b".repeat(100));
+        let out = prepare_prev_soap_for_merge(Some(&soap)).unwrap();
+        // Must not panic on slicing + must still hold valid UTF-8.
+        assert!(out.is_char_boundary(out.len()));
     }
 }

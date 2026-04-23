@@ -15,7 +15,7 @@ use crate::encounter_detection::{
     MultiPatientDetectionResult, MIN_WORDS_FOR_CLINICAL_CHECK,
 };
 use crate::encounter_experiment::strip_hallucinations;
-use crate::encounter_merge::{build_encounter_merge_prompt, parse_merge_check};
+use crate::encounter_merge::{build_encounter_merge_prompt, parse_merge_check, PrevMergeInput};
 use crate::llm_client::{
     build_simple_soap_prompt, LLMClient, MultiPatientSoapResult, SoapFormat, SoapOptions,
 };
@@ -301,9 +301,32 @@ pub async fn extract_and_archive_billing(
     // Override after-hours from caller (more reliable than LLM)
     features.is_after_hours = is_after_hours;
 
+    // Resolve diagnostic code via tools-model + file_lookup retrieval (Stage 0).
+    // Fails soft — `None` means the rule engine falls through to its existing
+    // 4-stage pipeline. Primary motivation: fast-model confidently hallucinates
+    // 3-digit OHIP codes it doesn't know (e.g., `315 developmental delays` for
+    // fibromyalgia), whereas the 35B tools-model with a grounded reference
+    // library is constrained to codes it can literally read back.
+    let primary_for_tools = features.primary_diagnosis.clone().unwrap_or_default();
+    let conditions_for_tools: Vec<String> = features
+        .conditions
+        .iter()
+        .filter_map(|c| serde_json::to_value(c).ok().and_then(|v| v.as_str().map(String::from)))
+        .collect();
+    let assessment_for_tools = extract_soap_assessment(soap_content);
+    let tools_model_resolved = crate::billing::diagnostic_tools_model::resolve_via_tools_model(
+        client,
+        &primary_for_tools,
+        &conditions_for_tools,
+        &assessment_for_tools,
+        logger,
+        session_id,
+    )
+    .await;
+
     // Map features to billing codes via deterministic rule engine (with companion code context)
     let date_str = format!("{:04}-{:02}-{:02}", session_date.year(), session_date.month(), session_date.day());
-    let mut record = crate::billing::map_features_to_billing_with_context(
+    let mut record = crate::billing::map_features_to_billing_with_tools_model(
         &features,
         session_id,
         &date_str,
@@ -311,6 +334,7 @@ pub async fn extract_and_archive_billing(
         patient_name,
         rule_ctx,
         billing_data,
+        tools_model_resolved.as_ref(),
     );
     record.extraction_model = Some(model.to_string());
 
@@ -357,6 +381,26 @@ pub async fn extract_and_archive_billing(
     );
 
     Ok(record)
+}
+
+/// Extract the Assessment ("A:") section of a SOAP note for use as context
+/// in the tools-model diagnostic code lookup. Falls back to the first ~1500
+/// bytes if the section delimiters aren't present.
+fn extract_soap_assessment(soap: &str) -> String {
+    if let Some(idx) = soap.find("\nA:") {
+        let rest = &soap[idx + 3..];
+        let end = rest
+            .find("\nP:")
+            .or_else(|| rest.find("\n\nP:"))
+            .unwrap_or(rest.len());
+        return rest[..end].trim().to_string();
+    }
+    // No explicit marker — hand the first chunk to the model.
+    let mut end = soap.len().min(1500);
+    while end > 0 && !soap.is_char_boundary(end) {
+        end -= 1;
+    }
+    soap[..end].to_string()
 }
 
 /// Determine if a session started during after-hours (Ontario EST/EDT).
@@ -485,18 +529,28 @@ pub struct MergeCheckOutcome {
 /// Builds the merge prompt, calls the LLM with a 60s timeout, parses the
 /// response, and logs all outcomes to the pipeline logger. Returns the full
 /// outcome for caller-side replay bundle and day log integration.
-pub async fn run_merge_check(
+pub async fn run_merge_check<'a>(
     client: &LLMClient,
     model: &str,
-    prev_tail: &str,
+    prev: PrevMergeInput<'a>,
     curr_head: &str,
     patient_name: Option<&str>,
     logger: &Arc<Mutex<PipelineLogger>>,
-    log_extra: serde_json::Value,
+    mut log_extra: serde_json::Value,
     templates: Option<&PromptTemplates>,
 ) -> MergeCheckOutcome {
+    // Record which prev-side input was fed to the LLM so replay bundles and
+    // pipeline_log rows are debuggable after the fact.
+    if let Some(obj) = log_extra.as_object_mut() {
+        obj.insert("prev_source".into(), serde_json::json!(prev.source_tag()));
+        obj.insert(
+            "prev_excerpt_chars".into(),
+            serde_json::json!(prev.content().len()),
+        );
+    }
+
     let (merge_system, merge_user) =
-        build_encounter_merge_prompt(prev_tail, curr_head, patient_name, templates);
+        build_encounter_merge_prompt(prev, curr_head, patient_name, templates);
     let merge_start = Instant::now();
     let merge_future = client.generate_timed(model, &merge_system, &merge_user, "encounter_merge");
 

@@ -74,6 +74,20 @@ pub fn get_session_archive_dir(session_id: &str, date: &DateTime<Utc>) -> Result
     Ok(date_dir.join(session_id))
 }
 
+/// Read just `soap_note.txt` from a session's archive directory. Returns `None`
+/// when the file is missing or the session id / date resolve to an invalid path.
+///
+/// Lighter-weight than [`get_session`] — it skips metadata + transcript I/O.
+/// Callers are responsible for validating the SOAP content (see
+/// [`crate::llm_client::is_usable_soap`]).
+pub fn read_session_soap(
+    session_id: &str,
+    date: &DateTime<Utc>,
+) -> Option<String> {
+    let dir = get_session_archive_dir(session_id, date).ok()?;
+    fs::read_to_string(dir.join("soap_note.txt")).ok()
+}
+
 /// Ensure the archive directory exists for a session
 fn ensure_session_dir(session_id: &str, date: &DateTime<Utc>) -> Result<PathBuf, String> {
     validate_session_id(session_id)?;

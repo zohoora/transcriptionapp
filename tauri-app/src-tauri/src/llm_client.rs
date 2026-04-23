@@ -57,6 +57,10 @@ pub mod tasks {
     pub const SOAP_NOTE: &str = "soap_note";
     pub const GREETING_DETECTION: &str = "greeting_detection";
     pub const HEALTH_CHECK: &str = "health_check";
+    /// Tools-model diagnostic-code lookup. Router docs warn against
+    /// `max_tokens < ~500` for tool-use paths — the multi-round tool loop
+    /// needs headroom for reasoning + final JSON answer.
+    pub const BILLING_CODES: &str = "billing_codes";
 }
 
 /// A single part of a multimodal message content array
@@ -312,8 +316,16 @@ pub struct GreetingResult {
 }
 
 /// Sentinel substring in the placeholder returned when all SOAP JSON parsers fail.
-/// Used by the retry logic to detect malformed output.
-const MALFORMED_SOAP_SENTINEL: &str = "SOAP generation produced malformed output";
+/// Used by the retry logic to detect malformed output, and by downstream
+/// consumers (e.g., merge-check) that need to skip unusable SOAPs.
+pub(crate) const MALFORMED_SOAP_SENTINEL: &str = "SOAP generation produced malformed output";
+
+/// True iff `s` is a usable SOAP note — non-empty after trimming and not the
+/// malformed-output placeholder from [`MALFORMED_SOAP_SENTINEL`].
+pub(crate) fn is_usable_soap(s: &str) -> bool {
+    let t = s.trim();
+    !t.is_empty() && !t.contains(MALFORMED_SOAP_SENTINEL)
+}
 
 /// SOAP note format style
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -771,8 +783,14 @@ impl LLMClient {
         });
 
         // SOAP generation needs explicit max_tokens to avoid output truncation
-        // on large transcripts (router/model defaults may be too low)
-        let max_tokens = if task == tasks::SOAP_NOTE { Some(4096) } else { None };
+        // on large transcripts (router/model defaults may be too low).
+        // Tools-model billing-code lookups need headroom because the tool
+        // loop + final JSON answer are all counted against completion_tokens.
+        let max_tokens = match task {
+            t if t == tasks::SOAP_NOTE => Some(4096),
+            t if t == tasks::BILLING_CODES => Some(1500),
+            _ => None,
+        };
 
         let request = ChatCompletionRequest {
             model: model.to_string(),
