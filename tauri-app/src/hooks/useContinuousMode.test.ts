@@ -53,7 +53,8 @@ describe('useContinuousMode', () => {
       expect(result.current.stats.buffer_word_count).toBe(0);
       expect(result.current.liveTranscript).toBe('');
       expect(result.current.audioQuality).toBeNull();
-      expect(result.current.encounterNotes).toBe('');
+      expect(result.current.encounterNotes).toEqual([]);
+      expect(result.current.currentPatientName).toBeNull();
       expect(result.current.error).toBeNull();
     });
 
@@ -108,7 +109,8 @@ describe('useContinuousMode', () => {
       expect(result.current.stats.state).toBe('idle');
       expect(result.current.liveTranscript).toBe('');
       expect(result.current.audioQuality).toBeNull();
-      expect(result.current.encounterNotes).toBe('');
+      expect(result.current.encounterNotes).toEqual([]);
+      expect(result.current.currentPatientName).toBeNull();
     });
 
     it('sets error and deactivates on error event', async () => {
@@ -151,6 +153,16 @@ describe('useContinuousMode', () => {
     });
 
     it('clears encounter notes on encounter_detected event', async () => {
+      mockInvoke.mockImplementation((cmd: string, args?: { text?: string }) => {
+        if (cmd === 'submit_continuous_encounter_note') {
+          return Promise.resolve({
+            id: 'note-1',
+            text: args?.text ?? '',
+            timestampMs: 1_700_000_000_000,
+          });
+        }
+        return Promise.resolve(undefined);
+      });
       const useContinuousMode = await loadHook();
       const { result } = renderHook(() => useContinuousMode());
 
@@ -158,18 +170,42 @@ describe('useContinuousMode', () => {
         expect(listeners['continuous_mode_event']).toBeDefined();
       });
 
-      // Set notes first
-      act(() => {
-        result.current.setEncounterNotes('Some notes');
+      await act(async () => {
+        await result.current.submitEncounterNote('Some notes');
       });
-      expect(result.current.encounterNotes).toBe('Some notes');
+      expect(result.current.encounterNotes).toHaveLength(1);
 
-      // Encounter detected should clear notes
+      // Encounter detected should clear notes + current patient name
       act(() => {
         emitEvent('continuous_mode_event', { type: 'encounter_detected' });
       });
 
-      expect(result.current.encounterNotes).toBe('');
+      expect(result.current.encounterNotes).toEqual([]);
+      expect(result.current.currentPatientName).toBeNull();
+    });
+
+    it('tracks current patient name from patient_name_updated events', async () => {
+      const useContinuousMode = await loadHook();
+      const { result } = renderHook(() => useContinuousMode());
+
+      await waitFor(() => {
+        expect(listeners['continuous_mode_event']).toBeDefined();
+      });
+
+      act(() => {
+        emitEvent('continuous_mode_event', {
+          type: 'patient_name_updated',
+          name: 'Jane Smith',
+          dob: '1970-01-15',
+        });
+      });
+      expect(result.current.currentPatientName).toBe('Jane Smith');
+
+      // Tracker clear (e.g. DOB invalidation) → name absent → null
+      act(() => {
+        emitEvent('continuous_mode_event', { type: 'patient_name_updated' });
+      });
+      expect(result.current.currentPatientName).toBeNull();
     });
   });
 
@@ -411,65 +447,64 @@ describe('useContinuousMode', () => {
     });
   });
 
-  describe('encounter notes debounce', () => {
-    it('updates local notes immediately', async () => {
+  describe('submit-able encounter notes', () => {
+    it('appends a chip when submit_continuous_encounter_note returns a record', async () => {
+      let callCount = 0;
+      mockInvoke.mockImplementation((cmd: string, args?: { text?: string }) => {
+        if (cmd === 'submit_continuous_encounter_note') {
+          callCount += 1;
+          return Promise.resolve({
+            id: `note-${callCount}`,
+            text: args?.text ?? '',
+            timestampMs: 1_700_000_000_000 + callCount,
+          });
+        }
+        return Promise.resolve(undefined);
+      });
       const useContinuousMode = await loadHook();
       const { result } = renderHook(() => useContinuousMode());
 
-      act(() => {
-        result.current.setEncounterNotes('Patient complains of headache');
+      await act(async () => {
+        await result.current.submitEncounterNote('Knee injection 40mg');
       });
-
-      expect(result.current.encounterNotes).toBe('Patient complains of headache');
-    });
-
-    it('syncs notes to backend after 500ms debounce', async () => {
-      vi.useFakeTimers();
-      const useContinuousMode = await loadHook();
-      const { result } = renderHook(() => useContinuousMode());
-
-      act(() => {
-        result.current.setEncounterNotes('Note text');
-      });
-
-      // Should not have synced yet
-      expect(mockInvoke).not.toHaveBeenCalledWith('set_continuous_encounter_notes', expect.anything());
-
-      // Advance past debounce
-      act(() => {
-        vi.advanceTimersByTime(500);
-      });
-
-      expect(mockInvoke).toHaveBeenCalledWith('set_continuous_encounter_notes', { notes: 'Note text' });
-      vi.useRealTimers();
-    });
-
-    it('coalesces rapid changes within debounce window', async () => {
-      vi.useFakeTimers();
-      const useContinuousMode = await loadHook();
-      const { result } = renderHook(() => useContinuousMode());
-
-      act(() => {
-        result.current.setEncounterNotes('A');
-      });
-      act(() => {
-        result.current.setEncounterNotes('AB');
-      });
-      act(() => {
-        result.current.setEncounterNotes('ABC');
-      });
-
-      act(() => {
-        vi.advanceTimersByTime(500);
-      });
-
-      // Should only invoke once with final value
-      const noteCalls = mockInvoke.mock.calls.filter(
-        (c) => c[0] === 'set_continuous_encounter_notes'
+      expect(mockInvoke).toHaveBeenCalledWith(
+        'submit_continuous_encounter_note',
+        { text: 'Knee injection 40mg' },
       );
-      expect(noteCalls).toHaveLength(1);
-      expect(noteCalls[0][1]).toEqual({ notes: 'ABC' });
-      vi.useRealTimers();
+      expect(result.current.encounterNotes).toHaveLength(1);
+      expect(result.current.encounterNotes[0].text).toBe('Knee injection 40mg');
+
+      await act(async () => {
+        await result.current.submitEncounterNote('Follow-up in 2 weeks');
+      });
+      expect(result.current.encounterNotes).toHaveLength(2);
+      expect(result.current.encounterNotes.map((n) => n.id)).toEqual(['note-1', 'note-2']);
+    });
+
+    it('removes a chip on deleteEncounterNote', async () => {
+      mockInvoke.mockImplementation((cmd: string, args?: { text?: string }) => {
+        if (cmd === 'submit_continuous_encounter_note') {
+          return Promise.resolve({
+            id: 'note-42',
+            text: args?.text ?? '',
+            timestampMs: 1_700_000_000_000,
+          });
+        }
+        return Promise.resolve(undefined);
+      });
+      const useContinuousMode = await loadHook();
+      const { result } = renderHook(() => useContinuousMode());
+
+      await act(async () => {
+        await result.current.submitEncounterNote('Test note');
+      });
+      expect(result.current.encounterNotes).toHaveLength(1);
+
+      await act(async () => {
+        await result.current.deleteEncounterNote('note-42');
+      });
+      expect(result.current.encounterNotes).toEqual([]);
+      expect(mockInvoke).toHaveBeenCalledWith('delete_continuous_encounter_note', { id: 'note-42' });
     });
   });
 

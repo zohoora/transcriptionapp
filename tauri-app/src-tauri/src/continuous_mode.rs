@@ -234,6 +234,11 @@ pub struct RecentEncounter {
     pub patient_name: Option<String>,
 }
 
+// `EncounterNote` lives in `local_archive.rs` (archive-persistent data).
+// Re-exported here so existing call sites that know the type via
+// `continuous_mode::EncounterNote` keep compiling.
+pub use crate::local_archive::{join_notes_for_prompt, EncounterNote};
+
 /// Stats for the frontend monitoring dashboard
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ContinuousModeStats {
@@ -291,8 +296,11 @@ pub struct ContinuousModeHandle {
     pub name_tracker: Arc<Mutex<PatientNameTracker>>,
     /// Manual trigger for "New Patient" button — wakes the encounter detector immediately
     pub encounter_manual_trigger: Arc<tokio::sync::Notify>,
-    /// Per-encounter notes from the clinician (passed to SOAP generation, cleared on new encounter)
-    pub encounter_notes: Arc<Mutex<String>>,
+    /// Submitted per-encounter clinician notes. Accumulates chip-style notes
+    /// until the encounter splits / merges / flushes, at which point the list
+    /// is drained, persisted to `clinician_notes.json`, and joined into the
+    /// SOAP prompt. See `EncounterNote` and `join_notes_for_prompt`.
+    pub encounter_notes: Arc<Mutex<Vec<EncounterNote>>>,
     /// Presence sensor state receiver (None when in LLM detection mode)
     pub sensor_state_rx: Mutex<Option<tokio::sync::watch::Receiver<crate::presence_sensor::PresenceState>>>,
     /// Presence sensor status receiver (None when in LLM detection mode)
@@ -328,7 +336,7 @@ impl ContinuousModeHandle {
             last_error: Arc::new(Mutex::new(None)),
             name_tracker: Arc::new(Mutex::new(PatientNameTracker::new())),
             encounter_manual_trigger: Arc::new(tokio::sync::Notify::new()),
-            encounter_notes: Arc::new(Mutex::new(String::new())),
+            encounter_notes: Arc::new(Mutex::new(Vec::new())),
             sensor_state_rx: Mutex::new(None),
             sensor_status_rx: Mutex::new(None),
             vision_name_change_trigger: Arc::new(tokio::sync::Notify::new()),
@@ -373,6 +381,23 @@ impl ContinuousModeHandle {
 
     pub fn stop(&self) {
         self.stop_flag.store(true, Ordering::Relaxed);
+    }
+
+    /// Atomically take + clear the accumulated clinician notes. Recovers
+    /// the Vec even if the mutex is poisoned so a crashed previous holder
+    /// doesn't strand the buffer on disk across splits.
+    pub fn drain_encounter_notes(&self) -> Vec<EncounterNote> {
+        match self.encounter_notes.lock() {
+            Ok(mut notes) => std::mem::take(&mut *notes),
+            Err(e) => {
+                warn!(
+                    event = "encounter_notes_lock_poisoned",
+                    error = %e,
+                    "Encounter notes lock poisoned — recovering Vec"
+                );
+                std::mem::take(&mut *e.into_inner())
+            }
+        }
     }
 
     pub fn is_stopped(&self) -> bool {
@@ -1892,6 +1917,7 @@ pub async fn run_continuous_mode<C: crate::run_context::RunContext>(
                 screenshot_buffer: handle.screenshot_buffer.clone(),
                 transcript_buffer: handle.transcript_buffer.clone(),
                 thresholds: screenshot_thresholds,
+                app_handle: ctx.raw_tauri_app(),
             },
         )))
     } else {

@@ -5,7 +5,8 @@ import { renderHook, act } from '@testing-library/react';
 const mockStart = vi.fn();
 const mockStop = vi.fn();
 const mockTriggerNewPatient = vi.fn();
-const mockSetEncounterNotes = vi.fn();
+const mockSubmitEncounterNote = vi.fn();
+const mockDeleteEncounterNote = vi.fn();
 const mockResetBiomarkers = vi.fn();
 const mockMiisRecordImpression = vi.fn();
 const mockMiisRecordClick = vi.fn();
@@ -28,8 +29,10 @@ vi.mock('./useContinuousMode', () => ({
     },
     liveTranscript: '',
     audioQuality: null,
-    encounterNotes: '',
-    setEncounterNotes: mockSetEncounterNotes,
+    encounterNotes: [],
+    submitEncounterNote: mockSubmitEncounterNote,
+    deleteEncounterNote: mockDeleteEncounterNote,
+    currentPatientName: null,
     start: mockStart,
     stop: mockStop,
     triggerNewPatient: mockTriggerNewPatient,
@@ -167,13 +170,15 @@ describe('useContinuousModeOrchestrator', () => {
       expect(mockStop).toHaveBeenCalledTimes(1);
     });
 
-    it('delegates onEncounterNotesChange from setEncounterNotes', async () => {
+    it('forwards onSubmitEncounterNote + onDeleteEncounterNote', async () => {
       const useContinuousModeOrchestrator = await loadHook();
       const { result } = renderHook(() =>
         useContinuousModeOrchestrator({ settings: null })
       );
-      result.current.onEncounterNotesChange('test notes');
-      expect(mockSetEncounterNotes).toHaveBeenCalledWith('test notes');
+      result.current.onSubmitEncounterNote('test notes');
+      expect(mockSubmitEncounterNote).toHaveBeenCalledWith('test notes');
+      result.current.onDeleteEncounterNote('note-id');
+      expect(mockDeleteEncounterNote).toHaveBeenCalledWith('note-id');
     });
 
     it('delegates onMiisImpression, onMiisClick, onMiisDismiss', async () => {

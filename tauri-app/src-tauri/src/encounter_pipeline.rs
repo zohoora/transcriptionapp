@@ -1145,6 +1145,7 @@ mod tests {
             has_billing_record: None,
             patient_confirmed_at: None,
             medplum_patient_id: None,
+            has_clinician_notes: false,
         }
     }
 

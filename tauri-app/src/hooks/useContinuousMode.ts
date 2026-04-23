@@ -1,7 +1,13 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { listen, UnlistenFn } from '@tauri-apps/api/event';
-import type { ContinuousModeStats, ContinuousModeEvent, TranscriptUpdate, AudioQualitySnapshot } from '../types';
+import type {
+  ContinuousModeStats,
+  ContinuousModeEvent,
+  TranscriptUpdate,
+  AudioQualitySnapshot,
+  EncounterNote,
+} from '../types';
 
 export interface UseContinuousModeResult {
   /** Whether continuous mode is actively running */
@@ -14,10 +20,14 @@ export interface UseContinuousModeResult {
   liveTranscript: string;
   /** Audio quality snapshot from the pipeline */
   audioQuality: AudioQualitySnapshot | null;
-  /** Per-encounter notes (passed to SOAP generation) */
-  encounterNotes: string;
-  /** Update encounter notes (debounced backend sync) */
-  setEncounterNotes: (notes: string) => void;
+  /** Chip-style submitted notes for the in-progress encounter (newest last) */
+  encounterNotes: EncounterNote[];
+  /** Submit a single note to the current encounter. Resolves after the backend stamps id + timestamp; rejects on empty input or if continuous mode isn't running. */
+  submitEncounterNote: (text: string) => Promise<EncounterNote>;
+  /** Remove a previously-submitted note by id. Idempotent — no-op if the id isn't present. */
+  deleteEncounterNote: (id: string) => Promise<void>;
+  /** Live patient name from vision tracker (null during buffering-before-vision or after DOB invalidation) */
+  currentPatientName: string | null;
   /** Start continuous mode */
   start: () => Promise<void>;
   /** Stop continuous mode */
@@ -60,14 +70,14 @@ export function useContinuousMode(): UseContinuousModeResult {
   const [stats, setStats] = useState<ContinuousModeStats>(IDLE_STATS);
   const [liveTranscript, setLiveTranscript] = useState('');
   const [audioQuality, setAudioQuality] = useState<AudioQualitySnapshot | null>(null);
-  const [encounterNotes, setEncounterNotesState] = useState('');
+  const [encounterNotes, setEncounterNotes] = useState<EncounterNote[]>([]);
+  const [currentPatientName, setCurrentPatientName] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [encounterSessionId, setEncounterSessionId] = useState<string>(`continuous-${Date.now()}`);
   const [transcriptionStalled, setTranscriptionStalled] = useState(false);
   const [isSleeping, setIsSleeping] = useState(false);
   const [sleepResumeAt, setSleepResumeAt] = useState<string | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const notesDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isActiveRef = useRef(isActive);
 
   // Keep isActiveRef in sync with isActive state
@@ -92,6 +102,8 @@ export function useContinuousMode(): UseContinuousModeResult {
           setTranscriptionStalled(false);
           setIsSleeping(false);
           setSleepResumeAt(null);
+          setEncounterNotes([]);
+          setCurrentPatientName(null);
           break;
         case 'stopped':
           setIsActive(false);
@@ -99,15 +111,25 @@ export function useContinuousMode(): UseContinuousModeResult {
           setStats(IDLE_STATS);
           setLiveTranscript('');
           setAudioQuality(null);
-          setEncounterNotesState('');
+          setEncounterNotes([]);
+          setCurrentPatientName(null);
           setTranscriptionStalled(false);
           setIsSleeping(false);
           setSleepResumeAt(null);
           break;
         case 'encounter_detected':
-          setEncounterNotesState('');
+          // Encounter split — archived notes are on disk. Reset the chip list
+          // for the NEW encounter; reset the attachment label until the
+          // vision tracker reacquires a name on the next screenshot cycle.
+          setEncounterNotes([]);
+          setCurrentPatientName(null);
           setEncounterSessionId(`continuous-${Date.now()}`);
           setTranscriptionStalled(false);
+          break;
+        case 'patient_name_updated':
+          // `name` absent = tracker cleared (DOB invalidation). Store null so
+          // the attachment label falls back to "current encounter".
+          setCurrentPatientName(payload.name ?? null);
           break;
         case 'transcription_stalled':
           setTranscriptionStalled(true);
@@ -219,27 +241,27 @@ export function useContinuousMode(): UseContinuousModeResult {
     };
   }, [isActive]);
 
-  // Debounced encounter notes setter — syncs to backend after 500ms idle
-  const setEncounterNotes = useCallback((notes: string) => {
-    setEncounterNotesState(notes);
-
-    if (notesDebounceRef.current) {
-      clearTimeout(notesDebounceRef.current);
-    }
-    notesDebounceRef.current = setTimeout(() => {
-      invoke('set_continuous_encounter_notes', { notes }).catch((e) => {
-        console.error('Failed to sync encounter notes:', e);
-      });
-    }, 500);
+  // Submit a single note. The backend stamps id + timestamp and returns the
+  // record; we append on success so React keys + timestamps come from one
+  // source of truth (the backend), avoiding clock drift or id collisions
+  // between optimistic UI and the eventual persisted list.
+  const submitEncounterNote = useCallback(async (text: string): Promise<EncounterNote> => {
+    const note = await invoke<EncounterNote>('submit_continuous_encounter_note', { text });
+    setEncounterNotes((prev) => [...prev, note]);
+    return note;
   }, []);
 
-  // Cleanup debounce timer on unmount
-  useEffect(() => {
-    return () => {
-      if (notesDebounceRef.current) {
-        clearTimeout(notesDebounceRef.current);
-      }
-    };
+  // Remove a chip. Optimistic (filter locally first) so the UI responds
+  // immediately; the backend call is idempotent so a failed network trip
+  // doesn't corrupt state — the worst case is a stale note persisting and
+  // being included in the SOAP prompt.
+  const deleteEncounterNote = useCallback(async (id: string): Promise<void> => {
+    setEncounterNotes((prev) => prev.filter((n) => n.id !== id));
+    try {
+      await invoke('delete_continuous_encounter_note', { id });
+    } catch (e) {
+      console.error('Failed to delete encounter note:', e);
+    }
   }, []);
 
   const start = useCallback(async () => {
@@ -280,7 +302,9 @@ export function useContinuousMode(): UseContinuousModeResult {
     liveTranscript,
     audioQuality,
     encounterNotes,
-    setEncounterNotes,
+    submitEncounterNote,
+    deleteEncounterNote,
+    currentPatientName,
     start,
     stop,
     triggerNewPatient,

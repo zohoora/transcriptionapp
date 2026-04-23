@@ -5,7 +5,7 @@ use crate::commands::physicians::{
     SharedActivePhysician, SharedProfileClient, SharedRoomConfig, SharedServerConfig,
 };
 use crate::config::Config;
-use crate::continuous_mode::{ContinuousModeHandle, ContinuousModeStats, ContinuousState};
+use crate::continuous_mode::{ContinuousModeHandle, ContinuousModeStats, ContinuousState, EncounterNote};
 use crate::continuous_mode_events::ContinuousModeEvent;
 use crate::server_config_resolve::resolve;
 use crate::server_sync::ServerSyncContext;
@@ -393,25 +393,82 @@ pub fn get_continuous_transcript(
     }
 }
 
-/// Set per-encounter notes for the current continuous mode encounter
+/// Submit a single clinician note to the currently-buffering encounter.
 ///
-/// Notes are passed to SOAP generation and cleared when a new encounter starts.
+/// The backend stamps a fresh UUID `id` and current `timestamp_ms` onto the
+/// submission and appends the record to the handle's notes Vec. Returns the
+/// stamped record so the frontend can render it immediately and key chip
+/// deletion against the id.
+///
+/// Whitespace-only submissions are rejected — the frontend is expected to
+/// disable its submit button for empty drafts, but we validate here too.
 #[tauri::command]
-pub fn set_continuous_encounter_notes(
-    notes: String,
+pub fn submit_continuous_encounter_note(
+    text: String,
+    continuous_state: State<'_, SharedContinuousModeState>,
+) -> Result<EncounterNote, CommandError> {
+    let trimmed = text.trim();
+    if trimmed.is_empty() {
+        return Err(CommandError::Validation(
+            "encounter note must contain non-whitespace text".into(),
+        ));
+    }
+    let state = continuous_state
+        .lock()
+        .map_err(|_| CommandError::lock_poisoned("continuous_state"))?;
+    if let Some(ref handle) = *state {
+        let note = EncounterNote::new(trimmed.to_string());
+        let mut notes = handle
+            .encounter_notes
+            .lock()
+            .map_err(|_| CommandError::lock_poisoned("encounter_notes"))?;
+        notes.push(note.clone());
+        Ok(note)
+    } else {
+        Err(CommandError::NotRunning("continuous mode".into()))
+    }
+}
+
+/// Return the list of clinician notes currently accumulated for the in-flight
+/// encounter. Used by the frontend on mount / hot-reload to reconcile its
+/// local chip list against backend truth (e.g. after a page refresh).
+#[tauri::command]
+pub fn get_continuous_encounter_notes(
+    continuous_state: State<'_, SharedContinuousModeState>,
+) -> Result<Vec<EncounterNote>, CommandError> {
+    let state = continuous_state
+        .lock()
+        .map_err(|_| CommandError::lock_poisoned("continuous_state"))?;
+    if let Some(ref handle) = *state {
+        let notes = handle
+            .encounter_notes
+            .lock()
+            .map_err(|_| CommandError::lock_poisoned("encounter_notes"))?;
+        Ok(notes.clone())
+    } else {
+        Ok(Vec::new())
+    }
+}
+
+/// Remove a previously-submitted note by id. No-op if the id is not present
+/// (e.g. the encounter just split and the list was drained out from under
+/// the user). Idempotent so the UI can fire-and-forget.
+#[tauri::command]
+pub fn delete_continuous_encounter_note(
+    id: String,
     continuous_state: State<'_, SharedContinuousModeState>,
 ) -> Result<(), CommandError> {
     let state = continuous_state
         .lock()
         .map_err(|_| CommandError::lock_poisoned("continuous_state"))?;
     if let Some(ref handle) = *state {
-        if let Ok(mut encounter_notes) = handle.encounter_notes.lock() {
-            *encounter_notes = notes;
-        }
-        Ok(())
-    } else {
-        Err(CommandError::NotRunning("continuous mode".into()))
+        let mut notes = handle
+            .encounter_notes
+            .lock()
+            .map_err(|_| CommandError::lock_poisoned("encounter_notes"))?;
+        notes.retain(|n| n.id != id);
     }
+    Ok(())
 }
 
 /// Get the current encounter transcript from continuous mode.

@@ -43,6 +43,7 @@ const ALLOWED_SESSION_FILES: &[&str] = &[
     "segments.jsonl",
     "billing.json",
     "patient_handout.txt",
+    "clinician_notes.json",
 ];
 
 /// Check if a filename is allowed for session file upload.
@@ -980,6 +981,12 @@ mod tests {
     fn allowlist_accepts_patient_handout() {
         // Regression guard: handout was omitted from the allowlist until v0.10.34.
         assert!(is_allowed_session_file("patient_handout.txt"));
+    }
+
+    #[test]
+    fn allowlist_accepts_clinician_notes() {
+        // Per-encounter clinician-submitted notes sidecar (v0.10.57+).
+        assert!(is_allowed_session_file("clinician_notes.json"));
     }
 
     #[test]

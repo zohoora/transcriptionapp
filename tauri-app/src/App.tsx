@@ -843,7 +843,9 @@ function App() {
             biomarkers={continuous.biomarkers}
             biomarkerTrends={continuous.biomarkerTrends}
             encounterNotes={continuous.encounterNotes}
-            onEncounterNotesChange={continuous.onEncounterNotesChange}
+            onSubmitEncounterNote={continuous.onSubmitEncounterNote}
+            onDeleteEncounterNote={continuous.onDeleteEncounterNote}
+            currentPatientName={continuous.currentPatientName}
             // Image suggestions (MIIS or AI)
             miisSuggestions={continuous.miisSuggestions}
             miisLoading={continuous.miisLoading}

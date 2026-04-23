@@ -550,7 +550,9 @@ pub fn run() {
             commands::get_continuous_mode_status,
             commands::get_continuous_transcript,
             commands::trigger_new_patient,
-            commands::set_continuous_encounter_notes,
+            commands::submit_continuous_encounter_note,
+            commands::get_continuous_encounter_notes,
+            commands::delete_continuous_encounter_note,
             commands::get_current_encounter_transcript,
             commands::list_serial_ports,
             // Physician selection and room config

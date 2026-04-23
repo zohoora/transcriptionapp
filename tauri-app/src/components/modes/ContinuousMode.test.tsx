@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { ContinuousMode } from './ContinuousMode';
 import type { ContinuousModeStats, AudioQualitySnapshot } from '../../types';
 
@@ -66,8 +66,14 @@ function makeDefaultProps(overrides: Partial<Parameters<typeof ContinuousMode>[0
     audioQuality: null,
     biomarkers: null,
     biomarkerTrends: { vitalityTrend: 'insufficient' as const, stabilityTrend: 'insufficient' as const },
-    encounterNotes: '',
-    onEncounterNotesChange: vi.fn(),
+    encounterNotes: [],
+    onSubmitEncounterNote: vi.fn().mockResolvedValue({
+      id: 'note-1',
+      text: '',
+      timestampMs: 1_700_000_000_000,
+    }),
+    onDeleteEncounterNote: vi.fn().mockResolvedValue(undefined),
+    currentPatientName: null,
     miisSuggestions: [],
     miisLoading: false,
     miisError: null,
@@ -262,48 +268,97 @@ describe('ContinuousMode', () => {
   describe('encounter notes', () => {
     it('shows "Add Notes" button by default', () => {
       render(<ContinuousMode {...makeDefaultProps({ isActive: true, stats: ACTIVE_STATS })} />);
-      expect(screen.getByText('Add Notes')).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /add notes/i })).toBeInTheDocument();
     });
 
-    it('shows notes input when toggle is clicked', () => {
+    it('shows draft input + submit button when toggle is clicked', () => {
       render(<ContinuousMode {...makeDefaultProps({ isActive: true, stats: ACTIVE_STATS })} />);
       fireEvent.click(screen.getByRole('button', { name: /add notes/i }));
-      expect(screen.getByText('Hide Notes')).toBeInTheDocument();
-      expect(screen.getByPlaceholderText(/enter observations/i)).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /hide notes/i })).toBeInTheDocument();
+      expect(screen.getByPlaceholderText(/enter an observation/i)).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /submit encounter note/i })).toBeInTheDocument();
     });
 
-    it('shows "has-notes" class when notes exist', () => {
+    it('marks the toggle with has-notes when chips exist', () => {
       render(<ContinuousMode {...makeDefaultProps({
         isActive: true,
         stats: ACTIVE_STATS,
-        encounterNotes: 'Some observation',
+        encounterNotes: [
+          { id: 'n1', text: 'Knee injection', timestampMs: 1_700_000_000_000 },
+        ],
       })} />);
-      const toggle = screen.getByRole('button', { name: /add notes/i });
-      expect(toggle).toHaveClass('has-notes');
+      expect(screen.getByRole('button', { name: /add notes/i })).toHaveClass('has-notes');
     });
 
-    it('fires onEncounterNotesChange when typing', () => {
-      const onEncounterNotesChange = vi.fn();
-      render(<ContinuousMode {...makeDefaultProps({
-        isActive: true,
-        stats: ACTIVE_STATS,
-        onEncounterNotesChange,
-      })} />);
-
-      fireEvent.click(screen.getByRole('button', { name: /add notes/i }));
-      fireEvent.change(screen.getByPlaceholderText(/enter observations/i), {
-        target: { value: 'Patient limping' },
+    it('calls onSubmitEncounterNote with trimmed draft and clears the textarea', async () => {
+      const onSubmitEncounterNote = vi.fn().mockResolvedValue({
+        id: 'note-1',
+        text: 'Patient limping',
+        timestampMs: 1_700_000_000_000,
       });
-      expect(onEncounterNotesChange).toHaveBeenCalledWith('Patient limping');
+      render(<ContinuousMode {...makeDefaultProps({
+        isActive: true,
+        stats: ACTIVE_STATS,
+        onSubmitEncounterNote,
+      })} />);
+
+      fireEvent.click(screen.getByRole('button', { name: /add notes/i }));
+      const textarea = screen.getByPlaceholderText(/enter an observation/i) as HTMLTextAreaElement;
+      fireEvent.change(textarea, { target: { value: '  Patient limping  ' } });
+      fireEvent.click(screen.getByRole('button', { name: /submit encounter note/i }));
+
+      await waitFor(() => expect(onSubmitEncounterNote).toHaveBeenCalledWith('Patient limping'));
+      await waitFor(() => expect(textarea.value).toBe(''));
     });
 
-    it('hides notes input when toggled again', () => {
+    it('disables the submit button when the draft is whitespace-only', () => {
       render(<ContinuousMode {...makeDefaultProps({ isActive: true, stats: ACTIVE_STATS })} />);
       fireEvent.click(screen.getByRole('button', { name: /add notes/i }));
-      expect(screen.getByPlaceholderText(/enter observations/i)).toBeInTheDocument();
+      const submit = screen.getByRole('button', { name: /submit encounter note/i });
+      expect(submit).toBeDisabled();
+      fireEvent.change(screen.getByPlaceholderText(/enter an observation/i), {
+        target: { value: '   ' },
+      });
+      expect(submit).toBeDisabled();
+    });
 
+    it('shows the attachment hint with the live patient name when provided', () => {
+      render(<ContinuousMode {...makeDefaultProps({
+        isActive: true,
+        stats: ACTIVE_STATS,
+        currentPatientName: 'Jane Smith',
+      })} />);
+      fireEvent.click(screen.getByRole('button', { name: /add notes/i }));
+      const hint = screen.getByText(/notes will attach to:/i);
+      expect(hint).toHaveTextContent('Jane Smith');
+    });
+
+    it('renders submitted chips newest-first and wires delete buttons', () => {
+      const onDeleteEncounterNote = vi.fn().mockResolvedValue(undefined);
+      render(<ContinuousMode {...makeDefaultProps({
+        isActive: true,
+        stats: ACTIVE_STATS,
+        encounterNotes: [
+          { id: 'old', text: 'first submission', timestampMs: 1_700_000_000_000 },
+          { id: 'new', text: 'second submission', timestampMs: 1_700_000_001_000 },
+        ],
+        onDeleteEncounterNote,
+      })} />);
+      fireEvent.click(screen.getByRole('button', { name: /add notes/i }));
+      const items = screen.getAllByRole('listitem');
+      expect(items).toHaveLength(2);
+      expect(items[0]).toHaveTextContent('second submission');
+      expect(items[1]).toHaveTextContent('first submission');
+      fireEvent.click(items[0].querySelector('.note-chip-delete') as HTMLButtonElement);
+      expect(onDeleteEncounterNote).toHaveBeenCalledWith('new');
+    });
+
+    it('hides the notes section when toggled again', () => {
+      render(<ContinuousMode {...makeDefaultProps({ isActive: true, stats: ACTIVE_STATS })} />);
+      fireEvent.click(screen.getByRole('button', { name: /add notes/i }));
+      expect(screen.getByPlaceholderText(/enter an observation/i)).toBeInTheDocument();
       fireEvent.click(screen.getByRole('button', { name: /hide notes/i }));
-      expect(screen.queryByPlaceholderText(/enter observations/i)).not.toBeInTheDocument();
+      expect(screen.queryByPlaceholderText(/enter an observation/i)).not.toBeInTheDocument();
     });
   });
 

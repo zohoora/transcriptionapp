@@ -261,6 +261,16 @@ pub async fn run<C: RunContext>(
                 // Track session ID for day log
                 flush_session_id_for_log = Some(session_id.clone());
 
+                // Drain clinician notes from the handle atomically. We don't
+                // know yet whether this buffer will merge back — the decision
+                // comes from the flush merge check below. Keep the Vec in
+                // scope and persist to the correct target once merge status
+                // is known (flush session on no-merge, prev session on merge).
+                let flush_drained_notes = handle.drain_encounter_notes();
+                let flush_has_clinician_notes = !flush_drained_notes.is_empty();
+                let flush_notes_text =
+                    crate::local_archive::join_notes_for_prompt(&flush_drained_notes);
+
                 // Cache today's sessions (used for encounter number + merge check)
                 let flush_today_str = ctx.now_utc().format("%Y-%m-%d").to_string();
                 let flush_today_sessions = local_archive::list_sessions_by_date(&flush_today_str).ok();
@@ -290,6 +300,9 @@ pub async fn run<C: RunContext>(
                                 metadata.charting_mode = Some("continuous".to_string());
                                 metadata.encounter_number = Some(flush_encounter_number);
                                 metadata.detection_method = Some("flush".to_string());
+                                if flush_has_clinician_notes {
+                                    metadata.has_clinician_notes = true;
+                                }
                                 if let Ok(tracker) = handle.name_tracker.lock() {
                                     metadata.patient_name = tracker.majority_name();
                                     metadata.patient_dob = tracker.dob().map(|s| s.to_string());
@@ -445,14 +458,49 @@ pub async fn run<C: RunContext>(
                                                     );
                                                 }
                                                 flush_was_merged = true;
-                                                // Regenerate SOAP for the merged encounter
+                                                // Migrate the flushed notes into the SURVIVING
+                                                // session's clinician_notes.json so they live on
+                                                // after this flush dir is cleaned up by
+                                                // merge_encounters, and capture the combined
+                                                // prev+flush list for the SOAP regen prompt.
+                                                let flush_merge_notes = if flush_has_clinician_notes {
+                                                    match crate::local_archive::append_clinician_notes_vec(
+                                                        &prev_summary.session_id,
+                                                        &now,
+                                                        &flush_drained_notes,
+                                                    ) {
+                                                        Ok(Some(ref combined)) => {
+                                                            crate::local_archive::join_notes_for_prompt(combined)
+                                                        }
+                                                        Ok(None) => flush_notes_text.clone(),
+                                                        Err(e) => {
+                                                            warn!(
+                                                                event = "flush_merge_notes_persist_failed",
+                                                                component = "continuous_mode_flush_on_stop",
+                                                                prev_session_id = %prev_summary.session_id,
+                                                                error = %e,
+                                                                "Failed to append flushed clinician notes to surviving session"
+                                                            );
+                                                            flush_notes_text.clone()
+                                                        }
+                                                    }
+                                                } else {
+                                                    // No flushed notes to migrate — use prev's
+                                                    // existing sidecar (if any) for the regen
+                                                    // prompt so prev's original observations
+                                                    // aren't dropped on the re-SOAP.
+                                                    match crate::local_archive::read_clinician_notes(
+                                                        &prev_summary.session_id,
+                                                        &now,
+                                                    ) {
+                                                        Ok(Some(ref list)) if !list.is_empty() => {
+                                                            crate::local_archive::join_notes_for_prompt(list)
+                                                        }
+                                                        _ => String::new(),
+                                                    }
+                                                };
                                                 let prev_is_clinical =
                                                     prev_summary.likely_non_clinical != Some(true);
-                                                let flush_merge_notes = handle
-                                                    .encounter_notes
-                                                    .lock()
-                                                    .map(|n| n.clone())
-                                                    .unwrap_or_default();
                                                 crate::encounter_pipeline::regen_soap_after_merge(
                                                     client,
                                                     &merged_text,
@@ -515,11 +563,25 @@ pub async fn run<C: RunContext>(
                         "Skipping SOAP for flush encounter — already merged into previous session"
                     );
                 } else if let Some(ref client) = flush_llm_client {
-                    let flush_notes = handle
-                        .encounter_notes
-                        .lock()
-                        .map(|n| n.clone())
-                        .unwrap_or_default();
+                    // Non-merged flush: persist notes into this flushed
+                    // session's own clinician_notes.json before SOAP runs,
+                    // so the notes survive even if SOAP generation errors.
+                    if flush_has_clinician_notes {
+                        if let Err(e) = crate::local_archive::write_clinician_notes(
+                            &session_id,
+                            &ctx.now_utc(),
+                            &flush_drained_notes,
+                        ) {
+                            warn!(
+                                event = "flush_notes_persist_failed",
+                                component = "continuous_mode_flush_on_stop",
+                                session_id = %session_id,
+                                error = %e,
+                                "Failed to persist clinician_notes.json for flushed session"
+                            );
+                        }
+                    }
+                    let flush_notes = flush_notes_text.clone();
                     info!(
                         event = "flush_soap_generating",
                         component = "continuous_mode_flush_on_stop",

@@ -72,6 +72,18 @@ pub enum ContinuousModeEvent {
         resume_at: String,
     },
     SleepEnded,
+    /// Live update: the vision-based `PatientNameTracker`'s majority name
+    /// for the in-progress encounter changed. Emitted only on transitions
+    /// (e.g. None → "John Smith", "John Smith" → "Jane Doe" after a DOB
+    /// invalidation), never on every screenshot. Frontend uses this to show
+    /// "Notes will attach to: <name>" while the encounter is still
+    /// buffering (before the eventual `encounter_detected` event).
+    PatientNameUpdated {
+        #[serde(skip_serializing_if = "Option::is_none")]
+        name: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        dob: Option<String>,
+    },
     ShadowDecision {
         shadow_method: String,
         outcome: String,
@@ -325,6 +337,33 @@ mod tests {
         assert_eq!(json["sensor_state"], "absent");
         assert!(json.get("confidence").is_none());
         assert_eq!(json.as_object().unwrap().len(), 5);
+    }
+
+    #[test]
+    fn serialize_patient_name_updated_with_name_and_dob() {
+        let event = ContinuousModeEvent::PatientNameUpdated {
+            name: Some("John Smith".into()),
+            dob: Some("1970-01-15".into()),
+        };
+        let json: serde_json::Value = serde_json::to_value(&event).unwrap();
+        assert_eq!(json["type"], "patient_name_updated");
+        assert_eq!(json["name"], "John Smith");
+        assert_eq!(json["dob"], "1970-01-15");
+        assert_eq!(json.as_object().unwrap().len(), 3);
+    }
+
+    #[test]
+    fn serialize_patient_name_updated_cleared() {
+        // DOB invalidation path: tracker clears its state, emits empty payload
+        let event = ContinuousModeEvent::PatientNameUpdated {
+            name: None,
+            dob: None,
+        };
+        let json: serde_json::Value = serde_json::to_value(&event).unwrap();
+        assert_eq!(json["type"], "patient_name_updated");
+        assert!(json.get("name").is_none());
+        assert!(json.get("dob").is_none());
+        assert_eq!(json.as_object().unwrap().len(), 1);
     }
 
     #[test]

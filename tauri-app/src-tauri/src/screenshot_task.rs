@@ -59,6 +59,11 @@ pub struct ScreenshotTaskConfig {
     /// screenshot task reads `screenshot_stale_grace_secs`,
     /// `vision_skip_streak_k`, and `vision_skip_call_cap` from this.
     pub thresholds: std::sync::Arc<crate::server_config::DetectionThresholds>,
+    /// Tauri app handle used to emit `PatientNameUpdated` events on majority-
+    /// name changes. `None` in test contexts (replay harness) — the task
+    /// simply skips event emission there. Production plumbs in
+    /// `ctx.raw_tauri_app()` at spawn time.
+    pub app_handle: Option<tauri::AppHandle>,
 }
 
 /// Runs the screenshot capture + vision extraction loop.
@@ -68,6 +73,11 @@ pub async fn run_screenshot_task(cfg: ScreenshotTaskConfig) {
         "Screenshot name extraction task started (interval: {}s)",
         cfg.screenshot_interval
     );
+
+    // Remembered (name, dob) we last emitted in a `PatientNameUpdated` event.
+    // Used to suppress repeat emissions on every screenshot — we only want to
+    // fire when the tracker's majority name or stored DOB actually transitions.
+    let mut last_emitted: (Option<String>, Option<String>) = (None, None);
 
     loop {
         tokio::time::sleep(tokio::time::Duration::from_secs(cfg.screenshot_interval)).await;
@@ -354,6 +364,31 @@ pub async fn run_screenshot_task(cfg: ScreenshotTaskConfig) {
                 debug!("Vision name extraction timed out after 30s");
             }
         }
+
+        // After the vision outcome has been folded into the tracker,
+        // check whether the majority name or stored DOB has transitioned
+        // since our last emission. A transition here includes:
+        //   • first positive identification (None → Some("John"))
+        //   • mid-encounter chart switch via DOB invalidation (Some → None)
+        //   • DOB changed without yet having a new majority
+        // Emit only on change to avoid chatter (the tracker updates on every
+        // screenshot even when the winning name stays the same).
+        let (current_name, current_dob) = match cfg.name_tracker.lock() {
+            Ok(t) => (t.majority_name(), t.dob().map(|s| s.to_string())),
+            Err(_) => continue,
+        };
+        if (current_name.as_deref(), current_dob.as_deref())
+            != (last_emitted.0.as_deref(), last_emitted.1.as_deref())
+        {
+            if let Some(ref app) = cfg.app_handle {
+                crate::continuous_mode_events::ContinuousModeEvent::PatientNameUpdated {
+                    name: current_name.clone(),
+                    dob: current_dob.clone(),
+                }
+                .emit(app);
+            }
+            last_emitted = (current_name, current_dob);
+        }
     }
 
     info!("Screenshot name extraction task stopped");
@@ -517,6 +552,7 @@ mod tests {
                 crate::transcript_buffer::TranscriptBuffer::new(),
             )),
             thresholds,
+            app_handle: None,
         };
 
         assert_eq!(cfg.thresholds.screenshot_stale_grace_secs, 111);

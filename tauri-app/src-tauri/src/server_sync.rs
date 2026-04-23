@@ -132,7 +132,13 @@ impl ServerSyncContext {
         date: &str,
     ) {
         if let Ok(session_dir) = Self::local_session_dir(session_id, date) {
-            for filename in &["pipeline_log.jsonl", "replay_bundle.json", "segments.jsonl", "billing.json"] {
+            for filename in &[
+                "pipeline_log.jsonl",
+                "replay_bundle.json",
+                "segments.jsonl",
+                "billing.json",
+                "clinician_notes.json",
+            ] {
                 let path = session_dir.join(filename);
                 if path.exists() {
                     match std::fs::read(&path) {

@@ -11,7 +11,13 @@
  * - handleNewPatient callback (resets biomarkers before triggerNewPatient)
  */
 import { useCallback } from 'react';
-import type { Settings, ContinuousModeStats, AudioQualitySnapshot, BiomarkerUpdate } from '../types';
+import type {
+  Settings,
+  ContinuousModeStats,
+  AudioQualitySnapshot,
+  BiomarkerUpdate,
+  EncounterNote,
+} from '../types';
 import type { PatientTrends } from './usePatientBiomarkers';
 import type { MiisSuggestion } from './useMiisImages';
 import type { AiImage } from './useAiImages';
@@ -47,8 +53,10 @@ export interface ContinuousModeOrchestratorResult {
   audioQuality: AudioQualitySnapshot | null;
   biomarkers: BiomarkerUpdate | null;
   biomarkerTrends: PatientTrends;
-  encounterNotes: string;
-  onEncounterNotesChange: (notes: string) => void;
+  encounterNotes: EncounterNote[];
+  onSubmitEncounterNote: (text: string) => Promise<EncounterNote>;
+  onDeleteEncounterNote: (id: string) => Promise<void>;
+  currentPatientName: string | null;
   miisSuggestions: MiisSuggestion[];
   miisLoading: boolean;
   miisError: string | null;
@@ -87,7 +95,9 @@ export function useContinuousModeOrchestrator({
     liveTranscript,
     audioQuality,
     encounterNotes,
-    setEncounterNotes,
+    submitEncounterNote,
+    deleteEncounterNote,
+    currentPatientName,
     start,
     stop,
     triggerNewPatient,
@@ -172,7 +182,9 @@ export function useContinuousModeOrchestrator({
     biomarkers: continuousBiomarkers,
     biomarkerTrends: continuousTrends,
     encounterNotes,
-    onEncounterNotesChange: setEncounterNotes,
+    onSubmitEncounterNote: submitEncounterNote,
+    onDeleteEncounterNote: deleteEncounterNote,
+    currentPatientName,
     miisSuggestions,
     miisLoading,
     miisError,

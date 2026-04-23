@@ -96,6 +96,151 @@ fn ensure_session_dir(session_id: &str, date: &DateTime<Utc>) -> Result<PathBuf,
     Ok(dir)
 }
 
+/// One submitted clinician note attached to a continuous-mode encounter.
+///
+/// Created by `submit_continuous_encounter_note`; persisted to
+/// `clinician_notes.json` inside the session archive dir at split / merge /
+/// flush time; joined via `join_notes_for_prompt` for SOAP generation.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct EncounterNote {
+    pub id: String,
+    pub text: String,
+    /// Unix epoch milliseconds (UTC) when the clinician pressed submit
+    pub timestamp_ms: i64,
+}
+
+impl EncounterNote {
+    pub fn new(text: String) -> Self {
+        Self {
+            id: Uuid::new_v4().to_string(),
+            text,
+            timestamp_ms: Utc::now().timestamp_millis(),
+        }
+    }
+}
+
+/// Separator used when joining `EncounterNote.text` entries into a single
+/// SOAP-prompt string. Each note becomes its own block so the LLM sees them
+/// as discrete observations.
+const NOTES_JOIN_SEPARATOR: &str = "\n---\n";
+
+/// Join notes into a single string suitable for the SOAP prompt's
+/// `CLINICIAN NOTES:` section. Empty input → empty string, so callers can
+/// treat "no notes" identically to the pre-existing behavior.
+pub fn join_notes_for_prompt(notes: &[EncounterNote]) -> String {
+    let mut out = String::new();
+    for (i, n) in notes.iter().enumerate() {
+        if i > 0 {
+            out.push_str(NOTES_JOIN_SEPARATOR);
+        }
+        out.push_str(n.text.trim());
+    }
+    out
+}
+
+/// Filename (relative to the session dir) for persisted clinician notes.
+pub const CLINICIAN_NOTES_FILENAME: &str = "clinician_notes.json";
+
+/// Load persisted clinician notes for a session. Returns `Ok(None)` if the
+/// file doesn't exist (the common case for sessions created before this
+/// feature or without any submitted notes). Malformed JSON is treated as
+/// "no notes" so reading never panics production paths.
+pub fn read_clinician_notes(
+    session_id: &str,
+    date: &DateTime<Utc>,
+) -> Result<Option<Vec<EncounterNote>>, String> {
+    validate_session_id(session_id)?;
+    let dir = get_session_archive_dir(session_id, date)?;
+    let path = dir.join(CLINICIAN_NOTES_FILENAME);
+    if !path.exists() {
+        return Ok(None);
+    }
+    let content = fs::read_to_string(&path)
+        .map_err(|e| format!("Failed to read clinician notes: {}", e))?;
+    match serde_json::from_str::<Vec<EncounterNote>>(&content) {
+        Ok(list) => Ok(Some(list)),
+        Err(e) => {
+            warn!(session_id = %session_id, error = %e, "Malformed clinician_notes.json — ignoring");
+            Ok(None)
+        }
+    }
+}
+
+/// Overwrite the session's `clinician_notes.json` with the supplied list.
+/// Creates the session dir if missing. An empty list deletes the file, so
+/// `has_clinician_notes` always reflects on-disk truth.
+pub fn write_clinician_notes(
+    session_id: &str,
+    date: &DateTime<Utc>,
+    notes: &[EncounterNote],
+) -> Result<(), String> {
+    let dir = ensure_session_dir(session_id, date)?;
+    let path = dir.join(CLINICIAN_NOTES_FILENAME);
+    if notes.is_empty() {
+        // Ignore NotFound — emptying an already-absent sidecar is a no-op,
+        // not a failure. Any other error is surfaced.
+        match fs::remove_file(&path) {
+            Ok(_) => {}
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            Err(e) => return Err(format!("Failed to clear clinician notes: {}", e)),
+        }
+        return Ok(());
+    }
+    let json = serde_json::to_string_pretty(notes)
+        .map_err(|e| format!("Failed to serialize clinician notes: {}", e))?;
+    fs::write(&path, json)
+        .map_err(|e| format!("Failed to write clinician notes: {}", e))?;
+    Ok(())
+}
+
+/// Append a list of notes onto session A's persisted clinician notes.
+/// Idempotent — notes with ids already present in A are skipped. Returns
+/// the full merged list (A's original + newly-appended, sorted by
+/// timestamp) on append, or `None` when nothing was added. Callers that
+/// need the joined prompt text can pass the Vec straight into
+/// `join_notes_for_prompt` without re-reading from disk.
+pub fn append_clinician_notes_vec(
+    session_a_id: &str,
+    date: &DateTime<Utc>,
+    incoming: &[EncounterNote],
+) -> Result<Option<Vec<EncounterNote>>, String> {
+    if incoming.is_empty() {
+        return Ok(None);
+    }
+    let mut a_notes = read_clinician_notes(session_a_id, date)?.unwrap_or_default();
+    let existing_ids: std::collections::HashSet<String> =
+        a_notes.iter().map(|n| n.id.clone()).collect();
+    let to_append: Vec<EncounterNote> = incoming
+        .iter()
+        .filter(|n| !existing_ids.contains(&n.id))
+        .cloned()
+        .collect();
+    if to_append.is_empty() {
+        return Ok(None);
+    }
+    a_notes.extend(to_append);
+    a_notes.sort_by_key(|n| n.timestamp_ms);
+    write_clinician_notes(session_a_id, date, &a_notes)?;
+    Ok(Some(a_notes))
+}
+
+/// Append B's persisted clinician notes onto A's. Used by `merge_encounters`
+/// to preserve clinician observations when the source session's directory
+/// is about to be deleted. Returns the merged list on append, `None` when
+/// B had no notes or all of B's ids were already in A.
+pub fn append_clinician_notes(
+    session_a_id: &str,
+    session_b_id: &str,
+    date: &DateTime<Utc>,
+) -> Result<Option<Vec<EncounterNote>>, String> {
+    let b_notes = match read_clinician_notes(session_b_id, date)? {
+        Some(list) if !list.is_empty() => list,
+        _ => return Ok(None),
+    };
+    append_clinician_notes_vec(session_a_id, date, &b_notes)
+}
+
 /// Session metadata for local archive
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ArchiveMetadata {
@@ -166,6 +311,11 @@ pub struct ArchiveMetadata {
     /// (v0.10.46+)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub medplum_patient_id: Option<String>,
+    /// True iff the session archive directory contains a `clinician_notes.json`
+    /// file with at least one submitted note. Kept in sync by the splitter /
+    /// flush / merge paths that write the file.
+    #[serde(default)]
+    pub has_clinician_notes: bool,
 }
 
 impl ArchiveMetadata {
@@ -198,6 +348,7 @@ impl ArchiveMetadata {
             has_billing_record: None,
             patient_confirmed_at: None,
             medplum_patient_id: None,
+            has_clinician_notes: false,
         }
     }
 }
@@ -955,7 +1106,7 @@ pub fn merge_encounters(
     merged_word_count: usize,
     merged_duration_ms: u64,
     patient_name: Option<&str>,
-) -> Result<(), String> {
+) -> Result<Option<Vec<EncounterNote>>, String> {
     validate_session_id(session_a_id)?;
     validate_session_id(session_b_id)?;
     let a_dir = get_session_archive_dir(session_a_id, date)?;
@@ -967,6 +1118,23 @@ pub fn merge_encounters(
     if !b_dir.exists() {
         return Err(format!("Session B directory does not exist: {}", b_dir.display()));
     }
+
+    // Step 0: Migrate clinician notes from B into A before B is deleted.
+    // Appended in timestamp order; idempotent on id collisions. Failure is
+    // logged and non-fatal — a re-merge would be ambiguous anyway.
+    let merged_notes = match append_clinician_notes(session_a_id, session_b_id, date) {
+        Ok(v) => v,
+        Err(e) => {
+            warn!(
+                session_a_id = %session_a_id,
+                session_b_id = %session_b_id,
+                error = %e,
+                "Failed to migrate clinician notes during merge — continuing without"
+            );
+            None
+        }
+    };
+    let notes_migrated = merged_notes.is_some();
 
     // Step 1: Write merged transcript to A
     let transcript_path = a_dir.join("transcript.txt");
@@ -984,6 +1152,9 @@ pub fn merge_encounters(
         metadata.word_count = merged_word_count;
         metadata.has_soap_note = false; // SOAP is stale after merge
         metadata.has_billing_record = None; // billing is stale after merge
+        if notes_migrated {
+            metadata.has_clinician_notes = true;
+        }
 
         // Recompute duration from the surviving encounter's started_at to now.
         // The caller-provided merged_duration_ms was computed from the orphan's start time,
@@ -1032,7 +1203,7 @@ pub fn merge_encounters(
         session_b_id, session_a_id, merged_word_count, merged_duration_ms
     );
 
-    Ok(())
+    Ok(merged_notes)
 }
 
 /// Resolve the date directory from a YYYY-MM-DD string.
@@ -1171,6 +1342,7 @@ pub fn split_session(session_id: &str, date_str: &str, split_line: usize) -> Res
         has_billing_record: None,
         patient_confirmed_at: None,
         medplum_patient_id: None,
+        has_clinician_notes: false,
     };
     let new_meta_json = serde_json::to_string_pretty(&new_meta)
         .map_err(|e| format!("Failed to serialize new metadata: {}", e))?;
@@ -2478,6 +2650,90 @@ mod tests {
         // Should not contain snake_case
         assert!(!json.contains("schema_version"));
         assert!(!json.contains("created_at"));
+    }
+
+    // ------------------------------------------------------------------
+    // Clinician notes sidecar + migration (v0.10.57+)
+    // ------------------------------------------------------------------
+
+    #[test]
+    fn encounter_note_new_stamps_unique_ids() {
+        let a = EncounterNote::new("first".into());
+        let b = EncounterNote::new("second".into());
+        assert_ne!(a.id, b.id);
+        assert!(a.timestamp_ms > 0);
+        assert!(b.timestamp_ms >= a.timestamp_ms);
+    }
+
+    #[test]
+    fn join_notes_for_prompt_separates_with_ruler() {
+        let notes = vec![
+            EncounterNote { id: "1".into(), text: " knee inj 40 mg ".into(), timestamp_ms: 1 },
+            EncounterNote { id: "2".into(), text: "follow up 2 weeks".into(), timestamp_ms: 2 },
+        ];
+        let joined = join_notes_for_prompt(&notes);
+        // Trimmed text, separator in the middle, no trailing separator
+        assert_eq!(joined, "knee inj 40 mg\n---\nfollow up 2 weeks");
+    }
+
+    #[test]
+    fn join_notes_for_prompt_empty_returns_empty_string() {
+        assert_eq!(join_notes_for_prompt(&[]), "");
+    }
+
+    #[test]
+    fn append_clinician_notes_vec_is_idempotent_on_id_collision() {
+        // Use a unique session id + fixed date so the helper writes to a
+        // predictable path inside the archive root. We read + rewrite JSON
+        // directly; no filesystem-level cleanup between asserts.
+        let session_id = format!("notes-test-{}", Uuid::new_v4());
+        let date: DateTime<Utc> = Utc::now();
+
+        // Ensure session dir exists so write_clinician_notes can write into it.
+        let _ = get_session_archive_dir(&session_id, &date).unwrap();
+
+        let initial = vec![
+            EncounterNote { id: "a".into(), text: "first".into(), timestamp_ms: 100 },
+            EncounterNote { id: "b".into(), text: "second".into(), timestamp_ms: 200 },
+        ];
+        write_clinician_notes(&session_id, &date, &initial).unwrap();
+
+        // Second call with a mix of duplicate + new ids: only the new one sticks
+        let incoming = vec![
+            EncounterNote { id: "b".into(), text: "DUP".into(), timestamp_ms: 999 },
+            EncounterNote { id: "c".into(), text: "third".into(), timestamp_ms: 150 },
+        ];
+        let returned = append_clinician_notes_vec(&session_id, &date, &incoming)
+            .unwrap()
+            .expect("new id 'c' should be appended and returned");
+        // Ordered by timestamp_ms: a(100), c(150), b(200)
+        assert_eq!(
+            returned.iter().map(|n| n.id.as_str()).collect::<Vec<_>>(),
+            vec!["a", "c", "b"],
+        );
+        // Duplicate id 'b' kept the original text, not "DUP"
+        assert_eq!(returned.iter().find(|n| n.id == "b").unwrap().text, "second");
+
+        // Persisted file matches the returned list — no re-read needed by callers
+        let persisted = read_clinician_notes(&session_id, &date).unwrap().unwrap();
+        assert_eq!(persisted, returned);
+
+        // Third call with ONLY duplicates returns None (nothing to add)
+        let again = append_clinician_notes_vec(&session_id, &date, &initial).unwrap();
+        assert!(again.is_none());
+
+        // Cleanup: write an empty list to delete the sidecar.
+        write_clinician_notes(&session_id, &date, &[]).unwrap();
+        let after = read_clinician_notes(&session_id, &date).unwrap();
+        assert!(after.is_none(), "empty write should remove the file");
+    }
+
+    #[test]
+    fn read_clinician_notes_tolerates_missing_file() {
+        // Nonexistent session — should return Ok(None), not Err.
+        let fake_id = format!("missing-{}", Uuid::new_v4());
+        let result = read_clinician_notes(&fake_id, &Utc::now()).unwrap();
+        assert!(result.is_none());
     }
 }
 

@@ -14,7 +14,12 @@
 import { memo, useState, useEffect, useRef, useCallback } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { writeText } from '@tauri-apps/plugin-clipboard-manager';
-import type { ContinuousModeStats, AudioQualitySnapshot, BiomarkerUpdate } from '../../types';
+import type {
+  ContinuousModeStats,
+  AudioQualitySnapshot,
+  BiomarkerUpdate,
+  EncounterNote,
+} from '../../types';
 import type { PatientTrends } from '../../hooks/usePatientBiomarkers';
 import type { MiisSuggestion } from '../../hooks/useMiisImages';
 import type { AiImage } from '../../hooks/useAiImages';
@@ -49,10 +54,14 @@ interface ContinuousModeProps {
   biomarkers: BiomarkerUpdate | null;
   /** Aggregated patient trends from baseline tracking */
   biomarkerTrends: PatientTrends;
-  /** Per-encounter notes text */
-  encounterNotes: string;
-  /** Callback when encounter notes change */
-  onEncounterNotesChange: (notes: string) => void;
+  /** Submitted clinician-note chips for the in-progress encounter */
+  encounterNotes: EncounterNote[];
+  /** Submit a single note (clears the textarea, appends a chip) */
+  onSubmitEncounterNote: (text: string) => Promise<EncounterNote>;
+  /** Remove a submitted chip by id */
+  onDeleteEncounterNote: (id: string) => Promise<void>;
+  /** Live patient name from vision tracker (null during buffering-before-vision) */
+  currentPatientName: string | null;
   /** MIIS image suggestions */
   miisSuggestions: MiisSuggestion[];
   miisLoading: boolean;
@@ -172,7 +181,9 @@ export const ContinuousMode = memo(function ContinuousMode({
   biomarkers,
   biomarkerTrends,
   encounterNotes,
-  onEncounterNotesChange,
+  onSubmitEncounterNote,
+  onDeleteEncounterNote,
+  currentPatientName,
   miisSuggestions,
   miisLoading,
   miisError,
@@ -239,9 +250,53 @@ export const ContinuousMode = memo(function ContinuousMode({
     setShowNotes(prev => !prev);
   }, []);
 
-  const handleNotesChange = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    onEncounterNotesChange(e.target.value);
-  }, [onEncounterNotesChange]);
+  // Local draft text — stays in the textarea until the clinician submits,
+  // then cleared. Deliberately not synced to the backend on every keystroke:
+  // only submitted notes cross the IPC boundary, so a mid-typing crash
+  // drops the current draft but never corrupts already-submitted chips.
+  const [noteDraft, setNoteDraft] = useState('');
+  const [isSubmittingNote, setIsSubmittingNote] = useState(false);
+  const trimmedDraft = noteDraft.trim();
+  const canSubmitNote = trimmedDraft.length > 0 && !isSubmittingNote;
+
+  const handleNoteDraftChange = useCallback(
+    (e: React.ChangeEvent<HTMLTextAreaElement>) => setNoteDraft(e.target.value),
+    [],
+  );
+
+  const handleNoteSubmit = useCallback(async () => {
+    if (!trimmedDraft || isSubmittingNote) return;
+    setIsSubmittingNote(true);
+    try {
+      await onSubmitEncounterNote(trimmedDraft);
+      setNoteDraft('');
+    } catch (err) {
+      console.error('Failed to submit encounter note:', err);
+    } finally {
+      setIsSubmittingNote(false);
+    }
+  }, [trimmedDraft, isSubmittingNote, onSubmitEncounterNote]);
+
+  // Cmd/Ctrl+Enter submits; plain Enter inserts a newline so multi-line
+  // notes (med lists, follow-up instructions) keep working.
+  const handleNoteKeyDown = useCallback(
+    (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+      if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+        e.preventDefault();
+        void handleNoteSubmit();
+      }
+    },
+    [handleNoteSubmit],
+  );
+
+  const handleNoteDelete = useCallback(
+    (id: string) => {
+      void onDeleteEncounterNote(id);
+    },
+    [onDeleteEncounterNote],
+  );
+
+  const attachmentLabel = currentPatientName ?? 'current encounter';
 
   // Not active — show start button
   if (!isActive) {
@@ -533,26 +588,70 @@ export const ContinuousMode = memo(function ContinuousMode({
 
       {/* Encounter Notes Toggle & Input */}
       <button
-        className={`notes-toggle ${showNotes ? 'active' : ''} ${encounterNotes.trim() ? 'has-notes' : ''}`}
+        className={`notes-toggle ${showNotes ? 'active' : ''} ${encounterNotes.length > 0 ? 'has-notes' : ''}`}
         onClick={handleNotesToggle}
         aria-label={showNotes ? 'Hide notes' : 'Add notes'}
         aria-expanded={showNotes}
       >
         <span className="notes-icon">📝</span>
-        <span className="notes-label">{showNotes ? 'Hide Notes' : 'Add Notes'}</span>
+        <span className="notes-label">
+          {showNotes ? 'Hide Notes' : 'Add Notes'}
+          {encounterNotes.length > 0 ? ` (${encounterNotes.length})` : ''}
+        </span>
         <span className="notes-chevron">{showNotes ? '▲' : '▼'}</span>
       </button>
 
       {showNotes && (
         <div className="session-notes-container">
+          <div className="note-attachment-hint">
+            Notes will attach to: <strong>{attachmentLabel}</strong>
+          </div>
           <textarea
             className="session-notes-input"
-            placeholder="Enter observations for this encounter..."
-            value={encounterNotes}
-            onChange={handleNotesChange}
+            placeholder="Enter an observation for this encounter, then press Submit (or Cmd/Ctrl+Enter)…"
+            value={noteDraft}
+            onChange={handleNoteDraftChange}
+            onKeyDown={handleNoteKeyDown}
             rows={3}
-            aria-label="Encounter notes"
+            aria-label="Encounter note draft"
           />
+          <div className="note-submit-row">
+            <span className="note-submit-hint">Cmd/Ctrl+Enter</span>
+            <button
+              type="button"
+              className="note-submit-btn"
+              onClick={handleNoteSubmit}
+              disabled={!canSubmitNote}
+              aria-label="Submit encounter note"
+            >
+              {isSubmittingNote ? 'Submitting…' : 'Submit'}
+            </button>
+          </div>
+          {encounterNotes.length > 0 && (
+            <ul className="note-chip-list" aria-label="Submitted notes for this encounter">
+              {[...encounterNotes].reverse().map((note) => {
+                const time = new Date(note.timestampMs).toLocaleTimeString([], {
+                  hour: 'numeric',
+                  minute: '2-digit',
+                });
+                return (
+                  <li key={note.id} className="note-chip">
+                    <span className="note-chip-time">{time}</span>
+                    <span className="note-chip-text">{note.text}</span>
+                    <button
+                      type="button"
+                      className="note-chip-delete"
+                      onClick={() => handleNoteDelete(note.id)}
+                      aria-label={`Remove note from ${time}`}
+                      title="Remove this note"
+                    >
+                      ×
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
         </div>
       )}
 

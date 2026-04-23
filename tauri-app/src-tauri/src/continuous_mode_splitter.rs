@@ -187,6 +187,29 @@ pub async fn split_encounter<C: RunContext>(
         );
     }
 
+    // Drain accumulated clinician notes atomically, persist to disk, and
+    // compute the joined prompt string for downstream SOAP generation.
+    // Done before the metadata rewrite so `has_clinician_notes` can be
+    // recorded on the session's metadata in the same write below.
+    let drained_notes = deps.handle.drain_encounter_notes();
+    let has_clinician_notes = !drained_notes.is_empty();
+    let notes_text = crate::local_archive::join_notes_for_prompt(&drained_notes);
+    if has_clinician_notes {
+        if let Err(e) = crate::local_archive::write_clinician_notes(
+            &session_id,
+            &ctx.now_utc(),
+            &drained_notes,
+        ) {
+            warn!(
+                event = "splitter_notes_persist_failed",
+                component = "continuous_mode_splitter",
+                session_id = %session_id,
+                error = %e,
+                "Failed to persist clinician_notes.json — notes still flow into SOAP prompt"
+            );
+        }
+    }
+
     // Set split decision on replay bundle
     if let Ok(mut bundle) = deps.bundle.lock() {
         bundle.set_split_decision(crate::replay_bundle::SplitDecision {
@@ -220,6 +243,9 @@ pub async fn split_encounter<C: RunContext>(
                     metadata.encounter_number = Some(loop_state.encounter_number);
                     // Record how this encounter was detected (reuse pre-computed value)
                     metadata.detection_method = Some(detection_method_str.clone());
+                    if has_clinician_notes {
+                        metadata.has_clinician_notes = true;
+                    }
                     // Add patient name and DOB from vision extraction
                     if let Ok(tracker) = deps.handle.name_tracker.lock() {
                         metadata.patient_name = tracker.majority_name();
@@ -328,27 +354,6 @@ pub async fn split_encounter<C: RunContext>(
     if let Ok(mut t) = deps.handle.last_split_time.lock() {
         *t = ctx.now_utc();
     }
-
-    // Read encounter notes AND clear atomically (SOAP generation needs them)
-    let notes_text = match deps.handle.encounter_notes.lock() {
-        Ok(mut notes) => {
-            let text = notes.clone();
-            notes.clear();
-            text
-        }
-        Err(e) => {
-            warn!(
-                event = "splitter_notes_poisoned",
-                component = "continuous_mode_splitter",
-                error = %e,
-                "Encounter notes lock poisoned, using recovered value"
-            );
-            let mut notes = e.into_inner();
-            let text = notes.clone();
-            notes.clear();
-            text
-        }
-    };
 
     // Reset biomarker accumulators for the new encounter
     deps.reset_bio_flag.store(true, Ordering::SeqCst);

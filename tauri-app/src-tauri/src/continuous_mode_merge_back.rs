@@ -51,6 +51,19 @@ use crate::continuous_mode::{
     finalize_merged_bundle, head_words, multi_patient_from_outcome, tail_words,
     ContinuousModeHandle, MERGE_EXCERPT_WORDS,
 };
+
+/// Read the surviving session's persisted clinician notes and join them for
+/// the SOAP prompt. Returns `String::new()` when the file is absent or
+/// malformed so callers can treat "no notes" identically to the pre-feature
+/// behavior. `merge_encounters` migrates the merged-away session's notes
+/// into the surviving session BEFORE this is called, so the file reflects
+/// the combined list.
+fn read_prev_clinician_notes(session_id: &str, date: &chrono::DateTime<chrono::Utc>) -> String {
+    match local_archive::read_clinician_notes(session_id, date) {
+        Ok(Some(list)) if !list.is_empty() => local_archive::join_notes_for_prompt(&list),
+        _ => String::new(),
+    }
+}
 use crate::continuous_mode_events::ContinuousModeEvent;
 use crate::continuous_mode_types::LoopState;
 use crate::day_log::DayLogger;
@@ -294,7 +307,7 @@ pub async fn run<C: RunContext>(
                     .lock()
                     .ok()
                     .and_then(|t| t.majority_name());
-                if let Err(e) = local_archive::merge_encounters(
+                let merge_result = local_archive::merge_encounters(
                     prev_id,
                     session_id,
                     prev_date,
@@ -302,27 +315,30 @@ pub async fn run<C: RunContext>(
                     merged_wc,
                     merged_duration,
                     merge_vision_name.as_deref(),
-                ) {
+                );
+                if let Err(ref e) = merge_result {
                     warn!(
                         event = "small_orphan_merge_failed",
                         component = "continuous_mode_merge_back",
                         error = %e,
                         "Failed to auto-merge small orphan"
                     );
-                } else {
+                }
+                if let Ok(migrated_notes) = merge_result {
                     // Sync merge to server: delete orphan, re-upload surviving session
                     {
                         let today = ctx.now_utc().format("%Y-%m-%d").to_string();
                         deps.sync_ctx.sync_merge(session_id, prev_id, &today);
                     }
-                    // Regenerate SOAP for the merged encounter
+                    // `merge_encounters` already migrated the merged-away session's
+                    // clinician_notes into the surviving (prev) session's file and
+                    // returned the combined list when new notes were appended —
+                    // reuse it directly instead of re-reading from disk.
                     if let Some(ref client) = deps.llm_client {
-                        let merge_notes = deps
-                            .handle
-                            .encounter_notes
-                            .lock()
-                            .map(|n| n.clone())
-                            .unwrap_or_default();
+                        let merge_notes = match migrated_notes {
+                            Some(ref list) => local_archive::join_notes_for_prompt(list),
+                            None => read_prev_clinician_notes(prev_id, prev_date),
+                        };
                         crate::encounter_pipeline::regen_soap_after_merge(
                             client,
                             &merged_text,
@@ -500,7 +516,7 @@ pub async fn run<C: RunContext>(
                         .lock()
                         .ok()
                         .and_then(|t| t.majority_name());
-                    if let Err(e) = local_archive::merge_encounters(
+                    let merge_result = local_archive::merge_encounters(
                         prev_id,
                         session_id,
                         prev_date,
@@ -508,27 +524,26 @@ pub async fn run<C: RunContext>(
                         merged_wc,
                         merged_duration,
                         merge_vision_name.as_deref(),
-                    ) {
+                    );
+                    if let Err(ref e) = merge_result {
                         warn!(
                             event = "llm_merge_failed",
                             component = "continuous_mode_merge_back",
                             error = %e,
                             "Failed to merge encounters"
                         );
-                    } else {
+                    }
+                    if let Ok(migrated_notes) = merge_result {
                         // Sync merge to server: delete merged-away session, re-upload surviving
                         {
                             let today = ctx.now_utc().format("%Y-%m-%d").to_string();
                             deps.sync_ctx.sync_merge(session_id, prev_id, &today);
                         }
-                        // Regenerate SOAP for the merged encounter
                         if let Some(ref client) = deps.llm_client {
-                            let merge_notes = deps
-                                .handle
-                                .encounter_notes
-                                .lock()
-                                .map(|n| n.clone())
-                                .unwrap_or_default();
+                            let merge_notes = match migrated_notes {
+                                Some(ref list) => local_archive::join_notes_for_prompt(list),
+                                None => read_prev_clinician_notes(prev_id, prev_date),
+                            };
                             crate::encounter_pipeline::regen_soap_after_merge(
                                 client,
                                 &merged_text,
@@ -674,12 +689,10 @@ pub async fn run<C: RunContext>(
                                         "Retrospective multi-patient SOAP regeneration"
                                     );
                                     let (filtered, _) = strip_hallucinations(&merged_text, 5);
-                                    let regen_notes = deps
-                                        .handle
-                                        .encounter_notes
-                                        .lock()
-                                        .map(|n| n.clone())
-                                        .unwrap_or_default();
+                                    // Retrospective multi-patient regen runs against the
+                                    // already-merged prev session; its clinician_notes.json
+                                    // is the post-migration truth.
+                                    let regen_notes = read_prev_clinician_notes(prev_id, prev_date);
                                     let regen_outcome =
                                         crate::encounter_pipeline::generate_and_archive_soap(
                                             client,

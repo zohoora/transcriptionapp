@@ -5578,6 +5578,117 @@ body {
   color: var(--text-muted);
 }
 
+/* -- Submit-able encounter notes (continuous mode) -- */
+
+.note-attachment-hint {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+  padding: 0 2px;
+  line-height: 1.4;
+}
+
+.note-attachment-hint strong {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.note-submit-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.note-submit-hint {
+  font-size: 11px;
+  color: var(--text-muted);
+  letter-spacing: 0.02em;
+}
+
+.note-submit-btn {
+  padding: 6px 14px;
+  border: 1px solid var(--accent-blue);
+  border-radius: 6px;
+  background: var(--accent-blue);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 0.15s ease, opacity 0.15s ease;
+}
+
+.note-submit-btn:hover:not(:disabled) {
+  filter: brightness(1.08);
+}
+
+.note-submit-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.note-chip-list {
+  list-style: none;
+  padding: 0;
+  margin: 10px 0 0 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.note-chip {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background: var(--bg-primary);
+  font-size: 13px;
+  line-height: 1.4;
+  position: relative;
+}
+
+.note-chip-time {
+  flex: 0 0 auto;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  padding-top: 1px;
+  min-width: 52px;
+  font-variant-numeric: tabular-nums;
+}
+
+.note-chip-text {
+  flex: 1 1 auto;
+  color: var(--text-primary);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.note-chip-delete {
+  flex: 0 0 auto;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 18px;
+  line-height: 1;
+  padding: 0 4px;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s ease, color 0.15s ease;
+}
+
+.note-chip:hover .note-chip-delete,
+.note-chip-delete:focus {
+  opacity: 1;
+}
+
+.note-chip-delete:hover {
+  color: #c0392b;
+}
+
 /* =============================================================================
    REVIEW MODE
    ============================================================================= */

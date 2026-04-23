@@ -949,7 +949,8 @@ export type ContinuousModeEventType =
   | 'transcription_stalled'
   | 'shadow_decision'
   | 'sleep_started'
-  | 'sleep_ended';
+  | 'sleep_ended'
+  | 'patient_name_updated';
 
 export interface ContinuousModeEvent {
   type: ContinuousModeEventType;
@@ -973,6 +974,22 @@ export interface ContinuousModeEvent {
   confidence?: number;
   /** ISO timestamp when sleep mode will end (for sleep_started events) */
   resume_at?: string;
+  /** Live patient majority name from vision tracker (for patient_name_updated events). Absent = cleared. */
+  name?: string;
+  /** Live patient DOB (YYYY-MM-DD) from vision tracker (for patient_name_updated events). Absent = cleared. */
+  dob?: string;
+}
+
+/**
+ * One submitted clinician note chip attached to the in-progress continuous-
+ * mode encounter. Created by `submit_continuous_encounter_note`; cleared
+ * when the encounter splits / merges / continuous mode stops.
+ */
+export interface EncounterNote {
+  id: string;
+  text: string;
+  /** Unix epoch milliseconds when the clinician pressed submit */
+  timestampMs: number;
 }
 
 /** Auto-end event payload */
