@@ -82,6 +82,7 @@ jobs:
             libssl-dev \
             libasound2-dev \
             libclang-dev \
+            libudev-dev \
             clang
 
       - name: Install system dependencies (macOS)
@@ -97,6 +98,16 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: tauri-app/src-tauri
+
+      # `tauri::generate_context!()` in lib.rs validates that `frontendDist`
+      # (../dist) exists at compile time. We don't need a real frontend bundle
+      # for Rust tests — a placeholder directory with an index.html is enough
+      # to pass the macro's path check without running the full pnpm build.
+      - name: Create frontend dist placeholder
+        working-directory: tauri-app
+        run: |
+          mkdir -p dist
+          printf '<!doctype html><html><body></body></html>' > dist/index.html
 
       - name: Run cargo check
         run: cargo check --all-features
@@ -174,6 +185,7 @@ jobs:
             libssl-dev \
             libasound2-dev \
             libclang-dev \
+            libudev-dev \
             clang
 
       - name: Setup Node.js
