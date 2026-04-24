@@ -9,6 +9,7 @@ import {
   DETECTION_FEEDBACK_LABELS,
   CONTENT_ISSUE_LABELS,
 } from '../types';
+import { createEmptyFeedback, cycleTriState } from '../utils';
 
 interface FeedbackPanelProps {
   sessionId: string;
@@ -35,24 +36,6 @@ const CONTENT_ISSUES: ContentIssueType[] = [
   'wrong_attribution',
   'hallucinated',
 ];
-
-function createEmptyFeedback(): SessionFeedback {
-  const now = new Date().toISOString();
-  return {
-    schemaVersion: 2,
-    createdAt: now,
-    updatedAt: now,
-    qualityRating: null,
-    detectionFeedback: null,
-    patientFeedback: [],
-    comments: null,
-    splitCorrect: null,
-    mergeCorrect: null,
-    clinicalCorrect: null,
-    patientCountCorrect: null,
-    billingCorrect: null,
-  };
-}
 
 type AccuracyField =
   | 'splitCorrect'
@@ -199,13 +182,11 @@ const FeedbackPanel: React.FC<FeedbackPanelProps> = ({
     updateFeedback(prev => ({ ...prev, comments: comments || null }));
   };
 
-  // Tri-state: null → true → false → null
   const cycleAccuracy = (field: AccuracyField) => {
-    updateFeedback(prev => {
-      const cur = (prev[field] ?? null) as boolean | null;
-      const next: boolean | null = cur === null ? true : cur === true ? false : null;
-      return { ...prev, [field]: next };
-    });
+    updateFeedback(prev => ({
+      ...prev,
+      [field]: cycleTriState((prev[field] ?? null) as boolean | null),
+    }));
   };
 
   const currentPatientFeedback = feedback?.patientFeedback.find(

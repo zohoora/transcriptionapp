@@ -33,6 +33,7 @@ import type {
   Settings,
 } from '../types';
 import { DETAIL_LEVEL_LABELS } from '../types';
+import { createEmptyFeedback } from '../utils';
 
 type DetailTab = 'transcript' | 'soap' | 'handout' | 'billing' | 'insights';
 type RightPaneMode = 'session' | 'daily_billing' | 'monthly_billing';
@@ -560,24 +561,18 @@ const HistoryWindow: React.FC = () => {
     }
   }, [fetchSessions, settingsLoaded]);
 
-  // Inline rate: one-click good/bad from the session row. Reuses existing
-  // save_session_feedback command so it round-trips to the profile server
-  // and shows up in regression corpus extraction.
   const rateSessionInline = useCallback(async (entry: FlattenedSession, rating: 'good' | 'bad') => {
     try {
-      const existing = await invoke<SessionFeedback | null>('get_session_feedback', {
-        sessionId: entry.session_id, date: entry.date,
-      });
+      const existing = entry.has_feedback
+        ? await invoke<SessionFeedback | null>('get_session_feedback', {
+            sessionId: entry.session_id, date: entry.date,
+          })
+        : null;
       const now = new Date().toISOString();
       const nextRating = existing?.qualityRating === rating ? null : rating;
       const updated: SessionFeedback = existing
         ? { ...existing, qualityRating: nextRating, updatedAt: now }
-        : {
-            schemaVersion: 2, createdAt: now, updatedAt: now,
-            qualityRating: nextRating,
-            detectionFeedback: null, patientFeedback: [], comments: null,
-            splitCorrect: null, mergeCorrect: null, clinicalCorrect: null, patientCountCorrect: null,
-          };
+        : { ...createEmptyFeedback(), qualityRating: nextRating };
       await invoke('save_session_feedback', {
         sessionId: entry.session_id, date: entry.date, feedback: updated,
       });
@@ -1380,8 +1375,6 @@ const HistoryWindow: React.FC = () => {
                         </div>
                       </div>
                     </button>
-                    {/* Inline one-click rating. Stays out of the button-body so it
-                        doesn't open the detail pane. Cycles rating on repeat click. */}
                     <div className="session-item-rate" onClick={(e) => e.stopPropagation()}>
                       <button
                         className={`session-rate-btn${entry.quality_rating === 'good' ? ' active good' : ''}`}
@@ -1862,6 +1855,7 @@ const HistoryWindow: React.FC = () => {
                     defaultVisitSetting={billingDefaults.visitSetting}
                     defaultCounsellingExhausted={billingDefaults.counsellingExhausted}
                     defaultIsHospital={billingDefaults.isHospital}
+                    hasFeedback={sessions.find(s => s.session_id === selectedSessionId)?.has_feedback ?? undefined}
                   />
                 )}
 

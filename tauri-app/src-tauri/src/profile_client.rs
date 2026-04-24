@@ -978,7 +978,7 @@ impl ProfileClient {
             anyhow::bail!(
                 "Download session file failed: {} - {}",
                 status,
-                &text[..text.len().min(200)]
+                crate::llm_client::truncate_error_body(&text, 200)
             );
         }
         Ok(Some(resp.bytes().await?.to_vec()))

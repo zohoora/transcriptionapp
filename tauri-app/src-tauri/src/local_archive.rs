@@ -1010,13 +1010,9 @@ pub fn list_sessions_by_date(date_str: &str) -> Result<Vec<ArchiveSummary>, Stri
 
         let feedback_path = session_dir.join("feedback.json");
         let has_feedback = feedback_path.exists();
-        let quality_rating = if has_feedback {
-            fs::read_to_string(&feedback_path).ok()
-                .and_then(|s| serde_json::from_str::<SessionFeedback>(&s).ok())
-                .and_then(|f| f.quality_rating)
-        } else {
-            None
-        };
+        let quality_rating = has_feedback
+            .then(|| read_quality_rating(&feedback_path))
+            .flatten();
 
         // Load patient labels for multi-patient sessions.
         // Try patient_labels.json first. If missing (pre-April 2026 sessions),
@@ -1777,6 +1773,20 @@ pub fn get_transcript_lines(session_id: &str, date_str: &str) -> Result<Vec<Stri
 // ============================================================================
 
 const FEEDBACK_FILENAME: &str = "feedback.json";
+
+/// Minimal shim that only deserializes `qualityRating`, used by `list_sessions_by_date`
+/// to avoid allocating the full SessionFeedback (patient_feedback Vec, comments, etc.)
+/// 40+ times per history-window open.
+fn read_quality_rating(feedback_path: &std::path::Path) -> Option<String> {
+    #[derive(serde::Deserialize)]
+    struct QualityRatingOnly {
+        #[serde(rename = "qualityRating")]
+        quality_rating: Option<String>,
+    }
+    fs::read_to_string(feedback_path).ok()
+        .and_then(|s| serde_json::from_str::<QualityRatingOnly>(&s).ok())
+        .and_then(|f| f.quality_rating)
+}
 
 /// Read feedback for a session. Returns None if no feedback file exists.
 pub fn read_feedback(session_id: &str, date_str: &str) -> Result<Option<SessionFeedback>, String> {

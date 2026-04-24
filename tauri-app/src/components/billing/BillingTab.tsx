@@ -3,6 +3,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { writeText } from '@tauri-apps/plugin-clipboard-manager';
 import type { BillingRecord, BillingCode, BillingContext, OhipCodeSearchResult, DiagnosticCodeSearchResult, BillingCategory, SessionFeedback } from '../../types';
 import { VISIT_SETTING_OPTIONS } from '../../types';
+import { createEmptyFeedback, cycleTriState } from '../../utils';
 import { formatCents, confidenceBadgeClass, OHIP_CODE_CRITERIA, ADDON_CODE_PAIRS, findConflicts, findAllConflicts } from './billingUtils';
 
 interface BillingTabProps {
@@ -16,11 +17,14 @@ interface BillingTabProps {
   defaultVisitSetting?: string;
   defaultCounsellingExhausted?: boolean;
   defaultIsHospital?: boolean;
+  /** True if the session already has feedback.json — skips the mount fetch when false. */
+  hasFeedback?: boolean;
 }
 
 export const BillingTab: React.FC<BillingTabProps> = ({
   record, loading, sessionId, date, patientDob, onRecordChange,
   defaultVisitSetting, defaultCounsellingExhausted, defaultIsHospital,
+  hasFeedback,
 }) => {
   const [extracting, setExtracting] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -44,34 +48,30 @@ export const BillingTab: React.FC<BillingTabProps> = ({
   const [billingCorrect, setBillingCorrect] = useState<boolean | null>(null);
 
   useEffect(() => {
+    if (hasFeedback === false) return;
     let cancelled = false;
-    // Wrap in Promise.resolve so a missing mock / unregistered command doesn't
-    // throw on `.then` — the feedback file may simply not exist yet.
     Promise.resolve(invoke<SessionFeedback | null>('get_session_feedback', { sessionId, date }))
       .then(fb => { if (!cancelled) setBillingCorrect(fb?.billingCorrect ?? null); })
-      .catch(() => { /* missing feedback.json is fine — stays null */ });
+      .catch(() => { /* missing feedback.json is fine */ });
     return () => { cancelled = true; };
-  }, [sessionId, date]);
+  }, [sessionId, date, hasFeedback]);
 
   const cycleBillingCorrect = useCallback(async () => {
-    const next: boolean | null = billingCorrect === null ? true : billingCorrect === true ? false : null;
+    const next = cycleTriState(billingCorrect);
     setBillingCorrect(next);
     try {
-      const existing = await invoke<SessionFeedback | null>('get_session_feedback', { sessionId, date });
+      const existing = hasFeedback === false
+        ? null
+        : await invoke<SessionFeedback | null>('get_session_feedback', { sessionId, date });
       const now = new Date().toISOString();
       const updated: SessionFeedback = existing
         ? { ...existing, billingCorrect: next, updatedAt: now }
-        : {
-            schemaVersion: 2, createdAt: now, updatedAt: now,
-            qualityRating: null, detectionFeedback: null, patientFeedback: [], comments: null,
-            splitCorrect: null, mergeCorrect: null, clinicalCorrect: null, patientCountCorrect: null,
-            billingCorrect: next,
-          };
+        : { ...createEmptyFeedback(), billingCorrect: next };
       await invoke('save_session_feedback', { sessionId, date, feedback: updated });
     } catch (e) {
       console.error('Failed to save billing ground-truth flag:', e);
     }
-  }, [billingCorrect, sessionId, date]);
+  }, [billingCorrect, sessionId, date, hasFeedback]);
   const [visitSetting, setVisitSetting] = useState(defaultVisitSetting || 'in_office');
   const [patientAge, setPatientAge] = useState('adult');
   const [referralReceived, setReferralReceived] = useState(false);

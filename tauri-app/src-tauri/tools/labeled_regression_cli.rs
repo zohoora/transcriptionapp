@@ -24,6 +24,7 @@ use std::process::ExitCode;
 use serde::Deserialize;
 
 use transcription_app_lib::billing::BillingRecord;
+use transcription_app_lib::feedback_to_label::LabelData;
 use transcription_app_lib::local_archive;
 
 #[derive(Debug, Deserialize)]
@@ -37,25 +38,6 @@ struct Label {
     #[serde(default)]
     labeled_by: Option<String>,
     labels: LabelData,
-}
-
-#[derive(Debug, Deserialize)]
-#[allow(dead_code)] // split/merge/patient_count fields are reserved for future regression checks
-struct LabelData {
-    #[serde(default)]
-    split_correct: Option<bool>,
-    #[serde(default)]
-    merge_correct: Option<bool>,
-    #[serde(default)]
-    clinical_correct: Option<bool>,
-    #[serde(default)]
-    patient_count_correct: Option<bool>,
-    #[serde(default)]
-    billing_codes_expected: Option<Vec<String>>,
-    #[serde(default)]
-    diagnostic_code_expected: Option<String>,
-    #[serde(default)]
-    notes: Option<String>,
 }
 
 fn print_usage(program: &str) {

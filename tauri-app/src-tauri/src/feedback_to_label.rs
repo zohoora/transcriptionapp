@@ -25,19 +25,26 @@
 //! clinical_correct / patient_count_correct), each also Option<bool>.
 
 use crate::local_archive::SessionFeedback;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
-/// Label record that matches `tools/labeled_regression_cli.rs::LabelData`.
-/// Kept here as a local copy so this module has no cross-crate dependency.
-#[derive(Debug, Clone, Serialize, Default)]
+/// Canonical label record. Mirrors the on-disk schema in
+/// `tests/fixtures/labels/*.json` consumed by `labeled_regression_cli`.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
 pub struct LabelData {
+    #[serde(default)]
     pub split_correct: Option<bool>,
+    #[serde(default)]
     pub merge_correct: Option<bool>,
+    #[serde(default)]
     pub clinical_correct: Option<bool>,
+    #[serde(default)]
     pub patient_count_correct: Option<bool>,
+    #[serde(default)]
     pub billing_codes_expected: Option<Vec<String>>,
+    #[serde(default)]
     pub diagnostic_code_expected: Option<String>,
+    #[serde(default)]
     pub notes: Option<String>,
 }
 

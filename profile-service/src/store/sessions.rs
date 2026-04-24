@@ -654,9 +654,7 @@ impl SessionStore {
                 let feedback_path = path.join("feedback.json");
                 let has_feedback = feedback_path.exists();
                 let quality_rating = if has_feedback {
-                    tokio::fs::read_to_string(&feedback_path).await.ok()
-                        .and_then(|s| serde_json::from_str::<crate::types::SessionFeedback>(&s).ok())
-                        .and_then(|f| f.quality_rating)
+                    read_quality_rating(&feedback_path).await
                 } else {
                     None
                 };
@@ -940,6 +938,19 @@ impl SessionStore {
             Some(notes)
         }
     }
+}
+
+/// Minimal shim that only deserializes `qualityRating` from feedback.json,
+/// avoiding the full SessionFeedback allocation (patient_feedback Vec, comments)
+/// when all we need is the rating for the session list row.
+async fn read_quality_rating(path: &std::path::Path) -> Option<String> {
+    #[derive(serde::Deserialize)]
+    struct QualityRatingOnly {
+        #[serde(rename = "qualityRating")]
+        quality_rating: Option<String>,
+    }
+    let content = tokio::fs::read_to_string(path).await.ok()?;
+    serde_json::from_str::<QualityRatingOnly>(&content).ok()?.quality_rating
 }
 
 /// Parse a date from an RFC 3339 started_at string

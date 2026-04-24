@@ -300,3 +300,29 @@ export function downloadBase64Image(base64: string, filenamePrefix: string): voi
   link.download = `${filenamePrefix}-${timestamp}.png`;
   link.click();
 }
+
+import type { SessionFeedback } from './types';
+
+/** Construct a blank v2 SessionFeedback with every optional field explicitly null. */
+export function createEmptyFeedback(): SessionFeedback {
+  const now = new Date().toISOString();
+  return {
+    schemaVersion: 2,
+    createdAt: now,
+    updatedAt: now,
+    qualityRating: null,
+    detectionFeedback: null,
+    patientFeedback: [],
+    comments: null,
+    splitCorrect: null,
+    mergeCorrect: null,
+    clinicalCorrect: null,
+    patientCountCorrect: null,
+    billingCorrect: null,
+  };
+}
+
+/** Cycle a tri-state: null → true → false → null. */
+export function cycleTriState(cur: boolean | null): boolean | null {
+  return cur === null ? true : cur === true ? false : null;
+}
