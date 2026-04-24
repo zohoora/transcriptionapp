@@ -67,6 +67,12 @@ describe('BillingTab', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockInvoke.mockReset();
+    // BillingTab eagerly fetches feedback on mount; route that command to null
+    // by default so tests can keep using mockResolvedValueOnce for extract/confirm.
+    mockInvoke.mockImplementation((cmd: string) => {
+      if (cmd === 'get_session_feedback') return Promise.resolve(null);
+      return Promise.resolve(undefined);
+    });
   });
 
   it('shows loading state', () => {
@@ -99,7 +105,11 @@ describe('BillingTab', () => {
   it('Extract button calls extract_billing_codes IPC', async () => {
     const user = userEvent.setup();
     const onRecordChange = vi.fn();
-    mockInvoke.mockResolvedValueOnce(baseRecord);
+    mockInvoke.mockImplementation((cmd: string) => {
+      if (cmd === 'extract_billing_codes') return Promise.resolve(baseRecord);
+      if (cmd === 'get_session_feedback') return Promise.resolve(null);
+      return Promise.resolve(undefined);
+    });
     render(
       <BillingTab
         record={null}
@@ -121,7 +131,11 @@ describe('BillingTab', () => {
 
   it('shows extraction error if IPC fails', async () => {
     const user = userEvent.setup();
-    mockInvoke.mockRejectedValueOnce('LLM unavailable');
+    mockInvoke.mockImplementation((cmd: string) => {
+      if (cmd === 'extract_billing_codes') return Promise.reject('LLM unavailable');
+      if (cmd === 'get_session_feedback') return Promise.resolve(null);
+      return Promise.resolve(undefined);
+    });
     render(
       <BillingTab
         record={null}

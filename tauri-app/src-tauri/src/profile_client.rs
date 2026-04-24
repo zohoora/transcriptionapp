@@ -956,6 +956,46 @@ impl ProfileClient {
         Ok(())
     }
 
+    /// Download an auxiliary session file (e.g. `billing.json`) from the server.
+    /// Returns `Ok(None)` when the server reports 404, `Err` for other failures.
+    pub async fn download_session_file(
+        &self,
+        physician_id: &str,
+        session_id: &str,
+        filename: &str,
+    ) -> Result<Option<Vec<u8>>> {
+        let url = format!(
+            "{}/physicians/{}/sessions/{}/files/{}",
+            self.base_url(), physician_id, session_id, filename
+        );
+        let resp = self.with_auth(self.client.get(&url)).send().await?;
+        if resp.status() == reqwest::StatusCode::NOT_FOUND {
+            return Ok(None);
+        }
+        if !resp.status().is_success() {
+            let status = resp.status();
+            let text = resp.text().await.unwrap_or_default();
+            anyhow::bail!(
+                "Download session file failed: {} - {}",
+                status,
+                &text[..text.len().min(200)]
+            );
+        }
+        Ok(Some(resp.bytes().await?.to_vec()))
+    }
+
+    /// Download and parse a session's `billing.json`. Returns `Ok(None)` on 404.
+    pub async fn download_billing_record(
+        &self,
+        physician_id: &str,
+        session_id: &str,
+    ) -> Result<Option<crate::billing::BillingRecord>> {
+        match self.download_session_file(physician_id, session_id, "billing.json").await? {
+            Some(bytes) => Ok(Some(serde_json::from_slice(&bytes)?)),
+            None => Ok(None),
+        }
+    }
+
     /// Upload the day log for a date
     pub async fn upload_day_log(
         &self,

@@ -346,7 +346,7 @@ fn default_encounter_detection_mode() -> EncounterDetectionMode {
 }
 
 fn default_presence_absence_threshold_secs() -> u64 {
-    180
+    120
 }
 
 fn default_presence_debounce_secs() -> u64 {
@@ -2163,7 +2163,7 @@ mod tests {
         assert_eq!(config.encounter_detection_mode, EncounterDetectionMode::Hybrid);
         assert!(config.presence_sensor_port.is_empty());
         assert!(config.presence_sensor_url.is_empty());
-        assert_eq!(config.presence_absence_threshold_secs, 180);
+        assert_eq!(config.presence_absence_threshold_secs, 120);
         assert_eq!(config.presence_debounce_secs, 15);
         assert!(config.presence_csv_log_enabled);
 
@@ -2171,7 +2171,7 @@ mod tests {
         assert_eq!(settings.encounter_detection_mode, EncounterDetectionMode::Hybrid);
         assert!(settings.presence_sensor_port.is_empty());
         assert!(settings.presence_sensor_url.is_empty());
-        assert_eq!(settings.presence_absence_threshold_secs, 180);
+        assert_eq!(settings.presence_absence_threshold_secs, 120);
         assert_eq!(settings.presence_debounce_secs, 15);
         assert!(settings.presence_csv_log_enabled);
     }

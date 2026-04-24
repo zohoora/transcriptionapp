@@ -560,6 +560,37 @@ const HistoryWindow: React.FC = () => {
     }
   }, [fetchSessions, settingsLoaded]);
 
+  // Inline rate: one-click good/bad from the session row. Reuses existing
+  // save_session_feedback command so it round-trips to the profile server
+  // and shows up in regression corpus extraction.
+  const rateSessionInline = useCallback(async (entry: FlattenedSession, rating: 'good' | 'bad') => {
+    try {
+      const existing = await invoke<SessionFeedback | null>('get_session_feedback', {
+        sessionId: entry.session_id, date: entry.date,
+      });
+      const now = new Date().toISOString();
+      const nextRating = existing?.qualityRating === rating ? null : rating;
+      const updated: SessionFeedback = existing
+        ? { ...existing, qualityRating: nextRating, updatedAt: now }
+        : {
+            schemaVersion: 2, createdAt: now, updatedAt: now,
+            qualityRating: nextRating,
+            detectionFeedback: null, patientFeedback: [], comments: null,
+            splitCorrect: null, mergeCorrect: null, clinicalCorrect: null, patientCountCorrect: null,
+          };
+      await invoke('save_session_feedback', {
+        sessionId: entry.session_id, date: entry.date, feedback: updated,
+      });
+      setSessions(prev => prev.map(s =>
+        s.session_id === entry.session_id
+          ? { ...s, has_feedback: true, quality_rating: nextRating }
+          : s
+      ));
+    } catch (e) {
+      console.error('Failed to rate session inline:', e);
+    }
+  }, []);
+
   // Fetch session details from local archive or Medplum
   const fetchSessionDetails = useCallback(async (session: LocalArchiveSummary, patientIndex?: number | null) => {
     setSelectedSessionId(session.session_id);
@@ -1349,6 +1380,26 @@ const HistoryWindow: React.FC = () => {
                         </div>
                       </div>
                     </button>
+                    {/* Inline one-click rating. Stays out of the button-body so it
+                        doesn't open the detail pane. Cycles rating on repeat click. */}
+                    <div className="session-item-rate" onClick={(e) => e.stopPropagation()}>
+                      <button
+                        className={`session-rate-btn${entry.quality_rating === 'good' ? ' active good' : ''}`}
+                        onClick={() => rateSessionInline(entry, 'good')}
+                        title="Mark this session's encounter detection + SOAP as correct"
+                        aria-label="Mark correct"
+                      >
+                        {'\u{1F44D}'}
+                      </button>
+                      <button
+                        className={`session-rate-btn${entry.quality_rating === 'bad' ? ' active bad' : ''}`}
+                        onClick={() => rateSessionInline(entry, 'bad')}
+                        title="Mark this session as needing review (open details to specify why)"
+                        aria-label="Mark needs review"
+                      >
+                        {'\u{1F44E}'}
+                      </button>
+                    </div>
                   </div>
                   );
                 })}

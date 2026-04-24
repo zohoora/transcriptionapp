@@ -651,7 +651,15 @@ impl SessionStore {
                 continue;
             }
             if let Ok(meta) = self.read_metadata(&path).await {
-                let has_feedback = path.join("feedback.json").exists();
+                let feedback_path = path.join("feedback.json");
+                let has_feedback = feedback_path.exists();
+                let quality_rating = if has_feedback {
+                    tokio::fs::read_to_string(&feedback_path).await.ok()
+                        .and_then(|s| serde_json::from_str::<crate::types::SessionFeedback>(&s).ok())
+                        .and_then(|f| f.quality_rating)
+                } else {
+                    None
+                };
                 sessions.push(ArchiveSummary {
                     session_id: meta.session_id.clone(),
                     date: date_str.to_string(),
@@ -666,6 +674,7 @@ impl SessionStore {
                     patient_name: meta.patient_name,
                     likely_non_clinical: meta.likely_non_clinical,
                     has_feedback: Some(has_feedback),
+                    quality_rating,
                     physician_name: meta.physician_name,
                     room_name: meta.room_name,
                     has_billing_record: meta.has_billing_record,

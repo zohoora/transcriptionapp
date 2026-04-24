@@ -86,12 +86,30 @@ pub fn build_context_hints(ctx: &BillingContext) -> String {
 }
 
 #[tauri::command]
-pub fn get_session_billing(
+pub async fn get_session_billing(
     session_id: String,
     date: String,
+    active_physician: State<'_, SharedActivePhysician>,
+    profile_client: State<'_, SharedProfileClient>,
 ) -> Result<Option<BillingRecord>, CommandError> {
     debug!("Loading billing record: {} on {}", session_id, date);
-    Ok(local_archive::get_billing_record(&session_id, &super::parse_date(&date)?)?)
+    let parsed_date = super::parse_date(&date)?;
+
+    if let Some(record) = local_archive::get_billing_record(&session_id, &parsed_date)? {
+        return Ok(Some(record));
+    }
+
+    let phys_id = active_physician.read().await.as_ref().map(|p| p.id.clone());
+    let client = profile_client.read().await.clone();
+    if let (Some(phys_id), Some(client)) = (phys_id, client) {
+        match client.download_billing_record(&phys_id, &session_id).await {
+            Ok(Some(record)) => return Ok(Some(record)),
+            Ok(None) => {}
+            Err(e) => warn!("Server billing fetch failed for {}: {e}", session_id),
+        }
+    }
+
+    Ok(None)
 }
 
 #[tauri::command]
@@ -234,23 +252,72 @@ pub async fn extract_billing_codes(
     Ok(record)
 }
 
-#[tauri::command]
-pub fn get_daily_billing_summary(
-    date: String,
-) -> Result<BillingDaySummary, CommandError> {
-    debug!("Loading daily billing summary for {}", date);
-    let parsed_date = super::parse_date(&date)?;
+/// Collect billing records for a date across local + server, parallelizing
+/// remote fetches. Sessions from other rooms are included when the physician
+/// + profile client are known.
+async fn collect_billing_records(
+    date: &str,
+    parsed_date: &chrono::DateTime<chrono::Utc>,
+    phys_id: Option<&str>,
+    client: Option<&crate::profile_client::ProfileClient>,
+) -> Vec<BillingRecord> {
+    let local_sessions = local_archive::list_sessions_by_date(date).unwrap_or_default();
 
-    // list_sessions_by_date takes a &str date (YYYY-MM-DD)
-    let sessions = local_archive::list_sessions_by_date(&date)
-        .map_err(CommandError::Other)?;
+    let sessions = if let (Some(pid), Some(c)) = (phys_id, client) {
+        match c.get_sessions_by_date(pid, date).await {
+            Ok(server) => local_archive::merge_session_summaries(server, &local_sessions),
+            Err(e) => {
+                warn!("Server sessions fetch failed for {}, using local only: {e}", date);
+                local_sessions
+            }
+        }
+    } else {
+        local_sessions
+    };
 
     let mut records = Vec::new();
+    let mut server_needed: Vec<String> = Vec::new();
     for summary in &sessions {
-        if let Ok(Some(record)) = local_archive::get_billing_record(&summary.session_id, &parsed_date) {
-            records.push(record);
+        match local_archive::get_billing_record(&summary.session_id, parsed_date) {
+            Ok(Some(record)) => records.push(record),
+            Ok(None) if summary.has_billing_record == Some(true) => {
+                server_needed.push(summary.session_id.clone())
+            }
+            Ok(None) => {}
+            Err(e) => warn!("Local billing read failed for {}: {e}", summary.session_id),
         }
     }
+
+    if !server_needed.is_empty() {
+        if let (Some(pid), Some(c)) = (phys_id, client) {
+            let fetches = server_needed.into_iter().map(|sid| {
+                let c = c.clone();
+                let pid = pid.to_string();
+                async move {
+                    match c.download_billing_record(&pid, &sid).await {
+                        Ok(opt) => opt,
+                        Err(e) => {
+                            warn!("Server billing fetch failed for {}: {e}", sid);
+                            None
+                        }
+                    }
+                }
+            });
+            let results = futures_util::future::join_all(fetches).await;
+            records.extend(results.into_iter().flatten());
+        }
+    }
+    records
+}
+
+/// Shared daily-summary builder used by single-day and monthly roll-up paths.
+async fn build_daily_summary(
+    date: String,
+    phys_id: Option<&str>,
+    client: Option<&crate::profile_client::ProfileClient>,
+) -> Result<BillingDaySummary, CommandError> {
+    let parsed_date = super::parse_date(&date)?;
+    let records = collect_billing_records(&date, &parsed_date, phys_id, client).await;
 
     let cap_status = calculate_daily_caps(&records);
 
@@ -294,23 +361,37 @@ pub fn get_daily_billing_summary(
 }
 
 #[tauri::command]
-pub fn get_monthly_billing_summary(
+pub async fn get_daily_billing_summary(
+    date: String,
+    active_physician: State<'_, SharedActivePhysician>,
+    profile_client: State<'_, SharedProfileClient>,
+) -> Result<BillingDaySummary, CommandError> {
+    debug!("Loading daily billing summary for {}", date);
+    let phys_id = active_physician.read().await.as_ref().map(|p| p.id.clone());
+    let client = profile_client.read().await.clone();
+    build_daily_summary(date, phys_id.as_deref(), client.as_ref()).await
+}
+
+#[tauri::command]
+pub async fn get_monthly_billing_summary(
     end_date: String,
+    active_physician: State<'_, SharedActivePhysician>,
+    profile_client: State<'_, SharedProfileClient>,
 ) -> Result<BillingMonthSummary, CommandError> {
     debug!("Loading monthly billing summary ending {}", end_date);
     let parsed_end = super::parse_date(&end_date)?;
 
+    let phys_id = active_physician.read().await.as_ref().map(|p| p.id.clone());
+    let client = profile_client.read().await.clone();
+
     let mut daily_summaries = Vec::new();
 
-    // Walk backwards 28 days
     for day_offset in 0..28i64 {
         let day = parsed_end - Duration::days(day_offset);
         let date_str = format!("{:04}-{:02}-{:02}", day.year(), day.month(), day.day());
 
-        // Try to get daily summary -- silently skip if no sessions
-        match get_daily_billing_summary(date_str) {
-            Ok(summary) => daily_summaries.push(summary),
-            Err(_) => {} // No sessions that day, skip
+        if let Ok(summary) = build_daily_summary(date_str, phys_id.as_deref(), client.as_ref()).await {
+            daily_summaries.push(summary);
         }
     }
 

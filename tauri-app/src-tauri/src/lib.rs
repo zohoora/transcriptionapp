@@ -53,6 +53,7 @@ pub mod encounter_merge;
 pub mod patient_name_tracker;
 pub mod debug_storage;
 pub mod diarization;
+pub mod feedback_to_label;
 pub mod local_archive;
 pub mod enhancement;
 pub mod listening;

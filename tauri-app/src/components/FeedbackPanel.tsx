@@ -39,15 +39,35 @@ const CONTENT_ISSUES: ContentIssueType[] = [
 function createEmptyFeedback(): SessionFeedback {
   const now = new Date().toISOString();
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     createdAt: now,
     updatedAt: now,
     qualityRating: null,
     detectionFeedback: null,
     patientFeedback: [],
     comments: null,
+    splitCorrect: null,
+    mergeCorrect: null,
+    clinicalCorrect: null,
+    patientCountCorrect: null,
+    billingCorrect: null,
   };
 }
+
+type AccuracyField =
+  | 'splitCorrect'
+  | 'mergeCorrect'
+  | 'clinicalCorrect'
+  | 'patientCountCorrect'
+  | 'billingCorrect';
+
+const ACCURACY_LABELS: Record<AccuracyField, string> = {
+  splitCorrect: 'Session boundary (end) is correct',
+  mergeCorrect: 'Merge with prior session was correct',
+  clinicalCorrect: 'Clinical vs. non-clinical is correct',
+  patientCountCorrect: 'Patient count / attribution is correct',
+  billingCorrect: 'Billing codes are correct (locks in as ground truth)',
+};
 
 const FeedbackPanel: React.FC<FeedbackPanelProps> = ({
   sessionId,
@@ -179,6 +199,15 @@ const FeedbackPanel: React.FC<FeedbackPanelProps> = ({
     updateFeedback(prev => ({ ...prev, comments: comments || null }));
   };
 
+  // Tri-state: null → true → false → null
+  const cycleAccuracy = (field: AccuracyField) => {
+    updateFeedback(prev => {
+      const cur = (prev[field] ?? null) as boolean | null;
+      const next: boolean | null = cur === null ? true : cur === true ? false : null;
+      return { ...prev, [field]: next };
+    });
+  };
+
   const currentPatientFeedback = feedback?.patientFeedback.find(
     p => p.patientIndex === activePatient
   );
@@ -213,6 +242,32 @@ const FeedbackPanel: React.FC<FeedbackPanelProps> = ({
 
       {expanded && (
         <div className="feedback-details">
+          {/* Accuracy — structured tri-state flags for regression corpus.
+              Detection fields only apply in continuous mode; billing applies to all sessions. */}
+          <div className="feedback-section">
+            <div className="feedback-section-title">Accuracy</div>
+            <div className="feedback-accuracy-group">
+              {(Object.keys(ACCURACY_LABELS) as AccuracyField[])
+                .filter(field => field === 'billingCorrect' || isContinuousMode)
+                .map(field => {
+                  const val = (feedback?.[field] ?? null) as boolean | null;
+                  const icon = val === true ? '✓' : val === false ? '✗' : '○';
+                  const cls = val === true ? 'correct' : val === false ? 'wrong' : 'unset';
+                  return (
+                    <button
+                      key={field}
+                      className={`feedback-accuracy-btn ${cls}`}
+                      onClick={() => cycleAccuracy(field)}
+                      title="Click to cycle: unset → correct → wrong → unset"
+                    >
+                      <span className="feedback-accuracy-icon" aria-hidden="true">{icon}</span>
+                      <span className="feedback-accuracy-label">{ACCURACY_LABELS[field]}</span>
+                    </button>
+                  );
+                })}
+            </div>
+          </div>
+
           {/* Detection feedback — continuous mode only */}
           {isContinuousMode && (
             <div className="feedback-section">

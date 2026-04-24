@@ -21,7 +21,11 @@ export function usePatientHandout(): UsePatientHandoutResult {
     setError(null);
 
     try {
-      const content = await invoke<string>('generate_patient_handout', { transcript });
+      const content = await invoke<string>('generate_patient_handout', {
+        transcript,
+        sessionId,
+        date,
+      });
 
       // Save to archive immediately so the editor can load it on mount (avoids event race)
       await invoke('save_patient_handout', { sessionId, date, content });

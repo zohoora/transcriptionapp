@@ -2713,8 +2713,9 @@ pub(crate) fn build_per_patient_user_content(
 }
 
 /// Build a system prompt for generating a plain-language patient handout
-/// from a clinical transcript. The handout should be easy for patients to
-/// understand (5th-8th grade reading level) and use warm, reassuring language.
+/// from a clinical transcript (and optionally a SOAP note as authoritative context).
+/// The handout should be easy for patients to understand (5th-8th grade reading level)
+/// and use warm, reassuring language.
 /// When `templates` is provided and the relevant field is non-empty, it overrides the hardcoded default.
 pub fn build_patient_handout_prompt(
     templates: Option<&crate::server_config::PromptTemplates>,
@@ -2732,7 +2733,10 @@ RULES:
 - Target 200-500 words
 - Do NOT wrap the output in JSON or any other format — output plain text only
 - Do NOT include the patient's name or the physician's name
-- Only include information that was actually discussed in the visit
+- Only include information that was actually discussed in the visit — do NOT invent medications, doses, diagnoses, tests, or instructions
+
+INPUT SOURCES:
+You may receive two inputs: a SOAP NOTE (the clinician's structured summary — authoritative) and a TRANSCRIPT (the raw visit conversation — for detail and tone). When a SOAP NOTE is provided, treat it as the source of truth for diagnoses, medications, tests, and the plan. Use the transcript to fill in explanation and context, not to override the SOAP. When only the transcript is provided, rely on it alone and do not invent missing details.
 
 USE THESE SECTIONS (with the exact headings below):
 
@@ -2740,19 +2744,49 @@ What We Discussed Today
 - Summarize the main reasons for the visit and topics covered
 
 What We Found
-- Summarize any exam findings, test results, or observations shared during the visit
+- Summarize exam findings, vital signs, or test results shared in the visit, in plain language
+
+Your Medications
+- For each medication started, changed, or stopped today, write one bullet in this form:
+  "<medication name> — <dose> — <how often> — <for how long> — <what it is for>"
+- If a medication is being continued unchanged, note that briefly
+- Only list what was actually discussed; do NOT fabricate doses or durations
+- If no medications were discussed, skip this section
+
+Tests and Referrals
+- List any lab tests, imaging, or specialist referrals ordered today
+- For each one, say what it is checking for and what you need to do (e.g., "bring your requisition to the lab", "the specialist's office will call you to book")
+- If nothing was ordered, skip this section
 
 Your Plan
-- List next steps: medications, lifestyle changes, procedures, or referrals
-- Explain each item simply so the patient understands what to do and why
+- List other next steps: lifestyle changes, procedures, things to watch for at home
+- Explain each item simply so you understand what to do and why
 
 When to Come Back
-- State when the patient should return or follow up
+- State concretely when to return (e.g., "in 2 weeks", "in 3 months", "only if symptoms worsen")
+- If the timing depends on test results, say that plainly
 
 Warning Signs — Call Us If...
-- List specific symptoms or situations that should prompt the patient to call the office or seek urgent care
+- List specific symptoms or situations that should prompt a call to the office or a visit to urgent care / the emergency department
 
 If a section has no relevant information from the visit, skip that section entirely."#.to_string())
+}
+
+/// Build the user message for the patient handout LLM call.
+///
+/// When a usable SOAP note is available it is included as the authoritative source,
+/// with the transcript attached for detail/tone. Unusable SOAP (empty or the
+/// malformed-output sentinel) is silently dropped, falling back to transcript-only.
+pub fn build_patient_handout_user_message(soap_note: Option<&str>, transcript: &str) -> String {
+    match soap_note {
+        Some(soap) if is_usable_soap(soap) => format!(
+            "SOAP NOTE (authoritative — use as source of truth for diagnoses, medications, tests, and plan):\n{}\n\n\
+             TRANSCRIPT (raw conversation — use for detail and tone only; do not override the SOAP):\n{}",
+            soap.trim(),
+            transcript,
+        ),
+        _ => transcript.to_string(),
+    }
 }
 
 /// Build a prompt for merging incorrectly split patients within one encounter.

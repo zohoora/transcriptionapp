@@ -375,6 +375,9 @@ pub struct ArchiveSummary {
     pub likely_non_clinical: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub has_feedback: Option<bool>,
+    // Surface the rating inline on the session list row (avoids a per-row fetch).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub quality_rating: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub physician_name: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -431,6 +434,20 @@ pub struct SessionFeedback {
     pub patient_feedback: Vec<PatientContentFeedback>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub comments: Option<String>,
+    // v2: structured accuracy flags mirroring tests/fixtures/labels schema.
+    // None = unrated, Some(true) = correct, Some(false) = wrong.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub split_correct: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub merge_correct: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub clinical_correct: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub patient_count_correct: Option<bool>,
+    // Billing ground truth. When Some(true), the session's billing.json codes
+    // + diagnostic code are treated as authoritative for regression testing.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub billing_correct: Option<bool>,
 }
 
 /// Feedback on encounter detection quality
@@ -906,6 +923,45 @@ pub fn list_session_dates() -> Result<Vec<String>, String> {
     Ok(dates)
 }
 
+/// Merge server and local session summaries for a date into a single list.
+///
+/// Server rows win for most fields, but are enriched from local with
+/// `patient_labels`/`patient_count` and `has_billing_record` when the server
+/// row is missing them (local writes land before the server sync).
+/// Local-only sessions (not yet synced) are appended. Result is sorted by
+/// `started_at` so the final list is stable across merges.
+pub fn merge_session_summaries(
+    server: Vec<ArchiveSummary>,
+    local: &[ArchiveSummary],
+) -> Vec<ArchiveSummary> {
+    let local_by_id: std::collections::HashMap<&str, &ArchiveSummary> =
+        local.iter().map(|s| (s.session_id.as_str(), s)).collect();
+
+    let mut merged = server;
+    for ss in &mut merged {
+        if let Some(l) = local_by_id.get(ss.session_id.as_str()) {
+            if ss.patient_labels.is_none() && l.patient_labels.is_some() {
+                ss.patient_labels = l.patient_labels.clone();
+                ss.patient_count = l.patient_count;
+            }
+            if ss.has_billing_record.is_none() && l.has_billing_record.is_some() {
+                ss.has_billing_record = l.has_billing_record;
+            }
+        }
+    }
+
+    let server_ids: std::collections::HashSet<String> =
+        merged.iter().map(|s| s.session_id.clone()).collect();
+    for l in local {
+        if !server_ids.contains(&l.session_id) {
+            merged.push(l.clone());
+        }
+    }
+
+    merged.sort_by(|a, b| a.started_at.cmp(&b.started_at));
+    merged
+}
+
 /// List sessions for a specific date
 pub fn list_sessions_by_date(date_str: &str) -> Result<Vec<ArchiveSummary>, String> {
     // Parse date string (YYYY-MM-DD)
@@ -952,7 +1008,15 @@ pub fn list_sessions_by_date(date_str: &str) -> Result<Vec<ArchiveSummary>, Stri
             }
         };
 
-        let has_feedback = session_dir.join("feedback.json").exists();
+        let feedback_path = session_dir.join("feedback.json");
+        let has_feedback = feedback_path.exists();
+        let quality_rating = if has_feedback {
+            fs::read_to_string(&feedback_path).ok()
+                .and_then(|s| serde_json::from_str::<SessionFeedback>(&s).ok())
+                .and_then(|f| f.quality_rating)
+        } else {
+            None
+        };
 
         // Load patient labels for multi-patient sessions.
         // Try patient_labels.json first. If missing (pre-April 2026 sessions),
@@ -994,6 +1058,7 @@ pub fn list_sessions_by_date(date_str: &str) -> Result<Vec<ArchiveSummary>, Stri
             patient_name: metadata.patient_name,
             likely_non_clinical: metadata.likely_non_clinical,
             has_feedback: Some(has_feedback),
+            quality_rating,
             physician_name: metadata.physician_name,
             room_name: metadata.room_name,
             patient_count: patient_labels.as_ref().map(|l| l.len() as u32).or(patient_count),
@@ -1860,6 +1925,7 @@ mod tests {
             patient_name: None,
             likely_non_clinical: None,
             has_feedback: None,
+            quality_rating: None,
             physician_name: None,
             room_name: None,
             patient_count: None,
@@ -2504,6 +2570,11 @@ mod tests {
                 details: None,
             }],
             comments: Some("Needs improvement".to_string()),
+            split_correct: None,
+            merge_correct: None,
+            clinical_correct: None,
+            patient_count_correct: None,
+            billing_correct: None,
         };
 
         // Write directly to session dir
@@ -2577,6 +2648,11 @@ mod tests {
             }),
             patient_feedback: vec![],
             comments: Some("Wrong split".to_string()),
+            split_correct: None,
+            merge_correct: None,
+            clinical_correct: None,
+            patient_count_correct: None,
+            billing_correct: None,
         };
 
         enrich_replay_bundle(&replay_path, &feedback).unwrap();
@@ -2610,6 +2686,7 @@ mod tests {
             patient_name: None,
             likely_non_clinical: None,
             has_feedback: Some(true),
+            quality_rating: None,
             physician_name: None,
             room_name: None,
             patient_count: None,
@@ -2639,6 +2716,11 @@ mod tests {
             detection_feedback: None,
             patient_feedback: vec![],
             comments: None,
+            split_correct: None,
+            merge_correct: None,
+            clinical_correct: None,
+            patient_count_correct: None,
+            billing_correct: None,
         };
 
         let json = serde_json::to_string(&feedback).unwrap();

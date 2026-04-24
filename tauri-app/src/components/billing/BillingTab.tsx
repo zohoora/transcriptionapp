@@ -1,7 +1,7 @@
 import React, { useState, useCallback, useEffect } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { writeText } from '@tauri-apps/plugin-clipboard-manager';
-import type { BillingRecord, BillingCode, BillingContext, OhipCodeSearchResult, DiagnosticCodeSearchResult, BillingCategory } from '../../types';
+import type { BillingRecord, BillingCode, BillingContext, OhipCodeSearchResult, DiagnosticCodeSearchResult, BillingCategory, SessionFeedback } from '../../types';
 import { VISIT_SETTING_OPTIONS } from '../../types';
 import { formatCents, confidenceBadgeClass, OHIP_CODE_CRITERIA, ADDON_CODE_PAIRS, findConflicts, findAllConflicts } from './billingUtils';
 
@@ -38,6 +38,40 @@ export const BillingTab: React.FC<BillingTabProps> = ({
 
   // Billing context selectors (initialized from physician billing preferences)
   const [contextExpanded, setContextExpanded] = useState(false);
+
+  // Billing ground-truth tri-state, stored in feedback.json alongside detection accuracy fields.
+  // null = unrated, true = current billing codes are ground truth, false = current codes are wrong.
+  const [billingCorrect, setBillingCorrect] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    // Wrap in Promise.resolve so a missing mock / unregistered command doesn't
+    // throw on `.then` — the feedback file may simply not exist yet.
+    Promise.resolve(invoke<SessionFeedback | null>('get_session_feedback', { sessionId, date }))
+      .then(fb => { if (!cancelled) setBillingCorrect(fb?.billingCorrect ?? null); })
+      .catch(() => { /* missing feedback.json is fine — stays null */ });
+    return () => { cancelled = true; };
+  }, [sessionId, date]);
+
+  const cycleBillingCorrect = useCallback(async () => {
+    const next: boolean | null = billingCorrect === null ? true : billingCorrect === true ? false : null;
+    setBillingCorrect(next);
+    try {
+      const existing = await invoke<SessionFeedback | null>('get_session_feedback', { sessionId, date });
+      const now = new Date().toISOString();
+      const updated: SessionFeedback = existing
+        ? { ...existing, billingCorrect: next, updatedAt: now }
+        : {
+            schemaVersion: 2, createdAt: now, updatedAt: now,
+            qualityRating: null, detectionFeedback: null, patientFeedback: [], comments: null,
+            splitCorrect: null, mergeCorrect: null, clinicalCorrect: null, patientCountCorrect: null,
+            billingCorrect: next,
+          };
+      await invoke('save_session_feedback', { sessionId, date, feedback: updated });
+    } catch (e) {
+      console.error('Failed to save billing ground-truth flag:', e);
+    }
+  }, [billingCorrect, sessionId, date]);
   const [visitSetting, setVisitSetting] = useState(defaultVisitSetting || 'in_office');
   const [patientAge, setPatientAge] = useState('adult');
   const [referralReceived, setReferralReceived] = useState(false);
@@ -403,6 +437,13 @@ export const BillingTab: React.FC<BillingTabProps> = ({
           {record.status === 'draft' && (
             <button className="btn-small btn-confirm" onClick={handleConfirm}>Confirm</button>
           )}
+          <button
+            className={`btn-small btn-ground-truth${billingCorrect === true ? ' gt-correct' : billingCorrect === false ? ' gt-wrong' : ''}`}
+            onClick={cycleBillingCorrect}
+            title="Ground truth for regression testing — cycle: unset → correct → wrong → unset"
+          >
+            {billingCorrect === true ? '✓ Ground truth' : billingCorrect === false ? '✗ Needs fix' : '○ Verify'}
+          </button>
           <button className="btn-small" onClick={handleCopy}>
             {copied ? '✓ Copied' : 'Copy'}
           </button>

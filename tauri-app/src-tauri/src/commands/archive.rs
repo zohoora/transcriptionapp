@@ -95,36 +95,10 @@ pub async fn get_local_sessions_by_date(
     let client = profile_client.read().await.clone();
     if let (Some(phys_id), Some(client)) = (physician_id, client) {
         match client.get_sessions_by_date(&phys_id, &date).await {
-            Ok(mut server_sessions) => {
-                // Build local lookup for enrichment (patient_labels, billing, etc.)
-                let local_by_id: std::collections::HashMap<&str, &local_archive::ArchiveSummary> =
-                    local_sessions.iter().map(|s| (s.session_id.as_str(), s)).collect();
-
-                // Enrich server sessions with local-only fields (patient_labels, patient_count)
-                for ss in &mut server_sessions {
-                    if let Some(local) = local_by_id.get(ss.session_id.as_str()) {
-                        if ss.patient_labels.is_none() && local.patient_labels.is_some() {
-                            ss.patient_labels = local.patient_labels.clone();
-                            ss.patient_count = local.patient_count;
-                        }
-                        if ss.has_billing_record.is_none() && local.has_billing_record.is_some() {
-                            ss.has_billing_record = local.has_billing_record;
-                        }
-                    }
-                }
-
-                // Add any local-only sessions not on server
-                let server_ids: std::collections::HashSet<String> =
-                    server_sessions.iter().map(|s| s.session_id.clone()).collect();
-                for local in &local_sessions {
-                    if !server_ids.contains(&local.session_id) {
-                        server_sessions.push(local.clone());
-                    }
-                }
-                if !server_sessions.is_empty() {
-                    // Re-sort merged list by started_at (server sessions may be unordered)
-                    server_sessions.sort_by(|a, b| a.started_at.cmp(&b.started_at));
-                    return Ok(server_sessions);
+            Ok(server_sessions) => {
+                let merged = local_archive::merge_session_summaries(server_sessions, &local_sessions);
+                if !merged.is_empty() {
+                    return Ok(merged);
                 }
             }
             Err(e) => warn!("Server fetch failed, using local only: {e}"),

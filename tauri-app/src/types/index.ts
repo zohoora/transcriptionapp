@@ -745,6 +745,7 @@ export interface LocalArchiveSummary {
   patient_name: string | null;
   likely_non_clinical: boolean | null;
   has_feedback: boolean | null;
+  quality_rating?: 'good' | 'bad' | null;
   physician_name?: string | null;
   room_name?: string | null;
   patient_count?: number | null;
@@ -871,6 +872,15 @@ export interface SessionFeedback {
   detectionFeedback: DetectionFeedback | null;
   patientFeedback: PatientContentFeedback[];
   comments: string | null;
+  // v2: structured accuracy flags mirroring tests/fixtures/labels schema.
+  // null = unrated, true = correct, false = wrong. Used to build a regression corpus.
+  splitCorrect?: boolean | null;
+  mergeCorrect?: boolean | null;
+  clinicalCorrect?: boolean | null;
+  patientCountCorrect?: boolean | null;
+  // v2: billing ground truth. When true, the session's billing.json codes +
+  // diagnostic code are treated as authoritative for regression testing.
+  billingCorrect?: boolean | null;
 }
 
 /** Human-readable labels for detection feedback categories */

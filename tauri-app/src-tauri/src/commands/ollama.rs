@@ -430,15 +430,20 @@ pub async fn generate_soap_note_auto_detect(
 /// Generate a plain-language patient handout from a transcript
 ///
 /// Uses the SOAP model to produce a warm, jargon-free visit summary
-/// that the patient can take home.
+/// that the patient can take home. When `session_id` and `date` are provided
+/// and a usable SOAP note exists on disk, it is passed to the LLM as the
+/// authoritative source (transcript is still included for detail/tone).
 #[tauri::command]
 pub async fn generate_patient_handout(
     transcript: String,
+    session_id: Option<String>,
+    date: Option<String>,
     server_config: tauri::State<'_, SharedServerConfig>,
 ) -> Result<String, CommandError> {
     info!(
-        "Generating patient handout for transcript of {} chars",
-        transcript.len()
+        "Generating patient handout for transcript of {} chars (session_id={:?})",
+        transcript.len(),
+        session_id.as_deref(),
     );
 
     if transcript.trim().is_empty() {
@@ -449,7 +454,23 @@ pub async fn generate_patient_handout(
 
     let (_config, models, client) = load_effective_models_and_client(server_config.inner()).await?;
 
+    let soap_note = match (session_id.as_deref(), date.as_deref()) {
+        (Some(sid), Some(d)) => {
+            let parsed = super::parse_date(d)?;
+            crate::local_archive::read_session_soap(sid, &parsed)
+        }
+        _ => None,
+    };
+    let usable_soap = soap_note
+        .as_deref()
+        .filter(|s| crate::llm_client::is_usable_soap(s));
+    if usable_soap.is_some() {
+        info!("Patient handout will use archived SOAP note as authoritative context");
+    }
+
     let system_prompt = crate::llm_client::build_patient_handout_prompt(None);
+    let user_message =
+        crate::llm_client::build_patient_handout_user_message(usable_soap, &transcript);
 
     // 90-second timeout for handout generation
     let result = tokio::time::timeout(
@@ -457,7 +478,7 @@ pub async fn generate_patient_handout(
         client.generate(
             &models.soap_model,
             &system_prompt,
-            &transcript,
+            &user_message,
             "patient_handout",
         ),
     )

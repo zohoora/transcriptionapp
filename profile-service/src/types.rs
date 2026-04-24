@@ -527,6 +527,8 @@ pub struct ArchiveSummary {
     pub likely_non_clinical: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub has_feedback: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub quality_rating: Option<String>,
     // Multi-user fields
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub physician_name: Option<String>,
@@ -572,6 +574,17 @@ pub struct SessionFeedback {
     pub patient_feedback: Vec<PatientContentFeedback>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub comments: Option<String>,
+    // v2: structured accuracy flags mirroring tests/fixtures/labels schema.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub split_correct: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub merge_correct: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub clinical_correct: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub patient_count_correct: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub billing_correct: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
