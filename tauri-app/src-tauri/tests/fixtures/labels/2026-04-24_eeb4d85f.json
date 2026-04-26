@@ -1,0 +1,15 @@
+{
+  "session_id": "eeb4d85f-71b0-442b-94f6-bd402b45b97c",
+  "date": "2026-04-24",
+  "labeled_at": "2026-04-24T19:30:00Z",
+  "labeled_by": "Dr Arash Zohoor (via forensic review)",
+  "labels": {
+    "clinical_correct": true,
+    "patient_count_correct": true,
+    "billing_codes_expected": [
+      "A007A"
+    ],
+    "diagnostic_code_expected": "401",
+    "notes": "Billing LLM's response_raw contains explicit self-correction: 'there is no condition code for diabetic_assessment in the context of this specific visit... Requires explicit diabetes management: A1C, foot exam, etc. -> Not present'. JSON conditions still contains ['diabetic_assessment'] \u2014 parser bug. No diabetes mentioned anywhere in transcript. K030A hallucinated. Remove Q310A too \u2014 no time entries in billing.json."
+  }
+}

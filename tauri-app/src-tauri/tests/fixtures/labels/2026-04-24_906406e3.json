@@ -1,0 +1,15 @@
+{
+  "session_id": "906406e3-39a7-4438-9edb-7e082133e692",
+  "date": "2026-04-24",
+  "labeled_at": "2026-04-24T19:30:00Z",
+  "labeled_by": "Dr Arash Zohoor (via forensic review)",
+  "labels": {
+    "clinical_correct": true,
+    "patient_count_correct": false,
+    "billing_codes_expected": [
+      "A007A",
+      "Q310A"
+    ],
+    "notes": "Francois + Betty were seen together. Pre-SOAP multi_patient_detect LLM returned patient_count=2 with correct summaries but SESSION WAS NOT SPLIT \u2014 final output is a single unified SOAP intermingling Francois (nasal/rhinitis) and Betty (pre-op gallbladder, skin spot, UTI). Billing includes Q042A+E079A smoking cessation codes; evidence cited was 'advised to discontinue decongestant nasal sprays' \u2014 LLM conflated nasal-spray-cessation counselling with tobacco smoking cessation. Vision detected both Francois (14:03) and Betty (14:04) correctly. Betty's SOAP also missed vaginal discharge."
+  }
+}

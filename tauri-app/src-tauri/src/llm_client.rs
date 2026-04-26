@@ -40,6 +40,25 @@ pub struct MultiPatientDetectionOutcome {
     pub error: Option<String>,
 }
 
+/// Full outcome of the multi-patient SPLIT prompt — finds the line_index
+/// boundary between patients in a transcript that's already been classified
+/// as multi-patient. Captured so replay tools can compare the boundary
+/// detection across prompt + model variants.
+pub struct MultiPatientSplitOutcome {
+    pub system_prompt: String,
+    pub user_prompt: String,
+    pub model: String,
+    pub response_raw: Option<String>,
+    /// Last line index of the FIRST patient's encounter. None when the LLM
+    /// returned `{}` (no clear boundary), the call failed, or parsing failed.
+    pub parsed_line_index: Option<u32>,
+    pub parsed_confidence: Option<f64>,
+    pub parsed_reason: Option<String>,
+    pub latency_ms: u64,
+    pub success: bool,
+    pub error: Option<String>,
+}
+
 /// Default timeout for LLM API requests (5 minutes for long SOAP generation)
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(300);
 
@@ -291,8 +310,11 @@ pub struct PatientSoapNote {
     pub content: String,
 }
 
-/// JSON structure for SOAP note from LLM
-#[derive(Debug, Clone, Deserialize)]
+/// JSON structure for SOAP note from LLM. v0.10.61 added a 5th `Procedure`
+/// section with two-stage candidate-then-filter shape so billing can bind
+/// to procedures supported by a verbatim past-tense doctor quote, instead
+/// of inferring from imperative-future Plan items.
+#[derive(Debug, Clone, Default, Deserialize)]
 struct SoapJsonResponse {
     #[serde(default)]
     subjective: Vec<String>,
@@ -302,6 +324,47 @@ struct SoapJsonResponse {
     assessment: Vec<String>,
     #[serde(default)]
     plan: Vec<String>,
+    /// Audit trail — every procedure mention found in the transcript with its
+    /// classified stance. Not currently rendered in the SOAP text view, but
+    /// preserved for forensics + replay.
+    #[serde(default, alias = "procedureCandidates")]
+    procedure_candidates: Vec<ProcedureCandidate>,
+    /// Procedures the SOAP-LLM judged were physically performed during the
+    /// visit. Bound to billing by the rule engine.
+    #[serde(default)]
+    procedure: Vec<PerformedProcedure>,
+}
+
+/// A procedure mention captured during SOAP extraction, with stance
+/// classification and walkback evidence. Used for audit + replay; the rule
+/// engine reads `procedure[]` (the deterministically-filtered final list).
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub struct ProcedureCandidate {
+    #[serde(default)]
+    pub mention: String,
+    #[serde(default, alias = "doctorQuote")]
+    pub doctor_quote: String,
+    /// One of: PROPOSED | OFFERED | IN_PROGRESS | COMPLETED | DECLINED
+    #[serde(default)]
+    pub stance: String,
+    /// Verbatim sentence later in the transcript that contradicts performance,
+    /// or the literal string `"none"` when no walkback exists.
+    #[serde(default)]
+    pub walkback: String,
+    /// Optional second quote confirming completion; `"none"` when absent.
+    #[serde(default, alias = "completionEvidence")]
+    pub completion_evidence: String,
+}
+
+/// A procedure the SOAP-LLM judged was physically performed during this visit.
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub struct PerformedProcedure {
+    #[serde(default)]
+    pub action: String,
+    #[serde(default, alias = "transcriptQuote")]
+    pub transcript_quote: String,
 }
 
 /// Result of greeting detection check
@@ -319,6 +382,13 @@ pub struct GreetingResult {
 /// Used by the retry logic to detect malformed output, and by downstream
 /// consumers (e.g., merge-check) that need to skip unusable SOAPs.
 pub(crate) const MALFORMED_SOAP_SENTINEL: &str = "SOAP generation produced malformed output";
+
+/// SOAP-generation prompt version tag (v0.10.62+). Stamped on
+/// `ArchiveMetadata.soap_prompt_version` when SOAP is archived. Bump this
+/// string whenever `build_simple_soap_prompt` (or the per-patient / single-
+/// patient variants) is materially edited so audits can correlate clinical
+/// drift to specific prompt revisions.
+pub const SOAP_PROMPT_VERSION: &str = "v0.10.61";
 
 /// True iff `s` is a usable SOAP note — non-empty after trimming and not the
 /// malformed-output placeholder from [`MALFORMED_SOAP_SENTINEL`].
@@ -1279,6 +1349,63 @@ impl LLMClient {
         }
     }
 
+    /// Run the multi-patient SPLIT prompt to find the line_index boundary
+    /// between the first and second patient. Always-capturing variant of the
+    /// multi-patient pipeline: returns the prompt + response + parsed
+    /// line_index for replay tooling, even when the LLM declines (`{}`).
+    ///
+    /// The transcript should already be formatted with `[<line_idx>] <text>`
+    /// per line so the model can name a numeric boundary. Caller decides
+    /// whether to act on the line_index — production currently captures it
+    /// for analysis but does not split the transcript on it.
+    pub async fn run_multi_patient_split(
+        &self,
+        fast_model: &str,
+        formatted_transcript: &str,
+        templates: Option<&crate::server_config::PromptTemplates>,
+    ) -> MultiPatientSplitOutcome {
+        use crate::encounter_detection::{multi_patient_split_prompt, parse_multi_patient_split};
+
+        let system = multi_patient_split_prompt(templates);
+        let user = format!("Transcript:\n{}", formatted_transcript);
+        let start = std::time::Instant::now();
+        let result = tokio::time::timeout(
+            tokio::time::Duration::from_secs(30),
+            self.generate(fast_model, &system, &user, "multi_patient_split"),
+        )
+        .await;
+        let latency_ms = start.elapsed().as_millis() as u64;
+
+        let (line_index, confidence, reason, response_raw, success, error) = match result {
+            Ok(Ok(resp)) => match parse_multi_patient_split(&resp) {
+                Ok(parsed) => (
+                    parsed.line_index.map(|n| n as u32),
+                    parsed.confidence,
+                    parsed.reason,
+                    Some(resp),
+                    true,
+                    None,
+                ),
+                Err(e) => (None, None, None, Some(resp), false, Some(format!("Parse error: {e}"))),
+            },
+            Ok(Err(e)) => (None, None, None, None, false, Some(e.to_string())),
+            Err(_) => (None, None, None, None, false, Some("Timeout after 30s".to_string())),
+        };
+
+        MultiPatientSplitOutcome {
+            system_prompt: system,
+            user_prompt: user,
+            model: fast_model.to_string(),
+            response_raw,
+            parsed_line_index: line_index,
+            parsed_confidence: confidence,
+            parsed_reason: reason,
+            latency_ms,
+            success,
+            error,
+        }
+    }
+
     /// Timeout for greeting detection
     const GREETING_TIMEOUT: Duration = Duration::from_secs(45);
 
@@ -1717,7 +1844,7 @@ pub fn build_simple_soap_prompt(
     let custom_section = build_soap_custom_section(options, templates);
 
     format!(
-        r#"You are a medical scribe that outputs ONLY valid JSON. Extract clinical information from transcripts into SOAP notes.{custom_section}
+        r#"You are a medical scribe that outputs ONLY valid JSON. Extract clinical information from transcripts into a 5-section SOAP-with-Procedure note.{custom_section}
 
 The transcript is from speech-to-text and may contain errors. Interpret medical terms correctly:
 - "human blade 1c" or "h b a 1 c" → HbA1c (hemoglobin A1c)
@@ -1725,7 +1852,7 @@ The transcript is from speech-to-text and may contain errors. Interpret medical 
 - Homophones and phonetic errors are common - use clinical context
 
 RESPOND WITH ONLY THIS JSON STRUCTURE - NO OTHER TEXT:
-{{"subjective":["item"],"objective":["item"],"assessment":["item"],"plan":["item"]}}
+{{"subjective":["item"],"objective":["item"],"assessment":["item"],"plan":["item"],"procedure_candidates":[{{"mention":"<>","doctor_quote":"<verbatim doctor quote>","stance":"PROPOSED|OFFERED|IN_PROGRESS|COMPLETED|DECLINED","walkback":"<verbatim contradicting quote or 'none'>","completion_evidence":"<verbatim second quote confirming completion or 'none'>"}}],"procedure":[{{"action":"<past-tense action>","transcript_quote":"<verbatim doctor quote>"}}]}}
 
 {format_instruction}
 
@@ -1733,11 +1860,43 @@ SECTION DEFINITIONS:
 - SUBJECTIVE: What the patient reports — symptoms, complaints, history of present illness, past medical/surgical history, medication history, social history, family history, review of systems, and any information prefaced by "patient reports/states/denies/describes". Also include historical test results the patient or physician recounts from previous visits (e.g. "previous EKG showed...", "labs from September...").
 - OBJECTIVE: ONLY findings from TODAY'S encounter — vital signs measured today, physical examination findings observed by the clinician, point-of-care test results obtained today, and imaging/lab results reviewed for the first time today. If the physician did not perform an exam or obtain new results, use an empty array []. Do NOT put patient-reported information here. Do NOT put historical results, prior imaging, or previous lab values here — those go in Subjective.
 - ASSESSMENT: Clinical impressions, diagnoses, differential diagnoses, and the clinician's interpretation of the findings.
-- PLAN: Treatments ordered, prescriptions, referrals, follow-up instructions, procedures performed, patient education provided, and next steps — ONLY what the doctor actually stated. Do NOT add recommendations not mentioned in the transcript.
+- PLAN: Treatments ordered, prescriptions, referrals, follow-up instructions, patient education provided, and next steps — ONLY what the doctor actually stated. Procedures the clinician PROPOSED, OFFERED, SCHEDULED, or DECLINED today belong here, NOT in procedure[].
+- PROCEDURE: Procedures the clinician PHYSICALLY PERFORMED during this visit. See the procedure-section workflow below.
+
+PROCEDURE-SECTION WORKFLOW (v0.10.61 — designed to prevent billing hallucinations from imperative-future Plan items):
+
+1. Identify EVERY procedure mention in the transcript and add it to procedure_candidates with stance:
+   - PROPOSED — modal capability: "I can inject", "we could try", "if you wanted", "would you like"
+   - OFFERED — one option among several: "I could spray with nitrogen, or use OTC"
+   - IN_PROGRESS — doctor narrating action mid-procedure. Markers include:
+       "here we go" / "here it goes" / "hold still" / "deep breath" / "ready?",
+       "I'm putting/placing/inserting/drawing/injecting now",
+       "the alcohol" or "antiseptic" being applied right before,
+       "I just landmarked", "I'll put a bandaid"
+   - COMPLETED — clear past-tense or aftercare narration:
+       "I sprayed/injected/drew/removed it", "the alcohol I just put on",
+       "the injection site is sore", "we drew the blood", "all set", "we're done"
+   - DECLINED — explicit no-go: "too early", "not today", "let's hold off", "use OTC instead", "not worth it"
+   - walkback: any later sentence in the transcript that contradicts performance ("instead", "let's wait", "maybe next visit"); set "none" if no walkback exists.
+   - completion_evidence: a SECOND verbatim doctor quote (different from doctor_quote) that confirms the procedure FINISHED; set "none" if absent.
+
+2. DETERMINISTIC FILTER for procedure[]. For each candidate c:
+     if c.walkback != "none": SKIP
+     if c.stance == "COMPLETED": INCLUDE
+     elif c.stance == "IN_PROGRESS" and c.completion_evidence != "none": INCLUDE
+     else: SKIP
+
+3. PROPOSED, OFFERED, DECLINED candidates NEVER enter procedure[]. Even if you think the procedure obviously happened.
+
+4. If multiple candidates refer to the SAME procedure, evaluate together — only include if at least ONE meets the inclusion rule above.
+
+Each procedure[] entry: {{"action": "<past-tense rewording>", "transcript_quote": "<verbatim doctor quote proving it was DONE>"}}
+
+When in doubt, leave procedure[] EMPTY. A missed procedure is recoverable via clinician review; a wrongly-billed procedure risks an OHIP claw-back.
 
 Rules:
 - Your entire response must be valid JSON - nothing else
-- Use simple string arrays, no nested objects
+- Use simple string arrays for S/O/A/P, no nested objects
 - Do NOT use newlines inside JSON strings - keep each array item as a single line
 - Use empty arrays [] for sections with no information
 - Use correct medical terminology
@@ -2326,6 +2485,8 @@ fn parse_and_format_soap_json(response: &str) -> String {
                 objective: soap.objective.into_iter().filter(|s| !s.trim().is_empty()).collect(),
                 assessment: soap.assessment.into_iter().filter(|s| !s.trim().is_empty()).collect(),
                 plan: soap.plan.into_iter().filter(|s| !s.trim().is_empty()).collect(),
+                procedure_candidates: soap.procedure_candidates,
+                procedure: soap.procedure.into_iter().filter(|p| !p.action.trim().is_empty()).collect(),
             };
             info!("Successfully parsed SOAP JSON: S={}, O={}, A={}, P={}",
                   soap.subjective.len(), soap.objective.len(),
@@ -2357,6 +2518,8 @@ fn parse_and_format_soap_json(response: &str) -> String {
                             objective: soap.objective.into_iter().filter(|s| !s.trim().is_empty()).collect(),
                             assessment: soap.assessment.into_iter().filter(|s| !s.trim().is_empty()).collect(),
                             plan: soap.plan.into_iter().filter(|s| !s.trim().is_empty()).collect(),
+                            procedure_candidates: soap.procedure_candidates,
+                            procedure: soap.procedure.into_iter().filter(|p| !p.action.trim().is_empty()).collect(),
                         };
                         info!("Aggressive JSON repair succeeded");
                         format_soap_as_text(&soap)
@@ -2457,6 +2620,7 @@ fn try_parse_text_soap(text: &str) -> Option<SoapJsonResponse> {
             objective,
             assessment,
             plan,
+            ..Default::default()
         })
     }
 }
@@ -2528,6 +2692,7 @@ fn try_parse_nested_json_soap(json_str: &str) -> Option<SoapJsonResponse> {
             objective,
             assessment,
             plan,
+            ..Default::default()
         })
     }
 }
@@ -2595,6 +2760,23 @@ fn format_soap_as_text(soap: &SoapJsonResponse) -> String {
     } else {
         for item in &soap.plan {
             output.push_str(&format!("• {}\n", strip_markdown_from_item(item)));
+        }
+    }
+
+    // Procedure (v0.10.61). Only renders when at least one procedure made
+    // it through the SOAP-LLM's stance-filtered procedure[] array. An empty
+    // section means no billable procedure was performed today; the rule
+    // engine treats this as authoritative.
+    if !soap.procedure.is_empty() {
+        output.push_str("\nProcedure:\n");
+        for p in &soap.procedure {
+            let action = strip_markdown_from_item(&p.action);
+            let quote = p.transcript_quote.trim();
+            if quote.is_empty() {
+                output.push_str(&format!("• {}\n", action));
+            } else {
+                output.push_str(&format!("• {}    [transcript: \"{}\"]\n", action, quote));
+            }
         }
     }
 
@@ -3225,6 +3407,52 @@ mod tests {
         let fixed = fix_truncated_json(input);
         assert!(serde_json::from_str::<serde_json::Value>(&fixed).is_ok(),
             "Should produce valid JSON, got: {}", fixed);
+    }
+
+    #[test]
+    fn test_parse_and_format_soap_json_with_procedure_section() {
+        // v0.10.61: SOAP-LLM emits a 5th `procedure` array; format_soap_as_text
+        // should render it as a Procedure section with the verbatim quote.
+        let response = r#"{
+            "subjective":["Wart on foot"],
+            "objective":["Wart treated with liquid nitrogen"],
+            "assessment":["Plantar wart"],
+            "plan":["Follow up if persists"],
+            "procedure_candidates":[{"mention":"cryotherapy","doctor_quote":"I sprayed it","stance":"COMPLETED","walkback":"none","completion_evidence":"you are done"}],
+            "procedure":[{"action":"Liquid nitrogen applied to plantar wart","transcript_quote":"I sprayed it"}]
+        }"#;
+        let out = parse_and_format_soap_json(response);
+        assert!(out.contains("\nProcedure:"), "expected Procedure section, got:\n{}", out);
+        assert!(out.contains("Liquid nitrogen applied to plantar wart"));
+        assert!(out.contains("[transcript: \"I sprayed it\"]"));
+    }
+
+    #[test]
+    fn test_parse_and_format_soap_json_omits_procedure_when_empty() {
+        // When procedure[] is empty (or absent), no Procedure section should
+        // render — keeps existing 4-section SOAPs unchanged.
+        let response = r#"{
+            "subjective":["foo"],
+            "objective":[],
+            "assessment":["bar"],
+            "plan":["baz"]
+        }"#;
+        let out = parse_and_format_soap_json(response);
+        assert!(!out.contains("Procedure:"), "should not render empty Procedure section, got:\n{}", out);
+    }
+
+    #[test]
+    fn test_parse_and_format_soap_json_filters_empty_procedure_actions() {
+        // Defensive: action="" should be filtered out same way empty S/O/A/P items are.
+        let response = r#"{
+            "subjective":["foo"],
+            "objective":[],
+            "assessment":[],
+            "plan":[],
+            "procedure":[{"action":"","transcript_quote":"junk"}]
+        }"#;
+        let out = parse_and_format_soap_json(response);
+        assert!(!out.contains("Procedure:"));
     }
 
     #[test]

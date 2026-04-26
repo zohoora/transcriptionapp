@@ -276,6 +276,29 @@ pub async fn run_screenshot_task(cfg: ScreenshotTaskConfig) {
                         continue;
                     }
 
+                    // Startup-grace gate (v0.10.60). Vision still runs, but
+                    // votes from the first N seconds after a split don't
+                    // count toward majority — gives the clinician time to
+                    // open the new patient's chart so an EMR carry-over
+                    // can't lock in the wrong name. Apr 24 2026: Louise
+                    // Simon's first 6 vision polls (5 min) all returned
+                    // "Jerry Zandbergen" because Jerry's chart hadn't been
+                    // closed; that 6-vote head-start drowned out the
+                    // 3 later Louise votes despite recency weighting.
+                    let grace_secs = cfg.thresholds.vision_startup_grace_secs as i64;
+                    if grace_secs > 0 {
+                        if let Ok(split_time) = cfg.last_split_time.lock() {
+                            let elapsed_secs = (Utc::now() - *split_time).num_seconds();
+                            if elapsed_secs < grace_secs {
+                                info!(
+                                    "Vision vote '{}' suppressed (startup grace {}s, {}s elapsed)",
+                                    name, grace_secs, elapsed_secs
+                                );
+                                continue;
+                            }
+                        }
+                    }
+
                     if let Ok(mut tracker) = cfg.name_tracker.lock() {
                         let (changed, old_name, new_name) =
                             tracker.record_and_check_change(&name);

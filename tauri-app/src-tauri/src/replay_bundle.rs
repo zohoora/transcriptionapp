@@ -26,8 +26,31 @@ const MERGED_BUNDLE_PREFIX: &str = "replay_bundle.merged_";
 /// the full production `DetectionEvalContext` without hardcoded defaults.
 /// v3 (2026-04): added `MultiPatientDetection.split_decision` to capture the
 /// multi-patient SPLIT prompt's parsed line_index for replay regression testing.
-/// Older bundles still load via `#[serde(default)]` — older replay tools see None.
-const SCHEMA_VERSION: u32 = 4;
+/// v4 (2026-04): added `MergeCheck.prev_source` + `prev_soap_excerpt` so the
+/// SOAP-aware merge-check is fully replayable.
+/// v5 (2026-04): added `system_prompt`, `user_prompt`, `response_raw` to
+/// `SoapResult` and `BillingResult` so SOAP and billing prompt-engineering
+/// experiments can replay archived sessions through new prompts without
+/// re-issuing the original LLM calls. Older bundles still load via
+/// `#[serde(default)]` — older replay tools see None.
+const SCHEMA_VERSION: u32 = 5;
+
+/// UTF-8-safe cap for v5 prompt/response captures. Production prompts run
+/// 2-8 KB and responses 1-3 KB; this leaves ample headroom while bounding the
+/// damage from a pathological 100 KB+ LLM response (which would otherwise
+/// bloat the on-disk bundle and slow downstream tooling).
+pub const CAPTURE_MAX_BYTES: usize = 32 * 1024;
+
+/// Truncate a captured prompt/response to `CAPTURE_MAX_BYTES` on a UTF-8
+/// boundary. Returns the input untouched when already within the cap.
+fn cap_capture(s: String) -> String {
+    if s.len() <= CAPTURE_MAX_BYTES {
+        s
+    } else {
+        let end = s.ceil_char_boundary(CAPTURE_MAX_BYTES);
+        s[..end].to_string()
+    }
+}
 
 /// Self-contained replay test case for an encounter.
 #[derive(Debug, Serialize, Deserialize)]
@@ -269,6 +292,17 @@ pub struct SoapResult {
     /// Number of patients detected (>1 for per-patient SOAP generation)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub patient_count: Option<usize>,
+    /// SOAP system prompt fed to the LLM. Schema v5+. Captured so
+    /// `soap_experiment_cli` can replay the same transcript through alternate
+    /// prompts and diff the outputs.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub system_prompt: Option<String>,
+    /// SOAP user prompt (transcript + clinician notes). Schema v5+.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub user_prompt: Option<String>,
+    /// Raw SOAP-LLM response text (JSON pre-parsing). Schema v5+.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub response_raw: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -357,6 +391,15 @@ pub struct BillingResult {
     pub selected_codes: Option<Vec<String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
+    /// Billing-extraction system prompt fed to the LLM. Schema v5+.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub system_prompt: Option<String>,
+    /// Billing-extraction user prompt (SOAP + transcript + context hints). Schema v5+.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub user_prompt: Option<String>,
+    /// Raw billing-LLM response text (clinical_features JSON pre-parsing). Schema v5+.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub response_raw: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -445,11 +488,19 @@ impl ReplayBundleBuilder {
         self.merge_check = Some(check);
     }
 
-    pub fn set_soap_result(&mut self, result: SoapResult) {
+    pub fn set_soap_result(&mut self, mut result: SoapResult) {
+        // v5+ capture fields are UTF-8-truncated at the bundle boundary so
+        // a pathological LLM response can't bloat the on-disk bundle.
+        result.system_prompt = result.system_prompt.map(cap_capture);
+        result.user_prompt = result.user_prompt.map(cap_capture);
+        result.response_raw = result.response_raw.map(cap_capture);
         self.soap_result = Some(result);
     }
 
-    pub fn set_billing_result(&mut self, result: BillingResult) {
+    pub fn set_billing_result(&mut self, mut result: BillingResult) {
+        result.system_prompt = result.system_prompt.map(cap_capture);
+        result.user_prompt = result.user_prompt.map(cap_capture);
+        result.response_raw = result.response_raw.map(cap_capture);
         self.billing_result = Some(result);
     }
 
@@ -463,6 +514,19 @@ impl ReplayBundleBuilder {
 
     pub fn add_multi_patient_detection(&mut self, detection: MultiPatientDetection) {
         self.multi_patient_detections.push(detection);
+    }
+
+    /// Attach a split-decision LLM call to the most recently added multi-
+    /// patient detection. No-op when there's no prior detection. The split
+    /// prompt only fires after detection succeeds, so the call site naturally
+    /// satisfies that ordering.
+    pub fn set_split_decision_on_last_mp_detection(
+        &mut self,
+        decision: MultiPatientSplitDecision,
+    ) {
+        if let Some(last) = self.multi_patient_detections.last_mut() {
+            last.split_decision = Some(decision);
+        }
     }
 
     /// Returns the trigger string from the split decision, if set.
@@ -827,6 +891,9 @@ mod tests {
             word_count: 1200,
             error: None,
             patient_count: None,
+            system_prompt: None,
+            user_prompt: None,
+            response_raw: None,
         });
 
         // Set name tracker state
@@ -1111,6 +1178,101 @@ mod tests {
         assert_eq!(pre, r#""pre_soap""#);
         assert_eq!(retro, r#""retrospective""#);
         assert_eq!(stand, r#""standalone""#);
+    }
+
+    #[test]
+    fn test_v5_soap_result_roundtrip_with_prompts() {
+        // Schema v5: SoapResult carries system_prompt + user_prompt + response_raw.
+        let r = SoapResult {
+            ts: "2026-04-25T12:00:00Z".to_string(),
+            latency_ms: 1234,
+            success: true,
+            word_count: 42,
+            error: None,
+            patient_count: Some(2),
+            system_prompt: Some("You are a medical scribe...".to_string()),
+            user_prompt: Some("Transcript here".to_string()),
+            response_raw: Some(r#"{"subjective":["foo"]}"#.to_string()),
+        };
+        let json = serde_json::to_string(&r).unwrap();
+        assert!(json.contains("system_prompt"));
+        assert!(json.contains("response_raw"));
+        let r2: SoapResult = serde_json::from_str(&json).unwrap();
+        assert_eq!(r2.system_prompt.as_deref(), Some("You are a medical scribe..."));
+        assert_eq!(r2.response_raw.as_deref(), Some(r#"{"subjective":["foo"]}"#));
+    }
+
+    #[test]
+    fn test_v5_billing_result_roundtrip_with_prompts() {
+        let r = BillingResult {
+            ts: "2026-04-25T12:00:00Z".to_string(),
+            latency_ms: 5678,
+            success: true,
+            codes_count: Some(2),
+            total_amount_cents: Some(3935),
+            selected_codes: Some(vec!["A007A".to_string(), "Q310A".to_string()]),
+            error: None,
+            system_prompt: Some("Billing prompt".to_string()),
+            user_prompt: Some("SOAP note + transcript".to_string()),
+            response_raw: Some(r#"{"visitType":"intermediate_assessment"}"#.to_string()),
+        };
+        let json = serde_json::to_string(&r).unwrap();
+        let r2: BillingResult = serde_json::from_str(&json).unwrap();
+        assert_eq!(r2.system_prompt.as_deref(), Some("Billing prompt"));
+    }
+
+    #[test]
+    fn test_capture_setters_truncate_oversized_strings() {
+        let dir = tempdir().expect("tempdir");
+        let mut builder = ReplayBundleBuilder::new(sample_config());
+        let huge = "x".repeat(CAPTURE_MAX_BYTES * 4);
+        builder.set_soap_result(SoapResult {
+            ts: "2026-04-25T00:00:00Z".to_string(),
+            latency_ms: 1,
+            success: true,
+            word_count: 0,
+            error: None,
+            patient_count: None,
+            system_prompt: Some(huge.clone()),
+            user_prompt: None,
+            response_raw: Some(huge.clone()),
+        });
+        builder.build_and_reset(dir.path());
+        let json: serde_json::Value = serde_json::from_str(
+            &std::fs::read_to_string(dir.path().join("replay_bundle.json")).unwrap()
+        ).unwrap();
+        let sys = json["soap_result"]["system_prompt"].as_str().unwrap();
+        let raw = json["soap_result"]["response_raw"].as_str().unwrap();
+        assert!(sys.len() <= CAPTURE_MAX_BYTES, "system_prompt should be capped");
+        assert!(raw.len() <= CAPTURE_MAX_BYTES, "response_raw should be capped");
+    }
+
+    #[test]
+    fn test_v4_bundle_loads_with_v5_fields_default_none() {
+        // Backward compat: a bundle written under v4 (no system_prompt etc.)
+        // must deserialize cleanly with new fields = None.
+        let v4_soap = r#"{
+            "ts": "2026-04-23T10:00:00Z",
+            "latency_ms": 1000,
+            "success": true,
+            "word_count": 100,
+            "patient_count": 1
+        }"#;
+        let r: SoapResult = serde_json::from_str(v4_soap).expect("v4 SoapResult should load");
+        assert_eq!(r.system_prompt, None);
+        assert_eq!(r.user_prompt, None);
+        assert_eq!(r.response_raw, None);
+
+        let v4_billing = r#"{
+            "ts": "2026-04-23T10:01:00Z",
+            "latency_ms": 2000,
+            "success": true,
+            "codes_count": 1,
+            "total_amount_cents": 4455
+        }"#;
+        let b: BillingResult = serde_json::from_str(v4_billing).expect("v4 BillingResult should load");
+        assert_eq!(b.system_prompt, None);
+        assert_eq!(b.response_raw, None);
     }
 
     #[test]

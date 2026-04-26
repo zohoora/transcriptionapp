@@ -231,6 +231,14 @@ pub struct DetectionThresholds {
     pub vision_skip_call_cap: usize,
     #[serde(default = "default_vision_re_sample_interval_secs")]
     pub vision_re_sample_interval_secs: u64,
+    /// First N seconds of an encounter where vision name votes don't count
+    /// toward the majority. Vision LLM still runs (we want to learn what's
+    /// on screen) and the screenshot is captured/archived; only the vote is
+    /// suppressed. Set to 0 to disable. Default 180s — chosen from the
+    /// Apr 24 2026 Louise Simon → Jerry Zandbergen mislabel where the
+    /// previous patient's chart stayed open for the first ~5 min.
+    #[serde(default = "default_vision_startup_grace_secs")]
+    pub vision_startup_grace_secs: u64,
     #[serde(default = "default_gemini_generation_timeout_secs")]
     pub gemini_generation_timeout_secs: u64,
     #[serde(default = "default_detection_prompt_max_words")]
@@ -259,6 +267,7 @@ fn default_mp_detect_word_threshold() -> usize { 500 }
 fn default_vision_skip_streak_k() -> usize { 5 }
 fn default_vision_skip_call_cap() -> usize { 30 }
 fn default_vision_re_sample_interval_secs() -> u64 { 600 }
+fn default_vision_startup_grace_secs() -> u64 { 180 }
 fn default_gemini_generation_timeout_secs() -> u64 { 45 }
 fn default_detection_prompt_max_words() -> usize { 6000 }
 
@@ -291,6 +300,7 @@ impl Default for DetectionThresholds {
             vision_skip_streak_k: 5,
             vision_skip_call_cap: 30,
             vision_re_sample_interval_secs: 600,
+            vision_startup_grace_secs: 180,
             gemini_generation_timeout_secs: 45,
             detection_prompt_max_words: 6000,
         }

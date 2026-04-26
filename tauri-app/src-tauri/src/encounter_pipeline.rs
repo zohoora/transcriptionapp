@@ -73,6 +73,11 @@ pub async fn generate_and_archive_soap(
     // `SOAP_GENERATION_TIMEOUT_SECS` constant. Pass `None` from tests and pre-Phase-2
     // callers; production continuous mode passes `Some(thresholds.soap_generation_timeout_secs)`.
     soap_timeout_override: Option<u64>,
+    // Optional replay bundle. When provided, the function writes a
+    // `SoapResult` with the captured system_prompt + response on every
+    // outcome path (Success / Failed / Timeout) so SOAP-experiment CLIs
+    // can replay the prompt without re-issuing the LLM call. Schema v5+.
+    bundle: Option<&Arc<Mutex<crate::replay_bundle::ReplayBundleBuilder>>>,
 ) -> SoapGenerationOutcome {
     let soap_timeout = soap_timeout_override.unwrap_or(SOAP_GENERATION_TIMEOUT_SECS);
     let effective_detail = effective_soap_detail_level(soap_detail_level, word_count);
@@ -147,6 +152,25 @@ pub async fn generate_and_archive_soap(
                 );
             }
 
+            // Replay bundle: capture prompts + response so SOAP-experiment
+            // CLIs can replay this encounter through alternate prompts. v5+.
+            if let Some(bundle_arc) = bundle {
+                if let Ok(mut b) = bundle_arc.lock() {
+                    let patient_count = soap_result.notes.len();
+                    b.set_soap_result(crate::replay_bundle::SoapResult {
+                        ts: Utc::now().to_rfc3339(),
+                        latency_ms,
+                        success: true,
+                        word_count,
+                        error: None,
+                        patient_count: if patient_count > 1 { Some(patient_count) } else { None },
+                        system_prompt: Some(soap_system_prompt.clone()),
+                        user_prompt: None,
+                        response_raw: Some(content.clone()),
+                    });
+                }
+            }
+
             SoapGenerationOutcome::Success {
                 result: soap_result,
                 content,
@@ -172,6 +196,21 @@ pub async fn generate_and_archive_soap(
                 );
             }
             warn!("SOAP generation failed: {}", e);
+            if let Some(bundle_arc) = bundle {
+                if let Ok(mut b) = bundle_arc.lock() {
+                    b.set_soap_result(crate::replay_bundle::SoapResult {
+                        ts: Utc::now().to_rfc3339(),
+                        latency_ms,
+                        success: false,
+                        word_count,
+                        error: Some(e.to_string()),
+                        patient_count: None,
+                        system_prompt: Some(soap_system_prompt.clone()),
+                        user_prompt: None,
+                        response_raw: None,
+                    });
+                }
+            }
             SoapGenerationOutcome::Failed {
                 latency_ms,
                 error: e.to_string(),
@@ -196,6 +235,21 @@ pub async fn generate_and_archive_soap(
                 );
             }
             warn!("SOAP generation timed out ({}s)", soap_timeout);
+            if let Some(bundle_arc) = bundle {
+                if let Ok(mut b) = bundle_arc.lock() {
+                    b.set_soap_result(crate::replay_bundle::SoapResult {
+                        ts: Utc::now().to_rfc3339(),
+                        latency_ms,
+                        success: false,
+                        word_count,
+                        error: Some(SOAP_TIMEOUT_ERROR.to_string()),
+                        patient_count: None,
+                        system_prompt: Some(soap_system_prompt.clone()),
+                        user_prompt: None,
+                        response_raw: None,
+                    });
+                }
+            }
             SoapGenerationOutcome::Failed {
                 latency_ms,
                 error: SOAP_TIMEOUT_ERROR.to_string(),
@@ -234,6 +288,11 @@ pub async fn extract_and_archive_billing(
     // Optional server-configured timeout override. `None` falls back to the
     // compiled `BILLING_EXTRACTION_TIMEOUT_SECS` constant.
     billing_timeout_override: Option<u64>,
+    // Optional replay bundle. When provided, the function writes a
+    // `BillingResult` with the captured system_prompt + user_prompt +
+    // response_raw on every outcome path so billing-experiment CLIs can
+    // replay the prompt without re-issuing the LLM call. Schema v5+.
+    bundle: Option<&Arc<Mutex<crate::replay_bundle::ReplayBundleBuilder>>>,
 ) -> Result<crate::billing::BillingRecord, String> {
     use crate::billing::clinical_features::{build_billing_extraction_prompt, parse_billing_extraction};
 
@@ -274,6 +333,22 @@ pub async fn extract_and_archive_billing(
                     ctx,
                 );
             }
+            if let Some(bundle_arc) = bundle {
+                if let Ok(mut b) = bundle_arc.lock() {
+                    b.set_billing_result(crate::replay_bundle::BillingResult {
+                        ts: Utc::now().to_rfc3339(),
+                        latency_ms,
+                        success: false,
+                        codes_count: None,
+                        total_amount_cents: None,
+                        selected_codes: None,
+                        error: Some(e.to_string()),
+                        system_prompt: Some(system_prompt.clone()),
+                        user_prompt: Some(user_prompt.clone()),
+                        response_raw: None,
+                    });
+                }
+            }
             return Err(format!("LLM error: {}", e));
         }
         Err(_) => {
@@ -291,6 +366,22 @@ pub async fn extract_and_archive_billing(
                     serde_json::json!({"session_id": session_id, "error": "timeout"}),
                 );
             }
+            if let Some(bundle_arc) = bundle {
+                if let Ok(mut b) = bundle_arc.lock() {
+                    b.set_billing_result(crate::replay_bundle::BillingResult {
+                        ts: Utc::now().to_rfc3339(),
+                        latency_ms,
+                        success: false,
+                        codes_count: None,
+                        total_amount_cents: None,
+                        selected_codes: None,
+                        error: Some("timeout".to_string()),
+                        system_prompt: Some(system_prompt.clone()),
+                        user_prompt: Some(user_prompt.clone()),
+                        response_raw: None,
+                    });
+                }
+            }
             return Err("Billing extraction timed out".to_string());
         }
     };
@@ -300,6 +391,28 @@ pub async fn extract_and_archive_billing(
 
     // Override after-hours from caller (more reliable than LLM)
     features.is_after_hours = is_after_hours;
+
+    // SOAP-text keyword guard (v0.10.61). The LLM sometimes hallucinates
+    // K-code conditions (diabetic_assessment, chf_management,
+    // smoking_cessation) and even fabricates plausible evidence strings,
+    // defeating the in-rule-engine evidence-text validator. Drop any such
+    // condition whose required keyword is absent from the SOAP text itself.
+    let (kept, dropped) = crate::billing::rule_engine::condition_keyword_guard(
+        &features.conditions,
+        soap_content,
+    );
+    if !dropped.is_empty() {
+        warn!(
+            "Billing extraction: dropped {} hallucinated condition(s) for {} — keyword absent from SOAP: {:?}",
+            dropped.len(), session_id, dropped
+        );
+        for cond in &dropped {
+            if let Some(key) = crate::billing::clinical_features::enum_to_snake_key(cond) {
+                features.condition_evidence.remove(&key);
+            }
+        }
+    }
+    features.conditions = kept;
 
     // Resolve diagnostic code via tools-model + file_lookup retrieval (Stage 0).
     // Fails soft — `None` means the rule engine falls through to its existing
@@ -311,7 +424,7 @@ pub async fn extract_and_archive_billing(
     let conditions_for_tools: Vec<String> = features
         .conditions
         .iter()
-        .filter_map(|c| serde_json::to_value(c).ok().and_then(|v| v.as_str().map(String::from)))
+        .filter_map(crate::billing::clinical_features::enum_to_snake_key)
         .collect();
     let assessment_for_tools = extract_soap_assessment(soap_content);
     let tools_model_resolved = crate::billing::diagnostic_tools_model::resolve_via_tools_model(
@@ -379,6 +492,25 @@ pub async fn extract_and_archive_billing(
         total_cents = record.total_amount_cents,
         "Billing codes extracted and archived"
     );
+
+    // Replay bundle: capture prompts + response so billing-experiment CLIs
+    // can replay this encounter through alternate prompts. v5+.
+    if let Some(bundle_arc) = bundle {
+        if let Ok(mut b) = bundle_arc.lock() {
+            b.set_billing_result(crate::replay_bundle::BillingResult {
+                ts: Utc::now().to_rfc3339(),
+                latency_ms,
+                success: true,
+                codes_count: Some(record.codes.len()),
+                total_amount_cents: Some(record.total_amount_cents),
+                selected_codes: Some(record.codes.iter().map(|c| c.code.clone()).collect()),
+                error: None,
+                system_prompt: Some(system_prompt.clone()),
+                user_prompt: Some(user_prompt.clone()),
+                response_raw: Some(response.clone()),
+            });
+        }
+    }
 
     Ok(record)
 }
@@ -491,6 +623,7 @@ pub async fn recover_orphaned_billing(
             None,
             None,
             None, // recovery path uses compiled default timeout
+            None, // recovery path has no replay bundle
         ).await {
             warn!("Failed to recover billing for {}: {}", summary.session_id, e);
         } else {
@@ -925,6 +1058,7 @@ pub async fn recover_orphaned_soap(
             }),
             None,
             None, // recovery path uses compiled default timeout
+            None, // orphan recovery has no replay bundle
         )
         .await;
 
@@ -1061,6 +1195,7 @@ pub async fn regen_soap_after_merge(
         }),
         None,
         None, // merge-regen uses compiled default timeout; caller could thread from ServerConfig if desired
+        None, // merge-regen path: bundle of merging-into session is finalized later via build_merged_and_reset
     )
     .await;
 
@@ -1084,6 +1219,7 @@ pub async fn regen_soap_after_merge(
                 surviving_patient_name, after_hours, &rule_ctx, logger,
                 billing_templates, billing_data,
                 None, // merge-path billing uses compiled default timeout
+                None, // merge-path: bundle finalized via build_merged_and_reset
             ).await {
                 Ok(record) => info!(
                     "Billing extracted after merge for {} ({} codes)",
@@ -1146,6 +1282,8 @@ mod tests {
             patient_confirmed_at: None,
             medplum_patient_id: None,
             has_clinician_notes: false,
+            soap_prompt_version: None,
+            billing_prompt_version: None,
         }
     }
 

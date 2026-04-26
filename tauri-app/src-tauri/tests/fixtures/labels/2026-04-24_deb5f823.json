@@ -1,0 +1,13 @@
+{
+  "session_id": "deb5f823-1ab7-4e32-87f7-11f9a4cd06fe",
+  "date": "2026-04-24",
+  "labeled_at": "2026-04-24T19:30:00Z",
+  "labeled_by": "Dr Arash Zohoor (via forensic review)",
+  "labels": {
+    "billing_codes_expected": [
+      "A007A",
+      "Q310A"
+    ],
+    "notes": "SOAP missed that blood was drawn TODAY to prepare PRP for treatment next Tuesday \u2014 SOAP wrote 'schedule blood draw and PRP treatment for Tuesday' conflating the two events. Billing code A007A correct. Diagnostic code 799 (ill-defined) is wrong per clinician; PRP for chronic wound needs a better specific code (potentially 707 chronic ulcer)."
+  }
+}

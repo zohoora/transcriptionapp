@@ -681,6 +681,52 @@ pub async fn run<C: RunContext>(
                                     );
                                 }
                                 if let Some(detection) = retro_outcome.detection {
+                                    // Capture the multi-patient SPLIT prompt's
+                                    // line_index decision for replay analysis.
+                                    // We don't act on the boundary yet (per-
+                                    // patient SOAPs come from the regen step
+                                    // below with multi-patient context), but
+                                    // capturing the data lets the split-replay
+                                    // CLI compare prompt + model variants on
+                                    // historical multi-patient encounters.
+                                    let formatted_lines: Vec<String> = merged_text_rich
+                                        .lines()
+                                        .enumerate()
+                                        .map(|(i, l)| format!("[{}] {}", i, l))
+                                        .collect();
+                                    let formatted = formatted_lines.join("\n");
+                                    let split_outcome = client
+                                        .run_multi_patient_split(
+                                            &deps.fast_model,
+                                            &formatted,
+                                            Some(&deps.templates),
+                                        )
+                                        .await;
+                                    if let Ok(mut logger) = deps.logger.lock() {
+                                        logger.log_llm_call(
+                                            "multi_patient_split",
+                                            &split_outcome.model,
+                                            &split_outcome.system_prompt,
+                                            &split_outcome.user_prompt,
+                                            split_outcome.response_raw.as_deref(),
+                                            split_outcome.latency_ms,
+                                            split_outcome.success,
+                                            split_outcome.error.as_deref(),
+                                            serde_json::json!({
+                                                "stage": "retrospective",
+                                                "parsed_line_index": split_outcome.parsed_line_index,
+                                                "parsed_confidence": split_outcome.parsed_confidence,
+                                                "merged_word_count": merged_wc,
+                                            }),
+                                        );
+                                    }
+                                    if let Ok(mut bundle) = deps.bundle.lock() {
+                                        bundle.set_split_decision_on_last_mp_detection(
+                                            crate::continuous_mode::multi_patient_split_from_outcome(
+                                                &split_outcome,
+                                            ),
+                                        );
+                                    }
                                     info!(
                                         event = "retrospective_multi_patient_regen",
                                         component = "continuous_mode_merge_back",
@@ -714,6 +760,7 @@ pub async fn run<C: RunContext>(
                                             }),
                                             Some(&deps.templates),
                                             Some(deps.soap_generation_timeout_secs),
+                                            None, // retrospective regen targets prev session; current bundle is for the new encounter
                                         )
                                         .await;
                                     if let crate::encounter_pipeline::SoapGenerationOutcome::Success {
@@ -860,6 +907,7 @@ pub async fn run<C: RunContext>(
                     }),
                     Some(&deps.templates),
                     Some(deps.soap_generation_timeout_secs),
+                    Some(&deps.bundle),
                 )
                 .await;
                 if let crate::encounter_pipeline::SoapGenerationOutcome::Success {

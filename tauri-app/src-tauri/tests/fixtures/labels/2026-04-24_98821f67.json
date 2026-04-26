@@ -1,0 +1,15 @@
+{
+  "session_id": "98821f67-4ed1-4454-83d6-8d51c1412fb2",
+  "date": "2026-04-24",
+  "labeled_at": "2026-04-24T19:30:00Z",
+  "labeled_by": "Dr Arash Zohoor (via forensic review)",
+  "labels": {
+    "clinical_correct": true,
+    "patient_count_correct": true,
+    "billing_codes_expected": [
+      "A004A",
+      "Q310A"
+    ],
+    "notes": "VISION NAME MISLABEL \u2014 session is Louise Simon (1952-05-11) but labeled Jerry Zandbergen. First 6 vision calls (17:39:17-17:41:59, first 5 min of session) all returned Jerry because the PREVIOUS patient's (Jerry, eeb4d85f ended 17:41) chart was still open. By the time Louise's chart was opened (18:02), PatientNameTracker already had 6 Jerry votes. Later alternation (Louise 3, Jerry 5 more) couldn't overcome the early lead. Recency weighting + DOB invalidation didn't fire because Jerry's DOB was captured before Louise's. Cryotherapy discussed not applied: 'I could spray them with liquid nitrogen, and sometimes they fall off' \u2014 conditional. Z117A + E542A wrongly billed. Dx 799 fallback needs specific code for acrochordons / chronic conditions listed."
+  }
+}

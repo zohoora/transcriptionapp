@@ -24,6 +24,7 @@ use std::process::ExitCode;
 use serde::Deserialize;
 
 use transcription_app_lib::local_archive;
+use transcription_app_lib::replay_fetch::ArchiveFetcher;
 
 #[derive(Debug, Deserialize)]
 struct Label {
@@ -95,7 +96,7 @@ fn count_sessions_in_archive(date: &str) -> Result<usize, String> {
     Ok(count)
 }
 
-fn verify_day(date: &str, labels_for_day: &[&Label]) -> (u32, u32, Vec<String>) {
+async fn verify_day(date: &str, labels_for_day: &[&Label], fetcher: &ArchiveFetcher) -> (u32, u32, Vec<String>) {
     let mut checks = 0;
     let mut passes = 0;
     let mut issues: Vec<String> = Vec::new();
@@ -103,18 +104,18 @@ fn verify_day(date: &str, labels_for_day: &[&Label]) -> (u32, u32, Vec<String>) 
     println!("\n=== Golden Day: {} ===", date);
     println!("  Labels in fixture set: {}", labels_for_day.len());
 
-    // Check 1: every labeled session exists in the archive
+    // Check 1: every labeled session exists in the archive (local or server).
     let mut sessions_found = 0;
     for label in labels_for_day {
         checks += 1;
-        match local_archive::get_session(&label.session_id, date) {
+        match fetcher.fetch_session(&label.session_id, date).await {
             Ok(_) => {
                 passes += 1;
                 sessions_found += 1;
             }
             Err(e) => {
                 issues.push(format!(
-                    "  ✗ Session {} not found in archive: {}",
+                    "  ✗ Session {} not found locally or on server: {}",
                     &label.session_id[..8],
                     e
                 ));
@@ -143,7 +144,8 @@ fn verify_day(date: &str, labels_for_day: &[&Label]) -> (u32, u32, Vec<String>) 
     (checks, passes, issues)
 }
 
-fn main() -> ExitCode {
+#[tokio::main(flavor = "current_thread")]
+async fn main() -> ExitCode {
     let args: Vec<String> = env::args().collect();
     let program = &args[0];
     if args.len() < 2 || args.contains(&"--help".to_string()) {
@@ -198,13 +200,18 @@ fn main() -> ExitCode {
         return ExitCode::from(1);
     };
 
+    let fetcher = ArchiveFetcher::from_env().unwrap_or_else(|e| {
+        eprintln!("warn: ArchiveFetcher init failed ({e}); falling back to local-only");
+        ArchiveFetcher::local_only()
+    });
+
     let mut total_checks = 0;
     let mut total_passes = 0;
     let mut total_issues: Vec<String> = Vec::new();
 
     for date in dates {
         let labels_for_day = by_date.get(date).unwrap();
-        let (checks, passes, issues) = verify_day(date, labels_for_day);
+        let (checks, passes, issues) = verify_day(date, labels_for_day, &fetcher).await;
         total_checks += checks;
         total_passes += passes;
         total_issues.extend(issues);

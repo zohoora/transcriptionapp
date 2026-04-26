@@ -25,7 +25,7 @@ use serde::Deserialize;
 
 use transcription_app_lib::billing::BillingRecord;
 use transcription_app_lib::feedback_to_label::LabelData;
-use transcription_app_lib::local_archive;
+use transcription_app_lib::replay_fetch::ArchiveFetcher;
 
 #[derive(Debug, Deserialize)]
 struct Label {
@@ -105,7 +105,8 @@ impl CheckResults {
     }
 }
 
-fn main() -> ExitCode {
+#[tokio::main(flavor = "current_thread")]
+async fn main() -> ExitCode {
     let args: Vec<String> = env::args().collect();
     let program = &args[0];
     if args.len() < 2 || args.contains(&"--help".to_string()) {
@@ -155,6 +156,11 @@ fn main() -> ExitCode {
         return ExitCode::SUCCESS;
     }
 
+    let fetcher = ArchiveFetcher::from_env().unwrap_or_else(|e| {
+        eprintln!("warn: ArchiveFetcher init failed ({e}); falling back to local-only");
+        ArchiveFetcher::local_only()
+    });
+
     let mut total_labels = 0;
     let mut total_checks = 0;
     let mut total_passes = 0;
@@ -180,11 +186,10 @@ fn main() -> ExitCode {
         total_labels += 1;
         let label_name = file.file_name().and_then(|n| n.to_str()).unwrap_or("?");
 
-        // Load session details
-        let session = match local_archive::get_session(&label.session_id, &label.date) {
+        let session = match fetcher.fetch_session(&label.session_id, &label.date).await {
             Ok(s) => s,
             Err(e) => {
-                println!("⊘ {} — session not found locally: {e}", label_name);
+                println!("⊘ {} — session not found locally or on server: {e}", label_name);
                 missing_sessions += 1;
                 continue;
             }
@@ -206,14 +211,12 @@ fn main() -> ExitCode {
         let want_billing = label.labels.billing_codes_expected.is_some()
             || label.labels.diagnostic_code_expected.is_some();
         if want_billing {
-            let session_dir = match parse_date(&label.date)
-                .and_then(|dt| local_archive::get_session_archive_dir(&label.session_id, &dt).ok())
-            {
-                Some(dir) => dir,
+            let parsed_date = match parse_date(&label.date) {
+                Some(d) => d,
                 None => {
                     results.checks += 1;
                     results.failures.push(format!(
-                        "  ✗ cannot resolve archive dir for date {}",
+                        "  ✗ cannot parse date {}",
                         label.date
                     ));
                     total_checks += results.checks;
@@ -222,10 +225,8 @@ fn main() -> ExitCode {
                     continue;
                 }
             };
-
-            let billing: Option<BillingRecord> = fs::read_to_string(session_dir.join("billing.json"))
-                .ok()
-                .and_then(|s| serde_json::from_str(&s).ok());
+            let billing: Option<BillingRecord> =
+                fetcher.fetch_billing(&label.session_id, &parsed_date).await.unwrap_or(None);
 
             match billing {
                 Some(billing) => {

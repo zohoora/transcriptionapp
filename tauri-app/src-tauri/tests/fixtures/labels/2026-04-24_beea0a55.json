@@ -1,0 +1,10 @@
+{
+  "session_id": "beea0a55-f1bd-4daf-a48f-d507dd1fa1d1",
+  "date": "2026-04-24",
+  "labeled_at": "2026-04-24T19:30:00Z",
+  "labeled_by": "Dr Arash Zohoor (via forensic review)",
+  "labels": {
+    "clinical_correct": false,
+    "notes": "Correctly classified non-clinical (119 words, no clinical content). Reference case."
+  }
+}

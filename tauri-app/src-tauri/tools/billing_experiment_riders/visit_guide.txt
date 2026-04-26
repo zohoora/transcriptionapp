@@ -1,0 +1,10 @@
+
+--- VISIT TYPE CALIBRATION GUIDE (rider) ---
+Carefully calibrate visitType to the actual scope of the visit:
+- "minor_assessment" (A001A) — SINGLE focused complaint, brief history + targeted exam, <10 min.
+- "intermediate_assessment" (A007A) — Moderate complexity, 1-2 issues addressed, 10-20 min.
+- "general_reassessment" (A004A) — Comprehensive ESTABLISHED patient follow-up addressing 3+ active problems. Multi-system review, typically 20-30 min. If the SOAP A section lists three or more distinct diagnoses, prefer A004A over A007A.
+- "general_assessment" (A003A) — Comprehensive NEW patient workup OR annual complete exam.
+- "mini_assessment" (A008A) — <5 min, no exam (Rx renewal, form signature only).
+- "virtual_phone" (A102A) — Telephone visit. Pick this when the SOAP explicitly contains telephone-call language ("calling", "we'll call you back", "phone visit", "over the phone").
+- "virtual_video" (A101A) — Video telemedicine visit.

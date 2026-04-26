@@ -324,4 +324,4 @@ All fields are `Option` — the model may return a subset. `line_index: None` or
 ### Fixture and Replay Tools
 
 - **Curated benchmark fixture**: `tauri-app/src-tauri/tests/fixtures/benchmarks/multi_patient_split.json` — TC-1, TC-2, etc., with `expected_line_index` and tolerance.
-- **Production replay**: `cargo run --bin multi_patient_split_replay_cli -- --all` — re-issues archived split prompts from production replay bundles (schema v4+, back-compatible with v3) and compares `line_index` within `±2 lines` (configurable via `--tolerance`). Synthetic mode (`--synthetic`) builds a split prompt from scratch for any bundle with ≥2-patient detection. See `tools/multi_patient_split_replay_cli.rs`.
+- **Production replay**: `cargo run --bin multi_patient_split_replay_cli -- --all` — re-issues archived split prompts from production replay bundles (schema v5+, back-compatible with v3 and v4) and compares `line_index` within `±2 lines` (configurable via `--tolerance`). Synthetic mode (`--synthetic`) builds a split prompt from scratch for any bundle with ≥2-patient detection. See `tools/multi_patient_split_replay_cli.rs`.

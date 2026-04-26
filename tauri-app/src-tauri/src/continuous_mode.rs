@@ -166,6 +166,26 @@ pub(crate) fn multi_patient_from_outcome(
     }
 }
 
+/// Convert a `MultiPatientSplitOutcome` from `llm_client` into a
+/// `MultiPatientSplitDecision` for the replay bundle.
+pub(crate) fn multi_patient_split_from_outcome(
+    outcome: &crate::llm_client::MultiPatientSplitOutcome,
+) -> crate::replay_bundle::MultiPatientSplitDecision {
+    crate::replay_bundle::MultiPatientSplitDecision {
+        ts: Utc::now().to_rfc3339(),
+        model: outcome.model.clone(),
+        system_prompt: outcome.system_prompt.clone(),
+        user_prompt: outcome.user_prompt.clone(),
+        response_raw: outcome.response_raw.clone(),
+        parsed_line_index: outcome.parsed_line_index,
+        parsed_confidence: outcome.parsed_confidence,
+        parsed_reason: outcome.parsed_reason.clone(),
+        latency_ms: outcome.latency_ms,
+        success: outcome.success,
+        error: outcome.error.clone(),
+    }
+}
+
 /// Extract up to `n` words from the end of `text`.
 pub(crate) fn tail_words(text: &str, n: usize) -> String {
     let words: Vec<&str> = text.split_whitespace().collect();

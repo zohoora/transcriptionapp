@@ -1,6 +1,6 @@
 [package]
 name = "transcription-app"
-version = "0.10.59"
+version = "0.10.62"
 description = "Local Transcription App"
 authors = ["you"]
 license = "MIT"
@@ -192,6 +192,18 @@ path = "tools/golden_day_cli.rs"
 [[bin]]
 name = "bootstrap_labels"
 path = "tools/bootstrap_labels.rs"
+
+[[bin]]
+name = "billing_experiment_cli"
+path = "tools/billing_experiment_cli.rs"
+
+[[bin]]
+name = "soap_experiment_cli"
+path = "tools/soap_experiment_cli.rs"
+
+[[bin]]
+name = "soap_diff_cli"
+path = "tools/soap_diff_cli.rs"
 
 [[bench]]
 name = "audio_benchmarks"

@@ -1,0 +1,16 @@
+{
+  "session_id": "491c6493-3de2-4b1e-99dc-1937eb0a6705",
+  "date": "2026-04-24",
+  "labeled_at": "2026-04-24T19:30:00Z",
+  "labeled_by": "Dr Arash Zohoor (via forensic review)",
+  "labels": {
+    "clinical_correct": true,
+    "patient_count_correct": true,
+    "billing_codes_expected": [
+      "A007A",
+      "Q310A"
+    ],
+    "diagnostic_code_expected": "311",
+    "notes": "Billing LLM extracted smoking_cessation condition citing cannabis (10g/week) discussion as evidence. OHIP Q042A+E079A are for TOBACCO cessation \u2014 cannabis use counselling is NOT billable under these codes. Also K005A (primary mental health) may be over-billed \u2014 the mental-health discussion was incidental, not the primary visit focus."
+  }
+}

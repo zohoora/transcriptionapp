@@ -1,0 +1,18 @@
+{
+  "session_id": "de7f5122-c3ae-4ffe-87a3-62be39ee29d2",
+  "date": "2026-04-24",
+  "labeled_at": "2026-04-24T19:30:00Z",
+  "labeled_by": "Dr Arash Zohoor (via forensic review)",
+  "labels": {
+    "split_correct": true,
+    "merge_correct": true,
+    "clinical_correct": true,
+    "patient_count_correct": true,
+    "billing_codes_expected": [
+      "A004A",
+      "Q310A"
+    ],
+    "diagnostic_code_expected": "725",
+    "notes": "All correct per clinician \u2014 polymyalgia rheumatica reassessment. Reference case."
+  }
+}

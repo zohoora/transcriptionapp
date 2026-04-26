@@ -33,7 +33,7 @@ import type {
   Settings,
 } from '../types';
 import { DETAIL_LEVEL_LABELS } from '../types';
-import { createEmptyFeedback } from '../utils';
+import { updateSessionFeedback } from '../utils';
 
 type DetailTab = 'transcript' | 'soap' | 'handout' | 'billing' | 'insights';
 type RightPaneMode = 'session' | 'daily_billing' | 'monthly_billing';
@@ -561,30 +561,35 @@ const HistoryWindow: React.FC = () => {
     }
   }, [fetchSessions, settingsLoaded]);
 
+  const markSessionFeedbackSaved = useCallback((sessionId: string, fb: SessionFeedback) => {
+    setSessions(prev => prev.map(s =>
+      s.session_id === sessionId
+        ? { ...s, has_feedback: true, quality_rating: fb.qualityRating }
+        : s
+    ));
+  }, []);
+
+  // Bound to the currently-selected session so FeedbackPanel + BillingTab
+  // don't need to re-thread sessionId on every save.
+  const handleSelectedSessionFeedbackSaved = useCallback((fb: SessionFeedback) => {
+    if (!selectedSessionId) return;
+    markSessionFeedbackSaved(selectedSessionId, fb);
+  }, [selectedSessionId, markSessionFeedbackSaved]);
+
   const rateSessionInline = useCallback(async (entry: FlattenedSession, rating: 'good' | 'bad') => {
+    const nextRating = entry.quality_rating === rating ? null : rating;
     try {
-      const existing = entry.has_feedback
-        ? await invoke<SessionFeedback | null>('get_session_feedback', {
-            sessionId: entry.session_id, date: entry.date,
-          })
-        : null;
-      const now = new Date().toISOString();
-      const nextRating = existing?.qualityRating === rating ? null : rating;
-      const updated: SessionFeedback = existing
-        ? { ...existing, qualityRating: nextRating, updatedAt: now }
-        : { ...createEmptyFeedback(), qualityRating: nextRating };
-      await invoke('save_session_feedback', {
-        sessionId: entry.session_id, date: entry.date, feedback: updated,
-      });
-      setSessions(prev => prev.map(s =>
-        s.session_id === entry.session_id
-          ? { ...s, has_feedback: true, quality_rating: nextRating }
-          : s
-      ));
+      const updated = await updateSessionFeedback(
+        entry.session_id,
+        entry.date,
+        { qualityRating: nextRating },
+        { skipLoad: !entry.has_feedback },
+      );
+      markSessionFeedbackSaved(entry.session_id, updated);
     } catch (e) {
       console.error('Failed to rate session inline:', e);
     }
-  }, []);
+  }, [markSessionFeedbackSaved]);
 
   // Fetch session details from local archive or Medplum
   const fetchSessionDetails = useCallback(async (session: LocalArchiveSummary, patientIndex?: number | null) => {
@@ -1337,22 +1342,22 @@ const HistoryWindow: React.FC = () => {
                         fetchSessionDetails(entry, entry.patientIndex);
                       }}
                     >
-                      <div className="session-info">
+                      <div className="session-row-top">
                         <span className="session-time">{formatLocalTime(entry.started_at || entry.date)}</span>
-                        <span className="session-name">
-                          {entry.charting_mode === 'continuous' && entry.encounter_number != null
-                            ? `Encounter #${entry.encounter_number}${displayName ? ` \u2014 ${displayName}` : ''}`
-                            : entry.word_count > 0
-                              ? `${entry.word_count} words`
-                              : 'Scribe Session'}
-                        </span>
-                      </div>
-                      <div className="session-meta">
                         {entry.duration_ms && (
                           <span className="session-duration">
                             {formatDurationShort(entry.duration_ms)}
                           </span>
                         )}
+                      </div>
+                      <div className="session-name">
+                        {entry.charting_mode === 'continuous' && entry.encounter_number != null
+                          ? `Encounter #${entry.encounter_number}${displayName ? ` \u2014 ${displayName}` : ''}`
+                          : entry.word_count > 0
+                            ? `${entry.word_count} words`
+                            : 'Scribe Session'}
+                      </div>
+                      <div className="session-row-bottom">
                         <div className="session-badges">
                           {entry.likely_non_clinical && (
                             <span className="badge non-clinical-badge">Non-clinical</span>
@@ -1368,9 +1373,6 @@ const HistoryWindow: React.FC = () => {
                           )}
                           {entry.auto_ended && (
                             <span className="badge auto-badge">Auto</span>
-                          )}
-                          {entry.has_feedback && (
-                            <span className="badge feedback-badge">Reviewed</span>
                           )}
                         </div>
                       </div>
@@ -1803,6 +1805,7 @@ const HistoryWindow: React.FC = () => {
                             date={formatDateForApi(selectedDate)}
                             feedback={feedback}
                             onFeedbackChange={setFeedback}
+                            onFeedbackSaved={handleSelectedSessionFeedbackSaved}
                             isMultiPatient={isMultiPatient}
                             activePatient={activePatient}
                             patientCount={soapResult.notes.length}
@@ -1855,7 +1858,7 @@ const HistoryWindow: React.FC = () => {
                     defaultVisitSetting={billingDefaults.visitSetting}
                     defaultCounsellingExhausted={billingDefaults.counsellingExhausted}
                     defaultIsHospital={billingDefaults.isHospital}
-                    hasFeedback={sessions.find(s => s.session_id === selectedSessionId)?.has_feedback ?? undefined}
+                    onFeedbackSaved={handleSelectedSessionFeedbackSaved}
                   />
                 )}
 

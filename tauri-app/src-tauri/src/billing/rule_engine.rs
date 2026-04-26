@@ -439,6 +439,55 @@ fn condition_type_to_codes(cond: &ConditionType, billing_data: BillingDataRef<'_
     }
 }
 
+/// SOAP-text keyword guard for K-code conditions (v0.10.61).
+///
+/// `validate_condition_evidence` checks the LLM's evidence STRING for keywords,
+/// but the LLM can fabricate plausible-sounding evidence even when the SOAP
+/// contains no mention of the condition (the Apr 24 Alexander Gulas case:
+/// "diabetic_assessment" hallucinated 3/3 seeds against a SOAP that never says
+/// "diabetes"). This guard reads the SOAP TEXT and drops any K-code condition
+/// whose required keyword is absent from the SOAP itself.
+///
+/// Returns `(kept, dropped)` so callers can log which conditions were filtered.
+pub fn condition_keyword_guard(
+    conditions: &[ConditionType],
+    soap_text: &str,
+) -> (Vec<ConditionType>, Vec<ConditionType>) {
+    let lc = soap_text.to_lowercase();
+    let mut kept = Vec::new();
+    let mut dropped = Vec::new();
+    for cond in conditions {
+        let required: &[&str] = match cond {
+            ConditionType::DiabeticAssessment
+            | ConditionType::DiabetesManagement
+            | ConditionType::InsulinTherapySupport => &[
+                "diabet", "t1dm", "t2dm", "gdm", "gestational diabetes",
+                "hba1c", "a1c",
+            ],
+            ConditionType::ChfManagement => &[
+                "congestive heart failure", "chf", "cardiomyopathy",
+                "reduced ejection fraction", "hfref", "hfpef",
+            ],
+            ConditionType::SmokingCessation
+            | ConditionType::SmokingCessationFollowUp => &[
+                "tobacco", "cigarette", "nicotine", "vaping nicotine",
+                "chewing tobacco", "smokes", "smoker", "smoking",
+            ],
+            // Other conditions don't have this guard yet — keep as-is.
+            _ => {
+                kept.push(cond.clone());
+                continue;
+            }
+        };
+        if required.iter().any(|kw| lc.contains(kw)) {
+            kept.push(cond.clone());
+        } else {
+            dropped.push(cond.clone());
+        }
+    }
+    (kept, dropped)
+}
+
 /// Cross-validate condition evidence: ensure the evidence text contains at least
 /// one keyword relevant to the condition. This catches LLM hallucinations where
 /// evidence is fabricated for conditions not actually present in the SOAP.
@@ -1778,5 +1827,93 @@ mod tests {
         let features = default_features();
         let record = map_features_to_billing(&features, "s1", "2026-04-05", 600_000, None, None);
         assert_eq!(record.diagnostic_code, None);
+    }
+
+    // ── condition_keyword_guard (v0.10.61) ─────────────────────────────────
+
+    #[test]
+    fn test_keyword_guard_drops_diabetes_when_soap_lacks_keyword() {
+        // Apr 24 Alexander Gulas: SOAP about RA/Raynaud's, no diabetes mention.
+        // The LLM still emitted diabetic_assessment 3 seeds in a row.
+        let soap = "S: cold extremities, RA flare. \
+                    O: fingers turning white. \
+                    A: Severe lumbar arthritis. Rheumatoid arthritis with vasculitis. \
+                    P: Prescribe nitroglycerin cream for Raynaud's.";
+        let (kept, dropped) = condition_keyword_guard(
+            &[ConditionType::DiabeticAssessment, ConditionType::PrimaryMentalHealth],
+            soap,
+        );
+        assert_eq!(kept, vec![ConditionType::PrimaryMentalHealth]);
+        assert_eq!(dropped, vec![ConditionType::DiabeticAssessment]);
+    }
+
+    #[test]
+    fn test_keyword_guard_keeps_diabetes_when_soap_has_keyword() {
+        let soap = "S: T2DM follow-up. A: Type 2 diabetes, A1C 7.8%. P: increase metformin.";
+        let (kept, dropped) = condition_keyword_guard(
+            &[ConditionType::DiabeticAssessment],
+            soap,
+        );
+        assert_eq!(kept, vec![ConditionType::DiabeticAssessment]);
+        assert!(dropped.is_empty());
+    }
+
+    #[test]
+    fn test_keyword_guard_drops_smoking_for_cannabis() {
+        // Apr 24 Cody Milmine: cannabis (10g/wk) discussed; LLM coded smoking_cessation.
+        let soap = "S: marijuana use, 10g/week. A: cannabis dependence. P: harm reduction discussed.";
+        let (kept, dropped) = condition_keyword_guard(
+            &[ConditionType::SmokingCessation],
+            soap,
+        );
+        assert!(kept.is_empty());
+        assert_eq!(dropped, vec![ConditionType::SmokingCessation]);
+    }
+
+    #[test]
+    fn test_keyword_guard_keeps_smoking_for_tobacco() {
+        let soap = "S: smokes 1ppd of cigarettes. A: tobacco dependence. P: nicotine patch counselled.";
+        let (kept, dropped) = condition_keyword_guard(
+            &[ConditionType::SmokingCessation],
+            soap,
+        );
+        assert_eq!(kept, vec![ConditionType::SmokingCessation]);
+        assert!(dropped.is_empty());
+    }
+
+    #[test]
+    fn test_keyword_guard_drops_chf_for_htn_management() {
+        // Apr 24 Martin Gierling: bisoprolol for HTN, LLM coded chf_management.
+        let soap = "S: BP 106/65 at home. A: hypertension on bisoprolol. P: monitor BP weekly.";
+        let (kept, dropped) = condition_keyword_guard(
+            &[ConditionType::ChfManagement],
+            soap,
+        );
+        assert!(kept.is_empty());
+        assert_eq!(dropped, vec![ConditionType::ChfManagement]);
+    }
+
+    #[test]
+    fn test_keyword_guard_keeps_chf_for_real_diagnosis() {
+        let soap = "S: SOB worsening. A: CHF exacerbation, reduced ejection fraction. P: increase furosemide.";
+        let (kept, dropped) = condition_keyword_guard(
+            &[ConditionType::ChfManagement],
+            soap,
+        );
+        assert_eq!(kept, vec![ConditionType::ChfManagement]);
+        assert!(dropped.is_empty());
+    }
+
+    #[test]
+    fn test_keyword_guard_passes_through_unguarded_conditions() {
+        // primary_mental_health, fibromyalgia_care, etc. don't have keyword guards yet.
+        // They should pass through untouched.
+        let soap = "S: mood. A: depression. P: counselling.";
+        let (kept, dropped) = condition_keyword_guard(
+            &[ConditionType::PrimaryMentalHealth, ConditionType::FibromyalgiaCare],
+            soap,
+        );
+        assert_eq!(kept.len(), 2);
+        assert!(dropped.is_empty());
     }
 }

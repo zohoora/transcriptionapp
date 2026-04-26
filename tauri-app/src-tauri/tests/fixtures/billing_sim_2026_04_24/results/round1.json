@@ -1,0 +1,2871 @@
+[
+  {
+    "sid": "0cce8568",
+    "variant": "V_BASE",
+    "seed": 0,
+    "visit_type": "intermediate_assessment",
+    "procedures": [],
+    "conditions": [],
+    "dx": "788",
+    "primary_dx_text": "<scrubbed>",
+    "score": {
+      "visit_ok": false,
+      "proc_fp": 0,
+      "proc_fn": 0,
+      "proc_ok": true,
+      "cond_hallucinated": [],
+      "cond_ok": true,
+      "dx_ok": true,
+      "dx_799_fallback": false,
+      "all_ok": false
+    }
+  },
+  {
+    "sid": "0cce8568",
+    "variant": "V_BASE",
+    "seed": 1,
+    "visit_type": "intermediate_assessment",
+    "procedures": [],
+    "conditions": [],
+    "dx": "788",
+    "primary_dx_text": "<scrubbed>",
+    "score": {
+      "visit_ok": false,
+      "proc_fp": 0,
+      "proc_fn": 0,
+      "proc_ok": true,
+      "cond_hallucinated": [],
+      "cond_ok": true,
+      "dx_ok": true,
+      "dx_799_fallback": false,
+      "all_ok": false
+    }
+  },
+  {
+    "sid": "0cce8568",
+    "variant": "V_SOAP_ONLY",
+    "seed": 0,
+    "visit_type": "minor_assessment",
+    "procedures": [],
+    "conditions": [],
+    "dx": "599",
+    "primary_dx_text": "<scrubbed>",
+    "score": {
+      "visit_ok": true,
+      "proc_fp": 0,
+      "proc_fn": 0,
+      "proc_ok": true,
+      "cond_hallucinated": [],
+      "cond_ok": true,
+      "dx_ok": true,
+      "dx_799_fallback": false,
+      "all_ok": true
+    }
+  },
+  {
+    "sid": "0cce8568",
+    "variant": "V_SOAP_ONLY",
+    "seed": 1,
+    "visit_type": "minor_assessment",
+    "procedures": [],
+    "conditions": [],
+    "dx": "599",
+    "primary_dx_text": "<scrubbed>",
+    "score": {
+      "visit_ok": true,
+      "proc_fp": 0,
+      "proc_fn": 0,
+      "proc_ok": true,
+      "cond_hallucinated": [],
+      "cond_ok": true,
+      "dx_ok": true,
+      "dx_799_fallback": false,
+      "all_ok": true
+    }
+  },
+  {
+    "sid": "0cce8568",
+    "variant": "V_DURATION",
+    "seed": 0,
+    "visit_type": "mini_assessment",
+    "procedures": [],
+    "conditions": [],
+    "dx": "599",
+    "primary_dx_text": "<scrubbed>",
+    "score": {
+      "visit_ok": false,
+      "proc_fp": 0,
+      "proc_fn": 0,
+      "proc_ok": true,
+      "cond_hallucinated": [],
+      "cond_ok": true,
+      "dx_ok": true,
+      "dx_799_fallback": false,
+      "all_ok": false
+    }
+  },
+  {
+    "sid": "0cce8568",
+    "variant": "V_DURATION",
+    "seed": 1,
+    "visit_type": "mini_assessment",
+    "procedures": [],
+    "conditions": [],
+    "dx": "599",
+    "primary_dx_text": "<scrubbed>",
+    "score": {
+      "visit_ok": false,
+      "proc_fp": 0,
+      "proc_fn": 0,
+      "proc_ok": true,
+      "cond_hallucinated": [],
+      "cond_ok": true,
+      "dx_ok": true,
+      "dx_799_fallback": false,
+      "all_ok": false
+    }
+  },
+  {
+    "sid": "0cce8568",
+    "variant": "V_STRICT",
+    "seed": 0,
+    "visit_type": "minor_assessment",
+    "procedures": [],
+    "conditions": [],
+    "dx": "599",
+    "primary_dx_text": "<scrubbed>",
+    "score": {
+      "visit_ok": true,
+      "proc_fp": 0,
+      "proc_fn": 0,
+      "proc_ok": true,
+      "cond_hallucinated": [],
+      "cond_ok": true,
+      "dx_ok": true,
+      "dx_799_fallback": false,
+      "all_ok": true
+    }
+  },
+  {
+    "sid": "0cce8568",
+    "variant": "V_STRICT",
+    "seed": 1,
+    "visit_type": "minor_assessment",
+    "procedures": [],
+    "conditions": [],
+    "dx": "599",
+    "primary_dx_text": "<scrubbed>",
+    "score": {
+      "visit_ok": true,
+      "proc_fp": 0,
+      "proc_fn": 0,
+      "proc_ok": true,
+      "cond_hallucinated": [],
+      "cond_ok": true,
+      "dx_ok": true,
+      "dx_799_fallback": false,
+      "all_ok": true
+    }
+  },
+  {
+    "sid": "0cce8568",
+    "variant": "V_PROC_BIND",
+    "seed": 0,
+    "visit_type": "intermediate_assessment",
+    "procedures": [],
+    "conditions": [],
+    "dx": "599",
+    "primary_dx_text": "<scrubbed>",
+    "score": {
+      "visit_ok": false,
+      "proc_fp": 0,
+      "proc_fn": 0,
+      "proc_ok": true,
+      "cond_hallucinated": [],
+      "cond_ok": true,
+      "dx_ok": true,
+      "dx_799_fallback": false,
+      "all_ok": false
+    }
+  },
+  {
+    "sid": "0cce8568",
+    "variant": "V_PROC_BIND",
+    "seed": 1,
+    "visit_type": "intermediate_assessment",
+    "procedures": [],
+    "conditions": [],
+    "dx": "599",
+    "primary_dx_text": "<scrubbed>",
+    "score": {
+      "visit_ok": false,
+      "proc_fp": 0,
+      "proc_fn": 0,
+      "proc_ok": true,
+      "cond_hallucinated": [],
+      "cond_ok": true,
+      "dx_ok": true,
+      "dx_799_fallback": false,
+      "all_ok": false
+    }
+  },
+  {
+    "sid": "de7f5122",
+    "variant": "V_BASE",
+    "seed": 0,
+    "visit_type": "intermediate_assessment",
+    "procedures": [],
+    "conditions": [],
+    "dx": "715",
+    "primary_dx_text": "<scrubbed>",
+    "score": {
+      "visit_ok": false,
+      "proc_fp": 0,
+      "proc_fn": 0,
+      "proc_ok": true,
+      "cond_hallucinated": [],
+      "cond_ok": true,
+      "dx_ok": false,
+      "dx_799_fallback": false,
+      "all_ok": false
+    }
+  },
+  {
+    "sid": "de7f5122",
+    "variant": "V_BASE",
+    "seed": 1,
+    "visit_type": "intermediate_assessment",
+    "procedures": [],
+    "conditions": [],
+    "dx": "715",
+    "primary_dx_text": "<scrubbed>",
+    "score": {
+      "visit_ok": false,
+      "proc_fp": 0,
+      "proc_fn": 0,
+      "proc_ok": true,
+      "cond_hallucinated": [],
+      "cond_ok": true,
+      "dx_ok": false,
+      "dx_799_fallback": false,
+      "all_ok": false
+    }
+  },
+  {
+    "sid": "de7f5122",
+    "variant": "V_SOAP_ONLY",
+    "seed": 0,
+    "visit_type": "general_reassessment",
+    "procedures": [],
+    "conditions": [],
+    "dx": "714",
+    "primary_dx_text": "<scrubbed>",
+    "score": {
+      "visit_ok": true,
+      "proc_fp": 0,
+      "proc_fn": 0,
+      "proc_ok": true,
+      "cond_hallucinated": [],
+      "cond_ok": true,
+      "dx_ok": true,
+      "dx_799_fallback": false,
+      "all_ok": true
+    }
+  },
+  {
+    "sid": "de7f5122",
+    "variant": "V_SOAP_ONLY",
+    "seed": 1,
+    "visit_type": "intermediate_assessment",
+    "procedures": [],
+    "conditions": [],
+    "dx": "715",
+    "primary_dx_text": "<scrubbed>",
+    "score": {
+      "visit_ok": false,
+      "proc_fp": 0,
+      "proc_fn": 0,
+      "proc_ok": true,
+      "cond_hallucinated": [],
+      "cond_ok": true,
+      "dx_ok": false,
+      "dx_799_fallback": false,
+      "all_ok": false
+    }
+  },
+  {
+    "sid": "de7f5122",
+    "variant": "V_DURATION",
+    "seed": 0,
+    "visit_type": "general_reassessment",
+    "procedures": [],
+    "conditions": [],
+    "dx": "714",
+    "primary_dx_text": "<scrubbed>",
+    "score": {
+      "visit_ok": true,
+      "proc_fp": 0,
+      "proc_fn": 0,
+      "proc_ok": true,
+      "cond_hallucinated": [],
+      "cond_ok": true,
+      "dx_ok": true,
+      "dx_799_fallback": false,
+      "all_ok": true
+    }
+  },
+  {
+    "sid": "de7f5122",
+    "variant": "V_DURATION",
+    "seed": 1,
+    "visit_type": "general_reassessment",
+    "procedures": [],
+    "conditions": [],
+    "dx": "714",
+    "primary_dx_text": "<scrubbed>",
+    "score": {
+      "visit_ok": true,
+      "proc_fp": 0,
+      "proc_fn": 0,
+      "proc_ok": true,
+      "cond_hallucinated": [],
+      "cond_ok": true,
+      "dx_ok": true,
+      "dx_799_fallback": false,
+      "all_ok": true
+    }
+  },
+  {
+    "sid": "de7f5122",
+    "variant": "V_STRICT",
+    "seed": 0,
+    "visit_type": "intermediate_assessment",
+    "procedures": [],
+    "conditions": [],
+    "dx": "714",
+    "primary_dx_text": "<scrubbed>",
+    "score": {
+      "visit_ok": false,
+      "proc_fp": 0,
+      "proc_fn": 0,
+      "proc_ok": true,
+      "cond_hallucinated": [],
+      "cond_ok": true,
+      "dx_ok": true,
+      "dx_799_fallback": false,
+      "all_ok": false
+    }
+  },
+  {
+    "sid": "de7f5122",
+    "variant": "V_STRICT",
+    "seed": 1,
+    "visit_type": "intermediate_assessment",
+    "procedures": [],
+    "conditions": [],
+    "dx": "714",
+    "primary_dx_text": "<scrubbed>",
+    "score": {
+      "visit_ok": false,
+      "proc_fp": 0,
+      "proc_fn": 0,
+      "proc_ok": true,
+      "cond_hallucinated": [],
+      "cond_ok": true,
+      "dx_ok": true,
+      "dx_799_fallback": false,
+      "all_ok": false
+    }
+  },
+  {
+    "sid": "de7f5122",
+    "variant": "V_PROC_BIND",
+    "seed": 0,
+    "visit_type": "intermediate_assessment",
+    "procedures": [],
+    "conditions": [],
+    "dx": "715",
+    "primary_dx_text": "<scrubbed>",
+    "score": {
+      "visit_ok": false,
+      "proc_fp": 0,
+      "proc_fn": 0,
+      "proc_ok": true,
+      "cond_hallucinated": [],
+      "cond_ok": true,
+      "dx_ok": false,
+      "dx_799_fallback": false,
+      "all_ok": false
+    }
+  },
+  {
+    "sid": "de7f5122",
+    "variant": "V_PROC_BIND",
+    "seed": 1,
+    "visit_type": "intermediate_assessment",
+    "procedures": [],
+    "conditions": [],
+    "dx": "715",
+    "primary_dx_text": "<scrubbed>",
+    "score": {
+      "visit_ok": false,
+      "proc_fp": 0,
+      "proc_fn": 0,
+      "proc_ok": true,
+      "cond_hallucinated": [],
+      "cond_ok": true,
+      "dx_ok": false,
+      "dx_799_fallback": false,
+      "all_ok": false
+    }
+  },
+  {
+    "sid": "491c6493",
+    "variant": "V_BASE",
+    "seed": 0,
+    "visit_type": "intermediate_assessment",
+    "procedures": [],
+    "conditions": [
+      "primary_mental_health"
+    ],
+    "dx": "307",
+    "primary_dx_text": "<scrubbed>",
+    "score": {
+      "visit_ok": true,
+      "proc_fp": 0,
+      "proc_fn": 0,
+      "proc_ok": true,
+      "cond_hallucinated": [],
+      "cond_ok": true,
+      "dx_ok": false,
+      "dx_799_fallback": false,
+      "all_ok": false
+    }
+  },
+  {
+    "sid": "491c6493",
+    "variant": "V_BASE",
+    "seed": 1,
+    "visit_type": "intermediate_assessment",
+    "procedures": [],
+    "conditions": [
+      "primary_mental_health"
+    ],
+    "dx": "307",
+    "primary_dx_text": "<scrubbed>",
+    "score": {
+      "visit_ok": true,
+      "proc_fp": 0,
+      "proc_fn": 0,
+      "proc_ok": true,
+      "cond_hallucinated": [],
+      "cond_ok": true,
+      "dx_ok": false,
+      "dx_799_fallback": false,
+      "all_ok": false
+    }
+  },
+  {
+    "sid": "491c6493",
+    "variant": "V_SOAP_ONLY",
+    "seed": 0,
+    "visit_type": "intermediate_assessment",
+    "procedures": [],
+    "conditions": [
+      "primary_mental_health"
+    ],
+    "dx": "307",
+    "primary_dx_text": "<scrubbed>",
+    "score": {
+      "visit_ok": true,
+      "proc_fp": 0,
+      "proc_fn": 0,
+      "proc_ok": true,
+      "cond_hallucinated": [],
+      "cond_ok": true,
+      "dx_ok": false,
+      "dx_799_fallback": false,
+      "all_ok": false
+    }
+  },
+  {
+    "sid": "491c6493",
+    "variant": "V_SOAP_ONLY",
+    "seed": 1,
+    "visit_type": "intermediate_assessment",
+    "procedures": [],
+    "conditions": [
+      "primary_mental_health"
+    ],
+    "dx": "300",
+    "primary_dx_text": "<scrubbed>",
+    "score": {
+      "visit_ok": true,
+      "proc_fp": 0,
+      "proc_fn": 0,
+      "proc_ok": true,
+      "cond_hallucinated": [],
+      "cond_ok": true,
+      "dx_ok": true,
+      "dx_799_fallback": false,
+      "all_ok": true
+    }
+  },
+  {
+    "sid": "491c6493",
+    "variant": "V_DURATION",
+    "seed": 0,
+    "visit_type": "intermediate_assessment",
+    "procedures": [],
+    "conditions": [
+      "opioid_withdrawal_management"
+    ],
+    "dx": "780",
+    "primary_dx_text": "<scrubbed>",
+    "score": {
+      "visit_ok": true,
+      "proc_fp": 0,
+      "proc_fn": 0,
+      "proc_ok": true,
+      "cond_hallucinated": [],
+      "cond_ok": true,
+      "dx_ok": false,
+      "dx_799_fallback": false,
+      "all_ok": false
+    }
+  },
+  {
+    "sid": "491c6493",
+    "variant": "V_DURATION",
+    "seed": 1,
+    "visit_type": "intermediate_assessment",
+    "procedures": [],
+    "conditions": [
+      "opioid_withdrawal_management"
+    ],
+    "dx": "305",
+    "primary_dx_text": "<scrubbed>",
+    "score": {
+      "visit_ok": true,
+      "proc_fp": 0,
+      "proc_fn": 0,
+      "proc_ok": true,
+      "cond_hallucinated": [],
+      "cond_ok": true,
+      "dx_ok": false,
+      "dx_799_fallback": false,
+      "all_ok": false
+    }
+  },
+  {
+    "sid": "491c6493",
+    "variant": "V_STRICT",
+    "seed": 0,
+    "visit_type": "intermediate_assessment",
+    "procedures": [],
+    "conditions": [
+      "opioid_withdrawal_management"
+    ],
+    "dx": "305",
+    "primary_dx_text": "<scrubbed>",
+    "score": {
+      "visit_ok": true,
+      "proc_fp": 0,
+      "proc_fn": 0,
+      "proc_ok": true,
+      "cond_hallucinated": [],
+      "cond_ok": true,
+      "dx_ok": false,
+      "dx_799_fallback": false,
+      "all_ok": false
+    }
+  },
+  {
+    "sid": "491c6493",
+    "variant": "V_STRICT",
+    "seed": 1,
+    "visit_type": "intermediate_assessment",
+    "procedures": [],
+    "conditions": [
+      "primary_mental_health"
+    ],
+    "dx": "300",
+    "primary_dx_text": "<scrubbed>",
+    "score": {
+      "visit_ok": true,
+      "proc_fp": 0,
+      "proc_fn": 0,
+      "proc_ok": true,
+      "cond_hallucinated": [],
+      "cond_ok": true,
+      "dx_ok": true,
+      "dx_799_fallback": false,
+      "all_ok": true
+    }
+  },
+  {
+    "sid": "491c6493",
+    "variant": "V_PROC_BIND",
+    "seed": 0,
+    "visit_type": "intermediate_assessment",
+    "procedures": [],
+    "conditions": [
+      "primary_mental_health"
+    ],
+    "dx": "780",
+    "primary_dx_text": "<scrubbed>",
+    "score": {
+      "visit_ok": true,
+      "proc_fp": 0,
+      "proc_fn": 0,
+      "proc_ok": true,
+      "cond_hallucinated": [],
+      "cond_ok": true,
+      "dx_ok": false,
+      "dx_799_fallback": false,
+      "all_ok": false
+    }
+  },
+  {
+    "sid": "491c6493",
+    "variant": "V_PROC_BIND",
+    "seed": 1,
+    "visit_type": "intermediate_assessment",
+    "procedures": [],
+    "conditions": [
+      "primary_mental_health"
+    ],
+    "dx": "311",
+    "primary_dx_text": "<scrubbed>",
+    "score": {
+      "visit_ok": true,
+      "proc_fp": 0,
+      "proc_fn": 0,
+      "proc_ok": true,
+      "cond_hallucinated": [],
+      "cond_ok": true,
+      "dx_ok": true,
+      "dx_799_fallback": false,
+      "all_ok": true
+    }
+  },
+  {
+    "sid": "e11d3112",
+    "variant": "V_BASE",
+    "seed": 0,
+    "visit_type": "intermediate_assessment",
+    "procedures": [],
+    "conditions": [
+      "primary_mental_health"
+    ],
+    "dx": "300",
+    "primary_dx_text": "<scrubbed>",
+    "score": {
+      "visit_ok": false,
+      "proc_fp": 0,
+      "proc_fn": 0,
+      "proc_ok": true,
+      "cond_hallucinated": [],
+      "cond_ok": true,
+      "dx_ok": true,
+      "dx_799_fallback": false,
+      "all_ok": false
+    }
+  },
+  {
+    "sid": "e11d3112",
+    "variant": "V_BASE",
+    "seed": 1,
+    "visit_type": "intermediate_assessment",
+    "procedures": [],
+    "conditions": [
+      "primary_mental_health"
+    ],
+    "dx": "300",
+    "primary_dx_text": "<scrubbed>",
+    "score": {
+      "visit_ok": false,
+      "proc_fp": 0,
+      "proc_fn": 0,
+      "proc_ok": true,
+      "cond_hallucinated": [],
+      "cond_ok": true,
+      "dx_ok": true,
+      "dx_799_fallback": false,
+      "all_ok": false
+    }
+  },
+  {
+    "sid": "e11d3112",
+    "variant": "V_SOAP_ONLY",
+    "seed": 0,
+    "visit_type": "intermediate_assessment",
+    "procedures": [],
+    "conditions": [
+      "primary_mental_health"
+    ],
+    "dx": "300",
+    "primary_dx_text": "<scrubbed>",
+    "score": {
+      "visit_ok": false,
+      "proc_fp": 0,
+      "proc_fn": 0,
+      "proc_ok": true,
+      "cond_hallucinated": [],
+      "cond_ok": true,
+      "dx_ok": true,
+      "dx_799_fallback": false,
+      "all_ok": false
+    }
+  },
+  {
+    "sid": "e11d3112",
+    "variant": "V_SOAP_ONLY",
+    "seed": 1,
+    "visit_type": "intermediate_assessment",
+    "procedures": [],
+    "conditions": [
+      "primary_mental_health"
+    ],
+    "dx": "300",
+    "primary_dx_text": "<scrubbed>",
+    "score": {
+      "visit_ok": false,
+      "proc_fp": 0,
+      "proc_fn": 0,
+      "proc_ok": true,
+      "cond_hallucinated": [],
+      "cond_ok": true,
+      "dx_ok": true,
+      "dx_799_fallback": false,
+      "all_ok": false
+    }
+  },
+  {
+    "sid": "e11d3112",
+    "variant": "V_DURATION",
+    "seed": 0,
+    "visit_type": "general_reassessment",
+    "procedures": [],
+    "conditions": [
+      "primary_mental_health"
+    ],
+    "dx": "311",
+    "primary_dx_text": "<scrubbed>",
+    "score": {
+      "visit_ok": true,
+      "proc_fp": 0,
+      "proc_fn": 0,
+      "proc_ok": true,
+      "cond_hallucinated": [],
+      "cond_ok": true,
+      "dx_ok": true,
+      "dx_799_fallback": false,
+      "all_ok": true
+    }
+  },
+  {
+    "sid": "e11d3112",
+    "variant": "V_DURATION",
+    "seed": 1,
+    "visit_type": "general_reassessment",
+    "procedures": [],
+    "conditions": [
+      "primary_mental_health"
+    ],
+    "dx": "311",
+    "primary_dx_text": "<scrubbed>",
+    "score": {
+      "visit_ok": true,
+      "proc_fp": 0,
+      "proc_fn": 0,
+      "proc_ok": true,
+      "cond_hallucinated": [],
+      "cond_ok": true,
+      "dx_ok": true,
+      "dx_799_fallback": false,
+      "all_ok": true
+    }
+  },
+  {
+    "sid": "e11d3112",
+    "variant": "V_STRICT",
+    "seed": 0,
+    "visit_type": "intermediate_assessment",
+    "procedures": [],
+    "conditions": [
+      "primary_mental_health"
+    ],
+    "dx": "300",
+    "primary_dx_text": "<scrubbed>",
+    "score": {
+      "visit_ok": false,
+      "proc_fp": 0,
+      "proc_fn": 0,
+      "proc_ok": true,
+      "cond_hallucinated": [],
+      "cond_ok": true,
+      "dx_ok": true,
+      "dx_799_fallback": false,
+      "all_ok": false
+    }
+  },
+  {
+    "sid": "e11d3112",
+    "variant": "V_STRICT",
+    "seed": 1,
+    "visit_type": "intermediate_assessment",
+    "procedures": [],
+    "conditions": [
+      "primary_mental_health"
+    ],
+    "dx": "300",
+    "primary_dx_text": "<scrubbed>",
+    "score": {
+      "visit_ok": false,
+      "proc_fp": 0,
+      "proc_fn": 0,
+      "proc_ok": true,
+      "cond_hallucinated": [],
+      "cond_ok": true,
+      "dx_ok": true,
+      "dx_799_fallback": false,
+      "all_ok": false
+    }
+  },
+  {
+    "sid": "e11d3112",
+    "variant": "V_PROC_BIND",
+    "seed": 0,
+    "visit_type": "intermediate_assessment",
+    "procedures": [],
+    "conditions": [
+      "primary_mental_health"
+    ],
+    "dx": "300",
+    "primary_dx_text": "<scrubbed>",
+    "score": {
+      "visit_ok": false,
+      "proc_fp": 0,
+      "proc_fn": 0,
+      "proc_ok": true,
+      "cond_hallucinated": [],
+      "cond_ok": true,
+      "dx_ok": true,
+      "dx_799_fallback": false,
+      "all_ok": false
+    }
+  },
+  {
+    "sid": "e11d3112",
+    "variant": "V_PROC_BIND",
+    "seed": 1,
+    "visit_type": "intermediate_assessment",
+    "procedures": [],
+    "conditions": [
+      "primary_mental_health"
+    ],
+    "dx": "300",
+    "primary_dx_text": "<scrubbed>",
+    "score": {
+      "visit_ok": false,
+      "proc_fp": 0,
+      "proc_fn": 0,
+      "proc_ok": true,
+      "cond_hallucinated": [],
+      "cond_ok": true,
+      "dx_ok": true,
+      "dx_799_fallback": false,
+      "all_ok": false
+    }
+  },
+  {
+    "sid": "58e617ac",
+    "variant": "V_BASE",
+    "seed": 0,
+    "visit_type": "intermediate_assessment",
+    "procedures": [
+      "nerve_block_peripheral",
+      "joint_injection"
+    ],
+    "conditions": [],
+    "dx": "724",
+    "primary_dx_text": "<scrubbed>",
+    "score": {
+      "visit_ok": true,
+      "proc_fp": 1,
+      "proc_fn": 1,
+      "proc_ok": false,
+      "cond_hallucinated": [],
+      "cond_ok": true,
+      "dx_ok": true,
+      "dx_799_fallback": false,
+      "all_ok": false
+    }
+  },
+  {
+    "sid": "58e617ac",
+    "variant": "V_BASE",
+    "seed": 1,
+    "visit_type": "intermediate_assessment",
+    "procedures": [
+      "nerve_block_paravertebral",
+      "joint_injection"
+    ],
+    "conditions": [],
+    "dx": "724",
+    "primary_dx_text": "<scrubbed>",
+    "score": {
+      "visit_ok": true,
+      "proc_fp": 0,
+      "proc_fn": 0,
+      "proc_ok": true,
+      "cond_hallucinated": [],
+      "cond_ok": true,
+      "dx_ok": true,
+      "dx_799_fallback": false,
+      "all_ok": true
+    }
+  },
+  {
+    "sid": "58e617ac",
+    "variant": "V_SOAP_ONLY",
+    "seed": 0,
+    "visit_type": "intermediate_assessment",
+    "procedures": [
+      "nerve_block_paravertebral"
+    ],
+    "conditions": [],
+    "dx": "724",
+    "primary_dx_text": "<scrubbed>",
+    "score": {
+      "visit_ok": true,
+      "proc_fp": 0,
+      "proc_fn": 1,
+      "proc_ok": false,
+      "cond_hallucinated": [],
+      "cond_ok": true,
+      "dx_ok": true,
+      "dx_799_fallback": false,
+      "all_ok": false
+    }
+  },
+  {
+    "sid": "58e617ac",
+    "variant": "V_SOAP_ONLY",
+    "seed": 1,
+    "visit_type": "intermediate_assessment",
+    "procedures": [
+      "nerve_block_paravertebral"
+    ],
+    "conditions": [],
+    "dx": "724",
+    "primary_dx_text": "<scrubbed>",
+    "score": {
+      "visit_ok": true,
+      "proc_fp": 0,
+      "proc_fn": 1,
+      "proc_ok": false,
+      "cond_hallucinated": [],
+      "cond_ok": true,
+      "dx_ok": true,
+      "dx_799_fallback": false,
+      "all_ok": false
+    }
+  },
+  {
+    "sid": "58e617ac",
+    "variant": "V_DURATION",
+    "seed": 0,
+    "visit_type": "intermediate_assessment",
+    "procedures": [
+      "nerve_block_paravertebral"
+    ],
+    "conditions": [],
+    "dx": "724",
+    "primary_dx_text": "<scrubbed>",
+    "score": {
+      "visit_ok": true,
+      "proc_fp": 0,
+      "proc_fn": 1,
+      "proc_ok": false,
+      "cond_hallucinated": [],
+      "cond_ok": true,
+      "dx_ok": true,
+      "dx_799_fallback": false,
+      "all_ok": false
+    }
+  },
+  {
+    "sid": "58e617ac",
+    "variant": "V_DURATION",
+    "seed": 1,
+    "visit_type": "intermediate_assessment",
+    "procedures": [
+      "nerve_block_paravertebral"
+    ],
+    "conditions": [],
+    "dx": "724",
+    "primary_dx_text": "<scrubbed>",
+    "score": {
+      "visit_ok": true,
+      "proc_fp": 0,
+      "proc_fn": 1,
+      "proc_ok": false,
+      "cond_hallucinated": [],
+      "cond_ok": true,
+      "dx_ok": true,
+      "dx_799_fallback": false,
+      "all_ok": false
+    }
+  },
+  {
+    "sid": "58e617ac",
+    "variant": "V_STRICT",
+    "seed": 0,
+    "visit_type": "intermediate_assessment",
+    "procedures": [
+      "nerve_block_paravertebral"
+    ],
+    "conditions": [],
+    "dx": "724",
+    "primary_dx_text": "<scrubbed>",
+    "score": {
+      "visit_ok": true,
+      "proc_fp": 0,
+      "proc_fn": 1,
+      "proc_ok": false,
+      "cond_hallucinated": [],
+      "cond_ok": true,
+      "dx_ok": true,
+      "dx_799_fallback": false,
+      "all_ok": false
+    }
+  },
+  {
+    "sid": "58e617ac",
+    "variant": "V_STRICT",
+    "seed": 1,
+    "visit_type": "intermediate_assessment",
+    "procedures": [
+      "nerve_block_paravertebral"
+    ],
+    "conditions": [],
+    "dx": "724",
+    "primary_dx_text": "<scrubbed>",
+    "score": {
+      "visit_ok": true,
+      "proc_fp": 0,
+      "proc_fn": 1,
+      "proc_ok": false,
+      "cond_hallucinated": [],
+      "cond_ok": true,
+      "dx_ok": true,
+      "dx_799_fallback": false,
+      "all_ok": false
+    }
+  },
+  {
+    "sid": "58e617ac",
+    "variant": "V_PROC_BIND",
+    "seed": 0,
+    "visit_type": "intermediate_assessment",
+    "procedures": [],
+    "conditions": [],
+    "dx": "724",
+    "primary_dx_text": "<scrubbed>",
+    "score": {
+      "visit_ok": true,
+      "proc_fp": 0,
+      "proc_fn": 2,
+      "proc_ok": false,
+      "cond_hallucinated": [],
+      "cond_ok": true,
+      "dx_ok": true,
+      "dx_799_fallback": false,
+      "all_ok": false
+    }
+  },
+  {
+    "sid": "58e617ac",
+    "variant": "V_PROC_BIND",
+    "seed": 1,
+    "visit_type": "intermediate_assessment",
+    "procedures": [],
+    "conditions": [],
+    "dx": "724",
+    "primary_dx_text": "<scrubbed>",
+    "score": {
+      "visit_ok": true,
+      "proc_fp": 0,
+      "proc_fn": 2,
+      "proc_ok": false,
+      "cond_hallucinated": [],
+      "cond_ok": true,
+      "dx_ok": true,
+      "dx_799_fallback": false,
+      "all_ok": false
+    }
+  },
+  {
+    "sid": "173c4253",
+    "variant": "V_BASE",
+    "seed": 0,
+    "visit_type": "intermediate_assessment",
+    "procedures": [
+      "nerve_block_paravertebral"
+    ],
+    "conditions": [],
+    "dx": "724",
+    "primary_dx_text": "<scrubbed>",
+    "score": {
+      "visit_ok": true,
+      "proc_fp": 0,
+      "proc_fn": 1,
+      "proc_ok": false,
+      "cond_hallucinated": [],
+      "cond_ok": true,
+      "dx_ok": true,
+      "dx_799_fallback": false,
+      "all_ok": false
+    }
+  },
+  {
+    "sid": "173c4253",
+    "variant": "V_BASE",
+    "seed": 1,
+    "visit_type": "intermediate_assessment",
+    "procedures": [
+      "nerve_block_paravertebral"
+    ],
+    "conditions": [],
+    "dx": "724",
+    "primary_dx_text": "<scrubbed>",
+    "score": {
+      "visit_ok": true,
+      "proc_fp": 0,
+      "proc_fn": 1,
+      "proc_ok": false,
+      "cond_hallucinated": [],
+      "cond_ok": true,
+      "dx_ok": true,
+      "dx_799_fallback": false,
+      "all_ok": false
+    }
+  },
+  {
+    "sid": "173c4253",
+    "variant": "V_SOAP_ONLY",
+    "seed": 0,
+    "visit_type": "intermediate_assessment",
+    "procedures": [
+      "nerve_block_paravertebral"
+    ],
+    "conditions": [
+      "primary_mental_health"
+    ],
+    "dx": "724",
+    "primary_dx_text": "<scrubbed>",
+    "score": {
+      "visit_ok": true,
+      "proc_fp": 0,
+      "proc_fn": 1,
+      "proc_ok": false,
+      "cond_hallucinated": [],
+      "cond_ok": true,
+      "dx_ok": true,
+      "dx_799_fallback": false,
+      "all_ok": false
+    }
+  },
+  {
+    "sid": "173c4253",
+    "variant": "V_SOAP_ONLY",
+    "seed": 1,
+    "visit_type": "intermediate_assessment",
+    "procedures": [
+      "nerve_block_paravertebral"
+    ],
+    "conditions": [
+      "primary_mental_health"
+    ],
+    "dx": "724",
+    "primary_dx_text": "<scrubbed>",
+    "score": {
+      "visit_ok": true,
+      "proc_fp": 0,
+      "proc_fn": 1,
+      "proc_ok": false,
+      "cond_hallucinated": [],
+      "cond_ok": true,
+      "dx_ok": true,
+      "dx_799_fallback": false,
+      "all_ok": false
+    }
+  },
+  {
+    "sid": "173c4253",
+    "variant": "V_DURATION",
+    "seed": 0,
+    "visit_type": "intermediate_assessment",
+    "procedures": [
+      "nerve_block_paravertebral"
+    ],
+    "conditions": [],
+    "dx": "724",
+    "primary_dx_text": "<scrubbed>",
+    "score": {
+      "visit_ok": true,
+      "proc_fp": 0,
+      "proc_fn": 1,
+      "proc_ok": false,
+      "cond_hallucinated": [],
+      "cond_ok": true,
+      "dx_ok": true,
+      "dx_799_fallback": false,
+      "all_ok": false
+    }
+  },
+  {
+    "sid": "173c4253",
+    "variant": "V_DURATION",
+    "seed": 1,
+    "visit_type": "intermediate_assessment",
+    "procedures": [
+      "nerve_block_paravertebral"
+    ],
+    "conditions": [
+      "primary_mental_health"
+    ],
+    "dx": "724",
+    "primary_dx_text": "<scrubbed>",
+    "score": {
+      "visit_ok": true,
+      "proc_fp": 0,
+      "proc_fn": 1,
+      "proc_ok": false,
+      "cond_hallucinated": [],
+      "cond_ok": true,
+      "dx_ok": true,
+      "dx_799_fallback": false,
+      "all_ok": false
+    }
+  },
+  {
+    "sid": "173c4253",
+    "variant": "V_STRICT",
+    "seed": 0,
+    "visit_type": "intermediate_assessment",
+    "procedures": [
+      "nerve_block_paravertebral"
+    ],
+    "conditions": [],
+    "dx": "724",
+    "primary_dx_text": "<scrubbed>",
+    "score": {
+      "visit_ok": true,
+      "proc_fp": 0,
+      "proc_fn": 1,
+      "proc_ok": false,
+      "cond_hallucinated": [],
+      "cond_ok": true,
+      "dx_ok": true,
+      "dx_799_fallback": false,
+      "all_ok": false
+    }
+  },
+  {
+    "sid": "173c4253",
+    "variant": "V_STRICT",
+    "seed": 1,
+    "visit_type": "intermediate_assessment",
+    "procedures": [
+      "nerve_block_paravertebral"
+    ],
+    "conditions": [],
+    "dx": "724",
+    "primary_dx_text": "<scrubbed>",
+    "score": {
+      "visit_ok": true,
+      "proc_fp": 0,
+      "proc_fn": 1,
+      "proc_ok": false,
+      "cond_hallucinated": [],
+      "cond_ok": true,
+      "dx_ok": true,
+      "dx_799_fallback": false,
+      "all_ok": false
+    }
+  },
+  {
+    "sid": "173c4253",
+    "variant": "V_PROC_BIND",
+    "seed": 0,
+    "visit_type": "intermediate_assessment",
+    "procedures": [
+      "nerve_block_paravertebral"
+    ],
+    "conditions": [
+      "primary_mental_health"
+    ],
+    "dx": "724",
+    "primary_dx_text": "<scrubbed>",
+    "score": {
+      "visit_ok": true,
+      "proc_fp": 0,
+      "proc_fn": 1,
+      "proc_ok": false,
+      "cond_hallucinated": [],
+      "cond_ok": true,
+      "dx_ok": true,
+      "dx_799_fallback": false,
+      "all_ok": false
+    }
+  },
+  {
+    "sid": "173c4253",
+    "variant": "V_PROC_BIND",
+    "seed": 1,
+    "visit_type": "intermediate_assessment",
+    "procedures": [
+      "nerve_block_paravertebral"
+    ],
+    "conditions": [
+      "primary_mental_health"
+    ],
+    "dx": "724",
+    "primary_dx_text": "<scrubbed>",
+    "score": {
+      "visit_ok": true,
+      "proc_fp": 0,
+      "proc_fn": 1,
+      "proc_ok": false,
+      "cond_hallucinated": [],
+      "cond_ok": true,
+      "dx_ok": true,
+      "dx_799_fallback": false,
+      "all_ok": false
+    }
+  },
+  {
+    "sid": "8feb77a1",
+    "variant": "V_BASE",
+    "seed": 0,
+    "visit_type": "intermediate_assessment",
+    "procedures": [],
+    "conditions": [],
+    "dx": "729",
+    "primary_dx_text": "<scrubbed>",
+    "score": {
+      "visit_ok": true,
+      "proc_fp": 0,
+      "proc_fn": 0,
+      "proc_ok": true,
+      "cond_hallucinated": [],
+      "cond_ok": true,
+      "dx_ok": false,
+      "dx_799_fallback": false,
+      "all_ok": false
+    }
+  },
+  {
+    "sid": "8feb77a1",
+    "variant": "V_BASE",
+    "seed": 1,
+    "visit_type": "intermediate_assessment",
+    "procedures": [],
+    "conditions": [],
+    "dx": "729",
+    "primary_dx_text": "<scrubbed>",
+    "score": {
+      "visit_ok": true,
+      "proc_fp": 0,
+      "proc_fn": 0,
+      "proc_ok": true,
+      "cond_hallucinated": [],
+      "cond_ok": true,
+      "dx_ok": false,
+      "dx_799_fallback": false,
+      "all_ok": false
+    }
+  },
+  {
+    "sid": "8feb77a1",
+    "variant": "V_SOAP_ONLY",
+    "seed": 0,
+    "visit_type": "intermediate_assessment",
+    "procedures": [],
+    "conditions": [
+      "primary_mental_health"
+    ],
+    "dx": "311",
+    "primary_dx_text": "<scrubbed>",
+    "score": {
+      "visit_ok": true,
+      "proc_fp": 0,
+      "proc_fn": 0,
+      "proc_ok": true,
+      "cond_hallucinated": [],
+      "cond_ok": true,
+      "dx_ok": false,
+      "dx_799_fallback": false,
+      "all_ok": false
+    }
+  },
+  {
+    "sid": "8feb77a1",
+    "variant": "V_SOAP_ONLY",
+    "seed": 1,
+    "visit_type": "intermediate_assessment",
+    "procedures": [],
+    "conditions": [
+      "primary_mental_health"
+    ],
+    "dx": "300",
+    "primary_dx_text": "<scrubbed>",
+    "score": {
+      "visit_ok": true,
+      "proc_fp": 0,
+      "proc_fn": 0,
+      "proc_ok": true,
+      "cond_hallucinated": [],
+      "cond_ok": true,
+      "dx_ok": false,
+      "dx_799_fallback": false,
+      "all_ok": false
+    }
+  },
+  {
+    "sid": "8feb77a1",
+    "variant": "V_DURATION",
+    "seed": 0,
+    "visit_type": "general_reassessment",
+    "procedures": [],
+    "conditions": [
+      "primary_mental_health"
+    ],
+    "dx": "311",
+    "primary_dx_text": "<scrubbed>",
+    "score": {
+      "visit_ok": true,
+      "proc_fp": 0,
+      "proc_fn": 0,
+      "proc_ok": true,
+      "cond_hallucinated": [],
+      "cond_ok": true,
+      "dx_ok": false,
+      "dx_799_fallback": false,
+      "all_ok": false
+    }
+  },
+  {
+    "sid": "8feb77a1",
+    "variant": "V_DURATION",
+    "seed": 1,
+    "visit_type": "general_reassessment",
+    "procedures": [],
+    "conditions": [
+      "primary_mental_health"
+    ],
+    "dx": "311",
+    "primary_dx_text": "<scrubbed>",
+    "score": {
+      "visit_ok": true,
+      "proc_fp": 0,
+      "proc_fn": 0,
+      "proc_ok": true,
+      "cond_hallucinated": [],
+      "cond_ok": true,
+      "dx_ok": false,
+      "dx_799_fallback": false,
+      "all_ok": false
+    }
+  },
+  {
+    "sid": "8feb77a1",
+    "variant": "V_STRICT",
+    "seed": 0,
+    "visit_type": "intermediate_assessment",
+    "procedures": [],
+    "conditions": [],
+    "dx": "729",
+    "primary_dx_text": "<scrubbed>",
+    "score": {
+      "visit_ok": true,
+      "proc_fp": 0,
+      "proc_fn": 0,
+      "proc_ok": true,
+      "cond_hallucinated": [],
+      "cond_ok": true,
+      "dx_ok": false,
+      "dx_799_fallback": false,
+      "all_ok": false
+    }
+  },
+  {
+    "sid": "8feb77a1",
+    "variant": "V_STRICT",
+    "seed": 1,
+    "visit_type": "intermediate_assessment",
+    "procedures": [],
+    "conditions": [],
+    "dx": "729",
+    "primary_dx_text": "<scrubbed>",
+    "score": {
+      "visit_ok": true,
+      "proc_fp": 0,
+      "proc_fn": 0,
+      "proc_ok": true,
+      "cond_hallucinated": [],
+      "cond_ok": true,
+      "dx_ok": false,
+      "dx_799_fallback": false,
+      "all_ok": false
+    }
+  },
+  {
+    "sid": "8feb77a1",
+    "variant": "V_PROC_BIND",
+    "seed": 0,
+    "visit_type": "intermediate_assessment",
+    "procedures": [],
+    "conditions": [
+      "primary_mental_health"
+    ],
+    "dx": "311",
+    "primary_dx_text": "<scrubbed>",
+    "score": {
+      "visit_ok": true,
+      "proc_fp": 0,
+      "proc_fn": 0,
+      "proc_ok": true,
+      "cond_hallucinated": [],
+      "cond_ok": true,
+      "dx_ok": false,
+      "dx_799_fallback": false,
+      "all_ok": false
+    }
+  },
+  {
+    "sid": "8feb77a1",
+    "variant": "V_PROC_BIND",
+    "seed": 1,
+    "visit_type": "intermediate_assessment",
+    "procedures": [],
+    "conditions": [
+      "primary_mental_health"
+    ],
+    "dx": "724",
+    "primary_dx_text": "<scrubbed>",
+    "score": {
+      "visit_ok": true,
+      "proc_fp": 0,
+      "proc_fn": 0,
+      "proc_ok": true,
+      "cond_hallucinated": [],
+      "cond_ok": true,
+      "dx_ok": true,
+      "dx_799_fallback": false,
+      "all_ok": true
+    }
+  },
+  {
+    "sid": "1ec7a57e",
+    "variant": "V_BASE",
+    "seed": 0,
+    "visit_type": "intermediate_assessment",
+    "procedures": [
+      "im_injection_with_visit"
+    ],
+    "conditions": [],
+    "dx": "715",
+    "primary_dx_text": "<scrubbed>",
+    "score": {
+      "visit_ok": true,
+      "proc_fp": 0,
+      "proc_fn": 0,
+      "proc_ok": true,
+      "cond_hallucinated": [],
+      "cond_ok": true,
+      "dx_ok": false,
+      "dx_799_fallback": false,
+      "all_ok": false
+    }
+  },
+  {
+    "sid": "1ec7a57e",
+    "variant": "V_BASE",
+    "seed": 1,
+    "visit_type": "intermediate_assessment",
+    "procedures": [
+      "im_injection_with_visit"
+    ],
+    "conditions": [],
+    "dx": "715",
+    "primary_dx_text": "<scrubbed>",
+    "score": {
+      "visit_ok": true,
+      "proc_fp": 0,
+      "proc_fn": 0,
+      "proc_ok": true,
+      "cond_hallucinated": [],
+      "cond_ok": true,
+      "dx_ok": false,
+      "dx_799_fallback": false,
+      "all_ok": false
+    }
+  },
+  {
+    "sid": "1ec7a57e",
+    "variant": "V_SOAP_ONLY",
+    "seed": 0,
+    "visit_type": "intermediate_assessment",
+    "procedures": [],
+    "conditions": [],
+    "dx": "715",
+    "primary_dx_text": "<scrubbed>",
+    "score": {
+      "visit_ok": true,
+      "proc_fp": 0,
+      "proc_fn": 0,
+      "proc_ok": true,
+      "cond_hallucinated": [],
+      "cond_ok": true,
+      "dx_ok": false,
+      "dx_799_fallback": false,
+      "all_ok": false
+    }
+  },
+  {
+    "sid": "1ec7a57e",
+    "variant": "V_SOAP_ONLY",
+    "seed": 1,
+    "visit_type": "intermediate_assessment",
+    "procedures": [
+      "im_injection_with_visit"
+    ],
+    "conditions": [],
+    "dx": "715",
+    "primary_dx_text": "<scrubbed>",
+    "score": {
+      "visit_ok": true,
+      "proc_fp": 0,
+      "proc_fn": 0,
+      "proc_ok": true,
+      "cond_hallucinated": [],
+      "cond_ok": true,
+      "dx_ok": false,
+      "dx_799_fallback": false,
+      "all_ok": false
+    }
+  },
+  {
+    "sid": "1ec7a57e",
+    "variant": "V_DURATION",
+    "seed": 0,
+    "visit_type": "intermediate_assessment",
+    "procedures": [
+      "im_injection_with_visit"
+    ],
+    "conditions": [],
+    "dx": "715",
+    "primary_dx_text": "<scrubbed>",
+    "score": {
+      "visit_ok": true,
+      "proc_fp": 0,
+      "proc_fn": 0,
+      "proc_ok": true,
+      "cond_hallucinated": [],
+      "cond_ok": true,
+      "dx_ok": false,
+      "dx_799_fallback": false,
+      "all_ok": false
+    }
+  },
+  {
+    "sid": "1ec7a57e",
+    "variant": "V_DURATION",
+    "seed": 1,
+    "visit_type": "intermediate_assessment",
+    "procedures": [
+      "im_injection_with_visit"
+    ],
+    "conditions": [
+      "diabetic_assessment"
+    ],
+    "dx": "715",
+    "primary_dx_text": "<scrubbed>",
+    "score": {
+      "visit_ok": true,
+      "proc_fp": 0,
+      "proc_fn": 0,
+      "proc_ok": true,
+      "cond_hallucinated": [
+        "diabetic_assessment"
+      ],
+      "cond_ok": false,
+      "dx_ok": false,
+      "dx_799_fallback": false,
+      "all_ok": false
+    }
+  },
+  {
+    "sid": "1ec7a57e",
+    "variant": "V_STRICT",
+    "seed": 0,
+    "visit_type": "intermediate_assessment",
+    "procedures": [],
+    "conditions": [],
+    "dx": "715",
+    "primary_dx_text": "<scrubbed>",
+    "score": {
+      "visit_ok": true,
+      "proc_fp": 0,
+      "proc_fn": 0,
+      "proc_ok": true,
+      "cond_hallucinated": [],
+      "cond_ok": true,
+      "dx_ok": false,
+      "dx_799_fallback": false,
+      "all_ok": false
+    }
+  },
+  {
+    "sid": "1ec7a57e",
+    "variant": "V_STRICT",
+    "seed": 1,
+    "visit_type": "intermediate_assessment",
+    "procedures": [],
+    "conditions": [],
+    "dx": "715",
+    "primary_dx_text": "<scrubbed>",
+    "score": {
+      "visit_ok": true,
+      "proc_fp": 0,
+      "proc_fn": 0,
+      "proc_ok": true,
+      "cond_hallucinated": [],
+      "cond_ok": true,
+      "dx_ok": false,
+      "dx_799_fallback": false,
+      "all_ok": false
+    }
+  },
+  {
+    "sid": "1ec7a57e",
+    "variant": "V_PROC_BIND",
+    "seed": 0,
+    "visit_type": "general_reassessment",
+    "procedures": [],
+    "conditions": [],
+    "dx": "715",
+    "primary_dx_text": "<scrubbed>",
+    "score": {
+      "visit_ok": true,
+      "proc_fp": 0,
+      "proc_fn": 0,
+      "proc_ok": true,
+      "cond_hallucinated": [],
+      "cond_ok": true,
+      "dx_ok": false,
+      "dx_799_fallback": false,
+      "all_ok": false
+    }
+  },
+  {
+    "sid": "1ec7a57e",
+    "variant": "V_PROC_BIND",
+    "seed": 1,
+    "visit_type": "general_reassessment",
+    "procedures": [],
+    "conditions": [],
+    "dx": "715",
+    "primary_dx_text": "<scrubbed>",
+    "score": {
+      "visit_ok": true,
+      "proc_fp": 0,
+      "proc_fn": 0,
+      "proc_ok": true,
+      "cond_hallucinated": [],
+      "cond_ok": true,
+      "dx_ok": false,
+      "dx_799_fallback": false,
+      "all_ok": false
+    }
+  },
+  {
+    "sid": "ccc2b9fb",
+    "variant": "V_BASE",
+    "seed": 0,
+    "visit_type": "general_reassessment",
+    "procedures": [],
+    "conditions": [],
+    "dx": "724",
+    "primary_dx_text": "<scrubbed>",
+    "score": {
+      "visit_ok": true,
+      "proc_fp": 0,
+      "proc_fn": 0,
+      "proc_ok": true,
+      "cond_hallucinated": [],
+      "cond_ok": true,
+      "dx_ok": true,
+      "dx_799_fallback": false,
+      "all_ok": true
+    }
+  },
+  {
+    "sid": "ccc2b9fb",
+    "variant": "V_BASE",
+    "seed": 1,
+    "visit_type": "general_reassessment",
+    "procedures": [],
+    "conditions": [],
+    "dx": "724",
+    "primary_dx_text": "<scrubbed>",
+    "score": {
+      "visit_ok": true,
+      "proc_fp": 0,
+      "proc_fn": 0,
+      "proc_ok": true,
+      "cond_hallucinated": [],
+      "cond_ok": true,
+      "dx_ok": true,
+      "dx_799_fallback": false,
+      "all_ok": true
+    }
+  },
+  {
+    "sid": "ccc2b9fb",
+    "variant": "V_SOAP_ONLY",
+    "seed": 0,
+    "visit_type": "general_reassessment",
+    "procedures": [],
+    "conditions": [],
+    "dx": "724",
+    "primary_dx_text": "<scrubbed>",
+    "score": {
+      "visit_ok": true,
+      "proc_fp": 0,
+      "proc_fn": 0,
+      "proc_ok": true,
+      "cond_hallucinated": [],
+      "cond_ok": true,
+      "dx_ok": true,
+      "dx_799_fallback": false,
+      "all_ok": true
+    }
+  },
+  {
+    "sid": "ccc2b9fb",
+    "variant": "V_SOAP_ONLY",
+    "seed": 1,
+    "visit_type": "general_reassessment",
+    "procedures": [],
+    "conditions": [],
+    "dx": "724",
+    "primary_dx_text": "<scrubbed>",
+    "score": {
+      "visit_ok": true,
+      "proc_fp": 0,
+      "proc_fn": 0,
+      "proc_ok": true,
+      "cond_hallucinated": [],
+      "cond_ok": true,
+      "dx_ok": true,
+      "dx_799_fallback": false,
+      "all_ok": true
+    }
+  },
+  {
+    "sid": "ccc2b9fb",
+    "variant": "V_DURATION",
+    "seed": 0,
+    "visit_type": "general_reassessment",
+    "procedures": [],
+    "conditions": [],
+    "dx": "724",
+    "primary_dx_text": "<scrubbed>",
+    "score": {
+      "visit_ok": true,
+      "proc_fp": 0,
+      "proc_fn": 0,
+      "proc_ok": true,
+      "cond_hallucinated": [],
+      "cond_ok": true,
+      "dx_ok": true,
+      "dx_799_fallback": false,
+      "all_ok": true
+    }
+  },
+  {
+    "sid": "ccc2b9fb",
+    "variant": "V_DURATION",
+    "seed": 1,
+    "visit_type": "general_reassessment",
+    "procedures": [],
+    "conditions": [],
+    "dx": "724",
+    "primary_dx_text": "<scrubbed>",
+    "score": {
+      "visit_ok": true,
+      "proc_fp": 0,
+      "proc_fn": 0,
+      "proc_ok": true,
+      "cond_hallucinated": [],
+      "cond_ok": true,
+      "dx_ok": true,
+      "dx_799_fallback": false,
+      "all_ok": true
+    }
+  },
+  {
+    "sid": "ccc2b9fb",
+    "variant": "V_STRICT",
+    "seed": 0,
+    "visit_type": "general_reassessment",
+    "procedures": [],
+    "conditions": [],
+    "dx": "724",
+    "primary_dx_text": "<scrubbed>",
+    "score": {
+      "visit_ok": true,
+      "proc_fp": 0,
+      "proc_fn": 0,
+      "proc_ok": true,
+      "cond_hallucinated": [],
+      "cond_ok": true,
+      "dx_ok": true,
+      "dx_799_fallback": false,
+      "all_ok": true
+    }
+  },
+  {
+    "sid": "ccc2b9fb",
+    "variant": "V_STRICT",
+    "seed": 1,
+    "visit_type": "general_reassessment",
+    "procedures": [],
+    "conditions": [],
+    "dx": "724",
+    "primary_dx_text": "<scrubbed>",
+    "score": {
+      "visit_ok": true,
+      "proc_fp": 0,
+      "proc_fn": 0,
+      "proc_ok": true,
+      "cond_hallucinated": [],
+      "cond_ok": true,
+      "dx_ok": true,
+      "dx_799_fallback": false,
+      "all_ok": true
+    }
+  },
+  {
+    "sid": "ccc2b9fb",
+    "variant": "V_PROC_BIND",
+    "seed": 0,
+    "visit_type": "general_reassessment",
+    "procedures": [],
+    "conditions": [],
+    "dx": "724",
+    "primary_dx_text": "<scrubbed>",
+    "score": {
+      "visit_ok": true,
+      "proc_fp": 0,
+      "proc_fn": 0,
+      "proc_ok": true,
+      "cond_hallucinated": [],
+      "cond_ok": true,
+      "dx_ok": true,
+      "dx_799_fallback": false,
+      "all_ok": true
+    }
+  },
+  {
+    "sid": "ccc2b9fb",
+    "variant": "V_PROC_BIND",
+    "seed": 1,
+    "visit_type": "general_reassessment",
+    "procedures": [],
+    "conditions": [
+      "diabetic_assessment",
+      "diabetes_management"
+    ],
+    "dx": "272",
+    "primary_dx_text": "<scrubbed>",
+    "score": {
+      "visit_ok": true,
+      "proc_fp": 0,
+      "proc_fn": 0,
+      "proc_ok": true,
+      "cond_hallucinated": [
+        "diabetic_assessment"
+      ],
+      "cond_ok": false,
+      "dx_ok": false,
+      "dx_799_fallback": false,
+      "all_ok": false
+    }
+  },
+  {
+    "sid": "bc81d25e",
+    "variant": "V_BASE",
+    "seed": 0,
+    "visit_type": "intermediate_assessment",
+    "procedures": [],
+    "conditions": [],
+    "dx": "785",
+    "primary_dx_text": "<scrubbed>",
+    "score": {
+      "visit_ok": false,
+      "proc_fp": 0,
+      "proc_fn": 0,
+      "proc_ok": true,
+      "cond_hallucinated": [],
+      "cond_ok": true,
+      "dx_ok": true,
+      "dx_799_fallback": false,
+      "all_ok": false
+    }
+  },
+  {
+    "sid": "bc81d25e",
+    "variant": "V_BASE",
+    "seed": 1,
+    "visit_type": "intermediate_assessment",
+    "procedures": [],
+    "conditions": [],
+    "dx": "785",
+    "primary_dx_text": "<scrubbed>",
+    "score": {
+      "visit_ok": false,
+      "proc_fp": 0,
+      "proc_fn": 0,
+      "proc_ok": true,
+      "cond_hallucinated": [],
+      "cond_ok": true,
+      "dx_ok": true,
+      "dx_799_fallback": false,
+      "all_ok": false
+    }
+  },
+  {
+    "sid": "bc81d25e",
+    "variant": "V_SOAP_ONLY",
+    "seed": 0,
+    "visit_type": "intermediate_assessment",
+    "procedures": [],
+    "conditions": [],
+    "dx": "785",
+    "primary_dx_text": "<scrubbed>",
+    "score": {
+      "visit_ok": false,
+      "proc_fp": 0,
+      "proc_fn": 0,
+      "proc_ok": true,
+      "cond_hallucinated": [],
+      "cond_ok": true,
+      "dx_ok": true,
+      "dx_799_fallback": false,
+      "all_ok": false
+    }
+  },
+  {
+    "sid": "bc81d25e",
+    "variant": "V_SOAP_ONLY",
+    "seed": 1,
+    "visit_type": "intermediate_assessment",
+    "procedures": [],
+    "conditions": [],
+    "dx": "785",
+    "primary_dx_text": "<scrubbed>",
+    "score": {
+      "visit_ok": false,
+      "proc_fp": 0,
+      "proc_fn": 0,
+      "proc_ok": true,
+      "cond_hallucinated": [],
+      "cond_ok": true,
+      "dx_ok": true,
+      "dx_799_fallback": false,
+      "all_ok": false
+    }
+  },
+  {
+    "sid": "bc81d25e",
+    "variant": "V_DURATION",
+    "seed": 0,
+    "visit_type": "minor_assessment",
+    "procedures": [],
+    "conditions": [],
+    "dx": "785",
+    "primary_dx_text": "<scrubbed>",
+    "score": {
+      "visit_ok": false,
+      "proc_fp": 0,
+      "proc_fn": 0,
+      "proc_ok": true,
+      "cond_hallucinated": [],
+      "cond_ok": true,
+      "dx_ok": true,
+      "dx_799_fallback": false,
+      "all_ok": false
+    }
+  },
+  {
+    "sid": "bc81d25e",
+    "variant": "V_DURATION",
+    "seed": 1,
+    "visit_type": "minor_assessment",
+    "procedures": [],
+    "conditions": [],
+    "dx": "785",
+    "primary_dx_text": "<scrubbed>",
+    "score": {
+      "visit_ok": false,
+      "proc_fp": 0,
+      "proc_fn": 0,
+      "proc_ok": true,
+      "cond_hallucinated": [],
+      "cond_ok": true,
+      "dx_ok": true,
+      "dx_799_fallback": false,
+      "all_ok": false
+    }
+  },
+  {
+    "sid": "bc81d25e",
+    "variant": "V_STRICT",
+    "seed": 0,
+    "visit_type": "intermediate_assessment",
+    "procedures": [],
+    "conditions": [],
+    "dx": "785",
+    "primary_dx_text": "<scrubbed>",
+    "score": {
+      "visit_ok": false,
+      "proc_fp": 0,
+      "proc_fn": 0,
+      "proc_ok": true,
+      "cond_hallucinated": [],
+      "cond_ok": true,
+      "dx_ok": true,
+      "dx_799_fallback": false,
+      "all_ok": false
+    }
+  },
+  {
+    "sid": "bc81d25e",
+    "variant": "V_STRICT",
+    "seed": 1,
+    "visit_type": "intermediate_assessment",
+    "procedures": [],
+    "conditions": [],
+    "dx": "785",
+    "primary_dx_text": "<scrubbed>",
+    "score": {
+      "visit_ok": false,
+      "proc_fp": 0,
+      "proc_fn": 0,
+      "proc_ok": true,
+      "cond_hallucinated": [],
+      "cond_ok": true,
+      "dx_ok": true,
+      "dx_799_fallback": false,
+      "all_ok": false
+    }
+  },
+  {
+    "sid": "bc81d25e",
+    "variant": "V_PROC_BIND",
+    "seed": 0,
+    "visit_type": "intermediate_assessment",
+    "procedures": [],
+    "conditions": [],
+    "dx": "785",
+    "primary_dx_text": "<scrubbed>",
+    "score": {
+      "visit_ok": false,
+      "proc_fp": 0,
+      "proc_fn": 0,
+      "proc_ok": true,
+      "cond_hallucinated": [],
+      "cond_ok": true,
+      "dx_ok": true,
+      "dx_799_fallback": false,
+      "all_ok": false
+    }
+  },
+  {
+    "sid": "bc81d25e",
+    "variant": "V_PROC_BIND",
+    "seed": 1,
+    "visit_type": "intermediate_assessment",
+    "procedures": [],
+    "conditions": [],
+    "dx": "785",
+    "primary_dx_text": "<scrubbed>",
+    "score": {
+      "visit_ok": false,
+      "proc_fp": 0,
+      "proc_fn": 0,
+      "proc_ok": true,
+      "cond_hallucinated": [],
+      "cond_ok": true,
+      "dx_ok": true,
+      "dx_799_fallback": false,
+      "all_ok": false
+    }
+  },
+  {
+    "sid": "eeb4d85f",
+    "variant": "V_BASE",
+    "seed": 0,
+    "visit_type": "intermediate_assessment",
+    "procedures": [],
+    "conditions": [],
+    "dx": "787",
+    "primary_dx_text": "<scrubbed>",
+    "score": {
+      "visit_ok": true,
+      "proc_fp": 0,
+      "proc_fn": 0,
+      "proc_ok": true,
+      "cond_hallucinated": [],
+      "cond_ok": true,
+      "dx_ok": false,
+      "dx_799_fallback": false,
+      "all_ok": false
+    }
+  },
+  {
+    "sid": "eeb4d85f",
+    "variant": "V_BASE",
+    "seed": 1,
+    "visit_type": "intermediate_assessment",
+    "procedures": [],
+    "conditions": [],
+    "dx": "787",
+    "primary_dx_text": "<scrubbed>",
+    "score": {
+      "visit_ok": true,
+      "proc_fp": 0,
+      "proc_fn": 0,
+      "proc_ok": true,
+      "cond_hallucinated": [],
+      "cond_ok": true,
+      "dx_ok": false,
+      "dx_799_fallback": false,
+      "all_ok": false
+    }
+  },
+  {
+    "sid": "eeb4d85f",
+    "variant": "V_SOAP_ONLY",
+    "seed": 0,
+    "visit_type": "intermediate_assessment",
+    "procedures": [],
+    "conditions": [],
+    "dx": "599",
+    "primary_dx_text": "<scrubbed>",
+    "score": {
+      "visit_ok": true,
+      "proc_fp": 0,
+      "proc_fn": 0,
+      "proc_ok": true,
+      "cond_hallucinated": [],
+      "cond_ok": true,
+      "dx_ok": true,
+      "dx_799_fallback": false,
+      "all_ok": true
+    }
+  },
+  {
+    "sid": "eeb4d85f",
+    "variant": "V_SOAP_ONLY",
+    "seed": 1,
+    "visit_type": "intermediate_assessment",
+    "procedures": [],
+    "conditions": [],
+    "dx": "785",
+    "primary_dx_text": "<scrubbed>",
+    "score": {
+      "visit_ok": true,
+      "proc_fp": 0,
+      "proc_fn": 0,
+      "proc_ok": true,
+      "cond_hallucinated": [],
+      "cond_ok": true,
+      "dx_ok": false,
+      "dx_799_fallback": false,
+      "all_ok": false
+    }
+  },
+  {
+    "sid": "eeb4d85f",
+    "variant": "V_DURATION",
+    "seed": 0,
+    "visit_type": "mini_assessment",
+    "procedures": [],
+    "conditions": [],
+    "dx": "785",
+    "primary_dx_text": "<scrubbed>",
+    "score": {
+      "visit_ok": true,
+      "proc_fp": 0,
+      "proc_fn": 0,
+      "proc_ok": true,
+      "cond_hallucinated": [],
+      "cond_ok": true,
+      "dx_ok": false,
+      "dx_799_fallback": false,
+      "all_ok": false
+    }
+  },
+  {
+    "sid": "eeb4d85f",
+    "variant": "V_DURATION",
+    "seed": 1,
+    "visit_type": "mini_assessment",
+    "procedures": [],
+    "conditions": [],
+    "dx": "785",
+    "primary_dx_text": "<scrubbed>",
+    "score": {
+      "visit_ok": true,
+      "proc_fp": 0,
+      "proc_fn": 0,
+      "proc_ok": true,
+      "cond_hallucinated": [],
+      "cond_ok": true,
+      "dx_ok": false,
+      "dx_799_fallback": false,
+      "all_ok": false
+    }
+  },
+  {
+    "sid": "eeb4d85f",
+    "variant": "V_STRICT",
+    "seed": 0,
+    "visit_type": "intermediate_assessment",
+    "procedures": [],
+    "conditions": [],
+    "dx": "787",
+    "primary_dx_text": "<scrubbed>",
+    "score": {
+      "visit_ok": true,
+      "proc_fp": 0,
+      "proc_fn": 0,
+      "proc_ok": true,
+      "cond_hallucinated": [],
+      "cond_ok": true,
+      "dx_ok": false,
+      "dx_799_fallback": false,
+      "all_ok": false
+    }
+  },
+  {
+    "sid": "eeb4d85f",
+    "variant": "V_STRICT",
+    "seed": 1,
+    "visit_type": "intermediate_assessment",
+    "procedures": [],
+    "conditions": [],
+    "dx": "599",
+    "primary_dx_text": "<scrubbed>",
+    "score": {
+      "visit_ok": true,
+      "proc_fp": 0,
+      "proc_fn": 0,
+      "proc_ok": true,
+      "cond_hallucinated": [],
+      "cond_ok": true,
+      "dx_ok": true,
+      "dx_799_fallback": false,
+      "all_ok": true
+    }
+  },
+  {
+    "sid": "eeb4d85f",
+    "variant": "V_PROC_BIND",
+    "seed": 0,
+    "visit_type": "intermediate_assessment",
+    "procedures": [],
+    "conditions": [],
+    "dx": "785",
+    "primary_dx_text": "<scrubbed>",
+    "score": {
+      "visit_ok": true,
+      "proc_fp": 0,
+      "proc_fn": 0,
+      "proc_ok": true,
+      "cond_hallucinated": [],
+      "cond_ok": true,
+      "dx_ok": false,
+      "dx_799_fallback": false,
+      "all_ok": false
+    }
+  },
+  {
+    "sid": "eeb4d85f",
+    "variant": "V_PROC_BIND",
+    "seed": 1,
+    "visit_type": "intermediate_assessment",
+    "procedures": [],
+    "conditions": [],
+    "dx": "599",
+    "primary_dx_text": "<scrubbed>",
+    "score": {
+      "visit_ok": true,
+      "proc_fp": 0,
+      "proc_fn": 0,
+      "proc_ok": true,
+      "cond_hallucinated": [],
+      "cond_ok": true,
+      "dx_ok": true,
+      "dx_799_fallback": false,
+      "all_ok": true
+    }
+  },
+  {
+    "sid": "98821f67",
+    "variant": "V_BASE",
+    "seed": 0,
+    "visit_type": "intermediate_assessment",
+    "procedures": [],
+    "conditions": [],
+    "dx": "216",
+    "primary_dx_text": "<scrubbed>",
+    "score": {
+      "visit_ok": true,
+      "proc_fp": 0,
+      "proc_fn": 0,
+      "proc_ok": true,
+      "cond_hallucinated": [],
+      "cond_ok": true,
+      "dx_ok": true,
+      "dx_799_fallback": false,
+      "all_ok": true
+    }
+  },
+  {
+    "sid": "98821f67",
+    "variant": "V_BASE",
+    "seed": 1,
+    "visit_type": "intermediate_assessment",
+    "procedures": [],
+    "conditions": [],
+    "dx": "216",
+    "primary_dx_text": "<scrubbed>",
+    "score": {
+      "visit_ok": true,
+      "proc_fp": 0,
+      "proc_fn": 0,
+      "proc_ok": true,
+      "cond_hallucinated": [],
+      "cond_ok": true,
+      "dx_ok": true,
+      "dx_799_fallback": false,
+      "all_ok": true
+    }
+  },
+  {
+    "sid": "98821f67",
+    "variant": "V_SOAP_ONLY",
+    "seed": 0,
+    "visit_type": "intermediate_assessment",
+    "procedures": [],
+    "conditions": [],
+    "dx": "216",
+    "primary_dx_text": "<scrubbed>",
+    "score": {
+      "visit_ok": true,
+      "proc_fp": 0,
+      "proc_fn": 0,
+      "proc_ok": true,
+      "cond_hallucinated": [],
+      "cond_ok": true,
+      "dx_ok": true,
+      "dx_799_fallback": false,
+      "all_ok": true
+    }
+  },
+  {
+    "sid": "98821f67",
+    "variant": "V_SOAP_ONLY",
+    "seed": 1,
+    "visit_type": "intermediate_assessment",
+    "procedures": [],
+    "conditions": [],
+    "dx": "216",
+    "primary_dx_text": "<scrubbed>",
+    "score": {
+      "visit_ok": true,
+      "proc_fp": 0,
+      "proc_fn": 0,
+      "proc_ok": true,
+      "cond_hallucinated": [],
+      "cond_ok": true,
+      "dx_ok": true,
+      "dx_799_fallback": false,
+      "all_ok": true
+    }
+  },
+  {
+    "sid": "98821f67",
+    "variant": "V_DURATION",
+    "seed": 0,
+    "visit_type": "general_reassessment",
+    "procedures": [],
+    "conditions": [],
+    "dx": "785",
+    "primary_dx_text": "<scrubbed>",
+    "score": {
+      "visit_ok": true,
+      "proc_fp": 0,
+      "proc_fn": 0,
+      "proc_ok": true,
+      "cond_hallucinated": [],
+      "cond_ok": true,
+      "dx_ok": false,
+      "dx_799_fallback": false,
+      "all_ok": false
+    }
+  },
+  {
+    "sid": "98821f67",
+    "variant": "V_DURATION",
+    "seed": 1,
+    "visit_type": "general_reassessment",
+    "procedures": [],
+    "conditions": [],
+    "dx": "785",
+    "primary_dx_text": "<scrubbed>",
+    "score": {
+      "visit_ok": true,
+      "proc_fp": 0,
+      "proc_fn": 0,
+      "proc_ok": true,
+      "cond_hallucinated": [],
+      "cond_ok": true,
+      "dx_ok": false,
+      "dx_799_fallback": false,
+      "all_ok": false
+    }
+  },
+  {
+    "sid": "98821f67",
+    "variant": "V_STRICT",
+    "seed": 0,
+    "visit_type": "intermediate_assessment",
+    "procedures": [],
+    "conditions": [],
+    "dx": "216",
+    "primary_dx_text": "<scrubbed>",
+    "score": {
+      "visit_ok": true,
+      "proc_fp": 0,
+      "proc_fn": 0,
+      "proc_ok": true,
+      "cond_hallucinated": [],
+      "cond_ok": true,
+      "dx_ok": true,
+      "dx_799_fallback": false,
+      "all_ok": true
+    }
+  },
+  {
+    "sid": "98821f67",
+    "variant": "V_STRICT",
+    "seed": 1,
+    "visit_type": "intermediate_assessment",
+    "procedures": [],
+    "conditions": [],
+    "dx": "216",
+    "primary_dx_text": "<scrubbed>",
+    "score": {
+      "visit_ok": true,
+      "proc_fp": 0,
+      "proc_fn": 0,
+      "proc_ok": true,
+      "cond_hallucinated": [],
+      "cond_ok": true,
+      "dx_ok": true,
+      "dx_799_fallback": false,
+      "all_ok": true
+    }
+  },
+  {
+    "sid": "98821f67",
+    "variant": "V_PROC_BIND",
+    "seed": 0,
+    "visit_type": "intermediate_assessment",
+    "procedures": [],
+    "conditions": [],
+    "dx": "785",
+    "primary_dx_text": "<scrubbed>",
+    "score": {
+      "visit_ok": true,
+      "proc_fp": 0,
+      "proc_fn": 0,
+      "proc_ok": true,
+      "cond_hallucinated": [],
+      "cond_ok": true,
+      "dx_ok": false,
+      "dx_799_fallback": false,
+      "all_ok": false
+    }
+  },
+  {
+    "sid": "98821f67",
+    "variant": "V_PROC_BIND",
+    "seed": 1,
+    "visit_type": "intermediate_assessment",
+    "procedures": [],
+    "conditions": [],
+    "dx": "785",
+    "primary_dx_text": "<scrubbed>",
+    "score": {
+      "visit_ok": true,
+      "proc_fp": 0,
+      "proc_fn": 0,
+      "proc_ok": true,
+      "cond_hallucinated": [],
+      "cond_ok": true,
+      "dx_ok": false,
+      "dx_799_fallback": false,
+      "all_ok": false
+    }
+  },
+  {
+    "sid": "b64ff7f3",
+    "variant": "V_BASE",
+    "seed": 0,
+    "visit_type": "intermediate_assessment",
+    "procedures": [
+      "cryotherapy_single"
+    ],
+    "conditions": [],
+    "dx": "401",
+    "primary_dx_text": "<scrubbed>",
+    "score": {
+      "visit_ok": true,
+      "proc_fp": 0,
+      "proc_fn": 0,
+      "proc_ok": true,
+      "cond_hallucinated": [],
+      "cond_ok": true,
+      "dx_ok": false,
+      "dx_799_fallback": false,
+      "all_ok": false
+    }
+  },
+  {
+    "sid": "b64ff7f3",
+    "variant": "V_BASE",
+    "seed": 1,
+    "visit_type": "intermediate_assessment",
+    "procedures": [
+      "cryotherapy_single"
+    ],
+    "conditions": [],
+    "dx": "401",
+    "primary_dx_text": "<scrubbed>",
+    "score": {
+      "visit_ok": true,
+      "proc_fp": 0,
+      "proc_fn": 0,
+      "proc_ok": true,
+      "cond_hallucinated": [],
+      "cond_ok": true,
+      "dx_ok": false,
+      "dx_799_fallback": false,
+      "all_ok": false
+    }
+  },
+  {
+    "sid": "b64ff7f3",
+    "variant": "V_SOAP_ONLY",
+    "seed": 0,
+    "visit_type": "intermediate_assessment",
+    "procedures": [
+      "cryotherapy_single"
+    ],
+    "conditions": [],
+    "dx": "401",
+    "primary_dx_text": "<scrubbed>",
+    "score": {
+      "visit_ok": true,
+      "proc_fp": 0,
+      "proc_fn": 0,
+      "proc_ok": true,
+      "cond_hallucinated": [],
+      "cond_ok": true,
+      "dx_ok": false,
+      "dx_799_fallback": false,
+      "all_ok": false
+    }
+  },
+  {
+    "sid": "b64ff7f3",
+    "variant": "V_SOAP_ONLY",
+    "seed": 1,
+    "visit_type": "intermediate_assessment",
+    "procedures": [
+      "cryotherapy_single"
+    ],
+    "conditions": [],
+    "dx": "401",
+    "primary_dx_text": "<scrubbed>",
+    "score": {
+      "visit_ok": true,
+      "proc_fp": 0,
+      "proc_fn": 0,
+      "proc_ok": true,
+      "cond_hallucinated": [],
+      "cond_ok": true,
+      "dx_ok": false,
+      "dx_799_fallback": false,
+      "all_ok": false
+    }
+  },
+  {
+    "sid": "b64ff7f3",
+    "variant": "V_DURATION",
+    "seed": 0,
+    "visit_type": "intermediate_assessment",
+    "procedures": [
+      "cryotherapy_single"
+    ],
+    "conditions": [],
+    "dx": "401",
+    "primary_dx_text": "<scrubbed>",
+    "score": {
+      "visit_ok": true,
+      "proc_fp": 0,
+      "proc_fn": 0,
+      "proc_ok": true,
+      "cond_hallucinated": [],
+      "cond_ok": true,
+      "dx_ok": false,
+      "dx_799_fallback": false,
+      "all_ok": false
+    }
+  },
+  {
+    "sid": "b64ff7f3",
+    "variant": "V_DURATION",
+    "seed": 1,
+    "visit_type": "intermediate_assessment",
+    "procedures": [
+      "cryotherapy_single"
+    ],
+    "conditions": [],
+    "dx": "401",
+    "primary_dx_text": "<scrubbed>",
+    "score": {
+      "visit_ok": true,
+      "proc_fp": 0,
+      "proc_fn": 0,
+      "proc_ok": true,
+      "cond_hallucinated": [],
+      "cond_ok": true,
+      "dx_ok": false,
+      "dx_799_fallback": false,
+      "all_ok": false
+    }
+  },
+  {
+    "sid": "b64ff7f3",
+    "variant": "V_STRICT",
+    "seed": 0,
+    "visit_type": "intermediate_assessment",
+    "procedures": [
+      "cryotherapy_single"
+    ],
+    "conditions": [],
+    "dx": "401",
+    "primary_dx_text": "<scrubbed>",
+    "score": {
+      "visit_ok": true,
+      "proc_fp": 0,
+      "proc_fn": 0,
+      "proc_ok": true,
+      "cond_hallucinated": [],
+      "cond_ok": true,
+      "dx_ok": false,
+      "dx_799_fallback": false,
+      "all_ok": false
+    }
+  },
+  {
+    "sid": "b64ff7f3",
+    "variant": "V_STRICT",
+    "seed": 1,
+    "visit_type": "intermediate_assessment",
+    "procedures": [
+      "cryotherapy_single"
+    ],
+    "conditions": [],
+    "dx": "401",
+    "primary_dx_text": "<scrubbed>",
+    "score": {
+      "visit_ok": true,
+      "proc_fp": 0,
+      "proc_fn": 0,
+      "proc_ok": true,
+      "cond_hallucinated": [],
+      "cond_ok": true,
+      "dx_ok": false,
+      "dx_799_fallback": false,
+      "all_ok": false
+    }
+  },
+  {
+    "sid": "b64ff7f3",
+    "variant": "V_PROC_BIND",
+    "seed": 0,
+    "visit_type": "intermediate_assessment",
+    "procedures": [
+      "cryotherapy_single"
+    ],
+    "conditions": [],
+    "dx": "401",
+    "primary_dx_text": "<scrubbed>",
+    "score": {
+      "visit_ok": true,
+      "proc_fp": 0,
+      "proc_fn": 0,
+      "proc_ok": true,
+      "cond_hallucinated": [],
+      "cond_ok": true,
+      "dx_ok": false,
+      "dx_799_fallback": false,
+      "all_ok": false
+    }
+  },
+  {
+    "sid": "b64ff7f3",
+    "variant": "V_PROC_BIND",
+    "seed": 1,
+    "visit_type": "intermediate_assessment",
+    "procedures": [
+      "cryotherapy_single"
+    ],
+    "conditions": [],
+    "dx": "401",
+    "primary_dx_text": "<scrubbed>",
+    "score": {
+      "visit_ok": true,
+      "proc_fp": 0,
+      "proc_fn": 0,
+      "proc_ok": true,
+      "cond_hallucinated": [],
+      "cond_ok": true,
+      "dx_ok": false,
+      "dx_799_fallback": false,
+      "all_ok": false
+    }
+  }
+]

@@ -261,6 +261,7 @@ pub async fn run<C: RunContext>(
             }),
             Some(&deps.templates),
             Some(deps.soap_generation_timeout_secs),
+            Some(&deps.bundle),
         )
         .await;
 
@@ -291,16 +292,6 @@ pub async fn run<C: RunContext>(
                     deps.soap_detail_level,
                     &deps.soap_format,
                 );
-                if let Ok(mut bundle) = deps.bundle.lock() {
-                    bundle.set_soap_result(crate::replay_bundle::SoapResult {
-                        ts: ctx.now_utc().to_rfc3339(),
-                        latency_ms,
-                        success: true,
-                        word_count: encounter_word_count,
-                        error: None,
-                        patient_count: if patient_count > 1 { Some(patient_count) } else { None },
-                    });
-                }
                 if let Some(ref dl) = *deps.day_logger {
                     dl.log(crate::day_log::DayEvent::SoapGenerated {
                         ts: ctx.now_utc().to_rfc3339(),
@@ -333,6 +324,7 @@ pub async fn run<C: RunContext>(
                         Some(&deps.templates),
                         Some(&deps.billing_data),
                         Some(deps.billing_extraction_timeout_secs),
+                        Some(&deps.bundle),
                     )
                     .await;
                     let billing_latency = billing_start.elapsed().as_millis() as u64;
@@ -347,17 +339,6 @@ pub async fn run<C: RunContext>(
                                     total_amount_cents: record.total_amount_cents,
                                     latency_ms: billing_latency,
                                     success: true,
-                                });
-                            }
-                            if let Ok(mut bundle) = deps.bundle.lock() {
-                                bundle.set_billing_result(crate::replay_bundle::BillingResult {
-                                    ts: ctx.now_utc().to_rfc3339(),
-                                    latency_ms: billing_latency,
-                                    success: true,
-                                    codes_count: Some(record.codes.len()),
-                                    total_amount_cents: Some(record.total_amount_cents),
-                                    selected_codes: Some(record.codes.iter().map(|c| c.code.clone()).collect()),
-                                    error: None,
                                 });
                             }
                             // Re-upload session to server so has_billing_record=true in
@@ -385,17 +366,6 @@ pub async fn run<C: RunContext>(
                                     success: false,
                                 });
                             }
-                            if let Ok(mut bundle) = deps.bundle.lock() {
-                                bundle.set_billing_result(crate::replay_bundle::BillingResult {
-                                    ts: ctx.now_utc().to_rfc3339(),
-                                    latency_ms: billing_latency,
-                                    success: false,
-                                    codes_count: None,
-                                    total_amount_cents: None,
-                                    selected_codes: None,
-                                    error: Some(e.clone()),
-                                });
-                            }
                         }
                     }
                 }
@@ -404,16 +374,6 @@ pub async fn run<C: RunContext>(
                 latency_ms,
                 ref error,
             } => {
-                if let Ok(mut bundle) = deps.bundle.lock() {
-                    bundle.set_soap_result(crate::replay_bundle::SoapResult {
-                        ts: ctx.now_utc().to_rfc3339(),
-                        latency_ms,
-                        success: false,
-                        word_count: encounter_word_count,
-                        error: Some(error.clone()),
-                        patient_count: None,
-                    });
-                }
                 if let Ok(mut err) = deps.last_error.lock() {
                     *err = Some(format!("SOAP generation failed: {}", error));
                 } else {

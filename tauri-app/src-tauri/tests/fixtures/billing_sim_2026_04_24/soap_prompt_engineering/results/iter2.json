@@ -1,0 +1,922 @@
+[
+  {
+    "sid": "0cce8568",
+    "prompt": "P_NARR_PLUS",
+    "n_proc": 0,
+    "procs": [],
+    "candidates": [
+      {
+        "m": "urine sample",
+        "stance": "PROPOSED",
+        "q": "Definitely, we're going to want to get a urine sample."
+      },
+      {
+        "m": "urine sample",
+        "stance": "PROPOSED",
+        "q": "We just do the urine sample first, so it's accurate."
+      }
+    ]
+  },
+  {
+    "sid": "0cce8568",
+    "prompt": "P_STRICT",
+    "n_proc": 0,
+    "procs": [],
+    "candidates": [
+      {
+        "m": "urine sample",
+        "stance": "PROPOSED",
+        "q": "Definitely, we're going to want to get a urine sample."
+      },
+      {
+        "m": "urine sample",
+        "stance": "PROPOSED",
+        "q": "We just do the urine sample first, so it's accurate."
+      }
+    ]
+  },
+  {
+    "sid": "0cce8568",
+    "prompt": "P_NARR",
+    "n_proc": 0,
+    "procs": [],
+    "candidates": [
+      {
+        "m": "urine sample",
+        "stance": "PROPOSED",
+        "q": "Definitely, we're going to want to get a urine sample."
+      }
+    ]
+  },
+  {
+    "sid": "0cce8568",
+    "prompt": "P_TWO",
+    "n_proc": 0,
+    "procs": [],
+    "candidates": [
+      {
+        "m": "",
+        "stance": "UNCLEAR",
+        "q": "Definitely, we're going to want to get a urine sample."
+      }
+    ]
+  },
+  {
+    "sid": "1ec7a57e",
+    "prompt": "P_STRICT",
+    "n_proc": 1,
+    "procs": [
+      {
+        "action": "X-rays",
+        "quote": "I had my X-rays done."
+      }
+    ],
+    "candidates": [
+      {
+        "m": "X-rays",
+        "stance": "COMPLETED",
+        "q": "I had my X-rays done."
+      },
+      {
+        "m": "abdominal ultrasound",
+        "stance": "DECLINED",
+        "q": "Did the ultrasound get done? Did the abdominal ultrasound not yet, and until May"
+      },
+      {
+        "m": "nitro cream prescription",
+        "stance": "PROPOSED",
+        "q": "What I'm going to do is prescribe it."
+      }
+    ]
+  },
+  {
+    "sid": "1ec7a57e",
+    "prompt": "P_TWO",
+    "n_proc": 0,
+    "procs": [],
+    "candidates": [
+      {
+        "m": "",
+        "stance": "NO",
+        "q": "Did the ultrasound get done? Did the abdominal ultrasound not yet, and until May"
+      },
+      {
+        "m": "",
+        "stance": "UNCLEAR",
+        "q": "Could you ask the nurse if I could get my B twelve now?"
+      },
+      {
+        "m": "",
+        "stance": "UNCLEAR",
+        "q": "What I'm going to do is prescribe it."
+      },
+      {
+        "m": "",
+        "stance": "UNCLEAR",
+        "q": "So you want to add restore lags."
+      }
+    ]
+  },
+  {
+    "sid": "1ec7a57e",
+    "prompt": "P_NARR_PLUS",
+    "n_proc": 0,
+    "procs": [],
+    "candidates": [
+      {
+        "m": "abdominal ultrasound",
+        "stance": "IN_PROGRESS",
+        "q": "Did the ultrasound get done? Did the abdominal ultrasound not yet, and until May"
+      },
+      {
+        "m": "nitro cream prescription",
+        "stance": "PROPOSED",
+        "q": "What I'm going to do is prescribe it."
+      },
+      {
+        "m": "Mestrolax prescription",
+        "stance": "PROPOSED",
+        "q": "So you want to add restore lags."
+      }
+    ]
+  },
+  {
+    "sid": "1ec7a57e",
+    "prompt": "P_NARR",
+    "n_proc": 0,
+    "procs": [],
+    "candidates": [
+      {
+        "m": "Abdominal ultrasound",
+        "stance": "IN_PROGRESS",
+        "q": "Did the ultrasound get done? Did the abdominal ultrasound not yet, and until May"
+      },
+      {
+        "m": "Nitroglycerin cream prescription",
+        "stance": "PROPOSED",
+        "q": "What I'm going to do is prescribe it."
+      },
+      {
+        "m": "B12 test",
+        "stance": "PROPOSED",
+        "q": "Could you ask the nurse if I could get my B twelve now?"
+      }
+    ]
+  },
+  {
+    "sid": "9b0b60e2",
+    "prompt": "P_STRICT",
+    "n_proc": 1,
+    "procs": [
+      {
+        "action": "injected the shoulder",
+        "quote": "I think you'll be okay. It may take a few days. For it to kick in, but hopefully it helps relieve some of the pressure."
+      }
+    ],
+    "candidates": [
+      {
+        "m": "inject the shoulder",
+        "stance": "PROPOSED",
+        "q": "I can inject the shoulder"
+      },
+      {
+        "m": "inject the shoulder",
+        "stance": "PROPOSED",
+        "q": "we could inject the shoulders"
+      },
+      {
+        "m": "inject the shoulder",
+        "stance": "PROPOSED",
+        "q": "I can inject the shoulder to settle that down"
+      },
+      {
+        "m": "inject the shoulder",
+        "stance": "IN_PROGRESS",
+        "q": "I need to be able to... this is perfect. Okay, no worries. Have a seat. I'll be "
+      },
+      {
+        "m": "inject the shoulder",
+        "stance": "IN_PROGRESS",
+        "q": "I'll be right back"
+      },
+      {
+        "m": "inject the shoulder",
+        "stance": "COMPLETED",
+        "q": "I think you'll be okay. It may take a few days. For it to kick in, but hopefully"
+      },
+      {
+        "m": "blood draw",
+        "stance": "PROPOSED",
+        "q": "I will need to do a blood draw"
+      },
+      {
+        "m": "blood draw",
+        "stance": "PROPOSED",
+        "q": "In a week or two, like we can do the blood draw for for this"
+      },
+      {
+        "m": "blood draw",
+        "stance": "PROPOSED",
+        "q": "Is there a day of the week that's easier for, for the blood draw?"
+      },
+      {
+        "m": "blood draw",
+        "stance": "PROPOSED",
+        "q": "Okay. It'll be at ten forty-five."
+      }
+    ]
+  },
+  {
+    "sid": "9b0b60e2",
+    "prompt": "P_NARR",
+    "n_proc": 0,
+    "procs": [],
+    "candidates": [
+      {
+        "m": "inject the shoulder",
+        "stance": "PROPOSED",
+        "q": "If you wanted, we could inject the shoulders."
+      },
+      {
+        "m": "inject the shoulder",
+        "stance": "PROPOSED",
+        "q": "Why don't we do this today? If you're okay with it, then I can inject the should"
+      },
+      {
+        "m": "inject the shoulder",
+        "stance": "IN_PROGRESS",
+        "q": "I can inject the shoulder to settle that down."
+      },
+      {
+        "m": "blood draw",
+        "stance": "PROPOSED",
+        "q": "I will need to do a blood draw, so."
+      },
+      {
+        "m": "blood draw",
+        "stance": "PROPOSED",
+        "q": "In a week or two, like we can do the blood draw for this."
+      }
+    ]
+  },
+  {
+    "sid": "9b0b60e2",
+    "prompt": "P_TWO",
+    "n_proc": 1,
+    "procs": [
+      {
+        "action": "Shoulder Injection",
+        "quote": "Dr Zohoor: Why don't we do this today? If you're okay with it, then I can inject the shoulder to settle that down."
+      }
+    ],
+    "candidates": [
+      {
+        "m": "",
+        "stance": "YES",
+        "q": "Dr Zohoor: I could inject the shoulder; I just don't know if it's been long enou"
+      }
+    ]
+  },
+  {
+    "sid": "9b0b60e2",
+    "prompt": "P_NARR_PLUS",
+    "n_proc": 0,
+    "procs": [],
+    "candidates": [
+      {
+        "m": "inject the shoulder",
+        "stance": "PROPOSED",
+        "q": "I could inject the shoulder"
+      },
+      {
+        "m": "inject the shoulder",
+        "stance": "PROPOSED",
+        "q": "we could inject the shoulders"
+      },
+      {
+        "m": "inject the shoulder",
+        "stance": "PROPOSED",
+        "q": "I can inject the shoulder to settle that down"
+      },
+      {
+        "m": "inject the shoulder",
+        "stance": "PROPOSED",
+        "q": "I can inject the shoulder"
+      },
+      {
+        "m": "inject the shoulder",
+        "stance": "IN_PROGRESS",
+        "q": "I'll be right back"
+      },
+      {
+        "m": "blood draw",
+        "stance": "PROPOSED",
+        "q": "I will need to do a blood draw"
+      },
+      {
+        "m": "blood draw",
+        "stance": "PROPOSED",
+        "q": "we can do the blood draw for this"
+      }
+    ]
+  },
+  {
+    "sid": "b64ff7f3",
+    "prompt": "P_STRICT",
+    "n_proc": 1,
+    "procs": [
+      {
+        "action": "liquid nitrogen treatment",
+        "quote": "You are done, my friend."
+      }
+    ],
+    "candidates": [
+      {
+        "m": "liquid nitrogen treatment",
+        "stance": "IN_PROGRESS",
+        "q": "Let me grab some liquid nitrogen right now."
+      },
+      {
+        "m": "liquid nitrogen treatment",
+        "stance": "COMPLETED",
+        "q": "You are done, my friend."
+      }
+    ]
+  },
+  {
+    "sid": "b64ff7f3",
+    "prompt": "P_NARR",
+    "n_proc": 1,
+    "procs": [
+      {
+        "action": "liquid nitrogen treatment for wart",
+        "quote": "Let me grab some liquid nitrogen right now."
+      }
+    ],
+    "candidates": [
+      {
+        "m": "liquid nitrogen treatment for wart",
+        "stance": "IN_PROGRESS",
+        "q": "Let me grab some liquid nitrogen right now."
+      }
+    ]
+  },
+  {
+    "sid": "b64ff7f3",
+    "prompt": "P_TWO",
+    "n_proc": 1,
+    "procs": [
+      {
+        "action": "Cryotherapy (Liquid Nitrogen) for wart",
+        "quote": "You are done, my friend. In terms of the words."
+      }
+    ],
+    "candidates": [
+      {
+        "m": "",
+        "stance": "YES",
+        "q": "Speaker 1 (71%): Let me grab some liquid nitrogen right now."
+      }
+    ]
+  },
+  {
+    "sid": "b64ff7f3",
+    "prompt": "P_NARR_PLUS",
+    "n_proc": 1,
+    "procs": [
+      {
+        "action": "Cryotherapy with liquid nitrogen",
+        "quote": "Let me grab some liquid nitrogen right now. ... You are done, my friend."
+      }
+    ],
+    "candidates": [
+      {
+        "m": "liquid nitrogen treatment for wart",
+        "stance": "IN_PROGRESS",
+        "q": "Let me grab some liquid nitrogen right now."
+      }
+    ]
+  },
+  {
+    "sid": "58e617ac",
+    "prompt": "P_STRICT",
+    "n_proc": 1,
+    "procs": [
+      {
+        "action": "injection",
+        "quote": "You're all done."
+      }
+    ],
+    "candidates": [
+      {
+        "m": "injection",
+        "stance": "PROPOSED",
+        "q": "I think today, Linda. The plan was to do one injection."
+      },
+      {
+        "m": "injecting",
+        "stance": "IN_PROGRESS",
+        "q": "I'll show you what we're injecting. It's a straight PIAL."
+      },
+      {
+        "m": "landmark",
+        "stance": "IN_PROGRESS",
+        "q": "I'm just gonna landmark a bit."
+      },
+      {
+        "m": "enter",
+        "stance": "IN_PROGRESS",
+        "q": "I'm gonna enter on the right side."
+      },
+      {
+        "m": "injection",
+        "stance": "COMPLETED",
+        "q": "You're all done."
+      },
+      {
+        "m": "biopsy",
+        "stance": "PROPOSED",
+        "q": "It's easy for me to do a quick biopsy and until then make sure it's okay."
+      },
+      {
+        "m": "biopsy",
+        "stance": "DECLINED",
+        "q": "I don't want to overdo it. I\u2014I wonder if it was one of those I got hold off."
+      }
+    ]
+  },
+  {
+    "sid": "58e617ac",
+    "prompt": "P_NARR",
+    "n_proc": 1,
+    "procs": [
+      {
+        "action": "Injection at L4-5",
+        "quote": "You're all done."
+      }
+    ],
+    "candidates": [
+      {
+        "m": "Injection at L4-5",
+        "stance": "IN_PROGRESS",
+        "q": "I'm gonna enter on the right side."
+      },
+      {
+        "m": "Biopsy",
+        "stance": "PROPOSED",
+        "q": "It's easy for me to do a quick biopsy and until then make sure it's okay."
+      }
+    ]
+  },
+  {
+    "sid": "58e617ac",
+    "prompt": "P_TWO",
+    "n_proc": 1,
+    "procs": [
+      {
+        "action": "PRP Injection at L4-5",
+        "quote": "Speaker 4 (58%): You're all done."
+      }
+    ],
+    "candidates": [
+      {
+        "m": "",
+        "stance": "YES",
+        "q": "Dr Zohoor (65%): I'll show you what we're injecting. It's a straight PIAL."
+      }
+    ]
+  },
+  {
+    "sid": "58e617ac",
+    "prompt": "P_NARR_PLUS",
+    "n_proc": 1,
+    "procs": [
+      {
+        "action": "injection at L4-5",
+        "quote": "You're all done."
+      }
+    ],
+    "candidates": [
+      {
+        "m": "injection at L4-5",
+        "stance": "PROPOSED",
+        "q": "I think today, Linda. The plan was to do one injection."
+      },
+      {
+        "m": "injection at L4-5",
+        "stance": "IN_PROGRESS",
+        "q": "I'll show you what we're injecting. It's a straight PIAL."
+      },
+      {
+        "m": "injection at L4-5",
+        "stance": "IN_PROGRESS",
+        "q": "I'm gonna enter on the right side."
+      },
+      {
+        "m": "biopsy",
+        "stance": "PROPOSED",
+        "q": "It's easy for me to do a quick biopsy and until then make sure it's okay."
+      },
+      {
+        "m": "biopsy",
+        "stance": "DECLINED",
+        "q": "I got hold off."
+      }
+    ]
+  },
+  {
+    "sid": "8feb77a1",
+    "prompt": "P_STRICT",
+    "n_proc": 1,
+    "procs": [
+      {
+        "action": "injection",
+        "quote": "Back okay."
+      }
+    ],
+    "candidates": [
+      {
+        "m": "injection",
+        "stance": "PROPOSED",
+        "q": "I can inject the shoulder"
+      },
+      {
+        "m": "injection",
+        "stance": "PROPOSED",
+        "q": "I could also inject other joints"
+      },
+      {
+        "m": "injection",
+        "stance": "OFFERED",
+        "q": "I'm happy to do the treatment"
+      },
+      {
+        "m": "injection",
+        "stance": "PROPOSED",
+        "q": "I can do the low back, or I can do neck, or I can do skull bone marrow"
+      },
+      {
+        "m": "injection",
+        "stance": "PROPOSED",
+        "q": "You think we should do an injection today, and then the time is where you kind o"
+      },
+      {
+        "m": "injection",
+        "stance": "OFFERED",
+        "q": "I'm happy to repeat it. See how I do with it."
+      },
+      {
+        "m": "injection",
+        "stance": "PROPOSED",
+        "q": "Do the treatment now, or wait and see if the oil works first?"
+      },
+      {
+        "m": "injection",
+        "stance": "PROPOSED",
+        "q": "If you want to try the oil first? Or do you want to do the injection now, and th"
+      },
+      {
+        "m": "injection",
+        "stance": "PROPOSED",
+        "q": "You feel like having an injection today, or do you feel we should hold off?"
+      },
+      {
+        "m": "injection",
+        "stance": "PROPOSED",
+        "q": "If you did an injection today, it would be in the head. Right?"
+      },
+      {
+        "m": "injection",
+        "stance": "PROPOSED",
+        "q": "I can use the same injection. Treat the neck, or treat the low back."
+      },
+      {
+        "m": "injection",
+        "stance": "PROPOSED",
+        "q": "If you decide you want to have the injection, I'll say to Norm that I told you i"
+      },
+      {
+        "m": "injection",
+        "stance": "PROPOSED",
+        "q": "If you decide not to have the injection. I'll say that I suggested we not do it "
+      },
+      {
+        "m": "injection",
+        "stance": "DECLINED",
+        "q": "If you're like, I really don't want an injection today. I'm feeling overwhelmed "
+      },
+      {
+        "m": "injection",
+        "stance": "DECLINED",
+        "q": "We can say that not me, but. We decided not to do an injection if the oil helps."
+      },
+      {
+        "m": "injection",
+        "stance": "PROPOSED",
+        "q": "You want to have an injection today, or would you rather not have an injection t"
+      },
+      {
+        "m": "injection",
+        "stance": "PROPOSED",
+        "q": "You want me to focus on one area. The low back, the neck. Or do the stem bone ma"
+      },
+      {
+        "m": "injection",
+        "stance": "OFFERED",
+        "q": "I'm also. If you want, I can. It's on one area."
+      },
+      {
+        "m": "injection",
+        "stance": "PROPOSED",
+        "q": "I'm happy to do that. Do the treatment now, or wait and see if the oil works fir"
+      },
+      {
+        "m": "injection",
+        "stance": "PROPOSED",
+        "q": "If you want a treatment. After leg weakness is a new thing for few days, or at l"
+      },
+      {
+        "m": "injection",
+        "stance": "OFFERED",
+        "q": "If you were coming in and hoping I do a skull bone marrow one. I'm also happy to"
+      },
+      {
+        "m": "injection",
+        "stance": "DECLINED",
+        "q": "I'm honestly easy. I'm happy to reschedule."
+      },
+      {
+        "m": "injection",
+        "stance": "PROPOSED",
+        "q": "Did you want me to do the back, or did you want me to do the skullbone now?"
+      },
+      {
+        "m": "injection",
+        "stance": "COMPLETED",
+        "q": "Back okay."
+      }
+    ]
+  },
+  {
+    "sid": "8feb77a1",
+    "prompt": "P_NARR",
+    "n_proc": 0,
+    "procs": [],
+    "candidates": [
+      {
+        "m": "low back injection",
+        "stance": "PROPOSED",
+        "q": "If the legs have been significantly weaker... Then it makes sense to do the low "
+      },
+      {
+        "m": "skull bone marrow injection",
+        "stance": "PROPOSED",
+        "q": "If you were coming in and hoping I do a skull bone marrow one. I'm also happy to"
+      },
+      {
+        "m": "injection today",
+        "stance": "IN_PROGRESS",
+        "q": "So you also don't feel like I'm staring at you. That can't be fun. I'll do a lit"
+      },
+      {
+        "m": "injection today",
+        "stance": "PROPOSED",
+        "q": "Did you want me to do the back, or did you want me to do the skullbone now? Back"
+      }
+    ]
+  },
+  {
+    "sid": "8feb77a1",
+    "prompt": "P_TWO",
+    "n_proc": null,
+    "raw": "{\n\"subjective\": [\n\"Patient reports overwhelming pain, weakness in legs, difficulty walking, and feeling overwhelmed/depressed.\",\n\"Patient notes recent worsening of leg weakness and inability to walk properly, requiring a wheelchair.\",\n\"Patient mentions using castor oil which she feels helps.\",\n\"Pati"
+  },
+  {
+    "sid": "8feb77a1",
+    "prompt": "P_NARR_PLUS",
+    "n_proc": null,
+    "raw": "<ERR timed out>"
+  },
+  {
+    "sid": "70e369bf",
+    "prompt": "P_STRICT",
+    "n_proc": 1,
+    "procs": [
+      {
+        "action": "injection",
+        "quote": "You've done great. Do you feel any tingling? Are you okay that way?"
+      }
+    ],
+    "candidates": [
+      {
+        "m": "injection",
+        "stance": "PROPOSED",
+        "q": "the thing was whether or not to do an injection duty"
+      },
+      {
+        "m": "injection",
+        "stance": "PROPOSED",
+        "q": "I can only do one today. Okay, do the top one."
+      },
+      {
+        "m": "injection",
+        "stance": "IN_PROGRESS",
+        "q": "Needle, relax a bit. Give me one second. I'm going to grab a different needle."
+      },
+      {
+        "m": "injection",
+        "stance": "COMPLETED",
+        "q": "You've done great. Do you feel any tingling? Are you okay that way?"
+      }
+    ]
+  },
+  {
+    "sid": "70e369bf",
+    "prompt": "P_NARR",
+    "n_proc": 1,
+    "procs": [
+      {
+        "action": "injection",
+        "quote": "Needle, relax a bit. Give me one second. I'm going to grab a different needle. Okay? Just because up higher is much more"
+      }
+    ],
+    "candidates": [
+      {
+        "m": "injection",
+        "stance": "PROPOSED",
+        "q": "the thing was whether or not to do an injection duty."
+      },
+      {
+        "m": "injection",
+        "stance": "IN_PROGRESS",
+        "q": "Needle, relax a bit. Give me one second. I'm going to grab a different needle. O"
+      }
+    ]
+  },
+  {
+    "sid": "70e369bf",
+    "prompt": "P_TWO",
+    "n_proc": 1,
+    "procs": [
+      {
+        "action": "Corticosteroid Injection",
+        "quote": "Dr Zohoor: 'You've done great. Do you feel any tingling? Are you okay that way?'"
+      }
+    ],
+    "candidates": [
+      {
+        "m": "",
+        "stance": "YES",
+        "q": "Dr Zohoor: 'And then in terms of today, the thing was whether or not to do an in"
+      }
+    ]
+  },
+  {
+    "sid": "70e369bf",
+    "prompt": "P_NARR_PLUS",
+    "n_proc": 1,
+    "procs": [
+      {
+        "action": "injection",
+        "quote": "Needle, relax a bit. Give me one second. I'm going to grab a different needle. Okay? Just because up higher is much more"
+      }
+    ],
+    "candidates": [
+      {
+        "m": "injection",
+        "stance": "PROPOSED",
+        "q": "the thing was whether or not to do an injection duty"
+      },
+      {
+        "m": "injection",
+        "stance": "PROPOSED",
+        "q": "I can only do one today. Okay, do the top one."
+      },
+      {
+        "m": "injection",
+        "stance": "IN_PROGRESS",
+        "q": "Needle, relax a bit. Give me one second. I'm going to grab a different needle."
+      },
+      {
+        "m": "injection",
+        "stance": "COMPLETED",
+        "q": "We had not injected the spot ever before, Judy."
+      },
+      {
+        "m": "injection",
+        "stance": "COMPLETED",
+        "q": "I think we looked at it."
+      },
+      {
+        "m": "injection",
+        "stance": "COMPLETED",
+        "q": "hope the injection helps."
+      }
+    ]
+  },
+  {
+    "sid": "173c4253",
+    "prompt": "P_STRICT",
+    "n_proc": 3,
+    "procs": [
+      {
+        "action": "epidural injection",
+        "quote": "The last needle you gave me. My legs went numb. Both of them. Both of them. And my privates."
+      },
+      {
+        "action": "epidural injection",
+        "quote": "I went a couple millimeters further, so I was in epidural space."
+      },
+      {
+        "action": "epidural injection",
+        "quote": "I'm happy with the injection today. I'm hoping that we get Less numbness and more relief."
+      }
+    ],
+    "candidates": [
+      {
+        "m": "epidural injection",
+        "stance": "COMPLETED",
+        "q": "The last needle you gave me. My legs went numb. Both of them. Both of them. And "
+      },
+      {
+        "m": "epidural injection",
+        "stance": "COMPLETED",
+        "q": "I went a couple millimeters further, so I was in epidural space."
+      },
+      {
+        "m": "epidural injection",
+        "stance": "PROPOSED",
+        "q": "I don't know if we should do it today, though. Just went through six hours of nu"
+      },
+      {
+        "m": "epidural injection",
+        "stance": "COMPLETED",
+        "q": "I'm happy with the injection today. I'm hoping that we get Less numbness and mor"
+      }
+    ]
+  },
+  {
+    "sid": "173c4253",
+    "prompt": "P_NARR",
+    "n_proc": 1,
+    "procs": [
+      {
+        "action": "epidural injection",
+        "quote": "So I've just been a lot busier. Yes, yeah. How things go? Well, uh, the last time\u2014the last needle you gave me. My legs w"
+      }
+    ],
+    "candidates": [
+      {
+        "m": "epidural injection",
+        "stance": "COMPLETED",
+        "q": "So I've just been a lot busier. Yes, yeah. How things go? Well, uh, the last tim"
+      },
+      {
+        "m": "epidural injection",
+        "stance": "PROPOSED",
+        "q": "I don't know if we should do it today, though. Just went through six hours of nu"
+      }
+    ]
+  },
+  {
+    "sid": "173c4253",
+    "prompt": "P_TWO",
+    "n_proc": 0,
+    "procs": [],
+    "candidates": [
+      {
+        "m": "",
+        "stance": "NO",
+        "q": "Speaker 4: Well, uh, the last time\u2014the last needle you gave me. My legs went num"
+      }
+    ]
+  },
+  {
+    "sid": "173c4253",
+    "prompt": "P_NARR_PLUS",
+    "n_proc": 1,
+    "procs": [
+      {
+        "action": "epidural injection",
+        "quote": "I went a couple millimeters further, so I was in epidural space."
+      }
+    ],
+    "candidates": [
+      {
+        "m": "epidural injection",
+        "stance": "COMPLETED",
+        "q": "I went a couple millimeters further, so I was in epidural space."
+      },
+      {
+        "m": "epidural injection",
+        "stance": "PROPOSED",
+        "q": "If you wanted to, we can. I just... I'd like to. Okay? iI'm happy to try it."
+      },
+      {
+        "m": "epidural injection",
+        "stance": "IN_PROGRESS",
+        "q": "I'm happy with the injection today. I'm hoping that we get Less numbness and mor"
+      }
+    ]
+  }
+]

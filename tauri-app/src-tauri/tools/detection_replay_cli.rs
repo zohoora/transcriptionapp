@@ -11,6 +11,7 @@
 use std::env;
 use std::fs;
 use std::path::PathBuf;
+use std::process::ExitCode;
 
 use transcription_app_lib::config::Config;
 use transcription_app_lib::continuous_mode::MIN_SENSOR_HYBRID_WORDS;
@@ -19,6 +20,7 @@ use transcription_app_lib::encounter_detection::{
 };
 use transcription_app_lib::local_archive;
 use transcription_app_lib::replay_bundle::{find_replay_bundles, ReplayBundle};
+use transcription_app_lib::replay_fetch::ArchiveFetcher;
 
 fn print_usage(program: &str) {
     eprintln!("Detection Replay CLI");
@@ -34,6 +36,8 @@ fn print_usage(program: &str) {
     eprintln!();
     eprintln!("Options:");
     eprintln!("  --all               Replay all bundles in ~/.transcriptionapp/archive/");
+    eprintln!("  --date YYYY-MM-DD   Replay all sessions for the date, fetching from profile");
+    eprintln!("                      service when not in the local archive (multi-room)");
     eprintln!("  --override K=V      Override a DetectionEvalContext field for what-if analysis");
     eprintln!("                      Supported: hybrid_confirm_window_secs, hybrid_min_words_for_sensor_split,");
     eprintln!("                                 merge_back_count, min_sensor_hybrid_words,");
@@ -255,21 +259,23 @@ fn outcomes_agree(replayed: &DetectionOutcome, actual: &str) -> bool {
     }
 }
 
-fn main() {
+#[tokio::main(flavor = "current_thread")]
+async fn main() -> ExitCode {
     let args: Vec<String> = env::args().collect();
     let program = &args[0];
 
     if args.len() < 2 || args.contains(&"--help".to_string()) {
         print_usage(program);
-        std::process::exit(if args.contains(&"--help".to_string()) {
-            0
+        return if args.contains(&"--help".to_string()) {
+            ExitCode::SUCCESS
         } else {
-            1
-        });
+            ExitCode::from(1)
+        };
     }
 
     // Parse arguments
     let mut archive_path: Option<PathBuf> = None;
+    let mut date_arg: Option<String> = None;
     let mut overrides = Overrides::default();
     let mut mismatches_only = false;
     let mut all_archives = false;
@@ -281,6 +287,14 @@ fn main() {
             "--all" => {
                 all_archives = true;
             }
+            "--date" => {
+                i += 1;
+                if i >= args.len() {
+                    eprintln!("Error: --date requires a YYYY-MM-DD value");
+                    return ExitCode::from(1);
+                }
+                date_arg = Some(args[i].clone());
+            }
             "--mismatches" => {
                 mismatches_only = true;
             }
@@ -291,7 +305,7 @@ fn main() {
                 i += 1;
                 if i >= args.len() {
                     eprintln!("Error: --threshold requires a percentage value");
-                    std::process::exit(1);
+                    return ExitCode::from(1);
                 }
                 threshold_pct = args[i].parse().expect("Invalid threshold (use a percent like 95.0)");
             }
@@ -299,7 +313,7 @@ fn main() {
                 i += 1;
                 if i >= args.len() {
                     eprintln!("Error: --override requires a KEY=VALUE argument");
-                    std::process::exit(1);
+                    return ExitCode::from(1);
                 }
                 match parse_override(&args[i]) {
                     Ok((key, value)) => match key.as_str() {
@@ -335,23 +349,23 @@ fn main() {
                         }
                         _ => {
                             eprintln!("Unknown override key: {}", key);
-                            std::process::exit(1);
+                            return ExitCode::from(1);
                         }
                     },
                     Err(e) => {
                         eprintln!("Error: {}", e);
-                        std::process::exit(1);
+                        return ExitCode::from(1);
                     }
                 }
             }
             "--help" => {
                 print_usage(program);
-                std::process::exit(0);
+                return ExitCode::SUCCESS;
             }
             other => {
                 if other.starts_with('-') {
                     eprintln!("Unknown option: {}", other);
-                    std::process::exit(1);
+                    return ExitCode::from(1);
                 }
                 archive_path = Some(PathBuf::from(other));
             }
@@ -359,27 +373,86 @@ fn main() {
         i += 1;
     }
 
-    // Determine search path
-    let search_path = if all_archives {
-        local_archive::get_archive_dir().expect("Could not determine archive directory")
-    } else if let Some(ref path) = archive_path {
-        path.clone()
+    // Resolve sources: each entry is (display_label, ReplayBundle).
+    //
+    // Three modes (in priority order):
+    //   --date YYYY-MM-DD   per-session iteration with local→server fallback
+    //   --all               filesystem walk of ~/.transcriptionapp/archive/
+    //   PATH                filesystem walk of the given directory
+    enum SourceMode {
+        Filesystem(PathBuf),
+        Date(String),
+    }
+    let mode = if let Some(date) = date_arg {
+        SourceMode::Date(date)
+    } else if all_archives {
+        SourceMode::Filesystem(
+            local_archive::get_archive_dir().expect("Could not determine archive directory"),
+        )
+    } else if let Some(path) = archive_path {
+        SourceMode::Filesystem(path)
     } else {
-        eprintln!("Error: provide an archive path or use --all");
-        std::process::exit(1);
+        eprintln!("Error: provide an archive path, --all, or --date YYYY-MM-DD");
+        return ExitCode::from(1);
     };
 
-    if !search_path.exists() {
-        eprintln!("Path does not exist: {}", search_path.display());
-        std::process::exit(1);
-    }
-
-    // Find all replay bundles
-    let bundle_paths = find_replay_bundles(&search_path);
-    if bundle_paths.is_empty() {
-        eprintln!("No replay_bundle.json files found under {}", search_path.display());
-        std::process::exit(0);
-    }
+    let sources: Vec<(String, ReplayBundle)> = match mode {
+        SourceMode::Filesystem(search_path) => {
+            if !search_path.exists() {
+                eprintln!("Path does not exist: {}", search_path.display());
+                return ExitCode::from(1);
+            }
+            let bundle_paths = find_replay_bundles(&search_path);
+            if bundle_paths.is_empty() {
+                eprintln!(
+                    "No replay_bundle.json files found under {}",
+                    search_path.display()
+                );
+                return ExitCode::SUCCESS;
+            }
+            let mut out: Vec<(String, ReplayBundle)> = Vec::new();
+            for bundle_path in &bundle_paths {
+                let content = match fs::read_to_string(bundle_path) {
+                    Ok(c) => c,
+                    Err(e) => {
+                        eprintln!("  Error reading {}: {}", bundle_path.display(), e);
+                        continue;
+                    }
+                };
+                let bundle: ReplayBundle = match serde_json::from_str(&content) {
+                    Ok(b) => b,
+                    Err(e) => {
+                        eprintln!("  Error parsing {}: {}", bundle_path.display(), e);
+                        continue;
+                    }
+                };
+                let display = bundle_path
+                    .strip_prefix(&search_path)
+                    .unwrap_or(bundle_path)
+                    .display()
+                    .to_string();
+                out.push((display, bundle));
+            }
+            out
+        }
+        SourceMode::Date(date) => {
+            let fetcher = ArchiveFetcher::from_env().unwrap_or_else(|e| {
+                eprintln!("warn: ArchiveFetcher init failed ({e}); falling back to local-only");
+                ArchiveFetcher::local_only()
+            });
+            match fetcher.list_replay_bundles_for_date(&date).await {
+                Ok(bundles) if bundles.is_empty() => {
+                    eprintln!("No replay_bundle.json found for {} (local or server)", date);
+                    return ExitCode::SUCCESS;
+                }
+                Ok(bundles) => bundles,
+                Err(e) => {
+                    eprintln!("Error: list bundles for {}: {}", date, e);
+                    return ExitCode::from(1);
+                }
+            }
+        }
+    };
 
     // Print override info
     let has_any_override = overrides.hybrid_confirm_window_secs.is_some()
@@ -416,23 +489,7 @@ fn main() {
     let mut matches = 0;
     let mut mismatches = 0;
 
-    for bundle_path in &bundle_paths {
-        let content = match fs::read_to_string(bundle_path) {
-            Ok(c) => c,
-            Err(e) => {
-                eprintln!("  Error reading {}: {}", bundle_path.display(), e);
-                continue;
-            }
-        };
-
-        let bundle: ReplayBundle = match serde_json::from_str(&content) {
-            Ok(b) => b,
-            Err(e) => {
-                eprintln!("  Error parsing {}: {}", bundle_path.display(), e);
-                continue;
-            }
-        };
-
+    for (display_path, bundle) in &sources {
         if bundle.detection_checks.is_empty() {
             continue;
         }
@@ -491,11 +548,6 @@ fn main() {
 
         // Print results (filter if --mismatches)
         if !mismatches_only || bundle_has_mismatch {
-            // Compute relative path for display
-            let display_path = bundle_path
-                .strip_prefix(&search_path)
-                .unwrap_or(bundle_path)
-                .display();
             let status = if bundle_has_mismatch {
                 "MISMATCH"
             } else {
@@ -533,8 +585,10 @@ fn main() {
         eprintln!(
             "Run without --fail-on-mismatch and with --mismatches to investigate."
         );
-        std::process::exit(2);
+        return ExitCode::from(2);
     }
+
+    ExitCode::SUCCESS
 }
 
 #[cfg(test)]

@@ -604,6 +604,7 @@ pub async fn run<C: RunContext>(
                         serde_json::json!({"stage": "flush_on_stop", "word_count": word_count}),
                         Some(&flush_templates),
                         Some(soap_generation_timeout_secs),
+                        Some(&bundle_for_flush),
                     )
                     .await;
                     if let crate::encounter_pipeline::SoapGenerationOutcome::Success {
@@ -661,6 +662,7 @@ pub async fn run<C: RunContext>(
                                     Some(&flush_templates),
                                     Some(&flush_billing_data),
                                     Some(billing_extraction_timeout_secs),
+                                    Some(&bundle_for_flush),
                                 )
                                 .await;
                             let billing_latency = billing_start.elapsed().as_millis() as u64;

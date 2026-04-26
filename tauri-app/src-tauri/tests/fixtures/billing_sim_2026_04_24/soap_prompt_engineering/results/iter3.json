@@ -1,0 +1,380 @@
+[
+  {
+    "sid": "0cce8568",
+    "prompt": "P_NARR_PLUS",
+    "seed": 0,
+    "n_proc": 0
+  },
+  {
+    "sid": "0cce8568",
+    "prompt": "P_NARR_PLUS",
+    "seed": 1,
+    "n_proc": 0
+  },
+  {
+    "sid": "0cce8568",
+    "prompt": "P_NARR_PLUS",
+    "seed": 2,
+    "n_proc": 0
+  },
+  {
+    "sid": "0cce8568",
+    "prompt": "P_SLIM",
+    "seed": 0,
+    "n_proc": 0
+  },
+  {
+    "sid": "0cce8568",
+    "prompt": "P_SLIM",
+    "seed": 1,
+    "n_proc": 0
+  },
+  {
+    "sid": "0cce8568",
+    "prompt": "P_SLIM",
+    "seed": 2,
+    "n_proc": 0
+  },
+  {
+    "sid": "0cce8568",
+    "prompt": "P_CONSERVATIVE",
+    "seed": 0,
+    "n_proc": 0
+  },
+  {
+    "sid": "0cce8568",
+    "prompt": "P_CONSERVATIVE",
+    "seed": 1,
+    "n_proc": 0
+  },
+  {
+    "sid": "0cce8568",
+    "prompt": "P_CONSERVATIVE",
+    "seed": 2,
+    "n_proc": 0
+  },
+  {
+    "sid": "1ec7a57e",
+    "prompt": "P_NARR_PLUS",
+    "seed": 0,
+    "n_proc": 0
+  },
+  {
+    "sid": "1ec7a57e",
+    "prompt": "P_NARR_PLUS",
+    "seed": 1,
+    "n_proc": 0
+  },
+  {
+    "sid": "1ec7a57e",
+    "prompt": "P_NARR_PLUS",
+    "seed": 2,
+    "n_proc": 0
+  },
+  {
+    "sid": "1ec7a57e",
+    "prompt": "P_SLIM",
+    "seed": 0,
+    "n_proc": 0
+  },
+  {
+    "sid": "1ec7a57e",
+    "prompt": "P_SLIM",
+    "seed": 1,
+    "n_proc": 0
+  },
+  {
+    "sid": "1ec7a57e",
+    "prompt": "P_SLIM",
+    "seed": 2,
+    "n_proc": 0
+  },
+  {
+    "sid": "1ec7a57e",
+    "prompt": "P_CONSERVATIVE",
+    "seed": 0,
+    "n_proc": 0
+  },
+  {
+    "sid": "1ec7a57e",
+    "prompt": "P_CONSERVATIVE",
+    "seed": 1,
+    "n_proc": 0
+  },
+  {
+    "sid": "1ec7a57e",
+    "prompt": "P_CONSERVATIVE",
+    "seed": 2,
+    "n_proc": 0
+  },
+  {
+    "sid": "9b0b60e2",
+    "prompt": "P_NARR_PLUS",
+    "seed": 0,
+    "n_proc": 1
+  },
+  {
+    "sid": "9b0b60e2",
+    "prompt": "P_NARR_PLUS",
+    "seed": 1,
+    "n_proc": 0
+  },
+  {
+    "sid": "9b0b60e2",
+    "prompt": "P_NARR_PLUS",
+    "seed": 2,
+    "n_proc": 0
+  },
+  {
+    "sid": "9b0b60e2",
+    "prompt": "P_SLIM",
+    "seed": 0,
+    "n_proc": 1
+  },
+  {
+    "sid": "9b0b60e2",
+    "prompt": "P_SLIM",
+    "seed": 1,
+    "n_proc": 1
+  },
+  {
+    "sid": "9b0b60e2",
+    "prompt": "P_SLIM",
+    "seed": 2,
+    "n_proc": 1
+  },
+  {
+    "sid": "9b0b60e2",
+    "prompt": "P_CONSERVATIVE",
+    "seed": 0,
+    "n_proc": 1
+  },
+  {
+    "sid": "9b0b60e2",
+    "prompt": "P_CONSERVATIVE",
+    "seed": 1,
+    "n_proc": 1
+  },
+  {
+    "sid": "9b0b60e2",
+    "prompt": "P_CONSERVATIVE",
+    "seed": 2,
+    "n_proc": 1
+  },
+  {
+    "sid": "58e617ac",
+    "prompt": "P_NARR_PLUS",
+    "seed": 0,
+    "n_proc": 1
+  },
+  {
+    "sid": "58e617ac",
+    "prompt": "P_NARR_PLUS",
+    "seed": 1,
+    "n_proc": 1
+  },
+  {
+    "sid": "58e617ac",
+    "prompt": "P_NARR_PLUS",
+    "seed": 2,
+    "n_proc": 1
+  },
+  {
+    "sid": "58e617ac",
+    "prompt": "P_SLIM",
+    "seed": 0,
+    "n_proc": 1
+  },
+  {
+    "sid": "58e617ac",
+    "prompt": "P_SLIM",
+    "seed": 1,
+    "n_proc": 1
+  },
+  {
+    "sid": "58e617ac",
+    "prompt": "P_SLIM",
+    "seed": 2,
+    "n_proc": 1
+  },
+  {
+    "sid": "58e617ac",
+    "prompt": "P_CONSERVATIVE",
+    "seed": 0,
+    "n_proc": 1
+  },
+  {
+    "sid": "58e617ac",
+    "prompt": "P_CONSERVATIVE",
+    "seed": 1,
+    "n_proc": 1
+  },
+  {
+    "sid": "58e617ac",
+    "prompt": "P_CONSERVATIVE",
+    "seed": 2,
+    "n_proc": 1
+  },
+  {
+    "sid": "8feb77a1",
+    "prompt": "P_NARR_PLUS",
+    "seed": 0,
+    "n_proc": 0
+  },
+  {
+    "sid": "8feb77a1",
+    "prompt": "P_NARR_PLUS",
+    "seed": 1,
+    "n_proc": 0
+  },
+  {
+    "sid": "8feb77a1",
+    "prompt": "P_NARR_PLUS",
+    "seed": 2,
+    "n_proc": null
+  },
+  {
+    "sid": "8feb77a1",
+    "prompt": "P_SLIM",
+    "seed": 0,
+    "n_proc": 0
+  },
+  {
+    "sid": "8feb77a1",
+    "prompt": "P_SLIM",
+    "seed": 1,
+    "n_proc": 0
+  },
+  {
+    "sid": "8feb77a1",
+    "prompt": "P_SLIM",
+    "seed": 2,
+    "n_proc": 0
+  },
+  {
+    "sid": "8feb77a1",
+    "prompt": "P_CONSERVATIVE",
+    "seed": 0,
+    "n_proc": 0
+  },
+  {
+    "sid": "8feb77a1",
+    "prompt": "P_CONSERVATIVE",
+    "seed": 1,
+    "n_proc": 0
+  },
+  {
+    "sid": "8feb77a1",
+    "prompt": "P_CONSERVATIVE",
+    "seed": 2,
+    "n_proc": 0
+  },
+  {
+    "sid": "70e369bf",
+    "prompt": "P_NARR_PLUS",
+    "seed": 0,
+    "n_proc": 1
+  },
+  {
+    "sid": "70e369bf",
+    "prompt": "P_NARR_PLUS",
+    "seed": 1,
+    "n_proc": 1
+  },
+  {
+    "sid": "70e369bf",
+    "prompt": "P_NARR_PLUS",
+    "seed": 2,
+    "n_proc": 1
+  },
+  {
+    "sid": "70e369bf",
+    "prompt": "P_SLIM",
+    "seed": 0,
+    "n_proc": 1
+  },
+  {
+    "sid": "70e369bf",
+    "prompt": "P_SLIM",
+    "seed": 1,
+    "n_proc": 1
+  },
+  {
+    "sid": "70e369bf",
+    "prompt": "P_SLIM",
+    "seed": 2,
+    "n_proc": 1
+  },
+  {
+    "sid": "70e369bf",
+    "prompt": "P_CONSERVATIVE",
+    "seed": 0,
+    "n_proc": 1
+  },
+  {
+    "sid": "70e369bf",
+    "prompt": "P_CONSERVATIVE",
+    "seed": 1,
+    "n_proc": 1
+  },
+  {
+    "sid": "70e369bf",
+    "prompt": "P_CONSERVATIVE",
+    "seed": 2,
+    "n_proc": 1
+  },
+  {
+    "sid": "173c4253",
+    "prompt": "P_NARR_PLUS",
+    "seed": 0,
+    "n_proc": 1
+  },
+  {
+    "sid": "173c4253",
+    "prompt": "P_NARR_PLUS",
+    "seed": 1,
+    "n_proc": 1
+  },
+  {
+    "sid": "173c4253",
+    "prompt": "P_NARR_PLUS",
+    "seed": 2,
+    "n_proc": 1
+  },
+  {
+    "sid": "173c4253",
+    "prompt": "P_SLIM",
+    "seed": 0,
+    "n_proc": 0
+  },
+  {
+    "sid": "173c4253",
+    "prompt": "P_SLIM",
+    "seed": 1,
+    "n_proc": 0
+  },
+  {
+    "sid": "173c4253",
+    "prompt": "P_SLIM",
+    "seed": 2,
+    "n_proc": 0
+  },
+  {
+    "sid": "173c4253",
+    "prompt": "P_CONSERVATIVE",
+    "seed": 0,
+    "n_proc": 0
+  },
+  {
+    "sid": "173c4253",
+    "prompt": "P_CONSERVATIVE",
+    "seed": 1,
+    "n_proc": 1
+  },
+  {
+    "sid": "173c4253",
+    "prompt": "P_CONSERVATIVE",
+    "seed": 2,
+    "n_proc": 0
+  }
+]

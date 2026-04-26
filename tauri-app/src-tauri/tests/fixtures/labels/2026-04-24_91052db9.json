@@ -1,0 +1,17 @@
+{
+  "session_id": "91052db9-163d-4017-9c88-187299285d60",
+  "date": "2026-04-24",
+  "labeled_at": "2026-04-24T19:30:00Z",
+  "labeled_by": "Dr Arash Zohoor (via forensic review)",
+  "labels": {
+    "clinical_correct": true,
+    "patient_count_correct": true,
+    "billing_codes_expected": [
+      "A004A",
+      "K005A",
+      "Q310A"
+    ],
+    "diagnostic_code_expected": "300",
+    "notes": "Billing ok per clinician. SOAP was limited in detail \u2014 suspected language/accent barrier affected STT quality, which then limited SOAP richness."
+  }
+}

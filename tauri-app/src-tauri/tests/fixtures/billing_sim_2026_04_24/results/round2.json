@@ -1,0 +1,1469 @@
+[
+  {
+    "sid": "0cce8568",
+    "variant": "V_BASE_R1",
+    "seed": 0,
+    "visit_type": "minor_assessment",
+    "procedures": [],
+    "conditions": [],
+    "dx": "599",
+    "primary_dx_text": "<scrubbed>"
+  },
+  {
+    "sid": "0cce8568",
+    "variant": "V_BASE_R1",
+    "seed": 1,
+    "visit_type": "intermediate_assessment",
+    "procedures": [],
+    "conditions": [],
+    "dx": "599",
+    "primary_dx_text": "<scrubbed>"
+  },
+  {
+    "sid": "0cce8568",
+    "variant": "V_VISIT",
+    "seed": 0,
+    "visit_type": "minor_assessment",
+    "procedures": [],
+    "conditions": [],
+    "dx": "599",
+    "primary_dx_text": "<scrubbed>"
+  },
+  {
+    "sid": "0cce8568",
+    "variant": "V_VISIT",
+    "seed": 1,
+    "visit_type": "minor_assessment",
+    "procedures": [],
+    "conditions": [],
+    "dx": "599",
+    "primary_dx_text": "<scrubbed>"
+  },
+  {
+    "sid": "0cce8568",
+    "variant": "V_DX_COT",
+    "seed": 0,
+    "visit_type": "intermediate_assessment",
+    "procedures": [],
+    "conditions": [],
+    "dx": "599",
+    "primary_dx_text": "<scrubbed>"
+  },
+  {
+    "sid": "0cce8568",
+    "variant": "V_DX_COT",
+    "seed": 1,
+    "visit_type": "intermediate_assessment",
+    "procedures": [],
+    "conditions": [],
+    "dx": "599",
+    "primary_dx_text": "<scrubbed>"
+  },
+  {
+    "sid": "0cce8568",
+    "variant": "V_VISIT_DX",
+    "seed": 0,
+    "visit_type": "minor_assessment",
+    "procedures": [],
+    "conditions": [],
+    "dx": "599",
+    "primary_dx_text": "<scrubbed>"
+  },
+  {
+    "sid": "0cce8568",
+    "variant": "V_VISIT_DX",
+    "seed": 1,
+    "visit_type": "minor_assessment",
+    "procedures": [],
+    "conditions": [],
+    "dx": "599",
+    "primary_dx_text": "<scrubbed>"
+  },
+  {
+    "sid": "0cce8568",
+    "variant": "V_PROC_BIND2",
+    "seed": 0,
+    "visit_type": "minor_assessment",
+    "procedures": [],
+    "conditions": [],
+    "dx": "599",
+    "primary_dx_text": "<scrubbed>"
+  },
+  {
+    "sid": "0cce8568",
+    "variant": "V_PROC_BIND2",
+    "seed": 1,
+    "visit_type": "minor_assessment",
+    "procedures": [],
+    "conditions": [],
+    "dx": "599",
+    "primary_dx_text": "<scrubbed>"
+  },
+  {
+    "sid": "de7f5122",
+    "variant": "V_BASE_R1",
+    "seed": 0,
+    "visit_type": "general_reassessment",
+    "procedures": [],
+    "conditions": [],
+    "dx": "714",
+    "primary_dx_text": "<scrubbed>"
+  },
+  {
+    "sid": "de7f5122",
+    "variant": "V_BASE_R1",
+    "seed": 1,
+    "visit_type": "general_reassessment",
+    "procedures": [],
+    "conditions": [],
+    "dx": "714",
+    "primary_dx_text": "<scrubbed>"
+  },
+  {
+    "sid": "de7f5122",
+    "variant": "V_VISIT",
+    "seed": 0,
+    "visit_type": "general_reassessment",
+    "procedures": [],
+    "conditions": [],
+    "dx": "714",
+    "primary_dx_text": "<scrubbed>"
+  },
+  {
+    "sid": "de7f5122",
+    "variant": "V_VISIT",
+    "seed": 1,
+    "visit_type": "general_reassessment",
+    "procedures": [],
+    "conditions": [],
+    "dx": "714",
+    "primary_dx_text": "<scrubbed>"
+  },
+  {
+    "sid": "de7f5122",
+    "variant": "V_DX_COT",
+    "seed": 0,
+    "visit_type": "intermediate_assessment",
+    "procedures": [],
+    "conditions": [],
+    "dx": "714",
+    "primary_dx_text": "<scrubbed>"
+  },
+  {
+    "sid": "de7f5122",
+    "variant": "V_DX_COT",
+    "seed": 1,
+    "visit_type": "intermediate_assessment",
+    "procedures": [],
+    "conditions": [],
+    "dx": "714",
+    "primary_dx_text": "<scrubbed>"
+  },
+  {
+    "sid": "de7f5122",
+    "variant": "V_VISIT_DX",
+    "seed": 0,
+    "visit_type": "general_reassessment",
+    "procedures": [],
+    "conditions": [],
+    "dx": "714",
+    "primary_dx_text": "<scrubbed>"
+  },
+  {
+    "sid": "de7f5122",
+    "variant": "V_VISIT_DX",
+    "seed": 1,
+    "visit_type": "intermediate_assessment",
+    "procedures": [],
+    "conditions": [],
+    "dx": "714",
+    "primary_dx_text": "<scrubbed>"
+  },
+  {
+    "sid": "de7f5122",
+    "variant": "V_PROC_BIND2",
+    "seed": 0,
+    "visit_type": "general_reassessment",
+    "procedures": [],
+    "conditions": [],
+    "dx": "714",
+    "primary_dx_text": "<scrubbed>"
+  },
+  {
+    "sid": "de7f5122",
+    "variant": "V_PROC_BIND2",
+    "seed": 1,
+    "visit_type": "general_reassessment",
+    "procedures": [],
+    "conditions": [],
+    "dx": "714",
+    "primary_dx_text": "<scrubbed>"
+  },
+  {
+    "sid": "491c6493",
+    "variant": "V_BASE_R1",
+    "seed": 0,
+    "visit_type": "intermediate_assessment",
+    "procedures": [],
+    "conditions": [
+      "primary_mental_health"
+    ],
+    "dx": "300",
+    "primary_dx_text": "<scrubbed>"
+  },
+  {
+    "sid": "491c6493",
+    "variant": "V_BASE_R1",
+    "seed": 1,
+    "visit_type": "intermediate_assessment",
+    "procedures": [],
+    "conditions": [
+      "primary_mental_health"
+    ],
+    "dx": "300",
+    "primary_dx_text": "<scrubbed>"
+  },
+  {
+    "sid": "491c6493",
+    "variant": "V_VISIT",
+    "seed": 0,
+    "visit_type": "intermediate_assessment",
+    "procedures": [],
+    "conditions": [
+      "opioid_withdrawal_management"
+    ],
+    "dx": "780",
+    "primary_dx_text": "<scrubbed>"
+  },
+  {
+    "sid": "491c6493",
+    "variant": "V_VISIT",
+    "seed": 1,
+    "visit_type": "general_reassessment",
+    "procedures": [],
+    "conditions": [
+      "primary_mental_health"
+    ],
+    "dx": "300",
+    "primary_dx_text": "<scrubbed>"
+  },
+  {
+    "sid": "491c6493",
+    "variant": "V_DX_COT",
+    "seed": 0,
+    "visit_type": "intermediate_assessment",
+    "procedures": [],
+    "conditions": [
+      "primary_mental_health"
+    ],
+    "dx": "311",
+    "primary_dx_text": "<scrubbed>"
+  },
+  {
+    "sid": "491c6493",
+    "variant": "V_DX_COT",
+    "seed": 1,
+    "visit_type": "intermediate_assessment",
+    "procedures": [],
+    "conditions": [
+      "primary_mental_health"
+    ],
+    "dx": "300",
+    "primary_dx_text": "<scrubbed>"
+  },
+  {
+    "sid": "491c6493",
+    "variant": "V_VISIT_DX",
+    "seed": 0,
+    "visit_type": "intermediate_assessment",
+    "procedures": [],
+    "conditions": [
+      "primary_mental_health"
+    ],
+    "dx": "300",
+    "primary_dx_text": "<scrubbed>"
+  },
+  {
+    "sid": "491c6493",
+    "variant": "V_VISIT_DX",
+    "seed": 1,
+    "visit_type": "intermediate_assessment",
+    "procedures": [],
+    "conditions": [
+      "primary_mental_health"
+    ],
+    "dx": "300",
+    "primary_dx_text": "<scrubbed>"
+  },
+  {
+    "sid": "491c6493",
+    "variant": "V_PROC_BIND2",
+    "seed": 0,
+    "visit_type": "intermediate_assessment",
+    "procedures": [],
+    "conditions": [
+      "primary_mental_health"
+    ],
+    "dx": "300",
+    "primary_dx_text": "<scrubbed>"
+  },
+  {
+    "sid": "491c6493",
+    "variant": "V_PROC_BIND2",
+    "seed": 1,
+    "visit_type": "intermediate_assessment",
+    "procedures": [],
+    "conditions": [
+      "primary_mental_health"
+    ],
+    "dx": "300",
+    "primary_dx_text": "<scrubbed>"
+  },
+  {
+    "sid": "e11d3112",
+    "variant": "V_BASE_R1",
+    "seed": 0,
+    "visit_type": "intermediate_assessment",
+    "procedures": [],
+    "conditions": [
+      "primary_mental_health"
+    ],
+    "dx": "300",
+    "primary_dx_text": "<scrubbed>"
+  },
+  {
+    "sid": "e11d3112",
+    "variant": "V_BASE_R1",
+    "seed": 1,
+    "visit_type": "intermediate_assessment",
+    "procedures": [],
+    "conditions": [
+      "primary_mental_health"
+    ],
+    "dx": "300",
+    "primary_dx_text": "<scrubbed>"
+  },
+  {
+    "sid": "e11d3112",
+    "variant": "V_VISIT",
+    "seed": 0,
+    "visit_type": "general_reassessment",
+    "procedures": [],
+    "conditions": [
+      "primary_mental_health"
+    ],
+    "dx": "311",
+    "primary_dx_text": "<scrubbed>"
+  },
+  {
+    "sid": "e11d3112",
+    "variant": "V_VISIT",
+    "seed": 1,
+    "visit_type": "general_reassessment",
+    "procedures": [],
+    "conditions": [
+      "primary_mental_health"
+    ],
+    "dx": "311",
+    "primary_dx_text": "<scrubbed>"
+  },
+  {
+    "sid": "e11d3112",
+    "variant": "V_DX_COT",
+    "seed": 0,
+    "visit_type": "intermediate_assessment",
+    "procedures": [],
+    "conditions": [
+      "primary_mental_health"
+    ],
+    "dx": "300",
+    "primary_dx_text": "<scrubbed>"
+  },
+  {
+    "sid": "e11d3112",
+    "variant": "V_DX_COT",
+    "seed": 1,
+    "visit_type": "intermediate_assessment",
+    "procedures": [],
+    "conditions": [
+      "primary_mental_health"
+    ],
+    "dx": "300",
+    "primary_dx_text": "<scrubbed>"
+  },
+  {
+    "sid": "e11d3112",
+    "variant": "V_VISIT_DX",
+    "seed": 0,
+    "visit_type": "general_reassessment",
+    "procedures": [],
+    "conditions": [
+      "primary_mental_health"
+    ],
+    "dx": "311",
+    "primary_dx_text": "<scrubbed>"
+  },
+  {
+    "sid": "e11d3112",
+    "variant": "V_VISIT_DX",
+    "seed": 1,
+    "visit_type": "general_reassessment",
+    "procedures": [],
+    "conditions": [
+      "primary_mental_health"
+    ],
+    "dx": "311",
+    "primary_dx_text": "<scrubbed>"
+  },
+  {
+    "sid": "e11d3112",
+    "variant": "V_PROC_BIND2",
+    "seed": 0,
+    "visit_type": "general_reassessment",
+    "procedures": [],
+    "conditions": [
+      "primary_mental_health"
+    ],
+    "dx": "311",
+    "primary_dx_text": "<scrubbed>"
+  },
+  {
+    "sid": "e11d3112",
+    "variant": "V_PROC_BIND2",
+    "seed": 1,
+    "visit_type": "general_reassessment",
+    "procedures": [],
+    "conditions": [
+      "primary_mental_health"
+    ],
+    "dx": "311",
+    "primary_dx_text": "<scrubbed>"
+  },
+  {
+    "sid": "58e617ac",
+    "variant": "V_BASE_R1",
+    "seed": 0,
+    "visit_type": "intermediate_assessment",
+    "procedures": [
+      "nerve_block_paravertebral"
+    ],
+    "conditions": [],
+    "dx": "724",
+    "primary_dx_text": "<scrubbed>"
+  },
+  {
+    "sid": "58e617ac",
+    "variant": "V_BASE_R1",
+    "seed": 1,
+    "visit_type": "intermediate_assessment",
+    "procedures": [
+      "nerve_block_paravertebral"
+    ],
+    "conditions": [],
+    "dx": "724",
+    "primary_dx_text": "<scrubbed>"
+  },
+  {
+    "sid": "58e617ac",
+    "variant": "V_VISIT",
+    "seed": 0,
+    "visit_type": "intermediate_assessment",
+    "procedures": [
+      "nerve_block_paravertebral"
+    ],
+    "conditions": [],
+    "dx": "724",
+    "primary_dx_text": "<scrubbed>"
+  },
+  {
+    "sid": "58e617ac",
+    "variant": "V_VISIT",
+    "seed": 1,
+    "visit_type": "intermediate_assessment",
+    "procedures": [
+      "nerve_block_paravertebral"
+    ],
+    "conditions": [],
+    "dx": "724",
+    "primary_dx_text": "<scrubbed>"
+  },
+  {
+    "sid": "58e617ac",
+    "variant": "V_DX_COT",
+    "seed": 0,
+    "visit_type": "intermediate_assessment",
+    "procedures": [
+      "nerve_block_paravertebral"
+    ],
+    "conditions": [],
+    "dx": "724",
+    "primary_dx_text": "<scrubbed>"
+  },
+  {
+    "sid": "58e617ac",
+    "variant": "V_DX_COT",
+    "seed": 1,
+    "visit_type": "intermediate_assessment",
+    "procedures": [
+      "nerve_block_paravertebral"
+    ],
+    "conditions": [],
+    "dx": "724",
+    "primary_dx_text": "<scrubbed>"
+  },
+  {
+    "sid": "58e617ac",
+    "variant": "V_VISIT_DX",
+    "seed": 0,
+    "visit_type": "intermediate_assessment",
+    "procedures": [
+      "nerve_block_paravertebral"
+    ],
+    "conditions": [],
+    "dx": "724",
+    "primary_dx_text": "<scrubbed>"
+  },
+  {
+    "sid": "58e617ac",
+    "variant": "V_VISIT_DX",
+    "seed": 1,
+    "visit_type": "intermediate_assessment",
+    "procedures": [
+      "nerve_block_paravertebral"
+    ],
+    "conditions": [],
+    "dx": "724",
+    "primary_dx_text": "<scrubbed>"
+  },
+  {
+    "sid": "58e617ac",
+    "variant": "V_PROC_BIND2",
+    "seed": 0,
+    "visit_type": "intermediate_assessment",
+    "procedures": [
+      "nerve_block_paravertebral"
+    ],
+    "conditions": [],
+    "dx": "724",
+    "primary_dx_text": "<scrubbed>"
+  },
+  {
+    "sid": "58e617ac",
+    "variant": "V_PROC_BIND2",
+    "seed": 1,
+    "visit_type": "intermediate_assessment",
+    "procedures": [
+      "nerve_block_paravertebral"
+    ],
+    "conditions": [],
+    "dx": "724",
+    "primary_dx_text": "<scrubbed>"
+  },
+  {
+    "sid": "173c4253",
+    "variant": "V_BASE_R1",
+    "seed": 0,
+    "visit_type": "intermediate_assessment",
+    "procedures": [
+      "nerve_block_paravertebral"
+    ],
+    "conditions": [],
+    "dx": "724",
+    "primary_dx_text": "<scrubbed>"
+  },
+  {
+    "sid": "173c4253",
+    "variant": "V_BASE_R1",
+    "seed": 1,
+    "visit_type": "intermediate_assessment",
+    "procedures": [
+      "nerve_block_paravertebral"
+    ],
+    "conditions": [
+      "primary_mental_health"
+    ],
+    "dx": "724",
+    "primary_dx_text": "<scrubbed>"
+  },
+  {
+    "sid": "173c4253",
+    "variant": "V_VISIT",
+    "seed": 0,
+    "visit_type": "intermediate_assessment",
+    "procedures": [
+      "nerve_block_paravertebral"
+    ],
+    "conditions": [],
+    "dx": "724",
+    "primary_dx_text": "<scrubbed>"
+  },
+  {
+    "sid": "173c4253",
+    "variant": "V_VISIT",
+    "seed": 1,
+    "visit_type": "intermediate_assessment",
+    "procedures": [
+      "nerve_block_paravertebral"
+    ],
+    "conditions": [
+      "primary_mental_health"
+    ],
+    "dx": "724",
+    "primary_dx_text": "<scrubbed>"
+  },
+  {
+    "sid": "173c4253",
+    "variant": "V_DX_COT",
+    "seed": 0,
+    "visit_type": "intermediate_assessment",
+    "procedures": [
+      "nerve_block_paravertebral"
+    ],
+    "conditions": [
+      "primary_mental_health"
+    ],
+    "dx": "724",
+    "primary_dx_text": "<scrubbed>"
+  },
+  {
+    "sid": "173c4253",
+    "variant": "V_DX_COT",
+    "seed": 1,
+    "visit_type": "intermediate_assessment",
+    "procedures": [
+      "nerve_block_paravertebral"
+    ],
+    "conditions": [
+      "opioid_withdrawal_management"
+    ],
+    "dx": "724",
+    "primary_dx_text": "<scrubbed>"
+  },
+  {
+    "sid": "173c4253",
+    "variant": "V_VISIT_DX",
+    "seed": 0,
+    "visit_type": "intermediate_assessment",
+    "procedures": [
+      "nerve_block_paravertebral"
+    ],
+    "conditions": [
+      "primary_mental_health"
+    ],
+    "dx": "724",
+    "primary_dx_text": "<scrubbed>"
+  },
+  {
+    "sid": "173c4253",
+    "variant": "V_VISIT_DX",
+    "seed": 1,
+    "visit_type": "intermediate_assessment",
+    "procedures": [
+      "nerve_block_paravertebral"
+    ],
+    "conditions": [
+      "primary_mental_health"
+    ],
+    "dx": "724",
+    "primary_dx_text": "<scrubbed>"
+  },
+  {
+    "sid": "173c4253",
+    "variant": "V_PROC_BIND2",
+    "seed": 0,
+    "visit_type": "intermediate_assessment",
+    "procedures": [
+      "nerve_block_paravertebral"
+    ],
+    "conditions": [
+      "primary_mental_health"
+    ],
+    "dx": "724",
+    "primary_dx_text": "<scrubbed>"
+  },
+  {
+    "sid": "173c4253",
+    "variant": "V_PROC_BIND2",
+    "seed": 1,
+    "visit_type": "intermediate_assessment",
+    "procedures": [
+      "nerve_block_paravertebral"
+    ],
+    "conditions": [
+      "primary_mental_health"
+    ],
+    "dx": "724",
+    "primary_dx_text": "<scrubbed>"
+  },
+  {
+    "sid": "8feb77a1",
+    "variant": "V_BASE_R1",
+    "seed": 0,
+    "visit_type": "intermediate_assessment",
+    "procedures": [],
+    "conditions": [],
+    "dx": "729",
+    "primary_dx_text": "<scrubbed>"
+  },
+  {
+    "sid": "8feb77a1",
+    "variant": "V_BASE_R1",
+    "seed": 1,
+    "visit_type": "intermediate_assessment",
+    "procedures": [],
+    "conditions": [
+      "primary_mental_health"
+    ],
+    "dx": "311",
+    "primary_dx_text": "<scrubbed>"
+  },
+  {
+    "sid": "8feb77a1",
+    "variant": "V_VISIT",
+    "seed": 0,
+    "visit_type": "general_reassessment",
+    "procedures": [],
+    "conditions": [
+      "primary_mental_health"
+    ],
+    "dx": "311",
+    "primary_dx_text": "<scrubbed>"
+  },
+  {
+    "sid": "8feb77a1",
+    "variant": "V_VISIT",
+    "seed": 1,
+    "visit_type": "general_reassessment",
+    "procedures": [],
+    "conditions": [
+      "primary_mental_health"
+    ],
+    "dx": "311",
+    "primary_dx_text": "<scrubbed>"
+  },
+  {
+    "sid": "8feb77a1",
+    "variant": "V_DX_COT",
+    "seed": 0,
+    "visit_type": "intermediate_assessment",
+    "procedures": [],
+    "conditions": [
+      "primary_mental_health"
+    ],
+    "dx": "300",
+    "primary_dx_text": "<scrubbed>"
+  },
+  {
+    "sid": "8feb77a1",
+    "variant": "V_DX_COT",
+    "seed": 1,
+    "visit_type": "intermediate_assessment",
+    "procedures": [],
+    "conditions": [
+      "primary_mental_health"
+    ],
+    "dx": "724",
+    "primary_dx_text": "<scrubbed>"
+  },
+  {
+    "sid": "8feb77a1",
+    "variant": "V_VISIT_DX",
+    "seed": 0,
+    "visit_type": "intermediate_assessment",
+    "procedures": [],
+    "conditions": [
+      "primary_mental_health"
+    ],
+    "dx": "724",
+    "primary_dx_text": "<scrubbed>"
+  },
+  {
+    "sid": "8feb77a1",
+    "variant": "V_VISIT_DX",
+    "seed": 1,
+    "visit_type": "intermediate_assessment",
+    "procedures": [],
+    "conditions": [
+      "primary_mental_health"
+    ],
+    "dx": "300",
+    "primary_dx_text": "<scrubbed>"
+  },
+  {
+    "sid": "8feb77a1",
+    "variant": "V_PROC_BIND2",
+    "seed": 0,
+    "visit_type": "general_reassessment",
+    "procedures": [],
+    "conditions": [
+      "fibromyalgia_care"
+    ],
+    "dx": "729",
+    "primary_dx_text": "<scrubbed>"
+  },
+  {
+    "sid": "8feb77a1",
+    "variant": "V_PROC_BIND2",
+    "seed": 1,
+    "visit_type": "intermediate_assessment",
+    "procedures": [],
+    "conditions": [
+      "primary_mental_health"
+    ],
+    "dx": "300",
+    "primary_dx_text": "<scrubbed>"
+  },
+  {
+    "sid": "1ec7a57e",
+    "variant": "V_BASE_R1",
+    "seed": 0,
+    "visit_type": "intermediate_assessment",
+    "procedures": [
+      "im_injection_with_visit"
+    ],
+    "conditions": [],
+    "dx": "715",
+    "primary_dx_text": "<scrubbed>"
+  },
+  {
+    "sid": "1ec7a57e",
+    "variant": "V_BASE_R1",
+    "seed": 1,
+    "visit_type": "intermediate_assessment",
+    "procedures": [
+      "im_injection_with_visit"
+    ],
+    "conditions": [
+      "diabetic_assessment"
+    ],
+    "dx": "715",
+    "primary_dx_text": "<scrubbed>"
+  },
+  {
+    "sid": "1ec7a57e",
+    "variant": "V_VISIT",
+    "seed": 0,
+    "visit_type": "general_reassessment",
+    "procedures": [
+      "im_injection_with_visit"
+    ],
+    "conditions": [
+      "diabetic_assessment",
+      "smoking_cessation",
+      "chf_management"
+    ],
+    "dx": "715",
+    "primary_dx_text": "<scrubbed>"
+  },
+  {
+    "sid": "1ec7a57e",
+    "variant": "V_VISIT",
+    "seed": 1,
+    "visit_type": "general_reassessment",
+    "procedures": [
+      "im_injection_with_visit"
+    ],
+    "conditions": [],
+    "dx": "715",
+    "primary_dx_text": "<scrubbed>"
+  },
+  {
+    "sid": "1ec7a57e",
+    "variant": "V_DX_COT",
+    "seed": 0,
+    "visit_type": "intermediate_assessment",
+    "procedures": [
+      "im_injection_with_visit"
+    ],
+    "conditions": [
+      "diabetic_assessment",
+      "smoking_cessation"
+    ],
+    "dx": "715",
+    "primary_dx_text": "<scrubbed>"
+  },
+  {
+    "sid": "1ec7a57e",
+    "variant": "V_DX_COT",
+    "seed": 1,
+    "visit_type": "intermediate_assessment",
+    "procedures": [
+      "im_injection_with_visit"
+    ],
+    "conditions": [],
+    "dx": "715",
+    "primary_dx_text": "<scrubbed>"
+  },
+  {
+    "sid": "1ec7a57e",
+    "variant": "V_VISIT_DX",
+    "seed": 0,
+    "visit_type": "general_reassessment",
+    "procedures": [
+      "im_injection_with_visit"
+    ],
+    "conditions": [
+      "diabetic_assessment"
+    ],
+    "dx": "715",
+    "primary_dx_text": "<scrubbed>"
+  },
+  {
+    "sid": "1ec7a57e",
+    "variant": "V_VISIT_DX",
+    "seed": 1,
+    "visit_type": "general_reassessment",
+    "procedures": [
+      "im_injection_with_visit"
+    ],
+    "conditions": [
+      "diabetic_assessment"
+    ],
+    "dx": "715",
+    "primary_dx_text": "<scrubbed>"
+  },
+  {
+    "sid": "1ec7a57e",
+    "variant": "V_PROC_BIND2",
+    "seed": 0,
+    "visit_type": "general_reassessment",
+    "procedures": [],
+    "conditions": [
+      "diabetic_assessment"
+    ],
+    "dx": "715",
+    "primary_dx_text": "<scrubbed>"
+  },
+  {
+    "sid": "1ec7a57e",
+    "variant": "V_PROC_BIND2",
+    "seed": 1,
+    "visit_type": "general_reassessment",
+    "procedures": [],
+    "conditions": [
+      "diabetic_assessment"
+    ],
+    "dx": "715",
+    "primary_dx_text": "<scrubbed>"
+  },
+  {
+    "sid": "ccc2b9fb",
+    "variant": "V_BASE_R1",
+    "seed": 0,
+    "visit_type": "general_reassessment",
+    "procedures": [],
+    "conditions": [],
+    "dx": "724",
+    "primary_dx_text": "<scrubbed>"
+  },
+  {
+    "sid": "ccc2b9fb",
+    "variant": "V_BASE_R1",
+    "seed": 1,
+    "visit_type": "general_reassessment",
+    "procedures": [],
+    "conditions": [],
+    "dx": "724",
+    "primary_dx_text": "<scrubbed>"
+  },
+  {
+    "sid": "ccc2b9fb",
+    "variant": "V_VISIT",
+    "seed": 0,
+    "visit_type": "general_reassessment",
+    "procedures": [],
+    "conditions": [],
+    "dx": "724",
+    "primary_dx_text": "<scrubbed>"
+  },
+  {
+    "sid": "ccc2b9fb",
+    "variant": "V_VISIT",
+    "seed": 1,
+    "visit_type": "general_reassessment",
+    "procedures": [],
+    "conditions": [],
+    "dx": "724",
+    "primary_dx_text": "<scrubbed>"
+  },
+  {
+    "sid": "ccc2b9fb",
+    "variant": "V_DX_COT",
+    "seed": 0,
+    "visit_type": "general_reassessment",
+    "procedures": [],
+    "conditions": [],
+    "dx": "724",
+    "primary_dx_text": "<scrubbed>"
+  },
+  {
+    "sid": "ccc2b9fb",
+    "variant": "V_DX_COT",
+    "seed": 1,
+    "visit_type": "general_reassessment",
+    "procedures": [],
+    "conditions": [],
+    "dx": "724",
+    "primary_dx_text": "<scrubbed>"
+  },
+  {
+    "sid": "ccc2b9fb",
+    "variant": "V_VISIT_DX",
+    "seed": 0,
+    "visit_type": "general_reassessment",
+    "procedures": [],
+    "conditions": [],
+    "dx": "724",
+    "primary_dx_text": "<scrubbed>"
+  },
+  {
+    "sid": "ccc2b9fb",
+    "variant": "V_VISIT_DX",
+    "seed": 1,
+    "visit_type": "general_reassessment",
+    "procedures": [],
+    "conditions": [],
+    "dx": "724",
+    "primary_dx_text": "<scrubbed>"
+  },
+  {
+    "sid": "ccc2b9fb",
+    "variant": "V_PROC_BIND2",
+    "seed": 0,
+    "visit_type": "general_reassessment",
+    "procedures": [],
+    "conditions": [],
+    "dx": "724",
+    "primary_dx_text": "<scrubbed>"
+  },
+  {
+    "sid": "ccc2b9fb",
+    "variant": "V_PROC_BIND2",
+    "seed": 1,
+    "visit_type": "general_reassessment",
+    "procedures": [],
+    "conditions": [],
+    "dx": "724",
+    "primary_dx_text": "<scrubbed>"
+  },
+  {
+    "sid": "bc81d25e",
+    "variant": "V_BASE_R1",
+    "seed": 0,
+    "visit_type": "intermediate_assessment",
+    "procedures": [],
+    "conditions": [],
+    "dx": "785",
+    "primary_dx_text": "<scrubbed>"
+  },
+  {
+    "sid": "bc81d25e",
+    "variant": "V_BASE_R1",
+    "seed": 1,
+    "visit_type": "intermediate_assessment",
+    "procedures": [],
+    "conditions": [],
+    "dx": "785",
+    "primary_dx_text": "<scrubbed>"
+  },
+  {
+    "sid": "bc81d25e",
+    "variant": "V_VISIT",
+    "seed": 0,
+    "visit_type": "intermediate_assessment",
+    "procedures": [],
+    "conditions": [],
+    "dx": "785",
+    "primary_dx_text": "<scrubbed>"
+  },
+  {
+    "sid": "bc81d25e",
+    "variant": "V_VISIT",
+    "seed": 1,
+    "visit_type": "intermediate_assessment",
+    "procedures": [],
+    "conditions": [],
+    "dx": "785",
+    "primary_dx_text": "<scrubbed>"
+  },
+  {
+    "sid": "bc81d25e",
+    "variant": "V_DX_COT",
+    "seed": 0,
+    "visit_type": "intermediate_assessment",
+    "procedures": [],
+    "conditions": [],
+    "dx": "785",
+    "primary_dx_text": "<scrubbed>"
+  },
+  {
+    "sid": "bc81d25e",
+    "variant": "V_DX_COT",
+    "seed": 1,
+    "visit_type": "intermediate_assessment",
+    "procedures": [],
+    "conditions": [],
+    "dx": "785",
+    "primary_dx_text": "<scrubbed>"
+  },
+  {
+    "sid": "bc81d25e",
+    "variant": "V_VISIT_DX",
+    "seed": 0,
+    "visit_type": "intermediate_assessment",
+    "procedures": [],
+    "conditions": [],
+    "dx": "785",
+    "primary_dx_text": "<scrubbed>"
+  },
+  {
+    "sid": "bc81d25e",
+    "variant": "V_VISIT_DX",
+    "seed": 1,
+    "visit_type": "intermediate_assessment",
+    "procedures": [],
+    "conditions": [],
+    "dx": "785",
+    "primary_dx_text": "<scrubbed>"
+  },
+  {
+    "sid": "bc81d25e",
+    "variant": "V_PROC_BIND2",
+    "seed": 0,
+    "visit_type": "intermediate_assessment",
+    "procedures": [],
+    "conditions": [],
+    "dx": "785",
+    "primary_dx_text": "<scrubbed>"
+  },
+  {
+    "sid": "bc81d25e",
+    "variant": "V_PROC_BIND2",
+    "seed": 1,
+    "visit_type": "intermediate_assessment",
+    "procedures": [],
+    "conditions": [],
+    "dx": "785",
+    "primary_dx_text": "<scrubbed>"
+  },
+  {
+    "sid": "eeb4d85f",
+    "variant": "V_BASE_R1",
+    "seed": 0,
+    "visit_type": "intermediate_assessment",
+    "procedures": [],
+    "conditions": [],
+    "dx": "785",
+    "primary_dx_text": "<scrubbed>"
+  },
+  {
+    "sid": "eeb4d85f",
+    "variant": "V_BASE_R1",
+    "seed": 1,
+    "visit_type": "intermediate_assessment",
+    "procedures": [],
+    "conditions": [],
+    "dx": "786",
+    "primary_dx_text": "<scrubbed>"
+  },
+  {
+    "sid": "eeb4d85f",
+    "variant": "V_VISIT",
+    "seed": 0,
+    "visit_type": "intermediate_assessment",
+    "procedures": [],
+    "conditions": [],
+    "dx": "785",
+    "primary_dx_text": "<scrubbed>"
+  },
+  {
+    "sid": "eeb4d85f",
+    "variant": "V_VISIT",
+    "seed": 1,
+    "visit_type": "intermediate_assessment",
+    "procedures": [],
+    "conditions": [],
+    "dx": "785",
+    "primary_dx_text": "<scrubbed>"
+  },
+  {
+    "sid": "eeb4d85f",
+    "variant": "V_DX_COT",
+    "seed": 0,
+    "visit_type": "intermediate_assessment",
+    "procedures": [],
+    "conditions": [],
+    "dx": "599",
+    "primary_dx_text": "<scrubbed>"
+  },
+  {
+    "sid": "eeb4d85f",
+    "variant": "V_DX_COT",
+    "seed": 1,
+    "visit_type": "intermediate_assessment",
+    "procedures": [],
+    "conditions": [],
+    "dx": "599",
+    "primary_dx_text": "<scrubbed>"
+  },
+  {
+    "sid": "eeb4d85f",
+    "variant": "V_VISIT_DX",
+    "seed": 0,
+    "visit_type": "intermediate_assessment",
+    "procedures": [],
+    "conditions": [],
+    "dx": "599",
+    "primary_dx_text": "<scrubbed>"
+  },
+  {
+    "sid": "eeb4d85f",
+    "variant": "V_VISIT_DX",
+    "seed": 1,
+    "visit_type": "intermediate_assessment",
+    "procedures": [],
+    "conditions": [],
+    "dx": "599",
+    "primary_dx_text": "<scrubbed>"
+  },
+  {
+    "sid": "eeb4d85f",
+    "variant": "V_PROC_BIND2",
+    "seed": 0,
+    "visit_type": "intermediate_assessment",
+    "procedures": [],
+    "conditions": [],
+    "dx": "599",
+    "primary_dx_text": "<scrubbed>"
+  },
+  {
+    "sid": "eeb4d85f",
+    "variant": "V_PROC_BIND2",
+    "seed": 1,
+    "visit_type": "intermediate_assessment",
+    "procedures": [],
+    "conditions": [],
+    "dx": "599",
+    "primary_dx_text": "<scrubbed>"
+  },
+  {
+    "sid": "98821f67",
+    "variant": "V_BASE_R1",
+    "seed": 0,
+    "visit_type": "intermediate_assessment",
+    "procedures": [],
+    "conditions": [],
+    "dx": "216",
+    "primary_dx_text": "<scrubbed>"
+  },
+  {
+    "sid": "98821f67",
+    "variant": "V_BASE_R1",
+    "seed": 1,
+    "visit_type": "intermediate_assessment",
+    "procedures": [],
+    "conditions": [],
+    "dx": "216",
+    "primary_dx_text": "<scrubbed>"
+  },
+  {
+    "sid": "98821f67",
+    "variant": "V_VISIT",
+    "seed": 0,
+    "visit_type": "general_reassessment",
+    "procedures": [],
+    "conditions": [],
+    "dx": "799",
+    "primary_dx_text": "<scrubbed>"
+  },
+  {
+    "sid": "98821f67",
+    "variant": "V_VISIT",
+    "seed": 1,
+    "visit_type": "general_reassessment",
+    "procedures": [],
+    "conditions": [],
+    "dx": "707",
+    "primary_dx_text": "<scrubbed>"
+  },
+  {
+    "sid": "98821f67",
+    "variant": "V_DX_COT",
+    "seed": 0,
+    "visit_type": "intermediate_assessment",
+    "procedures": [],
+    "conditions": [],
+    "dx": "216",
+    "primary_dx_text": "<scrubbed>"
+  },
+  {
+    "sid": "98821f67",
+    "variant": "V_DX_COT",
+    "seed": 1,
+    "visit_type": "intermediate_assessment",
+    "procedures": [],
+    "conditions": [],
+    "dx": "216",
+    "primary_dx_text": "<scrubbed>"
+  },
+  {
+    "sid": "98821f67",
+    "variant": "V_VISIT_DX",
+    "seed": 0,
+    "visit_type": "general_reassessment",
+    "procedures": [],
+    "conditions": [],
+    "dx": "216",
+    "primary_dx_text": "<scrubbed>"
+  },
+  {
+    "sid": "98821f67",
+    "variant": "V_VISIT_DX",
+    "seed": 1,
+    "visit_type": "general_reassessment",
+    "procedures": [],
+    "conditions": [],
+    "dx": "216",
+    "primary_dx_text": "<scrubbed>"
+  },
+  {
+    "sid": "98821f67",
+    "variant": "V_PROC_BIND2",
+    "seed": 0,
+    "visit_type": "general_reassessment",
+    "procedures": [],
+    "conditions": [],
+    "dx": "216",
+    "primary_dx_text": "<scrubbed>"
+  },
+  {
+    "sid": "98821f67",
+    "variant": "V_PROC_BIND2",
+    "seed": 1,
+    "visit_type": "general_reassessment",
+    "procedures": [],
+    "conditions": [],
+    "dx": "216",
+    "primary_dx_text": "<scrubbed>"
+  },
+  {
+    "sid": "b64ff7f3",
+    "variant": "V_BASE_R1",
+    "seed": 0,
+    "visit_type": "intermediate_assessment",
+    "procedures": [
+      "cryotherapy_single"
+    ],
+    "conditions": [],
+    "dx": "401",
+    "primary_dx_text": "<scrubbed>"
+  },
+  {
+    "sid": "b64ff7f3",
+    "variant": "V_BASE_R1",
+    "seed": 1,
+    "visit_type": "intermediate_assessment",
+    "procedures": [
+      "cryotherapy_single"
+    ],
+    "conditions": [],
+    "dx": "401",
+    "primary_dx_text": "<scrubbed>"
+  },
+  {
+    "sid": "b64ff7f3",
+    "variant": "V_VISIT",
+    "seed": 0,
+    "visit_type": "intermediate_assessment",
+    "procedures": [
+      "cryotherapy_single"
+    ],
+    "conditions": [],
+    "dx": "401",
+    "primary_dx_text": "<scrubbed>"
+  },
+  {
+    "sid": "b64ff7f3",
+    "variant": "V_VISIT",
+    "seed": 1,
+    "visit_type": "intermediate_assessment",
+    "procedures": [
+      "cryotherapy_single"
+    ],
+    "conditions": [],
+    "dx": "401",
+    "primary_dx_text": "<scrubbed>"
+  },
+  {
+    "sid": "b64ff7f3",
+    "variant": "V_DX_COT",
+    "seed": 0,
+    "visit_type": "intermediate_assessment",
+    "procedures": [
+      "cryotherapy_single"
+    ],
+    "conditions": [],
+    "dx": "707",
+    "primary_dx_text": "<scrubbed>"
+  },
+  {
+    "sid": "b64ff7f3",
+    "variant": "V_DX_COT",
+    "seed": 1,
+    "visit_type": "intermediate_assessment",
+    "procedures": [
+      "cryotherapy_single"
+    ],
+    "conditions": [],
+    "dx": "707",
+    "primary_dx_text": "<scrubbed>"
+  },
+  {
+    "sid": "b64ff7f3",
+    "variant": "V_VISIT_DX",
+    "seed": 0,
+    "visit_type": "intermediate_assessment",
+    "procedures": [
+      "cryotherapy_single"
+    ],
+    "conditions": [],
+    "dx": "707",
+    "primary_dx_text": "<scrubbed>"
+  },
+  {
+    "sid": "b64ff7f3",
+    "variant": "V_VISIT_DX",
+    "seed": 1,
+    "visit_type": "intermediate_assessment",
+    "procedures": [
+      "cryotherapy_single"
+    ],
+    "conditions": [],
+    "dx": "707",
+    "primary_dx_text": "<scrubbed>"
+  },
+  {
+    "sid": "b64ff7f3",
+    "variant": "V_PROC_BIND2",
+    "seed": 0,
+    "visit_type": "intermediate_assessment",
+    "procedures": [
+      "cryotherapy_single"
+    ],
+    "conditions": [],
+    "dx": "707",
+    "primary_dx_text": "<scrubbed>"
+  },
+  {
+    "sid": "b64ff7f3",
+    "variant": "V_PROC_BIND2",
+    "seed": 1,
+    "visit_type": "intermediate_assessment",
+    "procedures": [
+      "cryotherapy_single"
+    ],
+    "conditions": [],
+    "dx": "707",
+    "primary_dx_text": "<scrubbed>"
+  }
+]

@@ -76,6 +76,42 @@ cargo run --bin <tool> -- [PATH | --all] [--trials N] [--fail-on-mismatch] [--th
 | `labeled_regression_cli` | Per-session labeled outputs vs production | No (offline) | n/a (per-check) |
 | `golden_day_cli` | Full clinic-day labeled corpus integrity | No (offline) | n/a (all-or-nothing) |
 | `bootstrap_labels` | Generate label fixtures from production billing | No (offline) | n/a (creates labels) |
+| `soap_experiment_cli` | Regenerate SOAPs through prompt variants on archived sessions | Yes | n/a (per-variant report) |
+| `billing_experiment_cli` | Run billing-extraction prompt variants × seeds × labels | Yes | n/a (per-variant report) |
+| `soap_diff_cli` | Structural diff between archive SOAP and a regenerated SOAP under a new prompt | No / optional | n/a |
+
+### Experiment harness (v0.10.62)
+
+The three new CLIs above (`soap_experiment_cli`, `billing_experiment_cli`, `soap_diff_cli`) share a common Rust module at `src/experiment/`:
+
+- `experiment::variant` — `Variant` + `VariantSource::{Builtin, File, Inline}`. CLI flag `--variant <name|file>` is parsed by `parse_variant_arg`.
+- `experiment::runner` — `Runner` trait that each CLI implements once. `run_seeded(runner, sessions, variants, seeds)` cross-products sessions × variants × seeds and returns `Vec<Score>`.
+- `experiment::labels` — auto-loads `tests/fixtures/labels/<date>_<short_id>.json` for each session. Override via `AMI_LABELS_DIR` env var.
+- `experiment::report` — aggregate scoring (TP/TN/FP/FN, precision/recall, hallucination count, avg_latency_ms) plus markdown + JSON output. Default output dir: `~/.transcriptionapp/experiments/<task>/<run_id>/`.
+
+The harness is the migration target for `encounter_experiment_cli` and `vision_experiment_cli` — both still use hardcoded variants and don't auto-pull labels; opportunistic refactor as those CLIs evolve.
+
+### Server-side fallback (v0.10.62)
+
+All replay CLIs fall back to the profile-service when a session isn't in the local archive (via `replay_fetch::ArchiveFetcher`). This unblocks regression-checking server-only sessions on multi-room clinic deployments. `labeled_regression_cli` and `golden_day_cli` use it transparently (label-driven iteration). The five bundle-walking CLIs (`detection_replay_cli`, `merge_replay_cli`, `clinical_replay_cli`, `multi_patient_replay_cli`, `multi_patient_split_replay_cli`) take a new `--date YYYY-MM-DD` flag that lists every session for that date via `ArchiveFetcher::list_replay_bundles_for_date` — local-first, server-fallback per session. The existing `--all` and explicit-PATH modes still walk the local filesystem unchanged.
+
+### Multi-patient SPLIT capture (v0.10.62)
+
+Production now fires the multi-patient SPLIT prompt as a follow-up call after the retrospective multi-patient detector accepts a 2+ patient outcome (`continuous_mode_merge_back.rs`). The captured prompt + response + parsed `line_index` lands in `MultiPatientDetection.split_decision` on the surviving session's replay bundle, so `multi_patient_split_replay_cli` captured-mode can compare boundary detection across prompt + model variants. Production doesn't act on the boundary yet — multi-patient SOAPs still come from the regen step's multi-patient context — but the data is now collected for analysis.
+
+### Per-experiment performance summaries (v0.10.62)
+
+The experiment harness writes `performance_summary.json` alongside `results.json` and `summary.md`. Each variant gets a `LatencySummary` with p50/p90/p99/max/mean computed from `Score.latency_ms`. Mirrors the production day-level summary shape so a prompt change that lands accuracy unchanged but doubles tail latency surfaces in the same place as the accuracy delta.
+
+### Auto-pull labels in encounter_experiment_cli (v0.10.62)
+
+Mode B (pairwise) now consults the labeled corpus first via `experiment::labels::load_label_for_session`. When a label exists with `split_correct = Some(...)`, that drives the expected-verdict comparison; when no label is recorded the CLI falls back to the existing patient-name heuristic. The verdict line annotates the source (`source=label` vs `source=names`) so it's clear which signal won.
+
+### Replay-bundle schema v5 (v0.10.62)
+
+`replay_bundle.json` now captures the full SOAP and billing prompts + responses (`SoapResult.system_prompt`/`user_prompt`/`response_raw`, `BillingResult.{system_prompt, user_prompt, response_raw}`). Older v4 bundles deserialize cleanly via `#[serde(default)]`. The capture sites are inside `encounter_pipeline::generate_and_archive_soap` and `extract_and_archive_billing`, which now take an `Option<&Arc<Mutex<ReplayBundleBuilder>>>` parameter so call sites that don't have a bundle (orphan recovery, on-demand `extract_billing_codes` Tauri command) pass `None`.
+
+Per-archive prompt-version stamps live on `ArchiveMetadata.{soap_prompt_version, billing_prompt_version}` (also v0.10.62) — bumped via the constants `llm_client::SOAP_PROMPT_VERSION` and `clinical_features::BILLING_PROMPT_VERSION`.
 
 ### Why thresholds vary
 LLM responses at temp=0.3 have a documented ~40% flip rate on borderline cases. Each task has a different difficulty distribution; thresholds reflect what's achievable with `--trials 3` majority voting on the labeled corpus.

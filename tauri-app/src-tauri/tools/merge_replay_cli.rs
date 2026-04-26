@@ -25,6 +25,7 @@ use transcription_app_lib::encounter_merge::parse_merge_check;
 use transcription_app_lib::llm_client::LLMClient;
 use transcription_app_lib::local_archive;
 use transcription_app_lib::replay_bundle::{find_replay_bundles, ReplayBundle};
+use transcription_app_lib::replay_fetch::ArchiveFetcher;
 
 const DEFAULT_THRESHOLD: f64 = 75.0; // LLM non-determinism: ~40% flip rate per docs
 const DEFAULT_TRIALS: u32 = 1;
@@ -38,6 +39,7 @@ fn print_usage(program: &str) {
     eprintln!("Arguments:");
     eprintln!("  PATH                Search this directory for replay_bundle.json files");
     eprintln!("  --all               Replay all bundles in ~/.transcriptionapp/archive/");
+    eprintln!("  --date YYYY-MM-DD   Replay every session on that date (server fallback)");
     eprintln!();
     eprintln!("Options:");
     eprintln!("  --trials N          Run each merge-check N times, take majority vote (default: 1)");
@@ -50,7 +52,7 @@ fn print_usage(program: &str) {
 
 #[derive(Debug)]
 struct ReplayResult {
-    bundle_path: PathBuf,
+    display: String,
     archived_decision: bool,
     replayed_decisions: Vec<bool>,
     majority_decision: Option<bool>,
@@ -73,6 +75,7 @@ async fn main() -> ExitCode {
     }
 
     let mut archive_path: Option<PathBuf> = None;
+    let mut date_arg: Option<String> = None;
     let mut all_archives = false;
     let mut trials: u32 = DEFAULT_TRIALS;
     let mut fail_on_mismatch = false;
@@ -83,6 +86,14 @@ async fn main() -> ExitCode {
     while i < args.len() {
         match args[i].as_str() {
             "--all" => all_archives = true,
+            "--date" => {
+                i += 1;
+                if i >= args.len() {
+                    eprintln!("Error: --date requires a YYYY-MM-DD value");
+                    return ExitCode::from(1);
+                }
+                date_arg = Some(args[i].clone());
+            }
             "--mismatches" => mismatches_only = true,
             "--fail-on-mismatch" => fail_on_mismatch = true,
             "--trials" => {
@@ -124,19 +135,66 @@ async fn main() -> ExitCode {
         i += 1;
     }
 
-    let search_path = if all_archives {
-        local_archive::get_archive_dir().expect("Could not determine archive directory")
-    } else if let Some(ref path) = archive_path {
-        path.clone()
+    // Resolve sources to (display, ReplayBundle).
+    let sources: Vec<(String, ReplayBundle)> = if let Some(date) = date_arg {
+        let fetcher = ArchiveFetcher::from_env().unwrap_or_else(|e| {
+            eprintln!("warn: ArchiveFetcher init failed ({e}); falling back to local-only");
+            ArchiveFetcher::local_only()
+        });
+        match fetcher.list_replay_bundles_for_date(&date).await {
+            Ok(b) if b.is_empty() => {
+                eprintln!("No replay_bundle.json found for {} (local or server)", date);
+                return ExitCode::SUCCESS;
+            }
+            Ok(b) => b,
+            Err(e) => {
+                eprintln!("Error: list bundles for {}: {}", date, e);
+                return ExitCode::from(1);
+            }
+        }
     } else {
-        eprintln!("Error: provide an archive path or use --all");
-        return ExitCode::from(1);
+        let search_path = if all_archives {
+            local_archive::get_archive_dir().expect("Could not determine archive directory")
+        } else if let Some(ref path) = archive_path {
+            path.clone()
+        } else {
+            eprintln!("Error: provide an archive path, --all, or --date YYYY-MM-DD");
+            return ExitCode::from(1);
+        };
+        if !search_path.exists() {
+            eprintln!("Path does not exist: {}", search_path.display());
+            return ExitCode::from(1);
+        }
+        let bundle_paths = find_replay_bundles(&search_path);
+        if bundle_paths.is_empty() {
+            eprintln!("No replay_bundle.json files found");
+            return ExitCode::SUCCESS;
+        }
+        let mut out: Vec<(String, ReplayBundle)> = Vec::new();
+        for bundle_path in &bundle_paths {
+            let content = match fs::read_to_string(bundle_path) {
+                Ok(c) => c,
+                Err(e) => {
+                    eprintln!("  Error reading {}: {}", bundle_path.display(), e);
+                    continue;
+                }
+            };
+            let bundle: ReplayBundle = match serde_json::from_str(&content) {
+                Ok(b) => b,
+                Err(e) => {
+                    eprintln!("  Error parsing {}: {}", bundle_path.display(), e);
+                    continue;
+                }
+            };
+            let display = bundle_path
+                .strip_prefix(&search_path)
+                .unwrap_or(bundle_path)
+                .display()
+                .to_string();
+            out.push((display, bundle));
+        }
+        out
     };
-
-    if !search_path.exists() {
-        eprintln!("Path does not exist: {}", search_path.display());
-        return ExitCode::from(1);
-    }
 
     // Build LLM client from config
     let config = Config::load_or_default();
@@ -154,35 +212,14 @@ async fn main() -> ExitCode {
         }
     };
 
-    eprintln!("Merge-check replay against {} (model={}, trials={})",
-        search_path.display(), model, trials);
+    eprintln!("Merge-check replay (model={}, trials={}, bundles={})",
+        model, trials, sources.len());
     eprintln!();
-
-    let bundle_paths = find_replay_bundles(&search_path);
-    if bundle_paths.is_empty() {
-        eprintln!("No replay_bundle.json files found");
-        return ExitCode::SUCCESS;
-    }
 
     let mut results: Vec<ReplayResult> = Vec::new();
     let mut bundles_with_merge_check = 0;
 
-    for bundle_path in &bundle_paths {
-        let content = match fs::read_to_string(bundle_path) {
-            Ok(c) => c,
-            Err(e) => {
-                eprintln!("  Error reading {}: {}", bundle_path.display(), e);
-                continue;
-            }
-        };
-        let bundle: ReplayBundle = match serde_json::from_str(&content) {
-            Ok(b) => b,
-            Err(e) => {
-                eprintln!("  Error parsing {}: {}", bundle_path.display(), e);
-                continue;
-            }
-        };
-
+    for (display, bundle) in sources {
         let merge_check = match bundle.merge_check {
             Some(m) => m,
             None => continue, // skip bundles without a merge check
@@ -219,7 +256,7 @@ async fn main() -> ExitCode {
         let agree = majority == Some(archived);
 
         results.push(ReplayResult {
-            bundle_path: bundle_path.clone(),
+            display: display.clone(),
             archived_decision: archived,
             replayed_decisions: replayed,
             majority_decision: majority,
@@ -240,10 +277,6 @@ async fn main() -> ExitCode {
         if mismatches_only && r.agree {
             continue;
         }
-        let display = r.bundle_path
-            .strip_prefix(&search_path)
-            .unwrap_or(&r.bundle_path)
-            .display();
         let status = if r.agree { "MATCH" } else { "MISMATCH" };
         let majority_str = match r.majority_decision {
             Some(true) => "true",
@@ -253,7 +286,7 @@ async fn main() -> ExitCode {
         let trial_str: Vec<String> = r.replayed_decisions.iter().map(|d| d.to_string()).collect();
         println!(
             "Bundle: {} [{}] archived={}, majority={}, trials=[{}]",
-            display, status, r.archived_decision, majority_str, trial_str.join(",")
+            r.display, status, r.archived_decision, majority_str, trial_str.join(",")
         );
         if let Some(ref e) = r.error {
             println!("  last_error: {}", e);

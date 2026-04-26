@@ -316,6 +316,16 @@ pub struct ArchiveMetadata {
     /// flush / merge paths that write the file.
     #[serde(default)]
     pub has_clinician_notes: bool,
+    /// Version tag for the SOAP-generation prompt that produced `soap_note.txt`.
+    /// Set when SOAP is archived; absent on legacy sessions written before v0.10.62.
+    /// Lets audits correlate clinical drift to specific prompt revisions.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub soap_prompt_version: Option<String>,
+    /// Version tag for the billing-extraction prompt that produced `billing.json`.
+    /// Set when billing is extracted; absent on legacy sessions or sessions with
+    /// no billing record.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub billing_prompt_version: Option<String>,
 }
 
 impl ArchiveMetadata {
@@ -349,6 +359,8 @@ impl ArchiveMetadata {
             patient_confirmed_at: None,
             medplum_patient_id: None,
             has_clinician_notes: false,
+            soap_prompt_version: None,
+            billing_prompt_version: None,
         }
     }
 }
@@ -612,10 +624,13 @@ pub fn add_soap_note(
         metadata.has_soap_note = true;
         metadata.soap_detail_level = detail_level;
         metadata.soap_format = format.map(|s| s.to_string());
+        metadata.soap_prompt_version =
+            Some(crate::llm_client::SOAP_PROMPT_VERSION.to_string());
 
         // Invalidate stale billing when SOAP changes (needs re-extraction)
         if metadata.has_billing_record == Some(true) {
             metadata.has_billing_record = None;
+            metadata.billing_prompt_version = None;
             let billing_path = session_dir.join("billing.json");
             if billing_path.exists() {
                 let _ = fs::remove_file(&billing_path);
@@ -758,6 +773,8 @@ pub fn save_billing_record(
             .map_err(|e| format!("Failed to parse metadata: {}", e))?;
 
         metadata.has_billing_record = Some(true);
+        metadata.billing_prompt_version =
+            Some(crate::billing::clinical_features::BILLING_PROMPT_VERSION.to_string());
 
         let metadata_json = serde_json::to_string_pretty(&metadata)
             .map_err(|e| format!("Failed to serialize metadata: {}", e))?;
@@ -849,6 +866,8 @@ pub fn save_multi_patient_soap(
 
         metadata.patient_count = Some(notes.len() as u32);
         metadata.has_soap_note = true;
+        metadata.soap_prompt_version =
+            Some(crate::llm_client::SOAP_PROMPT_VERSION.to_string());
 
         let metadata_json = serde_json::to_string_pretty(&metadata)
             .map_err(|e| format!("Failed to serialize metadata: {}", e))?;
@@ -1404,6 +1423,8 @@ pub fn split_session(session_id: &str, date_str: &str, split_line: usize) -> Res
         patient_confirmed_at: None,
         medplum_patient_id: None,
         has_clinician_notes: false,
+        soap_prompt_version: None,
+        billing_prompt_version: None,
     };
     let new_meta_json = serde_json::to_string_pretty(&new_meta)
         .map_err(|e| format!("Failed to serialize new metadata: {}", e))?;
@@ -1917,6 +1938,44 @@ mod tests {
         assert!(!metadata.has_soap_note);
         assert!(!metadata.has_audio);
         assert!(!metadata.auto_ended);
+        // v0.10.62: prompt-version fields default to None on new metadata.
+        assert_eq!(metadata.soap_prompt_version, None);
+        assert_eq!(metadata.billing_prompt_version, None);
+    }
+
+    #[test]
+    fn test_archive_metadata_loads_legacy_metadata_without_prompt_versions() {
+        // Backward compat: a v0.10.61 metadata file (no soap_prompt_version)
+        // must deserialize cleanly with the new fields = None.
+        let legacy_json = r#"{
+            "session_id": "abc-123",
+            "started_at": "2026-04-23T10:00:00Z",
+            "ended_at": null,
+            "duration_ms": 600000,
+            "segment_count": 50,
+            "word_count": 1500,
+            "has_soap_note": true,
+            "has_audio": false,
+            "auto_ended": false,
+            "auto_end_reason": null,
+            "soap_detail_level": 5,
+            "soap_format": "comprehensive",
+            "has_clinician_notes": false
+        }"#;
+        let m: ArchiveMetadata = serde_json::from_str(legacy_json)
+            .expect("legacy metadata should deserialize");
+        assert_eq!(m.soap_prompt_version, None);
+        assert_eq!(m.billing_prompt_version, None);
+    }
+
+    #[test]
+    fn test_archive_metadata_serializes_prompt_versions_when_set() {
+        let mut m = ArchiveMetadata::new("abc-123");
+        m.soap_prompt_version = Some("v0.10.61".to_string());
+        m.billing_prompt_version = Some("v0.10.61".to_string());
+        let json = serde_json::to_string(&m).unwrap();
+        assert!(json.contains("\"soap_prompt_version\":\"v0.10.61\""));
+        assert!(json.contains("\"billing_prompt_version\":\"v0.10.61\""));
     }
 
     #[test]

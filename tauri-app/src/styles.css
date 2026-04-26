@@ -3481,10 +3481,12 @@ body {
   transform: rotate(-90deg);
 }
 
-.session-info {
+.session-row-top {
   display: flex;
-  flex-direction: column;
-  gap: 2px;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+  width: 100%;
 }
 
 .session-time {
@@ -3494,15 +3496,18 @@ body {
 }
 
 .session-name {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  width: 100%;
 }
 
-.session-meta {
+.session-row-bottom {
   display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 4px;
+  align-items: center;
+  width: 100%;
 }
 
 .session-duration {
@@ -3512,6 +3517,7 @@ body {
 
 .session-badges {
   display: flex;
+  flex-wrap: wrap;
   gap: 4px;
 }
 
@@ -6956,34 +6962,34 @@ button.review-section-header-left:focus {
   border-color: var(--accent-blue);
 }
 
-.badge.feedback-badge {
-  background: rgba(139, 92, 246, 0.15);
-  color: #a78bfa;
-}
-
 /* Inline rating buttons on the session list row */
 .session-item-rate {
   display: flex;
-  gap: 2px;
+  gap: 4px;
   align-self: center;
-  margin-right: 8px;
+  margin-right: 6px;
+  flex-shrink: 0;
 }
 .session-rate-btn {
   background: transparent;
-  border: 1px solid transparent;
+  border: 1px solid var(--border-color);
   border-radius: 4px;
-  padding: 2px 4px;
-  font-size: 14px;
+  padding: 4px 8px;
+  font-size: 15px;
   line-height: 1;
   cursor: pointer;
-  opacity: 0.3;
-  transition: opacity 0.15s, background 0.15s;
+  opacity: 0.65;
+  transition: opacity 0.15s, background 0.15s, border-color 0.15s;
 }
-.session-item:hover .session-rate-btn { opacity: 0.7; }
-.session-rate-btn:hover { opacity: 1; background: rgba(255, 255, 255, 0.06); }
-.session-rate-btn.active { opacity: 1; }
-.session-rate-btn.active.good { background: rgba(16, 185, 129, 0.18); }
-.session-rate-btn.active.bad  { background: rgba(239, 68, 68, 0.18); }
+.session-item:hover .session-rate-btn { opacity: 0.9; }
+.session-rate-btn:hover {
+  opacity: 1;
+  background: rgba(255, 255, 255, 0.06);
+  border-color: var(--accent-blue);
+}
+.session-rate-btn.active { opacity: 1; border-color: transparent; }
+.session-rate-btn.active.good { background: rgba(16, 185, 129, 0.28); border-color: rgba(16, 185, 129, 0.6); }
+.session-rate-btn.active.bad  { background: rgba(239, 68, 68, 0.28);  border-color: rgba(239, 68, 68, 0.6); }
 
 /* Detection Accuracy tri-state buttons inside the expanded panel */
 .feedback-accuracy-group {
@@ -8347,8 +8353,9 @@ button.review-section-header-left:focus {
 
 .session-item-body {
   display: flex;
-  justify-content: space-between;
-  align-items: center;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 3px;
   flex: 1;
   min-width: 0;
   padding: 0;

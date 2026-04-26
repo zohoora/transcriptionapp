@@ -1,0 +1,8 @@
+
+--- STRICT CONDITION CHECK (rider) ---
+Before emitting any K-code condition, verify these explicit requirements one more time:
+- diabetic_assessment (K030A): REQUIRES the SOAP to explicitly mention DIABETES (type 1, type 2, GDM) AND specific diabetic management (A1C review, insulin/metformin/SGLT2 dose change FOR DIABETES, foot exam, glucose monitoring). DO NOT include if the SOAP only mentions arthritis, RA, Raynaud's, B12 injection, weight loss, Ozempic-for-weight, or family history of diabetes.
+- chf_management (Q050A): REQUIRES explicit heart failure / CHF / cardiomyopathy / reduced ejection fraction diagnosis AND HF-specific management. Bisoprolol or any beta-blocker for HTN alone is NOT chf_management.
+- smoking_cessation (Q042A): REQUIRES the patient is a CURRENT TOBACCO smoker AND active counselling. Cannabis, marijuana, nasal spray cessation, alcohol — NOT smoking_cessation.
+
+If your candidate condition's evidence in the SOAP doesn't meet ALL the requirements above, leave the conditions array empty for that condition.

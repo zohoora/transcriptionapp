@@ -1,0 +1,272 @@
+[
+  {
+    "sid": "0cce8568",
+    "name": "Catherine Lamoureux",
+    "date": "Apr 20",
+    "v1_procedures": [
+      "G372A"
+    ],
+    "v1_dx": "599",
+    "v2_procedure_section_count": 0,
+    "v2_procedure_entries": [],
+    "v2_validated_count": 0,
+    "v2_rejected_quotes": [],
+    "v2_procedures": [],
+    "v2_dx": "788"
+  },
+  {
+    "sid": "70e369bf",
+    "name": "(unknown \u2014 Apr 20)",
+    "date": "Apr 20",
+    "v1_procedures": [
+      "G384A"
+    ],
+    "v1_dx": "847",
+    "v2_procedure_section_count": 1,
+    "v2_procedure_entries": [
+      {
+        "action": "Cortisone injection administered into upper back",
+        "quote": "I'm going to grab a different needle. Okay? Just because up higher is much more shallow."
+      }
+    ],
+    "v2_validated_count": 0,
+    "v2_rejected_quotes": [
+      {
+        "action": "Cortisone injection administered into upper back",
+        "quote": "I'm going to grab a different needle. Okay? Just because up higher is much more shallow.",
+        "reason": "modal_or_future"
+      }
+    ],
+    "v2_procedures": [
+      "trigger_point_injection"
+    ],
+    "v2_dx": "724"
+  },
+  {
+    "sid": "58e617ac",
+    "name": "Linda Routledge",
+    "date": "Apr 21",
+    "v1_procedures": [
+      "G370A"
+    ],
+    "v1_dx": "724",
+    "v2_procedure_section_count": 1,
+    "v2_procedure_entries": [
+      {
+        "action": "Ultrasound-guided injection administered at L4-5",
+        "quote": "I'm just gonna landmark a bit... Now we need to use the ultrasound... You're all done."
+      }
+    ],
+    "v2_validated_count": 0,
+    "v2_rejected_quotes": [
+      {
+        "action": "Ultrasound-guided injection administered at L4-5",
+        "quote": "I'm just gonna landmark a bit... Now we need to use the ultrasound... You're all done.",
+        "reason": "not_in_transcript"
+      }
+    ],
+    "v2_procedures": [],
+    "v2_dx": "724"
+  },
+  {
+    "sid": "d8c25a19",
+    "name": "(unknown \u2014 Apr 22)",
+    "date": "Apr 22",
+    "v1_procedures": [
+      "G384A",
+      "G372A"
+    ],
+    "v1_dx": "724",
+    "v2_procedure_section_count": 1,
+    "v2_procedure_entries": [
+      {
+        "action": "Sympathy bandage applied to the lower back",
+        "quote": "Yeah, sympathy bandages. Sympathy bandage so hopefully, hopefully that helps."
+      }
+    ],
+    "v2_validated_count": 0,
+    "v2_rejected_quotes": [
+      {
+        "action": "Sympathy bandage applied to the lower back",
+        "quote": "Yeah, sympathy bandages. Sympathy bandage so hopefully, hopefully that helps.",
+        "reason": "modal_or_future"
+      }
+    ],
+    "v2_procedures": [],
+    "v2_dx": "724"
+  },
+  {
+    "sid": "e11d3112",
+    "name": "Catherine Grieve",
+    "date": "Apr 22",
+    "v1_procedures": [
+      "G372A",
+      "G590A"
+    ],
+    "v1_dx": "311",
+    "v2_procedure_section_count": 0,
+    "v2_procedure_entries": [],
+    "v2_validated_count": 0,
+    "v2_rejected_quotes": [],
+    "v2_procedures": [],
+    "v2_dx": "300"
+  },
+  {
+    "sid": "173c4253",
+    "name": "Helene Williamson",
+    "date": "Apr 23",
+    "v1_procedures": [
+      "G370A"
+    ],
+    "v1_dx": "724",
+    "v2_procedure_section_count": 0,
+    "v2_procedure_entries": [],
+    "v2_validated_count": 0,
+    "v2_rejected_quotes": [],
+    "v2_procedures": [],
+    "v2_dx": "724"
+  },
+  {
+    "sid": "1d853542",
+    "name": "Julie Hundert",
+    "date": "Apr 23",
+    "v1_procedures": [
+      "G372A"
+    ],
+    "v1_dx": "726",
+    "v2_procedure_section_count": 1,
+    "v2_procedure_entries": [
+      {
+        "action": "Blood drawn from the left arm for PRP preparation",
+        "quote": "Which arm are we drawing blood from... Why don't we do the left side... We draw the same amount each time"
+      }
+    ],
+    "v2_validated_count": 0,
+    "v2_rejected_quotes": [
+      {
+        "action": "Blood drawn from the left arm for PRP preparation",
+        "quote": "Which arm are we drawing blood from... Why don't we do the left side... We draw the same amount each time",
+        "reason": "not_in_transcript"
+      }
+    ],
+    "v2_procedures": [
+      "im_injection_with_visit"
+    ],
+    "v2_dx": "724"
+  },
+  {
+    "sid": "8feb77a1",
+    "name": "Hasan Mirza",
+    "date": "Apr 23",
+    "v1_procedures": [
+      "G370A"
+    ],
+    "v1_dx": "724",
+    "v2_procedure_section_count": 0,
+    "v2_procedure_entries": [],
+    "v2_validated_count": 0,
+    "v2_rejected_quotes": [],
+    "v2_procedures": [],
+    "v2_dx": "724"
+  },
+  {
+    "sid": "9b0b60e2",
+    "name": "Mary Beth Dop",
+    "date": "Apr 23",
+    "v1_procedures": [
+      "G370A"
+    ],
+    "v1_dx": "715",
+    "v2_procedure_section_count": 1,
+    "v2_procedure_entries": [
+      {
+        "action": "Corticosteroid injection administered into left shoulder",
+        "quote": "I can inject the shoulder to settle that down."
+      }
+    ],
+    "v2_validated_count": 0,
+    "v2_rejected_quotes": [
+      {
+        "action": "Corticosteroid injection administered into left shoulder",
+        "quote": "I can inject the shoulder to settle that down.",
+        "reason": "modal_or_future"
+      }
+    ],
+    "v2_procedures": [
+      "joint_injection"
+    ],
+    "v2_dx": "726"
+  },
+  {
+    "sid": "1ec7a57e",
+    "name": "Alexander Gulas",
+    "date": "Apr 24",
+    "v1_procedures": [
+      "G372A"
+    ],
+    "v1_dx": "714",
+    "v2_procedure_section_count": 0,
+    "v2_procedure_entries": [],
+    "v2_validated_count": 0,
+    "v2_rejected_quotes": [],
+    "v2_procedures": [],
+    "v2_dx": "715"
+  },
+  {
+    "sid": "475695fe",
+    "name": "Shirley Muir",
+    "date": "Apr 24",
+    "v1_procedures": [
+      "G370A",
+      "G371A"
+    ],
+    "v1_dx": "799",
+    "v2_procedure_section_count": 0,
+    "v2_procedure_entries": [],
+    "v2_validated_count": 0,
+    "v2_rejected_quotes": [],
+    "v2_procedures": [],
+    "v2_dx": "780"
+  },
+  {
+    "sid": "98821f67",
+    "name": "Louise Simon",
+    "date": "Apr 24",
+    "v1_procedures": [
+      "Z117A"
+    ],
+    "v1_dx": "799",
+    "v2_procedure_section_count": 0,
+    "v2_procedure_entries": [],
+    "v2_validated_count": 0,
+    "v2_rejected_quotes": [],
+    "v2_procedures": [],
+    "v2_dx": "216"
+  },
+  {
+    "sid": "b64ff7f3",
+    "name": "Martin Gierling",
+    "date": "Apr 24",
+    "v1_procedures": [
+      "Z117A"
+    ],
+    "v1_dx": "428",
+    "v2_procedure_section_count": 1,
+    "v2_procedure_entries": [
+      {
+        "action": "Liquid nitrogen applied to plantar wart",
+        "quote": "Let me grab some liquid nitrogen right now."
+      }
+    ],
+    "v2_validated_count": 0,
+    "v2_rejected_quotes": [
+      {
+        "action": "Liquid nitrogen applied to plantar wart",
+        "quote": "Let me grab some liquid nitrogen right now.",
+        "reason": "modal_or_future"
+      }
+    ],
+    "v2_procedures": [],
+    "v2_dx": "401"
+  }
+]

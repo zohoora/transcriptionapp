@@ -1,0 +1,15 @@
+
+--- DIAGNOSTIC CODE — chief-complaint reasoning (rider) ---
+Before emitting suggestedDiagnosticCode, walk through:
+  1. Enumerate every distinct diagnosis listed in the SOAP A section.
+  2. Identify the CHIEF COMPLAINT — the visit's actual reason today.
+  3. Pick the 3-digit OHIP code matching the CHIEF COMPLAINT, NOT the most prominent chronic condition.
+
+Examples:
+  • "S: nasal congestion. A: rhinitis medicamentosa. P: stop nasal spray." → 477 (allergic rhinitis), NOT 401 (HTN).
+  • "S: wart on foot. A: HTN management on apixaban; plantar wart." → 707 (skin), NOT 401.
+  • "S: foot swelling. A: foot edema, pending DVT rule-out." → 451 (phlebitis/DVT), NOT 799.
+  • "A: rheumatoid arthritis with peripheral nerve symptoms." → 714 (RA), NOT 715 (osteoarthritis).
+  • "S: low back pain x 1 week. A: chronic LBP with sciatica." → 724 (back pain).
+
+If multiple codes are equally plausible, pick the most specific one tied to the chief complaint. Use 799 ONLY when no body-system code fits.

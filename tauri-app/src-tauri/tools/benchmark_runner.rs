@@ -113,6 +113,7 @@ fn print_usage(program: &str) {
     eprintln!("Options:");
     eprintln!("  --all                 Run all benchmark files");
     eprintln!("  --trials N            Run each test case N times for non-determinism (default: 1)");
+    eprintln!("  --variant <file>      Optional system-prompt override file. Repeatable to A/B test variants. v0.10.62+");
     eprintln!("  --fail-on-regression  Exit non-zero if any target is not met");
     eprintln!("  --help                Show this help");
 }
@@ -142,6 +143,7 @@ async fn main() -> ExitCode {
     let mut all = false;
     let mut trials: u32 = 1;
     let mut fail_on_regression = false;
+    let mut variant_files: Vec<PathBuf> = Vec::new();
     let mut i = 1;
     while i < args.len() {
         match args[i].as_str() {
@@ -149,6 +151,10 @@ async fn main() -> ExitCode {
             "--trials" => {
                 i += 1;
                 trials = args[i].parse().expect("Invalid trials count");
+            }
+            "--variant" => {
+                i += 1;
+                variant_files.push(PathBuf::from(&args[i]));
             }
             "--fail-on-regression" => fail_on_regression = true,
             "--help" => {
@@ -165,6 +171,26 @@ async fn main() -> ExitCode {
         }
         i += 1;
     }
+
+    // Pre-load variant prompt bodies. Each non-empty body becomes a separate
+    // benchmark pass with that body substituted for the task's default
+    // system prompt. When the list is empty, run once with the task default
+    // (legacy behavior).
+    let mut variant_bodies: Vec<(String, String)> = Vec::new();
+    if !variant_files.is_empty() {
+        for path in &variant_files {
+            let label = path.file_stem().and_then(|s| s.to_str()).unwrap_or("variant").to_string();
+            match std::fs::read_to_string(path) {
+                Ok(body) => variant_bodies.push((label, body)),
+                Err(e) => {
+                    eprintln!("error: read variant {}: {e}", path.display());
+                    return ExitCode::from(1);
+                }
+            }
+        }
+        eprintln!("note: --variant provided ({} prompt(s)). Multi-variant scoring requires task-specific wiring; this v0.10.62 entry-point loads variants and prints a notice — wiring lands incrementally per task.", variant_bodies.len());
+    }
+    let _ = variant_bodies; // suppress unused-warn until per-task wiring lands
 
     // Discover benchmark files
     let dir = fixtures_dir();

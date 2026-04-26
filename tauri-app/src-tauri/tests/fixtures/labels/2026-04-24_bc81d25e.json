@@ -1,0 +1,11 @@
+{
+  "session_id": "bc81d25e-ab62-4d26-8f81-2834895b30d9",
+  "date": "2026-04-24",
+  "labeled_at": "2026-04-24T19:30:00Z",
+  "labeled_by": "Dr Arash Zohoor (via forensic review)",
+  "labels": {
+    "clinical_correct": true,
+    "patient_count_correct": true,
+    "notes": "Clinician says billing and diagnostic code both wrong. Current: A102A (Limited Virtual Care Telephone) + dx 799. Transcript DOES contain phone-call language ('Hi Judy, it's Doctor Zver calling... we'll call you back'), so A102A may actually be correct structurally. Clinician feedback suggests a better specific dx is needed (foot swelling + DVT rule-out \u2014 possibly 451 phlebitis, 785 cardiovascular symptoms, or 729 soft tissue). Final expected codes pending clinician-specified target."
+  }
+}

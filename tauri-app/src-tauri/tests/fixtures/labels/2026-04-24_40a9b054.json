@@ -1,0 +1,12 @@
+{
+  "session_id": "40a9b054-45e4-4ab3-a1bd-3500cf2e0448",
+  "date": "2026-04-24",
+  "labeled_at": "2026-04-24T19:30:00Z",
+  "labeled_by": "Dr Arash Zohoor (via forensic review)",
+  "labels": {
+    "clinical_correct": true,
+    "patient_count_correct": true,
+    "split_correct": false,
+    "notes": "Julie Ann Cooper's single visit was over-split. User reports 3 separate sessions were created. The split between this and 2bac28e5 was driven by STT hallucinations at the transcript boundary (multilingual garbage \u2014 Chinese, Polish, Dutch, Portuguese fragments \u2014 likely pure noise mis-detected as speech). Merge-check LLM correctly declined to merge because the 'next' excerpt looked chaotic, but the underlying issue is the STT hallucinations that produced that excerpt."
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "session_id": "2bac28e5-7693-46eb-ad7c-577d8ce8d143",
+  "date": "2026-04-24",
+  "labeled_at": "2026-04-24T19:30:00Z",
+  "labeled_by": "Dr Arash Zohoor (via forensic review)",
+  "labels": {
+    "clinical_correct": false,
+    "split_correct": false,
+    "merge_correct": false,
+    "notes": "Over-split artifact from Julie Ann Cooper's visit. 405-word transcript is mostly STT hallucinations (multilingual garbage, no clinical content). Should have been recognized as non-clinical and merged into 40a9b054 OR the noise should have been filtered before the transcript boundary triggered a split."
+  }
+}

@@ -3,7 +3,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { writeText } from '@tauri-apps/plugin-clipboard-manager';
 import type { BillingRecord, BillingCode, BillingContext, OhipCodeSearchResult, DiagnosticCodeSearchResult, BillingCategory, SessionFeedback } from '../../types';
 import { VISIT_SETTING_OPTIONS } from '../../types';
-import { createEmptyFeedback, cycleTriState } from '../../utils';
+import { cycleTriState, updateSessionFeedback } from '../../utils';
 import { formatCents, confidenceBadgeClass, OHIP_CODE_CRITERIA, ADDON_CODE_PAIRS, findConflicts, findAllConflicts } from './billingUtils';
 
 interface BillingTabProps {
@@ -17,14 +17,15 @@ interface BillingTabProps {
   defaultVisitSetting?: string;
   defaultCounsellingExhausted?: boolean;
   defaultIsHospital?: boolean;
-  /** True if the session already has feedback.json — skips the mount fetch when false. */
-  hasFeedback?: boolean;
+  /** Notify parent that feedback.json for this session was just written, so
+   *  the sidebar row can reflect has_feedback=true. */
+  onFeedbackSaved?: (fb: SessionFeedback) => void;
 }
 
 export const BillingTab: React.FC<BillingTabProps> = ({
   record, loading, sessionId, date, patientDob, onRecordChange,
   defaultVisitSetting, defaultCounsellingExhausted, defaultIsHospital,
-  hasFeedback,
+  onFeedbackSaved,
 }) => {
   const [extracting, setExtracting] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -48,30 +49,23 @@ export const BillingTab: React.FC<BillingTabProps> = ({
   const [billingCorrect, setBillingCorrect] = useState<boolean | null>(null);
 
   useEffect(() => {
-    if (hasFeedback === false) return;
     let cancelled = false;
     Promise.resolve(invoke<SessionFeedback | null>('get_session_feedback', { sessionId, date }))
       .then(fb => { if (!cancelled) setBillingCorrect(fb?.billingCorrect ?? null); })
       .catch(() => { /* missing feedback.json is fine */ });
     return () => { cancelled = true; };
-  }, [sessionId, date, hasFeedback]);
+  }, [sessionId, date]);
 
   const cycleBillingCorrect = useCallback(async () => {
     const next = cycleTriState(billingCorrect);
     setBillingCorrect(next);
     try {
-      const existing = hasFeedback === false
-        ? null
-        : await invoke<SessionFeedback | null>('get_session_feedback', { sessionId, date });
-      const now = new Date().toISOString();
-      const updated: SessionFeedback = existing
-        ? { ...existing, billingCorrect: next, updatedAt: now }
-        : { ...createEmptyFeedback(), billingCorrect: next };
-      await invoke('save_session_feedback', { sessionId, date, feedback: updated });
+      const updated = await updateSessionFeedback(sessionId, date, { billingCorrect: next });
+      onFeedbackSaved?.(updated);
     } catch (e) {
       console.error('Failed to save billing ground-truth flag:', e);
     }
-  }, [billingCorrect, sessionId, date, hasFeedback]);
+  }, [billingCorrect, sessionId, date, onFeedbackSaved]);
   const [visitSetting, setVisitSetting] = useState(defaultVisitSetting || 'in_office');
   const [patientAge, setPatientAge] = useState('adult');
   const [referralReceived, setReferralReceived] = useState(false);

@@ -1,0 +1,10 @@
+{
+  "session_id": "4848510f-2f8b-4f19-b66f-ddcf242538fa",
+  "date": "2026-04-24",
+  "labeled_at": "2026-04-24T19:30:00Z",
+  "labeled_by": "Dr Arash Zohoor (via forensic review)",
+  "labels": {
+    "clinical_correct": false,
+    "notes": "FALSE POSITIVE clinical classification. Transcript is STT hallucination noise \u2014 35 Speaker 8 fragments mixing Mandarin Chinese + disjointed English. No physician speaker detected. Billing LLM self-flagged with confidence=0.6, no procedures, no conditions, primaryDiagnosis='Undocumented symptoms', suggestedDiagnosticCode=null \u2014 strong signals of non-clinical that the pipeline ignored. Fallback code 799 'ill-defined' used."
+  }
+}

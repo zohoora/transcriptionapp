@@ -1,0 +1,1594 @@
+[
+  {
+    "sid": "0cce8568",
+    "variant": "V_VISIT_DX",
+    "seed": 1,
+    "visit_type": "minor_assessment",
+    "procedures": [],
+    "conditions": [],
+    "dx": "599"
+  },
+  {
+    "sid": "0cce8568",
+    "variant": "V_VISIT_DX",
+    "seed": 0,
+    "visit_type": "minor_assessment",
+    "procedures": [],
+    "conditions": [],
+    "dx": "599"
+  },
+  {
+    "sid": "0cce8568",
+    "variant": "V_VISIT_DX",
+    "seed": 2,
+    "visit_type": "minor_assessment",
+    "procedures": [],
+    "conditions": [],
+    "dx": "599"
+  },
+  {
+    "sid": "0cce8568",
+    "variant": "V_VISIT_DX_STRICT",
+    "seed": 0,
+    "visit_type": "minor_assessment",
+    "procedures": [],
+    "conditions": [],
+    "dx": "599"
+  },
+  {
+    "sid": "0cce8568",
+    "variant": "V_VISIT_DX_STRICT",
+    "seed": 1,
+    "visit_type": "minor_assessment",
+    "procedures": [],
+    "conditions": [],
+    "dx": "599"
+  },
+  {
+    "sid": "0cce8568",
+    "variant": "V_VISIT_DX_STRICT",
+    "seed": 2,
+    "visit_type": "minor_assessment",
+    "procedures": [],
+    "conditions": [],
+    "dx": "599"
+  },
+  {
+    "sid": "0cce8568",
+    "variant": "V_VISIT_DX_PHONE",
+    "seed": 0,
+    "visit_type": "virtual_phone",
+    "procedures": [],
+    "conditions": [],
+    "dx": "599"
+  },
+  {
+    "sid": "0cce8568",
+    "variant": "V_VISIT_DX_PHONE",
+    "seed": 1,
+    "visit_type": "virtual_phone",
+    "procedures": [],
+    "conditions": [],
+    "dx": "599"
+  },
+  {
+    "sid": "0cce8568",
+    "variant": "V_VISIT_DX_PHONE",
+    "seed": 2,
+    "visit_type": "virtual_phone",
+    "procedures": [],
+    "conditions": [],
+    "dx": "599"
+  },
+  {
+    "sid": "0cce8568",
+    "variant": "V_VISIT_DX_BIND",
+    "seed": 0,
+    "visit_type": "virtual_phone",
+    "procedures": [],
+    "conditions": [],
+    "dx": "599"
+  },
+  {
+    "sid": "0cce8568",
+    "variant": "V_VISIT_DX_BIND",
+    "seed": 1,
+    "visit_type": "virtual_phone",
+    "procedures": [],
+    "conditions": [],
+    "dx": "599"
+  },
+  {
+    "sid": "0cce8568",
+    "variant": "V_VISIT_DX_BIND",
+    "seed": 2,
+    "visit_type": "virtual_phone",
+    "procedures": [],
+    "conditions": [],
+    "dx": "599"
+  },
+  {
+    "sid": "de7f5122",
+    "variant": "V_VISIT_DX",
+    "seed": 0,
+    "visit_type": "general_reassessment",
+    "procedures": [],
+    "conditions": [],
+    "dx": "714"
+  },
+  {
+    "sid": "de7f5122",
+    "variant": "V_VISIT_DX",
+    "seed": 1,
+    "visit_type": "intermediate_assessment",
+    "procedures": [],
+    "conditions": [],
+    "dx": "714"
+  },
+  {
+    "sid": "de7f5122",
+    "variant": "V_VISIT_DX",
+    "seed": 2,
+    "visit_type": "intermediate_assessment",
+    "procedures": [],
+    "conditions": [],
+    "dx": "714"
+  },
+  {
+    "sid": "de7f5122",
+    "variant": "V_VISIT_DX_STRICT",
+    "seed": 0,
+    "visit_type": "general_reassessment",
+    "procedures": [],
+    "conditions": [],
+    "dx": "714"
+  },
+  {
+    "sid": "de7f5122",
+    "variant": "V_VISIT_DX_STRICT",
+    "seed": 1,
+    "visit_type": "intermediate_assessment",
+    "procedures": [],
+    "conditions": [],
+    "dx": "714"
+  },
+  {
+    "sid": "de7f5122",
+    "variant": "V_VISIT_DX_STRICT",
+    "seed": 2,
+    "visit_type": "general_reassessment",
+    "procedures": [],
+    "conditions": [],
+    "dx": "714"
+  },
+  {
+    "sid": "de7f5122",
+    "variant": "V_VISIT_DX_PHONE",
+    "seed": 0,
+    "visit_type": "intermediate_assessment",
+    "procedures": [],
+    "conditions": [],
+    "dx": "714"
+  },
+  {
+    "sid": "de7f5122",
+    "variant": "V_VISIT_DX_PHONE",
+    "seed": 1,
+    "visit_type": "intermediate_assessment",
+    "procedures": [],
+    "conditions": [],
+    "dx": "714"
+  },
+  {
+    "sid": "de7f5122",
+    "variant": "V_VISIT_DX_PHONE",
+    "seed": 2,
+    "visit_type": "intermediate_assessment",
+    "procedures": [],
+    "conditions": [],
+    "dx": "714"
+  },
+  {
+    "sid": "de7f5122",
+    "variant": "V_VISIT_DX_BIND",
+    "seed": 0,
+    "visit_type": "intermediate_assessment",
+    "procedures": [],
+    "conditions": [],
+    "dx": "714"
+  },
+  {
+    "sid": "de7f5122",
+    "variant": "V_VISIT_DX_BIND",
+    "seed": 1,
+    "visit_type": "intermediate_assessment",
+    "procedures": [],
+    "conditions": [],
+    "dx": "714"
+  },
+  {
+    "sid": "de7f5122",
+    "variant": "V_VISIT_DX_BIND",
+    "seed": 2,
+    "visit_type": "intermediate_assessment",
+    "procedures": [],
+    "conditions": [],
+    "dx": "714"
+  },
+  {
+    "sid": "491c6493",
+    "variant": "V_VISIT_DX",
+    "seed": 0,
+    "visit_type": "intermediate_assessment",
+    "procedures": [],
+    "conditions": [
+      "primary_mental_health"
+    ],
+    "dx": "311"
+  },
+  {
+    "sid": "491c6493",
+    "variant": "V_VISIT_DX",
+    "seed": 1,
+    "visit_type": "intermediate_assessment",
+    "procedures": [],
+    "conditions": [
+      "primary_mental_health"
+    ],
+    "dx": "300"
+  },
+  {
+    "sid": "491c6493",
+    "variant": "V_VISIT_DX",
+    "seed": 2,
+    "visit_type": "intermediate_assessment",
+    "procedures": [],
+    "conditions": [
+      "primary_mental_health"
+    ],
+    "dx": "300"
+  },
+  {
+    "sid": "491c6493",
+    "variant": "V_VISIT_DX_STRICT",
+    "seed": 0,
+    "visit_type": "intermediate_assessment",
+    "procedures": [],
+    "conditions": [
+      "primary_mental_health"
+    ],
+    "dx": "311"
+  },
+  {
+    "sid": "491c6493",
+    "variant": "V_VISIT_DX_STRICT",
+    "seed": 1,
+    "visit_type": "intermediate_assessment",
+    "procedures": [],
+    "conditions": [
+      "primary_mental_health"
+    ],
+    "dx": "311"
+  },
+  {
+    "sid": "491c6493",
+    "variant": "V_VISIT_DX_STRICT",
+    "seed": 2,
+    "visit_type": "intermediate_assessment",
+    "procedures": [],
+    "conditions": [
+      "primary_mental_health"
+    ],
+    "dx": "311"
+  },
+  {
+    "sid": "491c6493",
+    "variant": "V_VISIT_DX_PHONE",
+    "seed": 0,
+    "visit_type": "intermediate_assessment",
+    "procedures": [],
+    "conditions": [
+      "primary_mental_health"
+    ],
+    "dx": "311"
+  },
+  {
+    "sid": "491c6493",
+    "variant": "V_VISIT_DX_PHONE",
+    "seed": 1,
+    "visit_type": "intermediate_assessment",
+    "procedures": [],
+    "conditions": [
+      "primary_mental_health"
+    ],
+    "dx": "311"
+  },
+  {
+    "sid": "491c6493",
+    "variant": "V_VISIT_DX_PHONE",
+    "seed": 2,
+    "visit_type": "intermediate_assessment",
+    "procedures": [],
+    "conditions": [
+      "primary_mental_health"
+    ],
+    "dx": "311"
+  },
+  {
+    "sid": "491c6493",
+    "variant": "V_VISIT_DX_BIND",
+    "seed": 0,
+    "visit_type": "intermediate_assessment",
+    "procedures": [],
+    "conditions": [
+      "primary_mental_health"
+    ],
+    "dx": "300"
+  },
+  {
+    "sid": "491c6493",
+    "variant": "V_VISIT_DX_BIND",
+    "seed": 1,
+    "visit_type": "intermediate_assessment",
+    "procedures": [],
+    "conditions": [
+      "opioid_withdrawal_management"
+    ],
+    "dx": "780"
+  },
+  {
+    "sid": "491c6493",
+    "variant": "V_VISIT_DX_BIND",
+    "seed": 2,
+    "visit_type": "intermediate_assessment",
+    "procedures": [],
+    "conditions": [
+      "primary_mental_health"
+    ],
+    "dx": "300"
+  },
+  {
+    "sid": "e11d3112",
+    "variant": "V_VISIT_DX",
+    "seed": 0,
+    "visit_type": "intermediate_assessment",
+    "procedures": [],
+    "conditions": [
+      "primary_mental_health"
+    ],
+    "dx": "311"
+  },
+  {
+    "sid": "e11d3112",
+    "variant": "V_VISIT_DX",
+    "seed": 1,
+    "visit_type": "general_reassessment",
+    "procedures": [],
+    "conditions": [
+      "primary_mental_health"
+    ],
+    "dx": "311"
+  },
+  {
+    "sid": "e11d3112",
+    "variant": "V_VISIT_DX",
+    "seed": 2,
+    "visit_type": "general_reassessment",
+    "procedures": [],
+    "conditions": [
+      "primary_mental_health"
+    ],
+    "dx": "311"
+  },
+  {
+    "sid": "e11d3112",
+    "variant": "V_VISIT_DX_STRICT",
+    "seed": 0,
+    "visit_type": "general_reassessment",
+    "procedures": [],
+    "conditions": [
+      "primary_mental_health"
+    ],
+    "dx": "311"
+  },
+  {
+    "sid": "e11d3112",
+    "variant": "V_VISIT_DX_STRICT",
+    "seed": 1,
+    "visit_type": "general_reassessment",
+    "procedures": [],
+    "conditions": [
+      "primary_mental_health"
+    ],
+    "dx": "311"
+  },
+  {
+    "sid": "e11d3112",
+    "variant": "V_VISIT_DX_STRICT",
+    "seed": 2,
+    "visit_type": "general_reassessment",
+    "procedures": [],
+    "conditions": [
+      "primary_mental_health"
+    ],
+    "dx": "311"
+  },
+  {
+    "sid": "e11d3112",
+    "variant": "V_VISIT_DX_PHONE",
+    "seed": 0,
+    "visit_type": "intermediate_assessment",
+    "procedures": [],
+    "conditions": [
+      "primary_mental_health"
+    ],
+    "dx": "300"
+  },
+  {
+    "sid": "e11d3112",
+    "variant": "V_VISIT_DX_PHONE",
+    "seed": 1,
+    "visit_type": "general_reassessment",
+    "procedures": [],
+    "conditions": [
+      "primary_mental_health"
+    ],
+    "dx": "311"
+  },
+  {
+    "sid": "e11d3112",
+    "variant": "V_VISIT_DX_PHONE",
+    "seed": 2,
+    "visit_type": "general_reassessment",
+    "procedures": [],
+    "conditions": [
+      "primary_mental_health"
+    ],
+    "dx": "311"
+  },
+  {
+    "sid": "e11d3112",
+    "variant": "V_VISIT_DX_BIND",
+    "seed": 0,
+    "visit_type": "intermediate_assessment",
+    "procedures": [],
+    "conditions": [
+      "primary_mental_health"
+    ],
+    "dx": "300"
+  },
+  {
+    "sid": "e11d3112",
+    "variant": "V_VISIT_DX_BIND",
+    "seed": 1,
+    "visit_type": "general_reassessment",
+    "procedures": [],
+    "conditions": [
+      "primary_mental_health"
+    ],
+    "dx": "311"
+  },
+  {
+    "sid": "e11d3112",
+    "variant": "V_VISIT_DX_BIND",
+    "seed": 2,
+    "visit_type": "general_reassessment",
+    "procedures": [],
+    "conditions": [
+      "primary_mental_health"
+    ],
+    "dx": "311"
+  },
+  {
+    "sid": "58e617ac",
+    "variant": "V_VISIT_DX",
+    "seed": 0,
+    "visit_type": "intermediate_assessment",
+    "procedures": [
+      "nerve_block_paravertebral"
+    ],
+    "conditions": [],
+    "dx": "724"
+  },
+  {
+    "sid": "58e617ac",
+    "variant": "V_VISIT_DX",
+    "seed": 1,
+    "visit_type": "intermediate_assessment",
+    "procedures": [
+      "nerve_block_paravertebral"
+    ],
+    "conditions": [],
+    "dx": "724"
+  },
+  {
+    "sid": "58e617ac",
+    "variant": "V_VISIT_DX",
+    "seed": 2,
+    "visit_type": "intermediate_assessment",
+    "procedures": [
+      "nerve_block_paravertebral"
+    ],
+    "conditions": [],
+    "dx": "724"
+  },
+  {
+    "sid": "58e617ac",
+    "variant": "V_VISIT_DX_STRICT",
+    "seed": 0,
+    "visit_type": "intermediate_assessment",
+    "procedures": [
+      "nerve_block_paravertebral"
+    ],
+    "conditions": [],
+    "dx": "724"
+  },
+  {
+    "sid": "58e617ac",
+    "variant": "V_VISIT_DX_STRICT",
+    "seed": 1,
+    "visit_type": "intermediate_assessment",
+    "procedures": [
+      "nerve_block_paravertebral"
+    ],
+    "conditions": [],
+    "dx": "724"
+  },
+  {
+    "sid": "58e617ac",
+    "variant": "V_VISIT_DX_STRICT",
+    "seed": 2,
+    "visit_type": "intermediate_assessment",
+    "procedures": [
+      "nerve_block_paravertebral"
+    ],
+    "conditions": [],
+    "dx": "724"
+  },
+  {
+    "sid": "58e617ac",
+    "variant": "V_VISIT_DX_PHONE",
+    "seed": 0,
+    "visit_type": "intermediate_assessment",
+    "procedures": [
+      "nerve_block_paravertebral"
+    ],
+    "conditions": [],
+    "dx": "724"
+  },
+  {
+    "sid": "58e617ac",
+    "variant": "V_VISIT_DX_PHONE",
+    "seed": 1,
+    "visit_type": "intermediate_assessment",
+    "procedures": [
+      "nerve_block_paravertebral"
+    ],
+    "conditions": [],
+    "dx": "724"
+  },
+  {
+    "sid": "58e617ac",
+    "variant": "V_VISIT_DX_PHONE",
+    "seed": 2,
+    "visit_type": "intermediate_assessment",
+    "procedures": [
+      "nerve_block_paravertebral"
+    ],
+    "conditions": [],
+    "dx": "724"
+  },
+  {
+    "sid": "58e617ac",
+    "variant": "V_VISIT_DX_BIND",
+    "seed": 0,
+    "visit_type": "intermediate_assessment",
+    "procedures": [
+      "nerve_block_paravertebral"
+    ],
+    "conditions": [],
+    "dx": "724"
+  },
+  {
+    "sid": "58e617ac",
+    "variant": "V_VISIT_DX_BIND",
+    "seed": 1,
+    "visit_type": "intermediate_assessment",
+    "procedures": [
+      "nerve_block_paravertebral"
+    ],
+    "conditions": [],
+    "dx": "724"
+  },
+  {
+    "sid": "58e617ac",
+    "variant": "V_VISIT_DX_BIND",
+    "seed": 2,
+    "visit_type": "intermediate_assessment",
+    "procedures": [
+      "nerve_block_paravertebral"
+    ],
+    "conditions": [],
+    "dx": "724"
+  },
+  {
+    "sid": "173c4253",
+    "variant": "V_VISIT_DX",
+    "seed": 0,
+    "visit_type": "intermediate_assessment",
+    "procedures": [
+      "nerve_block_paravertebral"
+    ],
+    "conditions": [
+      "primary_mental_health"
+    ],
+    "dx": "724"
+  },
+  {
+    "sid": "173c4253",
+    "variant": "V_VISIT_DX",
+    "seed": 1,
+    "visit_type": "intermediate_assessment",
+    "procedures": [
+      "nerve_block_paravertebral"
+    ],
+    "conditions": [
+      "primary_mental_health"
+    ],
+    "dx": "724"
+  },
+  {
+    "sid": "173c4253",
+    "variant": "V_VISIT_DX",
+    "seed": 2,
+    "visit_type": "intermediate_assessment",
+    "procedures": [
+      "nerve_block_paravertebral"
+    ],
+    "conditions": [
+      "primary_mental_health"
+    ],
+    "dx": "724"
+  },
+  {
+    "sid": "173c4253",
+    "variant": "V_VISIT_DX_STRICT",
+    "seed": 0,
+    "visit_type": "intermediate_assessment",
+    "procedures": [
+      "nerve_block_paravertebral"
+    ],
+    "conditions": [
+      "primary_mental_health"
+    ],
+    "dx": "724"
+  },
+  {
+    "sid": "173c4253",
+    "variant": "V_VISIT_DX_STRICT",
+    "seed": 1,
+    "visit_type": "intermediate_assessment",
+    "procedures": [
+      "nerve_block_paravertebral"
+    ],
+    "conditions": [
+      "primary_mental_health"
+    ],
+    "dx": "724"
+  },
+  {
+    "sid": "173c4253",
+    "variant": "V_VISIT_DX_STRICT",
+    "seed": 2,
+    "visit_type": "intermediate_assessment",
+    "procedures": [
+      "nerve_block_paravertebral"
+    ],
+    "conditions": [
+      "primary_mental_health"
+    ],
+    "dx": "724"
+  },
+  {
+    "sid": "173c4253",
+    "variant": "V_VISIT_DX_PHONE",
+    "seed": 0,
+    "visit_type": "intermediate_assessment",
+    "procedures": [
+      "nerve_block_paravertebral"
+    ],
+    "conditions": [
+      "primary_mental_health"
+    ],
+    "dx": "724"
+  },
+  {
+    "sid": "173c4253",
+    "variant": "V_VISIT_DX_PHONE",
+    "seed": 1,
+    "visit_type": "intermediate_assessment",
+    "procedures": [
+      "nerve_block_paravertebral"
+    ],
+    "conditions": [],
+    "dx": "724"
+  },
+  {
+    "sid": "173c4253",
+    "variant": "V_VISIT_DX_PHONE",
+    "seed": 2,
+    "visit_type": "intermediate_assessment",
+    "procedures": [
+      "nerve_block_paravertebral"
+    ],
+    "conditions": [
+      "primary_mental_health"
+    ],
+    "dx": "724"
+  },
+  {
+    "sid": "173c4253",
+    "variant": "V_VISIT_DX_BIND",
+    "seed": 0,
+    "visit_type": "intermediate_assessment",
+    "procedures": [
+      "nerve_block_paravertebral"
+    ],
+    "conditions": [
+      "primary_mental_health"
+    ],
+    "dx": "724"
+  },
+  {
+    "sid": "173c4253",
+    "variant": "V_VISIT_DX_BIND",
+    "seed": 1,
+    "visit_type": "intermediate_assessment",
+    "procedures": [
+      "nerve_block_paravertebral"
+    ],
+    "conditions": [
+      "primary_mental_health"
+    ],
+    "dx": "724"
+  },
+  {
+    "sid": "173c4253",
+    "variant": "V_VISIT_DX_BIND",
+    "seed": 2,
+    "visit_type": "intermediate_assessment",
+    "procedures": [
+      "nerve_block_paravertebral"
+    ],
+    "conditions": [],
+    "dx": "724"
+  },
+  {
+    "sid": "8feb77a1",
+    "variant": "V_VISIT_DX",
+    "seed": 0,
+    "visit_type": "intermediate_assessment",
+    "procedures": [],
+    "conditions": [
+      "primary_mental_health"
+    ],
+    "dx": "724"
+  },
+  {
+    "sid": "8feb77a1",
+    "variant": "V_VISIT_DX",
+    "seed": 1,
+    "visit_type": "intermediate_assessment",
+    "procedures": [],
+    "conditions": [
+      "primary_mental_health"
+    ],
+    "dx": "724"
+  },
+  {
+    "sid": "8feb77a1",
+    "variant": "V_VISIT_DX",
+    "seed": 2,
+    "visit_type": "intermediate_assessment",
+    "procedures": [],
+    "conditions": [
+      "primary_mental_health"
+    ],
+    "dx": "724"
+  },
+  {
+    "sid": "8feb77a1",
+    "variant": "V_VISIT_DX_STRICT",
+    "seed": 0,
+    "visit_type": "general_reassessment",
+    "procedures": [],
+    "conditions": [
+      "primary_mental_health"
+    ],
+    "dx": "300"
+  },
+  {
+    "sid": "8feb77a1",
+    "variant": "V_VISIT_DX_STRICT",
+    "seed": 1,
+    "visit_type": "general_reassessment",
+    "procedures": [],
+    "conditions": [
+      "primary_mental_health"
+    ],
+    "dx": "300"
+  },
+  {
+    "sid": "8feb77a1",
+    "variant": "V_VISIT_DX_STRICT",
+    "seed": 2,
+    "visit_type": "general_reassessment",
+    "procedures": [],
+    "conditions": [
+      "fibromyalgia_care"
+    ],
+    "dx": "729"
+  },
+  {
+    "sid": "8feb77a1",
+    "variant": "V_VISIT_DX_PHONE",
+    "seed": 0,
+    "visit_type": "intermediate_assessment",
+    "procedures": [],
+    "conditions": [
+      "primary_mental_health"
+    ],
+    "dx": "300"
+  },
+  {
+    "sid": "8feb77a1",
+    "variant": "V_VISIT_DX_PHONE",
+    "seed": 1,
+    "visit_type": "intermediate_assessment",
+    "procedures": [],
+    "conditions": [
+      "primary_mental_health"
+    ],
+    "dx": "300"
+  },
+  {
+    "sid": "8feb77a1",
+    "variant": "V_VISIT_DX_PHONE",
+    "seed": 2,
+    "visit_type": "intermediate_assessment",
+    "procedures": [],
+    "conditions": [
+      "primary_mental_health"
+    ],
+    "dx": "300"
+  },
+  {
+    "sid": "8feb77a1",
+    "variant": "V_VISIT_DX_BIND",
+    "seed": 0,
+    "visit_type": "general_reassessment",
+    "procedures": [],
+    "conditions": [
+      "fibromyalgia_care"
+    ],
+    "dx": "729"
+  },
+  {
+    "sid": "8feb77a1",
+    "variant": "V_VISIT_DX_BIND",
+    "seed": 1,
+    "visit_type": "intermediate_assessment",
+    "procedures": [],
+    "conditions": [
+      "primary_mental_health"
+    ],
+    "dx": "300"
+  },
+  {
+    "sid": "8feb77a1",
+    "variant": "V_VISIT_DX_BIND",
+    "seed": 2,
+    "visit_type": "intermediate_assessment",
+    "procedures": [],
+    "conditions": [
+      "primary_mental_health"
+    ],
+    "dx": "300"
+  },
+  {
+    "sid": "1ec7a57e",
+    "variant": "V_VISIT_DX",
+    "seed": 0,
+    "visit_type": "general_reassessment",
+    "procedures": [
+      "im_injection_with_visit"
+    ],
+    "conditions": [
+      "diabetic_assessment"
+    ],
+    "dx": "715"
+  },
+  {
+    "sid": "1ec7a57e",
+    "variant": "V_VISIT_DX",
+    "seed": 1,
+    "visit_type": "general_reassessment",
+    "procedures": [
+      "im_injection_with_visit"
+    ],
+    "conditions": [
+      "diabetic_assessment"
+    ],
+    "dx": "715"
+  },
+  {
+    "sid": "1ec7a57e",
+    "variant": "V_VISIT_DX",
+    "seed": 2,
+    "visit_type": "general_reassessment",
+    "procedures": [
+      "im_injection_with_visit"
+    ],
+    "conditions": [
+      "diabetic_assessment"
+    ],
+    "dx": "715"
+  },
+  {
+    "sid": "1ec7a57e",
+    "variant": "V_VISIT_DX_STRICT",
+    "seed": 0,
+    "visit_type": "general_reassessment",
+    "procedures": [
+      "im_injection_with_visit"
+    ],
+    "conditions": [],
+    "dx": "715"
+  },
+  {
+    "sid": "1ec7a57e",
+    "variant": "V_VISIT_DX_STRICT",
+    "seed": 1,
+    "visit_type": "general_reassessment",
+    "procedures": [
+      "im_injection_with_visit"
+    ],
+    "conditions": [],
+    "dx": "715"
+  },
+  {
+    "sid": "1ec7a57e",
+    "variant": "V_VISIT_DX_STRICT",
+    "seed": 2,
+    "visit_type": "general_reassessment",
+    "procedures": [
+      "im_injection_with_visit"
+    ],
+    "conditions": [],
+    "dx": "715"
+  },
+  {
+    "sid": "1ec7a57e",
+    "variant": "V_VISIT_DX_PHONE",
+    "seed": 0,
+    "visit_type": "general_reassessment",
+    "procedures": [
+      "im_injection_with_visit"
+    ],
+    "conditions": [],
+    "dx": "715"
+  },
+  {
+    "sid": "1ec7a57e",
+    "variant": "V_VISIT_DX_PHONE",
+    "seed": 1,
+    "visit_type": "general_reassessment",
+    "procedures": [
+      "im_injection_with_visit"
+    ],
+    "conditions": [],
+    "dx": "715"
+  },
+  {
+    "sid": "1ec7a57e",
+    "variant": "V_VISIT_DX_PHONE",
+    "seed": 2,
+    "visit_type": "general_reassessment",
+    "procedures": [
+      "im_injection_with_visit"
+    ],
+    "conditions": [],
+    "dx": "715"
+  },
+  {
+    "sid": "1ec7a57e",
+    "variant": "V_VISIT_DX_BIND",
+    "seed": 0,
+    "visit_type": "general_reassessment",
+    "procedures": [],
+    "conditions": [],
+    "dx": "715"
+  },
+  {
+    "sid": "1ec7a57e",
+    "variant": "V_VISIT_DX_BIND",
+    "seed": 1,
+    "visit_type": "general_reassessment",
+    "procedures": [],
+    "conditions": [],
+    "dx": "715"
+  },
+  {
+    "sid": "1ec7a57e",
+    "variant": "V_VISIT_DX_BIND",
+    "seed": 2,
+    "visit_type": "general_reassessment",
+    "procedures": [],
+    "conditions": [],
+    "dx": "715"
+  },
+  {
+    "sid": "ccc2b9fb",
+    "variant": "V_VISIT_DX",
+    "seed": 0,
+    "visit_type": "general_reassessment",
+    "procedures": [],
+    "conditions": [],
+    "dx": "724"
+  },
+  {
+    "sid": "ccc2b9fb",
+    "variant": "V_VISIT_DX",
+    "seed": 1,
+    "visit_type": "general_reassessment",
+    "procedures": [],
+    "conditions": [],
+    "dx": "724"
+  },
+  {
+    "sid": "ccc2b9fb",
+    "variant": "V_VISIT_DX",
+    "seed": 2,
+    "visit_type": "general_reassessment",
+    "procedures": [],
+    "conditions": [],
+    "dx": "724"
+  },
+  {
+    "sid": "ccc2b9fb",
+    "variant": "V_VISIT_DX_STRICT",
+    "seed": 0,
+    "visit_type": "general_reassessment",
+    "procedures": [],
+    "conditions": [],
+    "dx": "724"
+  },
+  {
+    "sid": "ccc2b9fb",
+    "variant": "V_VISIT_DX_STRICT",
+    "seed": 1,
+    "visit_type": "general_reassessment",
+    "procedures": [],
+    "conditions": [],
+    "dx": "724"
+  },
+  {
+    "sid": "ccc2b9fb",
+    "variant": "V_VISIT_DX_STRICT",
+    "seed": 2,
+    "visit_type": "general_reassessment",
+    "procedures": [],
+    "conditions": [],
+    "dx": "724"
+  },
+  {
+    "sid": "ccc2b9fb",
+    "variant": "V_VISIT_DX_PHONE",
+    "seed": 0,
+    "visit_type": "general_reassessment",
+    "procedures": [],
+    "conditions": [],
+    "dx": "724"
+  },
+  {
+    "sid": "ccc2b9fb",
+    "variant": "V_VISIT_DX_PHONE",
+    "seed": 1,
+    "visit_type": "general_reassessment",
+    "procedures": [],
+    "conditions": [],
+    "dx": "724"
+  },
+  {
+    "sid": "ccc2b9fb",
+    "variant": "V_VISIT_DX_PHONE",
+    "seed": 2,
+    "visit_type": "general_reassessment",
+    "procedures": [],
+    "conditions": [],
+    "dx": "724"
+  },
+  {
+    "sid": "ccc2b9fb",
+    "variant": "V_VISIT_DX_BIND",
+    "seed": 0,
+    "visit_type": "general_reassessment",
+    "procedures": [],
+    "conditions": [],
+    "dx": "724"
+  },
+  {
+    "sid": "ccc2b9fb",
+    "variant": "V_VISIT_DX_BIND",
+    "seed": 1,
+    "visit_type": "general_reassessment",
+    "procedures": [],
+    "conditions": [],
+    "dx": "724"
+  },
+  {
+    "sid": "ccc2b9fb",
+    "variant": "V_VISIT_DX_BIND",
+    "seed": 2,
+    "visit_type": "general_reassessment",
+    "procedures": [],
+    "conditions": [],
+    "dx": "724"
+  },
+  {
+    "sid": "bc81d25e",
+    "variant": "V_VISIT_DX",
+    "seed": 0,
+    "visit_type": "intermediate_assessment",
+    "procedures": [],
+    "conditions": [],
+    "dx": "785"
+  },
+  {
+    "sid": "bc81d25e",
+    "variant": "V_VISIT_DX",
+    "seed": 1,
+    "visit_type": "intermediate_assessment",
+    "procedures": [],
+    "conditions": [],
+    "dx": "785"
+  },
+  {
+    "sid": "bc81d25e",
+    "variant": "V_VISIT_DX",
+    "seed": 2,
+    "visit_type": "intermediate_assessment",
+    "procedures": [],
+    "conditions": [],
+    "dx": "785"
+  },
+  {
+    "sid": "bc81d25e",
+    "variant": "V_VISIT_DX_STRICT",
+    "seed": 0,
+    "visit_type": "intermediate_assessment",
+    "procedures": [],
+    "conditions": [],
+    "dx": "785"
+  },
+  {
+    "sid": "bc81d25e",
+    "variant": "V_VISIT_DX_STRICT",
+    "seed": 1,
+    "visit_type": "intermediate_assessment",
+    "procedures": [],
+    "conditions": [],
+    "dx": "785"
+  },
+  {
+    "sid": "bc81d25e",
+    "variant": "V_VISIT_DX_STRICT",
+    "seed": 2,
+    "visit_type": "intermediate_assessment",
+    "procedures": [],
+    "conditions": [],
+    "dx": "785"
+  },
+  {
+    "sid": "bc81d25e",
+    "variant": "V_VISIT_DX_PHONE",
+    "seed": 0,
+    "visit_type": "virtual_phone",
+    "procedures": [],
+    "conditions": [],
+    "dx": "785"
+  },
+  {
+    "sid": "bc81d25e",
+    "variant": "V_VISIT_DX_PHONE",
+    "seed": 1,
+    "visit_type": "virtual_phone",
+    "procedures": [],
+    "conditions": [],
+    "dx": "785"
+  },
+  {
+    "sid": "bc81d25e",
+    "variant": "V_VISIT_DX_PHONE",
+    "seed": 2,
+    "visit_type": "virtual_phone",
+    "procedures": [],
+    "conditions": [],
+    "dx": "785"
+  },
+  {
+    "sid": "bc81d25e",
+    "variant": "V_VISIT_DX_BIND",
+    "seed": 0,
+    "visit_type": "virtual_phone",
+    "procedures": [],
+    "conditions": [],
+    "dx": "785"
+  },
+  {
+    "sid": "bc81d25e",
+    "variant": "V_VISIT_DX_BIND",
+    "seed": 1,
+    "visit_type": "virtual_phone",
+    "procedures": [],
+    "conditions": [],
+    "dx": "785"
+  },
+  {
+    "sid": "bc81d25e",
+    "variant": "V_VISIT_DX_BIND",
+    "seed": 2,
+    "visit_type": "virtual_phone",
+    "procedures": [],
+    "conditions": [],
+    "dx": "785"
+  },
+  {
+    "sid": "eeb4d85f",
+    "variant": "V_VISIT_DX",
+    "seed": 0,
+    "visit_type": "intermediate_assessment",
+    "procedures": [],
+    "conditions": [],
+    "dx": "599"
+  },
+  {
+    "sid": "eeb4d85f",
+    "variant": "V_VISIT_DX",
+    "seed": 1,
+    "visit_type": "intermediate_assessment",
+    "procedures": [],
+    "conditions": [],
+    "dx": "599"
+  },
+  {
+    "sid": "eeb4d85f",
+    "variant": "V_VISIT_DX",
+    "seed": 2,
+    "visit_type": "intermediate_assessment",
+    "procedures": [],
+    "conditions": [],
+    "dx": "599"
+  },
+  {
+    "sid": "eeb4d85f",
+    "variant": "V_VISIT_DX_STRICT",
+    "seed": 0,
+    "visit_type": "intermediate_assessment",
+    "procedures": [],
+    "conditions": [],
+    "dx": "599"
+  },
+  {
+    "sid": "eeb4d85f",
+    "variant": "V_VISIT_DX_STRICT",
+    "seed": 1,
+    "visit_type": "intermediate_assessment",
+    "procedures": [],
+    "conditions": [],
+    "dx": "599"
+  },
+  {
+    "sid": "eeb4d85f",
+    "variant": "V_VISIT_DX_STRICT",
+    "seed": 2,
+    "visit_type": "intermediate_assessment",
+    "procedures": [],
+    "conditions": [],
+    "dx": "599"
+  },
+  {
+    "sid": "eeb4d85f",
+    "variant": "V_VISIT_DX_PHONE",
+    "seed": 0,
+    "visit_type": "virtual_phone",
+    "procedures": [],
+    "conditions": [],
+    "dx": "599"
+  },
+  {
+    "sid": "eeb4d85f",
+    "variant": "V_VISIT_DX_PHONE",
+    "seed": 1,
+    "visit_type": "virtual_phone",
+    "procedures": [],
+    "conditions": [],
+    "dx": "599"
+  },
+  {
+    "sid": "eeb4d85f",
+    "variant": "V_VISIT_DX_PHONE",
+    "seed": 2,
+    "visit_type": "virtual_phone",
+    "procedures": [],
+    "conditions": [],
+    "dx": "599"
+  },
+  {
+    "sid": "eeb4d85f",
+    "variant": "V_VISIT_DX_BIND",
+    "seed": 0,
+    "visit_type": "virtual_phone",
+    "procedures": [],
+    "conditions": [],
+    "dx": "599"
+  },
+  {
+    "sid": "eeb4d85f",
+    "variant": "V_VISIT_DX_BIND",
+    "seed": 1,
+    "visit_type": "virtual_phone",
+    "procedures": [],
+    "conditions": [],
+    "dx": "599"
+  },
+  {
+    "sid": "eeb4d85f",
+    "variant": "V_VISIT_DX_BIND",
+    "seed": 2,
+    "visit_type": "virtual_phone",
+    "procedures": [],
+    "conditions": [],
+    "dx": "599"
+  },
+  {
+    "sid": "98821f67",
+    "variant": "V_VISIT_DX",
+    "seed": 0,
+    "visit_type": "general_reassessment",
+    "procedures": [],
+    "conditions": [],
+    "dx": "216"
+  },
+  {
+    "sid": "98821f67",
+    "variant": "V_VISIT_DX",
+    "seed": 1,
+    "visit_type": "general_reassessment",
+    "procedures": [],
+    "conditions": [],
+    "dx": "216"
+  },
+  {
+    "sid": "98821f67",
+    "variant": "V_VISIT_DX",
+    "seed": 2,
+    "visit_type": "general_reassessment",
+    "procedures": [],
+    "conditions": [],
+    "dx": "216"
+  },
+  {
+    "sid": "98821f67",
+    "variant": "V_VISIT_DX_STRICT",
+    "seed": 0,
+    "visit_type": "general_reassessment",
+    "procedures": [],
+    "conditions": [],
+    "dx": "216"
+  },
+  {
+    "sid": "98821f67",
+    "variant": "V_VISIT_DX_STRICT",
+    "seed": 1,
+    "visit_type": "general_reassessment",
+    "procedures": [],
+    "conditions": [],
+    "dx": "216"
+  },
+  {
+    "sid": "98821f67",
+    "variant": "V_VISIT_DX_STRICT",
+    "seed": 2,
+    "visit_type": "general_reassessment",
+    "procedures": [],
+    "conditions": [],
+    "dx": "216"
+  },
+  {
+    "sid": "98821f67",
+    "variant": "V_VISIT_DX_PHONE",
+    "seed": 0,
+    "visit_type": "general_reassessment",
+    "procedures": [],
+    "conditions": [],
+    "dx": "216"
+  },
+  {
+    "sid": "98821f67",
+    "variant": "V_VISIT_DX_PHONE",
+    "seed": 1,
+    "visit_type": "general_reassessment",
+    "procedures": [],
+    "conditions": [],
+    "dx": "216"
+  },
+  {
+    "sid": "98821f67",
+    "variant": "V_VISIT_DX_PHONE",
+    "seed": 2,
+    "visit_type": "general_reassessment",
+    "procedures": [],
+    "conditions": [],
+    "dx": "216"
+  },
+  {
+    "sid": "98821f67",
+    "variant": "V_VISIT_DX_BIND",
+    "seed": 0,
+    "visit_type": "general_reassessment",
+    "procedures": [],
+    "conditions": [],
+    "dx": "216"
+  },
+  {
+    "sid": "98821f67",
+    "variant": "V_VISIT_DX_BIND",
+    "seed": 1,
+    "visit_type": "general_reassessment",
+    "procedures": [],
+    "conditions": [],
+    "dx": "216"
+  },
+  {
+    "sid": "98821f67",
+    "variant": "V_VISIT_DX_BIND",
+    "seed": 2,
+    "visit_type": "general_reassessment",
+    "procedures": [],
+    "conditions": [],
+    "dx": "216"
+  },
+  {
+    "sid": "b64ff7f3",
+    "variant": "V_VISIT_DX",
+    "seed": 0,
+    "visit_type": "intermediate_assessment",
+    "procedures": [
+      "cryotherapy_single"
+    ],
+    "conditions": [],
+    "dx": "707"
+  },
+  {
+    "sid": "b64ff7f3",
+    "variant": "V_VISIT_DX",
+    "seed": 1,
+    "visit_type": "intermediate_assessment",
+    "procedures": [
+      "cryotherapy_single"
+    ],
+    "conditions": [],
+    "dx": "216"
+  },
+  {
+    "sid": "b64ff7f3",
+    "variant": "V_VISIT_DX",
+    "seed": 2,
+    "visit_type": "intermediate_assessment",
+    "procedures": [
+      "cryotherapy_single"
+    ],
+    "conditions": [],
+    "dx": "707"
+  },
+  {
+    "sid": "b64ff7f3",
+    "variant": "V_VISIT_DX_STRICT",
+    "seed": 0,
+    "visit_type": "intermediate_assessment",
+    "procedures": [
+      "cryotherapy_single"
+    ],
+    "conditions": [],
+    "dx": "707"
+  },
+  {
+    "sid": "b64ff7f3",
+    "variant": "V_VISIT_DX_STRICT",
+    "seed": 1,
+    "visit_type": "intermediate_assessment",
+    "procedures": [
+      "cryotherapy_single"
+    ],
+    "conditions": [],
+    "dx": "707"
+  },
+  {
+    "sid": "b64ff7f3",
+    "variant": "V_VISIT_DX_STRICT",
+    "seed": 2,
+    "visit_type": "intermediate_assessment",
+    "procedures": [
+      "cryotherapy_single"
+    ],
+    "conditions": [],
+    "dx": "401"
+  },
+  {
+    "sid": "b64ff7f3",
+    "variant": "V_VISIT_DX_PHONE",
+    "seed": 0,
+    "visit_type": "intermediate_assessment",
+    "procedures": [
+      "cryotherapy_single"
+    ],
+    "conditions": [],
+    "dx": "707"
+  },
+  {
+    "sid": "b64ff7f3",
+    "variant": "V_VISIT_DX_PHONE",
+    "seed": 1,
+    "visit_type": "intermediate_assessment",
+    "procedures": [
+      "cryotherapy_single"
+    ],
+    "conditions": [],
+    "dx": "707"
+  },
+  {
+    "sid": "b64ff7f3",
+    "variant": "V_VISIT_DX_PHONE",
+    "seed": 2,
+    "visit_type": "intermediate_assessment",
+    "procedures": [
+      "cryotherapy_single"
+    ],
+    "conditions": [],
+    "dx": "707"
+  },
+  {
+    "sid": "b64ff7f3",
+    "variant": "V_VISIT_DX_BIND",
+    "seed": 0,
+    "visit_type": "intermediate_assessment",
+    "procedures": [
+      "cryotherapy_single"
+    ],
+    "conditions": [],
+    "dx": "216"
+  },
+  {
+    "sid": "b64ff7f3",
+    "variant": "V_VISIT_DX_BIND",
+    "seed": 1,
+    "visit_type": "intermediate_assessment",
+    "procedures": [
+      "cryotherapy_single"
+    ],
+    "conditions": [],
+    "dx": "707"
+  },
+  {
+    "sid": "b64ff7f3",
+    "variant": "V_VISIT_DX_BIND",
+    "seed": 2,
+    "visit_type": "intermediate_assessment",
+    "procedures": [
+      "cryotherapy_single"
+    ],
+    "conditions": [],
+    "dx": "401"
+  }
+]

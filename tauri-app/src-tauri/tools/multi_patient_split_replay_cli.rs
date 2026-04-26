@@ -31,6 +31,7 @@ use transcription_app_lib::encounter_detection::{
 use transcription_app_lib::llm_client::LLMClient;
 use transcription_app_lib::local_archive;
 use transcription_app_lib::replay_bundle::{find_replay_bundles, ReplayBundle};
+use transcription_app_lib::replay_fetch::ArchiveFetcher;
 
 const DEFAULT_THRESHOLD: f64 = 70.0;
 const DEFAULT_TRIALS: u32 = 1;
@@ -46,6 +47,8 @@ fn print_usage(program: &str) {
     eprintln!("  --synthetic:        build new split prompts from segments (any bundle)");
     eprintln!();
     eprintln!("Options:");
+    eprintln!("  --all                 Replay all bundles in ~/.transcriptionapp/archive/");
+    eprintln!("  --date YYYY-MM-DD     Replay every session on that date (server fallback)");
     eprintln!("  --trials N            Run each split N times, take median (default: 1)");
     eprintln!("  --tolerance N         Lines within ±N count as correct (default: 2)");
     eprintln!("  --fail-on-mismatch    Exit non-zero if agreement drops below threshold");
@@ -67,6 +70,7 @@ async fn main() -> ExitCode {
     }
 
     let mut archive_path: Option<PathBuf> = None;
+    let mut date_arg: Option<String> = None;
     let mut all_archives = false;
     let mut trials: u32 = DEFAULT_TRIALS;
     let mut tolerance: i64 = DEFAULT_TOLERANCE;
@@ -79,6 +83,11 @@ async fn main() -> ExitCode {
     while i < args.len() {
         match args[i].as_str() {
             "--all" => all_archives = true,
+            "--date" => {
+                i += 1;
+                if i >= args.len() { eprintln!("--date needs a YYYY-MM-DD value"); return ExitCode::from(1); }
+                date_arg = Some(args[i].clone());
+            }
             "--mismatches" => mismatches_only = true,
             "--fail-on-mismatch" => fail_on_mismatch = true,
             "--synthetic" => synthetic = true,
@@ -98,13 +107,37 @@ async fn main() -> ExitCode {
         i += 1;
     }
 
-    let search_path = if all_archives {
-        local_archive::get_archive_dir().expect("Could not determine archive dir")
-    } else if let Some(ref path) = archive_path {
-        path.clone()
+    let sources: Vec<(String, ReplayBundle)> = if let Some(date) = date_arg {
+        let fetcher = ArchiveFetcher::from_env().unwrap_or_else(|e| {
+            eprintln!("warn: ArchiveFetcher init failed ({e}); falling back to local-only");
+            ArchiveFetcher::local_only()
+        });
+        match fetcher.list_replay_bundles_for_date(&date).await {
+            Ok(b) if b.is_empty() => {
+                eprintln!("No replay_bundle.json found for {} (local or server)", date);
+                return ExitCode::SUCCESS;
+            }
+            Ok(b) => b,
+            Err(e) => { eprintln!("Error: list bundles for {}: {}", date, e); return ExitCode::from(1); }
+        }
     } else {
-        eprintln!("Provide PATH or --all");
-        return ExitCode::from(1);
+        let search_path = if all_archives {
+            local_archive::get_archive_dir().expect("Could not determine archive dir")
+        } else if let Some(ref path) = archive_path {
+            path.clone()
+        } else {
+            eprintln!("Provide PATH, --all, or --date YYYY-MM-DD");
+            return ExitCode::from(1);
+        };
+        let bundle_paths = find_replay_bundles(&search_path);
+        let mut out: Vec<(String, ReplayBundle)> = Vec::new();
+        for bundle_path in &bundle_paths {
+            let content = match fs::read_to_string(bundle_path) { Ok(c) => c, Err(_) => continue };
+            let bundle: ReplayBundle = match serde_json::from_str(&content) { Ok(b) => b, Err(_) => continue };
+            let display = bundle_path.strip_prefix(&search_path).unwrap_or(bundle_path).display().to_string();
+            out.push((display, bundle));
+        }
+        out
     };
 
     let config = Config::load_or_default();
@@ -120,21 +153,17 @@ async fn main() -> ExitCode {
     };
 
     let mode = if synthetic { "synthetic" } else { "captured" };
-    eprintln!("Multi-patient SPLIT replay against {} (mode={}, model={}, tolerance=±{})",
-        search_path.display(), mode, model, tolerance);
+    eprintln!("Multi-patient SPLIT replay (mode={}, model={}, tolerance=±{}, bundles={})",
+        mode, model, tolerance, sources.len());
     eprintln!();
 
-    let bundle_paths = find_replay_bundles(&search_path);
     let mut total = 0;
     let mut matches = 0;
     let mut mismatches = 0;
     let mut synthetic_runs = 0;
     let mut bundles_skipped_no_split = 0;
 
-    for bundle_path in &bundle_paths {
-        let content = match fs::read_to_string(bundle_path) { Ok(c) => c, Err(_) => continue };
-        let bundle: ReplayBundle = match serde_json::from_str(&content) { Ok(b) => b, Err(_) => continue };
-
+    for (display, bundle) in &sources {
         // Find a multi-patient detection that found ≥2 patients
         let detection = bundle.multi_patient_detections.iter()
             .find(|mp| mp.parsed_patient_count.unwrap_or(0) >= 2);
@@ -176,7 +205,6 @@ async fn main() -> ExitCode {
                 sorted.sort();
                 format!("line_index={}", sorted[sorted.len() / 2])
             };
-            let display = bundle_path.strip_prefix(&search_path).unwrap_or(bundle_path).display();
             println!("Bundle: {} [SYNTHETIC] {} (segments={})", display, result, bundle.segments.len());
             continue;
         }
@@ -225,7 +253,6 @@ async fn main() -> ExitCode {
         if agree { matches += 1; } else { mismatches += 1; }
 
         if mismatches_only && agree { continue; }
-        let display = bundle_path.strip_prefix(&search_path).unwrap_or(bundle_path).display();
         let status = if agree { "MATCH" } else { "MISMATCH" };
         let median_str = median.map(|m| m.to_string()).unwrap_or_else(|| "ERROR".to_string());
         let trial_str: Vec<String> = votes.iter().map(|d| d.to_string()).collect();

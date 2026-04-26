@@ -1,0 +1,15 @@
+{
+  "session_id": "b64ff7f3-dde3-4f73-b992-e7bd57649380",
+  "date": "2026-04-24",
+  "labeled_at": "2026-04-24T19:30:00Z",
+  "labeled_by": "Dr Arash Zohoor (via forensic review)",
+  "labels": {
+    "clinical_correct": true,
+    "patient_count_correct": true,
+    "billing_codes_expected": [
+      "A007A",
+      "Q310A"
+    ],
+    "notes": "Liquid nitrogen was DISCUSSED not APPLIED. Transcript: 'Let me grab some liquid nitrogen' then 'stuff over-the-counter does the same thing as liquid nitrogen... continue the over-the-counter one'. Cryotherapy not performed. Z117A + E542A wrongly billed. Q050A heart failure management also wrong \u2014 patient is on bisoprolol for hypertension, not CHF (no echo/HF documentation). Evidence cited for chf_management was 'BP monitoring 106/65, started bisoprolol, monitoring dizziness' = HTN management not CHF."
+  }
+}

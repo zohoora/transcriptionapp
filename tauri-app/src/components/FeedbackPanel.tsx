@@ -16,6 +16,9 @@ interface FeedbackPanelProps {
   date: string;
   feedback: SessionFeedback | null;
   onFeedbackChange: (fb: SessionFeedback) => void;
+  /** Called after a write to feedback.json lands, so the parent can refresh
+   *  the sidebar row's has_feedback / quality_rating without a full refetch. */
+  onFeedbackSaved?: (fb: SessionFeedback) => void;
   isMultiPatient: boolean;
   activePatient: number;
   patientCount: number;
@@ -57,6 +60,7 @@ const FeedbackPanel: React.FC<FeedbackPanelProps> = ({
   date,
   feedback,
   onFeedbackChange,
+  onFeedbackSaved,
   isMultiPatient,
   activePatient,
   patientCount,
@@ -68,11 +72,16 @@ const FeedbackPanel: React.FC<FeedbackPanelProps> = ({
   const statusResetRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const feedbackRef = useRef(feedback);
   feedbackRef.current = feedback;
+  // Flushed on cleanup so a rate-then-navigate-fast doesn't drop the debounced write.
+  const pendingSaveRef = useRef<SessionFeedback | null>(null);
+  const onFeedbackSavedRef = useRef(onFeedbackSaved);
+  onFeedbackSavedRef.current = onFeedbackSaved;
 
-  // Auto-save with 500ms debounce
   const saveFeedback = useCallback((fb: SessionFeedback) => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
+    pendingSaveRef.current = fb;
     debounceRef.current = setTimeout(async () => {
+      pendingSaveRef.current = null;
       setSaveStatus('saving');
       try {
         await invoke('save_session_feedback', {
@@ -80,6 +89,7 @@ const FeedbackPanel: React.FC<FeedbackPanelProps> = ({
           date,
           feedback: fb,
         });
+        onFeedbackSavedRef.current?.(fb);
         setSaveStatus('saved');
         if (statusResetRef.current) clearTimeout(statusResetRef.current);
         statusResetRef.current = setTimeout(() => setSaveStatus('idle'), 2000);
@@ -90,11 +100,23 @@ const FeedbackPanel: React.FC<FeedbackPanelProps> = ({
     }, 500);
   }, [sessionId, date]);
 
-  // Cleanup timers on unmount; flush pending save on session switch
+  // On session change: flush any pending save so rate-then-navigate-fast sticks.
   useEffect(() => {
+    const flushSessionId = sessionId;
+    const flushDate = date;
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current);
       if (statusResetRef.current) clearTimeout(statusResetRef.current);
+      const pending = pendingSaveRef.current;
+      if (!pending) return;
+      pendingSaveRef.current = null;
+      invoke('save_session_feedback', {
+        sessionId: flushSessionId,
+        date: flushDate,
+        feedback: pending,
+      })
+        .then(() => onFeedbackSavedRef.current?.(pending))
+        .catch(e => console.error('Failed to flush feedback on cleanup:', e));
     };
   }, [sessionId, date]);
 

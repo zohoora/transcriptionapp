@@ -2219,7 +2219,7 @@ mod tests {
         let config: Config = serde_json::from_str(json).expect("Should deserialize old config");
         assert_eq!(config.encounter_detection_mode, EncounterDetectionMode::Hybrid);
         assert!(config.presence_sensor_port.is_empty());
-        assert_eq!(config.presence_absence_threshold_secs, 180);
+        assert_eq!(config.presence_absence_threshold_secs, 120);
         assert_eq!(config.presence_debounce_secs, 15);
         assert!(config.presence_csv_log_enabled);
     }

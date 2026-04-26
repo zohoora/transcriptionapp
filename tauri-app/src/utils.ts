@@ -301,6 +301,7 @@ export function downloadBase64Image(base64: string, filenamePrefix: string): voi
   link.click();
 }
 
+import { invoke } from '@tauri-apps/api/core';
 import type { SessionFeedback } from './types';
 
 /** Construct a blank v2 SessionFeedback with every optional field explicitly null. */
@@ -325,4 +326,29 @@ export function createEmptyFeedback(): SessionFeedback {
 /** Cycle a tri-state: null → true → false → null. */
 export function cycleTriState(cur: boolean | null): boolean | null {
   return cur === null ? true : cur === true ? false : null;
+}
+
+/**
+ * Load a session's feedback.json, merge a partial patch, and save it back.
+ * Returns the merged payload so callers can bubble it up to parent state.
+ * Pass `skipLoad: true` when the caller already knows feedback.json doesn't exist
+ * (e.g. sidebar row with has_feedback=false) to skip one IPC.
+ */
+export async function updateSessionFeedback(
+  sessionId: string,
+  date: string,
+  patch: Partial<SessionFeedback>,
+  opts: { skipLoad?: boolean } = {},
+): Promise<SessionFeedback> {
+  const existing = opts.skipLoad
+    ? null
+    : await invoke<SessionFeedback | null>('get_session_feedback', { sessionId, date });
+  const base = existing ?? createEmptyFeedback();
+  const updated: SessionFeedback = {
+    ...base,
+    ...patch,
+    updatedAt: new Date().toISOString(),
+  };
+  await invoke('save_session_feedback', { sessionId, date, feedback: updated });
+  return updated;
 }

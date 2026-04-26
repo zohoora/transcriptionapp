@@ -659,9 +659,25 @@ const ABBREVIATION_EXPANSIONS: &[(&str, &str)] = &[
     ("ckd", "chronic kidney renal"),
     ("bph", "prostatic hyperplasia"),
     ("afib", "cardiac arrhythmia"),
-    ("dvt", "venous thrombosis"),
+    ("dvt", "phlebitis thrombophlebitis venous"),
     ("tia", "cerebrovascular"),
     ("ibs", "irritable bowel"),
+    ("acrochordon", "skin pigmented naevus dermatofibroma"),
+    ("acrochordons", "skin pigmented naevus dermatofibroma"),
+    ("skin tag", "skin pigmented naevus dermatofibroma"),
+    ("skin tags", "skin pigmented naevus dermatofibroma"),
+    ("rhinitis medicamentosa", "allergic rhinitis hay fever"),
+    ("cholelithiasis", "cholelithiasis gall stones"),
+    ("gallstone", "cholelithiasis gall stones"),
+    ("gallstones", "cholelithiasis gall stones"),
+    ("pre-cholecystectomy", "cholelithiasis gall stones"),
+    ("cholecystectomy", "cholelithiasis gall stones"),
+    ("prp", "skin subcutaneous"),
+    ("chronic wound", "decubitus ulcer bed sore"),
+    ("chronic ulcer", "decubitus ulcer bed sore"),
+    ("foot swelling", "edema masses"),
+    ("nasal congestion", "allergic rhinitis hay fever"),
+    ("rebound congestion", "allergic rhinitis hay fever"),
 ];
 
 /// Match a plain-text diagnosis to the best diagnostic code using word-level scoring.
@@ -676,11 +692,17 @@ pub fn match_diagnosis_text(text: &str) -> Option<&'static DiagnosticCode> {
         "unspecified", "bilateral", "left", "right",
     ];
 
-    // Expand abbreviations before tokenizing
+    // Expand abbreviations before tokenizing.
+    // Single-word abbreviations match whole-word (avoids "ra" matching "trauma").
+    // Multi-word abbreviations match as substring (e.g. "skin tag" in input).
     let mut expanded = text.to_lowercase();
     for (abbr, expansion) in ABBREVIATION_EXPANSIONS {
-        // Replace whole-word abbreviation with expansion (keep original too)
-        if expanded.split(|c: char| !c.is_alphanumeric()).any(|w| w == *abbr) {
+        let hit = if abbr.contains(' ') {
+            expanded.contains(*abbr)
+        } else {
+            expanded.split(|c: char| !c.is_alphanumeric()).any(|w| w == *abbr)
+        };
+        if hit {
             expanded.push(' ');
             expanded.push_str(expansion);
         }
@@ -752,6 +774,11 @@ pub const COMMON_DIAGNOSTIC_CODES: &[(&str, &str)] = &[
     ("600", "Benign prostatic hyperplasia"),
     ("626", "Disorders of menstruation"),
     ("692", "Dermatitis, eczema"),
+    ("707", "Chronic skin ulcer / decubitus / wound"),
+    ("216", "Benign skin neoplasm (skin tag, acrochordon, naevus)"),
+    ("451", "Phlebitis / thrombophlebitis / DVT"),
+    ("477", "Allergic rhinitis"),
+    ("460", "Common cold / nasopharyngitis"),
     ("715", "Osteoarthritis"),
     ("724", "Back pain"),
     ("726", "Fibromyalgia"),
@@ -876,6 +903,30 @@ mod tests {
     fn test_match_uti_abbreviation() {
         let dc = match_diagnosis_text("recurrent UTI").unwrap();
         assert_eq!(dc.code, "599");
+    }
+
+    #[test]
+    fn test_match_skin_tag_phrase() {
+        // 2026-04-24 Louise Simon: acrochordons fell back to 799; should now hit 216.
+        assert_eq!(match_diagnosis_text("multiple acrochordons with irritation").unwrap().code, "216");
+        assert_eq!(match_diagnosis_text("skin tag on neck").unwrap().code, "216");
+    }
+
+    #[test]
+    fn test_match_dvt_phrase() {
+        // 2026-04-24 Judith Croft: DVT rule-out fell back to 799; should now hit 451.
+        assert_eq!(match_diagnosis_text("DVT rule-out workup").unwrap().code, "451");
+    }
+
+    #[test]
+    fn test_match_chronic_wound() {
+        // 2026-04-24 David Krabbe: chronic wound + PRP fell back to 799; should now hit 707.
+        assert_eq!(match_diagnosis_text("chronic wound management").unwrap().code, "707");
+    }
+
+    #[test]
+    fn test_match_gallstones() {
+        assert_eq!(match_diagnosis_text("pre-cholecystectomy assessment for gallstones").unwrap().code, "574");
     }
 
     #[test]

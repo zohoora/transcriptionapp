@@ -1,6 +1,16 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
+/// Convert a serde-tagged enum to its `rename_all = "snake_case"` string key.
+/// Used for round-tripping `ConditionType` / `ProcedureType` / `VisitType`
+/// values into the snake_case strings the LLM emits and the rule engine /
+/// experiment CLIs key off. Returns `None` only when the enum variant
+/// somehow doesn't serialize to a JSON string (shouldn't happen for our
+/// flat enums).
+pub fn enum_to_snake_key<T: Serialize>(t: &T) -> Option<String> {
+    serde_json::to_value(t).ok().and_then(|v| v.as_str().map(String::from))
+}
+
 // ── Constrained enums for LLM extraction ───────────────────────────────────
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
@@ -159,6 +169,12 @@ pub struct ClinicalFeatures {
     pub condition_evidence: HashMap<String, String>,
 }
 
+/// Billing-extraction prompt version tag (v0.10.62+). Stamped on
+/// `ArchiveMetadata.billing_prompt_version` when billing is archived.
+/// Bump this string whenever `build_billing_extraction_prompt` is materially
+/// edited so audits can correlate billing drift to specific prompt revisions.
+pub const BILLING_PROMPT_VERSION: &str = "v0.10.61";
+
 // ── Prompt construction ────────────────────────────────────────────────────
 
 /// Build the system + user prompts for clinical feature extraction.
@@ -200,7 +216,7 @@ Analyze the provided SOAP note and transcript excerpt, then output a JSON object
 Extract the single most important diagnosis from the Assessment section as a short plain-text phrase (e.g. "COPD with progressive dyspnea", "Type 2 diabetes suboptimal control", "Anxiety disorder"). This will be matched to an OHIP diagnostic code automatically. Be specific — use the clinical language from the Assessment.
 
 ### suggestedDiagnosticCode (optional — 3-digit OHIP diagnostic code)
-If you are confident of the exact code, provide it. Common codes: 250 Diabetes | 401 Hypertension | 496 COPD | 493 Asthma | 311 Depression | 300 Anxiety | 715 Osteoarthritis | 724 Back pain | 917 Annual health exam. Leave null if uncertain — the system will resolve from primaryDiagnosis.
+If you are confident of the exact code, provide it. Common codes: 250 Diabetes | 401 Hypertension | 428 CHF | 496 COPD | 493 Asthma | 311 Depression | 300 Anxiety | 715 Osteoarthritis | 724 Back pain | 917 Annual health exam | 707 Chronic skin ulcer / wound | 451 Phlebitis / DVT / thrombophlebitis | 216 Benign skin neoplasm (skin tags / acrochordons / nevi) | 574 Cholelithiasis / gallstones / pre-cholecystectomy | 692 Eczema / dermatitis | 477 Allergic rhinitis | 460 Common cold / nasopharyngitis | 599 UTI | 785 Cardiovascular symptoms (edema, chest pain) | 786 Respiratory symptoms (cough, dyspnea) | 787 GI symptoms | 788 Urinary symptoms | 780 General symptoms (fatigue, dizziness). Use 799 (ill-defined) ONLY when no other 3-digit category fits — prefer a body-system code over 799 wherever possible. Leave null if uncertain — the system will resolve from primaryDiagnosis.
 
 ## Valid Values
 
@@ -293,9 +309,9 @@ If you are confident of the exact code, provide it. Common codes: 250 Diabetes |
 
 ### conditions (array — only include if SPECIFIC MANAGEMENT was done, not just mentioned in history)
 - "diabetes_management" — Diabetes management INCENTIVE: billable when at least 3 diabetic assessment visits (K030A) have occurred in the past year. Include this whenever diabetic_assessment is also included (Q040A)
-- "smoking_cessation" — Active smoking cessation COUNSELLING provided: discussed quit date, NRT options, triggers, or started cessation medication. Not just "smoker" noted in history (Q042A)
+- "smoking_cessation" — Active TOBACCO smoking cessation COUNSELLING. REQUIRES: patient is a CURRENT TOBACCO smoker (cigarettes / cigars / chewing tobacco / vaping nicotine) AND clinician discussed quit date, NRT/varenicline/bupropion options, withdrawal triggers, or started cessation medication. DO NOT use for: cannabis/marijuana counselling, decongestant nasal spray cessation, alcohol cessation, opioid tapering, or any non-tobacco substance. (Q042A)
 - "sti_management" — STI testing ORDERED/PERFORMED, STI treatment prescribed, or contact tracing discussed. Active STI workup, not just sexual history taking (K028A)
-- "chf_management" — Active CHF management: fluid status assessment, diuretic adjustment, weight monitoring, exercise counselling specifically for heart failure. Not just "has CHF" in history (Q050A)
+- "chf_management" — Active CONGESTIVE HEART FAILURE management. REQUIRES: explicit diagnosis of heart failure / CHF / cardiomyopathy / reduced ejection fraction in the Assessment AND active HF-specific management (diuretic dose adjustment, fluid/salt restriction counselling, daily-weight monitoring instructions, ACE-I/ARB/SGLT2 titration FOR HEART FAILURE, BNP/echo review). DO NOT use for: routine hypertension management, beta-blocker for HTN, BP-only monitoring, isolated bradycardia/arrhythmia management. Bisoprolol/metoprolol alone for HTN is NOT chf_management. (Q050A)
 - "neurocognitive" — FORMAL cognitive assessment performed: MMSE, MoCA, clock drawing test, or structured dementia screening tool administered and scored. Takes 20+ min of dedicated testing. NOT general mental status observations, NOT memory complaints discussed without formal testing, NOT neurological exam for non-cognitive concerns (K032A)
 - "home_care" — Home care services APPLICATION submitted (CCAC/home care referral form) or active home care supervision visit (K070A/K071A)
 - "smoking_cessation_follow_up" — FOLLOW-UP visit specifically for smoking cessation progress. Patient previously started cessation program, this is a check-in on quit attempt (K039A)
@@ -303,7 +319,7 @@ If you are confident of the exact code, provide it. Common codes: 250 Diabetes |
 - "psychotherapy" — Individual psychotherapy session (K007A). Minimum 30 min per unit
 - "hiv_primary_care" — HIV primary care management session (K022A). Minimum 20 min per unit
 - "insulin_therapy_support" — Insulin therapy support: training patients on insulin use, device education (K029A). Max 6 units/year
-- "diabetic_assessment" — Dedicated diabetic management assessment: A1C review, foot exam, medication adjustment, glucose monitoring review (K030A). Max 4/year. Include BOTH diabetic_assessment AND diabetes_management when diabetes is actively managed
+- "diabetic_assessment" — Dedicated DIABETIC management assessment. REQUIRES: explicit diabetes / type 1 DM / type 2 DM / gestational diabetes diagnosis in the Assessment AND active diabetic-specific management (A1C / HbA1c review, fasting glucose / fingerstick review, foot exam for neuropathy, retinopathy referral, insulin / metformin / SGLT2 / GLP-1 dose adjustment FOR DIABETES, diabetic dietary counselling). DO NOT use for: Ozempic / semaglutide / GLP-1 prescribed for WEIGHT LOSS or cardiovascular benefit (without diabetes diagnosis); routine BMI/weight discussion; ordering thyroid or iron labs; metabolic syndrome without diabetes; family history of diabetes only. (K030A). Max 4/year. Include BOTH diabetic_assessment AND diabetes_management when diabetes is actively managed
 - "counselling_additional" — Counselling after the first 3 K013 units are exhausted for the year (K033A). Out-of-basket at full FFS
 - "fibromyalgia_care" — Fibromyalgia or myalgic encephalomyelitis care session (K037A). Per unit
 - "idd_primary_care" — Primary care for patient with intellectual/developmental disability (autism, Down syndrome, cerebral palsy, FAS, spina bifida). Minimum 20 min. Requires IDD diagnosis (K125A)
@@ -377,14 +393,45 @@ SOAP: "S: Lump on upper back for 1 year. O: 3cm soft mobile subcutaneous mass. A
 
 CRITICAL RULES:
 1. Include ALL procedures physically performed during the visit — not just the main one. If a nerve block was done AND a nail excision, include BOTH. If an injection was given AND a biopsy taken, include BOTH.
-2. Only include procedures that were PHYSICALLY PERFORMED, not just discussed or planned.
+2. Only include procedures that were PHYSICALLY PERFORMED, not just discussed or planned. A procedure is billable ONLY when described in the past tense ("applied", "injected", "froze", "drained", "sutured", "removed"). Modal verbs ("could", "would", "might", "will", "let me grab") without follow-through, or "discussed but used over-the-counter instead", do NOT count as performance.
 3. Only include conditions where ACTIVE MANAGEMENT occurred during this visit, not conditions merely listed in the patient's medical history.
 4. For visits involving procedures (injection, excision, biopsy, etc.), the visit type should typically be "intermediate_assessment" unless it was truly brief (<10 min) or comprehensive (multi-system).
 5. When uncertain about a procedure, leave it out rather than guessing. But when a procedure is clearly described as performed, always include it.
 6. If no condition from the list matches what happened in the visit, leave the conditions array EMPTY. Do NOT force-fit unrelated clinical activities into a condition. Ordering labs, making referrals, or general investigations are NOT conditions — they are part of the assessment and plan.
-7. diabetic_assessment requires EXPLICIT diabetes management (A1C, glucose, diabetic medication adjustment, diabetic foot exam). Ordering thyroid or iron labs is NOT diabetic_assessment.
+7. diabetic_assessment requires EXPLICIT diabetes management (A1C, glucose, diabetic medication adjustment, diabetic foot exam). Ordering thyroid or iron labs is NOT diabetic_assessment. Ozempic / GLP-1 agonists prescribed for WEIGHT LOSS without a diabetes diagnosis is NOT diabetic_assessment.
+8. smoking_cessation requires TOBACCO use. Counselling on cannabis, marijuana, decongestant nasal sprays, or any non-tobacco substance is NOT smoking_cessation.
+9. chf_management requires an EXPLICIT heart failure diagnosis. Routine hypertension management with a beta-blocker is NOT chf_management.
 
-Respond ONLY with the JSON object. No explanations or commentary."#.to_string());
+VISIT-TYPE CALIBRATION:
+Calibrate visitType to the actual scope of the visit, not just count of issues:
+- "minor_assessment" (A001A) — SINGLE focused complaint, brief history + targeted exam, <10 min. UTI symptom check, single Rx renewal with brief exam, single rash review.
+- "intermediate_assessment" (A007A) — Moderate complexity, 1-2 issues addressed, 10-20 min. Standard follow-up, well-baby check, routine chronic disease follow-up.
+- "general_reassessment" (A004A) — Comprehensive ESTABLISHED patient follow-up addressing 3+ active problems. Multi-system review, typically 20-30 min. If the SOAP A section lists three or more distinct diagnoses or the Plan addresses several different organ systems / chronic conditions, prefer "general_reassessment" over "intermediate_assessment".
+- "general_assessment" (A003A) — Comprehensive NEW patient workup OR annual complete exam.
+- "mini_assessment" (A008A) — <5 min, no exam (Rx renewal, form signature only).
+- "virtual_phone" (A102A) — Telephone visit. Pick this when the SOAP explicitly contains telephone-call language ("calling", "we'll call you back", "phone visit", "over the phone").
+- "virtual_video" (A101A) — Video telemedicine visit.
+
+DIAGNOSTIC CODE — chief-complaint reasoning:
+Before emitting suggestedDiagnosticCode, walk through:
+  1. Enumerate every distinct diagnosis listed in the SOAP A section.
+  2. Identify the CHIEF COMPLAINT — the visit's actual reason today (often the dominant entry in S, or the diagnosis driving the most active management in P).
+  3. Pick the 3-digit OHIP code matching the chief complaint, NOT the most prominent chronic condition.
+
+Examples:
+  • "S: nasal congestion. A: rhinitis medicamentosa. P: stop nasal spray." → 477 (allergic rhinitis), NOT 401 (HTN).
+  • "S: wart on foot. A: HTN management on apixaban; plantar wart." → 707 (skin), NOT 401. Wart is the visit reason; HTN is incidental.
+  • "S: foot swelling. A: foot edema, pending DVT rule-out." → 451 (phlebitis/DVT), NOT 799.
+  • "S: skin tags. A: irritated acrochordons. P: liquid nitrogen offered." → 216 (benign skin neoplasm), NOT 799.
+  • "A: rheumatoid arthritis with peripheral nerve symptoms." → 714 (RA), NOT 715 (osteoarthritis) — pick the most specific autoimmune dx when stated.
+  • "S: low back pain x 1 week. A: chronic LBP with sciatica." → 724 (back pain), NOT 729 (fibromyalgia).
+
+If multiple codes are equally plausible, pick the most specific one tied to the chief complaint. Use 799 ONLY when no body-system code fits.
+
+OUTPUT FORMAT — STRICT:
+- Output ONE JSON object and NOTHING else. No explanations, no Markdown fences, no prose before or after, no "correction" notes, no summary.
+- If you need to revise during reasoning, internally do so but emit ONLY the final corrected JSON object.
+- The conditionEvidence value for each condition must be a brief AFFIRMATIVE quote that supports inclusion. If the evidence text would say "not present", "not mentioned", "should not be included", "no evidence", or otherwise admit the condition does not apply, REMOVE that condition from the conditions array entirely — do not include it with a self-defeating evidence string."#.to_string());
 
     let context_section = if context_hints.is_empty() {
         String::new()
@@ -405,43 +452,137 @@ Respond ONLY with the JSON object. No explanations or commentary."#.to_string())
 /// Parse the LLM response into a `ClinicalFeatures` struct.
 ///
 /// Handles common LLM output quirks: markdown code fences, leading prose
-/// before the JSON, trailing text after the JSON, etc.
+/// before the JSON, trailing text after the JSON, etc. When the response
+/// contains MULTIPLE JSON blocks (LLM emits draft + corrected revision), the
+/// LAST parseable block wins — Apr 24 2026 saw the LLM self-correct in prose
+/// after its first JSON, so taking the first block locked in hallucinated
+/// conditions the LLM had already retracted.
+///
+/// After successful parse, conditions whose `conditionEvidence` text contains
+/// negation phrases ("not present", "should not be included", "no evidence",
+/// etc.) are stripped — the LLM uses the evidence field itself to confess
+/// when it shouldn't have included a condition (Alexander Gulas + Jerry
+/// Zandbergen, Apr 24 2026).
 pub fn parse_billing_extraction(response: &str) -> Result<ClinicalFeatures, String> {
-    let mut text = response.to_string();
-
-    // Strip markdown code fences
-    text = text.replace("```json", "").replace("```", "");
-
-    // Find JSON object boundaries
-    let start = text
-        .find('{')
-        .ok_or_else(|| "No JSON object found in response".to_string())?;
-    let end = text
-        .rfind('}')
-        .ok_or_else(|| "No closing brace found in response".to_string())?;
-
-    if end < start {
-        return Err("Malformed JSON: closing brace before opening brace".to_string());
+    let blocks = candidate_json_blocks(response);
+    if blocks.is_empty() {
+        return Err("No JSON object found in response".to_string());
     }
 
-    let json_str = &text[start..=end];
-
-    // Try strict parse first
-    match serde_json::from_str::<ClinicalFeatures>(json_str) {
-        Ok(features) => return Ok(features),
-        Err(_) => {}
+    // Walk newest → oldest so the LAST parseable JSON in the response wins.
+    let mut last_err: Option<String> = None;
+    for block in blocks.iter().rev() {
+        match try_parse_features(block) {
+            Ok(features) => return Ok(strip_self_negated_conditions(features)),
+            Err(e) => last_err = Some(e),
+        }
     }
+    Err(last_err.unwrap_or_else(|| "Failed to parse any JSON block".to_string()))
+}
 
-    // Fallback: use streaming deserializer to handle trailing content after valid JSON
+/// Return every `{...}` substring in the response, in document order. Markdown
+/// code fences are stripped before scanning. Brace counting respects strings
+/// (so `"foo: {"` doesn't open a new block).
+fn candidate_json_blocks(response: &str) -> Vec<String> {
+    let stripped = response.replace("```json", "").replace("```", "");
+    let bytes = stripped.as_bytes();
+    let mut blocks = Vec::new();
+    let mut depth: i32 = 0;
+    let mut start: Option<usize> = None;
+    let mut in_str = false;
+    let mut escaped = false;
+    for (i, &b) in bytes.iter().enumerate() {
+        if in_str {
+            if escaped {
+                escaped = false;
+            } else if b == b'\\' {
+                escaped = true;
+            } else if b == b'"' {
+                in_str = false;
+            }
+            continue;
+        }
+        match b {
+            b'"' => in_str = true,
+            b'{' => {
+                if depth == 0 {
+                    start = Some(i);
+                }
+                depth += 1;
+            }
+            b'}' => {
+                depth -= 1;
+                if depth == 0 {
+                    if let Some(s) = start.take() {
+                        blocks.push(stripped[s..=i].to_string());
+                    }
+                }
+                if depth < 0 {
+                    depth = 0;
+                }
+            }
+            _ => {}
+        }
+    }
+    blocks
+}
+
+fn try_parse_features(json_str: &str) -> Result<ClinicalFeatures, String> {
+    if let Ok(features) = serde_json::from_str::<ClinicalFeatures>(json_str) {
+        return Ok(features);
+    }
     let mut deserializer = serde_json::Deserializer::from_str(json_str);
-    match ClinicalFeatures::deserialize(&mut deserializer) {
-        Ok(features) => Ok(features),
-        Err(e) => Err(format!(
+    ClinicalFeatures::deserialize(&mut deserializer).map_err(|e| {
+        format!(
             "Failed to parse clinical features JSON: {}. Input: {}",
             e,
             &json_str[..json_str.len().min(200)]
-        )),
+        )
+    })
+}
+
+/// Phrases the LLM uses to confess in the evidence field that the condition
+/// shouldn't have been included. Lowercased; substring match.
+const SELF_NEGATING_EVIDENCE_PHRASES: &[&str] = &[
+    "not present",
+    "not mentioned",
+    "not documented",
+    "no evidence",
+    "should not be included",
+    "should not include",
+    "not supported",
+    "not applicable",
+    "n/a",
+    "is not",
+    "no specific evidence",
+];
+
+fn strip_self_negated_conditions(mut features: ClinicalFeatures) -> ClinicalFeatures {
+    let mut dropped_keys: Vec<String> = Vec::new();
+    features.conditions.retain(|c| {
+        let Some(key) = enum_to_snake_key(c) else { return true };
+        let Some(evidence) = features.condition_evidence.get(&key) else { return true };
+        let lc = evidence.to_lowercase();
+        let self_negated = SELF_NEGATING_EVIDENCE_PHRASES
+            .iter()
+            .any(|p| lc.contains(p));
+        if self_negated {
+            dropped_keys.push(key);
+            false
+        } else {
+            true
+        }
+    });
+    if !dropped_keys.is_empty() {
+        tracing::warn!(
+            "Dropped conditions with self-negating evidence: {:?}",
+            dropped_keys
+        );
+        for k in &dropped_keys {
+            features.condition_evidence.remove(k);
+        }
     }
+    features
 }
 
 // ── Tests ──────────────────────────────────────────────────────────────────
@@ -464,6 +605,11 @@ mod tests {
         assert!(system.contains("immunization_flu"));
         assert!(system.contains("primary_mental_health"));
         assert!(system.contains("pap_smear_repeat"));
+        // v0.10.61 calibration sections must be present
+        assert!(system.contains("VISIT-TYPE CALIBRATION"));
+        assert!(system.contains("3+ active problems"));
+        assert!(system.contains("DIAGNOSTIC CODE — chief-complaint reasoning"));
+        assert!(system.contains("CHIEF COMPLAINT"));
         assert!(user.contains("SOAP content here"));
         assert!(user.contains("Transcript here"));
         // No context section when hints are empty
@@ -566,6 +712,76 @@ This patient had a diabetes follow-up via phone."#;
         let json = r#"{"visitType":"unknown_type","procedures":[],"conditions":[],"setting":"in_office","isNewPatient":false,"isAfterHours":false,"patientCount":null,"estimatedDurationMinutes":10,"confidence":0.5}"#;
         let result = parse_billing_extraction(json);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_parse_takes_last_json_block_when_llm_revises() {
+        // The LLM emits a draft JSON, then a corrected JSON after prose.
+        // The parser must take the LAST block so the correction wins.
+        let response = r#"```json
+{"visitType":"general_reassessment","procedures":[],"conditions":["diabetic_assessment"],"setting":"in_office","isNewPatient":false,"isAfterHours":false,"patientCount":null,"estimatedDurationMinutes":20,"confidence":0.85,"primaryDiagnosis":"foo","conditionEvidence":{"diabetic_assessment":"some evidence"}}
+```
+
+On reflection, no diabetes management actually occurred. Here is the corrected output:
+
+```json
+{"visitType":"general_reassessment","procedures":[],"conditions":[],"setting":"in_office","isNewPatient":false,"isAfterHours":false,"patientCount":null,"estimatedDurationMinutes":20,"confidence":0.9,"primaryDiagnosis":"foo"}
+```"#;
+        let features = parse_billing_extraction(response).unwrap();
+        assert!(features.conditions.is_empty(), "corrected JSON's empty conditions should win, got {:?}", features.conditions);
+    }
+
+    #[test]
+    fn test_parse_strips_self_negated_conditions() {
+        // 2026-04-24 Alexander Gulas + Jerry Zandbergen: LLM left
+        // "diabetic_assessment" in conditions[] but its evidence string
+        // explicitly admitted it shouldn't be included.
+        let response = r#"{
+  "visitType": "general_reassessment",
+  "procedures": [],
+  "conditions": ["diabetic_assessment"],
+  "setting": "in_office",
+  "isNewPatient": false,
+  "isAfterHours": false,
+  "patientCount": null,
+  "estimatedDurationMinutes": 20,
+  "confidence": 0.85,
+  "primaryDiagnosis": "Rheumatoid arthritis",
+  "conditionEvidence": {
+    "diabetic_assessment": "The transcript mentions diabetic_assessment but the SOAP does NOT contain evidence of diabetic management. Therefore, this should NOT be included as it is not supported by the text."
+  }
+}"#;
+        let features = parse_billing_extraction(response).unwrap();
+        assert!(
+            features.conditions.is_empty(),
+            "self-negating evidence should drop the condition; got {:?}",
+            features.conditions
+        );
+        assert!(
+            features.condition_evidence.is_empty(),
+            "evidence map should also be cleared for the dropped condition"
+        );
+    }
+
+    #[test]
+    fn test_parse_keeps_genuine_evidence() {
+        let response = r#"{
+  "visitType": "general_reassessment",
+  "procedures": [],
+  "conditions": ["diabetic_assessment"],
+  "setting": "in_office",
+  "isNewPatient": false,
+  "isAfterHours": false,
+  "patientCount": null,
+  "estimatedDurationMinutes": 20,
+  "confidence": 0.9,
+  "primaryDiagnosis": "Suboptimal type 2 diabetes",
+  "conditionEvidence": {
+    "diabetic_assessment": "A1C 7.8%, increased metformin, recheck in 3 months"
+  }
+}"#;
+        let features = parse_billing_extraction(response).unwrap();
+        assert_eq!(features.conditions, vec![ConditionType::DiabeticAssessment]);
     }
 
     #[test]

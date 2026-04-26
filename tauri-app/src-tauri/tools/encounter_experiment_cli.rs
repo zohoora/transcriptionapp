@@ -17,6 +17,7 @@ use std::path::PathBuf;
 
 use transcription_app_lib::config::Config;
 use transcription_app_lib::encounter_experiment::*;
+use transcription_app_lib::experiment::labels::load_label_for_session;
 use transcription_app_lib::llm_client::LLMClient;
 
 fn print_usage(program: &str) {
@@ -441,6 +442,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 accum_points.len(),
             );
 
+            // Labels corpus uses YYYY-MM-DD; CLI takes YYYY/MM/DD. Translate
+            // once per run so each pair's lookup is a cheap file stat.
+            let labels_date = date.replace('/', "-");
+
             for pair_idx in 0..continuous.len() - 1 {
                 let enc_a = continuous[pair_idx];
                 let enc_b = continuous[pair_idx + 1];
@@ -448,11 +453,29 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let name_a = enc_a.patient_name.as_deref().unwrap_or("unknown");
                 let name_b = enc_b.patient_name.as_deref().unwrap_or("unknown");
 
-                let same_patient = name_a == name_b;
-                let expected_label = if same_patient {
-                    "complete=false (same patient)"
+                // Prefer the labeled corpus answer when present. enc_a's
+                // `split_correct` field captures whether the production split
+                // at enc_a's trailing edge was correct — exactly what Mode B
+                // asks about. Falls back to the name-based heuristic when no
+                // label has been recorded for the session yet.
+                let label_a = load_label_for_session(&enc_a.session_id, &labels_date);
+                let label_split_says = label_a
+                    .as_ref()
+                    .and_then(|l| l.labels.split_correct);
+                let same_patient = match label_split_says {
+                    Some(true) => false,  // split was correct → different patients
+                    Some(false) => true,  // split was wrong → same patient
+                    None => name_a == name_b,
+                };
+                let expected_source = if label_split_says.is_some() {
+                    "label"
                 } else {
-                    "complete=true (different patients)"
+                    "names"
+                };
+                let expected_label = if same_patient {
+                    format!("complete=false (same patient, source={expected_source})")
+                } else {
+                    format!("complete=true (different patients, source={expected_source})")
                 };
 
                 println!(

@@ -22,6 +22,7 @@ use transcription_app_lib::encounter_detection::{
 use transcription_app_lib::llm_client::LLMClient;
 use transcription_app_lib::local_archive;
 use transcription_app_lib::replay_bundle::{find_replay_bundles, ReplayBundle};
+use transcription_app_lib::replay_fetch::ArchiveFetcher;
 
 const DEFAULT_THRESHOLD: f64 = 90.0;
 const DEFAULT_TRIALS: u32 = 1;
@@ -37,6 +38,7 @@ fn print_usage(program: &str) {
     eprintln!("Arguments:");
     eprintln!("  PATH                Search this directory for replay_bundle.json files");
     eprintln!("  --all               Replay all bundles in ~/.transcriptionapp/archive/");
+    eprintln!("  --date YYYY-MM-DD   Replay every session on that date (server fallback)");
     eprintln!();
     eprintln!("Options:");
     eprintln!("  --trials N          Run each check N times, take majority vote (default: 1)");
@@ -62,6 +64,7 @@ async fn main() -> ExitCode {
     }
 
     let mut archive_path: Option<PathBuf> = None;
+    let mut date_arg: Option<String> = None;
     let mut all_archives = false;
     let mut trials: u32 = DEFAULT_TRIALS;
     let mut fail_on_mismatch = false;
@@ -72,6 +75,11 @@ async fn main() -> ExitCode {
     while i < args.len() {
         match args[i].as_str() {
             "--all" => all_archives = true,
+            "--date" => {
+                i += 1;
+                if i >= args.len() { eprintln!("--date needs a YYYY-MM-DD value"); return ExitCode::from(1); }
+                date_arg = Some(args[i].clone());
+            }
             "--mismatches" => mismatches_only = true,
             "--fail-on-mismatch" => fail_on_mismatch = true,
             "--trials" => {
@@ -101,13 +109,41 @@ async fn main() -> ExitCode {
         i += 1;
     }
 
-    let search_path = if all_archives {
-        local_archive::get_archive_dir().expect("Could not determine archive directory")
-    } else if let Some(ref path) = archive_path {
-        path.clone()
+    let sources: Vec<(String, ReplayBundle)> = if let Some(date) = date_arg {
+        let fetcher = ArchiveFetcher::from_env().unwrap_or_else(|e| {
+            eprintln!("warn: ArchiveFetcher init failed ({e}); falling back to local-only");
+            ArchiveFetcher::local_only()
+        });
+        match fetcher.list_replay_bundles_for_date(&date).await {
+            Ok(b) if b.is_empty() => {
+                eprintln!("No replay_bundle.json found for {} (local or server)", date);
+                return ExitCode::SUCCESS;
+            }
+            Ok(b) => b,
+            Err(e) => { eprintln!("Error: list bundles for {}: {}", date, e); return ExitCode::from(1); }
+        }
     } else {
-        eprintln!("Error: provide an archive path or use --all");
-        return ExitCode::from(1);
+        let search_path = if all_archives {
+            local_archive::get_archive_dir().expect("Could not determine archive directory")
+        } else if let Some(ref path) = archive_path {
+            path.clone()
+        } else {
+            eprintln!("Error: provide an archive path, --all, or --date YYYY-MM-DD");
+            return ExitCode::from(1);
+        };
+        let bundle_paths = find_replay_bundles(&search_path);
+        if bundle_paths.is_empty() {
+            eprintln!("No replay bundles found");
+            return ExitCode::SUCCESS;
+        }
+        let mut out: Vec<(String, ReplayBundle)> = Vec::new();
+        for bundle_path in &bundle_paths {
+            let content = match fs::read_to_string(bundle_path) { Ok(c) => c, Err(_) => continue };
+            let bundle: ReplayBundle = match serde_json::from_str(&content) { Ok(b) => b, Err(_) => continue };
+            let display = bundle_path.strip_prefix(&search_path).unwrap_or(bundle_path).display().to_string();
+            out.push((display, bundle));
+        }
+        out
     };
 
     let config = Config::load_or_default();
@@ -122,30 +158,15 @@ async fn main() -> ExitCode {
         Err(e) => { eprintln!("LLM init failed: {e}"); return ExitCode::from(1); }
     };
 
-    eprintln!("Clinical-check replay against {} (model={}, trials={})",
-        search_path.display(), model, trials);
+    eprintln!("Clinical-check replay (model={}, trials={}, bundles={})",
+        model, trials, sources.len());
     eprintln!();
-
-    let bundle_paths = find_replay_bundles(&search_path);
-    if bundle_paths.is_empty() {
-        eprintln!("No replay bundles found");
-        return ExitCode::SUCCESS;
-    }
 
     let mut total = 0;
     let mut matches = 0;
     let mut mismatches = 0;
 
-    for bundle_path in &bundle_paths {
-        let content = match fs::read_to_string(bundle_path) {
-            Ok(c) => c,
-            Err(_) => continue,
-        };
-        let bundle: ReplayBundle = match serde_json::from_str(&content) {
-            Ok(b) => b,
-            Err(_) => continue,
-        };
-
+    for (display, bundle) in sources {
         let archived_clinical = match bundle.clinical_check.as_ref() {
             Some(c) if c.success => c.is_clinical,
             _ => continue, // skip bundles without a clinical check or where it failed
@@ -188,7 +209,6 @@ async fn main() -> ExitCode {
         if agree { matches += 1; } else { mismatches += 1; }
 
         if mismatches_only && agree { continue; }
-        let display = bundle_path.strip_prefix(&search_path).unwrap_or(bundle_path).display();
         let status = if agree { "MATCH" } else { "MISMATCH" };
         let majority_str = match majority {
             Some(true) => "true",

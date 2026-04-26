@@ -246,6 +246,7 @@ pub async fn extract_billing_codes(
         Some(&sc.prompts),
         Some(&sc.billing),
         Some(sc.thresholds.billing_extraction_timeout_secs),
+        None, // command path: no replay bundle context (not in continuous mode)
     ).await
     .map_err(CommandError::Other)?;
 

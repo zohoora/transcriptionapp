@@ -1,0 +1,17 @@
+{
+  "session_id": "1ec7a57e-0b03-4487-9915-fea5a4c0ea8d",
+  "date": "2026-04-24",
+  "labeled_at": "2026-04-24T19:30:00Z",
+  "labeled_by": "Dr Arash Zohoor (via forensic review)",
+  "labels": {
+    "clinical_correct": true,
+    "patient_count_correct": true,
+    "billing_codes_expected": [
+      "A004A",
+      "G372A",
+      "Q310A"
+    ],
+    "diagnostic_code_expected": "714",
+    "notes": "Billing LLM's response_raw contains explicit self-correction saying 'diabetic_assessment should NOT be included as it is not supported by the text' \u2014 but the JSON conditions array still contains ['diabetic_assessment']. Parser took the first JSON block and ignored the prose correction. K030A diabetic management is pure hallucination \u2014 no diabetes mention anywhere in transcript."
+  }
+}
