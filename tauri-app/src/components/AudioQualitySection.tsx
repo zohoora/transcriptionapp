@@ -1,4 +1,5 @@
 import { AudioQualitySnapshot, AUDIO_QUALITY_THRESHOLDS } from '../types';
+import { clamp } from '../utils';
 
 interface AudioQualitySectionProps {
   audioQuality: AudioQualitySnapshot | null;
@@ -9,7 +10,7 @@ interface AudioQualitySectionProps {
 // Level: -40 to -6 dBFS is good range
 function getLevelPercent(value: number): number {
   const { LEVEL_MIN_DISPLAY, LEVEL_MAX_DISPLAY } = AUDIO_QUALITY_THRESHOLDS;
-  return Math.min(100, Math.max(0, ((value - LEVEL_MIN_DISPLAY) / (LEVEL_MAX_DISPLAY - LEVEL_MIN_DISPLAY)) * 100));
+  return clamp(((value - LEVEL_MIN_DISPLAY) / (LEVEL_MAX_DISPLAY - LEVEL_MIN_DISPLAY)) * 100, 0, 100);
 }
 
 function getLevelClass(value: number): string {
@@ -22,7 +23,7 @@ function getLevelClass(value: number): string {
 // SNR: >10 dB is good
 function getSnrPercent(value: number): number {
   const { SNR_MAX_DISPLAY } = AUDIO_QUALITY_THRESHOLDS;
-  return Math.min(100, Math.max(0, (value / SNR_MAX_DISPLAY) * 100));
+  return clamp((value / SNR_MAX_DISPLAY) * 100, 0, 100);
 }
 
 function getSnrClass(value: number): string {

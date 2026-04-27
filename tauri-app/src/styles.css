@@ -2937,14 +2937,38 @@ body {
   overflow: hidden;
 }
 
-/* Left pane: calendar + session list */
+/* Left pane: calendar + session list. Width is driven by React state (inline
+   style) so the user can drag the .history-resizer handle to widen/shrink
+   the sidebar. min-width below acts as a safety floor if React state misses. */
 .history-left-pane {
-  width: 320px;
-  min-width: 280px;
+  flex: 0 0 auto;
+  min-width: 240px;
   display: flex;
   flex-direction: column;
   border-right: 1px solid var(--border-color);
   overflow: hidden;
+}
+
+/* Drag handle between left and right panes. Thin (4px) for a clean look,
+   with a wider invisible hit-area would be ideal but at 4px on the visible
+   border it's still grabbable. col-resize cursor announces the affordance. */
+.history-resizer {
+  flex: 0 0 4px;
+  cursor: col-resize;
+  background: transparent;
+  border-right: 1px solid var(--border-color);
+  transition: background 120ms ease;
+}
+
+.history-resizer:hover,
+.history-resizer:active,
+.history-resizer:focus-visible {
+  background: var(--border-color);
+}
+
+.history-resizer:focus-visible {
+  outline: 2px solid var(--primary-color);
+  outline-offset: -1px;
 }
 
 .history-left-scroll {

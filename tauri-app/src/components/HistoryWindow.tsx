@@ -18,7 +18,7 @@ import {
 import ConfirmPatientsBatchDialog from './ConfirmPatientsBatchDialog';
 import FeedbackPanel from './FeedbackPanel';
 import { BillingTab, DailySummaryView, MonthlySummaryView } from './billing';
-import { formatDateForApi, formatLocalTime, formatLocalDateTime, formatDurationShort } from '../utils';
+import { clamp, formatDateForApi, formatLocalTime, formatLocalDateTime, formatDurationShort } from '../utils';
 import type {
   LocalArchiveSummary,
   LocalArchiveDetails,
@@ -257,6 +257,94 @@ const HistoryWindow: React.FC = () => {
   const [sortField, setSortField] = useState<SortField>('time');
   const [sortDir, setSortDir] = useState<SortDir>('asc');
   const [filterMode, setFilterMode] = useState<FilterMode>('all');
+
+  // Resizable left pane. Drag drives the DOM directly via leftPaneRef and
+  // commits to state only on mouseup, so a 60Hz drag doesn't trigger 60
+  // re-renders of this 1500-line component (or 60 localStorage writes).
+  // State (and the inline style fallback) take over after mouseup so a
+  // subsequent re-render keeps the chosen width.
+  const LEFT_PANE_MIN = 240;
+  const LEFT_PANE_MAX = 640;
+  const LEFT_PANE_DEFAULT = 320;
+  const LEFT_PANE_KEY_STEP = 8;
+  const LEFT_PANE_KEY_BIG_STEP = 32;
+  const [leftPaneWidth, setLeftPaneWidth] = useState<number>(() => {
+    try {
+      const raw = window.localStorage?.getItem?.('historyLeftPaneWidth');
+      const saved = Number(raw);
+      if (Number.isFinite(saved) && saved >= LEFT_PANE_MIN && saved <= LEFT_PANE_MAX) {
+        return saved;
+      }
+    } catch {
+      // jsdom or sandboxed environments may not expose localStorage; fall through.
+    }
+    return LEFT_PANE_DEFAULT;
+  });
+  const leftPaneRef = useRef<HTMLDivElement | null>(null);
+  const dragRef = useRef<{
+    onMove: (ev: MouseEvent) => void;
+    onUp: () => void;
+    pendingWidth: number;
+  } | null>(null);
+  const beginPaneDrag = useCallback((startX: number, startWidth: number) => {
+    const onMove = (ev: MouseEvent) => {
+      const next = clamp(startWidth + (ev.clientX - startX), LEFT_PANE_MIN, LEFT_PANE_MAX);
+      if (leftPaneRef.current) {
+        leftPaneRef.current.style.width = `${next}px`;
+      }
+      if (dragRef.current) dragRef.current.pendingWidth = next;
+    };
+    const onUp = () => {
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+      const final = dragRef.current?.pendingWidth ?? startWidth;
+      dragRef.current = null;
+      setLeftPaneWidth(final);
+      try {
+        window.localStorage?.setItem?.('historyLeftPaneWidth', String(final));
+      } catch {
+        // ignore storage failures (e.g. private browsing quota)
+      }
+    };
+    dragRef.current = { onMove, onUp, pendingWidth: startWidth };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+  }, []);
+  const onResizeMouseDown = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    const startWidth = leftPaneRef.current?.getBoundingClientRect().width ?? leftPaneWidth;
+    beginPaneDrag(e.clientX, startWidth);
+  }, [beginPaneDrag, leftPaneWidth]);
+  const onResizeKeyDown = useCallback((e: React.KeyboardEvent) => {
+    const step = e.shiftKey ? LEFT_PANE_KEY_BIG_STEP : LEFT_PANE_KEY_STEP;
+    let next: number | null = null;
+    if (e.key === 'ArrowLeft') next = leftPaneWidth - step;
+    else if (e.key === 'ArrowRight') next = leftPaneWidth + step;
+    else if (e.key === 'Home') next = LEFT_PANE_MIN;
+    else if (e.key === 'End') next = LEFT_PANE_MAX;
+    if (next === null) return;
+    e.preventDefault();
+    const clamped = clamp(next, LEFT_PANE_MIN, LEFT_PANE_MAX);
+    setLeftPaneWidth(clamped);
+    try {
+      window.localStorage?.setItem?.('historyLeftPaneWidth', String(clamped));
+    } catch { /* ignore */ }
+  }, [leftPaneWidth]);
+  // Mid-drag unmount: detach window listeners and restore body styles so a
+  // closed window doesn't leave the document in col-resize forever.
+  useEffect(() => () => {
+    if (dragRef.current) {
+      window.removeEventListener('mousemove', dragRef.current.onMove);
+      window.removeEventListener('mouseup', dragRef.current.onUp);
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+      dragRef.current = null;
+    }
+  }, []);
 
   // Data source — local archive is production storage, always the default
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -1238,7 +1326,11 @@ const HistoryWindow: React.FC = () => {
       <div className="history-split-pane">
 
         {/* LEFT PANE — calendar + session list */}
-        <div className="history-left-pane">
+        <div
+          className="history-left-pane"
+          ref={leftPaneRef}
+          style={{ width: leftPaneWidth }}
+        >
           <div className="history-left-scroll">
           {/* Success message */}
           {cleanupMessage && (
@@ -1462,6 +1554,20 @@ const HistoryWindow: React.FC = () => {
             </div>
           )}
         </div>
+
+        {/* Resize handle — drag or use arrow keys to widen / shrink the left pane */}
+        <div
+          className="history-resizer"
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="Resize sidebar"
+          aria-valuenow={leftPaneWidth}
+          aria-valuemin={LEFT_PANE_MIN}
+          aria-valuemax={LEFT_PANE_MAX}
+          tabIndex={0}
+          onMouseDown={onResizeMouseDown}
+          onKeyDown={onResizeKeyDown}
+        />
 
         {/* RIGHT PANE — session details or billing summaries */}
         <div className="history-right-pane">

@@ -23,6 +23,13 @@ export function truncateText(text: string, maxLength: number): string {
 }
 
 /**
+ * Clamp a number to [min, max]. NaN-in → NaN-out (Math.min/max propagate).
+ */
+export function clamp(value: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, value));
+}
+
+/**
  * Word count for transcript
  */
 export function countWords(text: string): number {

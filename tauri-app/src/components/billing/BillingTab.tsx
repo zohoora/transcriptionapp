@@ -3,7 +3,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { writeText } from '@tauri-apps/plugin-clipboard-manager';
 import type { BillingRecord, BillingCode, BillingContext, OhipCodeSearchResult, DiagnosticCodeSearchResult, BillingCategory, SessionFeedback } from '../../types';
 import { VISIT_SETTING_OPTIONS } from '../../types';
-import { cycleTriState, updateSessionFeedback } from '../../utils';
+import { clamp, cycleTriState, updateSessionFeedback } from '../../utils';
 import { formatCents, confidenceBadgeClass, OHIP_CODE_CRITERIA, ADDON_CODE_PAIRS, findConflicts, findAllConflicts } from './billingUtils';
 
 interface BillingTabProps {
@@ -231,7 +231,7 @@ export const BillingTab: React.FC<BillingTabProps> = ({
     // Regular code (no add-on pair): adjust quantity directly
     const updated = { ...record, codes: record.codes.map((c, i) => {
       if (i !== index) return c;
-      const newQty = Math.max(1, Math.min(10, (c.quantity ?? 1) + delta));
+      const newQty = clamp((c.quantity ?? 1) + delta, 1, 10);
       return { ...c, quantity: newQty };
     })};
     recalcTotals(updated);

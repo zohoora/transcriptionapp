@@ -1,5 +1,6 @@
 import { memo } from 'react';
 import type { ListeningStatus, AuthState } from '../../types';
+import { clamp } from '../../utils';
 
 interface ReadyModeProps {
   // Audio level for mic preview
@@ -128,7 +129,7 @@ export const ReadyMode = memo(function ReadyMode({
         <div className="mic-level-bar">
           <div
             className="mic-level-fill"
-            style={{ width: `${Math.min(100, Math.max(0, audioLevel))}%` }}
+            style={{ width: `${clamp(audioLevel, 0, 100)}%` }}
           />
         </div>
       </div>

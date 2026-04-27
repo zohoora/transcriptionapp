@@ -16,7 +16,7 @@ import { memo, useMemo } from 'react';
 import type { BiomarkerUpdate, SpeakerBiomarkers } from '../types';
 import { BIOMARKER_THRESHOLDS } from '../types';
 import type { TrendDirection } from '../hooks/usePatientBiomarkers';
-import { aggregatePatientSpeakers } from '../utils';
+import { aggregatePatientSpeakers, clamp } from '../utils';
 
 // ============================================================================
 // Types
@@ -201,7 +201,7 @@ function determinePulseState(
 
 /** Compact 40px capsule progress bar (only shown on alert cards) */
 function MiniBar({ value, max }: { value: number; max: number }) {
-  const pct = Math.min(Math.max(value / max, 0), 1) * 100;
+  const pct = clamp(value / max, 0, 1) * 100;
   return (
     <span className="pulse-mini-bar" aria-label={`${Math.round(pct)}%`}>
       <span className="pulse-mini-bar-fill" style={{ width: `${pct}%` }} />

@@ -37,7 +37,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { writeText } from '@tauri-apps/plugin-clipboard-manager';
 import type { CoughEvent, OllamaStatus, SoapNote, SoapOptions, SoapFormat, MultiPatientSoapResult, Settings } from '../types';
 import { DEFAULT_SOAP_OPTIONS } from '../types';
-import { formatErrorMessage } from '../utils';
+import { clamp, formatErrorMessage } from '../utils';
 
 export interface UseSoapNoteResult {
   isGeneratingSoap: boolean;
@@ -109,7 +109,7 @@ export function useSoapNote(): UseSoapNoteResult {
 
   // Update individual SOAP options
   const updateSoapDetailLevel = useCallback((level: number) => {
-    setSoapOptions(prev => ({ ...prev, detail_level: Math.max(1, Math.min(10, level)) }));
+    setSoapOptions(prev => ({ ...prev, detail_level: clamp(level, 1, 10) }));
   }, []);
 
   const updateSoapFormat = useCallback((format: SoapFormat) => {

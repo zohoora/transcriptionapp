@@ -1,4 +1,5 @@
 import { ConversationDynamics, BIOMARKER_THRESHOLDS } from '../types';
+import { clamp } from '../utils';
 
 interface ConversationDynamicsSectionProps {
   dynamics: ConversationDynamics;
@@ -16,7 +17,7 @@ function getResponseLatencyClass(value: number): string {
 
 function getEngagementPercent(value: number | null): number {
   if (value === null) return 0;
-  return Math.min(100, Math.max(0, value));
+  return clamp(value, 0, 100);
 }
 
 function getEngagementClass(value: number | null): string {
