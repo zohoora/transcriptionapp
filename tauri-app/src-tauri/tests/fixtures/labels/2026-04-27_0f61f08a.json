@@ -1,0 +1,18 @@
+{
+  "session_id": "0f61f08a-c37a-46ae-9a5a-a41ee22281c2",
+  "date": "2026-04-27",
+  "labeled_at": "2026-04-28T00:00:00+00:00",
+  "labeled_by": "Dr Z (2026-04-27 clinic-day forensic review)",
+  "labels": {
+    "split_correct": false,
+    "merge_correct": false,
+    "clinical_correct": true,
+    "patient_count_correct": false,
+    "expected_patient_count": 2,
+    "procedure_section_correct": true,
+    "billing_codes_expected": ["A004A", "Q310A"],
+    "billing_codes_unexpected": ["G372A"],
+    "diagnostic_code_expected": null,
+    "notes": "Marlene Greenfield 11:19 (15:19-17:20 UTC, 121 min, 3786 words) — INAPPROPRIATELY COMBINED with Tyler Sookraj seen ~1:30pm. Two-patient session that should have split. The 16-year-old son's vaccination content in Marlene's SOAP is actually Tyler. Detection events stop at 15:57:32 (after which a complete=True LLM decision should have triggered a split — but no split fired and no further detection events for 1h 23m). Multi-patient retrospective check did NOT trigger because it requires merge-back AND >=2500 words; merge_back_count=0 here. False G372A billing — there is NO injection in the transcript; the billing-LLM extracted im_injection_with_visit from 'vaccination update' Plan-line discussion (proposed, not performed). Diagnostic code 799 (wastebox fallback). Failure modes: detection-task-stopped-mid-session, multi-patient-retrospective-check-not-triggered (no merge-back precondition), billing-LLM-stance-blindness (proposed-as-performed), dx-799-fallback."
+  }
+}

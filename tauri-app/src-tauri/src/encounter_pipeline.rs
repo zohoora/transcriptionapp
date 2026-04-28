@@ -154,9 +154,17 @@ pub async fn generate_and_archive_soap(
 
             // Replay bundle: capture prompts + response so SOAP-experiment
             // CLIs can replay this encounter through alternate prompts. v5+.
+            // Prefer the raw LLM JSON (with procedure_candidates etc.) over
+            // the formatted text — fix from 2026-04-27 forensic review which
+            // found we'd been silently writing the formatted output, losing
+            // the v0.10.61 stance-filter audit trail.
             if let Some(bundle_arc) = bundle {
                 if let Ok(mut b) = bundle_arc.lock() {
                     let patient_count = soap_result.notes.len();
+                    let raw_for_bundle = soap_result
+                        .raw_response
+                        .clone()
+                        .unwrap_or_else(|| content.clone());
                     b.set_soap_result(crate::replay_bundle::SoapResult {
                         ts: Utc::now().to_rfc3339(),
                         latency_ms,
@@ -166,7 +174,7 @@ pub async fn generate_and_archive_soap(
                         patient_count: if patient_count > 1 { Some(patient_count) } else { None },
                         system_prompt: Some(soap_system_prompt.clone()),
                         user_prompt: None,
-                        response_raw: Some(content.clone()),
+                        response_raw: Some(raw_for_bundle),
                     });
                 }
             }
@@ -1211,6 +1219,7 @@ pub async fn regen_soap_after_merge(
             let after_hours = is_after_hours(&Utc::now());
             let rule_ctx = crate::billing::RuleEngineContext {
                 counselling_exhausted: billing_counselling_exhausted,
+                transcript: Some(filtered_merged.clone()),
                 ..Default::default()
             };
             match extract_and_archive_billing(
@@ -1408,6 +1417,7 @@ mod tests {
             physician_speaker: None,
             generated_at: "2026-03-26T10:00:00Z".into(),
             model_used: "soap-model-fast".into(),
+            raw_response: None,
         };
         let outcome = SoapGenerationOutcome::Success {
             result,

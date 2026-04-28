@@ -1,0 +1,18 @@
+{
+  "session_id": "ed45d3f6-25ba-48e1-b7ef-d934a9d0c6f7",
+  "date": "2026-04-27",
+  "labeled_at": "2026-04-28T00:00:00+00:00",
+  "labeled_by": "Dr Z (2026-04-27 clinic-day forensic review)",
+  "labels": {
+    "split_correct": false,
+    "merge_correct": false,
+    "clinical_correct": true,
+    "patient_count_correct": false,
+    "expected_patient_count": 2,
+    "procedure_section_correct": true,
+    "billing_codes_expected": ["A004A", "Q310A"],
+    "diagnostic_code_expected": "726",
+    "diagnostic_code_acceptable": ["726", "473", "729"],
+    "notes": "Ann Davidson 11:42 (15:42-16:34 UTC, 52 min, 6430 words) — INAPPROPRIATELY COMBINED with the next patient (toe-cyst drainage). Ann's primary issues were left shoulder rotator-cuff tendonitis and chronic sinus congestion; the right-foot ganglion cyst content in the SOAP belongs to the next patient who was put in the same room after Ann left. Multi-patient retrospective check did NOT trigger — same root as Marlene's case. Diagnostic code 726 (fibromyalgia) is wrong sub-pick — Ann had rotator-cuff tendonitis (likely 727 disorders of synovium/tendon/bursa) plus sinus (473). Failure modes: cross-patient-contamination, multi-patient-retrospective-check-not-triggered, dx-fibromyalgia-mis-grouping."
+  }
+}

@@ -1,0 +1,163 @@
+{
+  "date": "2026-04-27",
+  "labeled_at": "2026-04-28T00:00:00+00:00",
+  "labeled_by": "Dr Z (2026-04-27 clinic-day forensic review)",
+  "physician_id": "60e4f1de-012d-4560-b02f-bad4c5cd5c6a",
+  "session_count_actual": 15,
+  "session_count_expected": 13,
+  "rooms": ["Room 6", "Room 2"],
+  "summary": "13 patient encounters across two rooms became 15 archived sessions due to two false-split pairs (Kaden, Toni). Two additional sessions silently combined consecutive patients (Marlene+Tyler, Ann+toe-cyst) without firing multi-patient detection. 5 SOAPs had hallucinated procedure sections; 3 of those cascaded into false billing claims.",
+  "failure_modes": {
+    "soap_procedure_hallucination": {
+      "sessions": ["48efcdcc", "424c37f2", "8a54d84b", "b1d59dd8", "7559d99d"],
+      "count": 5,
+      "subvariants": {
+        "physical_exam_as_procedure": ["48efcdcc", "7559d99d", "b1d59dd8"],
+        "historical_or_proposed_as_completed": ["424c37f2", "8a54d84b"]
+      },
+      "root_cause": "SOAP-LLM stance filter (v0.10.61) passes COMPLETED candidates whose transcript_quote does not actually evidence procedure performance. Examples: 'You're done, my friend' (farewell) cited for 'Performed physical examination'; 'I can just keep it there now' (unrelated) cited for 'Applied estrogen patch'.",
+      "generalizable_fixes": [
+        "Add explicit prompt rules: physical exam, vital sign measurement, history-taking, and reviewed-imaging are NEVER billable procedures regardless of completion stance.",
+        "Strengthen completion_evidence requirement: must contain an action verb in past tense AND a procedure noun within the same sentence (e.g., 'I just injected the cortisone'). Pure aftercare or farewell phrases are insufficient.",
+        "Require BOTH doctor_quote AND completion_evidence to mention the procedure noun (anchor on noun, not just stance).",
+        "Add the SOAP-LLM's procedure_candidates JSON to replay_bundle.json:soap_result.response_raw_json (currently lost — only formatted output is captured)."
+      ]
+    },
+    "soap_to_billing_cascade": {
+      "sessions": ["8a54d84b"],
+      "false_billing_codes": ["G372A"],
+      "root_cause": "Hallucinated 'Applied estrogen patch' in SOAP procedure section was read by billing-LLM and classified as im_injection_with_visit, mapping to G372A.",
+      "generalizable_fixes": [
+        "After SOAP-procedure prompt is hardened, this disappears.",
+        "Defensive: rule_engine should require a transcript_quote field on procedure features and reject if quote does not contain action+noun match against the procedure type."
+      ]
+    },
+    "billing_llm_stance_blindness": {
+      "sessions": ["0f61f08a", "9c9fe271"],
+      "false_billing_codes": ["G372A", "G373A"],
+      "root_cause": "Billing-LLM extracts procedures from SOAP S/A/P sections (where future/proposed procedures are discussed) without stance filtering. Marlene: 'vaccination update' Plan-line → G372A; Dorothy: 'Sublocade injection' Plan-line → G373A. Neither was performed today.",
+      "generalizable_fixes": [
+        "Apply the same v0.10.61 stance-filter pattern to billing's clinical_features extraction. Currently only the SOAP prompt has it.",
+        "Require LLM to emit procedure[] entries with a transcript_quote AND a stance field, then have rule_engine drop anything not COMPLETED/IN_PROGRESS+evidence.",
+        "Cross-validate: a procedure billed must have its noun in the SOAP Procedure section (not just S/A/P). If the SOAP procedure section is empty, no procedure code may be billed."
+      ]
+    },
+    "false_split_conversational_pause": {
+      "session_pairs": [
+        ["48efcdcc", "049967be"],
+        ["a30cd034", "df5acc1a"]
+      ],
+      "signature": "negative gap of 10-11 seconds between consecutive sessions (next session.started_at < prev session.ended_at), small tail (614 / 1692 words), tail starts mid-conversation continuing prev topic.",
+      "root_cause": "Encounter-detection LLM mistakes mid-encounter wrap-up phrases ('we're going to do X', 'let me know if you want', 'we'll switch insulin') for encounter-end signals. These are mid-conversation summaries, not handoffs. The doctor immediately continues the same teaching/discussion.",
+      "generalizable_fixes": [
+        "Tighten detection prompt: encounter-end requires explicit handoff cues (goodbye, see-you-next-time, leaving the room, room-cleanup language) not just topic-summary language.",
+        "Tail-similarity gate: before splitting, peek at next 30 seconds of transcript (if buffered) — if topic-embedding similarity to prev tail > 0.85, suppress the split.",
+        "Raise small-orphan merge-back threshold from current value to ~2000 words for sessions where prev_session ended <30s before. Negative-gap consecutive sessions are highly likely false-splits.",
+        "Add 'consecutive-session-merge' check at session-end: if two sessions for the same physician on the same day overlap or have <30s gap AND combined word count <8000, suggest auto-merge."
+      ]
+    },
+    "cross_patient_silent_contamination": {
+      "sessions": ["0f61f08a", "ed45d3f6"],
+      "signatures": [
+        "Marlene 0f61f08a: 121-min single-encounter session containing two patients (Marlene + Tyler). Tyler's vaccination content silently absorbed as 'Marlene's son's vaccination'.",
+        "Ann ed45d3f6: 52-min session containing Ann + the next patient (toe-cyst drainage). Toe-cyst content silently absorbed as 'Ann's right foot ganglion cyst'."
+      ],
+      "root_cause": "Multi-patient retrospective check fires ONLY when (a) a merge-back occurred AND (b) merged transcript >= 2500 words. Both Marlene and Ann had merge_back_count=0, so the retrospective check never ran. The standalone multi-patient check at split time also did not fire because no split fired.",
+      "generalizable_fixes": [
+        "Drop the 'after merge-back only' precondition. Run multi-patient retrospective check at any encounter-end where transcript >= 2500 words (or session duration >= 45 min).",
+        "On flush-on-stop, ALWAYS run the multi-patient check on the final buffer regardless of merge-back history.",
+        "Vision-based DOB invalidation should trigger an immediate split candidate, not just clear the name tracker — a chart switch is strong evidence the room saw two patients.",
+        "Sensor-based: room-empty + room-occupied transitions WITHIN a single session window should be logged and cross-checked against detection events. A 30+ min absence followed by speech is almost certainly a new patient."
+      ]
+    },
+    "k_code_dedup_bug": {
+      "sessions": ["9c9fe271"],
+      "false_pattern": "Two K005A entries each with quantity=1 instead of one entry with quantity=2",
+      "root_cause": "rule_engine.rs line 128-154: when features.conditions contains both PrimaryMentalHealth and OpioidWithdrawalManagement (or any duplicate), each maps to ['K005A'] and is pushed separately. There is no dedup pass after the conditions loop.",
+      "generalizable_fixes": [
+        "After all push paths complete, dedupe codes[] by code-string. For per-unit codes (K013/K033/K005/K007), sum quantities. For one-time codes, keep one entry.",
+        "Alternative: track which code strings have been added to codes[] in a HashSet during the conditions loop and skip duplicates."
+      ]
+    },
+    "missing_c002a_hospital_followup": {
+      "sessions": ["9c9fe271"],
+      "missing_code": "C002A",
+      "root_cause": "Dorothy's visit is explicitly post-hospital-discharge follow-up ('two recent hospital visits', 'discharge note not yet received'). C002A exists in ohip_codes.rs:1622 but has no rule mapping in rule_engine.rs, and the LLM extraction prompt in clinical_features.rs has no condition or visit-type for hospital discharge follow-up.",
+      "generalizable_fixes": [
+        "Add ConditionType::HospitalDischargeFollowUp (or VisitType::HospitalDischargeFollowUp).",
+        "Map to C002A in rule_engine.",
+        "Update clinical_features.rs LLM prompt with examples: 'If patient is being seen for follow-up after a recent hospital admission/discharge, set hospital_discharge_followup=true.'"
+      ]
+    },
+    "diagnostic_code_799_fallback": {
+      "sessions": ["176b4c02", "049967be", "0f61f08a"],
+      "count": 3,
+      "root_cause": "diagnostic_tools_model.rs falls back to 799 when LLM-suggested code does not pass cross-validation against primaryDiagnosis text. 3 hits in one day means the cross-validation is too strict OR the primaryDiagnosis text is too sparse to match.",
+      "generalizable_fixes": [
+        "When falling back, pick a body-system code from the SOAP Assessment text (regex: 'pain'+body-part → 729; 'cough'+'shortness'→786; 'depression'→311 etc.) before using 799.",
+        "Soft-cross-validation: instead of exact text-match, use embedding similarity threshold to accept the LLM's suggested code when reasonable.",
+        "Log every 799 fallback with the SOAP A section so the diagnostic-codes-replay CLI can re-test fixes."
+      ]
+    },
+    "diagnostic_code_786_misgrouping": {
+      "sessions": ["48efcdcc"],
+      "wrong_code": "786",
+      "expected_code": "729",
+      "root_cause": "OHIP dx 786 is grouped 'Epistaxis, hemoptysis, cough, dyspnea, masses, shortness of breath' — the SOB description includes 'chest pain' but the diagnostic_codes.rs description does not, AND the prompt at clinical_features.rs:219 lists 786 as 'Respiratory symptoms (cough, dyspnea)' which doesn't match Kaden's MSK rib pain. The LLM incorrectly picked 786 because of 'chest' anatomic match.",
+      "generalizable_fixes": [
+        "Update diagnostic_codes.rs description for 786 to explicitly distinguish 'chest pain (cardiac/respiratory)' from 'chest wall MSK pain (use 729)'.",
+        "Update clinical_features.rs prompt: 'Chest WALL pain, rib pain, or chest pain reproducible on palpation → 729. Chest pain associated with respiratory symptoms (cough, dyspnea) → 786.'",
+        "Add this pattern as a benchmark fixture in tests/fixtures/benchmarks/"
+      ]
+    },
+    "manual_merge_cross_machine_bug": {
+      "sessions": ["a30cd034"],
+      "error_message": "Session not found: a30cd034-4ab7-430b-aa17-66228bbfab24",
+      "root_cause": "local_archive.rs:1495 in merge_sessions() checks `if !session_dir.exists()` against the calling machine's local FS. Cross-machine sessions appear in hybrid history (server-side merge in commands/archive.rs::get_local_sessions_by_date) but are not present on the local FS unless they were created on this machine.",
+      "generalizable_fixes": [
+        "Pre-fetch missing sessions from profile-service via ProfileClient before invoking merge_sessions() in commands/archive.rs::merge_local_sessions.",
+        "Alternative: surface a 'this session lives on Room X — switch to that machine to merge' UI error instead of the raw 'Session not found' message.",
+        "Better: add a profile-service merge endpoint (POST /sessions/merge) and route cross-machine merges through it."
+      ]
+    },
+    "detection_task_silent_stall": {
+      "sessions": ["0f61f08a"],
+      "signature": "Last detection event at 15:57:32 with complete=True conf=0.95 wc=3027. NO further detection events for 1h 23m, but session stayed active until 17:20:42 with final wc=3786. complete=True did not result in an archived split.",
+      "root_cause": "Unknown — possibly LLM-router transient unreachability that was logged elsewhere, OR detection task crashed mid-split, OR sleep/calendar transition. day_log.jsonl on Room 2 is needed to disambiguate (not synced to profile-service).",
+      "generalizable_fixes": [
+        "Add liveness watchdog on the detector loop: if no detection event in 2x the configured interval, log a heartbeat-failed event and attempt task restart.",
+        "Sync day_log.jsonl to profile-service so cross-machine forensic analysis is possible without SSH.",
+        "Add a heartbeat counter to performance_summary.json so detection-task-stalls show up in daily aggregates."
+      ]
+    },
+    "observability_replay_bundle_loses_procedure_candidates": {
+      "scope": "all sessions",
+      "root_cause": "replay_bundle.json:soap_result.response_raw stores the FORMATTED SOAP output (S:/O:/A:/P:/Procedure:) instead of the raw LLM JSON. The procedure_candidates array (with stance, walkback, completion_evidence) is parsed and discarded before the bundle is written.",
+      "generalizable_fixes": [
+        "Capture raw LLM JSON output BEFORE format conversion in llm_client.rs::generate_soap_note. Add a new field `response_raw_json` to SoapResult in replay_bundle.rs.",
+        "This is critical for forensic analysis of v0.10.61 stance-filter behavior — without it, we cannot tell whether the SOAP-LLM is mis-classifying stance, ignoring the filter rule, or producing ambiguous candidates."
+      ]
+    }
+  },
+  "metric_aggregates": {
+    "total_sessions": 15,
+    "soap_procedure_section_present": 5,
+    "soap_procedure_section_correct": 0,
+    "false_billing_claims": 4,
+    "false_billing_codes": ["G372A (Tammy)", "G372A (Marlene)", "G373A (Dorothy)", "K005A duplicate (Dorothy)"],
+    "missing_billing_codes": ["C002A (Dorothy)"],
+    "diagnostic_code_correct": 8,
+    "diagnostic_code_borderline": 2,
+    "diagnostic_code_incorrect": 4,
+    "diagnostic_code_799_fallback_count": 3,
+    "false_splits": 2,
+    "cross_patient_contaminated_sessions": 2,
+    "manual_merge_failures": 1
+  },
+  "recommended_replay_corpus_uses": [
+    "labeled_regression_cli --all should fail-on-regression on the 4 false billing claims after each rule_engine change.",
+    "encounter_experiment_cli should re-run the 5 procedure-hallucination SOAPs through any new SOAP prompt and assert procedure[] is empty.",
+    "detection_replay_cli should replay 48efcdcc + a30cd034 through any new detection prompt and assert complete=False at the split-point words.",
+    "multi_patient_replay_cli should replay 0f61f08a + ed45d3f6 through any new retrospective-trigger condition and assert multi-patient split fires."
+  ]
+}

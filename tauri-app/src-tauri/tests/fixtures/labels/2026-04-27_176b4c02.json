@@ -1,0 +1,16 @@
+{
+  "session_id": "176b4c02-86c3-4230-9a05-d9d85f481d72",
+  "date": "2026-04-27",
+  "labeled_at": "2026-04-28T00:00:00+00:00",
+  "labeled_by": "Dr Z (2026-04-27 clinic-day forensic review)",
+  "labels": {
+    "split_correct": true,
+    "merge_correct": true,
+    "clinical_correct": true,
+    "patient_count_correct": true,
+    "procedure_section_correct": true,
+    "billing_codes_expected": ["A007A", "Q310A"],
+    "diagnostic_code_expected": null,
+    "notes": "Tracy 10:14 — SOAP OK. Diagnostic code 799 'Other ill-defined conditions' is the wastebox fallback — incorrect. Tracy's chief complaint should map to a body-system code; the diagnostic-tools-model fell back to 799 when it could not match against primaryDiagnosis text. Billing OK. Failure mode: diagnostic-code-799-fallback (one of 3 today: also Marlene 0f61f08a, phantom Kaden 049967be)."
+  }
+}

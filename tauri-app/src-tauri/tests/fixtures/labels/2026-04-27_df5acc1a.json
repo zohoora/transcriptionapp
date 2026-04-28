@@ -1,0 +1,17 @@
+{
+  "session_id": "df5acc1a-004c-493a-9c5a-7ce436423b20",
+  "date": "2026-04-27",
+  "labeled_at": "2026-04-28T00:00:00+00:00",
+  "labeled_by": "Dr Z (2026-04-27 clinic-day forensic review)",
+  "labels": {
+    "split_correct": false,
+    "merge_correct": false,
+    "clinical_correct": true,
+    "patient_count_correct": true,
+    "procedure_section_correct": true,
+    "billing_codes_expected": [],
+    "diagnostic_code_expected": null,
+    "expected_merged_into": "a30cd034-4ab7-430b-aa17-66228bbfab24",
+    "notes": "Toni Anthony 4:12 — FALSE-SPLIT TAIL of a30cd034. 8 minutes, 1692 words, continues the same insulin-titration teaching that a30cd034 was in the middle of. Should not exist as a separate session. Billing duplicates K030A/Q040A and adds K029A/A007A (assessment) on top of a30cd034's already-billed assessment + time — net effect is double-billed time and double-counted condition codes. Diagnostic code 250 is the same condition as a30cd034 (diabetes management). Same failure-mode set as Kaden phantom 049967be."
+  }
+}

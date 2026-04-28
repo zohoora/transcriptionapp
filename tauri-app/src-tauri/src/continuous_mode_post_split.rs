@@ -318,6 +318,7 @@ pub async fn run<C: RunContext>(
                         after_hours,
                         &crate::billing::RuleEngineContext {
                             counselling_exhausted: deps.billing_counselling_exhausted,
+                            transcript: Some(filtered_encounter_text.clone()),
                             ..Default::default()
                         },
                         &deps.logger,

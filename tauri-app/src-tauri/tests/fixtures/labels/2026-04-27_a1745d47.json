@@ -1,0 +1,17 @@
+{
+  "session_id": "a1745d47-2899-44e8-9989-ba36be2fba77",
+  "date": "2026-04-27",
+  "labeled_at": "2026-04-28T00:00:00+00:00",
+  "labeled_by": "Dr Z (2026-04-27 clinic-day forensic review)",
+  "labels": {
+    "split_correct": true,
+    "merge_correct": true,
+    "clinical_correct": true,
+    "patient_count_correct": true,
+    "procedure_section_correct": true,
+    "billing_codes_expected": ["A007A", "Q310A"],
+    "diagnostic_code_expected": "959",
+    "diagnostic_code_acceptable": ["959", "692"],
+    "notes": "Anuradha 1:58 — left foot pain/itching follow-up. SOAP, billing OK. Diagnostic 959 (other injuries/trauma) acceptable but 692 (eczema/dermatitis) might be more specific given the itching+scratching presentation. Reference case for clean follow-up visit."
+  }
+}

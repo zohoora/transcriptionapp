@@ -44,6 +44,7 @@ const DEFAULT_MODEL: &str = "fast-model";
 const VISIT_GUIDE_RIDER: &str = include_str!("billing_experiment_riders/visit_guide.txt");
 const DX_COT_RIDER: &str = include_str!("billing_experiment_riders/dx_cot.txt");
 const STRICT_COND_RIDER: &str = include_str!("billing_experiment_riders/strict_cond.txt");
+const PROCEDURE_STANCE_RIDER: &str = include_str!("billing_experiment_riders/procedure_stance.txt");
 
 fn baseline_prompt(soap_content: &str, transcript: &str, ctx_hints: &str) -> (String, String) {
     build_billing_extraction_prompt(soap_content, transcript, ctx_hints, None)
@@ -56,7 +57,9 @@ fn resolve_builtin_variant(name: &str) -> Result<String> {
         "baseline" => Ok(String::new()),
         "visit_dx" => Ok(format!("{}{}", VISIT_GUIDE_RIDER, DX_COT_RIDER)),
         "strict" => Ok(format!("{}{}{}", VISIT_GUIDE_RIDER, DX_COT_RIDER, STRICT_COND_RIDER)),
-        _ => Err(anyhow!("Unknown built-in variant: {name}. Try: baseline, visit_dx, strict, or pass a path to a prompt file.")),
+        "procedure_stance" => Ok(PROCEDURE_STANCE_RIDER.to_string()),
+        "strict_proc" => Ok(format!("{}{}{}{}", VISIT_GUIDE_RIDER, DX_COT_RIDER, STRICT_COND_RIDER, PROCEDURE_STANCE_RIDER)),
+        _ => Err(anyhow!("Unknown built-in variant: {name}. Try: baseline, visit_dx, strict, procedure_stance, strict_proc, or pass a path to a prompt file.")),
     }
 }
 

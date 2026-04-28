@@ -514,6 +514,7 @@ pub fn run() {
             commands::delete_local_session,
             commands::split_local_session,
             commands::merge_local_sessions,
+            commands::find_negative_gap_pairs_for_date,
             commands::update_session_patient_name,
             commands::confirm_session_patient,
             commands::renumber_local_encounters,

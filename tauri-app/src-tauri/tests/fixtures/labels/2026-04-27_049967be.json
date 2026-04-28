@@ -1,0 +1,17 @@
+{
+  "session_id": "049967be-d637-4ca5-bd5e-5a7c503bc2a9",
+  "date": "2026-04-27",
+  "labeled_at": "2026-04-28T00:00:00+00:00",
+  "labeled_by": "Dr Z (2026-04-27 clinic-day forensic review)",
+  "labels": {
+    "split_correct": false,
+    "merge_correct": false,
+    "clinical_correct": true,
+    "patient_count_correct": true,
+    "procedure_section_correct": true,
+    "billing_codes_expected": [],
+    "diagnostic_code_expected": null,
+    "expected_merged_into": "48efcdcc-5b2a-4c94-bb7b-ca353be9f201",
+    "notes": "PHANTOM SESSION — should not exist. This 4-min, 614-word session is the tail of Kaden 9:46 (48efcdcc). Started 14:25:49, ten seconds BEFORE 48efcdcc finalized at 14:25:59 (negative gap signature of flush-on-stop or forced split). Transcript shows continuous referral-to-pediatrician discussion; the previous session's last words ('Um.') and this session's first words ('Why don't I make a referral to to another?') are mid-conversation, not encounter boundaries. merge_back_count=0 — the merge-back coordinator failed to recognize them as the same encounter (orphan word count 614 may be above small-orphan threshold, and SOAP-aware merge-check decided 'separate'). Diagnostic code 799 (wastebox). Billing claims 1u A007A despite no real visit — false claim. Failure modes: false-split-on-conversational-pause, merge-back-orphan-threshold-too-low, dx-799-fallback, false-billing-claim-on-phantom-session."
+  }
+}

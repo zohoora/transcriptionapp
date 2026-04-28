@@ -1,0 +1,17 @@
+{
+  "session_id": "424c37f2-4819-48b6-a73b-7d2b258c315e",
+  "date": "2026-04-27",
+  "labeled_at": "2026-04-28T00:00:00+00:00",
+  "labeled_by": "Dr Z (2026-04-27 clinic-day forensic review)",
+  "labels": {
+    "split_correct": true,
+    "merge_correct": true,
+    "clinical_correct": true,
+    "patient_count_correct": true,
+    "procedure_section_correct": false,
+    "billing_codes_expected": ["A004A", "Q310A"],
+    "diagnostic_code_expected": "493",
+    "diagnostic_code_acceptable": ["493", "729", "780"],
+    "notes": "Cathy 9:49 — chronic multisystem complex (headache, neuropathy, tremors, suspected asthma, Raynaud's). Dx 493 (asthma) is borderline — patient has multiple equally-prominent complaints; a single asthma dx undersells the visit's complexity. Procedure section is hallucinated: 'Injection administered previously in April' cites 'The injections that we did were less than ideal.' That's a HISTORICAL injection (PAST), not performed today — the SOAP-LLM stance filter should have flagged this PROPOSED/HISTORICAL not COMPLETED. Failure modes: SOAP-procedure-hallucination (historical-as-performed), dx-code-narrow-pick."
+  }
+}

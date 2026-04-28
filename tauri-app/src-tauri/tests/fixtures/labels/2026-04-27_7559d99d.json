@@ -1,0 +1,16 @@
+{
+  "session_id": "7559d99d-9b59-4551-8480-a6a96252f16f",
+  "date": "2026-04-27",
+  "labeled_at": "2026-04-28T00:00:00+00:00",
+  "labeled_by": "Dr Z (2026-04-27 clinic-day forensic review)",
+  "labels": {
+    "split_correct": true,
+    "merge_correct": true,
+    "clinical_correct": true,
+    "patient_count_correct": true,
+    "procedure_section_correct": false,
+    "billing_codes_expected": ["A004A", "Q310A"],
+    "diagnostic_code_expected": "715",
+    "notes": "Jim 3:04 — pulsatile tinnitus follow-up + knee OA + preventive care. Diagnostic 715 (osteoarthritis) and billing A004A both OK. Procedure section hallucinated TWO entries: 'Measured blood pressure' cites 'So I had you at one forty-two over seventy.' and 'Examined ear canal' cites 'So this is the opening to the ear. Yeah.' Both are physical exam steps, NOT billable procedures — the assessment code A004A already covers exam. Same SOAP-procedure-hallucination as Kaden/Cathy/Tammy/Heike — but here the variant is 'physical-exam-as-procedure' rather than 'historical/proposed-as-performed'."
+  }
+}

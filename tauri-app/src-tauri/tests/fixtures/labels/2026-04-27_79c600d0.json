@@ -1,0 +1,17 @@
+{
+  "session_id": "79c600d0-f690-4362-9a8c-d1a60ebbb464",
+  "date": "2026-04-27",
+  "labeled_at": "2026-04-28T00:00:00+00:00",
+  "labeled_by": "Dr Z (2026-04-27 clinic-day forensic review)",
+  "labels": {
+    "split_correct": true,
+    "merge_correct": true,
+    "clinical_correct": true,
+    "patient_count_correct": true,
+    "procedure_section_correct": true,
+    "billing_codes_expected": ["A004A", "Q042A", "E079A", "Q310A"],
+    "diagnostic_code_expected": "599",
+    "diagnostic_code_acceptable": ["599", "707", "305"],
+    "notes": "Caroline 11:00 — pressure-sore surgery prep + UTI + smoking cessation. SOAP correct. Billing correct (smoking cessation E079A + Q042A appropriate). Diagnostic code 599 (urinary disorders) is borderline — UTI was secondary, primary was pre-op pressure sore consultation. 707 (chronic skin ulcer) might fit better. Reference case for borderline-but-OK dx selection."
+  }
+}

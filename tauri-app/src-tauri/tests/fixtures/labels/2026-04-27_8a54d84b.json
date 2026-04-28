@@ -1,0 +1,17 @@
+{
+  "session_id": "8a54d84b-45a2-463c-9e1e-5b8f7088f744",
+  "date": "2026-04-27",
+  "labeled_at": "2026-04-28T00:00:00+00:00",
+  "labeled_by": "Dr Z (2026-04-27 clinic-day forensic review)",
+  "labels": {
+    "split_correct": true,
+    "merge_correct": true,
+    "clinical_correct": true,
+    "patient_count_correct": true,
+    "procedure_section_correct": false,
+    "billing_codes_expected": ["A004A", "Q310A"],
+    "billing_codes_unexpected": ["G372A"],
+    "diagnostic_code_expected": "627",
+    "notes": "Tammy 10:28 — perimenopause counselling. SOAP procedure section hallucinated: 'Applied estrogen patch' cites 'I can just keep it there now.' (an unrelated transcript fragment). Transcript confirms no injection or patch was applied today; the entire visit was a discussion of starting transdermal estradiol. THE HALLUCINATED PROCEDURE CASCADED INTO THE BILLING ENGINE: G372A 'IM/SC/Intradermal Injection — with visit' was billed ($4.55). Diagnostic code 627 (menopause) correct. Visit code A004A correct. Failure modes: SOAP-procedure-hallucination (proposed-as-performed), SOAP-to-billing-cascade (G372A false claim)."
+  }
+}

@@ -753,6 +753,21 @@ export interface LocalArchiveSummary {
   has_billing_record?: boolean;
 }
 
+/**
+ * A pair of consecutive sessions that look like a false split — the second
+ * session is likely the tail of the first. Returned by the
+ * `find_negative_gap_pairs_for_date` IPC command (Fix #3, 2026-04-28
+ * forensic review). Mirrors `local_archive::NegativeGapPair`.
+ */
+export interface NegativeGapPair {
+  prev_session_id: string;
+  next_session_id: string;
+  /** Seconds between prev session's recorded end and next session's start. Negative = overlap. */
+  gap_secs: number;
+  next_word_count: number;
+  same_room: boolean;
+}
+
 /** Metadata for an archived session */
 export interface LocalArchiveMetadata {
   session_id: string;

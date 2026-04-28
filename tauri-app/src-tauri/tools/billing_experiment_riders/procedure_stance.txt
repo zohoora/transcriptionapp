@@ -1,0 +1,21 @@
+--- PROCEDURE STANCE FILTER (rider) ---
+Before emitting any entry in `procedures[]`, apply this filter (the v0.10.61 SOAP-side rule, applied to billing too):
+
+A procedure ONLY enters `procedures[]` if it was PHYSICALLY PERFORMED during this visit.
+
+Tests for inclusion:
+- INCLUDE if you can find a verbatim doctor quote in the transcript that uses past-tense action language for the doctor doing the procedure (e.g. "I just numbed it up", "I removed it", "we drew the blood", "all done", "we're done") OR narrates mid-action ("here we go", "hold still", "deep breath", "the alcohol I just put on") AND a separate verbatim quote afterward confirms completion.
+
+Tests for exclusion (procedures[] must remain empty for these — they go in PLAN or SUBJECTIVE, not procedures):
+- PROPOSED capability: the doctor offers something but doesn't do it ("I can do an injection", "we could try a steroid shot", "would you like a flu shot today").
+- SCHEDULED FOR FUTURE: the doctor plans the procedure for a different day ("come back next month", "let's do it in three weeks", "I'll book it for May", "we'll start the patch tomorrow").
+- DECLINED: explicit refusal or postponement ("not today", "let's hold off", "use OTC instead", "too early").
+- HISTORICAL — patient or doctor describing past procedures ("the injection we did last month", "you had your B12 in February", "the patches you've used before"). Patient-reported history goes in SUBJECTIVE.
+- DISCUSSED OR REVIEWED — review of imaging/labs/treatment plans is part of the assessment, not a procedure ("we'll review the imaging", "let's go through your last lab", "I'll explain how the patch works").
+- PHYSICAL EXAM steps: blood pressure measurement, palpation, auscultation, ear/throat/skin inspection, range-of-motion testing, neurological exam — all encompassed by the assessment code, NEVER as separate procedures.
+- VITAL-SIGN MEASUREMENTS: BP, HR, oxygen saturation, weight, height, temperature.
+- HISTORY-TAKING / CHART REVIEW: reading prior notes, discussing previous test results.
+
+Critical: the SOAP's Plan section often describes future procedures the doctor INTENDS to do. Treat Plan items as NOT procedures unless the same procedure is also evidenced by past-tense action language in the transcript.
+
+When in doubt, leave `procedures` empty. A missed procedure is recoverable via clinician review; a falsely-billed procedure is an OHIP claw-back risk.

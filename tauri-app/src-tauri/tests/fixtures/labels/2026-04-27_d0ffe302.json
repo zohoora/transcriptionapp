@@ -1,0 +1,16 @@
+{
+  "session_id": "d0ffe302-5575-44f3-b980-47ad6b8879e4",
+  "date": "2026-04-27",
+  "labeled_at": "2026-04-28T00:00:00+00:00",
+  "labeled_by": "Dr Z (2026-04-27 clinic-day forensic review)",
+  "labels": {
+    "split_correct": true,
+    "merge_correct": true,
+    "clinical_correct": true,
+    "patient_count_correct": true,
+    "procedure_section_correct": true,
+    "billing_codes_expected": ["A004A", "K030A", "Q040A", "Q310A"],
+    "diagnostic_code_expected": "250",
+    "notes": "Thomas 10:57 — diabetic management visit. SOAP, dx, and billing all correct. Reference case: this is what a clean diabetic management session should look like in the labeled corpus."
+  }
+}

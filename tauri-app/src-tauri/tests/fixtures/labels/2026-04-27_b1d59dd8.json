@@ -1,0 +1,16 @@
+{
+  "session_id": "b1d59dd8-d0ac-4a94-b3f3-32f5f05159bb",
+  "date": "2026-04-27",
+  "labeled_at": "2026-04-28T00:00:00+00:00",
+  "labeled_by": "Dr Z (2026-04-27 clinic-day forensic review)",
+  "labels": {
+    "split_correct": true,
+    "merge_correct": true,
+    "clinical_correct": true,
+    "patient_count_correct": true,
+    "procedure_section_correct": false,
+    "billing_codes_expected": ["K013A", "Q310A"],
+    "diagnostic_code_expected": "309",
+    "notes": "Heike 1:57 — caregiver-stress counselling. SOAP correct, diagnostic code 309 (adjustment reaction) correct, billing K013A counselling correct. Procedure section hallucinated: 'Reviewed previous breast imaging results from March' cites 'I think we did the the breast imaging in March. I got the um' — that is a HISTORICAL discussion of past imaging, not a procedure performed today. Same SOAP-procedure-hallucination failure mode as Kaden/Cathy/Tammy/Jim. Did not cascade into billing here (K013A is the right code regardless)."
+  }
+}

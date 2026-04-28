@@ -1,0 +1,16 @@
+{
+  "session_id": "48efcdcc-5b2a-4c94-bb7b-ca353be9f201",
+  "date": "2026-04-27",
+  "labeled_at": "2026-04-28T00:00:00+00:00",
+  "labeled_by": "Dr Z (2026-04-27 clinic-day forensic review)",
+  "labels": {
+    "split_correct": false,
+    "merge_correct": false,
+    "clinical_correct": true,
+    "patient_count_correct": true,
+    "procedure_section_correct": false,
+    "billing_codes_expected": ["A007A", "Q310A"],
+    "diagnostic_code_expected": "729",
+    "notes": "Kaden 9:46 — rib pain follow-up, parent + child. Clinical content correct. Procedure section is hallucinated: 'Performed physical examination of chest and back' cites transcript fragment 'You're done, my friend. Come on up.' — that's a friendly farewell, not procedure evidence. Physical exam is part of the assessment code, NOT a billable procedure. Diagnostic code 786 (Epistaxis/hemoptysis/cough) is wrong sub-grouping for MSK rib pain — should be 729 (musculoskeletal). Session was inappropriately split at 14:25:59 producing a 4-min phantom session 049967be that should have been merge-backed. Failure modes: SOAP-procedure-hallucination, dx-code-mis-grouping, false-split (no merge-back)."
+  }
+}

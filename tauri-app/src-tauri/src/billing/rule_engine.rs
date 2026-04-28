@@ -13,6 +13,12 @@ pub struct RuleEngineContext {
     pub is_hospital: bool,
     /// True = patient's 3 K013 units for the year are exhausted. Use K033A instead.
     pub counselling_exhausted: bool,
+    /// Optional verbatim transcript. When provided, procedure codes are
+    /// cross-validated against past-tense action evidence in the transcript
+    /// before being added to the billing record. Mirrors the K-code
+    /// `validate_condition_evidence` pattern. When `None`, validation is
+    /// skipped (backward compat).
+    pub transcript: Option<String>,
 }
 
 /// Map extracted clinical features to a draft billing record with OHIP codes.
@@ -111,8 +117,20 @@ pub fn map_features_to_billing_with_tools_model(
     }
 
     // 2. Procedures -> procedure codes
+    //    Defensive validation (added 2026-04-28 from forensic review): when a
+    //    transcript is supplied, drop procedure codes whose past-tense action
+    //    evidence is absent. Mirrors K-code `validate_condition_evidence`.
+    //    Catches the cascade where the LLM extracts `im_injection_with_visit`
+    //    from a discussion of starting a patch (Tammy 2026-04-27 → false G372A)
+    //    or `injection_sole_reason` from a deferred Sublocade plan (Dorothy
+    //    2026-04-27 → false G373A).
     let mut procedure_codes: Vec<String> = Vec::new();
     for proc in &features.procedures {
+        if let Some(ts) = ctx.transcript.as_deref() {
+            if !validate_procedure_evidence(proc, ts) {
+                continue;
+            }
+        }
         let proc_code = procedure_type_to_code(proc, billing_data);
         if let Some(ohip) = ohip_codes::get_code(&proc_code) {
             codes.push(make_billing_code(ohip, BillingConfidence::High, false));
@@ -219,6 +237,17 @@ pub fn map_features_to_billing_with_tools_model(
     } else {
         vec![]
     };
+
+    // 6.5 Dedup duplicate code entries.
+    //   When two `ConditionType`s map to the same OHIP code (e.g.
+    //   PrimaryMentalHealth + OpioidWithdrawalManagement both return K005A),
+    //   the conditions loop pushes one entry per condition. For per-unit time
+    //   codes that's two `quantity:1` lines instead of one `quantity:2` line —
+    //   a reporting/submission error caught on 2026-04-27 (Dorothy Roesler).
+    //   For per-unit codes we sum quantities; for other codes we keep the first
+    //   occurrence (E542A tray fee, companion codes — duplication there is a
+    //   bug not a quantity signal).
+    dedupe_codes(&mut codes);
 
     // 7. Collect billing code strings before moving `codes` into record
     let billing_code_strs: Vec<String> = codes.iter().map(|c| c.code.clone()).collect();
@@ -491,6 +520,59 @@ pub fn condition_keyword_guard(
 /// Cross-validate condition evidence: ensure the evidence text contains at least
 /// one keyword relevant to the condition. This catches LLM hallucinations where
 /// evidence is fabricated for conditions not actually present in the SOAP.
+/// `validate_procedure_evidence` requires past-tense doctor-action language in the
+/// transcript before allowing a procedure code to bill. Mirrors the K-code
+/// validation pattern: a procedure that's only PROPOSED, SCHEDULED, DECLINED,
+/// or DISCUSSED HISTORICALLY must NOT be billed.
+///
+/// The check is conservative: if any past-tense action keyword for the
+/// procedure family appears anywhere in the transcript, we allow the code.
+/// Transcript-wide presence is a weak signal but captures the easy cascade
+/// failures (Tammy patch-as-injection, Dorothy proposed-sublocade-as-performed)
+/// without rejecting legitimate procedures whose action language is brief.
+fn validate_procedure_evidence(proc: &ProcedureType, transcript: &str) -> bool {
+    let lower = transcript.to_lowercase();
+    // Action keywords by procedure family. Past-tense doctor-action language.
+    // Empty list = no validation (default-allow for procedures we haven't
+    // calibrated yet — this fix focuses on the injection family that drove
+    // 2026-04-27 false claims).
+    let keywords: &[&str] = match proc {
+        // Injection family — the 2026-04-27 cascade target
+        ProcedureType::ImInjectionWithVisit
+        | ProcedureType::InjectionSoleReason
+        | ProcedureType::JointInjection
+        | ProcedureType::JointInjectionAdditional
+        | ProcedureType::TriggerPointInjection
+        | ProcedureType::TriggerPointAdditional
+        | ProcedureType::IntralesionalSmall
+        | ProcedureType::IntralesionalLarge
+        | ProcedureType::IntravenousAdmin
+        | ProcedureType::NerveBlockPeripheral
+        | ProcedureType::NerveBlockParavertebral
+        | ProcedureType::NerveBlockAdditional
+        | ProcedureType::Immunization
+        | ProcedureType::ImmunizationFlu
+        | ProcedureType::ImmunizationTdap
+        | ProcedureType::ImmunizationHepB
+        | ProcedureType::ImmunizationHpv
+        | ProcedureType::ImmunizationMmr
+        | ProcedureType::ImmunizationPneumococcal
+        | ProcedureType::ImmunizationVaricella
+        | ProcedureType::ImmunizationPediatric => &[
+            "i injected", "we injected", "i just injected",
+            "i gave the injection", "i gave the shot", "i gave you a",
+            "i administered", "i drew up",
+            "the alcohol i just put", "alcohol i just put on",
+            "i numbed it up", "i numbed up", "i landmarked",
+            "i'm putting the needle", "i placed the needle",
+            "i'll put a bandaid", "all done", "we're done",
+        ],
+        // For procedures we haven't calibrated keywords for, default-allow.
+        _ => return true,
+    };
+    keywords.iter().any(|kw| lower.contains(kw))
+}
+
 fn validate_condition_evidence(cond: &ConditionType, evidence: &str) -> bool {
     let evidence_lower = evidence.to_lowercase();
     let keywords: &[&str] = match cond {
@@ -517,6 +599,32 @@ fn validate_condition_evidence(cond: &ConditionType, evidence: &str) -> bool {
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────
+
+/// Per-unit time-based codes — duplicate entries indicate the LLM extracted
+/// multiple conditions that all warrant counselling/management for the same
+/// session. These should aggregate into a single line with summed quantity,
+/// not appear as N rows of `quantity:1`.
+const PER_UNIT_TIME_CODES: &[&str] = &["K005A", "K007A", "K013A", "K033A"];
+
+/// Collapse duplicate code entries in-place, preserving order.
+/// For per-unit time codes (K005A/K007A/K013A/K033A): sum quantities.
+/// For all others: keep the first occurrence and drop later duplicates.
+fn dedupe_codes(codes: &mut Vec<BillingCode>) {
+    let mut seen: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+    let mut out: Vec<BillingCode> = Vec::with_capacity(codes.len());
+    for c in codes.drain(..) {
+        if let Some(&idx) = seen.get(&c.code) {
+            if PER_UNIT_TIME_CODES.contains(&c.code.as_str()) {
+                out[idx].quantity = out[idx].quantity.saturating_add(c.quantity);
+            }
+            // non-per-unit duplicate: drop silently
+        } else {
+            seen.insert(c.code.clone(), out.len());
+            out.push(c);
+        }
+    }
+    *codes = out;
+}
 
 fn basket_to_category(basket: Basket) -> String {
     match basket {
@@ -1714,6 +1822,126 @@ mod tests {
         let record = map_features_to_billing(&features, "s1", "2026-04-05", 74 * 60 * 1000, None, None);
         assert!(record.codes.iter().any(|c| c.code == "K013A"), "K013A should be present");
         assert!(!record.codes.iter().any(|c| c.code == "K005A"), "K005A should be suppressed when K013A is the visit type");
+    }
+
+    #[test]
+    fn test_k005_dedup_when_two_conditions_map_to_same_code() {
+        // 2026-04-27 Dorothy Roesler: depression + opioid use disorder both extracted
+        // by LLM. Both ConditionType::PrimaryMentalHealth and ConditionType::Opioid-
+        // WithdrawalManagement map to K005A. Bug: rule engine pushed two separate
+        // K005A entries with quantity=1 each, instead of one entry with quantity=2.
+        let mut features = default_features();
+        features.visit_type = VisitType::GeneralReassessment; // A004A — not the K013A path
+        features.conditions = vec![
+            ConditionType::PrimaryMentalHealth,
+            ConditionType::OpioidWithdrawalManagement,
+        ];
+        features.condition_evidence.insert(
+            "primary_mental_health".to_string(),
+            "depression and feeling at rock bottom".to_string(),
+        );
+        features.condition_evidence.insert(
+            "opioid_withdrawal_management".to_string(),
+            "Sublocade buprenorphine for opioid use disorder".to_string(),
+        );
+        let record = map_features_to_billing(&features, "s1", "2026-04-27", 28 * 60 * 1000, None, None);
+        let k005s: Vec<_> = record.codes.iter().filter(|c| c.code == "K005A").collect();
+        assert_eq!(
+            k005s.len(),
+            1,
+            "K005A should appear exactly once after dedup, got: {:?}",
+            record.codes.iter().map(|c| (&c.code, c.quantity)).collect::<Vec<_>>()
+        );
+        assert_eq!(
+            k005s[0].quantity, 2,
+            "Two conditions both mapping to K005A should aggregate into quantity=2"
+        );
+    }
+
+    // ── Defensive procedure validation tests (2026-04-27 forensic review) ─
+
+    #[test]
+    fn test_procedure_dropped_when_no_transcript_evidence() {
+        // 2026-04-27 Tammy Palma: LLM extracted procedures=["im_injection_with_visit"]
+        // from a perimenopause discussion where the doctor only TALKED about starting
+        // a transdermal estradiol patch — never injected anything. Transcript has
+        // discussion of patches ("if we were to do a patch") but no past-tense
+        // injection action by the doctor. Defensive validation should drop G372A.
+        let mut features = default_features();
+        features.visit_type = VisitType::GeneralReassessment;
+        features.procedures = vec![ProcedureType::ImInjectionWithVisit];
+        let transcript = "Dr Z: So if we were to do a patch and change them, let me just see what.\n\
+                          Dr Z: ideally, we we the suggestion is to start with a patch or a cream.\n\
+                          Dr Z: cost pills also sometimes a bit cheaper.";
+        let mut ctx = RuleEngineContext::default();
+        ctx.transcript = Some(transcript.to_string());
+        let record = map_features_to_billing_with_context(
+            &features, "tammy", "2026-04-27", 28 * 60 * 1000, None, &ctx, None,
+        );
+        assert!(
+            !record.codes.iter().any(|c| c.code == "G372A"),
+            "G372A must be suppressed when transcript shows no past-tense injection action; got codes: {:?}",
+            record.codes.iter().map(|c| &c.code).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn test_procedure_dropped_when_only_proposed() {
+        // 2026-04-27 Dorothy Roesler: SOAP plan said "Proposed initiation of
+        // Sublocade buprenorphine extended-release injection" but transcript
+        // explicitly defers it 3 weeks. injection_sole_reason → G373A must drop.
+        let mut features = default_features();
+        features.visit_type = VisitType::GeneralReassessment;
+        features.procedures = vec![ProcedureType::InjectionSoleReason];
+        let transcript = "Dr Z: Sublucade is the injection. It helps with pain and withdrawal.\n\
+                          Dr Z: Why don't we do it in like three weeks?\n\
+                          Patient: Yes, thank you.";
+        let mut ctx = RuleEngineContext::default();
+        ctx.transcript = Some(transcript.to_string());
+        let record = map_features_to_billing_with_context(
+            &features, "dorothy", "2026-04-27", 28 * 60 * 1000, None, &ctx, None,
+        );
+        assert!(
+            !record.codes.iter().any(|c| c.code == "G373A"),
+            "G373A must be suppressed when injection is only PROPOSED for future; got codes: {:?}",
+            record.codes.iter().map(|c| &c.code).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn test_procedure_kept_when_evidence_present() {
+        // Sanity: a real injection with past-tense evidence must STILL bill.
+        let mut features = default_features();
+        features.visit_type = VisitType::IntermediateAssessment;
+        features.procedures = vec![ProcedureType::JointInjection];
+        let transcript = "Dr Z: Okay, the alcohol I just put on. Hold still.\n\
+                          Dr Z: I just injected the cortisone into the knee. All done.\n\
+                          Patient: Thank you.";
+        let mut ctx = RuleEngineContext::default();
+        ctx.transcript = Some(transcript.to_string());
+        let record = map_features_to_billing_with_context(
+            &features, "kneeinj", "2026-04-27", 15 * 60 * 1000, None, &ctx, None,
+        );
+        assert!(
+            record.codes.iter().any(|c| c.code == "G370A"),
+            "G370A must be kept when transcript has past-tense injection evidence; got codes: {:?}",
+            record.codes.iter().map(|c| &c.code).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn test_procedure_kept_when_no_transcript_provided() {
+        // Backward compat: when transcript is None, validation is skipped
+        // (existing call sites that don't pass transcript continue to work).
+        let mut features = default_features();
+        features.procedures = vec![ProcedureType::ImInjectionWithVisit];
+        let record = map_features_to_billing(
+            &features, "s1", "2026-04-27", 600_000, None, None,
+        );
+        assert!(
+            record.codes.iter().any(|c| c.code == "G372A"),
+            "G372A should still bill when no transcript is supplied (backward compat)"
+        );
     }
 
     // ── Diagnostic code resolution tests ──────────────────────────────────

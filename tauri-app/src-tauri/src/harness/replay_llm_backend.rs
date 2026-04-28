@@ -214,6 +214,7 @@ impl LlmBackend for ReplayLlmBackend {
             physician_speaker: None,
             generated_at: chrono::Utc::now().to_rfc3339(),
             model_used: "harness-stub".into(),
+            raw_response: None,
         })
     }
 }

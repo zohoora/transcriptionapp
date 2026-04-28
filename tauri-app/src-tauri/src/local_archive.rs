@@ -3096,3 +3096,200 @@ pub fn merge_patients_in_session(
     Ok(())
 }
 
+
+// ── Negative-gap auto-merge candidate detection (added 2026-04-28) ──
+//
+// 2026-04-27 forensic review found two false-split pairs (Kaden 9:46 →
+// phantom 10:25, Toni 3:23 → 4:12) that share a signature: the next session
+// started ~10 seconds BEFORE the previous session's recorded end_at
+// (negative gap), the new session was small (614 / 1692 words), and the
+// transcript began mid-sentence continuing the previous topic. This is the
+// fingerprint of flush-on-stop or a forced split firing during a
+// conversational micro-pause.
+//
+// `find_negative_gap_pairs` scans a same-day session list for these
+// candidates and returns them as `(prev_id, next_id)` pairs. Designed to be
+// called at end-of-day or from a History-window action so the clinician can
+// review and merge with one click.
+
+/// A pair of sessions that look like a false-split — the second one is
+/// likely the tail of the first.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct NegativeGapPair {
+    pub prev_session_id: String,
+    pub next_session_id: String,
+    pub gap_secs: i64,
+    pub next_word_count: usize,
+    pub same_room: bool,
+}
+
+/// Maximum gap (seconds) between sessions to flag as auto-merge candidate.
+/// Negative values = next session started BEFORE prev session ended (the
+/// strongest signal). 30s positive grace catches sessions where the doctor
+/// paused briefly between thoughts.
+pub const NEGATIVE_GAP_MAX_SECS: i64 = 30;
+
+/// Maximum word count of the second (tail) session to qualify. Larger tails
+/// are more likely to be genuine separate visits, so we conservatively only
+/// flag small tails. Tuned against 2026-04-27 ground truth: phantom Kaden
+/// 614w, Toni2 1692w both clearly under; KadenPhantom→Tammy (different
+/// patient, 2686w tail) correctly excluded.
+pub const NEGATIVE_GAP_MAX_TAIL_WORDS: usize = 2500;
+
+/// Find pairs of consecutive sessions that look like false splits.
+///
+/// Pure function — no I/O. Pass it a list of summaries from one date.
+/// Returns pairs where:
+///   - `next_session.started_at` − `prev_session.ended_at` < `NEGATIVE_GAP_MAX_SECS`
+///   - `next_session.word_count` < `NEGATIVE_GAP_MAX_TAIL_WORDS`
+///   - Both sessions share a `room_name` (when known)
+///
+/// Rooms unknown for either side are treated as a match-by-default to handle
+/// pre-multi-room archive entries.
+pub fn find_negative_gap_pairs(summaries: &[ArchiveSummary]) -> Vec<NegativeGapPair> {
+    // Sort by started_at — the input may not be ordered.
+    let mut sorted: Vec<&ArchiveSummary> = summaries.iter().collect();
+    sorted.sort_by(|a, b| a.started_at.as_deref().unwrap_or("").cmp(b.started_at.as_deref().unwrap_or("")));
+
+    let mut pairs = Vec::new();
+    for i in 0..sorted.len() {
+        let prev = sorted[i];
+        let prev_room = prev.room_name.as_deref().unwrap_or("");
+        // Find next-in-room (or next-overall when rooms aren't tracked).
+        for next in &sorted[i + 1..] {
+            let next_room = next.room_name.as_deref().unwrap_or("");
+            let same_room = prev_room.is_empty() || next_room.is_empty() || prev_room == next_room;
+            if !same_room {
+                continue;
+            }
+            let Some(prev_started) = prev.started_at.as_deref() else { continue };
+            let Some(next_started) = next.started_at.as_deref() else { continue };
+            let Some(prev_dur) = prev.duration_ms else { continue };
+            let Ok(prev_start_dt) = DateTime::parse_from_rfc3339(prev_started) else { continue };
+            let Ok(next_start_dt) = DateTime::parse_from_rfc3339(next_started) else { continue };
+            let prev_end_dt = prev_start_dt + chrono::Duration::milliseconds(prev_dur as i64);
+            let gap_secs = next_start_dt.signed_duration_since(prev_end_dt).num_seconds();
+            if gap_secs < NEGATIVE_GAP_MAX_SECS
+                && next.word_count < NEGATIVE_GAP_MAX_TAIL_WORDS
+            {
+                pairs.push(NegativeGapPair {
+                    prev_session_id: prev.session_id.clone(),
+                    next_session_id: next.session_id.clone(),
+                    gap_secs,
+                    next_word_count: next.word_count,
+                    same_room,
+                });
+            }
+            // Only check the immediate next-in-room — any further pair is a
+            // separate transition and should be evaluated as its own (i, j).
+            break;
+        }
+    }
+    pairs
+}
+
+#[cfg(test)]
+mod negative_gap_tests {
+    use super::*;
+
+    fn summary(sid: &str, started_at: &str, dur_ms: u64, wc: usize, room: &str) -> ArchiveSummary {
+        ArchiveSummary {
+            session_id: sid.to_string(),
+            date: "2026-04-27".to_string(),
+            started_at: Some(started_at.to_string()),
+            duration_ms: Some(dur_ms),
+            word_count: wc,
+            has_soap_note: true,
+            has_audio: true,
+            auto_ended: false,
+            charting_mode: Some("continuous".to_string()),
+            encounter_number: None,
+            patient_name: None,
+            likely_non_clinical: None,
+            has_feedback: None,
+            quality_rating: None,
+            physician_name: None,
+            room_name: Some(room.to_string()),
+            patient_count: None,
+            patient_labels: None,
+            has_billing_record: None,
+        }
+    }
+
+    #[test]
+    fn test_finds_kaden_and_toni_false_splits_from_2026_04_27() {
+        // The two ground-truth false-split pairs from forensic review.
+        // Kaden 9:46 → phantom 10:25 (R6, gap=-10s, tail=614w)
+        // Toni 3:23 → 4:12 (R2, gap=-11s, tail=1692w)
+        // Real durations to the second (production end_at minus started_at).
+        let summaries = vec![
+            // Kaden 9:46 — runs 39:30, ends 14:25:59 → gap to phantom = -10s
+            summary("48efcdcc", "2026-04-27T13:46:29+00:00", 2_370_000, 4540, "Room 6"),
+            // Phantom 10:25 — 614w, 3:41 long
+            summary("049967be", "2026-04-27T14:25:49+00:00",   221_000,  614, "Room 6"),
+            // Tammy 10:28 — different patient, 2686w (above tail threshold)
+            summary("8a54d84b", "2026-04-27T14:28:42+00:00", 1_759_000, 2686, "Room 6"),
+            // Toni 1 — runs 48:57, ends 20:12:22 → gap to Toni 2 = -11s
+            summary("a30cd034", "2026-04-27T19:23:25+00:00", 2_937_000, 7625, "Room 2"),
+            // Toni 2 — 1692w (under tail threshold)
+            summary("df5acc1a", "2026-04-27T20:12:11+00:00",   549_000, 1692, "Room 2"),
+        ];
+        let pairs = find_negative_gap_pairs(&summaries);
+        let pair_ids: Vec<(String, String)> = pairs
+            .iter()
+            .map(|p| (p.prev_session_id.clone(), p.next_session_id.clone()))
+            .collect();
+        assert!(
+            pair_ids.contains(&("48efcdcc".to_string(), "049967be".to_string())),
+            "expected Kaden 9:46 → phantom flagged; got {:?}",
+            pair_ids
+        );
+        assert!(
+            pair_ids.contains(&("a30cd034".to_string(), "df5acc1a".to_string())),
+            "expected Toni 3:23 → 4:12 flagged; got {:?}",
+            pair_ids
+        );
+        assert_eq!(pairs.len(), 2, "expected exactly 2 pairs (no false positives), got {:?}", pair_ids);
+    }
+
+    #[test]
+    fn test_does_not_flag_different_patients_with_close_gap() {
+        // KadenPhantom → Tammy: same room, gap=-48s, but tail=2686 (>2500).
+        // Cathy → Tracy: same room, gap=18s, but tail=3338 (>2500).
+        // Neither should be flagged — they're consecutive different-patient
+        // sessions that happen to abut.
+        let summaries = vec![
+            summary("049967be", "2026-04-27T14:25:49+00:00",   221_000,  614, "Room 6"),
+            summary("8a54d84b", "2026-04-27T14:28:42+00:00", 1_759_000, 2686, "Room 6"),
+            summary("424c37f2", "2026-04-27T13:49:30+00:00", 1_491_000, 4672, "Room 2"),
+            summary("176b4c02", "2026-04-27T14:14:39+00:00", 1_716_000, 3338, "Room 2"),
+        ];
+        let pairs = find_negative_gap_pairs(&summaries);
+        // KadenPhantom→Tammy IS gap=-48s but Tammy is 2686 > 2500 — must skip.
+        // Cathy→Tracy IS gap=18s but Tracy is 3338 > 2500 — must skip.
+        assert!(pairs.is_empty(), "expected no pairs (different patients); got {:?}", pairs);
+    }
+
+    #[test]
+    fn test_does_not_flag_cross_room_sessions() {
+        // Different rooms must not be flagged even if gap is negative.
+        let summaries = vec![
+            summary("48efcdcc", "2026-04-27T13:46:29+00:00", 2_370_000, 4540, "Room 6"),
+            summary("424c37f2", "2026-04-27T13:49:30+00:00", 1_491_000, 4672, "Room 2"),
+        ];
+        let pairs = find_negative_gap_pairs(&summaries);
+        assert!(pairs.is_empty(), "cross-room sessions must not be flagged; got {:?}", pairs);
+    }
+
+    #[test]
+    fn test_handles_unknown_room_gracefully() {
+        // Pre-multi-room archives may not have room_name. Match-by-default
+        // for unknown rooms so this still works on legacy data.
+        let mut a = summary("48efcdcc", "2026-04-27T13:46:29+00:00", 2_370_000, 4540, "");
+        a.room_name = None;
+        let mut b = summary("049967be", "2026-04-27T14:25:49+00:00",   221_000,  614, "");
+        b.room_name = None;
+        let pairs = find_negative_gap_pairs(&[a, b]);
+        assert_eq!(pairs.len(), 1, "expected legacy pair (no room data) to still flag; got {:?}", pairs);
+    }
+}

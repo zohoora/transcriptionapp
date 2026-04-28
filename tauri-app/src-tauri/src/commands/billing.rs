@@ -227,6 +227,7 @@ pub async fn extract_billing_codes(
     let rule_ctx = crate::billing::RuleEngineContext {
         is_hospital: context.as_ref().map_or(false, |c| c.is_hospital),
         counselling_exhausted: context.as_ref().map_or(config.billing_counselling_exhausted, |c| c.counselling_exhausted),
+        transcript: Some(transcript.to_string()),
     };
 
     let sc = server_config.read().await;
