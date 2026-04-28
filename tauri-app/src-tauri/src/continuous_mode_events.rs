@@ -94,9 +94,8 @@ pub enum ContinuousModeEvent {
         #[serde(skip_serializing_if = "Option::is_none")]
         confidence: Option<f64>,
     },
-    /// Negative-gap auto-merge candidates detected (Fix #3, 2026-04-28).
-    /// Emitted at continuous-mode stop after the day's flush. Frontend
-    /// shows a banner in History view inviting the clinician to merge.
+    /// False-split candidates detected post-flush. Frontend shows a banner
+    /// in History view offering one-click merge.
     NegativeGapPairsFound {
         date: String,
         pair_count: usize,

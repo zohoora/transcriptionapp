@@ -3097,23 +3097,11 @@ pub fn merge_patients_in_session(
 }
 
 
-// ── Negative-gap auto-merge candidate detection (added 2026-04-28) ──
-//
-// 2026-04-27 forensic review found two false-split pairs (Kaden 9:46 →
-// phantom 10:25, Toni 3:23 → 4:12) that share a signature: the next session
-// started ~10 seconds BEFORE the previous session's recorded end_at
-// (negative gap), the new session was small (614 / 1692 words), and the
-// transcript began mid-sentence continuing the previous topic. This is the
-// fingerprint of flush-on-stop or a forced split firing during a
-// conversational micro-pause.
-//
-// `find_negative_gap_pairs` scans a same-day session list for these
-// candidates and returns them as `(prev_id, next_id)` pairs. Designed to be
-// called at end-of-day or from a History-window action so the clinician can
-// review and merge with one click.
+// ── Negative-gap auto-merge candidate detection ─────────────────────
 
-/// A pair of sessions that look like a false-split — the second one is
-/// likely the tail of the first.
+/// A pair of sessions that look like a false split — the second one is
+/// likely the tail of the first. Surfaced to the clinician for one-click
+/// merge in the History window.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct NegativeGapPair {
     pub prev_session_id: String,
@@ -3123,66 +3111,52 @@ pub struct NegativeGapPair {
     pub same_room: bool,
 }
 
-/// Maximum gap (seconds) between sessions to flag as auto-merge candidate.
-/// Negative values = next session started BEFORE prev session ended (the
-/// strongest signal). 30s positive grace catches sessions where the doctor
-/// paused briefly between thoughts.
+/// Maximum gap (seconds) between consecutive sessions to flag.
+/// Negative values mean the next session started before the previous one's
+/// recorded end — a flush-on-stop / forced-split fingerprint that's the
+/// strongest false-split signal.
 pub const NEGATIVE_GAP_MAX_SECS: i64 = 30;
 
-/// Maximum word count of the second (tail) session to qualify. Larger tails
-/// are more likely to be genuine separate visits, so we conservatively only
-/// flag small tails. Tuned against 2026-04-27 ground truth: phantom Kaden
-/// 614w, Toni2 1692w both clearly under; KadenPhantom→Tammy (different
-/// patient, 2686w tail) correctly excluded.
+/// Maximum word count of the second (tail) session to qualify. Calibrated
+/// against 2026-04-27 ground truth: phantom Kaden 614w and Toni-tail 1692w
+/// flagged, KadenPhantom→Tammy (different patient, 2686w tail) excluded.
 pub const NEGATIVE_GAP_MAX_TAIL_WORDS: usize = 2500;
 
 /// Find pairs of consecutive sessions that look like false splits.
 ///
-/// Pure function — no I/O. Pass it a list of summaries from one date.
-/// Returns pairs where:
-///   - `next_session.started_at` − `prev_session.ended_at` < `NEGATIVE_GAP_MAX_SECS`
-///   - `next_session.word_count` < `NEGATIVE_GAP_MAX_TAIL_WORDS`
-///   - Both sessions share a `room_name` (when known)
-///
-/// Rooms unknown for either side are treated as a match-by-default to handle
-/// pre-multi-room archive entries.
+/// Pure function — no I/O. Returns pairs where:
+///   - `next.started_at − prev.ended_at < NEGATIVE_GAP_MAX_SECS`
+///   - `next.word_count < NEGATIVE_GAP_MAX_TAIL_WORDS`
+///   - prev and next share a `room_name` (rooms unknown for either side
+///     are treated as a match-by-default for legacy archives)
 pub fn find_negative_gap_pairs(summaries: &[ArchiveSummary]) -> Vec<NegativeGapPair> {
-    // Sort by started_at — the input may not be ordered.
     let mut sorted: Vec<&ArchiveSummary> = summaries.iter().collect();
     sorted.sort_by(|a, b| a.started_at.as_deref().unwrap_or("").cmp(b.started_at.as_deref().unwrap_or("")));
 
     let mut pairs = Vec::new();
-    for i in 0..sorted.len() {
-        let prev = sorted[i];
+    for window in sorted.windows(2) {
+        let (prev, next) = (window[0], window[1]);
         let prev_room = prev.room_name.as_deref().unwrap_or("");
-        // Find next-in-room (or next-overall when rooms aren't tracked).
-        for next in &sorted[i + 1..] {
-            let next_room = next.room_name.as_deref().unwrap_or("");
-            let same_room = prev_room.is_empty() || next_room.is_empty() || prev_room == next_room;
-            if !same_room {
-                continue;
-            }
-            let Some(prev_started) = prev.started_at.as_deref() else { continue };
-            let Some(next_started) = next.started_at.as_deref() else { continue };
-            let Some(prev_dur) = prev.duration_ms else { continue };
-            let Ok(prev_start_dt) = DateTime::parse_from_rfc3339(prev_started) else { continue };
-            let Ok(next_start_dt) = DateTime::parse_from_rfc3339(next_started) else { continue };
-            let prev_end_dt = prev_start_dt + chrono::Duration::milliseconds(prev_dur as i64);
-            let gap_secs = next_start_dt.signed_duration_since(prev_end_dt).num_seconds();
-            if gap_secs < NEGATIVE_GAP_MAX_SECS
-                && next.word_count < NEGATIVE_GAP_MAX_TAIL_WORDS
-            {
-                pairs.push(NegativeGapPair {
-                    prev_session_id: prev.session_id.clone(),
-                    next_session_id: next.session_id.clone(),
-                    gap_secs,
-                    next_word_count: next.word_count,
-                    same_room,
-                });
-            }
-            // Only check the immediate next-in-room — any further pair is a
-            // separate transition and should be evaluated as its own (i, j).
-            break;
+        let next_room = next.room_name.as_deref().unwrap_or("");
+        let same_room = prev_room.is_empty() || next_room.is_empty() || prev_room == next_room;
+        if !same_room {
+            continue;
+        }
+        let Some(prev_started) = prev.started_at.as_deref() else { continue };
+        let Some(next_started) = next.started_at.as_deref() else { continue };
+        let Some(prev_dur) = prev.duration_ms else { continue };
+        let Ok(prev_start_dt) = DateTime::parse_from_rfc3339(prev_started) else { continue };
+        let Ok(next_start_dt) = DateTime::parse_from_rfc3339(next_started) else { continue };
+        let prev_end_dt = prev_start_dt + chrono::Duration::milliseconds(prev_dur as i64);
+        let gap_secs = next_start_dt.signed_duration_since(prev_end_dt).num_seconds();
+        if gap_secs < NEGATIVE_GAP_MAX_SECS && next.word_count < NEGATIVE_GAP_MAX_TAIL_WORDS {
+            pairs.push(NegativeGapPair {
+                prev_session_id: prev.session_id.clone(),
+                next_session_id: next.session_id.clone(),
+                gap_secs,
+                next_word_count: next.word_count,
+                same_room,
+            });
         }
     }
     pairs

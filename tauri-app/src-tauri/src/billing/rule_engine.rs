@@ -116,14 +116,11 @@ pub fn map_features_to_billing_with_tools_model(
         }
     }
 
-    // 2. Procedures -> procedure codes
-    //    Defensive validation (added 2026-04-28 from forensic review): when a
-    //    transcript is supplied, drop procedure codes whose past-tense action
-    //    evidence is absent. Mirrors K-code `validate_condition_evidence`.
-    //    Catches the cascade where the LLM extracts `im_injection_with_visit`
-    //    from a discussion of starting a patch (Tammy 2026-04-27 → false G372A)
-    //    or `injection_sole_reason` from a deferred Sublocade plan (Dorothy
-    //    2026-04-27 → false G373A).
+    // 2. Procedures -> procedure codes.
+    //    When a transcript is supplied, drop procedure codes whose past-tense
+    //    action evidence is absent — guards against the SOAP-LLM extracting an
+    //    injection procedure from discussion-only mentions (e.g. patch
+    //    counselling, deferred Sublocade plans).
     let mut procedure_codes: Vec<String> = Vec::new();
     for proc in &features.procedures {
         if let Some(ts) = ctx.transcript.as_deref() {
@@ -238,15 +235,10 @@ pub fn map_features_to_billing_with_tools_model(
         vec![]
     };
 
-    // 6.5 Dedup duplicate code entries.
-    //   When two `ConditionType`s map to the same OHIP code (e.g.
-    //   PrimaryMentalHealth + OpioidWithdrawalManagement both return K005A),
-    //   the conditions loop pushes one entry per condition. For per-unit time
-    //   codes that's two `quantity:1` lines instead of one `quantity:2` line —
-    //   a reporting/submission error caught on 2026-04-27 (Dorothy Roesler).
-    //   For per-unit codes we sum quantities; for other codes we keep the first
-    //   occurrence (E542A tray fee, companion codes — duplication there is a
-    //   bug not a quantity signal).
+    // 6.5 Dedup duplicate code entries — when two ConditionTypes map to the
+    //     same OHIP code (e.g. PrimaryMentalHealth + OpioidWithdrawalManagement
+    //     both return K005A), aggregate quantities for per-unit time codes
+    //     instead of emitting parallel quantity:1 rows.
     dedupe_codes(&mut codes);
 
     // 7. Collect billing code strings before moving `codes` into record
@@ -532,12 +524,10 @@ pub fn condition_keyword_guard(
 /// without rejecting legitimate procedures whose action language is brief.
 fn validate_procedure_evidence(proc: &ProcedureType, transcript: &str) -> bool {
     let lower = transcript.to_lowercase();
-    // Action keywords by procedure family. Past-tense doctor-action language.
-    // Empty list = no validation (default-allow for procedures we haven't
-    // calibrated yet — this fix focuses on the injection family that drove
-    // 2026-04-27 false claims).
+    // Past-tense doctor-action language by procedure family. Procedures not
+    // listed here default-allow — calibration is currently focused on the
+    // injection family which is where false-claim cascades have been observed.
     let keywords: &[&str] = match proc {
-        // Injection family — the 2026-04-27 cascade target
         ProcedureType::ImInjectionWithVisit
         | ProcedureType::InjectionSoleReason
         | ProcedureType::JointInjection
@@ -567,7 +557,7 @@ fn validate_procedure_evidence(proc: &ProcedureType, transcript: &str) -> bool {
             "i'm putting the needle", "i placed the needle",
             "i'll put a bandaid", "all done", "we're done",
         ],
-        // For procedures we haven't calibrated keywords for, default-allow.
+            // For procedures we haven't calibrated keywords for, default-allow.
         _ => return true,
     };
     keywords.iter().any(|kw| lower.contains(kw))
@@ -1826,10 +1816,8 @@ mod tests {
 
     #[test]
     fn test_k005_dedup_when_two_conditions_map_to_same_code() {
-        // 2026-04-27 Dorothy Roesler: depression + opioid use disorder both extracted
-        // by LLM. Both ConditionType::PrimaryMentalHealth and ConditionType::Opioid-
-        // WithdrawalManagement map to K005A. Bug: rule engine pushed two separate
-        // K005A entries with quantity=1 each, instead of one entry with quantity=2.
+        // Two ConditionTypes (PrimaryMentalHealth + OpioidWithdrawalManagement)
+        // both map to K005A — must aggregate to quantity=2, not parallel rows.
         let mut features = default_features();
         features.visit_type = VisitType::GeneralReassessment; // A004A — not the K013A path
         features.conditions = vec![
@@ -1858,15 +1846,14 @@ mod tests {
         );
     }
 
-    // ── Defensive procedure validation tests (2026-04-27 forensic review) ─
+    // ── Defensive procedure validation tests ─────────────────────────────
 
     #[test]
     fn test_procedure_dropped_when_no_transcript_evidence() {
-        // 2026-04-27 Tammy Palma: LLM extracted procedures=["im_injection_with_visit"]
-        // from a perimenopause discussion where the doctor only TALKED about starting
-        // a transdermal estradiol patch — never injected anything. Transcript has
-        // discussion of patches ("if we were to do a patch") but no past-tense
-        // injection action by the doctor. Defensive validation should drop G372A.
+        // LLM extracted im_injection_with_visit from a transdermal-patch
+        // counselling discussion where no injection was actually performed.
+        // Defensive validation must drop G372A when the transcript has no
+        // past-tense doctor-action language for an injection.
         let mut features = default_features();
         features.visit_type = VisitType::GeneralReassessment;
         features.procedures = vec![ProcedureType::ImInjectionWithVisit];
@@ -1887,9 +1874,8 @@ mod tests {
 
     #[test]
     fn test_procedure_dropped_when_only_proposed() {
-        // 2026-04-27 Dorothy Roesler: SOAP plan said "Proposed initiation of
-        // Sublocade buprenorphine extended-release injection" but transcript
-        // explicitly defers it 3 weeks. injection_sole_reason → G373A must drop.
+        // SOAP plan proposes a Sublocade injection but the transcript defers
+        // it weeks. injection_sole_reason → G373A must drop.
         let mut features = default_features();
         features.visit_type = VisitType::GeneralReassessment;
         features.procedures = vec![ProcedureType::InjectionSoleReason];

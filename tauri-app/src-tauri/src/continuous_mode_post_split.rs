@@ -21,7 +21,6 @@ use std::sync::{Arc, Mutex};
 
 use tracing::{info, warn};
 
-use crate::continuous_mode::multi_patient_from_outcome;
 use crate::continuous_mode_events::ContinuousModeEvent;
 use crate::continuous_mode_splitter::SplitContext;
 use crate::day_log::DayLogger;
@@ -156,8 +155,8 @@ pub async fn run<C: RunContext>(
             "Skipping SOAP for non-clinical encounter"
         );
     } else if let Some(ref client) = llm_client {
-        // ── Multi-patient detection ──────────────────────────
-        // Run before SOAP to detect couples/family visits.
+        // Detect couples/family visits before SOAP so the per-patient SOAP
+        // path can fire when patient_count > 1.
         let multi_patient_detection = if encounter_word_count >= deps.multi_patient_detect_word_threshold {
             info!(
                 event = "post_split_multi_patient_detect",
@@ -166,46 +165,16 @@ pub async fn run<C: RunContext>(
                 word_count = encounter_word_count,
                 "Running multi-patient detection"
             );
-            let outcome = client
-                .run_multi_patient_detection(&deps.fast_model, encounter_text_rich)
-                .await;
-            if let Ok(mut logger) = deps.logger.lock() {
-                let det_context = match &outcome.detection {
-                    Some(d) => serde_json::json!({
-                        "patient_count": d.patient_count,
-                        "confidence": d.confidence,
-                        "reasoning": d.reasoning,
-                        "patients": d.patients.iter()
-                            .map(|p| serde_json::json!({"label": p.label, "summary": p.summary}))
-                            .collect::<Vec<_>>(),
-                        "word_count": encounter_word_count,
-                    }),
-                    None => serde_json::json!({
-                        "patient_count": 1,
-                        "word_count": encounter_word_count,
-                        "accepted": false,
-                    }),
-                };
-                logger.log_llm_call(
-                    "multi_patient_detect",
-                    &outcome.model,
-                    &outcome.system_prompt,
-                    &outcome.user_prompt,
-                    outcome.response_raw.as_deref(),
-                    outcome.latency_ms,
-                    outcome.success,
-                    outcome.error.as_deref(),
-                    det_context,
-                );
-            }
-            if let Ok(mut bundle) = deps.bundle.lock() {
-                bundle.add_multi_patient_detection(multi_patient_from_outcome(
-                    &outcome,
-                    crate::replay_bundle::MultiPatientStage::PreSoap,
-                    encounter_word_count,
-                ));
-            }
-            outcome.detection
+            crate::encounter_pipeline::run_pre_soap_multi_patient_detection(
+                client,
+                &deps.fast_model,
+                encounter_text_rich,
+                encounter_word_count,
+                "post_split",
+                &deps.logger,
+                &deps.bundle,
+            )
+            .await
         } else {
             None
         };

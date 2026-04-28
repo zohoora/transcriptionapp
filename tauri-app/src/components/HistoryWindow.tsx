@@ -253,9 +253,6 @@ const HistoryWindow: React.FC = () => {
   const [selectedPatientIndex, setSelectedPatientIndex] = useState<number | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [datesWithSessions, setDatesWithSessions] = useState<Set<string>>(new Set());
-  // Negative-gap auto-merge candidates (Fix #3, 2026-04-28). Populated for the
-  // selected date; banner above the session list lets the clinician one-click
-  // merge each false-split pair.
   const [negativeGapPairs, setNegativeGapPairs] = useState<NegativeGapPair[]>([]);
   const [mergingPairId, setMergingPairId] = useState<string | null>(null);
 
@@ -594,21 +591,18 @@ const HistoryWindow: React.FC = () => {
 
     setLoading(true);
     setError(null);
+    setNegativeGapPairs([]);
 
     try {
       const dateStr = formatDateForApi(selectedDate);
 
       if (dataSource === 'local') {
-        // Fetch from local archive
         const result = await invoke<LocalArchiveSummary[]>('get_local_sessions_by_date', {
           date: dateStr,
         });
         setSessions(result);
 
-        // Fix #3 (2026-04-28): scan for negative-gap auto-merge candidates so
-        // the clinician can one-click clean up false splits. Best-effort —
-        // network failure (server-side server_sessions fetch inside the
-        // command) shouldn't break the history view.
+        // Best-effort scan: a network failure here shouldn't break the list.
         try {
           const pairs = await invoke<NegativeGapPair[] | null>(
             'find_negative_gap_pairs_for_date',
@@ -617,7 +611,6 @@ const HistoryWindow: React.FC = () => {
           setNegativeGapPairs(pairs ?? []);
         } catch (e) {
           console.warn('Negative-gap scan failed', e);
-          setNegativeGapPairs([]);
         }
       } else if (dataSource === 'medplum') {
         if (!authState.is_authenticated) {
@@ -1109,10 +1102,8 @@ const HistoryWindow: React.FC = () => {
     return uniqueSessions.size === 1 && keys.some(k => patientIndexFromKey(k) !== null);
   }, [selectedIds]);
 
-  // One-click merge for a negative-gap auto-merge candidate (Fix #3, 2026-04-28).
-  // Wraps the same `merge_local_sessions` IPC the regular merge dialog uses, but
-  // skips the modal because the user already saw the banner explaining what's
-  // being merged.
+  // One-click merge for a banner-flagged false-split pair. Skips the regular
+  // merge dialog because the banner already explains what's being merged.
   const handleMergeNegativeGapPair = useCallback(async (pair: NegativeGapPair) => {
     const dateStr = formatDateForApi(selectedDate);
     const pairId = `${pair.prev_session_id}|${pair.next_session_id}`;
@@ -1445,7 +1436,6 @@ const HistoryWindow: React.FC = () => {
               </div>
             )}
 
-            {/* Fix #3 (2026-04-28): false-split candidates surfaced for one-click merge. */}
             {!loading && negativeGapPairs.length > 0 && (
               <div className="negative-gap-banner" role="status">
                 <div className="negative-gap-banner-header">

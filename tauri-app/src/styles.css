@@ -3241,7 +3241,7 @@ body {
   cursor: pointer;
 }
 
-/* Fix #3 (2026-04-28): false-split candidate banner above the session list */
+/* False-split candidate banner above the session list */
 .negative-gap-banner {
   margin: 8px 12px 12px;
   padding: 10px 12px;

@@ -101,7 +101,7 @@ pub async fn generate_and_archive_soap(
     );
 
     match tokio::time::timeout(tokio::time::Duration::from_secs(soap_timeout), soap_future).await {
-        Ok(Ok(soap_result)) => {
+        Ok(Ok(mut soap_result)) => {
             let latency_ms = soap_start.elapsed().as_millis() as u64;
             let content = soap_result.format_for_archive();
 
@@ -152,18 +152,15 @@ pub async fn generate_and_archive_soap(
                 );
             }
 
-            // Replay bundle: capture prompts + response so SOAP-experiment
-            // CLIs can replay this encounter through alternate prompts. v5+.
-            // Prefer the raw LLM JSON (with procedure_candidates etc.) over
-            // the formatted text — fix from 2026-04-27 forensic review which
-            // found we'd been silently writing the formatted output, losing
-            // the v0.10.61 stance-filter audit trail.
+            // Replay bundle: capture prompts + raw LLM JSON (with
+            // procedure_candidates etc.) so SOAP-experiment CLIs can audit
+            // stance-filter decisions and replay through alternate prompts.
             if let Some(bundle_arc) = bundle {
                 if let Ok(mut b) = bundle_arc.lock() {
                     let patient_count = soap_result.notes.len();
                     let raw_for_bundle = soap_result
                         .raw_response
-                        .clone()
+                        .take()
                         .unwrap_or_else(|| content.clone());
                     b.set_soap_result(crate::replay_bundle::SoapResult {
                         ts: Utc::now().to_rfc3339(),
@@ -815,6 +812,69 @@ pub async fn run_merge_check<'a>(
             }
         }
     }
+}
+
+// ── Multi-patient detection helper ───────────────────────────────────
+
+/// Run the pre-SOAP multi-patient detection LLM call, log the outcome, and
+/// add the result to the replay bundle. Shared between the post-split path
+/// and the flush-on-stop path so both produce identical pipeline_log
+/// entries and replay_bundle records.
+///
+/// `stage_label` is logged as the `stage` key in the LLM context (e.g.
+/// `"post_split"` or `"flush_on_stop"`) and surfaces in the multi-patient
+/// detection record's debugging output.
+pub async fn run_pre_soap_multi_patient_detection(
+    client: &LLMClient,
+    fast_model: &str,
+    transcript: &str,
+    word_count: usize,
+    stage_label: &str,
+    logger: &Arc<Mutex<PipelineLogger>>,
+    bundle: &Arc<Mutex<crate::replay_bundle::ReplayBundleBuilder>>,
+) -> Option<MultiPatientDetectionResult> {
+    let outcome = client
+        .run_multi_patient_detection(fast_model, transcript)
+        .await;
+    if let Ok(mut l) = logger.lock() {
+        let det_context = match &outcome.detection {
+            Some(d) => serde_json::json!({
+                "stage": stage_label,
+                "patient_count": d.patient_count,
+                "confidence": d.confidence,
+                "reasoning": d.reasoning,
+                "patients": d.patients.iter()
+                    .map(|p| serde_json::json!({"label": p.label, "summary": p.summary}))
+                    .collect::<Vec<_>>(),
+                "word_count": word_count,
+            }),
+            None => serde_json::json!({
+                "stage": stage_label,
+                "patient_count": 1,
+                "word_count": word_count,
+                "accepted": false,
+            }),
+        };
+        l.log_llm_call(
+            "multi_patient_detect",
+            &outcome.model,
+            &outcome.system_prompt,
+            &outcome.user_prompt,
+            outcome.response_raw.as_deref(),
+            outcome.latency_ms,
+            outcome.success,
+            outcome.error.as_deref(),
+            det_context,
+        );
+    }
+    if let Ok(mut b) = bundle.lock() {
+        b.add_multi_patient_detection(crate::continuous_mode::multi_patient_from_outcome(
+            &outcome,
+            crate::replay_bundle::MultiPatientStage::PreSoap,
+            word_count,
+        ));
+    }
+    outcome.detection
 }
 
 // ── Clinical content check ───────────────────────────────────────────

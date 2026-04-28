@@ -77,49 +77,45 @@ pub async fn get_local_session_dates(
     Ok(local_dates)
 }
 
-/// Find session pairs that look like false splits (Fix #3 from 2026-04-27
-/// forensic review). Pure post-hoc analysis: looks at the date's session
-/// summaries (already returned by `get_local_sessions_by_date`) and applies
-/// `find_negative_gap_pairs` to surface false-split candidates the clinician
-/// can one-click merge. No LLM, no I/O beyond the same path the list view
-/// already walks.
+/// Fetch the date's sessions, preferring server-merged results so cross-room
+/// sessions are visible from any machine. Falls back to local on server
+/// failure or when the merged result is empty.
+async fn fetch_merged_sessions_for_date(
+    date: &str,
+    active_physician: &SharedActivePhysician,
+    profile_client: &SharedProfileClient,
+) -> Vec<ArchiveSummary> {
+    let local_sessions = local_archive::list_sessions_by_date(date).unwrap_or_default();
+    let physician_id = active_physician.read().await.as_ref().map(|p| p.id.clone());
+    let client = profile_client.read().await.clone();
+    let (Some(phys_id), Some(client)) = (physician_id, client) else {
+        return local_sessions;
+    };
+    match client.get_sessions_by_date(&phys_id, date).await {
+        Ok(server_sessions) => {
+            let merged = local_archive::merge_session_summaries(server_sessions, &local_sessions);
+            if merged.is_empty() { local_sessions } else { merged }
+        }
+        Err(e) => {
+            warn!("Server fetch failed, using local only: {e}");
+            local_sessions
+        }
+    }
+}
+
+/// Surface false-split candidates so the clinician can one-click merge.
 #[tauri::command]
 pub async fn find_negative_gap_pairs_for_date(
     date: String,
     active_physician: State<'_, SharedActivePhysician>,
     profile_client: State<'_, SharedProfileClient>,
 ) -> Result<Vec<local_archive::NegativeGapPair>, CommandError> {
-    // Reuse the same merging strategy as `get_local_sessions_by_date` so we
-    // catch cross-machine pairs (e.g. Toni 3:23 + 4:12 both on Room 2 when
-    // viewed from Room 6).
-    let local_sessions = local_archive::list_sessions_by_date(&date).unwrap_or_default();
-    let summaries = {
-        let physician_id = active_physician.read().await.as_ref().map(|p| p.id.clone());
-        let client = profile_client.read().await.clone();
-        if let (Some(phys_id), Some(client)) = (physician_id, client) {
-            match client.get_sessions_by_date(&phys_id, &date).await {
-                Ok(server_sessions) => {
-                    let merged = local_archive::merge_session_summaries(server_sessions, &local_sessions);
-                    if merged.is_empty() {
-                        local_sessions
-                    } else {
-                        merged
-                    }
-                }
-                Err(e) => {
-                    warn!("Server fetch failed in negative-gap scan, using local only: {e}");
-                    local_sessions
-                }
-            }
-        } else {
-            local_sessions
-        }
-    };
+    let summaries = fetch_merged_sessions_for_date(&date, &active_physician, &profile_client).await;
     Ok(local_archive::find_negative_gap_pairs(&summaries))
 }
 
-/// Get sessions for a specific date.
-/// Tries local first, then merges with server sessions.
+/// Get sessions for a specific date. Local + server merged so cross-room
+/// sessions appear on every workstation.
 #[tauri::command]
 pub async fn get_local_sessions_by_date(
     date: String,
@@ -127,26 +123,7 @@ pub async fn get_local_sessions_by_date(
     profile_client: State<'_, SharedProfileClient>,
 ) -> Result<Vec<ArchiveSummary>, CommandError> {
     info!("Getting local sessions for date: {}", date);
-
-    // Start with local sessions (fast path)
-    let local_sessions = local_archive::list_sessions_by_date(&date).unwrap_or_default();
-
-    // Try to enrich with server sessions (may include sessions from other machines)
-    let physician_id = active_physician.read().await.as_ref().map(|p| p.id.clone());
-    let client = profile_client.read().await.clone();
-    if let (Some(phys_id), Some(client)) = (physician_id, client) {
-        match client.get_sessions_by_date(&phys_id, &date).await {
-            Ok(server_sessions) => {
-                let merged = local_archive::merge_session_summaries(server_sessions, &local_sessions);
-                if !merged.is_empty() {
-                    return Ok(merged);
-                }
-            }
-            Err(e) => warn!("Server fetch failed, using local only: {e}"),
-        }
-    }
-
-    Ok(local_sessions)
+    Ok(fetch_merged_sessions_for_date(&date, &active_physician, &profile_client).await)
 }
 
 /// Get full details of an archived session.

@@ -583,14 +583,10 @@ pub async fn run<C: RunContext>(
                     }
                     let flush_notes = flush_notes_text.clone();
 
-                    // ── Multi-patient detection on flush (added 2026-04-28) ──
-                    // The post_split path runs this on every encounter end ≥
-                    // MULTI_PATIENT_DETECT_WORD_THRESHOLD words; the flush path
-                    // (encounter that never split before continuous-mode stop /
-                    // sleep cut-over) used to skip it, silently producing
-                    // single-patient SOAPs for combined-patient sessions like
-                    // 2026-04-27 Marlene+Tyler (121-min, 3786w) and Ann+toe-cyst
-                    // (52-min, 6430w). Mirrors continuous_mode_post_split.rs:161.
+                    // Detect combined-patient sessions that never split before
+                    // continuous-mode stopped (e.g. a long appointment that
+                    // overlapped two patients in the same room). Without this
+                    // the SOAP-LLM silently merges them into one note.
                     let multi_patient_detection = if word_count
                         >= crate::encounter_detection::MULTI_PATIENT_DETECT_WORD_THRESHOLD
                     {
@@ -600,50 +596,16 @@ pub async fn run<C: RunContext>(
                             word_count,
                             "Running multi-patient detection on flush buffer"
                         );
-                        let outcome = client
-                            .run_multi_patient_detection(&flush_fast_model, &filtered_text)
-                            .await;
-                        if let Ok(mut logger) = logger_for_flush.lock() {
-                            let det_context = match &outcome.detection {
-                                Some(d) => serde_json::json!({
-                                    "stage": "flush_on_stop",
-                                    "patient_count": d.patient_count,
-                                    "confidence": d.confidence,
-                                    "reasoning": d.reasoning,
-                                    "patients": d.patients.iter()
-                                        .map(|p| serde_json::json!({"label": p.label, "summary": p.summary}))
-                                        .collect::<Vec<_>>(),
-                                    "word_count": word_count,
-                                }),
-                                None => serde_json::json!({
-                                    "stage": "flush_on_stop",
-                                    "patient_count": 1,
-                                    "word_count": word_count,
-                                    "accepted": false,
-                                }),
-                            };
-                            logger.log_llm_call(
-                                "multi_patient_detect",
-                                &outcome.model,
-                                &outcome.system_prompt,
-                                &outcome.user_prompt,
-                                outcome.response_raw.as_deref(),
-                                outcome.latency_ms,
-                                outcome.success,
-                                outcome.error.as_deref(),
-                                det_context,
-                            );
-                        }
-                        if let Ok(mut bundle) = bundle_for_flush.lock() {
-                            bundle.add_multi_patient_detection(
-                                crate::continuous_mode::multi_patient_from_outcome(
-                                    &outcome,
-                                    crate::replay_bundle::MultiPatientStage::PreSoap,
-                                    word_count,
-                                ),
-                            );
-                        }
-                        outcome.detection
+                        crate::encounter_pipeline::run_pre_soap_multi_patient_detection(
+                            client,
+                            &flush_fast_model,
+                            &filtered_text,
+                            word_count,
+                            "flush_on_stop",
+                            &logger_for_flush,
+                            &bundle_for_flush,
+                        )
+                        .await
                     } else {
                         None
                     };
@@ -846,7 +808,7 @@ pub async fn run<C: RunContext>(
     // clinic day) and it runs only at stop, not on the hot path.
     crate::performance_summary::write_today_summary();
 
-    // Negative-gap pair scan (Fix #3, 2026-04-28). Walks today's session
+    // Negative-gap pair scan. Walks today's session
     // summaries looking for false-split signatures (next session started
     // <30s after prev session's recorded end AND tail <2500 words). Emits
     // an event so the frontend can show a one-click merge banner.
@@ -899,7 +861,9 @@ mod multi_patient_threshold_tests {
     /// matches the post-split path. Both paths must use the same gate so
     /// that a session ending via flush gets the same multi-patient scrutiny
     /// as a session ending via normal split. Regression guard for the
-    /// 2026-04-27 Marlene+Tyler / Ann+toe-cyst silent-contamination cases.
+    /// silent-contamination cases (a long appointment that overlapped two
+    /// patients in the same room produces a single-patient SOAP unless the
+    /// flush path runs the same multi-patient gate as post_split).
     #[test]
     fn flush_on_stop_uses_same_multi_patient_threshold_as_post_split() {
         // Both paths read MULTI_PATIENT_DETECT_WORD_THRESHOLD directly.

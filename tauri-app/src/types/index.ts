@@ -756,8 +756,8 @@ export interface LocalArchiveSummary {
 /**
  * A pair of consecutive sessions that look like a false split — the second
  * session is likely the tail of the first. Returned by the
- * `find_negative_gap_pairs_for_date` IPC command (Fix #3, 2026-04-28
- * forensic review). Mirrors `local_archive::NegativeGapPair`.
+ * `find_negative_gap_pairs_for_date` IPC command. Mirrors
+ * `local_archive::NegativeGapPair`.
  */
 export interface NegativeGapPair {
   prev_session_id: string;

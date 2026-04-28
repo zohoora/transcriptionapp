@@ -267,6 +267,10 @@ pub struct SoapNote {
     pub model_used: String,
 }
 
+/// Delimiter used when joining the raw LLM responses of multiple
+/// per-patient SOAP calls into a single `MultiPatientSoapResult.raw_response`.
+pub const RAW_RESPONSE_JOIN_DELIMITER: &str = "\n---\n";
+
 /// Multi-patient SOAP result (returned by LLM auto-detection)
 /// Contains separate SOAP notes for each patient identified in the transcript
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -279,15 +283,11 @@ pub struct MultiPatientSoapResult {
     pub generated_at: String,
     /// Which LLM model was used
     pub model_used: String,
-    /// Raw LLM response text BEFORE parsing/formatting. Captured so
-    /// `replay_bundle::SoapResult.response_raw` retains the JSON the model
-    /// actually emitted (with `procedure_candidates` stance, walkback,
-    /// completion_evidence) instead of the formatted SOAP. Critical for
-    /// post-hoc forensic auditing of v0.10.61 procedure-section decisions.
-    /// In multi-patient mode, the raws of each per-patient call are joined
-    /// with `\n---\n` so a single field can carry all of them.
-    /// Schema additive — older serde JSON without this field deserializes
-    /// to `None` via `serde(default)`.
+    /// Raw LLM response text BEFORE parsing/formatting. Carried into
+    /// `replay_bundle::SoapResult.response_raw` so SOAP-experiment CLIs can
+    /// audit `procedure_candidates` stance/walkback/completion_evidence
+    /// post-hoc. Per-patient SOAPs join their raw responses with
+    /// `RAW_RESPONSE_JOIN_DELIMITER`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub raw_response: Option<String>,
 }
@@ -1303,7 +1303,7 @@ impl LLMClient {
         let joined_raw = if raw_responses.is_empty() {
             None
         } else {
-            Some(raw_responses.join("\n---\n"))
+            Some(raw_responses.join(RAW_RESPONSE_JOIN_DELIMITER))
         };
         Ok(MultiPatientSoapResult {
             notes,
@@ -3516,11 +3516,10 @@ mod tests {
 
     #[test]
     fn test_raw_response_round_trips_through_serde() {
-        // 2026-04-27 forensic-review fix: SoapResult.response_raw must hold
-        // the raw LLM JSON (with `procedure_candidates` etc.), not the
-        // formatted SOAP. MultiPatientSoapResult.raw_response is the
-        // upstream carrier — verify it round-trips through serde so any
-        // future schema migration preserves it.
+        // raw_response carries the raw LLM JSON (with procedure_candidates,
+        // stance, walkback, completion_evidence) into the replay bundle —
+        // verify it survives serde round-trips so future schema migrations
+        // preserve the forensic audit trail.
         let r = MultiPatientSoapResult {
             notes: vec![PatientSoapNote {
                 patient_label: "Patient 1".into(),
