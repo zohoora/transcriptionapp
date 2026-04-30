@@ -385,6 +385,8 @@ fn procedure_type_to_code(proc: &ProcedureType, billing_data: BillingDataRef<'_>
         ProcedureType::NerveBlockPeripheral => "G231A",
         ProcedureType::NerveBlockParavertebral => "G228A",
         ProcedureType::NerveBlockAdditional => "G223A",
+        ProcedureType::NerveBlockOccipital => "G264A",
+        ProcedureType::NerveBlockOccipitalAdditional => "G265A",
         ProcedureType::EarSyringing => "G420A",
         ProcedureType::Tonometry => "G435A",
         ProcedureType::NailDebridement => "Z110A",
@@ -836,6 +838,152 @@ const IDD_CODES_K125: &[&str] = &["299", "319", "343", "741", "758"];
 const DX_TRUST_CONFIDENCE: f32 = 0.90;
 const DX_MIN_CONSIDER: f32 = 0.50;
 
+/// Stop-tokens that aren't useful for matching primary diagnosis to OHIP code
+/// description. Most are connectives, prepositions, or generic medical filler.
+const DX_MATCH_STOPWORDS: &[&str] = &[
+    "the", "and", "with", "without", "due", "from", "into", "onto", "over",
+    "under", "above", "below", "complications", "complication", "syndrome",
+    "disorder", "disorders", "disease", "diseases", "other", "specified",
+    "unspecified", "including", "include", "such", "this", "that", "these",
+    "those", "non", "nec", "not", "elsewhere", "classified", "primary",
+    "secondary", "chronic", "acute", "encounter", "visit", "patient",
+    "care", "management", "review", "assessment", "history",
+];
+
+/// Common synonym pairs for OHIP-description-vs-narrative mismatches. The DB
+/// uses formal ICD-8 terminology while clinicians write narrative text. When
+/// either side of a pair appears in the description and the OTHER side
+/// appears in the primary diagnosis, we treat that as a valid match.
+///
+/// Add pairs as we discover them — keep narrowly scoped (true synonyms, not
+/// broad related concepts). Validated against the 2026-04-29 forensic review
+/// failure modes: acne, cervical, hypertension, ADHD.
+const DX_SYNONYMS: &[(&str, &str)] = &[
+    // Acne and skin
+    ("acne", "sebaceous"),
+    ("acne", "vulgaris"),
+    // Cervical / neck
+    ("cervicogenic", "fibrositis"),
+    ("cervicogenic", "myositis"),
+    ("cervicogenic", "muscular"),
+    ("cervical", "fibrositis"),
+    ("cervical", "myositis"),
+    ("cervicalgia", "fibrositis"),
+    ("cervicalgia", "myositis"),
+    ("neck", "fibrositis"),
+    ("neck", "myositis"),
+    // Hypertension synonyms
+    ("hypertension", "hypertensive"),
+    ("htn", "hypertensive"),
+    ("htn", "hypertension"),
+    ("blood pressure", "hypertensive"),
+    ("bp", "hypertensive"),
+    // ADHD: 314 description is "Hyperkinetic syndrome of childhood"; 313 is
+    // "Behaviour disorders of childhood and adolescence". For ADULT ADHD the
+    // age-mismatch guard below handles 314; for child ADHD we want
+    // hyperkinetic↔ADHD synonymy.
+    ("adhd", "hyperkinetic"),
+    ("attention deficit", "hyperkinetic"),
+    // Diabetes
+    ("diabetes", "diabetic"),
+    ("dm", "diabetes"),
+    ("type 2 dm", "diabetes"),
+    // Headache
+    ("headache", "cephalgia"),
+    ("migraine", "headache"),
+    // Joint
+    ("knee", "osteoarthritis"),
+    ("hip", "osteoarthritis"),
+    ("oa", "osteoarthritis"),
+    // GI
+    ("diarrhea", "gastro-enteritis"),
+    ("diarrhoea", "gastro-enteritis"),
+    ("vomiting", "nausea"),
+    // Mental health
+    ("anxiety", "neuroses"),
+    ("depression", "depressive"),
+    ("insomnia", "depressive"),
+    ("insomnia", "non-psychotic"),
+    // Allergic
+    ("rhinitis", "allergic"),
+];
+
+/// Cross-validate a tools-model-suggested OHIP diagnostic code's description
+/// against the primary diagnosis. Returns true if the two are plausibly
+/// related — at least one significant shared token OR a known synonym hit.
+///
+/// Called from Stage 0 to reject semantically-untethered tools-model outputs.
+/// 2026-04-29 forensic review surfaced this as the dominant tools-model
+/// failure mode (Carter acne→701 hyperkeratosis, Irene cervicogenic→491
+/// chronic bronchitis, etc.). The guard fails closed: if either input is
+/// empty, return true (don't false-reject).
+pub(crate) fn dx_description_matches_primary(
+    primary_diagnosis: &str,
+    dc_description: &str,
+) -> bool {
+    let primary = primary_diagnosis.trim().to_lowercase();
+    let desc = dc_description.trim().to_lowercase();
+    if primary.is_empty() || desc.is_empty() {
+        return true;
+    }
+
+    // Tokenize: keep alpha tokens ≥4 chars, drop stop-words.
+    fn tokens(s: &str) -> std::collections::HashSet<String> {
+        s.split(|c: char| !c.is_alphanumeric() && c != '-')
+            .filter(|w| w.len() >= 4)
+            .filter(|w| !DX_MATCH_STOPWORDS.contains(&&**w))
+            .map(|w| w.to_string())
+            .collect()
+    }
+
+    // Age-restriction veto runs FIRST — even if a token or synonym would
+    // match, an age-restricted description (e.g. "Hyperkinetic syndrome of
+    // childhood") on an adult primary diagnosis must reject. Daniel's adult
+    // ADHD→314 was the failure mode that motivated this. We don't have
+    // direct access to patient age here, so the guard fires when the
+    // description signals age-restriction AND the primary doesn't echo a
+    // pediatric anchor.
+    let desc_age_restricted = desc.contains("childhood")
+        || desc.contains("of children")
+        || desc.contains("infant")
+        || desc.contains("neonatal")
+        || desc.contains("perinatal")
+        || desc.contains("newborn")
+        || desc.contains("paediatric")
+        || desc.contains("pediatric");
+    let primary_pediatric = primary.contains("child")
+        || primary.contains("infant")
+        || primary.contains("baby")
+        || primary.contains("toddler")
+        || primary.contains("paediatric")
+        || primary.contains("pediatric")
+        || primary.contains("neonate")
+        || primary.contains("newborn");
+    if desc_age_restricted && !primary_pediatric {
+        return false;
+    }
+
+    // Token overlap (≥4-char tokens, stop-words filtered)
+    let primary_toks = tokens(&primary);
+    let desc_toks = tokens(&desc);
+    if primary_toks.intersection(&desc_toks).next().is_some() {
+        return true;
+    }
+
+    // Synonym fallback — either order
+    for (a, b) in DX_SYNONYMS {
+        let a_in_primary = primary.contains(a);
+        let b_in_primary = primary.contains(b);
+        let a_in_desc = desc.contains(a);
+        let b_in_desc = desc.contains(b);
+        if (a_in_primary && b_in_desc) || (b_in_primary && a_in_desc) {
+            return true;
+        }
+    }
+
+    false
+}
+
 /// Resolve the diagnostic code for a billing record via a 5-stage pipeline:
 /// 0. If a tools-model resolution was provided, trust it (validated by the
 ///    caller: code is known-good against the 562-entry DB). Evidence + reasoning
@@ -852,20 +1000,44 @@ fn resolve_diagnostic_code(
     billing_data: BillingDataRef<'_>,
     tools_model_resolved: Option<&ResolvedDiagnostic>,
 ) {
-    // Stage 0: tools-model retrieval wins when present. The caller has already
-    // verified the code exists in the 562-entry DB; we re-look-up here to
-    // emit the authoritative description and to keep this function self-
-    // contained (tests can exercise it without a live router).
+    // Stage 0: tools-model retrieval wins when present — BUT must pass a
+    // semantic-untethering guard. The caller has already verified the code
+    // exists in the 562-entry DB; we re-look up here to emit the authoritative
+    // description and to keep this function self-contained.
+    //
+    // 2026-04-29 forensic review surfaced 5 sessions where tools-model
+    // returned a code whose DB description was lexically and semantically
+    // unrelated to the primary diagnosis (Carter: acne→701 hyperkeratosis;
+    // Irene: cervicogenic headache→491 chronic bronchitis; Catherine 2:35:
+    // knee OA→249 pre-diabetes). The model's reasoning text was internally
+    // contradictory with the DB description (e.g. "701 is the OHIP code for
+    // acne" vs DB "Hyperkeratosis, scleroderma, keloid"). The guard rejects
+    // the tools-model output when the primary diagnosis and DB description
+    // share no significant tokens AND no known synonym hits. Rejection falls
+    // through to Stage 1 (LLM suggestion) → Stage 2 (text match), which
+    // historically resolves these cases correctly (706 for acne, 729 for
+    // cervicalgia, 715 for knee OA).
     if let Some(rd) = tools_model_resolved {
         if let Some(dc) = diagnostic_codes::get_diagnostic_code(&rd.code) {
-            set_diagnostic(record, dc);
-            if !rd.evidence.is_empty() {
-                record.diagnostic_evidence = Some(rd.evidence.clone());
+            let primary = features
+                .primary_diagnosis
+                .as_deref()
+                .unwrap_or("");
+            if dx_description_matches_primary(primary, dc.description) {
+                set_diagnostic(record, dc);
+                if !rd.evidence.is_empty() {
+                    record.diagnostic_evidence = Some(rd.evidence.clone());
+                }
+                if !rd.reasoning.is_empty() {
+                    record.diagnostic_reasoning = Some(rd.reasoning.clone());
+                }
+                // Fall through to Stage 4 (IDD constraint) but skip Stages 1–3.
+            } else {
+                tracing::warn!(
+                    "Stage 0 tools-model REJECTED: code={} (\"{}\") has no semantic overlap with primary_diagnosis=\"{}\" — falling through to Stage 1/2",
+                    rd.code, dc.description, primary
+                );
             }
-            if !rd.reasoning.is_empty() {
-                record.diagnostic_reasoning = Some(rd.reasoning.clone());
-            }
-            // Fall through to Stage 4 (IDD constraint) but skip Stages 1–3.
         }
     }
 
@@ -976,6 +1148,121 @@ mod tests {
             condition_evidence: std::collections::HashMap::new(),
         }
     }
+
+    // ====== Class 2 fix: Stage 0 semantic-untethering guard ======
+    //
+    // Each row is `(name, primary_diagnosis, db_description, expect_match)`.
+    // Failure-mode names reference the originating clinic-day session.
+
+    #[test]
+    fn dx_description_matches_primary_table() {
+        let cases: &[(&str, &str, &str, bool)] = &[
+            // Token / synonym matches
+            ("acne_to_acne_code",
+             "Acne vulgaris with psychosocial distress",
+             "Acne, acne vulgaris, sebaceous cyst", true),
+            ("cervicogenic_to_fibrositis",
+             "Cervicogenic headache with cervical muscle spasm",
+             "Fibrositis, myositis, muscular rheumatism", true),
+            ("knee_oa_to_osteoarthritis",
+             "Knee osteoarthritis with significant functional impairment",
+             "Osteoarthritis", true),
+            ("hypertension_to_essential_hypertension",
+             "Hypertension management with intermittent low BP readings",
+             "Essential, benign hypertension", true),
+            ("pediatric_adhd_to_childhood_hyperkinetic",
+             "Child ADHD with attention difficulties at school",
+             "Hyperkinetic syndrome of childhood", true),
+            ("diarrhea_to_gastroenteritis",
+             "Recurrent acute watery diarrhea in a 3-year-old child",
+             "Diarrhea, gastro-enteritis, viral gastro-enteritis", true),
+            ("empty_primary_passes_open",
+             "", "Anything", true),
+            ("empty_description_passes_open",
+             "Something", "", true),
+            // Rejections — production failure modes
+            ("acne_NOT_hyperkeratosis (Carter)",
+             "Acne vulgaris with psychosocial distress",
+             "Hyperkeratosis, scleroderma, keloid", false),
+            ("cervicogenic_NOT_chronic_bronchitis (Irene)",
+             "Cervicogenic headache with cervical muscle spasm",
+             "Chronic bronchitis", false),
+            ("knee_oa_NOT_prediabetes (Catherine 2:35)",
+             "Knee osteoarthritis with significant functional impairment",
+             "Pre-diabetes", false),
+            ("hypertension_NOT_depression (Janice)",
+             "Hypertension management with intermittent low BP readings",
+             "Depressive or other non-psychotic disorders, not elsewhere classified", false),
+            ("adult_adhd_NOT_childhood_hyperkinetic (Daniel)",
+             "Adult ADHD on Concerta requesting dose increase",
+             "Hyperkinetic syndrome of childhood", false),
+            ("stopwords_alone_dont_count",
+             "Management with primary unspecified",
+             "Other disorders specified with management", false),
+        ];
+        for (name, primary, desc, expect) in cases {
+            assert_eq!(
+                dx_description_matches_primary(primary, desc), *expect,
+                "case {name}: primary={primary:?} desc={desc:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn stage_0_tools_model_rejected_when_semantically_untethered() {
+        // Stage 0 acceptance test: when tools-model returns 491 (Chronic
+        // bronchitis) for primary diagnosis "Cervicogenic headache", the
+        // guard must reject and Stage 2 (text match) must pick up 729
+        // (Fibrositis) via the synonym fallback in match_diagnosis_text.
+        let mut features = default_features();
+        features.primary_diagnosis = Some("Cervicogenic headache with cervical muscle spasm".to_string());
+        features.confidence = 0.0; // Stage 1 LLM suggestion path won't fire
+        let mut record = BillingRecord {
+            session_id: "sid".to_string(),
+            date: "2026-04-29".to_string(),
+            patient_name: None,
+            status: BillingStatus::Draft,
+            codes: vec![],
+            time_entries: vec![],
+            total_shadow_cents: 0,
+            total_out_of_basket_cents: 0,
+            total_time_based_cents: 0,
+            total_amount_cents: 0,
+            confirmed_at: None,
+            notes: None,
+            extraction_model: Some("test".to_string()),
+            extracted_at: Some(chrono::Utc::now().to_rfc3339()),
+            diagnostic_code: None,
+            diagnostic_description: None,
+            diagnostic_evidence: None,
+            diagnostic_reasoning: None,
+        };
+        // Provide a tools-model resolution with the BAD code (491).
+        let bad_resolution = crate::billing::types::ResolvedDiagnostic {
+            code: "491".to_string(),
+            description: "Chronic bronchitis".to_string(),
+            evidence: "(model evidence)".to_string(),
+            reasoning: "(model reasoning)".to_string(),
+        };
+        resolve_diagnostic_code(
+            &features,
+            &[],
+            "A007A",
+            &mut record,
+            None,
+            Some(&bad_resolution),
+        );
+        // Stage 0 must REJECT the bad tools-model code. Stage 2 text match
+        // on "Cervicogenic headache..." may or may not resolve to a
+        // specific code; the critical assertion is that 491 is NOT set.
+        assert_ne!(
+            record.diagnostic_code.as_deref(),
+            Some("491"),
+            "Stage 0 guard must reject 491 for cervicogenic headache; got record={:?}",
+            record.diagnostic_code
+        );
+    }
+    // ====== end Class 2 fix tests ======
 
     #[test]
     fn test_minor_assessment_mapping() {

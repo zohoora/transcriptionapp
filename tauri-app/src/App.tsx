@@ -871,6 +871,8 @@ function App() {
             transcriptionStalled={continuous.transcriptionStalled}
             isSleeping={continuous.isSleeping}
             sleepResumeAt={continuous.sleepResumeAt}
+            chartStaleWarning={continuous.chartStaleWarning}
+            onDismissChartStaleWarning={continuous.onDismissChartStaleWarning}
             onViewHistory={openHistoryWindow}
             onUploadAudio={() => setShowUploadModal(true)}
             chatMessages={chatMessages}

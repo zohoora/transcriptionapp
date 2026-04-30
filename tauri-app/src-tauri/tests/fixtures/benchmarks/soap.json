@@ -1,0 +1,89 @@
+{
+  "task": "soap",
+  "model": "soap-model-fast",
+  "targets": {
+    "overall_accuracy_pct": 80.0
+  },
+  "test_cases": [
+    {
+      "id": "SOAP-PROC-EMPTY-1",
+      "name": "Chest auscultation should NOT appear in procedure[]",
+      "difficulty": "medium",
+      "input": "Speaker 1 (doctor): Hi Mrs Doherty, how have you been? Speaker 2 (patient): The cough is not getting better. Speaker 1: Can I have a quick listen to your chest while you're here? Yeah, so it does sound a bit upmarket in this area. Speaker 2: Should I be worried? Speaker 1: Let me order a CT to be sure, and we'll add doxycycline empirically. Speaker 2: Okay thank you.",
+      "expected_procedures_substrings": [],
+      "forbidden_in_soap": ["[transcript:", "Performed chest auscultation"]
+    },
+    {
+      "id": "SOAP-PROC-EMPTY-2",
+      "name": "Reviewing labs should NOT appear in procedure[]",
+      "difficulty": "medium",
+      "input": "Speaker 1 (doctor): Good morning, Mr Nicholls. The blood work is super average, meaning that your sugars, kidney, liver, cholesterol and blood count are all within normal limits. Positive thyroid B12 and iron levels too. Speaker 2: Oh wonderful. Speaker 1: Yeah so just continue what you're doing. Let's recheck in 3 months.",
+      "expected_procedures_substrings": [],
+      "forbidden_in_soap": ["[transcript:", "reviewed blood work", "Reviewed blood work"]
+    },
+    {
+      "id": "SOAP-PROC-EMPTY-3",
+      "name": "Form completion should NOT appear in procedure[]",
+      "difficulty": "medium",
+      "input": "Speaker 1 (doctor): Do you want me to fill out a Disability Tax Credit form? Will that help? Speaker 2 (patient): Yes please that would be great. Speaker 1: Okay I will put down for then likely in year twenty twenty eight. So you complete the rest of it and submit. Speaker 2: Got it.",
+      "expected_procedures_substrings": [],
+      "forbidden_in_soap": ["[transcript:", "Completed Disability"]
+    },
+    {
+      "id": "SOAP-PROC-EMPTY-4",
+      "name": "Physical knee/hip exam should NOT appear in procedure[]",
+      "difficulty": "medium",
+      "input": "Speaker 1 (doctor): Let me have a look at your knees. Right knee is tender on the lateral aspect with crepitus on flexion. Left knee looks fine. Speaker 2: Okay. Speaker 1: Hips have full range. Speaker 2: Yes that feels fine. Speaker 1: Let's get an X-ray and follow up in two weeks.",
+      "expected_procedures_substrings": [],
+      "forbidden_in_soap": ["[transcript:", "Performed physical examination"]
+    },
+    {
+      "id": "SOAP-PROC-INJECTION-1",
+      "name": "Cortisone knee injection IS a billable procedure",
+      "difficulty": "easy",
+      "input": "Speaker 1 (doctor): Right knee OA is bothering you again. Let me do the cortisone injection now. Speaker 2 (patient): Okay. Speaker 1: Just going to clean the area with alcohol. Sharp scratch coming up — there we go. All done. Speaker 2: That wasn't so bad.",
+      "expected_procedures_substrings": ["injection"],
+      "forbidden_in_soap": ["[transcript:"]
+    },
+    {
+      "id": "SOAP-PROC-CRYO-1",
+      "name": "Liquid nitrogen cryotherapy IS a billable procedure",
+      "difficulty": "easy",
+      "input": "Speaker 1 (doctor): That plantar wart's been there a while. I'll spray it with liquid nitrogen today. Speaker 2 (patient): Sure. Speaker 1: Hold still — okay there we go, sprayed it. Speaker 2: Stings a bit. Speaker 1: Yep, follow up in three weeks if it persists.",
+      "expected_procedures_substrings": ["nitrogen"],
+      "forbidden_in_soap": ["[transcript:"]
+    },
+    {
+      "id": "SOAP-PROC-DECLINED-1",
+      "name": "Declined injection should NOT appear (stance filter)",
+      "difficulty": "hard",
+      "input": "Speaker 1 (doctor): I could inject the trigger point with steroid today, or you could try OTC anti-inflammatories first. Speaker 2 (patient): Let's try the OTC first. Speaker 1: Okay. We'll wait on the injection. Take ibuprofen 600 BID for two weeks and we'll reassess.",
+      "expected_procedures_substrings": [],
+      "forbidden_in_soap": ["[transcript:"]
+    },
+    {
+      "id": "SOAP-PROC-PROPOSED-1",
+      "name": "Proposed-but-not-done procedure should NOT appear",
+      "difficulty": "hard",
+      "input": "Speaker 1 (doctor): If we don't see improvement in two weeks I can do a joint injection. Speaker 2 (patient): Okay. Speaker 1: For now let's do PT and re-evaluate. Speaker 2: Sure thing.",
+      "expected_procedures_substrings": [],
+      "forbidden_in_soap": ["[transcript:"]
+    },
+    {
+      "id": "SOAP-DRUG-VERBATIM-1",
+      "name": "Unfamiliar drug name should NOT be substituted (Class 7)",
+      "difficulty": "hard",
+      "input": "Speaker 1 (doctor): How are you tolerating the Davigo for sleep? Speaker 2 (patient): Yeah pretty good actually. Speaker 1: Okay continue at 5mg at bedtime then.",
+      "expected_procedures_substrings": [],
+      "forbidden_in_soap": ["estradiol", "estrogen"]
+    },
+    {
+      "id": "SOAP-NOT-PROCEDURE-PHONE",
+      "name": "Reading lab values over the phone is not a procedure",
+      "difficulty": "medium",
+      "input": "Speaker 1 (doctor): Hi Diana, this is Doctor Williams. I'm calling about your A1C. Speaker 2 (patient): Hi Doctor. Speaker 1: It came back at 8.1 which is up from your target. Let's increase the metformin to 1000mg twice daily. Speaker 2: Okay. Speaker 1: I'll fax the prescription in.",
+      "expected_procedures_substrings": [],
+      "forbidden_in_soap": ["[transcript:", "Reviewed", "reviewed"]
+    }
+  ]
+}

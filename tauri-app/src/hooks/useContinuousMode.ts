@@ -4,10 +4,23 @@ import { listen, UnlistenFn } from '@tauri-apps/api/event';
 import type {
   ContinuousModeStats,
   ContinuousModeEvent,
+  ChartStaleReason,
   TranscriptUpdate,
   AudioQualitySnapshot,
   EncounterNote,
 } from '../types';
+
+/**
+ * Live "verify patient" warning emitted when the backend's chart-stale
+ * heuristic fires (≥3 distinct vision names in one encounter, OR
+ * audio-greeting names don't match vision majority).
+ */
+export interface ChartStaleWarning {
+  reason: ChartStaleReason;
+  visionName?: string;
+  visionUniqueNames: string[];
+  audioGreetingCandidates: string[];
+}
 
 export interface UseContinuousModeResult {
   /** Whether continuous mode is actively running */
@@ -44,6 +57,10 @@ export interface UseContinuousModeResult {
   isSleeping: boolean;
   /** ISO timestamp when sleep mode will resume (null when not sleeping) */
   sleepResumeAt: string | null;
+  /** Live chart-stale warning (null when no suspect signal in the current encounter). Cleared on encounter split. */
+  chartStaleWarning: ChartStaleWarning | null;
+  /** Manually dismiss the chart-stale banner without waiting for the next encounter split. */
+  dismissChartStaleWarning: () => void;
 }
 
 const IDLE_STATS: ContinuousModeStats = {
@@ -77,6 +94,7 @@ export function useContinuousMode(): UseContinuousModeResult {
   const [transcriptionStalled, setTranscriptionStalled] = useState(false);
   const [isSleeping, setIsSleeping] = useState(false);
   const [sleepResumeAt, setSleepResumeAt] = useState<string | null>(null);
+  const [chartStaleWarning, setChartStaleWarning] = useState<ChartStaleWarning | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const isActiveRef = useRef(isActive);
 
@@ -104,6 +122,7 @@ export function useContinuousMode(): UseContinuousModeResult {
           setSleepResumeAt(null);
           setEncounterNotes([]);
           setCurrentPatientName(null);
+          setChartStaleWarning(null);
           break;
         case 'stopped':
           setIsActive(false);
@@ -116,6 +135,7 @@ export function useContinuousMode(): UseContinuousModeResult {
           setTranscriptionStalled(false);
           setIsSleeping(false);
           setSleepResumeAt(null);
+          setChartStaleWarning(null);
           break;
         case 'encounter_detected':
           // Encounter split — archived notes are on disk. Reset the chip list
@@ -125,6 +145,21 @@ export function useContinuousMode(): UseContinuousModeResult {
           setCurrentPatientName(null);
           setEncounterSessionId(`continuous-${Date.now()}`);
           setTranscriptionStalled(false);
+          // Clear the chart-stale banner — it was scoped to the previous
+          // encounter. The audio-mismatch flavor of the warning fires
+          // post-split so the splitter's own emit will set it again here
+          // BEFORE encounter_detected when it applies.
+          setChartStaleWarning(null);
+          break;
+        case 'chart_stale_suspected':
+          if (payload.reason) {
+            setChartStaleWarning({
+              reason: payload.reason,
+              visionName: payload.vision_name,
+              visionUniqueNames: payload.vision_unique_names ?? [],
+              audioGreetingCandidates: payload.audio_greeting_candidates ?? [],
+            });
+          }
           break;
         case 'patient_name_updated':
           // `name` absent = tracker cleared (DOB invalidation). Store null so
@@ -295,6 +330,10 @@ export function useContinuousMode(): UseContinuousModeResult {
     }
   }, []);
 
+  const dismissChartStaleWarning = useCallback(() => {
+    setChartStaleWarning(null);
+  }, []);
+
   return {
     isActive,
     isStopping,
@@ -313,5 +352,7 @@ export function useContinuousMode(): UseContinuousModeResult {
     transcriptionStalled,
     isSleeping,
     sleepResumeAt,
+    chartStaleWarning,
+    dismissChartStaleWarning,
   };
 }

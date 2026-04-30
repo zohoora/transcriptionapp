@@ -1,0 +1,16 @@
+{
+  "session_id": "12b5e886-b18b-4835-b2d1-1cf9bffee349",
+  "date": "2026-04-29",
+  "labeled_at": "2026-04-29T23:50:00+00:00",
+  "labeled_by": "Dr Z (2026-04-29 clinic-day forensic review)",
+  "labels": {
+    "split_correct": true,
+    "merge_correct": true,
+    "clinical_correct": true,
+    "patient_count_correct": true,
+    "procedure_section_correct": false,
+    "billing_codes_expected": ["A007A", "K030A", "Q040A", "Q310A"],
+    "diagnostic_code_expected": "250",
+    "notes": "Allan Nicholls 10:48am — post-extraction recovery + diabetes med stop + minor hand trauma. SOAP and billing OK; dx 250 (Diabetes mellitus) correct. PROCEDURE SECTION HALLUCINATED: 'reviewed blood work results [transcript: ...]'. Reviewing labs is documentation, not a billable procedure. Same v0.10.61 overcapture as Ruth/Catherine 2:35/Angelika today."
+  }
+}

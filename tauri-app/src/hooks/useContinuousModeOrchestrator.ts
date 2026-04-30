@@ -78,6 +78,8 @@ export interface ContinuousModeOrchestratorResult {
   transcriptionStalled: boolean;
   isSleeping: boolean;
   sleepResumeAt: string | null;
+  chartStaleWarning: import('./useContinuousMode').ChartStaleWarning | null;
+  onDismissChartStaleWarning: () => void;
 }
 
 // ============================================================================
@@ -106,6 +108,8 @@ export function useContinuousModeOrchestrator({
     transcriptionStalled,
     isSleeping,
     sleepResumeAt,
+    chartStaleWarning,
+    dismissChartStaleWarning,
   } = useContinuousMode();
 
   // Patient biomarker trending (filters clinician voices, tracks trends)
@@ -205,5 +209,7 @@ export function useContinuousModeOrchestrator({
     transcriptionStalled,
     isSleeping,
     sleepResumeAt,
+    chartStaleWarning,
+    onDismissChartStaleWarning: dismissChartStaleWarning,
   };
 }

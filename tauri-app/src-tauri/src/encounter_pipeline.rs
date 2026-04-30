@@ -111,6 +111,7 @@ pub async fn generate_and_archive_soap(
                     session_id,
                     session_date,
                     &soap_result.notes,
+                    multi_patient_detection,
                 ) {
                     warn!("Failed to save multi-patient SOAP for session {}: {}", session_id, e);
                 }
@@ -397,6 +398,21 @@ pub async fn extract_and_archive_billing(
     // Override after-hours from caller (more reliable than LLM)
     features.is_after_hours = is_after_hours;
 
+    // Procedure→billing safety net: when the LLM's extraction missed a
+    // procedure that the SOAP procedure section explicitly states (e.g.
+    // a nerve-block injection), best-effort augment features.procedures
+    // so the rule engine bills it.
+    let proc_section = extract_soap_procedure_section(soap_content);
+    if !proc_section.is_empty() {
+        let added = crate::billing::clinical_features::augment_procedures_from_soap_text(
+            &mut features,
+            &proc_section,
+        );
+        if added > 0 {
+            warn!("Augmented {} procedure(s) from SOAP text for session {}", added, session_id);
+        }
+    }
+
     // SOAP-text keyword guard (v0.10.61). The LLM sometimes hallucinates
     // K-code conditions (diabetic_assessment, chf_management,
     // smoking_cessation) and even fabricates plausible evidence strings,
@@ -521,23 +537,36 @@ pub async fn extract_and_archive_billing(
 }
 
 /// Extract the Assessment ("A:") section of a SOAP note for use as context
-/// in the tools-model diagnostic code lookup. Falls back to the first ~1500
-/// bytes if the section delimiters aren't present.
+/// Extract the rendered SOAP's Assessment section. Falls back to the
+/// first ~1500 bytes if the marker isn't present. Markers are sourced
+/// from `llm_client::SOAP_SECTION_*` so renderer changes propagate.
 fn extract_soap_assessment(soap: &str) -> String {
-    if let Some(idx) = soap.find("\nA:") {
-        let rest = &soap[idx + 3..];
-        let end = rest
-            .find("\nP:")
-            .or_else(|| rest.find("\n\nP:"))
-            .unwrap_or(rest.len());
+    use crate::llm_client::{SOAP_SECTION_ASSESSMENT, SOAP_SECTION_PLAN};
+    let assessment_marker = SOAP_SECTION_ASSESSMENT.trim_end_matches('\n');
+    let plan_marker = SOAP_SECTION_PLAN.trim_end_matches('\n');
+    if let Some(idx) = soap.find(assessment_marker) {
+        let rest = &soap[idx + assessment_marker.len()..];
+        let end = rest.find(plan_marker).unwrap_or(rest.len());
         return rest[..end].trim().to_string();
     }
-    // No explicit marker — hand the first chunk to the model.
     let mut end = soap.len().min(1500);
     while end > 0 && !soap.is_char_boundary(end) {
         end -= 1;
     }
     soap[..end].to_string()
+}
+
+/// Extract the rendered SOAP's Procedure section. Returns empty string
+/// when no Procedure section is present. Procedure is the LAST section
+/// in render order, so the cut runs to end-of-string.
+fn extract_soap_procedure_section(soap: &str) -> String {
+    use crate::llm_client::SOAP_SECTION_PROCEDURE;
+    let with_newline = SOAP_SECTION_PROCEDURE;
+    let without_trailing = SOAP_SECTION_PROCEDURE.trim_end_matches('\n');
+    if let Some(idx) = soap.find(with_newline).or_else(|| soap.find(without_trailing)) {
+        return soap[idx..].trim().to_string();
+    }
+    String::new()
 }
 
 /// Determine if a session started during after-hours (Ontario EST/EDT).
@@ -1305,6 +1334,32 @@ pub async fn regen_soap_after_merge(
 }
 
 #[cfg(test)]
+mod class6_section_extractor_tests {
+    use super::extract_soap_procedure_section;
+
+    #[test]
+    fn extracts_simple_procedure_section() {
+        let soap = "S:\n• cough\n\nO:\n• Vitals stable\n\nA:\n• URI\n\nP:\n• Rest\n\nProcedure:\n• Pap smear performed";
+        let p = extract_soap_procedure_section(soap);
+        assert!(p.contains("Pap smear performed"), "got: {:?}", p);
+    }
+
+    #[test]
+    fn returns_empty_when_no_procedure_section() {
+        let soap = "S:\n• cough\nA:\n• URI\nP:\n• Rest";
+        assert_eq!(extract_soap_procedure_section(soap), "");
+    }
+
+    #[test]
+    fn handles_multiple_procedure_lines() {
+        let soap = "P:\n• Plan\n\nProcedure:\n• Punch biopsy of forearm lesion\n• Cortisone injection right knee";
+        let p = extract_soap_procedure_section(soap);
+        assert!(p.contains("Punch biopsy"));
+        assert!(p.contains("Cortisone injection"));
+    }
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
     use crate::continuous_mode_events::ContinuousModeEvent;
@@ -1353,6 +1408,7 @@ mod tests {
             has_clinician_notes: false,
             soap_prompt_version: None,
             billing_prompt_version: None,
+            chart_stale_suspected: None,
         }
     }
 

@@ -44,6 +44,9 @@ const ALLOWED_SESSION_FILES: &[&str] = &[
     "billing.json",
     "patient_handout.txt",
     "clinician_notes.json",
+    // Per-patient labels + summaries for multi-patient sessions; needed
+    // for cross-room per-patient SOAP regen.
+    "patient_labels.json",
 ];
 
 /// Check if a filename is allowed for session file upload.
@@ -1007,6 +1010,11 @@ mod tests {
     fn allowlist_accepts_clinician_notes() {
         // Per-encounter clinician-submitted notes sidecar (v0.10.57+).
         assert!(is_allowed_session_file("clinician_notes.json"));
+    }
+
+    #[test]
+    fn allowlist_accepts_patient_labels() {
+        assert!(is_allowed_session_file("patient_labels.json"));
     }
 
     #[test]

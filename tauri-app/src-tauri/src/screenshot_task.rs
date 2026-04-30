@@ -12,6 +12,7 @@ use tokio::sync::Notify;
 use tracing::{debug, info, warn};
 
 use crate::config::Config;
+use crate::continuous_mode_events::ChartStaleReason;
 use crate::llm_client::{ContentPart, ImageUrlContent, LLMClient};
 use crate::patient_name_tracker::PatientNameTracker;
 use crate::pipeline_log::PipelineLogger;
@@ -78,12 +79,35 @@ pub async fn run_screenshot_task(cfg: ScreenshotTaskConfig) {
     // Used to suppress repeat emissions on every screenshot — we only want to
     // fire when the tracker's majority name or stored DOB actually transitions.
     let mut last_emitted: (Option<String>, Option<String>) = (None, None);
+    // Class 3 fix from 2026-04-29 forensic review: emit
+    // `ChartStaleSuspected` once per encounter when vision sees ≥3 distinct
+    // patient names (the tracker's `is_chart_likely_stale()` heuristic).
+    // Reset on encounter split via the `last_split_time` watch below — the
+    // splitter bumps `last_split_time` whenever the encounter ends, so we
+    // observe that timestamp transition and clear the flag for the new
+    // encounter.
+    let mut chart_stale_emitted_for_encounter = false;
+    let mut last_observed_split_time = cfg
+        .last_split_time
+        .lock()
+        .map(|t| *t)
+        .unwrap_or_else(|_| chrono::Utc::now());
 
     loop {
         tokio::time::sleep(tokio::time::Duration::from_secs(cfg.screenshot_interval)).await;
 
         if cfg.stop_flag.load(Ordering::Relaxed) {
             break;
+        }
+
+        // Class 3: detect encounter boundary via last_split_time bump.
+        // Whenever the splitter records a new split, reset the per-encounter
+        // chart-stale-emitted latch so we can warn on the next encounter too.
+        if let Ok(t) = cfg.last_split_time.lock() {
+            if *t != last_observed_split_time {
+                last_observed_split_time = *t;
+                chart_stale_emitted_for_encounter = false;
+            }
         }
 
         // Skip capture when no speech in buffer (no active encounter)
@@ -396,8 +420,12 @@ pub async fn run_screenshot_task(cfg: ScreenshotTaskConfig) {
         //   • DOB changed without yet having a new majority
         // Emit only on change to avoid chatter (the tracker updates on every
         // screenshot even when the winning name stays the same).
-        let (current_name, current_dob) = match cfg.name_tracker.lock() {
-            Ok(t) => (t.majority_name(), t.dob().map(|s| s.to_string())),
+        let (current_name, current_dob, is_stale) = match cfg.name_tracker.lock() {
+            Ok(t) => (
+                t.majority_name(),
+                t.dob().map(|s| s.to_string()),
+                t.is_chart_likely_stale(),
+            ),
             Err(_) => continue,
         };
         if (current_name.as_deref(), current_dob.as_deref())
@@ -410,7 +438,34 @@ pub async fn run_screenshot_task(cfg: ScreenshotTaskConfig) {
                 }
                 .emit(app);
             }
-            last_emitted = (current_name, current_dob);
+            last_emitted = (current_name.clone(), current_dob);
+        }
+
+        // Multi-chart heuristic: ≥3 distinct vision-derived names per
+        // encounter → suspect EMR chart-stale. Emit once per encounter so
+        // the frontend can surface a "verify patient" banner. Reset on
+        // last_split_time bump above. Snapshot the names list only when
+        // we're about to emit (cheap-clone optimization on the hot path).
+        if is_stale && !chart_stale_emitted_for_encounter {
+            let unique_names: Vec<String> = match cfg.name_tracker.lock() {
+                Ok(t) => t.votes().keys().cloned().collect(),
+                Err(_) => continue,
+            };
+            tracing::warn!(
+                "Chart-stale suspected: vision saw {} distinct names this encounter ({:?})",
+                unique_names.len(), unique_names
+            );
+            if let Some(ref app) = cfg.app_handle {
+                crate::continuous_mode_events::ContinuousModeEvent::ChartStaleSuspected {
+                    session_id: String::new(),
+                    reason: ChartStaleReason::MultiChart,
+                    vision_name: current_name.clone(),
+                    vision_unique_names: unique_names,
+                    audio_greeting_candidates: Vec::new(),
+                }
+                .emit(app);
+            }
+            chart_stale_emitted_for_encounter = true;
         }
     }
 

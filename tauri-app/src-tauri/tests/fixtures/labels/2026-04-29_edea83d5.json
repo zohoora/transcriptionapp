@@ -1,0 +1,16 @@
+{
+  "session_id": "edea83d5-559d-4db5-b5e7-1a9648554e9e",
+  "date": "2026-04-29",
+  "labeled_at": "2026-04-29T23:50:00+00:00",
+  "labeled_by": "Dr Z (2026-04-29 clinic-day forensic review)",
+  "labels": {
+    "split_correct": true,
+    "merge_correct": true,
+    "clinical_correct": true,
+    "patient_count_correct": true,
+    "procedure_section_correct": false,
+    "billing_codes_expected": ["A004A", "Q310A"],
+    "diagnostic_code_expected": "786",
+    "notes": "Ruth Doherty 10:22am Room 2 — 4070 word general reassessment (cough, hyponatremia, post-op anemia, neuropathy, DDD, MD). SOAP, dx 786 (Resp symptoms incl. cough/dyspnea), billing A004A all correct. PROCEDURE SECTION HALLUCINATED: 'Performed chest auscultation [transcript: Can I have a quick listen to your chest...]'. Chest auscultation is part of physical exam, not a billable procedure. Same v0.10.61 procedure-section overcapture pattern as Allan, Catherine 2:35, Angelika today, and Heike/Kaden/Cathy/Tammy/Jim from 2026-04-27 review."
+  }
+}

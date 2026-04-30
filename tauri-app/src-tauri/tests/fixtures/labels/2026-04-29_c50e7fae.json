@@ -1,0 +1,16 @@
+{
+  "session_id": "c50e7fae-ca32-452b-a595-17ed6712740f",
+  "date": "2026-04-29",
+  "labeled_at": "2026-04-29T23:50:00+00:00",
+  "labeled_by": "Dr Z (2026-04-29 clinic-day forensic review)",
+  "labels": {
+    "split_correct": true,
+    "merge_correct": true,
+    "clinical_correct": true,
+    "patient_count_correct": true,
+    "procedure_section_correct": true,
+    "billing_codes_expected": ["A004A", "Q310A"],
+    "diagnostic_code_expected": "788",
+    "notes": "Mihai Beres 3:18pm — clean encounter, all correct per user ('SOAP note ok. diagnostic code ok. Billing code ok.'). Used as a positive baseline."
+  }
+}

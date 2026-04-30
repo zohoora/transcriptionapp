@@ -834,6 +834,11 @@ const HistoryWindow: React.FC = () => {
           audioEvents: null,
           options: soapOptions,
           sessionId: selectedSession?.session_id ?? null,
+          // Class 5 follow-up (2026-04-29): pass session date so the
+          // backend's lookup_patient_summary uses the right archive
+          // directory for older multi-patient regens. Same-day regens
+          // still work without this — kept for backward compat.
+          sessionDate: formatDateForApi(selectedDate),
           speakerContext: null,
           patientLabel: targetNote.patient_label,
           modelOverride: modelOverride || null,
@@ -1532,6 +1537,14 @@ const HistoryWindow: React.FC = () => {
                         <div className="session-badges">
                           {entry.likely_non_clinical && (
                             <span className="badge non-clinical-badge">Non-clinical</span>
+                          )}
+                          {entry.chart_stale_suspected && (
+                            <span
+                              className="badge chart-stale-badge"
+                              title="Vision and audio disagreed on patient name — verify before billing"
+                            >
+                              ⚠️ Verify patient
+                            </span>
                           )}
                           {entry.charting_mode === 'continuous' && (
                             <span className="badge charted-badge">Auto-charted</span>

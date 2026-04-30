@@ -1,0 +1,13 @@
+{
+  "session_id": "406f0785-ce91-47cd-8765-a76923b3a8ed",
+  "date": "2026-04-29",
+  "labeled_at": "2026-04-29T23:50:00+00:00",
+  "labeled_by": "Dr Z (2026-04-29 clinic-day forensic review)",
+  "labels": {
+    "split_correct": true,
+    "merge_correct": true,
+    "clinical_correct": false,
+    "patient_count_correct": true,
+    "notes": "Hussein Esmaili Seyghalahi 12:58pm — 391 words, correctly identified as non-clinical (no SOAP/billing). User explicitly confirmed 'correctly identified as a non-clinical'. clinical_correct: false here asserts the encounter IS non-clinical (matching production's classification)."
+  }
+}

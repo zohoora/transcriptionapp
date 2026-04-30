@@ -99,6 +99,34 @@ struct TestCase {
     expected_line_index_acceptable: Option<Vec<usize>>,
     #[serde(default)]
     expected_no_boundary: Option<bool>,
+    // SOAP benchmarks (F3 from 2026-04-29 forensic review)
+    /// Expected procedure[] entries (action substrings). Empty Vec means
+    /// "procedure[] should be empty after the post-filter". Used for
+    /// procedure-section discipline (Class 1 fix verification).
+    #[serde(default)]
+    expected_procedures_substrings: Option<Vec<String>>,
+    /// Action substrings that must NOT appear in the rendered SOAP body
+    /// (e.g. "[transcript:" — see Class 1 render-quote-strip).
+    #[serde(default)]
+    forbidden_in_soap: Option<Vec<String>>,
+    // Billing benchmarks (F3 from 2026-04-29 forensic review)
+    /// Expected diagnostic code (3-digit OHIP). The CLI checks the rule
+    /// engine's resolved code, not the raw LLM suggestion.
+    #[serde(default)]
+    expected_diagnostic_code: Option<String>,
+    /// Expected primary OHIP billing codes (must be a subset of actual
+    /// codes after rule_engine.map_features_to_billing).
+    #[serde(default)]
+    expected_billing_codes: Option<Vec<String>>,
+    /// Expected visit type for billing benchmarks (e.g. "virtual_phone"
+    /// for telephone-detection cases).
+    #[serde(default)]
+    expected_visit_type: Option<String>,
+    /// SOAP content used as input for billing benchmarks. SOAP benchmarks
+    /// use `input` for the transcript; billing uses `soap_content` because
+    /// the billing extraction prompt takes both.
+    #[serde(default)]
+    soap_content: Option<String>,
 }
 
 fn print_usage(program: &str) {
@@ -258,6 +286,8 @@ async fn main() -> ExitCode {
             "encounter_merge" => run_encounter_merge(&client, &bench, trials).await,
             "multi_patient_detection" => run_multi_patient_detection(&client, &bench, trials).await,
             "multi_patient_split" => run_multi_patient_split(&client, &bench, trials).await,
+            "soap" => run_soap(&client, &bench, trials).await,
+            "billing" => run_billing(&client, &bench, trials).await,
             other => {
                 eprintln!("Task not yet implemented in runner: {other}");
                 false
@@ -834,6 +864,206 @@ async fn run_multi_patient_split(
     if let Some(target) = bench.targets.within_5_lines_pct {
         if within_5_pct < target {
             println!("  ✗ within_5_lines {:.1}% < target {:.1}%", within_5_pct, target);
+            regression = true;
+        }
+    }
+    regression
+}
+
+// ── SOAP benchmark runner (F3 from 2026-04-29 forensic review) ────────────
+//
+// Verifies the v0.10.61 procedure-section discipline + Class 1 post-filter.
+// Each test case provides a transcript; the runner generates SOAP and
+// asserts (a) procedure[] entries match the expected substring list (or
+// is empty when the list is empty), and (b) `forbidden_in_soap` substrings
+// (e.g. "[transcript:") do NOT appear in the rendered SOAP body.
+
+async fn run_soap(
+    client: &LLMClient,
+    bench: &BenchmarkFile,
+    trials: u32,
+) -> bool {
+    use transcription_app_lib::llm_client::SoapOptions;
+
+    let mut total = 0;
+    let mut correct = 0;
+
+    for tc in &bench.test_cases {
+        let Some(input) = tc.input.as_ref() else { continue };
+        let expected_subs = match tc.expected_procedures_substrings.as_ref() {
+            Some(v) => v,
+            None => continue,
+        };
+
+        let mut votes_correct = 0u32;
+        let mut last_soap = String::new();
+        for _ in 0..trials {
+            match client
+                .generate_soap_note(&bench.model, input, None, Some(&SoapOptions::default()), None)
+                .await
+            {
+                Ok(soap) => {
+                    last_soap = soap.content.clone();
+                    let proc_section = extract_procedure_block(&soap.content);
+                    let forbidden_ok = tc
+                        .forbidden_in_soap
+                        .as_ref()
+                        .map(|fb| fb.iter().all(|s| !soap.content.contains(s)))
+                        .unwrap_or(true);
+                    let procedure_ok = if expected_subs.is_empty() {
+                        proc_section.trim().is_empty()
+                    } else {
+                        expected_subs
+                            .iter()
+                            .all(|sub| proc_section.to_lowercase().contains(&sub.to_lowercase()))
+                    };
+                    if forbidden_ok && procedure_ok {
+                        votes_correct += 1;
+                    }
+                }
+                Err(e) => {
+                    eprintln!("    SOAP gen failed for {}: {}", tc.id, e);
+                }
+            }
+        }
+        total += 1;
+        let majority_ok = votes_correct > trials / 2;
+        if majority_ok {
+            correct += 1;
+            println!("  ✓ {} {} ({})", tc.id, tc.name, tc.difficulty);
+        } else {
+            println!("  ✗ {} {} ({}) — voted {}/{}; SOAP head: {:.200}",
+                tc.id, tc.name, tc.difficulty, votes_correct, trials, last_soap);
+        }
+    }
+
+    let overall = correct as f64 / total.max(1) as f64 * 100.0;
+    println!();
+    println!("  Overall: {:.1}% ({}/{})", overall, correct, total);
+    let mut regression = false;
+    if let Some(target) = bench.targets.overall_accuracy_pct {
+        if overall < target {
+            println!("  ✗ overall {:.1}% < target {:.1}%", overall, target);
+            regression = true;
+        }
+    }
+    regression
+}
+
+fn extract_procedure_block(soap: &str) -> String {
+    if let Some(idx) = soap.find("\nProcedure:\n").or_else(|| soap.find("Procedure:")) {
+        return soap[idx..].to_string();
+    }
+    String::new()
+}
+
+// ── Billing benchmark runner (F3 from 2026-04-29 forensic review) ─────────
+//
+// End-to-end billing: LLM extracts clinical features → rule engine maps to
+// OHIP codes → assert visit_type, billing_codes, and diagnostic_code match.
+// Specifically checks:
+//   - Class 4 (telephone): visit_type=virtual_phone for phone-greeting cases
+//   - Class 2 (dx semantic guard): primary_diagnosis maps to expected dx
+//   - Class 6 (procedure→billing): nerve-block / pap procedures surface
+
+async fn run_billing(
+    client: &LLMClient,
+    bench: &BenchmarkFile,
+    trials: u32,
+) -> bool {
+    use transcription_app_lib::billing::clinical_features::{
+        build_billing_extraction_prompt, parse_billing_extraction,
+    };
+    use transcription_app_lib::billing::map_features_to_billing;
+
+    let mut total = 0;
+    let mut correct = 0;
+
+    for tc in &bench.test_cases {
+        let Some(soap_content) = tc.soap_content.as_ref() else { continue };
+        let transcript = tc.input.as_deref().unwrap_or("");
+
+        let mut votes_correct = 0u32;
+        let mut last_summary = String::new();
+        for _ in 0..trials {
+            let (system, user) =
+                build_billing_extraction_prompt(soap_content, transcript, "", None);
+            match client
+                .generate(&bench.model, &system, &user, "billing_bench")
+                .await
+            {
+                Ok(resp) => {
+                    let features = match parse_billing_extraction(&resp) {
+                        Ok(f) => f,
+                        Err(e) => {
+                            last_summary = format!("parse err: {e}");
+                            continue;
+                        }
+                    };
+
+                    // Visit-type check
+                    let vt_ok = match tc.expected_visit_type.as_deref() {
+                        None => true,
+                        Some(want) => format!("{:?}", features.visit_type)
+                            .to_lowercase()
+                            .contains(&want.replace('_', "").to_lowercase()),
+                    };
+
+                    // Run through rule engine to get codes + dx
+                    let record = map_features_to_billing(
+                        &features, &tc.id, "2026-04-29", 600_000, None, None,
+                    );
+
+                    let billing_ok = match tc.expected_billing_codes.as_ref() {
+                        None => true,
+                        Some(want) => {
+                            let actual: Vec<&str> = record
+                                .codes
+                                .iter()
+                                .map(|c| c.code.as_str())
+                                .chain(record.time_entries.iter().map(|t| t.code.as_str()))
+                                .collect();
+                            want.iter().all(|w| actual.contains(&w.as_str()))
+                        }
+                    };
+
+                    let dx_ok = match tc.expected_diagnostic_code.as_deref() {
+                        None => true,
+                        Some(want) => record.diagnostic_code.as_deref() == Some(want),
+                    };
+
+                    last_summary = format!(
+                        "vt={:?} codes={:?} dx={:?}",
+                        features.visit_type,
+                        record.codes.iter().map(|c| &c.code).collect::<Vec<_>>(),
+                        record.diagnostic_code
+                    );
+                    if vt_ok && billing_ok && dx_ok {
+                        votes_correct += 1;
+                    }
+                }
+                Err(e) => {
+                    eprintln!("    billing gen failed for {}: {}", tc.id, e);
+                }
+            }
+        }
+        total += 1;
+        if votes_correct > trials / 2 {
+            correct += 1;
+            println!("  ✓ {} {} ({})", tc.id, tc.name, tc.difficulty);
+        } else {
+            println!("  ✗ {} {} ({}) — voted {}/{}; last: {}",
+                tc.id, tc.name, tc.difficulty, votes_correct, trials, last_summary);
+        }
+    }
+
+    let overall = correct as f64 / total.max(1) as f64 * 100.0;
+    println!();
+    println!("  Overall: {:.1}% ({}/{})", overall, correct, total);
+    let mut regression = false;
+    if let Some(target) = bench.targets.overall_accuracy_pct {
+        if overall < target {
+            println!("  ✗ overall {:.1}% < target {:.1}%", overall, target);
             regression = true;
         }
     }

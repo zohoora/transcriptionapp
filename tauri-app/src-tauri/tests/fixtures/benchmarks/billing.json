@@ -1,0 +1,95 @@
+{
+  "task": "billing",
+  "model": "fast-model",
+  "targets": {
+    "overall_accuracy_pct": 70.0
+  },
+  "test_cases": [
+    {
+      "id": "BILL-PHONE-1",
+      "name": "Class 4: doctor self-introduction by phone → A102A",
+      "difficulty": "medium",
+      "input": "Speaker 1 (doctor): Hi Diana, this is Doctor Zohor Kalin. Speaker 2 (patient): Hi Doctor. Speaker 1: I'm just behind today, how are you doing? Speaker 2: Okay. Speaker 1: Your blood pressure readings — the 90s are a bit low but not dramatic. Let's continue the beta blocker at 150mg at bedtime and recheck in four weeks. Speaker 2: Sounds good.",
+      "soap_content": "S:\n• HTN management — BP readings occasionally in 90s without dramatic symptoms\n• On beta blocker 150mg at bedtime\nO:\n• Not documented (phone visit)\nA:\n• Hypertension on beta blocker\n• Possible intermittent hypotension\nP:\n• Continue beta blocker 150mg HS\n• Follow up in 4 weeks",
+      "expected_visit_type": "VirtualPhone",
+      "expected_billing_codes": ["A102A"],
+      "expected_diagnostic_code": "401"
+    },
+    {
+      "id": "BILL-DX-ACNE",
+      "name": "Class 2: acne primary diagnosis → 706 (not 701)",
+      "difficulty": "medium",
+      "input": "Speaker 1: Acne on the forehead has been frustrating you. Speaker 2: Yeah I've tried OTC products with no luck. Speaker 1: Let me prescribe a triple-ingredient cream. Apply at bedtime, follow up in 6 weeks.",
+      "soap_content": "S:\n• Acne forehead causing distress\n• Multiple OTC products tried\nO:\n• Acne noted on forehead, mild\nA:\n• Acne vulgaris\nP:\n• Prescribe triple-ingredient cream nightly\n• Follow up in 6-8 weeks",
+      "expected_diagnostic_code": "706"
+    },
+    {
+      "id": "BILL-DX-OA",
+      "name": "Class 2: knee OA primary diagnosis → 715 (not 249/491)",
+      "difficulty": "medium",
+      "input": "Speaker 1: Bilateral knee pain, worse on stairs. Speaker 2: Yeah I can barely walk a block. Speaker 1: I'll order knee X-rays.",
+      "soap_content": "S:\n• Bilateral knee pain with stair climbing\n• Functional limitation — cannot walk one block\nO:\n• Crepitus on flexion bilaterally\nA:\n• Bilateral knee osteoarthritis with significant functional impairment\nP:\n• Order knee X-rays\n• Refer to physiotherapy",
+      "expected_diagnostic_code": "715"
+    },
+    {
+      "id": "BILL-DX-HTN",
+      "name": "Class 2: hypertension management → 401 (not 311)",
+      "difficulty": "easy",
+      "input": "Speaker 1: HTN check-in. Speaker 2: BP at home in 90s sometimes. Speaker 1: Continue current beta blocker.",
+      "soap_content": "S:\n• HTN management — BP readings 90-120 systolic\n• On beta blocker\nO:\n• BP 118/72\nA:\n• Hypertension well-controlled, possible intermittent hypotension\nP:\n• Continue current management",
+      "expected_diagnostic_code": "401"
+    },
+    {
+      "id": "BILL-DX-PEDI-DIARRHEA",
+      "name": "Class 2: pediatric diarrhea → 009 (gastro-enteritis)",
+      "difficulty": "medium",
+      "input": "Speaker 1: How is the diarrhea? Speaker 2 (parent): It comes back every two weeks. Speaker 1: Stool culture and dietary modification. Speaker 2: Okay.",
+      "soap_content": "S:\n• Recurrent watery diarrhea every 2 weeks in 3-year-old child\n• 5-10 loose stools per episode\n• High juice and dairy intake\nO:\n• Not documented\nA:\n• Recurrent acute watery diarrhea in 3-year-old child\nP:\n• Stool testing for ova/parasites/bacteria\n• Eliminate fruit juice, reduce dairy",
+      "expected_diagnostic_code": "009"
+    },
+    {
+      "id": "BILL-DX-ADULT-ADHD",
+      "name": "Class 2 age-guard: adult ADHD must NOT map to 314 childhood",
+      "difficulty": "hard",
+      "input": "Speaker 1: ADHD follow-up. Speaker 2: Concerta is wearing off too quickly. Speaker 1: Let me increase the dose to 54mg.",
+      "soap_content": "S:\n• Adult ADHD on Concerta 36mg\n• Effect wears off in 3-4 hours\n• Working three jobs, focus issues\nO:\n• Patient appears engaged, no acute distress\nA:\n• Adult ADHD on Concerta requesting dose increase\nP:\n• Prescribe Concerta 54mg\n• Refer to psychiatry for diagnostic clarification",
+      "expected_diagnostic_code": "313"
+    },
+    {
+      "id": "BILL-PROC-NERVE-BLOCK",
+      "name": "Class 6: cervical numbing injection → G231A",
+      "difficulty": "hard",
+      "input": "Speaker 1: I'll do the ultrasound-guided injection now. Just a little numbing first. Speaker 2: Okay. Speaker 1: Going in. There. Done. Speaker 2: That wasn't bad.",
+      "soap_content": "S:\n• Cervicogenic headache, neck pain\nO:\n• Tender cervical paraspinals\nA:\n• Cervicogenic headache\nP:\n• proceeded with ultrasound-guided cervical numbing injection\nProcedure:\n• performed ultrasound-guided cervical numbing injection",
+      "expected_billing_codes": ["G231A"],
+      "expected_diagnostic_code": "729"
+    },
+    {
+      "id": "BILL-PROC-PAP",
+      "name": "Class 6: pap smear performed → G365A + E430A",
+      "difficulty": "medium",
+      "input": "Speaker 1: Pap smear today. Speaker 2: Sure. Speaker 1: Okay sample collected.",
+      "soap_content": "S:\n• Annual exam\nO:\n• Cervix appears normal\nA:\n• Routine cervical cancer screening\nP:\n• Pap smear collected\nProcedure:\n• Pap smear performed with speculum",
+      "expected_billing_codes": ["G365A", "E430A"]
+    },
+    {
+      "id": "BILL-VISIT-A007-FOLLOWUP",
+      "name": "Standard follow-up → A007A intermediate assessment",
+      "difficulty": "easy",
+      "input": "Speaker 1: How's the diabetes? Speaker 2: A1C dropped to 7.2. Speaker 1: Good — continue metformin. Recheck in 3 months.",
+      "soap_content": "S:\n• Type 2 diabetes follow-up\n• A1C 7.2 (down from 7.8)\nO:\n• BMI stable\nA:\n• Type 2 diabetes — improving\nP:\n• Continue metformin 500mg BID\n• Recheck A1C in 3 months",
+      "expected_visit_type": "IntermediateAssessment",
+      "expected_billing_codes": ["A007A"],
+      "expected_diagnostic_code": "250"
+    },
+    {
+      "id": "BILL-VISIT-MULTI-A004",
+      "name": "Multi-issue 3+ problem visit → A004A general reassessment",
+      "difficulty": "medium",
+      "input": "Speaker 1: Lots to cover today — diabetes, hypertension, knee pain, screening. Speaker 2: Yeah it's a lot.",
+      "soap_content": "S:\n• Diabetes on metformin\n• Hypertension on amlodipine\n• Right knee pain — likely OA\n• Due for colonoscopy and pap\nO:\n• BP 130/80, BMI 28\n• Right knee crepitus\nA:\n• Type 2 diabetes\n• Hypertension\n• Right knee osteoarthritis\n• Cervical and colorectal cancer screening due\nP:\n• Continue metformin and amlodipine\n• Refer to physio for knee\n• Schedule colonoscopy and pap",
+      "expected_visit_type": "GeneralReassessment",
+      "expected_billing_codes": ["A004A"]
+    }
+  ]
+}

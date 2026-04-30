@@ -1,0 +1,13 @@
+{
+  "session_id": "2e12553f-b123-42ac-a99f-14780607f1fb",
+  "date": "2026-04-29",
+  "labeled_at": "2026-04-29T23:50:00+00:00",
+  "labeled_by": "Dr Z (2026-04-29 clinic-day forensic review)",
+  "labels": {
+    "split_correct": true,
+    "merge_correct": true,
+    "clinical_correct": false,
+    "patient_count_correct": true,
+    "notes": "Tail-of-day 3:48pm 220-word non-clinical encounter labelled-as-Sara-Slote (vision still on Sara's chart from prior 3:28). Correctly identified non-clinical, no SOAP/billing generated. Used as a negative baseline."
+  }
+}

@@ -55,6 +55,15 @@ struct SoapRunner {
     client: LLMClient,
     model: String,
     fetcher: ArchiveFetcher,
+    /// 2026-04-29 follow-up: when true, skip the live LLM call and replay
+    /// the SOAP JSON archived in `replay_bundle.json::soap_result.response_raw`.
+    /// Lets prompt-edit experiments run offline against the labeled corpus
+    /// (no LLM Router required). Mirrors the existing `replay_*_cli.rs`
+    /// pattern. Note: replay-only mode CANNOT validate prompt CHANGES — it
+    /// only re-scores archived production output. To compare a new prompt
+    /// against the archived one, use the `--variant <new.txt>` flag with
+    /// the live LLM (default mode).
+    replay_only: bool,
 }
 
 #[async_trait]
@@ -86,10 +95,20 @@ impl Runner for SoapRunner {
         };
 
         let started = std::time::Instant::now();
-        let response = self.client
-            .generate(&self.model, prompt_body, &user_prompt, "soap_note")
-            .await
-            .map_err(|e| anyhow!("LLM call: {e}"))?;
+        let response = if self.replay_only {
+            let raw = experiment::replay::replay_response(
+                &self.fetcher, session_id, date, "/soap_result/response_raw",
+            ).await?;
+            // Multi-patient bundles join per-patient raws with `\n---\n`;
+            // score the first block (caller can extend if aggregation is
+            // ever needed).
+            raw.split("\n---\n").next().unwrap_or("").to_string()
+        } else {
+            self.client
+                .generate(&self.model, prompt_body, &user_prompt, "soap_note")
+                .await
+                .map_err(|e| anyhow!("LLM call: {e}"))?
+        };
         let latency_ms = started.elapsed().as_millis() as u64;
 
         // Parse the JSON response — best-effort. Failure is recorded but doesn't error.
@@ -158,6 +177,7 @@ fn print_usage(program: &str) {
     eprintln!("  --seeds N                 Number of seeds per variant (default 1)");
     eprintln!("  --model <alias>           LLM model alias (default: soap-model-fast)");
     eprintln!("  --output <dir>            Output directory");
+    eprintln!("  --replay-only             Score archived SOAP raw responses from replay_bundle.json without issuing live LLM calls (offline mode; requires schema v5 bundles).");
     eprintln!("  --help                    This message");
 }
 
@@ -176,6 +196,7 @@ async fn main() -> ExitCode {
     let mut seeds: u32 = 1;
     let mut model = DEFAULT_MODEL.to_string();
     let mut output_override: Option<std::path::PathBuf> = None;
+    let mut replay_only = false;
 
     let mut i = 1;
     while i < args.len() {
@@ -186,6 +207,7 @@ async fn main() -> ExitCode {
             "--seeds" => { i += 1; seeds = args[i].parse().unwrap_or(1); }
             "--model" => { i += 1; model = args[i].clone(); }
             "--output" => { i += 1; output_override = Some(args[i].clone().into()); }
+            "--replay-only" => { replay_only = true; }
             "--help" => { print_usage(program); return ExitCode::SUCCESS; }
             other if other.starts_with('-') => {
                 eprintln!("Unknown option: {other}");
@@ -215,7 +237,10 @@ async fn main() -> ExitCode {
     };
 
     let fetcher = ArchiveFetcher::from_env().unwrap_or_else(|_| ArchiveFetcher::local_only());
-    let runner = SoapRunner { client, model, fetcher };
+    let runner = SoapRunner { client, model, fetcher, replay_only };
+    if replay_only {
+        eprintln!("[replay-only mode] skipping live LLM calls; reading archived response_raw from replay_bundle.json");
+    }
 
     let mut targets: Vec<(String, String)> = Vec::new();
     if let Some(date_str) = &date {

@@ -326,6 +326,12 @@ pub struct ArchiveMetadata {
     /// no billing record.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub billing_prompt_version: Option<String>,
+    /// True when the audio-vs-vision cross-check at split time disagreed
+    /// with the vision-derived patient_name (e.g. Catherine 2:35 = Shirley
+    /// Rice). Frontend renders a "verify patient" badge in the History
+    /// view. Absent on sessions where the check passed or wasn't run.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub chart_stale_suspected: Option<bool>,
 }
 
 impl ArchiveMetadata {
@@ -361,6 +367,7 @@ impl ArchiveMetadata {
             has_clinician_notes: false,
             soap_prompt_version: None,
             billing_prompt_version: None,
+            chart_stale_suspected: None,
         }
     }
 }
@@ -400,6 +407,10 @@ pub struct ArchiveSummary {
     pub patient_labels: Option<Vec<String>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub has_billing_record: Option<bool>,
+    /// Mirrors `ArchiveMetadata.chart_stale_suspected` so list rows can
+    /// render a "verify patient" badge without a per-row metadata fetch.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub chart_stale_suspected: Option<bool>,
 }
 
 /// A single patient's SOAP note within a multi-patient encounter
@@ -411,11 +422,28 @@ pub struct ArchivedPatientNote {
     pub content: String,
 }
 
-/// Entry in patient_labels.json
+/// Entry in patient_labels.json (extended 2026-04-29 to include per-patient
+/// summary so single-patient SOAP regeneration retains the multi-patient
+/// detection context that originally separated the two patients in the
+/// composite SOAP).
+///
+/// Class 5 fix from 2026-04-29 forensic review: Slote 3:28pm mom+child had
+/// both `soap_patient_1.txt` (child) and `soap_patient_2.txt` (adult) end
+/// up with the adult's iron-deficiency content because the regen prompt
+/// only had a generic label like "Child/Young Patient" — without the
+/// per-patient summary the detection produced, the LLM defaulted to the
+/// dominant content (~800-word adult vs ~50-word child).
+///
+/// `summary` is `Option<String>` for backward-compat: pre-2026-04-29
+/// patient_labels.json files have only `index` and `label`. When summary
+/// is None at regen time, the prompt falls back to label-only behavior
+/// (existing semantics).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct PatientLabelEntry {
     index: u32,
     label: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    summary: Option<String>,
 }
 
 /// Detailed archived session (for detail view)
@@ -811,14 +839,80 @@ pub fn get_billing_record(
     Ok(Some(record))
 }
 
+/// Three-state result for the patient-summary lookup. The IPC caller uses
+/// this to decide whether to fall back to the profile service: only
+/// `FileMissing` triggers a cross-machine fetch. `LabelNotFound` and
+/// `Found` are local-conclusive (server has the same data).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PatientSummaryLookup {
+    /// patient_labels.json doesn't exist locally — caller may try server.
+    FileMissing,
+    /// File exists but has no entry for the requested label, or the entry
+    /// has no usable summary (legacy schema).
+    LabelNotFound,
+    /// Found a non-empty summary.
+    Found(String),
+}
+
+/// Lookup the per-patient summary stored in `patient_labels.json`. Returns
+/// a 3-state result so the IPC layer can distinguish "file missing locally,
+/// try server" from "file exists but label/summary missing — server has
+/// the same data, don't bother".
+pub fn lookup_patient_summary(
+    session_id: &str,
+    date: &DateTime<Utc>,
+    patient_label: &str,
+) -> PatientSummaryLookup {
+    if validate_session_id(session_id).is_err() {
+        return PatientSummaryLookup::FileMissing;
+    }
+    let Ok(session_dir) = get_session_archive_dir(session_id, date) else {
+        return PatientSummaryLookup::FileMissing;
+    };
+    let labels_path = session_dir.join("patient_labels.json");
+    let bytes = match fs::read(&labels_path) {
+        Ok(b) => b,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            return PatientSummaryLookup::FileMissing;
+        }
+        Err(_) => return PatientSummaryLookup::FileMissing,
+    };
+    match lookup_patient_summary_from_bytes(&bytes, patient_label) {
+        Some(s) => PatientSummaryLookup::Found(s),
+        None => PatientSummaryLookup::LabelNotFound,
+    }
+}
+
+/// Pure parser used by both the local-disk path and the cross-machine
+/// server-fallback path. Returns the per-patient summary when the label
+/// exists and has a non-empty summary. Pre-2026-04-29 patient_labels.json
+/// files without the `summary` field round-trip as None.
+pub fn lookup_patient_summary_from_bytes(bytes: &[u8], patient_label: &str) -> Option<String> {
+    let entries: Vec<PatientLabelEntry> = serde_json::from_slice(bytes).ok()?;
+    let want = patient_label.trim().to_lowercase();
+    entries
+        .into_iter()
+        .find(|e| e.label.trim().to_lowercase() == want)
+        .and_then(|e| e.summary)
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+}
+
 /// Save per-patient SOAP files alongside the combined soap_note.txt.
 /// Called when multi-patient detection produces N>1 notes.
 /// Writes: soap_patient_1.txt, soap_patient_2.txt, ..., patient_labels.json
 /// Updates metadata.json with patient_count.
+///
+/// `detection`: optional multi-patient detection result. When provided, each
+/// per-patient summary from `detection.patients[].summary` is matched to its
+/// SOAP note by `patient_label` and persisted in patient_labels.json. Class 5
+/// fix from 2026-04-29 forensic review: per-patient SOAP regeneration needs
+/// the summary to disambiguate dominant-content cases (Slote mom+child).
 pub fn save_multi_patient_soap(
     session_id: &str,
     date: &DateTime<Utc>,
     notes: &[crate::llm_client::PatientSoapNote],
+    detection: Option<&crate::encounter_detection::MultiPatientDetectionResult>,
 ) -> Result<(), String> {
     if notes.len() <= 1 {
         return Ok(()); // Nothing to do for single-patient
@@ -846,9 +940,24 @@ pub fn save_multi_patient_soap(
         );
     }
 
-    // Write patient_labels.json metadata
+    // Write patient_labels.json metadata. Look up each note's summary from
+    // detection.patients by label match (case-insensitive trim). Detection's
+    // patient list and notes are produced from the same labels so a missing
+    // match is rare; treat it as None and continue.
     let labels: Vec<PatientLabelEntry> = notes.iter().enumerate().map(|(i, note)| {
-        PatientLabelEntry { index: (i + 1) as u32, label: note.patient_label.clone() }
+        let summary = detection.and_then(|d| {
+            let want = note.patient_label.trim().to_lowercase();
+            d.patients
+                .iter()
+                .find(|p| p.label.trim().to_lowercase() == want)
+                .map(|p| p.summary.trim().to_string())
+                .filter(|s| !s.is_empty())
+        });
+        PatientLabelEntry {
+            index: (i + 1) as u32,
+            label: note.patient_label.clone(),
+            summary,
+        }
     }).collect();
     let labels_path = session_dir.join("patient_labels.json");
     let labels_json = serde_json::to_string_pretty(&labels)
@@ -1079,6 +1188,7 @@ pub fn list_sessions_by_date(date_str: &str) -> Result<Vec<ArchiveSummary>, Stri
             patient_count: patient_labels.as_ref().map(|l| l.len() as u32).or(patient_count),
             patient_labels,
             has_billing_record: metadata.has_billing_record,
+            chart_stale_suspected: metadata.chart_stale_suspected,
         });
     }
 
@@ -1425,6 +1535,7 @@ pub fn split_session(session_id: &str, date_str: &str, split_line: usize) -> Res
         has_clinician_notes: false,
         soap_prompt_version: None,
         billing_prompt_version: None,
+        chart_stale_suspected: None,
     };
     let new_meta_json = serde_json::to_string_pretty(&new_meta)
         .map_err(|e| format!("Failed to serialize new metadata: {}", e))?;
@@ -2000,6 +2111,7 @@ mod tests {
             patient_count: None,
             patient_labels: None,
             has_billing_record: None,
+            chart_stale_suspected: None,
         };
 
         let json = serde_json::to_string(&summary).unwrap();
@@ -2761,6 +2873,7 @@ mod tests {
             patient_count: None,
             patient_labels: None,
             has_billing_record: None,
+            chart_stale_suspected: None,
         };
 
         let json = serde_json::to_string(&summary).unwrap();
@@ -2891,6 +3004,16 @@ mod tests {
 // ============================================================================
 // Multi-Patient Operations
 // ============================================================================
+
+/// Set `chart_stale_suspected: true` on a session's metadata. Called by
+/// the splitter when the audio-vs-vision cross-check disagrees (e.g.
+/// Catherine 2:35 = Shirley Rice). Round-trips through the typed
+/// [`ArchiveMetadata`] struct so existing fields are preserved.
+pub fn mark_chart_stale_suspected(session_id: &str, date_str: &str) -> Result<(), String> {
+    update_metadata_field(session_id, date_str, |m| {
+        m.chart_stale_suspected = Some(true);
+    })
+}
 
 /// Helper: read metadata, apply a mutation, write back.
 fn update_metadata_field(
@@ -3187,6 +3310,7 @@ mod negative_gap_tests {
             patient_count: None,
             patient_labels: None,
             has_billing_record: None,
+            chart_stale_suspected: None,
         }
     }
 
@@ -3265,5 +3389,99 @@ mod negative_gap_tests {
         b.room_name = None;
         let pairs = find_negative_gap_pairs(&[a, b]);
         assert_eq!(pairs.len(), 1, "expected legacy pair (no room data) to still flag; got {:?}", pairs);
+    }
+
+    #[test]
+    fn mark_chart_stale_suspected_sets_typed_field() {
+        // Round-trips through ArchiveMetadata so existing typed fields are
+        // preserved. Replaces an earlier raw-JSON-patch helper.
+        use chrono::TimeZone;
+        let test_root = std::env::temp_dir().join(format!("ami-test-stale-{}", uuid::Uuid::new_v4()));
+        std::env::set_var("TRANSCRIPTION_APP_DATA_DIR", &test_root);
+        let date = chrono::Utc.with_ymd_and_hms(2026, 4, 29, 12, 0, 0).unwrap();
+        let session_id = "00000000-0000-0000-0000-000000000001";
+        let dir = get_session_archive_dir(session_id, &date).unwrap();
+        fs::create_dir_all(&dir).unwrap();
+        let mut initial = ArchiveMetadata::new(session_id);
+        initial.patient_name = Some("Catherine Deveuge".to_string());
+        fs::write(dir.join("metadata.json"), serde_json::to_string_pretty(&initial).unwrap()).unwrap();
+
+        mark_chart_stale_suspected(session_id, "2026-04-29").unwrap();
+
+        let after_str = fs::read_to_string(dir.join("metadata.json")).unwrap();
+        let after: ArchiveMetadata = serde_json::from_str(&after_str).unwrap();
+        assert_eq!(after.chart_stale_suspected, Some(true));
+        assert_eq!(after.patient_name.as_deref(), Some("Catherine Deveuge"));
+
+        let _ = fs::remove_dir_all(&test_root);
+        std::env::remove_var("TRANSCRIPTION_APP_DATA_DIR");
+    }
+
+    // ============================================================
+    // Cross-machine sync follow-up (#3 from 2026-04-29 forensic review):
+    // lookup_patient_summary_from_bytes pure parser tests
+    // ============================================================
+
+    #[test]
+    fn lookup_summary_from_bytes_finds_match() {
+        let json = serde_json::json!([
+            {"index": 1, "label": "Child/Young Patient", "summary": "3-year-old with watery diarrhea"},
+            {"index": 2, "label": "Adult Female", "summary": "Iron deficiency anemia, menorrhagia"},
+        ]).to_string();
+        let s = lookup_patient_summary_from_bytes(json.as_bytes(), "Child/Young Patient");
+        assert_eq!(s.as_deref(), Some("3-year-old with watery diarrhea"));
+        let s = lookup_patient_summary_from_bytes(json.as_bytes(), "Adult Female");
+        assert_eq!(s.as_deref(), Some("Iron deficiency anemia, menorrhagia"));
+    }
+
+
+    #[test]
+    fn lookup_summary_from_bytes_case_insensitive() {
+        let json = serde_json::json!([
+            {"index": 1, "label": "Adult Female", "summary": "summary text"},
+        ]).to_string();
+        // Different case + whitespace: must still match.
+        assert_eq!(
+            lookup_patient_summary_from_bytes(json.as_bytes(), "adult female").as_deref(),
+            Some("summary text")
+        );
+        assert_eq!(
+            lookup_patient_summary_from_bytes(json.as_bytes(), "  Adult Female  ").as_deref(),
+            Some("summary text")
+        );
+    }
+
+    #[test]
+    fn lookup_summary_from_bytes_returns_none_when_label_not_present() {
+        let json = serde_json::json!([
+            {"index": 1, "label": "Adult Female", "summary": "summary text"},
+        ]).to_string();
+        assert!(lookup_patient_summary_from_bytes(json.as_bytes(), "Unknown Patient").is_none());
+    }
+
+    #[test]
+    fn lookup_summary_from_bytes_returns_none_when_summary_missing() {
+        // Pre-2026-04-29 patient_labels.json files have no summary field —
+        // treat as None so the regen falls back to label-only behavior
+        // (legacy compat).
+        let json = serde_json::json!([
+            {"index": 1, "label": "Patient A"},
+        ]).to_string();
+        assert!(lookup_patient_summary_from_bytes(json.as_bytes(), "Patient A").is_none());
+    }
+
+    #[test]
+    fn lookup_summary_from_bytes_returns_none_for_empty_summary() {
+        let json = serde_json::json!([
+            {"index": 1, "label": "Patient A", "summary": "   "},
+        ]).to_string();
+        assert!(lookup_patient_summary_from_bytes(json.as_bytes(), "Patient A").is_none());
+    }
+
+    #[test]
+    fn lookup_summary_from_bytes_returns_none_for_invalid_json() {
+        // Garbage bytes should fail-soft to None, not panic.
+        assert!(lookup_patient_summary_from_bytes(b"not json", "Patient A").is_none());
+        assert!(lookup_patient_summary_from_bytes(b"", "Patient A").is_none());
     }
 }

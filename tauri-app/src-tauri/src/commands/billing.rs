@@ -537,18 +537,69 @@ pub struct OhipCodeSearchResult {
     pub basket: String,
 }
 
-/// Search OHIP codes by code prefix or description substring.
+/// Synonym expansion for OHIP code search. Surfaces clinically-relevant
+/// codes whose descriptions don't literal-match the query token (e.g.
+/// "occipital" → G264A even though the code's description is "Nerve
+/// Block — Occipital, First Block (...)"). Each entry is `(query_token,
+/// &[expanded_codes])`; matcher uses case-insensitive `query.contains`.
+///
+/// A startup test (`synonym_map_codes_exist`) asserts every code listed
+/// here exists in the DB so typos are caught at compile-test time.
+const OHIP_SEARCH_SYNONYMS: &[(&str, &[&str])] = &[
+    // Occipital nerve blocks — explicit codes preferred (2026-04-29 audit
+    // added G264/G265/G291/G292 from SOB 2026-03-27, the codes Dr Z
+    // expected to see in the dropdown). Generic peripheral / cranial /
+    // paravertebral retained as fallbacks for partial matches.
+    ("occipital",  &["G264A", "G265A", "G291A", "G292A", "G231A", "G228A"]),
+    ("greater occipital", &["G264A", "G265A", "G291A", "G292A"]),
+    ("cervical block", &["G228A", "G231A"]),
+    // Epidurals (spine route)
+    ("epidural",   &["G246A", "G117A", "G119A", "G918A"]),
+    ("lumbar epidural",    &["G246A"]),
+    ("thoracic epidural",  &["G117A"]),
+    ("cervical epidural",  &["G119A"]),
+    ("caudal epidural",    &["G918A"]),
+    // Trigger / joint shorthand
+    ("trigger",    &["G384A", "G385A"]),
+    ("joint inj",  &["G370A", "G371A"]),
+    ("knee inj",   &["G370A"]),
+    ("shoulder inj", &["G370A"]),
+    // Pap / cervical-cancer screening
+    ("pap",        &["G365A", "G394A", "E430A"]),
+    // IUD
+    ("iud",        &["G378A", "G552A"]),
+    // Skin / cryo
+    ("wart",       &["Z117A"]),
+    ("liquid nitrogen", &["Z117A"]),
+    ("cryo",       &["Z117A"]),
+    // Ear syringing
+    ("ear syring", &["G420A"]),
+    ("cerumen",    &["G420A"]),
+    ("earwax",     &["G420A"]),
+];
+
+/// Search OHIP codes by code prefix or description substring, with synonym
+/// expansion (Class 6 fix from 2026-04-29 forensic review).
 #[tauri::command]
 pub fn search_ohip_codes(query: String) -> Vec<OhipCodeSearchResult> {
     debug!("Searching OHIP codes: {}", query);
     let query_lower = query.to_lowercase();
     let mut results = Vec::new();
+    // Synonym expansion — codes the user is "really looking for" given
+    // a clinical-narrative query that doesn't literal-match any
+    // description. Example: query="occipital" → preload G231A/G225A/G228A.
+    let synonym_codes: Vec<&str> = OHIP_SEARCH_SYNONYMS
+        .iter()
+        .filter(|(token, _)| query_lower.contains(token))
+        .flat_map(|(_, codes)| codes.iter().copied())
+        .collect();
 
     for ohip in crate::billing::ohip_codes::all_codes() {
         let code_matches = ohip.code.to_lowercase().contains(&query_lower);
         let desc_matches = ohip.description.to_lowercase().contains(&query_lower);
+        let synonym_match = synonym_codes.contains(&ohip.code);
 
-        if code_matches || desc_matches {
+        if code_matches || desc_matches || synonym_match {
             results.push(OhipCodeSearchResult {
                 code: ohip.code.to_string(),
                 description: ohip.description.to_string(),
@@ -614,6 +665,72 @@ fn escape_csv(s: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // Class 6 dropdown synonym tests (2026-04-29 forensic review)
+
+    #[test]
+    fn search_occipital_returns_nerve_block_codes() {
+        // Irene's failure: clinician searched "occipital" for greater
+        // occipital nerve block; dropdown was empty because no description
+        // contains "occipital". 2026-04-29 audit added G264A/G265A/G291A/
+        // G292A as explicit occipital-specific codes — these must surface
+        // ahead of the generic peripheral nerve block fallback.
+        let results = search_ohip_codes("occipital".to_string());
+        let codes: Vec<&str> = results.iter().map(|r| r.code.as_str()).collect();
+        for want in &["G264A", "G265A", "G291A", "G292A"] {
+            assert!(
+                codes.contains(want),
+                "Expected occipital-specific code {want} for 'occipital' query. Got: {:?}",
+                codes
+            );
+        }
+    }
+
+    #[test]
+    fn search_epidural_returns_epidural_codes() {
+        let results = search_ohip_codes("epidural".to_string());
+        assert!(
+            results.iter().any(|r| r.code == "G246A"),
+            "G246A (lumbar epidural) must surface for 'epidural' query"
+        );
+    }
+
+    #[test]
+    fn search_pap_includes_e430a_tray() {
+        // Pap searches should surface the tray-fee companion E430A so
+        // clinician sees both in the dropdown.
+        let results = search_ohip_codes("pap".to_string());
+        assert!(
+            results.iter().any(|r| r.code == "G365A"),
+            "G365A (pap smear) must surface"
+        );
+        assert!(
+            results.iter().any(|r| r.code == "E430A"),
+            "E430A (pap tray) must also surface via synonym"
+        );
+    }
+
+    #[test]
+    fn search_unrelated_query_unaffected() {
+        // Query without any synonym match should return literal-substring
+        // results unchanged.
+        let results = search_ohip_codes("A001".to_string());
+        assert!(results.iter().any(|r| r.code == "A001A"));
+    }
+
+    #[test]
+    fn synonym_map_codes_exist() {
+        // Catches typos in OHIP_SEARCH_SYNONYMS at test time. Every code
+        // expanded by a synonym must exist in the OHIP code DB.
+        for (token, codes) in OHIP_SEARCH_SYNONYMS {
+            for code in *codes {
+                assert!(
+                    crate::billing::ohip_codes::get_code(code).is_some(),
+                    "Synonym {token:?} → unknown code {code:?}"
+                );
+            }
+        }
+    }
 
     #[test]
     fn test_build_context_hints_defaults() {

@@ -84,6 +84,137 @@ fn parse_date(date: &str) -> Option<chrono::DateTime<chrono::Utc>> {
     Some(chrono::DateTime::<chrono::Utc>::from_naive_utc_and_offset(noon, chrono::Utc))
 }
 
+/// Decide whether production's procedure section is clinically appropriate.
+///
+/// Reads `replay_bundle.json` bytes, finds `soap_result.response_raw`, parses
+/// `procedure[]`, and judges each entry via
+/// [`is_billable_procedure_action`] from the shared
+/// `billing::procedure_vocab` module. Empty / unparseable / no-raw inputs
+/// return `true` (conservative — don't false-fail when we can't judge).
+fn procedure_section_judges_correct(replay_bundle_bytes: &[u8]) -> bool {
+    let Ok(bundle) = serde_json::from_slice::<serde_json::Value>(replay_bundle_bytes) else {
+        return true;
+    };
+    let Some(raw) = bundle.pointer("/soap_result/response_raw").and_then(|v| v.as_str()) else {
+        return true;
+    };
+    if raw.is_empty() {
+        return true;
+    }
+
+    let mut any_action = false;
+    for chunk in raw.split("\n---\n") {
+        let chunk = chunk.trim()
+            .trim_start_matches("```json")
+            .trim_start_matches("```")
+            .trim_end_matches("```")
+            .trim();
+        let Ok(json) = serde_json::from_str::<serde_json::Value>(chunk) else { continue };
+        let Some(arr) = json.get("procedure").and_then(|v| v.as_array()) else { continue };
+        for item in arr {
+            let Some(action) = item.get("action").and_then(|v| v.as_str()) else { continue };
+            any_action = true;
+            if !transcription_app_lib::billing::procedure_vocab::is_billable_procedure_action(action) {
+                return false;
+            }
+        }
+    }
+    let _ = any_action;
+    true
+}
+
+#[cfg(test)]
+mod tests {
+    use super::procedure_section_judges_correct;
+
+    fn bundle_with_raw(raw: &str) -> Vec<u8> {
+        let body = serde_json::json!({
+            "soap_result": { "response_raw": raw }
+        });
+        serde_json::to_vec(&body).unwrap()
+    }
+
+    #[test]
+    fn empty_procedure_section_is_correct() {
+        let raw = r#"{"subjective":[],"objective":[],"assessment":[],"plan":[],"procedure":[]}"#;
+        assert!(procedure_section_judges_correct(&bundle_with_raw(raw)));
+    }
+
+    #[test]
+    fn injection_is_billable() {
+        let raw = r#"{"subjective":[],"objective":[],"assessment":[],"plan":[],"procedure":[{"action":"performed knee injection","transcript_quote":"x"}]}"#;
+        assert!(procedure_section_judges_correct(&bundle_with_raw(raw)));
+    }
+
+    #[test]
+    fn auscultation_is_not_billable() {
+        // Ruth's actual procedure entry from 2026-04-29 — must fail this check.
+        let raw = r#"{"subjective":[],"objective":[],"assessment":[],"plan":[],"procedure":[{"action":"Performed chest auscultation","transcript_quote":"x"}]}"#;
+        assert!(!procedure_section_judges_correct(&bundle_with_raw(raw)));
+    }
+
+    #[test]
+    fn reviewing_labs_is_not_billable() {
+        // Allan / Catherine 2:35 / Catherine sub-procedure — must fail.
+        let raw = r#"{"subjective":[],"objective":[],"assessment":[],"plan":[],"procedure":[{"action":"Reviewed blood work results","transcript_quote":"x"}]}"#;
+        assert!(!procedure_section_judges_correct(&bundle_with_raw(raw)));
+    }
+
+    #[test]
+    fn dtc_form_is_not_billable() {
+        let raw = r#"{"subjective":[],"objective":[],"assessment":[],"plan":[],"procedure":[{"action":"Completed medical section of Disability Tax Credit form","transcript_quote":"x"}]}"#;
+        assert!(!procedure_section_judges_correct(&bundle_with_raw(raw)));
+    }
+
+    #[test]
+    fn pap_smear_is_billable() {
+        let raw = r#"{"subjective":[],"objective":[],"assessment":[],"plan":[],"procedure":[{"action":"Performed pap smear with speculum","transcript_quote":"x"}]}"#;
+        assert!(procedure_section_judges_correct(&bundle_with_raw(raw)));
+    }
+
+    #[test]
+    fn nerve_block_is_billable() {
+        // Irene's actual procedure — would be billable if labeled correctly.
+        let raw = r#"{"subjective":[],"objective":[],"assessment":[],"plan":[],"procedure":[{"action":"performed ultrasound-guided cervical numbing injection","transcript_quote":"x"}]}"#;
+        assert!(procedure_section_judges_correct(&bundle_with_raw(raw)));
+    }
+
+    #[test]
+    fn mixed_billable_and_nonbillable_fails() {
+        // Catherine 2:35 actual: 3 entries, only one might be borderline.
+        let raw = r#"{"subjective":[],"objective":[],"assessment":[],"plan":[],"procedure":[
+            {"action":"Reviewed blood work results and ECG","transcript_quote":"x"},
+            {"action":"Provided printed copy of blood work results","transcript_quote":"y"},
+            {"action":"Completed Disability Tax Credit form","transcript_quote":"z"}
+        ]}"#;
+        assert!(!procedure_section_judges_correct(&bundle_with_raw(raw)));
+    }
+
+    #[test]
+    fn unparseable_raw_is_conservative() {
+        // Garbage JSON — return true so we don't false-fail.
+        let bundle = bundle_with_raw("not json");
+        assert!(procedure_section_judges_correct(&bundle));
+    }
+
+    #[test]
+    fn missing_response_raw_skips_check() {
+        // No response_raw → we can't judge → return true (skip).
+        let body = serde_json::json!({"soap_result": {}});
+        assert!(procedure_section_judges_correct(&serde_json::to_vec(&body).unwrap()));
+    }
+
+    #[test]
+    fn multi_patient_raw_with_delimiter() {
+        // Per-patient raw responses are joined with \n---\n. Both halves must
+        // pass for the overall judgement to be correct.
+        let raw = r#"{"subjective":[],"objective":[],"assessment":[],"plan":[],"procedure":[]}
+---
+{"subjective":[],"objective":[],"assessment":[],"plan":[],"procedure":[{"action":"performed pap smear","transcript_quote":"x"}]}"#;
+        assert!(procedure_section_judges_correct(&bundle_with_raw(raw)));
+    }
+}
+
 #[derive(Debug, Default)]
 struct CheckResults {
     checks: u32,
@@ -256,6 +387,48 @@ async fn main() -> ExitCode {
                 None => {
                     results.checks += 1;
                     results.failures.push("  ✗ billing.json missing — cannot check codes/dx".to_string());
+                }
+            }
+        }
+
+        // procedure_section_correct: read the replay bundle's raw SOAP response,
+        // parse procedure[], and check against the label assertion. This catches
+        // the v0.10.61 procedure-section overcapture failure mode (chest
+        // auscultation / "reviewed blood work" being listed as billable
+        // procedures). Added after the 2026-04-29 forensic review surfaced 5+
+        // sessions today + Apr 27 Heike with this defect.
+        if let Some(expected_correct) = label.labels.procedure_section_correct {
+            let parsed_date = match parse_date(&label.date) {
+                Some(d) => d,
+                None => {
+                    results.checks += 1;
+                    results.failures.push(format!(
+                        "  ✗ procedure_section: cannot parse date {}",
+                        label.date
+                    ));
+                    total_checks += results.checks;
+                    total_passes += results.passes;
+                    if !results.failures.is_empty() { total_regressions += 1; }
+                    continue;
+                }
+            };
+            match fetcher.fetch_replay_bundle_raw(&label.session_id, &parsed_date).await {
+                Ok(Some(bytes)) => {
+                    let actual_correct = procedure_section_judges_correct(&bytes);
+                    results.check("procedure_section_correct", &expected_correct, &actual_correct);
+                }
+                Ok(None) => {
+                    // No replay bundle — can't verify. Note as informational
+                    // rather than fail; some older sessions predate v5 schema.
+                    if verbose {
+                        println!("  ⊘ {} no replay_bundle.json — procedure_section check skipped", label_name);
+                    }
+                }
+                Err(e) => {
+                    results.checks += 1;
+                    results.failures.push(format!(
+                        "  ✗ procedure_section: replay_bundle fetch failed: {e}"
+                    ));
                 }
             }
         }

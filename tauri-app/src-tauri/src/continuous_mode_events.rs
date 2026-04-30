@@ -100,6 +100,40 @@ pub enum ContinuousModeEvent {
         date: String,
         pair_count: usize,
     },
+    /// Vision OCR's chart name is suspect — the encounter has multiple
+    /// distinct patient names visible on the EMR (≥3 unique), OR the
+    /// transcript's greeting names don't match what vision saw. Frontend
+    /// shows a "verify patient" banner and lowers the auto-applied
+    /// name's confidence; the vision majority still applies until the
+    /// clinician overrides.
+    ChartStaleSuspected {
+        /// Empty when fired from the screenshot task (mid-encounter, no
+        /// session_id assigned yet). Populated post-split from the
+        /// splitter's audio-vs-vision cross-check.
+        session_id: String,
+        reason: ChartStaleReason,
+        /// Vision-derived majority name at detection time.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        vision_name: Option<String>,
+        /// Distinct names vision has seen this encounter.
+        #[serde(skip_serializing_if = "Vec::is_empty")]
+        vision_unique_names: Vec<String>,
+        /// Audio greeting candidates (only for `AudioMismatch`).
+        #[serde(skip_serializing_if = "Vec::is_empty")]
+        audio_greeting_candidates: Vec<String>,
+    },
+}
+
+/// Why we suspect the EMR chart is on the wrong patient.
+#[derive(Debug, Clone, Copy, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ChartStaleReason {
+    /// Vision OCR has captured ≥3 distinct patient names this encounter.
+    /// Emitted live by the screenshot task.
+    MultiChart,
+    /// The vision-derived name doesn't match any greeting name parsed
+    /// from the transcript opener. Emitted post-split by the splitter.
+    AudioMismatch,
 }
 
 impl ContinuousModeEvent {

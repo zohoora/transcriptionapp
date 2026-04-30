@@ -1,0 +1,16 @@
+{
+  "session_id": "5c807cc6-e0e3-4633-80bd-f5e71612916c",
+  "date": "2026-04-29",
+  "labeled_at": "2026-04-29T23:50:00+00:00",
+  "labeled_by": "Dr Z (2026-04-29 clinic-day forensic review)",
+  "labels": {
+    "split_correct": true,
+    "merge_correct": true,
+    "clinical_correct": true,
+    "patient_count_correct": true,
+    "procedure_section_correct": true,
+    "billing_codes_expected": ["A007A", "Q310A"],
+    "diagnostic_code_expected": "706",
+    "notes": "Carter Young-watling 2:19pm — adolescent with acne vulgaris, prescribed triple-ingredient cream. SOAP correct. Billing A007A correct. DIAGNOSTIC CODE 701 (Hyperkeratosis, scleroderma, keloid) WRONG — primary diagnosis is acne vulgaris which maps to 706 (Acne, acne vulgaris, sebaceous cyst). Worse: tools-model emitted reasoning 'Code 701 is the specific OHIP diagnostic code for acne' which is internally contradictory with the DB description (701 is hyperkeratosis/scleroderma/keloid). This is a pure tools-model hallucination that bypassed validation because the code is in-DB. Needs DB-description-vs-primary-diagnosis cross-check before accepting tools-model output."
+  }
+}

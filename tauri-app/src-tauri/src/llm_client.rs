@@ -399,7 +399,7 @@ pub(crate) const MALFORMED_SOAP_SENTINEL: &str = "SOAP generation produced malfo
 /// string whenever `build_simple_soap_prompt` (or the per-patient / single-
 /// patient variants) is materially edited so audits can correlate clinical
 /// drift to specific prompt revisions.
-pub const SOAP_PROMPT_VERSION: &str = "v0.10.61";
+pub const SOAP_PROMPT_VERSION: &str = "v0.10.67";
 
 /// True iff `s` is a usable SOAP note — non-empty after trimming and not the
 /// malformed-output placeholder from [`MALFORMED_SOAP_SENTINEL`].
@@ -1147,6 +1147,7 @@ impl LLMClient {
         model: &str,
         transcript: &str,
         patient_label: &str,
+        patient_summary: Option<&str>,
         audio_events: Option<&[AudioEvent]>,
         options: Option<&SoapOptions>,
         speaker_context: Option<&SpeakerContext>,
@@ -1154,14 +1155,15 @@ impl LLMClient {
         let prepared_transcript = Self::prepare_transcript(transcript)?;
         let opts = options.cloned().unwrap_or_default();
         info!(
-            "Generating single-patient SOAP note for \"{}\" with model {} ({} chars, {} words)",
+            "Generating single-patient SOAP note for \"{}\" with model {} ({} chars, {} words, summary={})",
             patient_label,
             model,
             prepared_transcript.len(),
             prepared_transcript.split_whitespace().count(),
+            patient_summary.map(|s| s.len()).unwrap_or(0),
         );
 
-        let system_prompt = build_single_patient_soap_prompt(&opts, patient_label, None);
+        let system_prompt = build_single_patient_soap_prompt(&opts, patient_label, patient_summary, None);
         let session_notes = if opts.session_notes.trim().is_empty() { None } else { Some(opts.session_notes.as_str()) };
         let user_content = build_soap_user_content(&prepared_transcript, audio_events, session_notes, speaker_context);
 
@@ -1890,9 +1892,35 @@ SECTION DEFINITIONS:
 - PLAN: Treatments ordered, prescriptions, referrals, follow-up instructions, patient education provided, and next steps — ONLY what the doctor actually stated. Procedures the clinician PROPOSED, OFFERED, SCHEDULED, or DECLINED today belong here, NOT in procedure[].
 - PROCEDURE: Procedures the clinician PHYSICALLY PERFORMED during this visit. See the procedure-section workflow below.
 
-PROCEDURE-SECTION WORKFLOW (v0.10.61 — designed to prevent billing hallucinations from imperative-future Plan items):
+PROCEDURE-SECTION WORKFLOW (v0.10.61, tightened 2026-04-29 to prevent overcapture of routine PE / paperwork):
 
-1. Identify EVERY procedure mention in the transcript and add it to procedure_candidates with stance:
+THE PROCEDURE SECTION IS FOR BILLABLE PROCEDURES ONLY. A "billable procedure" means a discrete, structured intervention the physician PHYSICALLY PERFORMED during this encounter, of a kind that has a corresponding OHIP G/Z fee code.
+
+POSITIVE LIST — procedures that CAN qualify for procedure[] (this list mirrors the canonical billing vocabulary; if your action doesn't fit one of these categories, do NOT include it):
+   * Injections (joint, trigger point, nerve block, intralesional, IM, SC, ID, IV)
+   * Pap smear, IUD insertion or removal
+   * Skin biopsy / lesion excision / wart cryotherapy / electrocautery / curettage
+   * Suturing, laceration repair, abscess drainage, foreign-body removal
+   * Nail avulsion / debridement / matrixectomy
+   * Ear syringing / cerumen removal, epistaxis cautery or packing, hemorrhoid I&D
+   * Sigmoidoscopy, anoscopy, tonometry
+   * Vaccinations / immunizations
+   * Aspiration / paracentesis / thoracentesis / joint aspiration
+
+NEGATIVE LIST — these are NEVER procedures, even when the doctor performed them today (place these where they belong: physical-exam findings in O, paperwork/orders/follow-ups in P, education in P):
+   * Physical examination components — auscultation (chest, heart, abdomen), palpation, percussion, range-of-motion testing, neurological exam, blood-pressure / heart-rate / temperature / oxygen-saturation measurement, otoscope, ophthalmoscope
+   * Reviewing labs, imaging, ECG, or other test results (today's or historical)
+   * Providing the patient with a printed copy of results
+   * Completing or signing forms (Disability Tax Credit, return-to-work, sick note, school note, insurance form, medical letter)
+   * Prescription writing or renewal (counts as Plan, not procedure)
+   * Counselling, patient education, lifestyle advice, motivational interviewing (counts as Plan)
+   * Telephone call itself (the call's CONTENT is the visit; if a procedure is performed in office during the call that's separate)
+   * Discussion of options that were not selected ("we discussed", "I explained")
+   * Charting / documentation
+
+WORKFLOW:
+
+1. Identify EVERY POSITIVE-LIST procedure mention in the transcript and add it to procedure_candidates with stance:
    - PROPOSED — modal capability: "I can inject", "we could try", "if you wanted", "would you like"
    - OFFERED — one option among several: "I could spray with nitrogen, or use OTC"
    - IN_PROGRESS — doctor narrating action mid-procedure. Markers include:
@@ -1907,19 +1935,21 @@ PROCEDURE-SECTION WORKFLOW (v0.10.61 — designed to prevent billing hallucinati
    - walkback: any later sentence in the transcript that contradicts performance ("instead", "let's wait", "maybe next visit"); set "none" if no walkback exists.
    - completion_evidence: a SECOND verbatim doctor quote (different from doctor_quote) that confirms the procedure FINISHED; set "none" if absent.
 
-2. DETERMINISTIC FILTER for procedure[]. For each candidate c:
+2. DO NOT add NEGATIVE-LIST items to procedure_candidates. Things like "Performed chest auscultation", "Reviewed blood work results", "Completed Disability Tax Credit form" are NOT candidates and NEVER appear in procedure[]. They belong in O (exam findings) or P (orders, paperwork).
+
+3. DETERMINISTIC FILTER for procedure[]. For each POSITIVE-LIST candidate c:
      if c.walkback != "none": SKIP
      if c.stance == "COMPLETED": INCLUDE
      elif c.stance == "IN_PROGRESS" and c.completion_evidence != "none": INCLUDE
      else: SKIP
 
-3. PROPOSED, OFFERED, DECLINED candidates NEVER enter procedure[]. Even if you think the procedure obviously happened.
+4. PROPOSED, OFFERED, DECLINED candidates NEVER enter procedure[]. Even if you think the procedure obviously happened.
 
-4. If multiple candidates refer to the SAME procedure, evaluate together — only include if at least ONE meets the inclusion rule above.
+5. If multiple candidates refer to the SAME procedure, evaluate together — only include if at least ONE meets the inclusion rule above.
 
 Each procedure[] entry: {{"action": "<past-tense rewording>", "transcript_quote": "<verbatim doctor quote proving it was DONE>"}}
 
-When in doubt, leave procedure[] EMPTY. A missed procedure is recoverable via clinician review; a wrongly-billed procedure risks an OHIP claw-back.
+When in doubt, leave procedure[] EMPTY. A missed procedure is recoverable via clinician review; a wrongly-billed procedure risks an OHIP claw-back; an over-captured non-procedure clutters the SOAP and inflates the billing-extraction prompt's signal-to-noise.
 
 Rules:
 - Your entire response must be valid JSON - nothing else
@@ -1930,6 +1960,7 @@ Rules:
 - Do NOT use any markdown formatting (no **, no __, no #, no backticks) - output plain text only
 - Do NOT include specific patient names or healthcare provider names - use "patient" or "the physician/provider" instead
 - Do NOT hallucinate or embellish - only include what was explicitly stated
+- DRUG NAMES — verbatim only: If a drug name in the transcript is unfamiliar or appears phonetically uncertain (likely STT mishearing), keep it VERBATIM as written and append "(transcribed; verify spelling)". Do NOT substitute a different drug, even one that sounds similar (e.g. do NOT rewrite "Davigo"→"estradiol" or "Razipan"→"a heart medication"). Do NOT annotate with a generic name unless the transcript itself states the generic. Under-annotation is far safer than substitution; clinician will verify on review.
 - CLINICIAN NOTES: If provided, incorporate clinician observations into the appropriate SOAP sections (usually Objective for physical observations, Subjective for reported symptoms).
 - {detail_instruction}"#
     )
@@ -2499,6 +2530,30 @@ fn extract_json_from_response(response: &str) -> String {
     text.trim().to_string()
 }
 
+/// Drop procedure[] entries whose action text isn't a canonical billable
+/// procedure verb (see [`billing::procedure_vocab`]). Empty actions also
+/// dropped. Shared vocabulary keeps the SOAP renderer and the regression
+/// CLI's `procedure_section_judges_correct` check aligned.
+fn filter_billable_procedures(procedures: Vec<PerformedProcedure>) -> Vec<PerformedProcedure> {
+    procedures
+        .into_iter()
+        .filter(|p| {
+            let action_trim = p.action.trim();
+            if action_trim.is_empty() {
+                return false;
+            }
+            let billable = crate::billing::procedure_vocab::is_billable_procedure_action(action_trim);
+            if !billable {
+                tracing::warn!(
+                    "SOAP procedure[] DROPPED non-billable action: {:?} (Class 1 post-filter)",
+                    action_trim
+                );
+            }
+            billable
+        })
+        .collect()
+}
+
 /// Parse JSON SOAP response and format as bullet-point text
 fn parse_and_format_soap_json(response: &str) -> String {
     let json_str = extract_json_from_response(response);
@@ -2507,17 +2562,20 @@ fn parse_and_format_soap_json(response: &str) -> String {
     match serde_json::from_str::<SoapJsonResponse>(&json_str) {
         Ok(soap) => {
             // Filter out empty string elements (LLM artifact: ["", "real item"])
+            // and procedure[] entries that don't match a canonical billable
+            // procedure verb (Class 1 fix from 2026-04-29 forensic review —
+            // see billing/procedure_vocab.rs).
             let soap = SoapJsonResponse {
                 subjective: soap.subjective.into_iter().filter(|s| !s.trim().is_empty()).collect(),
                 objective: soap.objective.into_iter().filter(|s| !s.trim().is_empty()).collect(),
                 assessment: soap.assessment.into_iter().filter(|s| !s.trim().is_empty()).collect(),
                 plan: soap.plan.into_iter().filter(|s| !s.trim().is_empty()).collect(),
                 procedure_candidates: soap.procedure_candidates,
-                procedure: soap.procedure.into_iter().filter(|p| !p.action.trim().is_empty()).collect(),
+                procedure: filter_billable_procedures(soap.procedure),
             };
-            info!("Successfully parsed SOAP JSON: S={}, O={}, A={}, P={}",
+            info!("Successfully parsed SOAP JSON: S={}, O={}, A={}, P={}, Proc={}",
                   soap.subjective.len(), soap.objective.len(),
-                  soap.assessment.len(), soap.plan.len());
+                  soap.assessment.len(), soap.plan.len(), soap.procedure.len());
             format_soap_as_text(&soap)
         }
         Err(e) => {
@@ -2546,7 +2604,7 @@ fn parse_and_format_soap_json(response: &str) -> String {
                             assessment: soap.assessment.into_iter().filter(|s| !s.trim().is_empty()).collect(),
                             plan: soap.plan.into_iter().filter(|s| !s.trim().is_empty()).collect(),
                             procedure_candidates: soap.procedure_candidates,
-                            procedure: soap.procedure.into_iter().filter(|p| !p.action.trim().is_empty()).collect(),
+                            procedure: filter_billable_procedures(soap.procedure),
                         };
                         info!("Aggressive JSON repair succeeded");
                         format_soap_as_text(&soap)
@@ -2746,12 +2804,21 @@ fn strip_markdown_from_item(item: &str) -> String {
     without_bullets.to_string()
 }
 
+// Section markers used by `format_soap_as_text`. Exposed so downstream
+// consumers (e.g. `encounter_pipeline::extract_soap_*_section`) reference
+// the same strings as the renderer — changes to format here propagate to
+// extractors without a separate update.
+pub const SOAP_SECTION_SUBJECTIVE: &str = "S:\n";
+pub const SOAP_SECTION_OBJECTIVE: &str = "\nO:\n";
+pub const SOAP_SECTION_ASSESSMENT: &str = "\nA:\n";
+pub const SOAP_SECTION_PLAN: &str = "\nP:\n";
+pub const SOAP_SECTION_PROCEDURE: &str = "\nProcedure:\n";
+
 /// Format parsed SOAP JSON as bullet-point text for EMR copy-paste
 fn format_soap_as_text(soap: &SoapJsonResponse) -> String {
     let mut output = String::new();
 
-    // Subjective
-    output.push_str("S:\n");
+    output.push_str(SOAP_SECTION_SUBJECTIVE);
     if soap.subjective.is_empty() {
         output.push_str("• Not documented\n");
     } else {
@@ -2760,8 +2827,7 @@ fn format_soap_as_text(soap: &SoapJsonResponse) -> String {
         }
     }
 
-    // Objective
-    output.push_str("\nO:\n");
+    output.push_str(SOAP_SECTION_OBJECTIVE);
     if soap.objective.is_empty() {
         output.push_str("• Not documented\n");
     } else {
@@ -2770,8 +2836,7 @@ fn format_soap_as_text(soap: &SoapJsonResponse) -> String {
         }
     }
 
-    // Assessment
-    output.push_str("\nA:\n");
+    output.push_str(SOAP_SECTION_ASSESSMENT);
     if soap.assessment.is_empty() {
         output.push_str("• Not documented\n");
     } else {
@@ -2780,8 +2845,7 @@ fn format_soap_as_text(soap: &SoapJsonResponse) -> String {
         }
     }
 
-    // Plan
-    output.push_str("\nP:\n");
+    output.push_str(SOAP_SECTION_PLAN);
     if soap.plan.is_empty() {
         output.push_str("• Not documented\n");
     } else {
@@ -2790,20 +2854,14 @@ fn format_soap_as_text(soap: &SoapJsonResponse) -> String {
         }
     }
 
-    // Procedure (v0.10.61). Only renders when at least one procedure made
-    // it through the SOAP-LLM's stance-filtered procedure[] array. An empty
-    // section means no billable procedure was performed today; the rule
-    // engine treats this as authoritative.
+    // Procedure renders only when procedure[] survived the stance filter
+    // AND the billable-vocabulary post-filter. Action only —
+    // transcript_quote stays in the JSON for audit but doesn't render.
     if !soap.procedure.is_empty() {
-        output.push_str("\nProcedure:\n");
+        output.push_str(SOAP_SECTION_PROCEDURE);
         for p in &soap.procedure {
             let action = strip_markdown_from_item(&p.action);
-            let quote = p.transcript_quote.trim();
-            if quote.is_empty() {
-                output.push_str(&format!("• {}\n", action));
-            } else {
-                output.push_str(&format!("• {}    [transcript: \"{}\"]\n", action, quote));
-            }
+            output.push_str(&format!("• {}\n", action));
         }
     }
 
@@ -2882,21 +2940,40 @@ pub(crate) fn build_per_patient_soap_prompt(
 /// Used when the physician regenerates SOAP for one specific patient (flattened sidebar entry).
 /// Appends a single-patient constraint to the base SOAP prompt.
 /// When `templates` is provided and `soap_single_patient_scope_template` is non-empty, it overrides the hardcoded constraint.
+///
+/// `patient_summary`: optional per-patient summary from the original
+/// multi-patient detection (e.g. "3-year-old with recurrent watery diarrhea
+/// and dietary concerns" vs "Adult mother with iron-deficiency anemia and
+/// menorrhagia"). When provided, it disambiguates the regen prompt so the
+/// LLM doesn't default to the dominant content. Class 5 fix from 2026-04-29
+/// forensic review (Slote mom+child case where both per-patient regens
+/// produced adult content).
 pub fn build_single_patient_soap_prompt(
     options: &SoapOptions,
     patient_label: &str,
+    patient_summary: Option<&str>,
     templates: Option<&crate::server_config::PromptTemplates>,
 ) -> String {
     let base = build_simple_soap_prompt(options, templates);
+    let summary_clause = patient_summary
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty())
+        .map(|s| format!(" The reason-for-visit / clinical context for this patient is: {}.", s))
+        .unwrap_or_default();
     let scope = templates
         .and_then(|t| (!t.soap_single_patient_scope_template.is_empty()).then(|| {
-            t.soap_single_patient_scope_template.replace("{patient_label}", patient_label)
+            t.soap_single_patient_scope_template
+                .replace("{patient_label}", patient_label)
+                .replace("{patient_summary}", patient_summary.unwrap_or(""))
         }))
         .unwrap_or_else(|| format!(
             "IMPORTANT: This transcript contains multiple patients. \
-             Generate a SOAP note ONLY for the patient identified as \"{}\". \
-             Ignore clinical content belonging to other patients in the transcript.",
-            patient_label
+             Generate a SOAP note ONLY for the patient identified as \"{}\".{} \
+             Ignore clinical content belonging to other patients in the transcript. \
+             If one patient's content dominates the transcript while another patient's content is brief, \
+             do NOT default to the dominant content for the brief patient — use the reason-for-visit \
+             above as the disambiguation anchor.",
+            patient_label, summary_clause
         ));
     format!("{}\n\n{}", base, scope)
 }
@@ -3437,9 +3514,61 @@ mod tests {
     }
 
     #[test]
+    fn test_single_patient_prompt_includes_summary_when_provided() {
+        // Class 5 fix from 2026-04-29 forensic review (Slote mom+child):
+        // when a patient_summary is provided, the regen prompt must surface
+        // it as a disambiguation anchor, and the prompt must explicitly tell
+        // the LLM not to default to dominant content.
+        let opts = SoapOptions::default();
+        let with_summary = build_single_patient_soap_prompt(
+            &opts,
+            "Child/Young Patient",
+            Some("3-year-old with recurrent watery diarrhea and dietary concerns"),
+            None,
+        );
+        assert!(with_summary.contains("3-year-old"),
+            "summary text must appear in the prompt");
+        assert!(with_summary.contains("recurrent watery diarrhea"),
+            "summary detail must appear");
+        assert!(with_summary.contains("disambiguation anchor")
+                || with_summary.contains("do NOT default to the dominant content"),
+            "prompt must instruct against dominant-content default");
+
+        // Without summary: prompt still works (legacy behavior, no anchor)
+        let without_summary = build_single_patient_soap_prompt(
+            &opts,
+            "Patient A",
+            None,
+            None,
+        );
+        assert!(without_summary.contains("Patient A"));
+        assert!(!without_summary.contains("3-year-old"));
+    }
+
+    #[test]
+    fn test_simple_soap_prompt_includes_drug_verbatim_rule() {
+        // Class 7 fix from 2026-04-29 forensic review: Janice's "Davigo"
+        // (likely Dayvigo / lemborexant) was annotated as "estradiol" by the
+        // SOAP LLM. The prompt must instruct verbatim handling for unfamiliar
+        // drug names rather than substituting a similar-sounding drug.
+        let opts = SoapOptions::default();
+        let prompt = build_simple_soap_prompt(&opts, None);
+        assert!(prompt.contains("DRUG NAMES"),
+            "expected DRUG NAMES rule in prompt, got:\n{}", prompt);
+        assert!(prompt.contains("verbatim"),
+            "drug rule must use the word 'verbatim'");
+        assert!(prompt.contains("verify spelling") || prompt.contains("verify"),
+            "drug rule should suggest clinician verification");
+        assert!(prompt.contains("substitute") || prompt.contains("substitut"),
+            "drug rule should explicitly forbid substitution");
+    }
+
+    #[test]
     fn test_parse_and_format_soap_json_with_procedure_section() {
         // v0.10.61: SOAP-LLM emits a 5th `procedure` array; format_soap_as_text
-        // should render it as a Procedure section with the verbatim quote.
+        // renders it as a Procedure section. 2026-04-29: render is now
+        // action-only (no [transcript: "..."] bracket); audit trail lives
+        // in replay_bundle.json::soap_result.response_raw.
         let response = r#"{
             "subjective":["Wart on foot"],
             "objective":["Wart treated with liquid nitrogen"],
@@ -3451,7 +3580,105 @@ mod tests {
         let out = parse_and_format_soap_json(response);
         assert!(out.contains("\nProcedure:"), "expected Procedure section, got:\n{}", out);
         assert!(out.contains("Liquid nitrogen applied to plantar wart"));
-        assert!(out.contains("[transcript: \"I sprayed it\"]"));
+        assert!(
+            !out.contains("[transcript:"),
+            "Class 1 fix from 2026-04-29: transcript_quote must NOT leak into rendered SOAP — \
+             keep audit trail in replay_bundle.json. Got:\n{}",
+            out
+        );
+    }
+
+    #[test]
+    fn test_parse_and_format_soap_json_drops_chest_auscultation() {
+        // Class 1 post-filter: Ruth's failure mode — "Performed chest auscultation"
+        // listed as a procedure must be dropped.
+        let response = r#"{
+            "subjective":["Cough"],
+            "objective":["Chest auscultation reveals abnormal sounds"],
+            "assessment":["Persistent dry cough"],
+            "plan":["Order CT chest"],
+            "procedure":[{"action":"Performed chest auscultation","transcript_quote":"Can I have a quick listen"}]
+        }"#;
+        let out = parse_and_format_soap_json(response);
+        assert!(
+            !out.contains("Procedure:"),
+            "chest auscultation must be dropped by post-filter; SOAP should have no Procedure section, got:\n{}",
+            out
+        );
+    }
+
+    #[test]
+    fn test_parse_and_format_soap_json_drops_reviewing_blood_work() {
+        // Class 1 post-filter: Allan / Catherine 2:35 failure mode.
+        let response = r#"{
+            "subjective":["Follow-up"],
+            "objective":["Labs normal"],
+            "assessment":["Stable"],
+            "plan":["Continue current management"],
+            "procedure":[{"action":"reviewed blood work results","transcript_quote":"x"}]
+        }"#;
+        let out = parse_and_format_soap_json(response);
+        assert!(
+            !out.contains("Procedure:"),
+            "reviewing labs must be dropped by post-filter, got:\n{}",
+            out
+        );
+    }
+
+    #[test]
+    fn test_parse_and_format_soap_json_drops_form_completion() {
+        // Class 1 post-filter: Catherine 2:35 had "Completed DTC form" listed.
+        let response = r#"{
+            "subjective":["Multi-issue"],
+            "objective":["Stable"],
+            "assessment":["Knee OA"],
+            "plan":["Refer for X-ray"],
+            "procedure":[{"action":"Completed medical section of Disability Tax Credit form","transcript_quote":"x"}]
+        }"#;
+        let out = parse_and_format_soap_json(response);
+        assert!(
+            !out.contains("Procedure:"),
+            "form completion must be dropped by post-filter, got:\n{}",
+            out
+        );
+    }
+
+    #[test]
+    fn test_parse_and_format_soap_json_keeps_pap_smear() {
+        // Class 1 post-filter MUST preserve real billable procedures.
+        let response = r#"{
+            "subjective":["Annual exam"],
+            "objective":["Pap smear collected"],
+            "assessment":["Routine"],
+            "plan":["Send sample"],
+            "procedure":[{"action":"Pap smear performed with speculum","transcript_quote":"all done"}]
+        }"#;
+        let out = parse_and_format_soap_json(response);
+        assert!(
+            out.contains("Procedure:") && out.contains("Pap smear performed"),
+            "pap smear is billable, must survive post-filter, got:\n{}",
+            out
+        );
+    }
+
+    #[test]
+    fn test_parse_and_format_soap_json_mixed_drops_only_nonbillable() {
+        // Mixed list: one billable + one non-billable. Billable survives,
+        // non-billable dropped. Catherine 2:35 had this pattern with 3
+        // entries; this test pins the most-aggressive case.
+        let response = r#"{
+            "subjective":["Knee pain"],
+            "objective":["Effusion"],
+            "assessment":["Knee OA"],
+            "plan":["Continue"],
+            "procedure":[
+                {"action":"Cortisone injection into right knee","transcript_quote":"a"},
+                {"action":"reviewed blood work results","transcript_quote":"b"}
+            ]
+        }"#;
+        let out = parse_and_format_soap_json(response);
+        assert!(out.contains("Cortisone injection"), "billable injection must survive");
+        assert!(!out.contains("reviewed blood work"), "non-billable must drop");
     }
 
     #[test]

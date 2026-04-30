@@ -11,7 +11,7 @@ transcriptionapp/
 │   ├── src-tauri/
 │   │   ├── src/            # Rust library + main binary
 │   │   ├── src/bin/        # process_mobile (mobile audio processing daemon)
-│   │   ├── tools/          # 12 replay/regression CLIs (detection_replay, merge_replay, clinical_replay, multi_patient_replay, multi_patient_split_replay, benchmark_runner, labeled_regression, golden_day, bootstrap_labels, replay_bundle_backfill, encounter_experiment, vision_experiment)
+│   │   ├── tools/          # 15 replay/regression CLIs (detection_replay, merge_replay, clinical_replay, multi_patient_replay, multi_patient_split_replay, benchmark_runner, labeled_regression, golden_day, bootstrap_labels, replay_bundle_backfill, encounter_experiment, vision_experiment, soap_experiment, billing_experiment, soap_diff)
 │   │   ├── benches/        # Criterion benchmarks (audio_benchmarks)
 │   │   └── tests/fixtures/ # benchmarks/*.json + labels/*.json (ground-truth corpus)
 │   ├── CLAUDE.md           # Detailed codebase context (architecture, commands, patterns)

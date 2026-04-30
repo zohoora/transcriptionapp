@@ -90,6 +90,14 @@ pub enum ProcedureType {
     NerveBlockPeripheral,
     NerveBlockParavertebral,
     NerveBlockAdditional,
+    /// Occipital nerve block — specific OHIP codes G264A/G265A (in-cap)
+    /// or G291A/G292A (above-cap, IC-billed). Class 6 follow-up from
+    /// 2026-04-29 forensic review. Distinct from `NerveBlockPeripheral`
+    /// which would over-bill via G231A. The rule engine default-prefers
+    /// G264A when this variant is selected; `NerveBlockOccipitalAdditional`
+    /// covers each additional unilateral block per spinal level.
+    NerveBlockOccipital,
+    NerveBlockOccipitalAdditional,
     // Other common procedures
     EarSyringing,
     Tonometry,
@@ -173,7 +181,7 @@ pub struct ClinicalFeatures {
 /// `ArchiveMetadata.billing_prompt_version` when billing is archived.
 /// Bump this string whenever `build_billing_extraction_prompt` is materially
 /// edited so audits can correlate billing drift to specific prompt revisions.
-pub const BILLING_PROMPT_VERSION: &str = "v0.10.61";
+pub const BILLING_PROMPT_VERSION: &str = "v0.10.67";
 
 // ── Prompt construction ────────────────────────────────────────────────────
 
@@ -287,9 +295,11 @@ If you are confident of the exact code, provide it. Common codes: 250 Diabetes |
 - "intralesional_small" — Intralesional infiltration of 1-2 lesions (e.g., steroid injection into keloid or cyst) (G375A)
 - "intralesional_large" — Intralesional infiltration of 3+ lesions (G377A)
 - "intravenous_admin" — Intravenous administration to child/adolescent/adult (G379A)
-- "nerve_block_peripheral" — Somatic or peripheral nerve block at one nerve or site (e.g., digital block, intercostal) (G231A)
+- "nerve_block_peripheral" — Somatic or peripheral nerve block at one nerve or site (e.g., digital block, intercostal). Use this for general peripheral nerve blocks ONLY when the location is not occipital (G231A)
 - "nerve_block_paravertebral" — Paravertebral nerve block at any spinal level: cervical, thoracic, lumbar, sacral, or coccygeal (G228A)
-- "nerve_block_additional" — Additional nerve block site(s) in the same visit (G223A)
+- "nerve_block_additional" — Additional peripheral nerve block site(s) in the same visit, with `nerve_block_peripheral` (G223A)
+- "nerve_block_occipital" — Occipital nerve block specifically (greater occipital nerve, ultrasound-guided cervical occipital injection). Use this NOT `nerve_block_peripheral` when the SOAP / transcript explicitly mentions "occipital" (G264A)
+- "nerve_block_occipital_additional" — Each additional unilateral occipital block per spinal level after `nerve_block_occipital` (G265A)
 - "ear_syringing" — Ear syringing, curetting, or debridement — unilateral or bilateral (G420A)
 - "tonometry" — Tonometry eye pressure measurement (G435A)
 - "nail_debridement" — Extensive debridement of thickened (onychogryphotic) nail WITHOUT removal. Trimming/grinding only (Z110A)
@@ -367,6 +377,14 @@ SOAP: "S: Patient called after hours, anxious about chest tightness. O: History 
 {"visitType":"counselling","procedures":[],"conditions":[],"setting":"telephone_remote","isNewPatient":false,"isAfterHours":true,"patientCount":null,"estimatedDurationMinutes":15,"confidence":0.85,"primaryDiagnosis":"Anxiety-related chest tightness","suggestedDiagnosticCode":"300"}
 ```
 
+### Example 5b: In-office phone visit — doctor self-introduction pattern
+Transcript opens: "Hi, [Name]. This is Doctor [LastName]." (no other phone-call language elsewhere)
+SOAP: "S: Patient reports occasional BP readings in 90s; insomnia ongoing on current beta-blocker. O: Not documented (phone visit, no exam). A: BP intermittently low; insomnia. P: Continue beta-blocker, trial low-dose doxepin for sleep, follow up in 4 weeks."
+```json
+{"visitType":"virtual_phone","procedures":[],"conditions":["hypertension_management"],"setting":"telephone_in_office","isNewPatient":false,"isAfterHours":false,"patientCount":null,"estimatedDurationMinutes":25,"confidence":0.85,"primaryDiagnosis":"Hypertension management","suggestedDiagnosticCode":"401"}
+```
+Note: doctor's self-introduction by phone ("This is Doctor X") is the load-bearing signal — it appears in the OPENING utterance, not in the SOAP body itself. visitType=virtual_phone (A102A) is correct even when the SOAP doesn't repeat phone-specific phrasing in S/O/A/P. Mistakenly emitting visitType=general_reassessment (A004A) for these in-office phone visits was the 2026-04-29 Janice Carey failure mode.
+
 ### Example 6: Follow-up with knee injection
 SOAP: "S: Follow-up for right knee OA. Pain worse with stairs. O: Moderate effusion R knee. A: Right knee OA, moderate. P: Cortisone injection into right knee performed. Follow-up 6 weeks."
 ```json
@@ -409,7 +427,12 @@ Calibrate visitType to the actual scope of the visit, not just count of issues:
 - "general_reassessment" (A004A) — Comprehensive ESTABLISHED patient follow-up addressing 3+ active problems. Multi-system review, typically 20-30 min. If the SOAP A section lists three or more distinct diagnoses or the Plan addresses several different organ systems / chronic conditions, prefer "general_reassessment" over "intermediate_assessment".
 - "general_assessment" (A003A) — Comprehensive NEW patient workup OR annual complete exam.
 - "mini_assessment" (A008A) — <5 min, no exam (Rx renewal, form signature only).
-- "virtual_phone" (A102A) — Telephone visit. Pick this when the SOAP explicitly contains telephone-call language ("calling", "we'll call you back", "phone visit", "over the phone").
+- "virtual_phone" (A102A) — Telephone visit. Pick this when the transcript opens with phone-greeting patterns OR contains explicit phone-call language. Recognized signals (any one suffices):
+   * Doctor self-introduction by phone: "this is Dr X / Doctor X", "Dr X here / speaking", "it's Dr X", "Dr X calling"
+   * Doctor initiates remote contact: "I'm calling", "I'm just calling", "calling you about", "calling to follow up", "we'll call you back"
+   * Patient-verification phrasing: "Can you hear me?", "Are you there?", "Is this [Name]?"
+   * Explicit phrasing: "phone visit", "over the phone", "by phone", "phone consult"
+   The 2026-04-29 forensic review surfaced Janice Carey's session opening with "Hi, Diana. This is Doctor Zohor Kalin." — that pattern alone is sufficient to set virtual_phone (A102A); do NOT default to in-office assessment when the doctor self-introduces by phone.
 - "virtual_video" (A101A) — Video telemedicine visit.
 
 DIAGNOSTIC CODE — chief-complaint reasoning:
@@ -478,6 +501,88 @@ pub fn parse_billing_extraction(response: &str) -> Result<ClinicalFeatures, Stri
         }
     }
     Err(last_err.unwrap_or_else(|| "Failed to parse any JSON block".to_string()))
+}
+
+/// Class 6 fix from 2026-04-29 forensic review (Irene's nerve-block visit
+/// shipped with no procedure code despite the SOAP procedure section
+/// listing "performed ultrasound-guided cervical numbing injection"):
+/// post-extraction safety net that scans the SOAP procedure section text
+/// for canonical procedure verbs and best-effort augments
+/// `features.procedures` when the LLM's extraction missed a clearly-
+/// performed procedure.
+///
+/// This is conservative — it only ADDS procedures, never removes them, and
+/// only triggers when the LLM's extracted list is empty (or doesn't yet
+/// contain a procedure type that the SOAP procedure section clearly
+/// indicates). Logs at WARN level so audits can correlate.
+///
+/// Pass the SOAP text (full SOAP body or the procedure section). Returns
+/// the count of procedure types added.
+pub fn augment_procedures_from_soap_text(
+    features: &mut ClinicalFeatures,
+    soap_procedure_text: &str,
+) -> usize {
+    if soap_procedure_text.trim().is_empty() {
+        return 0;
+    }
+    let lower = soap_procedure_text.to_lowercase();
+
+    // Map of (verb / phrase signal → ProcedureType). Order matters — more
+    // specific phrases first so "trigger point injection" wins over generic
+    // "injection". Each entry mirrors a ProcedureType in this same module.
+    let signals: &[(&str, ProcedureType)] = &[
+        ("trigger point injection", ProcedureType::TriggerPointInjection),
+        ("intralesional", ProcedureType::IntralesionalSmall),
+        // Occipital-specific check first — falls through if not occipital.
+        ("greater occipital nerve", ProcedureType::NerveBlockOccipital),
+        ("occipital nerve block", ProcedureType::NerveBlockOccipital),
+        ("occipital nerve injection", ProcedureType::NerveBlockOccipital),
+        ("occipital", ProcedureType::NerveBlockOccipital),
+        ("nerve block", ProcedureType::NerveBlockPeripheral),
+        ("paravertebral", ProcedureType::NerveBlockParavertebral),
+        ("numbing injection", ProcedureType::NerveBlockPeripheral),
+        ("joint injection", ProcedureType::JointInjection),
+        ("knee injection", ProcedureType::JointInjection),
+        ("shoulder injection", ProcedureType::JointInjection),
+        ("hip injection", ProcedureType::JointInjection),
+        ("cortisone", ProcedureType::JointInjection),
+        ("im injection", ProcedureType::ImInjectionWithVisit),
+        ("intramuscular injection", ProcedureType::ImInjectionWithVisit),
+        ("subcutaneous injection", ProcedureType::ImInjectionWithVisit),
+        ("pap smear", ProcedureType::PapSmear),
+        ("pap test", ProcedureType::PapSmear),
+        ("iud insertion", ProcedureType::IudInsertion),
+        ("iud removal", ProcedureType::IudRemoval),
+        ("punch biopsy", ProcedureType::SkinBiopsy),
+        ("shave biopsy", ProcedureType::SkinBiopsy),
+        ("skin biopsy", ProcedureType::SkinBiopsy),
+        ("liquid nitrogen", ProcedureType::CryotherapySingle),
+        ("cryotherapy", ProcedureType::CryotherapySingle),
+        ("ear syringing", ProcedureType::EarSyringing),
+        ("cerumen removal", ProcedureType::EarSyringing),
+        ("foreign body removal", ProcedureType::ForeignBodyRemoval),
+        ("nail avulsion", ProcedureType::NailExcisionSingle),
+        ("ingrown toenail", ProcedureType::NailExcisionSingle),
+        ("abscess drainage", ProcedureType::AbscessDrainage),
+        ("incision and drainage", ProcedureType::AbscessDrainage),
+        ("anoscopy", ProcedureType::Anoscopy),
+        ("sigmoidoscopy", ProcedureType::Sigmoidoscopy),
+        ("tonometry", ProcedureType::Tonometry),
+    ];
+
+    let mut added = 0;
+    for (signal, proc_type) in signals {
+        if lower.contains(signal) && !features.procedures.contains(proc_type) {
+            tracing::warn!(
+                "Class 6 safety net: augmenting procedures with {:?} (signal: {:?}) — \
+                 LLM extraction missed it but the SOAP procedure section indicates it was performed",
+                proc_type, signal
+            );
+            features.procedures.push(proc_type.clone());
+            added += 1;
+        }
+    }
+    added
 }
 
 /// Return every `{...}` substring in the response, in document order. Markdown
@@ -590,6 +695,150 @@ fn strip_self_negated_conditions(mut features: ClinicalFeatures) -> ClinicalFeat
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // ============================================================
+    // Class 6: procedure→billing safety net (2026-04-29 forensic review)
+    // ============================================================
+
+    #[test]
+    fn augment_adds_nerve_block_when_soap_has_injection() {
+        // Irene's failure: SOAP procedure section had "performed
+        // ultrasound-guided cervical numbing injection" but billing
+        // emitted only A007A (no nerve_block_peripheral). Safety net
+        // must pick this up.
+        let mut features = ClinicalFeatures {
+            visit_type: VisitType::IntermediateAssessment,
+            procedures: vec![],
+            conditions: vec![],
+            setting: EncounterSetting::InOffice,
+            is_new_patient: false,
+            is_after_hours: false,
+            patient_count: None,
+            estimated_duration_minutes: Some(30),
+            confidence: 0.9,
+            suggested_diagnostic_code: None,
+            primary_diagnosis: Some("Cervicogenic headache".to_string()),
+            condition_evidence: Default::default(),
+        };
+        let soap_text = "Procedure:\n• performed ultrasound-guided cervical numbing injection";
+        let added = augment_procedures_from_soap_text(&mut features, soap_text);
+        assert!(added >= 1);
+        assert!(features.procedures.contains(&ProcedureType::NerveBlockPeripheral));
+    }
+
+    #[test]
+    fn augment_adds_pap_when_soap_says_pap_smear() {
+        // Angelika's failure: pap was actually done; billing missed it.
+        let mut features = ClinicalFeatures {
+            visit_type: VisitType::IntermediateAssessment,
+            procedures: vec![],
+            conditions: vec![],
+            setting: EncounterSetting::InOffice,
+            is_new_patient: false,
+            is_after_hours: false,
+            patient_count: None,
+            estimated_duration_minutes: Some(20),
+            confidence: 0.9,
+            suggested_diagnostic_code: None,
+            primary_diagnosis: None,
+            condition_evidence: Default::default(),
+        };
+        let soap_text = "Procedure:\n• Pap smear collected with speculum";
+        let added = augment_procedures_from_soap_text(&mut features, soap_text);
+        assert!(added >= 1);
+        assert!(features.procedures.contains(&ProcedureType::PapSmear));
+    }
+
+    #[test]
+    fn augment_does_not_duplicate_existing() {
+        // If LLM already extracted nerve_block_peripheral, safety net
+        // must NOT add it again.
+        let mut features = ClinicalFeatures {
+            visit_type: VisitType::IntermediateAssessment,
+            procedures: vec![ProcedureType::NerveBlockPeripheral],
+            conditions: vec![],
+            setting: EncounterSetting::InOffice,
+            is_new_patient: false,
+            is_after_hours: false,
+            patient_count: None,
+            estimated_duration_minutes: Some(30),
+            confidence: 0.9,
+            suggested_diagnostic_code: None,
+            primary_diagnosis: None,
+            condition_evidence: Default::default(),
+        };
+        let soap_text = "Procedure:\n• performed nerve block injection";
+        let added = augment_procedures_from_soap_text(&mut features, soap_text);
+        // The safety net adds based on each signal independently so it
+        // may match more than one signal that maps to the same type;
+        // verify no duplicates remain.
+        let count = features.procedures.iter().filter(|p| **p == ProcedureType::NerveBlockPeripheral).count();
+        assert_eq!(count, 1, "must not duplicate existing procedure");
+        let _ = added;
+    }
+
+    #[test]
+    fn augment_zero_when_soap_has_no_procedures() {
+        // Empty / non-procedural SOAP must add nothing.
+        let mut features = ClinicalFeatures {
+            visit_type: VisitType::IntermediateAssessment,
+            procedures: vec![],
+            conditions: vec![],
+            setting: EncounterSetting::InOffice,
+            is_new_patient: false,
+            is_after_hours: false,
+            patient_count: None,
+            estimated_duration_minutes: Some(15),
+            confidence: 0.9,
+            suggested_diagnostic_code: None,
+            primary_diagnosis: None,
+            condition_evidence: Default::default(),
+        };
+        let added = augment_procedures_from_soap_text(&mut features, "");
+        assert_eq!(added, 0);
+        assert!(features.procedures.is_empty());
+    }
+
+    #[test]
+    fn augment_zero_for_pe_keywords_alone() {
+        // Auscultation / palpation / paperwork text alone must NOT trigger
+        // additions — only the canonical procedure verbs.
+        let mut features = ClinicalFeatures {
+            visit_type: VisitType::IntermediateAssessment,
+            procedures: vec![],
+            conditions: vec![],
+            setting: EncounterSetting::InOffice,
+            is_new_patient: false,
+            is_after_hours: false,
+            patient_count: None,
+            estimated_duration_minutes: Some(15),
+            confidence: 0.9,
+            suggested_diagnostic_code: None,
+            primary_diagnosis: None,
+            condition_evidence: Default::default(),
+        };
+        let soap_text = "O: chest auscultation reveals abnormal sounds; reviewed blood work; palpated abdomen";
+        let added = augment_procedures_from_soap_text(&mut features, soap_text);
+        assert_eq!(added, 0, "PE / paperwork must not trigger procedure augmentation");
+    }
+
+    // ============================================================
+
+    #[test]
+    fn test_build_billing_extraction_prompt_includes_phone_self_intro_signal() {
+        // Class 4 fix from 2026-04-29 forensic review: Janice Carey's phone visit
+        // wasn't detected because the prompt only listed "calling/phone visit/over the phone"
+        // and missed the most common phone-call opener ("Hi [Name], this is Dr X").
+        let (system, _user) = build_billing_extraction_prompt("SOAP", "Transcript", "", None);
+        assert!(
+            system.contains("self-introduction") || system.contains("this is Dr"),
+            "phone-detection guidance must include doctor self-introduction pattern"
+        );
+        assert!(
+            system.contains("Janice") || system.contains("self-introduces by phone"),
+            "prompt should anchor the new signal with the failure-mode reference"
+        );
+    }
 
     #[test]
     fn test_build_billing_extraction_prompt() {

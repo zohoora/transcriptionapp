@@ -69,6 +69,12 @@ struct BillingRunner {
     client: LLMClient,
     model: String,
     fetcher: ArchiveFetcher,
+    /// 2026-04-29 follow-up: when true, skip the live LLM call and replay
+    /// the billing extraction archived in `replay_bundle.json::billing_result.response_raw`.
+    /// Lets prompt-edit experiments re-score archived production output
+    /// offline (no LLM Router required). Mirrors the existing
+    /// `replay_*_cli.rs` pattern.
+    replay_only: bool,
 }
 
 #[async_trait]
@@ -111,10 +117,16 @@ impl Runner for BillingRunner {
         };
 
         let started = std::time::Instant::now();
-        let response = self.client
-            .generate(&self.model, &system_prompt, &user_prompt, "billing_extraction")
-            .await
-            .map_err(|e| anyhow!("LLM call: {e}"))?;
+        let response = if self.replay_only {
+            experiment::replay::replay_response(
+                &self.fetcher, session_id, date, "/billing_result/response_raw",
+            ).await?
+        } else {
+            self.client
+                .generate(&self.model, &system_prompt, &user_prompt, "billing_extraction")
+                .await
+                .map_err(|e| anyhow!("LLM call: {e}"))?
+        };
         let latency_ms = started.elapsed().as_millis() as u64;
 
         // Parse the response (uses production parser — last-JSON + self-negation guard).
@@ -225,6 +237,7 @@ fn print_usage(program: &str) {
     eprintln!("  --seeds N                 Number of seeds per variant (default 1)");
     eprintln!("  --model <alias>           LLM model alias (default: fast-model)");
     eprintln!("  --output <dir>            Output directory (default: ~/.transcriptionapp/experiments/billing/<run_id>/)");
+    eprintln!("  --replay-only             Score archived billing raw responses from replay_bundle.json without issuing live LLM calls (offline mode; requires schema v5 bundles).");
     eprintln!("  --help                    This message");
 }
 
@@ -243,6 +256,7 @@ async fn main() -> ExitCode {
     let mut seeds: u32 = 1;
     let mut model = DEFAULT_MODEL.to_string();
     let mut output_override: Option<std::path::PathBuf> = None;
+    let mut replay_only = false;
 
     let mut i = 1;
     while i < args.len() {
@@ -253,6 +267,7 @@ async fn main() -> ExitCode {
             "--seeds" => { i += 1; seeds = args[i].parse().unwrap_or(1); }
             "--model" => { i += 1; model = args[i].clone(); }
             "--output" => { i += 1; output_override = Some(args[i].clone().into()); }
+            "--replay-only" => { replay_only = true; }
             "--help" => { print_usage(program); return ExitCode::SUCCESS; }
             other if other.starts_with('-') => {
                 eprintln!("Unknown option: {other}");
@@ -283,7 +298,10 @@ async fn main() -> ExitCode {
     };
 
     let fetcher = ArchiveFetcher::from_env().unwrap_or_else(|_| ArchiveFetcher::local_only());
-    let runner = BillingRunner { client, model, fetcher };
+    let runner = BillingRunner { client, model, fetcher, replay_only };
+    if replay_only {
+        eprintln!("[replay-only mode] skipping live LLM calls; reading archived response_raw from replay_bundle.json");
+    }
 
     // Resolve target sessions.
     let mut targets: Vec<(String, String)> = Vec::new();

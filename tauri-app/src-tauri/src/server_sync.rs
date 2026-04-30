@@ -124,7 +124,23 @@ impl ServerSyncContext {
         });
     }
 
-    /// Upload auxiliary files (pipeline_log, replay_bundle, segments) and day_log.
+    /// Auxiliary session files that get uploaded to the profile service. MUST match
+    /// `ALLOWED_SESSION_FILES` in `profile-service/src/store/sessions.rs` — a parity
+    /// test in this file enforces that. Adding a new file type requires updates on
+    /// both sides plus the parity test fixture.
+    pub const SYNCED_AUX_FILES: &'static [&'static str] = &[
+        "pipeline_log.jsonl",
+        "replay_bundle.json",
+        "segments.jsonl",
+        "billing.json",
+        "clinician_notes.json",
+        // Per-patient labels + summaries; needed for cross-room
+        // per-patient SOAP regen.
+        "patient_labels.json",
+    ];
+
+    /// Upload auxiliary files (pipeline_log, replay_bundle, segments, billing,
+    /// clinician_notes) and day_log.
     async fn upload_aux_files(
         client: &crate::profile_client::ProfileClient,
         phys_id: &str,
@@ -132,13 +148,7 @@ impl ServerSyncContext {
         date: &str,
     ) {
         if let Ok(session_dir) = Self::local_session_dir(session_id, date) {
-            for filename in &[
-                "pipeline_log.jsonl",
-                "replay_bundle.json",
-                "segments.jsonl",
-                "billing.json",
-                "clinician_notes.json",
-            ] {
+            for filename in Self::SYNCED_AUX_FILES {
                 let path = session_dir.join(filename);
                 if path.exists() {
                     match std::fs::read(&path) {
@@ -337,5 +347,25 @@ mod tests {
             client: None,
         };
         ctx.sync_session("nonexistent-session", "2026-04-15");
+    }
+
+    /// Pins the file list the tauri app uploads. Must match the
+    /// profile-service `ALLOWED_SESSION_FILES` allowlist (excluding
+    /// `patient_handout.txt` which has a typed route). When either side
+    /// adds or removes a file, both must change in lock-step or sync
+    /// silently drops the file.
+    #[test]
+    fn test_synced_aux_files_matches_profile_service_allowlist() {
+        assert_eq!(
+            ServerSyncContext::SYNCED_AUX_FILES,
+            &[
+                "pipeline_log.jsonl",
+                "replay_bundle.json",
+                "segments.jsonl",
+                "billing.json",
+                "clinician_notes.json",
+                "patient_labels.json",
+            ][..]
+        );
     }
 }

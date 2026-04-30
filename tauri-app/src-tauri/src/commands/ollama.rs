@@ -140,6 +140,49 @@ pub async fn prewarm_ollama_model(
     client.prewarm_model(&models.fast_model).await.map_err(|e| CommandError::Network(e))
 }
 
+/// Resolve the per-patient summary for a multi-patient SOAP regen.
+///
+/// Local-first via [`local_archive::lookup_patient_summary`] which returns
+/// a 3-state result: only `FileMissing` triggers a server fetch (saves a
+/// round-trip when the local file exists but the requested label isn't in
+/// it — server has the same data).
+async fn resolve_patient_summary(
+    session_id: Option<&str>,
+    session_date: Option<&str>,
+    label: &str,
+    profile_client: &crate::commands::physicians::SharedProfileClient,
+    active_physician: &crate::commands::physicians::SharedActivePhysician,
+) -> Option<String> {
+    let sid = session_id?;
+    let dt = session_date
+        .and_then(|d| crate::commands::parse_date(d).ok())
+        .unwrap_or_else(chrono::Utc::now);
+
+    use crate::local_archive::PatientSummaryLookup;
+    match crate::local_archive::lookup_patient_summary(sid, &dt, label) {
+        PatientSummaryLookup::Found(s) => return Some(s),
+        PatientSummaryLookup::LabelNotFound => return None,
+        PatientSummaryLookup::FileMissing => {}
+    }
+
+    let phys_id = active_physician.read().await.as_ref().map(|p| p.id.clone())?;
+    let pc = profile_client.read().await.clone()?;
+    match pc.download_session_file(&phys_id, sid, "patient_labels.json").await {
+        Ok(Some(bytes)) => {
+            let result = crate::local_archive::lookup_patient_summary_from_bytes(&bytes, label);
+            if result.is_some() {
+                info!("Cross-machine patient summary lookup succeeded for session {} patient {:?}", sid, label);
+            }
+            result
+        }
+        Ok(None) => None,
+        Err(e) => {
+            warn!("Cross-machine patient_labels.json download failed for session {}: {}", sid, e);
+            None
+        }
+    }
+}
+
 /// Generate a SOAP note from the given transcript
 ///
 /// # Arguments
@@ -147,6 +190,11 @@ pub async fn prewarm_ollama_model(
 /// * `audio_events` - Optional audio events (coughs, laughs, etc.) detected during recording
 /// * `options` - Optional SOAP generation options (detail level, format, custom instructions)
 /// * `session_id` - Optional session ID for debug storage correlation
+/// * `session_date` - Optional session date in `YYYY-MM-DD` format. Used (with `session_id` +
+///   `patient_label`) to look up the per-patient summary from `patient_labels.json` when
+///   regenerating SOAP for a multi-patient session. When omitted, falls back to today's
+///   date — that works for same-day regens (the common case) but not for older sessions.
+///   Class 5 follow-up from the 2026-04-29 forensic review.
 /// * `speaker_context` - Optional speaker identification context for better SOAP generation
 /// * `patient_label` - Optional patient label to scope the note to a single patient in a
 ///   multi-patient transcript (used when regenerating SOAP for a flattened sidebar entry)
@@ -156,17 +204,26 @@ pub async fn generate_soap_note(
     audio_events: Option<Vec<AudioEvent>>,
     options: Option<SoapOptions>,
     session_id: Option<String>,
+    session_date: Option<String>,
     speaker_context: Option<Vec<SpeakerInfo>>,
     patient_label: Option<String>,
     model_override: Option<String>,
     server_config: tauri::State<'_, SharedServerConfig>,
+    // 2026-04-29 follow-up #3 (cross-machine sync): when the local
+    // patient_labels.json is missing (regen of an older or cross-room
+    // multi-patient session), the IPC falls back to downloading via the
+    // profile service. These two states are wired through tauri's State
+    // injection — see lib.rs setup.
+    profile_client: tauri::State<'_, crate::commands::physicians::SharedProfileClient>,
+    active_physician: tauri::State<'_, crate::commands::physicians::SharedActivePhysician>,
 ) -> Result<SoapNote, CommandError> {
     info!(
-        "Generating SOAP note for transcript of {} chars, {} audio events, {} speakers, patient_label: {:?}, model_override: {:?}, options: {:?}",
+        "Generating SOAP note for transcript of {} chars, {} audio events, {} speakers, patient_label: {:?}, session_date: {:?}, model_override: {:?}, options: {:?}",
         transcript.len(),
         audio_events.as_ref().map(|e| e.len()).unwrap_or(0),
         speaker_context.as_ref().map(|s| s.len()).unwrap_or(0),
         patient_label,
+        session_date,
         model_override,
         options
     );
@@ -193,12 +250,25 @@ pub async fn generate_soap_note(
     let selected_model = model_override.as_deref().unwrap_or(&models.soap_model);
     let start_time = std::time::Instant::now();
 
-    // When a patient_label is provided, scope the SOAP note to that patient only
+    // When a patient_label is provided, scope the SOAP note to that patient only.
+    // Class 5 fix: also fetch the per-patient summary from patient_labels.json
+    // so the regen prompt can disambiguate dominant-content cases (Slote
+    // mom+child, where regen otherwise defaulted both per-patient SOAPs to
+    // the adult's iron-deficiency content).
     let soap_result = if let Some(ref label) = patient_label {
+        let summary = resolve_patient_summary(
+            session_id.as_deref(),
+            session_date.as_deref(),
+            label,
+            &profile_client,
+            &active_physician,
+        )
+        .await;
         client.generate_single_patient_soap_note(
             selected_model,
             &transcript,
             label,
+            summary.as_deref(),
             audio_events.as_deref(),
             options.as_ref(),
             ctx.as_ref(),

@@ -3037,6 +3037,14 @@ body {
   color: #94a3b8;
 }
 
+/* Chart-stale "verify patient" badge — fires post-split when audio
+   greeting names didn't match the vision-derived chart name. */
+.badge.chart-stale-badge {
+  background: rgba(245, 158, 11, 0.15);
+  color: #b45309;
+  font-weight: 600;
+}
+
 .history-window .history-content {
   flex: 1;
   display: flex;
@@ -8011,6 +8019,52 @@ button.review-section-header-left:focus {
   flex-direction: column;
   gap: 8px;
 }
+
+/* Chart-stale "verify patient" banner — fires when vision sees ≥3 distinct
+   patient names in one encounter or when the audio greeting doesn't match
+   the EMR chart. Renders above other banners; clinician dismisses or it
+   auto-clears on encounter split. */
+.chart-stale-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 12px;
+  margin: 0 0 8px 0;
+  background: #fff7ed; /* light amber */
+  border: 1px solid #f59e0b;
+  border-radius: 6px;
+  color: #78350f;
+}
+.chart-stale-banner-icon {
+  font-size: 18px;
+  line-height: 1.2;
+  flex-shrink: 0;
+}
+.chart-stale-banner-body {
+  flex: 1;
+  min-width: 0;
+}
+.chart-stale-banner-title {
+  font-weight: 600;
+  font-size: 13px;
+  margin-bottom: 2px;
+}
+.chart-stale-banner-detail {
+  font-size: 12px;
+  line-height: 1.4;
+  color: #92400e;
+}
+.chart-stale-banner-dismiss {
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  font-size: 18px;
+  line-height: 1;
+  color: #92400e;
+  padding: 0 4px;
+  margin-left: 4px;
+}
+.chart-stale-banner-dismiss:hover { color: #78350f; }
 
 /* Sleep mode banner */
 .continuous-sleep-mode {

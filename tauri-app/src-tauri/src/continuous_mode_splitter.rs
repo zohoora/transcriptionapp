@@ -383,6 +383,58 @@ pub async fn split_encounter<C: RunContext>(
     }
     .emit_via(ctx);
 
+    // Class 3 cross-check: compare vision-derived patient name against
+    // greeting names parsed from the transcript. Two failure modes from
+    // 2026-04-29:
+    //   1. Catherine 2:35 — vision said Catherine, audio greeting was
+    //      "Hi Shirley" → Mismatch → emit chart_stale_suspected.
+    //   2. The (vision_unique_names ≥ 3) path is handled in
+    //      screenshot_task; here we cover the audio-mismatch case.
+    //
+    // We also stamp `chart_stale_suspected: true` onto the session
+    // metadata so the History view can surface a "verify patient" badge
+    // post-hoc. The vision majority is still applied as the patient_name
+    // (clinician will confirm or rename via the History action bar).
+    let audio_candidates = crate::patient_name_tracker::extract_greeting_name_candidates(
+        &encounter_text,
+        200,
+    );
+    let cross = crate::patient_name_tracker::cross_check_vision_vs_audio(
+        encounter_patient_name.as_deref(),
+        &audio_candidates,
+    );
+    if cross == crate::patient_name_tracker::NameCrossCheck::Mismatch {
+        warn!(
+            event = "chart_stale_audio_mismatch",
+            component = "continuous_mode_splitter",
+            session_id = %session_id,
+            vision_name = ?encounter_patient_name,
+            audio_candidates = ?audio_candidates,
+            "Vision-derived patient name does NOT match transcript greeting names"
+        );
+        ContinuousModeEvent::ChartStaleSuspected {
+            session_id: session_id.clone(),
+            reason: crate::continuous_mode_events::ChartStaleReason::AudioMismatch,
+            vision_name: encounter_patient_name.clone(),
+            vision_unique_names: tracker_snapshot.2.clone(),
+            audio_greeting_candidates: audio_candidates.clone(),
+        }
+        .emit_via(ctx);
+        // Stamp metadata so post-hoc views can surface the badge even
+        // after the live event has fled. Best-effort: failure doesn't
+        // block the split.
+        let split_date_str = ctx.now_utc().format("%Y-%m-%d").to_string();
+        if let Err(e) = crate::local_archive::mark_chart_stale_suspected(&session_id, &split_date_str) {
+            warn!(
+                event = "chart_stale_metadata_mark_failed",
+                component = "continuous_mode_splitter",
+                session_id = %session_id,
+                error = %e,
+                "Failed to stamp chart_stale_suspected on metadata; live event still emitted"
+            );
+        }
+    }
+
     info!(
         event = "splitter_complete",
         component = "continuous_mode_splitter",

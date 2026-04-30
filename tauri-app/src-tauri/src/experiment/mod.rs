@@ -17,6 +17,7 @@
 
 pub mod variant;
 pub mod labels;
+pub mod replay;
 pub mod report;
 pub mod runner;
 

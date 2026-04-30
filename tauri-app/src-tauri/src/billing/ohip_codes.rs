@@ -560,6 +560,58 @@ pub static OHIP_CODES: &[OhipCode] = &[
         after_hours_eligible: false,
         max_per_year: None,
     },
+    // ── Occipital nerve block codes (added 2026-04-29 forensic review,
+    //     Class 6: Irene's session needed these and the dropdown didn't
+    //     have them; user explicitly flagged G291 / G264 as missing).
+    //     Source: SOB 2026-03-27 (docs/billing/references/), under "Nerve
+    //     Block — Occipital nerve" — pp. ~G214 et seq.
+    //
+    //     G264 + G265 are the standard occipital block codes (first +
+    //     additional per spinal level). G291 + G292 are the IC-billed
+    //     codes for use ABOVE the per-year caps (G264 is capped at 16
+    //     first blocks per calendar year). The rule_engine should
+    //     prefer G264 / G265 unless a counter is exhausted (TODO:
+    //     follow-up enhancement).
+    OhipCode {
+        code: "G264A",
+        description: "Nerve Block \u{2014} Occipital, First Block (max 1/day, 16/year)",
+        ffs_rate_cents: 3410, // $34.10
+        basket: Basket::In,
+        shadow_pct: 30,
+        category: CodeCategory::Procedure,
+        after_hours_eligible: false,
+        max_per_year: Some(16),
+    },
+    OhipCode {
+        code: "G265A",
+        description: "Nerve Block \u{2014} Occipital, Each Additional (max 3/day, 48/year, with G264)",
+        ffs_rate_cents: 1710, // $17.10
+        basket: Basket::In,
+        shadow_pct: 30,
+        category: CodeCategory::Procedure,
+        after_hours_eligible: false,
+        max_per_year: Some(48),
+    },
+    OhipCode {
+        code: "G291A",
+        description: "Nerve Block \u{2014} Occipital, First Block in excess of G264 cap (IC-billed, max 1/day)",
+        ffs_rate_cents: 1985, // $19.85
+        basket: Basket::In,
+        shadow_pct: 30,
+        category: CodeCategory::Procedure,
+        after_hours_eligible: false,
+        max_per_year: None,
+    },
+    OhipCode {
+        code: "G292A",
+        description: "Nerve Block \u{2014} Occipital, Each Additional after G291 (max 3/day)",
+        ffs_rate_cents: 1000, // $10.00
+        basket: Basket::In,
+        shadow_pct: 30,
+        category: CodeCategory::Procedure,
+        after_hours_eligible: false,
+        max_per_year: None,
+    },
 
     // ── Cardiovascular (in-basket, 30% shadow, Procedure) ───────────────
     OhipCode {
@@ -2470,8 +2522,21 @@ mod tests {
 
     #[test]
     fn test_code_count() {
-        // 235 codes from April 2026 SOB (145 in-basket + 90 out-of-basket)
-        assert_eq!(all_codes().len(), 235);
+        // 239 codes — April 2026 SOB (145 in-basket + 90 out-of-basket = 235)
+        // plus the 4 occipital nerve block codes added 2026-04-29 (Class 6
+        // forensic review — Irene's session): G264A, G265A, G291A, G292A.
+        assert_eq!(all_codes().len(), 239);
+    }
+
+    #[test]
+    fn test_occipital_nerve_block_codes_present() {
+        // Class 6 fix from 2026-04-29 forensic review: user explicitly
+        // flagged that G291 / G264 weren't in the dropdown; confirmed in
+        // SOB 2026-03-27 PDF that they exist as occipital-specific codes.
+        let codes: Vec<&str> = all_codes().iter().map(|c| c.code).collect();
+        for code in &["G264A", "G265A", "G291A", "G292A"] {
+            assert!(codes.contains(code), "Missing occipital code: {}", code);
+        }
     }
 
     #[test]
@@ -2584,12 +2649,15 @@ mod tests {
     fn test_ohip_code_count() {
         let in_basket = all_codes().iter().filter(|c| c.basket == Basket::In).count();
         let out_basket = all_codes().iter().filter(|c| c.basket == Basket::Out).count();
+        // 239 = 235 (Apr 2026 SOB baseline: 145 in-basket + 90 out-of-basket)
+        // + 4 occipital nerve block codes added 2026-04-29 (G264A/G265A/G291A/G292A,
+        // all in-basket per SOB pricing).
         assert_eq!(
             all_codes().len(),
-            235,
+            239,
             "OHIP code count changed — update the file header comment and this test"
         );
-        assert_eq!(in_basket, 145, "In-basket count changed — update the file header comment");
+        assert_eq!(in_basket, 149, "In-basket count changed — update the file header comment");
         assert_eq!(out_basket, 90, "Out-of-basket count changed — update the file header comment");
     }
 
