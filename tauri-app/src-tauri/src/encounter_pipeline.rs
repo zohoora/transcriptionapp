@@ -1448,6 +1448,66 @@ mod tests {
     use super::*;
     use crate::continuous_mode_events::ContinuousModeEvent;
 
+    // ====== 2026-04-30 forensic review validation tests ======
+
+    #[test]
+    fn class_d_2026_04_30_karin_empty_soap_not_substantive() {
+        let soap = "S:\n• Not documented\n\n\
+                    O:\n• Not documented\n\n\
+                    A:\n• Not documented\n\n\
+                    P:\n• Not documented";
+        assert!(!is_substantive_soap(soap));
+    }
+
+    #[test]
+    fn class_d_2026_04_30_real_soap_is_substantive() {
+        let soap = "S:\n• Patient reports knee pain\n\n\
+                    O:\n• Not documented\n\n\
+                    A:\n• Bilateral knee OA\n\n\
+                    P:\n• Scheduled blood draw for PRP";
+        assert!(is_substantive_soap(soap));
+    }
+
+    #[test]
+    fn class_d_2026_04_30_procedure_section_counts_as_substantive() {
+        let soap = "S:\n• Not documented\n\n\
+                    O:\n• Not documented\n\n\
+                    A:\n• Knee OA\n\n\
+                    P:\n• Not documented\n\n\
+                    Procedure:\n• Administered cortisone knee injection";
+        assert!(is_substantive_soap(soap));
+    }
+
+    #[test]
+    fn class_i_2026_04_30_james_p_hold_off_with_procedure_performed() {
+        let soap = "S:\n• Pain\n\n\
+                    O:\n• Exam\n\n\
+                    A:\n• Radiculopathy\n\n\
+                    P:\n• Hold off on further injections at this time\n• Monitor symptoms\n\
+                    Procedure:\n• Performed injection at left-sided painful spot";
+        assert!(detect_soap_p_procedure_contradiction(soap));
+    }
+
+    #[test]
+    fn class_i_2026_04_30_consistent_p_procedure_no_flag() {
+        let soap = "S:\n• Pain\n\n\
+                    A:\n• OA\n\n\
+                    P:\n• Continue management\n\
+                    Procedure:\n• Administered knee injection";
+        assert!(!detect_soap_p_procedure_contradiction(soap));
+    }
+
+    #[test]
+    fn class_i_2026_04_30_unrelated_hold_off_no_flag() {
+        let soap = "S:\n• Pain\n\n\
+                    A:\n• OA\n\n\
+                    P:\n• Hold off on the medication change\n• Schedule follow-up\n\
+                    Procedure:\n• Administered cortisone knee injection";
+        assert!(!detect_soap_p_procedure_contradiction(soap));
+    }
+
+    // ====== end 2026-04-30 validation tests ======
+
     // ── Helper: write a minimal ArchiveMetadata JSON to a temp dir ──
 
     fn write_metadata(dir: &std::path::Path, metadata: &local_archive::ArchiveMetadata) {

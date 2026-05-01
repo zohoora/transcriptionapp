@@ -207,6 +207,64 @@ fn names_match_loose(a: &str, b: &str) -> bool {
 mod tests {
     use super::*;
 
+    fn merged_true() -> MergeCheckResult {
+        MergeCheckResult { same_encounter: true, reason: Some("test".into()) }
+    }
+
+    #[test]
+    fn class_a_2026_04_30_dob_mismatch_blocks_merge() {
+        let (result, block) = apply_identity_hard_block(
+            &merged_true(),
+            MergePatientIdentity { name: Some("Linda Guest"), dob: Some("1951-04-18") },
+            MergePatientIdentity { name: Some("Rashida Hafiz-zadeh"), dob: Some("1968-07-22") },
+        );
+        assert!(!result.same_encounter);
+        assert!(matches!(block, IdentityHardBlock::DobMismatch { .. }));
+    }
+
+    #[test]
+    fn class_a_2026_04_30_name_only_mismatch_blocks_merge() {
+        let (result, block) = apply_identity_hard_block(
+            &merged_true(),
+            MergePatientIdentity { name: Some("Linda Guest"), dob: None },
+            MergePatientIdentity { name: Some("Rashida Hafiz-zadeh"), dob: None },
+        );
+        assert!(!result.same_encounter);
+        assert!(matches!(block, IdentityHardBlock::NameMismatch { .. }));
+    }
+
+    #[test]
+    fn class_a_2026_04_30_same_patient_preserves_merge() {
+        let (result, block) = apply_identity_hard_block(
+            &merged_true(),
+            MergePatientIdentity { name: Some("Linda Guest"), dob: Some("1951-04-18") },
+            MergePatientIdentity { name: Some("Linda Guest"), dob: Some("1951-04-18") },
+        );
+        assert!(result.same_encounter);
+        assert_eq!(block, IdentityHardBlock::Pass);
+    }
+
+    #[test]
+    fn class_a_2026_04_30_no_identity_preserves_llm_verdict() {
+        let (result, _) = apply_identity_hard_block(
+            &merged_true(),
+            MergePatientIdentity::default(),
+            MergePatientIdentity::default(),
+        );
+        assert!(result.same_encounter);
+    }
+
+    #[test]
+    fn class_a_2026_04_30_dob_wins_over_name_match() {
+        let (result, block) = apply_identity_hard_block(
+            &merged_true(),
+            MergePatientIdentity { name: Some("John Smith"), dob: Some("1960-01-01") },
+            MergePatientIdentity { name: Some("John Smith"), dob: Some("1985-06-15") },
+        );
+        assert!(!result.same_encounter);
+        assert!(matches!(block, IdentityHardBlock::DobMismatch { .. }));
+    }
+
     #[test]
     fn test_parse_merge_check_with_think_tags() {
         let response = r#"<think>reasoning here</think> {"same_encounter": true, "reason": "same patient"}"#;

@@ -1325,6 +1325,121 @@ mod tests {
     }
     // ====== end Class 2 fix tests ======
 
+    // ====== 2026-04-30 forensic review validation tests (re-applied) ======
+
+    #[test]
+    fn dx_2026_04_30_radiculopathy_accepts_lumbago() {
+        // James Dollery + Linda Guest: "radiculopathy" must match 724 (lumbago).
+        assert!(dx_description_matches_primary(
+            "Recurrent left-sided radiculopathy with recent exacerbation",
+            "Lumbar strain, lumbago, coccydynia, sciatica"
+        ));
+    }
+
+    #[test]
+    fn dx_2026_04_30_peroneal_accepts_neuritis() {
+        // Carl Grieve: "peroneal nerve entrapment" must match 356 (neuritis).
+        assert!(dx_description_matches_primary(
+            "Left peroneal nerve entrapment or irritation suspected at fibular head",
+            "Idiopathic peripheral neuritis"
+        ));
+    }
+
+    #[test]
+    fn dx_2026_04_30_no_diagnosis_documented_text_match_returns_none() {
+        // Karin Smit: empty SOAP must not substring-match into 311.
+        let result = crate::billing::diagnostic_codes::match_diagnosis_text(
+            "No diagnosis documented"
+        );
+        assert!(result.is_none(), "got: {:?}", result.map(|d| (d.code, d.description)));
+    }
+
+    #[test]
+    fn dx_2026_04_30_joanne_prp_ra_does_not_match_bedsore() {
+        // PRP+chronic-pain + RA must not land on 707 (bedsore).
+        let result = crate::billing::diagnostic_codes::match_diagnosis_text(
+            "Worsening chronic pain post-PRP therapy with rheumatoid arthritis"
+        );
+        let code = result.map(|d| d.code);
+        assert_ne!(code, Some("707"));
+    }
+
+    #[test]
+    fn class_f_2026_04_30_nerve_block_suppresses_im_injection() {
+        use crate::billing::clinical_features::ProcedureType;
+        let mut features = default_features();
+        features.procedures = vec![
+            ProcedureType::NerveBlockPeripheral,
+            ProcedureType::ImInjectionWithVisit,
+        ];
+        let record = map_features_to_billing(&features, "s1", "2026-04-30", 1_200_000, None, None);
+        let codes: Vec<&str> = record.codes.iter().map(|c| c.code.as_str()).collect();
+        assert!(codes.contains(&"G231A"));
+        assert!(!codes.contains(&"G372A"), "G372A must be suppressed; got {:?}", codes);
+    }
+
+    #[test]
+    fn class_g_2026_04_30_deanna_k005_scales_with_71min() {
+        use crate::billing::clinical_features::{ConditionType, VisitType};
+        let mut features = default_features();
+        features.visit_type = VisitType::GeneralReassessment;
+        features.conditions = vec![ConditionType::PrimaryMentalHealth];
+        features.condition_evidence.insert(
+            "primary_mental_health".to_string(),
+            "anxiety counselling and anger management".to_string(),
+        );
+        let record = map_features_to_billing(&features, "s1", "2026-04-30", 71 * 60_000, None, None);
+        let k005 = record.codes.iter().find(|c| c.code == "K005A").expect("K005A");
+        assert_eq!(k005.quantity, 2, "71-min visit must produce K005A qty=2");
+    }
+
+    #[test]
+    fn class_h_2026_04_30_karen_no_mental_health_drops_k005() {
+        use crate::billing::clinical_features::ConditionType;
+        let karen_soap = "S: cervical pain. A: cervical radiculopathy, MS. P: refer immunology.";
+        let (kept, _) = condition_keyword_guard(&[ConditionType::PrimaryMentalHealth], karen_soap);
+        assert!(kept.is_empty(), "PrimaryMentalHealth must be DROPPED on non-MH SOAP");
+    }
+
+    #[test]
+    fn class_h_2026_04_30_joanne_ra_drops_k037() {
+        use crate::billing::clinical_features::ConditionType;
+        let joanne_soap = "A: Worsening chronic pain post-PRP. Rheumatoid Arthritis with heat-sensitive symptoms.";
+        let (kept, _) = condition_keyword_guard(&[ConditionType::FibromyalgiaCare], joanne_soap);
+        assert!(kept.is_empty(), "FibromyalgiaCare must be DROPPED for RA-only SOAP");
+    }
+
+    #[test]
+    fn class_e_2026_04_30_karen_neck_injection_compound_fires() {
+        use crate::billing::clinical_features::{augment_procedures_from_soap_text, ProcedureType};
+        let mut features = default_features();
+        let added = augment_procedures_from_soap_text(
+            &mut features,
+            "• Administered injection to right side of neck"
+        );
+        assert!(added > 0);
+        assert!(
+            features.procedures.contains(&ProcedureType::NerveBlockPeripheral)
+                || features.procedures.contains(&ProcedureType::JointInjection),
+            "neck-injection compound rule must fire; got {:?}",
+            features.procedures
+        );
+    }
+
+    #[test]
+    fn class_e_2026_04_30_linda_epidural_augments() {
+        use crate::billing::clinical_features::{augment_procedures_from_soap_text, ProcedureType};
+        let mut features = default_features();
+        let added = augment_procedures_from_soap_text(
+            &mut features,
+            "• Performed PRP injection at L5-S1 level (epidural)"
+        );
+        assert!(added > 0);
+        assert!(features.procedures.contains(&ProcedureType::NerveBlockParavertebral));
+    }
+
+    // ====== end 2026-04-30 validation tests ======
+
     #[test]
     fn test_minor_assessment_mapping() {
         let features = default_features();
