@@ -24,7 +24,7 @@ use std::process::ExitCode;
 use serde::Deserialize;
 
 use transcription_app_lib::billing::clinical_features::{
-    augment_procedures_from_soap_text, parse_billing_extraction, ClinicalFeatures,
+    parse_billing_extraction, ClinicalFeatures,
 };
 use transcription_app_lib::billing::rule_engine::{
     condition_keyword_guard, map_features_to_billing_with_tools_model, RuleEngineContext,
@@ -178,22 +178,30 @@ async fn main() -> ExitCode {
         let (kept, _) = condition_keyword_guard(&features.conditions, soap_text);
         features.conditions = kept;
 
-        // 2026-04-30 Class E: production runs augment_procedures_from_soap_text
-        // in extract_and_archive_billing on the rendered SOAP procedure section.
-        // Mirror that here so Class E patches are exercised in replay.
-        // Extract Procedure section from the raw SOAP JSON's procedure[] field.
+        // 2026-04-30 Class E: post-refactor, augment is now invoked INSIDE
+        // map_features_to_billing_with_tools_model when ctx provides
+        // soap_procedure_text. We pass the SOAP procedure text via ctx and
+        // the rule engine handles augment internally.
         let soap_proc_text = extract_soap_procedure_section_text(soap_text);
-        let _augmented = augment_procedures_from_soap_text(&mut features, &soap_proc_text);
 
         // Synthesize a ResolvedDiagnostic from the archived diagnostic_tools_model
         // step output if present (this is what production passes to Stage 0).
         let tools_resolved: Option<ResolvedDiagnostic> = extract_tools_model(&bundle);
 
-        // Build a context (transcript-aware procedure validation)
-        let transcript = String::new(); // we don't replay transcripts here — keep validate-allow
+        // 2026-04-30 replay-gap-1 fix: pass the archived transcript so
+        // validate_procedure_evidence runs (mirrors production behavior).
+        let transcript = fetcher
+            .fetch_session(&label.session_id, &label.date)
+            .await
+            .ok()
+            .and_then(|d| d.transcript)
+            .unwrap_or_default();
         let mut ctx = RuleEngineContext::default();
         if !transcript.is_empty() {
             ctx.transcript = Some(transcript);
+        }
+        if !soap_proc_text.is_empty() {
+            ctx.soap_procedure_text = Some(soap_proc_text);
         }
 
         // Synthetic 25-min duration; only matters for K005-style codes

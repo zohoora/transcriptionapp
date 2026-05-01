@@ -522,8 +522,23 @@ pub fn augment_procedures_from_soap_text(
     features: &mut ClinicalFeatures,
     soap_procedure_text: &str,
 ) -> usize {
+    augment_procedures_from_soap_text_tracked(features, soap_procedure_text).len()
+}
+
+/// 2026-04-30 architecture-gap fix: same as `augment_procedures_from_soap_text`
+/// but returns the LIST of all SOAP-grounded ProcedureTypes — both
+/// newly-added by augment AND LLM-extracted procedures that the SOAP
+/// procedure section corroborates. Used by the rule engine to bypass the
+/// past-tense transcript validator for SOAP-grounded procedures (the SOAP
+/// procedure section's explicit listing IS sufficient evidence — many real
+/// injections happen with silent doctor narration: Karen White, Frederick
+/// Moore on 2026-04-30).
+pub fn augment_procedures_from_soap_text_tracked(
+    features: &mut ClinicalFeatures,
+    soap_procedure_text: &str,
+) -> Vec<ProcedureType> {
     if soap_procedure_text.trim().is_empty() {
-        return 0;
+        return Vec::new();
     }
     let lower = soap_procedure_text.to_lowercase();
 
@@ -580,16 +595,28 @@ pub fn augment_procedures_from_soap_text(
         ("tonometry", ProcedureType::Tonometry),
     ];
 
-    let mut added = 0;
+    // Track ALL procedures grounded by the SOAP procedure section — both
+    // new additions AND LLM-extracted procedures whose signal appears
+    // here. The latter case (Frederick Moore: LLM extracted joint_injection
+    // AND SOAP says "Administered knee injection" → signal "knee injection"
+    // matches) is the soap-corroboration path: bypass past-tense transcript
+    // validation.
+    let mut added: Vec<ProcedureType> = Vec::new();
     for (signal, proc_type) in signals {
-        if lower.contains(signal) && !features.procedures.contains(proc_type) {
-            tracing::warn!(
-                "Class 6 safety net: augmenting procedures with {:?} (signal: {:?}) — \
-                 LLM extraction missed it but the SOAP procedure section indicates it was performed",
-                proc_type, signal
-            );
-            features.procedures.push(proc_type.clone());
-            added += 1;
+        if lower.contains(signal) {
+            if !features.procedures.contains(proc_type) {
+                tracing::warn!(
+                    "Class 6 safety net: augmenting procedures with {:?} (signal: {:?}) — \
+                     LLM extraction missed it but the SOAP procedure section indicates it was performed",
+                    proc_type, signal
+                );
+                features.procedures.push(proc_type.clone());
+            }
+            // Always mark as soap_grounded if signal matches (covers
+            // both newly-augmented and LLM-extracted-then-corroborated).
+            if !added.contains(proc_type) {
+                added.push(proc_type.clone());
+            }
         }
     }
 
@@ -612,14 +639,17 @@ pub fn augment_procedures_from_soap_text(
         (&["performed", "injection"], ProcedureType::JointInjection),
     ];
     for (kwds, proc_type) in compound_signals {
-        if features.procedures.contains(proc_type) { continue; }
         if kwds.iter().all(|kw| lower.contains(kw)) {
-            tracing::warn!(
-                "Class 6 compound safety net: augmenting procedures with {:?} (all of {:?})",
-                proc_type, kwds
-            );
-            features.procedures.push(proc_type.clone());
-            added += 1;
+            if !features.procedures.contains(proc_type) {
+                tracing::warn!(
+                    "Class 6 compound safety net: augmenting procedures with {:?} (all of {:?})",
+                    proc_type, kwds
+                );
+                features.procedures.push(proc_type.clone());
+            }
+            if !added.contains(proc_type) {
+                added.push(proc_type.clone());
+            }
         }
     }
     added

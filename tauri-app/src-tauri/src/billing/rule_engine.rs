@@ -77,11 +77,19 @@ pub fn map_features_to_billing_with_tools_model(
     // SOAP procedure text. Previously this was caller-side only — any
     // caller using `map_features_to_billing_with_tools_model` directly
     // bypassed the safety net.
+    //
+    // Track WHICH procedures were added by augment so they can bypass the
+    // past-tense transcript validator (`validate_procedure_evidence`). The
+    // SOAP procedure section's explicit listing IS sufficient evidence —
+    // many real injections happen with silent doctor narration (Karen White
+    // and Frederick Moore on 2026-04-30 both had injections documented in
+    // SOAP but no past-tense action language in transcript).
     let mut features_owned;
+    let mut soap_grounded: Vec<ProcedureType> = Vec::new();
     let features: &ClinicalFeatures = if let Some(proc_text) = ctx.soap_procedure_text.as_deref() {
         if !proc_text.trim().is_empty() {
             features_owned = features.clone();
-            let _added = augment_procedures_from_soap_text(&mut features_owned, proc_text);
+            soap_grounded = augment_procedures_from_soap_text_tracked(&mut features_owned, proc_text);
             &features_owned
         } else {
             features
@@ -159,9 +167,17 @@ pub fn map_features_to_billing_with_tools_model(
         if has_nerve_block && matches!(proc, ProcedureType::ImInjectionWithVisit) {
             continue;
         }
-        if let Some(ts) = ctx.transcript.as_deref() {
-            if !validate_procedure_evidence(proc, ts) {
-                continue;
+        // 2026-04-30 architecture-gap fix: skip past-tense transcript
+        // validation when this procedure was added via the SOAP-grounded
+        // augment path. The SOAP procedure section's explicit documentation
+        // is itself authoritative (silent-narration injections still
+        // happen and are billable).
+        let soap_grounded_proc = soap_grounded.contains(proc);
+        if !soap_grounded_proc {
+            if let Some(ts) = ctx.transcript.as_deref() {
+                if !validate_procedure_evidence(proc, ts) {
+                    continue;
+                }
             }
         }
         let proc_code = procedure_type_to_code(proc, billing_data);
