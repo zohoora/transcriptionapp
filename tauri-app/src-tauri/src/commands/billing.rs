@@ -228,6 +228,7 @@ pub async fn extract_billing_codes(
         is_hospital: context.as_ref().map_or(false, |c| c.is_hospital),
         counselling_exhausted: context.as_ref().map_or(config.billing_counselling_exhausted, |c| c.counselling_exhausted),
         transcript: Some(transcript.to_string()),
+        soap_procedure_text: None,
     };
 
     let sc = server_config.read().await;

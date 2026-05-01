@@ -19,6 +19,14 @@ pub struct RuleEngineContext {
     /// `validate_condition_evidence` pattern. When `None`, validation is
     /// skipped (backward compat).
     pub transcript: Option<String>,
+    /// 2026-04-30 architecture-gap fix: optional SOAP Procedure-section text.
+    /// When provided, the rule engine runs `augment_procedures_from_soap_text`
+    /// internally before mapping procedures, ensuring the safety net fires
+    /// regardless of caller convention. Previously this was caller-side in
+    /// `extract_and_archive_billing` only — replay/experiment tools that
+    /// invoked `map_features_to_billing_with_tools_model` directly bypassed
+    /// the augment layer.
+    pub soap_procedure_text: Option<String>,
 }
 
 /// Map extracted clinical features to a draft billing record with OHIP codes.
@@ -64,6 +72,24 @@ pub fn map_features_to_billing_with_tools_model(
     billing_data: BillingDataRef<'_>,
     tools_model_resolved: Option<&ResolvedDiagnostic>,
 ) -> BillingRecord {
+    // 2026-04-30 architecture-gap fix: clone features so we can run
+    // `augment_procedures_from_soap_text` internally when ctx provides the
+    // SOAP procedure text. Previously this was caller-side only — any
+    // caller using `map_features_to_billing_with_tools_model` directly
+    // bypassed the safety net.
+    let mut features_owned;
+    let features: &ClinicalFeatures = if let Some(proc_text) = ctx.soap_procedure_text.as_deref() {
+        if !proc_text.trim().is_empty() {
+            features_owned = features.clone();
+            let _added = augment_procedures_from_soap_text(&mut features_owned, proc_text);
+            &features_owned
+        } else {
+            features
+        }
+    } else {
+        features
+    };
+
     let mut codes: Vec<BillingCode> = Vec::new();
 
     // 1. Visit type -> assessment code
@@ -969,6 +995,58 @@ const DX_SYNONYMS: &[(&str, &str)] = &[
     ("rheumatoid", "rheumatoid arthritis"),
 ];
 
+/// 2026-04-30 architecture-gap fix: detect OBVIOUS clinical-category
+/// mismatch between a primary diagnosis text and a candidate dx code's
+/// description. Used by Stage 1 high-confidence trust path to reject
+/// the LLM's clearly-wrong suggestions WITHOUT being so strict that it
+/// rejects acceptable variations.
+///
+/// Returns true ONLY when:
+///   - primary diagnosis contains a clear musculoskeletal anchor
+///     (radiculopathy, sciatica, arthritis, joint, back pain) AND
+///     description contains a clearly-different category anchor
+///     (respiratory, cardiac, mental, gastrointestinal, dermatologic, etc.).
+/// Designed to be FALSE for edge cases — fail-open preserves Stage 1 trust
+/// for the 90%+ of cases where the LLM is correct.
+pub(crate) fn dx_obvious_category_mismatch(
+    primary_diagnosis: &str,
+    dc_description: &str,
+) -> bool {
+    let p = primary_diagnosis.to_lowercase();
+    let d = dc_description.to_lowercase();
+    // Musculoskeletal anchors in primary
+    let primary_msk = p.contains("radiculopathy")
+        || p.contains("sciatic")
+        || p.contains("musculoskeletal")
+        || p.contains("arthriti")
+        || p.contains("joint pain")
+        || p.contains("back pain")
+        || p.contains("neck pain")
+        || p.contains("fibromyalgia")
+        || p.contains("nerve entrapment")
+        || p.contains("peroneal");
+    // Description in clearly-orthogonal categories
+    let desc_orthogonal = d.contains("respiratory")
+        || d.contains("bronch")
+        || d.contains("asthma")
+        || d.contains("pneumonia")
+        || d.contains("cardiac")
+        || d.contains("hypertensive")
+        || d.contains("decubitus")
+        || d.contains("bed sore")
+        || d.contains("acne")
+        || d.contains("eczema")
+        || d.contains("intestinal")
+        || d.contains("gastritis");
+    // Fibrositis is orthogonal-to-radiculopathy specifically (James Dollery
+    // case: 729 fibrositis-for-radiculopathy was the false-positive guard
+    // case). Don't apply this rule when primary mentions fibrositis itself.
+    let fibrositis_radic_mismatch = p.contains("radiculopathy")
+        && !p.contains("fibrosit") && !p.contains("muscular")
+        && (d.contains("fibrosit") || d.contains("myositi"));
+    primary_msk && desc_orthogonal || fibrositis_radic_mismatch
+}
+
 /// Cross-validate a tools-model-suggested OHIP diagnostic code's description
 /// against the primary diagnosis. Returns true if the two are plausibly
 /// related — at least one significant shared token OR a known synonym hit.
@@ -1122,13 +1200,34 @@ fn resolve_diagnostic_code(
     //     to Stage 2 text match. (A low-confidence LLM output is noise.)
     //
     // Skipped entirely when Stage 0 already set a diagnostic via tools-model.
+    //
+    // 2026-04-30 architecture-gap REFINED: previously Stage 1 was UNGUARDED
+    // for high-confidence LLM suggestions (conf >= 0.90). I tried adding the
+    // same `dx_description_matches_primary` cross-validation as Stage 0 but
+    // it was too aggressive — closed 1 case (James 729) but opened 5 new
+    // mismatches in the Apr 27/29 corpus (the LLM's mid-confidence + age-veto
+    // cases were correctly resolved by trust). Compromise: keep high-confidence
+    // trust, but add an EXPLICIT-CONTRADICTION check (description contains
+    // a category that's clearly orthogonal to primary diagnosis — e.g.
+    // "respiratory" code for "musculoskeletal" primary).
     if record.diagnostic_code.is_none() {
     if let Some(ref suggested) = features.suggested_diagnostic_code {
         if let Some(dc) = diagnostic_codes::get_diagnostic_code(suggested.trim()) {
             let conf = features.confidence;
             if conf >= DX_TRUST_CONFIDENCE {
-                // High-confidence path: trust the LLM.
-                set_diagnostic(record, dc);
+                // High-confidence path: trust the LLM UNLESS the description
+                // is in an orthogonal clinical category from the primary
+                // diagnosis (catches James 729 fibrositis-for-radiculopathy
+                // and similar without rejecting the LLM's correct cases).
+                let primary = features.primary_diagnosis.as_deref().unwrap_or("");
+                if dx_obvious_category_mismatch(primary, dc.description) {
+                    tracing::warn!(
+                        "Stage 1 LLM suggestion REJECTED (category mismatch): code={} (\"{}\") clearly orthogonal to primary_diagnosis=\"{}\"",
+                        dc.code, dc.description, primary
+                    );
+                } else {
+                    set_diagnostic(record, dc);
+                }
             } else if conf >= DX_MIN_CONSIDER {
                 // Mid-confidence path: keep the literal-word cross-validation guardrail.
                 let cross_valid = match features.primary_diagnosis.as_ref() {

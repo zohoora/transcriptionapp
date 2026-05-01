@@ -1326,13 +1326,13 @@ impl LLMClient {
     ) -> MultiPatientDetectionOutcome {
         use crate::encounter_detection::{
             MULTI_PATIENT_DETECT_PROMPT, MULTI_PATIENT_DETECT_MIN_CONFIDENCE,
-            parse_multi_patient_detection,
+            MULTI_PATIENT_DETECT_TIMEOUT_SECS, parse_multi_patient_detection,
         };
 
         let mp_user = format!("Transcript (segments numbered with speaker labels):\n{}", transcript);
         let start = std::time::Instant::now();
         let result = tokio::time::timeout(
-            tokio::time::Duration::from_secs(30),
+            tokio::time::Duration::from_secs(MULTI_PATIENT_DETECT_TIMEOUT_SECS),
             self.generate(fast_model, MULTI_PATIENT_DETECT_PROMPT, &mp_user, "multi_patient_detect"),
         ).await;
         let latency_ms = start.elapsed().as_millis() as u64;
@@ -1361,8 +1361,8 @@ impl LLMClient {
                 (None, None, false, Some(e.to_string()))
             }
             Err(_) => {
-                warn!("Multi-patient detection timed out");
-                (None, None, false, Some("Timeout after 30s".to_string()))
+                warn!("Multi-patient detection timed out after {}s", MULTI_PATIENT_DETECT_TIMEOUT_SECS);
+                (None, None, false, Some(format!("Timeout after {}s", MULTI_PATIENT_DETECT_TIMEOUT_SECS)))
             }
         };
 
@@ -1393,13 +1393,16 @@ impl LLMClient {
         formatted_transcript: &str,
         templates: Option<&crate::server_config::PromptTemplates>,
     ) -> MultiPatientSplitOutcome {
-        use crate::encounter_detection::{multi_patient_split_prompt, parse_multi_patient_split};
+        use crate::encounter_detection::{
+            multi_patient_split_prompt, parse_multi_patient_split,
+            MULTI_PATIENT_DETECT_TIMEOUT_SECS,
+        };
 
         let system = multi_patient_split_prompt(templates);
         let user = format!("Transcript:\n{}", formatted_transcript);
         let start = std::time::Instant::now();
         let result = tokio::time::timeout(
-            tokio::time::Duration::from_secs(30),
+            tokio::time::Duration::from_secs(MULTI_PATIENT_DETECT_TIMEOUT_SECS),
             self.generate(fast_model, &system, &user, "multi_patient_split"),
         )
         .await;

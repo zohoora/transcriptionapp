@@ -126,144 +126,25 @@ pub fn parse_merge_check(response: &str) -> Result<MergeCheckResult, String> {
     parse_llm_json_response(response, "{\"same_encounter\"", "merge check")
 }
 
-/// 2026-04-30 Class A: encounter identity for the merge hard-block.
-#[derive(Debug, Clone, Copy, Default)]
-pub struct MergePatientIdentity<'a> {
-    pub name: Option<&'a str>,
-    pub dob: Option<&'a str>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum IdentityHardBlock {
-    Pass,
-    DobMismatch { prev: String, curr: String },
-    NameMismatch { prev: String, curr: String },
-}
-
-/// Post-LLM hard-block: when prev/curr DOBs (or names) clearly differ,
-/// override the LLM verdict and refuse the merge. Linda+Rashida bdb55313
-/// false-merge would have been prevented by the DOB check.
-pub fn apply_identity_hard_block(
-    llm_verdict: &MergeCheckResult,
-    prev: MergePatientIdentity,
-    curr: MergePatientIdentity,
-) -> (MergeCheckResult, IdentityHardBlock) {
-    if let (Some(p), Some(c)) = (prev.dob, curr.dob) {
-        let p = p.trim();
-        let c = c.trim();
-        if !p.is_empty() && !c.is_empty() && p != c {
-            let block = IdentityHardBlock::DobMismatch {
-                prev: p.to_string(), curr: c.to_string(),
-            };
-            return (
-                MergeCheckResult {
-                    same_encounter: false,
-                    reason: Some(format!(
-                        "DOB hard-block: prev DOB={} ≠ curr DOB={}; LLM verdict ({}) overridden",
-                        p, c, llm_verdict.same_encounter
-                    )),
-                },
-                block,
-            );
-        }
-    }
-    if let (Some(p), Some(c)) = (prev.name, curr.name) {
-        let p = p.trim();
-        let c = c.trim();
-        if !p.is_empty() && !c.is_empty() && !names_match_loose(p, c) {
-            let block = IdentityHardBlock::NameMismatch {
-                prev: p.to_string(), curr: c.to_string(),
-            };
-            return (
-                MergeCheckResult {
-                    same_encounter: false,
-                    reason: Some(format!(
-                        "Name hard-block: prev '{}' ≠ curr '{}'; LLM verdict ({}) overridden",
-                        p, c, llm_verdict.same_encounter
-                    )),
-                },
-                block,
-            );
-        }
-    }
-    (llm_verdict.clone(), IdentityHardBlock::Pass)
-}
-
-fn names_match_loose(a: &str, b: &str) -> bool {
-    let na = a.to_lowercase().split_whitespace().collect::<Vec<_>>().join(" ");
-    let nb = b.to_lowercase().split_whitespace().collect::<Vec<_>>().join(" ");
-    if na == nb { return true; }
-    let a_toks: Vec<&str> = na.split_whitespace().collect();
-    let b_toks: Vec<&str> = nb.split_whitespace().collect();
-    if a_toks.is_empty() || b_toks.is_empty() { return false; }
-    let first_match = a_toks[0].len() > 2 && b_toks[0].len() > 2 && a_toks[0] == b_toks[0];
-    let last_match = a_toks.last().map_or(false, |x| x.len() > 2)
-        && b_toks.last().map_or(false, |x| x.len() > 2)
-        && a_toks.last() == b_toks.last();
-    first_match || last_match
-}
+// 2026-04-30 Class A REJECTED by directive: vision-based identity
+// hard-block (DOB/name mismatch overriding the merge LLM) was prototyped
+// here but removed per ops feedback ("charts often aren't open" — vision
+// identity is high-noise; using it as a load-bearing input to the live
+// detection pipeline produces false negatives).
+//
+// The Linda+Rashida false-merge class is instead solved via:
+// 1. Wider merge-check `curr_head_words` window (currently 500 — too narrow
+//    to detect mid-buffer patient transitions).
+// 2. multi_patient_detect timeout raised 30s → 180s (covers long combined
+//    transcripts that previously timed out as the safety-net check).
+// See `~/.claude/.../memory/feedback_no_vision_for_session_detection.md`.
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    fn merged_true() -> MergeCheckResult {
-        MergeCheckResult { same_encounter: true, reason: Some("test".into()) }
-    }
-
-    #[test]
-    fn class_a_2026_04_30_dob_mismatch_blocks_merge() {
-        let (result, block) = apply_identity_hard_block(
-            &merged_true(),
-            MergePatientIdentity { name: Some("Linda Guest"), dob: Some("1951-04-18") },
-            MergePatientIdentity { name: Some("Rashida Hafiz-zadeh"), dob: Some("1968-07-22") },
-        );
-        assert!(!result.same_encounter);
-        assert!(matches!(block, IdentityHardBlock::DobMismatch { .. }));
-    }
-
-    #[test]
-    fn class_a_2026_04_30_name_only_mismatch_blocks_merge() {
-        let (result, block) = apply_identity_hard_block(
-            &merged_true(),
-            MergePatientIdentity { name: Some("Linda Guest"), dob: None },
-            MergePatientIdentity { name: Some("Rashida Hafiz-zadeh"), dob: None },
-        );
-        assert!(!result.same_encounter);
-        assert!(matches!(block, IdentityHardBlock::NameMismatch { .. }));
-    }
-
-    #[test]
-    fn class_a_2026_04_30_same_patient_preserves_merge() {
-        let (result, block) = apply_identity_hard_block(
-            &merged_true(),
-            MergePatientIdentity { name: Some("Linda Guest"), dob: Some("1951-04-18") },
-            MergePatientIdentity { name: Some("Linda Guest"), dob: Some("1951-04-18") },
-        );
-        assert!(result.same_encounter);
-        assert_eq!(block, IdentityHardBlock::Pass);
-    }
-
-    #[test]
-    fn class_a_2026_04_30_no_identity_preserves_llm_verdict() {
-        let (result, _) = apply_identity_hard_block(
-            &merged_true(),
-            MergePatientIdentity::default(),
-            MergePatientIdentity::default(),
-        );
-        assert!(result.same_encounter);
-    }
-
-    #[test]
-    fn class_a_2026_04_30_dob_wins_over_name_match() {
-        let (result, block) = apply_identity_hard_block(
-            &merged_true(),
-            MergePatientIdentity { name: Some("John Smith"), dob: Some("1960-01-01") },
-            MergePatientIdentity { name: Some("John Smith"), dob: Some("1985-06-15") },
-        );
-        assert!(!result.same_encounter);
-        assert!(matches!(block, IdentityHardBlock::DobMismatch { .. }));
-    }
+    // Class A vision-based identity hard-block tests REMOVED — directive
+    // forbids using vision name/DOB as a load-bearing input to detection.
 
     #[test]
     fn test_parse_merge_check_with_think_tags() {

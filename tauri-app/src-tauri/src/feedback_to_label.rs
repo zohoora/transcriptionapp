@@ -47,6 +47,11 @@ pub struct LabelData {
     /// (Karen White, Joanne Takacs) and G372A double-dip (Carl Grieve).
     #[serde(default)]
     pub billing_codes_unexpected: Option<Vec<String>>,
+    /// Per-code expected quantity. Used by `labeled_regression_cli` to verify
+    /// per-unit time codes (K005A/K013A) scale correctly with session
+    /// duration. Added 2026-04-30 — Deanna Wicks K005A qty=2 case.
+    #[serde(default)]
+    pub billing_quantity_expected: Option<std::collections::HashMap<String, u32>>,
     #[serde(default)]
     pub diagnostic_code_expected: Option<String>,
     /// Alternative dx codes that are also acceptable (synonyms, related

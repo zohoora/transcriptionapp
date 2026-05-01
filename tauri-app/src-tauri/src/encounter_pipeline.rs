@@ -302,6 +302,55 @@ pub async fn extract_and_archive_billing(
 ) -> Result<crate::billing::BillingRecord, String> {
     use crate::billing::clinical_features::{build_billing_extraction_prompt, parse_billing_extraction};
 
+    // 2026-04-30 Class D wiring: skip billing extraction entirely when SOAP
+    // is non-substantive (all "Not documented" placeholders or similar).
+    // Karin Smit's d7039e4c session generated A008A + Q310A + dx 311 against
+    // a 522-word multi-language STT-noise transcript whose SOAP had every
+    // section as "Not documented". An empty SOAP cannot support billing or
+    // diagnostic-code resolution; emit a sentinel BillingRecord with an
+    // explanatory note so downstream tools can audit.
+    if !is_substantive_soap(soap_content) {
+        info!(
+            "[Class D] Skipping billing extraction for {} — SOAP is non-substantive (all-placeholder bullets)",
+            session_id
+        );
+        if let Ok(mut l) = logger.lock() {
+            l.log_event(
+                "billing_skipped_empty_soap",
+                serde_json::json!({
+                    "session_id": session_id,
+                    "reason": "non_substantive_soap",
+                    "soap_chars": soap_content.len(),
+                }),
+            );
+        }
+        // Return an empty draft so callers don't write a billing.json
+        return Err("non_substantive_soap".to_string());
+    }
+
+    // 2026-04-30 Class I wiring: detect SOAP P/Procedure cross-section
+    // contradictions ("Hold off on injections" in P + "Performed injection"
+    // in Procedure). James Dollery's case. Logs a warning event for
+    // clinician review; does NOT block billing — Procedure section is the
+    // canonical record of what physically happened.
+    if detect_soap_p_procedure_contradiction(soap_content) {
+        warn!(
+            "[Class I] SOAP P/Procedure contradiction detected for {} — \
+             P-section claims deferral but Procedure-section lists a performed action",
+            session_id
+        );
+        if let Ok(mut l) = logger.lock() {
+            l.log_event(
+                "soap_contradiction_detected",
+                serde_json::json!({
+                    "session_id": session_id,
+                    "kind": "p_procedure_contradiction",
+                    "note": "P claims deferral but Procedure non-empty; trust Procedure as authoritative",
+                }),
+            );
+        }
+    }
+
     let billing_timeout = billing_timeout_override.unwrap_or(BILLING_EXTRACTION_TIMEOUT_SECS);
 
     // Build prompt
