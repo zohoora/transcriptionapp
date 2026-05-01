@@ -24,7 +24,7 @@ use std::process::ExitCode;
 use serde::Deserialize;
 
 use transcription_app_lib::billing::clinical_features::{
-    parse_billing_extraction, ClinicalFeatures,
+    augment_procedures_from_soap_text, parse_billing_extraction, ClinicalFeatures,
 };
 use transcription_app_lib::billing::rule_engine::{
     condition_keyword_guard, map_features_to_billing_with_tools_model, RuleEngineContext,
@@ -177,6 +177,13 @@ async fn main() -> ExitCode {
             .unwrap_or("");
         let (kept, _) = condition_keyword_guard(&features.conditions, soap_text);
         features.conditions = kept;
+
+        // 2026-04-30 Class E: production runs augment_procedures_from_soap_text
+        // in extract_and_archive_billing on the rendered SOAP procedure section.
+        // Mirror that here so Class E patches are exercised in replay.
+        // Extract Procedure section from the raw SOAP JSON's procedure[] field.
+        let soap_proc_text = extract_soap_procedure_section_text(soap_text);
+        let _augmented = augment_procedures_from_soap_text(&mut features, &soap_proc_text);
 
         // Synthesize a ResolvedDiagnostic from the archived diagnostic_tools_model
         // step output if present (this is what production passes to Stage 0).
@@ -354,6 +361,34 @@ async fn main() -> ExitCode {
     println!();
     println!("SUMMARY: would_fix={} would_regress={}", fix_count, regress_count);
     ExitCode::SUCCESS
+}
+
+/// Extract the rendered SOAP's procedure section from the LLM JSON.
+/// The SOAP `response_raw` is JSON with a `procedure[]` array of `{action, transcript_quote}`
+/// objects. We concatenate the action strings as the augment input.
+fn extract_soap_procedure_section_text(soap_raw: &str) -> String {
+    // Strip markdown fences
+    let stripped = soap_raw
+        .trim()
+        .trim_start_matches("```json")
+        .trim_start_matches("```")
+        .trim_end_matches("```")
+        .trim();
+    let Ok(json) = serde_json::from_str::<serde_json::Value>(stripped) else {
+        return String::new();
+    };
+    let Some(arr) = json.get("procedure").and_then(|v| v.as_array()) else {
+        return String::new();
+    };
+    let mut buf = String::new();
+    for item in arr {
+        if let Some(action) = item.get("action").and_then(|v| v.as_str()) {
+            buf.push_str("• ");
+            buf.push_str(action);
+            buf.push('\n');
+        }
+    }
+    buf
 }
 
 /// Extract the tools-model resolved diagnostic from the replay bundle, if
