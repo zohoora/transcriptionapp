@@ -447,20 +447,13 @@ pub async fn extract_and_archive_billing(
     // Override after-hours from caller (more reliable than LLM)
     features.is_after_hours = is_after_hours;
 
-    // Procedure→billing safety net: when the LLM's extraction missed a
-    // procedure that the SOAP procedure section explicitly states (e.g.
-    // a nerve-block injection), best-effort augment features.procedures
-    // so the rule engine bills it.
+    // Procedure→billing safety net: extract the SOAP procedure section
+    // and pass it to the rule engine via `RuleEngineContext.soap_procedure_text`.
+    // The rule engine itself runs `augment_procedures_from_soap_text_tracked`
+    // and tracks soap-grounded procedures so it can bypass the past-tense
+    // transcript validator for them (silent-doctor-narration injections
+    // still bill — Karen White / Frederick Moore on 2026-04-30).
     let proc_section = extract_soap_procedure_section(soap_content);
-    if !proc_section.is_empty() {
-        let added = crate::billing::clinical_features::augment_procedures_from_soap_text(
-            &mut features,
-            &proc_section,
-        );
-        if added > 0 {
-            warn!("Augmented {} procedure(s) from SOAP text for session {}", added, session_id);
-        }
-    }
 
     // SOAP-text keyword guard (v0.10.61). The LLM sometimes hallucinates
     // K-code conditions (diabetic_assessment, chf_management,
@@ -507,15 +500,27 @@ pub async fn extract_and_archive_billing(
     )
     .await;
 
-    // Map features to billing codes via deterministic rule engine (with companion code context)
+    // Map features to billing codes via deterministic rule engine (with companion code context).
+    // Wrap caller's ctx with the SOAP procedure-section text so the engine's
+    // internal augment + soap-grounded transcript-validation bypass fires.
     let date_str = format!("{:04}-{:02}-{:02}", session_date.year(), session_date.month(), session_date.day());
+    let augmented_ctx = crate::billing::RuleEngineContext {
+        is_hospital: rule_ctx.is_hospital,
+        counselling_exhausted: rule_ctx.counselling_exhausted,
+        transcript: rule_ctx.transcript.clone(),
+        soap_procedure_text: if proc_section.is_empty() {
+            None
+        } else {
+            Some(proc_section)
+        },
+    };
     let mut record = crate::billing::map_features_to_billing_with_tools_model(
         &features,
         session_id,
         &date_str,
         duration_ms,
         patient_name,
-        rule_ctx,
+        &augmented_ctx,
         billing_data,
         tools_model_resolved.as_ref(),
     );
@@ -585,18 +590,36 @@ pub async fn extract_and_archive_billing(
     Ok(record)
 }
 
-/// Extract the Assessment ("A:") section of a SOAP note for use as context
-/// Extract the rendered SOAP's Assessment section. Falls back to the
-/// first ~1500 bytes if the marker isn't present. Markers are sourced
-/// from `llm_client::SOAP_SECTION_*` so renderer changes propagate.
+/// Extract a single SOAP section between `start_marker` and `end_marker`
+/// (or to end-of-string when no `end_marker`). Returns empty string when
+/// `start_marker` is absent. Markers are sourced from `llm_client::SOAP_SECTION_*`
+/// so renderer changes propagate. Tolerates marker variants with/without
+/// trailing newline.
+fn extract_soap_section(soap: &str, start_marker: &str, end_marker: Option<&str>) -> String {
+    let start_trim = start_marker.trim_end_matches('\n');
+    let Some(idx) = soap.find(start_marker).or_else(|| soap.find(start_trim)) else {
+        return String::new();
+    };
+    let body_start = if soap[idx..].starts_with(start_marker) {
+        idx + start_marker.len()
+    } else {
+        idx + start_trim.len()
+    };
+    let rest = &soap[body_start..];
+    let end = match end_marker {
+        Some(em) => rest.find(em.trim_end_matches('\n')).unwrap_or(rest.len()),
+        None => rest.len(),
+    };
+    rest[..end].trim().to_string()
+}
+
+/// Extract the SOAP Assessment section, or fall back to the first ~1500
+/// bytes when the marker is absent.
 fn extract_soap_assessment(soap: &str) -> String {
     use crate::llm_client::{SOAP_SECTION_ASSESSMENT, SOAP_SECTION_PLAN};
-    let assessment_marker = SOAP_SECTION_ASSESSMENT.trim_end_matches('\n');
-    let plan_marker = SOAP_SECTION_PLAN.trim_end_matches('\n');
-    if let Some(idx) = soap.find(assessment_marker) {
-        let rest = &soap[idx + assessment_marker.len()..];
-        let end = rest.find(plan_marker).unwrap_or(rest.len());
-        return rest[..end].trim().to_string();
+    let body = extract_soap_section(soap, SOAP_SECTION_ASSESSMENT, Some(SOAP_SECTION_PLAN));
+    if !body.is_empty() {
+        return body;
     }
     let mut end = soap.len().min(1500);
     while end > 0 && !soap.is_char_boundary(end) {
@@ -605,30 +628,17 @@ fn extract_soap_assessment(soap: &str) -> String {
     soap[..end].to_string()
 }
 
-/// Extract the rendered SOAP's Procedure section. Returns empty string
-/// when no Procedure section is present. Procedure is the LAST section
-/// in render order, so the cut runs to end-of-string.
+/// Extract the SOAP Procedure section. Procedure is the last section in
+/// render order; the cut runs to end-of-string.
 fn extract_soap_procedure_section(soap: &str) -> String {
     use crate::llm_client::SOAP_SECTION_PROCEDURE;
-    let with_newline = SOAP_SECTION_PROCEDURE;
-    let without_trailing = SOAP_SECTION_PROCEDURE.trim_end_matches('\n');
-    if let Some(idx) = soap.find(with_newline).or_else(|| soap.find(without_trailing)) {
-        return soap[idx..].trim().to_string();
-    }
-    String::new()
+    extract_soap_section(soap, SOAP_SECTION_PROCEDURE, None)
 }
 
-/// Extract the rendered SOAP's Plan section.
+/// Extract the SOAP Plan section (between PLAN and PROCEDURE markers).
 fn extract_soap_plan(soap: &str) -> String {
     use crate::llm_client::{SOAP_SECTION_PLAN, SOAP_SECTION_PROCEDURE};
-    let plan_marker = SOAP_SECTION_PLAN.trim_end_matches('\n');
-    let procedure_marker = SOAP_SECTION_PROCEDURE.trim_end_matches('\n');
-    if let Some(idx) = soap.find(plan_marker) {
-        let rest = &soap[idx + plan_marker.len()..];
-        let end = rest.find(procedure_marker).unwrap_or(rest.len());
-        return rest[..end].trim().to_string();
-    }
-    String::new()
+    extract_soap_section(soap, SOAP_SECTION_PLAN, Some(SOAP_SECTION_PROCEDURE))
 }
 
 /// 2026-04-30 Class D: detect SOAPs that parsed but contain only

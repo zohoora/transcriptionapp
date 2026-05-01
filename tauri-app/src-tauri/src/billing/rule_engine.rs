@@ -193,25 +193,27 @@ pub fn map_features_to_billing_with_tools_model(
     //    K005A/K007A are suppressed when visitType is counselling (K013A) —
     //    they're mutually exclusive per-unit time codes for the same service.
     let mut condition_codes: Vec<String> = Vec::new();
-    // 2026-04-30 Class G: track whether K005A/K007A already added with
-    // duration-scaled qty. Multiple conditions for the same time period
-    // must not multiply units.
-    let mut k005_already_added = false;
-    let mut k007_already_added = false;
+    // 2026-04-30 Class G: per-unit counselling codes (K005A/K007A) are
+    // about TIME spent — multiple conditions on the same encounter must
+    // not multiply units. Track which have already been emitted with
+    // duration-scaled qty; subsequent emissions are skipped so dedupe
+    // doesn't sum duration*N.
+    let mut duration_scaled_emitted: Vec<&str> = Vec::new();
     for cond in &features.conditions {
         let cond_codes = condition_type_to_codes(cond, billing_data);
         for code_str in cond_codes {
-            // Suppress K005A/K007A when already billing K013A (or vice versa)
-            // 2026-04-30 Class G: extend to also suppress when assessment_code
-            // is itself K005/K007 (avoids dedupe summing).
+            // K005A/K007A from conditions are suppressed when assessment_code
+            // is itself a per-unit counselling code (K013A/K005A/K007A) — the
+            // assessment branch already added it (avoids dedup summing).
             if matches!(code_str.as_str(), "K005A" | "K007A")
                 && matches!(assessment_code.as_str(), "K013A" | "K005A" | "K007A")
             {
                 continue;
             }
-            // 2026-04-30 Class G: skip subsequent K005/K007 from conditions
-            if code_str == "K005A" && k005_already_added { continue; }
-            if code_str == "K007A" && k007_already_added { continue; }
+            // Skip subsequent same-K005/K007 push from a later condition.
+            if duration_scaled_emitted.iter().any(|c| *c == code_str.as_str()) {
+                continue;
+            }
             if code_str.starts_with('K') {
                 let key = condition_type_to_key(cond);
                 let evidence = features
@@ -230,13 +232,9 @@ pub fn map_features_to_billing_with_tools_model(
             }
             if let Some(ohip) = ohip_codes::get_code(&code_str) {
                 let mut bc = make_billing_code(ohip, BillingConfidence::Medium, false);
-                // 2026-04-30 Class G: K005/K007 from conditions branch are
-                // per-unit time codes — scale qty from session duration.
                 if matches!(code_str.as_str(), "K005A" | "K007A") {
-                    let units = counselling_units_from_duration(duration_ms, billing_data);
-                    bc.quantity = units;
-                    if code_str == "K005A" { k005_already_added = true; }
-                    if code_str == "K007A" { k007_already_added = true; }
+                    bc.quantity = counselling_units_from_duration(duration_ms, billing_data);
+                    duration_scaled_emitted.push(if code_str == "K005A" { "K005A" } else { "K007A" });
                 }
                 codes.push(bc);
                 condition_codes.push(code_str);
@@ -1017,50 +1015,43 @@ const DX_SYNONYMS: &[(&str, &str)] = &[
 /// the LLM's clearly-wrong suggestions WITHOUT being so strict that it
 /// rejects acceptable variations.
 ///
-/// Returns true ONLY when:
-///   - primary diagnosis contains a clear musculoskeletal anchor
-///     (radiculopathy, sciatica, arthritis, joint, back pain) AND
-///     description contains a clearly-different category anchor
-///     (respiratory, cardiac, mental, gastrointestinal, dermatologic, etc.).
+/// Returns true when ANY of these holds:
+///   1. Primary diagnosis has a musculoskeletal anchor AND description is
+///      in a clearly-orthogonal category (respiratory, cardiac, dermatologic,
+///      gastrointestinal, etc.).
+///   2. Primary mentions radiculopathy AND description is fibrositis/myositis
+///      (the James Dollery case: 729 fibrositis was returned at conf 0.92
+///      for radiculopathy — different MSK families).
+///
 /// Designed to be FALSE for edge cases — fail-open preserves Stage 1 trust
 /// for the 90%+ of cases where the LLM is correct.
 pub(crate) fn dx_obvious_category_mismatch(
     primary_diagnosis: &str,
     dc_description: &str,
 ) -> bool {
+    const MSK_ANCHORS: &[&str] = &[
+        "radiculopathy", "sciatic", "musculoskeletal", "arthriti", "joint pain",
+        "back pain", "neck pain", "fibromyalgia", "nerve entrapment", "peroneal",
+    ];
+    const ORTHOGONAL_CATEGORIES: &[&str] = &[
+        "respiratory", "bronch", "asthma", "pneumonia",
+        "cardiac", "hypertensive",
+        "decubitus", "bed sore", "acne", "eczema",
+        "intestinal", "gastritis",
+    ];
     let p = primary_diagnosis.to_lowercase();
     let d = dc_description.to_lowercase();
-    // Musculoskeletal anchors in primary
-    let primary_msk = p.contains("radiculopathy")
-        || p.contains("sciatic")
-        || p.contains("musculoskeletal")
-        || p.contains("arthriti")
-        || p.contains("joint pain")
-        || p.contains("back pain")
-        || p.contains("neck pain")
-        || p.contains("fibromyalgia")
-        || p.contains("nerve entrapment")
-        || p.contains("peroneal");
-    // Description in clearly-orthogonal categories
-    let desc_orthogonal = d.contains("respiratory")
-        || d.contains("bronch")
-        || d.contains("asthma")
-        || d.contains("pneumonia")
-        || d.contains("cardiac")
-        || d.contains("hypertensive")
-        || d.contains("decubitus")
-        || d.contains("bed sore")
-        || d.contains("acne")
-        || d.contains("eczema")
-        || d.contains("intestinal")
-        || d.contains("gastritis");
-    // Fibrositis is orthogonal-to-radiculopathy specifically (James Dollery
-    // case: 729 fibrositis-for-radiculopathy was the false-positive guard
-    // case). Don't apply this rule when primary mentions fibrositis itself.
-    let fibrositis_radic_mismatch = p.contains("radiculopathy")
-        && !p.contains("fibrosit") && !p.contains("muscular")
-        && (d.contains("fibrosit") || d.contains("myositi"));
-    primary_msk && desc_orthogonal || fibrositis_radic_mismatch
+    let primary_msk = MSK_ANCHORS.iter().any(|kw| p.contains(kw));
+    let desc_orthogonal = ORTHOGONAL_CATEGORIES.iter().any(|kw| d.contains(kw));
+    if primary_msk && desc_orthogonal {
+        return true;
+    }
+    // Rule 2: radiculopathy ≠ fibrositis/myositis (James Dollery 729 case).
+    // Skip when primary itself mentions fibrositis/muscular (no false-positive).
+    p.contains("radiculopathy")
+        && !p.contains("fibrosit")
+        && !p.contains("muscular")
+        && (d.contains("fibrosit") || d.contains("myositi"))
 }
 
 /// Cross-validate a tools-model-suggested OHIP diagnostic code's description

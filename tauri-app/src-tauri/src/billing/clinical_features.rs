@@ -595,34 +595,12 @@ pub fn augment_procedures_from_soap_text_tracked(
         ("tonometry", ProcedureType::Tonometry),
     ];
 
-    // Track ALL procedures grounded by the SOAP procedure section — both
-    // new additions AND LLM-extracted procedures whose signal appears
-    // here. The latter case (Frederick Moore: LLM extracted joint_injection
-    // AND SOAP says "Administered knee injection" → signal "knee injection"
-    // matches) is the soap-corroboration path: bypass past-tense transcript
-    // validation.
-    let mut added: Vec<ProcedureType> = Vec::new();
-    for (signal, proc_type) in signals {
-        if lower.contains(signal) {
-            if !features.procedures.contains(proc_type) {
-                tracing::warn!(
-                    "Class 6 safety net: augmenting procedures with {:?} (signal: {:?}) — \
-                     LLM extraction missed it but the SOAP procedure section indicates it was performed",
-                    proc_type, signal
-                );
-                features.procedures.push(proc_type.clone());
-            }
-            // Always mark as soap_grounded if signal matches (covers
-            // both newly-augmented and LLM-extracted-then-corroborated).
-            if !added.contains(proc_type) {
-                added.push(proc_type.clone());
-            }
-        }
-    }
-
-    // 2026-04-30 Class E: compound (AND) signals for cases where the SOAP
-    // wording places the procedure verb and the anatomy several words apart
-    // (Karen "Administered injection to right side of neck").
+    // 2026-04-30 Class E compound signals: verb+anatomy pairs that may be
+    // separated by several words ("Administered injection to right side of
+    // neck"). Both single-substring and compound paths track ALL matched
+    // ProcedureTypes — both newly-added AND LLM-extracted-then-corroborated —
+    // so the rule engine can bypass the past-tense transcript validator
+    // for soap-grounded procedures.
     let compound_signals: &[(&[&str], ProcedureType)] = &[
         (&["injection", "neck"], ProcedureType::NerveBlockPeripheral),
         (&["injection", "cervical"], ProcedureType::NerveBlockPeripheral),
@@ -638,18 +616,27 @@ pub fn augment_procedures_from_soap_text_tracked(
         (&["administered", "injection"], ProcedureType::JointInjection),
         (&["performed", "injection"], ProcedureType::JointInjection),
     ];
+    let mut added: Vec<ProcedureType> = Vec::new();
+    let mut try_match = |proc_type: &ProcedureType| {
+        if !features.procedures.contains(proc_type) {
+            features.procedures.push(proc_type.clone());
+            tracing::warn!(
+                "Class 6 safety net: augmenting procedures with {:?}",
+                proc_type
+            );
+        }
+        if !added.contains(proc_type) {
+            added.push(proc_type.clone());
+        }
+    };
+    for (signal, proc_type) in signals {
+        if lower.contains(signal) {
+            try_match(proc_type);
+        }
+    }
     for (kwds, proc_type) in compound_signals {
         if kwds.iter().all(|kw| lower.contains(kw)) {
-            if !features.procedures.contains(proc_type) {
-                tracing::warn!(
-                    "Class 6 compound safety net: augmenting procedures with {:?} (all of {:?})",
-                    proc_type, kwds
-                );
-                features.procedures.push(proc_type.clone());
-            }
-            if !added.contains(proc_type) {
-                added.push(proc_type.clone());
-            }
+            try_match(proc_type);
         }
     }
     added
