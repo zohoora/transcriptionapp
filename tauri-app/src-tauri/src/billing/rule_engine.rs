@@ -117,12 +117,22 @@ pub fn map_features_to_billing_with_tools_model(
     }
 
     // 2. Procedures -> procedure codes.
-    //    When a transcript is supplied, drop procedure codes whose past-tense
-    //    action evidence is absent — guards against the SOAP-LLM extracting an
-    //    injection procedure from discussion-only mentions (e.g. patch
-    //    counselling, deferred Sublocade plans).
+    //    Class F mutual-exclusion (2026-04-30): when a nerve block is
+    //    present, suppress G372A (the local anesthetic is a component
+    //    of the nerve block, not a separately billable IM injection —
+    //    Carl Grieve case).
+    let has_nerve_block = features.procedures.iter().any(|p| matches!(p,
+        ProcedureType::NerveBlockPeripheral
+        | ProcedureType::NerveBlockOccipital
+        | ProcedureType::NerveBlockOccipitalAdditional
+        | ProcedureType::NerveBlockParavertebral
+        | ProcedureType::NerveBlockAdditional
+    ));
     let mut procedure_codes: Vec<String> = Vec::new();
     for proc in &features.procedures {
+        if has_nerve_block && matches!(proc, ProcedureType::ImInjectionWithVisit) {
+            continue;
+        }
         if let Some(ts) = ctx.transcript.as_deref() {
             if !validate_procedure_evidence(proc, ts) {
                 continue;
@@ -141,13 +151,25 @@ pub fn map_features_to_billing_with_tools_model(
     //    K005A/K007A are suppressed when visitType is counselling (K013A) —
     //    they're mutually exclusive per-unit time codes for the same service.
     let mut condition_codes: Vec<String> = Vec::new();
+    // 2026-04-30 Class G: track whether K005A/K007A already added with
+    // duration-scaled qty. Multiple conditions for the same time period
+    // must not multiply units.
+    let mut k005_already_added = false;
+    let mut k007_already_added = false;
     for cond in &features.conditions {
         let cond_codes = condition_type_to_codes(cond, billing_data);
         for code_str in cond_codes {
             // Suppress K005A/K007A when already billing K013A (or vice versa)
-            if matches!(code_str.as_str(), "K005A" | "K007A") && assessment_code == "K013A" {
+            // 2026-04-30 Class G: extend to also suppress when assessment_code
+            // is itself K005/K007 (avoids dedupe summing).
+            if matches!(code_str.as_str(), "K005A" | "K007A")
+                && matches!(assessment_code.as_str(), "K013A" | "K005A" | "K007A")
+            {
                 continue;
             }
+            // 2026-04-30 Class G: skip subsequent K005/K007 from conditions
+            if code_str == "K005A" && k005_already_added { continue; }
+            if code_str == "K007A" && k007_already_added { continue; }
             if code_str.starts_with('K') {
                 let key = condition_type_to_key(cond);
                 let evidence = features
@@ -165,7 +187,16 @@ pub fn map_features_to_billing_with_tools_model(
                 }
             }
             if let Some(ohip) = ohip_codes::get_code(&code_str) {
-                codes.push(make_billing_code(ohip, BillingConfidence::Medium, false));
+                let mut bc = make_billing_code(ohip, BillingConfidence::Medium, false);
+                // 2026-04-30 Class G: K005/K007 from conditions branch are
+                // per-unit time codes — scale qty from session duration.
+                if matches!(code_str.as_str(), "K005A" | "K007A") {
+                    let units = counselling_units_from_duration(duration_ms, billing_data);
+                    bc.quantity = units;
+                    if code_str == "K005A" { k005_already_added = true; }
+                    if code_str == "K007A" { k007_already_added = true; }
+                }
+                codes.push(bc);
                 condition_codes.push(code_str);
             }
         }
@@ -496,6 +527,18 @@ pub fn condition_keyword_guard(
                 "tobacco", "cigarette", "nicotine", "vaping nicotine",
                 "chewing tobacco", "smokes", "smoker", "smoking",
             ],
+            // Class H additions (2026-04-30 review):
+            ConditionType::PrimaryMentalHealth => &[
+                "anxiety", "anxious", "depression", "depressive", "depressed",
+                "mental health", "counselling", "counseling", "psychotherapy",
+                "anger management", "panic attack", "ptsd", "trauma",
+                "mood disorder", "bipolar", "ocd", "obsessive",
+                "suicid", "self-harm",
+            ],
+            ConditionType::FibromyalgiaCare => &[
+                "fibromyalgia", "myalgic encephalomyelitis", "me/cfs",
+                "chronic fatigue syndrome",
+            ],
             // Other conditions don't have this guard yet — keep as-is.
             _ => {
                 kept.push(cond.clone());
@@ -558,6 +601,14 @@ fn validate_procedure_evidence(proc: &ProcedureType, transcript: &str) -> bool {
             "i numbed it up", "i numbed up", "i landmarked",
             "i'm putting the needle", "i placed the needle",
             "i'll put a bandaid", "all done", "we're done",
+            // 2026-04-30 Class E expansions
+            "i was injecting", "we were injecting",
+            "did the injection", "did the shot",
+            "we just did the inject", "we just did an inject",
+            "from the injection", "after the injection",
+            "right now from the injection", "had this injection",
+            "feel it where i was inject", "where i was injecting",
+            "post-injection",
         ],
             // For procedures we haven't calibrated keywords for, default-allow.
         _ => return true,
@@ -906,6 +957,16 @@ const DX_SYNONYMS: &[(&str, &str)] = &[
     ("insomnia", "non-psychotic"),
     // Allergic
     ("rhinitis", "allergic"),
+    // 2026-04-30 review additions
+    ("radiculopathy", "lumbago"),
+    ("radiculopathy", "sciatica"),
+    ("radicular", "lumbago"),
+    ("radicular", "sciatica"),
+    ("peroneal", "neuritis"),
+    ("peroneal", "peripheral"),
+    ("nerve entrapment", "neuritis"),
+    ("entrapment", "neuritis"),
+    ("rheumatoid", "rheumatoid arthritis"),
 ];
 
 /// Cross-validate a tools-model-suggested OHIP diagnostic code's description
@@ -2103,10 +2164,10 @@ mod tests {
 
     #[test]
     fn test_k005_dedup_when_two_conditions_map_to_same_code() {
-        // Two ConditionTypes (PrimaryMentalHealth + OpioidWithdrawalManagement)
-        // both map to K005A — must aggregate to quantity=2, not parallel rows.
+        // 2026-04-30 update (Class G): quantity is now duration-driven.
+        // 28-min visit = 1 unit regardless of how many conditions.
         let mut features = default_features();
-        features.visit_type = VisitType::GeneralReassessment; // A004A — not the K013A path
+        features.visit_type = VisitType::GeneralReassessment;
         features.conditions = vec![
             ConditionType::PrimaryMentalHealth,
             ConditionType::OpioidWithdrawalManagement,
@@ -2121,15 +2182,11 @@ mod tests {
         );
         let record = map_features_to_billing(&features, "s1", "2026-04-27", 28 * 60 * 1000, None, None);
         let k005s: Vec<_> = record.codes.iter().filter(|c| c.code == "K005A").collect();
+        assert_eq!(k005s.len(), 1, "K005A appears exactly once");
         assert_eq!(
-            k005s.len(),
-            1,
-            "K005A should appear exactly once after dedup, got: {:?}",
+            k005s[0].quantity, 1,
+            "28-min visit = 1 unit regardless of condition count. Got: {:?}",
             record.codes.iter().map(|c| (&c.code, c.quantity)).collect::<Vec<_>>()
-        );
-        assert_eq!(
-            k005s[0].quantity, 2,
-            "Two conditions both mapping to K005A should aggregate into quantity=2"
         );
     }
 
@@ -2335,16 +2392,17 @@ mod tests {
     #[test]
     fn test_keyword_guard_drops_diabetes_when_soap_lacks_keyword() {
         // Apr 24 Alexander Gulas: SOAP about RA/Raynaud's, no diabetes mention.
-        // The LLM still emitted diabetic_assessment 3 seeds in a row.
+        // 2026-04-30 update: PrimaryMentalHealth is now guarded too — use
+        // an unguarded control (HivPrimaryCare).
         let soap = "S: cold extremities, RA flare. \
                     O: fingers turning white. \
                     A: Severe lumbar arthritis. Rheumatoid arthritis with vasculitis. \
                     P: Prescribe nitroglycerin cream for Raynaud's.";
         let (kept, dropped) = condition_keyword_guard(
-            &[ConditionType::DiabeticAssessment, ConditionType::PrimaryMentalHealth],
+            &[ConditionType::DiabeticAssessment, ConditionType::HivPrimaryCare],
             soap,
         );
-        assert_eq!(kept, vec![ConditionType::PrimaryMentalHealth]);
+        assert_eq!(kept, vec![ConditionType::HivPrimaryCare]);
         assert_eq!(dropped, vec![ConditionType::DiabeticAssessment]);
     }
 
@@ -2407,11 +2465,11 @@ mod tests {
 
     #[test]
     fn test_keyword_guard_passes_through_unguarded_conditions() {
-        // primary_mental_health, fibromyalgia_care, etc. don't have keyword guards yet.
-        // They should pass through untouched.
-        let soap = "S: mood. A: depression. P: counselling.";
+        // 2026-04-30 update: PrimaryMentalHealth + FibromyalgiaCare are
+        // now guarded. Use HomeCare + HivPrimaryCare (still unguarded).
+        let soap = "S: any. A: any. P: any.";
         let (kept, dropped) = condition_keyword_guard(
-            &[ConditionType::PrimaryMentalHealth, ConditionType::FibromyalgiaCare],
+            &[ConditionType::HomeCare, ConditionType::HivPrimaryCare],
             soap,
         );
         assert_eq!(kept.len(), 2);

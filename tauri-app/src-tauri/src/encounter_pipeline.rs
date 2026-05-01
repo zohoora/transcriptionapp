@@ -569,6 +569,90 @@ fn extract_soap_procedure_section(soap: &str) -> String {
     String::new()
 }
 
+/// Extract the rendered SOAP's Plan section.
+fn extract_soap_plan(soap: &str) -> String {
+    use crate::llm_client::{SOAP_SECTION_PLAN, SOAP_SECTION_PROCEDURE};
+    let plan_marker = SOAP_SECTION_PLAN.trim_end_matches('\n');
+    let procedure_marker = SOAP_SECTION_PROCEDURE.trim_end_matches('\n');
+    if let Some(idx) = soap.find(plan_marker) {
+        let rest = &soap[idx + plan_marker.len()..];
+        let end = rest.find(procedure_marker).unwrap_or(rest.len());
+        return rest[..end].trim().to_string();
+    }
+    String::new()
+}
+
+/// 2026-04-30 Class D: detect SOAPs that parsed but contain only
+/// "Not documented" placeholders. Karin Smit's session generated
+/// fabricated billing on this fingerprint.
+pub fn is_substantive_soap(soap: &str) -> bool {
+    const PLACEHOLDERS: &[&str] = &[
+        "not documented", "not documented.", "[see transcript]",
+        "(no documentation provided)", "no documentation",
+        "n/a", "none", "none documented", "no significant findings",
+    ];
+    fn is_placeholder(line: &str) -> bool {
+        let trimmed = line
+            .trim_start_matches(|c: char| c == '•' || c == '-' || c == '*' || c.is_whitespace())
+            .trim()
+            .to_lowercase();
+        if trimmed.is_empty() { return true; }
+        PLACEHOLDERS.iter().any(|p| trimmed == *p)
+    }
+    use crate::llm_client::{
+        SOAP_SECTION_ASSESSMENT, SOAP_SECTION_OBJECTIVE, SOAP_SECTION_PLAN,
+        SOAP_SECTION_PROCEDURE, SOAP_SECTION_SUBJECTIVE,
+    };
+    let markers = [
+        SOAP_SECTION_SUBJECTIVE,
+        SOAP_SECTION_OBJECTIVE.trim_start(),
+        SOAP_SECTION_ASSESSMENT.trim_start(),
+        SOAP_SECTION_PLAN.trim_start(),
+        SOAP_SECTION_PROCEDURE.trim_start(),
+    ];
+    let mut substantive_sections = 0u32;
+    for (i, marker) in markers.iter().enumerate() {
+        let Some(start) = soap.find(marker) else { continue };
+        let body_start = start + marker.len();
+        let next_marker_idx = markers
+            .iter()
+            .skip(i + 1)
+            .filter_map(|m| soap[body_start..].find(m).map(|x| body_start + x))
+            .min()
+            .unwrap_or(soap.len());
+        let body = &soap[body_start..next_marker_idx];
+        let has_substantive = body.lines().any(|line| !is_placeholder(line));
+        if has_substantive { substantive_sections += 1; }
+    }
+    substantive_sections >= 2
+}
+
+/// 2026-04-30 Class I: detect SOAP P/Procedure section contradictions
+/// (James Dollery had P "Hold off on injections" + Procedure "Performed
+/// injection"). Returns true when Procedure is non-empty AND P contains
+/// a deferral phrase.
+pub fn detect_soap_p_procedure_contradiction(soap: &str) -> bool {
+    let procedure = extract_soap_procedure_section(soap);
+    if procedure.is_empty() { return false; }
+    let plan = extract_soap_plan(soap);
+    if plan.is_empty() { return false; }
+    let plan_lc = plan.to_lowercase();
+    const DEFERRAL_PHRASES: &[&str] = &[
+        "hold off on further injection",
+        "hold off on the injection",
+        "hold off on injection",
+        "no injection performed",
+        "did not inject",
+        "did not perform the injection",
+        "no procedure today",
+        "deferred the injection",
+        "injection deferred",
+        "declined injection",
+        "declined the injection",
+    ];
+    DEFERRAL_PHRASES.iter().any(|p| plan_lc.contains(p))
+}
+
 /// Determine if a session started during after-hours (Ontario EST/EDT).
 ///
 /// After-hours = weekends all day, weekdays before 8 AM or after 5 PM Eastern.

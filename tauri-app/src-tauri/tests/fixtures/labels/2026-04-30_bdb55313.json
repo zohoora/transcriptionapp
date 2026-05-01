@@ -1,0 +1,20 @@
+{
+  "session_id": "bdb55313-2c71-43d9-9f33-ba3d270df982",
+  "date": "2026-04-30",
+  "labeled_at": "2026-04-30T20:30:00+00:00",
+  "labeled_by": "Dr Z (2026-04-30 clinic-day forensic review)",
+  "labels": {
+    "split_correct": true,
+    "merge_correct": false,
+    "expected_merged_into": null,
+    "clinical_correct": true,
+    "patient_count_correct": false,
+    "expected_patient_count": 2,
+    "procedure_section_correct": true,
+    "billing_codes_expected": ["A007A", "G231A", "G370A", "G371A", "E542A", "Q310A"],
+    "billing_codes_unexpected": [],
+    "diagnostic_code_expected": "729",
+    "diagnostic_code_acceptable": ["724", "722", "729"],
+    "notes": "Linda Guest 9:53am-11:00am (DOB 1951-04-18) — TWO distinct patients incorrectly merged into one session bdb55313. Linda received epidural at L5-S1 + SI joint + GTB bursa injections. Then Rashida Rehman Hafiz-zadeh (vision tracker confirmed at 6 unanimous votes) checked in for IIH suspect, prescribed acetazolamide. The encounter_merge LLM at 15:00:48 collapsed Rashida's session a0d2cf0b BACK INTO Linda's bdb55313, citing 'continuous conversation immediately following the written documentation' — but it was looking only at the first 500 words of a0d2cf0b which were Linda's post-procedure debrief. Rashida's IIH+acetazolamide content arrived later in the same buffer and survived the merge into the SOAP regen output, producing a Frankenstein SOAP. ROOT CAUSES (Class A merge engine identity-blind + window-biased): (1) merge prompt builds with `patient_name: null` even though prev_encounter_patient_name='Linda Guest' AND name_tracker.majority_name='Rashida Rehman Hafiz-zadeh' (6 unanimous votes) were both available at merge time; (2) merge LLM only sees curr_head_words=500 — cannot detect mid-buffer patient transitions; (3) post-merge multi_patient_detect at 15:02:27 (the safety net) FAILED with 30s timeout on the long combined transcript. Diagnostic code 401 (Essential hypertension) is wildly wrong — should be 729/724 for the back/SI/GTB pain (Class B dx semantic guard rejected good 724 from tools-model). Billing missed the epidural (G231A, no `epidural` keyword in augment table) and undercounted the additional joints (3 injections billed as G370A+G371A=2 sites; should be G370A+2×G371A or G231A+G370A+G371A — Class E billing under-extraction)."
+  }
+}

@@ -126,6 +126,83 @@ pub fn parse_merge_check(response: &str) -> Result<MergeCheckResult, String> {
     parse_llm_json_response(response, "{\"same_encounter\"", "merge check")
 }
 
+/// 2026-04-30 Class A: encounter identity for the merge hard-block.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct MergePatientIdentity<'a> {
+    pub name: Option<&'a str>,
+    pub dob: Option<&'a str>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum IdentityHardBlock {
+    Pass,
+    DobMismatch { prev: String, curr: String },
+    NameMismatch { prev: String, curr: String },
+}
+
+/// Post-LLM hard-block: when prev/curr DOBs (or names) clearly differ,
+/// override the LLM verdict and refuse the merge. Linda+Rashida bdb55313
+/// false-merge would have been prevented by the DOB check.
+pub fn apply_identity_hard_block(
+    llm_verdict: &MergeCheckResult,
+    prev: MergePatientIdentity,
+    curr: MergePatientIdentity,
+) -> (MergeCheckResult, IdentityHardBlock) {
+    if let (Some(p), Some(c)) = (prev.dob, curr.dob) {
+        let p = p.trim();
+        let c = c.trim();
+        if !p.is_empty() && !c.is_empty() && p != c {
+            let block = IdentityHardBlock::DobMismatch {
+                prev: p.to_string(), curr: c.to_string(),
+            };
+            return (
+                MergeCheckResult {
+                    same_encounter: false,
+                    reason: Some(format!(
+                        "DOB hard-block: prev DOB={} ≠ curr DOB={}; LLM verdict ({}) overridden",
+                        p, c, llm_verdict.same_encounter
+                    )),
+                },
+                block,
+            );
+        }
+    }
+    if let (Some(p), Some(c)) = (prev.name, curr.name) {
+        let p = p.trim();
+        let c = c.trim();
+        if !p.is_empty() && !c.is_empty() && !names_match_loose(p, c) {
+            let block = IdentityHardBlock::NameMismatch {
+                prev: p.to_string(), curr: c.to_string(),
+            };
+            return (
+                MergeCheckResult {
+                    same_encounter: false,
+                    reason: Some(format!(
+                        "Name hard-block: prev '{}' ≠ curr '{}'; LLM verdict ({}) overridden",
+                        p, c, llm_verdict.same_encounter
+                    )),
+                },
+                block,
+            );
+        }
+    }
+    (llm_verdict.clone(), IdentityHardBlock::Pass)
+}
+
+fn names_match_loose(a: &str, b: &str) -> bool {
+    let na = a.to_lowercase().split_whitespace().collect::<Vec<_>>().join(" ");
+    let nb = b.to_lowercase().split_whitespace().collect::<Vec<_>>().join(" ");
+    if na == nb { return true; }
+    let a_toks: Vec<&str> = na.split_whitespace().collect();
+    let b_toks: Vec<&str> = nb.split_whitespace().collect();
+    if a_toks.is_empty() || b_toks.is_empty() { return false; }
+    let first_match = a_toks[0].len() > 2 && b_toks[0].len() > 2 && a_toks[0] == b_toks[0];
+    let last_match = a_toks.last().map_or(false, |x| x.len() > 2)
+        && b_toks.last().map_or(false, |x| x.len() > 2)
+        && a_toks.last() == b_toks.last();
+    first_match || last_match
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

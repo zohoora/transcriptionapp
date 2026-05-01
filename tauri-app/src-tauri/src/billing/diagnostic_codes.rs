@@ -672,7 +672,9 @@ const ABBREVIATION_EXPANSIONS: &[(&str, &str)] = &[
     ("gallstones", "cholelithiasis gall stones"),
     ("pre-cholecystectomy", "cholelithiasis gall stones"),
     ("cholecystectomy", "cholelithiasis gall stones"),
-    ("prp", "skin subcutaneous"),
+    // 2026-04-30 review: REMOVED `("prp", "skin subcutaneous")` —
+    // PRP = platelet-rich plasma (orthopedic), not a skin condition.
+    // The Joanne Takacs case was steering Stage-2 onto 707 bedsore.
     ("chronic wound", "decubitus ulcer bed sore"),
     ("chronic ulcer", "decubitus ulcer bed sore"),
     ("foot swelling", "edema masses"),
@@ -690,6 +692,10 @@ pub fn match_diagnosis_text(text: &str) -> Option<&'static DiagnosticCode> {
         "to", "is", "was", "due", "from", "not", "other", "including",
         "progressive", "mild", "moderate", "severe",
         "unspecified", "bilateral", "left", "right",
+        // 2026-04-30 review additions: stop-word degeneracy that landed
+        // Karin Smit's "No diagnosis documented" on 311 (Depression).
+        "no", "none", "nothing", "diagnosis", "documented", "primary",
+        "secondary", "specific", "patient",
     ];
 
     // Expand abbreviations before tokenizing.

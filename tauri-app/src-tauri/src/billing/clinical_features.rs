@@ -540,11 +540,21 @@ pub fn augment_procedures_from_soap_text(
         ("occipital", ProcedureType::NerveBlockOccipital),
         ("nerve block", ProcedureType::NerveBlockPeripheral),
         ("paravertebral", ProcedureType::NerveBlockParavertebral),
+        // 2026-04-30 Class E: epidural is anatomically a paravertebral block
+        ("epidural", ProcedureType::NerveBlockParavertebral),
+        ("epidural injection", ProcedureType::NerveBlockParavertebral),
         ("numbing injection", ProcedureType::NerveBlockPeripheral),
         ("joint injection", ProcedureType::JointInjection),
         ("knee injection", ProcedureType::JointInjection),
         ("shoulder injection", ProcedureType::JointInjection),
         ("hip injection", ProcedureType::JointInjection),
+        // 2026-04-30 Class E: anatomy expansions (Karen White's "neck injection",
+        // back/lumbar/spinal injections that previously fell through).
+        ("neck injection", ProcedureType::NerveBlockPeripheral),
+        ("cervical injection", ProcedureType::NerveBlockPeripheral),
+        ("back injection", ProcedureType::NerveBlockParavertebral),
+        ("lumbar injection", ProcedureType::NerveBlockParavertebral),
+        ("spinal injection", ProcedureType::NerveBlockParavertebral),
         ("cortisone", ProcedureType::JointInjection),
         ("im injection", ProcedureType::ImInjectionWithVisit),
         ("intramuscular injection", ProcedureType::ImInjectionWithVisit),
@@ -577,6 +587,36 @@ pub fn augment_procedures_from_soap_text(
                 "Class 6 safety net: augmenting procedures with {:?} (signal: {:?}) — \
                  LLM extraction missed it but the SOAP procedure section indicates it was performed",
                 proc_type, signal
+            );
+            features.procedures.push(proc_type.clone());
+            added += 1;
+        }
+    }
+
+    // 2026-04-30 Class E: compound (AND) signals for cases where the SOAP
+    // wording places the procedure verb and the anatomy several words apart
+    // (Karen "Administered injection to right side of neck").
+    let compound_signals: &[(&[&str], ProcedureType)] = &[
+        (&["injection", "neck"], ProcedureType::NerveBlockPeripheral),
+        (&["injection", "cervical"], ProcedureType::NerveBlockPeripheral),
+        (&["injection", "occipital"], ProcedureType::NerveBlockOccipital),
+        (&["injection", "epidural"], ProcedureType::NerveBlockParavertebral),
+        (&["injection", "spine"], ProcedureType::NerveBlockParavertebral),
+        (&["injection", "lumbar"], ProcedureType::NerveBlockParavertebral),
+        (&["injection", "back"], ProcedureType::NerveBlockParavertebral),
+        (&["injection", "knee"], ProcedureType::JointInjection),
+        (&["injection", "shoulder"], ProcedureType::JointInjection),
+        (&["injection", "hip"], ProcedureType::JointInjection),
+        (&["injection", "bursa"], ProcedureType::JointInjection),
+        (&["administered", "injection"], ProcedureType::JointInjection),
+        (&["performed", "injection"], ProcedureType::JointInjection),
+    ];
+    for (kwds, proc_type) in compound_signals {
+        if features.procedures.contains(proc_type) { continue; }
+        if kwds.iter().all(|kw| lower.contains(kw)) {
+            tracing::warn!(
+                "Class 6 compound safety net: augmenting procedures with {:?} (all of {:?})",
+                proc_type, kwds
             );
             features.procedures.push(proc_type.clone());
             added += 1;
