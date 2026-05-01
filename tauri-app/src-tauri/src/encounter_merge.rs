@@ -126,9 +126,25 @@ pub fn parse_merge_check(response: &str) -> Result<MergeCheckResult, String> {
     parse_llm_json_response(response, "{\"same_encounter\"", "merge check")
 }
 
+// 2026-04-30 Class A REJECTED by directive: vision-based identity
+// hard-block (DOB/name mismatch overriding the merge LLM) was prototyped
+// here but removed per ops feedback ("charts often aren't open" — vision
+// identity is high-noise; using it as a load-bearing input to the live
+// detection pipeline produces false negatives).
+//
+// The Linda+Rashida false-merge class is instead solved via:
+// 1. Wider merge-check `curr_head_words` window (currently 500 — too narrow
+//    to detect mid-buffer patient transitions).
+// 2. multi_patient_detect timeout raised 30s → 180s (covers long combined
+//    transcripts that previously timed out as the safety-net check).
+// See `~/.claude/.../memory/feedback_no_vision_for_session_detection.md`.
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // Class A vision-based identity hard-block tests REMOVED — directive
+    // forbids using vision name/DOB as a load-bearing input to detection.
 
     #[test]
     fn test_parse_merge_check_with_think_tags() {

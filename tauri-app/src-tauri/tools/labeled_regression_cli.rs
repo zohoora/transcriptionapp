@@ -361,16 +361,18 @@ async fn main() -> ExitCode {
 
             match billing {
                 Some(billing) => {
+                    let actual_codes: Vec<String> = billing.codes.iter().map(|c| c.code.clone())
+                        .chain(billing.time_entries.iter().map(|t| t.code.clone()))
+                        .collect();
+
                     if let Some(expected_codes) = &label.labels.billing_codes_expected {
-                        let mut actual: Vec<String> = billing.codes.iter().map(|c| c.code.clone()).collect();
-                        actual.extend(billing.time_entries.iter().map(|t| t.code.clone()));
                         results.checks += 1;
-                        if expected_codes.iter().all(|c| actual.contains(c)) {
+                        if expected_codes.iter().all(|c| actual_codes.contains(c)) {
                             results.passes += 1;
                         } else {
                             let mut expected_sorted = expected_codes.clone();
                             expected_sorted.sort();
-                            let mut actual_sorted = actual.clone();
+                            let mut actual_sorted = actual_codes.clone();
                             actual_sorted.sort();
                             results.failures.push(format!(
                                 "  ✗ billing_codes: expected {:?} subset of actual, got {:?}",
@@ -379,9 +381,61 @@ async fn main() -> ExitCode {
                         }
                     }
 
+                    // 2026-04-30 schema additions: also check `billing_codes_unexpected`.
+                    // Karen White K005A and Carl Grieve G372A are present-but-flagged-wrong cases.
+                    if let Some(unexpected_codes) = &label.labels.billing_codes_unexpected {
+                        for code in unexpected_codes {
+                            results.checks += 1;
+                            if actual_codes.contains(code) {
+                                results.failures.push(format!(
+                                    "  ✗ billing_codes_unexpected: code {} present (label flagged as inappropriate)",
+                                    code
+                                ));
+                            } else {
+                                results.passes += 1;
+                            }
+                        }
+                    }
+
+                    // 2026-04-30 schema addition: per-code `billing_quantity_expected`.
+                    // Deanna Wicks K005A qty=2 case (was qty=1 pre-Class-G fix).
+                    if let Some(qty_expected) = &label.labels.billing_quantity_expected {
+                        for (code, expected_qty) in qty_expected {
+                            results.checks += 1;
+                            let actual_qty = billing
+                                .codes
+                                .iter()
+                                .find(|c| &c.code == code)
+                                .map(|c| c.quantity as u32);
+                            if actual_qty == Some(*expected_qty as u32) {
+                                results.passes += 1;
+                            } else {
+                                results.failures.push(format!(
+                                    "  ✗ billing_quantity[{}]: expected {}, got {:?}",
+                                    code, expected_qty, actual_qty
+                                ));
+                            }
+                        }
+                    }
+
                     if let Some(expected_dx) = &label.labels.diagnostic_code_expected {
                         let actual_dx = billing.diagnostic_code.clone().unwrap_or_default();
-                        results.check("diagnostic_code", expected_dx, &actual_dx);
+                        // 2026-04-30 schema addition: honor `diagnostic_code_acceptable` —
+                        // match against expected OR any acceptable code.
+                        let acceptable: Vec<String> = label
+                            .labels
+                            .diagnostic_code_acceptable
+                            .clone()
+                            .unwrap_or_default();
+                        results.checks += 1;
+                        if &actual_dx == expected_dx || acceptable.contains(&actual_dx) {
+                            results.passes += 1;
+                        } else {
+                            results.failures.push(format!(
+                                "  ✗ diagnostic_code: expected {} (acceptable: {:?}), got {}",
+                                expected_dx, acceptable, actual_dx
+                            ));
+                        }
                     }
                 }
                 None => {

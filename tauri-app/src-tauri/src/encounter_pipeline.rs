@@ -302,6 +302,55 @@ pub async fn extract_and_archive_billing(
 ) -> Result<crate::billing::BillingRecord, String> {
     use crate::billing::clinical_features::{build_billing_extraction_prompt, parse_billing_extraction};
 
+    // 2026-04-30 Class D wiring: skip billing extraction entirely when SOAP
+    // is non-substantive (all "Not documented" placeholders or similar).
+    // Karin Smit's d7039e4c session generated A008A + Q310A + dx 311 against
+    // a 522-word multi-language STT-noise transcript whose SOAP had every
+    // section as "Not documented". An empty SOAP cannot support billing or
+    // diagnostic-code resolution; emit a sentinel BillingRecord with an
+    // explanatory note so downstream tools can audit.
+    if !is_substantive_soap(soap_content) {
+        info!(
+            "[Class D] Skipping billing extraction for {} — SOAP is non-substantive (all-placeholder bullets)",
+            session_id
+        );
+        if let Ok(mut l) = logger.lock() {
+            l.log_event(
+                "billing_skipped_empty_soap",
+                serde_json::json!({
+                    "session_id": session_id,
+                    "reason": "non_substantive_soap",
+                    "soap_chars": soap_content.len(),
+                }),
+            );
+        }
+        // Return an empty draft so callers don't write a billing.json
+        return Err("non_substantive_soap".to_string());
+    }
+
+    // 2026-04-30 Class I wiring: detect SOAP P/Procedure cross-section
+    // contradictions ("Hold off on injections" in P + "Performed injection"
+    // in Procedure). James Dollery's case. Logs a warning event for
+    // clinician review; does NOT block billing — Procedure section is the
+    // canonical record of what physically happened.
+    if detect_soap_p_procedure_contradiction(soap_content) {
+        warn!(
+            "[Class I] SOAP P/Procedure contradiction detected for {} — \
+             P-section claims deferral but Procedure-section lists a performed action",
+            session_id
+        );
+        if let Ok(mut l) = logger.lock() {
+            l.log_event(
+                "soap_contradiction_detected",
+                serde_json::json!({
+                    "session_id": session_id,
+                    "kind": "p_procedure_contradiction",
+                    "note": "P claims deferral but Procedure non-empty; trust Procedure as authoritative",
+                }),
+            );
+        }
+    }
+
     let billing_timeout = billing_timeout_override.unwrap_or(BILLING_EXTRACTION_TIMEOUT_SECS);
 
     // Build prompt
@@ -398,20 +447,13 @@ pub async fn extract_and_archive_billing(
     // Override after-hours from caller (more reliable than LLM)
     features.is_after_hours = is_after_hours;
 
-    // Procedure→billing safety net: when the LLM's extraction missed a
-    // procedure that the SOAP procedure section explicitly states (e.g.
-    // a nerve-block injection), best-effort augment features.procedures
-    // so the rule engine bills it.
+    // Procedure→billing safety net: extract the SOAP procedure section
+    // and pass it to the rule engine via `RuleEngineContext.soap_procedure_text`.
+    // The rule engine itself runs `augment_procedures_from_soap_text_tracked`
+    // and tracks soap-grounded procedures so it can bypass the past-tense
+    // transcript validator for them (silent-doctor-narration injections
+    // still bill — Karen White / Frederick Moore on 2026-04-30).
     let proc_section = extract_soap_procedure_section(soap_content);
-    if !proc_section.is_empty() {
-        let added = crate::billing::clinical_features::augment_procedures_from_soap_text(
-            &mut features,
-            &proc_section,
-        );
-        if added > 0 {
-            warn!("Augmented {} procedure(s) from SOAP text for session {}", added, session_id);
-        }
-    }
 
     // SOAP-text keyword guard (v0.10.61). The LLM sometimes hallucinates
     // K-code conditions (diabetic_assessment, chf_management,
@@ -458,15 +500,27 @@ pub async fn extract_and_archive_billing(
     )
     .await;
 
-    // Map features to billing codes via deterministic rule engine (with companion code context)
+    // Map features to billing codes via deterministic rule engine (with companion code context).
+    // Wrap caller's ctx with the SOAP procedure-section text so the engine's
+    // internal augment + soap-grounded transcript-validation bypass fires.
     let date_str = format!("{:04}-{:02}-{:02}", session_date.year(), session_date.month(), session_date.day());
+    let augmented_ctx = crate::billing::RuleEngineContext {
+        is_hospital: rule_ctx.is_hospital,
+        counselling_exhausted: rule_ctx.counselling_exhausted,
+        transcript: rule_ctx.transcript.clone(),
+        soap_procedure_text: if proc_section.is_empty() {
+            None
+        } else {
+            Some(proc_section)
+        },
+    };
     let mut record = crate::billing::map_features_to_billing_with_tools_model(
         &features,
         session_id,
         &date_str,
         duration_ms,
         patient_name,
-        rule_ctx,
+        &augmented_ctx,
         billing_data,
         tools_model_resolved.as_ref(),
     );
@@ -536,18 +590,36 @@ pub async fn extract_and_archive_billing(
     Ok(record)
 }
 
-/// Extract the Assessment ("A:") section of a SOAP note for use as context
-/// Extract the rendered SOAP's Assessment section. Falls back to the
-/// first ~1500 bytes if the marker isn't present. Markers are sourced
-/// from `llm_client::SOAP_SECTION_*` so renderer changes propagate.
+/// Extract a single SOAP section between `start_marker` and `end_marker`
+/// (or to end-of-string when no `end_marker`). Returns empty string when
+/// `start_marker` is absent. Markers are sourced from `llm_client::SOAP_SECTION_*`
+/// so renderer changes propagate. Tolerates marker variants with/without
+/// trailing newline.
+fn extract_soap_section(soap: &str, start_marker: &str, end_marker: Option<&str>) -> String {
+    let start_trim = start_marker.trim_end_matches('\n');
+    let Some(idx) = soap.find(start_marker).or_else(|| soap.find(start_trim)) else {
+        return String::new();
+    };
+    let body_start = if soap[idx..].starts_with(start_marker) {
+        idx + start_marker.len()
+    } else {
+        idx + start_trim.len()
+    };
+    let rest = &soap[body_start..];
+    let end = match end_marker {
+        Some(em) => rest.find(em.trim_end_matches('\n')).unwrap_or(rest.len()),
+        None => rest.len(),
+    };
+    rest[..end].trim().to_string()
+}
+
+/// Extract the SOAP Assessment section, or fall back to the first ~1500
+/// bytes when the marker is absent.
 fn extract_soap_assessment(soap: &str) -> String {
     use crate::llm_client::{SOAP_SECTION_ASSESSMENT, SOAP_SECTION_PLAN};
-    let assessment_marker = SOAP_SECTION_ASSESSMENT.trim_end_matches('\n');
-    let plan_marker = SOAP_SECTION_PLAN.trim_end_matches('\n');
-    if let Some(idx) = soap.find(assessment_marker) {
-        let rest = &soap[idx + assessment_marker.len()..];
-        let end = rest.find(plan_marker).unwrap_or(rest.len());
-        return rest[..end].trim().to_string();
+    let body = extract_soap_section(soap, SOAP_SECTION_ASSESSMENT, Some(SOAP_SECTION_PLAN));
+    if !body.is_empty() {
+        return body;
     }
     let mut end = soap.len().min(1500);
     while end > 0 && !soap.is_char_boundary(end) {
@@ -556,17 +628,88 @@ fn extract_soap_assessment(soap: &str) -> String {
     soap[..end].to_string()
 }
 
-/// Extract the rendered SOAP's Procedure section. Returns empty string
-/// when no Procedure section is present. Procedure is the LAST section
-/// in render order, so the cut runs to end-of-string.
+/// Extract the SOAP Procedure section. Procedure is the last section in
+/// render order; the cut runs to end-of-string.
 fn extract_soap_procedure_section(soap: &str) -> String {
     use crate::llm_client::SOAP_SECTION_PROCEDURE;
-    let with_newline = SOAP_SECTION_PROCEDURE;
-    let without_trailing = SOAP_SECTION_PROCEDURE.trim_end_matches('\n');
-    if let Some(idx) = soap.find(with_newline).or_else(|| soap.find(without_trailing)) {
-        return soap[idx..].trim().to_string();
+    extract_soap_section(soap, SOAP_SECTION_PROCEDURE, None)
+}
+
+/// Extract the SOAP Plan section (between PLAN and PROCEDURE markers).
+fn extract_soap_plan(soap: &str) -> String {
+    use crate::llm_client::{SOAP_SECTION_PLAN, SOAP_SECTION_PROCEDURE};
+    extract_soap_section(soap, SOAP_SECTION_PLAN, Some(SOAP_SECTION_PROCEDURE))
+}
+
+/// 2026-04-30 Class D: detect SOAPs that parsed but contain only
+/// "Not documented" placeholders. Karin Smit's session generated
+/// fabricated billing on this fingerprint.
+pub fn is_substantive_soap(soap: &str) -> bool {
+    const PLACEHOLDERS: &[&str] = &[
+        "not documented", "not documented.", "[see transcript]",
+        "(no documentation provided)", "no documentation",
+        "n/a", "none", "none documented", "no significant findings",
+    ];
+    fn is_placeholder(line: &str) -> bool {
+        let trimmed = line
+            .trim_start_matches(|c: char| c == '•' || c == '-' || c == '*' || c.is_whitespace())
+            .trim()
+            .to_lowercase();
+        if trimmed.is_empty() { return true; }
+        PLACEHOLDERS.iter().any(|p| trimmed == *p)
     }
-    String::new()
+    use crate::llm_client::{
+        SOAP_SECTION_ASSESSMENT, SOAP_SECTION_OBJECTIVE, SOAP_SECTION_PLAN,
+        SOAP_SECTION_PROCEDURE, SOAP_SECTION_SUBJECTIVE,
+    };
+    let markers = [
+        SOAP_SECTION_SUBJECTIVE,
+        SOAP_SECTION_OBJECTIVE.trim_start(),
+        SOAP_SECTION_ASSESSMENT.trim_start(),
+        SOAP_SECTION_PLAN.trim_start(),
+        SOAP_SECTION_PROCEDURE.trim_start(),
+    ];
+    let mut substantive_sections = 0u32;
+    for (i, marker) in markers.iter().enumerate() {
+        let Some(start) = soap.find(marker) else { continue };
+        let body_start = start + marker.len();
+        let next_marker_idx = markers
+            .iter()
+            .skip(i + 1)
+            .filter_map(|m| soap[body_start..].find(m).map(|x| body_start + x))
+            .min()
+            .unwrap_or(soap.len());
+        let body = &soap[body_start..next_marker_idx];
+        let has_substantive = body.lines().any(|line| !is_placeholder(line));
+        if has_substantive { substantive_sections += 1; }
+    }
+    substantive_sections >= 2
+}
+
+/// 2026-04-30 Class I: detect SOAP P/Procedure section contradictions
+/// (James Dollery had P "Hold off on injections" + Procedure "Performed
+/// injection"). Returns true when Procedure is non-empty AND P contains
+/// a deferral phrase.
+pub fn detect_soap_p_procedure_contradiction(soap: &str) -> bool {
+    let procedure = extract_soap_procedure_section(soap);
+    if procedure.is_empty() { return false; }
+    let plan = extract_soap_plan(soap);
+    if plan.is_empty() { return false; }
+    let plan_lc = plan.to_lowercase();
+    const DEFERRAL_PHRASES: &[&str] = &[
+        "hold off on further injection",
+        "hold off on the injection",
+        "hold off on injection",
+        "no injection performed",
+        "did not inject",
+        "did not perform the injection",
+        "no procedure today",
+        "deferred the injection",
+        "injection deferred",
+        "declined injection",
+        "declined the injection",
+    ];
+    DEFERRAL_PHRASES.iter().any(|p| plan_lc.contains(p))
 }
 
 /// Determine if a session started during after-hours (Ontario EST/EDT).
@@ -1363,6 +1506,66 @@ mod class6_section_extractor_tests {
 mod tests {
     use super::*;
     use crate::continuous_mode_events::ContinuousModeEvent;
+
+    // ====== 2026-04-30 forensic review validation tests ======
+
+    #[test]
+    fn class_d_2026_04_30_karin_empty_soap_not_substantive() {
+        let soap = "S:\n• Not documented\n\n\
+                    O:\n• Not documented\n\n\
+                    A:\n• Not documented\n\n\
+                    P:\n• Not documented";
+        assert!(!is_substantive_soap(soap));
+    }
+
+    #[test]
+    fn class_d_2026_04_30_real_soap_is_substantive() {
+        let soap = "S:\n• Patient reports knee pain\n\n\
+                    O:\n• Not documented\n\n\
+                    A:\n• Bilateral knee OA\n\n\
+                    P:\n• Scheduled blood draw for PRP";
+        assert!(is_substantive_soap(soap));
+    }
+
+    #[test]
+    fn class_d_2026_04_30_procedure_section_counts_as_substantive() {
+        let soap = "S:\n• Not documented\n\n\
+                    O:\n• Not documented\n\n\
+                    A:\n• Knee OA\n\n\
+                    P:\n• Not documented\n\n\
+                    Procedure:\n• Administered cortisone knee injection";
+        assert!(is_substantive_soap(soap));
+    }
+
+    #[test]
+    fn class_i_2026_04_30_james_p_hold_off_with_procedure_performed() {
+        let soap = "S:\n• Pain\n\n\
+                    O:\n• Exam\n\n\
+                    A:\n• Radiculopathy\n\n\
+                    P:\n• Hold off on further injections at this time\n• Monitor symptoms\n\
+                    Procedure:\n• Performed injection at left-sided painful spot";
+        assert!(detect_soap_p_procedure_contradiction(soap));
+    }
+
+    #[test]
+    fn class_i_2026_04_30_consistent_p_procedure_no_flag() {
+        let soap = "S:\n• Pain\n\n\
+                    A:\n• OA\n\n\
+                    P:\n• Continue management\n\
+                    Procedure:\n• Administered knee injection";
+        assert!(!detect_soap_p_procedure_contradiction(soap));
+    }
+
+    #[test]
+    fn class_i_2026_04_30_unrelated_hold_off_no_flag() {
+        let soap = "S:\n• Pain\n\n\
+                    A:\n• OA\n\n\
+                    P:\n• Hold off on the medication change\n• Schedule follow-up\n\
+                    Procedure:\n• Administered cortisone knee injection";
+        assert!(!detect_soap_p_procedure_contradiction(soap));
+    }
+
+    // ====== end 2026-04-30 validation tests ======
 
     // ── Helper: write a minimal ArchiveMetadata JSON to a temp dir ──
 

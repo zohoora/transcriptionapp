@@ -461,7 +461,7 @@ Jim: Thanks doc."#;
         let mp_user = format!("Transcript:\n\n{}", couples_transcript);
         let detect_result = rt.block_on(async {
             tokio::time::timeout(
-                tokio::time::Duration::from_secs(30),
+                tokio::time::Duration::from_secs(crate::encounter_detection::MULTI_PATIENT_DETECT_TIMEOUT_SECS),
                 client.generate(fast_model, crate::encounter_detection::MULTI_PATIENT_DETECT_PROMPT, &mp_user, "multi_patient_detect"),
             ).await
         });

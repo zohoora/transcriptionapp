@@ -1,0 +1,18 @@
+{
+  "session_id": "881519b5-d143-44ad-986b-36146994f5e2",
+  "date": "2026-04-30",
+  "labeled_at": "2026-04-30T20:30:00+00:00",
+  "labeled_by": "Dr Z (2026-04-30 clinic-day forensic review)",
+  "labels": {
+    "split_correct": true,
+    "merge_correct": true,
+    "clinical_correct": true,
+    "patient_count_correct": true,
+    "procedure_section_correct": true,
+    "billing_codes_expected": ["A007A", "G370A", "E542A", "Q310A"],
+    "billing_codes_unexpected": ["K005A"],
+    "diagnostic_code_expected": "729",
+    "diagnostic_code_acceptable": ["723", "729", "722", "335"],
+    "notes": "Karen Dawn White 11:03am — cervical radiculopathy + autoimmune (alopecia totalis, MS, lupus-like). Doctor administered injection to right side of neck (clearly stated in Procedure section). DEFECTS: (1) Class E BILLING MISSED INJECTION — only A007A + K005 + Q310 saved. Expected G370A (joint/bursa injection) for the cervical injection. Augment signal table has no `neck injection` / `cervical injection` keyword, so safety net didn't fire. (2) Class H K005A INAPPROPRIATELY ADDED — SOAP has no mental-health primary content (cervical pain + IVIG/MS workup). The PrimaryMentalHealth condition fired without `condition_keyword_guard` coverage for K005. (3) Diagnostic code 724 (Lumbago/sciatica) is in the right family but wrong site — patient has CERVICAL not lumbar radiculopathy. Better: 723 (cervical) or 729 (musculoskeletal), or 335 (motor neuron — given MS context)."
+  }
+}

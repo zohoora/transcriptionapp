@@ -19,6 +19,14 @@ pub struct RuleEngineContext {
     /// `validate_condition_evidence` pattern. When `None`, validation is
     /// skipped (backward compat).
     pub transcript: Option<String>,
+    /// 2026-04-30 architecture-gap fix: optional SOAP Procedure-section text.
+    /// When provided, the rule engine runs `augment_procedures_from_soap_text`
+    /// internally before mapping procedures, ensuring the safety net fires
+    /// regardless of caller convention. Previously this was caller-side in
+    /// `extract_and_archive_billing` only — replay/experiment tools that
+    /// invoked `map_features_to_billing_with_tools_model` directly bypassed
+    /// the augment layer.
+    pub soap_procedure_text: Option<String>,
 }
 
 /// Map extracted clinical features to a draft billing record with OHIP codes.
@@ -64,6 +72,32 @@ pub fn map_features_to_billing_with_tools_model(
     billing_data: BillingDataRef<'_>,
     tools_model_resolved: Option<&ResolvedDiagnostic>,
 ) -> BillingRecord {
+    // 2026-04-30 architecture-gap fix: clone features so we can run
+    // `augment_procedures_from_soap_text` internally when ctx provides the
+    // SOAP procedure text. Previously this was caller-side only — any
+    // caller using `map_features_to_billing_with_tools_model` directly
+    // bypassed the safety net.
+    //
+    // Track WHICH procedures were added by augment so they can bypass the
+    // past-tense transcript validator (`validate_procedure_evidence`). The
+    // SOAP procedure section's explicit listing IS sufficient evidence —
+    // many real injections happen with silent doctor narration (Karen White
+    // and Frederick Moore on 2026-04-30 both had injections documented in
+    // SOAP but no past-tense action language in transcript).
+    let mut features_owned;
+    let mut soap_grounded: Vec<ProcedureType> = Vec::new();
+    let features: &ClinicalFeatures = if let Some(proc_text) = ctx.soap_procedure_text.as_deref() {
+        if !proc_text.trim().is_empty() {
+            features_owned = features.clone();
+            soap_grounded = augment_procedures_from_soap_text_tracked(&mut features_owned, proc_text);
+            &features_owned
+        } else {
+            features
+        }
+    } else {
+        features
+    };
+
     let mut codes: Vec<BillingCode> = Vec::new();
 
     // 1. Visit type -> assessment code
@@ -117,15 +151,33 @@ pub fn map_features_to_billing_with_tools_model(
     }
 
     // 2. Procedures -> procedure codes.
-    //    When a transcript is supplied, drop procedure codes whose past-tense
-    //    action evidence is absent — guards against the SOAP-LLM extracting an
-    //    injection procedure from discussion-only mentions (e.g. patch
-    //    counselling, deferred Sublocade plans).
+    //    Class F mutual-exclusion (2026-04-30): when a nerve block is
+    //    present, suppress G372A (the local anesthetic is a component
+    //    of the nerve block, not a separately billable IM injection —
+    //    Carl Grieve case).
+    let has_nerve_block = features.procedures.iter().any(|p| matches!(p,
+        ProcedureType::NerveBlockPeripheral
+        | ProcedureType::NerveBlockOccipital
+        | ProcedureType::NerveBlockOccipitalAdditional
+        | ProcedureType::NerveBlockParavertebral
+        | ProcedureType::NerveBlockAdditional
+    ));
     let mut procedure_codes: Vec<String> = Vec::new();
     for proc in &features.procedures {
-        if let Some(ts) = ctx.transcript.as_deref() {
-            if !validate_procedure_evidence(proc, ts) {
-                continue;
+        if has_nerve_block && matches!(proc, ProcedureType::ImInjectionWithVisit) {
+            continue;
+        }
+        // 2026-04-30 architecture-gap fix: skip past-tense transcript
+        // validation when this procedure was added via the SOAP-grounded
+        // augment path. The SOAP procedure section's explicit documentation
+        // is itself authoritative (silent-narration injections still
+        // happen and are billable).
+        let soap_grounded_proc = soap_grounded.contains(proc);
+        if !soap_grounded_proc {
+            if let Some(ts) = ctx.transcript.as_deref() {
+                if !validate_procedure_evidence(proc, ts) {
+                    continue;
+                }
             }
         }
         let proc_code = procedure_type_to_code(proc, billing_data);
@@ -141,11 +193,25 @@ pub fn map_features_to_billing_with_tools_model(
     //    K005A/K007A are suppressed when visitType is counselling (K013A) —
     //    they're mutually exclusive per-unit time codes for the same service.
     let mut condition_codes: Vec<String> = Vec::new();
+    // 2026-04-30 Class G: per-unit counselling codes (K005A/K007A) are
+    // about TIME spent — multiple conditions on the same encounter must
+    // not multiply units. Track which have already been emitted with
+    // duration-scaled qty; subsequent emissions are skipped so dedupe
+    // doesn't sum duration*N.
+    let mut duration_scaled_emitted: Vec<&str> = Vec::new();
     for cond in &features.conditions {
         let cond_codes = condition_type_to_codes(cond, billing_data);
         for code_str in cond_codes {
-            // Suppress K005A/K007A when already billing K013A (or vice versa)
-            if matches!(code_str.as_str(), "K005A" | "K007A") && assessment_code == "K013A" {
+            // K005A/K007A from conditions are suppressed when assessment_code
+            // is itself a per-unit counselling code (K013A/K005A/K007A) — the
+            // assessment branch already added it (avoids dedup summing).
+            if matches!(code_str.as_str(), "K005A" | "K007A")
+                && matches!(assessment_code.as_str(), "K013A" | "K005A" | "K007A")
+            {
+                continue;
+            }
+            // Skip subsequent same-K005/K007 push from a later condition.
+            if duration_scaled_emitted.iter().any(|c| *c == code_str.as_str()) {
                 continue;
             }
             if code_str.starts_with('K') {
@@ -165,7 +231,12 @@ pub fn map_features_to_billing_with_tools_model(
                 }
             }
             if let Some(ohip) = ohip_codes::get_code(&code_str) {
-                codes.push(make_billing_code(ohip, BillingConfidence::Medium, false));
+                let mut bc = make_billing_code(ohip, BillingConfidence::Medium, false);
+                if matches!(code_str.as_str(), "K005A" | "K007A") {
+                    bc.quantity = counselling_units_from_duration(duration_ms, billing_data);
+                    duration_scaled_emitted.push(if code_str == "K005A" { "K005A" } else { "K007A" });
+                }
+                codes.push(bc);
                 condition_codes.push(code_str);
             }
         }
@@ -496,6 +567,18 @@ pub fn condition_keyword_guard(
                 "tobacco", "cigarette", "nicotine", "vaping nicotine",
                 "chewing tobacco", "smokes", "smoker", "smoking",
             ],
+            // Class H additions (2026-04-30 review):
+            ConditionType::PrimaryMentalHealth => &[
+                "anxiety", "anxious", "depression", "depressive", "depressed",
+                "mental health", "counselling", "counseling", "psychotherapy",
+                "anger management", "panic attack", "ptsd", "trauma",
+                "mood disorder", "bipolar", "ocd", "obsessive",
+                "suicid", "self-harm",
+            ],
+            ConditionType::FibromyalgiaCare => &[
+                "fibromyalgia", "myalgic encephalomyelitis", "me/cfs",
+                "chronic fatigue syndrome",
+            ],
             // Other conditions don't have this guard yet — keep as-is.
             _ => {
                 kept.push(cond.clone());
@@ -558,6 +641,14 @@ fn validate_procedure_evidence(proc: &ProcedureType, transcript: &str) -> bool {
             "i numbed it up", "i numbed up", "i landmarked",
             "i'm putting the needle", "i placed the needle",
             "i'll put a bandaid", "all done", "we're done",
+            // 2026-04-30 Class E expansions
+            "i was injecting", "we were injecting",
+            "did the injection", "did the shot",
+            "we just did the inject", "we just did an inject",
+            "from the injection", "after the injection",
+            "right now from the injection", "had this injection",
+            "feel it where i was inject", "where i was injecting",
+            "post-injection",
         ],
             // For procedures we haven't calibrated keywords for, default-allow.
         _ => return true,
@@ -906,7 +997,62 @@ const DX_SYNONYMS: &[(&str, &str)] = &[
     ("insomnia", "non-psychotic"),
     // Allergic
     ("rhinitis", "allergic"),
+    // 2026-04-30 review additions
+    ("radiculopathy", "lumbago"),
+    ("radiculopathy", "sciatica"),
+    ("radicular", "lumbago"),
+    ("radicular", "sciatica"),
+    ("peroneal", "neuritis"),
+    ("peroneal", "peripheral"),
+    ("nerve entrapment", "neuritis"),
+    ("entrapment", "neuritis"),
+    ("rheumatoid", "rheumatoid arthritis"),
 ];
+
+/// 2026-04-30 architecture-gap fix: detect OBVIOUS clinical-category
+/// mismatch between a primary diagnosis text and a candidate dx code's
+/// description. Used by Stage 1 high-confidence trust path to reject
+/// the LLM's clearly-wrong suggestions WITHOUT being so strict that it
+/// rejects acceptable variations.
+///
+/// Returns true when ANY of these holds:
+///   1. Primary diagnosis has a musculoskeletal anchor AND description is
+///      in a clearly-orthogonal category (respiratory, cardiac, dermatologic,
+///      gastrointestinal, etc.).
+///   2. Primary mentions radiculopathy AND description is fibrositis/myositis
+///      (the James Dollery case: 729 fibrositis was returned at conf 0.92
+///      for radiculopathy — different MSK families).
+///
+/// Designed to be FALSE for edge cases — fail-open preserves Stage 1 trust
+/// for the 90%+ of cases where the LLM is correct.
+pub(crate) fn dx_obvious_category_mismatch(
+    primary_diagnosis: &str,
+    dc_description: &str,
+) -> bool {
+    const MSK_ANCHORS: &[&str] = &[
+        "radiculopathy", "sciatic", "musculoskeletal", "arthriti", "joint pain",
+        "back pain", "neck pain", "fibromyalgia", "nerve entrapment", "peroneal",
+    ];
+    const ORTHOGONAL_CATEGORIES: &[&str] = &[
+        "respiratory", "bronch", "asthma", "pneumonia",
+        "cardiac", "hypertensive",
+        "decubitus", "bed sore", "acne", "eczema",
+        "intestinal", "gastritis",
+    ];
+    let p = primary_diagnosis.to_lowercase();
+    let d = dc_description.to_lowercase();
+    let primary_msk = MSK_ANCHORS.iter().any(|kw| p.contains(kw));
+    let desc_orthogonal = ORTHOGONAL_CATEGORIES.iter().any(|kw| d.contains(kw));
+    if primary_msk && desc_orthogonal {
+        return true;
+    }
+    // Rule 2: radiculopathy ≠ fibrositis/myositis (James Dollery 729 case).
+    // Skip when primary itself mentions fibrositis/muscular (no false-positive).
+    p.contains("radiculopathy")
+        && !p.contains("fibrosit")
+        && !p.contains("muscular")
+        && (d.contains("fibrosit") || d.contains("myositi"))
+}
 
 /// Cross-validate a tools-model-suggested OHIP diagnostic code's description
 /// against the primary diagnosis. Returns true if the two are plausibly
@@ -1061,13 +1207,34 @@ fn resolve_diagnostic_code(
     //     to Stage 2 text match. (A low-confidence LLM output is noise.)
     //
     // Skipped entirely when Stage 0 already set a diagnostic via tools-model.
+    //
+    // 2026-04-30 architecture-gap REFINED: previously Stage 1 was UNGUARDED
+    // for high-confidence LLM suggestions (conf >= 0.90). I tried adding the
+    // same `dx_description_matches_primary` cross-validation as Stage 0 but
+    // it was too aggressive — closed 1 case (James 729) but opened 5 new
+    // mismatches in the Apr 27/29 corpus (the LLM's mid-confidence + age-veto
+    // cases were correctly resolved by trust). Compromise: keep high-confidence
+    // trust, but add an EXPLICIT-CONTRADICTION check (description contains
+    // a category that's clearly orthogonal to primary diagnosis — e.g.
+    // "respiratory" code for "musculoskeletal" primary).
     if record.diagnostic_code.is_none() {
     if let Some(ref suggested) = features.suggested_diagnostic_code {
         if let Some(dc) = diagnostic_codes::get_diagnostic_code(suggested.trim()) {
             let conf = features.confidence;
             if conf >= DX_TRUST_CONFIDENCE {
-                // High-confidence path: trust the LLM.
-                set_diagnostic(record, dc);
+                // High-confidence path: trust the LLM UNLESS the description
+                // is in an orthogonal clinical category from the primary
+                // diagnosis (catches James 729 fibrositis-for-radiculopathy
+                // and similar without rejecting the LLM's correct cases).
+                let primary = features.primary_diagnosis.as_deref().unwrap_or("");
+                if dx_obvious_category_mismatch(primary, dc.description) {
+                    tracing::warn!(
+                        "Stage 1 LLM suggestion REJECTED (category mismatch): code={} (\"{}\") clearly orthogonal to primary_diagnosis=\"{}\"",
+                        dc.code, dc.description, primary
+                    );
+                } else {
+                    set_diagnostic(record, dc);
+                }
             } else if conf >= DX_MIN_CONSIDER {
                 // Mid-confidence path: keep the literal-word cross-validation guardrail.
                 let cross_valid = match features.primary_diagnosis.as_ref() {
@@ -1263,6 +1430,121 @@ mod tests {
         );
     }
     // ====== end Class 2 fix tests ======
+
+    // ====== 2026-04-30 forensic review validation tests (re-applied) ======
+
+    #[test]
+    fn dx_2026_04_30_radiculopathy_accepts_lumbago() {
+        // James Dollery + Linda Guest: "radiculopathy" must match 724 (lumbago).
+        assert!(dx_description_matches_primary(
+            "Recurrent left-sided radiculopathy with recent exacerbation",
+            "Lumbar strain, lumbago, coccydynia, sciatica"
+        ));
+    }
+
+    #[test]
+    fn dx_2026_04_30_peroneal_accepts_neuritis() {
+        // Carl Grieve: "peroneal nerve entrapment" must match 356 (neuritis).
+        assert!(dx_description_matches_primary(
+            "Left peroneal nerve entrapment or irritation suspected at fibular head",
+            "Idiopathic peripheral neuritis"
+        ));
+    }
+
+    #[test]
+    fn dx_2026_04_30_no_diagnosis_documented_text_match_returns_none() {
+        // Karin Smit: empty SOAP must not substring-match into 311.
+        let result = crate::billing::diagnostic_codes::match_diagnosis_text(
+            "No diagnosis documented"
+        );
+        assert!(result.is_none(), "got: {:?}", result.map(|d| (d.code, d.description)));
+    }
+
+    #[test]
+    fn dx_2026_04_30_joanne_prp_ra_does_not_match_bedsore() {
+        // PRP+chronic-pain + RA must not land on 707 (bedsore).
+        let result = crate::billing::diagnostic_codes::match_diagnosis_text(
+            "Worsening chronic pain post-PRP therapy with rheumatoid arthritis"
+        );
+        let code = result.map(|d| d.code);
+        assert_ne!(code, Some("707"));
+    }
+
+    #[test]
+    fn class_f_2026_04_30_nerve_block_suppresses_im_injection() {
+        use crate::billing::clinical_features::ProcedureType;
+        let mut features = default_features();
+        features.procedures = vec![
+            ProcedureType::NerveBlockPeripheral,
+            ProcedureType::ImInjectionWithVisit,
+        ];
+        let record = map_features_to_billing(&features, "s1", "2026-04-30", 1_200_000, None, None);
+        let codes: Vec<&str> = record.codes.iter().map(|c| c.code.as_str()).collect();
+        assert!(codes.contains(&"G231A"));
+        assert!(!codes.contains(&"G372A"), "G372A must be suppressed; got {:?}", codes);
+    }
+
+    #[test]
+    fn class_g_2026_04_30_deanna_k005_scales_with_71min() {
+        use crate::billing::clinical_features::{ConditionType, VisitType};
+        let mut features = default_features();
+        features.visit_type = VisitType::GeneralReassessment;
+        features.conditions = vec![ConditionType::PrimaryMentalHealth];
+        features.condition_evidence.insert(
+            "primary_mental_health".to_string(),
+            "anxiety counselling and anger management".to_string(),
+        );
+        let record = map_features_to_billing(&features, "s1", "2026-04-30", 71 * 60_000, None, None);
+        let k005 = record.codes.iter().find(|c| c.code == "K005A").expect("K005A");
+        assert_eq!(k005.quantity, 2, "71-min visit must produce K005A qty=2");
+    }
+
+    #[test]
+    fn class_h_2026_04_30_karen_no_mental_health_drops_k005() {
+        use crate::billing::clinical_features::ConditionType;
+        let karen_soap = "S: cervical pain. A: cervical radiculopathy, MS. P: refer immunology.";
+        let (kept, _) = condition_keyword_guard(&[ConditionType::PrimaryMentalHealth], karen_soap);
+        assert!(kept.is_empty(), "PrimaryMentalHealth must be DROPPED on non-MH SOAP");
+    }
+
+    #[test]
+    fn class_h_2026_04_30_joanne_ra_drops_k037() {
+        use crate::billing::clinical_features::ConditionType;
+        let joanne_soap = "A: Worsening chronic pain post-PRP. Rheumatoid Arthritis with heat-sensitive symptoms.";
+        let (kept, _) = condition_keyword_guard(&[ConditionType::FibromyalgiaCare], joanne_soap);
+        assert!(kept.is_empty(), "FibromyalgiaCare must be DROPPED for RA-only SOAP");
+    }
+
+    #[test]
+    fn class_e_2026_04_30_karen_neck_injection_compound_fires() {
+        use crate::billing::clinical_features::{augment_procedures_from_soap_text, ProcedureType};
+        let mut features = default_features();
+        let added = augment_procedures_from_soap_text(
+            &mut features,
+            "• Administered injection to right side of neck"
+        );
+        assert!(added > 0);
+        assert!(
+            features.procedures.contains(&ProcedureType::NerveBlockPeripheral)
+                || features.procedures.contains(&ProcedureType::JointInjection),
+            "neck-injection compound rule must fire; got {:?}",
+            features.procedures
+        );
+    }
+
+    #[test]
+    fn class_e_2026_04_30_linda_epidural_augments() {
+        use crate::billing::clinical_features::{augment_procedures_from_soap_text, ProcedureType};
+        let mut features = default_features();
+        let added = augment_procedures_from_soap_text(
+            &mut features,
+            "• Performed PRP injection at L5-S1 level (epidural)"
+        );
+        assert!(added > 0);
+        assert!(features.procedures.contains(&ProcedureType::NerveBlockParavertebral));
+    }
+
+    // ====== end 2026-04-30 validation tests ======
 
     #[test]
     fn test_minor_assessment_mapping() {
@@ -2103,10 +2385,10 @@ mod tests {
 
     #[test]
     fn test_k005_dedup_when_two_conditions_map_to_same_code() {
-        // Two ConditionTypes (PrimaryMentalHealth + OpioidWithdrawalManagement)
-        // both map to K005A — must aggregate to quantity=2, not parallel rows.
+        // 2026-04-30 update (Class G): quantity is now duration-driven.
+        // 28-min visit = 1 unit regardless of how many conditions.
         let mut features = default_features();
-        features.visit_type = VisitType::GeneralReassessment; // A004A — not the K013A path
+        features.visit_type = VisitType::GeneralReassessment;
         features.conditions = vec![
             ConditionType::PrimaryMentalHealth,
             ConditionType::OpioidWithdrawalManagement,
@@ -2121,15 +2403,11 @@ mod tests {
         );
         let record = map_features_to_billing(&features, "s1", "2026-04-27", 28 * 60 * 1000, None, None);
         let k005s: Vec<_> = record.codes.iter().filter(|c| c.code == "K005A").collect();
+        assert_eq!(k005s.len(), 1, "K005A appears exactly once");
         assert_eq!(
-            k005s.len(),
-            1,
-            "K005A should appear exactly once after dedup, got: {:?}",
+            k005s[0].quantity, 1,
+            "28-min visit = 1 unit regardless of condition count. Got: {:?}",
             record.codes.iter().map(|c| (&c.code, c.quantity)).collect::<Vec<_>>()
-        );
-        assert_eq!(
-            k005s[0].quantity, 2,
-            "Two conditions both mapping to K005A should aggregate into quantity=2"
         );
     }
 
@@ -2335,16 +2613,17 @@ mod tests {
     #[test]
     fn test_keyword_guard_drops_diabetes_when_soap_lacks_keyword() {
         // Apr 24 Alexander Gulas: SOAP about RA/Raynaud's, no diabetes mention.
-        // The LLM still emitted diabetic_assessment 3 seeds in a row.
+        // 2026-04-30 update: PrimaryMentalHealth is now guarded too — use
+        // an unguarded control (HivPrimaryCare).
         let soap = "S: cold extremities, RA flare. \
                     O: fingers turning white. \
                     A: Severe lumbar arthritis. Rheumatoid arthritis with vasculitis. \
                     P: Prescribe nitroglycerin cream for Raynaud's.";
         let (kept, dropped) = condition_keyword_guard(
-            &[ConditionType::DiabeticAssessment, ConditionType::PrimaryMentalHealth],
+            &[ConditionType::DiabeticAssessment, ConditionType::HivPrimaryCare],
             soap,
         );
-        assert_eq!(kept, vec![ConditionType::PrimaryMentalHealth]);
+        assert_eq!(kept, vec![ConditionType::HivPrimaryCare]);
         assert_eq!(dropped, vec![ConditionType::DiabeticAssessment]);
     }
 
@@ -2407,11 +2686,11 @@ mod tests {
 
     #[test]
     fn test_keyword_guard_passes_through_unguarded_conditions() {
-        // primary_mental_health, fibromyalgia_care, etc. don't have keyword guards yet.
-        // They should pass through untouched.
-        let soap = "S: mood. A: depression. P: counselling.";
+        // 2026-04-30 update: PrimaryMentalHealth + FibromyalgiaCare are
+        // now guarded. Use HomeCare + HivPrimaryCare (still unguarded).
+        let soap = "S: any. A: any. P: any.";
         let (kept, dropped) = condition_keyword_guard(
-            &[ConditionType::PrimaryMentalHealth, ConditionType::FibromyalgiaCare],
+            &[ConditionType::HomeCare, ConditionType::HivPrimaryCare],
             soap,
         );
         assert_eq!(kept.len(), 2);

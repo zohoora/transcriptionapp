@@ -213,3 +213,7 @@ harness = false
 lto = true
 opt-level = 3
 codegen-units = 1
+
+[[bin]]
+name = "forensic_2026_04_30_replay"
+path = "tools/forensic_2026_04_30_replay.rs"

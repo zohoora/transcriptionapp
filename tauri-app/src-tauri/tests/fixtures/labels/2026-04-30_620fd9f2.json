@@ -1,0 +1,16 @@
+{
+  "session_id": "620fd9f2-0088-4510-af9a-c06258dd8b22",
+  "date": "2026-04-30",
+  "labeled_at": "2026-04-30T20:30:00+00:00",
+  "labeled_by": "Dr Z (2026-04-30 clinic-day forensic review)",
+  "labels": {
+    "split_correct": true,
+    "merge_correct": true,
+    "clinical_correct": true,
+    "patient_count_correct": true,
+    "procedure_section_correct": true,
+    "billing_codes_expected": ["A007A", "Q310A"],
+    "diagnostic_code_expected": "715",
+    "notes": "Christina Louise Andrews 9:30am — bilateral knee OA, post-injection follow-up, plan PRP+Synvisc. SOAP correct. Billing A007A correct. Dx 715 (Osteoarthritis) correct. Used as the positive baseline for the 2026-04-30 review."
+  }
+}

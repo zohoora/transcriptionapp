@@ -1,0 +1,17 @@
+{
+  "session_id": "dc7018b2-f0e3-4ff1-8499-99503cce4217",
+  "date": "2026-04-30",
+  "labeled_at": "2026-04-30T20:30:00+00:00",
+  "labeled_by": "Dr Z (2026-04-30 clinic-day forensic review)",
+  "labels": {
+    "split_correct": true,
+    "merge_correct": true,
+    "clinical_correct": true,
+    "patient_count_correct": true,
+    "procedure_section_correct": false,
+    "billing_codes_expected": ["A007A", "G384A", "E542A", "Q310A"],
+    "diagnostic_code_expected": "724",
+    "diagnostic_code_acceptable": ["724", "722", "729"],
+    "notes": "James Fredrick Dollery 1:46pm — left-sided radiculopathy with leg radiation; ONE trigger-point injection performed. DEFECTS: (1) Class I SOAP P/PROCEDURE CONTRADICTION — P-section says 'Hold off on further injections at this time' but Procedure-section says 'Performed injection at left-sided painful spot'. Transcript shows the doctor verbalized the decision flip mid-sentence ('Did you want to do an injection? Yeah. Do you wanna hold off Just file it in the pocket. Come on up.'); SOAP-model captured both halves into different sections. Fix: post-SOAP cross-section consistency check — when P-section claims 'no procedure today / hold off / deferred' and Procedure-section lists a performed procedure, prefer Procedure as authoritative and emit `soap_contradiction_detected` event (or regenerate). (2) Class B dx 729 (fibrositis) wrong — should be 724 (lumbago/sciatica) for radiculopathy with leg radiation. Same DX_SYNONYMS gap as Carl. Billing OK given that an injection WAS in fact performed."
+  }
+}

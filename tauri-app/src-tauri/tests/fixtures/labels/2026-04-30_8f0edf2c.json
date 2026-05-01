@@ -1,0 +1,17 @@
+{
+  "session_id": "8f0edf2c-04fa-49df-9cbd-f6a265a7c840",
+  "date": "2026-04-30",
+  "labeled_at": "2026-04-30T20:30:00+00:00",
+  "labeled_by": "Dr Z (2026-04-30 clinic-day forensic review)",
+  "labels": {
+    "split_correct": true,
+    "merge_correct": true,
+    "clinical_correct": true,
+    "patient_count_correct": true,
+    "procedure_section_correct": true,
+    "billing_codes_expected": ["A004A", "K005A", "Q310A"],
+    "billing_quantity_expected": {"K005A": 2},
+    "diagnostic_code_expected": "300",
+    "notes": "Deanna Eileen Wicks 11:52am — 71-min comprehensive visit (mixed mental health + IIH workup). Visit type correctly identified as A004A (general re-assessment). SOAP and dx 300 (anxiety/non-psychotic) both OK. DEFECT (Class G billing K005 unit logic): K005 quantity=1 in saved billing, should be 2 (K005 = '30 minutes or major part thereof'; 71-min visit ≥ 60 min counselling component → 2 units). ROOT CAUSE: rule_engine.rs line 91-94 only scales K005/K013 quantity from duration when `assessment_code` itself is K005/K013. When K005 enters via Conditions::PrimaryMentalHealth (line 144-167), it's added with default quantity=1 via make_billing_code(). Fix: extend counselling_units_from_duration() call to fire when K005/K007 come via the conditions branch."
+  }
+}

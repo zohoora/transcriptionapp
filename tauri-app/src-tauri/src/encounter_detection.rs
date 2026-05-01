@@ -47,6 +47,13 @@ pub const SCREENSHOT_STALE_GRACE_SECS: i64 = 90;
 pub const MULTI_PATIENT_CHECK_WORD_THRESHOLD: usize = 2500;
 /// Minimum words per half for a retrospective split to be accepted (size gate).
 pub const MULTI_PATIENT_SPLIT_MIN_WORDS: usize = 500;
+/// 2026-04-30 architecture-gap fix: timeout for multi_patient_detect /
+/// multi_patient_split raised from 30s to 180s. The Linda+Rashida bdb55313
+/// false-merge had a post-merge multi_patient_detect that could have caught
+/// the false-merge but timed out at 30s on the 9000-word combined transcript.
+/// 180s gives the LLM enough budget on long transcripts while still
+/// bounding worst-case latency.
+pub const MULTI_PATIENT_DETECT_TIMEOUT_SECS: u64 = 180;
 
 /// Optional context signals for encounter detection.
 /// Provides real-time signals from sensor (departure/presence) to augment

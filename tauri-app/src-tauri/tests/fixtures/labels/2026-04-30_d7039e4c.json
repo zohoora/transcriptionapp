@@ -1,0 +1,18 @@
+{
+  "session_id": "d7039e4c-2d8c-47ec-8b44-9062fe80ce1d",
+  "date": "2026-04-30",
+  "labeled_at": "2026-04-30T20:30:00+00:00",
+  "labeled_by": "Dr Z (2026-04-30 clinic-day forensic review)",
+  "labels": {
+    "split_correct": false,
+    "merge_correct": true,
+    "clinical_correct": false,
+    "patient_count_correct": false,
+    "expected_patient_count": 0,
+    "procedure_section_correct": true,
+    "billing_codes_expected": [],
+    "billing_codes_unexpected": ["A008A", "Q310A"],
+    "diagnostic_code_expected": null,
+    "notes": "Karin Smit 3:47pm-4:16pm — FALSE POSITIVE SESSION (background conversation, no actual visit). 522 words of multi-language STT garbage (Mandarin/Hindi/German fragments, hallucinated 'prescription for methamphetamine'). Session created via flush_on_stop pipeline at continuous_mode_stopped (no encounter_split ever fired). DEFECTS (compounding chain): (1) Class 8 flush_on_stop word-count gate (>100 words) too loose for accumulated background noise after 30 min of idle; (2) Class 8 clinical_content_check returned `is_clinical: true` keyword-fooled by 'prescription' token in STT garbage; (3) Class 7 SOAP returned all 4 sections as 'Not documented' but parser counted as Success — no `is_substantive_soap` guard before downstream stages; (4) BILLING extracted A008A+Q310A on empty SOAP (no `if !is_substantive_soap then skip billing` guard); (5) Class B+C dx 311 (Depression) hallucinated — tools-model correctly returned 799 (ill-defined) but semantic guard rejected (`documented` ∉ `ill-defined`), Stage-2 match_diagnosis_text('No diagnosis documented') leaked stop-word 'no' through the filter, substring-matched 53 codes, tie-break landed on 311. Recommended fix (single high-leverage): add `is_substantive_soap()` guard in flush_on_stop.rs and continuous_mode_post_split.rs that blocks billing+dx when SOAP is all 'Not documented' / placeholder. Vision name 'Karin Smit' was a stale chart vote from 1 screenshot at 3:17pm — clinician left chart open during background period. patient_dob: null (vision returned no DOB)."
+  }
+}

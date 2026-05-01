@@ -1,0 +1,18 @@
+{
+  "session_id": "3c654a52-0354-43eb-ab04-ba12ac0fd941",
+  "date": "2026-04-30",
+  "labeled_at": "2026-04-30T20:30:00+00:00",
+  "labeled_by": "Dr Z (2026-04-30 clinic-day forensic review)",
+  "labels": {
+    "split_correct": true,
+    "merge_correct": true,
+    "clinical_correct": true,
+    "patient_count_correct": true,
+    "procedure_section_correct": true,
+    "billing_codes_expected": ["A007A", "Q310A"],
+    "billing_codes_unexpected": ["K037A"],
+    "diagnostic_code_expected": "714",
+    "diagnostic_code_acceptable": ["714", "729", "724"],
+    "notes": "Joanne Louise Takacs 2:47pm — visit was BLOOD DRAW for upcoming PRP, NO injection performed today (P-section explicit: 'No injection performed today; blood work required prior to treatment'). Patient has Rheumatoid Arthritis with chronic pain post-PRP-stop, dental dryness from Lyrica. DEFECTS: (1) Class B/C dx 707 (Decubitus ulcer / bed sore) WILDLY WRONG. ROOT CAUSE: tools-model returned 726 (fibromyalgia), v0.10.67 semantic guard rejected (`fibromyalgia` ∉ `chronic pain post-PRP RA`), Stage-2 fell through to match_diagnosis_text which hit the BUGGY `chronic wound → decubitus ulcer bed sore` abbreviation expansion in diagnostic_codes.rs:676 plus `prp → skin subcutaneous` at line 675 — both wrong and steered toward 707. Expected dx 714 (RA). (2) Class H K037A (fibromyalgia care) INAPPROPRIATELY ADDED — patient has RA, NOT fibromyalgia. The condition_keyword_guard doesn't cover FibromyalgiaCare. Billing A007A correct. User-flagged question: A007A+K037A combo billable together is plausible per OHIP but K037 should not be billed without fibromyalgia diagnosis evidence."
+  }
+}

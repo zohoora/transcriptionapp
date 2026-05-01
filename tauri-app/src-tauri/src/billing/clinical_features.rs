@@ -522,8 +522,23 @@ pub fn augment_procedures_from_soap_text(
     features: &mut ClinicalFeatures,
     soap_procedure_text: &str,
 ) -> usize {
+    augment_procedures_from_soap_text_tracked(features, soap_procedure_text).len()
+}
+
+/// 2026-04-30 architecture-gap fix: same as `augment_procedures_from_soap_text`
+/// but returns the LIST of all SOAP-grounded ProcedureTypes — both
+/// newly-added by augment AND LLM-extracted procedures that the SOAP
+/// procedure section corroborates. Used by the rule engine to bypass the
+/// past-tense transcript validator for SOAP-grounded procedures (the SOAP
+/// procedure section's explicit listing IS sufficient evidence — many real
+/// injections happen with silent doctor narration: Karen White, Frederick
+/// Moore on 2026-04-30).
+pub fn augment_procedures_from_soap_text_tracked(
+    features: &mut ClinicalFeatures,
+    soap_procedure_text: &str,
+) -> Vec<ProcedureType> {
     if soap_procedure_text.trim().is_empty() {
-        return 0;
+        return Vec::new();
     }
     let lower = soap_procedure_text.to_lowercase();
 
@@ -540,11 +555,21 @@ pub fn augment_procedures_from_soap_text(
         ("occipital", ProcedureType::NerveBlockOccipital),
         ("nerve block", ProcedureType::NerveBlockPeripheral),
         ("paravertebral", ProcedureType::NerveBlockParavertebral),
+        // 2026-04-30 Class E: epidural is anatomically a paravertebral block
+        ("epidural", ProcedureType::NerveBlockParavertebral),
+        ("epidural injection", ProcedureType::NerveBlockParavertebral),
         ("numbing injection", ProcedureType::NerveBlockPeripheral),
         ("joint injection", ProcedureType::JointInjection),
         ("knee injection", ProcedureType::JointInjection),
         ("shoulder injection", ProcedureType::JointInjection),
         ("hip injection", ProcedureType::JointInjection),
+        // 2026-04-30 Class E: anatomy expansions (Karen White's "neck injection",
+        // back/lumbar/spinal injections that previously fell through).
+        ("neck injection", ProcedureType::NerveBlockPeripheral),
+        ("cervical injection", ProcedureType::NerveBlockPeripheral),
+        ("back injection", ProcedureType::NerveBlockParavertebral),
+        ("lumbar injection", ProcedureType::NerveBlockParavertebral),
+        ("spinal injection", ProcedureType::NerveBlockParavertebral),
         ("cortisone", ProcedureType::JointInjection),
         ("im injection", ProcedureType::ImInjectionWithVisit),
         ("intramuscular injection", ProcedureType::ImInjectionWithVisit),
@@ -570,16 +595,48 @@ pub fn augment_procedures_from_soap_text(
         ("tonometry", ProcedureType::Tonometry),
     ];
 
-    let mut added = 0;
-    for (signal, proc_type) in signals {
-        if lower.contains(signal) && !features.procedures.contains(proc_type) {
-            tracing::warn!(
-                "Class 6 safety net: augmenting procedures with {:?} (signal: {:?}) — \
-                 LLM extraction missed it but the SOAP procedure section indicates it was performed",
-                proc_type, signal
-            );
+    // 2026-04-30 Class E compound signals: verb+anatomy pairs that may be
+    // separated by several words ("Administered injection to right side of
+    // neck"). Both single-substring and compound paths track ALL matched
+    // ProcedureTypes — both newly-added AND LLM-extracted-then-corroborated —
+    // so the rule engine can bypass the past-tense transcript validator
+    // for soap-grounded procedures.
+    let compound_signals: &[(&[&str], ProcedureType)] = &[
+        (&["injection", "neck"], ProcedureType::NerveBlockPeripheral),
+        (&["injection", "cervical"], ProcedureType::NerveBlockPeripheral),
+        (&["injection", "occipital"], ProcedureType::NerveBlockOccipital),
+        (&["injection", "epidural"], ProcedureType::NerveBlockParavertebral),
+        (&["injection", "spine"], ProcedureType::NerveBlockParavertebral),
+        (&["injection", "lumbar"], ProcedureType::NerveBlockParavertebral),
+        (&["injection", "back"], ProcedureType::NerveBlockParavertebral),
+        (&["injection", "knee"], ProcedureType::JointInjection),
+        (&["injection", "shoulder"], ProcedureType::JointInjection),
+        (&["injection", "hip"], ProcedureType::JointInjection),
+        (&["injection", "bursa"], ProcedureType::JointInjection),
+        (&["administered", "injection"], ProcedureType::JointInjection),
+        (&["performed", "injection"], ProcedureType::JointInjection),
+    ];
+    let mut added: Vec<ProcedureType> = Vec::new();
+    let mut try_match = |proc_type: &ProcedureType| {
+        if !features.procedures.contains(proc_type) {
             features.procedures.push(proc_type.clone());
-            added += 1;
+            tracing::warn!(
+                "Class 6 safety net: augmenting procedures with {:?}",
+                proc_type
+            );
+        }
+        if !added.contains(proc_type) {
+            added.push(proc_type.clone());
+        }
+    };
+    for (signal, proc_type) in signals {
+        if lower.contains(signal) {
+            try_match(proc_type);
+        }
+    }
+    for (kwds, proc_type) in compound_signals {
+        if kwds.iter().all(|kw| lower.contains(kw)) {
+            try_match(proc_type);
         }
     }
     added
