@@ -477,6 +477,20 @@ pub async fn extract_and_archive_billing(
     }
     features.conditions = kept;
 
+    // Population-specific visit-type guard (companion to condition guard
+    // above) — drops prenatal/well-baby codes when the SOAP has no
+    // matching keywords. See `visit_type_keyword_guard` for rationale.
+    if let Some(downgraded_to) = crate::billing::rule_engine::visit_type_keyword_guard(
+        &features.visit_type,
+        soap_content,
+    ) {
+        warn!(
+            "Billing extraction: downgraded {:?} → {:?} for {} — population keywords absent from SOAP",
+            features.visit_type, downgraded_to, session_id
+        );
+        features.visit_type = downgraded_to;
+    }
+
     // Resolve diagnostic code via tools-model + file_lookup retrieval (Stage 0).
     // Fails soft — `None` means the rule engine falls through to its existing
     // 4-stage pipeline. Primary motivation: fast-model confidently hallucinates

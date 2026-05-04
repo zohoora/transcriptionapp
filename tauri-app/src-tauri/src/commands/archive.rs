@@ -137,25 +137,53 @@ pub async fn get_local_session_details(
 ) -> Result<ArchiveDetails, CommandError> {
     info!("Getting local session details: {} on {}", session_id, date);
 
-    // Try local first (fast path)
-    if let Ok(details) = local_archive::get_session(&session_id, &date) {
-        return Ok(details);
-    }
+    // Partial-archive sessions (metadata.json present locally but SOAP/
+    // transcript files missing because the session was authored on another
+    // machine) need a server merge — without it the History row renders a
+    // SOAP checkmark with no body and the regen button can't recover.
+    let local_details = match local_archive::get_session(&session_id, &date) {
+        Ok(d) if !is_blank(&d.soap_note) => return Ok(d),
+        Ok(d) => Some(d),
+        Err(_) => None,
+    };
 
-    // Try server (session may exist on a different machine)
     let physician_id = active_physician.read().await.as_ref().map(|p| p.id.clone());
     let client = profile_client.read().await.clone();
     if let (Some(phys_id), Some(client)) = (physician_id, client) {
         match client.get_session(&phys_id, &session_id).await {
-            Ok(details) => return Ok(details),
+            Ok(server) => {
+                // Local metadata wins (locally-edited patient_name survives);
+                // server fills the SOAP/transcript/patient_notes gaps.
+                if let Some(mut local) = local_details {
+                    if is_blank(&local.soap_note) {
+                        local.soap_note = server.soap_note;
+                    }
+                    if is_blank(&local.transcript) {
+                        local.transcript = server.transcript;
+                    }
+                    if local.patient_notes.is_none() {
+                        local.patient_notes = server.patient_notes;
+                    }
+                    return Ok(local);
+                }
+                return Ok(server);
+            }
             Err(e) => warn!("Server fetch also failed: {e}"),
         }
+    }
+
+    if let Some(local) = local_details {
+        return Ok(local);
     }
 
     Err(CommandError::NotFound(format!(
         "Session {} not found locally or on server",
         session_id
     )))
+}
+
+fn is_blank(s: &Option<String>) -> bool {
+    s.as_deref().map_or(true, str::is_empty)
 }
 
 /// Save SOAP note to an archived session
@@ -199,6 +227,103 @@ pub fn save_local_soap_note(
             });
             if let Err(e) = client.update_soap(&phys_id, &sid, &body).await {
                 warn!("Server sync failed (update_soap): {e}");
+            }
+        },
+    );
+
+    Ok(())
+}
+
+/// Save a multi-patient SOAP note to an archived session.
+///
+/// Writes per-patient files (`soap_patient_N.txt`) and `patient_labels.json`
+/// so the History row fan-out (one row per sub-patient) fires for sessions
+/// where multi-patient detection was deferred until history-window regen.
+/// Also writes the combined `soap_note.txt` via `add_soap_note` to update
+/// `metadata.has_soap_note` and trigger billing invalidation.
+#[tauri::command]
+pub fn save_local_multi_patient_soap_note(
+    session_id: String,
+    date: String,
+    notes: Vec<crate::llm_client::PatientSoapNote>,
+    detail_level: Option<u8>,
+    format: Option<String>,
+    active_physician: State<'_, SharedActivePhysician>,
+    profile_client: State<'_, SharedProfileClient>,
+) -> Result<(), CommandError> {
+    info!(
+        "Saving multi-patient SOAP note to local archive: {} ({} patients, detail: {:?}, format: {:?})",
+        session_id,
+        notes.len(),
+        detail_level,
+        format
+    );
+
+    if notes.is_empty() {
+        return Err(CommandError::Validation(
+            "save_local_multi_patient_soap_note: notes is empty".into(),
+        ));
+    }
+
+    let utc_datetime = super::parse_date(&date)?;
+
+    if notes.len() > 1 {
+        local_archive::save_multi_patient_soap(&session_id, &utc_datetime, &notes, None)?;
+    }
+
+    let combined = crate::llm_client::format_patient_notes_for_archive(
+        notes.iter().map(|n| (&n.patient_label, &n.content)),
+    );
+    local_archive::add_soap_note(
+        &session_id,
+        &utc_datetime,
+        &combined,
+        detail_level,
+        format.as_deref(),
+    )?;
+
+    // Best-effort server sync: SOAP body via update_soap, plus the
+    // per-patient files + patient_labels.json via the aux-file uploader so
+    // other rooms see the same fan-out.
+    let sid = session_id.clone();
+    let soap = combined.clone();
+    let per_patient_payloads: Vec<(String, Vec<u8>)> = if notes.len() > 1 {
+        let mut v: Vec<(String, Vec<u8>)> = notes
+            .iter()
+            .enumerate()
+            .map(|(i, n)| (format!("soap_patient_{}.txt", i + 1), n.content.as_bytes().to_vec()))
+            .collect();
+        // Also push the freshly written patient_labels.json so it propagates.
+        if let Ok(dir) = local_archive::get_session_archive_dir(&session_id, &utc_datetime) {
+            let labels_path = dir.join("patient_labels.json");
+            if let Ok(bytes) = std::fs::read(&labels_path) {
+                v.push(("patient_labels.json".to_string(), bytes));
+            }
+        }
+        v
+    } else {
+        Vec::new()
+    };
+    spawn_sync(
+        active_physician.inner().clone(),
+        profile_client.inner().clone(),
+        "update_soap_multi_patient",
+        move |phys_id, client| async move {
+            let body = serde_json::json!({
+                "content": soap,
+                "detail_level": detail_level,
+                "format": format,
+            });
+            if let Err(e) = client.update_soap(&phys_id, &sid, &body).await {
+                warn!("Server sync failed (update_soap): {e}");
+            }
+            for (filename, bytes) in per_patient_payloads {
+                if let Err(e) = client
+                    .upload_session_file(&phys_id, &sid, &filename, bytes)
+                    .await
+                {
+                    warn!("Server sync failed (upload {filename}): {e}");
+                }
             }
         },
     );
@@ -906,32 +1031,46 @@ pub async fn suggest_split_points(
     Ok(suggestions)
 }
 
-/// Get the SOAP note content for a session (for clipboard copy)
+/// Get the SOAP note content for a session (for clipboard copy). Falls back
+/// to the server when local SOAP is missing so cross-machine sessions with
+/// only a server-side archive still return content.
 #[tauri::command]
 pub async fn get_session_soap_note(
     session_id: String,
     date: String,
+    active_physician: State<'_, SharedActivePhysician>,
+    profile_client: State<'_, SharedProfileClient>,
 ) -> Result<String, CommandError> {
-    let details = local_archive::get_session(&session_id, &date)?;
-    // Check for per-patient notes first, then single SOAP
-    if let Some(notes) = details.patient_notes {
-        let combined = notes
-            .iter()
-            .map(|n| {
-                if notes.len() > 1 {
-                    format!("=== {} ===\n\n{}", n.label, n.content)
-                } else {
-                    n.content.clone()
-                }
-            })
-            .collect::<Vec<_>>()
-            .join("\n\n---\n\n");
-        Ok(combined)
-    } else if let Some(soap) = details.soap_note {
-        Ok(soap)
-    } else {
-        Err(CommandError::Validation("No SOAP note found".into()))
+    fn combine(details: &ArchiveDetails) -> Option<String> {
+        if let Some(notes) = details.patient_notes.as_ref().filter(|n| !n.is_empty()) {
+            return Some(crate::llm_client::format_patient_notes_for_archive(
+                notes.iter().map(|n| (&n.label, &n.content)),
+            ));
+        }
+        details
+            .soap_note
+            .as_ref()
+            .filter(|s| !s.is_empty())
+            .cloned()
     }
+
+    if let Ok(details) = local_archive::get_session(&session_id, &date) {
+        if let Some(soap) = combine(&details) {
+            return Ok(soap);
+        }
+    }
+
+    let physician_id = active_physician.read().await.as_ref().map(|p| p.id.clone());
+    let client = profile_client.read().await.clone();
+    if let (Some(phys_id), Some(client)) = (physician_id, client) {
+        if let Ok(server_details) = client.get_session(&phys_id, &session_id).await {
+            if let Some(soap) = combine(&server_details) {
+                return Ok(soap);
+            }
+        }
+    }
+
+    Err(CommandError::Validation("No SOAP note found".into()))
 }
 
 /// Delete a single patient's SOAP from a multi-patient session

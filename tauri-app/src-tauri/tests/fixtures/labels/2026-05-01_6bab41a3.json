@@ -1,0 +1,18 @@
+{
+  "session_id": "6bab41a3-f1c6-4893-ae82-798eb0486325",
+  "date": "2026-05-01",
+  "labeled_at": "2026-05-04T00:00:00+00:00",
+  "labeled_by": "Dr Z (2026-05-01 clinic-day forensic review)",
+  "labels": {
+    "split_correct": true,
+    "merge_correct": true,
+    "clinical_correct": true,
+    "patient_count_correct": false,
+    "expected_patient_count": 2,
+    "procedure_section_correct": true,
+    "billing_codes_expected": ["A007A", "Q310A"],
+    "billing_codes_unexpected": ["P003A"],
+    "diagnostic_code_expected": "382",
+    "notes": "Miranda Brown (mom, prenatal visit) + Theodore Brown (son, AOM) 10:37am — multi-patient session, recorded on a different machine and pulled into Room 6 history via cross-machine sync. User opened it in History and clicked 'Extract Billing Codes' at 12:29 EDT → billing.json saved with patientName='Theodore Brown' (the son) but codes are MIRANDA's prenatal codes: P003A x2 (Major Prenatal Visit, $93.85 ea) + Q310A 41min. Diagnostic code 650 (Normal pregnancy/delivery). DEFECTS: (1) **Class D — multi-patient billing fan-out routes mom's prenatal codes to toddler's sub-record**: the per-patient billing slice didn't isolate Theodore (who has AOM, expected dx 382 + visit-only billing A007A or A001A). Either the per-patient transcript split was wrong or the per-patient prompt got the labels swapped. P003A on a toddler with AOM is a clear false positive that should NEVER fire — guardrail: P003A requires 'female patient + pregnancy context' which Theodore (toddler, ear infection) clearly fails. (2) **Class C — REGRESSION same as 8a89bf4e**: history shows as one row, should fan out to two rows (Miranda + Theodore). Root cause is in HistoryWindow.tsx history-regen path — it calls `save_local_soap_note` instead of `save_multi_patient_soap`, so `patient_labels.json` is never written and the fan-out at HistoryWindow:566-586 has nothing to expand. (3) **Class C/G — orphan partial-archive**: local archive dir has ONLY billing.json. No SOAP, no transcript, no metadata. Same root cause as 8a89bf4e: server-only session opened from history, action-button writes content but skips metadata bootstrap."
+  }
+}

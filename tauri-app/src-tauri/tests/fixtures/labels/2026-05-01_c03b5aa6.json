@@ -1,0 +1,16 @@
+{
+  "session_id": "c03b5aa6-578a-4905-a64b-982ed5f337e6",
+  "date": "2026-05-01",
+  "labeled_at": "2026-05-04T00:00:00+00:00",
+  "labeled_by": "Dr Z (2026-05-01 clinic-day forensic review)",
+  "labels": {
+    "split_correct": true,
+    "merge_correct": true,
+    "clinical_correct": true,
+    "patient_count_correct": true,
+    "procedure_section_correct": true,
+    "billing_codes_expected": ["A102A"],
+    "diagnostic_code_expected": "486",
+    "notes": "Shrikrishna Pendharkar 9:44am — telephone visit (1st of 3 back-to-back phone calls). Vision identified patient correctly across 7 calls (chart open and stable). SOAP, dx 486 (pneumonia/respiratory), and A102A (virtual phone) all correct. Used as POSITIVE BASELINE for the day's three-phone-call sequence (the next two calls had vision misattribution because doctor pre-loaded next charts during ongoing calls — see 66772dfb and 83ed03d4 labels)."
+  }
+}

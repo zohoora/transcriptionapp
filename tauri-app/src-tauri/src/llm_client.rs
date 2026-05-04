@@ -296,18 +296,37 @@ impl MultiPatientSoapResult {
     /// Format SOAP notes for archive storage.
     /// Single-patient: bare content. Multi-patient: `=== Patient Label ===` headers.
     pub fn format_for_archive(&self) -> String {
-        if self.notes.len() > 1 {
-            self.notes.iter()
-                .map(|n| format!("=== {} ===\n{}", n.patient_label, n.content))
-                .collect::<Vec<_>>()
-                .join("\n\n---\n\n")
-        } else {
-            self.notes.iter()
-                .map(|n| n.content.clone())
-                .collect::<Vec<_>>()
-                .join("\n\n---\n\n")
-        }
+        format_patient_notes_for_archive(
+            self.notes.iter().map(|n| (&n.patient_label, &n.content)),
+        )
     }
+}
+
+/// Canonical multi-patient SOAP serializer. Single source of truth for the
+/// archive on-disk format and the clipboard-copy format. Single-patient: bare
+/// content. Multi-patient: `=== {label} ===\n{content}` separated by
+/// `\n\n---\n\n`. Generic over any iterator of `(label, content)` pairs so
+/// the same formatter works on `PatientSoapNote` (LLM result) and
+/// `ArchivedPatientNote` (read back from disk).
+pub fn format_patient_notes_for_archive<'a, I, L, C>(notes: I) -> String
+where
+    I: IntoIterator<Item = (L, C)>,
+    I::IntoIter: ExactSizeIterator,
+    L: AsRef<str>,
+    C: AsRef<str>,
+{
+    let iter = notes.into_iter();
+    let multi = iter.len() > 1;
+    iter
+        .map(|(label, content)| {
+            if multi {
+                format!("=== {} ===\n{}", label.as_ref(), content.as_ref())
+            } else {
+                content.as_ref().to_string()
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n\n---\n\n")
 }
 
 /// Per-patient SOAP note with speaker identification

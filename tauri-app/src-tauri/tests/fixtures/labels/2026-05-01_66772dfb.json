@@ -1,0 +1,18 @@
+{
+  "session_id": "66772dfb-5e1c-4ff9-9174-c6ff93a6c24b",
+  "date": "2026-05-01",
+  "labeled_at": "2026-05-04T00:00:00+00:00",
+  "labeled_by": "Dr Z (2026-05-01 clinic-day forensic review)",
+  "labels": {
+    "split_correct": true,
+    "merge_correct": true,
+    "clinical_correct": true,
+    "patient_count_correct": true,
+    "procedure_section_correct": true,
+    "patient_name_expected": "Evelyn Elaine Horvath",
+    "patient_dob_expected": "1951-09-16",
+    "billing_codes_expected": ["A102A"],
+    "diagnostic_code_expected": "724",
+    "notes": "ACTUAL PATIENT: Evelyn Horvath (telephone visit 9:51am, 2nd of 3 back-to-back phone calls). Metadata + saved name says 'Samuel Aran Mezhenchik' (DOB 1984-12-26) — WRONG, that's the NEXT patient. SOAP, dx 724 (lumbago), and A102A all clinically correct for Evelyn — only the patient identity is wrong. DEFECT (NEW Class A — vision chart pre-load): pipeline_log shows 22 vision calls cycling through 6 chart states across 8.8 min: Shrikrishna lingering (3 votes 13:52-54) → Ruth Doherty transient (1 vote 13:55) → Evelyn Horvath the actual patient (3 votes 13:56-58, DOB 1951-09-16) → NOT_FOUND (2 votes 13:59-00) → Samuel Menhinick the next patient's chart pre-loaded (10 votes 14:01-14, DOB 1984-12-28). Recency-weighted majority elected Samuel because doctor opened Samuel's chart ~3 min before Evelyn's call ended. v0.10.45 DOB-mismatch invalidation DID fire at the Evelyn→Samuel transition but only clears votes once — couldn't beat 10 subsequent Samuel votes. This is the SYMMETRIC failure mode to the Apr 20 Shelley/Richard case (which was prev-patient lingering). Suggested fixes: (a) freeze name vote once K=5 streak reached + ignore later contradictions; (b) compute majority on first-half-of-encounter when ≥3 distinct names ever seen; (c) add `vision_calls_after_dob_invalidate_cap` so post-invalidation votes can't dominate. Per the user's 'no vision for session detection' rule, vision identity is post-hoc audit only — but this case is patient-name metadata which IS meant to use vision."
+  }
+}

@@ -226,6 +226,39 @@ function serializeSoapNotes(notes: { patient_label: string; content: string }[])
   ).join('\n\n---\n\n');
 }
 
+/**
+ * Persist a regenerated SOAP to the local archive. Multi-patient results
+ * MUST go through the dedicated command so `patient_labels.json` is
+ * written — that file drives the per-sub-patient History row fan-out;
+ * `save_local_soap_note` alone collapses the result back to a single row.
+ */
+async function persistSoapResultToArchive(args: {
+  sessionId: string;
+  date: string;
+  notes: { patient_label: string; speaker_id: string; content: string }[];
+  detailLevel?: number;
+  format?: string;
+}): Promise<void> {
+  const { sessionId, date, notes, detailLevel, format } = args;
+  if (notes.length > 1) {
+    await invoke('save_local_multi_patient_soap_note', {
+      sessionId,
+      date,
+      notes,
+      detailLevel,
+      format,
+    });
+  } else {
+    await invoke('save_local_soap_note', {
+      sessionId,
+      date,
+      soapContent: serializeSoapNotes(notes),
+      detailLevel,
+      format,
+    });
+  }
+}
+
 const HistoryWindow: React.FC = () => {
   const { authState, isLoading: authLoading, login } = useAuth();
 
@@ -867,12 +900,11 @@ const HistoryWindow: React.FC = () => {
 
         // Save updated SOAP to archive
         if (selectedSession && dataSource === 'local') {
-          const soapContent = serializeSoapNotes(updatedResult.notes);
           try {
-            await invoke('save_local_soap_note', {
+            await persistSoapResultToArchive({
               sessionId: selectedSession.session_id,
               date: formatDateForApi(selectedDate),
-              soapContent,
+              notes: updatedResult.notes,
               detailLevel: soapOptions.detail_level,
               format: soapOptions.format,
             });
@@ -904,16 +936,15 @@ const HistoryWindow: React.FC = () => {
 
     // Save SOAP note to archive (hook doesn't know about session context)
     if (selectedSession) {
-      const soapContent = serializeSoapNotes(result.notes);
-
       try {
         if (dataSource === 'local') {
-          // Save to local archive with SOAP options
-          const dateStr = formatDateForApi(selectedDate);
-          await invoke('save_local_soap_note', {
+          // Save to local archive with SOAP options. Multi-patient writes
+          // also persist soap_patient_N.txt + patient_labels.json so the
+          // History row fan-out picks up the sub-patients on next refresh.
+          await persistSoapResultToArchive({
             sessionId: selectedSession.session_id,
-            date: dateStr,
-            soapContent,
+            date: formatDateForApi(selectedDate),
+            notes: result.notes,
             detailLevel: soapOptions.detail_level,
             format: soapOptions.format,
           });
@@ -921,7 +952,7 @@ const HistoryWindow: React.FC = () => {
           // Save to Medplum (no metadata support)
           await invoke('medplum_add_soap_to_encounter', {
             encounterFhirId: selectedSession.session_id,
-            soapNote: soapContent,
+            soapNote: serializeSoapNotes(result.notes),
           });
         }
       } catch (saveErr) {
@@ -1311,11 +1342,10 @@ const HistoryWindow: React.FC = () => {
         if (details.transcript?.trim()) {
           const result = await generateSoapNote(details.transcript, undefined, soapOptions, id);
           if (result) {
-            const soapContent = serializeSoapNotes(result.notes);
-            await invoke('save_local_soap_note', {
+            await persistSoapResultToArchive({
               sessionId: id,
               date: dateStr,
-              soapContent,
+              notes: result.notes,
               detailLevel: soapOptions.detail_level,
               format: soapOptions.format,
             });

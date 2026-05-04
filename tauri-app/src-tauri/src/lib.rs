@@ -497,6 +497,7 @@ pub fn run() {
             commands::get_local_sessions_by_date,
             commands::get_local_session_details,
             commands::save_local_soap_note,
+            commands::save_local_multi_patient_soap_note,
             commands::save_patient_handout,
             commands::get_patient_handout,
             // Billing commands

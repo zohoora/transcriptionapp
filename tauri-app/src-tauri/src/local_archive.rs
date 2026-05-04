@@ -74,6 +74,23 @@ pub fn get_session_archive_dir(session_id: &str, date: &DateTime<Utc>) -> Result
     Ok(date_dir.join(session_id))
 }
 
+/// Read just the `started_at` field from a session's metadata.json.
+/// Cheaper than `get_session()` because it skips transcript/SOAP/audio
+/// reads — used on the merge-back hot path to derive merged duration
+/// without loading the full archive. `None` on any read/parse failure.
+pub fn read_session_started_at(
+    session_id: &str,
+    date: &DateTime<Utc>,
+) -> Option<DateTime<Utc>> {
+    let session_dir = get_session_archive_dir(session_id, date).ok()?;
+    let metadata_path = session_dir.join("metadata.json");
+    let content = fs::read_to_string(&metadata_path).ok()?;
+    let metadata: ArchiveMetadata = serde_json::from_str(&content).ok()?;
+    DateTime::parse_from_rfc3339(&metadata.started_at)
+        .ok()
+        .map(|dt| dt.with_timezone(&Utc))
+}
+
 /// Read just `soap_note.txt` from a session's archive directory. Returns `None`
 /// when the file is missing or the session id / date resolve to an invalid path.
 ///
@@ -965,24 +982,32 @@ pub fn save_multi_patient_soap(
     fs::write(&labels_path, labels_json)
         .map_err(|e| format!("Failed to write patient_labels.json: {}", e))?;
 
-    // Update metadata with patient_count
+    // Bootstrap a stub when metadata.json is missing — without it, a
+    // server-only session opened from History and re-SOAPed via the regen
+    // path would leave per-patient files + patient_labels.json without the
+    // metadata pointer the History fan-out keys off, producing a zombie
+    // partial-archive. ArchiveMetadata::new defaults started_at to now;
+    // a subsequent server sync can overwrite it with the canonical value.
     let metadata_path = session_dir.join("metadata.json");
-    if metadata_path.exists() {
+    let mut metadata = if metadata_path.exists() {
         let content = fs::read_to_string(&metadata_path)
             .map_err(|e| format!("Failed to read metadata: {}", e))?;
-        let mut metadata: ArchiveMetadata = serde_json::from_str(&content)
-            .map_err(|e| format!("Failed to parse metadata: {}", e))?;
-
-        metadata.patient_count = Some(notes.len() as u32);
-        metadata.has_soap_note = true;
-        metadata.soap_prompt_version =
-            Some(crate::llm_client::SOAP_PROMPT_VERSION.to_string());
-
-        let metadata_json = serde_json::to_string_pretty(&metadata)
-            .map_err(|e| format!("Failed to serialize metadata: {}", e))?;
-        fs::write(&metadata_path, metadata_json)
-            .map_err(|e| format!("Failed to write metadata: {}", e))?;
-    }
+        serde_json::from_str(&content)
+            .map_err(|e| format!("Failed to parse metadata: {}", e))?
+    } else {
+        info!(
+            session_id = %session_id,
+            "Bootstrapping stub metadata.json for orphan multi-patient session"
+        );
+        ArchiveMetadata::new(session_id)
+    };
+    metadata.patient_count = Some(notes.len() as u32);
+    metadata.has_soap_note = true;
+    metadata.soap_prompt_version = Some(crate::llm_client::SOAP_PROMPT_VERSION.to_string());
+    let metadata_json = serde_json::to_string_pretty(&metadata)
+        .map_err(|e| format!("Failed to serialize metadata: {}", e))?;
+    fs::write(&metadata_path, metadata_json)
+        .map_err(|e| format!("Failed to write metadata: {}", e))?;
 
     info!(
         session_id = %session_id,
@@ -3015,6 +3040,22 @@ pub fn mark_chart_stale_suspected(session_id: &str, date_str: &str) -> Result<()
     })
 }
 
+/// Mark chart stale AND clear the vision-derived patient identity. Called
+/// when the audio-vs-vision cross-check finds the vision name to be
+/// provably wrong (transcript greeted a different patient); clearing
+/// name + DOB forces the clinician through the confirm-patient flow
+/// before any EMR push instead of mislabeling downstream tooling.
+pub fn mark_chart_stale_and_clear_identity(
+    session_id: &str,
+    date_str: &str,
+) -> Result<(), String> {
+    update_metadata_field(session_id, date_str, |m| {
+        m.chart_stale_suspected = Some(true);
+        m.patient_name = None;
+        m.patient_dob = None;
+    })
+}
+
 /// Helper: read metadata, apply a mutation, write back.
 fn update_metadata_field(
     session_id: &str,
@@ -3412,6 +3453,117 @@ mod negative_gap_tests {
         let after: ArchiveMetadata = serde_json::from_str(&after_str).unwrap();
         assert_eq!(after.chart_stale_suspected, Some(true));
         assert_eq!(after.patient_name.as_deref(), Some("Catherine Deveuge"));
+
+        let _ = fs::remove_dir_all(&test_root);
+        std::env::remove_var("TRANSCRIPTION_APP_DATA_DIR");
+    }
+
+    #[test]
+    fn mark_chart_stale_and_clear_identity_clears_vision_name_and_dob() {
+        use chrono::TimeZone;
+        let test_root =
+            std::env::temp_dir().join(format!("ami-test-clear-id-{}", uuid::Uuid::new_v4()));
+        std::env::set_var("TRANSCRIPTION_APP_DATA_DIR", &test_root);
+        let date = chrono::Utc.with_ymd_and_hms(2026, 5, 1, 13, 51, 0).unwrap();
+        let session_id = "00000000-0000-0000-0000-000000000002";
+        let dir = get_session_archive_dir(session_id, &date).unwrap();
+        fs::create_dir_all(&dir).unwrap();
+        let mut initial = ArchiveMetadata::new(session_id);
+        initial.patient_name = Some("Samuel Aran Mezhenchik".to_string());
+        initial.patient_dob = Some("1984-12-26".to_string());
+        fs::write(
+            dir.join("metadata.json"),
+            serde_json::to_string_pretty(&initial).unwrap(),
+        )
+        .unwrap();
+
+        mark_chart_stale_and_clear_identity(session_id, "2026-05-01").unwrap();
+
+        let after_str = fs::read_to_string(dir.join("metadata.json")).unwrap();
+        let after: ArchiveMetadata = serde_json::from_str(&after_str).unwrap();
+        assert_eq!(after.chart_stale_suspected, Some(true));
+        assert_eq!(after.patient_name, None, "vision name must be cleared");
+        assert_eq!(after.patient_dob, None, "vision DOB must be cleared");
+
+        let _ = fs::remove_dir_all(&test_root);
+        std::env::remove_var("TRANSCRIPTION_APP_DATA_DIR");
+    }
+
+    #[test]
+    fn read_session_started_at_returns_none_when_missing() {
+        let result = read_session_started_at(
+            "00000000-0000-0000-0000-000000000099",
+            &chrono::Utc::now(),
+        );
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn read_session_started_at_round_trips_archived_metadata() {
+        use chrono::TimeZone;
+        let test_root =
+            std::env::temp_dir().join(format!("ami-test-started-at-{}", uuid::Uuid::new_v4()));
+        std::env::set_var("TRANSCRIPTION_APP_DATA_DIR", &test_root);
+        let date = chrono::Utc.with_ymd_and_hms(2026, 5, 1, 13, 22, 0).unwrap();
+        let session_id = "00000000-0000-0000-0000-000000000003";
+        let dir = get_session_archive_dir(session_id, &date).unwrap();
+        fs::create_dir_all(&dir).unwrap();
+        let mut metadata = ArchiveMetadata::new(session_id);
+        let started = chrono::Utc.with_ymd_and_hms(2026, 5, 1, 13, 22, 21).unwrap();
+        metadata.started_at = started.to_rfc3339();
+        fs::write(
+            dir.join("metadata.json"),
+            serde_json::to_string_pretty(&metadata).unwrap(),
+        )
+        .unwrap();
+
+        let read = read_session_started_at(session_id, &date).expect("started_at present");
+        assert_eq!(read, started);
+
+        let _ = fs::remove_dir_all(&test_root);
+        std::env::remove_var("TRANSCRIPTION_APP_DATA_DIR");
+    }
+
+    #[test]
+    fn save_multi_patient_soap_bootstraps_stub_metadata_for_orphan() {
+        use chrono::TimeZone;
+        let test_root =
+            std::env::temp_dir().join(format!("ami-test-orphan-bootstrap-{}", uuid::Uuid::new_v4()));
+        std::env::set_var("TRANSCRIPTION_APP_DATA_DIR", &test_root);
+        let date = chrono::Utc.with_ymd_and_hms(2026, 5, 1, 14, 13, 0).unwrap();
+        let session_id = "00000000-0000-0000-0000-000000000004";
+        let dir = get_session_archive_dir(session_id, &date).unwrap();
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        // Orphan partial-archive case: no metadata.json on disk yet.
+        let metadata_path = dir.join("metadata.json");
+        let _ = fs::remove_file(&metadata_path);
+
+        let notes = vec![
+            crate::llm_client::PatientSoapNote {
+                patient_label: "Speaker 1 (Jim)".to_string(),
+                speaker_id: "Speaker 1".to_string(),
+                content: "S: medication review.\nA: stable.\nP: continue.".to_string(),
+            },
+            crate::llm_client::PatientSoapNote {
+                patient_label: "Speaker 2 (Linda)".to_string(),
+                speaker_id: "Speaker 2".to_string(),
+                content: "S: separate concern.\nA: separate.\nP: separate plan.".to_string(),
+            },
+        ];
+        save_multi_patient_soap(session_id, &date, &notes, None).unwrap();
+
+        // Per-patient files written
+        assert!(dir.join("soap_patient_1.txt").exists());
+        assert!(dir.join("soap_patient_2.txt").exists());
+        // patient_labels.json written
+        assert!(dir.join("patient_labels.json").exists());
+        // Stub metadata.json bootstrapped with patient_count=2
+        assert!(metadata_path.exists(), "stub metadata.json must be created");
+        let m: ArchiveMetadata =
+            serde_json::from_str(&fs::read_to_string(&metadata_path).unwrap()).unwrap();
+        assert_eq!(m.patient_count, Some(2));
+        assert!(m.has_soap_note);
 
         let _ = fs::remove_dir_all(&test_root);
         std::env::remove_var("TRANSCRIPTION_APP_DATA_DIR");

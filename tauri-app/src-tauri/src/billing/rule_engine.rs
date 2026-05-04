@@ -543,6 +543,39 @@ fn condition_type_to_codes(cond: &ConditionType, billing_data: BillingDataRef<'_
 /// whose required keyword is absent from the SOAP itself.
 ///
 /// Returns `(kept, dropped)` so callers can log which conditions were filtered.
+/// Population-specific visit-type guard. When the LLM picks a visit type
+/// that's only plausible for a narrow population (prenatal, well-baby),
+/// require the SOAP text to contain a population keyword. Catches
+/// multi-patient billing fan-out where mom's prenatal codes leak into a
+/// sub-patient. Returns `Some(downgrade)` when the guard fails (caller
+/// substitutes the safer code), `None` when no guard applies or the
+/// keyword check passed. Mirror of `condition_keyword_guard`.
+pub fn visit_type_keyword_guard(
+    visit_type: &VisitType,
+    soap_text: &str,
+) -> Option<VisitType> {
+    let lc = soap_text.to_lowercase();
+    let required: &[&str] = match visit_type {
+        VisitType::PrenatalMajor | VisitType::PrenatalMinor => &[
+            "pregnan", "prenatal", "antenatal", "gestation", "trimester",
+            "fundal height", "fetal heart", "fetus", "obstetric",
+            "weeks pregnant", "ga ", "edd",
+        ],
+        VisitType::WellBabyVisit => &[
+            "well baby", "well-baby", "well child", "well-child",
+            "infant", "newborn", "immunization", "vaccine", "vaccination",
+            "growth chart", "developmental milestone",
+        ],
+        // Other visit types don't have a population-specific guard.
+        _ => return None,
+    };
+    if required.iter().any(|kw| lc.contains(kw)) {
+        None
+    } else {
+        Some(VisitType::IntermediateAssessment)
+    }
+}
+
 pub fn condition_keyword_guard(
     conditions: &[ConditionType],
     soap_text: &str,
@@ -2695,5 +2728,67 @@ mod tests {
         );
         assert_eq!(kept.len(), 2);
         assert!(dropped.is_empty());
+    }
+
+    // ── visit_type_keyword_guard (Class D, 2026-05-01) ─────────────────────
+
+    #[test]
+    fn test_visit_type_guard_drops_prenatal_for_toddler_aom() {
+        let soap = "S: 2-year-old with right ear pain, fever 38.5, tugging at ear. \
+                    O: erythematous bulging right TM. A: Acute otitis media right. \
+                    P: amoxicillin 40mg/kg.";
+        let downgrade = visit_type_keyword_guard(&VisitType::PrenatalMajor, soap);
+        assert_eq!(downgrade, Some(VisitType::IntermediateAssessment));
+
+        let downgrade2 = visit_type_keyword_guard(&VisitType::PrenatalMinor, soap);
+        assert_eq!(downgrade2, Some(VisitType::IntermediateAssessment));
+    }
+
+    #[test]
+    fn test_visit_type_guard_keeps_prenatal_for_real_pregnancy() {
+        let soap = "S: 28 weeks gestation, fetal movement felt. \
+                    O: fundal height 28cm, fetal heart 140. A: Normal prenatal at 28 weeks. \
+                    P: continue prenatal vitamins, follow up 4 weeks.";
+        assert_eq!(
+            visit_type_keyword_guard(&VisitType::PrenatalMajor, soap),
+            None,
+            "prenatal_major must pass when SOAP says 28 weeks gestation"
+        );
+        assert_eq!(
+            visit_type_keyword_guard(&VisitType::PrenatalMinor, soap),
+            None,
+            "prenatal_minor must pass when SOAP says fundal height + fetal heart"
+        );
+    }
+
+    #[test]
+    fn test_visit_type_guard_drops_well_baby_when_no_infant_keywords() {
+        let soap = "S: adult diabetes follow-up. A: T2DM stable. P: continue metformin.";
+        let downgrade = visit_type_keyword_guard(&VisitType::WellBabyVisit, soap);
+        assert_eq!(downgrade, Some(VisitType::IntermediateAssessment));
+    }
+
+    #[test]
+    fn test_visit_type_guard_keeps_well_baby_for_real_infant_visit() {
+        let soap = "S: 6-month well-baby visit. A: developmental milestones met. \
+                    P: 6mo immunizations administered.";
+        assert_eq!(
+            visit_type_keyword_guard(&VisitType::WellBabyVisit, soap),
+            None
+        );
+    }
+
+    #[test]
+    fn test_visit_type_guard_passes_unguarded_visit_types() {
+        // Most visit types don't have a population guard.
+        let soap = "S: any. A: any. P: any.";
+        assert_eq!(
+            visit_type_keyword_guard(&VisitType::IntermediateAssessment, soap),
+            None
+        );
+        assert_eq!(
+            visit_type_keyword_guard(&VisitType::GeneralReassessment, soap),
+            None
+        );
     }
 }

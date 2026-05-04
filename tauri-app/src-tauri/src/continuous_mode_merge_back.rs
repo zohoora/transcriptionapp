@@ -64,6 +64,24 @@ fn read_prev_clinician_notes(session_id: &str, date: &chrono::DateTime<chrono::U
         _ => String::new(),
     }
 }
+
+/// Duration for the post-merge billing regen, spanning prev's start →
+/// now. Using the new encounter's start would collapse to ~16s for a
+/// small-orphan merge and silently suppress Q310A on the regen. Falls
+/// back to `(now - new_encounter_start)` if prev metadata is unreadable.
+fn compute_merged_duration_ms(
+    prev_session_id: &str,
+    prev_date: &DateTime<Utc>,
+    new_encounter_start: Option<DateTime<Utc>>,
+    now: DateTime<Utc>,
+) -> u64 {
+    if let Some(prev_start) = local_archive::read_session_started_at(prev_session_id, prev_date) {
+        return (now - prev_start).num_milliseconds().max(0) as u64;
+    }
+    new_encounter_start
+        .map(|s| (now - s).num_milliseconds().max(0) as u64)
+        .unwrap_or(0)
+}
 use crate::continuous_mode_events::ContinuousModeEvent;
 use crate::continuous_mode_types::LoopState;
 use crate::day_log::DayLogger;
@@ -298,9 +316,8 @@ pub async fn run<C: RunContext>(
                     None => format!("{}\n{}", prev_text, encounter_text_rich),
                 };
                 let merged_wc = merged_text.split_whitespace().count();
-                let merged_duration = encounter_start
-                    .map(|s| (ctx.now_utc() - s).num_milliseconds().max(0) as u64)
-                    .unwrap_or(0);
+                let merged_duration =
+                    compute_merged_duration_ms(prev_id, prev_date, encounter_start, ctx.now_utc());
                 let merge_vision_name = deps
                     .handle
                     .name_tracker
@@ -506,9 +523,12 @@ pub async fn run<C: RunContext>(
                         None => format!("{}\n{}", prev_text, encounter_text_rich),
                     };
                     let merged_wc = merged_text.split_whitespace().count();
-                    let merged_duration = encounter_start
-                        .map(|s| (ctx.now_utc() - s).num_milliseconds().max(0) as u64)
-                        .unwrap_or(0);
+                    let merged_duration = compute_merged_duration_ms(
+                        prev_id,
+                        prev_date,
+                        encounter_start,
+                        ctx.now_utc(),
+                    );
 
                     let merge_vision_name = deps
                         .handle

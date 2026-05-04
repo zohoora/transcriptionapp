@@ -331,7 +331,7 @@ pub async fn split_encounter<C: RunContext>(
     // The replay bundle needs this data too — capturing after reset
     // would see an empty tracker (was the cause of replay_bundle
     // always showing majority_name=None, vote_count=0).
-    let (encounter_patient_name, tracker_snapshot) = match deps.handle.name_tracker.lock() {
+    let (mut encounter_patient_name, tracker_snapshot) = match deps.handle.name_tracker.lock() {
         Ok(mut tracker) => {
             let name = tracker.majority_name();
             let votes: usize = tracker.vote_count();
@@ -410,7 +410,7 @@ pub async fn split_encounter<C: RunContext>(
             session_id = %session_id,
             vision_name = ?encounter_patient_name,
             audio_candidates = ?audio_candidates,
-            "Vision-derived patient name does NOT match transcript greeting names"
+            "Vision-derived patient name does NOT match transcript greeting names; clearing vision identity"
         );
         ContinuousModeEvent::ChartStaleSuspected {
             session_id: session_id.clone(),
@@ -420,11 +420,15 @@ pub async fn split_encounter<C: RunContext>(
             audio_greeting_candidates: audio_candidates.clone(),
         }
         .emit_via(ctx);
-        // Stamp metadata so post-hoc views can surface the badge even
-        // after the live event has fled. Best-effort: failure doesn't
-        // block the split.
+        // Vision name is provably wrong (transcript greeted a different
+        // patient) — clear it from both in-memory state and metadata so
+        // downstream tooling can't mislabel the session.
+        encounter_patient_name = None;
         let split_date_str = ctx.now_utc().format("%Y-%m-%d").to_string();
-        if let Err(e) = crate::local_archive::mark_chart_stale_suspected(&session_id, &split_date_str) {
+        if let Err(e) = crate::local_archive::mark_chart_stale_and_clear_identity(
+            &session_id,
+            &split_date_str,
+        ) {
             warn!(
                 event = "chart_stale_metadata_mark_failed",
                 component = "continuous_mode_splitter",
