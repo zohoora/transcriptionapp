@@ -310,9 +310,45 @@ fn run_audio_checks(config: &Config) -> Vec<CheckResult> {
     checks
 }
 
+/// Read ONNX Runtime startup health and convert it to a `CheckResult`. State
+/// is set once by `setup_bundled_ort` in lib.rs before the Tauri builder runs.
+fn check_ort_runtime() -> CheckResult {
+    use crate::OrtHealth;
+    let make = |status, message: String, action| CheckResult {
+        id: "ort_runtime".to_string(),
+        name: "ONNX Runtime".to_string(),
+        category: CheckCategory::Model,
+        status,
+        message: Some(message),
+        action,
+    };
+    match crate::ORT_HEALTH.get() {
+        Some(OrtHealth::Ok { .. }) => make(CheckStatus::Pass, "Loaded successfully".into(), None),
+        Some(OrtHealth::Missing) => make(
+            CheckStatus::Warning,
+            "Bundled libonnxruntime not found — diarization, denoising, and cough detection disabled".into(),
+            Some(CheckAction::None),
+        ),
+        Some(OrtHealth::LoadFailed { error, .. }) => make(
+            CheckStatus::Warning,
+            format!("Failed to load: {error}. Diarization, denoising, and cough detection disabled."),
+            Some(CheckAction::None),
+        ),
+        None => make(
+            CheckStatus::Warning,
+            "Startup health not yet recorded".into(),
+            Some(CheckAction::Retry),
+        ),
+    }
+}
+
 /// Run model-related checks
 fn run_model_checks(config: &Config) -> Vec<CheckResult> {
     let mut checks = Vec::new();
+
+    // Run before model-file checks: a model file can exist while the runtime
+    // that loads it is broken, which makes the file checks misleading.
+    checks.push(check_ort_runtime());
 
     // Whisper model check - always remote server
     let whisper_check = CheckResult {

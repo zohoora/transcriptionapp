@@ -72,18 +72,32 @@ jobs:
           APPLE_SIGNING_IDENTITY: "Developer ID Application: Arash Zohoor (F982984LCX)"
         run: pnpm tauri build
 
+      - name: Determine ONNX Runtime version
+        id: ort-version
+        run: |
+          # Single source of truth for the onnxruntime pin lives in scripts/setup-ort.sh
+          # so local and CI builds stay in lockstep.
+          ORT_VERSION=$(grep '^ORT_VERSION=' scripts/setup-ort.sh | cut -d'"' -f2)
+          if [ -z "$ORT_VERSION" ]; then
+            echo "Error: could not extract ORT_VERSION from scripts/setup-ort.sh"
+            exit 1
+          fi
+          echo "Pinning onnxruntime to ${ORT_VERSION}"
+          echo "version=${ORT_VERSION}" >> "$GITHUB_OUTPUT"
+
       - name: Bundle ONNX Runtime
+        id: bundle-ort
         env:
           APPLE_SIGNING_IDENTITY: "Developer ID Application: Arash Zohoor (F982984LCX)"
+          ORT_VERSION: ${{ steps.ort-version.outputs.version }}
         run: |
           BUNDLE_DIR="src-tauri/target/release/bundle/macos"
           APP_NAME="AMI Assist"
           FRAMEWORKS_DIR="${BUNDLE_DIR}/${APP_NAME}.app/Contents/Frameworks"
           mkdir -p "$FRAMEWORKS_DIR"
 
-          # Install ONNX Runtime via pip and copy the dylib
           python3 -m venv /tmp/ort-venv
-          /tmp/ort-venv/bin/pip install onnxruntime
+          /tmp/ort-venv/bin/pip install "onnxruntime==${ORT_VERSION}"
           DYLIB=$(/usr/bin/find /tmp/ort-venv -name "libonnxruntime.*.dylib" | head -1)
 
           if [ -z "$DYLIB" ]; then
@@ -93,13 +107,47 @@ jobs:
 
           cp "$DYLIB" "$FRAMEWORKS_DIR/"
           DYLIB_NAME=$(basename "$DYLIB")
+          BUNDLED_DYLIB="${FRAMEWORKS_DIR}/${DYLIB_NAME}"
           echo "Bundled: $DYLIB_NAME"
+          echo "dylib_path=${BUNDLED_DYLIB}" >> "$GITHUB_OUTPUT"
 
-          # Re-sign dylib and app bundle
-          codesign --force --sign "$APPLE_SIGNING_IDENTITY" "$FRAMEWORKS_DIR/$DYLIB_NAME"
+          codesign --force --sign "$APPLE_SIGNING_IDENTITY" "$BUNDLED_DYLIB"
           codesign --force --deep --sign "$APPLE_SIGNING_IDENTITY" "${BUNDLE_DIR}/${APP_NAME}.app"
           codesign --verify --deep --strict "${BUNDLE_DIR}/${APP_NAME}.app"
           echo "App bundle re-signed with ONNX Runtime"
+
+      - name: Verify bundled ONNX Runtime is loadable
+        env:
+          # `codesign --verify` is a signature check, not a runtime check —
+          # this step exercises the actual Session::builder() symbol resolution
+          # before the artifact is published.
+          DYLIB: ${{ steps.bundle-ort.outputs.dylib_path }}
+        run: |
+          if [ -z "$DYLIB" ] || [ ! -f "$DYLIB" ]; then
+            echo "FAIL: bundle step did not export a dylib path (got: '${DYLIB}')"
+            exit 1
+          fi
+
+          echo "Verifying $DYLIB"
+
+          # 1. Architecture check — clinic workstations are arm64-only per latest.json
+          if ! lipo -info "$DYLIB" | grep -q arm64; then
+            echo "FAIL: $DYLIB is not arm64"
+            lipo -info "$DYLIB"
+            exit 1
+          fi
+
+          # 2. Codesign sanity on the dylib itself (the existing --verify --deep
+          #    --strict check is on the .app bundle; this confirms the nested
+          #    dylib carries its own valid signature).
+          codesign -d --verbose=4 "$DYLIB"
+
+          # 3. Real load test — runs the same Session::builder() call as production.
+          #    Catches version-mismatch, ABI-break, wrong-arch, missing-symbol
+          #    failures that codesign --verify cannot see. See tools/ort_smoke.rs
+          #    for exit-code semantics.
+          cd src-tauri
+          ORT_DYLIB_PATH="$DYLIB" cargo run --release --bin ort_smoke
 
       - name: Create updater bundle and sign
         env:

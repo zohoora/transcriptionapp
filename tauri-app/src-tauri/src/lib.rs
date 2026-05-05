@@ -109,7 +109,7 @@ pub mod server_config;
 pub mod server_config_resolve;
 
 use commands::PipelineState;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Duration;
 use tauri::{Emitter, Manager, WindowEvent};
 use tracing::{info, warn};
@@ -119,6 +119,31 @@ const APP_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 /// Timeout for graceful pipeline shutdown on window close
 const SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(3);
+
+/// Health of the bundled ONNX Runtime dylib at startup. Set once by
+/// `setup_bundled_ort`. Visible-warn, not hard-fail — SOAP/billing/EMR don't
+/// depend on ONNX, so we launch even when diarization/denoising/cough are off.
+#[derive(Clone, Debug, serde::Serialize)]
+#[serde(tag = "state", rename_all = "snake_case")]
+pub enum OrtHealth {
+    Ok { dylib_path: String },
+    Missing,
+    LoadFailed { dylib_path: String, error: String },
+}
+
+impl OrtHealth {
+    /// Static tag matching the serde discriminator. Single source of truth so
+    /// log fields can't drift from the wire format.
+    pub fn state_tag(&self) -> &'static str {
+        match self {
+            OrtHealth::Ok { .. } => "ok",
+            OrtHealth::Missing => "missing",
+            OrtHealth::LoadFailed { .. } => "load_failed",
+        }
+    }
+}
+
+pub static ORT_HEALTH: OnceLock<OrtHealth> = OnceLock::new();
 
 /// Recursively search a directory for a file matching `libonnxruntime.*.dylib`.
 /// Returns the first match found, or `None`.
@@ -139,56 +164,94 @@ fn find_ort_dylib_recursive(dir: &std::path::Path) -> Option<std::path::PathBuf>
     None
 }
 
-/// Set up ONNX Runtime path from bundled location if not already set.
-/// This allows the app to work without requiring ORT_DYLIB_PATH to be set externally.
+/// Test that the ONNX Runtime dylib at `ORT_DYLIB_PATH` is loadable by the
+/// compiled `ort` crate. Shared by startup health-check (`record_ort_health`)
+/// and by `tools/ort_smoke.rs` so CI and runtime exercise the same code path.
+///
+/// `ort` panics rather than returning Err when required symbols are missing
+/// (e.g. `OrtGetApiBase`), so we wrap with `catch_unwind` and convert the
+/// panic into an Err.
+#[cfg(feature = "diarization")]
+pub fn verify_ort_loadable() -> Result<(), String> {
+    let result =
+        std::panic::catch_unwind(std::panic::AssertUnwindSafe(ort::session::Session::builder));
+    match result {
+        Ok(Ok(_)) => Ok(()),
+        Ok(Err(e)) => Err(format!("Session::builder() returned Err: {}", e)),
+        Err(panic_payload) => {
+            let msg = panic_payload
+                .downcast_ref::<&str>()
+                .map(|s| s.to_string())
+                .or_else(|| panic_payload.downcast_ref::<String>().cloned())
+                .unwrap_or_else(|| "<non-string panic payload>".to_string());
+            Err(format!("Session::builder() panicked: {}", msg))
+        }
+    }
+}
+
+#[cfg(not(feature = "diarization"))]
+pub fn verify_ort_loadable() -> Result<(), String> {
+    Err("built without 'diarization' feature".to_string())
+}
+
+/// Resolve the bundled `Contents/Frameworks/` directory by walking up from
+/// the running executable. `current_exe → MacOS/ → Contents/ → Frameworks/`.
+fn bundled_frameworks_dir() -> Option<std::path::PathBuf> {
+    let exe = std::env::current_exe().ok()?;
+    let frameworks = exe.parent()?.parent()?.join("Frameworks");
+    frameworks.exists().then_some(frameworks)
+}
+
+/// Set up `ORT_DYLIB_PATH` from the bundled location (or fallback dev venv),
+/// then run the load test. Records the outcome in `ORT_HEALTH` so the Tauri
+/// setup hook can emit it to the frontend. Always returns — never panics.
 ///
 /// SAFETY: Uses `std::env::set_var` (unsafe in Rust 2024+). This function runs
 /// during single-threaded startup before any other threads are spawned.
 fn setup_bundled_ort() {
-    // If ORT_DYLIB_PATH is already set, use it
-    if std::env::var("ORT_DYLIB_PATH").is_ok() {
+    if let Ok(existing) = std::env::var("ORT_DYLIB_PATH") {
+        record_ort_health(&existing);
         return;
     }
 
-    // Try to find bundled ONNX Runtime in the app bundle
-    // On macOS: MyApp.app/Contents/Frameworks/libonnxruntime.*.dylib
-    if let Ok(exe_path) = std::env::current_exe() {
-        // Navigate from Contents/MacOS/app-binary to Contents/Frameworks/
-        if let Some(macos_dir) = exe_path.parent() {
-            if let Some(contents_dir) = macos_dir.parent() {
-                let frameworks_dir = contents_dir.join("Frameworks");
+    let candidate = bundled_frameworks_dir()
+        .as_deref()
+        .and_then(find_ort_dylib_recursive)
+        .or_else(|| {
+            let venv = dirs::home_dir()?.join(".transcriptionapp/ort-venv");
+            venv.exists().then(|| find_ort_dylib_recursive(&venv))?
+        });
 
-                // Look for libonnxruntime.*.dylib
-                if frameworks_dir.exists() {
-                    if let Ok(entries) = std::fs::read_dir(&frameworks_dir) {
-                        for entry in entries.flatten() {
-                            let path = entry.path();
-                            if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
-                                if name.starts_with("libonnxruntime.") && name.ends_with(".dylib") {
-                                    let path_str = path.to_string_lossy().to_string();
-                                    unsafe { std::env::set_var("ORT_DYLIB_PATH", &path_str) };
-                                    eprintln!("Using bundled ONNX Runtime: {}", path_str);
-                                    return;
-                                }
-                            }
-                        }
-                    }
-                }
+    if let Some(path) = candidate {
+        let path_str = path.to_string_lossy().to_string();
+        unsafe { std::env::set_var("ORT_DYLIB_PATH", &path_str) };
+        eprintln!("Using bundled ONNX Runtime: {}", path_str);
+        record_ort_health(&path_str);
+    } else {
+        eprintln!("ONNX Runtime dylib not found in app bundle or venv");
+        let _ = ORT_HEALTH.set(OrtHealth::Missing);
+    }
+}
+
+/// Run the load test against the configured dylib path and stash the result
+/// in `ORT_HEALTH` (set-once via `OnceLock`).
+fn record_ort_health(dylib_path: &str) {
+    let health = match verify_ort_loadable() {
+        Ok(()) => {
+            eprintln!("ONNX Runtime load test passed");
+            OrtHealth::Ok {
+                dylib_path: dylib_path.to_string(),
             }
         }
-    }
-
-    // Fallback: try the default venv location
-    let home = dirs::home_dir().unwrap_or_default();
-    let venv_path = home.join(".transcriptionapp/ort-venv");
-    if venv_path.exists() {
-        // Walk the venv directory tree to find the dylib (native Rust, no shell-out)
-        if let Some(found) = find_ort_dylib_recursive(&venv_path) {
-            let path_str = found.to_string_lossy().to_string();
-            unsafe { std::env::set_var("ORT_DYLIB_PATH", &path_str) };
-            eprintln!("Using ORT from venv: {}", path_str);
+        Err(e) => {
+            eprintln!("ONNX Runtime load test FAILED: {}", e);
+            OrtHealth::LoadFailed {
+                dylib_path: dylib_path.to_string(),
+                error: e,
+            }
         }
-    }
+    };
+    let _ = ORT_HEALTH.set(health);
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -210,6 +273,9 @@ pub fn run() {
 
     // Log application start
     activity_log::log_app_start(APP_VERSION);
+    if let Some(health) = ORT_HEALTH.get() {
+        activity_log::log_ort_health(health);
+    }
     info!("Transcription App starting...");
 
     tauri::Builder::default()
@@ -423,6 +489,16 @@ pub fn run() {
 
             });
 
+            // Emit ONNX Runtime health to the frontend so windows that mount
+            // before the user opens the Settings drawer can render the
+            // degradation banner immediately. Windows that mount later read
+            // the same state via `commands::get_ort_health`.
+            if let Some(health) = ORT_HEALTH.get() {
+                if let Err(e) = app.emit("ort_health", health.clone()) {
+                    warn!("Failed to emit ort_health event: {}", e);
+                }
+            }
+
             info!("App setup complete");
             Ok(())
         })
@@ -481,6 +557,8 @@ pub fn run() {
             commands::check_microphone_permission,
             commands::request_microphone_permission,
             commands::open_microphone_settings,
+            // ONNX Runtime health (launch-time load test, surfaced for UI banner)
+            commands::get_ort_health,
             // Listening mode commands (auto-session detection)
             commands::start_listening,
             commands::stop_listening,

@@ -525,6 +525,33 @@ pub fn log_app_shutdown(reason: &str) {
     );
 }
 
+/// Log ONNX Runtime startup health. PHI-safe — only dylib path and error
+/// class. State tag is sourced from `OrtHealth::state_tag()` so log fields
+/// can't drift from the wire format.
+pub fn log_ort_health(health: &crate::OrtHealth) {
+    let state = health.state_tag();
+    match health {
+        crate::OrtHealth::Ok { dylib_path } => info!(
+            event = "ort_health",
+            state = state,
+            dylib_path = %dylib_path,
+            "ONNX Runtime loaded"
+        ),
+        crate::OrtHealth::Missing => warn!(
+            event = "ort_health",
+            state = state,
+            "ONNX Runtime dylib not found — diarization, denoising, and cough detection disabled"
+        ),
+        crate::OrtHealth::LoadFailed { dylib_path, error } => warn!(
+            event = "ort_health",
+            state = state,
+            dylib_path = %dylib_path,
+            error = %error,
+            "ONNX Runtime dylib failed to load — diarization, denoising, and cough detection disabled"
+        ),
+    }
+}
+
 /// Log checklist result
 pub fn log_checklist_result(
     total_checks: usize,

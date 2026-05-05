@@ -14,7 +14,8 @@
  */
 import { useState, useEffect, useCallback } from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import type { Settings, WhisperServerStatus, OllamaStatus } from '../types';
+import { listen } from '@tauri-apps/api/event';
+import type { Settings, WhisperServerStatus, OllamaStatus, OrtHealthStatus } from '../types';
 import type { PendingSettings } from './useSettings';
 import { useOllamaConnection } from './useOllamaConnection';
 
@@ -39,6 +40,10 @@ export interface ConnectionTestsResult {
   // Whisper server state (owned by this hook)
   whisperServerStatus: WhisperServerStatus | null;
   whisperServerModels: string[];
+  // ONNX Runtime startup health — populated once on mount via the `ort_health`
+  // event (fired from the Tauri setup hook) plus an initial `get_ort_health`
+  // invoke for windows that mount after the event fired.
+  ortHealth: OrtHealthStatus | null;
   // Test handlers (used by SettingsDrawer)
   handleTestLLM: () => Promise<void>;
   handleTestMedplum: () => Promise<void>;
@@ -63,6 +68,40 @@ export function useConnectionTests({
   // Whisper server state (owned by this hook)
   const [whisperServerStatus, setWhisperServerStatus] = useState<WhisperServerStatus | null>(null);
   const [whisperServerModels, setWhisperServerModels] = useState<string[]>([]);
+
+  // ONNX Runtime startup health: listen for the one-shot event from the
+  // Tauri setup hook, plus a direct invoke for windows that mount after the
+  // event has already fired. Both are wrapped so default vi.fn() mocks
+  // (returning undefined) don't reject.
+  const [ortHealth, setOrtHealth] = useState<OrtHealthStatus | null>(null);
+  useEffect(() => {
+    let mounted = true;
+    let unlisten: (() => void) | null = null;
+
+    async function initOrtHealth() {
+      try {
+        const fn = await listen<OrtHealthStatus>('ort_health', (event) => {
+          if (mounted) setOrtHealth(event.payload);
+        });
+        if (mounted) unlisten = fn;
+        else fn();
+      } catch (e) {
+        console.error('Failed to listen for ort_health:', e);
+      }
+      try {
+        const health = await invoke<OrtHealthStatus>('get_ort_health');
+        if (mounted && health) setOrtHealth(health);
+      } catch (e) {
+        console.error('Failed to fetch ort_health:', e);
+      }
+    }
+    initOrtHealth();
+
+    return () => {
+      mounted = false;
+      if (unlisten) unlisten();
+    };
+  }, []);
 
   // Sync Ollama status from connection hook to SOAP hook
   useEffect(() => {
@@ -161,6 +200,7 @@ export function useConnectionTests({
   return {
     whisperServerStatus,
     whisperServerModels,
+    ortHealth,
     handleTestLLM,
     handleTestMedplum,
     handleTestWhisperServer,

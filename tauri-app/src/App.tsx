@@ -138,9 +138,8 @@ function App() {
   // Devices from hook
   const { devices } = useDevices();
 
-  // Connection tests composite hook (LLM, Medplum init, Whisper server)
-  // Tests run on mount; we only need the side effects (setOllamaStatus, etc.)
-  useConnectionTests({
+  // Connection tests composite hook (LLM, Medplum init, Whisper server, ORT health)
+  const { ortHealth } = useConnectionTests({
     settings,
     pendingSettings,
     setOllamaStatus,
@@ -148,6 +147,12 @@ function App() {
     setMedplumConnected,
     setMedplumError,
   });
+
+  // Session-scoped dismiss for the ONNX degradation banner. Re-shows on next
+  // launch if the dylib is still broken.
+  const [ortBannerDismissed, setOrtBannerDismissed] = useState(false);
+  const showOrtBanner =
+    !!ortHealth && ortHealth.state !== 'ok' && !ortBannerDismissed;
 
   // Checklist from hook (for permission checks)
   const { checkMicrophonePermission, openMicrophoneSettings } = useChecklist();
@@ -779,6 +784,37 @@ function App() {
         </div>
       )}
 
+      {/* ONNX Runtime degradation banner */}
+      {showOrtBanner && ortHealth && (
+        <div
+          role="status"
+          aria-live="polite"
+          className="warning-banner"
+          style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}
+        >
+          <span>
+            {ortHealth.state === 'missing'
+              ? 'ONNX Runtime missing — diarization, denoising, and cough detection are disabled.'
+              : `ONNX Runtime failed to load (${ortHealth.error}). Diarization, denoising, and cough detection are disabled.`}
+          </span>
+          <button
+            onClick={() => setOrtBannerDismissed(true)}
+            aria-label="Dismiss ONNX Runtime warning"
+            style={{
+              background: 'transparent',
+              color: 'inherit',
+              border: '1px solid currentColor',
+              borderRadius: '4px',
+              padding: '2px 8px',
+              fontSize: '11px',
+              cursor: 'pointer',
+            }}
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
+
       {/* Update notification banner */}
       {updateStatus.available && (
         <div style={{
@@ -871,8 +907,6 @@ function App() {
             transcriptionStalled={continuous.transcriptionStalled}
             isSleeping={continuous.isSleeping}
             sleepResumeAt={continuous.sleepResumeAt}
-            chartStaleWarning={continuous.chartStaleWarning}
-            onDismissChartStaleWarning={continuous.onDismissChartStaleWarning}
             onViewHistory={openHistoryWindow}
             onUploadAudio={() => setShowUploadModal(true)}
             chatMessages={chatMessages}
