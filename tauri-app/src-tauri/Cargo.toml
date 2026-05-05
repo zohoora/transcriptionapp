@@ -1,6 +1,6 @@
 [package]
 name = "transcription-app"
-version = "0.10.71"
+version = "0.10.72"
 description = "Local Transcription App"
 authors = ["you"]
 license = "MIT"

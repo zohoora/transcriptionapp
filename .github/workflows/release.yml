@@ -108,8 +108,11 @@ jobs:
           cp "$DYLIB" "$FRAMEWORKS_DIR/"
           DYLIB_NAME=$(basename "$DYLIB")
           BUNDLED_DYLIB="${FRAMEWORKS_DIR}/${DYLIB_NAME}"
-          echo "Bundled: $DYLIB_NAME"
-          echo "dylib_path=${BUNDLED_DYLIB}" >> "$GITHUB_OUTPUT"
+          # Resolve to absolute path: the verify step `cd`s into src-tauri before
+          # invoking cargo, so a relative path here breaks dlopen resolution.
+          ABS_BUNDLED_DYLIB="$(cd "$(dirname "$BUNDLED_DYLIB")" && pwd)/${DYLIB_NAME}"
+          echo "Bundled: $DYLIB_NAME -> $ABS_BUNDLED_DYLIB"
+          echo "dylib_path=${ABS_BUNDLED_DYLIB}" >> "$GITHUB_OUTPUT"
 
           codesign --force --sign "$APPLE_SIGNING_IDENTITY" "$BUNDLED_DYLIB"
           codesign --force --deep --sign "$APPLE_SIGNING_IDENTITY" "${BUNDLE_DIR}/${APP_NAME}.app"
