@@ -8,7 +8,6 @@
     "merge_correct": true,
     "clinical_correct": true,
     "patient_count_correct": true,
-    "procedure_section_correct": true,
     "billing_codes_expected": ["A004A", "Q310A"],
     "diagnostic_code_expected": "788",
     "notes": "Mihai Beres 3:18pm — clean encounter, all correct per user ('SOAP note ok. diagnostic code ok. Billing code ok.'). Used as a positive baseline."

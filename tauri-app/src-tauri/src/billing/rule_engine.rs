@@ -19,14 +19,6 @@ pub struct RuleEngineContext {
     /// `validate_condition_evidence` pattern. When `None`, validation is
     /// skipped (backward compat).
     pub transcript: Option<String>,
-    /// 2026-04-30 architecture-gap fix: optional SOAP Procedure-section text.
-    /// When provided, the rule engine runs `augment_procedures_from_soap_text`
-    /// internally before mapping procedures, ensuring the safety net fires
-    /// regardless of caller convention. Previously this was caller-side in
-    /// `extract_and_archive_billing` only — replay/experiment tools that
-    /// invoked `map_features_to_billing_with_tools_model` directly bypassed
-    /// the augment layer.
-    pub soap_procedure_text: Option<String>,
 }
 
 /// Map extracted clinical features to a draft billing record with OHIP codes.
@@ -72,32 +64,6 @@ pub fn map_features_to_billing_with_tools_model(
     billing_data: BillingDataRef<'_>,
     tools_model_resolved: Option<&ResolvedDiagnostic>,
 ) -> BillingRecord {
-    // 2026-04-30 architecture-gap fix: clone features so we can run
-    // `augment_procedures_from_soap_text` internally when ctx provides the
-    // SOAP procedure text. Previously this was caller-side only — any
-    // caller using `map_features_to_billing_with_tools_model` directly
-    // bypassed the safety net.
-    //
-    // Track WHICH procedures were added by augment so they can bypass the
-    // past-tense transcript validator (`validate_procedure_evidence`). The
-    // SOAP procedure section's explicit listing IS sufficient evidence —
-    // many real injections happen with silent doctor narration (Karen White
-    // and Frederick Moore on 2026-04-30 both had injections documented in
-    // SOAP but no past-tense action language in transcript).
-    let mut features_owned;
-    let mut soap_grounded: Vec<ProcedureType> = Vec::new();
-    let features: &ClinicalFeatures = if let Some(proc_text) = ctx.soap_procedure_text.as_deref() {
-        if !proc_text.trim().is_empty() {
-            features_owned = features.clone();
-            soap_grounded = augment_procedures_from_soap_text_tracked(&mut features_owned, proc_text);
-            &features_owned
-        } else {
-            features
-        }
-    } else {
-        features
-    };
-
     let mut codes: Vec<BillingCode> = Vec::new();
 
     // 1. Visit type -> assessment code
@@ -167,17 +133,9 @@ pub fn map_features_to_billing_with_tools_model(
         if has_nerve_block && matches!(proc, ProcedureType::ImInjectionWithVisit) {
             continue;
         }
-        // 2026-04-30 architecture-gap fix: skip past-tense transcript
-        // validation when this procedure was added via the SOAP-grounded
-        // augment path. The SOAP procedure section's explicit documentation
-        // is itself authoritative (silent-narration injections still
-        // happen and are billable).
-        let soap_grounded_proc = soap_grounded.contains(proc);
-        if !soap_grounded_proc {
-            if let Some(ts) = ctx.transcript.as_deref() {
-                if !validate_procedure_evidence(proc, ts) {
-                    continue;
-                }
+        if let Some(ts) = ctx.transcript.as_deref() {
+            if !validate_procedure_evidence(proc, ts) {
+                continue;
             }
         }
         let proc_code = procedure_type_to_code(proc, billing_data);
@@ -1546,35 +1504,6 @@ mod tests {
         let joanne_soap = "A: Worsening chronic pain post-PRP. Rheumatoid Arthritis with heat-sensitive symptoms.";
         let (kept, _) = condition_keyword_guard(&[ConditionType::FibromyalgiaCare], joanne_soap);
         assert!(kept.is_empty(), "FibromyalgiaCare must be DROPPED for RA-only SOAP");
-    }
-
-    #[test]
-    fn class_e_2026_04_30_karen_neck_injection_compound_fires() {
-        use crate::billing::clinical_features::{augment_procedures_from_soap_text, ProcedureType};
-        let mut features = default_features();
-        let added = augment_procedures_from_soap_text(
-            &mut features,
-            "• Administered injection to right side of neck"
-        );
-        assert!(added > 0);
-        assert!(
-            features.procedures.contains(&ProcedureType::NerveBlockPeripheral)
-                || features.procedures.contains(&ProcedureType::JointInjection),
-            "neck-injection compound rule must fire; got {:?}",
-            features.procedures
-        );
-    }
-
-    #[test]
-    fn class_e_2026_04_30_linda_epidural_augments() {
-        use crate::billing::clinical_features::{augment_procedures_from_soap_text, ProcedureType};
-        let mut features = default_features();
-        let added = augment_procedures_from_soap_text(
-            &mut features,
-            "• Performed PRP injection at L5-S1 level (epidural)"
-        );
-        assert!(added > 0);
-        assert!(features.procedures.contains(&ProcedureType::NerveBlockParavertebral));
     }
 
     // ====== end 2026-04-30 validation tests ======

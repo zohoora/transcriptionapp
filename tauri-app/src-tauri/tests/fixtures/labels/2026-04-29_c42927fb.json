@@ -8,7 +8,6 @@
     "merge_correct": true,
     "clinical_correct": true,
     "patient_count_correct": true,
-    "procedure_section_correct": true,
     "billing_codes_expected": ["A007A", "Q310A"],
     "diagnostic_code_expected": "009",
     "notes": "Labelled-as-Sara-Slote 2:50pm WAS ACTUALLY JADEN SLOTE (3-year-old with watery diarrhea). Mother+child seen together; the SOAP correctly captures Jaden's content (juice/dairy/diet, 3-year-old, daycare). VISION NAME MISLABEL — vision sequence on this 38-min session: 7×Shirley Rice (chart leftover from prior pt) → NONE → 3×Catherine Devouge → 3×Jaden Slote → 2×Sara Slote (final). Recency-weighted majority picked Sara because clinician opened her chart last (presumably for the adult portion that became the next encounter). DEFECTS: (1) Patient identified as Sara when content is Jaden — generalized fix: when vision sees ≥3 distinct patient names within one encounter, flag for clinician review rather than picking last; cross-check against transcript greeting patterns; (2) DIAGNOSTIC CODE 787 (GI symptoms — anorexia/nausea/vomiting/heartburn etc) acceptable but 009 (Diarrhea, gastro-enteritis) is more specific given primary presentation is recurrent watery diarrhea. User said 'borderline'."

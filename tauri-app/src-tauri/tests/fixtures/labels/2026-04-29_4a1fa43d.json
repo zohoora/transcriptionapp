@@ -8,7 +8,6 @@
     "merge_correct": true,
     "clinical_correct": true,
     "patient_count_correct": true,
-    "procedure_section_correct": true,
     "billing_codes_expected": ["A004A", "K030A", "Q040A", "Q310A"],
     "diagnostic_code_expected": "715",
     "notes": "Catherine Devouge 1:59pm (DOB 1956-05-05) — true Catherine with knee OA, breathing test follow-up. Small 2:15pm short-followup session (sid c5bba8dd, 122 words) was correctly auto-merged into this session by the merge-back coordinator: 'pt had a last minute question re her upcoming breathing test'. User explicitly confirmed merge was correct. SOAP/dx/billing all OK on the merged result."

@@ -2,7 +2,6 @@ pub mod clinical_features;
 pub mod diagnostic_codes;
 pub mod diagnostic_tools_model;
 pub mod ohip_codes;
-pub mod procedure_vocab;
 pub mod rule_engine;
 pub mod time_tracking;
 pub mod types;

@@ -60,16 +60,6 @@ pub struct LabelData {
     /// are clinically equivalent (e.g. cervical 723 vs musculoskeletal 729).
     #[serde(default)]
     pub diagnostic_code_acceptable: Option<Vec<String>>,
-    /// Ground truth for whether the SOAP's procedure section is clinically
-    /// appropriate. `Some(true)` means the procedure[] either correctly listed
-    /// real billable procedures or correctly was empty; `Some(false)` means
-    /// production hallucinated entries (e.g. "reviewed blood work", "performed
-    /// chest auscultation") OR missed a real procedure that was performed.
-    /// Verified by `labeled_regression_cli` against
-    /// `replay_bundle.json::soap_result.response_raw` (parsed for
-    /// procedure[]) — see Class 1 fixes from the 2026-04-29 forensic review.
-    #[serde(default)]
-    pub procedure_section_correct: Option<bool>,
     #[serde(default)]
     pub notes: Option<String>,
 }

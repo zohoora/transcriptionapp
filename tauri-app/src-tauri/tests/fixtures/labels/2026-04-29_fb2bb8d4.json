@@ -8,7 +8,6 @@
     "merge_correct": true,
     "clinical_correct": true,
     "patient_count_correct": true,
-    "procedure_section_correct": true,
     "billing_codes_expected": ["A102A", "Q310A"],
     "diagnostic_code_expected": "401",
     "notes": "Janice Carey 2:49pm — TELEPHONE CONSULTATION. Transcript opens with 'Hi, Diana. This is Doctor Zohor Kalin' — classic phone-call greeting (doctor introduces self by phone). DEFECTS: (1) TELEPHONE NOT DETECTED — billing got A004A (general reassessment in-office) instead of A102A (telephone visit). The clinical_features prompt's phone-detection signals ('calling, we'll call you back, phone visit, over the phone') are too narrow and miss the most common phone opener ('Hi [Name], this is Dr X'). Generalized fix: expand phone signals to include 'this is Dr X', 'Dr X calling', single-speaker dominance >80%, doctor self-introduction. (2) DRUG-NAME HALLUCINATION — SOAP says 'Davigo (estradiol)' but Dayvigo is lemborexant (insomnia drug), not estradiol. STT phonetic miss + LLM creative substitution. Generalized fix: verbatim-only rule for unrecognized drug names. (3) DIAGNOSTIC CODE 311 (Depression/non-psychotic disorders) — call covered HTN management (BP readings 90s), postprandial GI symptoms, sleep insomnia, beta-blocker dosing. Expected primary dx 401 (Hypertension) given the visit centered on BP management; or 311 if sleep was primary. User said 'not the best one'."

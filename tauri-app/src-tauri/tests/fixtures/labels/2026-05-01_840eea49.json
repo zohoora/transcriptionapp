@@ -8,7 +8,6 @@
     "merge_correct": true,
     "clinical_correct": true,
     "patient_count_correct": true,
-    "procedure_section_correct": true,
     "billing_codes_expected": ["A004A", "K030A", "Q040A", "Q310A"],
     "diagnostic_code_expected": "250",
     "notes": "Larry L Barber 10:36am — comprehensive 26-min visit covering hypertension med adjustment (Twinstar 80/10 reinstate, spironolactone add), neuropathy, restless legs, iron deficiency anemia, type 2 diabetes management, recent TIA. Vision identified Larry correctly (22 calls). multi_patient_detect ran TWICE (post-split + retrospective) and correctly returned patient_count=1. SOAP, dx 250 (Diabetes), and full billing all correct. POSITIVE BASELINE for the comprehensive-visit + diabetic-management billing path (contrast with Paul Beal d22efcbc which is missing Q310A despite being the same visit type)."

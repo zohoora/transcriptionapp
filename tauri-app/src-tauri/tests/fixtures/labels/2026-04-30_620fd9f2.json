@@ -8,7 +8,6 @@
     "merge_correct": true,
     "clinical_correct": true,
     "patient_count_correct": true,
-    "procedure_section_correct": true,
     "billing_codes_expected": ["A007A", "Q310A"],
     "diagnostic_code_expected": "715",
     "notes": "Christina Louise Andrews 9:30am — bilateral knee OA, post-injection follow-up, plan PRP+Synvisc. SOAP correct. Billing A007A correct. Dx 715 (Osteoarthritis) correct. Used as the positive baseline for the 2026-04-30 review."

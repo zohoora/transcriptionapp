@@ -7,17 +7,15 @@
 //! diff summary to `~/.transcriptionapp/experiments/soap/<run_id>/`.
 //!
 //! Built-in variants:
-//!   - "v0_10_61"   — current production SOAP prompt (with the procedure section)
-//!   - "no_procsec" — same prompt minus the Procedure-section workflow
-//!     (useful for ablations)
+//!   - "current" — current production SOAP prompt
 //!
 //! Custom variants pulled from --variant <file>.
 //!
 //! Usage:
 //!   cargo run --bin soap_experiment_cli -- --date 2026-04-24 \
-//!       --variant v0_10_61 --variant no_procsec --seeds 3
+//!       --variant current --seeds 3
 //!   cargo run --bin soap_experiment_cli -- --session 8feb77a1 \
-//!       --variant prompts/strict_procsec.txt --seeds 5
+//!       --variant prompts/my_variant.txt --seeds 5
 
 use std::env;
 use std::process::ExitCode;
@@ -35,19 +33,8 @@ const DEFAULT_MODEL: &str = "soap-model-fast";
 
 fn resolve_builtin_variant(name: &str) -> Result<String> {
     match name {
-        "v0_10_61" => Ok(build_simple_soap_prompt(&SoapOptions::default(), None)),
-        "no_procsec" => {
-            // Strip the Procedure-section workflow from the production prompt.
-            // This is a simple heuristic — looks for the "PROCEDURE-SECTION
-            // WORKFLOW" header and truncates before it.
-            let full = build_simple_soap_prompt(&SoapOptions::default(), None);
-            if let Some(idx) = full.find("PROCEDURE-SECTION WORKFLOW") {
-                Ok(full[..idx].trim_end().to_string())
-            } else {
-                Ok(full)
-            }
-        }
-        _ => Err(anyhow!("Unknown built-in variant: {name}. Try: v0_10_61, no_procsec, or pass a path to a prompt file.")),
+        "current" => Ok(build_simple_soap_prompt(&SoapOptions::default(), None)),
+        _ => Err(anyhow!("Unknown built-in variant: {name}. Try: current, or pass a path to a prompt file.")),
     }
 }
 
@@ -119,10 +106,6 @@ impl Runner for SoapRunner {
             .and_then(|m| m.get("subjective"))
             .and_then(|v| v.as_array().map(|a| a.len()))
             .unwrap_or(0);
-        let n_procedure = parsed_obj
-            .and_then(|m| m.get("procedure"))
-            .and_then(|v| v.as_array().map(|a| a.len()))
-            .unwrap_or(0);
 
         // Score: structural-only. all_ok=true iff JSON parsed AND has S/O/A/P sections.
         let all_ok = parsed_obj
@@ -145,7 +128,7 @@ impl Runner for SoapRunner {
 
         tracing::debug!(
             session_id = %session_id, variant = %variant.label, seed,
-            n_subjective, n_procedure, "soap_experiment run_one"
+            n_subjective, "soap_experiment run_one"
         );
         Ok(Score {
             variant: variant.label.clone(),
@@ -153,7 +136,7 @@ impl Runner for SoapRunner {
             seed,
             all_ok,
             visit_ok: None,
-            proc_ok: Some(n_procedure > 0),
+            proc_ok: None,
             cond_ok: Some(true),
             dx_ok: None,
             procedures: None,
@@ -173,7 +156,7 @@ fn print_usage(program: &str) {
     eprintln!("Options:");
     eprintln!("  --date YYYY-MM-DD         All sessions on the given date");
     eprintln!("  --session <id>            A single session id");
-    eprintln!("  --variant <name|file>     Built-in name (v0_10_61, no_procsec) or path to a prompt file. Repeatable.");
+    eprintln!("  --variant <name|file>     Built-in name (current) or path to a prompt file. Repeatable.");
     eprintln!("  --seeds N                 Number of seeds per variant (default 1)");
     eprintln!("  --model <alias>           LLM model alias (default: soap-model-fast)");
     eprintln!("  --output <dir>            Output directory");

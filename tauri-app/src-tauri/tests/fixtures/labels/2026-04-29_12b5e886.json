@@ -8,7 +8,6 @@
     "merge_correct": true,
     "clinical_correct": true,
     "patient_count_correct": true,
-    "procedure_section_correct": false,
     "billing_codes_expected": ["A007A", "K030A", "Q040A", "Q310A"],
     "diagnostic_code_expected": "250",
     "notes": "Allan Nicholls 10:48am — post-extraction recovery + diabetes med stop + minor hand trauma. SOAP and billing OK; dx 250 (Diabetes mellitus) correct. PROCEDURE SECTION HALLUCINATED: 'reviewed blood work results [transcript: ...]'. Reviewing labs is documentation, not a billable procedure. Same v0.10.61 overcapture as Ruth/Catherine 2:35/Angelika today."

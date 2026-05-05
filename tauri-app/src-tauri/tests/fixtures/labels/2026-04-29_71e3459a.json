@@ -8,7 +8,6 @@
     "merge_correct": true,
     "clinical_correct": true,
     "patient_count_correct": true,
-    "procedure_section_correct": true,
     "billing_codes_expected": ["A007A"],
     "diagnostic_code_expected": "280",
     "notes": "Slote multi-patient 3:28pm — Sara (mother, iron deficiency/menorrhagia) + Jaden (child, diet follow-up after 2:50 visit). Multi-patient detection CORRECTLY identified 2 patients (Child/Young Patient + Adult Female), composite SOAP correctly separated content. DEFECT: PER-PATIENT SOAP REGEN PRODUCED IDENTICAL ADULT CONTENT FOR BOTH soap_patient_1.txt and soap_patient_2.txt — the child SOAP got the adult's iron-deficiency content too. Root cause: build_per_patient_soap_prompt uses generic labels ('Adult Female' / 'Child/Young Patient') without persisted per-patient summary; when one patient's content is dominant (adult here, ~800 words vs child's ~50), the LLM defaults to dominant content for both regens. Generalized fix: persist multi-patient detection's per-patient summary alongside labels in patient_labels.json, pass to regeneration prompt; OR include vision-extracted name+DOB per patient when EMR shows separate charts. Diagnostic code 280 (Iron deficiency anemia) appropriate for the adult/dominant complaint; child portion lacks its own dx (009 GI/diarrhea). Billing has only A007A and no time entries — likely because per-patient billing extraction stalled mid-process."

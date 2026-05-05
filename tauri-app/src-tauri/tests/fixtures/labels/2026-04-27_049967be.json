@@ -8,7 +8,6 @@
     "merge_correct": false,
     "clinical_correct": true,
     "patient_count_correct": true,
-    "procedure_section_correct": true,
     "billing_codes_expected": [],
     "diagnostic_code_expected": null,
     "expected_merged_into": "48efcdcc-5b2a-4c94-bb7b-ca353be9f201",

@@ -8,7 +8,6 @@
     "merge_correct": true,
     "clinical_correct": true,
     "patient_count_correct": true,
-    "procedure_section_correct": false,
     "billing_codes_expected": ["A007A", "G365A", "E430A", "Q310A"],
     "diagnostic_code_expected": "715",
     "notes": "Angelika Jaskot 1:28pm — multi-issue: knee OA, sleep, menopause, cervical/colorectal screening, mental health follow-up. Pap smear ACTUALLY DONE during visit. DEFECTS: (1) PROCEDURE SECTION HALLUCINATED 'Performed physical examination of both knees and hips' — physical exam is not a billable procedure; (2) PAP SMEAR PROCEDURE MISSED — should generate G365A (Pap smear) + E430A (pap tray); current billing has only A007A. Tied to defect #1 — when procedure[] is filled with non-procedures, the billing extraction loses signal-to-noise; (3) Billing dx 715 (Osteoarthritis) is technically correct for the knee primary, but a multi-issue 'general reassessment' visit could justify A004A instead of A007A given pap+knee+sleep+psych+screening discussion (user noted 'not the best — not considering different topics, duration, and pap'). With pap added → A007A is fine because the joint procedure makes A007A appropriate, but K013A counselling could be considered for the mental-health portion."

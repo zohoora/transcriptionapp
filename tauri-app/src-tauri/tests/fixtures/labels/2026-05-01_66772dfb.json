@@ -8,7 +8,6 @@
     "merge_correct": true,
     "clinical_correct": true,
     "patient_count_correct": true,
-    "procedure_section_correct": true,
     "patient_name_expected": "Evelyn Elaine Horvath",
     "patient_dob_expected": "1951-09-16",
     "billing_codes_expected": ["A102A"],

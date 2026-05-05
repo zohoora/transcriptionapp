@@ -8,7 +8,6 @@
     "merge_correct": true,
     "clinical_correct": true,
     "patient_count_correct": true,
-    "procedure_section_correct": true,
     "billing_codes_expected": ["A004A", "Q310A"],
     "diagnostic_code_expected": "345",
     "notes": "Gregory Alan Murray 11:02am — flush-on-stop session (Run 1 stopped while Gregory's encounter was still active in buffer; flush path generated SOAP via the same multi-patient gate as post_split per v0.10.68 fix). 29-min visit covering seizure disorder (therapeutic anti-seizure levels for first time), chronic respiratory condition, scalp lesion exam, family travel update. SOAP, dx 345 (Epilepsy), A004A + Q310A all correct. POSITIVE BASELINE: validates the v0.10.68 flush-path multi-patient gate alignment (test guard in flush_on_stop.rs::flush_on_stop_uses_same_multi_patient_threshold_as_post_split)."

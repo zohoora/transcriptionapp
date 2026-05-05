@@ -9,7 +9,6 @@
     "clinical_correct": false,
     "patient_count_correct": false,
     "expected_patient_count": 0,
-    "procedure_section_correct": true,
     "billing_codes_expected": [],
     "billing_codes_unexpected": ["A008A", "Q310A"],
     "diagnostic_code_expected": null,

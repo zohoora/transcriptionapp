@@ -8,7 +8,6 @@
     "merge_correct": true,
     "clinical_correct": true,
     "patient_count_correct": true,
-    "procedure_section_correct": true,
     "billing_codes_expected": ["A007A", "G370A", "E542A", "Q310A"],
     "diagnostic_code_expected": "715",
     "notes": "Frederick Paul (Paul) Moore 2:05pm — bilateral knee OA + sleep apnea + cancer screening discussion + knee injection. Procedure section explicit: 'Administered knee injection'. DEFECT (Class E BILLING MISSED INJECTION): only A007A + Q310A saved. Expected G370A + E542A. Same root cause as Karen White and Vitalie Pani — augment_procedures_from_soap_text didn't fire on 'knee injection' (the keyword `knee injection` IS in the table per agent investigation, so the LLM-extracted procedure may have been dropped by validate_procedure_evidence's transcript past-tense check when the doctor was quiet during the procedure). SOAP and dx 715 (Osteoarthritis) correct."

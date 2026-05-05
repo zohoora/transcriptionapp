@@ -8,7 +8,6 @@
     "merge_correct": true,
     "clinical_correct": true,
     "patient_count_correct": true,
-    "procedure_section_correct": true,
     "patient_name_expected": "Samuel Mezhenchik",
     "billing_codes_expected": ["A102A"],
     "notes": "ACTUAL PATIENT: Samuel Mezhenchik (telephone visit 10:01am, 3rd of 3 back-to-back phone calls). Metadata patient_name=None, patient_dob=None — vision identity entirely missing. SOAP, dx, billing all clinically correct. DEFECT (NEW Class B — vision system silent for entire encounter): pipeline_log.jsonl has ZERO vision_extraction events across 11.7 min / 1750 words. Sessions immediately before (66772dfb) and after (840eea49) had 22 and 22 vision calls respectively, so the screenshot task wasn't globally disabled. Possible causes: (1) PatientNameTracker still in early-stop state from prev encounter and re-sample throttle (600s) blocked all calls — but tracker.reset() should fire on encounter split; (2) word-count gate in screenshot_task.rs returned 0 for the buffer when it shouldn't have; (3) Screen Recording permission revoked transiently. Worth instrumenting: log a debug line every time the screenshot task SKIPS a capture (and why)."

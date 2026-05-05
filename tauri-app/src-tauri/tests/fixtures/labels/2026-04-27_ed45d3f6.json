@@ -9,7 +9,6 @@
     "clinical_correct": true,
     "patient_count_correct": false,
     "expected_patient_count": 2,
-    "procedure_section_correct": true,
     "billing_codes_expected": ["A004A", "Q310A"],
     "diagnostic_code_expected": "726",
     "diagnostic_code_acceptable": ["726", "473", "729"],

@@ -8,7 +8,6 @@
     "merge_correct": true,
     "clinical_correct": true,
     "patient_count_correct": true,
-    "procedure_section_correct": true,
     "billing_codes_expected": ["A007A", "G370A", "E542A", "Q310A"],
     "billing_codes_unexpected": ["K005A"],
     "diagnostic_code_expected": "729",
