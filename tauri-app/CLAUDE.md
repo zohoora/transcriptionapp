@@ -173,8 +173,9 @@ cd src-tauri && cargo test --test harness_per_encounter  # Per-encounter snapsho
 cd ../profile-service && cargo test  # Profile service (99 passing across 8 test files)
 
 # Daily preflight (verifies STT + LLM + Archive before clinic)
-./scripts/preflight.sh           # Quick (~10s): layers 1-3
-./scripts/preflight.sh --full    # Full (~30s): all 5 layers
+./scripts/preflight.sh           # Quick (~10s): connectivity layers 1-3 + offline regression 6+8+9
+./scripts/preflight.sh --full    # Full: all 9 layers (adds 4, 5 full pipeline + 7 golden_day)
+./scripts/preflight.sh --regression  # Code-regression only: 6+8+9 (used by PR-side CI ratchet)
 ```
 
 **Why not `tauri dev`?** Deep links and single-instance plugin don't work in dev mode. OAuth callbacks open new instances instead of routing to existing app.
@@ -606,9 +607,24 @@ End-to-end tests verify the full pipeline against live STT and LLM Router servic
 ### Daily Preflight Script
 
 ```bash
-./scripts/preflight.sh           # Quick check (~10s) — layers 1-3
-./scripts/preflight.sh --full    # Full pipeline (~30s) — layers 1-5
-./scripts/preflight.sh --layer 2 # Specific layer only
+./scripts/preflight.sh             # Quick — layers 1, 2, 3 (connectivity) + 6, 8, 9 (offline regression)
+./scripts/preflight.sh --full      # All 9 layers (adds 4, 5 full pipeline + 7 golden_day)
+./scripts/preflight.sh --regression  # Layers 6, 8, 9 only (no live STT/LLM). Used by the PR-side CI gate.
+./scripts/preflight.sh --layer 2   # Specific layer only
+```
+
+### CI ratchet: regression corpus on PRs (v0.10.72+)
+
+Two ratchets gate code health:
+
+1. **Release-side** (v0.10.70): `release.yml` runs `ort_smoke` between bundle and publish — fails the release if the bundled `libonnxruntime.dylib` won't load.
+2. **PR-side**: `ci.yml`'s `regression-corpus` job runs `./scripts/preflight.sh --regression` on a self-hosted MacBook runner. Layer 9 (`labeled_regression_cli`) honors per-label `expected_failures` baselines — known-bad cases stay green, NEW divergences fail the gate. See `docs/superpowers/specs/2026-05-05-regression-ci-design.md` and `docs/regression-ci-runner-setup.md`.
+
+Tightening the gate (a fix lands, a known-failure case starts passing): edit the relevant label in `tests/fixtures/labels/` and remove the now-fixed check name from `expected_failures`. Re-bootstrapping a fresh corpus state:
+
+```bash
+cd src-tauri
+cargo run --bin labeled_regression_cli -- --all --bootstrap-expected-failures
 ```
 
 ### Running Tests Directly

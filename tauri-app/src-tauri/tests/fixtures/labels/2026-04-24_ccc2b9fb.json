@@ -11,6 +11,9 @@
       "Q310A"
     ],
     "diagnostic_code_expected": "715",
-    "notes": "No billing.json was saved. Visit was joint/musculoskeletal review. Ozempic is for WEIGHT LOSS not diabetes (transcript explicitly: 'hasn't helped much with weight loss component, standard dose between 1 and...'). K030A diabetic management would have been hallucination. multi_patient_detect at 16:34 correctly returned patient_count=1 (family members present but not separate patients)."
+    "notes": "No billing.json was saved. Visit was joint/musculoskeletal review. Ozempic is for WEIGHT LOSS not diabetes (transcript explicitly: 'hasn't helped much with weight loss component, standard dose between 1 and...'). K030A diabetic management would have been hallucination. multi_patient_detect at 16:34 correctly returned patient_count=1 (family members present but not separate patients).",
+    "expected_failures": [
+      "diagnostic_code"
+    ]
   }
 }

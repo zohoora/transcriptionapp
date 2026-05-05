@@ -5,9 +5,12 @@
 # Runs layered E2E tests so failures are easy to diagnose.
 #
 # Usage:
-#   ./scripts/preflight.sh           # Quick check (layers 1-3, ~10s)
-#   ./scripts/preflight.sh --full    # Full pipeline (all layers, ~30s)
-#   ./scripts/preflight.sh --layer 2 # Specific layer only
+#   ./scripts/preflight.sh             # Quick check (layers 1-3, ~10s)
+#   ./scripts/preflight.sh --full      # Full pipeline (all layers, ~30s)
+#   ./scripts/preflight.sh --regression  # Offline regression corpus only
+#                                        # (layers 6-9, no STT/LLM required).
+#                                        # Used by the PR-side CI ratchet.
+#   ./scripts/preflight.sh --layer 2   # Specific layer only
 #
 # Exit codes:
 #   0 = All checks passed
@@ -29,26 +32,33 @@ MODE="quick"
 LAYER=""
 while [[ $# -gt 0 ]]; do
     case $1 in
-        --full)   MODE="full"; shift ;;
-        --layer)  LAYER="$2"; shift 2 ;;
+        --full)        MODE="full"; shift ;;
+        --regression)  MODE="regression"; shift ;;
+        --layer)       LAYER="$2"; shift 2 ;;
         --help|-h)
             echo "Daily Preflight Check"
             echo ""
-            echo "Usage: $0 [--full] [--layer N]"
+            echo "Usage: $0 [--full | --regression] [--layer N]"
             echo ""
             echo "Layers:"
-            echo "  1  STT Router        — health, alias, WebSocket streaming"
-            echo "  2  LLM Router        — SOAP generation, encounter detection, hybrid model"
-            echo "  3  Local Archive     — save/retrieve, continuous mode metadata"
-            echo "  4  Session Mode      — full Audio → STT → SOAP → Archive → History"
-            echo "  5  Continuous        — full Audio → STT → Detection → SOAP → Archive"
-            echo "  6  Detection Replay  — offline evaluate_detection replay"
-            echo "  7  Golden Day        — labeled clinic days vs production archive"
-            echo "  8  Harness           — orchestrator equivalence (run_continuous_mode snapshot)"
+            echo "  1  STT Router            — health, alias, WebSocket streaming"
+            echo "  2  LLM Router            — SOAP generation, encounter detection, hybrid model"
+            echo "  3  Local Archive         — save/retrieve, continuous mode metadata"
+            echo "  4  Session Mode          — full Audio → STT → SOAP → Archive → History"
+            echo "  5  Continuous            — full Audio → STT → Detection → SOAP → Archive"
+            echo "  6  Detection Replay      — offline evaluate_detection replay"
+            echo "  7  Golden Day            — labeled clinic days vs production archive"
+            echo "  8  Harness               — orchestrator equivalence (run_continuous_mode snapshot)"
+            echo "  9  Labeled Regression    — per-check label vs production with expected_failures baseline"
             echo ""
-            echo "Options:"
-            echo "  --full      Run all 5 layers (default: layers 1-3)"
-            echo "  --layer N   Run only layer N"
+            echo "Modes:"
+            echo "  (default)     Quick — layers 1-3"
+            echo "  --full        All 9 layers"
+            echo "  --regression  Code-regression corpus only — layers 6, 8, 9"
+            echo "                (no live STT/LLM required; used by PR-side CI ratchet)"
+            echo "                Layer 7 (golden day) runs in --full because corpus drift"
+            echo "                is clinical maintenance, not code regression."
+            echo "  --layer N     Run only layer N"
             exit 0
             ;;
         *) echo "Unknown option: $1"; exit 1 ;;
@@ -88,7 +98,8 @@ run_test() {
 }
 
 # Layer 1: STT Router
-if [[ -z "$LAYER" || "$LAYER" == "1" ]]; then
+# Skipped in --regression mode (offline-only).
+if [[ ( -z "$LAYER" && "$MODE" != "regression" ) || "$LAYER" == "1" ]]; then
     echo -e "${YELLOW}Layer 1: STT Router${NC}"
     run_test "e2e_layer1_stt_health_check" "Health check"
     run_test "e2e_layer1_stt_alias_available" "Alias 'medical-streaming'"
@@ -97,7 +108,8 @@ if [[ -z "$LAYER" || "$LAYER" == "1" ]]; then
 fi
 
 # Layer 2: LLM Router
-if [[ -z "$LAYER" || "$LAYER" == "2" ]]; then
+# Skipped in --regression mode (offline-only).
+if [[ ( -z "$LAYER" && "$MODE" != "regression" ) || "$LAYER" == "2" ]]; then
     echo -e "${YELLOW}Layer 2: LLM Router${NC}"
     run_test "e2e_layer2_llm_soap_generation" "SOAP generation (soap-model-fast)"
     run_test "e2e_layer2_llm_encounter_detection" "Encounter detection (fast-model)"
@@ -106,7 +118,8 @@ if [[ -z "$LAYER" || "$LAYER" == "2" ]]; then
 fi
 
 # Layer 3: Local Archive
-if [[ -z "$LAYER" || "$LAYER" == "3" ]]; then
+# Skipped in --regression mode (offline-only).
+if [[ ( -z "$LAYER" && "$MODE" != "regression" ) || "$LAYER" == "3" ]]; then
     echo -e "${YELLOW}Layer 3: Local Archive${NC}"
     run_test "e2e_layer3_archive_save_and_retrieve" "Save and retrieve"
     run_test "e2e_layer3_archive_continuous_mode_metadata" "Continuous mode metadata"
@@ -127,37 +140,40 @@ if [[ "$MODE" == "full" || "$LAYER" == "5" ]]; then
 fi
 
 # Layer 6: Detection Replay Regression (offline, against archived bundles)
+# Script CWD is already $PROJECT_DIR (tauri-app/src-tauri/), set at the top.
 if [[ -z "$LAYER" || "$LAYER" == "6" ]]; then
     echo -e "${YELLOW}Layer 6: Detection Replay Regression${NC}"
     echo -n "  Replaying detection decisions against archive (target ≥ 99.0%)... "
-    if cd src-tauri && cargo run --quiet --bin detection_replay_cli -- --all --fail-on-mismatch --threshold 99.0 > /tmp/preflight_replay.log 2>&1; then
+    if cargo run --quiet --bin detection_replay_cli -- --all --fail-on-mismatch --threshold 99.0 > /tmp/preflight_replay.log 2>&1; then
         echo -e "${GREEN}PASS${NC}"
         grep "Bundles:\|Agreement:" /tmp/preflight_replay.log | sed 's/^/    /'
         PASSED=$((PASSED + 1))
-        cd ..
     else
         echo -e "${RED}FAIL${NC}"
         tail -10 /tmp/preflight_replay.log | sed 's/^/    /'
         FAILED=$((FAILED + 1))
-        cd ..
     fi
     echo ""
 fi
 
 # Layer 7: Golden Day Regression (offline, labeled fixtures vs production archive)
-if [[ -z "$LAYER" || "$LAYER" == "7" ]]; then
+# This is a CLINICAL-MAINTENANCE check — flags days where the archive and the
+# label corpus have drifted (extra sessions, sessions only on profile service,
+# placeholder labels for known-missing sessions, etc). Not gated on PRs because
+# corpus state changes independently of code changes (cross-room sync, test
+# artifacts, late labelling) and would block merges for reasons unrelated to
+# the PR. Runs in --full for the daily preflight and on explicit --layer 7.
+if [[ ( -z "$LAYER" && "$MODE" != "regression" ) || "$LAYER" == "7" ]]; then
     echo -e "${YELLOW}Layer 7: Golden Day Regression${NC}"
     echo -n "  Verifying labeled clinic days match production... "
-    if cd src-tauri && cargo run --quiet --bin golden_day_cli -- --all-days --fail-on-regression > /tmp/preflight_golden.log 2>&1; then
+    if cargo run --quiet --bin golden_day_cli -- --all-days --fail-on-regression > /tmp/preflight_golden.log 2>&1; then
         echo -e "${GREEN}PASS${NC}"
         grep "Total:\|Golden Day:" /tmp/preflight_golden.log | sed 's/^/    /'
         PASSED=$((PASSED + 1))
-        cd ..
     else
         echo -e "${RED}FAIL${NC}"
         tail -10 /tmp/preflight_golden.log | sed 's/^/    /'
         FAILED=$((FAILED + 1))
-        cd ..
     fi
     echo ""
 fi
@@ -178,6 +194,31 @@ if [[ -z "$LAYER" || "$LAYER" == "8" ]]; then
         echo -e "${RED}FAIL${NC}"
         grep -E "FAILED|panicked|harness detected" /tmp/preflight_harness.log | head -10 | sed 's/^/    /'
         echo "    Full reports: target/harness-report/*.json"
+        FAILED=$((FAILED + 1))
+    fi
+    echo ""
+fi
+
+# Layer 9: Labeled Regression Corpus (offline, per-check baseline gate)
+# Compares production billing/dx/clinical output to ground-truth labels in
+# tests/fixtures/labels/. Each label declares `expected_failures` listing the
+# checks currently known to diverge — those don't count as regressions, only
+# NEW divergences do. Bootstrap a label's baseline with
+#   cargo run --bin labeled_regression_cli -- --all --bootstrap-expected-failures
+# This is the load-bearing PR-side gate (paired with v0.10.70's release-side
+# ort_smoke gate). See:
+#   docs/superpowers/specs/2026-05-05-regression-ci-design.md
+if [[ -z "$LAYER" || "$LAYER" == "9" ]]; then
+    echo -e "${YELLOW}Layer 9: Labeled Regression Corpus${NC}"
+    echo -n "  Comparing production output to per-check labels... "
+    if cargo run --quiet --bin labeled_regression_cli -- --all --fail-on-regression > /tmp/preflight_labeled.log 2>&1; then
+        echo -e "${GREEN}PASS${NC}"
+        grep -E "^Labels:" /tmp/preflight_labeled.log | sed 's/^/    /'
+        PASSED=$((PASSED + 1))
+    else
+        echo -e "${RED}FAIL${NC}"
+        grep -E "^REGRESSION |^Labels:" /tmp/preflight_labeled.log | sed 's/^/    /'
+        echo "    Full report: /tmp/preflight_labeled.log"
         FAILED=$((FAILED + 1))
     fi
     echo ""

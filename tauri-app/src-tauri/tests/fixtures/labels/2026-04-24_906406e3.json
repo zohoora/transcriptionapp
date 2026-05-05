@@ -10,6 +10,9 @@
       "A007A",
       "Q310A"
     ],
-    "notes": "Francois + Betty were seen together. Pre-SOAP multi_patient_detect LLM returned patient_count=2 with correct summaries but SESSION WAS NOT SPLIT \u2014 final output is a single unified SOAP intermingling Francois (nasal/rhinitis) and Betty (pre-op gallbladder, skin spot, UTI). Billing includes Q042A+E079A smoking cessation codes; evidence cited was 'advised to discontinue decongestant nasal sprays' \u2014 LLM conflated nasal-spray-cessation counselling with tobacco smoking cessation. Vision detected both Francois (14:03) and Betty (14:04) correctly. Betty's SOAP also missed vaginal discharge."
+    "notes": "Francois + Betty were seen together. Pre-SOAP multi_patient_detect LLM returned patient_count=2 with correct summaries but SESSION WAS NOT SPLIT — final output is a single unified SOAP intermingling Francois (nasal/rhinitis) and Betty (pre-op gallbladder, skin spot, UTI). Billing includes Q042A+E079A smoking cessation codes; evidence cited was 'advised to discontinue decongestant nasal sprays' — LLM conflated nasal-spray-cessation counselling with tobacco smoking cessation. Vision detected both Francois (14:03) and Betty (14:04) correctly. Betty's SOAP also missed vaginal discharge.",
+    "expected_failures": [
+      "billing_codes"
+    ]
   }
 }

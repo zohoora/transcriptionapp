@@ -209,7 +209,9 @@ Located at `tauri-app/src-tauri/tests/fixtures/labels/`. JSON schema:
 
 The canonical schema reference lives at `tauri-app/src-tauri/tests/fixtures/labels/README.md`. The `_expected` suffix on `billing_codes_expected` and `diagnostic_code_expected` is intentional — it distinguishes the expectation (what should be true) from the production value (what currently is true).
 
-Run the labeled regression with `cargo run --bin labeled_regression_cli -- --all --fail-on-regression`.
+Each label may also declare an `expected_failures: ["check_name", ...]` array — names of checks that are currently expected to fail. `--fail-on-regression` treats those as expected, not as regressions; only NEW divergences fail. Bootstrap the baseline against the current archive state with `cargo run --bin labeled_regression_cli -- --all --bootstrap-expected-failures`.
+
+Run the labeled regression with `cargo run --bin labeled_regression_cli -- --all --fail-on-regression`. This is **the load-bearing PR-side gate**, paired with v0.10.70's release-side `ort_smoke` gate (see `docs/superpowers/specs/2026-05-05-regression-ci-design.md` and `docs/regression-ci-runner-setup.md`).
 
 ## Test counts (target / current)
 

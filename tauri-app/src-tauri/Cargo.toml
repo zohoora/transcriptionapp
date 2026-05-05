@@ -27,7 +27,12 @@ tauri-plugin-updater = "2"
 tauri-plugin-process = "2"
 tauri-plugin-dialog = "2.7"
 serde = { version = "1", features = ["derive"] }
-serde_json = "1"
+# preserve_order: serde_json::Value uses IndexMap (insertion order) instead of
+# BTreeMap (alphabetical). Required by labeled_regression_cli's
+# --bootstrap-expected-failures flag so rewriting label files preserves the
+# clinician's chosen field order. Typed structs serialize in field declaration
+# order regardless of this feature.
+serde_json = { version = "1", features = ["preserve_order"] }
 
 # Audio capture
 cpal = "0.15"

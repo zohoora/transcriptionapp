@@ -8,8 +8,15 @@
     "merge_correct": true,
     "clinical_correct": true,
     "patient_count_correct": true,
-    "billing_codes_expected": ["A004A", "K030A", "Q310A"],
+    "billing_codes_expected": [
+      "A004A",
+      "K030A",
+      "Q310A"
+    ],
     "diagnostic_code_expected": "250",
-    "notes": "Paul Beal 1:22pm — 27-min visit, MTO medical form completion + new-patient intake covering hypertension (BP 172/95), suspected diabetes (urine glucose elevated, no labs in 3 yrs), skin tags counselling, vision/hearing review, blood work req. SOAP and dx 250 (Diabetes) correct. DEFECT (Class E billing missing Q-code): saved billing has A004A + K030A only, timeEntries=[]. Q310A missing. Differential vs Larry Barber 840eea49 (same 26-27 min visit, same general_reassessment + diabetic_assessment combo, also 250) which DID get Q310A added. Two-stage extraction returned visitType=general_reassessment, conditions=[diabetic_assessment], estimatedDurationMinutes=25 (1st extraction) / 25 (2nd) — input identical to Larry's. ROOT CAUSE: rule_engine time-tracking branch didn't fire Q310A for Paul despite duration ≥15 min. Possible: time_tracking.rs::Q310 unit derivation branched on a condition (visit_setting? K013_exhausted? referral_received?) that differs in BillingContext between the two sessions. Worth pulling both sessions' BillingContext snapshot from pipeline_log to diff them."
+    "notes": "Paul Beal 1:22pm — 27-min visit, MTO medical form completion + new-patient intake covering hypertension (BP 172/95), suspected diabetes (urine glucose elevated, no labs in 3 yrs), skin tags counselling, vision/hearing review, blood work req. SOAP and dx 250 (Diabetes) correct. DEFECT (Class E billing missing Q-code): saved billing has A004A + K030A only, timeEntries=[]. Q310A missing. Differential vs Larry Barber 840eea49 (same 26-27 min visit, same general_reassessment + diabetic_assessment combo, also 250) which DID get Q310A added. Two-stage extraction returned visitType=general_reassessment, conditions=[diabetic_assessment], estimatedDurationMinutes=25 (1st extraction) / 25 (2nd) — input identical to Larry's. ROOT CAUSE: rule_engine time-tracking branch didn't fire Q310A for Paul despite duration ≥15 min. Possible: time_tracking.rs::Q310 unit derivation branched on a condition (visit_setting? K013_exhausted? referral_received?) that differs in BillingContext between the two sessions. Worth pulling both sessions' BillingContext snapshot from pipeline_log to diff them.",
+    "expected_failures": [
+      "billing_codes"
+    ]
   }
 }

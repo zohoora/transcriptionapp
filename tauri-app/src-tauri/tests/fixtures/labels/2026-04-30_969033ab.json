@@ -8,9 +8,22 @@
     "merge_correct": true,
     "clinical_correct": true,
     "patient_count_correct": true,
-    "billing_codes_expected": ["A007A", "G370A", "G371A", "E542A", "Q310A"],
+    "billing_codes_expected": [
+      "A007A",
+      "G370A",
+      "G371A",
+      "E542A",
+      "Q310A"
+    ],
     "diagnostic_code_expected": "724",
-    "diagnostic_code_acceptable": ["724", "715", "729"],
-    "notes": "Vitalie Pani 11:39am — short follow-up (12 min, 984 words). Procedure section explicit: 'performed two injections (one in back, one in knee)'. DEFECT (Classes E + 11 BILLING UNDER-COUNT): only A007A saved — both injections COMPLETELY MISSED. Expected G370A (1st joint/bursa, knee or back) + G371A (additional joint, the other site) + E542A tray. ROOT CAUSE: SOAP procedure-section count phrasing ('two injections') is not parsed by augment_procedures_from_soap_text — the augment table is binary signal-presence (joint_injection ✓/✗), no count regex. validate_procedure_evidence may have also dropped the LLM-extracted procedure if doctor was quiet during the procedure. Dx 724 (lumbago) is correct given low back primary."
+    "diagnostic_code_acceptable": [
+      "724",
+      "715",
+      "729"
+    ],
+    "notes": "Vitalie Pani 11:39am — short follow-up (12 min, 984 words). Procedure section explicit: 'performed two injections (one in back, one in knee)'. DEFECT (Classes E + 11 BILLING UNDER-COUNT): only A007A saved — both injections COMPLETELY MISSED. Expected G370A (1st joint/bursa, knee or back) + G371A (additional joint, the other site) + E542A tray. ROOT CAUSE: SOAP procedure-section count phrasing ('two injections') is not parsed by augment_procedures_from_soap_text — the augment table is binary signal-presence (joint_injection ✓/✗), no count regex. validate_procedure_evidence may have also dropped the LLM-extracted procedure if doctor was quiet during the procedure. Dx 724 (lumbago) is correct given low back primary.",
+    "expected_failures": [
+      "billing_codes"
+    ]
   }
 }

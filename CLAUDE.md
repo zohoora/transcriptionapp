@@ -79,13 +79,15 @@ cd tauri-app/src-tauri && cargo test --test harness_per_encounter  # Per-encount
 # E2E (requires live STT + LLM Router)
 cd tauri-app/src-tauri && cargo test e2e_ -- --ignored --nocapture
 
-# Daily preflight (7 layers: 5 E2E + detection replay + golden day)
-./scripts/preflight.sh                    # Quick (~10s)
-./scripts/preflight.sh --full             # Full (~30s)
+# Daily preflight (9 layers: 1-3 connectivity, 4-5 full pipeline, 6-9 offline regression)
+./scripts/preflight.sh                    # Quick: layers 1, 2, 3 + 6, 8, 9
+./scripts/preflight.sh --full             # All 9 layers
+./scripts/preflight.sh --regression       # Code-regression only (6, 8, 9). Used by PR-side CI.
 
 # Replay regression CLIs (offline + online, see docs/TESTING.md)
 cd tauri-app/src-tauri && cargo run --bin detection_replay_cli -- --all --fail-on-mismatch
-cd tauri-app/src-tauri && cargo run --bin labeled_regression_cli -- --all
+cd tauri-app/src-tauri && cargo run --bin labeled_regression_cli -- --all --fail-on-regression
+cd tauri-app/src-tauri && cargo run --bin labeled_regression_cli -- --all --bootstrap-expected-failures  # one-time corpus reset
 cd tauri-app/src-tauri && cargo run --bin benchmark_runner -- --all --trials 3
 
 # Profile service

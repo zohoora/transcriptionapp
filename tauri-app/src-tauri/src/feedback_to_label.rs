@@ -60,6 +60,17 @@ pub struct LabelData {
     /// are clinically equivalent (e.g. cervical 723 vs musculoskeletal 729).
     #[serde(default)]
     pub diagnostic_code_acceptable: Option<Vec<String>>,
+    /// Names of checks (e.g. "billing_codes", "diagnostic_code",
+    /// "clinical_classification", "billing_codes_unexpected:K005A") that are
+    /// CURRENTLY expected to fail. The regression CLI (`labeled_regression_cli
+    /// --fail-on-regression`) treats these as expected, not as regressions.
+    /// Removing an entry tightens the gate — the next run that reproduces the
+    /// same failure will be a regression. Added 2026-05-05 alongside the
+    /// PR-side regression-corpus CI ratchet (paired with v0.10.70's release
+    /// ratchet on `ort_smoke`). Bootstrap via
+    /// `labeled_regression_cli --all --bootstrap-expected-failures`.
+    #[serde(default)]
+    pub expected_failures: Option<Vec<String>>,
     #[serde(default)]
     pub notes: Option<String>,
 }

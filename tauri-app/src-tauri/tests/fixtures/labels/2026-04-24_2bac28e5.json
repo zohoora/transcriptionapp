@@ -7,6 +7,9 @@
     "clinical_correct": false,
     "split_correct": false,
     "merge_correct": false,
-    "notes": "Over-split artifact from Julie Ann Cooper's visit. 405-word transcript is mostly STT hallucinations (multilingual garbage, no clinical content). Should have been recognized as non-clinical and merged into 40a9b054 OR the noise should have been filtered before the transcript boundary triggered a split."
+    "notes": "Over-split artifact from Julie Ann Cooper's visit. 405-word transcript is mostly STT hallucinations (multilingual garbage, no clinical content). Should have been recognized as non-clinical and merged into 40a9b054 OR the noise should have been filtered before the transcript boundary triggered a split.",
+    "expected_failures": [
+      "clinical_classification"
+    ]
   }
 }

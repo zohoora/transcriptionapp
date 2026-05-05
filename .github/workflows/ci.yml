@@ -215,6 +215,30 @@ jobs:
       - name: Build Tauri (check only)
         run: cargo build --manifest-path src-tauri/Cargo.toml
 
+  # Regression corpus (PR-side ratchet, paired with v0.10.70's release-side ort_smoke).
+  #
+  # Runs the offline regression corpus (preflight Layers 6, 8, 9) on a self-hosted
+  # MacBook runner that has read access to the production session archive. New
+  # check failures block merge; failures listed in each label's `expected_failures`
+  # do not (see docs/superpowers/specs/2026-05-05-regression-ci-design.md).
+  #
+  # The runner is the MacBook (100.119.83.76) — same host as the profile service
+  # and the LLM/STT routers. One-time bring-up: docs/regression-ci-runner-setup.md.
+  # Until the runner is registered, this job stays "queued" on PRs but does not
+  # falsely report success or failure.
+  regression-corpus:
+    name: Regression Corpus
+    runs-on: [self-hosted, macOS, ami-ci]
+    defaults:
+      run:
+        working-directory: tauri-app
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run preflight regression layers (6, 8, 9)
+        run: ./scripts/preflight.sh --regression
+
   # E2E tests (requires built app)
   e2e-test:
     name: E2E Tests

@@ -8,8 +8,14 @@
     "merge_correct": true,
     "clinical_correct": true,
     "patient_count_correct": true,
-    "billing_codes_expected": ["A007A", "Q310A"],
+    "billing_codes_expected": [
+      "A007A",
+      "Q310A"
+    ],
     "diagnostic_code_expected": "313",
-    "notes": "Daniel Santos Chua 1:22pm — 26-year-old adult with established ADHD on Concerta, requesting dose increase + DTC + psychiatry referral. SOAP correct. DIAGNOSTIC CODE 314 (Hyperkinetic syndrome of CHILDHOOD) wrong because patient is an adult. OHIP doesn't have a clean adult-ADHD code; closest semantic match is 313 (Behaviour disorders of childhood/adolescence) or 311 (Depressive/non-psychotic disorders), neither perfect. Underlying issue: tools-model didn't account for patient_age (DOB 1999-05-21 = 26y) when scoring code suitability. Billing A007A + Q310A correct."
+    "notes": "Daniel Santos Chua 1:22pm — 26-year-old adult with established ADHD on Concerta, requesting dose increase + DTC + psychiatry referral. SOAP correct. DIAGNOSTIC CODE 314 (Hyperkinetic syndrome of CHILDHOOD) wrong because patient is an adult. OHIP doesn't have a clean adult-ADHD code; closest semantic match is 313 (Behaviour disorders of childhood/adolescence) or 311 (Depressive/non-psychotic disorders), neither perfect. Underlying issue: tools-model didn't account for patient_age (DOB 1999-05-21 = 26y) when scoring code suitability. Billing A007A + Q310A correct.",
+    "expected_failures": [
+      "diagnostic_code"
+    ]
   }
 }

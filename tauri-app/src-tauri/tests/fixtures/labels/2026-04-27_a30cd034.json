@@ -8,9 +8,20 @@
     "merge_correct": false,
     "clinical_correct": true,
     "patient_count_correct": true,
-    "billing_codes_expected": ["A004A", "K030A", "Q040A", "K005A", "K029A", "Q310A"],
+    "billing_codes_expected": [
+      "A004A",
+      "K030A",
+      "Q040A",
+      "K005A",
+      "K029A",
+      "Q310A"
+    ],
     "diagnostic_code_expected": "250",
     "expected_merged_with": "df5acc1a-004c-493a-9c5a-7ce436423b20",
-    "notes": "Toni Anthony 3:23 — SHOULD BE MERGED with df5acc1a (4:12 tail). The two sessions are one continuous insulin-titration conversation: a30cd034 ends mid-sentence ('I'm going to add to that 15 units of truvy') with a brief Mandarin utterance ('在哪儿？'), then df5acc1a starts mid-sentence ('So dropi works within like ten minutes') continuing the same insulin-education thread. Encounter-detection LLM said complete=True at 20:12:22 wc=6095, mistaking a wrap-up-style 'we're going to do this' phrase for an encounter end. df5acc1a starts 11 seconds before a30cd034's recorded end (negative gap = flush-on-stop / forced-split signature, same as Kaden phantom). MANUAL MERGE FAILED with 'Session not found: a30cd034-4ab7-430b-aa17-66228bbfab24' because both sessions live only on Room 2's local archive — merge_sessions() in local_archive.rs:1495 checks LOCAL FS only and the user attempted the merge from a different machine. Combined billing total $432 across both halves with double-counted Q310 time, K030/Q040 duplicated. Failure modes: false-split-on-conversational-pause, merge-back-orphan-threshold-too-low, manual-merge-cross-machine-bug."
+    "notes": "Toni Anthony 3:23 — SHOULD BE MERGED with df5acc1a (4:12 tail). The two sessions are one continuous insulin-titration conversation: a30cd034 ends mid-sentence ('I'm going to add to that 15 units of truvy') with a brief Mandarin utterance ('在哪儿？'), then df5acc1a starts mid-sentence ('So dropi works within like ten minutes') continuing the same insulin-education thread. Encounter-detection LLM said complete=True at 20:12:22 wc=6095, mistaking a wrap-up-style 'we're going to do this' phrase for an encounter end. df5acc1a starts 11 seconds before a30cd034's recorded end (negative gap = flush-on-stop / forced-split signature, same as Kaden phantom). MANUAL MERGE FAILED with 'Session not found: a30cd034-4ab7-430b-aa17-66228bbfab24' because both sessions live only on Room 2's local archive — merge_sessions() in local_archive.rs:1495 checks LOCAL FS only and the user attempted the merge from a different machine. Combined billing total $432 across both halves with double-counted Q310 time, K030/Q040 duplicated. Failure modes: false-split-on-conversational-pause, merge-back-orphan-threshold-too-low, manual-merge-cross-machine-bug.",
+    "expected_failures": [
+      "billing_codes",
+      "diagnostic_code"
+    ]
   }
 }

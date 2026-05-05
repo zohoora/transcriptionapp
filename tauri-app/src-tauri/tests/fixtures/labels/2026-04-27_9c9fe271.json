@@ -8,10 +8,24 @@
     "merge_correct": true,
     "clinical_correct": true,
     "patient_count_correct": true,
-    "billing_codes_expected": ["A004A", "K005A", "C002A", "Q310A"],
-    "billing_codes_unexpected": ["G373A"],
-    "billing_quantity_expected": {"K005A": 2},
+    "billing_codes_expected": [
+      "A004A",
+      "K005A",
+      "C002A",
+      "Q310A"
+    ],
+    "billing_codes_unexpected": [
+      "G373A"
+    ],
+    "billing_quantity_expected": {
+      "K005A": 2
+    },
     "diagnostic_code_expected": "311",
-    "notes": "Dorothy 2:45 — complex case: post-hospital-discharge follow-up + chronic pain + opioid use disorder + depression + caregiver burden. SOAP captures it well. Diagnostic 311 (depression) correct. THREE BILLING ERRORS: (1) K005A listed twice as separate quantity-1 entries instead of ONE entry with quantity=2 — rule_engine deduplication bug when conditions array contains both PrimaryMentalHealth + OpioidWithdrawalManagement (both map to K005A). (2) G373A 'IM/SC/Intradermal — Sole Reason' is inappropriate — billing-LLM extracted injection_sole_reason from Sublocade/buprenorphine discussion in Plan, but Sublocade was PROPOSED/SCHEDULED for future, not administered today (transcript explicitly defers it 3 weeks). (3) Missing C002A 'Hospital In-Patient Visit / Discharge Follow-up' — Dorothy had two recent hospital visits and the visit is explicitly post-discharge follow-up; there's no rule mapping nor LLM extraction for this context. Failure modes: K005A-dedup-bug, billing-LLM-stance-blindness (proposed-as-performed for G373A), missing-C002A-mapping."
+    "notes": "Dorothy 2:45 — complex case: post-hospital-discharge follow-up + chronic pain + opioid use disorder + depression + caregiver burden. SOAP captures it well. Diagnostic 311 (depression) correct. THREE BILLING ERRORS: (1) K005A listed twice as separate quantity-1 entries instead of ONE entry with quantity=2 — rule_engine deduplication bug when conditions array contains both PrimaryMentalHealth + OpioidWithdrawalManagement (both map to K005A). (2) G373A 'IM/SC/Intradermal — Sole Reason' is inappropriate — billing-LLM extracted injection_sole_reason from Sublocade/buprenorphine discussion in Plan, but Sublocade was PROPOSED/SCHEDULED for future, not administered today (transcript explicitly defers it 3 weeks). (3) Missing C002A 'Hospital In-Patient Visit / Discharge Follow-up' — Dorothy had two recent hospital visits and the visit is explicitly post-discharge follow-up; there's no rule mapping nor LLM extraction for this context. Failure modes: K005A-dedup-bug, billing-LLM-stance-blindness (proposed-as-performed for G373A), missing-C002A-mapping.",
+    "expected_failures": [
+      "billing_codes",
+      "billing_codes_unexpected:G373A",
+      "billing_quantity:K005A"
+    ]
   }
 }
