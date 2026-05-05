@@ -343,12 +343,6 @@ pub struct ArchiveMetadata {
     /// no billing record.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub billing_prompt_version: Option<String>,
-    /// True when the audio-vs-vision cross-check at split time disagreed
-    /// with the vision-derived patient_name (e.g. Catherine 2:35 = Shirley
-    /// Rice). Frontend renders a "verify patient" badge in the History
-    /// view. Absent on sessions where the check passed or wasn't run.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub chart_stale_suspected: Option<bool>,
 }
 
 impl ArchiveMetadata {
@@ -384,7 +378,6 @@ impl ArchiveMetadata {
             has_clinician_notes: false,
             soap_prompt_version: None,
             billing_prompt_version: None,
-            chart_stale_suspected: None,
         }
     }
 }
@@ -424,10 +417,6 @@ pub struct ArchiveSummary {
     pub patient_labels: Option<Vec<String>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub has_billing_record: Option<bool>,
-    /// Mirrors `ArchiveMetadata.chart_stale_suspected` so list rows can
-    /// render a "verify patient" badge without a per-row metadata fetch.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub chart_stale_suspected: Option<bool>,
 }
 
 /// A single patient's SOAP note within a multi-patient encounter
@@ -1213,7 +1202,6 @@ pub fn list_sessions_by_date(date_str: &str) -> Result<Vec<ArchiveSummary>, Stri
             patient_count: patient_labels.as_ref().map(|l| l.len() as u32).or(patient_count),
             patient_labels,
             has_billing_record: metadata.has_billing_record,
-            chart_stale_suspected: metadata.chart_stale_suspected,
         });
     }
 
@@ -1560,7 +1548,6 @@ pub fn split_session(session_id: &str, date_str: &str, split_line: usize) -> Res
         has_clinician_notes: false,
         soap_prompt_version: None,
         billing_prompt_version: None,
-        chart_stale_suspected: None,
     };
     let new_meta_json = serde_json::to_string_pretty(&new_meta)
         .map_err(|e| format!("Failed to serialize new metadata: {}", e))?;
@@ -2136,7 +2123,6 @@ mod tests {
             patient_count: None,
             patient_labels: None,
             has_billing_record: None,
-            chart_stale_suspected: None,
         };
 
         let json = serde_json::to_string(&summary).unwrap();
@@ -2898,7 +2884,6 @@ mod tests {
             patient_count: None,
             patient_labels: None,
             has_billing_record: None,
-            chart_stale_suspected: None,
         };
 
         let json = serde_json::to_string(&summary).unwrap();
@@ -3029,32 +3014,6 @@ mod tests {
 // ============================================================================
 // Multi-Patient Operations
 // ============================================================================
-
-/// Set `chart_stale_suspected: true` on a session's metadata. Called by
-/// the splitter when the audio-vs-vision cross-check disagrees (e.g.
-/// Catherine 2:35 = Shirley Rice). Round-trips through the typed
-/// [`ArchiveMetadata`] struct so existing fields are preserved.
-pub fn mark_chart_stale_suspected(session_id: &str, date_str: &str) -> Result<(), String> {
-    update_metadata_field(session_id, date_str, |m| {
-        m.chart_stale_suspected = Some(true);
-    })
-}
-
-/// Mark chart stale AND clear the vision-derived patient identity. Called
-/// when the audio-vs-vision cross-check finds the vision name to be
-/// provably wrong (transcript greeted a different patient); clearing
-/// name + DOB forces the clinician through the confirm-patient flow
-/// before any EMR push instead of mislabeling downstream tooling.
-pub fn mark_chart_stale_and_clear_identity(
-    session_id: &str,
-    date_str: &str,
-) -> Result<(), String> {
-    update_metadata_field(session_id, date_str, |m| {
-        m.chart_stale_suspected = Some(true);
-        m.patient_name = None;
-        m.patient_dob = None;
-    })
-}
 
 /// Helper: read metadata, apply a mutation, write back.
 fn update_metadata_field(
@@ -3351,7 +3310,6 @@ mod negative_gap_tests {
             patient_count: None,
             patient_labels: None,
             has_billing_record: None,
-            chart_stale_suspected: None,
         }
     }
 
@@ -3430,63 +3388,6 @@ mod negative_gap_tests {
         b.room_name = None;
         let pairs = find_negative_gap_pairs(&[a, b]);
         assert_eq!(pairs.len(), 1, "expected legacy pair (no room data) to still flag; got {:?}", pairs);
-    }
-
-    #[test]
-    fn mark_chart_stale_suspected_sets_typed_field() {
-        // Round-trips through ArchiveMetadata so existing typed fields are
-        // preserved. Replaces an earlier raw-JSON-patch helper.
-        use chrono::TimeZone;
-        let test_root = std::env::temp_dir().join(format!("ami-test-stale-{}", uuid::Uuid::new_v4()));
-        std::env::set_var("TRANSCRIPTION_APP_DATA_DIR", &test_root);
-        let date = chrono::Utc.with_ymd_and_hms(2026, 4, 29, 12, 0, 0).unwrap();
-        let session_id = "00000000-0000-0000-0000-000000000001";
-        let dir = get_session_archive_dir(session_id, &date).unwrap();
-        fs::create_dir_all(&dir).unwrap();
-        let mut initial = ArchiveMetadata::new(session_id);
-        initial.patient_name = Some("Catherine Deveuge".to_string());
-        fs::write(dir.join("metadata.json"), serde_json::to_string_pretty(&initial).unwrap()).unwrap();
-
-        mark_chart_stale_suspected(session_id, "2026-04-29").unwrap();
-
-        let after_str = fs::read_to_string(dir.join("metadata.json")).unwrap();
-        let after: ArchiveMetadata = serde_json::from_str(&after_str).unwrap();
-        assert_eq!(after.chart_stale_suspected, Some(true));
-        assert_eq!(after.patient_name.as_deref(), Some("Catherine Deveuge"));
-
-        let _ = fs::remove_dir_all(&test_root);
-        std::env::remove_var("TRANSCRIPTION_APP_DATA_DIR");
-    }
-
-    #[test]
-    fn mark_chart_stale_and_clear_identity_clears_vision_name_and_dob() {
-        use chrono::TimeZone;
-        let test_root =
-            std::env::temp_dir().join(format!("ami-test-clear-id-{}", uuid::Uuid::new_v4()));
-        std::env::set_var("TRANSCRIPTION_APP_DATA_DIR", &test_root);
-        let date = chrono::Utc.with_ymd_and_hms(2026, 5, 1, 13, 51, 0).unwrap();
-        let session_id = "00000000-0000-0000-0000-000000000002";
-        let dir = get_session_archive_dir(session_id, &date).unwrap();
-        fs::create_dir_all(&dir).unwrap();
-        let mut initial = ArchiveMetadata::new(session_id);
-        initial.patient_name = Some("Samuel Aran Mezhenchik".to_string());
-        initial.patient_dob = Some("1984-12-26".to_string());
-        fs::write(
-            dir.join("metadata.json"),
-            serde_json::to_string_pretty(&initial).unwrap(),
-        )
-        .unwrap();
-
-        mark_chart_stale_and_clear_identity(session_id, "2026-05-01").unwrap();
-
-        let after_str = fs::read_to_string(dir.join("metadata.json")).unwrap();
-        let after: ArchiveMetadata = serde_json::from_str(&after_str).unwrap();
-        assert_eq!(after.chart_stale_suspected, Some(true));
-        assert_eq!(after.patient_name, None, "vision name must be cleared");
-        assert_eq!(after.patient_dob, None, "vision DOB must be cleared");
-
-        let _ = fs::remove_dir_all(&test_root);
-        std::env::remove_var("TRANSCRIPTION_APP_DATA_DIR");
     }
 
     #[test]

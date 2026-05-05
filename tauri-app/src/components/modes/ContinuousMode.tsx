@@ -110,10 +110,6 @@ interface ContinuousModeProps {
   isSleeping?: boolean;
   /** ISO timestamp when sleep mode will resume (null when not sleeping) */
   sleepResumeAt?: string | null;
-  /** Live "verify patient" warning when the chart-stale heuristic fires (null when no warning). */
-  chartStaleWarning?: import('../../hooks/useContinuousMode').ChartStaleWarning | null;
-  /** Dismiss the chart-stale banner (null when handler not provided). */
-  onDismissChartStaleWarning?: () => void;
 }
 
 /**
@@ -219,8 +215,6 @@ export const ContinuousMode = memo(function ContinuousMode({
   transcriptionStalled,
   isSleeping,
   sleepResumeAt,
-  chartStaleWarning,
-  onDismissChartStaleWarning,
 }: ContinuousModeProps) {
   const encounterElapsed = useElapsedTime(stats.buffer_started_at ?? undefined, 10000);
 
@@ -351,42 +345,6 @@ export const ContinuousMode = memo(function ContinuousMode({
   // Active — show monitoring dashboard
   return (
     <div className="mode-content continuous-mode">
-      {chartStaleWarning && (
-        <div className="chart-stale-banner" role="alert">
-          <div className="chart-stale-banner-icon" aria-hidden="true">⚠️</div>
-          <div className="chart-stale-banner-body">
-            <div className="chart-stale-banner-title">Verify patient</div>
-            <div className="chart-stale-banner-detail">
-              {chartStaleWarning.reason === 'multi_chart' ? (
-                <>
-                  Vision saw {chartStaleWarning.visionUniqueNames.length} distinct names this encounter
-                  {chartStaleWarning.visionUniqueNames.length > 0 && (
-                    <> ({chartStaleWarning.visionUniqueNames.join(', ')})</>
-                  )}
-                  . The chart may be on the wrong patient.
-                </>
-              ) : (
-                <>
-                  Audio greeting{chartStaleWarning.audioGreetingCandidates.length === 1 ? '' : 's'}{' '}
-                  ({chartStaleWarning.audioGreetingCandidates.join(', ') || 'unknown'}) don&apos;t match the chart name
-                  {chartStaleWarning.visionName && <> ({chartStaleWarning.visionName})</>}.
-                </>
-              )}
-            </div>
-          </div>
-          {onDismissChartStaleWarning && (
-            <button
-              type="button"
-              className="chart-stale-banner-dismiss"
-              onClick={onDismissChartStaleWarning}
-              aria-label="Dismiss verify-patient warning"
-            >
-              ×
-            </button>
-          )}
-        </div>
-      )}
-
       {isSleeping && (
         <div className="continuous-sleep-mode">
           <div className="sleep-mode-icon">🌙</div>

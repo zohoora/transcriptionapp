@@ -1568,14 +1568,6 @@ const HistoryWindow: React.FC = () => {
                           {entry.likely_non_clinical && (
                             <span className="badge non-clinical-badge">Non-clinical</span>
                           )}
-                          {entry.chart_stale_suspected && (
-                            <span
-                              className="badge chart-stale-badge"
-                              title="Vision and audio disagreed on patient name — verify before billing"
-                            >
-                              ⚠️ Verify patient
-                            </span>
-                          )}
                           {entry.charting_mode === 'continuous' && (
                             <span className="badge charted-badge">Auto-charted</span>
                           )}

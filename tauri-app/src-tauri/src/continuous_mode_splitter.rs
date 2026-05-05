@@ -331,7 +331,7 @@ pub async fn split_encounter<C: RunContext>(
     // The replay bundle needs this data too — capturing after reset
     // would see an empty tracker (was the cause of replay_bundle
     // always showing majority_name=None, vote_count=0).
-    let (mut encounter_patient_name, tracker_snapshot) = match deps.handle.name_tracker.lock() {
+    let (encounter_patient_name, tracker_snapshot) = match deps.handle.name_tracker.lock() {
         Ok(mut tracker) => {
             let name = tracker.majority_name();
             let votes: usize = tracker.vote_count();
@@ -382,62 +382,6 @@ pub async fn split_encounter<C: RunContext>(
         patient_name: encounter_patient_name.clone(),
     }
     .emit_via(ctx);
-
-    // Class 3 cross-check: compare vision-derived patient name against
-    // greeting names parsed from the transcript. Two failure modes from
-    // 2026-04-29:
-    //   1. Catherine 2:35 — vision said Catherine, audio greeting was
-    //      "Hi Shirley" → Mismatch → emit chart_stale_suspected.
-    //   2. The (vision_unique_names ≥ 3) path is handled in
-    //      screenshot_task; here we cover the audio-mismatch case.
-    //
-    // We also stamp `chart_stale_suspected: true` onto the session
-    // metadata so the History view can surface a "verify patient" badge
-    // post-hoc. The vision majority is still applied as the patient_name
-    // (clinician will confirm or rename via the History action bar).
-    let audio_candidates = crate::patient_name_tracker::extract_greeting_name_candidates(
-        &encounter_text,
-        200,
-    );
-    let cross = crate::patient_name_tracker::cross_check_vision_vs_audio(
-        encounter_patient_name.as_deref(),
-        &audio_candidates,
-    );
-    if cross == crate::patient_name_tracker::NameCrossCheck::Mismatch {
-        warn!(
-            event = "chart_stale_audio_mismatch",
-            component = "continuous_mode_splitter",
-            session_id = %session_id,
-            vision_name = ?encounter_patient_name,
-            audio_candidates = ?audio_candidates,
-            "Vision-derived patient name does NOT match transcript greeting names; clearing vision identity"
-        );
-        ContinuousModeEvent::ChartStaleSuspected {
-            session_id: session_id.clone(),
-            reason: crate::continuous_mode_events::ChartStaleReason::AudioMismatch,
-            vision_name: encounter_patient_name.clone(),
-            vision_unique_names: tracker_snapshot.2.clone(),
-            audio_greeting_candidates: audio_candidates.clone(),
-        }
-        .emit_via(ctx);
-        // Vision name is provably wrong (transcript greeted a different
-        // patient) — clear it from both in-memory state and metadata so
-        // downstream tooling can't mislabel the session.
-        encounter_patient_name = None;
-        let split_date_str = ctx.now_utc().format("%Y-%m-%d").to_string();
-        if let Err(e) = crate::local_archive::mark_chart_stale_and_clear_identity(
-            &session_id,
-            &split_date_str,
-        ) {
-            warn!(
-                event = "chart_stale_metadata_mark_failed",
-                component = "continuous_mode_splitter",
-                session_id = %session_id,
-                error = %e,
-                "Failed to stamp chart_stale_suspected on metadata; live event still emitted"
-            );
-        }
-    }
 
     info!(
         event = "splitter_complete",
