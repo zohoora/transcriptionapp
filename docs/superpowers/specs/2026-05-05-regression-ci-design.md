@@ -26,7 +26,7 @@ The labels are in repo, but the `replay_bundle.json` files they reference live i
 
 | Dimension | Choice |
 |-----------|--------|
-| Substrate | **Self-hosted runner on the MacBook** (100.119.83.76). Reads existing `~/.transcriptionapp/archive/`. |
+| Substrate | **Self-hosted runner on a workstation** (Room 6 to start). Reads the workstation's `~/.transcriptionapp/archive/`. (Initially attempted on the MacBook server; switched to a workstation because the desktop app — and therefore `replay_bundle.json` — only exists on workstations.) |
 | Pass/fail policy | **Pinned per-label expectations** — each label file declares which checks are currently expected to fail. |
 | Schema granularity | **Per-check** (`expected_failures: ["billing_codes", "diagnostic_code"]`). Ratchet tightens by removing entries. |
 | Scope of CI gate | `labeled_regression_cli` + `detection_replay_cli` + `harness_per_encounter`. (`golden_day_cli` was originally in scope but moved to `--full` daily preflight only — see "Layer 7 carve-out" below.) |
@@ -101,7 +101,7 @@ regression-corpus:
 
 Trigger: same as the other jobs (push to main, every PR).
 
-The runner uses tag `ami-ci` to disambiguate from any future MacBook-hosted runners. Bring-up doc: `docs/regression-ci-runner-setup.md`.
+The runner uses tag `ami-ci` to disambiguate from any other workstation-hosted runners we might add later. Initial host: Room 6 (`backoffice` user). Bring-up doc: `docs/regression-ci-runner-setup.md`.
 
 ## Migration plan
 

@@ -218,14 +218,18 @@ jobs:
   # Regression corpus (PR-side ratchet, paired with v0.10.70's release-side ort_smoke).
   #
   # Runs the offline regression corpus (preflight Layers 6, 8, 9) on a self-hosted
-  # MacBook runner that has read access to the production session archive. New
-  # check failures block merge; failures listed in each label's `expected_failures`
-  # do not (see docs/superpowers/specs/2026-05-05-regression-ci-design.md).
+  # workstation runner that has read access to the production session archive
+  # (~/.transcriptionapp/archive/, populated by the desktop AMI Assist app
+  # during continuous-mode use). New check failures block merge; failures listed
+  # in each label's `expected_failures` do not. See:
+  #   docs/superpowers/specs/2026-05-05-regression-ci-design.md
   #
-  # The runner is the MacBook (100.119.83.76) — same host as the profile service
-  # and the LLM/STT routers. One-time bring-up: docs/regression-ci-runner-setup.md.
-  # Until the runner is registered, this job stays "queued" on PRs but does not
-  # falsely report success or failure.
+  # Initial host: Room 6 workstation (ami-ci-room6, user `backoffice`). The
+  # MacBook server doesn't host this runner because it has no local replay
+  # bundle archive — the desktop app only runs on workstations.
+  # One-time bring-up: docs/regression-ci-runner-setup.md.
+  # Until the runner is registered, this job stays "queued" on PRs without
+  # falsely reporting success or failure.
   regression-corpus:
     name: Regression Corpus
     runs-on: [self-hosted, macOS, ami-ci]
