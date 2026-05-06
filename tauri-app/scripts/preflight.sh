@@ -72,13 +72,36 @@ echo ""
 
 cd "$PROJECT_DIR"
 
-# Build test binary (fast if already compiled)
-echo -e "${YELLOW}Building tests...${NC}"
-cargo test --no-run --lib 2>&1 | grep -E "Compiling|Finished" || true
-echo ""
+# Build the lib-test binary upfront. Layers 1-5 invoke `cargo test --ignored`,
+# which reuses this artifact. Skipped in --regression mode (layers 6, 8, 9
+# build their own binaries via `cargo run`/`cargo test --test`).
+if [[ "$MODE" != "regression" ]]; then
+    echo -e "${YELLOW}Building tests...${NC}"
+    cargo test --no-run --lib 2>&1 | grep -E "Compiling|Finished" || true
+    echo ""
+fi
 
 FAILED=0
 PASSED=0
+
+# Returns 0 if the layer should run given $MODE and $LAYER.
+# Gating values:
+#   connectivity — runs in quick + full + explicit-N. Skipped in --regression.
+#   full         — runs in --full + explicit-N only.
+#   offline      — always runs (quick + full + --regression + explicit-N).
+should_run() {
+    local layer="$1" gating="$2"
+    if [[ -n "$LAYER" ]]; then
+        [[ "$LAYER" == "$layer" ]]
+        return $?
+    fi
+    case "$gating" in
+        connectivity) [[ "$MODE" != "regression" ]] ;;
+        full)         [[ "$MODE" == "full" ]] ;;
+        offline)      true ;;
+        *)            echo "should_run: unknown gating '$gating'" >&2; return 1 ;;
+    esac
+}
 
 run_test() {
     local test_name="$1"
@@ -91,15 +114,43 @@ run_test() {
         PASSED=$((PASSED + 1))
     else
         echo -e "${RED}FAIL${NC}"
-        # Print relevant error lines (skip cargo noise)
         echo "$OUTPUT" | grep -E "panicked|FAILED|Error|error" | head -5 | sed 's/^/    /'
         FAILED=$((FAILED + 1))
     fi
 }
 
-# Layer 1: STT Router
-# Skipped in --regression mode (offline-only).
-if [[ ( -z "$LAYER" && "$MODE" != "regression" ) || "$LAYER" == "1" ]]; then
+# Run a CLI-based layer: invokes a command, redirects to a log, prints PASS
+# with `success_grep` lines on success, or FAIL with `fail_grep` lines (or
+# `tail -10` if fail_grep is empty) on failure. Optional fail_hint appears
+# below the failure tail.
+#
+# Usage: run_cli_layer LAYER NAME DESCRIPTION LOG_FILE SUCCESS_GREP FAIL_GREP FAIL_HINT -- CMD...
+run_cli_layer() {
+    local layer_num="$1" layer_name="$2" description="$3" log_file="$4"
+    local success_grep="$5" fail_grep="$6" fail_hint="$7"
+    shift 7
+    [[ "$1" == "--" ]] && shift
+
+    echo -e "${YELLOW}Layer ${layer_num}: ${layer_name}${NC}"
+    echo -n "  ${description}... "
+    if "$@" > "$log_file" 2>&1; then
+        echo -e "${GREEN}PASS${NC}"
+        grep -E "$success_grep" "$log_file" | sed 's/^/    /'
+        PASSED=$((PASSED + 1))
+    else
+        echo -e "${RED}FAIL${NC}"
+        if [[ -n "$fail_grep" ]]; then
+            grep -E "$fail_grep" "$log_file" | head -10 | sed 's/^/    /'
+        else
+            tail -10 "$log_file" | sed 's/^/    /'
+        fi
+        [[ -n "$fail_hint" ]] && echo "    $fail_hint"
+        FAILED=$((FAILED + 1))
+    fi
+    echo ""
+}
+
+if should_run 1 connectivity; then
     echo -e "${YELLOW}Layer 1: STT Router${NC}"
     run_test "e2e_layer1_stt_health_check" "Health check"
     run_test "e2e_layer1_stt_alias_available" "Alias 'medical-streaming'"
@@ -107,9 +158,7 @@ if [[ ( -z "$LAYER" && "$MODE" != "regression" ) || "$LAYER" == "1" ]]; then
     echo ""
 fi
 
-# Layer 2: LLM Router
-# Skipped in --regression mode (offline-only).
-if [[ ( -z "$LAYER" && "$MODE" != "regression" ) || "$LAYER" == "2" ]]; then
+if should_run 2 connectivity; then
     echo -e "${YELLOW}Layer 2: LLM Router${NC}"
     run_test "e2e_layer2_llm_soap_generation" "SOAP generation (soap-model-fast)"
     run_test "e2e_layer2_llm_encounter_detection" "Encounter detection (fast-model)"
@@ -117,43 +166,32 @@ if [[ ( -z "$LAYER" && "$MODE" != "regression" ) || "$LAYER" == "2" ]]; then
     echo ""
 fi
 
-# Layer 3: Local Archive
-# Skipped in --regression mode (offline-only).
-if [[ ( -z "$LAYER" && "$MODE" != "regression" ) || "$LAYER" == "3" ]]; then
+if should_run 3 connectivity; then
     echo -e "${YELLOW}Layer 3: Local Archive${NC}"
     run_test "e2e_layer3_archive_save_and_retrieve" "Save and retrieve"
     run_test "e2e_layer3_archive_continuous_mode_metadata" "Continuous mode metadata"
     echo ""
 fi
 
-# Layers 4-5: Full pipeline (only in --full mode or explicit --layer)
-if [[ "$MODE" == "full" || "$LAYER" == "4" ]]; then
+if should_run 4 full; then
     echo -e "${YELLOW}Layer 4: Session Mode (full pipeline)${NC}"
     run_test "e2e_layer4_session_mode_full" "Audio → STT → SOAP → Archive → History"
     echo ""
 fi
 
-if [[ "$MODE" == "full" || "$LAYER" == "5" ]]; then
+if should_run 5 full; then
     echo -e "${YELLOW}Layer 5: Continuous Mode (full pipeline)${NC}"
     run_test "e2e_layer5_continuous_mode_full" "Audio → Detection → SOAP → Archive → History"
     echo ""
 fi
 
-# Layer 6: Detection Replay Regression (offline, against archived bundles)
-# Script CWD is already $PROJECT_DIR (tauri-app/src-tauri/), set at the top.
-if [[ -z "$LAYER" || "$LAYER" == "6" ]]; then
-    echo -e "${YELLOW}Layer 6: Detection Replay Regression${NC}"
-    echo -n "  Replaying detection decisions against archive (target ≥ 99.0%)... "
-    if cargo run --quiet --bin detection_replay_cli -- --all --fail-on-mismatch --threshold 99.0 > /tmp/preflight_replay.log 2>&1; then
-        echo -e "${GREEN}PASS${NC}"
-        grep "Bundles:\|Agreement:" /tmp/preflight_replay.log | sed 's/^/    /'
-        PASSED=$((PASSED + 1))
-    else
-        echo -e "${RED}FAIL${NC}"
-        tail -10 /tmp/preflight_replay.log | sed 's/^/    /'
-        FAILED=$((FAILED + 1))
-    fi
-    echo ""
+if should_run 6 offline; then
+    run_cli_layer 6 "Detection Replay Regression" \
+        "Replaying detection decisions against archive (target ≥ 99.0%)" \
+        /tmp/preflight_replay.log \
+        "Bundles:|Agreement:" "" "" \
+        -- cargo run --quiet --bin detection_replay_cli -- \
+            --all --fail-on-mismatch --threshold 99.0
 fi
 
 # Layer 7: Golden Day Regression (offline, labeled fixtures vs production archive)
@@ -163,65 +201,34 @@ fi
 # corpus state changes independently of code changes (cross-room sync, test
 # artifacts, late labelling) and would block merges for reasons unrelated to
 # the PR. Runs in --full for the daily preflight and on explicit --layer 7.
-if [[ ( -z "$LAYER" && "$MODE" != "regression" ) || "$LAYER" == "7" ]]; then
-    echo -e "${YELLOW}Layer 7: Golden Day Regression${NC}"
-    echo -n "  Verifying labeled clinic days match production... "
-    if cargo run --quiet --bin golden_day_cli -- --all-days --fail-on-regression > /tmp/preflight_golden.log 2>&1; then
-        echo -e "${GREEN}PASS${NC}"
-        grep "Total:\|Golden Day:" /tmp/preflight_golden.log | sed 's/^/    /'
-        PASSED=$((PASSED + 1))
-    else
-        echo -e "${RED}FAIL${NC}"
-        tail -10 /tmp/preflight_golden.log | sed 's/^/    /'
-        FAILED=$((FAILED + 1))
-    fi
-    echo ""
+if should_run 7 connectivity; then
+    run_cli_layer 7 "Golden Day Regression" \
+        "Verifying labeled clinic days match production" \
+        /tmp/preflight_golden.log \
+        "Total:|Golden Day:" "" "" \
+        -- cargo run --quiet --bin golden_day_cli -- --all-days --fail-on-regression
 fi
 
-# Layer 8: Orchestrator equivalence harness (offline, per-encounter)
-# Drives run_continuous_mode through RecordingRunContext and compares the
-# archive output to snapshot baselines. Fails if the orchestrator's observable
-# behavior differs from the recorded reference. See:
-#   docs/superpowers/specs/2026-04-18-continuous-mode-test-harness-design.md
-if [[ -z "$LAYER" || "$LAYER" == "8" ]]; then
-    echo -e "${YELLOW}Layer 8: Orchestrator Equivalence Harness${NC}"
-    echo -n "  Verifying run_continuous_mode behavior against snapshot baselines... "
-    if cargo test --test harness_per_encounter --quiet > /tmp/preflight_harness.log 2>&1; then
-        echo -e "${GREEN}PASS${NC}"
-        grep "test result:" /tmp/preflight_harness.log | sed 's/^/    /'
-        PASSED=$((PASSED + 1))
-    else
-        echo -e "${RED}FAIL${NC}"
-        grep -E "FAILED|panicked|harness detected" /tmp/preflight_harness.log | head -10 | sed 's/^/    /'
-        echo "    Full reports: target/harness-report/*.json"
-        FAILED=$((FAILED + 1))
-    fi
-    echo ""
+# Layer 8 spec: docs/superpowers/specs/2026-04-18-continuous-mode-test-harness-design.md
+if should_run 8 offline; then
+    run_cli_layer 8 "Orchestrator Equivalence Harness" \
+        "Verifying run_continuous_mode behavior against snapshot baselines" \
+        /tmp/preflight_harness.log \
+        "test result:" \
+        "FAILED|panicked|harness detected" \
+        "Full reports: target/harness-report/*.json" \
+        -- cargo test --test harness_per_encounter --quiet
 fi
 
-# Layer 9: Labeled Regression Corpus (offline, per-check baseline gate)
-# Compares production billing/dx/clinical output to ground-truth labels in
-# tests/fixtures/labels/. Each label declares `expected_failures` listing the
-# checks currently known to diverge — those don't count as regressions, only
-# NEW divergences do. Bootstrap a label's baseline with
-#   cargo run --bin labeled_regression_cli -- --all --bootstrap-expected-failures
-# This is the load-bearing PR-side gate (paired with v0.10.70's release-side
-# ort_smoke gate). See:
-#   docs/superpowers/specs/2026-05-05-regression-ci-design.md
-if [[ -z "$LAYER" || "$LAYER" == "9" ]]; then
-    echo -e "${YELLOW}Layer 9: Labeled Regression Corpus${NC}"
-    echo -n "  Comparing production output to per-check labels... "
-    if cargo run --quiet --bin labeled_regression_cli -- --all --fail-on-regression > /tmp/preflight_labeled.log 2>&1; then
-        echo -e "${GREEN}PASS${NC}"
-        grep -E "^Labels:" /tmp/preflight_labeled.log | sed 's/^/    /'
-        PASSED=$((PASSED + 1))
-    else
-        echo -e "${RED}FAIL${NC}"
-        grep -E "^REGRESSION |^Labels:" /tmp/preflight_labeled.log | sed 's/^/    /'
-        echo "    Full report: /tmp/preflight_labeled.log"
-        FAILED=$((FAILED + 1))
-    fi
-    echo ""
+# Layer 9 spec: docs/superpowers/specs/2026-05-05-regression-ci-design.md
+if should_run 9 offline; then
+    run_cli_layer 9 "Labeled Regression Corpus" \
+        "Comparing production output to per-check labels" \
+        /tmp/preflight_labeled.log \
+        "^Labels:" \
+        "^REGRESSION |^Labels:" \
+        "Full report: /tmp/preflight_labeled.log" \
+        -- cargo run --quiet --bin labeled_regression_cli -- --all --fail-on-regression
 fi
 
 # Summary
