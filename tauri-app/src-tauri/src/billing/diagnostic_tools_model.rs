@@ -21,7 +21,11 @@ use tracing::warn;
 
 /// Hard cap on tools-model call latency. Typical: 2–7s. The router doc warns
 /// multi-round tool calls can take 30–60s; we budget generously for tail cases.
-const TOOLS_MODEL_TIMEOUT_SECS: u64 = 60;
+/// 2026-05-06: raised from 60s to 180s after the underlying model was swapped
+/// for a larger one — Room 2 hit the 60s cap on a normal billing call. 180s
+/// matches `MULTI_PATIENT_DETECT_TIMEOUT_SECS` precedent for large-prompt
+/// multi-round calls.
+const TOOLS_MODEL_TIMEOUT_SECS: u64 = 180;
 
 /// The model's `description` field is intentionally ignored — it's often a
 /// paraphrase ("Back pain" vs the DB's "Lumbar strain, lumbago, coccydynia,

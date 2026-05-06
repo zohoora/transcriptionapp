@@ -44,6 +44,12 @@ const SOAP_GENERATION_TIMEOUT_SECS: u64 = 300;
 /// Error string for SOAP timeout (avoids allocation in the timeout path).
 const SOAP_TIMEOUT_ERROR: &str = "timeout_300s";
 
+/// Timeout for the post-split clinical-content classifier LLM call. 2026-05-06:
+/// raised from 30s to 90s after `fast-model` was repointed at a larger model.
+/// The prompt is small (clinical / non-clinical classifier) so 90s is generous,
+/// but the larger model still pushes some calls over the original 30s budget.
+const CLINICAL_CONTENT_CHECK_TIMEOUT_SECS: u64 = 90;
+
 /// Generate a SOAP note, archive it, and log the result.
 ///
 /// Handles the full LLM call → timeout → archive → pipeline log pattern
@@ -1012,7 +1018,7 @@ pub async fn check_clinical_content(
     let cc_start = Instant::now();
     let cc_future = client.generate_timed(model, &cc_system, &cc_user, "clinical_content_check");
 
-    match tokio::time::timeout(tokio::time::Duration::from_secs(30), cc_future).await {
+    match tokio::time::timeout(tokio::time::Duration::from_secs(CLINICAL_CONTENT_CHECK_TIMEOUT_SECS), cc_future).await {
         Ok((Ok(cc_response), m)) => {
             let cc_latency = cc_start.elapsed().as_millis() as u64;
             match parse_clinical_content_check(&cc_response) {
@@ -1092,6 +1098,7 @@ pub async fn check_clinical_content(
         }
         Err(_) => {
             let cc_latency = cc_start.elapsed().as_millis() as u64;
+            let timeout_tag = format!("timeout_{}s", CLINICAL_CONTENT_CHECK_TIMEOUT_SECS);
             if let Ok(mut l) = logger.lock() {
                 let mut meta = log_extra;
                 if let Some(obj) = meta.as_object_mut() {
@@ -1104,11 +1111,11 @@ pub async fn check_clinical_content(
                     None,
                     cc_latency,
                     false,
-                    Some("timeout_30s"),
+                    Some(&timeout_tag),
                     meta,
                 );
             }
-            warn!("Clinical content check timed out (30s)");
+            warn!("Clinical content check timed out ({}s)", CLINICAL_CONTENT_CHECK_TIMEOUT_SECS);
             true // fail-open
         }
     }

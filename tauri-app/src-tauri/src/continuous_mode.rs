@@ -34,6 +34,7 @@ pub use crate::encounter_detection::{
     ClinicalContentCheckResult, build_clinical_content_check_prompt, parse_clinical_content_check,
     FORCE_CHECK_WORD_THRESHOLD, FORCE_SPLIT_WORD_THRESHOLD, FORCE_SPLIT_CONSECUTIVE_LIMIT, ABSOLUTE_WORD_CAP,
     MIN_WORDS_FOR_CLINICAL_CHECK,
+    ENCOUNTER_DETECTION_TIMEOUT_SECS,
     MULTI_PATIENT_CHECK_WORD_THRESHOLD, MULTI_PATIENT_SPLIT_MIN_WORDS,
     MULTI_PATIENT_CHECK_PROMPT, MULTI_PATIENT_SPLIT_PROMPT,
     multi_patient_check_prompt, multi_patient_split_prompt,
@@ -1442,7 +1443,7 @@ pub async fn run_continuous_mode<C: crate::run_context::RunContext>(
                     detection_context.sensor_departed, detection_context.sensor_present,
                 );
 
-                match tokio::time::timeout(tokio::time::Duration::from_secs(90), llm_future).await {
+                match tokio::time::timeout(tokio::time::Duration::from_secs(ENCOUNTER_DETECTION_TIMEOUT_SECS), llm_future).await {
                     Ok((Ok(response), metrics)) => {
                         let latency = detect_start.elapsed().as_millis() as u64;
                         match parse_encounter_detection(&response) {
@@ -1549,13 +1550,14 @@ pub async fn run_continuous_mode<C: crate::run_context::RunContext>(
                     }
                     Err(_elapsed) => {
                         let latency = detect_start.elapsed().as_millis() as u64;
-                        warn!("Encounter detection LLM call timed out after 90s");
+                        let timeout_tag = format!("timeout_{}s", ENCOUNTER_DETECTION_TIMEOUT_SECS);
+                        warn!("Encounter detection LLM call timed out after {}s", ENCOUNTER_DETECTION_TIMEOUT_SECS);
                         if let Ok(mut logger) = logger_for_detector.lock() {
                             let mut ctx = detect_ctx.clone();
                             ctx["timeout"] = serde_json::json!(true);
                             logger.log_detection(
                                 &detection_model, &system_prompt, &user_prompt,
-                                None, latency, false, Some("timeout_90s"), ctx,
+                                None, latency, false, Some(&timeout_tag), ctx,
                             );
                         }
                         if let Ok(mut bundle) = bundle_for_detector.lock() {
@@ -1566,7 +1568,7 @@ pub async fn run_continuous_mode<C: crate::run_context::RunContext>(
                                 replay_buffer_age, replay_sensor_absent,
                                 sensor_state.sensor_continuous_present, sensor_triggered, manual_triggered,
                             );
-                            check.error = Some("timeout_90s".to_string());
+                            check.error = Some(timeout_tag.clone());
                             bundle.add_detection_check(check);
                         }
                         if let Ok(mut err) = last_error_for_detector.lock() {

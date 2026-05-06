@@ -55,6 +55,13 @@ pub const MULTI_PATIENT_SPLIT_MIN_WORDS: usize = 500;
 /// bounding worst-case latency.
 pub const MULTI_PATIENT_DETECT_TIMEOUT_SECS: u64 = 180;
 
+/// Hard cap on encounter-detection LLM call latency (per check). 2026-05-06:
+/// raised from 90s to 180s after `fast-model` was repointed at a larger model
+/// — Room 2 hit the 90s ceiling 8 times in a 25-min window. 180s matches
+/// `MULTI_PATIENT_DETECT_TIMEOUT_SECS` precedent and keeps tail protection on
+/// long encounters without false-failing during normal large-model latency.
+pub const ENCOUNTER_DETECTION_TIMEOUT_SECS: u64 = 180;
+
 /// Optional context signals for encounter detection.
 /// Provides real-time signals from sensor (departure/presence) to augment
 /// the LLM prompt. Vision-extracted patient names are used only for metadata
