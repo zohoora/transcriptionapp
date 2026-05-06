@@ -138,3 +138,168 @@ pub fn split_transcript_into_encounters(transcript: &str) -> Vec<String> {
     // The desktop History window has a manual split tool for users who need it.
     vec![transcript.to_string()]
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::PathBuf;
+
+    // ── is_supported_format ──────────────────────────────────────────────
+
+    #[test]
+    fn is_supported_format_accepts_every_listed_extension() {
+        for ext in SUPPORTED_EXTENSIONS {
+            let p = PathBuf::from(format!("/tmp/recording.{ext}"));
+            assert!(
+                is_supported_format(&p),
+                "expected {ext} to be supported"
+            );
+        }
+    }
+
+    #[test]
+    fn is_supported_format_is_case_insensitive() {
+        assert!(is_supported_format(Path::new("/tmp/A.MP3")));
+        assert!(is_supported_format(Path::new("/tmp/A.Wav")));
+        assert!(is_supported_format(Path::new("/tmp/A.WEBM")));
+    }
+
+    #[test]
+    fn is_supported_format_rejects_unsupported() {
+        assert!(!is_supported_format(Path::new("/tmp/notes.txt")));
+        assert!(!is_supported_format(Path::new("/tmp/video.mp4")));
+        assert!(!is_supported_format(Path::new("/tmp/data.bin")));
+    }
+
+    #[test]
+    fn is_supported_format_rejects_missing_extension() {
+        assert!(!is_supported_format(Path::new("/tmp/no_extension")));
+        assert!(!is_supported_format(Path::new("/tmp/")));
+        assert!(!is_supported_format(Path::new("")));
+    }
+
+    // ── split_transcript_into_encounters ─────────────────────────────────
+
+    #[test]
+    fn split_transcript_returns_single_encounter_for_empty() {
+        let out = split_transcript_into_encounters("");
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0], "");
+    }
+
+    #[test]
+    fn split_transcript_returns_single_encounter_for_short_text() {
+        let out = split_transcript_into_encounters("hello doctor");
+        assert_eq!(out, vec!["hello doctor".to_string()]);
+    }
+
+    #[test]
+    fn split_transcript_returns_single_encounter_for_long_text() {
+        // V1 contract: never splits, even for long transcripts. Manual split
+        // is provided through the desktop history window.
+        let long = "word ".repeat(10_000);
+        let out = split_transcript_into_encounters(&long);
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0], long);
+    }
+
+    #[test]
+    fn split_transcript_preserves_whitespace_only_input() {
+        let out = split_transcript_into_encounters("   \n\t  ");
+        assert_eq!(out, vec!["   \n\t  ".to_string()]);
+    }
+
+    // ── read_wav_samples ─────────────────────────────────────────────────
+
+    fn write_wav_int16(path: &Path, samples: &[i16]) {
+        let spec = hound::WavSpec {
+            channels: 1,
+            sample_rate: 16_000,
+            bits_per_sample: 16,
+            sample_format: hound::SampleFormat::Int,
+        };
+        let mut writer = hound::WavWriter::create(path, spec).unwrap();
+        for s in samples {
+            writer.write_sample(*s).unwrap();
+        }
+        writer.finalize().unwrap();
+    }
+
+    fn write_wav_float32(path: &Path, samples: &[f32]) {
+        let spec = hound::WavSpec {
+            channels: 1,
+            sample_rate: 16_000,
+            bits_per_sample: 32,
+            sample_format: hound::SampleFormat::Float,
+        };
+        let mut writer = hound::WavWriter::create(path, spec).unwrap();
+        for s in samples {
+            writer.write_sample(*s).unwrap();
+        }
+        writer.finalize().unwrap();
+    }
+
+    fn write_wav_stereo_int16(path: &Path) {
+        let spec = hound::WavSpec {
+            channels: 2,
+            sample_rate: 16_000,
+            bits_per_sample: 16,
+            sample_format: hound::SampleFormat::Int,
+        };
+        let mut writer = hound::WavWriter::create(path, spec).unwrap();
+        writer.write_sample(0_i16).unwrap();
+        writer.write_sample(0_i16).unwrap();
+        writer.finalize().unwrap();
+    }
+
+    #[test]
+    fn read_wav_samples_normalizes_int16_to_unit_range() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("int16.wav");
+        write_wav_int16(&path, &[i16::MAX, 0, i16::MIN, 16_384]);
+
+        let samples = read_wav_samples(&path).expect("should read");
+        assert_eq!(samples.len(), 4);
+        // i16::MAX (32767) / 32768.0 ≈ 0.99997
+        assert!((samples[0] - 0.999_969_5).abs() < 1e-5);
+        assert_eq!(samples[1], 0.0);
+        assert_eq!(samples[2], -1.0);
+        // 16384 / 32768 = 0.5
+        assert!((samples[3] - 0.5).abs() < 1e-6);
+    }
+
+    #[test]
+    fn read_wav_samples_returns_float32_unchanged() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("float32.wav");
+        let inputs = [0.0_f32, 0.25, -0.75, 1.0, -1.0];
+        write_wav_float32(&path, &inputs);
+
+        let samples = read_wav_samples(&path).expect("should read");
+        assert_eq!(samples.len(), inputs.len());
+        for (got, expected) in samples.iter().zip(inputs.iter()) {
+            assert!((got - expected).abs() < 1e-6);
+        }
+    }
+
+    #[test]
+    fn read_wav_samples_rejects_stereo() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("stereo.wav");
+        write_wav_stereo_int16(&path);
+
+        let err = read_wav_samples(&path).expect_err("stereo should error");
+        assert!(
+            err.contains("Expected mono WAV"),
+            "expected mono error, got: {err}"
+        );
+        assert!(err.contains("2 channels"));
+    }
+
+    #[test]
+    fn read_wav_samples_errors_on_missing_file() {
+        let path = Path::new("/tmp/this-file-definitely-does-not-exist-9f7e4c2.wav");
+        let err = read_wav_samples(path).expect_err("missing file should error");
+        assert!(err.contains("Failed to open WAV"));
+    }
+}

@@ -883,3 +883,277 @@ mod multi_patient_threshold_tests {
         );
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::continuous_mode::ContinuousState;
+    use crate::encounter_detection::MIN_WORDS_FOR_CLINICAL_CHECK;
+    use crate::harness::test_env::{
+        seed_transcript_buffer as seed_buffer, test_ctx_with_archive as make_ctx, ArchiveDirGuard,
+    };
+    use crate::local_archive::ArchiveMetadata;
+    use crate::pipeline::PipelineHandle;
+    use crate::replay_bundle::ReplayBundleBuilder;
+    use chrono::{DateTime, Utc};
+    use serial_test::serial;
+    use std::path::{Path, PathBuf};
+
+    fn make_deps(handle: Arc<ContinuousModeHandle>) -> FlushOnStopDeps {
+        FlushOnStopDeps {
+            handle,
+            sync_ctx: ServerSyncContext::empty(),
+            llm_client: None,
+            soap_model: "soap-model-fast".to_string(),
+            fast_model: "fast-model".to_string(),
+            soap_detail_level: 5,
+            soap_format: "comprehensive".to_string(),
+            soap_custom_instructions: String::new(),
+            logger: Arc::new(std::sync::Mutex::new(PipelineLogger::new())),
+            day_logger: Arc::new(None),
+            templates: Arc::new(PromptTemplates::default()),
+            billing_data: Arc::new(BillingData::default()),
+            bundle: Arc::new(std::sync::Mutex::new(ReplayBundleBuilder::new(
+                serde_json::json!({}),
+            ))),
+            min_words_for_clinical_check: MIN_WORDS_FOR_CLINICAL_CHECK,
+            merge_enabled: false,
+            soap_generation_timeout_secs: 300,
+            billing_extraction_timeout_secs: 60,
+            billing_counselling_exhausted: false,
+        }
+    }
+
+    fn make_handles() -> FlushOnStopHandles {
+        FlushOnStopHandles {
+            pipeline_handle: PipelineHandle::for_testing(),
+            sensor_handle: None,
+            consumer_task: tokio::spawn(async {}),
+            detector_task: tokio::spawn(async {}),
+            screenshot_task: None,
+            shadow_task: None,
+            sensor_monitor_task: None,
+        }
+    }
+
+    /// Walk archive_root/YYYY/MM/DD/ and return any subdirectories (each one
+    /// is a session UUID dir).
+    fn list_session_dirs_today(archive_root: &Path) -> Vec<PathBuf> {
+        let today_dir = archive_root.join(Utc::now().format("%Y/%m/%d").to_string());
+        let Ok(read) = std::fs::read_dir(&today_dir) else {
+            return Vec::new();
+        };
+        read.filter_map(|e| e.ok())
+            .filter(|e| e.path().is_dir())
+            .map(|e| e.path())
+            .collect()
+    }
+
+    fn last_event_type(
+        events: &[crate::harness::captured_event::CapturedEvent],
+    ) -> Option<String> {
+        events.last().and_then(|e| {
+            if e.event_name != "continuous_mode_event" {
+                return None;
+            }
+            e.payload
+                .get("type")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string())
+        })
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn empty_buffer_emits_stopped_and_sets_idle() {
+        let guard = ArchiveDirGuard::new();
+        let ctx = make_ctx(guard.path());
+        let handle = Arc::new(ContinuousModeHandle::new());
+
+        run(&ctx, make_deps(Arc::clone(&handle)), make_handles())
+            .await
+            .expect("flush should succeed");
+
+        let events = ctx.captured_events();
+        assert_eq!(
+            last_event_type(&events).as_deref(),
+            Some("stopped"),
+            "Stopped should be the final event"
+        );
+
+        let state = handle.state.lock().unwrap();
+        assert!(matches!(*state, ContinuousState::Idle));
+
+        // No buffer content → no archive activity at all.
+        let session_dirs = list_session_dirs_today(guard.path());
+        assert!(
+            session_dirs.is_empty(),
+            "empty buffer should not create flush session, found: {:?}",
+            session_dirs
+        );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn buffer_under_100_words_skips_flush_session() {
+        let guard = ArchiveDirGuard::new();
+        let ctx = make_ctx(guard.path());
+        let handle = Arc::new(ContinuousModeHandle::new());
+        // 5 segments × 10 words = 50 words: above zero (so the buffer block
+        // is entered), below the 100-word gate (so no session is created).
+        seed_buffer(&handle, 10, 5);
+
+        run(&ctx, make_deps(Arc::clone(&handle)), make_handles())
+            .await
+            .expect("flush");
+
+        assert!(
+            list_session_dirs_today(guard.path()).is_empty(),
+            "buffer below the 100-word gate must not create a flush session"
+        );
+        assert_eq!(
+            last_event_type(&ctx.captured_events()).as_deref(),
+            Some("stopped")
+        );
+    }
+
+    /// Helper: write a complete prior session to today's archive — transcript +
+    /// metadata.json with `encounter_number` and `started_at` set. The ts arg
+    /// drives `list_sessions_by_date`'s sort order (ascending by started_at),
+    /// so the latest ts = the session the flush path picks via `.iter().rev()`.
+    fn write_seed_session(session_id: &str, started_at_iso: &str, encounter_number: u32) {
+        let date = DateTime::parse_from_rfc3339(started_at_iso)
+            .expect("valid RFC3339 ts")
+            .with_timezone(&Utc);
+        crate::local_archive::save_session(
+            session_id,
+            "seed transcript text",
+            60_000,
+            None,
+            false,
+            None,
+            Some(date),
+            Some(1),
+        )
+        .expect("save seed session");
+        let dir = crate::local_archive::get_session_archive_dir(session_id, &date)
+            .expect("session dir");
+        let raw = std::fs::read_to_string(dir.join("metadata.json")).expect("read meta");
+        let mut meta: ArchiveMetadata = serde_json::from_str(&raw).expect("parse meta");
+        meta.encounter_number = Some(encounter_number);
+        meta.charting_mode = Some("continuous".to_string());
+        let pretty = serde_json::to_string_pretty(&meta).unwrap();
+        std::fs::write(dir.join("metadata.json"), pretty).expect("write meta");
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn flush_encounter_number_uses_latest_prev_plus_one() {
+        // Regression guard for the Apr 16 2026 Grantham bug. The flush path
+        // must compute encounter_number from the LATEST prev session's
+        // encounter_number + 1 (not `sessions.len()`), so that mid-day
+        // continuous-mode restarts don't bleed morning-run counts into the
+        // evening run's flush.
+        //
+        // Seeded shape mirrors that day: a 3-encounter morning run (mid-day
+        // stop+restart) followed by a 2-encounter evening run, then a flush.
+        // Latest started_at is evening enc#2 → expected flush enc# = 3.
+        // `sessions.len()`-based math would yield 5+1=6 (or 5), which would
+        // fail the assert below.
+
+        let guard = ArchiveDirGuard::new();
+        let ctx = make_ctx(guard.path());
+        let handle = Arc::new(ContinuousModeHandle::new());
+
+        let today = Utc::now().format("%Y-%m-%d").to_string();
+        // Morning continuous-mode run (3 encounters, ascending enc#)
+        write_seed_session("morn-1", &format!("{today}T09:00:00Z"), 1);
+        write_seed_session("morn-2", &format!("{today}T10:00:00Z"), 2);
+        write_seed_session("morn-3", &format!("{today}T11:00:00Z"), 3);
+        // App stopped mid-day, restarted in the afternoon → enc# resets
+        write_seed_session("eve-1", &format!("{today}T17:00:00Z"), 1);
+        write_seed_session("eve-2", &format!("{today}T18:00:00Z"), 2);
+        // Latest started_at is `eve-2` with enc#2 → flush should be enc#3.
+        let expected_flush_encounter_number: u32 = 3;
+
+        seed_buffer(&handle, 30, 4); // 120 words → above the 100w gate
+
+        run(&ctx, make_deps(Arc::clone(&handle)), make_handles())
+            .await
+            .expect("flush");
+
+        let session_dirs = list_session_dirs_today(guard.path());
+        // Among today_dir contents we have N seed sessions + 1 flush session.
+        // Pick the one with detection_method="flush" (the others were seeded
+        // without that field).
+        let flush_dir = session_dirs
+            .iter()
+            .find(|p| {
+                std::fs::read_to_string(p.join("metadata.json"))
+                    .ok()
+                    .and_then(|raw| serde_json::from_str::<ArchiveMetadata>(&raw).ok())
+                    .and_then(|m| m.detection_method)
+                    == Some("flush".to_string())
+            })
+            .expect("a flush-detected session should be present");
+
+        let flush_meta: ArchiveMetadata = serde_json::from_str(
+            &std::fs::read_to_string(flush_dir.join("metadata.json")).unwrap(),
+        )
+        .unwrap();
+
+        assert_eq!(
+            flush_meta.encounter_number,
+            Some(expected_flush_encounter_number),
+            "flush session must use prev.encounter_number + 1 (Apr 16 Grantham regression)"
+        );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn buffer_over_100_words_with_no_llm_archives_flush_session() {
+        let guard = ArchiveDirGuard::new();
+        let ctx = make_ctx(guard.path());
+        let handle = Arc::new(ContinuousModeHandle::new());
+        // 4 segments × 30 words = 120 words: above the 100-word gate, below
+        // the 500-word multi-patient gate (which would call into LLM and
+        // None-LLM blocks anyway). With llm_client=None, SOAP/billing/merge
+        // all skip; the function still archives the transcript and writes
+        // the metadata enrichment.
+        seed_buffer(&handle, 30, 4);
+
+        run(&ctx, make_deps(Arc::clone(&handle)), make_handles())
+            .await
+            .expect("flush");
+
+        let session_dirs = list_session_dirs_today(guard.path());
+        assert_eq!(
+            session_dirs.len(),
+            1,
+            "expected exactly one flush session dir, got {:?}",
+            session_dirs
+        );
+        let session_dir = &session_dirs[0];
+
+        let metadata: ArchiveMetadata = serde_json::from_str(
+            &std::fs::read_to_string(session_dir.join("metadata.json"))
+                .expect("metadata.json"),
+        )
+        .expect("metadata parses");
+
+        assert_eq!(metadata.charting_mode.as_deref(), Some("continuous"));
+        assert_eq!(metadata.detection_method.as_deref(), Some("flush"));
+        // No prior sessions seeded → encounter_number defaults to 1.
+        assert_eq!(metadata.encounter_number, Some(1));
+
+        // No SOAP generated when llm_client is None.
+        assert!(!session_dir.join("soap_note.txt").exists());
+
+        // Replay bundle finalized for the flush session.
+        assert!(
+            session_dir.join("replay_bundle.json").exists(),
+            "replay_bundle.json should be finalized for flush sessions \
+             (regression guard for the Apr 21 Spencer missing-bundle bug)"
+        );
+    }
+}

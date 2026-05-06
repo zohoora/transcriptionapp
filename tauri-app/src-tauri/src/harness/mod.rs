@@ -17,6 +17,8 @@ pub mod event_comparator;
 pub mod driver;
 pub mod encounter_harness;
 pub mod day_harness;
+#[cfg(test)]
+pub(crate) mod test_env;
 
 pub use captured_event::CapturedEvent;
 pub use encounter_harness::EncounterHarness;

@@ -409,3 +409,250 @@ pub async fn split_encounter<C: RunContext>(
         session_dir,
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::harness::test_env::{
+        seed_transcript_buffer as seed_buffer, test_ctx_with_archive as make_ctx, ArchiveDirGuard,
+    };
+    use crate::local_archive::ArchiveMetadata;
+    use serial_test::serial;
+
+    fn make_deps(handle: Arc<ContinuousModeHandle>) -> SplitterDeps {
+        SplitterDeps {
+            handle,
+            logger: Arc::new(std::sync::Mutex::new(PipelineLogger::new())),
+            bundle: Arc::new(std::sync::Mutex::new(ReplayBundleBuilder::new(
+                serde_json::json!({}),
+            ))),
+            segment_logger: Arc::new(std::sync::Mutex::new(SegmentLogger::new())),
+            day_logger: Arc::new(None::<DayLogger>),
+            sync_ctx: ServerSyncContext::empty(),
+            reset_bio_flag: Arc::new(AtomicBool::new(false)),
+            is_shadow_mode: false,
+            shadow_active_method: ShadowActiveMethod::Sensor,
+        }
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn returns_split_context_with_correct_counts() {
+        let guard = ArchiveDirGuard::new();
+        let ctx = make_ctx(guard.path());
+        let handle = Arc::new(ContinuousModeHandle::new());
+        seed_buffer(&handle, 5, 4); // 4 segments × 5 words = 20 words
+
+        let deps = make_deps(Arc::clone(&handle));
+        let call = SplitterCall {
+            end_index: 4,
+            detection_method: "test_split",
+            cleaned_word_count: 20,
+        };
+        let loop_state = LoopState::new();
+
+        let split_ctx = split_encounter(&ctx, &deps, call, &loop_state)
+            .await
+            .expect("split should succeed");
+
+        assert_eq!(split_ctx.encounter_word_count, 20);
+        assert_eq!(split_ctx.encounter_segment_count, 4);
+        assert_eq!(split_ctx.detection_method, "test_split");
+        assert!(!split_ctx.session_id.is_empty());
+        // Duration is computed from first→last segment.start_ms (300ms) but
+        // those are pipeline ms, not wall-clock — the splitter uses the
+        // segments' `started_at` for duration. With seed_buffer using
+        // `Utc::now()` at push time, all segments have ~the same started_at,
+        // so duration is bounded but small; check sanity rather than exact.
+        assert!(split_ctx.encounter_duration_ms < 5_000);
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn writes_metadata_with_continuous_charting_mode() {
+        let guard = ArchiveDirGuard::new();
+        let ctx = make_ctx(guard.path());
+        let handle = Arc::new(ContinuousModeHandle::new());
+
+        // Seed a patient name into the tracker so the splitter writes it
+        // into metadata.patient_name.
+        {
+            let mut tracker = handle.name_tracker.lock().expect("tracker lock");
+            for _ in 0..3 {
+                tracker.record("Jane Doe");
+            }
+        }
+        seed_buffer(&handle, 3, 5);
+
+        let deps = make_deps(Arc::clone(&handle));
+        let call = SplitterCall {
+            end_index: 5,
+            detection_method: "llm_confident_split",
+            cleaned_word_count: 15,
+        };
+        let mut loop_state = LoopState::new();
+        loop_state.encounter_number = 7;
+
+        let split_ctx = split_encounter(&ctx, &deps, call, &loop_state)
+            .await
+            .expect("split");
+
+        let session_dir = split_ctx
+            .session_dir
+            .clone()
+            .expect("session_dir resolved");
+        let metadata_path = session_dir.join("metadata.json");
+        let raw = std::fs::read_to_string(&metadata_path)
+            .expect("metadata.json should exist after split");
+        let metadata: ArchiveMetadata =
+            serde_json::from_str(&raw).expect("metadata.json parses");
+
+        assert_eq!(metadata.charting_mode.as_deref(), Some("continuous"));
+        assert_eq!(metadata.encounter_number, Some(7));
+        assert_eq!(
+            metadata.detection_method.as_deref(),
+            Some("llm_confident_split")
+        );
+        assert_eq!(metadata.patient_name.as_deref(), Some("Jane Doe"));
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn resets_name_tracker_after_split() {
+        let guard = ArchiveDirGuard::new();
+        let ctx = make_ctx(guard.path());
+        let handle = Arc::new(ContinuousModeHandle::new());
+
+        {
+            let mut tracker = handle.name_tracker.lock().unwrap();
+            tracker.record("Alice");
+            tracker.record("Alice");
+            tracker.set_dob("1990-01-01".to_string());
+        }
+        seed_buffer(&handle, 4, 3);
+
+        let deps = make_deps(Arc::clone(&handle));
+        split_encounter(
+            &ctx,
+            &deps,
+            SplitterCall {
+                end_index: 3,
+                detection_method: "t",
+                cleaned_word_count: 12,
+            },
+            &LoopState::new(),
+        )
+        .await
+        .expect("split");
+
+        let tracker = handle.name_tracker.lock().unwrap();
+        assert!(
+            tracker.majority_name().is_none(),
+            "tracker votes should be cleared after split"
+        );
+        assert_eq!(tracker.vote_count(), 0);
+        assert!(tracker.dob().is_none(), "dob should be cleared after split");
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn increments_encounters_detected_counter() {
+        let guard = ArchiveDirGuard::new();
+        let ctx = make_ctx(guard.path());
+        let handle = Arc::new(ContinuousModeHandle::new());
+        seed_buffer(&handle, 3, 2);
+
+        assert_eq!(handle.encounters_detected.load(Ordering::Relaxed), 0);
+
+        let deps = make_deps(Arc::clone(&handle));
+        split_encounter(
+            &ctx,
+            &deps,
+            SplitterCall {
+                end_index: 2,
+                detection_method: "t",
+                cleaned_word_count: 6,
+            },
+            &LoopState::new(),
+        )
+        .await
+        .expect("split");
+
+        assert_eq!(handle.encounters_detected.load(Ordering::Relaxed), 1);
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn truncates_recent_encounters_to_three() {
+        let guard = ArchiveDirGuard::new();
+        let ctx = make_ctx(guard.path());
+        let handle = Arc::new(ContinuousModeHandle::new());
+
+        // 4 splits in a row; each pushes onto recent_encounters (newest at
+        // front), then truncates to 3.
+        for i in 0..4 {
+            seed_buffer(&handle, 2, 1);
+            let deps = make_deps(Arc::clone(&handle));
+            split_encounter(
+                &ctx,
+                &deps,
+                SplitterCall {
+                    end_index: 1 + i, // monotonic so drain_through doesn't replay
+                    detection_method: "t",
+                    cleaned_word_count: 2,
+                },
+                &LoopState::new(),
+            )
+            .await
+            .expect("split");
+        }
+
+        let recent = handle.recent_encounters.lock().unwrap();
+        assert_eq!(recent.len(), 3);
+        // Newest first; the 4th (last) split should be at index 0.
+        // (Indirect proof: all 4 session_ids are unique, so seeing exactly 3
+        // means truncation fired.)
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn emits_encounter_detected_event() {
+        let guard = ArchiveDirGuard::new();
+        let ctx = make_ctx(guard.path());
+        let handle = Arc::new(ContinuousModeHandle::new());
+        seed_buffer(&handle, 3, 4); // 12 words
+
+        let deps = make_deps(Arc::clone(&handle));
+        let split_ctx = split_encounter(
+            &ctx,
+            &deps,
+            SplitterCall {
+                end_index: 4,
+                detection_method: "t",
+                cleaned_word_count: 12,
+            },
+            &LoopState::new(),
+        )
+        .await
+        .expect("split");
+
+        let events = ctx.captured_events();
+        let detected = events
+            .iter()
+            .find(|e| {
+                e.event_name == "continuous_mode_event"
+                    && e.payload.get("type").and_then(|v| v.as_str())
+                        == Some("encounter_detected")
+            })
+            .expect("EncounterDetected event should be captured");
+
+        assert_eq!(
+            detected.payload.get("session_id").and_then(|v| v.as_str()),
+            Some(split_ctx.session_id.as_str())
+        );
+        assert_eq!(
+            detected.payload.get("word_count").and_then(|v| v.as_u64()),
+            Some(12)
+        );
+    }
+}
