@@ -7,12 +7,21 @@ use super::ohip_codes;
 use super::rule_engine::text_has_mental_health_keywords;
 use super::types::{BillingConfidence, BillingRecord, UpgradeSuggestion};
 
+/// Visit duration (in minutes) at which we suggest considering K013A counselling
+/// in place of an assessment code. Tuned from clinic billing practice — visits
+/// past this threshold often have substantial counselling content that bills
+/// higher under K013 standalone (per-unit) than under a single A-code.
+pub(crate) const LONG_VISIT_K_CODE_MIN_MINUTES: u16 = 30;
+
 pub fn compute_upgrade_suggestions(
     record: &BillingRecord,
     features: &ClinicalFeatures,
 ) -> Vec<UpgradeSuggestion> {
     let mut out = Vec::new();
     if let Some(s) = check_a004_to_a007(record, features) {
+        out.push(s);
+    }
+    if let Some(s) = check_long_visit_to_k013(record, features) {
         out.push(s);
     }
     if let Some(s) = check_k005_to_k013(record, features) {
@@ -74,29 +83,58 @@ pub fn apply_upgrade_in_record(
 
 // ── Predicates (clinical decisions — owned by clinic operators) ────────────
 
-/// A004A → A007A. Suggest unless the visit looks comprehensive — A004
-/// expects multi-problem / multi-system / 20-30 min, while A007 fits the
-/// everyday focused follow-up and pays $5.20 more.
+/// A004A → A007A. A007 is OHIP's intermediate-assessment workhorse for
+/// established-patient visits of any length; A004 is reserved for the
+/// comprehensive periodic review (annual physical), which is rare and
+/// typically maps to its own visit_type. Suggest the swap whenever A004
+/// is selected and let the clinician dismiss when the visit really was
+/// the periodic review.
 fn check_a004_to_a007(
     record: &BillingRecord,
-    features: &ClinicalFeatures,
+    _features: &ClinicalFeatures,
 ) -> Option<UpgradeSuggestion> {
     if !record.has_code("A004A") {
         return None;
     }
-
-    let conditions = features.conditions.len();
-    let procedures = features.procedures.len();
-    let duration = features.estimated_duration_minutes.unwrap_or(0);
-    let looks_comprehensive = conditions >= 3 || duration >= 25 || procedures >= 2;
-    if looks_comprehensive {
-        return None;
-    }
-
     Some(build_suggestion(
         "A004A",
         "A007A",
-        "Focused follow-up — A007A intermediate assessment fits 1-2 problems / ≤20 min and pays $5.20 more than A004A.",
+        "A007A intermediate assessment is the OHIP workhorse and pays $5.20 more than A004A. Dismiss if this visit was a comprehensive periodic review.",
+    ))
+}
+
+/// Assessment-code → K013A when the visit is long enough that counselling
+/// content may bill higher under K013 standalone (per ½-hr unit, $80/unit)
+/// than under a single A-code. K013 is mutually exclusive with all
+/// assessment codes per the corpus's "K013 standalone" exclusion group, so
+/// this is a *replacement*, not a stack. The clinician verifies the unit
+/// quantity in the codes table after applying — apply preserves quantity=1
+/// from the original assessment code; multi-unit cases need a manual bump.
+fn check_long_visit_to_k013(
+    record: &BillingRecord,
+    features: &ClinicalFeatures,
+) -> Option<UpgradeSuggestion> {
+    let duration = features.estimated_duration_minutes.unwrap_or(0);
+    if duration < LONG_VISIT_K_CODE_MIN_MINUTES {
+        return None;
+    }
+    // Already on a K-code — nothing to suggest.
+    if record.has_code("K013A") || record.has_code("K005A") || record.has_code("K007A") {
+        return None;
+    }
+    let from = if record.has_code("A007A") {
+        "A007A"
+    } else if record.has_code("A004A") {
+        "A004A"
+    } else {
+        return None;
+    };
+    Some(build_suggestion(
+        from,
+        "K013A",
+        &format!(
+            "Visit ≥{LONG_VISIT_K_CODE_MIN_MINUTES} min — if the bulk of it was counselling, K013A standalone (½-hr unit, $80/unit) often pays better than {from}. Verify unit quantity after applying."
+        ),
     ))
 }
 
@@ -226,9 +264,25 @@ mod tests {
         assert!(compute_upgrade_suggestions(&record, &default_features()).is_empty());
     }
 
-    /// Ordering is fixed: A004→A007 first, K005→K013 second. Pins the contract.
+    /// Ordering contract: A004→A007 first, then long-visit K013, then K005→K013.
+    /// (The long-visit predicate and the K005 predicate are mutually exclusive
+    /// in practice — the long-visit one bails when a K-counselling code is
+    /// already present — so each ordering test exercises a different pair.)
     #[test]
-    fn compute_ordering_is_stable() {
+    fn compute_ordering_a004_long_visit_no_k005() {
+        let mut record = empty_record();
+        record.codes.push(billing_code("A004A"));
+        let mut features = default_features();
+        features.estimated_duration_minutes = Some(33);
+
+        let s = compute_upgrade_suggestions(&record, &features);
+        assert_eq!(s.len(), 2);
+        assert_eq!((&s[0].from_code[..], &s[0].to_code[..]), ("A004A", "A007A"));
+        assert_eq!((&s[1].from_code[..], &s[1].to_code[..]), ("A004A", "K013A"));
+    }
+
+    #[test]
+    fn compute_ordering_a004_with_k005_short_visit() {
         let mut record = empty_record();
         record.codes.push(billing_code("A004A"));
         record.codes.push(billing_code("K005A"));
@@ -237,62 +291,132 @@ mod tests {
         features.estimated_duration_minutes = Some(15);
         features.conditions = vec![ConditionType::DiabeticAssessment];
 
-        let suggestions = compute_upgrade_suggestions(&record, &features);
-        assert_eq!(suggestions.len(), 2);
-        assert_eq!(suggestions[0].from_code, "A004A");
-        assert_eq!(suggestions[0].to_code, "A007A");
-        assert_eq!(suggestions[1].from_code, "K005A");
-        assert_eq!(suggestions[1].to_code, "K013A");
+        let s = compute_upgrade_suggestions(&record, &features);
+        assert_eq!(s.len(), 2);
+        assert_eq!((&s[0].from_code[..], &s[0].to_code[..]), ("A004A", "A007A"));
+        assert_eq!((&s[1].from_code[..], &s[1].to_code[..]), ("K005A", "K013A"));
     }
 
     // ── A004 → A007 ────────────────────────────────────────────────────────
 
+    /// A007 is OHIP's intermediate-assessment workhorse and pays more than A004
+    /// at every visit length; the only true A004 case is the comprehensive
+    /// periodic review (which has its own visit_type → its own code). So the
+    /// predicate fires whenever A004A is on the record, regardless of duration,
+    /// procedure load, or condition count. Clinician dismisses if it was the
+    /// periodic review.
     #[test]
-    fn a004_focused_visit_suggests_a007() {
-        let mut record = empty_record();
-        record.codes.push(billing_code("A004A"));
-        let mut features = default_features();
-        features.estimated_duration_minutes = Some(15);
-        features.conditions = vec![ConditionType::DiabeticAssessment];
+    fn a004_always_suggests_a007_regardless_of_signals() {
+        for (label, mut features) in [
+            ("short focused", {
+                let mut f = default_features();
+                f.estimated_duration_minutes = Some(15);
+                f.conditions = vec![ConditionType::DiabeticAssessment];
+                f
+            }),
+            ("long visit (Troy 33-min repro)", {
+                let mut f = default_features();
+                f.estimated_duration_minutes = Some(33);
+                f
+            }),
+            ("many conditions", {
+                let mut f = default_features();
+                f.conditions = vec![
+                    ConditionType::DiabeticAssessment,
+                    ConditionType::ChfManagement,
+                    ConditionType::SmokingCessation,
+                ];
+                f.estimated_duration_minutes = Some(20);
+                f
+            }),
+            ("multiple procedures", {
+                let mut f = default_features();
+                f.procedures = vec![
+                    ProcedureType::JointInjection,
+                    ProcedureType::TriggerPointInjection,
+                ];
+                f.estimated_duration_minutes = Some(20);
+                f
+            }),
+        ] {
+            features.primary_diagnosis = Some("non-MH dx".into()); // keep K005 path quiet
+            let mut record = empty_record();
+            record.codes.push(billing_code("A004A"));
+            let s = check_a004_to_a007(&record, &features)
+                .unwrap_or_else(|| panic!("expected A004→A007 for {label}"));
+            assert_eq!(s.fee_delta_cents, 520, "case {label}");
+        }
+    }
 
-        let s = check_a004_to_a007(&record, &features).expect("focused visit fires");
-        assert_eq!(s.fee_delta_cents, 520);
+    // ── Long-visit K013 ────────────────────────────────────────────────────
+
+    #[test]
+    fn long_visit_with_a007_suggests_k013() {
+        let mut record = empty_record();
+        record.codes.push(billing_code("A007A"));
+        let mut features = default_features();
+        features.estimated_duration_minutes = Some(33);
+
+        let s = check_long_visit_to_k013(&record, &features)
+            .expect("33-min visit with A007 fires K013 suggestion");
+        assert_eq!(s.from_code, "A007A");
+        assert_eq!(s.to_code, "K013A");
     }
 
     #[test]
-    fn a004_long_visit_does_not_suggest() {
+    fn long_visit_with_a004_suggests_k013_in_addition_to_a007() {
+        // The Troy Beaudette repro: 33 min, A004 selected. Both chips fire so
+        // the clinician picks A007 (intermediate) or K013 (counselling) based
+        // on actual content.
         let mut record = empty_record();
         record.codes.push(billing_code("A004A"));
         let mut features = default_features();
-        features.estimated_duration_minutes = Some(28);
-        assert!(check_a004_to_a007(&record, &features).is_none());
+        features.estimated_duration_minutes = Some(33);
+
+        let suggestions = compute_upgrade_suggestions(&record, &features);
+        assert_eq!(suggestions.len(), 2);
+        assert!(suggestions.iter().any(|s| s.from_code == "A004A" && s.to_code == "A007A"));
+        assert!(suggestions.iter().any(|s| s.from_code == "A004A" && s.to_code == "K013A"));
     }
 
     #[test]
-    fn a004_many_conditions_does_not_suggest() {
+    fn short_visit_does_not_suggest_k013() {
         let mut record = empty_record();
-        record.codes.push(billing_code("A004A"));
+        record.codes.push(billing_code("A007A"));
         let mut features = default_features();
-        features.conditions = vec![
-            ConditionType::DiabeticAssessment,
-            ConditionType::ChfManagement,
-            ConditionType::SmokingCessation,
-        ];
-        features.estimated_duration_minutes = Some(15);
-        assert!(check_a004_to_a007(&record, &features).is_none());
+        features.estimated_duration_minutes = Some(20);
+        assert!(check_long_visit_to_k013(&record, &features).is_none());
     }
 
     #[test]
-    fn a004_with_multiple_procedures_does_not_suggest() {
+    fn visit_with_existing_k013_does_not_suggest_k013() {
         let mut record = empty_record();
-        record.codes.push(billing_code("A004A"));
+        record.codes.push(billing_code("A007A"));
+        record.codes.push(billing_code("K013A"));
         let mut features = default_features();
-        features.procedures = vec![
-            ProcedureType::JointInjection,
-            ProcedureType::TriggerPointInjection,
-        ];
-        features.estimated_duration_minutes = Some(15);
-        assert!(check_a004_to_a007(&record, &features).is_none());
+        features.estimated_duration_minutes = Some(45);
+        assert!(check_long_visit_to_k013(&record, &features).is_none());
+    }
+
+    #[test]
+    fn visit_with_existing_k005_does_not_suggest_k013_alongside() {
+        // A K-counselling code is already on the record — leave it for the
+        // K005→K013 predicate to handle (clinical-fit decision, different axis).
+        let mut record = empty_record();
+        record.codes.push(billing_code("A007A"));
+        record.codes.push(billing_code("K005A"));
+        let mut features = default_features();
+        features.estimated_duration_minutes = Some(45);
+        assert!(check_long_visit_to_k013(&record, &features).is_none());
+    }
+
+    #[test]
+    fn long_visit_without_a_code_does_not_suggest_k013() {
+        let mut record = empty_record();
+        record.codes.push(billing_code("A001A")); // minor, not in our upgrade chain
+        let mut features = default_features();
+        features.estimated_duration_minutes = Some(45);
+        assert!(check_long_visit_to_k013(&record, &features).is_none());
     }
 
     // ── K005 → K013 ────────────────────────────────────────────────────────

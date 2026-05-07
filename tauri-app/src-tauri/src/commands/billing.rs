@@ -186,6 +186,12 @@ pub fn apply_billing_upgrade(
     )
     .map_err(CommandError::Validation)?;
 
+    // Drop sibling suggestions whose from_code is no longer in the record
+    // (e.g. applying A004→A007 makes a pending A004→K013 stale).
+    record
+        .suggestions
+        .retain(|s| record.codes.iter().any(|c| c.code == s.from_code));
+
     record.applied_upgrades.push(crate::billing::AppliedUpgrade {
         from_code: suggestion.from_code,
         to_code: suggestion.to_code,
