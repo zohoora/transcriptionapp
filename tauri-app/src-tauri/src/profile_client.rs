@@ -638,7 +638,8 @@ impl ProfileClient {
     /// Generate an image via the profile-service OpenAI proxy (v0.10.54+).
     ///
     /// `timeout_secs` overrides the shared client's 10s default because OpenAI
-    /// image generation routinely takes 15–45s (server-side budget is 60s).
+    /// image generation routinely takes 30–90s (and gpt-image-2 medium
+    /// benchmarked at ~60s on 2026-05-07; server-side budget is now 300s).
     /// Callers pass `gemini_generation_timeout_secs + 15` so the workstation
     /// waits past the server's OpenAI budget with margin for the return trip.
     pub async fn fetch_openai_image(

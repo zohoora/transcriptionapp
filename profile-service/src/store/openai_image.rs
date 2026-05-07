@@ -64,11 +64,17 @@ impl OpenAIImageProxy {
     pub fn new(config: Option<OpenAIImageConfig>) -> Self {
         Self {
             config,
-            // Match Tauri's Gemini timeout (45s default, clamped by the
-            // workstation's DetectionThresholds snapshot). OpenAI high-tier
-            // can take ~30s so we leave headroom.
+            // 2026-05-07: bumped from 60s to 300s after a normal
+            // gpt-image-2 medium-tier call benchmarked at 59.6s end-to-end —
+            // right at the workstation's 60s ceiling, leaving zero margin for
+            // tail variance. 300s matches `SOAP_GENERATION_TIMEOUT_SECS` and
+            // gives high-tier OpenAI calls room without false-failing.
+            // Workstation pairs this with `gemini_generation_timeout_secs=240`
+            // (workstation timeout = 240+15 = 255s; server cap 300s would
+            // exceed workstation, but server-side will return at OpenAI's
+            // actual completion within budget).
             http: reqwest::Client::builder()
-                .timeout(Duration::from_secs(60))
+                .timeout(Duration::from_secs(300))
                 .build()
                 .expect("reqwest client"),
         }
