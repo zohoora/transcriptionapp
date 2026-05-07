@@ -583,6 +583,8 @@ pub fn run() {
             commands::save_session_billing,
             commands::confirm_session_billing,
             commands::extract_billing_codes,
+            commands::apply_billing_upgrade,
+            commands::dismiss_billing_upgrade,
             commands::get_daily_billing_summary,
             commands::get_monthly_billing_summary,
             commands::export_billing_csv,

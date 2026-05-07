@@ -343,6 +343,8 @@ mod tests {
             diagnostic_description: None,
             diagnostic_evidence: None,
             diagnostic_reasoning: None,
+            suggestions: vec![],
+            applied_upgrades: vec![],
         }
     }
 

@@ -58,6 +58,10 @@ mod check_names {
     pub fn billing_quantity(code: &str) -> String {
         format!("billing_quantity:{code}")
     }
+    /// Per-pair upgrade-suggestion check name (e.g. `billing_upgrade_suggestion:A004A->A007A`).
+    pub fn billing_upgrade_suggestion(from: &str, to: &str) -> String {
+        format!("billing_upgrade_suggestion:{from}->{to}")
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -424,7 +428,8 @@ async fn main() -> ExitCode {
         let want_billing = label.labels.billing_codes_expected.is_some()
             || label.labels.diagnostic_code_expected.is_some()
             || label.labels.billing_codes_unexpected.is_some()
-            || label.labels.billing_quantity_expected.is_some();
+            || label.labels.billing_quantity_expected.is_some()
+            || label.labels.expected_upgrade_suggestions.is_some();
         if want_billing {
             match parse_date(&label.date) {
                 Some(parsed_date) => {
@@ -573,6 +578,31 @@ fn check_billing(
                 actual_dx
             );
             results.record_fail(check_names::DIAGNOSTIC_CODE, msg, expected_failures);
+        }
+    }
+
+    if let Some(expected_suggestions) = &labels.expected_upgrade_suggestions {
+        // Pass when surfaced in pending OR already applied — labels stay green
+        // after the clinician clicks "Apply".
+        for pair in expected_suggestions {
+            let name = check_names::billing_upgrade_suggestion(&pair.from_code, &pair.to_code);
+            let in_pending = billing
+                .suggestions
+                .iter()
+                .any(|s| s.from_code == pair.from_code && s.to_code == pair.to_code);
+            let in_applied = billing
+                .applied_upgrades
+                .iter()
+                .any(|a| a.from_code == pair.from_code && a.to_code == pair.to_code);
+            if in_pending || in_applied {
+                results.record_pass(&name, expected_failures);
+            } else {
+                let msg = format!(
+                    "  ✗ {}: predicate did not surface {} → {} for this record",
+                    name, pair.from_code, pair.to_code
+                );
+                results.record_fail(&name, msg, expected_failures);
+            }
         }
     }
 }

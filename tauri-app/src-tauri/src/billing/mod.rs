@@ -5,6 +5,7 @@ pub mod ohip_codes;
 pub mod rule_engine;
 pub mod time_tracking;
 pub mod types;
+pub mod upgrade_suggestions;
 
 /// Type alias for optional server-configurable billing data.
 pub(crate) type BillingDataRef<'a> = Option<&'a crate::server_config::BillingData>;
@@ -16,6 +17,8 @@ pub use rule_engine::{
 };
 pub use time_tracking::{calculate_daily_caps, calculate_direct_care_time, calculate_monthly_caps};
 pub use types::{
-    BillingCode, BillingConfidence, BillingDaySummary, BillingMonthSummary, BillingRecord,
-    BillingStatus, CapWarning, DailyCapStatus, MonthlyCapStatus, ResolvedDiagnostic, TimeEntry,
+    AppliedUpgrade, BillingCode, BillingConfidence, BillingDaySummary, BillingMonthSummary,
+    BillingRecord, BillingStatus, CapWarning, DailyCapStatus, MonthlyCapStatus, ResolvedDiagnostic,
+    TimeEntry, UpgradeSuggestion,
 };
+pub use upgrade_suggestions::compute_upgrade_suggestions;

@@ -15,6 +15,13 @@ export function formatCents(cents: number): string {
   return `$${(cents / 100).toFixed(2)}`;
 }
 
+/** Format a signed fee delta with explicit sign — e.g. `+$5.20`, `−$2.40`, `±$0.00`. */
+export function formatFeeDelta(cents: number): string {
+  if (cents === 0) return '±$0.00';
+  const sign = cents > 0 ? '+' : '−';
+  return `${sign}$${(Math.abs(cents) / 100).toFixed(2)}`;
+}
+
 export function formatHours(hours: number): string {
   return `${hours.toFixed(1)}h`;
 }

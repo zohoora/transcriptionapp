@@ -4,7 +4,7 @@ import { writeText } from '@tauri-apps/plugin-clipboard-manager';
 import type { BillingRecord, BillingCode, BillingContext, OhipCodeSearchResult, DiagnosticCodeSearchResult, BillingCategory, SessionFeedback } from '../../types';
 import { VISIT_SETTING_OPTIONS } from '../../types';
 import { clamp, cycleTriState, updateSessionFeedback } from '../../utils';
-import { formatCents, confidenceBadgeClass, OHIP_CODE_CRITERIA, ADDON_CODE_PAIRS, findConflicts, findAllConflicts } from './billingUtils';
+import { formatCents, formatFeeDelta, confidenceBadgeClass, OHIP_CODE_CRITERIA, ADDON_CODE_PAIRS, findConflicts, findAllConflicts } from './billingUtils';
 
 interface BillingTabProps {
   record: BillingRecord | null;
@@ -30,6 +30,7 @@ export const BillingTab: React.FC<BillingTabProps> = ({
   const [extracting, setExtracting] = useState(false);
   const [copied, setCopied] = useState(false);
   const [extractError, setExtractError] = useState<string | null>(null);
+  const [pendingUpgrade, setPendingUpgrade] = useState<string | null>(null);
   const [showAddCode, setShowAddCode] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<OhipCodeSearchResult[]>([]);
@@ -277,6 +278,36 @@ export const BillingTab: React.FC<BillingTabProps> = ({
     }
   }, [sessionId, date, onRecordChange]);
 
+  const handleApplyUpgrade = useCallback(async (fromCode: string, toCode: string) => {
+    const key = `${fromCode}->${toCode}`;
+    setPendingUpgrade(key);
+    try {
+      const result = await invoke<BillingRecord>('apply_billing_upgrade', {
+        sessionId, date, fromCode, toCode,
+      });
+      onRecordChange(result);
+    } catch (e) {
+      console.error('Apply upgrade failed:', e);
+    } finally {
+      setPendingUpgrade(null);
+    }
+  }, [sessionId, date, onRecordChange]);
+
+  const handleDismissUpgrade = useCallback(async (fromCode: string, toCode: string) => {
+    const key = `${fromCode}->${toCode}`;
+    setPendingUpgrade(key);
+    try {
+      const result = await invoke<BillingRecord>('dismiss_billing_upgrade', {
+        sessionId, date, fromCode, toCode,
+      });
+      onRecordChange(result);
+    } catch (e) {
+      console.error('Dismiss upgrade failed:', e);
+    } finally {
+      setPendingUpgrade(null);
+    }
+  }, [sessionId, date, onRecordChange]);
+
   const handleRemoveCode = useCallback((index: number) => {
     if (!record) return;
     const updated = { ...record, codes: record.codes.filter((_, i) => i !== index) };
@@ -497,6 +528,44 @@ export const BillingTab: React.FC<BillingTabProps> = ({
           </div>
         )}
       </div>
+
+      {/* Upgrade suggestions — clinician-reviewable, never auto-applied */}
+      {record.suggestions && record.suggestions.length > 0 && record.status === 'draft' && (
+        <div className="insight-card billing-upgrade-card">
+          <div className="insight-card-title">Upgrade suggestions</div>
+          {record.suggestions.map(s => {
+            const key = `${s.fromCode}->${s.toCode}`;
+            const busy = pendingUpgrade === key;
+            return (
+              <div key={key} className="billing-upgrade-row">
+                <span className="billing-upgrade-codes">
+                  <strong>{s.fromCode}</strong>
+                  {' → '}
+                  <strong>{s.toCode}</strong>
+                </span>
+                <span className="billing-upgrade-delta">{formatFeeDelta(s.feeDeltaCents)}</span>
+                <span className="billing-upgrade-reason">{s.reasoning}</span>
+                <span className="billing-upgrade-actions">
+                  <button
+                    className="btn-small btn-confirm"
+                    disabled={busy}
+                    onClick={() => handleApplyUpgrade(s.fromCode, s.toCode)}
+                  >
+                    {busy ? 'Applying...' : 'Apply'}
+                  </button>
+                  <button
+                    className="btn-small"
+                    disabled={busy}
+                    onClick={() => handleDismissUpgrade(s.fromCode, s.toCode)}
+                  >
+                    Dismiss
+                  </button>
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      )}
 
       {/* Billing codes table */}
       <div className="insight-card">

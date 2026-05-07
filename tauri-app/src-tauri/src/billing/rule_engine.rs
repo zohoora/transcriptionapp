@@ -294,6 +294,8 @@ pub fn map_features_to_billing_with_tools_model(
         diagnostic_description: None,
         diagnostic_evidence: None,
         diagnostic_reasoning: None,
+        suggestions: vec![],
+        applied_upgrades: vec![],
     };
 
     // Resolve diagnostic code via 5-stage pipeline:
@@ -534,6 +536,25 @@ pub fn visit_type_keyword_guard(
     }
 }
 
+/// Keywords that mark text as mental-health-framed. Shared between the
+/// K005 admit-side guard (`condition_keyword_guard`) and the K005→K013
+/// suggestion's reject-side guard (`upgrade_suggestions::check_k005_to_k013`)
+/// so the two checks can't drift.
+pub(crate) const MH_KEYWORDS: &[&str] = &[
+    "anxiety", "anxious", "depression", "depressive", "depressed",
+    "mental health", "counselling", "counseling", "psychotherapy",
+    "anger management", "panic attack", "ptsd", "trauma",
+    "mood disorder", "bipolar", "ocd", "obsessive",
+    "suicid", "self-harm",
+];
+
+/// Lower-cased substring scan against `MH_KEYWORDS`. Allocates one
+/// lowercase clone of `text`.
+pub(crate) fn text_has_mental_health_keywords(text: &str) -> bool {
+    let lc = text.to_lowercase();
+    MH_KEYWORDS.iter().any(|kw| lc.contains(kw))
+}
+
 pub fn condition_keyword_guard(
     conditions: &[ConditionType],
     soap_text: &str,
@@ -558,14 +579,7 @@ pub fn condition_keyword_guard(
                 "tobacco", "cigarette", "nicotine", "vaping nicotine",
                 "chewing tobacco", "smokes", "smoker", "smoking",
             ],
-            // Class H additions (2026-04-30 review):
-            ConditionType::PrimaryMentalHealth => &[
-                "anxiety", "anxious", "depression", "depressive", "depressed",
-                "mental health", "counselling", "counseling", "psychotherapy",
-                "anger management", "panic attack", "ptsd", "trauma",
-                "mood disorder", "bipolar", "ocd", "obsessive",
-                "suicid", "self-harm",
-            ],
+            ConditionType::PrimaryMentalHealth => MH_KEYWORDS,
             ConditionType::FibromyalgiaCare => &[
                 "fibromyalgia", "myalgic encephalomyelitis", "me/cfs",
                 "chronic fatigue syndrome",
@@ -707,7 +721,7 @@ fn basket_to_category(basket: Basket) -> String {
     }
 }
 
-fn make_billing_code(
+pub(crate) fn make_billing_code(
     ohip: &OhipCode,
     confidence: BillingConfidence,
     is_after_hours: bool,
@@ -1394,6 +1408,8 @@ mod tests {
             diagnostic_description: None,
             diagnostic_evidence: None,
             diagnostic_reasoning: None,
+            suggestions: vec![],
+            applied_upgrades: vec![],
         };
         // Provide a tools-model resolution with the BAD code (491).
         let bad_resolution = crate::billing::types::ResolvedDiagnostic {

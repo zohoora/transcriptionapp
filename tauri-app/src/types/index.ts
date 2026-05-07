@@ -1177,6 +1177,25 @@ export interface TimeEntry {
   autoCalculated: boolean;
 }
 
+/** Pending upgrade suggestion surfaced to the clinician in the BillingTab */
+export interface UpgradeSuggestion {
+  fromCode: string;
+  toCode: string;
+  /** to_code FFS rate − from_code FFS rate, in cents. May be 0 or negative. */
+  feeDeltaCents: number;
+  reasoning: string;
+}
+
+/** Audit record of an upgrade the clinician applied */
+export interface AppliedUpgrade {
+  fromCode: string;
+  toCode: string;
+  feeDeltaCents: number;
+  reasoning: string;
+  /** ISO-8601 timestamp the clinician applied the upgrade */
+  appliedAt: string;
+}
+
 /** Complete billing record for a single encounter */
 export interface BillingRecord {
   sessionId: string;
@@ -1201,6 +1220,10 @@ export interface BillingRecord {
   diagnosticEvidence?: string | null;
   /** One-sentence rationale for the code choice */
   diagnosticReasoning?: string | null;
+  /** Pending upgrade suggestions; removed on apply or dismiss */
+  suggestions?: UpgradeSuggestion[];
+  /** Audit log of upgrades the clinician applied */
+  appliedUpgrades?: AppliedUpgrade[];
 }
 
 /** Search result from diagnostic code lookup */

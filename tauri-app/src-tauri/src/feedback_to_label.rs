@@ -71,8 +71,25 @@ pub struct LabelData {
     /// `labeled_regression_cli --all --bootstrap-expected-failures`.
     #[serde(default)]
     pub expected_failures: Option<Vec<String>>,
+    /// Pairs of (from_code, to_code) the label asserts the upgrade-suggestion
+    /// detector SHOULD surface for this session. Optional / opt-in per label.
+    /// Each pair is checked under the `billing_upgrade_suggestion:{from}->{to}`
+    /// stable check name, so the per-label `expected_failures` baseline still
+    /// works for known-undetected suggestions.
+    #[serde(default)]
+    pub expected_upgrade_suggestions: Option<Vec<UpgradeSuggestionPair>>,
     #[serde(default)]
     pub notes: Option<String>,
+}
+
+/// A single (from_code → to_code) pair the label asserts should appear in
+/// `BillingRecord.suggestions`. Field names match `UpgradeSuggestion` so
+/// label fixtures use the same casing as the on-disk `billing.json`.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub struct UpgradeSuggestionPair {
+    pub from_code: String,
+    pub to_code: String,
 }
 
 /// Translate a session's feedback into a ground-truth label record.

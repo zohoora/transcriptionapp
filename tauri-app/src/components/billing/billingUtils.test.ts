@@ -4,6 +4,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   formatCents,
+  formatFeeDelta,
   formatHours,
   capWarningColor,
   confidenceBadgeClass,
@@ -27,6 +28,22 @@ describe('formatCents', () => {
   it('handles negative amounts (sign in cents position)', () => {
     // Implementation: just `$${(cents/100).toFixed(2)}` — sign appears after $
     expect(formatCents(-100)).toBe('$-1.00');
+  });
+});
+
+describe('formatFeeDelta', () => {
+  it('uses + for positive deltas', () => {
+    expect(formatFeeDelta(520)).toBe('+$5.20');
+    expect(formatFeeDelta(1)).toBe('+$0.01');
+  });
+
+  it('uses unicode minus for negative deltas (clearer than ASCII -)', () => {
+    expect(formatFeeDelta(-520)).toBe('−$5.20');
+    expect(formatFeeDelta(-3935)).toBe('−$39.35');
+  });
+
+  it('shows ± for zero (e.g. K005 ↔ K013 same-fee swap)', () => {
+    expect(formatFeeDelta(0)).toBe('±$0.00');
   });
 });
 

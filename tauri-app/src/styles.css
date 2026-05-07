@@ -10293,6 +10293,41 @@ button.review-section-header-left:focus {
   border-color: var(--accent-idle, #22c55e);
 }
 
+.billing-upgrade-card {
+  border-left: 3px solid var(--accent-stopping, #f59e0b);
+}
+.billing-upgrade-row {
+  display: grid;
+  grid-template-columns: minmax(8em, max-content) minmax(5em, max-content) 1fr max-content;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 8px;
+  font-size: 12px;
+  border-top: 1px solid var(--border-color, #1f2937);
+}
+.billing-upgrade-row:first-of-type {
+  border-top: none;
+}
+.billing-upgrade-codes strong {
+  color: var(--text-primary, #f3f4f6);
+}
+.billing-upgrade-delta {
+  font-weight: 600;
+  color: var(--accent-idle, #22c55e);
+  font-variant-numeric: tabular-nums;
+}
+.billing-upgrade-reason {
+  color: var(--text-secondary, #9ca3af);
+  font-style: italic;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.billing-upgrade-actions {
+  display: flex;
+  gap: 6px;
+  justify-self: end;
+}
+
 .billing-code-table {
   width: 100%;
   border-collapse: collapse;

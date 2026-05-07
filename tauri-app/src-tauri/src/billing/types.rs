@@ -75,6 +75,38 @@ pub struct TimeEntry {
     pub auto_calculated: bool,
 }
 
+// ── Upgrade suggestions (post-rule-engine, clinician-reviewable) ───────────
+
+/// A suggestion that one of the codes in the BillingRecord could be
+/// replaced with a higher-value or better-fitting alternative. Computed
+/// post-rule-engine without LLM involvement; surfaced in the BillingTab UI
+/// and applied only when the clinician clicks "Apply" (never auto-applied).
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct UpgradeSuggestion {
+    pub from_code: String,
+    pub to_code: String,
+    /// Difference in FFS rate (to_code - from_code) at quantity=1, in cents.
+    /// May be negative or zero (e.g. K005 ↔ K013, both $80).
+    pub fee_delta_cents: i32,
+    /// Short clinician-facing rationale (e.g. "≥3 procedures and ≥2 conditions").
+    pub reasoning: String,
+}
+
+/// Audit record of an upgrade the clinician applied. Stamped onto the
+/// BillingRecord at apply time so the original code is traceable even
+/// after the swap.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct AppliedUpgrade {
+    pub from_code: String,
+    pub to_code: String,
+    pub fee_delta_cents: i32,
+    pub reasoning: String,
+    /// ISO-8601 timestamp the clinician applied the upgrade.
+    pub applied_at: String,
+}
+
 // ── Full billing record for one encounter ──────────────────────────────────
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -107,6 +139,15 @@ pub struct BillingRecord {
     /// One-sentence rationale for the diagnostic code choice.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub diagnostic_reasoning: Option<String>,
+    /// Pending upgrade suggestions surfaced to the clinician. Computed by
+    /// `billing::upgrade_suggestions::compute_upgrade_suggestions`. Each
+    /// entry is removed when applied or dismissed via the IPC commands.
+    #[serde(default)]
+    pub suggestions: Vec<UpgradeSuggestion>,
+    /// Audit log of upgrades the clinician applied. Cleared whenever the
+    /// billing record is invalidated (SOAP regen path).
+    #[serde(default)]
+    pub applied_upgrades: Vec<AppliedUpgrade>,
 }
 
 /// Result of resolving a diagnostic code via tools-model (file_lookup + LLM pick).
@@ -124,6 +165,11 @@ pub struct ResolvedDiagnostic {
 }
 
 impl BillingRecord {
+    /// True iff `self.codes` already contains a `BillingCode` with `code == code`.
+    pub fn has_code(&self, code: &str) -> bool {
+        self.codes.iter().any(|c| c.code == code)
+    }
+
     /// Recalculate the aggregate totals from the individual codes and time entries.
     pub fn recalculate_totals(&mut self) {
         let mut shadow_cents: u32 = 0;
@@ -279,6 +325,8 @@ mod tests {
             diagnostic_description: None,
             diagnostic_evidence: None,
             diagnostic_reasoning: None,
+            suggestions: vec![],
+            applied_upgrades: vec![],
         }
     }
 
@@ -397,6 +445,62 @@ mod tests {
         let deser: BillingRecord = serde_json::from_str(&json).unwrap();
         assert_eq!(deser.total_amount_cents, rec.total_amount_cents);
         assert_eq!(deser.session_id, "s1");
+    }
+
+    #[test]
+    fn test_serde_upgrade_suggestion_camel_case() {
+        let s = UpgradeSuggestion {
+            from_code: "A004A".into(),
+            to_code: "A007A".into(),
+            fee_delta_cents: 520,
+            reasoning: "Procedural complexity".into(),
+        };
+        let json = serde_json::to_string(&s).unwrap();
+        assert!(json.contains("\"fromCode\""));
+        assert!(json.contains("\"toCode\""));
+        assert!(json.contains("\"feeDeltaCents\""));
+        let back: UpgradeSuggestion = serde_json::from_str(&json).unwrap();
+        assert_eq!(back, s);
+    }
+
+    #[test]
+    fn test_serde_applied_upgrade_camel_case() {
+        let a = AppliedUpgrade {
+            from_code: "A004A".into(),
+            to_code: "A007A".into(),
+            fee_delta_cents: 520,
+            reasoning: "Procedural complexity".into(),
+            applied_at: "2026-05-07T12:00:00Z".into(),
+        };
+        let json = serde_json::to_string(&a).unwrap();
+        assert!(json.contains("\"appliedAt\""));
+        let back: AppliedUpgrade = serde_json::from_str(&json).unwrap();
+        assert_eq!(back, a);
+    }
+
+    /// Old billing.json files (pre-upgrade-suggestions) deserialize cleanly:
+    /// missing `suggestions` and `appliedUpgrades` default to empty vecs.
+    #[test]
+    fn test_billing_record_back_compat_missing_upgrade_fields() {
+        let legacy_json = r#"{
+            "sessionId": "old",
+            "date": "2026-04-01",
+            "patientName": null,
+            "status": "draft",
+            "codes": [],
+            "timeEntries": [],
+            "totalShadowCents": 0,
+            "totalOutOfBasketCents": 0,
+            "totalTimeBasedCents": 0,
+            "totalAmountCents": 0,
+            "confirmedAt": null,
+            "notes": null,
+            "extractionModel": null,
+            "extractedAt": null
+        }"#;
+        let rec: BillingRecord = serde_json::from_str(legacy_json).unwrap();
+        assert!(rec.suggestions.is_empty());
+        assert!(rec.applied_upgrades.is_empty());
     }
 
     #[test]

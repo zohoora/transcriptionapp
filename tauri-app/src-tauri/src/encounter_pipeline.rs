@@ -501,8 +501,8 @@ pub async fn extract_and_archive_billing(
         tools_model_resolved.as_ref(),
     );
     record.extraction_model = Some(model.to_string());
+    record.suggestions = crate::billing::compute_upgrade_suggestions(&record, &features);
 
-    // Save to archive
     local_archive::save_billing_record(session_id, session_date, &record)?;
 
     // Log success

@@ -141,6 +141,82 @@ pub fn confirm_session_billing(
     Ok(record)
 }
 
+/// Remove and return the matching pending suggestion. Errors when no suggestion
+/// with that (from, to) tuple is present, surfacing the same message used by
+/// both `apply_billing_upgrade` and `dismiss_billing_upgrade`.
+fn take_suggestion(
+    record: &mut BillingRecord,
+    from_code: &str,
+    to_code: &str,
+) -> Result<crate::billing::UpgradeSuggestion, CommandError> {
+    let pos = record
+        .suggestions
+        .iter()
+        .position(|s| s.from_code == from_code && s.to_code == to_code)
+        .ok_or_else(|| {
+            CommandError::Validation(format!(
+                "No pending suggestion {from_code} -> {to_code} on this record"
+            ))
+        })?;
+    Ok(record.suggestions.remove(pos))
+}
+
+/// Identified by (from_code, to_code) rather than index so concurrent UI state
+/// can't apply the wrong suggestion if a parallel apply or re-extract reorders
+/// the list.
+#[tauri::command]
+pub fn apply_billing_upgrade(
+    session_id: String,
+    date: String,
+    from_code: String,
+    to_code: String,
+) -> Result<BillingRecord, CommandError> {
+    info!("Applying billing upgrade {from_code} -> {to_code} for session: {session_id}");
+    let parsed_date = super::parse_date(&date)?;
+
+    let mut record = local_archive::get_billing_record(&session_id, &parsed_date)?
+        .ok_or_else(|| CommandError::NotFound("No billing record found".into()))?;
+
+    let suggestion = take_suggestion(&mut record, &from_code, &to_code)?;
+
+    crate::billing::upgrade_suggestions::apply_upgrade_in_record(
+        &mut record,
+        &from_code,
+        &to_code,
+    )
+    .map_err(CommandError::Validation)?;
+
+    record.applied_upgrades.push(crate::billing::AppliedUpgrade {
+        from_code: suggestion.from_code,
+        to_code: suggestion.to_code,
+        fee_delta_cents: suggestion.fee_delta_cents,
+        reasoning: suggestion.reasoning,
+        applied_at: chrono::Utc::now().to_rfc3339(),
+    });
+
+    local_archive::save_billing_record(&session_id, &parsed_date, &record)?;
+    Ok(record)
+}
+
+#[tauri::command]
+pub fn dismiss_billing_upgrade(
+    session_id: String,
+    date: String,
+    from_code: String,
+    to_code: String,
+) -> Result<BillingRecord, CommandError> {
+    info!("Dismissing billing upgrade {from_code} -> {to_code} for session: {session_id}");
+    let parsed_date = super::parse_date(&date)?;
+
+    let mut record = local_archive::get_billing_record(&session_id, &parsed_date)?
+        .ok_or_else(|| CommandError::NotFound("No billing record found".into()))?;
+
+    take_suggestion(&mut record, &from_code, &to_code)?;
+
+    local_archive::save_billing_record(&session_id, &parsed_date, &record)?;
+    Ok(record)
+}
+
 /// Extract billing codes from a session's SOAP note via LLM + rule engine.
 /// Called on-demand from the billing tab "Extract Billing Codes" button.
 /// Tries local archive first, then server (session may be from another machine).

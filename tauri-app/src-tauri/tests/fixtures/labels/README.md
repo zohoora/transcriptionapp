@@ -33,6 +33,7 @@ Example: `2026-04-15_00aa31d4.json`
     "billing_quantity_expected": {"K005A": 2},
     "diagnostic_code_expected": "311",
     "diagnostic_code_acceptable": ["311.0", "799"],
+    "expected_upgrade_suggestions": [{"from_code": "A004A", "to_code": "A007A"}],
     "expected_failures": ["billing_codes", "diagnostic_code"],
     "notes": "Clean headache encounter, well-coded"
   }
@@ -40,6 +41,12 @@ Example: `2026-04-15_00aa31d4.json`
 ```
 
 All fields except `session_id` and `date` are optional. The CLI checks each provided label against the bundle and reports mismatches.
+
+### `expected_upgrade_suggestions` (added 2026-05-07)
+
+Pairs of `(from, to)` codes the label asserts the upgrade-suggestion detector should surface for this session. Optional / opt-in per label; only labels that exercise an upgrade pattern need this field.
+
+A pair counts as "surfaced" if it appears in `BillingRecord.suggestions` (still pending) **or** in `BillingRecord.applied_upgrades` (already accepted by the clinician). That way a label keeps passing after the suggestion is applied. Each pair runs under the per-pair check name `billing_upgrade_suggestion:{from}->{to}` so it can be listed in `expected_failures` while the predicate is still being tuned.
 
 ### `expected_failures` (added 2026-05-05)
 
@@ -58,6 +65,7 @@ Stable check names emitted by the CLI:
 | `billing_codes_unexpected:{CODE}` | `billing_codes_unexpected` | One per code in the unexpected list. |
 | `billing_quantity:{CODE}` | `billing_quantity_expected` | One per code in the quantity map. |
 | `diagnostic_code` | `diagnostic_code_expected` | Honors `diagnostic_code_acceptable` synonyms. |
+| `billing_upgrade_suggestion:{FROM}->{TO}` | `expected_upgrade_suggestions` | One per pair. Passes when surfaced in pending or applied. |
 | `billing_json_missing` | (synthetic) | Fires when a billing-related expectation exists but `billing.json` doesn't. |
 | `date_parse` | (synthetic) | Fires on a malformed `date`. |
 
