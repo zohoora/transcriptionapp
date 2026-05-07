@@ -1071,7 +1071,11 @@ pub struct DetectionThresholds {
     /// permanently locked to the first-settled name. Default: 600 (10 min).
     #[serde(default = "default_vision_re_sample_interval_secs")]
     pub vision_re_sample_interval_secs: u64,
-    /// Gemini image generation HTTP timeout in seconds (default: 45)
+    /// HTTP timeout (seconds) for AI image generation. Caps direct
+    /// workstation→Gemini calls AND the workstation→profile-service
+    /// `/openai/image` proxy call (workstation adds +15s margin for the
+    /// return trip). 2026-05-07: raised from 45→240 after gpt-image-2 medium
+    /// benchmarked at ~60s, exhausting the previous 60s budget.
     #[serde(default = "default_gemini_generation_timeout_secs")]
     pub gemini_generation_timeout_secs: u64,
     /// Cap on how many words of formatted segments are sent to the encounter
@@ -1104,7 +1108,7 @@ fn default_mp_detect_word_threshold() -> usize { 500 }
 fn default_vision_skip_streak_k() -> usize { 5 }
 fn default_vision_skip_call_cap() -> usize { 30 }
 fn default_vision_re_sample_interval_secs() -> u64 { 600 }
-fn default_gemini_generation_timeout_secs() -> u64 { 45 }
+fn default_gemini_generation_timeout_secs() -> u64 { 240 }
 fn default_detection_prompt_max_words() -> usize { 6000 }
 
 impl Default for DetectionThresholds {
@@ -1136,7 +1140,7 @@ impl Default for DetectionThresholds {
             vision_skip_streak_k: 5,
             vision_skip_call_cap: 30,
             vision_re_sample_interval_secs: 600,
-            gemini_generation_timeout_secs: 45,
+            gemini_generation_timeout_secs: 240,
             detection_prompt_max_words: 6000,
         }
     }
