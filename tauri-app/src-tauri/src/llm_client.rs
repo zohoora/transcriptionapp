@@ -289,6 +289,10 @@ pub struct MultiPatientSoapResult {
     /// SOAPs join their raw responses with `RAW_RESPONSE_JOIN_DELIMITER`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub raw_response: Option<String>,
+    /// User prompt sent to the LLM. Per-patient SOAPs join with
+    /// `RAW_RESPONSE_JOIN_DELIMITER` (mirrors `raw_response`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub user_prompt: Option<String>,
 }
 
 impl MultiPatientSoapResult {
@@ -1213,6 +1217,7 @@ impl LLMClient {
             generated_at: Utc::now().to_rfc3339(),
             model_used: model.to_string(),
             raw_response: Some(raw_response),
+            user_prompt: Some(user_content),
         })
     }
 
@@ -1230,9 +1235,12 @@ impl LLMClient {
             .collect::<Vec<_>>()
             .join("; ");
 
-        // Build futures for concurrent generation. Each future returns
-        // (note, raw_response) so the caller can preserve raw JSON for
-        // forensic auditing.
+        struct PerPatientAttempt {
+            note: PatientSoapNote,
+            raw_response: String,
+            user_prompt: String,
+        }
+
         let futures: Vec<_> = detection.patients.iter().map(|patient| {
             let user_content = build_per_patient_user_content(
                 transcript, &patient.label, &patient.summary, &all_patients_desc,
@@ -1243,14 +1251,15 @@ impl LLMClient {
                 let response = self.generate(&mdl, &sys, &user_content, tasks::SOAP_NOTE).await?;
                 let raw_response = response.clone();
                 let content = self.parse_soap_with_retry(&mdl, &sys, &user_content, &response).await;
-                Ok::<(PatientSoapNote, String), String>((
-                    PatientSoapNote {
+                Ok::<PerPatientAttempt, String>(PerPatientAttempt {
+                    note: PatientSoapNote {
                         patient_label: patient.label.clone(),
                         speaker_id: "All".to_string(),
                         content,
                     },
                     raw_response,
-                ))
+                    user_prompt: user_content,
+                })
             }
         }).collect();
 
@@ -1258,13 +1267,15 @@ impl LLMClient {
 
         let mut notes = Vec::new();
         let mut raw_responses: Vec<String> = Vec::new();
+        let mut user_contents: Vec<String> = Vec::new();
         let mut errors = Vec::new();
         for result in results {
             match result {
-                Ok((note, raw)) => {
-                    info!("Per-patient SOAP generated for '{}' ({} chars)", note.patient_label, note.content.len());
-                    notes.push(note);
-                    raw_responses.push(raw);
+                Ok(attempt) => {
+                    info!("Per-patient SOAP generated for '{}' ({} chars)", attempt.note.patient_label, attempt.note.content.len());
+                    notes.push(attempt.note);
+                    raw_responses.push(attempt.raw_response);
+                    user_contents.push(attempt.user_prompt);
                 }
                 Err(e) => {
                     warn!("Per-patient SOAP generation failed: {}", e);
@@ -1283,12 +1294,18 @@ impl LLMClient {
         } else {
             Some(raw_responses.join(RAW_RESPONSE_JOIN_DELIMITER))
         };
+        let joined_user = if user_contents.is_empty() {
+            None
+        } else {
+            Some(user_contents.join(RAW_RESPONSE_JOIN_DELIMITER))
+        };
         Ok(MultiPatientSoapResult {
             notes,
             physician_speaker: None,
             generated_at: Utc::now().to_rfc3339(),
             model_used: model.to_string(),
             raw_response: joined_raw,
+            user_prompt: joined_user,
         })
     }
 
@@ -3489,6 +3506,7 @@ mod tests {
             generated_at: "2026-01-01T00:00:00Z".to_string(),
             model_used: "test-model".to_string(),
             raw_response: None,
+            user_prompt: None,
         }
     }
 
@@ -3507,6 +3525,7 @@ mod tests {
             generated_at: "2026-04-28T00:00:00Z".into(),
             model_used: "test-model".into(),
             raw_response: Some(r#"{"subjective":["headache"],"plan":["ibuprofen"]}"#.into()),
+            user_prompt: None,
         };
         let json = serde_json::to_string(&r).unwrap();
         assert!(json.contains("ibuprofen"), "raw payload must survive serialization: {}", json);
@@ -3528,6 +3547,41 @@ mod tests {
         }"#;
         let r: MultiPatientSoapResult = serde_json::from_str(legacy).expect("legacy SOAP JSON should load");
         assert!(r.raw_response.is_none(), "missing field defaults to None");
+    }
+
+    #[test]
+    fn test_user_prompt_round_trips_through_serde() {
+        let r = MultiPatientSoapResult {
+            notes: vec![PatientSoapNote {
+                patient_label: "Combined".into(),
+                speaker_id: "All".into(),
+                content: "S: Headache".into(),
+            }],
+            physician_speaker: None,
+            generated_at: "2026-05-08T00:00:00Z".into(),
+            model_used: "test-model".into(),
+            raw_response: Some(r#"{"subjective":["headache"]}"#.into()),
+            user_prompt: Some("TRANSCRIPT:\nDr Z (77%): How is your head?".into()),
+        };
+        let json = serde_json::to_string(&r).unwrap();
+        assert!(json.contains("TRANSCRIPT"), "user_prompt must serialize: {}", json);
+        let r2: MultiPatientSoapResult = serde_json::from_str(&json).unwrap();
+        assert_eq!(
+            r2.user_prompt.as_deref(),
+            Some("TRANSCRIPT:\nDr Z (77%): How is your head?")
+        );
+    }
+
+    #[test]
+    fn test_user_prompt_backward_compat_when_missing() {
+        let legacy = r#"{
+            "notes": [{"patient_label":"P1","speaker_id":"","content":"S: x"}],
+            "physician_speaker": null,
+            "generated_at": "2026-01-01T00:00:00Z",
+            "model_used": "old-model"
+        }"#;
+        let r: MultiPatientSoapResult = serde_json::from_str(legacy).expect("legacy SOAP JSON should load");
+        assert!(r.user_prompt.is_none(), "missing field defaults to None");
     }
 
     #[test]

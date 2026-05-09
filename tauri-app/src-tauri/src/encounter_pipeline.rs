@@ -60,6 +60,33 @@ const CLINICAL_CONTENT_CHECK_TIMEOUT_SECS: u64 = 90;
 /// `log_extra` should contain caller-specific metadata (e.g. stage, session_id,
 /// encounter_number). The function auto-adds `detail_level`, `format`,
 /// `response_chars`, and `patient_count`.
+/// Falls back to formatted `content` when `raw_response` is missing
+/// (older code paths, stub backends).
+fn build_soap_bundle_capture_success(
+    soap_result: &mut crate::llm_client::MultiPatientSoapResult,
+    system_prompt: &str,
+    content: &str,
+    latency_ms: u64,
+    word_count: usize,
+) -> crate::replay_bundle::SoapResult {
+    let patient_count = soap_result.notes.len();
+    let raw_for_bundle = soap_result
+        .raw_response
+        .take()
+        .unwrap_or_else(|| content.to_string());
+    crate::replay_bundle::SoapResult {
+        ts: Utc::now().to_rfc3339(),
+        latency_ms,
+        success: true,
+        word_count,
+        error: None,
+        patient_count: if patient_count > 1 { Some(patient_count) } else { None },
+        system_prompt: Some(system_prompt.to_string()),
+        user_prompt: soap_result.user_prompt.take(),
+        response_raw: Some(raw_for_bundle),
+    }
+}
+
 pub async fn generate_and_archive_soap(
     client: &LLMClient,
     soap_model: &str,
@@ -163,22 +190,14 @@ pub async fn generate_and_archive_soap(
             // SOAP-experiment CLIs can replay through alternate prompts.
             if let Some(bundle_arc) = bundle {
                 if let Ok(mut b) = bundle_arc.lock() {
-                    let patient_count = soap_result.notes.len();
-                    let raw_for_bundle = soap_result
-                        .raw_response
-                        .take()
-                        .unwrap_or_else(|| content.clone());
-                    b.set_soap_result(crate::replay_bundle::SoapResult {
-                        ts: Utc::now().to_rfc3339(),
+                    let capture = build_soap_bundle_capture_success(
+                        &mut soap_result,
+                        &soap_system_prompt,
+                        &content,
                         latency_ms,
-                        success: true,
                         word_count,
-                        error: None,
-                        patient_count: if patient_count > 1 { Some(patient_count) } else { None },
-                        system_prompt: Some(soap_system_prompt.clone()),
-                        user_prompt: None,
-                        response_raw: Some(raw_for_bundle),
-                    });
+                    );
+                    b.set_soap_result(capture);
                 }
             }
 
@@ -1602,6 +1621,66 @@ mod tests {
     // ── Type construction tests ──
 
     #[test]
+    fn build_soap_bundle_capture_carries_user_prompt_and_response() {
+        let mut soap_result = crate::llm_client::MultiPatientSoapResult {
+            notes: vec![crate::llm_client::PatientSoapNote {
+                patient_label: "Combined".into(),
+                speaker_id: "All".into(),
+                content: "S: Headache".into(),
+            }],
+            physician_speaker: None,
+            generated_at: "2026-05-08T00:00:00Z".into(),
+            model_used: "soap-model-fast".into(),
+            raw_response: Some(r#"{"subjective":["headache"]}"#.into()),
+            user_prompt: Some("TRANSCRIPT:\nDr Z (77%): How is your head?".into()),
+        };
+
+        let captured = build_soap_bundle_capture_success(
+            &mut soap_result,
+            "you are a medical scribe...",
+            "S: Headache",
+            5_000,
+            42,
+        );
+
+        assert_eq!(captured.success, true);
+        assert_eq!(captured.latency_ms, 5_000);
+        assert_eq!(captured.word_count, 42);
+        assert_eq!(captured.system_prompt.as_deref(), Some("you are a medical scribe..."));
+        assert_eq!(
+            captured.user_prompt.as_deref(),
+            Some("TRANSCRIPT:\nDr Z (77%): How is your head?"),
+        );
+        assert_eq!(
+            captured.response_raw.as_deref(),
+            Some(r#"{"subjective":["headache"]}"#)
+        );
+        assert!(soap_result.user_prompt.is_none());
+        assert!(soap_result.raw_response.is_none());
+    }
+
+    #[test]
+    fn build_soap_bundle_capture_falls_back_to_content_when_raw_missing() {
+        let mut soap_result = crate::llm_client::MultiPatientSoapResult {
+            notes: vec![],
+            physician_speaker: None,
+            generated_at: "2026-05-08T00:00:00Z".into(),
+            model_used: "soap-model-fast".into(),
+            raw_response: None,
+            user_prompt: Some("TRANSCRIPT:\nx".into()),
+        };
+        let captured = build_soap_bundle_capture_success(
+            &mut soap_result,
+            "sys",
+            "FORMATTED CONTENT",
+            1,
+            1,
+        );
+        assert_eq!(captured.response_raw.as_deref(), Some("FORMATTED CONTENT"));
+        assert_eq!(captured.user_prompt.as_deref(), Some("TRANSCRIPT:\nx"));
+    }
+
+    #[test]
     fn soap_generation_outcome_success_fields() {
         let result = crate::llm_client::MultiPatientSoapResult {
             notes: vec![],
@@ -1609,6 +1688,7 @@ mod tests {
             generated_at: "2026-03-26T10:00:00Z".into(),
             model_used: "soap-model-fast".into(),
             raw_response: None,
+            user_prompt: None,
         };
         let outcome = SoapGenerationOutcome::Success {
             result,

@@ -215,6 +215,7 @@ impl LlmBackend for ReplayLlmBackend {
             generated_at: chrono::Utc::now().to_rfc3339(),
             model_used: "harness-stub".into(),
             raw_response: None,
+            user_prompt: None,
         })
     }
 }
