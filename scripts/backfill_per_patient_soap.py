@@ -22,6 +22,11 @@ Usage:
     # Limit to a single session_id (full or 8-char prefix)
     python3 scripts/backfill_per_patient_soap.py --apply --session 7375a8dd
 
+    # Fall back to this physician_id when metadata.json is missing one
+    # (older pre-multi-user sessions). Required for any session whose
+    # metadata predates the multi-user system.
+    python3 scripts/backfill_per_patient_soap.py --apply --physician 60e4f1de-...
+
 Run on each workstation that hosts affected sessions in its local archive
 (check both Room 6 and Room 2). Run from any directory.
 """
@@ -60,6 +65,10 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--apply", action="store_true", help="Actually upload (default: dry run)")
     ap.add_argument("--session", help="Limit to one session_id (full or 8-char prefix)")
+    ap.add_argument(
+        "--physician",
+        help="Fallback physician_id when metadata.json lacks one (older sessions)",
+    )
     args = ap.parse_args()
 
     server_url = load_server_url()
@@ -81,15 +90,22 @@ def main():
         if args.session and not sid.startswith(args.session):
             continue
 
+        # Skip obvious test/placeholder sessions (UUID starts with all-zero
+        # block — these come from harness/dev runs and shouldn't sync).
+        if sid.startswith("00000000-0000-"):
+            print(f"  SKIP {sid[:8]} — placeholder/test session")
+            skipped += 1
+            continue
+
         # Need metadata.json for physician_id
         meta_path = os.path.join(session_dir, "metadata.json")
         if not os.path.isfile(meta_path):
             continue
         with open(meta_path) as f:
             meta = json.load(f)
-        phys_id = meta.get("physician_id")
+        phys_id = meta.get("physician_id") or args.physician
         if not phys_id:
-            print(f"  SKIP {sid[:8]} — no physician_id in metadata")
+            print(f"  SKIP {sid[:8]} — no physician_id in metadata (pass --physician to override)")
             skipped += 1
             continue
 
