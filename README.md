@@ -34,7 +34,7 @@ Ambient Medical Intelligence — a clinical ambient scribe for physicians. Real-
 - **MCP Server** - JSON-RPC 2.0 server on port 7101 for external tool integration
 - **Mobile House Call Recording** - iOS app records offline, auto-uploads when on network, server processes via shared Rust pipeline
 - **Manual Audio Upload** - Upload an audio file (mp3/wav/m4a/aac/flac/ogg/wma/webm) directly from the desktop and run it through the same continuous-mode pipeline (ffmpeg → STT batch → encounter detection → SOAP)
-- **FHO+ Billing Engine** - Two-stage billing extraction (LLM clinical features → deterministic OHIP rule engine); 235 OHIP codes; auto K013A→K033A overflow at 4+ counselling units; diagnostic-code cross-validation; per-patient billing for multi-patient encounters
+- **FHO+ Billing Engine** - Two-stage billing extraction (LLM clinical features → deterministic OHIP rule engine); 239 OHIP codes (SOB-verified through 2026-03-27); upgrade suggestions for higher-value alternates (K013 long-visit, etc., v0.10.76+); auto K013A→K033A overflow at 4+ counselling units; diagnostic-code cross-validation; per-patient billing for multi-patient encounters
 - **Patient Handout** - Plain-language visit summary (5th–8th grade reading level); included as context in SOAP generation
 - **Differential Diagnosis** - Top 3 DDx with cardinal symptoms, refreshed every 30s during continuous mode
 - **Auto-Update** - Tauri updater + GitHub Releases with Ed25519 signing; running apps see an update banner on next launch
@@ -89,7 +89,7 @@ open "src-tauri/target/debug/bundle/macos/AMI Assist.app"
 - **[tauri-app/CLAUDE.md](tauri-app/CLAUDE.md)** - Comprehensive AI coder context (desktop app)
 - **[profile-service/CLAUDE.md](profile-service/CLAUDE.md)** - Profile service architecture and patterns
 - **[docs/TESTING.md](docs/TESTING.md)** - Test architecture, replay tools, labeled regression corpus
-- **[docs/benchmarks/](docs/benchmarks/)** - LLM task benchmarks (encounter detection, merge, clinical content, multi-patient)
+- **[docs/benchmarks/](docs/benchmarks/)** - LLM task benchmarks (encounter detection, merge, clinical content, multi-patient detection, multi-patient split, billing, SOAP)
 - **[docs/superpowers/specs/2026-04-13-mobile-app-v1-design.md](docs/superpowers/specs/2026-04-13-mobile-app-v1-design.md)** - Mobile app design spec
 - **[tauri-app/CONTRIBUTING.md](tauri-app/CONTRIBUTING.md)** - Development guidelines
 - **[tauri-app/README.md](tauri-app/README.md)** - Desktop app documentation
@@ -142,7 +142,7 @@ open "src-tauri/target/debug/bundle/macos/AMI Assist.app"
 | Audio Preprocessing | biquad + dagc |
 | SOAP Generation | OpenAI-compatible LLM router |
 | EMR Integration | Medplum FHIR (OAuth 2.0) |
-| FHO+ Billing | 235 OHIP codes + 562 diagnostic codes; two-stage LLM + rule engine |
+| FHO+ Billing | 239 OHIP codes + 562 diagnostic codes; two-stage LLM + rule engine + post-engine upgrade suggestions |
 
 ## Testing
 
@@ -154,7 +154,7 @@ cd tauri-app
 # Frontend tests
 pnpm test:run
 
-# Rust tests (preflight runs all 7 layers including offline replay regressions)
+# Rust tests (preflight runs all 9 layers including offline replay regressions)
 ./scripts/preflight.sh --full
 
 # Or run components directly:

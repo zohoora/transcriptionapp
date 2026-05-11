@@ -11,9 +11,9 @@ transcriptionapp/
 │   ├── src-tauri/
 │   │   ├── src/            # Rust library + main binary
 │   │   ├── src/bin/        # process_mobile (mobile audio processing daemon)
-│   │   ├── tools/          # 15 replay/regression CLIs (detection_replay, merge_replay, clinical_replay, multi_patient_replay, multi_patient_split_replay, benchmark_runner, labeled_regression, golden_day, bootstrap_labels, replay_bundle_backfill, encounter_experiment, vision_experiment, soap_experiment, billing_experiment, soap_diff)
+│   │   ├── tools/          # 17 CLIs: 15 replay/regression (detection_replay, merge_replay, clinical_replay, multi_patient_replay, multi_patient_split_replay, benchmark_runner, labeled_regression, golden_day, bootstrap_labels, replay_bundle_backfill, encounter_experiment, vision_experiment, soap_experiment, billing_experiment, soap_diff) + ort_smoke (ONNX Runtime CI smoke) + forensic_2026_04_30_replay (dated forensic replay)
 │   │   ├── benches/        # Criterion benchmarks (audio_benchmarks)
-│   │   └── tests/fixtures/ # benchmarks/*.json + labels/*.json (ground-truth corpus)
+│   │   └── tests/fixtures/ # benchmarks/*.json (7 tasks) + labels/*.json (134 GT labels) + encounter_bundles/seed/ (10 harness bundles) + day_summaries/ + billing_sim_2026_04_24/
 │   ├── CLAUDE.md           # Detailed codebase context (architecture, commands, patterns)
 │   ├── CONTRIBUTING.md     # Development workflow
 │   └── README.md           # App-level docs
@@ -72,8 +72,8 @@ cd tauri-app && npx tsc --noEmit          # Frontend
 cd tauri-app/src-tauri && cargo check     # Backend
 
 # Tests
-cd tauri-app && pnpm test:run             # Frontend (Vitest, 600 passing across 33 files)
-cd tauri-app/src-tauri && cargo test --lib   # Backend lib (1,179 passing, 30 ignored)
+cd tauri-app && pnpm test:run             # Frontend (Vitest, 606 passing across 33 files)
+cd tauri-app/src-tauri && cargo test --lib   # Backend lib (1,373 passing, 31 ignored)
 cd tauri-app/src-tauri && cargo test --test harness_per_encounter  # Per-encounter snapshot harness (10 seed bundles)
 
 # E2E (requires live STT + LLM Router)
@@ -92,7 +92,7 @@ cd tauri-app/src-tauri && cargo run --bin benchmark_runner -- --all --trials 3
 
 # Profile service
 cd profile-service && cargo check          # Type check
-cd profile-service && cargo test           # Tests (66 passing across integration + lib)
+cd profile-service && cargo test           # Tests across auth_tests, config_data_tests, infrastructure_tests, patient_tests, physician_tests, room_tests, session_tests, speaker_tests
 
 # Mobile processing CLI
 cd tauri-app/src-tauri && cargo check --bin process_mobile   # Type check
@@ -105,7 +105,7 @@ cd ios && xcodegen generate                # Regenerate Xcode project
 
 # Release (triggers auto-update for all rooms)
 # Bump version in tauri.conf.json + package.json + src-tauri/Cargo.toml, then:
-git tag v0.10.46   # use the next patch version
+git tag v0.10.80   # use the next patch version (current: 0.10.79)
 git push origin main --tags
 ```
 
@@ -187,6 +187,20 @@ Idempotent on `(name_normalized, dob)` within a physician — repeated confirms 
 Confirmation is the trust boundary — vision alone never auto-pushes to the EMR. Module: `continuous_mode_forward_merge.rs` covers one vision failure mode (false multi-patient); this feature covers the other (chart-stuck-on-wrong-patient) by giving the clinician a curated upload path. See ADR-0030.
 
 Not yet enabled (deferred): auto-sync on continuous-mode encounter completion, prior-SOAP injection into new-encounter prompt context.
+
+## Billing upgrade suggestions (v0.10.76+, K013 long-visit in v0.10.77)
+
+After the rule engine emits a billed record (the "safest" defensible code), `billing::upgrade_suggestions::compute_upgrade_suggestions` proposes higher-value alternates the clinician can promote with one click — without surprising them with unjustified upgrades. Each suggestion includes `from`/`to` codes, dollar delta (may be ≤0 for K005↔K013 swaps), and a one-sentence reasoning line so the clinician can confirm at a glance.
+
+v0.10.77 fires upgrades on long visits — when transcript duration crosses K013-tier thresholds, suggests K013 even when rule engine landed on a shorter-visit code. Logic in `billing/upgrade_suggestions.rs` (509 lines). Suggestions surface in the billing sidebar in ContinuousMode/RecordingMode under the rule-engine output.
+
+## Multimodal multi-patient detect + SOAP (v0.10.79)
+
+Multi-patient detection and the per-patient SOAP generation both now route through the LLM Router's multimodal path when chart screenshots are available. `screenshot_dedup::dedup_screenshots` picks a small chronologically-spread set so the model sees representative chart state without paying for redundant frames. Same dedup pipeline runs for orphan-recovery and merge-back paths so the screenshot signal is consistent across all clinical reasoning calls. Modules: `screenshot_dedup.rs`, `encounter_pipeline.rs` (image_url part wiring around lines 115/974/1257/1407).
+
+## Release pipeline hardening (v0.10.70+, ort_smoke)
+
+The release workflow now runs `ort_smoke` (a stub binary that loads the speaker-diarization ONNX model from the bundled dylib) before promoting the build. This catches the failure mode where `libonnxruntime.dylib` was missing from the .app bundle — historically the cause of in-clinic post-update outages. The bundle script (`scripts/bundle-ort.sh`) is paired with this smoke test; if either side breaks, the release is rejected before users see the update banner. v0.10.72 fixed the absolute-vs-relative dylib path passed to the smoke binary in `release.yml`.
 
 ## Detailed Context
 

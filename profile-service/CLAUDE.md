@@ -21,18 +21,20 @@ src/
 ├── error.rs           # ApiError enum → HTTP status mapping
 ├── types.rs           # All data structures + validation methods
 ├── routes/
-│   ├── mod.rs         # build_router() — 35 route registrations across 9 resource groups
+│   ├── mod.rs         # build_router() — 37 route registrations across 11 resource groups
 │   ├── health.rs      # GET /health
 │   ├── infrastructure.rs  # Clinic-wide settings (singleton)
-│   ├── config_data.rs # GET/PUT for prompts, billing, thresholds + version check (9 handlers)
-│   ├── mobile.rs      # Mobile job upload, status, CRUD (6 handlers)
-│   ├── patients.rs    # Longitudinal patient memory — confirm, search, get-by-id (3 handlers)
+│   ├── config_data.rs # GET/PUT for prompts, billing, thresholds, operational defaults + version check (10 handlers)
+│   ├── mobile.rs      # Mobile job upload, status, CRUD (7 handlers)
+│   ├── patients.rs    # Longitudinal patient memory — confirm, search, get-by-id (4 handlers)
 │   ├── physicians.rs  # Physician CRUD
 │   ├── rooms.rs       # Room CRUD
-│   ├── sessions.rs    # Session storage, split, merge, audio, files, day-log
-│   └── speakers.rs    # Speaker profile CRUD
+│   ├── sessions.rs    # Session storage, split, merge, audio, files, day-log (~22 handlers)
+│   ├── speakers.rs    # Speaker profile CRUD
+│   ├── medplum_auth.rs # POST /medplum/token — server-side OAuth client-credentials proxy so workstations don't ship the Medplum client secret
+│   └── openai_image.rs # POST /openai/image — server-side OpenAI image-generation proxy (mirrors Gemini's client-side path but keeps the OpenAI key off workstations)
 └── store/
-    ├── mod.rs         # AppState (7 RwLock<Manager> + SessionStore)
+    ├── mod.rs         # AppState (multiple RwLock<Manager> + SessionStore + PatientManager + ConfigDataStore + MobileJobStore + MedplumAuthProxy + OpenAIImageProxy)
     ├── config_data.rs # ConfigDataStore — prompts, billing rules, thresholds, operational defaults; version counter
     ├── mobile_jobs.rs # Mobile job store (in-memory HashMap + JSON persistence)
     ├── patients.rs    # PatientManager — cross-session index keyed (physician_id, name_normalized, dob) → PatientRecord (v0.10.46+)
@@ -40,7 +42,9 @@ src/
     ├── rooms.rs       # Same pattern as physicians
     ├── speakers.rs    # Same pattern
     ├── infrastructure.rs  # Singleton JSON
-    └── sessions.rs    # Disk-based session store + in-memory path cache
+    ├── sessions.rs    # Disk-based session store + in-memory path cache
+    ├── medplum_auth.rs # MedplumAuthProxy — caches the client-credentials access token + reuses across requests
+    └── openai_image.rs # OpenAIImageProxy — config from env vars, HTTP client to OpenAI image endpoint
 ```
 
 Middleware stack (outermost → innermost): CORS → body limit (500 MB) → auth → handler.
@@ -64,7 +68,7 @@ Middleware stack (outermost → innermost): CORS → body limit (500 MB) → aut
 
 ## API Routes
 
-32 `.route()` registrations (each with multiple HTTP methods, ~52 handler functions total) across 8 resource groups. Session routes scoped under `/physicians/:id/sessions/...`. Mobile routes under `/mobile/...`. Config routes under `/config/...`.
+37 `.route()` registrations (each with one or more HTTP methods) across 11 resource groups. Session routes scoped under `/physicians/:id/sessions/...`. Mobile routes under `/mobile/...`. Config routes under `/config/...`.
 
 | Resource | Endpoints |
 |----------|-----------|
@@ -77,6 +81,8 @@ Middleware stack (outermost → innermost): CORS → body limit (500 MB) → aut
 | Speakers | `GET/POST /speakers`, `GET/PUT/DELETE /speakers/:id` |
 | Sessions | dates, list, get, upload, delete, split, merge, renumber, metadata, soap, feedback, patient-name, transcript-lines, audio, files, screenshots, day-log |
 | Patients (v0.10.46+) | `POST /physicians/:id/patients/confirm`, `GET /physicians/:id/patients` (unqualified list OR `?name=&dob=` exact lookup), `GET/DELETE /physicians/:id/patients/:patient_id` (DELETE added v0.10.47) |
+| Medplum Auth | `POST /medplum/token` — proxies the Medplum client-credentials OAuth flow so workstations don't ship the client secret |
+| OpenAI Image | `POST /openai/image` — proxies OpenAI's image-generation endpoint so the API key stays server-side (`gemini_client.rs` retains direct client access for the Gemini path) |
 
 ## Server Config Categories
 

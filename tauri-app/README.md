@@ -15,7 +15,7 @@ Ambient Medical Intelligence — a real-time speech-to-text transcription deskto
 ### Clinical
 - **SOAP note generation** — AI-powered via OpenAI-compatible LLM router with explicit S/O/A/P section definitions
 - **Multi-patient SOAP** — supports up to 4 patients per visit with auto patient/physician detection
-- **FHO+ Billing Engine** — two-stage extraction (LLM clinical features → deterministic OHIP rule engine); 235 OHIP codes; auto K013A→K033A overflow at 4+ counselling units; per-patient billing; diagnostic-code cross-validation
+- **FHO+ Billing Engine** — two-stage extraction (LLM clinical features → deterministic OHIP rule engine); 239 OHIP codes (SOB-verified through 2026-03-27); post-engine upgrade suggestions (K013 long-visit, etc., v0.10.76+); auto K013A→K033A overflow at 4+ counselling units; per-patient billing; diagnostic-code cross-validation
 - **Patient handout** — plain-language visit summary (5th–8th grade reading level); included as context in SOAP generation
 - **Differential diagnosis** — top 3 DDx with cardinal symptoms, refreshed every 30s during continuous mode
 - **Clinical assistant chat** — `clinical-assistant` LLM alias for live questions during recording; chat history persisted per session (continuous mode)
@@ -90,7 +90,7 @@ open "src-tauri/target/debug/bundle/macos/AMI Assist.app"
 
 ```bash
 # Bump version in tauri.conf.json + package.json + src-tauri/Cargo.toml, then:
-git tag v0.10.46   # use the next patch version
+git tag v0.10.80   # use the next patch version (current: 0.10.79)
 git push origin main --tags
 # GitHub Actions builds, signs, and publishes to Releases
 # All running rooms detect the update on next launch
@@ -143,10 +143,10 @@ cd src-tauri && cargo test --lib
 # E2E (requires STT + LLM Router running)
 cd src-tauri && cargo test e2e_ -- --ignored --nocapture
 
-# Preflight — runs all 7 layers including offline replay regressions
+# Preflight — runs all 9 layers including offline replay regressions
 ./scripts/preflight.sh --full
 
-# Offline replay regression (no LLM needed) — runs against ~195 archived bundles
+# Offline replay regression (no LLM needed) — runs against archived replay bundles in ~/.transcriptionapp/archive
 cd src-tauri && cargo run --bin detection_replay_cli -- --all --fail-on-mismatch --threshold 99.0
 
 # Labeled regression (offline) — compares production billing.json to ground-truth labels

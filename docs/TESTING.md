@@ -6,12 +6,12 @@ This document describes the AMI Assist test infrastructure: what's tested, where
 
 | Surface | Files | Tests | Runner |
 |---------|-------|-------|--------|
-| Rust backend (lib) | ~119 | 1,179 (incl. 30 ignored) | `cd tauri-app/src-tauri && cargo test --lib` |
-| Rust CLI tool tests | 13 binaries | ~46 inline | `cargo test --bins` |
-| Profile service | 7 | 66 | `cd profile-service && cargo test` |
-| Frontend (React + TS) | 32 | 594 | `cd tauri-app && pnpm test:run` |
+| Rust backend (lib) | ~153 | 1,373 (31 ignored) | `cd tauri-app/src-tauri && cargo test --lib` |
+| Rust CLI tool tests | 18 binaries (17 in tools/ + 1 in src/bin/) | inline | `cargo test --bins` |
+| Profile service | 8 integration test files | across auth/config_data/infrastructure/patient/physician/room/session/speaker | `cd profile-service && cargo test` |
+| Frontend (React + TS) | 33 | 606 | `cd tauri-app && pnpm test:run` |
 | E2E (live services) | 1 file, 11 tests | All `#[ignore]` | `./scripts/preflight.sh --full` |
-| Replay regressions | 6 CLIs | Run against archive | See "Replay tools" below |
+| Replay regressions | 15 replay/regression CLIs in tools/ + 2 infra (ort_smoke, forensic_2026_04_30_replay) | Run against archive | See "Replay tools" below |
 | Orchestrator harness | 10 per-encounter tests | Snapshot baselines | `cargo test --test harness_per_encounter` |
 
 ## Test layers
@@ -72,13 +72,18 @@ cargo run --bin <tool> -- [PATH | --all] [--trials N] [--fail-on-mismatch] [--th
 | `clinical_replay_cli` | Clinical content check LLM calls | Yes | 90.0% |
 | `multi_patient_replay_cli` | Multi-patient detection LLM calls | Yes | 80.0% |
 | `multi_patient_split_replay_cli` | Multi-patient split (line_index) LLM calls | Yes | 70.0% (±2 lines) |
-| `benchmark_runner` | Curated TC fixtures from docs/benchmarks | Yes | per-fixture |
-| `labeled_regression_cli` | Per-session labeled outputs vs production | No (offline) | n/a (per-check) |
+| `benchmark_runner` | Curated TC fixtures from `tests/fixtures/benchmarks/*.json` (7 tasks) | Yes | per-fixture |
+| `labeled_regression_cli` | Per-session labeled outputs vs production; honors per-label `expected_failures` baselines | No (offline) | n/a (per-check) |
 | `golden_day_cli` | Full clinic-day labeled corpus integrity | No (offline) | n/a (all-or-nothing) |
 | `bootstrap_labels` | Generate label fixtures from production billing | No (offline) | n/a (creates labels) |
-| `soap_experiment_cli` | Regenerate SOAPs through prompt variants on archived sessions | Yes | n/a (per-variant report) |
-| `billing_experiment_cli` | Run billing-extraction prompt variants × seeds × labels | Yes | n/a (per-variant report) |
+| `replay_bundle_backfill` | Reconstruct historical v1→v2 replay bundles from mmWave CSV + day_log | No (offline) | n/a |
+| `encounter_experiment_cli` | Compare encounter-detection prompts on archived sessions | Yes | n/a (per-variant) |
+| `vision_experiment_cli` | Compare vision-based SOAP strategies on archived sessions | Yes | n/a (per-variant) |
+| `soap_experiment_cli` | Regenerate SOAPs through prompt variants on archived sessions (v0.10.67+ `--replay-only` mode uses schema-v5 `response_raw`, no live LLM) | Yes / No with --replay-only | n/a (per-variant report) |
+| `billing_experiment_cli` | Run billing-extraction prompt variants × seeds × labels (same `--replay-only` mode) | Yes / No with --replay-only | n/a (per-variant report) |
 | `soap_diff_cli` | Structural diff between archive SOAP and a regenerated SOAP under a new prompt | No / optional | n/a |
+| `ort_smoke` | Loads the bundled `libonnxruntime.dylib` + speaker-diarization ONNX model. Release-side CI gate — fails the release if ONNX runtime can't load | No (offline) | n/a |
+| `forensic_2026_04_30_replay` | Dated forensic-replay tool that validates the `augment_procedures_from_soap_text` fix path against the 2026-04-30 review corpus | Yes | n/a |
 
 ### Experiment harness (v0.10.62)
 
@@ -217,15 +222,15 @@ Run the labeled regression with `cargo run --bin labeled_regression_cli -- --all
 
 | Surface | Target | Current |
 |---------|--------|---------|
-| Rust unit + integration | 1,000+ | 1,179 |
-| Frontend hook + component | 600+ | 594 |
-| Profile service | 50+ | 66 |
-| Replay corpus (bundles) | 200+ | 192 |
-| Labeled bundles | 30+ | 68 (6 days: 04-08, 04-09, 04-10, 04-13, 04-14, 04-15) |
-| Benchmark test cases | 30+ | 21 (5 tasks: clinical, detection, merge, multi-patient detection, multi-patient split) |
-| Replay regression CLIs | 5 | 6 (detection + merge + clinical + multi-patient + multi-patient-split + golden-day) |
-| Preflight layers | 7 | 7 (1-5 E2E + 6 detection replay + 7 golden day) |
-| Bundle schema version | — | v3 (added MultiPatientSplitDecision capture) |
+| Rust unit + integration | 1,000+ | 1,373 (31 ignored) |
+| Frontend hook + component | 600+ | 606 |
+| Profile service | 50+ | across 8 integration test files (auth, config_data, infrastructure, patient, physician, room, session, speaker) |
+| Replay corpus (bundles) | 200+ | ~328 in `~/.transcriptionapp/archive/` |
+| Labeled bundles | 30+ | 134 across multiple clinic days |
+| Benchmark test cases | 30+ | 7 tasks (clinical_content_check, encounter_detection, encounter_merge, multi_patient_detection, multi_patient_split, billing, soap) |
+| Tools (binaries) | 5 | 17 in tools/ + 1 in src/bin (process_mobile) |
+| Preflight layers | 9 | 9 — 1-3 connectivity (STT/LLM/archive) + 4-5 full E2E (session/continuous) + 6 detection replay + 7 golden day + 8 harness equivalence + 9 labeled regression |
+| Bundle schema version | — | v5 (adds SoapResult/BillingResult prompt + response_raw for offline experiment replay) |
 
 ## Removed test infrastructure (Apr 2026)
 

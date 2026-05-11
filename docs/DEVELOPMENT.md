@@ -4,7 +4,7 @@
 
 ## Project Status
 
-**Date:** January 2025 (original), February 2026 (last updated)
+**Date:** January 2025 (original), May 2026 (last updated to reflect v0.10.79)
 **Status:** Production-Ready - All milestones complete
 
 ### Completed Work
@@ -114,7 +114,7 @@ ORT_DYLIB_PATH=$(./scripts/setup-ort.sh) \
 
 ## Testing
 
-### Frontend Tests (594 tests)
+### Frontend Tests (606 tests across 33 files)
 
 ```bash
 cd tauri-app
@@ -123,7 +123,7 @@ pnpm test              # Watch mode
 pnpm test:coverage     # With coverage
 ```
 
-### Rust Tests (1,125 tests, 30 ignored)
+### Rust Tests (1,373 tests, 31 ignored)
 
 ```bash
 cd tauri-app/src-tauri
@@ -131,6 +131,9 @@ ORT_DYLIB_PATH=$(../scripts/setup-ort.sh) cargo test
 
 # E2E integration tests (requires STT Router + LLM Router running)
 cargo test e2e_ -- --ignored --nocapture
+
+# Per-encounter snapshot harness (10 seed bundles)
+cargo test --test harness_per_encounter
 ```
 
 ---

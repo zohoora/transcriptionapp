@@ -94,6 +94,9 @@ Rust Backend
 ├── activity_log.rs    # Structured PHI-safe activity logging
 ├── shadow_log.rs      # Shadow mode CSV logging (dual detection comparison)
 ├── gemini_client.rs   # Google Gemini API client (image generation)
+├── openai_image_client.rs # OpenAI image client (gpt-image-2). Mirrors gemini_client.rs's retry + error-body-truncation
+├── screenshot_dedup.rs # Picks a chronologically-spread set of representative chart screenshots so multi-patient detect + multi-patient SOAP (v0.10.79) get useful vision context without paying for redundant frames
+├── feedback_to_label.rs # Converts session feedback (clinician corrections) into label fixtures usable by labeled_regression_cli
 ├── profile_client.rs    # HTTP client for profile service (physicians, sessions, speakers, rooms, config)
 ├── server_config.rs     # Server-configurable data (prompts, billing, thresholds); fetch/cache/defaults
 ├── room_config.rs       # Room config (room name, profile server URL, room ID)
@@ -110,13 +113,17 @@ Rust Backend
 ├── vision_experiment.rs    # Vision SOAP experiment CLI support
 ├── diarization/       # Speaker detection (ONNX embeddings, clustering)
 ├── enhancement/       # Speech enhancement (GTCRN)
-├── billing/             # FHO+ billing engine (235 OHIP codes: 145 in-basket + 90 out-of-basket, 562 diagnostic codes, SOB-verified)
-│   ├── mod.rs               # Module root, re-exports
-│   ├── types.rs             # BillingRecord, BillingCode, TimeEntry, cap types
-│   ├── ohip_codes.rs        # Static OHIP code database (234 codes, 21 exclusion groups)
+├── experiment/        # Prompt-engineering experiment harness — variants, labels, replay, report, runner. Powers soap_experiment_cli + billing_experiment_cli
+├── harness/           # Test orchestrator — day_harness, encounter_harness, driver, event_comparator, mismatch_report, archive_comparator, scripted_sensor_source, replay_llm_backend. Powers `cargo test --test harness_per_encounter`
+├── billing/             # FHO+ billing engine (239 OHIP codes, 562 diagnostic codes, SOB-verified through 2026-03-27)
+│   ├── mod.rs               # Module root, re-exports (incl. `compute_upgrade_suggestions`)
+│   ├── types.rs             # BillingRecord, BillingCode, TimeEntry, UpgradeSuggestion, cap types
+│   ├── ohip_codes.rs        # Static OHIP code database (239 codes, 21 exclusion groups)
 │   ├── diagnostic_codes.rs  # OHIP diagnostic codes (562 ICD-8 codes, MOH Apr 2023 + Mar 2026)
-│   ├── clinical_features.rs # LLM extraction schema (23 visit types, 79 procedures, 14 conditions)
-│   ├── rule_engine.rs       # Deterministic feature → OHIP code mapping (94 codes reachable)
+│   ├── diagnostic_tools_model.rs # Stage 0: tools-model + file_lookup over the 562 OHIP diagnostic codes (v0.10.55+). Fails soft to the rule engine
+│   ├── clinical_features.rs # LLM extraction schema (23 visit types, 81 procedures, 14 conditions)
+│   ├── rule_engine.rs       # Deterministic feature → OHIP code mapping
+│   ├── upgrade_suggestions.rs # Post-rule-engine higher-value alternates (K013 long-visit, etc., v0.10.76+; K013-tier from duration v0.10.77+)
 │   └── time_tracking.rs     # Q310-Q313 time calculation, daily/monthly caps
 ├── biomarkers/        # Vocal analysis (vitality, stability, cough detection)
 ├── mcp/               # MCP server on port 7101
@@ -129,7 +136,7 @@ Rust Backend
 ├── soak_tests.rs      # Long-running stability tests
 └── stress_tests.rs    # Load/stress tests
 
-tools/                  # Replay regression CLIs (registered as [[bin]] in Cargo.toml)
+tools/                  # 17 CLIs (registered as [[bin]] in Cargo.toml)
 ├── detection_replay_cli.rs       # Offline deterministic replay of evaluate_detection() (no LLM)
 ├── merge_replay_cli.rs           # Re-issues archived merge-check LLM calls
 ├── clinical_replay_cli.rs        # Re-issues archived clinical-content LLM calls
@@ -141,13 +148,21 @@ tools/                  # Replay regression CLIs (registered as [[bin]] in Cargo
 ├── bootstrap_labels.rs           # Generate label fixtures from production output (`day YYYY-MM-DD`)
 ├── replay_bundle_backfill.rs     # Reconstruct historical v1→v2 replay bundles from CSV + day_log
 ├── encounter_experiment_cli.rs   # Compare encounter detection prompts on archived sessions
-└── vision_experiment_cli.rs      # Compare vision-based SOAP strategies on archived sessions
+├── vision_experiment_cli.rs      # Compare vision-based SOAP strategies on archived sessions
+├── soap_experiment_cli.rs        # SOAP prompt-engineering variants over archived sessions (v0.10.62+; --replay-only mode v0.10.67+ uses schema v5 response_raw, no LLM)
+├── billing_experiment_cli.rs     # Billing prompt-engineering variants over archived sessions (paired with soap_experiment_cli)
+├── soap_diff_cli.rs              # Diff SOAP outputs across archived sessions/variants
+├── ort_smoke.rs                  # ONNX Runtime smoke test — loads the speaker-diarization ONNX model from the bundled dylib. Run by release.yml between bundle and publish; failure rejects the release before users see the update banner
+└── forensic_2026_04_30_replay.rs # Dated forensic-replay tool for the 2026-04-30 review (validates the augment_procedures_from_soap_text fix path)
 
 benches/audio_benchmarks.rs  # Criterion benchmarks for audio processing
 
 tests/fixtures/
-├── benchmarks/*.json   # Curated TC files used by benchmark_runner (5 tasks: clinical, detection, merge, multi-patient detection, multi-patient split)
-└── labels/*.json       # Ground-truth labels (~68 files across 6 days). Schema in labels/README.md
+├── benchmarks/*.json   # 7 curated TC files used by benchmark_runner (clinical_content_check, encounter_detection, encounter_merge, multi_patient_detection, multi_patient_split, billing, soap)
+├── labels/*.json       # 134 ground-truth labels across multiple clinic days. Schema in labels/README.md. labeled_regression_cli honors per-label `expected_failures` baselines so known-bad cases stay green; new divergences fail the PR-side CI gate
+├── encounter_bundles/seed/  # 10 paired (replay + baseline) bundles powering the harness_per_encounter snapshot tests
+├── day_summaries/      # Per-day summary fixtures used by harness day-level tests
+└── billing_sim_2026_04_24/  # Billing simulation fixture (see fixture README)
 ```
 
 ## Quick Start
@@ -167,10 +182,10 @@ npx tsc --noEmit                 # TypeScript typecheck
 cd src-tauri && cargo check      # Rust compile check
 
 # Tests
-pnpm test:run                    # Frontend (Vitest, 600 passing across 33 files)
-cd src-tauri && cargo test --lib # Rust lib (1,179 passing, 30 ignored)
+pnpm test:run                    # Frontend (Vitest, 606 passing across 33 files)
+cd src-tauri && cargo test --lib # Rust lib (1,373 passing, 31 ignored)
 cd src-tauri && cargo test --test harness_per_encounter  # Per-encounter snapshot harness (10 seed bundles)
-cd ../profile-service && cargo test  # Profile service (99 passing across 8 test files)
+cd ../profile-service && cargo test  # Profile service (across 8 integration test files: auth, config_data, infrastructure, patient, physician, room, session, speaker)
 
 # Daily preflight (verifies STT + LLM + Archive before clinic)
 ./scripts/preflight.sh           # Quick (~10s): connectivity layers 1-3 + offline regression 6+8+9
@@ -213,7 +228,7 @@ cd ../profile-service && cargo test  # Profile service (99 passing across 8 test
 | Modify room setup | `room_config.rs`, `commands/physicians.rs`, `useRoomConfig.ts`, `RoomSetup.tsx` |
 | Modify server session sync | `profile_client.rs`, `continuous_mode.rs` (ServerSyncContext), `commands/archive.rs` (server fallback) |
 | Modify patient handout | `llm_client.rs` (`build_patient_handout_prompt()`), `commands/ollama.rs` (`generate_patient_handout`), `commands/archive.rs` (`save_patient_handout`, `get_patient_handout`), `local_archive.rs`, `usePatientHandout.ts`, `PatientHandoutEditor.tsx` |
-| Modify billing | `commands/billing.rs` (BillingContext toggles), `billing/rule_engine.rs`, `billing/ohip_codes.rs` (234 codes + 21 exclusion groups), `billing/clinical_features.rs` (23 visit types, 79 procedures, 14 conditions), `billing/types.rs`, `billing/time_tracking.rs`, `src/components/billing/BillingTab.tsx`, `src/types/index.ts` (billing types section) |
+| Modify billing | `commands/billing.rs` (BillingContext toggles), `billing/rule_engine.rs`, `billing/ohip_codes.rs` (239 codes + 21 exclusion groups), `billing/clinical_features.rs` (23 visit types, 81 procedures, 14 conditions), `billing/diagnostic_tools_model.rs` (Stage 0 tools-model), `billing/upgrade_suggestions.rs` (post-engine higher-value alternates), `billing/types.rs`, `billing/time_tracking.rs`, `src/components/billing/BillingTab.tsx`, `src/types/index.ts` (billing types section) |
 | Modify mobile processing | `src/bin/process_mobile.rs` (CLI pipeline), `profile-service/src/routes/mobile.rs` (API), `profile-service/src/store/mobile_jobs.rs` (job store). CLI imports `llm_client` + `whisper_server` + `audio_processing` from `transcription_app_lib` |
 | Modify manual audio upload | `commands/audio_upload.rs` (Tauri commands + pipeline orchestration), `audio_processing.rs` (shared ffmpeg helpers), `useAudioUpload.ts` (React state + event listener), `AudioUploadModal.tsx` (UI). Both `ReadyMode.tsx` and `ContinuousMode.tsx` expose the trigger |
 | Modify shared audio helpers | `audio_processing.rs` — used by both `process_mobile` CLI and `commands/audio_upload.rs`. Changes propagate to both pipelines |
@@ -350,6 +365,8 @@ Idle → Preparing → Recording → Stopping → Completed
 | Nerve-block / IM mutual exclusion (v0.10.68+) | When any `NerveBlock*` ProcedureType (Peripheral/Occipital/Paravertebral) is present, `ImInjectionWithVisit` (G372A) is suppressed in the rule engine. The local anesthetic component of a nerve block is part of the block, not a separately billable IM injection. Carl Grieve case: PRP + local anesthetic to peroneal nerve produced both G231A and G372A pre-fix |
 | Empty-SOAP downstream guard / `is_substantive_soap` (v0.10.68+) | `encounter_pipeline::is_substantive_soap(soap)` returns false when fewer than 2 SOAP sections have any non-placeholder bullet (placeholder = "Not documented", "[See transcript]", "n/a", "none", "no documentation", "none documented", "no significant findings"). `extract_and_archive_billing` short-circuits with `Err("non_substantive_soap")` when the guard returns false, preventing fabricated billing + diagnostic codes for background-noise sessions. Karin Smit's d7039e4c case (522 words of multi-language STT garbage, all-placeholder SOAP, A008A + Q310A + dx 311 fabricated) is the test case |
 | Multi-patient detect 30s → 180s timeout (v0.10.68+) | `MULTI_PATIENT_DETECT_TIMEOUT_SECS: u64 = 180` in `encounter_detection.rs`. Used by `LLMClient::run_multi_patient_detection` and `run_multi_patient_split`. Linda+Rashida bdb55313 false-merge had a post-merge multi_patient_detect that COULD have caught the false-merge but timed out at 30s on the 9000-word combined transcript. 180s gives the LLM enough budget on long transcripts while still bounding worst-case latency |
+| Multimodal multi-patient detect + SOAP (v0.10.79+) | When chart screenshots are available, multi-patient detection AND the per-patient SOAP generation route through the LLM Router's multimodal path. `screenshot_dedup::dedup_screenshots` picks a small chronologically-spread set (representative chart state without redundant frames). Same dedup runs for orphan-recovery and merge-back screenshot args in `encounter_pipeline.rs` (lines ~115/974/1257/1407) so the screenshot signal is consistent across all clinical reasoning calls. `image_url` parts are attached via the `MultimodalMessageContent` array variant; plain-string content path stays unchanged when no screenshots present |
+| Release-pipeline ONNX smoke (v0.10.70+, ort_smoke) | `tools/ort_smoke.rs` is a stub binary that loads the speaker-diarization ONNX model from `libonnxruntime.dylib`. Run by `.github/workflows/release.yml` between bundle and publish; if the bundled dylib won't load (the historical cause of in-clinic post-update outages), the release is rejected before users see the update banner. v0.10.72 fixed the absolute-vs-relative dylib path passed to the smoke binary |
 | **NO vision (name/DOB) for session detection algorithm** (v0.10.68+) | Vision-extracted patient name + DOB are NOT to be used as inputs to encounter detection / split / merge / multi-patient logic. Charts often aren't open during clinic work. The 2026-04-30 review's `MergePatientIdentity` DOB/name hard-block prototype was REMOVED before merging. Vision name/DOB CAN be used for: session metadata enrichment, audit trails, history-window display, post-hoc patient confirmation flow (clinician-reviewed before commit to EMR). The Linda+Rashida class is solved via the multi_patient_detect timeout bump + transcript-content signals, NOT vision identity |
 | Multi-patient SOAP regen with summary (v0.10.67+) | `patient_labels.json` schema extended with optional `summary: Option<String>` (per-patient detection summary). `save_multi_patient_soap` accepts `Option<&MultiPatientDetectionResult>` and matches per-patient summaries by label. `build_single_patient_soap_prompt` takes `patient_summary: Option<&str>` so the regen prompt carries the disambiguation anchor. The regen IPC (`generate_soap_note`) accepts `session_date: Option<String>` and uses 3-state `local_archive::PatientSummaryLookup{FileMissing,LabelNotFound,Found}` — only `FileMissing` triggers the cross-machine server fetch (saves a wasted RTT when local file exists but the requested label isn't in it). `commands/ollama.rs::resolve_patient_summary` is the local-then-server resolver that the IPC delegates to. Closes the Slote mom+child failure mode where both per-patient regens defaulted to the dominant adult content |
 | Telephone visit detection (v0.10.67+) | `clinical_features.rs` billing prompt's `virtual_phone` (A102A) signals expanded beyond explicit phrases ("phone visit", "over the phone") to include: doctor self-introduction by phone ("this is Dr X", "Dr X here", "I'm calling"), patient verification ("Can you hear me?", "Are you there?"), and an in-prompt example showing the "Hi [Name], this is Doctor X" greeting pattern. Closes the 2026-04-29 Janice Carey failure mode where the call wasn't detected and got A004A (general reassessment) instead of A102A |
@@ -358,7 +375,7 @@ Idle → Preparing → Recording → Stopping → Completed
 | Audit-stamping metadata fields | `mark_chart_stale_suspected(session_id, date_str)` writes `chart_stale_suspected: Some(true)` via the typed `update_metadata_field` helper — preferred over raw JSON patching since it round-trips through `ArchiveMetadata` and preserves serde guarantees. Pattern for future audit flags: add `Option<bool>` field to `ArchiveMetadata`, write via a typed helper |
 | Vision DOB extraction | `parse_vision_response()` in `patient_name_tracker.rs` — tries JSON `{"name": "...", "dob": "YYYY-MM-DD"}` first, falls back to plain-text parsing. DOB validated as YYYY-MM-DD format. `PatientNameTracker` stores DOB separately via `set_dob()`, cleared on `reset()`. `patient_dob` field in `ArchiveMetadata` auto-populates billing age bracket |
 | Billing context toggles | `BillingContext` struct in `commands/billing.rs` — physician-provided context (visit_setting, patient_age, referral_received, counselling_exhausted, after_hours_override). `build_context_hints()` converts to LLM prompt hints. Passed as optional parameter to `extract_billing_codes` |
-| OHIP code search + conflicts | `search_ohip_codes()` searches 234 codes by code prefix or description substring. `find_conflicts()` / `find_all_conflicts()` in `ohip_codes.rs` check 21 exclusion groups for code incompatibilities |
+| OHIP code search + conflicts | `search_ohip_codes()` searches 239 codes by code prefix or description substring. `find_conflicts()` / `find_all_conflicts()` in `ohip_codes.rs` check 21 exclusion groups for code incompatibilities |
 | SOAP model override | `model_override: Option<String>` parameter on `generate_soap_note` and `generate_soap_note_auto_detect`. History regenerate button has dropdown for `soap-alt` and `soap-alt-2` aliases |
 
 ## Features
@@ -385,7 +402,7 @@ Idle → Preparing → Recording → Stopping → Completed
 | **Session Cleanup** | History window tools: delete, split, merge sessions, rename patients, renumber encounters. Split opens in separate resizable window with LLM-suggested split point (`suggest_split_points` via `fast-model`) | `commands/archive.rs`, `components/cleanup/`, `SplitWindow.tsx` |
 | **Vision Experiments** | CLI + IPC tools for comparing vision-based SOAP strategies across archived sessions | `vision_experiment.rs`, `commands/ollama.rs` |
 | **Simulation Replay Logging** | Three-tier structured logging for offline replay and regression testing: per-segment JSONL timeline (`segments.jsonl`), self-contained encounter test case (`replay_bundle.json` — all LLM prompts/responses, sensor transitions, vision results, split decisions, multi-patient detections), day-level orchestration events (`day_log.jsonl`). Schema v2 adds `sensor_continuous_present`/`sensor_triggered`/`manual_triggered` to loop_state (~99.5% replay agreement with production). Merge-back encounters finalize as `replay_bundle.merged_{short_id}.json` siblings under the surviving session's dir. Multi-patient detections captured at three call sites (PreSoap, Retrospective, Standalone) via `MultiPatientStage` enum. Config snapshot via `replay_snapshot()`. ~0.5-3MB/day. `detection_replay_cli` replays archived decisions through `evaluate_detection()` with `--override` for what-if parameter tuning. `replay_bundle_backfill` tool reconstructs v1→v2 upgrades from mmWave CSV + day_log. `scripts/replay_day.py` orchestrates full-day audio replay through STT Router + LLM Router for end-to-end model comparison | `segment_log.rs`, `replay_bundle.rs`, `day_log.rs`, `config.rs`, `tools/detection_replay_cli.rs`, `tools/replay_bundle_backfill.rs`, `scripts/replay_day.py` |
-| **FHO+ Billing** | Two-stage billing extraction: LLM extracts clinical features (23 visit types, 81 procedures incl. `NerveBlockOccipital` / `NerveBlockOccipitalAdditional`, 14 conditions incl. `OpioidWithdrawalManagement`), deterministic rule engine maps to OHIP codes. 239 OHIP codes (SOB-verified through 2026-03-27, including occipital nerve block codes G264A/G265A/G291A/G292A added v0.10.67 from the Apr 29 forensic review), 562 diagnostic codes (MOH ICD-8), 21 exclusion groups. **K013A → K033A overflow**: K013A capped at 3 units/year — overflow units auto-assigned to K033A (out-of-basket). Companion code auto-add: E542A tray fee, E430A pap tray, E079A smoking cessation. Base+add-on quantity logic (G370→G371, G384→G385). Billing preferences in Settings (visit setting, K013 exhausted, hospital-based). **Diagnostic code resolution**: two-stage — (1) cross-validate LLM's `suggestedDiagnosticCode` against `primaryDiagnosis` text (fallback to text match on mismatch), (2) text match from SOAP. Billing context toggles: visit setting, patient age (auto from vision DOB), referral, K013, after-hours, hospital. CSV export with diagnostic code column. Auto-extracts after SOAP in continuous mode. Multi-patient billing: per-patient records merged into `billing.json`. Full Q310-Q313 time tracking with 14hr/day and 240hr/28-day caps. Daily/monthly summary. Stored as `billing.json` per session | `billing/`, `commands/billing.rs`, `encounter_pipeline.rs`, `src/components/billing/` |
+| **FHO+ Billing** | Two-stage billing extraction: LLM extracts clinical features (23 visit types, 81 procedures incl. `NerveBlockOccipital` / `NerveBlockOccipitalAdditional`, 14 conditions incl. `OpioidWithdrawalManagement`), deterministic rule engine maps to OHIP codes, then `compute_upgrade_suggestions` (v0.10.76+) proposes higher-value alternates the clinician can promote with one click (e.g. K005A↔K013A for counselling, K013A on long visits in v0.10.77). 239 OHIP codes (SOB-verified through 2026-03-27, including occipital nerve block codes G264A/G265A/G291A/G292A added v0.10.67 from the Apr 29 forensic review), 562 diagnostic codes (MOH ICD-8), 21 exclusion groups. **K013A → K033A overflow**: K013A capped at 3 units/year — overflow units auto-assigned to K033A (out-of-basket). Companion code auto-add: E542A tray fee, E430A pap tray, E079A smoking cessation. Base+add-on quantity logic (G370→G371, G384→G385). Billing preferences in Settings (visit setting, K013 exhausted, hospital-based). **Diagnostic code resolution**: two-stage — (1) cross-validate LLM's `suggestedDiagnosticCode` against `primaryDiagnosis` text (fallback to text match on mismatch), (2) text match from SOAP. Billing context toggles: visit setting, patient age (auto from vision DOB), referral, K013, after-hours, hospital. CSV export with diagnostic code column. Auto-extracts after SOAP in continuous mode. Multi-patient billing: per-patient records merged into `billing.json`. Full Q310-Q313 time tracking with 14hr/day and 240hr/28-day caps. Daily/monthly summary. Stored as `billing.json` per session | `billing/`, `commands/billing.rs`, `encounter_pipeline.rs`, `src/components/billing/` |
 | **Manual Audio Upload** | Upload pre-recorded audio files (mp3/wav/m4a/aac/flac/ogg/wma/webm) with user-selected date. Runs through same continuous-mode pipeline: ffmpeg transcode → STT batch → encounter detection → SOAP per encounter → archive + sync. Accessible via "Upload Recording" link in both ReadyMode (session mode) and ContinuousMode. Shared helpers in `audio_processing.rs` with `process_mobile` CLI (zero algorithm divergence). Progress events: `transcoding` → `transcribing` → `detecting` → `generating_soap` → `complete`/`failed`. Fail-open on SOAP errors (skip SOAP for that encounter, session still archived) | `commands/audio_upload.rs`, `audio_processing.rs`, `useAudioUpload.ts`, `AudioUploadModal.tsx` |
 | **Multi-User** | Room + physician profile system. Passwordless physician selection (physical clinic security). Profile service on Mac Studio (:8090) stores physicians, rooms, speakers, and sessions. Server is source of truth — local archive is write-through cache. Settings merge: infrastructure (shared) → room (per-machine) → physician (roaming). Background audio upload, 30s delayed re-sync for late-written files. Offline resilience with cached profiles. Multi-URL failover: `fallback_server_urls` in room_config.json, startup health probe selects fastest responding URL (2s timeout per URL, `connect_timeout` 3s on main client) | `profile_client.rs`, `room_config.rs`, `physician_cache.rs`, `commands/physicians.rs` |
 | **Mobile House Calls** | iOS SwiftUI app records AAC audio offline, auto-uploads to profile service when on network. Processing CLI (`process_mobile`) shares desktop app's Rust modules — zero algorithm divergence. Pipeline: ffmpeg transcode → STT Router (batch) → encounter detection → SOAP generation → upload sessions to profile service. Mobile sessions appear in desktop History automatically. Profile service tracks job lifecycle (queued→transcoding→transcribing→detecting→generating_soap→complete/failed). `--once` flag for single-job processing | `src/bin/process_mobile.rs` (CLI), `ios/` (SwiftUI app), `profile-service/src/routes/mobile.rs`, `profile-service/src/store/mobile_jobs.rs` |

@@ -1,6 +1,6 @@
 # LLM Benchmark Specifications
 
-Benchmark specs for the 5 LLM tasks used in continuous charting mode (beyond final SOAP note generation). Each spec is self-contained — a separate benchmarking app can use it to evaluate model candidates without access to this codebase.
+Benchmark specs for the LLM tasks used in continuous charting mode. There are 7 fixtures under `tauri-app/src-tauri/tests/fixtures/benchmarks/`: 5 detection/routing tasks documented here (with self-contained per-task specs), plus 2 newer tasks — `billing.json` (Stage 0 diagnostic / OHIP code extraction regression cases) and `soap.json` (SOAP-prompt-engineering regression cases like "no procedure section reappears"). The 2 newer fixtures are run through `benchmark_runner` the same way; their per-task markdown specs are not yet written but the fixture JSON is the canonical schema reference until then.
 
 ## Architecture Context
 
@@ -53,7 +53,7 @@ Audio → STT → Transcript Buffer
 |------|------|-------------|---------------|--------------|
 | [encounter-detection.md](encounter-detection.md) | Detect transition between patient encounters | Every ~2 min, or on sensor trigger, or on word count threshold | `fast-model` (with optional `/nothink`) | `tauri-app/src-tauri/tests/fixtures/benchmarks/encounter_detection.json` |
 | [encounter-merge.md](encounter-merge.md) | Check if split segments are same visit | After every encounter split | `fast-model` | `tauri-app/src-tauri/tests/fixtures/benchmarks/encounter_merge.json` |
-| [clinical-content-check.md](clinical-content-check.md) | Classify transcript as clinical vs non-clinical | After split confirmed (not merged back) | `fast-model` | `tauri-app/src-tauri/tests/fixtures/benchmarks/clinical_content.json` |
+| [clinical-content-check.md](clinical-content-check.md) | Classify transcript as clinical vs non-clinical | After split confirmed (not merged back) | `fast-model` | `tauri-app/src-tauri/tests/fixtures/benchmarks/clinical_content_check.json` |
 | [multi-patient-detection.md](multi-patient-detection.md) | Detect multiple patients in merged transcript | After merge-back, if merged text ≥ 2500 words | `fast-model` | `tauri-app/src-tauri/tests/fixtures/benchmarks/multi_patient_detection.json` |
 | [multi-patient-split.md](multi-patient-split.md) | Find boundary line between patients | After multi-patient detection confirms multiple patients | `fast-model` | `tauri-app/src-tauri/tests/fixtures/benchmarks/multi_patient_split.json` |
 

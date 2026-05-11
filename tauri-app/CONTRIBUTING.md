@@ -116,25 +116,28 @@ refactor: extract audio resampling into separate module
 
 ## Testing
 
-The full test architecture is documented in **[../docs/TESTING.md](../docs/TESTING.md)** — read it first for context on the 7 test layers, replay tools, labeled corpus, and benchmark fixtures.
+The full test architecture is documented in **[../docs/TESTING.md](../docs/TESTING.md)** — read it first for context on the 9 test layers, replay tools, labeled corpus, and benchmark fixtures.
 
-Current coverage: 594 frontend tests, 1,125 Rust lib tests, 66 profile-service tests, 192 replay bundles, 68 labeled bundles. All PRs must pass `cargo test --lib`, `pnpm test:run`, and `./scripts/preflight.sh --full`.
+Current coverage: 606 frontend tests, 1,373 Rust lib tests (31 ignored), 10 per-encounter harness snapshots, 134 labeled bundles, archived replay corpus under `~/.transcriptionapp/archive/`. All PRs must pass `cargo test --lib`, `pnpm test:run`, and `./scripts/preflight.sh --regression` (the PR-side CI gate covers preflight layers 6 + 8 + 9).
 
 ### Running Tests
 
 ```bash
-# Frontend (Vitest, 32 files)
+# Frontend (Vitest, 33 files)
 pnpm test:run
 
-# Rust backend (~1,125 lib tests)
+# Rust backend (~1,373 lib tests)
 cd src-tauri
 cargo test --lib
 
-# Profile service (66 tests)
+# Per-encounter snapshot harness (10 seed bundles)
+cargo test --test harness_per_encounter
+
+# Profile service
 cd ../../profile-service
 cargo test
 
-# Full preflight (7 layers, ~30s)
+# Full preflight (9 layers)
 cd ../tauri-app
 ./scripts/preflight.sh --full
 
@@ -335,12 +338,12 @@ proptest! {
 | `activity_log` | Structured PHI-safe activity logging |
 | `pipeline_log` | Pipeline replay JSONL logger |
 | `segment_log` | Per-segment JSONL timeline logger (continuous mode) |
-| `replay_bundle` | Self-contained encounter replay test case builder (schema v3, includes MultiPatientSplitDecision) |
+| `replay_bundle` | Self-contained encounter replay test case builder (schema v5; v2 adds sensor-context loop_state + multi_patient_detections; v3 adds MultiPatientSplitDecision; v4 adds MergeCheck.prev_source + prev_soap_excerpt; v5 adds SoapResult.system_prompt/user_prompt/response_raw + BillingResult.system_prompt/user_prompt/response_raw for offline replay of SOAP/billing prompt experiments) |
 | `day_log` | Day-level orchestration JSONL logger |
 | `performance_summary` | Writes `performance_summary.json` per day at continuous-mode stop. Per-step latency percentiles + scheduling/network split + peak concurrency + failure counts |
 | `transcript_buffer` | Timestamped segment buffer (continuous mode) |
 | `audio_processing` | Shared ffmpeg + WAV helpers used by manual audio upload + mobile CLI |
-| `billing/` | FHO+ billing engine (235 OHIP codes, 562 diagnostic codes, two-stage extraction) |
+| `billing/` | FHO+ billing engine (239 OHIP codes, 562 diagnostic codes, two-stage extraction + Stage 0 diagnostic tools-model + post-engine upgrade suggestions) |
 | `server_sync` | `ServerSyncContext` — fire-and-forget session upload + 30s delayed re-sync |
 | `server_config` | Server-configurable prompts/billing/thresholds (3-tier fallback: server → cache → defaults) |
 | `room_config` | Room config (room name, profile server URL, fallback URLs, room ID) |
@@ -348,7 +351,7 @@ proptest! {
 | `profile_client` | HTTP client for profile service (physicians, sessions, speakers, rooms, config) |
 | `audio_upload_queue` | Background audio upload queue for server sync |
 | `co2_calibration` | CO2 sensor baseline calibration tool |
-| `tools/*.rs` | 12 replay/regression CLIs (detection_replay, merge_replay, clinical_replay, multi_patient_replay, multi_patient_split_replay, benchmark_runner, labeled_regression, golden_day, bootstrap_labels, replay_bundle_backfill, encounter_experiment, vision_experiment) |
+| `tools/*.rs` | 17 CLIs: 15 replay/regression (detection_replay, merge_replay, clinical_replay, multi_patient_replay, multi_patient_split_replay, benchmark_runner, labeled_regression, golden_day, bootstrap_labels, replay_bundle_backfill, encounter_experiment, vision_experiment, soap_experiment, billing_experiment, soap_diff) + ort_smoke (ONNX Runtime CI smoke) + forensic_2026_04_30_replay (dated forensic-replay tool) |
 | `bin/process_mobile.rs` | Mobile audio processing CLI (polls profile service, runs STT→detect→SOAP) |
 | `benches/audio_benchmarks.rs` | Criterion benchmarks for audio processing |
 
