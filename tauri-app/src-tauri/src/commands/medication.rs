@@ -29,51 +29,45 @@ use tracing::{error, info, warn};
 
 const VISION_TIMEOUT_SECS: u64 = 30;
 const PHARM_SERVICE_TIMEOUT_SECS: u64 = 30;
-const SCREENSHOT_MAX_EDGE: u32 = 1280;
+/// Med-list capture needs a higher resolution than the rest of the
+/// vision pipeline: at 1280 the EMR's small meds-panel font (~6-8px)
+/// is below the vision model's effective OCR threshold and the model
+/// silently returns []. 2048 reliably reads dense panels in testing.
+const SCREENSHOT_MAX_EDGE_PRIMARY: u32 = 2048;
+/// Retry resolution when 2048 returns an empty list on a non-blank
+/// screen. Borderline charts (small font, dim contrast) intermittently
+/// fail at 2048 but succeed at 2560. Above 2560 the model starts
+/// returning [] on dense charts so this is the practical ceiling.
+const SCREENSHOT_MAX_EDGE_RETRY: u32 = 2560;
+/// Dense med panels need >500 tokens — a 15-item Skater-style list
+/// runs ~700-1000 completion tokens. 2000 leaves headroom without
+/// blowing the 30s timeout.
+const MED_EXTRACTION_MAX_TOKENS: u32 = 2000;
 
 // ── capture_screenshot_for_meds ───────────────────────────────────────
 
-/// Capture one screenshot and run it through the vision LLM to extract a
-/// medication list. Fail-soft: vision errors / timeouts return an empty
-/// list rather than propagating an error, so the UI can fall through to
-/// manual entry without an error toast.
-#[tauri::command]
-pub async fn capture_screenshot_for_meds(
-    server_config: State<'_, SharedServerConfig>,
-) -> Result<MedExtractionResult, CommandError> {
-    let config = Config::load_or_default();
-
-    // capture_to_base64 is sync + CPU-bound; spawn_blocking keeps the tokio runtime free.
-    let capture =
-        tokio::task::spawn_blocking(move || screenshot::capture_to_base64(SCREENSHOT_MAX_EDGE))
-            .await
-            .map_err(|e| CommandError::Other(format!("screenshot task join failed: {}", e)))?
-            .map_err(CommandError::Other)?;
+/// One vision-extraction attempt at `max_edge`. Returns `(meds, likely_blank)`.
+/// `likely_blank` short-circuits the caller — no point retrying a screenshot
+/// the OS blanked out due to missing Screen Recording permission.
+///
+/// Fail-soft: vision errors and timeouts return `(Vec::new(), false)` rather
+/// than propagating, so the caller can decide whether to retry or surface
+/// "no meds found" to the user.
+async fn try_extract_meds(
+    max_edge: u32,
+    client: &LLMClient,
+    templates: &crate::server_config::PromptTemplates,
+) -> Result<(Vec<MedEntry>, bool), CommandError> {
+    let capture = tokio::task::spawn_blocking(move || screenshot::capture_to_base64(max_edge))
+        .await
+        .map_err(|e| CommandError::Other(format!("screenshot task join failed: {}", e)))?
+        .map_err(CommandError::Other)?;
 
     if capture.likely_blank {
-        warn!("Medication screenshot likely blank — probably no Screen Recording permission");
-        return Ok(MedExtractionResult {
-            medications: Vec::new(),
-            likely_blank: true,
-        });
+        return Ok((Vec::new(), true));
     }
 
-    // Clone prompt templates out of the lock before drop so we can use them
-    // for the vision call without holding the read guard across .await.
-    let templates = {
-        let sc = server_config.read().await;
-        sc.prompts.clone()
-    };
-
-    let client = LLMClient::new(
-        &config.llm_router_url,
-        &config.llm_api_key,
-        &config.llm_client_id,
-        &config.fast_model,
-    )
-    .map_err(CommandError::Network)?;
-
-    let (system_prompt, user_text) = build_medication_extraction_prompt(Some(&templates));
+    let (system_prompt, user_text) = build_medication_extraction_prompt(Some(templates));
     let content_parts = vec![
         ContentPart::Text { text: user_text },
         ContentPart::ImageUrl {
@@ -89,7 +83,7 @@ pub async fn capture_screenshot_for_meds(
         content_parts,
         "med_list_extraction",
         Some(0.1),
-        Some(500),
+        Some(MED_EXTRACTION_MAX_TOKENS),
         None,
         None,
     );
@@ -102,32 +96,93 @@ pub async fn capture_screenshot_for_meds(
     {
         Ok((Ok(resp), _metrics)) => resp,
         Ok((Err(e), _)) => {
-            error!("Vision call for med extraction failed: {}", e);
-            return Ok(MedExtractionResult {
-                medications: Vec::new(),
-                likely_blank: false,
-            });
+            error!("Vision call for med extraction failed at {}px: {}", max_edge, e);
+            return Ok((Vec::new(), false));
         }
         Err(_) => {
             warn!(
-                "Vision call for med extraction timed out after {}s",
-                VISION_TIMEOUT_SECS
+                "Vision call for med extraction timed out at {}px after {}s",
+                max_edge, VISION_TIMEOUT_SECS
             );
-            return Ok(MedExtractionResult {
-                medications: Vec::new(),
-                likely_blank: false,
-            });
+            return Ok((Vec::new(), false));
         }
     };
 
-    let medications = parse_medication_vision_response(&response);
-    info!(
-        "Medication extraction returned {} medications",
-        medications.len()
-    );
+    Ok((parse_medication_vision_response(&response), false))
+}
 
+/// Capture one screenshot and run it through the vision LLM to extract a
+/// medication list. Tries `SCREENSHOT_MAX_EDGE_PRIMARY` first; on an empty
+/// non-blank result, retakes the screenshot at `SCREENSHOT_MAX_EDGE_RETRY`
+/// and tries again. Borderline charts intermittently return [] at the
+/// primary resolution even when meds are clearly visible; the retry covers
+/// that case at the cost of an extra vision call (~15-20s) only when the
+/// first attempt found nothing.
+#[tauri::command]
+pub async fn capture_screenshot_for_meds(
+    server_config: State<'_, SharedServerConfig>,
+) -> Result<MedExtractionResult, CommandError> {
+    let config = Config::load_or_default();
+
+    // Clone prompt templates out of the lock so we can use them across
+    // the awaits without holding the read guard.
+    let templates = {
+        let sc = server_config.read().await;
+        sc.prompts.clone()
+    };
+
+    let client = LLMClient::new(
+        &config.llm_router_url,
+        &config.llm_api_key,
+        &config.llm_client_id,
+        &config.fast_model,
+    )
+    .map_err(CommandError::Network)?;
+
+    let (meds, likely_blank) =
+        try_extract_meds(SCREENSHOT_MAX_EDGE_PRIMARY, &client, &templates).await?;
+
+    if likely_blank {
+        warn!("Medication screenshot likely blank — probably no Screen Recording permission");
+        return Ok(MedExtractionResult {
+            medications: Vec::new(),
+            likely_blank: true,
+        });
+    }
+
+    if !meds.is_empty() {
+        info!(
+            "Medication extraction returned {} medications at {}px",
+            meds.len(),
+            SCREENSHOT_MAX_EDGE_PRIMARY
+        );
+        return Ok(MedExtractionResult {
+            medications: meds,
+            likely_blank: false,
+        });
+    }
+
+    info!(
+        "Medication extraction empty at {}px; retrying at {}px",
+        SCREENSHOT_MAX_EDGE_PRIMARY, SCREENSHOT_MAX_EDGE_RETRY
+    );
+    let (retry_meds, retry_blank) =
+        try_extract_meds(SCREENSHOT_MAX_EDGE_RETRY, &client, &templates).await?;
+
+    if retry_blank {
+        return Ok(MedExtractionResult {
+            medications: Vec::new(),
+            likely_blank: true,
+        });
+    }
+
+    info!(
+        "Medication extraction (retry) returned {} medications at {}px",
+        retry_meds.len(),
+        SCREENSHOT_MAX_EDGE_RETRY
+    );
     Ok(MedExtractionResult {
-        medications,
+        medications: retry_meds,
         likely_blank: false,
     })
 }
@@ -135,26 +190,30 @@ pub async fn capture_screenshot_for_meds(
 // ── analyze_medications ──────────────────────────────────────────────
 
 /// Shape returned by pharm-refactor's `MedicationResponse` (api/server.py).
+///
+/// The pharm service serializes in snake_case (FastAPI/pydantic default) while
+/// we send this struct through to the JS frontend as camelCase. `rename_all`
+/// handles the JS direction; per-field `alias` handles the pharm direction.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AnalysisMedication {
-    #[serde(default)]
+    #[serde(default, alias = "raw_text")]
     pub raw_text: String,
-    #[serde(default)]
+    #[serde(default, alias = "name_canonical")]
     pub name_canonical: String,
-    #[serde(default)]
+    #[serde(default, alias = "dose_value")]
     pub dose_value: Option<f64>,
-    #[serde(default)]
+    #[serde(default, alias = "dose_unit")]
     pub dose_unit: Option<String>,
     #[serde(default)]
     pub frequency: String,
     #[serde(default)]
     pub formulation: String,
-    #[serde(default)]
+    #[serde(default, alias = "dose_band")]
     pub dose_band: String,
-    #[serde(default)]
+    #[serde(default, alias = "is_combo")]
     pub is_combo: bool,
-    #[serde(default)]
+    #[serde(default, alias = "combo_components")]
     pub combo_components: Vec<String>,
 }
 
@@ -169,9 +228,9 @@ pub struct AnalysisCard {
     pub category: String,
     pub severity: String,
     pub confidence: String,
-    #[serde(default)]
+    #[serde(default, alias = "meds_involved")]
     pub meds_involved: Vec<String>,
-    #[serde(default)]
+    #[serde(default, alias = "verify_checklist")]
     pub verify_checklist: Vec<String>,
     #[serde(default)]
     pub action: Option<String>,
@@ -179,28 +238,28 @@ pub struct AnalysisCard {
     pub notes: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BurdenScores {
-    #[serde(default)]
+    #[serde(default, alias = "acb_total")]
     pub acb_total: f64,
-    #[serde(default)]
+    #[serde(default, alias = "sedation_total")]
     pub sedation_total: f64,
-    #[serde(default)]
+    #[serde(default, alias = "constipation_total")]
     pub constipation_total: f64,
-    #[serde(default)]
+    #[serde(default, alias = "qt_risk_count")]
     pub qt_risk_count: u32,
-    #[serde(default)]
+    #[serde(default, alias = "serotonergic_count")]
     pub serotonergic_count: u32,
-    #[serde(default)]
+    #[serde(default, alias = "bleeding_risk_count")]
     pub bleeding_risk_count: u32,
-    #[serde(default)]
+    #[serde(default, alias = "falls_risk_count")]
     pub falls_risk_count: u32,
-    #[serde(default)]
+    #[serde(default, alias = "nephrotoxic_count")]
     pub nephrotoxic_count: u32,
-    #[serde(default)]
+    #[serde(default, alias = "hepatotoxic_count")]
     pub hepatotoxic_count: u32,
-    #[serde(default)]
+    #[serde(default, alias = "hyperkalemia_count")]
     pub hyperkalemia_count: u32,
 }
 
@@ -209,6 +268,7 @@ pub struct BurdenScores {
 pub struct AnalysisResult {
     pub medications: Vec<AnalysisMedication>,
     pub cards: Vec<AnalysisCard>,
+    #[serde(alias = "burden_scores")]
     pub burden_scores: BurdenScores,
     #[serde(default)]
     pub context: HashMap<String, serde_json::Value>,
@@ -304,3 +364,101 @@ pub async fn analyze_medications(
     Ok(analysis)
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Round-trip the exact wire format pharm-refactor's FastAPI returns
+    /// (snake_case keys, including the required `burden_scores`). Catches
+    /// the v0.10.82 regression where `rename_all = "camelCase"` made serde
+    /// look for `burdenScores` and fail with "missing field".
+    #[test]
+    fn deserializes_pharm_service_snake_case_response() {
+        let body = r#"{
+            "medications": [{
+                "raw_text": "lipitor 40 od",
+                "name_canonical": "atorvastatin",
+                "dose_value": 40.0,
+                "dose_unit": "mg",
+                "frequency": "UNKNOWN",
+                "formulation": "UNKNOWN",
+                "dose_band": "UNKNOWN",
+                "is_combo": false,
+                "combo_components": []
+            }],
+            "cards": [{
+                "id": "guideline_avoid_d3d8a891",
+                "title": "Guideline: Consider avoiding atorvastatin",
+                "rationale": "...",
+                "category": "GuidelineDeviation",
+                "severity": "critical",
+                "confidence": "HIGH",
+                "meds_involved": ["atorvastatin"],
+                "verify_checklist": ["Confirm patient has COVID-19"],
+                "action": null,
+                "notes": null
+            }],
+            "burden_scores": {
+                "acb_total": 0.0,
+                "sedation_total": 0.5,
+                "constipation_total": 0.0,
+                "qt_risk_count": 0,
+                "serotonergic_count": 0,
+                "bleeding_risk_count": 0,
+                "falls_risk_count": 0,
+                "nephrotoxic_count": 0,
+                "hepatotoxic_count": 0,
+                "hyperkalemia_count": 0
+            },
+            "context": {}
+        }"#;
+        let analysis: AnalysisResult =
+            serde_json::from_str(body).expect("pharm-service snake_case response must deserialize");
+        assert_eq!(analysis.medications.len(), 1);
+        let med = &analysis.medications[0];
+        assert_eq!(med.raw_text, "lipitor 40 od");
+        assert_eq!(med.name_canonical, "atorvastatin");
+        assert_eq!(med.dose_value, Some(40.0));
+        assert_eq!(med.dose_unit.as_deref(), Some("mg"));
+        assert_eq!(analysis.cards.len(), 1);
+        assert_eq!(analysis.cards[0].meds_involved, vec!["atorvastatin"]);
+        assert_eq!(
+            analysis.cards[0].verify_checklist,
+            vec!["Confirm patient has COVID-19"]
+        );
+        assert_eq!(analysis.burden_scores.sedation_total, 0.5);
+    }
+
+    /// Same struct must still serialize as camelCase when we send it on
+    /// to the JS frontend via Tauri IPC. JS reads e.g. `burdenScores` not
+    /// `burden_scores`.
+    #[test]
+    fn serializes_to_camel_case_for_js() {
+        let result = AnalysisResult {
+            medications: vec![AnalysisMedication {
+                raw_text: "lipitor".into(),
+                name_canonical: "atorvastatin".into(),
+                dose_value: Some(40.0),
+                dose_unit: Some("mg".into()),
+                frequency: String::new(),
+                formulation: String::new(),
+                dose_band: String::new(),
+                is_combo: false,
+                combo_components: vec![],
+            }],
+            cards: vec![],
+            burden_scores: BurdenScores {
+                acb_total: 1.5,
+                ..Default::default()
+            },
+            context: HashMap::new(),
+        };
+        let json = serde_json::to_string(&result).unwrap();
+        assert!(json.contains("\"rawText\":\"lipitor\""));
+        assert!(json.contains("\"nameCanonical\":\"atorvastatin\""));
+        assert!(json.contains("\"burdenScores\":{"));
+        assert!(json.contains("\"acbTotal\":1.5"));
+        assert!(!json.contains("raw_text"));
+        assert!(!json.contains("burden_scores"));
+    }
+}

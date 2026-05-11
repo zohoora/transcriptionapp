@@ -49,15 +49,17 @@ const ClinicalAssistantWindow: React.FC = () => {
     med.medList
   );
 
-  // Defer the vision call until the user actually opens the Meds tab —
-  // saves a 30s timeout-bounded LLM call when the user only wants chat.
+  // Auto-extract on window mount so the extracted med list is available
+  // as system context for the chat tab (the default tab) as soon as the
+  // clinician asks their first question. The Re-extract button in the
+  // Meds tab still triggers a fresh capture if the chart has changed.
   const didAutoExtractRef = useRef(false);
   useEffect(() => {
-    if (activeTab !== 'meds' || didAutoExtractRef.current) return;
+    if (didAutoExtractRef.current) return;
     if (med.extractionState !== 'idle') return;
     didAutoExtractRef.current = true;
     void med.extract();
-  }, [activeTab, med.extractionState, med.extract]);
+  }, [med.extractionState, med.extract]);
 
   const handleClose = useCallback(async () => {
     try {
