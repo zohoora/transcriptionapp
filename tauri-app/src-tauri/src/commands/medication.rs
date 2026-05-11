@@ -58,10 +58,17 @@ async fn try_extract_meds(
     client: &LLMClient,
     templates: &crate::server_config::PromptTemplates,
 ) -> Result<(Vec<MedEntry>, bool), CommandError> {
-    let capture = tokio::task::spawn_blocking(move || screenshot::capture_to_base64(max_edge))
-        .await
-        .map_err(|e| CommandError::Other(format!("screenshot task join failed: {}", e)))?
-        .map_err(CommandError::Other)?;
+    // Full-screen capture, NOT window-under-cursor. The clinician triggers
+    // this from the AMI Assist sidebar — at click time the cursor is on the
+    // "Clinical Assistant" button, so the window-under-cursor path captured
+    // the sidebar (no meds visible) and returned empty regardless of
+    // resolution. See activity.log on v0.10.83 — both 2048 and 2560
+    // retries returned 0 medications because the source image was wrong.
+    let capture =
+        tokio::task::spawn_blocking(move || screenshot::capture_full_screen_to_base64(max_edge))
+            .await
+            .map_err(|e| CommandError::Other(format!("screenshot task join failed: {}", e)))?
+            .map_err(CommandError::Other)?;
 
     if capture.likely_blank {
         return Ok((Vec::new(), true));

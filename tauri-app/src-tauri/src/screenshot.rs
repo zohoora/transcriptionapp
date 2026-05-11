@@ -538,20 +538,21 @@ pub struct CaptureResult {
     pub likely_blank: bool,
 }
 
-pub fn capture_to_base64(max_edge: u32) -> Result<CaptureResult, String> {
+/// Resize a `RawImage` and JPEG-encode it to a base64 string. Shared between
+/// `capture_to_base64` (window-under-cursor) and `capture_full_screen_to_base64`
+/// (full display) so the resize/encode pipeline stays in one place.
+fn raw_to_base64(raw: RawImage, max_edge: u32) -> Result<CaptureResult, String> {
     use base64::Engine;
-    use image::{ImageBuffer, Rgba, codecs::jpeg::JpegEncoder, imageops::FilterType};
+    use image::{codecs::jpeg::JpegEncoder, imageops::FilterType, ImageBuffer, Rgba};
     use std::io::Cursor;
-
-    let raw = capture_screen()?;
 
     // Check if the raw capture is blank before resizing (cheaper on full-res RGBA data)
     let likely_blank = is_blank_capture(&raw.data, raw.width, raw.height);
 
-    let img: ImageBuffer<Rgba<u8>, _> = ImageBuffer::from_raw(raw.width, raw.height, raw.data.clone())
-        .ok_or("Failed to create image buffer")?;
+    let img: ImageBuffer<Rgba<u8>, _> =
+        ImageBuffer::from_raw(raw.width, raw.height, raw.data.clone())
+            .ok_or("Failed to create image buffer")?;
 
-    // Resize to fit within max_edge
     let long_edge = raw.width.max(raw.height);
     let (new_w, new_h) = if long_edge <= max_edge {
         (raw.width, raw.height)
@@ -565,7 +566,6 @@ pub fn capture_to_base64(max_edge: u32) -> Result<CaptureResult, String> {
 
     let resized = image::imageops::resize(&img, new_w, new_h, FilterType::Lanczos3);
 
-    // Encode as JPEG to in-memory buffer
     let mut buf = Vec::new();
     let mut encoder = JpegEncoder::new_with_quality(Cursor::new(&mut buf), 70);
     encoder
@@ -581,6 +581,31 @@ pub fn capture_to_base64(max_edge: u32) -> Result<CaptureResult, String> {
         base64: base64::engine::general_purpose::STANDARD.encode(&buf),
         likely_blank,
     })
+}
+
+/// Capture the window-under-cursor (or full screen if no window found).
+/// Used by continuous-mode patient-name tracking where the cursor is on
+/// the EMR chart the clinician is interacting with — the window-under-
+/// cursor heuristic captures exactly the chart, not the AMI sidebar.
+pub fn capture_to_base64(max_edge: u32) -> Result<CaptureResult, String> {
+    raw_to_base64(capture_screen()?, max_edge)
+}
+
+/// Capture the full primary display, regardless of cursor position. Used by
+/// medication extraction triggered from the AMI Assist sidebar: at trigger
+/// time the cursor is on the "Clinical Assistant" button so the
+/// window-under-cursor path would capture the sidebar (no meds visible),
+/// producing the silent-empty-result failure mode seen in v0.10.83.
+pub fn capture_full_screen_to_base64(max_edge: u32) -> Result<CaptureResult, String> {
+    #[cfg(target_os = "macos")]
+    {
+        raw_to_base64(capture_full_screen()?, max_edge)
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        // Other platforms fall back to whatever capture_screen returns.
+        raw_to_base64(capture_screen()?, max_edge)
+    }
 }
 
 /// Select evenly-spaced thumbnail screenshots from the captured list.
