@@ -215,23 +215,20 @@ describe('useContinuousModeOrchestrator', () => {
         useContinuousModeOrchestrator({ settings: null })
       );
 
-      // The mount effect also calls resetBiomarkers (no-op when biomarkers
-      // start empty). Snapshot baseline so we measure only the handleNewPatient
-      // call here.
-      const mountResetCalls = mockResetBiomarkers.mock.calls.length;
+      // Drop the mount-effect call (a no-op since biomarkers start empty) so
+      // the assertion below isolates what handleNewPatient itself does.
+      mockResetBiomarkers.mockClear();
 
       await act(async () => {
         await result.current.onNewPatient();
       });
 
-      expect(mockResetBiomarkers.mock.calls.length).toBe(mountResetCalls + 1);
+      expect(mockResetBiomarkers).toHaveBeenCalledTimes(1);
       expect(mockTriggerNewPatient).toHaveBeenCalledTimes(1);
 
-      // The handleNewPatient reset should be ordered before triggerNewPatient.
-      const lastResetOrder =
-        mockResetBiomarkers.mock.invocationCallOrder[mountResetCalls];
+      const resetOrder = mockResetBiomarkers.mock.invocationCallOrder[0];
       const triggerOrder = mockTriggerNewPatient.mock.invocationCallOrder[0];
-      expect(lastResetOrder).toBeLessThan(triggerOrder);
+      expect(resetOrder).toBeLessThan(triggerOrder);
     });
   });
 
@@ -332,13 +329,13 @@ describe('useContinuousModeOrchestrator', () => {
         useContinuousModeOrchestrator({ settings: null })
       );
 
-      const callsAfterMount = mockResetBiomarkers.mock.calls.length;
+      mockResetBiomarkers.mockClear();
 
       // Backend fires encounter_detected → useContinuousMode returns a new id.
       mockUseContinuousMode.mockReturnValue(makeContinuousModeReturn('enc-2') as never);
       rerender();
 
-      expect(mockResetBiomarkers.mock.calls.length).toBe(callsAfterMount + 1);
+      expect(mockResetBiomarkers).toHaveBeenCalledTimes(1);
     });
 
     it('does not reset patient biomarkers when encounterSessionId is unchanged across rerenders', async () => {
@@ -352,12 +349,12 @@ describe('useContinuousModeOrchestrator', () => {
         useContinuousModeOrchestrator({ settings: null })
       );
 
-      const callsAfterMount = mockResetBiomarkers.mock.calls.length;
+      mockResetBiomarkers.mockClear();
 
       rerender();
       rerender();
 
-      expect(mockResetBiomarkers.mock.calls.length).toBe(callsAfterMount);
+      expect(mockResetBiomarkers).not.toHaveBeenCalled();
     });
 
     it('passes encounterSessionId as resetKey to usePredictiveHint', async () => {

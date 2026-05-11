@@ -89,6 +89,15 @@ export function usePredictiveHint({
     transcriptRef.current = transcript;
   }, [transcript]);
 
+  const clearHintState = useCallback(() => {
+    setHint('');
+    setConcepts([]);
+    setImagePrompt(null);
+    setDifferentialDiagnoses([]);
+    setLastUpdated(null);
+    lastGeneratedRef.current = '';
+  }, []);
+
   const generateHint = useCallback(async () => {
     // Read from ref to get current transcript value
     const text = transcriptRef.current;
@@ -173,27 +182,16 @@ export function usePredictiveHint({
         }
       };
     } else {
-      setHint('');
-      setConcepts([]);
-      setImagePrompt(null);
-      setDifferentialDiagnoses([]);
-      setLastUpdated(null);
-      lastGeneratedRef.current = '';
+      clearHintState();
     }
-  }, [isRecording, generateHint, resetKey]);
+  }, [isRecording, generateHint, resetKey, clearHintState]);
 
-  // Clear hint state on resetKey change (continuous-mode encounter split).
-  // Separate from the timer effect so state clears even when resetKey is
-  // first set or when changed without an isRecording transition.
+  // Reset hint state when a new encounter starts so the next patient sees a
+  // clean panel instead of stale predictions from the previous encounter.
   useEffect(() => {
     if (resetKey === undefined) return;
-    setHint('');
-    setConcepts([]);
-    setImagePrompt(null);
-    setDifferentialDiagnoses([]);
-    setLastUpdated(null);
-    lastGeneratedRef.current = '';
-  }, [resetKey]);
+    clearHintState();
+  }, [resetKey, clearHintState]);
 
   return {
     hint,
