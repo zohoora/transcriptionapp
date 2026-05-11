@@ -23,6 +23,7 @@ import type {
   LocalArchiveSummary,
   LocalArchiveDetails,
   LocalArchiveMetadata,
+  ArchivedPatientNote,
   MultiPatientSoapResult,
   NegativeGapPair,
   SoapNote,
@@ -214,6 +215,55 @@ function formatDateForDisplay(date: Date): string {
     year: 'numeric',
     month: 'long',
     day: 'numeric',
+  });
+}
+
+/**
+ * Recover per-patient SOAP notes from the combined `soap_note.txt` when the
+ * per-patient `soap_patient_N.txt` files weren't synced from the originating
+ * room (cross-room multi-patient bug — see ALLOWED_SESSION_FILES in
+ * profile-service/src/store/sessions.rs).
+ *
+ * The combined SOAP is produced by Rust's `format_patient_notes_for_archive`
+ * (see tauri-app/src-tauri/src/llm_client.rs) which writes each patient as:
+ *
+ *   === <label> ===
+ *   <content>
+ *
+ * joined by `\n\n---\n\n`.
+ *
+ * Inputs:
+ *   - `combined`: the full soap_note string (non-empty, has `=== ... ===` headers)
+ *   - `labels`: the patientNotes entries (used for index/label to preserve UX
+ *     identical to the healthy multi-patient render path)
+ *
+ * Returns one entry per element in `labels`, in input order. If the combined
+ * SOAP can't be parsed into matching sections, the caller should fall back to
+ * a single-note view — return `labels.map(... content: '')` is acceptable for
+ * the caller to detect.
+ */
+function recoverPerPatientNotesFromCombined(
+  combined: string,
+  labels: ArchivedPatientNote[],
+): { speaker_id: string; patient_label: string; content: string }[] {
+  // Split on `=== <label> ===` headers. The captured group keeps labels in
+  // alternation with content: ["", label0, content0, label1, content1, ...].
+  const parts = combined.split(/^=== (.+?) ===\s*$/m);
+  const sections: { label: string; content: string }[] = [];
+  for (let i = 1; i < parts.length; i += 2) {
+    const sectionContent = (parts[i + 1] ?? '')
+      .replace(/\n\s*---\s*\n/g, '\n')
+      .trim();
+    sections.push({ label: parts[i].trim(), content: sectionContent });
+  }
+  return labels.map((pn, idx) => {
+    const byLabel = sections.find(s => s.label === pn.label);
+    const section = byLabel ?? sections[idx];
+    return {
+      speaker_id: `Patient ${pn.index}`,
+      patient_label: pn.label,
+      content: section?.content ?? '',
+    };
   });
 }
 
@@ -805,18 +855,31 @@ const HistoryWindow: React.FC = () => {
 
       // If session has SOAP note, create result for display
       if (details.soap_note) {
-        // Use per-patient notes when available (multi-patient encounter)
-        const notes = details.patientNotes && details.patientNotes.length > 1
-          ? details.patientNotes.map(pn => ({
-              speaker_id: `Patient ${pn.index}`,
-              patient_label: pn.label,
-              content: pn.content,
-            }))
-          : [{
-              speaker_id: 'Patient',
-              patient_label: 'Patient',
-              content: details.soap_note,
-            }];
+        // Use per-patient notes when available (multi-patient encounter).
+        // Recovery path: cross-room multi-patient sessions can have non-empty
+        // patient labels but empty content strings, because soap_patient_*.txt
+        // didn't always sync to the profile service. In that case, recover
+        // per-patient content by parsing the combined soap_note delimiters.
+        const hasMultiPatient = details.patientNotes && details.patientNotes.length > 1;
+        const allPerPatientEmpty = hasMultiPatient &&
+          details.patientNotes!.every(pn => !pn.content || pn.content.trim() === '');
+
+        let notes: { speaker_id: string; patient_label: string; content: string }[];
+        if (hasMultiPatient && !allPerPatientEmpty) {
+          notes = details.patientNotes!.map(pn => ({
+            speaker_id: `Patient ${pn.index}`,
+            patient_label: pn.label,
+            content: pn.content,
+          }));
+        } else if (hasMultiPatient && allPerPatientEmpty && details.soap_note) {
+          notes = recoverPerPatientNotesFromCombined(details.soap_note, details.patientNotes!);
+        } else {
+          notes = [{
+            speaker_id: 'Patient',
+            patient_label: 'Patient',
+            content: details.soap_note,
+          }];
+        }
 
         setSoapResult({
           notes,

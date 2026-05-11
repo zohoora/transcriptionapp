@@ -50,7 +50,9 @@ const ALLOWED_SESSION_FILES: &[&str] = &[
 ];
 
 /// Check if a filename is allowed for session file upload.
-/// Supports exact matches from ALLOWED_SESSION_FILES and screenshots/*.jpg pattern.
+/// Supports exact matches from ALLOWED_SESSION_FILES and pattern matches for
+/// screenshots/*.jpg and soap_patient_*.txt (per-patient SOAP for multi-patient
+/// sessions; needed for cross-room rendering of multi-patient encounters).
 fn is_allowed_session_file(filename: &str) -> bool {
     if ALLOWED_SESSION_FILES.contains(&filename) {
         return true;
@@ -61,6 +63,13 @@ fn is_allowed_session_file(filename: &str) -> bool {
             && !rest.contains("..")
             && !rest.contains('/')
             && rest.len() < 100;
+    }
+    // Allow per-patient SOAP files: soap_patient_*.txt (multi-patient encounters)
+    if let Some(rest) = filename.strip_prefix("soap_patient_") {
+        return rest.ends_with(".txt")
+            && !rest.contains("..")
+            && !rest.contains('/')
+            && rest.len() < 50;
     }
     false
 }
@@ -1036,5 +1045,19 @@ mod tests {
         assert!(!is_allowed_session_file("metadata.json"));
         assert!(!is_allowed_session_file("arbitrary.file"));
         assert!(!is_allowed_session_file("../../etc/passwd"));
+    }
+
+    #[test]
+    fn allowlist_accepts_valid_soap_patient_files() {
+        assert!(is_allowed_session_file("soap_patient_1.txt"));
+        assert!(is_allowed_session_file("soap_patient_2.txt"));
+        assert!(is_allowed_session_file("soap_patient_10.txt"));
+    }
+
+    #[test]
+    fn allowlist_rejects_soap_patient_traversal() {
+        assert!(!is_allowed_session_file("soap_patient_../etc.txt"));
+        assert!(!is_allowed_session_file("soap_patient_sub/nested.txt"));
+        assert!(!is_allowed_session_file("soap_patient_1.json"));
     }
 }
