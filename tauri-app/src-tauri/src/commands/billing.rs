@@ -161,36 +161,30 @@ fn take_suggestion(
     Ok(record.suggestions.remove(pos))
 }
 
-/// Identified by (from_code, to_code) rather than index so concurrent UI state
-/// can't apply the wrong suggestion if a parallel apply or re-extract reorders
-/// the list.
-#[tauri::command]
-pub fn apply_billing_upgrade(
-    session_id: String,
-    date: String,
-    from_code: String,
-    to_code: String,
-) -> Result<BillingRecord, CommandError> {
-    info!("Applying billing upgrade {from_code} -> {to_code} for session: {session_id}");
-    let parsed_date = super::parse_date(&date)?;
+/// Pure mutation: take the matching suggestion, apply the upgrade in place,
+/// drop sibling suggestions whose from-code no longer exists in the record,
+/// and append an `AppliedUpgrade` audit entry. Extracted from the IPC so
+/// unit tests can exercise the full mutation including the sibling-cleanup
+/// path without touching disk.
+fn apply_upgrade_to_record(
+    record: &mut BillingRecord,
+    from_code: &str,
+    to_code: &str,
+) -> Result<(), CommandError> {
+    let suggestion = take_suggestion(record, from_code, to_code)?;
 
-    let mut record = local_archive::get_billing_record(&session_id, &parsed_date)?
-        .ok_or_else(|| CommandError::NotFound("No billing record found".into()))?;
-
-    let suggestion = take_suggestion(&mut record, &from_code, &to_code)?;
-
-    crate::billing::upgrade_suggestions::apply_upgrade_in_record(
-        &mut record,
-        &from_code,
-        &to_code,
-    )
-    .map_err(CommandError::Validation)?;
+    crate::billing::upgrade_suggestions::apply_upgrade_in_record(record, from_code, to_code)
+        .map_err(CommandError::Validation)?;
 
     // Drop sibling suggestions whose from_code is no longer in the record
-    // (e.g. applying A004→A007 makes a pending A004→K013 stale).
+    // (e.g. applying A004→A007 makes a pending A004→K013 stale). Cloning
+    // out `codes` first avoids a closure-borrow conflict with the &mut
+    // suggestions borrow that retain() takes.
+    let surviving_from_codes: Vec<String> =
+        record.codes.iter().map(|c| c.code.clone()).collect();
     record
         .suggestions
-        .retain(|s| record.codes.iter().any(|c| c.code == s.from_code));
+        .retain(|s| surviving_from_codes.contains(&s.from_code));
 
     record.applied_upgrades.push(crate::billing::AppliedUpgrade {
         from_code: suggestion.from_code,
@@ -200,6 +194,32 @@ pub fn apply_billing_upgrade(
         applied_at: chrono::Utc::now().to_rfc3339(),
     });
 
+    Ok(())
+}
+
+/// Identified by (from_code, to_code) rather than index so concurrent UI state
+/// can't apply the wrong suggestion if a parallel apply or re-extract reorders
+/// the list.
+///
+/// Takes the current in-memory `record` from the frontend rather than
+/// re-reading from local archive — cross-room sessions are loaded via
+/// `get_session_billing`'s server fallback, in which case the local
+/// archive may not have a record yet. Mirrors the `save_session_billing`
+/// convention (frontend owns the latest state, backend persists it).
+#[tauri::command]
+pub fn apply_billing_upgrade(
+    session_id: String,
+    date: String,
+    record: BillingRecord,
+    from_code: String,
+    to_code: String,
+) -> Result<BillingRecord, CommandError> {
+    info!("Applying billing upgrade {from_code} -> {to_code} for session: {session_id}");
+    let parsed_date = super::parse_date(&date)?;
+    let mut record = record;
+
+    apply_upgrade_to_record(&mut record, &from_code, &to_code)?;
+
     local_archive::save_billing_record(&session_id, &parsed_date, &record)?;
     Ok(record)
 }
@@ -208,14 +228,13 @@ pub fn apply_billing_upgrade(
 pub fn dismiss_billing_upgrade(
     session_id: String,
     date: String,
+    record: BillingRecord,
     from_code: String,
     to_code: String,
 ) -> Result<BillingRecord, CommandError> {
     info!("Dismissing billing upgrade {from_code} -> {to_code} for session: {session_id}");
     let parsed_date = super::parse_date(&date)?;
-
-    let mut record = local_archive::get_billing_record(&session_id, &parsed_date)?
-        .ok_or_else(|| CommandError::NotFound("No billing record found".into()))?;
+    let mut record = record;
 
     take_suggestion(&mut record, &from_code, &to_code)?;
 
@@ -747,6 +766,141 @@ fn escape_csv(s: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::billing::{
+        BillingCode, BillingConfidence, BillingRecord, BillingStatus, UpgradeSuggestion,
+    };
+
+    fn code(code: &str, fee_cents: u32) -> BillingCode {
+        BillingCode {
+            code: code.to_string(),
+            description: format!("{code} desc"),
+            fee_cents,
+            category: "in_basket".to_string(),
+            shadow_pct: 30,
+            billable_amount_cents: fee_cents * 30 / 100,
+            confidence: BillingConfidence::High,
+            auto_extracted: true,
+            after_hours: false,
+            after_hours_premium_cents: 0,
+            quantity: 1,
+        }
+    }
+
+    fn record_with_a004_and_two_suggestions() -> BillingRecord {
+        let mut r = BillingRecord {
+            session_id: "test-sid".into(),
+            date: "2026-05-11".into(),
+            patient_name: None,
+            status: BillingStatus::Draft,
+            codes: vec![code("A004A", 3935)],
+            time_entries: vec![],
+            total_shadow_cents: 0,
+            total_out_of_basket_cents: 0,
+            total_time_based_cents: 0,
+            total_amount_cents: 0,
+            confirmed_at: None,
+            notes: None,
+            extraction_model: Some("fast-model".into()),
+            extracted_at: Some("2026-05-11T13:00:00Z".into()),
+            diagnostic_code: None,
+            diagnostic_description: None,
+            diagnostic_evidence: None,
+            diagnostic_reasoning: None,
+            suggestions: vec![
+                UpgradeSuggestion {
+                    from_code: "A004A".into(),
+                    to_code: "A007A".into(),
+                    fee_delta_cents: 520,
+                    reasoning: "test".into(),
+                },
+                UpgradeSuggestion {
+                    from_code: "A004A".into(),
+                    to_code: "K013A".into(),
+                    fee_delta_cents: 4065,
+                    reasoning: "test".into(),
+                },
+            ],
+            applied_upgrades: vec![],
+        };
+        r.recalculate_totals();
+        r
+    }
+
+    /// Applying A004A→A007A on a record whose only A-code is A004A also drops
+    /// the sibling A004A→K013A suggestion because A004A no longer exists in
+    /// `codes` after the swap. This is the user-facing behavior referenced in
+    /// the v0.10.84 release: "if one suggestion is accepted, sibling
+    /// suggestions targeting the same from-code auto-remove."
+    #[test]
+    fn apply_drops_sibling_suggestions_targeting_replaced_code() {
+        let mut record = record_with_a004_and_two_suggestions();
+        assert_eq!(record.suggestions.len(), 2);
+
+        apply_upgrade_to_record(&mut record, "A004A", "A007A").expect("apply succeeds");
+
+        assert_eq!(record.suggestions.len(), 0, "sibling must be removed");
+        assert_eq!(record.codes.len(), 1);
+        assert_eq!(record.codes[0].code, "A007A");
+        assert_eq!(record.applied_upgrades.len(), 1);
+        assert_eq!(record.applied_upgrades[0].from_code, "A004A");
+        assert_eq!(record.applied_upgrades[0].to_code, "A007A");
+    }
+
+    /// Applying one suggestion when an unrelated sibling exists (different
+    /// from-code) must NOT drop the unrelated sibling.
+    #[test]
+    fn apply_keeps_unrelated_sibling_suggestions() {
+        let mut record = record_with_a004_and_two_suggestions();
+        record.codes.push(code("K005A", 8000));
+        record.suggestions.push(UpgradeSuggestion {
+            from_code: "K005A".into(),
+            to_code: "K013A".into(),
+            fee_delta_cents: 0,
+            reasoning: "test".into(),
+        });
+        assert_eq!(record.suggestions.len(), 3);
+
+        apply_upgrade_to_record(&mut record, "A004A", "A007A").expect("apply succeeds");
+
+        // Both A004A→* suggestions gone (A004A no longer in codes), but
+        // K005A→K013A survives.
+        assert_eq!(record.suggestions.len(), 1);
+        assert_eq!(record.suggestions[0].from_code, "K005A");
+        assert_eq!(record.suggestions[0].to_code, "K013A");
+    }
+
+    /// Dismissing a suggestion must NOT touch siblings — clinician is
+    /// rejecting just that one option.
+    #[test]
+    fn dismiss_preserves_sibling_suggestions() {
+        let mut record = record_with_a004_and_two_suggestions();
+
+        take_suggestion(&mut record, "A004A", "A007A").expect("dismiss succeeds");
+
+        assert_eq!(record.suggestions.len(), 1);
+        assert_eq!(record.suggestions[0].from_code, "A004A");
+        assert_eq!(record.suggestions[0].to_code, "K013A");
+        // Code list is untouched on dismiss.
+        assert_eq!(record.codes.len(), 1);
+        assert_eq!(record.codes[0].code, "A004A");
+        // No applied_upgrades entry on dismiss.
+        assert_eq!(record.applied_upgrades.len(), 0);
+    }
+
+    /// take_suggestion errors when (from, to) doesn't match any pending
+    /// suggestion — this is what surfaces in the UI as a console error
+    /// after the JS .catch().
+    #[test]
+    fn take_suggestion_errors_on_missing_pair() {
+        let mut record = record_with_a004_and_two_suggestions();
+        let err = take_suggestion(&mut record, "A004A", "ZZZZ9").unwrap_err();
+        match err {
+            CommandError::Validation(msg) => {
+                assert!(msg.contains("No pending suggestion"));
+            }
+            other => panic!("expected Validation, got {other:?}"),
+        }
+    }
 
     // Class 6 dropdown synonym tests (2026-04-29 forensic review)
 

@@ -233,6 +233,93 @@ describe('BillingTab', () => {
     expect(badge).toBeInTheDocument();
   });
 
+  it('Apply button on upgrade suggestion sends in-memory record to IPC', async () => {
+    const user = userEvent.setup();
+    const onRecordChange = vi.fn();
+    const recordWithSuggestion = {
+      ...baseRecord,
+      codes: [{ ...baseRecord.codes[0], code: 'A004A', description: 'General Re-Assessment' }],
+      suggestions: [
+        { fromCode: 'A004A', toCode: 'A007A', feeDeltaCents: 520, reasoning: 'test' },
+      ],
+    };
+    const upgradedRecord = {
+      ...recordWithSuggestion,
+      codes: [{ ...recordWithSuggestion.codes[0], code: 'A007A' }],
+      suggestions: [],
+    };
+    mockInvoke.mockImplementation((cmd: string, args?: unknown) => {
+      if (cmd === 'get_session_feedback') return Promise.resolve(null);
+      if (cmd === 'apply_billing_upgrade') {
+        // Crucial assertion: the IPC must receive `record` (not just session id),
+        // otherwise the backend can't act on cross-room sessions where the local
+        // billing.json doesn't exist yet.
+        const a = args as { sessionId: string; fromCode: string; toCode: string; record: { suggestions: unknown[] } };
+        expect(a.sessionId).toBe('s1');
+        expect(a.fromCode).toBe('A004A');
+        expect(a.toCode).toBe('A007A');
+        expect(a.record).toBeDefined();
+        expect(a.record.suggestions).toHaveLength(1);
+        return Promise.resolve(upgradedRecord);
+      }
+      return Promise.resolve(undefined);
+    });
+    render(
+      <BillingTab
+        record={recordWithSuggestion}
+        loading={false}
+        sessionId="s1"
+        date="2026-04-15"
+        onRecordChange={onRecordChange}
+      />
+    );
+    await user.click(screen.getByRole('button', { name: /^Apply$/ }));
+    await waitFor(() => {
+      expect(onRecordChange).toHaveBeenCalledWith(upgradedRecord);
+    });
+  });
+
+  it('Dismiss button on upgrade suggestion sends in-memory record to IPC', async () => {
+    const user = userEvent.setup();
+    const onRecordChange = vi.fn();
+    const recordWithTwoSuggestions = {
+      ...baseRecord,
+      codes: [{ ...baseRecord.codes[0], code: 'A004A', description: 'General Re-Assessment' }],
+      suggestions: [
+        { fromCode: 'A004A', toCode: 'A007A', feeDeltaCents: 520, reasoning: 'test' },
+        { fromCode: 'A004A', toCode: 'K013A', feeDeltaCents: 4065, reasoning: 'test' },
+      ],
+    };
+    const afterDismiss = {
+      ...recordWithTwoSuggestions,
+      suggestions: [recordWithTwoSuggestions.suggestions[1]],
+    };
+    mockInvoke.mockImplementation((cmd: string, args?: unknown) => {
+      if (cmd === 'get_session_feedback') return Promise.resolve(null);
+      if (cmd === 'dismiss_billing_upgrade') {
+        const a = args as { sessionId: string; record: { suggestions: unknown[] } };
+        expect(a.sessionId).toBe('s1');
+        expect(a.record.suggestions).toHaveLength(2);
+        return Promise.resolve(afterDismiss);
+      }
+      return Promise.resolve(undefined);
+    });
+    render(
+      <BillingTab
+        record={recordWithTwoSuggestions}
+        loading={false}
+        sessionId="s1"
+        date="2026-04-15"
+        onRecordChange={onRecordChange}
+      />
+    );
+    const dismissButtons = screen.getAllByRole('button', { name: /^Dismiss$/ });
+    await user.click(dismissButtons[0]);
+    await waitFor(() => {
+      expect(onRecordChange).toHaveBeenCalledWith(afterDismiss);
+    });
+  });
+
   it('expands billing context section on click', async () => {
     const user = userEvent.setup();
     render(

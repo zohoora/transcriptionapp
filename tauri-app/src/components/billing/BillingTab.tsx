@@ -31,6 +31,7 @@ export const BillingTab: React.FC<BillingTabProps> = ({
   const [copied, setCopied] = useState(false);
   const [extractError, setExtractError] = useState<string | null>(null);
   const [pendingUpgrade, setPendingUpgrade] = useState<string | null>(null);
+  const [upgradeError, setUpgradeError] = useState<string | null>(null);
   const [showAddCode, setShowAddCode] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<OhipCodeSearchResult[]>([]);
@@ -278,35 +279,45 @@ export const BillingTab: React.FC<BillingTabProps> = ({
     }
   }, [sessionId, date, onRecordChange]);
 
+  // Pass the in-memory `record` to the IPC rather than letting the backend
+  // re-read from disk: cross-room sessions are loaded via get_session_billing's
+  // server fallback, in which case there's no local file for the backend to
+  // read. Mirrors the save_session_billing convention.
   const handleApplyUpgrade = useCallback(async (fromCode: string, toCode: string) => {
+    if (!record) return;
     const key = `${fromCode}->${toCode}`;
     setPendingUpgrade(key);
+    setUpgradeError(null);
     try {
       const result = await invoke<BillingRecord>('apply_billing_upgrade', {
-        sessionId, date, fromCode, toCode,
+        sessionId, date, record, fromCode, toCode,
       });
       onRecordChange(result);
     } catch (e) {
       console.error('Apply upgrade failed:', e);
+      setUpgradeError(`Apply failed: ${e instanceof Error ? e.message : String(e)}`);
     } finally {
       setPendingUpgrade(null);
     }
-  }, [sessionId, date, onRecordChange]);
+  }, [record, sessionId, date, onRecordChange]);
 
   const handleDismissUpgrade = useCallback(async (fromCode: string, toCode: string) => {
+    if (!record) return;
     const key = `${fromCode}->${toCode}`;
     setPendingUpgrade(key);
+    setUpgradeError(null);
     try {
       const result = await invoke<BillingRecord>('dismiss_billing_upgrade', {
-        sessionId, date, fromCode, toCode,
+        sessionId, date, record, fromCode, toCode,
       });
       onRecordChange(result);
     } catch (e) {
       console.error('Dismiss upgrade failed:', e);
+      setUpgradeError(`Dismiss failed: ${e instanceof Error ? e.message : String(e)}`);
     } finally {
       setPendingUpgrade(null);
     }
-  }, [sessionId, date, onRecordChange]);
+  }, [record, sessionId, date, onRecordChange]);
 
   const handleRemoveCode = useCallback((index: number) => {
     if (!record) return;
@@ -533,6 +544,9 @@ export const BillingTab: React.FC<BillingTabProps> = ({
       {record.suggestions && record.suggestions.length > 0 && record.status === 'draft' && (
         <div className="insight-card billing-upgrade-card">
           <div className="insight-card-title">Upgrade suggestions</div>
+          {upgradeError && (
+            <div className="cap-warning-banner critical">{upgradeError}</div>
+          )}
           {record.suggestions.map(s => {
             const key = `${s.fromCode}->${s.toCode}`;
             const busy = pendingUpgrade === key;
