@@ -398,7 +398,15 @@ async fn generate_soap(
 
     info!("Generating SOAP for {word_count} words...");
     let soap_note = llm_client
-        .generate_soap_note(model, transcript, None, Some(&options), None)
+        .generate_soap_note(
+            model,
+            transcript,
+            None,
+            Some(&options),
+            None,
+            None,  // mobile processing has no chart screenshots
+            model, // vision_model unused when screenshots is None
+        )
         .await?;
     Ok(Some(soap_note.content))
 }

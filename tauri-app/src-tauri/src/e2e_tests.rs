@@ -274,10 +274,12 @@ Speaker 1: Take care. We'll see you soon.";
         let result = rt.block_on(client.generate_multi_patient_soap_note(
             SOAP_MODEL,
             FIXTURE_TRANSCRIPT,
-            None,  // No audio events
-            None,  // Default SOAP options
-            None,  // No speaker context
-            None,  // No multi-patient detection
+            None,         // No audio events
+            None,         // Default SOAP options
+            None,         // No speaker context
+            None,         // No multi-patient detection
+            None,         // No chart screenshots in unit-test e2e
+            SOAP_MODEL,   // vision_model unused when screenshots is None
         )).expect("SOAP generation failed");
 
         assert!(!result.notes.is_empty(), "SOAP result has no patient notes");
@@ -488,6 +490,8 @@ Jim: Thanks doc."#;
             None,
             None,
             Some(&detection),
+            None,
+            SOAP_MODEL,
         )).expect("Per-patient SOAP generation failed");
 
         assert!(soap_result.notes.len() >= 2, "Should have at least 2 SOAP notes, got {}", soap_result.notes.len());
@@ -711,6 +715,8 @@ Jim: Thanks doc."#;
             None,
             None,
             None,
+            None,
+            SOAP_MODEL,
         )).expect("SOAP generation failed");
 
         assert!(!soap_result.notes.is_empty(), "No SOAP notes generated");
@@ -864,6 +870,8 @@ Jim: Thanks doc."#;
             None,
             None,
             None,
+            None,
+            SOAP_MODEL,
         )).expect("SOAP generation failed");
 
         assert!(!soap_result.notes.is_empty(), "No SOAP notes generated");

@@ -44,6 +44,9 @@ pub struct FlushOnStopDeps {
     pub llm_client: Option<LLMClient>,
     pub soap_model: String,
     pub fast_model: String,
+    /// Vision-capable model alias used for multimodal multi-patient detect +
+    /// SOAP calls (see `PostSplitDeps::vision_model`).
+    pub vision_model: String,
     pub soap_detail_level: u8,
     pub soap_format: String,
     pub soap_custom_instructions: String,
@@ -88,6 +91,7 @@ pub async fn run<C: RunContext>(
         llm_client: flush_llm_client,
         soap_model: flush_soap_model,
         fast_model: flush_fast_model,
+        vision_model: flush_vision_model,
         soap_detail_level: flush_soap_detail_level,
         soap_format: flush_soap_format,
         soap_custom_instructions: flush_soap_custom_instructions,
@@ -169,6 +173,7 @@ pub async fn run<C: RunContext>(
             &logger_for_flush,
             &app_handle,
             &sync_ctx,
+            &flush_vision_model,
         )
         .await;
     }
@@ -508,6 +513,7 @@ pub async fn run<C: RunContext>(
                                                     &now,
                                                     prev_summary.patient_name.as_deref(),
                                                     &flush_soap_model,
+                                                    &flush_vision_model,
                                                     flush_soap_detail_level,
                                                     &flush_soap_format,
                                                     &flush_soap_custom_instructions,
@@ -583,6 +589,16 @@ pub async fn run<C: RunContext>(
                     }
                     let flush_notes = flush_notes_text.clone();
 
+                    // One dedup, attached to both the multi-patient detect and
+                    // SOAP calls below — consistent image set across both hops.
+                    let flush_now = ctx.now_utc();
+                    let flush_deduped_screenshots =
+                        crate::screenshot_dedup::load_deduped_screenshots_for_session(
+                            &session_id,
+                            &flush_now,
+                        );
+                    let flush_screenshot_arg = Some(flush_deduped_screenshots.as_slice());
+
                     // Detect combined-patient sessions that never split before
                     // continuous-mode stopped (e.g. a long appointment that
                     // overlapped two patients in the same room). Without this
@@ -594,6 +610,7 @@ pub async fn run<C: RunContext>(
                             event = "flush_multi_patient_detect",
                             component = "continuous_mode_flush_on_stop",
                             word_count,
+                            screenshots_attached = flush_deduped_screenshots.len(),
                             "Running multi-patient detection on flush buffer"
                         );
                         crate::encounter_pipeline::run_pre_soap_multi_patient_detection(
@@ -604,6 +621,8 @@ pub async fn run<C: RunContext>(
                             "flush_on_stop",
                             &logger_for_flush,
                             &bundle_for_flush,
+                            flush_screenshot_arg,
+                            &flush_vision_model,
                         )
                         .await
                     } else {
@@ -615,6 +634,7 @@ pub async fn run<C: RunContext>(
                         component = "continuous_mode_flush_on_stop",
                         word_count,
                         multi_patient = multi_patient_detection.is_some(),
+                        screenshots_attached = flush_deduped_screenshots.len(),
                         "Generating SOAP for flushed buffer"
                     );
                     let outcome = crate::encounter_pipeline::generate_and_archive_soap(
@@ -622,7 +642,7 @@ pub async fn run<C: RunContext>(
                         &flush_soap_model,
                         &filtered_text,
                         &session_id,
-                        &ctx.now_utc(),
+                        &flush_now,
                         flush_soap_detail_level,
                         &flush_soap_format,
                         &flush_soap_custom_instructions,
@@ -634,6 +654,8 @@ pub async fn run<C: RunContext>(
                         Some(&flush_templates),
                         Some(soap_generation_timeout_secs),
                         Some(&bundle_for_flush),
+                        flush_screenshot_arg,
+                        &flush_vision_model,
                     )
                     .await;
                     if let crate::encounter_pipeline::SoapGenerationOutcome::Success {
@@ -906,6 +928,7 @@ mod tests {
             llm_client: None,
             soap_model: "soap-model-fast".to_string(),
             fast_model: "fast-model".to_string(),
+            vision_model: "soap-model".to_string(),
             soap_detail_level: 5,
             soap_format: "comprehensive".to_string(),
             soap_custom_instructions: String::new(),

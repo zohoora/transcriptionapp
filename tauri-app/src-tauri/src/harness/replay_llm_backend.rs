@@ -196,6 +196,8 @@ impl LlmBackend for ReplayLlmBackend {
         _options: Option<&SoapOptions>,
         _speaker_context: Option<&SpeakerContext>,
         multi_patient_detection: Option<&MultiPatientDetectionResult>,
+        _screenshot_paths: Option<&[std::path::PathBuf]>,
+        _vision_model: &str,
     ) -> Result<MultiPatientSoapResult, String> {
         // SOAP content is not captured in replay bundles (only the outcome's
         // success + word_count are). Return a minimal stub so the orchestrator

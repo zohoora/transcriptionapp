@@ -130,6 +130,9 @@ pub struct MergeBackDeps {
     pub billing_data: Arc<BillingData>,
     pub fast_model: String,
     pub soap_model: String,
+    /// Vision-capable model alias used for multimodal multi-patient detect +
+    /// SOAP calls (see `PostSplitDeps::vision_model`).
+    pub vision_model: String,
     pub soap_detail_level: u8,
     pub soap_format: String,
     pub soap_custom_instructions: String,
@@ -363,6 +366,7 @@ pub async fn run<C: RunContext>(
                             prev_date,
                             prev_encounter_patient_name,
                             &deps.soap_model,
+                            &deps.vision_model,
                             deps.soap_detail_level,
                             &deps.soap_format,
                             &deps.soap_custom_instructions,
@@ -571,6 +575,7 @@ pub async fn run<C: RunContext>(
                                 prev_date,
                                 prev_encounter_patient_name,
                                 &deps.soap_model,
+                                &deps.vision_model,
                                 deps.soap_detail_level,
                                 &deps.soap_format,
                                 &deps.soap_custom_instructions,
@@ -643,11 +648,22 @@ pub async fn run<C: RunContext>(
                                     merged_word_count = merged_wc,
                                     "Retrospective multi-patient detect"
                                 );
+                                // One dedup of the surviving session's screenshots, reused
+                                // for the retrospective detect AND the per-patient SOAP
+                                // regen below — keeps the model on a consistent image set
+                                // across both calls.
+                                let prev_deduped_screenshots =
+                                    crate::screenshot_dedup::load_deduped_screenshots_for_session(
+                                        prev_id, prev_date,
+                                    );
+                                let prev_screenshot_arg = Some(prev_deduped_screenshots.as_slice());
                                 // Log to the surviving session's pipeline log
                                 let retro_outcome = client
                                     .run_multi_patient_detection(
                                         &deps.fast_model,
                                         &merged_text_rich,
+                                        prev_screenshot_arg,
+                                        &deps.vision_model,
                                     )
                                     .await;
                                 if let Ok(mut logger) = deps.logger.lock() {
@@ -781,6 +797,8 @@ pub async fn run<C: RunContext>(
                                             Some(&deps.templates),
                                             Some(deps.soap_generation_timeout_secs),
                                             None, // retrospective regen targets prev session; current bundle is for the new encounter
+                                            prev_screenshot_arg,
+                                            &deps.vision_model,
                                         )
                                         .await;
                                     if let crate::encounter_pipeline::SoapGenerationOutcome::Success {
@@ -860,8 +878,20 @@ pub async fn run<C: RunContext>(
                 word_count = encounter_word_count,
                 "Standalone multi-patient check"
             );
+            // One dedup of the current session's screenshots — same set is
+            // reused for the standalone detect call AND the multi-patient regen
+            // SOAP below.
+            let soap_now = ctx.now_utc();
+            let cur_deduped_screenshots =
+                crate::screenshot_dedup::load_deduped_screenshots_for_session(session_id, &soap_now);
+            let cur_screenshot_arg = Some(cur_deduped_screenshots.as_slice());
             let mp_outcome = client
-                .run_multi_patient_detection(&deps.fast_model, encounter_text_rich)
+                .run_multi_patient_detection(
+                    &deps.fast_model,
+                    encounter_text_rich,
+                    cur_screenshot_arg,
+                    &deps.vision_model,
+                )
                 .await;
             if let Ok(mut logger) = deps.logger.lock() {
                 let det_context = match &mp_outcome.detection {
@@ -905,7 +935,6 @@ pub async fn run<C: RunContext>(
                     "Standalone multi-patient SOAP regeneration"
                 );
                 let (filtered, _) = strip_hallucinations(encounter_text, 5);
-                let soap_now = ctx.now_utc();
                 let regen_outcome = crate::encounter_pipeline::generate_and_archive_soap(
                     client,
                     &deps.soap_model,
@@ -928,6 +957,8 @@ pub async fn run<C: RunContext>(
                     Some(&deps.templates),
                     Some(deps.soap_generation_timeout_secs),
                     Some(&deps.bundle),
+                    cur_screenshot_arg,
+                    &deps.vision_model,
                 )
                 .await;
                 if let crate::encounter_pipeline::SoapGenerationOutcome::Success {

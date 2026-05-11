@@ -32,6 +32,21 @@ pub(crate) struct EffectiveModels {
     pub encounter_detection_model: String,
 }
 
+/// Parse a session_date string from the Tauri command surface. Accepts either
+/// RFC3339 (`2026-04-29T13:42:00+00:00`, current production format) or a bare
+/// `YYYY-MM-DD` (anchored to noon UTC). Returns `None` on parse failure.
+fn parse_session_date(date_str: &str) -> Option<chrono::DateTime<chrono::Utc>> {
+    chrono::DateTime::parse_from_rfc3339(date_str)
+        .map(|dt| dt.with_timezone(&chrono::Utc))
+        .ok()
+        .or_else(|| {
+            chrono::NaiveDate::parse_from_str(date_str, "%Y-%m-%d")
+                .ok()
+                .and_then(|nd| nd.and_hms_opt(12, 0, 0))
+                .map(|ndt| chrono::DateTime::<chrono::Utc>::from_naive_utc_and_offset(ndt, chrono::Utc))
+        })
+}
+
 pub(crate) fn resolve_effective_models(
     config: &Config,
     server: &ServerConfig,
@@ -250,6 +265,18 @@ pub async fn generate_soap_note(
     let selected_model = model_override.as_deref().unwrap_or(&models.soap_model);
     let start_time = std::time::Instant::now();
 
+    // Resolve archived session's screenshots when both session_id + session_date
+    // are known. Date string may arrive as RFC3339 or bare "YYYY-MM-DD".
+    let regen_deduped_screenshots = session_id
+        .as_deref()
+        .zip(session_date.as_deref())
+        .and_then(|(sid, date_str)| parse_session_date(date_str).map(|d| (sid, d)))
+        .map(|(sid, date)| {
+            crate::screenshot_dedup::load_deduped_screenshots_for_session(sid, &date)
+        })
+        .unwrap_or_default();
+    let regen_screenshot_arg = Some(regen_deduped_screenshots.as_slice());
+
     // When a patient_label is provided, scope the SOAP note to that patient only.
     // Class 5 fix: also fetch the per-patient summary from patient_labels.json
     // so the regen prompt can disambiguate dominant-content cases (Slote
@@ -272,6 +299,8 @@ pub async fn generate_soap_note(
             audio_events.as_deref(),
             options.as_ref(),
             ctx.as_ref(),
+            regen_screenshot_arg,
+            &models.soap_model,
         ).await
     } else {
         client.generate_soap_note(
@@ -280,6 +309,8 @@ pub async fn generate_soap_note(
             audio_events.as_deref(),
             options.as_ref(),
             ctx.as_ref(),
+            regen_screenshot_arg,
+            &models.soap_model,
         ).await
     };
 
@@ -413,10 +444,33 @@ pub async fn generate_soap_note_auto_detect(
     // Use model override if provided, otherwise the effective soap_model.
     let selected_model = model_override.as_deref().unwrap_or(&models.soap_model);
 
+    // One dedup, shared between the multi-patient detect call and the SOAP
+    // call below — the Tauri auto-detect command operates on already-archived
+    // sessions, so screenshots (if any) are on disk.
+    let deduped_screenshots = session_id
+        .as_deref()
+        .map(|sid| {
+            crate::screenshot_dedup::load_deduped_screenshots_for_session(sid, &chrono::Utc::now())
+        })
+        .unwrap_or_default();
+    let screenshot_arg = Some(deduped_screenshots.as_slice());
+
     // Run multi-patient detection if transcript is long enough
     let multi_patient_detection = if word_count >= multi_patient_detect_word_threshold {
-        info!("Running multi-patient detection for session-mode SOAP ({} words)", word_count);
-        client.run_multi_patient_detection(&models.fast_model, &transcript).await.detection
+        info!(
+            "Running multi-patient detection for session-mode SOAP ({} words, {} screenshots)",
+            word_count,
+            deduped_screenshots.len(),
+        );
+        client
+            .run_multi_patient_detection(
+                &models.fast_model,
+                &transcript,
+                screenshot_arg,
+                &models.soap_model,
+            )
+            .await
+            .detection
     } else {
         None
     };
@@ -431,6 +485,8 @@ pub async fn generate_soap_note_auto_detect(
             options.as_ref(),
             ctx.as_ref(),
             multi_patient_detection.as_ref(),
+            screenshot_arg,
+            &models.soap_model,
         )
         .await
     {

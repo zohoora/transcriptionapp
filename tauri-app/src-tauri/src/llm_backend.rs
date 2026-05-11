@@ -18,6 +18,7 @@ use crate::llm_client::{
     SpeakerContext,
 };
 use async_trait::async_trait;
+use std::path::PathBuf;
 use std::sync::Arc;
 
 #[async_trait]
@@ -58,6 +59,8 @@ pub trait LlmBackend: Send + Sync + 'static {
         options: Option<&SoapOptions>,
         speaker_context: Option<&SpeakerContext>,
         multi_patient_detection: Option<&MultiPatientDetectionResult>,
+        screenshot_paths: Option<&[PathBuf]>,
+        vision_model: &str,
     ) -> Result<MultiPatientSoapResult, String>;
 }
 
@@ -98,9 +101,12 @@ impl LlmBackend for LLMClient {
         options: Option<&SoapOptions>,
         speaker_context: Option<&SpeakerContext>,
         multi_patient_detection: Option<&MultiPatientDetectionResult>,
+        screenshot_paths: Option<&[PathBuf]>,
+        vision_model: &str,
     ) -> Result<MultiPatientSoapResult, String> {
         LLMClient::generate_multi_patient_soap_note(
             self, model, transcript, audio_events, options, speaker_context, multi_patient_detection,
+            screenshot_paths, vision_model,
         ).await
     }
 }
@@ -140,9 +146,12 @@ impl<T: LlmBackend + ?Sized> LlmBackend for Arc<T> {
         options: Option<&SoapOptions>,
         speaker_context: Option<&SpeakerContext>,
         multi_patient_detection: Option<&MultiPatientDetectionResult>,
+        screenshot_paths: Option<&[PathBuf]>,
+        vision_model: &str,
     ) -> Result<MultiPatientSoapResult, String> {
         (**self).generate_multi_patient_soap_note(
             model, transcript, audio_events, options, speaker_context, multi_patient_detection,
+            screenshot_paths, vision_model,
         ).await
     }
 }

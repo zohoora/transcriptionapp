@@ -899,7 +899,15 @@ async fn run_soap(
         let mut last_soap = String::new();
         for _ in 0..trials {
             match client
-                .generate_soap_note(&bench.model, input, None, Some(&SoapOptions::default()), None)
+                .generate_soap_note(
+                    &bench.model,
+                    input,
+                    None,
+                    Some(&SoapOptions::default()),
+                    None,
+                    None,           // no chart screenshots in benchmark fixtures
+                    &bench.model,   // vision_model unused when screenshots is None
+                )
                 .await
             {
                 Ok(soap) => {

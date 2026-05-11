@@ -81,6 +81,7 @@ pub mod shadow_observer;
 pub mod day_log;
 pub mod performance_summary;
 pub mod screenshot;
+pub mod screenshot_dedup;
 pub mod screenshot_task;
 pub mod encounter_pipeline;
 pub mod continuous_mode_events;

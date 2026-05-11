@@ -286,6 +286,8 @@ pub async fn process_audio_upload(
                     None,
                     Some(&soap_options),
                     None,
+                    None,                      // no chart screenshots from audio-upload pipeline
+                    &effective_soap_model,     // vision_model unused when screenshots is None
                 )
                 .await
             {

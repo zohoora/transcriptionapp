@@ -1009,6 +1009,10 @@ pub async fn run_continuous_mode<C: crate::run_context::RunContext>(
 
     let soap_model = operational.soap_model_fast.clone();
     let fast_model = operational.fast_model.clone();
+    // Vision-capable model alias used for multimodal multi-patient detect +
+    // SOAP calls when chart screenshots are available (per ADR; `soap-model`
+    // alias has vision capabilities).
+    let vision_model = operational.soap_model.clone();
     let soap_detail_level = config.soap_detail_level;
     let soap_format = config.soap_format.clone();
     let soap_custom_instructions = config.soap_custom_instructions.clone();
@@ -1016,6 +1020,7 @@ pub async fn run_continuous_mode<C: crate::run_context::RunContext>(
     // Clone config values for flush-on-stop SOAP generation + merge check (outside detector task)
     let flush_fast_model = operational.fast_model.clone();
     let flush_soap_model = operational.soap_model_fast.clone();
+    let flush_vision_model = operational.soap_model.clone();
     let flush_soap_detail_level = config.soap_detail_level;
     let flush_soap_format = config.soap_format.clone();
     let flush_soap_custom_instructions = config.soap_custom_instructions.clone();
@@ -1122,6 +1127,7 @@ pub async fn run_continuous_mode<C: crate::run_context::RunContext>(
             billing_data: billing_data.clone(),
             fast_model: fast_model.clone(),
             soap_model: soap_model.clone(),
+            vision_model: vision_model.clone(),
             soap_detail_level,
             soap_format: soap_format.clone(),
             soap_custom_instructions: soap_custom_instructions.clone(),
@@ -1158,6 +1164,7 @@ pub async fn run_continuous_mode<C: crate::run_context::RunContext>(
             billing_data: billing_data.clone(),
             fast_model: fast_model.clone(),
             soap_model: soap_model.clone(),
+            vision_model: vision_model.clone(),
             soap_detail_level,
             soap_format: soap_format.clone(),
             soap_custom_instructions: soap_custom_instructions.clone(),
@@ -1962,6 +1969,7 @@ pub async fn run_continuous_mode<C: crate::run_context::RunContext>(
         sync_ctx: sync_ctx.clone(),
         llm_client: flush_llm_client,
         soap_model: flush_soap_model,
+        vision_model: flush_vision_model,
         fast_model: flush_fast_model,
         soap_detail_level: flush_soap_detail_level,
         soap_format: flush_soap_format,

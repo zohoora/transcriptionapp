@@ -49,6 +49,12 @@ pub struct PostSplitDeps {
     pub billing_data: Arc<BillingData>,
     pub fast_model: String,
     pub soap_model: String,
+    /// Vision-capable model alias used for multimodal multi-patient detect +
+    /// SOAP calls when deduped chart screenshots are available for the
+    /// encounter (resolved from `operational.soap_model`, which per ADR is
+    /// vision-capable). Falls back to text-only models when no screenshots
+    /// are present at split time.
+    pub vision_model: String,
     pub soap_detail_level: u8,
     pub soap_format: String,
     pub soap_custom_instructions: String,
@@ -155,6 +161,15 @@ pub async fn run<C: RunContext>(
             "Skipping SOAP for non-clinical encounter"
         );
     } else if let Some(ref client) = llm_client {
+        // One dedup, attached to BOTH the multi-patient detect call AND the
+        // SOAP call below — the model sees a consistent chart-image set across
+        // both hops. Screenshots are flushed to disk by `continuous_mode_splitter`
+        // BEFORE this function fires.
+        let soap_now = ctx.now_utc();
+        let deduped_screenshots =
+            crate::screenshot_dedup::load_deduped_screenshots_for_session(session_id, &soap_now);
+        let screenshot_arg = Some(deduped_screenshots.as_slice());
+
         // Detect couples/family visits before SOAP so the per-patient SOAP
         // path can fire when patient_count > 1.
         let multi_patient_detection = if encounter_word_count >= deps.multi_patient_detect_word_threshold {
@@ -163,6 +178,7 @@ pub async fn run<C: RunContext>(
                 component = "continuous_mode_post_split",
                 encounter_number,
                 word_count = encounter_word_count,
+                screenshots_attached = deduped_screenshots.len(),
                 "Running multi-patient detection"
             );
             crate::encounter_pipeline::run_pre_soap_multi_patient_detection(
@@ -173,6 +189,8 @@ pub async fn run<C: RunContext>(
                 "post_split",
                 &deps.logger,
                 &deps.bundle,
+                screenshot_arg,
+                &deps.vision_model,
             )
             .await
         } else {
@@ -207,9 +225,9 @@ pub async fn run<C: RunContext>(
             event = "post_split_soap_generate",
             component = "continuous_mode_post_split",
             encounter_number,
+            screenshots_attached = deduped_screenshots.len(),
             "Generating SOAP"
         );
-        let soap_now = ctx.now_utc();
         let soap_outcome = crate::encounter_pipeline::generate_and_archive_soap(
             client,
             &deps.soap_model,
@@ -231,6 +249,8 @@ pub async fn run<C: RunContext>(
             Some(&deps.templates),
             Some(deps.soap_generation_timeout_secs),
             Some(&deps.bundle),
+            screenshot_arg,
+            &deps.vision_model,
         )
         .await;
 

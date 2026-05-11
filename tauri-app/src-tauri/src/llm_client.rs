@@ -6,6 +6,7 @@
 use chrono::Utc;
 use reqwest::header::{HeaderMap, HeaderValue, AUTHORIZATION, CONTENT_TYPE};
 use serde::{Deserialize, Serialize};
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 use tracing::{debug, error, info, warn};
@@ -540,6 +541,35 @@ fn calculate_backoff(attempt: u32) -> Duration {
     Duration::from_millis(capped_delay + jitter)
 }
 
+/// Build a multimodal user-content array (text first, then `image_url` parts)
+/// from a deduped screenshot path list.
+///
+/// Returns `None` when `paths` is `None`, the slice is empty, or every image
+/// failed to load — caller falls back to the text-only LLM path with the same
+/// `text` string. The first `ContentPart` is always the text; image_url parts
+/// follow in the input path order.
+///
+/// **Caller responsibility**: dedup before calling
+/// ([`crate::screenshot_dedup::dedup_screenshots`]). This helper does NOT cap
+/// or dedup — it trusts the caller to have already constrained the image count
+/// to [`crate::screenshot_dedup::MAX_SCREENSHOTS_PER_LLM_CALL`].
+fn build_multimodal_user_content_if_available(
+    text: &str,
+    paths: Option<&[PathBuf]>,
+) -> Option<Vec<ContentPart>> {
+    let paths = paths.filter(|p| !p.is_empty())?;
+    let mut parts: Vec<ContentPart> = Vec::with_capacity(paths.len() + 1);
+    parts.push(ContentPart::Text { text: text.to_string() });
+    for p in paths {
+        if let Some(part) = crate::screenshot_dedup::load_jpeg_as_content_part(p) {
+            parts.push(part);
+        }
+    }
+    // Only return `Some` when at least one image actually loaded; otherwise the
+    // caller should take the text-only path.
+    if parts.len() > 1 { Some(parts) } else { None }
+}
+
 impl LLMClient {
     /// Create a new LLM client with URL validation
     ///
@@ -611,6 +641,50 @@ impl LLMClient {
             }
             Err(e) => {
                 warn!("SOAP retry LLM call failed: {}", e);
+                content
+            }
+        }
+    }
+
+    /// Multimodal variant of [`parse_soap_with_retry`]. Re-issues the SOAP
+    /// call via `generate_vision` (same model + same image attachments) when
+    /// the initial response was the malformed-output placeholder.
+    async fn parse_soap_with_retry_multimodal(
+        &self,
+        model: &str,
+        system_prompt: &str,
+        user_content: &[ContentPart],
+        initial_response: &str,
+    ) -> String {
+        let content = parse_and_format_soap_json(initial_response);
+        if !content.contains(MALFORMED_SOAP_SENTINEL) {
+            return content;
+        }
+        warn!("SOAP parse returned malformed placeholder (multimodal), retrying LLM call once");
+        let retry = self
+            .generate_vision(
+                model,
+                system_prompt,
+                user_content.to_vec(),
+                tasks::SOAP_NOTE,
+                None,
+                None,
+                None,
+                None,
+            )
+            .await;
+        match retry {
+            Ok(retry_response) => {
+                let retry_content = parse_and_format_soap_json(&retry_response);
+                if retry_content.contains(MALFORMED_SOAP_SENTINEL) {
+                    warn!("SOAP retry (multimodal) also produced malformed output, using placeholder");
+                } else {
+                    info!("SOAP retry (multimodal) succeeded ({} chars)", retry_content.len());
+                }
+                retry_content
+            }
+            Err(e) => {
+                warn!("SOAP retry (multimodal) LLM call failed: {}", e);
                 content
             }
         }
@@ -1071,12 +1145,10 @@ impl LLMClient {
     /// Generate a SOAP note from a clinical transcript
     /// Returns the raw LLM output as a single text block
     ///
-    /// # Arguments
-    /// * `model` - LLM model name to use
-    /// * `transcript` - Clinical transcript text
-    /// * `audio_events` - Optional detected audio events (coughs, etc.)
-    /// * `options` - SOAP generation options
-    /// * `speaker_context` - Optional speaker identification context
+    /// When `screenshot_paths` is `Some` and non-empty, the call is routed
+    /// through the vision-capable `vision_model` with the deduped image set
+    /// attached as `image_url` parts. Falls back to text-only via `model`
+    /// when no screenshots are provided or none load successfully.
     pub async fn generate_soap_note(
         &self,
         model: &str,
@@ -1084,30 +1156,65 @@ impl LLMClient {
         audio_events: Option<&[AudioEvent]>,
         options: Option<&SoapOptions>,
         speaker_context: Option<&SpeakerContext>,
+        screenshot_paths: Option<&[PathBuf]>,
+        vision_model: &str,
     ) -> Result<SoapNote, String> {
         let prepared_transcript = Self::prepare_transcript(transcript)?;
         let opts = options.cloned().unwrap_or_default();
         info!(
-            "Generating SOAP note with model {} for transcript of {} chars ({} words), {} audio events, {} speakers",
+            "Generating SOAP note with model {} for transcript of {} chars ({} words), {} audio events, {} speakers, {} screenshots",
             model,
             prepared_transcript.len(),
             prepared_transcript.split_whitespace().count(),
             audio_events.map(|e| e.len()).unwrap_or(0),
-            speaker_context.map(|c| c.speakers.len()).unwrap_or(0)
+            speaker_context.map(|c| c.speakers.len()).unwrap_or(0),
+            screenshot_paths.map(|p| p.len()).unwrap_or(0)
         );
 
         let system_prompt = build_simple_soap_prompt(&opts, None);
         let session_notes = if opts.session_notes.trim().is_empty() { None } else { Some(opts.session_notes.as_str()) };
         let user_content = build_soap_user_content(&prepared_transcript, audio_events, session_notes, speaker_context);
 
-        let response = self.generate(model, &system_prompt, &user_content, tasks::SOAP_NOTE).await?;
-        let content = self.parse_soap_with_retry(model, &system_prompt, &user_content, &response).await;
+        let multimodal = build_multimodal_user_content_if_available(&user_content, screenshot_paths);
+        let (content, model_used) = match multimodal {
+            Some(parts) => {
+                info!(
+                    "Routing SOAP via vision model {} with {} images attached",
+                    vision_model, parts.len() - 1
+                );
+                let response = self
+                    .generate_vision(
+                        vision_model,
+                        &system_prompt,
+                        parts.clone(),
+                        tasks::SOAP_NOTE,
+                        None,
+                        None,
+                        None,
+                        None,
+                    )
+                    .await?;
+                let c = self
+                    .parse_soap_with_retry_multimodal(vision_model, &system_prompt, &parts, &response)
+                    .await;
+                (c, vision_model.to_string())
+            }
+            None => {
+                let response = self
+                    .generate(model, &system_prompt, &user_content, tasks::SOAP_NOTE)
+                    .await?;
+                let c = self
+                    .parse_soap_with_retry(model, &system_prompt, &user_content, &response)
+                    .await;
+                (c, model.to_string())
+            }
+        };
 
         info!("Successfully generated SOAP note ({} chars)", content.len());
         Ok(SoapNote {
             content,
             generated_at: Utc::now().to_rfc3339(),
-            model_used: model.to_string(),
+            model_used,
         })
     }
 
@@ -1131,30 +1238,65 @@ impl LLMClient {
         audio_events: Option<&[AudioEvent]>,
         options: Option<&SoapOptions>,
         speaker_context: Option<&SpeakerContext>,
+        screenshot_paths: Option<&[PathBuf]>,
+        vision_model: &str,
     ) -> Result<SoapNote, String> {
         let prepared_transcript = Self::prepare_transcript(transcript)?;
         let opts = options.cloned().unwrap_or_default();
         info!(
-            "Generating single-patient SOAP note for \"{}\" with model {} ({} chars, {} words, summary={})",
+            "Generating single-patient SOAP note for \"{}\" with model {} ({} chars, {} words, summary={}, {} screenshots)",
             patient_label,
             model,
             prepared_transcript.len(),
             prepared_transcript.split_whitespace().count(),
             patient_summary.map(|s| s.len()).unwrap_or(0),
+            screenshot_paths.map(|p| p.len()).unwrap_or(0),
         );
 
         let system_prompt = build_single_patient_soap_prompt(&opts, patient_label, patient_summary, None);
         let session_notes = if opts.session_notes.trim().is_empty() { None } else { Some(opts.session_notes.as_str()) };
         let user_content = build_soap_user_content(&prepared_transcript, audio_events, session_notes, speaker_context);
 
-        let response = self.generate(model, &system_prompt, &user_content, tasks::SOAP_NOTE).await?;
-        let content = self.parse_soap_with_retry(model, &system_prompt, &user_content, &response).await;
+        let multimodal = build_multimodal_user_content_if_available(&user_content, screenshot_paths);
+        let (content, model_used) = match multimodal {
+            Some(parts) => {
+                info!(
+                    "Routing single-patient SOAP via vision model {} with {} images attached",
+                    vision_model, parts.len() - 1
+                );
+                let response = self
+                    .generate_vision(
+                        vision_model,
+                        &system_prompt,
+                        parts.clone(),
+                        tasks::SOAP_NOTE,
+                        None,
+                        None,
+                        None,
+                        None,
+                    )
+                    .await?;
+                let c = self
+                    .parse_soap_with_retry_multimodal(vision_model, &system_prompt, &parts, &response)
+                    .await;
+                (c, vision_model.to_string())
+            }
+            None => {
+                let response = self
+                    .generate(model, &system_prompt, &user_content, tasks::SOAP_NOTE)
+                    .await?;
+                let c = self
+                    .parse_soap_with_retry(model, &system_prompt, &user_content, &response)
+                    .await;
+                (c, model.to_string())
+            }
+        };
 
         info!("Successfully generated single-patient SOAP note for \"{}\" ({} chars)", patient_label, content.len());
         Ok(SoapNote {
             content,
             generated_at: Utc::now().to_rfc3339(),
-            model_used: model.to_string(),
+            model_used,
         })
     }
 
@@ -1175,6 +1317,8 @@ impl LLMClient {
         options: Option<&SoapOptions>,
         speaker_context: Option<&SpeakerContext>,
         multi_patient_detection: Option<&MultiPatientDetectionResult>,
+        screenshot_paths: Option<&[PathBuf]>,
+        vision_model: &str,
     ) -> Result<MultiPatientSoapResult, String> {
         let prepared_transcript = Self::prepare_transcript(transcript)?;
         let opts = options.cloned().unwrap_or_default();
@@ -1183,28 +1327,75 @@ impl LLMClient {
         if let Some(detection) = multi_patient_detection {
             let word_count = prepared_transcript.split_whitespace().count();
             info!(
-                "Generating {} per-patient SOAP notes with model {} ({} chars, {} words)",
-                detection.patient_count, model, prepared_transcript.len(), word_count,
+                "Generating {} per-patient SOAP notes with model {} ({} chars, {} words, {} screenshots)",
+                detection.patient_count,
+                model,
+                prepared_transcript.len(),
+                word_count,
+                screenshot_paths.map(|p| p.len()).unwrap_or(0),
             );
-            return self.generate_per_patient_soap(model, &prepared_transcript, &opts, detection).await;
+            return self
+                .generate_per_patient_soap(
+                    model,
+                    &prepared_transcript,
+                    &opts,
+                    detection,
+                    screenshot_paths,
+                    vision_model,
+                )
+                .await;
         }
 
-        // Single-patient path (existing behavior)
+        // Single-patient path (existing behavior, optionally multimodal)
         info!(
-            "Generating multi-patient SOAP note with model {} for transcript of {} chars ({} words), {} speakers",
+            "Generating multi-patient SOAP note with model {} for transcript of {} chars ({} words), {} speakers, {} screenshots",
             model,
             prepared_transcript.len(),
             prepared_transcript.split_whitespace().count(),
-            speaker_context.map(|c| c.speakers.len()).unwrap_or(0)
+            speaker_context.map(|c| c.speakers.len()).unwrap_or(0),
+            screenshot_paths.map(|p| p.len()).unwrap_or(0),
         );
 
         let system_prompt = build_simple_soap_prompt(&opts, None);
         let session_notes = if opts.session_notes.trim().is_empty() { None } else { Some(opts.session_notes.as_str()) };
         let user_content = build_soap_user_content(&prepared_transcript, audio_events, session_notes, speaker_context);
 
-        let response = self.generate(model, &system_prompt, &user_content, tasks::SOAP_NOTE).await?;
-        let raw_response = response.clone();
-        let content = self.parse_soap_with_retry(model, &system_prompt, &user_content, &response).await;
+        let multimodal = build_multimodal_user_content_if_available(&user_content, screenshot_paths);
+        let (content, raw_response, model_used) = match multimodal {
+            Some(parts) => {
+                info!(
+                    "Routing multi-patient SOAP via vision model {} with {} images attached",
+                    vision_model, parts.len() - 1
+                );
+                let response = self
+                    .generate_vision(
+                        vision_model,
+                        &system_prompt,
+                        parts.clone(),
+                        tasks::SOAP_NOTE,
+                        None,
+                        None,
+                        None,
+                        None,
+                    )
+                    .await?;
+                let raw = response.clone();
+                let c = self
+                    .parse_soap_with_retry_multimodal(vision_model, &system_prompt, &parts, &response)
+                    .await;
+                (c, raw, vision_model.to_string())
+            }
+            None => {
+                let response = self
+                    .generate(model, &system_prompt, &user_content, tasks::SOAP_NOTE)
+                    .await?;
+                let raw = response.clone();
+                let c = self
+                    .parse_soap_with_retry(model, &system_prompt, &user_content, &response)
+                    .await;
+                (c, raw, model.to_string())
+            }
+        };
 
         info!("Successfully generated multi-patient SOAP note ({} chars)", content.len());
         Ok(MultiPatientSoapResult {
@@ -1215,25 +1406,51 @@ impl LLMClient {
             }],
             physician_speaker: None,
             generated_at: Utc::now().to_rfc3339(),
-            model_used: model.to_string(),
+            model_used,
             raw_response: Some(raw_response),
             user_prompt: Some(user_content),
         })
     }
 
     /// Generate N concurrent per-patient SOAP notes from the full transcript.
+    ///
+    /// When `screenshot_paths` is non-empty, each per-patient call routes
+    /// through `vision_model` with the same deduped image set attached. The
+    /// per-patient text user prompts differ (one per patient label) but the
+    /// image bundle is shared across all parallel calls.
     async fn generate_per_patient_soap(
         &self,
         model: &str,
         transcript: &str,
         options: &SoapOptions,
         detection: &MultiPatientDetectionResult,
+        screenshot_paths: Option<&[PathBuf]>,
+        vision_model: &str,
     ) -> Result<MultiPatientSoapResult, String> {
         let system_prompt = build_per_patient_soap_prompt(options, None);
         let all_patients_desc: String = detection.patients.iter()
             .map(|p| format!("{}: {}", p.label, p.summary))
             .collect::<Vec<_>>()
             .join("; ");
+
+        // Pre-load image parts ONCE (instead of N times) since every per-patient
+        // call attaches the same image set. Returns None when no images load.
+        let shared_images: Option<Vec<ContentPart>> = screenshot_paths
+            .filter(|p| !p.is_empty())
+            .map(|paths| {
+                paths
+                    .iter()
+                    .filter_map(|p| crate::screenshot_dedup::load_jpeg_as_content_part(p))
+                    .collect::<Vec<_>>()
+            })
+            .filter(|parts| !parts.is_empty());
+
+        if let Some(ref imgs) = shared_images {
+            info!(
+                "Routing per-patient SOAP via vision model {} with {} images shared across {} patients",
+                vision_model, imgs.len(), detection.patients.len()
+            );
+        }
 
         struct PerPatientAttempt {
             note: PatientSoapNote,
@@ -1247,10 +1464,33 @@ impl LLMClient {
             );
             let sys = system_prompt.clone();
             let mdl = model.to_string();
+            let vmdl = vision_model.to_string();
+            let imgs_clone = shared_images.clone();
             async move {
-                let response = self.generate(&mdl, &sys, &user_content, tasks::SOAP_NOTE).await?;
-                let raw_response = response.clone();
-                let content = self.parse_soap_with_retry(&mdl, &sys, &user_content, &response).await;
+                let (content, raw_response) = match imgs_clone {
+                    Some(imgs) => {
+                        let mut parts: Vec<ContentPart> = Vec::with_capacity(imgs.len() + 1);
+                        parts.push(ContentPart::Text { text: user_content.clone() });
+                        parts.extend(imgs.into_iter());
+                        let response = self
+                            .generate_vision(
+                                &vmdl, &sys, parts.clone(), tasks::SOAP_NOTE,
+                                None, None, None, None,
+                            )
+                            .await?;
+                        let raw = response.clone();
+                        let c = self
+                            .parse_soap_with_retry_multimodal(&vmdl, &sys, &parts, &response)
+                            .await;
+                        (c, raw)
+                    }
+                    None => {
+                        let response = self.generate(&mdl, &sys, &user_content, tasks::SOAP_NOTE).await?;
+                        let raw = response.clone();
+                        let c = self.parse_soap_with_retry(&mdl, &sys, &user_content, &response).await;
+                        (c, raw)
+                    }
+                };
                 Ok::<PerPatientAttempt, String>(PerPatientAttempt {
                     note: PatientSoapNote {
                         patient_label: patient.label.clone(),
@@ -1299,11 +1539,16 @@ impl LLMClient {
         } else {
             Some(user_contents.join(RAW_RESPONSE_JOIN_DELIMITER))
         };
+        let effective_model = if shared_images.is_some() {
+            vision_model.to_string()
+        } else {
+            model.to_string()
+        };
         Ok(MultiPatientSoapResult {
             notes,
             physician_speaker: None,
             generated_at: Utc::now().to_rfc3339(),
-            model_used: model.to_string(),
+            model_used: effective_model,
             raw_response: joined_raw,
             user_prompt: joined_user,
         })
@@ -1316,6 +1561,8 @@ impl LLMClient {
         &self,
         fast_model: &str,
         transcript: &str,
+        screenshot_paths: Option<&[PathBuf]>,
+        vision_model: &str,
     ) -> MultiPatientDetectionOutcome {
         use crate::encounter_detection::{
             MULTI_PATIENT_DETECT_PROMPT, MULTI_PATIENT_DETECT_MIN_CONFIDENCE,
@@ -1323,11 +1570,48 @@ impl LLMClient {
         };
 
         let mp_user = format!("Transcript (segments numbered with speaker labels):\n{}", transcript);
+        let multimodal = build_multimodal_user_content_if_available(&mp_user, screenshot_paths);
+        let attached_images = multimodal.as_ref().map(|p| p.len() - 1).unwrap_or(0);
+        let effective_model = if attached_images > 0 {
+            vision_model.to_string()
+        } else {
+            fast_model.to_string()
+        };
+        if attached_images > 0 {
+            info!(
+                "Multi-patient detect routed via vision model {} with {} images attached",
+                effective_model, attached_images
+            );
+        }
+
         let start = std::time::Instant::now();
-        let result = tokio::time::timeout(
-            tokio::time::Duration::from_secs(MULTI_PATIENT_DETECT_TIMEOUT_SECS),
-            self.generate(fast_model, MULTI_PATIENT_DETECT_PROMPT, &mp_user, "multi_patient_detect"),
-        ).await;
+        let timeout = tokio::time::Duration::from_secs(MULTI_PATIENT_DETECT_TIMEOUT_SECS);
+        let result = match multimodal {
+            Some(parts) => tokio::time::timeout(
+                timeout,
+                self.generate_vision(
+                    &effective_model,
+                    MULTI_PATIENT_DETECT_PROMPT,
+                    parts,
+                    "multi_patient_detect",
+                    None,
+                    None,
+                    None,
+                    None,
+                ),
+            )
+            .await,
+            None => tokio::time::timeout(
+                timeout,
+                self.generate(
+                    fast_model,
+                    MULTI_PATIENT_DETECT_PROMPT,
+                    &mp_user,
+                    "multi_patient_detect",
+                ),
+            )
+            .await,
+        };
         let latency_ms = start.elapsed().as_millis() as u64;
 
         let (detection, response_raw, success, error) = match result {
@@ -1363,7 +1647,7 @@ impl LLMClient {
             detection,
             system_prompt: MULTI_PATIENT_DETECT_PROMPT.to_string(),
             user_prompt: mp_user,
-            model: fast_model.to_string(),
+            model: effective_model,
             response_raw,
             latency_ms,
             success,

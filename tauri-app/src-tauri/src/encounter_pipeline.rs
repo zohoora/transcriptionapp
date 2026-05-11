@@ -6,6 +6,7 @@
 //! orphaned SOAP recovery.
 
 use chrono::{DateTime, Datelike, Utc};
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 use tracing::{info, warn};
@@ -111,6 +112,15 @@ pub async fn generate_and_archive_soap(
     // outcome path (Success / Failed / Timeout) so SOAP-experiment CLIs
     // can replay the prompt without re-issuing the LLM call. Schema v5+.
     bundle: Option<&Arc<Mutex<crate::replay_bundle::ReplayBundleBuilder>>>,
+    // Optional deduped chart screenshots to attach as image_url parts.
+    // When `Some` and non-empty, SOAP generation routes through `vision_model`
+    // (vision-capable) instead of `soap_model`. Caller is responsible for
+    // deduping via `screenshot_dedup::dedup_screenshots`.
+    screenshot_paths: Option<&[PathBuf]>,
+    // Vision-capable model alias used when `screenshot_paths` has images.
+    // Pass the resolved `soap_model` alias (per ADR; `soap-model` has vision
+    // capabilities). Ignored when `screenshot_paths` is None or empty.
+    vision_model: &str,
 ) -> SoapGenerationOutcome {
     let soap_timeout = soap_timeout_override.unwrap_or(SOAP_GENERATION_TIMEOUT_SECS);
     let effective_detail = effective_soap_detail_level(soap_detail_level, word_count);
@@ -131,6 +141,8 @@ pub async fn generate_and_archive_soap(
         Some(&soap_opts),
         None,
         multi_patient_detection,
+        screenshot_paths,
+        vision_model,
     );
 
     match tokio::time::timeout(tokio::time::Duration::from_secs(soap_timeout), soap_future).await {
@@ -959,9 +971,13 @@ pub async fn run_pre_soap_multi_patient_detection(
     stage_label: &str,
     logger: &Arc<Mutex<PipelineLogger>>,
     bundle: &Arc<Mutex<crate::replay_bundle::ReplayBundleBuilder>>,
+    // Optional deduped screenshots. When non-empty, routes the detect call
+    // through `vision_model` for chart-aware multi-patient detection.
+    screenshot_paths: Option<&[PathBuf]>,
+    vision_model: &str,
 ) -> Option<MultiPatientDetectionResult> {
     let outcome = client
-        .run_multi_patient_detection(fast_model, transcript)
+        .run_multi_patient_detection(fast_model, transcript, screenshot_paths, vision_model)
         .await;
     if let Ok(mut l) = logger.lock() {
         let det_context = match &outcome.detection {
@@ -1183,6 +1199,10 @@ pub async fn recover_orphaned_soap(
     logger: &Arc<Mutex<PipelineLogger>>,
     app: &tauri::AppHandle,
     sync_ctx: &crate::server_sync::ServerSyncContext,
+    // Vision-capable model alias for orphan-SOAP recovery (see
+    // `generate_and_archive_soap` `vision_model` docs). When the orphan
+    // session has screenshots on disk, recovery goes through the vision path.
+    vision_model: &str,
 ) {
     let today_str = Utc::now().format("%Y-%m-%d").to_string();
     let sessions = match local_archive::list_sessions_by_date(&today_str) {
@@ -1234,6 +1254,12 @@ pub async fn recover_orphaned_soap(
             .map(|dt| dt.with_timezone(&Utc))
             .unwrap_or_else(|_| Utc::now());
 
+        let orphan_deduped = crate::screenshot_dedup::load_deduped_screenshots_for_session(
+            &summary.session_id,
+            &soap_date,
+        );
+        let orphan_screenshot_arg = Some(orphan_deduped.as_slice());
+
         let outcome = generate_and_archive_soap(
             client,
             soap_model,
@@ -1255,6 +1281,8 @@ pub async fn recover_orphaned_soap(
             None,
             None, // recovery path uses compiled default timeout
             None, // orphan recovery has no replay bundle
+            orphan_screenshot_arg,
+            vision_model,
         )
         .await;
 
@@ -1337,6 +1365,9 @@ pub async fn regen_soap_after_merge(
     // re-extracted billing.json keeps patientName populated rather than going null.
     surviving_patient_name: Option<&str>,
     soap_model: &str,
+    // Vision-capable model alias for the merge-regen SOAP path (see
+    // `generate_and_archive_soap` `vision_model` docs).
+    vision_model: &str,
     soap_detail_level: u8,
     soap_format: &str,
     soap_custom_instructions: &str,
@@ -1372,6 +1403,13 @@ pub async fn regen_soap_after_merge(
         }
     }
 
+    // Dedup the surviving session's screenshots for the merge-regen SOAP call.
+    let merge_deduped = crate::screenshot_dedup::load_deduped_screenshots_for_session(
+        surviving_session_id,
+        surviving_date,
+    );
+    let merge_screenshot_arg = Some(merge_deduped.as_slice());
+
     let outcome = generate_and_archive_soap(
         client,
         soap_model,
@@ -1392,6 +1430,8 @@ pub async fn regen_soap_after_merge(
         None,
         None, // merge-regen uses compiled default timeout; caller could thread from ServerConfig if desired
         None, // merge-regen path: bundle of merging-into session is finalized later via build_merged_and_reset
+        merge_screenshot_arg,
+        vision_model,
     )
     .await;
 
