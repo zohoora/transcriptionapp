@@ -83,6 +83,10 @@ pub struct PromptTemplates {
     #[serde(default)]
     pub patient_name_user: String,
     #[serde(default)]
+    pub medication_extraction_system: String,
+    #[serde(default)]
+    pub medication_extraction_user: String,
+    #[serde(default)]
     pub greeting_detection: String,
     #[serde(default)]
     pub billing_extraction: String,

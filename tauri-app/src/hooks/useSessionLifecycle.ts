@@ -22,8 +22,10 @@
  * Reset callbacks coordinated:
  * - useSessionState.handleStart / handleReset (transcript, biomarkers, SOAP result)
  * - useMedplumSync.resetSyncState (sync progress, encounter tracking)
- * - useClinicalChat.clearChat (chat messages from previous session)
  * - useSoapNote.setSoapError (stale error from previous session)
+ *
+ * Note: clinical chat state now lives in the standalone Clinical Assistant
+ * window — its lifecycle is independent of session start/reset.
  */
 import { useState, useCallback, useRef } from 'react';
 
@@ -34,8 +36,6 @@ export interface SessionLifecycleHandlers {
   sessionReset: () => Promise<void>;
   /** Reset sync state — clears encounter, sync progress (from useMedplumSync) */
   resetSyncState: () => void;
-  /** Clear chat messages — prevents patient data leak across sessions (from useClinicalChat) */
-  clearChat: () => void;
   /** Clear stale SOAP error from previous session (from useSoapNote) */
   clearSoapError: () => void;
   /** Clear session-level custom instructions (from useSoapNote) */
@@ -83,7 +83,6 @@ export function useSessionLifecycle({
   sessionStart,
   sessionReset,
   resetSyncState,
-  clearChat,
   clearSoapError,
   clearSessionCustomInstructions,
 }: SessionLifecycleHandlers): UseSessionLifecycleResult {
@@ -95,10 +94,9 @@ export function useSessionLifecycle({
   const resetAllSessionState = useCallback(() => {
     setSessionNotes('');
     resetSyncState();
-    clearChat();
     clearSoapError();
     clearSessionCustomInstructions();
-  }, [resetSyncState, clearChat, clearSoapError, clearSessionCustomInstructions]);
+  }, [resetSyncState, clearSoapError, clearSessionCustomInstructions]);
 
   const startSession = useCallback(async (deviceId: string | null) => {
     autoStartPendingRef.current = false;

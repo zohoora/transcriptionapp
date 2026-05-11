@@ -31,6 +31,8 @@ export interface PendingSettings {
   gemini_api_key: string;
   openai_api_key: string;
   image_model: string;
+  // Pharmacotherapy refactor service (powers Clinical Assistant window)
+  pharm_service_url: string;
   // Screen capture
   screen_capture_enabled: boolean;
   // Continuous charting mode
@@ -87,6 +89,7 @@ export function buildMergedSettings(settings: Settings, pending: PendingSettings
     gemini_api_key: pending.gemini_api_key,
     openai_api_key: pending.openai_api_key,
     image_model: pending.image_model,
+    pharm_service_url: pending.pharm_service_url,
     screen_capture_enabled: pending.screen_capture_enabled,
     charting_mode: pending.charting_mode,
     encounter_merge_enabled: pending.encounter_merge_enabled,
@@ -158,6 +161,7 @@ export function useSettings(): UseSettingsResult {
     gemini_api_key: s.gemini_api_key,
     openai_api_key: s.openai_api_key,
     image_model: s.image_model,
+    pharm_service_url: s.pharm_service_url,
     screen_capture_enabled: s.screen_capture_enabled,
     charting_mode: s.charting_mode,
     encounter_detection_mode: s.encounter_detection_mode,

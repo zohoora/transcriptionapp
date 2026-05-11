@@ -8,7 +8,6 @@ function createMockHandlers(): SessionLifecycleHandlers {
     sessionStart: vi.fn().mockResolvedValue(undefined),
     sessionReset: vi.fn().mockResolvedValue(undefined),
     resetSyncState: vi.fn(),
-    clearChat: vi.fn(),
     clearSoapError: vi.fn(),
     clearSessionCustomInstructions: vi.fn(),
   };
@@ -64,7 +63,6 @@ describe('useSessionLifecycle', () => {
       });
 
       expect(handlers.resetSyncState).toHaveBeenCalledTimes(1);
-      expect(handlers.clearChat).toHaveBeenCalledTimes(1);
       expect(handlers.clearSoapError).toHaveBeenCalledTimes(1);
       expect(handlers.clearSessionCustomInstructions).toHaveBeenCalledTimes(1);
       expect(handlers.sessionStart).toHaveBeenCalledWith('device-1');
@@ -105,7 +103,6 @@ describe('useSessionLifecycle', () => {
       });
 
       expect(handlers.resetSyncState).toHaveBeenCalledTimes(1);
-      expect(handlers.clearChat).toHaveBeenCalledTimes(1);
       expect(handlers.clearSoapError).toHaveBeenCalledTimes(1);
       expect(handlers.clearSessionCustomInstructions).toHaveBeenCalledTimes(1);
       expect(handlers.sessionReset).toHaveBeenCalledTimes(1);
@@ -135,7 +132,6 @@ describe('useSessionLifecycle', () => {
       });
 
       expect(handlers.resetSyncState).toHaveBeenCalledTimes(1);
-      expect(handlers.clearChat).toHaveBeenCalledTimes(1);
       expect(handlers.clearSoapError).toHaveBeenCalledTimes(1);
       expect(handlers.clearSessionCustomInstructions).toHaveBeenCalledTimes(1);
       expect(handlers.sessionStart).toHaveBeenCalledWith('device-1');

@@ -10958,3 +10958,544 @@ button.review-section-header-left:focus {
   color: var(--text-secondary, #9ca3af);
   text-align: center;
 }
+
+/* ────────────────────────────────────────────────────────────────────
+   Clinical Assistant — standalone tabbed window
+   ──────────────────────────────────────────────────────────────────── */
+
+.clinical-assistant-window {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+}
+
+.ca-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 20px;
+  border-bottom: 1px solid var(--border-color);
+  background: var(--bg-secondary);
+}
+
+.ca-header-titles {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.ca-header h1 {
+  font-size: 16px;
+  font-weight: 600;
+  margin: 0;
+}
+
+.ca-header-subtitle {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.ca-header-close {
+  background: transparent;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  padding: 4px 10px;
+  cursor: pointer;
+  font-size: 14px;
+  color: var(--text-secondary);
+}
+
+.ca-header-close:hover {
+  background: var(--bg-hover);
+}
+
+.ca-loading,
+.ca-error {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 32px;
+  color: var(--text-secondary);
+}
+
+.ca-error {
+  flex-direction: column;
+}
+
+.ca-error-action {
+  padding: 6px 14px;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background: var(--bg-primary);
+  cursor: pointer;
+}
+
+.ca-tabs {
+  display: flex;
+  border-bottom: 1px solid var(--border-color);
+  background: var(--bg-primary);
+}
+
+.ca-tab {
+  position: relative;
+  padding: 10px 18px;
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.ca-tab:hover:not(.ca-tab-active) {
+  color: var(--text-primary);
+  background: var(--bg-hover);
+}
+
+.ca-tab-active {
+  color: var(--accent-blue);
+  border-bottom-color: var(--accent-blue);
+  background: var(--bg-primary);
+}
+
+.ca-tab-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: 10px;
+  background: var(--accent-blue);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.ca-tab-content {
+  flex: 1;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Chat tab ─────────────────────────────────────────────────────────── */
+
+.clinical-chat-tab {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  padding: 16px;
+  gap: 12px;
+  overflow: hidden;
+}
+
+.chat-context-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  border-radius: 6px;
+  font-size: 13px;
+  color: #1e40af;
+}
+
+/* Clinical Assistant launch button in main window modes ─────────────── */
+
+.clinical-assistant-launch {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  margin: 8px 0;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  width: 100%;
+  justify-content: center;
+}
+
+.clinical-assistant-launch:hover {
+  background: var(--bg-hover);
+  border-color: var(--accent-blue);
+}
+
+/* Medication Assessment tab ─────────────────────────────────────────── */
+
+.medication-assessment {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  padding: 16px;
+  gap: 12px;
+  overflow-y: auto;
+}
+
+.med-status {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border-radius: 6px;
+  font-size: 13px;
+  flex-wrap: wrap;
+}
+
+.med-status-loading {
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+}
+
+.med-status-extracted {
+  background: #f0fdf4;
+  border: 1px solid #bbf7d0;
+  color: #166534;
+  justify-content: space-between;
+}
+
+.med-status-warning {
+  background: #fefce8;
+  border: 1px solid #fde68a;
+  color: #854d0e;
+  justify-content: space-between;
+}
+
+.med-status-error {
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  color: #991b1b;
+  justify-content: space-between;
+}
+
+.med-status-action {
+  padding: 4px 10px;
+  border: 1px solid currentColor;
+  border-radius: 4px;
+  background: transparent;
+  color: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.med-status-action:hover {
+  background: rgba(0, 0, 0, 0.05);
+}
+
+.med-status-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.med-table {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  overflow: hidden;
+  --med-grid: 2fr 1fr 1fr 36px;
+}
+
+.med-table-header {
+  display: grid;
+  grid-template-columns: var(--med-grid);
+  padding: 8px 12px;
+  background: var(--bg-secondary);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.med-table-empty {
+  padding: 24px;
+  text-align: center;
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+
+.med-row {
+  display: grid;
+  grid-template-columns: var(--med-grid);
+  gap: 8px;
+  padding: 6px 12px;
+  border-top: 1px solid var(--border-color);
+  align-items: center;
+}
+
+.med-row-input {
+  padding: 6px 8px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: transparent;
+  font-size: 13px;
+  color: var(--text-primary);
+  width: 100%;
+}
+
+.med-row-input:hover,
+.med-row-input:focus {
+  border-color: var(--border-color);
+  background: var(--bg-primary);
+  outline: none;
+}
+
+.med-row-input:focus {
+  border-color: var(--accent-blue);
+}
+
+.med-row-name {
+  font-weight: 500;
+}
+
+.med-row-delete {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 14px;
+  padding: 4px;
+  border-radius: 4px;
+}
+
+.med-row-delete:hover {
+  color: #ef4444;
+  background: #fef2f2;
+}
+
+.med-table-add {
+  padding: 8px 12px;
+  background: var(--bg-secondary);
+  border: none;
+  border-top: 1px solid var(--border-color);
+  color: var(--accent-blue);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  text-align: left;
+}
+
+.med-table-add:hover {
+  background: var(--bg-hover);
+}
+
+.med-analyze-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.med-analyze-button {
+  padding: 8px 24px;
+  background: var(--accent-blue);
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.med-analyze-button:disabled {
+  background: var(--text-muted);
+  cursor: not-allowed;
+}
+
+.med-analyze-error {
+  flex: 1;
+  padding: 6px 10px;
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  border-radius: 4px;
+  color: #991b1b;
+  font-size: 12px;
+}
+
+.med-analysis-results {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border-color);
+}
+
+.med-analysis-empty {
+  padding: 16px;
+  text-align: center;
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+
+/* Burden score panel ───────────────────────────────────────────────── */
+
+.burden-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.burden-tiles {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+
+.burden-tile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 10px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+}
+
+.burden-label {
+  font-size: 11px;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.burden-value {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.burden-risks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.burden-risk-pill {
+  padding: 3px 10px;
+  background: #fef3c7;
+  color: #92400e;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+/* Finding cards ────────────────────────────────────────────────────── */
+
+.med-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.finding-card {
+  padding: 12px;
+  border: 1px solid var(--border-color);
+  border-left: 4px solid var(--text-muted);
+  border-radius: 6px;
+  background: var(--bg-primary);
+}
+
+.finding-card.card-critical {
+  border-left-color: #dc2626;
+  background: #fef2f2;
+}
+
+.finding-card.card-important {
+  border-left-color: #d97706;
+  background: #fff7ed;
+}
+
+.finding-card.card-convenience {
+  border-left-color: #2563eb;
+}
+
+.finding-card.card-info {
+  border-left-color: var(--text-muted);
+}
+
+.finding-card-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.finding-card-severity {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  padding: 2px 6px;
+  border-radius: 3px;
+  background: rgba(0, 0, 0, 0.06);
+}
+
+.card-critical .finding-card-severity {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+.card-important .finding-card-severity {
+  background: #fed7aa;
+  color: #9a3412;
+}
+
+.finding-card-category {
+  font-size: 11px;
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+
+.finding-card-title {
+  font-size: 14px;
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+
+.finding-card-meds {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-bottom: 6px;
+}
+
+.finding-card-med-badge {
+  padding: 2px 8px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.finding-card-rationale {
+  font-size: 13px;
+  color: var(--text-primary);
+  line-height: 1.4;
+}
+
+.finding-card-rationale .markdown-content p {
+  margin-bottom: 6px;
+}
+
+.finding-card-action {
+  margin-top: 8px;
+  padding: 6px 10px;
+  background: var(--bg-secondary);
+  border-radius: 4px;
+  font-size: 12px;
+  color: var(--text-primary);
+}

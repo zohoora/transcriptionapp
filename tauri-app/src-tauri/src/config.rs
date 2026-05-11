@@ -146,6 +146,9 @@ pub struct Settings {
     pub miis_enabled: bool,
     #[serde(default = "default_miis_server_url")]
     pub miis_server_url: String,
+    // Pharmacotherapy refactor service (MacBook-hosted; see clinical-assistant window)
+    #[serde(default = "default_pharm_service_url")]
+    pub pharm_service_url: String,
     // AI image generation settings
     #[serde(default = "default_image_source")]
     pub image_source: String,
@@ -397,6 +400,10 @@ fn default_miis_server_url() -> String {
     "http://100.119.83.76:7843".to_string()
 }
 
+fn default_pharm_service_url() -> String {
+    "http://100.119.83.76:8091".to_string()
+}
+
 fn default_image_source() -> String {
     "ai".to_string()
 }
@@ -543,6 +550,7 @@ impl Default for Settings {
             debug_storage_enabled: default_debug_storage_enabled(),
             miis_enabled: false,
             miis_server_url: default_miis_server_url(),
+            pharm_service_url: default_pharm_service_url(),
             image_source: default_image_source(),
             gemini_api_key: String::new(),
             openai_api_key: String::new(),
@@ -895,6 +903,8 @@ pub struct InfrastructureOverlay {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub miis_server_url: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pharm_service_url: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub whisper_mode: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub encounter_detection_model: Option<String>,
@@ -1031,6 +1041,7 @@ impl Settings {
             medplum_server_url: if self.medplum_server_url.is_empty() { None } else { Some(self.medplum_server_url.clone()) },
             medplum_client_id: Some(self.medplum_client_id.clone()),
             miis_server_url: if self.miis_server_url.is_empty() { None } else { Some(self.miis_server_url.clone()) },
+            pharm_service_url: if self.pharm_service_url.is_empty() { None } else { Some(self.pharm_service_url.clone()) },
             whisper_mode: Some(self.whisper_mode.clone()),
             encounter_detection_model: Some(self.encounter_detection_model.clone()),
             encounter_detection_nothink: Some(self.encounter_detection_nothink),
@@ -1052,6 +1063,7 @@ impl Settings {
         if let Some(ref v) = infra.medplum_server_url { self.medplum_server_url = v.clone(); }
         if let Some(ref v) = infra.medplum_client_id { self.medplum_client_id = v.clone(); }
         if let Some(ref v) = infra.miis_server_url { self.miis_server_url = v.clone(); }
+        if let Some(ref v) = infra.pharm_service_url { self.pharm_service_url = v.clone(); }
         if let Some(ref v) = infra.whisper_mode { self.whisper_mode = v.clone(); }
         if let Some(ref v) = infra.encounter_detection_model { self.encounter_detection_model = v.clone(); }
         if let Some(v) = infra.encounter_detection_nothink { self.encounter_detection_nothink = v; }
@@ -1131,8 +1143,8 @@ impl Settings {
         // Infrastructure
         for field in &["llm_router_url", "llm_api_key", "llm_client_id", "soap_model", "soap_model_fast",
                        "fast_model", "whisper_server_url", "whisper_server_model", "stt_alias", "stt_postprocess",
-                       "medplum_server_url", "medplum_client_id", "miis_server_url", "whisper_mode",
-                       "encounter_detection_model", "encounter_detection_nothink"] {
+                       "medplum_server_url", "medplum_client_id", "miis_server_url", "pharm_service_url",
+                       "whisper_mode", "encounter_detection_model", "encounter_detection_nothink"] {
             m.insert(*field, SettingsTier::Infrastructure);
         }
         // Room
@@ -1615,6 +1627,7 @@ mod tests {
             debug_storage_enabled: true,
             miis_enabled: false,
             miis_server_url: "http://100.119.83.76:7843".to_string(),
+            pharm_service_url: "http://100.119.83.76:8091".to_string(),
             image_source: "off".to_string(),
             gemini_api_key: String::new(),
             openai_api_key: String::new(),
@@ -1751,6 +1764,7 @@ mod tests {
             debug_storage_enabled: true,
             miis_enabled: false,
             miis_server_url: default_miis_server_url(),
+            pharm_service_url: default_pharm_service_url(),
             image_source: default_image_source(),
             gemini_api_key: String::new(),
             openai_api_key: String::new(),

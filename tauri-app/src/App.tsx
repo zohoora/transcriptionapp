@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { WebviewWindow } from '@tauri-apps/api/webviewWindow';
 import { useAuth } from './components/AuthProvider';
@@ -22,7 +22,6 @@ import {
   useDevices,
   useChecklist,
   useAutoDetection,
-  useClinicalChat,
   useSessionLifecycle,
   usePredictiveHint,
   useMiisImages,
@@ -157,18 +156,9 @@ function App() {
   // Checklist from hook (for permission checks)
   const { checkMicrophonePermission, openMicrophoneSettings } = useChecklist();
 
-  // Clinical chat for during-appointment Q&A
-  const {
-    messages: chatMessages,
-    isLoading: chatIsLoading,
-    error: chatError,
-    sendMessage: chatSendMessage,
-    clearChat,
-  } = useClinicalChat(
-    settings?.llm_router_url || '',
-    settings?.llm_api_key || '',
-    settings?.llm_client_id || 'ai-scribe'
-  );
+  // Clinical chat is now hosted inside the standalone Clinical Assistant
+  // window (opened from a button in each Mode). The hook lives there;
+  // the main window no longer needs to drive it.
 
   // Centralized session lifecycle coordination
   const {
@@ -183,7 +173,6 @@ function App() {
     sessionStart: sessionStart,
     sessionReset: sessionReset,
     resetSyncState,
-    clearChat,
     clearSoapError: () => setSoapError(null),
     clearSessionCustomInstructions: () => updateSessionCustomInstructions(''),
   });
@@ -195,15 +184,6 @@ function App() {
   // Continuous mode orchestrator (groups useContinuousMode, usePatientBiomarkers,
   // usePredictiveHint, useMiisImages, and related state)
   const continuous = useContinuousModeOrchestrator({ settings });
-
-  // Clear clinical chat when a new encounter is detected in continuous mode
-  const prevEncounterIdRef = useRef(continuous.encounterSessionId);
-  useEffect(() => {
-    if (continuous.encounterSessionId !== prevEncounterIdRef.current) {
-      prevEncounterIdRef.current = continuous.encounterSessionId;
-      clearChat();
-    }
-  }, [continuous.encounterSessionId, clearChat]);
 
   // Patient handout generation
   const { isGenerating: isGeneratingHandout, generateHandout } = usePatientHandout();
@@ -909,11 +889,6 @@ function App() {
             sleepResumeAt={continuous.sleepResumeAt}
             onViewHistory={openHistoryWindow}
             onUploadAudio={() => setShowUploadModal(true)}
-            chatMessages={chatMessages}
-            chatIsLoading={chatIsLoading}
-            chatError={chatError}
-            onChatSendMessage={chatSendMessage}
-            onChatClear={clearChat}
           />
         )}
 
@@ -974,11 +949,6 @@ function App() {
             onSessionNotesChange={setSessionNotes}
             isStopping={isStopping}
             silenceWarning={silenceWarning}
-            chatMessages={chatMessages}
-            chatIsLoading={chatIsLoading}
-            chatError={chatError}
-            onChatSendMessage={chatSendMessage}
-            onChatClear={clearChat}
             predictiveHint={predictiveHint}
             predictiveHintLoading={predictiveHintLoading}
             differentialDiagnoses={differentialDiagnoses}

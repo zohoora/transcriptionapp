@@ -328,14 +328,14 @@ pub(crate) fn parse_vision_response(response: &str) -> (Option<String>, Option<S
     (parse_patient_name(trimmed), None)
 }
 
-/// Find the first balanced `{...}` block in `s`, respecting string escaping.
+/// Find the first balanced bracket-delimited region of `s`, respecting string
+/// escaping. Used for both `{...}` and `[...]` JSON extraction across vision
+/// response parsers.
 ///
 /// Handles markdown-wrapped JSON, leading garbage, and multi-block responses.
-/// Returns the exact byte slice of the first complete object (including the
-/// outer braces), or None if no balanced object is found.
-fn extract_first_json_object(s: &str) -> Option<&str> {
+pub(crate) fn extract_first_balanced(s: &str, open: u8, close: u8) -> Option<&str> {
     let bytes = s.as_bytes();
-    let start = bytes.iter().position(|&b| b == b'{')?;
+    let start = bytes.iter().position(|&b| b == open)?;
 
     let mut depth = 0i32;
     let mut in_string = false;
@@ -354,20 +354,23 @@ fn extract_first_json_object(s: &str) -> Option<&str> {
             }
             continue;
         }
-        match b {
-            b'"' => in_string = true,
-            b'{' => depth += 1,
-            b'}' => {
-                depth -= 1;
-                if depth == 0 {
-                    let end = start + idx + 1;
-                    return Some(&s[start..end]);
-                }
+        if b == b'"' {
+            in_string = true;
+        } else if b == open {
+            depth += 1;
+        } else if b == close {
+            depth -= 1;
+            if depth == 0 {
+                let end = start + idx + 1;
+                return Some(&s[start..end]);
             }
-            _ => {}
         }
     }
     None
+}
+
+fn extract_first_json_object(s: &str) -> Option<&str> {
+    extract_first_balanced(s, b'{', b'}')
 }
 
 /// Parse a plain-text vision response for a patient name.

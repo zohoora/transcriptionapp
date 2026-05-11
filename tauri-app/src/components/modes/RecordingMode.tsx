@@ -1,12 +1,12 @@
 import { memo, useState, useCallback } from 'react';
 import type { AudioQualitySnapshot, BiomarkerUpdate, SilenceWarningPayload } from '../../types';
-import type { ChatMessage } from '../../hooks/useClinicalChat';
 import type { MiisSuggestion } from '../../hooks/useMiisImages';
 import type { AiImage } from '../../hooks/useAiImages';
 import type { DifferentialDiagnosis } from '../../hooks/usePredictiveHint';
 import { DDX_LIKELIHOOD_LABELS } from '../../hooks/usePredictiveHint';
 import { getAudioQualityLevel } from '../../utils';
-import { ClinicalChat, MarkdownContent } from '../ClinicalChat';
+import { MarkdownContent } from '../ClinicalChat';
+import { useClinicalAssistantWindow } from '../../hooks/useClinicalAssistantWindow';
 import { ImageSuggestions } from '../ImageSuggestions';
 import { PatientPulse } from '../PatientPulse';
 
@@ -37,13 +37,6 @@ interface RecordingModeProps {
 
   // Silence warning for auto-end countdown
   silenceWarning: SilenceWarningPayload | null;
-
-  // Clinical chat props
-  chatMessages: ChatMessage[];
-  chatIsLoading: boolean;
-  chatError: string | null;
-  onChatSendMessage: (content: string) => void;
-  onChatClear: () => void;
 
   // Predictive hint
   predictiveHint: string;
@@ -98,11 +91,6 @@ export const RecordingMode = memo(function RecordingMode({
   onSessionNotesChange,
   isStopping,
   silenceWarning,
-  chatMessages,
-  chatIsLoading,
-  chatError,
-  onChatSendMessage,
-  onChatClear,
   predictiveHint,
   predictiveHintLoading,
   differentialDiagnoses,
@@ -132,7 +120,7 @@ export const RecordingMode = memo(function RecordingMode({
   const [showTranscript, setShowTranscript] = useState(false);
   const [showDetails, setShowDetails] = useState(false);
   const [showNotes, setShowNotes] = useState(false);
-  const [chatExpanded, setChatExpanded] = useState(false);
+  const { openClinicalAssistant } = useClinicalAssistantWindow();
 
   const qualityLevel = getAudioQualityLevel(audioQuality);
 
@@ -368,16 +356,15 @@ export const RecordingMode = memo(function RecordingMode({
         </div>
       )}
 
-      {/* Clinical Assistant Chat */}
-      <ClinicalChat
-        messages={chatMessages}
-        isLoading={chatIsLoading}
-        error={chatError}
-        onSendMessage={onChatSendMessage}
-        onClear={onChatClear}
-        isExpanded={chatExpanded}
-        onToggleExpand={() => setChatExpanded(!chatExpanded)}
-      />
+      {/* Opens the standalone Clinical Assistant window. */}
+      <button
+        className="clinical-assistant-launch"
+        onClick={() => void openClinicalAssistant()}
+        aria-label="Open Clinical Assistant"
+      >
+        <span aria-hidden="true">💬</span>
+        <span>Clinical Assistant</span>
+      </button>
 
       {/* Model indicator */}
       <div className="model-indicator">

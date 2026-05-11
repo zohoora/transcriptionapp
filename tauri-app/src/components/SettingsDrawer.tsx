@@ -346,6 +346,32 @@ export const SettingsDrawer = memo(function SettingsDrawer({
                   </div>
                 </details>
 
+                {/* Advanced — Clinical Assistant service. Same collapsed-by-default
+                    pattern as LLM Models. The pharm-refactor URL is an IT-tier
+                    setting; clinics shouldn't see it in the default view. */}
+                <details className="settings-advanced-models">
+                  <summary className="settings-sub-header" style={{ cursor: 'pointer' }}>
+                    Advanced (Clinical Assistant)
+                  </summary>
+
+                  <div className="settings-group">
+                    <label className="settings-label" htmlFor="pharm-service-url-input">
+                      Pharmacotherapy service URL
+                    </label>
+                    <input
+                      id="pharm-service-url-input"
+                      type="text"
+                      className="settings-input"
+                      value={pendingSettings.pharm_service_url}
+                      onChange={(e) => onSettingsChange({ ...pendingSettings, pharm_service_url: e.target.value })}
+                      placeholder="http://100.119.83.76:8091"
+                    />
+                    <span className="settings-hint">
+                      Hosts the medication-assessment analyzer used by the Clinical Assistant window.
+                    </span>
+                  </div>
+                </details>
+
                 {/* Session Automation (session mode only) */}
                 {pendingSettings.charting_mode !== 'continuous' && (<>
                 <div className="settings-divider" />

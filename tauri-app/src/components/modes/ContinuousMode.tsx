@@ -26,8 +26,8 @@ import type { AiImage } from '../../hooks/useAiImages';
 import type { DifferentialDiagnosis } from '../../hooks/usePredictiveHint';
 import { DDX_LIKELIHOOD_LABELS } from '../../hooks/usePredictiveHint';
 import { getAudioQualityLevel } from '../../utils';
-import { ClinicalChat, MarkdownContent } from '../ClinicalChat';
-import type { ChatMessage } from '../../hooks/useClinicalChat';
+import { MarkdownContent } from '../ClinicalChat';
+import { useClinicalAssistantWindow } from '../../hooks/useClinicalAssistantWindow';
 import { ImageSuggestions } from '../ImageSuggestions';
 import { PatientPulse } from '../PatientPulse';
 
@@ -94,16 +94,6 @@ interface ContinuousModeProps {
   onViewHistory: () => void;
   /** Upload audio file for batch processing */
   onUploadAudio?: () => void;
-  /** Clinical chat messages */
-  chatMessages: ChatMessage[];
-  /** Whether a chat response is being generated */
-  chatIsLoading: boolean;
-  /** Chat error message */
-  chatError: string | null;
-  /** Send a chat message */
-  onChatSendMessage: (content: string) => void;
-  /** Clear chat history */
-  onChatClear: () => void;
   /** Speech detected but no transcription being produced */
   transcriptionStalled?: boolean;
   /** Whether the pipeline is currently in overnight sleep mode */
@@ -207,11 +197,6 @@ export const ContinuousMode = memo(function ContinuousMode({
   isGeneratingHandout,
   onViewHistory,
   onUploadAudio,
-  chatMessages,
-  chatIsLoading,
-  chatError,
-  onChatSendMessage,
-  onChatClear,
   transcriptionStalled,
   isSleeping,
   sleepResumeAt,
@@ -220,8 +205,7 @@ export const ContinuousMode = memo(function ContinuousMode({
 
   // Local UI toggle states
   const [showTranscript, setShowTranscript] = useState(false);
-  const [chatExpanded, setChatExpanded] = useState(false);
-  const handleToggleChat = useCallback(() => setChatExpanded(prev => !prev), []);
+  const { openClinicalAssistant } = useClinicalAssistantWindow();
   const [showDetails, setShowDetails] = useState(false);
   const [showNotes, setShowNotes] = useState(false);
   const [copiedEncounterId, setCopiedEncounterId] = useState<string | null>(null);
@@ -674,16 +658,15 @@ export const ContinuousMode = memo(function ContinuousMode({
         </div>
       )}
 
-      {/* Clinical Assistant Chat */}
-      <ClinicalChat
-        messages={chatMessages}
-        isLoading={chatIsLoading}
-        error={chatError}
-        onSendMessage={onChatSendMessage}
-        onClear={onChatClear}
-        isExpanded={chatExpanded}
-        onToggleExpand={handleToggleChat}
-      />
+      {/* Opens the standalone Clinical Assistant window. */}
+      <button
+        className="clinical-assistant-launch"
+        onClick={() => void openClinicalAssistant()}
+        aria-label="Open Clinical Assistant"
+      >
+        <span aria-hidden="true">💬</span>
+        <span>Clinical Assistant</span>
+      </button>
 
       {/* Error display */}
       {(error || stats.last_error) && (

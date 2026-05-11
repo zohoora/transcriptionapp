@@ -64,6 +64,7 @@ pub mod llm_backend;
 pub mod llm_client;
 pub mod run_context;
 pub mod mcp;
+pub mod medication_extraction;
 pub mod medplum;
 pub mod models;
 pub mod ollama;
@@ -611,6 +612,9 @@ pub fn run() {
             commands::generate_clinical_feedback,
             // Clinical chat commands
             commands::clinical_chat_send,
+            // Medication assessment commands
+            commands::capture_screenshot_for_meds,
+            commands::analyze_medications,
             // MIIS (Medical Illustration Image Server) commands
             commands::miis_suggest,
             commands::miis_send_usage,

@@ -1,5 +1,6 @@
 import { useState, useCallback, useRef } from 'react';
 import { invoke } from '@tauri-apps/api/core';
+import type { MedEntry } from '../types';
 
 export interface ChatMessage {
   id: string;
@@ -26,10 +27,19 @@ interface ClinicalChatResponse {
 
 const SYSTEM_PROMPT = `You are a clinical reference tool used by a licensed physician during patient appointments. Respond as you would to a medical colleague: concise, evidence-based, no disclaimers. The physician will apply clinical judgment.`;
 
+/**
+ * Hook for the Clinical Assistant chat.
+ *
+ * When `currentMedications` is provided (non-null, non-empty), the Rust
+ * `clinical_chat_send` command prepends a system message describing the
+ * patient's current meds. Pattern is additive: passing `null`/`undefined`
+ * leaves the chat behavior identical to v1.
+ */
 export function useClinicalChat(
   llmRouterUrl: string,
   llmApiKey: string,
-  llmClientId: string
+  llmClientId: string,
+  currentMedications?: MedEntry[] | null
 ): UseClinicalChatResult {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -42,9 +52,12 @@ export function useClinicalChat(
   const messagesRef = useRef<ChatMessage[]>([]);
   messagesRef.current = messages;
 
-  const sendMessage = useCallback(async (content: string) => {
-    console.log('Clinical chat: sending message via Tauri invoke', { llmRouterUrl, llmApiKey: llmApiKey ? '***' : 'empty', llmClientId });
+  // Same trick for currentMedications: keep sendMessage stable regardless
+  // of how often the medication list updates.
+  const medsRef = useRef<MedEntry[] | null>(currentMedications ?? null);
+  medsRef.current = currentMedications ?? null;
 
+  const sendMessage = useCallback(async (content: string) => {
     if (!content.trim() || !llmRouterUrl) {
       setError('Please configure LLM Router URL in settings');
       return;
@@ -91,14 +104,14 @@ export function useClinicalChat(
       ];
 
       // Use Tauri invoke instead of browser fetch
+      const meds = medsRef.current && medsRef.current.length > 0 ? medsRef.current : null;
       const response = await invoke<ClinicalChatResponse>('clinical_chat_send', {
         llmRouterUrl,
         llmApiKey,
         llmClientId,
         messages: apiMessages,
+        currentMedications: meds,
       });
-
-      console.log('Clinical chat: received response', { contentLength: response.content.length, toolsUsed: response.tools_used });
 
       // Check if cancelled during the request
       if (cancelledRef.current) {

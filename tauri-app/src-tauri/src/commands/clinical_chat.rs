@@ -103,19 +103,71 @@ fn log_chat_exchange(entry: &ChatLogEntry) {
     }
 }
 
+/// Build a single-line system context message from a med list. Empty input
+/// returns None — caller should NOT insert a context message in that case.
+fn build_medication_context_message(
+    meds: &[crate::medication_extraction::MedEntry],
+) -> Option<String> {
+    if meds.is_empty() {
+        return None;
+    }
+    // Cap at 32 meds to bound token budget; very long lists are nearly always OCR noise.
+    let lines: Vec<String> = meds
+        .iter()
+        .take(32)
+        .map(|m| {
+            let mut line = format!("- {}", m.name);
+            if let Some(dose) = &m.dose {
+                line.push(' ');
+                line.push_str(dose);
+            }
+            if let Some(freq) = &m.frequency {
+                line.push(' ');
+                line.push_str(freq);
+            }
+            line
+        })
+        .collect();
+    Some(format!(
+        "Current medications (extracted from chart screenshot, clinician-reviewed):\n{}",
+        lines.join("\n")
+    ))
+}
+
 /// Send a message to the clinical assistant LLM
 #[tauri::command]
 pub async fn clinical_chat_send(
     llm_router_url: String,
     llm_api_key: String,
     llm_client_id: String,
-    messages: Vec<ChatMessage>,
+    mut messages: Vec<ChatMessage>,
+    current_medications: Option<Vec<crate::medication_extraction::MedEntry>>,
 ) -> Result<ClinicalChatResponse, super::CommandError> {
     use super::CommandError;
+    // Med-list context goes at index 1 so the persona system prompt at
+    // index 0 still anchors the conversation.
+    if let Some(meds) = current_medications.as_ref() {
+        if let Some(ctx) = build_medication_context_message(meds) {
+            let insert_at = if messages.first().map(|m| m.role.as_str()) == Some("system") {
+                1
+            } else {
+                0
+            };
+            messages.insert(
+                insert_at,
+                ChatMessage {
+                    role: "system".to_string(),
+                    content: ctx,
+                },
+            );
+        }
+    }
+
     info!(
-        "Clinical chat: sending {} messages to {}",
+        "Clinical chat: sending {} messages to {} (meds_attached={})",
         messages.len(),
-        llm_router_url
+        llm_router_url,
+        current_medications.as_ref().map(|m| m.len()).unwrap_or(0)
     );
 
     if llm_router_url.is_empty() {
@@ -263,4 +315,52 @@ pub async fn clinical_chat_send(
         content,
         tools_used,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::medication_extraction::MedEntry;
+
+    #[test]
+    fn empty_meds_returns_none() {
+        assert!(build_medication_context_message(&[]).is_none());
+    }
+
+    #[test]
+    fn formats_one_med_per_line_with_optional_fields() {
+        let meds = vec![
+            MedEntry {
+                name: "metformin".into(),
+                dose: Some("500 mg".into()),
+                frequency: Some("BID".into()),
+            },
+            MedEntry {
+                name: "aspirin".into(),
+                dose: None,
+                frequency: None,
+            },
+        ];
+        let ctx = build_medication_context_message(&meds).expect("context message");
+        assert!(ctx.starts_with("Current medications"));
+        assert!(ctx.contains("- metformin 500 mg BID"));
+        assert!(ctx.contains("- aspirin"));
+        assert!(ctx.contains("clinician-reviewed"));
+    }
+
+    #[test]
+    fn caps_at_32_medications() {
+        let meds: Vec<MedEntry> = (0..50)
+            .map(|i| MedEntry {
+                name: format!("drug{}", i),
+                dose: None,
+                frequency: None,
+            })
+            .collect();
+        let ctx = build_medication_context_message(&meds).expect("context message");
+        // 32 lines + header — anything past should be dropped.
+        assert!(ctx.contains("drug0"));
+        assert!(ctx.contains("drug31"));
+        assert!(!ctx.contains("drug32"));
+    }
 }

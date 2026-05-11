@@ -97,6 +97,8 @@ export interface Settings {
   // MIIS (Medical Illustration Image Server)
   miis_enabled: boolean;
   miis_server_url: string;
+  // Pharmacotherapy refactor service (MacBook-hosted; powers the Clinical Assistant window)
+  pharm_service_url: string;
   // AI image generation
   image_source: string; // "off" | "miis" | "ai"
   gemini_api_key: string;
@@ -1362,4 +1364,76 @@ export interface UploadedSession {
 export interface AudioUploadResult {
   sessions: UploadedSession[];
   totalWordCount: number;
+}
+
+// ────────────────────────────────────────────────────────────────────
+// Medication Assessment (powered by the MacBook pharm-refactor service)
+// Mirrors Rust types in src-tauri/src/medication_extraction.rs and
+// src-tauri/src/commands/medication.rs.
+// ────────────────────────────────────────────────────────────────────
+
+/** A single medication entry — output of vision extraction + input to /analyze */
+export interface MedEntry {
+  name: string;
+  dose?: string;
+  frequency?: string;
+}
+
+/** Result of `capture_screenshot_for_meds` — fail-soft on every error */
+export interface MedExtractionResult {
+  medications: MedEntry[];
+  /** True when the screenshot was mostly blank; usually means Screen Recording permission is denied */
+  likelyBlank: boolean;
+}
+
+/** Pharm-refactor parsed-medication shape (CardResponse mirrors python schema) */
+export interface AnalysisMedication {
+  rawText: string;
+  nameCanonical: string;
+  doseValue: number | null;
+  doseUnit: string | null;
+  frequency: string;
+  formulation: string;
+  doseBand: string;
+  isCombo: boolean;
+  comboComponents: string[];
+}
+
+export type CardSeverity = 'critical' | 'important' | 'convenience' | 'info';
+
+/** Analysis finding card — severity drives UI color, category drives grouping */
+export interface AnalysisCard {
+  id: string;
+  title: string;
+  rationale: string | null;
+  /** Open-ended on the wire: HardStop / TagStack / Beers / Cascade / Burden / Simplify / Deprescribe / Administration / FoodInteraction / GuidelineDeviation / ... */
+  category: string;
+  severity: CardSeverity;
+  confidence: string; // LOW | MEDIUM | HIGH
+  medsInvolved: string[];
+  verifyChecklist: string[];
+  action: string | null;
+  notes: string | null;
+}
+
+/** Burden score totals + per-tag risk counts */
+export interface BurdenScores {
+  acbTotal: number;
+  sedationTotal: number;
+  constipationTotal: number;
+  qtRiskCount: number;
+  serotonergicCount: number;
+  bleedingRiskCount: number;
+  fallsRiskCount: number;
+  nephrotoxicCount: number;
+  hepatotoxicCount: number;
+  hyperkalemiaCount: number;
+}
+
+/** Full /analyze response */
+export interface AnalysisResult {
+  medications: AnalysisMedication[];
+  cards: AnalysisCard[];
+  burdenScores: BurdenScores;
+  context: Record<string, unknown>;
 }
