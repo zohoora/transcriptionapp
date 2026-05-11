@@ -614,6 +614,7 @@ pub fn run() {
             commands::clinical_chat_send,
             // Medication assessment commands
             commands::capture_screenshot_for_meds,
+            commands::parse_medications_from_text,
             commands::analyze_medications,
             // MIIS (Medical Illustration Image Server) commands
             commands::miis_suggest,

@@ -11200,6 +11200,73 @@ button.review-section-header-left:focus {
   gap: 6px;
 }
 
+.med-text-parse {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.med-text-parse-label {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.med-text-parse-input {
+  width: 100%;
+  font-family: inherit;
+  font-size: 13px;
+  padding: 8px 10px;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background: var(--bg-input, #fff);
+  color: var(--text-primary);
+  resize: vertical;
+  min-height: 60px;
+}
+
+.med-text-parse-input:focus {
+  outline: none;
+  border-color: var(--accent-color, #2563eb);
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.15);
+}
+
+.med-text-parse-input:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+
+.med-text-parse-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.med-text-parse-button {
+  padding: 6px 14px;
+  font-size: 13px;
+  font-weight: 500;
+  background: var(--accent-color, #2563eb);
+  color: #fff;
+  border: none;
+  border-radius: 5px;
+  cursor: pointer;
+}
+
+.med-text-parse-button:hover:not(:disabled) {
+  filter: brightness(1.08);
+}
+
+.med-text-parse-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.med-text-parse-error {
+  font-size: 12px;
+  color: var(--danger-color, #b91c1c);
+}
+
 .med-table {
   display: flex;
   flex-direction: column;

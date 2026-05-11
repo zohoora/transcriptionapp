@@ -141,10 +141,15 @@ const ClinicalAssistantWindow: React.FC = () => {
             analysis={med.analysis}
             isAnalyzing={med.isAnalyzing}
             analyzeError={med.analyzeError}
+            parseText={med.parseText}
+            setParseText={med.setParseText}
+            isParsing={med.isParsing}
+            parseError={med.parseError}
             addRow={med.addRow}
             updateRow={med.updateRow}
             deleteRow={med.deleteRow}
             extract={med.extract}
+            parseTypedMeds={med.parseTypedMeds}
             analyze={med.analyze}
           />
         )}

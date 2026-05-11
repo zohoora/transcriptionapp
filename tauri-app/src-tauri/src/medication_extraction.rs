@@ -124,6 +124,66 @@ pub(crate) fn parse_medication_vision_response(response: &str) -> Vec<MedEntry> 
         .collect()
 }
 
+/// Build the LLM prompt for parsing a clinician's free-text medication
+/// list into structured `MedEntry` JSON. The prompt accepts both fresh
+/// lists ("metformin 500 bid, lipitor 40, aspirin") and modifications
+/// ("stop the lipitor", "increase metformin to 1000") on top of the
+/// current list. Output shape matches the vision-extraction prompt so
+/// `parse_medication_vision_response` parses both.
+pub(crate) fn build_medication_text_parse_prompt(
+    current_meds: &[MedEntry],
+    user_text: &str,
+    templates: Option<&crate::server_config::PromptTemplates>,
+) -> (String, String) {
+    let system = templates
+        .and_then(|t| {
+            (!t.medication_text_parse_system.is_empty())
+                .then(|| t.medication_text_parse_system.clone())
+        })
+        .unwrap_or_else(|| {
+            "You normalize a clinician's free-text medication entries into structured JSON. \
+             The clinician is in clinic and types quickly — the input may have typos, abbreviations, \
+             or be a mix of a fresh list and modifications to the existing list. \
+             You will receive the CURRENT list and the clinician's input; apply the input to the \
+             current list and output the FINAL list as JSON. Respond with ONLY a JSON array, no other text."
+                .to_string()
+        });
+
+    // Serialize current list — empty array if no current meds.
+    let current_json = serde_json::to_string(current_meds).unwrap_or_else(|_| "[]".to_string());
+
+    let user_template = templates
+        .and_then(|t| {
+            (!t.medication_text_parse_user.is_empty())
+                .then(|| t.medication_text_parse_user.clone())
+        })
+        .unwrap_or_else(|| {
+            "Current medication list:\n{CURRENT_LIST}\n\n\
+             Clinician input:\n{USER_TEXT}\n\n\
+             Output the FINAL medication list as a JSON array. Each object has:\n\
+             - \"name\": drug name, lowercase, correct spelling (e.g. fix \"asprin\" → \"aspirin\"). \
+             Preserve brand vs. generic as the clinician wrote it.\n\
+             - \"dose\": dose with units (e.g. \"500 mg\", \"40 mg\"), or null if not stated. \
+             A bare number after a drug name (\"metformin 500\") usually means mg.\n\
+             - \"frequency\": standardized abbreviation (OD, BID, TID, QID, QHS, PRN), \
+             or a short phrase, or null.\n\n\
+             Rules:\n\
+             - If the clinician's input is a fresh complete list (no modification language), \
+             REPLACE the current list with it.\n\
+             - If it's modifications (\"stop X\", \"add Y\", \"increase Z to W\"), apply them \
+             to the current list — keep meds the clinician didn't mention.\n\
+             - Drop empty/garbage entries.\n\
+             - Respond with ONLY the JSON array."
+                .to_string()
+        });
+
+    let user = user_template
+        .replace("{CURRENT_LIST}", &current_json)
+        .replace("{USER_TEXT}", user_text);
+
+    (system, user)
+}
+
 /// Flatten a med list into the newline-delimited text the pharm-refactor
 /// `/analyze` endpoint expects (`engine/parser.py::parse_medication_list`).
 pub fn medications_to_text(meds: &[MedEntry]) -> String {
@@ -243,6 +303,62 @@ mod tests {
         let (system, user) = build_medication_extraction_prompt(Some(&templates));
         assert_eq!(system, "CUSTOM SYSTEM");
         assert_eq!(user, "CUSTOM USER");
+    }
+
+    #[test]
+    fn text_parse_prompt_embeds_current_list_and_user_input() {
+        let current = vec![
+            MedEntry {
+                name: "metformin".into(),
+                dose: Some("500 mg".into()),
+                frequency: Some("BID".into()),
+            },
+            MedEntry {
+                name: "lipitor".into(),
+                dose: Some("40 mg".into()),
+                frequency: Some("OD".into()),
+            },
+        ];
+        let (system, user) =
+            build_medication_text_parse_prompt(&current, "stop the lipitor, add asprin 81", None);
+        // System prompt mentions the normalization task and JSON output rule.
+        assert!(system.contains("clinician"));
+        assert!(system.contains("JSON"));
+        // User prompt contains the serialized current list (as JSON) and the
+        // clinician's input verbatim — placeholders must be replaced.
+        assert!(!user.contains("{CURRENT_LIST}"));
+        assert!(!user.contains("{USER_TEXT}"));
+        assert!(user.contains("metformin"));
+        assert!(user.contains("lipitor"));
+        assert!(user.contains("stop the lipitor"));
+        assert!(user.contains("asprin"));
+        // Output schema description so the LLM knows the shape.
+        assert!(user.contains("name"));
+        assert!(user.contains("dose"));
+        assert!(user.contains("frequency"));
+    }
+
+    #[test]
+    fn text_parse_prompt_with_empty_current_list_serializes_empty_array() {
+        let (_, user) =
+            build_medication_text_parse_prompt(&[], "metformin 500 bid, lipitor 40", None);
+        // No current meds means the placeholder gets replaced with "[]".
+        assert!(user.contains("[]"));
+        assert!(user.contains("metformin 500 bid"));
+    }
+
+    #[test]
+    fn text_parse_prompt_honors_template_override() {
+        let templates = crate::server_config::PromptTemplates {
+            medication_text_parse_system: "CUSTOM TEXT-PARSE SYS".to_string(),
+            medication_text_parse_user: "CURR={CURRENT_LIST} TEXT={USER_TEXT}".to_string(),
+            ..Default::default()
+        };
+        let (system, user) =
+            build_medication_text_parse_prompt(&[], "type whatever", Some(&templates));
+        assert_eq!(system, "CUSTOM TEXT-PARSE SYS");
+        // Placeholders still get substituted in custom templates.
+        assert_eq!(user, "CURR=[] TEXT=type whatever");
     }
 
     #[test]

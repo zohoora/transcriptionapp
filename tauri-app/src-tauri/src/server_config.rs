@@ -86,6 +86,14 @@ pub struct PromptTemplates {
     pub medication_extraction_system: String,
     #[serde(default)]
     pub medication_extraction_user: String,
+    /// Server override for the free-text med-list parsing prompt
+    /// (clinician types meds into the assistant; LLM normalizes).
+    /// Empty = use compiled default. Two placeholders in the user
+    /// template: `{CURRENT_LIST}` and `{USER_TEXT}`.
+    #[serde(default)]
+    pub medication_text_parse_system: String,
+    #[serde(default)]
+    pub medication_text_parse_user: String,
     #[serde(default)]
     pub greeting_detection: String,
     #[serde(default)]

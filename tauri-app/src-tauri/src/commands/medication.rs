@@ -16,8 +16,8 @@ use super::{physicians::SharedServerConfig, CommandError};
 use crate::config::Config;
 use crate::llm_client::{truncate_error_body, ContentPart, ImageUrlContent, LLMClient};
 use crate::medication_extraction::{
-    build_medication_extraction_prompt, medications_to_text, parse_medication_vision_response,
-    MedEntry, MedExtractionResult,
+    build_medication_extraction_prompt, build_medication_text_parse_prompt, medications_to_text,
+    parse_medication_vision_response, MedEntry, MedExtractionResult,
 };
 use crate::screenshot;
 use reqwest::Client as HttpClient;
@@ -29,6 +29,9 @@ use tracing::{error, info, warn};
 
 const VISION_TIMEOUT_SECS: u64 = 30;
 const PHARM_SERVICE_TIMEOUT_SECS: u64 = 30;
+/// Free-text med-list parsing should be fast — clinician is mid-visit. 15s
+/// is enough for fast-model on ~50 meds (well under VISION_TIMEOUT_SECS).
+const TEXT_PARSE_TIMEOUT_SECS: u64 = 15;
 /// Med-list capture needs a higher resolution than the rest of the
 /// vision pipeline: at 1280 the EMR's small meds-panel font (~6-8px)
 /// is below the vision model's effective OCR threshold and the model
@@ -192,6 +195,92 @@ pub async fn capture_screenshot_for_meds(
         medications: retry_meds,
         likely_blank: false,
     })
+}
+
+// ── parse_medications_from_text ──────────────────────────────────────
+
+/// Normalize a clinician's free-text medication entry into structured
+/// `MedEntry` JSON via an LLM call. Takes the current med list so the
+/// LLM can merge modifications ("stop X", "add Y") rather than always
+/// overwriting. Uses the `fast-model` alias — clinician is mid-visit,
+/// latency matters. Same parser as the vision path
+/// (`parse_medication_vision_response`) because the LLM output shape
+/// is identical.
+///
+/// Fail-soft: on LLM error or timeout, returns the current list
+/// unchanged (caller surfaces the error so the clinician can re-try).
+#[tauri::command]
+pub async fn parse_medications_from_text(
+    server_config: State<'_, SharedServerConfig>,
+    text: String,
+    current_medications: Vec<MedEntry>,
+) -> Result<Vec<MedEntry>, CommandError> {
+    let trimmed = text.trim();
+    if trimmed.is_empty() {
+        return Err(CommandError::Validation(
+            "Medication text is empty".into(),
+        ));
+    }
+
+    let config = Config::load_or_default();
+    let templates = {
+        let sc = server_config.read().await;
+        sc.prompts.clone()
+    };
+
+    let client = LLMClient::new(
+        &config.llm_router_url,
+        &config.llm_api_key,
+        &config.llm_client_id,
+        &config.fast_model,
+    )
+    .map_err(CommandError::Network)?;
+
+    let (system_prompt, user_prompt) =
+        build_medication_text_parse_prompt(&current_medications, trimmed, Some(&templates));
+
+    let llm_future = client.generate(
+        &config.fast_model,
+        &system_prompt,
+        &user_prompt,
+        crate::llm_client::tasks::MED_LIST_TEXT_PARSE,
+    );
+
+    let response = match tokio::time::timeout(
+        Duration::from_secs(TEXT_PARSE_TIMEOUT_SECS),
+        llm_future,
+    )
+    .await
+    {
+        Ok(Ok(resp)) => resp,
+        Ok(Err(e)) => {
+            error!("Med-text LLM parse failed: {}", e);
+            return Err(CommandError::Network(format!(
+                "Couldn't parse medication list: {}",
+                e
+            )));
+        }
+        Err(_) => {
+            warn!(
+                "Med-text LLM parse timed out after {}s",
+                TEXT_PARSE_TIMEOUT_SECS
+            );
+            return Err(CommandError::Network(format!(
+                "Parsing timed out after {}s",
+                TEXT_PARSE_TIMEOUT_SECS
+            )));
+        }
+    };
+
+    let parsed = parse_medication_vision_response(&response);
+    info!(
+        "Med-text parse: input {} chars, current={} → output={} medications",
+        trimmed.len(),
+        current_medications.len(),
+        parsed.len()
+    );
+
+    Ok(parsed)
 }
 
 // ── analyze_medications ──────────────────────────────────────────────

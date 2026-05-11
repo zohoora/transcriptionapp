@@ -17,10 +17,15 @@ interface MedicationAssessmentProps {
   analysis: AnalysisResult | null;
   isAnalyzing: boolean;
   analyzeError: string | null;
+  parseText: string;
+  setParseText: (text: string) => void;
+  isParsing: boolean;
+  parseError: string | null;
   addRow: () => void;
   updateRow: (index: number, patch: Partial<MedEntry>) => void;
   deleteRow: (index: number) => void;
   extract: () => Promise<void>;
+  parseTypedMeds: () => Promise<void>;
   analyze: () => Promise<void>;
 }
 
@@ -230,10 +235,15 @@ export const MedicationAssessment = memo(function MedicationAssessment(props: Me
     analysis,
     isAnalyzing,
     analyzeError,
+    parseText,
+    setParseText,
+    isParsing,
+    parseError,
     addRow,
     updateRow,
     deleteRow,
     extract,
+    parseTypedMeds,
     analyze,
   } = props;
 
@@ -245,14 +255,31 @@ export const MedicationAssessment = memo(function MedicationAssessment(props: Me
   }, [analysis]);
 
   const canAnalyze = medList.some((m) => m.name.trim().length > 0) && !isAnalyzing;
+  const canParse = parseText.trim().length > 0 && !isParsing;
 
   const handleReextract = useCallback(() => {
     void extract();
   }, [extract]);
 
+  const handleParseTyped = useCallback(() => {
+    if (canParse) void parseTypedMeds();
+  }, [canParse, parseTypedMeds]);
+
   const handleAnalyze = useCallback(() => {
     void analyze();
   }, [analyze]);
+
+  // Cmd/Ctrl+Enter parses without leaving the textarea — the clinician
+  // can type → submit → see structured rows without reaching for the mouse.
+  const handleTextKeyDown = useCallback(
+    (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+      if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+        e.preventDefault();
+        handleParseTyped();
+      }
+    },
+    [handleParseTyped]
+  );
 
   return (
     <div className="medication-assessment">
@@ -262,6 +289,33 @@ export const MedicationAssessment = memo(function MedicationAssessment(props: Me
         error={extractionError}
         onReextract={handleReextract}
       />
+
+      <div className="med-text-parse">
+        <label className="med-text-parse-label" htmlFor="med-text-parse-input">
+          Type the medication list, additions, or changes — the AI will normalize doses and spelling.
+        </label>
+        <textarea
+          id="med-text-parse-input"
+          className="med-text-parse-input"
+          value={parseText}
+          onChange={(e) => setParseText(e.target.value)}
+          onKeyDown={handleTextKeyDown}
+          placeholder="e.g. metformin 500 bid, lipitor 40 daily, asprin&#10;or: stop the gabapentin, add: pantoprazole 40 od"
+          rows={3}
+          disabled={isParsing}
+        />
+        <div className="med-text-parse-actions">
+          <button
+            className="med-text-parse-button"
+            onClick={handleParseTyped}
+            disabled={!canParse}
+            title="Parse with AI (⌘↵ / Ctrl+↵)"
+          >
+            {isParsing ? 'Parsing...' : 'Parse with AI'}
+          </button>
+          {parseError && <span className="med-text-parse-error">{parseError}</span>}
+        </div>
+      </div>
 
       <div className="med-table">
         <div className="med-table-header">

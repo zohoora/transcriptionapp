@@ -23,11 +23,20 @@ export interface UseMedicationAssessmentResult {
   isAnalyzing: boolean;
   analyzeError: string | null;
 
+  /** Freeform text the clinician is typing — not yet parsed. */
+  parseText: string;
+  setParseText: (text: string) => void;
+  /** True while the LLM is normalizing the typed text. */
+  isParsing: boolean;
+  parseError: string | null;
+
   addRow: () => void;
   updateRow: (index: number, patch: Partial<MedEntry>) => void;
   deleteRow: (index: number) => void;
 
   extract: () => Promise<void>;
+  /** Send `parseText` + current `medList` through the LLM normalizer. */
+  parseTypedMeds: () => Promise<void>;
   analyze: () => Promise<void>;
 }
 
@@ -49,8 +58,18 @@ export function useMedicationAssessment(): UseMedicationAssessmentResult {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [analyzeError, setAnalyzeError] = useState<string | null>(null);
 
+  // Freeform-text input state: clinician types, then clicks Parse to
+  // run an LLM call that normalizes + merges with the current medList.
+  const [parseText, setParseText] = useState('');
+  const [isParsing, setIsParsing] = useState(false);
+  const [parseError, setParseError] = useState<string | null>(null);
+
   const extractingRef = useRef(false);
   const analyzingRef = useRef(false);
+  const parsingRef = useRef(false);
+  // Tracks whether the clinician has typed/parsed anything. When true,
+  // a late-arriving screenshot extraction won't clobber their entries.
+  const userHasEditedRef = useRef(false);
 
   const medListRef = useRef<MedEntry[]>(medList);
   medListRef.current = medList;
@@ -83,7 +102,12 @@ export function useMedicationAssessment(): UseMedicationAssessmentResult {
         setExtractionState('permission_denied');
         return;
       }
-      setMedList(result.medications);
+      // Don't clobber a list the clinician has already typed/edited while
+      // the screenshot extraction was running. They explicitly entered
+      // something — the screenshot result is the speculative input.
+      if (!userHasEditedRef.current) {
+        setMedList(result.medications);
+      }
       setExtractionState('extracted');
       clearAnalysisIfPresent();
     } catch (e) {
@@ -94,6 +118,37 @@ export function useMedicationAssessment(): UseMedicationAssessmentResult {
       extractingRef.current = false;
     }
   }, [clearAnalysisIfPresent]);
+
+  const parseTypedMeds = useCallback(async () => {
+    if (parsingRef.current) return;
+    const text = parseText.trim();
+    if (!text) {
+      setParseError('Type a medication list first.');
+      return;
+    }
+    parsingRef.current = true;
+    userHasEditedRef.current = true;
+    if (mountedRef.current) {
+      setIsParsing(true);
+      setParseError(null);
+    }
+    try {
+      const result = await invoke<MedEntry[]>('parse_medications_from_text', {
+        text,
+        currentMedications: medListRef.current,
+      });
+      if (!mountedRef.current) return;
+      setMedList(result);
+      setParseText('');
+      clearAnalysisIfPresent();
+    } catch (e) {
+      if (!mountedRef.current) return;
+      setParseError(formatErrorMessage(e));
+    } finally {
+      parsingRef.current = false;
+      if (mountedRef.current) setIsParsing(false);
+    }
+  }, [parseText, clearAnalysisIfPresent]);
 
   const analyze = useCallback(async () => {
     if (analyzingRef.current) return;
@@ -140,11 +195,13 @@ export function useMedicationAssessment(): UseMedicationAssessmentResult {
   }, []);
 
   const addRow = useCallback(() => {
+    userHasEditedRef.current = true;
     setMedList((prev) => [...prev, { name: '' }]);
   }, []);
 
   const updateRow = useCallback(
     (index: number, patch: Partial<MedEntry>) => {
+      userHasEditedRef.current = true;
       setMedList((prev) =>
         prev.map((m, i) => {
           if (i !== index) return m;
@@ -161,6 +218,7 @@ export function useMedicationAssessment(): UseMedicationAssessmentResult {
 
   const deleteRow = useCallback(
     (index: number) => {
+      userHasEditedRef.current = true;
       setMedList((prev) => prev.filter((_, i) => i !== index));
       clearAnalysisIfPresent();
     },
@@ -174,10 +232,15 @@ export function useMedicationAssessment(): UseMedicationAssessmentResult {
     analysis,
     isAnalyzing,
     analyzeError,
+    parseText,
+    setParseText,
+    isParsing,
+    parseError,
     addRow,
     updateRow,
     deleteRow,
     extract,
+    parseTypedMeds,
     analyze,
   };
 }
