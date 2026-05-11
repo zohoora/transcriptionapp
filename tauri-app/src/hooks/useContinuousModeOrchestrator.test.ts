@@ -37,6 +37,10 @@ vi.mock('./useContinuousMode', () => ({
     stop: mockStop,
     triggerNewPatient: mockTriggerNewPatient,
     error: null,
+    encounterSessionId: 'enc-default',
+    transcriptionStalled: false,
+    isSleeping: false,
+    sleepResumeAt: null,
   })),
 }));
 
@@ -211,17 +215,23 @@ describe('useContinuousModeOrchestrator', () => {
         useContinuousModeOrchestrator({ settings: null })
       );
 
+      // The mount effect also calls resetBiomarkers (no-op when biomarkers
+      // start empty). Snapshot baseline so we measure only the handleNewPatient
+      // call here.
+      const mountResetCalls = mockResetBiomarkers.mock.calls.length;
+
       await act(async () => {
         await result.current.onNewPatient();
       });
 
-      expect(mockResetBiomarkers).toHaveBeenCalledTimes(1);
+      expect(mockResetBiomarkers.mock.calls.length).toBe(mountResetCalls + 1);
       expect(mockTriggerNewPatient).toHaveBeenCalledTimes(1);
 
-      // resetBiomarkers should be called before triggerNewPatient
-      const resetOrder = mockResetBiomarkers.mock.invocationCallOrder[0];
+      // The handleNewPatient reset should be ordered before triggerNewPatient.
+      const lastResetOrder =
+        mockResetBiomarkers.mock.invocationCallOrder[mountResetCalls];
       const triggerOrder = mockTriggerNewPatient.mock.invocationCallOrder[0];
-      expect(resetOrder).toBeLessThan(triggerOrder);
+      expect(lastResetOrder).toBeLessThan(triggerOrder);
     });
   });
 
@@ -277,6 +287,93 @@ describe('useContinuousModeOrchestrator', () => {
       expect(mockUseContinuousMode).toHaveBeenCalled();
       // usePatientBiomarkers is called with isActive from useContinuousMode
       expect(mockUsePatientBiomarkers).toHaveBeenCalledWith(false);
+    });
+  });
+
+  describe('per-encounter reset', () => {
+    function makeContinuousModeReturn(encounterSessionId: string) {
+      return {
+        isActive: true,
+        isStopping: false,
+        stats: {
+          state: 'recording',
+          recording_since: '',
+          encounters_detected: 0,
+          recent_encounters: [],
+          last_error: null,
+          buffer_word_count: 0,
+          buffer_started_at: null,
+        },
+        liveTranscript: '',
+        audioQuality: null,
+        encounterNotes: [],
+        submitEncounterNote: mockSubmitEncounterNote,
+        deleteEncounterNote: mockDeleteEncounterNote,
+        currentPatientName: null,
+        start: mockStart,
+        stop: mockStop,
+        triggerNewPatient: mockTriggerNewPatient,
+        error: null,
+        encounterSessionId,
+        transcriptionStalled: false,
+        isSleeping: false,
+        sleepResumeAt: null,
+      };
+    }
+
+    it('resets patient biomarkers when encounterSessionId changes', async () => {
+      const { useContinuousMode } = await import('./useContinuousMode');
+      const mockUseContinuousMode = vi.mocked(useContinuousMode);
+
+      mockUseContinuousMode.mockReturnValue(makeContinuousModeReturn('enc-1') as never);
+
+      const useContinuousModeOrchestrator = await loadHook();
+      const { rerender } = renderHook(() =>
+        useContinuousModeOrchestrator({ settings: null })
+      );
+
+      const callsAfterMount = mockResetBiomarkers.mock.calls.length;
+
+      // Backend fires encounter_detected → useContinuousMode returns a new id.
+      mockUseContinuousMode.mockReturnValue(makeContinuousModeReturn('enc-2') as never);
+      rerender();
+
+      expect(mockResetBiomarkers.mock.calls.length).toBe(callsAfterMount + 1);
+    });
+
+    it('does not reset patient biomarkers when encounterSessionId is unchanged across rerenders', async () => {
+      const { useContinuousMode } = await import('./useContinuousMode');
+      const mockUseContinuousMode = vi.mocked(useContinuousMode);
+
+      mockUseContinuousMode.mockReturnValue(makeContinuousModeReturn('enc-1') as never);
+
+      const useContinuousModeOrchestrator = await loadHook();
+      const { rerender } = renderHook(() =>
+        useContinuousModeOrchestrator({ settings: null })
+      );
+
+      const callsAfterMount = mockResetBiomarkers.mock.calls.length;
+
+      rerender();
+      rerender();
+
+      expect(mockResetBiomarkers.mock.calls.length).toBe(callsAfterMount);
+    });
+
+    it('passes encounterSessionId as resetKey to usePredictiveHint', async () => {
+      const { useContinuousMode } = await import('./useContinuousMode');
+      const { usePredictiveHint } = await import('./usePredictiveHint');
+      const mockUseContinuousMode = vi.mocked(useContinuousMode);
+      const mockUsePredictiveHint = vi.mocked(usePredictiveHint);
+
+      mockUseContinuousMode.mockReturnValue(makeContinuousModeReturn('enc-abc') as never);
+
+      const useContinuousModeOrchestrator = await loadHook();
+      renderHook(() => useContinuousModeOrchestrator({ settings: null }));
+
+      expect(mockUsePredictiveHint).toHaveBeenCalledWith(
+        expect.objectContaining({ resetKey: 'enc-abc' })
+      );
     });
   });
 });

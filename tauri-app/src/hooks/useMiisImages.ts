@@ -185,13 +185,13 @@ export function useMiisImages({
     };
   }, [enabled, sessionId, flushTelemetry]);
 
-  // Clear state when session ends
+  // Clear state on any sessionId change (encounter split or session end).
+  // Mirrors the useAiImages pattern — every new encounter starts with a
+  // clean panel.
   useEffect(() => {
-    if (!sessionId) {
-      setSuggestions([]);
-      setSuggestionSetId(null);
-      lastConceptsRef.current = '';
-    }
+    setSuggestions([]);
+    setSuggestionSetId(null);
+    lastConceptsRef.current = '';
   }, [sessionId]);
 
   return {

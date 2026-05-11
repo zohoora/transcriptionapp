@@ -10,7 +10,7 @@
  * - continuousMiisSessionId state + useEffect (stable session ID)
  * - handleNewPatient callback (resets biomarkers before triggerNewPatient)
  */
-import { useCallback } from 'react';
+import { useCallback, useEffect } from 'react';
 import type {
   Settings,
   ContinuousModeStats,
@@ -115,7 +115,9 @@ export function useContinuousModeOrchestrator({
     reset: resetPatientBiomarkers,
   } = usePatientBiomarkers(isActive);
 
-  // Predictive hints for continuous mode (uses live transcript preview)
+  // Predictive hints for continuous mode (uses live transcript preview).
+  // resetKey: encounterSessionId clears the "Pssst..." hint + differential
+  // diagnosis on every encounter split so the next patient sees a clean panel.
   const {
     hint: predictiveHint,
     concepts: continuousImageConcepts,
@@ -124,6 +126,7 @@ export function useContinuousModeOrchestrator({
   } = usePredictiveHint({
     transcript: liveTranscript,
     isRecording: isActive && !isStopping,
+    resetKey: encounterSessionId,
   });
 
   // Session ID for image hooks — driven by encounter_detected events (no poll lag)
@@ -158,6 +161,13 @@ export function useContinuousModeOrchestrator({
     enabled: continuousImageSource === 'ai',
     sessionId: continuousMiisSessionId,
   });
+
+  // Reset patient pulse + voice trends on every encounter split (matches the
+  // immediate reset that the manual "New Patient" button already does).
+  // Fires on first mount too — harmless no-op since biomarkers start empty.
+  useEffect(() => {
+    resetPatientBiomarkers();
+  }, [encounterSessionId, resetPatientBiomarkers]);
 
   // Wrap "New Patient" to immediately reset frontend state before backend processes
   const handleNewPatient = useCallback(async () => {

@@ -37,6 +37,12 @@ interface PredictiveHintResponse {
 interface UsePredictiveHintOptions {
   transcript: string;
   isRecording: boolean;
+  /**
+   * Optional key that, when changed, clears all hint state and re-arms the
+   * 5s INITIAL_DELAY_MS so the next encounter gets a fast first hint.
+   * Continuous mode passes `encounterSessionId`; session-mode callers omit it.
+   */
+  resetKey?: string;
 }
 
 interface UsePredictiveHintResult {
@@ -62,6 +68,7 @@ interface UsePredictiveHintResult {
 export function usePredictiveHint({
   transcript,
   isRecording,
+  resetKey,
 }: UsePredictiveHintOptions): UsePredictiveHintResult {
   const [hint, setHint] = useState('');
   const [concepts, setConcepts] = useState<ImageConcept[]>([]);
@@ -137,7 +144,9 @@ export function usePredictiveHint({
     }
   }, []);
 
-  // Set up interval when recording starts
+  // Set up interval when recording starts. resetKey is in the dep array so a
+  // continuous-mode encounter split tears down the running 30s interval and
+  // re-arms a fresh 5s INITIAL_DELAY_MS for the next encounter.
   useEffect(() => {
     if (isRecording) {
       console.log('Predictive hint: Starting hint generation timer');
@@ -171,7 +180,20 @@ export function usePredictiveHint({
       setLastUpdated(null);
       lastGeneratedRef.current = '';
     }
-  }, [isRecording, generateHint]);
+  }, [isRecording, generateHint, resetKey]);
+
+  // Clear hint state on resetKey change (continuous-mode encounter split).
+  // Separate from the timer effect so state clears even when resetKey is
+  // first set or when changed without an isRecording transition.
+  useEffect(() => {
+    if (resetKey === undefined) return;
+    setHint('');
+    setConcepts([]);
+    setImagePrompt(null);
+    setDifferentialDiagnoses([]);
+    setLastUpdated(null);
+    lastGeneratedRef.current = '';
+  }, [resetKey]);
 
   return {
     hint,
