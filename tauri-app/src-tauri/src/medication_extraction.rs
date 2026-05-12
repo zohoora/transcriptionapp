@@ -149,7 +149,6 @@ pub(crate) fn build_medication_text_parse_prompt(
                 .to_string()
         });
 
-    // Serialize current list — empty array if no current meds.
     let current_json = serde_json::to_string(current_meds).unwrap_or_else(|_| "[]".to_string());
 
     let user_template = templates

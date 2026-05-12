@@ -11227,8 +11227,8 @@ button.review-section-header-left:focus {
 
 .med-text-parse-input:focus {
   outline: none;
-  border-color: var(--accent-color, #2563eb);
-  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.15);
+  border-color: var(--accent-blue);
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.18);
 }
 
 .med-text-parse-input:disabled {
@@ -11236,35 +11236,10 @@ button.review-section-header-left:focus {
   cursor: wait;
 }
 
-.med-text-parse-actions {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
 .med-text-parse-button {
+  align-self: flex-start;
   padding: 6px 14px;
   font-size: 13px;
-  font-weight: 500;
-  background: var(--accent-color, #2563eb);
-  color: #fff;
-  border: none;
-  border-radius: 5px;
-  cursor: pointer;
-}
-
-.med-text-parse-button:hover:not(:disabled) {
-  filter: brightness(1.08);
-}
-
-.med-text-parse-button:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.med-text-parse-error {
-  font-size: 12px;
-  color: var(--danger-color, #b91c1c);
 }
 
 .med-table {

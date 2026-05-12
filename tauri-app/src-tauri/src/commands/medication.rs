@@ -12,9 +12,9 @@
 //! Trust boundary is unchanged from the rest of the vision pipeline:
 //! vision-derived output is clinician-reviewed before any action.
 
+use super::ollama::load_effective_models_and_client;
 use super::{physicians::SharedServerConfig, CommandError};
-use crate::config::Config;
-use crate::llm_client::{truncate_error_body, ContentPart, ImageUrlContent, LLMClient};
+use crate::llm_client::{tasks, truncate_error_body, ContentPart, ImageUrlContent, LLMClient};
 use crate::medication_extraction::{
     build_medication_extraction_prompt, build_medication_text_parse_prompt, medications_to_text,
     parse_medication_vision_response, MedEntry, MedExtractionResult,
@@ -29,23 +29,16 @@ use tracing::{error, info, warn};
 
 const VISION_TIMEOUT_SECS: u64 = 30;
 const PHARM_SERVICE_TIMEOUT_SECS: u64 = 30;
-/// Free-text med-list parsing should be fast — clinician is mid-visit. 15s
-/// is enough for fast-model on ~50 meds (well under VISION_TIMEOUT_SECS).
 const TEXT_PARSE_TIMEOUT_SECS: u64 = 15;
-/// Med-list capture needs a higher resolution than the rest of the
-/// vision pipeline: at 1280 the EMR's small meds-panel font (~6-8px)
-/// is below the vision model's effective OCR threshold and the model
-/// silently returns []. 2048 reliably reads dense panels in testing.
+/// 2048 is the OCR threshold for the EMR's small meds-panel font in our
+/// testing; 1280 silently returns []. 2560 used on retry — above that the
+/// model starts returning [] on dense charts.
 const SCREENSHOT_MAX_EDGE_PRIMARY: u32 = 2048;
-/// Retry resolution when 2048 returns an empty list on a non-blank
-/// screen. Borderline charts (small font, dim contrast) intermittently
-/// fail at 2048 but succeed at 2560. Above 2560 the model starts
-/// returning [] on dense charts so this is the practical ceiling.
 const SCREENSHOT_MAX_EDGE_RETRY: u32 = 2560;
-/// Dense med panels need >500 tokens — a 15-item Skater-style list
-/// runs ~700-1000 completion tokens. 2000 leaves headroom without
-/// blowing the 30s timeout.
 const MED_EXTRACTION_MAX_TOKENS: u32 = 2000;
+/// Reject pathologically large inputs before paying for an LLM round-trip.
+const MAX_PARSE_TEXT_LEN: usize = 8_000;
+const MAX_CURRENT_MEDS: usize = 200;
 
 // ── capture_screenshot_for_meds ───────────────────────────────────────
 
@@ -132,22 +125,11 @@ async fn try_extract_meds(
 pub async fn capture_screenshot_for_meds(
     server_config: State<'_, SharedServerConfig>,
 ) -> Result<MedExtractionResult, CommandError> {
-    let config = Config::load_or_default();
-
-    // Clone prompt templates out of the lock so we can use them across
-    // the awaits without holding the read guard.
+    let (_config, _models, client) = load_effective_models_and_client(server_config.inner()).await?;
     let templates = {
         let sc = server_config.read().await;
         sc.prompts.clone()
     };
-
-    let client = LLMClient::new(
-        &config.llm_router_url,
-        &config.llm_api_key,
-        &config.llm_client_id,
-        &config.fast_model,
-    )
-    .map_err(CommandError::Network)?;
 
     let (meds, likely_blank) =
         try_extract_meds(SCREENSHOT_MAX_EDGE_PRIMARY, &client, &templates).await?;
@@ -199,16 +181,11 @@ pub async fn capture_screenshot_for_meds(
 
 // ── parse_medications_from_text ──────────────────────────────────────
 
-/// Normalize a clinician's free-text medication entry into structured
-/// `MedEntry` JSON via an LLM call. Takes the current med list so the
-/// LLM can merge modifications ("stop X", "add Y") rather than always
-/// overwriting. Uses the `fast-model` alias — clinician is mid-visit,
-/// latency matters. Same parser as the vision path
-/// (`parse_medication_vision_response`) because the LLM output shape
-/// is identical.
-///
-/// Fail-soft: on LLM error or timeout, returns the current list
-/// unchanged (caller surfaces the error so the clinician can re-try).
+/// Normalize a clinician's free-text medication input into structured
+/// `MedEntry` JSON via an LLM call. The LLM is given the current list
+/// plus the typed text so modifications ("stop X", "add Y") work
+/// against state, not just fresh lists. Output shape matches the
+/// vision path so `parse_medication_vision_response` parses both.
 #[tauri::command]
 pub async fn parse_medications_from_text(
     server_config: State<'_, SharedServerConfig>,
@@ -217,60 +194,53 @@ pub async fn parse_medications_from_text(
 ) -> Result<Vec<MedEntry>, CommandError> {
     let trimmed = text.trim();
     if trimmed.is_empty() {
-        return Err(CommandError::Validation(
-            "Medication text is empty".into(),
-        ));
+        return Err(CommandError::Validation("Medication text is empty".into()));
+    }
+    if trimmed.len() > MAX_PARSE_TEXT_LEN {
+        return Err(CommandError::Validation(format!(
+            "Medication text too long ({} > {} chars)",
+            trimmed.len(),
+            MAX_PARSE_TEXT_LEN
+        )));
+    }
+    if current_medications.len() > MAX_CURRENT_MEDS {
+        return Err(CommandError::Validation(format!(
+            "Too many existing medications ({} > {})",
+            current_medications.len(),
+            MAX_CURRENT_MEDS
+        )));
     }
 
-    let config = Config::load_or_default();
+    let (_config, models, client) = load_effective_models_and_client(server_config.inner()).await?;
     let templates = {
         let sc = server_config.read().await;
         sc.prompts.clone()
     };
 
-    let client = LLMClient::new(
-        &config.llm_router_url,
-        &config.llm_api_key,
-        &config.llm_client_id,
-        &config.fast_model,
-    )
-    .map_err(CommandError::Network)?;
-
     let (system_prompt, user_prompt) =
         build_medication_text_parse_prompt(&current_medications, trimmed, Some(&templates));
 
-    let llm_future = client.generate(
-        &config.fast_model,
-        &system_prompt,
-        &user_prompt,
-        crate::llm_client::tasks::MED_LIST_TEXT_PARSE,
-    );
-
-    let response = match tokio::time::timeout(
+    let response = tokio::time::timeout(
         Duration::from_secs(TEXT_PARSE_TIMEOUT_SECS),
-        llm_future,
+        client.generate(
+            &models.fast_model,
+            &system_prompt,
+            &user_prompt,
+            tasks::MED_LIST_TEXT_PARSE,
+        ),
     )
     .await
-    {
-        Ok(Ok(resp)) => resp,
-        Ok(Err(e)) => {
-            error!("Med-text LLM parse failed: {}", e);
-            return Err(CommandError::Network(format!(
-                "Couldn't parse medication list: {}",
-                e
-            )));
-        }
-        Err(_) => {
-            warn!(
-                "Med-text LLM parse timed out after {}s",
-                TEXT_PARSE_TIMEOUT_SECS
-            );
-            return Err(CommandError::Network(format!(
-                "Parsing timed out after {}s",
-                TEXT_PARSE_TIMEOUT_SECS
-            )));
-        }
-    };
+    .map_err(|_| {
+        warn!(
+            "Med-text LLM parse timed out after {}s",
+            TEXT_PARSE_TIMEOUT_SECS
+        );
+        CommandError::Network(format!("Parsing timed out after {}s", TEXT_PARSE_TIMEOUT_SECS))
+    })?
+    .map_err(|e| {
+        error!("Med-text LLM parse failed: {}", e);
+        CommandError::Network(format!("Couldn't parse medication list: {}", e))
+    })?;
 
     let parsed = parse_medication_vision_response(&response);
     info!(

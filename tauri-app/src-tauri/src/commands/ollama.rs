@@ -84,7 +84,7 @@ pub(crate) fn resolve_effective_models(
 /// constructs an `LLMClient` whose default model is `fast_model`. Callers that
 /// need a different alias pass it explicitly to each `generate_*` call on the
 /// returned client.
-async fn load_effective_models_and_client(
+pub(super) async fn load_effective_models_and_client(
     server_config: &SharedServerConfig,
 ) -> Result<(Config, EffectiveModels, LLMClient), CommandError> {
     let config = Config::load_or_default();

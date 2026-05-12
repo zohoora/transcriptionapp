@@ -81,9 +81,8 @@ pub mod tasks {
     /// `max_tokens < ~500` for tool-use paths — the multi-round tool loop
     /// needs headroom for reasoning + final JSON answer.
     pub const BILLING_CODES: &str = "billing_codes";
-    /// Free-text med-list parsing — clinician types a list, LLM normalizes.
-    /// Dense lists (10-30 meds) produce ~700-1500 completion tokens, so
-    /// we set a higher cap than the router default to avoid truncation.
+    /// Dense lists (15+ meds) produce ~1500 completion tokens of JSON,
+    /// so we lift the router default with an explicit `max_tokens` entry.
     pub const MED_LIST_TEXT_PARSE: &str = "med_list_text_parse";
 }
 
@@ -925,8 +924,6 @@ impl LLMClient {
         // on large transcripts (router/model defaults may be too low).
         // Tools-model billing-code lookups need headroom because the tool
         // loop + final JSON answer are all counted against completion_tokens.
-        // Med-list text parsing can produce ~1500 tokens for a dense list
-        // (15+ meds, each ~80 tokens of JSON).
         let max_tokens = match task {
             t if t == tasks::SOAP_NOTE => Some(4096),
             t if t == tasks::BILLING_CODES => Some(1500),
