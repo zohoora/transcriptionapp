@@ -159,16 +159,15 @@ Scope: `tauri-app/src` and `tauri-app/src-tauri/src` (security intentionally dep
 - Recommendation:
   - Split event names (`session_transcript_update` vs `continuous_transcript_preview`) and gate listeners by mode.
 
-### 14) [Medium] Medplum history/document lookup has truncation and scaling issues — DEFERRED
-- Evidence:
-  - Encounter history query hard-limits `_count=100` with no pagination (`tauri-app/src-tauri/src/medplum.rs:1062`).
-  - Document/media lookups hard-limit `_count=200` with no pagination (`tauri-app/src-tauri/src/medplum.rs:1220`, `tauri-app/src-tauri/src/medplum.rs:1269`).
-  - Patient names are fetched per encounter (N+1) (`tauri-app/src-tauri/src/medplum.rs:1140`).
-- Impact:
-  - Incomplete history flags and degraded performance for larger datasets.
-- Recommendation:
-  - Implement pagination (`link.next` traversal).
-  - Reduce N+1 by batching or using `subject.display` fallback/caching.
+### 14) [Medium] Medplum history/document lookup has truncation and scaling issues — FIXED (2026-05-12, v0.10.91)
+- Evidence (pre-fix):
+  - Encounter history query hard-limited at `_count=100` with no pagination.
+  - Document/media lookups hard-limited at `_count=200`.
+  - Patient names fetched per encounter (N+1 HTTP GETs).
+- Resolution:
+  - Added `fetch_all_pages()` helper traversing `Bundle.link[rel=next]` with a 50-page hard cap. All three queries (encounter history, soap-note docs, audio media) now paginate.
+  - Added `_include=Encounter:subject` to the encounter query so Patient resources arrive in the same bundle. `extract_patients_from_bundle()` builds an `id → Patient` map; replaces the per-encounter HTTP GET. Fallback chain: included Patient → `subject.display` → "Unknown".
+  - Net: encounter history shrinks from N+1 calls to 1-50 calls (bounded by pages). N=100 case: 101 → 1 call.
 
 ### 15) [Medium] `useAutoDetection` callback contract mismatches async usage — FIXED
 - Evidence:

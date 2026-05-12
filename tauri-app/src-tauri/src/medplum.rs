@@ -1141,10 +1141,12 @@ impl MedplumClient {
             .as_ref()
             .ok_or_else(|| MedplumError::NotAuthenticated)?;
 
-        // Build query URL - search all encounters, filter by practitioner and documents in code
-        // (Medplum has issues with complex combined searches)
+        // Build query URL. `_include=Encounter:subject` pulls the referenced
+        // Patient resources into the same bundle so we can avoid N+1 HTTP GETs
+        // for patient names. `_count` is per-page; full traversal happens via
+        // Bundle.link[rel=next] in `fetch_all_pages`.
         let mut url = format!(
-            "{}/fhir/R4/Encounter?_sort=-date&_count=100",
+            "{}/fhir/R4/Encounter?_sort=-date&_count=100&_include=Encounter:subject",
             self.base_url
         );
 
@@ -1166,14 +1168,8 @@ impl MedplumClient {
             }
         }
 
-        let response = self
-            .http_client
-            .get(&url)
-            .bearer_auth(&token)
-            .send()
-            .await?;
-
-        let bundle: serde_json::Value = self.handle_response(response).await?;
+        let bundle = self.fetch_all_pages(&token, &url).await?;
+        let included_patients = Self::extract_patients_from_bundle(&bundle);
 
         let mut encounters = Vec::new();
         let practitioner_ref = format!("Practitioner/{}", practitioner_id);
@@ -1181,6 +1177,12 @@ impl MedplumClient {
         if let Some(entries) = bundle["entry"].as_array() {
             for entry in entries {
                 let resource = &entry["resource"];
+
+                // Skip non-Encounter resources (the bundle also includes
+                // Patient resources from `_include=Encounter:subject`).
+                if resource["resourceType"].as_str() != Some("Encounter") {
+                    continue;
+                }
 
                 // Filter by practitioner (since we removed participant from URL query)
                 let is_our_encounter = resource["participant"]
@@ -1221,11 +1223,20 @@ impl MedplumClient {
                     None
                 };
 
-                // Get patient name from subject reference
-                let patient_name = self
-                    .get_patient_name_from_encounter(&token, resource)
-                    .await
-                    .unwrap_or_else(|_| "Unknown".to_string());
+                // Patient name from the included Patient resource (single HTTP
+                // call vs the previous N+1 GET-per-encounter). Falls back to
+                // `subject.display` if the include didn't resolve.
+                let patient_name = resource["subject"]["reference"]
+                    .as_str()
+                    .and_then(|r| r.strip_prefix("Patient/"))
+                    .and_then(|id| included_patients.get(id))
+                    .map(|patient| self.extract_patient_name(patient))
+                    .or_else(|| {
+                        resource["subject"]["display"]
+                            .as_str()
+                            .map(|s| s.to_string())
+                    })
+                    .unwrap_or_else(|| "Unknown".to_string());
 
                 encounters.push(EncounterSummary {
                     id: encounter_id,
@@ -1266,7 +1277,13 @@ impl MedplumClient {
         Ok(encounters)
     }
 
-    /// Get patient name from encounter subject reference
+    /// Get patient name from encounter subject reference.
+    ///
+    /// Slow path — issues one HTTP GET per encounter. Prefer the in-bundle
+    /// `_include=Encounter:subject` resolution (see `extract_patients_from_bundle`),
+    /// which carries the Patient resources alongside the Encounters in a single
+    /// response. This helper is retained for one-off callers (e.g. encounter
+    /// details lookup) that don't have a bundle to read from.
     async fn get_patient_name_from_encounter(
         &self,
         token: &str,
@@ -1284,6 +1301,90 @@ impl MedplumClient {
             return Ok(self.extract_patient_name(&patient));
         }
         Ok("Unknown".to_string())
+    }
+
+    /// Walk a FHIR Bundle's `entry[]` and pull included Patient resources into
+    /// a `HashMap<patient_id, patient_resource>` for O(1) lookup. Use with
+    /// `_include=Encounter:subject` on the original search to avoid N+1.
+    fn extract_patients_from_bundle(
+        bundle: &serde_json::Value,
+    ) -> std::collections::HashMap<String, serde_json::Value> {
+        let mut patients = std::collections::HashMap::new();
+        if let Some(entries) = bundle["entry"].as_array() {
+            for entry in entries {
+                let resource = &entry["resource"];
+                if resource["resourceType"].as_str() == Some("Patient") {
+                    if let Some(id) = resource["id"].as_str() {
+                        patients.insert(id.to_string(), resource.clone());
+                    }
+                }
+            }
+        }
+        patients
+    }
+
+    /// Hard cap on pages traversed when following `Bundle.link[rel=next]`. Keeps
+    /// pathological misuse bounded — a typical clinic year produces under 5,000
+    /// encounters, well under this ceiling. Adjust if real workloads exceed it.
+    const MAX_BUNDLE_PAGES: usize = 50;
+
+    /// Fetch a FHIR search URL and concatenate all `entry[]` arrays across
+    /// `Bundle.link[rel=next]` pages into one synthetic bundle. Returns the
+    /// first response's bundle (with `entry` replaced) so callers can read it
+    /// the same way they read a single-page bundle.
+    async fn fetch_all_pages(
+        &self,
+        token: &str,
+        initial_url: &str,
+    ) -> Result<serde_json::Value, MedplumError> {
+        let mut accumulated_entries: Vec<serde_json::Value> = Vec::new();
+        let mut current_url = initial_url.to_string();
+        let mut pages = 0usize;
+        let mut first_bundle: Option<serde_json::Value> = None;
+
+        loop {
+            pages += 1;
+            if pages > Self::MAX_BUNDLE_PAGES {
+                tracing::warn!(
+                    event = "medplum_pagination_capped",
+                    pages_traversed = pages - 1,
+                    "Hit MAX_BUNDLE_PAGES; remaining pages dropped",
+                );
+                break;
+            }
+            let response = self
+                .http_client
+                .get(&current_url)
+                .bearer_auth(token)
+                .send()
+                .await?;
+            let bundle: serde_json::Value = self.handle_response(response).await?;
+            if let Some(entries) = bundle["entry"].as_array() {
+                accumulated_entries.extend(entries.iter().cloned());
+            }
+            let next_url = bundle["link"]
+                .as_array()
+                .and_then(|links| {
+                    links.iter().find_map(|l| {
+                        if l["relation"].as_str() == Some("next") {
+                            l["url"].as_str().map(|s| s.to_string())
+                        } else {
+                            None
+                        }
+                    })
+                });
+            if first_bundle.is_none() {
+                first_bundle = Some(bundle);
+            }
+            match next_url {
+                Some(url) => current_url = url,
+                None => break,
+            }
+        }
+
+        let mut out = first_bundle.unwrap_or_else(|| serde_json::json!({}));
+        out["entry"] = serde_json::Value::Array(accumulated_entries);
+        Ok(out)
     }
 
     /// Get encounter FHIR IDs that have SOAP notes
@@ -1306,14 +1407,7 @@ impl MedplumClient {
             self.base_url
         );
 
-        let response = self
-            .http_client
-            .get(&url)
-            .bearer_auth(token)
-            .send()
-            .await?;
-
-        let bundle: serde_json::Value = self.handle_response(response).await?;
+        let bundle = self.fetch_all_pages(token, &url).await?;
 
         if let Some(entries) = bundle["entry"].as_array() {
             for entry in entries {
@@ -1355,14 +1449,7 @@ impl MedplumClient {
             self.base_url
         );
 
-        let response = self
-            .http_client
-            .get(&url)
-            .bearer_auth(token)
-            .send()
-            .await?;
-
-        let bundle: serde_json::Value = self.handle_response(response).await?;
+        let bundle = self.fetch_all_pages(token, &url).await?;
 
         if let Some(entries) = bundle["entry"].as_array() {
             for entry in entries {
@@ -1976,6 +2063,47 @@ pub struct MedplumSessionSync {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn extract_patients_from_bundle_collects_included_patients() {
+        let bundle = serde_json::json!({
+            "entry": [
+                {"resource": {"resourceType": "Encounter", "id": "enc-1"}},
+                {"resource": {"resourceType": "Patient", "id": "pat-1", "name": [{"text": "Alice Smith"}]}},
+                {"resource": {"resourceType": "Encounter", "id": "enc-2"}},
+                {"resource": {"resourceType": "Patient", "id": "pat-2", "name": [{"text": "Bob Jones"}]}},
+                {"resource": {"resourceType": "Observation", "id": "obs-1"}},
+            ]
+        });
+        let patients = MedplumClient::extract_patients_from_bundle(&bundle);
+        assert_eq!(patients.len(), 2);
+        assert!(patients.contains_key("pat-1"));
+        assert!(patients.contains_key("pat-2"));
+        assert_eq!(
+            patients["pat-1"]["name"][0]["text"].as_str(),
+            Some("Alice Smith")
+        );
+    }
+
+    #[test]
+    fn extract_patients_from_bundle_handles_missing_entry() {
+        let bundle = serde_json::json!({});
+        let patients = MedplumClient::extract_patients_from_bundle(&bundle);
+        assert!(patients.is_empty());
+    }
+
+    #[test]
+    fn extract_patients_from_bundle_skips_unidentified_patients() {
+        let bundle = serde_json::json!({
+            "entry": [
+                {"resource": {"resourceType": "Patient"}},
+                {"resource": {"resourceType": "Patient", "id": "pat-ok"}},
+            ]
+        });
+        let patients = MedplumClient::extract_patients_from_bundle(&bundle);
+        assert_eq!(patients.len(), 1);
+        assert!(patients.contains_key("pat-ok"));
+    }
 
     #[test]
     fn test_pkce_generation() {
