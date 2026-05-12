@@ -87,6 +87,13 @@ pub enum ContinuousModeEvent {
         resume_at: String,
     },
     SleepEnded,
+    /// One-shot prune of `recordings/` ran at continuous-mode start.
+    RecordingsRetention {
+        files_deleted: u64,
+        bytes_freed: u64,
+        errors: u64,
+        retention_days: u32,
+    },
     /// Live update: the vision-based `PatientNameTracker`'s majority name
     /// for the in-progress encounter changed. Emitted only on transitions
     /// (e.g. None → "John Smith", "John Smith" → "Jane Doe" after a DOB

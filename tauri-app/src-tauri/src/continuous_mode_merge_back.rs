@@ -673,7 +673,7 @@ pub async fn run<C: RunContext>(
                                     ) {
                                         logger.set_session(&prev_dir);
                                     }
-                                    let det_context = match &retro_outcome.detection {
+                                    let mut det_context = match &retro_outcome.detection {
                                         Some(d) => serde_json::json!({
                                             "stage": "retrospective",
                                             "patient_count": d.patient_count,
@@ -691,6 +691,9 @@ pub async fn run<C: RunContext>(
                                             "accepted": false,
                                         }),
                                     };
+                                    if let Some(m) = retro_outcome.call_metrics {
+                                        m.attach_to(&mut det_context);
+                                    }
                                     logger.log_llm_call(
                                         "multi_patient_detect",
                                         &retro_outcome.model,
@@ -739,6 +742,15 @@ pub async fn run<C: RunContext>(
                                         )
                                         .await;
                                     if let Ok(mut logger) = deps.logger.lock() {
+                                        let mut split_ctx = serde_json::json!({
+                                            "stage": "retrospective",
+                                            "parsed_line_index": split_outcome.parsed_line_index,
+                                            "parsed_confidence": split_outcome.parsed_confidence,
+                                            "merged_word_count": merged_wc,
+                                        });
+                                        if let Some(m) = split_outcome.call_metrics {
+                                            m.attach_to(&mut split_ctx);
+                                        }
                                         logger.log_llm_call(
                                             "multi_patient_split",
                                             &split_outcome.model,
@@ -748,12 +760,7 @@ pub async fn run<C: RunContext>(
                                             split_outcome.latency_ms,
                                             split_outcome.success,
                                             split_outcome.error.as_deref(),
-                                            serde_json::json!({
-                                                "stage": "retrospective",
-                                                "parsed_line_index": split_outcome.parsed_line_index,
-                                                "parsed_confidence": split_outcome.parsed_confidence,
-                                                "merged_word_count": merged_wc,
-                                            }),
+                                            split_ctx,
                                         );
                                     }
                                     if let Ok(mut bundle) = deps.bundle.lock() {
@@ -894,7 +901,7 @@ pub async fn run<C: RunContext>(
                 )
                 .await;
             if let Ok(mut logger) = deps.logger.lock() {
-                let det_context = match &mp_outcome.detection {
+                let mut det_context = match &mp_outcome.detection {
                     Some(d) => serde_json::json!({
                         "stage": "standalone_multi_patient",
                         "patient_count": d.patient_count,
@@ -907,6 +914,9 @@ pub async fn run<C: RunContext>(
                         "word_count": encounter_word_count,
                     }),
                 };
+                if let Some(m) = mp_outcome.call_metrics {
+                    m.attach_to(&mut det_context);
+                }
                 logger.log_llm_call(
                     "multi_patient_detect",
                     &mp_outcome.model,

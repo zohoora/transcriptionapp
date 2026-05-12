@@ -20,8 +20,32 @@ use tracing::{error, info, warn};
 use transcription_app_lib::audio_processing;
 use transcription_app_lib::llm_client::{LLMClient, SoapFormat, SoapOptions};
 use transcription_app_lib::profile_client::PhysicianProfile;
-use transcription_app_lib::server_config;
+use transcription_app_lib::server_config::{self, ServerConfig};
+use transcription_app_lib::server_config_resolve::resolve;
 use transcription_app_lib::whisper_server::WhisperServerClient;
+
+/// Cached server-resolved model aliases for the polling loop. Refreshed on each
+/// loop iteration from the latest `ServerConfig`, so server-pushed alias
+/// changes take effect within one poll interval without a CLI restart.
+///
+/// Precedence: server-pushed alias > compiled default (`CliConfig.soap_model`).
+/// There's no "user-edited" tier — the CLI has no persistent local config; the
+/// `user_edited` slice passed to `resolve()` is always empty.
+#[derive(Debug, Clone)]
+struct ResolvedModels {
+    soap_model: String,
+}
+
+fn resolve_models(server: &ServerConfig, fallback_soap_model: &str) -> ResolvedModels {
+    let local = fallback_soap_model.to_string();
+    let soap_model = resolve(
+        Some(&server.defaults.soap_model_fast),
+        &local,
+        "soap_model_fast",
+        &[],
+    );
+    ResolvedModels { soap_model }
+}
 
 // ── Types matching profile service API ──────────────────────────────────────
 
@@ -418,6 +442,7 @@ async fn process_job(
     stt_client: &WhisperServerClient,
     llm_client: &LLMClient,
     config: &CliConfig,
+    models: &ResolvedModels,
     work_dir: &Path,
 ) -> Result<Vec<CreatedSession>, String> {
     // Clean up sessions from previous processing attempts (requeue scenario)
@@ -472,13 +497,13 @@ async fn process_job(
         let encounter_number = (idx as u32) + 1;
         let word_count = encounter_transcript.split_whitespace().count();
 
-        // Generate SOAP
-        // TODO(phase3): wire to server config — see ADR-0023 "Future work".
-        // CLI binary lacks Tauri managed state; needs non-Tauri access pattern for SharedServerConfig.
+        // SOAP model alias resolved per polling iteration via `ResolvedModels`,
+        // so server-pushed alias changes take effect within one poll interval.
+        // See `resolve_models` for precedence (server > compiled default).
         let soap = generate_soap(
             llm_client,
             encounter_transcript,
-            &config.soap_model,
+            &models.soap_model,
             &physician,
         )
         .await
@@ -573,18 +598,23 @@ async fn main() {
         LLMClient::new(&config.llm_url, &config.llm_api_key, "process_mobile", "fast-model")
             .expect("Failed to create LLM client");
 
-    // Fetch server-configurable data (prompts, billing rules, thresholds)
-    // via the shared ProfileClient. Uses version-based caching + disk fallback.
+    // Shared profile client for server-config fetches. Uses version-based
+    // caching + disk fallback so per-loop refresh is cheap when nothing changed.
     let shared_client = transcription_app_lib::profile_client::ProfileClient::new(
         &[config.profile_service_url.clone()], None,
     );
-    let _server_config = server_config::load_server_config(&shared_client).await;
 
     // Work directory for temp files
     let work_dir = std::env::temp_dir().join("process_mobile");
     std::fs::create_dir_all(&work_dir).expect("Failed to create work directory");
 
     loop {
+        // Refresh server-config each iteration. The version-check short-circuit
+        // makes this ~one HTTP HEAD when nothing changed; full body only on
+        // server version bumps. Cheap on the 10s poll cadence.
+        let server_cfg = server_config::load_server_config(&shared_client).await;
+        let models = resolve_models(&server_cfg, &config.soap_model);
+
         match profile_client.get_queued_jobs().await {
             Ok(jobs) => {
                 if jobs.is_empty() {
@@ -594,10 +624,11 @@ async fn main() {
                     }
                 } else {
                     for job in &jobs {
-                        info!("Processing job {} (physician={}, {:.0}s audio)",
+                        info!("Processing job {} (physician={}, {:.0}s audio, soap_model={})",
                             &job.job_id[..8.min(job.job_id.len())],
                             &job.physician_id[..8.min(job.physician_id.len())],
                             job.duration_ms as f64 / 1000.0,
+                            &models.soap_model,
                         );
 
                         match process_job(
@@ -606,6 +637,7 @@ async fn main() {
                             &stt_client,
                             &llm_client,
                             &config,
+                            &models,
                             &work_dir,
                         )
                         .await

@@ -18,7 +18,8 @@ use crate::encounter_detection::{
 use crate::encounter_experiment::strip_hallucinations;
 use crate::encounter_merge::{build_encounter_merge_prompt, parse_merge_check, PrevMergeInput};
 use crate::llm_client::{
-    build_simple_soap_prompt, LLMClient, MultiPatientSoapResult, SoapFormat, SoapOptions,
+    build_simple_soap_prompt, build_soap_user_content, LLMClient, MultiPatientSoapResult,
+    SoapFormat, SoapOptions,
 };
 use crate::server_config::PromptTemplates;
 use crate::local_archive;
@@ -142,9 +143,20 @@ pub async fn generate_and_archive_soap(
         ..Default::default()
     };
     let soap_system_prompt = build_simple_soap_prompt(&soap_opts, templates);
+    // Built locally so all three replay-bundle outcome paths (Success / Failed /
+    // Timeout) have user_prompt — the tokio::time::timeout Elapsed case can't
+    // recover it from the cancelled future. Match `audio_events=None` and
+    // `speaker_context=None` against the call below to keep the two in sync;
+    // build_soap_user_content drops empty/whitespace session_notes itself.
+    let soap_user_prompt = build_soap_user_content(
+        filtered_text,
+        None,
+        Some(soap_opts.session_notes.as_str()),
+        None,
+    );
 
     let soap_start = Instant::now();
-    let soap_future = client.generate_multi_patient_soap_note(
+    let soap_future = client.generate_multi_patient_soap_note_timed(
         soap_model,
         filtered_text,
         None,
@@ -156,7 +168,7 @@ pub async fn generate_and_archive_soap(
     );
 
     match tokio::time::timeout(tokio::time::Duration::from_secs(soap_timeout), soap_future).await {
-        Ok(Ok(mut soap_result)) => {
+        Ok((Ok(mut soap_result), call_metrics)) => {
             let latency_ms = soap_start.elapsed().as_millis() as u64;
             let content = soap_result.format_for_archive();
 
@@ -216,6 +228,9 @@ pub async fn generate_and_archive_soap(
                         serde_json::json!(soap_result.notes.len()),
                     );
                 }
+                if let Some(m) = call_metrics {
+                    m.attach_to(&mut meta);
+                }
                 l.log_soap(
                     soap_model,
                     &soap_system_prompt,
@@ -250,12 +265,15 @@ pub async fn generate_and_archive_soap(
                 sibling_ids,
             }
         }
-        Ok(Err(e)) => {
+        Ok((Err(e), call_metrics)) => {
             let latency_ms = soap_start.elapsed().as_millis() as u64;
             if let Ok(mut l) = logger.lock() {
                 let mut meta = log_extra;
                 if let Some(obj) = meta.as_object_mut() {
                     obj.insert("llm_error".into(), serde_json::json!(true));
+                }
+                if let Some(m) = call_metrics {
+                    m.attach_to(&mut meta);
                 }
                 l.log_soap(
                     soap_model,
@@ -279,7 +297,7 @@ pub async fn generate_and_archive_soap(
                         error: Some(e.to_string()),
                         patient_count: None,
                         system_prompt: Some(soap_system_prompt.clone()),
-                        user_prompt: None,
+                        user_prompt: Some(soap_user_prompt.clone()),
                         response_raw: None,
                     });
                 }
@@ -318,7 +336,7 @@ pub async fn generate_and_archive_soap(
                         error: Some(SOAP_TIMEOUT_ERROR.to_string()),
                         patient_count: None,
                         system_prompt: Some(soap_system_prompt.clone()),
-                        user_prompt: None,
+                        user_prompt: Some(soap_user_prompt.clone()),
                         response_raw: None,
                     });
                 }
@@ -1011,7 +1029,7 @@ pub async fn run_pre_soap_multi_patient_detection(
         .run_multi_patient_detection(fast_model, transcript, screenshot_paths, vision_model)
         .await;
     if let Ok(mut l) = logger.lock() {
-        let det_context = match &outcome.detection {
+        let mut det_context = match &outcome.detection {
             Some(d) => serde_json::json!({
                 "stage": stage_label,
                 "patient_count": d.patient_count,
@@ -1029,6 +1047,9 @@ pub async fn run_pre_soap_multi_patient_detection(
                 "accepted": false,
             }),
         };
+        if let Some(m) = outcome.call_metrics {
+            m.attach_to(&mut det_context);
+        }
         l.log_llm_call(
             "multi_patient_detect",
             &outcome.model,

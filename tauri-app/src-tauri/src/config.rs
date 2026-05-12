@@ -217,6 +217,11 @@ pub struct Settings {
     // discarded as ambient noise. 0 = disabled.
     #[serde(default = "default_idle_encounter_timeout_secs")]
     pub idle_encounter_timeout_secs: u32,
+    // Days of continuous_*.wav / session_*.wav recordings to keep before
+    // pruning on continuous-mode start. 0 = never prune (escape hatch).
+    // See `recordings_retention.rs` and CODE_REVIEW_FINDINGS.md Finding #12.
+    #[serde(default = "default_continuous_recording_retention_days")]
+    pub continuous_recording_retention_days: u32,
     // Multi-sensor suite settings (thermal + CO2 analysis)
     #[serde(default = "default_thermal_hot_pixel_threshold_c")]
     pub thermal_hot_pixel_threshold_c: f32,
@@ -335,6 +340,8 @@ fn default_hybrid_min_words_for_sensor_split() -> usize {
 fn default_sleep_mode_enabled() -> bool { true }
 fn default_sleep_start_hour() -> u8 { 22 } // 10 PM EST
 fn default_sleep_end_hour() -> u8 { 6 }    // 6 AM EST
+
+fn default_continuous_recording_retention_days() -> u32 { 30 }
 
 fn default_shadow_active_method() -> ShadowActiveMethod {
     ShadowActiveMethod::Sensor
@@ -578,6 +585,7 @@ impl Default for Settings {
             sleep_start_hour: default_sleep_start_hour(),
             sleep_end_hour: default_sleep_end_hour(),
             idle_encounter_timeout_secs: default_idle_encounter_timeout_secs(),
+            continuous_recording_retention_days: default_continuous_recording_retention_days(),
             thermal_hot_pixel_threshold_c: default_thermal_hot_pixel_threshold_c(),
             co2_baseline_ppm: default_co2_baseline_ppm(),
             user_edited_fields: Vec::new(),
@@ -1355,6 +1363,11 @@ impl Config {
             self.idle_encounter_timeout_secs = self.idle_encounter_timeout_secs.clamp(300, 3600);
         }
 
+        if self.continuous_recording_retention_days > 0 {
+            self.continuous_recording_retention_days =
+                self.continuous_recording_retention_days.clamp(1, 365);
+        }
+
         // Thermal: hot pixel threshold 20-40°C
         self.thermal_hot_pixel_threshold_c = self.thermal_hot_pixel_threshold_c.clamp(20.0, 40.0);
 
@@ -1655,6 +1668,7 @@ mod tests {
             sleep_start_hour: default_sleep_start_hour(),
             sleep_end_hour: default_sleep_end_hour(),
             idle_encounter_timeout_secs: default_idle_encounter_timeout_secs(),
+            continuous_recording_retention_days: default_continuous_recording_retention_days(),
             thermal_hot_pixel_threshold_c: default_thermal_hot_pixel_threshold_c(),
             co2_baseline_ppm: default_co2_baseline_ppm(),
             stt_alias: "medical-streaming".to_string(),
@@ -1792,6 +1806,7 @@ mod tests {
             sleep_start_hour: default_sleep_start_hour(),
             sleep_end_hour: default_sleep_end_hour(),
             idle_encounter_timeout_secs: default_idle_encounter_timeout_secs(),
+            continuous_recording_retention_days: default_continuous_recording_retention_days(),
             thermal_hot_pixel_threshold_c: default_thermal_hot_pixel_threshold_c(),
             co2_baseline_ppm: default_co2_baseline_ppm(),
             stt_alias: default_stt_alias(),

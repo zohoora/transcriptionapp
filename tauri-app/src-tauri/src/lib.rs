@@ -75,6 +75,7 @@ pub mod presence_sensor;
 pub mod preprocessing;
 pub mod experiment;
 pub mod replay_bundle;
+pub mod recordings_retention;
 pub mod replay_fetch;
 pub mod segment_log;
 pub mod server_sync;

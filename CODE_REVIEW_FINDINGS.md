@@ -139,15 +139,16 @@ Scope: `tauri-app/src` and `tauri-app/src-tauri/src` (security intentionally dep
   - Emit `started` only after pipeline start success.
   - In hook, set `isActive=false` on `error` and on failed status poll.
 
-### 12) [High] Continuous mode records full-day WAV files that are never surfaced or cleaned — DEFERRED
+### 12) [High] Continuous mode records full-day WAV files that are never surfaced or cleaned — FIXED (2026-05-12, v0.10.89)
 - Evidence:
-  - Continuous pipeline always configures `audio_output_path` (`tauri-app/src-tauri/src/continuous_mode.rs:389`).
-  - No archive linkage or cleanup code references those files.
-- Impact:
-  - Silent storage growth and orphaned recordings.
-- Recommendation:
-  - Decide product behavior: keep-and-link, rotate, or disable full-day raw recording.
-  - Implement retention policy and history linkage if kept.
+  - Continuous pipeline always configures `audio_output_path` (`tauri-app/src-tauri/src/continuous_mode.rs:572`).
+  - 2026-05-12 audit: 605 files / 40 GB in `~/.transcriptionapp/recordings/` spanning Feb 5 → May 12 on Room 6. Growth ~12 GB/month.
+- Resolution:
+  - Read-side consumer confirmed: `scripts/replay_day.py` slices `continuous_*.wav` for end-to-end model A/B replay. Per-encounter audio in continuous mode is NOT separately captured (`continuous_mode_splitter.rs:157`), so the daily WAV is the only audio record. Replay value drops off after ~2–4 weeks (forensic-review window).
+  - Implemented time-based retention in `recordings_retention.rs` with `prune_old_recordings()`. Runs on every continuous-mode start, before the new file is created. Prunes both `continuous_*.wav` and `session_*.wav` (session files duplicate the per-session archive `audio.wav`).
+  - Config: `Settings.continuous_recording_retention_days` (default 30, clamp 1-365, 0 = disabled).
+  - Observability: emits `RecordingsRetention { files_deleted, bytes_freed, errors, retention_days }` event on `continuous_mode_event` channel; logs `recordings_retention_pruned` at info.
+  - 6 unit tests cover the policy (boundary, zero-disable, name filter, missing-dir, drift-safe boundary).
 
 ### 13) [Medium] Session and continuous mode share `transcript_update` event channel (cross-talk) — FIXED
 - Evidence:
@@ -324,7 +325,7 @@ Final cross-cutting review of `feat/server-config-phase3` (ADR-0023 Phase 3, 17 
 - Deploy mitigation: After shipping the Phase 3 server, issue one dummy `PUT /config/defaults` to bump the shared version past any stale client cache.
 - Long-term: Already addressed — any real `PUT /config/defaults` post-deploy bumps version and triggers refetch on all clients within 60s.
 
-### P3-3: `process_mobile` CLI still reads model aliases from local config
-- Evidence: `bin/process_mobile.rs:468` TODO comment. CLI binary lacks Tauri managed state; needs a non-Tauri access pattern for `SharedServerConfig`.
-- Impact: Mobile processing CLI doesn't benefit from server-side model-alias rollouts. Workaround: edit `~/.transcriptionapp/config.json` on the MacBook where `process_mobile` runs.
-- Proposed fix: Add a direct `load_server_config()` call at CLI startup, re-load on polling loop iterations. Track as followup.
+### P3-3: `process_mobile` CLI still reads model aliases from local config — FIXED (2026-05-12)
+- Evidence (pre-fix): `bin/process_mobile.rs:476` TODO comment. CLI binary lacks Tauri managed state; needs a non-Tauri access pattern for `SharedServerConfig`.
+- Impact: Mobile processing CLI didn't benefit from server-side model-alias rollouts. Workaround was to edit `~/.transcriptionapp/config.json` on the MacBook.
+- Resolution: Added `ResolvedModels` struct + `resolve_models()` helper in `process_mobile.rs`. Main polling loop calls `server_config::load_server_config(&shared_client)` on each iteration (cheap via version-check short-circuit), resolves `soap_model_fast` with precedence `server > compiled default`, passes `&ResolvedModels` into `process_job`. Server-pushed alias changes take effect within one poll interval (~10s) without CLI restart. Only `soap_model_fast` is wired today — `fast_model` / `encounter_detection_model` are not used by the CLI's batch pipeline. Per-call prompt-template overrides not yet wired (`generate_soap_note` ignores `PromptTemplates`); deferred as a separate gap.

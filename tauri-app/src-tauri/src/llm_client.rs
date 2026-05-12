@@ -39,6 +39,10 @@ pub struct MultiPatientDetectionOutcome {
     pub latency_ms: u64,
     pub success: bool,
     pub error: Option<String>,
+    /// Per-call metrics (scheduling/network/concurrency). `None` only when the
+    /// outer tokio timeout elapsed — the inner future never completed, so
+    /// there's no metric to report. Attach to pipeline_log via `attach_to`.
+    pub call_metrics: Option<CallMetrics>,
 }
 
 /// Full outcome of the multi-patient SPLIT prompt — finds the line_index
@@ -58,6 +62,7 @@ pub struct MultiPatientSplitOutcome {
     pub latency_ms: u64,
     pub success: bool,
     pub error: Option<String>,
+    pub call_metrics: Option<CallMetrics>,
 }
 
 /// Default timeout for LLM API requests (5 minutes for long SOAP generation)
@@ -1324,7 +1329,39 @@ impl LLMClient {
         screenshot_paths: Option<&[PathBuf]>,
         vision_model: &str,
     ) -> Result<MultiPatientSoapResult, String> {
-        let prepared_transcript = Self::prepare_transcript(transcript)?;
+        self.generate_multi_patient_soap_note_timed(
+            model,
+            transcript,
+            audio_events,
+            options,
+            speaker_context,
+            multi_patient_detection,
+            screenshot_paths,
+            vision_model,
+        )
+        .await
+        .0
+    }
+
+    /// Timed variant: returns metrics alongside the result for pipeline_log
+    /// observability. The single-patient path produces a concrete `CallMetrics`;
+    /// the per-patient fan-out path returns `None` (each child call has its own
+    /// metrics that are not yet aggregated — see `generate_per_patient_soap`).
+    pub async fn generate_multi_patient_soap_note_timed(
+        &self,
+        model: &str,
+        transcript: &str,
+        audio_events: Option<&[AudioEvent]>,
+        options: Option<&SoapOptions>,
+        speaker_context: Option<&SpeakerContext>,
+        multi_patient_detection: Option<&MultiPatientDetectionResult>,
+        screenshot_paths: Option<&[PathBuf]>,
+        vision_model: &str,
+    ) -> (Result<MultiPatientSoapResult, String>, Option<CallMetrics>) {
+        let prepared_transcript = match Self::prepare_transcript(transcript) {
+            Ok(t) => t,
+            Err(e) => return (Err(e), None),
+        };
         let opts = options.cloned().unwrap_or_default();
 
         // Per-patient path: callers pass Some() only after confidence gating
@@ -1338,7 +1375,7 @@ impl LLMClient {
                 word_count,
                 screenshot_paths.map(|p| p.len()).unwrap_or(0),
             );
-            return self
+            let result = self
                 .generate_per_patient_soap(
                     model,
                     &prepared_transcript,
@@ -1348,6 +1385,7 @@ impl LLMClient {
                     vision_model,
                 )
                 .await;
+            return (result, None);
         }
 
         // Single-patient path (existing behavior, optionally multimodal)
@@ -1365,14 +1403,14 @@ impl LLMClient {
         let user_content = build_soap_user_content(&prepared_transcript, audio_events, session_notes, speaker_context);
 
         let multimodal = build_multimodal_user_content_if_available(&user_content, screenshot_paths);
-        let (content, raw_response, model_used) = match multimodal {
+        let (content, raw_response, model_used, metrics) = match multimodal {
             Some(parts) => {
                 info!(
                     "Routing multi-patient SOAP via vision model {} with {} images attached",
                     vision_model, parts.len() - 1
                 );
-                let response = self
-                    .generate_vision(
+                let (resp_result, m) = self
+                    .generate_vision_timed(
                         vision_model,
                         &system_prompt,
                         parts.clone(),
@@ -1382,38 +1420,49 @@ impl LLMClient {
                         None,
                         None,
                     )
-                    .await?;
+                    .await;
+                let response = match resp_result {
+                    Ok(r) => r,
+                    Err(e) => return (Err(e), Some(m)),
+                };
                 let raw = response.clone();
                 let c = self
                     .parse_soap_with_retry_multimodal(vision_model, &system_prompt, &parts, &response)
                     .await;
-                (c, raw, vision_model.to_string())
+                (c, raw, vision_model.to_string(), m)
             }
             None => {
-                let response = self
-                    .generate(model, &system_prompt, &user_content, tasks::SOAP_NOTE)
-                    .await?;
+                let (resp_result, m) = self
+                    .generate_timed(model, &system_prompt, &user_content, tasks::SOAP_NOTE)
+                    .await;
+                let response = match resp_result {
+                    Ok(r) => r,
+                    Err(e) => return (Err(e), Some(m)),
+                };
                 let raw = response.clone();
                 let c = self
                     .parse_soap_with_retry(model, &system_prompt, &user_content, &response)
                     .await;
-                (c, raw, model.to_string())
+                (c, raw, model.to_string(), m)
             }
         };
 
         info!("Successfully generated multi-patient SOAP note ({} chars)", content.len());
-        Ok(MultiPatientSoapResult {
-            notes: vec![PatientSoapNote {
-                patient_label: "Combined".to_string(),
-                speaker_id: "All".to_string(),
-                content,
-            }],
-            physician_speaker: None,
-            generated_at: Utc::now().to_rfc3339(),
-            model_used,
-            raw_response: Some(raw_response),
-            user_prompt: Some(user_content),
-        })
+        (
+            Ok(MultiPatientSoapResult {
+                notes: vec![PatientSoapNote {
+                    patient_label: "Combined".to_string(),
+                    speaker_id: "All".to_string(),
+                    content,
+                }],
+                physician_speaker: None,
+                generated_at: Utc::now().to_rfc3339(),
+                model_used,
+                raw_response: Some(raw_response),
+                user_prompt: Some(user_content),
+            }),
+            Some(metrics),
+        )
     }
 
     /// Generate N concurrent per-patient SOAP notes from the full transcript.
@@ -1593,7 +1642,7 @@ impl LLMClient {
         let result = match multimodal {
             Some(parts) => tokio::time::timeout(
                 timeout,
-                self.generate_vision(
+                self.generate_vision_timed(
                     &effective_model,
                     MULTI_PATIENT_DETECT_PROMPT,
                     parts,
@@ -1607,7 +1656,7 @@ impl LLMClient {
             .await,
             None => tokio::time::timeout(
                 timeout,
-                self.generate(
+                self.generate_timed(
                     fast_model,
                     MULTI_PATIENT_DETECT_PROMPT,
                     &mp_user,
@@ -1618,8 +1667,8 @@ impl LLMClient {
         };
         let latency_ms = start.elapsed().as_millis() as u64;
 
-        let (detection, response_raw, success, error) = match result {
-            Ok(Ok(resp)) => {
+        let (detection, response_raw, success, error, call_metrics) = match result {
+            Ok((Ok(resp), m)) => {
                 match parse_multi_patient_detection(&resp) {
                     Ok(det) => {
                         info!(
@@ -1629,21 +1678,21 @@ impl LLMClient {
                         let accepted = det.patient_count > 1
                             && det.confidence.unwrap_or(0.0) >= MULTI_PATIENT_DETECT_MIN_CONFIDENCE
                             && det.patients.len() > 1;
-                        (if accepted { Some(det) } else { None }, Some(resp), true, None)
+                        (if accepted { Some(det) } else { None }, Some(resp), true, None, Some(m))
                     }
                     Err(e) => {
                         warn!("Failed to parse multi-patient detection: {}", e);
-                        (None, Some(resp), false, Some(format!("Parse error: {}", e)))
+                        (None, Some(resp), false, Some(format!("Parse error: {}", e)), Some(m))
                     }
                 }
             }
-            Ok(Err(e)) => {
+            Ok((Err(e), m)) => {
                 warn!("Multi-patient detection LLM error: {}", e);
-                (None, None, false, Some(e.to_string()))
+                (None, None, false, Some(e.to_string()), Some(m))
             }
             Err(_) => {
                 warn!("Multi-patient detection timed out after {}s", MULTI_PATIENT_DETECT_TIMEOUT_SECS);
-                (None, None, false, Some(format!("Timeout after {}s", MULTI_PATIENT_DETECT_TIMEOUT_SECS)))
+                (None, None, false, Some(format!("Timeout after {}s", MULTI_PATIENT_DETECT_TIMEOUT_SECS)), None)
             }
         };
 
@@ -1656,6 +1705,7 @@ impl LLMClient {
             latency_ms,
             success,
             error,
+            call_metrics,
         }
     }
 
@@ -1684,13 +1734,13 @@ impl LLMClient {
         let start = std::time::Instant::now();
         let result = tokio::time::timeout(
             tokio::time::Duration::from_secs(MULTI_PATIENT_DETECT_TIMEOUT_SECS),
-            self.generate(fast_model, &system, &user, "multi_patient_split"),
+            self.generate_timed(fast_model, &system, &user, "multi_patient_split"),
         )
         .await;
         let latency_ms = start.elapsed().as_millis() as u64;
 
-        let (line_index, confidence, reason, response_raw, success, error) = match result {
-            Ok(Ok(resp)) => match parse_multi_patient_split(&resp) {
+        let (line_index, confidence, reason, response_raw, success, error, call_metrics) = match result {
+            Ok((Ok(resp), m)) => match parse_multi_patient_split(&resp) {
                 Ok(parsed) => (
                     parsed.line_index.map(|n| n as u32),
                     parsed.confidence,
@@ -1698,11 +1748,12 @@ impl LLMClient {
                     Some(resp),
                     true,
                     None,
+                    Some(m),
                 ),
-                Err(e) => (None, None, None, Some(resp), false, Some(format!("Parse error: {e}"))),
+                Err(e) => (None, None, None, Some(resp), false, Some(format!("Parse error: {e}")), Some(m)),
             },
-            Ok(Err(e)) => (None, None, None, None, false, Some(e.to_string())),
-            Err(_) => (None, None, None, None, false, Some("Timeout after 30s".to_string())),
+            Ok((Err(e), m)) => (None, None, None, None, false, Some(e.to_string()), Some(m)),
+            Err(_) => (None, None, None, None, false, Some("Timeout after 30s".to_string()), None),
         };
 
         MultiPatientSplitOutcome {
@@ -1716,6 +1767,7 @@ impl LLMClient {
             latency_ms,
             success,
             error,
+            call_metrics,
         }
     }
 

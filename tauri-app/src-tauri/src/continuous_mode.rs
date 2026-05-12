@@ -576,6 +576,28 @@ pub async fn run_continuous_mode<C: crate::run_context::RunContext>(
             warn!("Could not create recordings directory: {}", e);
             None
         } else {
+            let retention_days = config.continuous_recording_retention_days;
+            let summary = crate::recordings_retention::prune_old_recordings(
+                &recordings_dir,
+                retention_days,
+                std::time::SystemTime::now(),
+            );
+            if summary.files_deleted > 0 || summary.errors > 0 {
+                info!(
+                    event = "recordings_retention_pruned",
+                    files_deleted = summary.files_deleted,
+                    bytes_freed = summary.bytes_freed,
+                    errors = summary.errors,
+                    retention_days,
+                );
+                ContinuousModeEvent::RecordingsRetention {
+                    files_deleted: summary.files_deleted,
+                    bytes_freed: summary.bytes_freed,
+                    errors: summary.errors,
+                    retention_days,
+                }
+                .emit_via(&ctx);
+            }
             let timestamp = ctx.now_utc().format("%Y%m%d_%H%M%S").to_string();
             Some(recordings_dir.join(format!("continuous_{}.wav", timestamp)))
         }
