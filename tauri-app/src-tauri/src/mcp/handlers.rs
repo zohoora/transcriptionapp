@@ -298,7 +298,7 @@ pub fn handle_get_status(session_manager: &Arc<Mutex<SessionManager>>) -> ToolRe
         last_activity: chrono::Utc::now().to_rfc3339(),
         active_tasks,
         queued_tasks: 0,
-        error_count_last_hour: 0, // TODO: Track errors
+        error_count_last_hour: crate::mcp::error_counter::global().count_last_hour(),
         warnings,
     };
 

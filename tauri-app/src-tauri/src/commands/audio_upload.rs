@@ -228,6 +228,7 @@ pub async fn process_audio_upload(
         "soap_model",
         &config.user_edited_fields,
     );
+    let templates = sc.prompts.clone();
     drop(sc);
     let llm_client = LLMClient::new(
         &config.llm_router_url,
@@ -288,6 +289,7 @@ pub async fn process_audio_upload(
                     None,
                     None,                      // no chart screenshots from audio-upload pipeline
                     &effective_soap_model,     // vision_model unused when screenshots is None
+                    Some(&templates),
                 )
                 .await
             {

@@ -96,6 +96,7 @@ mod tests {
             billing_counselling_exhausted: false,
             billing_is_hospital: false,
             user_edited_fields: Vec::new(),
+            user_edited_fields_version: 0,
         };
 
         // Serialize to JSON

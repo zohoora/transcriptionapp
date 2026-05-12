@@ -399,6 +399,7 @@ async fn generate_soap(
     transcript: &str,
     model: &str,
     physician: &PhysicianProfile,
+    templates: Option<&transcription_app_lib::server_config::PromptTemplates>,
 ) -> Result<Option<String>, String> {
     let word_count = transcript.split_whitespace().count();
     if word_count < 50 {
@@ -430,6 +431,7 @@ async fn generate_soap(
             None,
             None,  // mobile processing has no chart screenshots
             model, // vision_model unused when screenshots is None
+            templates,
         )
         .await?;
     Ok(Some(soap_note.content))
@@ -443,6 +445,7 @@ async fn process_job(
     llm_client: &LLMClient,
     config: &CliConfig,
     models: &ResolvedModels,
+    templates: &transcription_app_lib::server_config::PromptTemplates,
     work_dir: &Path,
 ) -> Result<Vec<CreatedSession>, String> {
     // Clean up sessions from previous processing attempts (requeue scenario)
@@ -505,6 +508,7 @@ async fn process_job(
             encounter_transcript,
             &models.soap_model,
             &physician,
+            Some(templates),
         )
         .await
         .unwrap_or_else(|e| {
@@ -638,6 +642,7 @@ async fn main() {
                             &llm_client,
                             &config,
                             &models,
+                            &server_cfg.prompts,
                             &work_dir,
                         )
                         .await

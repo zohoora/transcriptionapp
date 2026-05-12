@@ -125,7 +125,7 @@ async fn try_extract_meds(
 pub async fn capture_screenshot_for_meds(
     server_config: State<'_, SharedServerConfig>,
 ) -> Result<MedExtractionResult, CommandError> {
-    let (_config, _models, client) = load_effective_models_and_client(server_config.inner()).await?;
+    let (_config, _models, client, _templates) = load_effective_models_and_client(server_config.inner()).await?;
     let templates = {
         let sc = server_config.read().await;
         sc.prompts.clone()
@@ -211,7 +211,7 @@ pub async fn parse_medications_from_text(
         )));
     }
 
-    let (_config, models, client) = load_effective_models_and_client(server_config.inner()).await?;
+    let (_config, models, client, _templates) = load_effective_models_and_client(server_config.inner()).await?;
     let templates = {
         let sc = server_config.read().await;
         sc.prompts.clone()

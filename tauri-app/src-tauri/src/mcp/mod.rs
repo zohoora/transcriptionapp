@@ -47,6 +47,7 @@
 //! }
 //! ```
 
+pub mod error_counter;
 mod handlers;
 mod server;
 mod types;

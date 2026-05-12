@@ -86,10 +86,17 @@ pub fn init_logging() -> Result<(), Box<dyn std::error::Error>> {
         .with_filter(EnvFilter::try_from_default_env()
             .unwrap_or_else(|_| EnvFilter::new("info")));
 
+    // Error-counter layer feeds the MCP `get_status` endpoint's
+    // `error_count_last_hour`. Rolling 1-hour window, 10k-entry hard cap.
+    let error_counter_layer = crate::mcp::error_counter::ErrorCounterLayer::new(
+        crate::mcp::error_counter::global(),
+    );
+
     // Combine layers
     tracing_subscriber::registry()
         .with(file_layer)
         .with(console_layer)
+        .with(error_counter_layer)
         .init();
 
     info!(

@@ -165,6 +165,7 @@ pub async fn generate_and_archive_soap(
         multi_patient_detection,
         screenshot_paths,
         vision_model,
+        templates,
     );
 
     match tokio::time::timeout(tokio::time::Duration::from_secs(soap_timeout), soap_future).await {

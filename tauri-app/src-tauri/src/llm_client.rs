@@ -1167,6 +1167,7 @@ impl LLMClient {
         speaker_context: Option<&SpeakerContext>,
         screenshot_paths: Option<&[PathBuf]>,
         vision_model: &str,
+        templates: Option<&crate::server_config::PromptTemplates>,
     ) -> Result<SoapNote, String> {
         let prepared_transcript = Self::prepare_transcript(transcript)?;
         let opts = options.cloned().unwrap_or_default();
@@ -1180,7 +1181,7 @@ impl LLMClient {
             screenshot_paths.map(|p| p.len()).unwrap_or(0)
         );
 
-        let system_prompt = build_simple_soap_prompt(&opts, None);
+        let system_prompt = build_simple_soap_prompt(&opts, templates);
         let session_notes = if opts.session_notes.trim().is_empty() { None } else { Some(opts.session_notes.as_str()) };
         let user_content = build_soap_user_content(&prepared_transcript, audio_events, session_notes, speaker_context);
 
@@ -1249,6 +1250,7 @@ impl LLMClient {
         speaker_context: Option<&SpeakerContext>,
         screenshot_paths: Option<&[PathBuf]>,
         vision_model: &str,
+        templates: Option<&crate::server_config::PromptTemplates>,
     ) -> Result<SoapNote, String> {
         let prepared_transcript = Self::prepare_transcript(transcript)?;
         let opts = options.cloned().unwrap_or_default();
@@ -1262,7 +1264,7 @@ impl LLMClient {
             screenshot_paths.map(|p| p.len()).unwrap_or(0),
         );
 
-        let system_prompt = build_single_patient_soap_prompt(&opts, patient_label, patient_summary, None);
+        let system_prompt = build_single_patient_soap_prompt(&opts, patient_label, patient_summary, templates);
         let session_notes = if opts.session_notes.trim().is_empty() { None } else { Some(opts.session_notes.as_str()) };
         let user_content = build_soap_user_content(&prepared_transcript, audio_events, session_notes, speaker_context);
 
@@ -1328,6 +1330,7 @@ impl LLMClient {
         multi_patient_detection: Option<&MultiPatientDetectionResult>,
         screenshot_paths: Option<&[PathBuf]>,
         vision_model: &str,
+        templates: Option<&crate::server_config::PromptTemplates>,
     ) -> Result<MultiPatientSoapResult, String> {
         self.generate_multi_patient_soap_note_timed(
             model,
@@ -1338,6 +1341,7 @@ impl LLMClient {
             multi_patient_detection,
             screenshot_paths,
             vision_model,
+            templates,
         )
         .await
         .0
@@ -1357,6 +1361,7 @@ impl LLMClient {
         multi_patient_detection: Option<&MultiPatientDetectionResult>,
         screenshot_paths: Option<&[PathBuf]>,
         vision_model: &str,
+        templates: Option<&crate::server_config::PromptTemplates>,
     ) -> (Result<MultiPatientSoapResult, String>, Option<CallMetrics>) {
         let prepared_transcript = match Self::prepare_transcript(transcript) {
             Ok(t) => t,
@@ -1383,6 +1388,7 @@ impl LLMClient {
                     detection,
                     screenshot_paths,
                     vision_model,
+                    templates,
                 )
                 .await;
             return (result, None);
@@ -1398,7 +1404,7 @@ impl LLMClient {
             screenshot_paths.map(|p| p.len()).unwrap_or(0),
         );
 
-        let system_prompt = build_simple_soap_prompt(&opts, None);
+        let system_prompt = build_simple_soap_prompt(&opts, templates);
         let session_notes = if opts.session_notes.trim().is_empty() { None } else { Some(opts.session_notes.as_str()) };
         let user_content = build_soap_user_content(&prepared_transcript, audio_events, session_notes, speaker_context);
 
@@ -1479,8 +1485,9 @@ impl LLMClient {
         detection: &MultiPatientDetectionResult,
         screenshot_paths: Option<&[PathBuf]>,
         vision_model: &str,
+        templates: Option<&crate::server_config::PromptTemplates>,
     ) -> Result<MultiPatientSoapResult, String> {
-        let system_prompt = build_per_patient_soap_prompt(options, None);
+        let system_prompt = build_per_patient_soap_prompt(options, templates);
         let all_patients_desc: String = detection.patients.iter()
             .map(|p| format!("{}: {}", p.label, p.summary))
             .collect::<Vec<_>>()
@@ -1519,34 +1526,52 @@ impl LLMClient {
             let mdl = model.to_string();
             let vmdl = vision_model.to_string();
             let imgs_clone = shared_images.clone();
+            let patient_label = patient.label.clone();
             async move {
-                let (content, raw_response) = match imgs_clone {
+                let (content, raw_response, metrics, model_used) = match imgs_clone {
                     Some(imgs) => {
                         let mut parts: Vec<ContentPart> = Vec::with_capacity(imgs.len() + 1);
                         parts.push(ContentPart::Text { text: user_content.clone() });
                         parts.extend(imgs.into_iter());
-                        let response = self
-                            .generate_vision(
+                        let (resp_result, m) = self
+                            .generate_vision_timed(
                                 &vmdl, &sys, parts.clone(), tasks::SOAP_NOTE,
                                 None, None, None, None,
                             )
-                            .await?;
+                            .await;
+                        let response = resp_result?;
                         let raw = response.clone();
                         let c = self
                             .parse_soap_with_retry_multimodal(&vmdl, &sys, &parts, &response)
                             .await;
-                        (c, raw)
+                        (c, raw, m, vmdl.clone())
                     }
                     None => {
-                        let response = self.generate(&mdl, &sys, &user_content, tasks::SOAP_NOTE).await?;
+                        let (resp_result, m) = self
+                            .generate_timed(&mdl, &sys, &user_content, tasks::SOAP_NOTE)
+                            .await;
+                        let response = resp_result?;
                         let raw = response.clone();
                         let c = self.parse_soap_with_retry(&mdl, &sys, &user_content, &response).await;
-                        (c, raw)
+                        (c, raw, m, mdl.clone())
                     }
                 };
+                // Per-patient observability — surfaces "patient N was slow" without
+                // needing the orchestrator to thread a logger into the SOAP fn.
+                info!(
+                    event = "per_patient_soap_call",
+                    patient_label = %patient_label,
+                    model = %model_used,
+                    wall_ms = metrics.wall_ms,
+                    scheduling_ms = metrics.scheduling_ms,
+                    network_ms = metrics.network_ms,
+                    concurrent_at_start = metrics.concurrent_at_start,
+                    retry_count = metrics.retry_count,
+                    response_chars = raw_response.len(),
+                );
                 Ok::<PerPatientAttempt, String>(PerPatientAttempt {
                     note: PatientSoapNote {
-                        patient_label: patient.label.clone(),
+                        patient_label,
                         speaker_id: "All".to_string(),
                         content,
                     },

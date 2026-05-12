@@ -927,7 +927,7 @@ const IDD_CODES_K125: &[&str] = &["299", "319", "343", "741", "758"];
 // A 0.90 threshold effectively means "accept whenever the LLM gave any
 // suggestion at all"; 0.95 would reject about half the day's outputs.
 //
-// Current policy — TODO: confirm these values match your intent:
+// Validated by the 2026-04-29 / 2026-04-30 forensic reviews:
 //   • 0.90 = trust threshold (skip cross-validation)
 //   • 0.50 = consider threshold (below this, ignore the suggestion entirely)
 // ────────────────────────────────────────────────────────────────────────────

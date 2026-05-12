@@ -275,13 +275,6 @@ impl PipelineHandle {
         self.reset_silence_flag.store(true, Ordering::SeqCst);
     }
 
-    /// Reset biomarker accumulators (triggered on encounter boundary in continuous mode)
-    #[allow(dead_code)]
-    pub fn reset_biomarkers(&self) {
-        info!("Requesting biomarker reset");
-        self.reset_biomarkers_flag.store(true, Ordering::SeqCst);
-    }
-
     /// Get a clone of the reset biomarkers flag (for external tasks to trigger resets)
     pub fn reset_biomarkers_flag(&self) -> Arc<AtomicBool> {
         self.reset_biomarkers_flag.clone()
@@ -294,11 +287,7 @@ impl PipelineHandle {
         }
     }
 
-    /// Check if the pipeline is still running
-    #[allow(dead_code)] // Useful for future monitoring features
-    pub fn is_running(&self) -> bool {
-        !self.stop_flag.load(Ordering::Relaxed)
-    }
+
 
     /// Construct a no-op PipelineHandle for tests. No audio thread is spawned;
     /// stop/join are no-ops. The reset_biomarkers_flag is a real Arc<AtomicBool>
@@ -696,9 +685,6 @@ fn run_pipeline_thread_inner(
     // Track audio capture overflows (buffer overruns)
     let mut last_overflow_count: u64 = 0;
 
-    // Context for transcription
-    let mut context = String::new();
-
     // Track consecutive transcription errors
     let mut consecutive_transcription_errors: u32 = 0;
     const MAX_CONSECUTIVE_ERRORS: u32 = 3;
@@ -796,13 +782,6 @@ fn run_pipeline_thread_inner(
                     }
                 }
 
-                // TODO: Pass context to transcription for improved accuracy
-                let _context_ref = if context.is_empty() {
-                    None
-                } else {
-                    Some(context.as_str())
-                };
-
                 // Transcribe (using enhanced audio if available)
                 match transcribe_utterance(&whisper_client, &utterance, &config.stt_alias, config.stt_postprocess, &tx) {
                     Ok(mut segment) => {
@@ -832,8 +811,6 @@ fn run_pipeline_thread_inner(
                                 }
                             }
 
-                            context.push(' ');
-                            context.push_str(&segment.text);
                             if tx.blocking_send(PipelineMessage::Segment(segment)).is_err() {
                                 break;
                             }
@@ -1063,13 +1040,6 @@ fn run_pipeline_thread_inner(
                 }
             }
 
-            // TODO: Pass context to transcription for improved accuracy
-            let _context_ref = if context.is_empty() {
-                None
-            } else {
-                Some(context.as_str())
-            };
-
             // Transcribe (using enhanced audio if available)
             match transcribe_utterance(&whisper_client, &utterance, &config.stt_alias, config.stt_postprocess, &tx) {
                 Ok(mut segment) => {
@@ -1179,24 +1149,6 @@ fn run_pipeline_thread_inner(
 
                         // Log segment metadata only - no transcript text (PHI)
                         info!("Sending segment: {} words ({}ms - {}ms)", segment.text.split_whitespace().count(), segment.start_ms, segment.end_ms);
-
-                        // Update context
-                        context.push(' ');
-                        context.push_str(&segment.text);
-
-                        // Keep context reasonable size
-                        if context.len() > 1000 {
-                            let words: Vec<&str> = context.split_whitespace().collect();
-                            context = words
-                                .into_iter()
-                                .rev()
-                                .take(100)
-                                .collect::<Vec<_>>()
-                                .into_iter()
-                                .rev()
-                                .collect::<Vec<_>>()
-                                .join(" ");
-                        }
 
                         if tx.blocking_send(PipelineMessage::Segment(segment)).is_err() {
                             warn!("Failed to send segment, receiver dropped");

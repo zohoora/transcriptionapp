@@ -12,7 +12,7 @@
 use super::mismatch_report::MismatchKind;
 use crate::replay_bundle::{Outcome, ReplayBundle};
 use serde::{Deserialize, Serialize};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 /// Snapshot of the archive state that the harness produces for a given bundle.
 ///
@@ -366,36 +366,6 @@ fn all_actual_sessions(root: &Path) -> Vec<ActualSession> {
         }
     }
     out
-}
-
-// Legacy helper retained for potential future use (per-session-id probe).
-#[allow(dead_code)]
-fn find_session_metadata(root: &Path, session_id: &str) -> Option<PathBuf> {
-    // Archive layout: root/YYYY/MM/DD/<session_id>/metadata.json
-    // We do a bounded walk (depth 4) rather than a generic recurse.
-    let year_dirs = std::fs::read_dir(root).ok()?.flatten();
-    for y in year_dirs {
-        if !y.path().is_dir() {
-            continue;
-        }
-        let month_dirs = std::fs::read_dir(y.path()).ok()?.flatten();
-        for m in month_dirs {
-            if !m.path().is_dir() {
-                continue;
-            }
-            let day_dirs = std::fs::read_dir(m.path()).ok()?.flatten();
-            for d in day_dirs {
-                if !d.path().is_dir() {
-                    continue;
-                }
-                let cand = d.path().join(session_id).join("metadata.json");
-                if cand.exists() {
-                    return Some(cand);
-                }
-            }
-        }
-    }
-    None
 }
 
 /// Build a JSON object containing only the fields we expect to have been

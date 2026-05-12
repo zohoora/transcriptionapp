@@ -19,6 +19,11 @@ pub fn get_settings() -> Result<Settings, CommandError> {
 /// currently-stored value. Any field whose value changed is appended to
 /// `user_edited_fields` (dedup'd). This lets server-pushed
 /// `OperationalDefaults` skip user-tuned values on future refreshes.
+///
+/// Rejects payloads whose `user_edited_fields_version` is behind the on-disk
+/// version — see `merge_user_edited_fields` doc-comment for the race this
+/// closes. Frontends should always re-fetch after a `clear_user_edited_field`
+/// before issuing another `set_settings`.
 #[tauri::command]
 pub fn set_settings(mut settings: Settings) -> Result<Settings, CommandError> {
     // Validate settings before saving
@@ -32,11 +37,31 @@ pub fn set_settings(mut settings: Settings) -> Result<Settings, CommandError> {
         )));
     }
 
+    let existing = Config::load_or_default();
+
+    // Stale-snapshot guard: payload's version must not be behind the on-disk
+    // version. A pre-clear snapshot would carry an older version and would
+    // resurrect the just-cleared field via the diff-on-save branch below.
+    if settings.user_edited_fields_version < existing.settings.user_edited_fields_version {
+        return Err(CommandError::Validation(format!(
+            "Settings payload is stale (version {} < on-disk {}); re-fetch and retry",
+            settings.user_edited_fields_version, existing.settings.user_edited_fields_version,
+        )));
+    }
+
     // Diff-on-save: find Cat B fields whose value changed vs. currently-stored
     // settings and record them as user-edited. Uses the existing settings on
     // disk as the reference.
-    let existing = Config::load_or_default();
+    let edited_before = settings.user_edited_fields.clone();
     merge_user_edited_fields(&mut settings, &existing.settings);
+    if settings.user_edited_fields != edited_before
+        || settings.user_edited_fields != existing.settings.user_edited_fields
+    {
+        settings.user_edited_fields_version = existing
+            .settings
+            .user_edited_fields_version
+            .saturating_add(1);
+    }
 
     let mut config = existing;
     config.update_from_settings(&settings);
@@ -51,6 +76,9 @@ pub fn set_settings(mut settings: Settings) -> Result<Settings, CommandError> {
 /// After calling this the server-configurable resolver treats the field as
 /// "reset to server/compiled default" — subsequent server pushes are free to
 /// overwrite the local value. No-op if the field isn't tracked.
+///
+/// Bumps `user_edited_fields_version` on actual removal so a subsequent
+/// `set_settings` carrying a pre-clear snapshot is rejected.
 #[tauri::command]
 pub fn clear_user_edited_field(field_name: String) -> Result<Settings, CommandError> {
     let mut config = Config::load_or_default();
@@ -60,6 +88,10 @@ pub fn clear_user_edited_field(field_name: String) -> Result<Settings, CommandEr
         .user_edited_fields
         .retain(|f| f != &field_name);
     if config.settings.user_edited_fields.len() != before {
+        config.settings.user_edited_fields_version = config
+            .settings
+            .user_edited_fields_version
+            .saturating_add(1);
         config
             .save()
             .map_err(|e| CommandError::Config(e.to_string()))?;
@@ -107,8 +139,9 @@ pub async fn get_operational_defaults(
 /// issued. This function treats every `set_settings` payload as authoritative
 /// at its construction time.
 ///
-/// Closing this race properly would require a version counter on
-/// `user_edited_fields` — a larger design change deferred for now.
+/// Closed via the `user_edited_fields_version` counter (v0.10.90+): both
+/// `clear_user_edited_field` and `set_settings` bump the version, and
+/// `set_settings` rejects payloads whose version is behind the on-disk one.
 fn merge_user_edited_fields(new: &mut Settings, previous: &Settings) {
     // Start from the existing list so an oblivious frontend doesn't erase it.
     for field in &previous.user_edited_fields {

@@ -53,19 +53,6 @@ impl SlidingWindow {
         Some((window, start_offset))
     }
 
-    /// Check if a window is ready
-    #[allow(dead_code)]
-    pub fn has_window(&self) -> bool {
-        self.buffer.len() >= WINDOW_SIZE
-    }
-
-    /// Clear the buffer
-    #[allow(dead_code)]
-    pub fn clear(&mut self) {
-        self.buffer.clear();
-        self.total_samples_added = 0;
-        self.samples_consumed = 0;
-    }
 }
 
 impl Default for SlidingWindow {

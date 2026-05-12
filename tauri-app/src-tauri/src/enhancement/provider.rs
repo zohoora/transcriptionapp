@@ -168,50 +168,6 @@ impl EnhancementProvider {
         (real, imag)
     }
 
-    /// Compute STFT of audio - returns (real, imag) for all frames
-    #[allow(dead_code)]
-    fn stft(&mut self, audio: &[f32]) -> (Vec<Vec<f32>>, Vec<Vec<f32>>) {
-        let fft = self.fft_planner.plan_fft_forward(FFT_SIZE);
-        let num_frames = (audio.len().saturating_sub(FFT_SIZE)) / HOP_SIZE + 1;
-
-        let mut all_real = Vec::with_capacity(num_frames);
-        let mut all_imag = Vec::with_capacity(num_frames);
-
-        for frame_idx in 0..num_frames {
-            let start = frame_idx * HOP_SIZE;
-            let end = (start + FFT_SIZE).min(audio.len());
-
-            // Apply window and create complex buffer
-            let mut buffer: Vec<Complex<f32>> = (0..FFT_SIZE)
-                .map(|i| {
-                    let sample = if start + i < end {
-                        audio[start + i] * self.window[i]
-                    } else {
-                        0.0
-                    };
-                    Complex::new(sample, 0.0)
-                })
-                .collect();
-
-            // Compute FFT
-            fft.process(&mut buffer);
-
-            // Extract real and imag for positive frequencies
-            let mut frame_real = Vec::with_capacity(FREQ_BINS);
-            let mut frame_imag = Vec::with_capacity(FREQ_BINS);
-
-            for bin in buffer.iter().take(FREQ_BINS) {
-                frame_real.push(bin.re);
-                frame_imag.push(bin.im);
-            }
-
-            all_real.push(frame_real);
-            all_imag.push(frame_imag);
-        }
-
-        (all_real, all_imag)
-    }
-
     /// Compute inverse STFT from real/imag components
     fn istft(&mut self, all_real: &[Vec<f32>], all_imag: &[Vec<f32>], original_len: usize) -> Vec<f32> {
         let ifft = self.fft_planner.plan_fft_inverse(FFT_SIZE);

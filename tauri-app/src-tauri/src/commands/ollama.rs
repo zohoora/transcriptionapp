@@ -86,10 +86,11 @@ pub(crate) fn resolve_effective_models(
 /// returned client.
 pub(super) async fn load_effective_models_and_client(
     server_config: &SharedServerConfig,
-) -> Result<(Config, EffectiveModels, LLMClient), CommandError> {
+) -> Result<(Config, EffectiveModels, LLMClient, crate::server_config::PromptTemplates), CommandError> {
     let config = Config::load_or_default();
     let sc = server_config.read().await;
     let models = resolve_effective_models(&config, &sc);
+    let templates = sc.prompts.clone();
     drop(sc);
     let client = LLMClient::new(
         &config.llm_router_url,
@@ -98,7 +99,7 @@ pub(super) async fn load_effective_models_and_client(
         &models.fast_model,
     )
     .map_err(|e| CommandError::Network(e))?;
-    Ok((config, models, client))
+    Ok((config, models, client, templates))
 }
 
 /// Check LLM router status and list available models
@@ -138,7 +139,7 @@ pub async fn check_ollama_status(
 pub async fn list_ollama_models(
     server_config: tauri::State<'_, SharedServerConfig>,
 ) -> Result<Vec<String>, CommandError> {
-    let (_config, _models, client) = load_effective_models_and_client(server_config.inner()).await?;
+    let (_config, _models, client, _templates) = load_effective_models_and_client(server_config.inner()).await?;
     client.list_models().await.map_err(|e| CommandError::Network(e))
 }
 
@@ -150,7 +151,7 @@ pub async fn list_ollama_models(
 pub async fn prewarm_ollama_model(
     server_config: tauri::State<'_, SharedServerConfig>,
 ) -> Result<(), CommandError> {
-    let (_config, models, client) = load_effective_models_and_client(server_config.inner()).await?;
+    let (_config, models, client, _templates) = load_effective_models_and_client(server_config.inner()).await?;
     // Pre-warm the fast model (used for greeting detection)
     client.prewarm_model(&models.fast_model).await.map_err(|e| CommandError::Network(e))
 }
@@ -249,7 +250,7 @@ pub async fn generate_soap_note(
         ));
     }
 
-    let (config, models, client) = load_effective_models_and_client(server_config.inner()).await?;
+    let (config, models, client, templates) = load_effective_models_and_client(server_config.inner()).await?;
 
     // Count words for logging and model selection
     let word_count = transcript.split_whitespace().count();
@@ -301,6 +302,7 @@ pub async fn generate_soap_note(
             ctx.as_ref(),
             regen_screenshot_arg,
             &models.soap_model,
+            Some(&templates),
         ).await
     } else {
         client.generate_soap_note(
@@ -311,6 +313,7 @@ pub async fn generate_soap_note(
             ctx.as_ref(),
             regen_screenshot_arg,
             &models.soap_model,
+            Some(&templates),
         ).await
     };
 
@@ -421,12 +424,13 @@ pub async fn generate_soap_note_auto_detect(
     };
 
     let config = Config::load_or_default();
-    // Resolve all four model aliases + threshold in one lock read.
-    let (models, multi_patient_detect_word_threshold) = {
+    // Resolve all four model aliases + threshold + templates in one lock read.
+    let (models, multi_patient_detect_word_threshold, templates) = {
         let sc = server_config.read().await;
         let m = resolve_effective_models(&config, &sc);
         let thr = sc.thresholds.multi_patient_detect_word_threshold;
-        (m, thr)
+        let t = sc.prompts.clone();
+        (m, thr, t)
     };
     let client = LLMClient::new(&config.llm_router_url, &config.llm_api_key, &config.llm_client_id, &models.fast_model)
         .map_err(|e| CommandError::Network(e))?;
@@ -487,6 +491,7 @@ pub async fn generate_soap_note_auto_detect(
             multi_patient_detection.as_ref(),
             screenshot_arg,
             &models.soap_model,
+            Some(&templates),
         )
         .await
     {
@@ -578,7 +583,7 @@ pub async fn generate_patient_handout(
         ));
     }
 
-    let (_config, models, client) = load_effective_models_and_client(server_config.inner()).await?;
+    let (_config, models, client, _templates) = load_effective_models_and_client(server_config.inner()).await?;
 
     let soap_note = match (session_id.as_deref(), date.as_deref()) {
         (Some(sid), Some(d)) => {
@@ -675,7 +680,7 @@ pub async fn generate_predictive_hint(
         return Ok(empty_response); // Not enough content yet
     }
 
-    let (_config, models, client) = load_effective_models_and_client(server_config.inner()).await?;
+    let (_config, models, client, _templates) = load_effective_models_and_client(server_config.inner()).await?;
 
     let system_prompt = r#"You are a clinical assistant analyzing a medical transcript. Provide FOUR things:
 
@@ -838,7 +843,7 @@ pub async fn generate_vision_soap_note(
     // Create LLM client and generate.
     // The client's default model is fast_model; the actual inference model
     // below is hard-coded "vision-model".
-    let (_config, _models, client) = load_effective_models_and_client(server_config.inner()).await?;
+    let (_config, _models, client, _templates) = load_effective_models_and_client(server_config.inner()).await?;
 
     let start_time = std::time::Instant::now();
     let word_count = transcript.split_whitespace().count();
@@ -1048,7 +1053,7 @@ pub async fn run_vision_experiments(
 
     // Create LLM client. Client's default model is fast_model but inference
     // below uses the hard-coded "vision-model" alias.
-    let (_config, _models, client) = load_effective_models_and_client(server_config.inner()).await?;
+    let (_config, _models, client, _templates) = load_effective_models_and_client(server_config.inner()).await?;
 
     // Determine strategies to test
     let strategies: Vec<PromptStrategy> = if request.strategies.is_empty() {
@@ -1224,7 +1229,7 @@ pub async fn merge_patient_soaps(
     );
 
     // Get LLM client and model from config — follows the same pattern as generate_soap_note
-    let (_config, models, client) = load_effective_models_and_client(server_config.inner()).await?;
+    let (_config, models, client, _templates) = load_effective_models_and_client(server_config.inner()).await?;
     let soap_model = &models.soap_model;
 
     info!(

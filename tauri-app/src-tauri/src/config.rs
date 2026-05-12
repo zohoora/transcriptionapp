@@ -227,6 +227,14 @@ pub struct Settings {
     pub thermal_hot_pixel_threshold_c: f32,
     #[serde(default = "default_co2_baseline_ppm")]
     pub co2_baseline_ppm: f32,
+    // Monotonic counter bumped on every mutation of `user_edited_fields`
+    // (`set_settings` accepts → increment; `clear_user_edited_field` removes →
+    // increment). `set_settings` rejects payloads whose version is behind the
+    // on-disk version, which closes the P3-1 stale-snapshot race: a
+    // `clear_user_edited_field` followed by a `set_settings` from a pre-clear
+    // snapshot would otherwise re-add the just-cleared field via diff-on-save.
+    #[serde(default)]
+    pub user_edited_fields_version: u64,
     // Field names the user has locally tuned. Server pushes of
     // OperationalDefaults (Cat B fields) must NOT stomp values listed here.
     // Populated by legacy migration (first load after upgrade) and by
@@ -589,6 +597,7 @@ impl Default for Settings {
             thermal_hot_pixel_threshold_c: default_thermal_hot_pixel_threshold_c(),
             co2_baseline_ppm: default_co2_baseline_ppm(),
             user_edited_fields: Vec::new(),
+            user_edited_fields_version: 0,
         }
     }
 }
@@ -1677,6 +1686,7 @@ mod tests {
             billing_counselling_exhausted: false,
             billing_is_hospital: false,
             user_edited_fields: Vec::new(),
+            user_edited_fields_version: 0,
         };
 
         let mut config = Config::default();
@@ -1815,6 +1825,7 @@ mod tests {
             billing_counselling_exhausted: false,
             billing_is_hospital: false,
             user_edited_fields: Vec::new(),
+            user_edited_fields_version: 0,
         };
 
         let mut config = Config::default();
