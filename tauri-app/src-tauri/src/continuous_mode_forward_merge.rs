@@ -121,6 +121,95 @@ pub async fn run<C: RunContext>(
         Err(e) => return ForwardMergeOutcome::Error { reason: format!("get curr dir: {e}") },
     };
 
+    // Sibling-aware path: if prev session is the anchor of an auto-split
+    // multi-patient encounter (v0.10.88+), check each sibling's SOAP against
+    // curr's SOAP. On match, emit a SiblingMergeSuggestion event — do NOT
+    // auto-delete (siblings are independent sessions; destructive cleanup is
+    // unsafe without user review). The clinician resolves via the History
+    // Window using existing delete/merge IPCs.
+    if let Some(group_id) = read_sibling_group_id(&prev_dir) {
+        let curr_soap = match fs::read_to_string(curr_dir.join("soap_note.txt")) {
+            Ok(s) => s,
+            Err(_) => return ForwardMergeOutcome::Skipped { reason: "curr_has_no_soap".into() },
+        };
+        let curr_ap = extract_ap_terms(&curr_soap);
+        if curr_ap.len() < deps.min_shared_terms {
+            return ForwardMergeOutcome::Skipped {
+                reason: format!("curr_soap_too_small_{}_terms", curr_ap.len()),
+            };
+        }
+        let audio_gap_secs = match compute_audio_gap_secs(&prev_dir, &curr_dir) {
+            Some(gap) if gap > deps.max_audio_gap_secs as f64 => {
+                return ForwardMergeOutcome::Skipped {
+                    reason: format!("audio_gap_{gap:.1}s_exceeds_{}s", deps.max_audio_gap_secs),
+                };
+            }
+            Some(gap) => gap,
+            None => return ForwardMergeOutcome::Skipped { reason: "audio_gap_unknown".into() },
+        };
+
+        // Walk the date dir for sibling sessions (sibling_index > 0) sharing the same group_id.
+        let date_dir = match prev_dir.parent() {
+            Some(p) => p.to_path_buf(),
+            None => return ForwardMergeOutcome::Skipped { reason: "no_date_dir".into() },
+        };
+        let mut best: Option<(String, f64, Vec<String>)> = None;
+        if let Ok(entries) = fs::read_dir(&date_dir) {
+            for entry in entries.flatten() {
+                let sib_dir = entry.path();
+                if !sib_dir.is_dir() { continue; }
+                let sib_meta = match crate::local_archive::read_metadata(&sib_dir) {
+                    Ok(m) => m,
+                    Err(_) => continue,
+                };
+                if sib_meta.sibling_group_id.as_deref() != Some(group_id.as_str()) { continue; }
+                if sib_meta.sibling_index.unwrap_or(0) == 0 { continue; } // skip anchor
+                let sib_soap = match fs::read_to_string(sib_dir.join("soap_note.txt")) {
+                    Ok(s) => s,
+                    Err(_) => continue,
+                };
+                let sib_ap = extract_ap_terms(&sib_soap);
+                if sib_ap.is_empty() { continue; }
+                let shared: Vec<String> = {
+                    let mut v: Vec<_> = sib_ap.intersection(&curr_ap).cloned().collect();
+                    v.sort();
+                    v
+                };
+                let denom = sib_ap.len().min(curr_ap.len()) as f64;
+                let oc = if denom > 0.0 { shared.len() as f64 / denom } else { 0.0 };
+                if oc >= deps.oc_threshold && shared.len() >= deps.min_shared_terms
+                    && best.as_ref().map_or(true, |(_, b_oc, _)| oc > *b_oc) {
+                    best = Some((sib_meta.session_id.clone(), oc, shared));
+                }
+            }
+        }
+
+        if let Some((suspect_id, oc, shared)) = best {
+            info!(
+                event = "sibling_merge_suggestion",
+                component = "continuous_mode_forward_merge",
+                suspect_sibling_session_id = %suspect_id,
+                sibling_group_id = %group_id,
+                curr_session_id = %call.curr_session_id,
+                overlap_coef = oc,
+                shared_term_count = shared.len(),
+                audio_gap_secs = audio_gap_secs,
+                "Suggested sibling merge: prev encounter's sibling clinically matches curr"
+            );
+            ContinuousModeEvent::SiblingMergeSuggestion {
+                suspect_sibling_session_id: suspect_id,
+                sibling_group_id: group_id,
+                curr_session_id: call.curr_session_id.to_string(),
+                overlap_coef: oc,
+                shared_term_count: shared.len(),
+                audio_gap_secs,
+            }
+            .emit_via(ctx);
+            return ForwardMergeOutcome::Skipped { reason: "sibling_merge_suggested".into() };
+        }
+        return ForwardMergeOutcome::Skipped { reason: "no_matching_sibling".into() };
+    }
+
     let labels = match load_patient_labels(&prev_dir) {
         None => return ForwardMergeOutcome::NotApplicable { reason: "no_patient_labels" },
         Some(l) if l.len() <= 1 => return ForwardMergeOutcome::NotApplicable { reason: "single_patient" },
@@ -242,6 +331,14 @@ fn load_patient_labels(session_dir: &Path) -> Option<Vec<PatientLabelEntry>> {
     let path = session_dir.join("patient_labels.json");
     let raw = fs::read_to_string(&path).ok()?;
     serde_json::from_str::<Vec<PatientLabelEntry>>(&raw).ok()
+}
+
+/// Read sibling_group_id from a session's metadata. Returns None if absent
+/// (single-patient session or legacy multi-patient session that hasn't been
+/// migrated to the sibling layout).
+fn read_sibling_group_id(session_dir: &Path) -> Option<String> {
+    let meta = crate::local_archive::read_metadata(session_dir).ok()?;
+    meta.sibling_group_id.filter(|_| meta.sibling_group_size.unwrap_or(0) > 1)
 }
 
 fn compute_audio_gap_secs(prev_dir: &Path, curr_dir: &Path) -> Option<f64> {

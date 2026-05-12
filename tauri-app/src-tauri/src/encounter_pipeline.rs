@@ -33,8 +33,18 @@ pub enum SoapGenerationOutcome {
     /// SOAP generated and archived successfully.
     Success {
         result: MultiPatientSoapResult,
+        /// Combined formatted SOAP text (with `=== Patient N ===` headers when
+        /// multi-patient). Retained for legacy logging + uploads. New per-sibling
+        /// callers should iterate `result.notes` and use each `note.content`.
         content: String,
         latency_ms: u64,
+        /// Sibling session IDs when the multi-patient encounter was auto-split
+        /// into separate sessions (anchor first, then siblings 1..N in
+        /// patient-detection order). Empty for single-patient encounters or
+        /// when the split fell back to the legacy combined-SOAP layout.
+        /// Callers iterate this in pair with `result.notes` to drive per-patient
+        /// billing extraction and per-sibling sync.
+        sibling_ids: Vec<String>,
     },
     /// LLM call failed or timed out.
     Failed { latency_ms: u64, error: String },
@@ -150,15 +160,34 @@ pub async fn generate_and_archive_soap(
             let latency_ms = soap_start.elapsed().as_millis() as u64;
             let content = soap_result.format_for_archive();
 
-            // Save per-patient files when multi-patient detection found >1 patient
-            if soap_result.notes.len() > 1 {
-                if let Err(e) = local_archive::save_multi_patient_soap(
-                    session_id,
-                    session_date,
-                    &soap_result.notes,
-                    multi_patient_detection,
-                ) {
-                    warn!("Failed to save multi-patient SOAP for session {}: {}", session_id, e);
+            // Multi-patient encounters auto-split into N sibling sessions, each
+            // single-patient. Single-patient encounters take the legacy SOAP path.
+            // If the sibling split fails (rare — disk error), fall back to the
+            // legacy combined-SOAP layout so the encounter is still preserved
+            // and clinicians can recover via the manual backfill button.
+            let sibling_ids: Vec<String> = if soap_result.notes.len() > 1 {
+                let date_str = session_date.format("%Y-%m-%d").to_string();
+                let per_patient: Vec<(String, String)> = soap_result.notes.iter()
+                    .map(|n| (n.patient_label.clone(), n.content.clone()))
+                    .collect();
+                match local_archive::split_into_siblings(session_id, &date_str, &per_patient) {
+                    Ok(ids) => ids,
+                    Err(e) => {
+                        warn!(
+                            session_id = %session_id,
+                            error = %e,
+                            "split_into_siblings failed; falling back to legacy combined-SOAP layout"
+                        );
+                        if let Err(e2) = local_archive::save_multi_patient_soap(
+                            session_id,
+                            session_date,
+                            &soap_result.notes,
+                            multi_patient_detection,
+                        ) {
+                            warn!("Legacy multi-patient SOAP fallback also failed for session {}: {}", session_id, e2);
+                        }
+                        Vec::new()
+                    }
                 }
             } else {
                 if let Err(e) = local_archive::add_soap_note(
@@ -170,7 +199,8 @@ pub async fn generate_and_archive_soap(
                 ) {
                     warn!("Failed to save SOAP for session {}: {}", session_id, e);
                 }
-            }
+                Vec::new()
+            };
 
             if let Ok(mut l) = logger.lock() {
                 let mut meta = log_extra;
@@ -217,6 +247,7 @@ pub async fn generate_and_archive_soap(
                 result: soap_result,
                 content,
                 latency_ms,
+                sibling_ids,
             }
         }
         Ok(Err(e)) => {
@@ -1543,6 +1574,9 @@ mod tests {
             has_clinician_notes: false,
             soap_prompt_version: None,
             billing_prompt_version: None,
+            sibling_group_id: None,
+            sibling_index: None,
+            sibling_group_size: None,
         }
     }
 
@@ -1734,6 +1768,7 @@ mod tests {
             result,
             content: "test content".into(),
             latency_ms: 1500,
+            sibling_ids: Vec::new(),
         };
         match outcome {
             SoapGenerationOutcome::Success { content, latency_ms, .. } => {

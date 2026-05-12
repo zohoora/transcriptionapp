@@ -1,0 +1,21 @@
+{
+  "session_id": "7375a8dd-575f-491c-9e4e-22056d6794e6",
+  "date": "2026-05-11",
+  "labeled_at": "2026-05-11T22:00:00Z",
+  "labeled_by": "Dr Z (definitive multi-patient split landing)",
+  "labels": {
+    "split_correct": true,
+    "patient_count_correct": true,
+    "clinical_correct": true,
+    "billing_codes_expected": ["A004A"],
+    "diagnostic_code_expected": "729",
+    "expected_upgrade_suggestions": [
+      { "from_code": "A004A", "to_code": "K013A" }
+    ],
+    "expected_failures": [
+      "billing_codes",
+      "billing_upgrade_suggestion:A004A->K013A"
+    ],
+    "notes": "Father (Steven Davidson, triceps tendonopathy/fatty liver/gallbladder polyps) + son (Knight Davidson, post-infectious cough) seen as one encounter on Room 2 (2026-05-11 13:04). Multi-patient detect fired at confidence 0.95. Pre-v0.10.88 this archived as a single session with tabbed SOAP and one shared billing record (A004A qty=2, applied K013A upgrade). Post-v0.10.88 the encounter auto-splits into 2 sibling sessions (sibling_group_id shared) each with its own A004A + prorated Q310A. expected_failures pinned while the corpus still contains pre-fix pre-split labels; remove once the regression CLI sees 2 sibling sessions for this group_id and tightens the gate.\n\nFor Phase H follow-up: capture and sanitize this session's replay_bundle.json into tauri-app/src-tauri/tests/fixtures/encounter_bundles/seed/ to drive harness_per_encounter coverage of the auto-split path end-to-end."
+  }
+}

@@ -3340,6 +3340,25 @@ body {
   margin-top: 0;
 }
 
+/* Auto-split sibling rows: each sibling is a real session (own session_id, own
+   billing) but shared the same transcript. Stronger left-border accent than the
+   legacy patient_labels fan-out so it reads as "linked but independent". */
+.session-item.multi-patient-group.sibling-row {
+  border-left: 3px solid var(--accent-blue);
+}
+
+.badge.sibling-badge {
+  background: rgba(74, 144, 226, 0.12);
+  color: var(--accent-blue);
+  border: 1px solid rgba(74, 144, 226, 0.4);
+}
+
+.multi-patient-migrate {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border-color);
+}
+
 .shared-transcript-label {
   font-size: 12px;
   color: var(--text-tertiary);

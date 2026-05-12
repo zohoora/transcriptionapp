@@ -64,6 +64,21 @@ pub enum ContinuousModeEvent {
         shared_term_count: usize,
         audio_gap_secs: f64,
     },
+    /// Forward-merge detected that a previous encounter's auto-split SIBLING
+    /// session is likely the same patient as the current encounter (e.g. the
+    /// next patient's reception audio bled into the previous session and got
+    /// mis-detected as a second patient). Unlike `ForwardMergeFired`, this is
+    /// a *suggestion* — no auto-cleanup. The frontend surfaces a banner so
+    /// the clinician can review and merge or delete the suspected-noise
+    /// sibling via existing IPCs (delete_local_session / merge_local_sessions).
+    SiblingMergeSuggestion {
+        suspect_sibling_session_id: String,
+        sibling_group_id: String,
+        curr_session_id: String,
+        overlap_coef: f64,
+        shared_term_count: usize,
+        audio_gap_secs: f64,
+    },
     /// Speech detected by VAD but no transcription segments produced
     TranscriptionStalled {
         speech_secs: u64,

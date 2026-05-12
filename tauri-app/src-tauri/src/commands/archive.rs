@@ -424,6 +424,148 @@ pub fn split_local_session(
     Ok(new_session_id)
 }
 
+/// Migrate a legacy multi-patient session (pre-v0.10.88) into separate sibling
+/// sessions, one per patient, each with its own SOAP and billing.
+///
+/// Reads existing `patient_labels.json` + `soap_patient_*.txt` from the session
+/// directory, calls `local_archive::split_into_siblings`, then runs per-sibling
+/// billing extraction (LLM, may take ~30s per patient). Returns the sibling IDs
+/// in order (anchor first).
+///
+/// The original session_id becomes sibling 0 (the anchor); siblings 1..N are
+/// new dirs with fresh UUIDs. Stale combined-SOAP artifacts are cleaned from
+/// the anchor. Audio, screenshots, pipeline_log, replay_bundle stay with the
+/// anchor (siblings 1+ get `has_audio=false`).
+///
+/// Best-effort server sync: each sibling is uploaded after billing completes.
+/// If the IPC fails partway, the local archive is still consistent (split
+/// completes before billing starts; partial billing failures don't roll back).
+#[tauri::command]
+pub async fn migrate_legacy_multipatient_session(
+    session_id: String,
+    date: String,
+    active_physician: State<'_, SharedActivePhysician>,
+    profile_client: State<'_, SharedProfileClient>,
+    server_config: State<'_, SharedServerConfig>,
+) -> Result<Vec<String>, CommandError> {
+    info!("Migrating legacy multi-patient session: {}", session_id);
+    let parsed_date = super::parse_date(&date)?;
+
+    let details = local_archive::get_session(&session_id, &date)
+        .map_err(|e| CommandError::NotFound(format!("Session not found: {}: {}", session_id, e)))?;
+
+    // Extract per-patient SOAPs from patient_notes (populated from
+    // patient_labels.json + soap_patient_*.txt by get_session)
+    let patient_notes = details.patient_notes
+        .as_ref()
+        .filter(|n| n.len() > 1)
+        .ok_or_else(|| CommandError::Other(
+            "Session has no per-patient SOAPs to migrate (patient_count <= 1)".to_string()
+        ))?;
+
+    let per_patient: Vec<(String, String)> = patient_notes
+        .iter()
+        .map(|n| (n.label.clone(), n.content.clone()))
+        .collect();
+    let n_patients = per_patient.len();
+
+    // Local split (synchronous). Anchor reuses session_id; siblings 1..N get fresh UUIDs.
+    let sibling_ids = local_archive::split_into_siblings(&session_id, &date, &per_patient)
+        .map_err(|e| CommandError::Other(format!("split_into_siblings failed: {}", e)))?;
+
+    // Per-sibling billing extraction (LLM). Fail-open per sibling — one failure
+    // does not block the others. Each call is ~5-30s.
+    let config = Config::load_or_default();
+    let sc_read = server_config.read().await;
+    let effective_fast_model = resolve(
+        Some(&sc_read.defaults.fast_model),
+        &config.fast_model,
+        "fast_model",
+        &config.user_edited_fields,
+    );
+    drop(sc_read);
+    let client = LLMClient::new(
+        &config.llm_router_url,
+        &config.llm_api_key,
+        &config.llm_client_id,
+        &effective_fast_model,
+    ).map_err(|e| CommandError::Network(e))?;
+
+    let logger = std::sync::Arc::new(std::sync::Mutex::new(
+        crate::pipeline_log::PipelineLogger::new(),
+    ));
+    let after_hours = crate::encounter_pipeline::is_after_hours(&parsed_date);
+    let transcript = details.transcript.as_deref().unwrap_or("");
+    let source_duration = details.metadata.duration_ms.unwrap_or(0);
+    let durations = local_archive::prorate_durations_by_soap_words(&per_patient, source_duration);
+
+    let sc = server_config.read().await;
+    let rule_ctx = crate::billing::RuleEngineContext {
+        counselling_exhausted: config.billing_counselling_exhausted,
+        transcript: Some(transcript.to_string()),
+        ..Default::default()
+    };
+    let client_ref = &client;
+    let model_ref = effective_fast_model.as_str();
+    let logger_ref = &logger;
+    let rule_ctx_ref = &rule_ctx;
+    let prompts_ref = &sc.prompts;
+    let billing_ref = &sc.billing;
+    let parsed_date_ref = &parsed_date;
+    let billing_timeout = sc.thresholds.billing_extraction_timeout_secs;
+    let billing_futures = sibling_ids.iter()
+        .zip(per_patient.iter())
+        .zip(durations.iter())
+        .map(|((child_id, (label, soap_text)), child_dur)| async move {
+            let r = crate::encounter_pipeline::extract_and_archive_billing(
+                client_ref, model_ref, soap_text, transcript, "",
+                child_id, parsed_date_ref, *child_dur, Some(label.as_str()), after_hours,
+                rule_ctx_ref, logger_ref,
+                Some(prompts_ref), Some(billing_ref),
+                Some(billing_timeout), None,
+            ).await;
+            (child_id.clone(), r)
+        });
+    let results = futures_util::future::join_all(billing_futures).await;
+    drop(sc);
+
+    for (i, (child_id, billing_result)) in results.into_iter().enumerate() {
+        match billing_result {
+            Ok(record) => info!(
+                "Migrate: per-sibling billing extracted for sibling {} ({}/{}, codes={})",
+                child_id, i + 1, n_patients, record.codes.len()
+            ),
+            Err(e) => warn!(
+                "Migrate: billing extraction failed for sibling {} ({}/{}): {}",
+                child_id, i + 1, n_patients, e
+            ),
+        }
+    }
+
+    // Best-effort server sync: upload each sibling's full session
+    let sibling_ids_clone = sibling_ids.clone();
+    let date_clone = date.clone();
+    spawn_sync(
+        active_physician.inner().clone(),
+        profile_client.inner().clone(),
+        "migrate_legacy_multipatient",
+        move |phys_id, client| async move {
+            for sib in &sibling_ids_clone {
+                if let Ok(d) = local_archive::get_session(sib, &date_clone) {
+                    if let Ok(body) = serde_json::to_value(&d) {
+                        if let Err(e) = client.upload_session(&phys_id, sib, &body).await {
+                            warn!("Server sync failed (upload migrated sibling {}): {e}", sib);
+                        }
+                    }
+                }
+            }
+        },
+    );
+
+    info!("Migration complete: {} siblings created", sibling_ids.len());
+    Ok(sibling_ids)
+}
+
 /// Merge multiple sessions into one, returning the surviving session ID
 #[tauri::command]
 pub async fn merge_local_sessions(

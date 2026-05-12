@@ -15,7 +15,7 @@ use chrono::{DateTime, Datelike, Local, NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
 use std::fs::{self, File};
 use std::io::Write;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use tracing::{info, warn};
 use uuid::Uuid;
 
@@ -343,6 +343,21 @@ pub struct ArchiveMetadata {
     /// no billing record.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub billing_prompt_version: Option<String>,
+    /// Sibling-group UUID shared across all child sessions produced by an
+    /// auto-split multi-patient encounter. Same value on every sibling; absent
+    /// on single-patient sessions and on legacy multi-patient sessions still
+    /// using the combined-SOAP / patient_labels.json layout.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sibling_group_id: Option<String>,
+    /// 0-based position within the sibling group. Sibling 0 is the anchor that
+    /// owns shared resources (audio, screenshots, pipeline_log, replay_bundle);
+    /// other siblings reference the anchor via `sibling_group_id`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sibling_index: Option<u32>,
+    /// Total siblings in the group. Denormalized so the History sidebar can
+    /// render "Patient N of M" badges without a second lookup.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sibling_group_size: Option<u32>,
 }
 
 impl ArchiveMetadata {
@@ -378,6 +393,9 @@ impl ArchiveMetadata {
             has_clinician_notes: false,
             soap_prompt_version: None,
             billing_prompt_version: None,
+            sibling_group_id: None,
+            sibling_index: None,
+            sibling_group_size: None,
         }
     }
 }
@@ -417,6 +435,12 @@ pub struct ArchiveSummary {
     pub patient_labels: Option<Vec<String>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub has_billing_record: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sibling_group_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sibling_index: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sibling_group_size: Option<u32>,
 }
 
 /// A single patient's SOAP note within a multi-patient encounter
@@ -1089,6 +1113,14 @@ pub fn merge_session_summaries(
             if ss.has_billing_record.is_none() && l.has_billing_record.is_some() {
                 ss.has_billing_record = l.has_billing_record;
             }
+            // Sibling-group fields: server is canonical once synced, but a freshly
+            // auto-split session may not have reached the server yet. Local fills
+            // the gap so the History sidebar can render sibling badges immediately.
+            if ss.sibling_group_id.is_none() && l.sibling_group_id.is_some() {
+                ss.sibling_group_id = l.sibling_group_id.clone();
+                ss.sibling_index = l.sibling_index;
+                ss.sibling_group_size = l.sibling_group_size;
+            }
         }
     }
 
@@ -1202,6 +1234,9 @@ pub fn list_sessions_by_date(date_str: &str) -> Result<Vec<ArchiveSummary>, Stri
             patient_count: patient_labels.as_ref().map(|l| l.len() as u32).or(patient_count),
             patient_labels,
             has_billing_record: metadata.has_billing_record,
+            sibling_group_id: metadata.sibling_group_id,
+            sibling_index: metadata.sibling_index,
+            sibling_group_size: metadata.sibling_group_size,
         });
     }
 
@@ -1548,6 +1583,12 @@ pub fn split_session(session_id: &str, date_str: &str, split_line: usize) -> Res
         has_clinician_notes: false,
         soap_prompt_version: None,
         billing_prompt_version: None,
+        // Manual split breaks the new half out of any sibling group it inherited.
+        // Original session keeps its sibling linkage (handled by the in-place
+        // mutation below; we don't touch its sibling_* fields).
+        sibling_group_id: None,
+        sibling_index: None,
+        sibling_group_size: None,
     };
     let new_meta_json = serde_json::to_string_pretty(&new_meta)
         .map_err(|e| format!("Failed to serialize new metadata: {}", e))?;
@@ -1592,6 +1633,207 @@ pub fn split_session(session_id: &str, date_str: &str, split_line: usize) -> Res
     );
 
     Ok(new_session_id)
+}
+
+/// Read and deserialize a session's `metadata.json`. Returns an error if the
+/// file is missing or unparseable. Used by both the in-place sibling rewriter
+/// and the forward-merge sibling check.
+pub fn read_metadata(session_dir: &Path) -> Result<ArchiveMetadata, String> {
+    let raw = fs::read_to_string(session_dir.join("metadata.json"))
+        .map_err(|e| format!("read metadata: {e}"))?;
+    serde_json::from_str(&raw).map_err(|e| format!("parse metadata: {e}"))
+}
+
+/// Prorate a source duration across per-patient SOAPs by SOAP word count.
+/// Each output entry aligns with the input order. Words ≥ 1 (avoids div-by-zero).
+pub fn prorate_durations_by_soap_words(
+    per_patient_soap: &[(String, String)],
+    source_duration_ms: u64,
+) -> Vec<u64> {
+    let counts: Vec<u128> = per_patient_soap.iter()
+        .map(|(_, soap)| soap.split_whitespace().count().max(1) as u128)
+        .collect();
+    let total: u128 = counts.iter().sum::<u128>().max(1);
+    counts.iter()
+        .map(|c| (source_duration_ms as u128 * c / total) as u64)
+        .collect()
+}
+
+/// Split one multi-patient encounter into N sibling sessions, one per patient.
+///
+/// The source session BECOMES sibling 0 (the anchor) — its directory is reused
+/// so audio, screenshots, pipeline_log, replay_bundle, and segments stay put
+/// without expensive copies. Siblings 1..N-1 are new directories with fresh
+/// UUIDs that share the same `sibling_group_id`.
+///
+/// Each sibling gets:
+/// - Its own `metadata.json` (single-patient, with sibling_group_id/index/size)
+/// - A copy of the full `transcript.txt` (proration is on duration/billing only)
+/// - The per-patient SOAP as `soap_note.txt`
+///
+/// Per-sibling `duration_ms` and `word_count` are prorated by per-patient SOAP
+/// word count against the source's total. Stale combined-SOAP artifacts
+/// (`soap_patient_*.txt`, `patient_labels.json`, `billing.json`) are removed
+/// from the anchor; each sibling needs its own billing extraction afterward.
+///
+/// Returns the session IDs of all siblings in order (anchor first).
+pub fn split_into_siblings(
+    source_session_id: &str,
+    date_str: &str,
+    per_patient_soap: &[(String, String)],
+) -> Result<Vec<String>, String> {
+    if per_patient_soap.len() < 2 {
+        return Err(format!(
+            "split_into_siblings requires at least 2 patients, got {}",
+            per_patient_soap.len()
+        ));
+    }
+
+    let source_dir = get_session_dir_from_str(source_session_id, date_str)?;
+    if !source_dir.exists() {
+        return Err(format!("Source session not found: {}", source_session_id));
+    }
+    let date_dir = get_date_dir_from_str(date_str)?;
+
+    let metadata_path = source_dir.join("metadata.json");
+    let mut anchor_meta = read_metadata(&source_dir)?;
+
+    let transcript_path = source_dir.join("transcript.txt");
+    let transcript = fs::read_to_string(&transcript_path)
+        .map_err(|e| format!("Failed to read transcript: {}", e))?;
+
+    let source_duration = anchor_meta.duration_ms.unwrap_or(0);
+    let source_words = anchor_meta.word_count;
+    let prorated_durations = prorate_durations_by_soap_words(per_patient_soap, source_duration);
+    let prorated_word_counts: Vec<usize> = {
+        let counts: Vec<usize> = per_patient_soap.iter()
+            .map(|(_, soap)| soap.split_whitespace().count().max(1))
+            .collect();
+        let total = counts.iter().sum::<usize>().max(1);
+        counts.iter().map(|c| source_words * c / total).collect()
+    };
+
+    let group_id = Uuid::new_v4().to_string();
+    let n = per_patient_soap.len();
+    let mut sibling_ids: Vec<String> = Vec::with_capacity(n);
+
+    // Sibling 0 (anchor): reuse source dir, rewrite metadata + soap, clean stale files
+    {
+        let (label, soap_text) = &per_patient_soap[0];
+        let prorated_duration = prorated_durations[0];
+        let prorated_words = prorated_word_counts[0];
+
+        anchor_meta.sibling_group_id = Some(group_id.clone());
+        anchor_meta.sibling_index = Some(0);
+        anchor_meta.sibling_group_size = Some(n as u32);
+        anchor_meta.patient_name = Some(label.clone());
+        anchor_meta.patient_count = None;
+        anchor_meta.duration_ms = Some(prorated_duration);
+        anchor_meta.word_count = prorated_words;
+        anchor_meta.has_soap_note = true;
+        anchor_meta.has_billing_record = None;
+        anchor_meta.patient_confirmed_at = None;
+        anchor_meta.medplum_patient_id = None;
+        anchor_meta.has_patient_handout = None;
+        anchor_meta.billing_prompt_version = None;
+
+        let meta_json = serde_json::to_string_pretty(&anchor_meta)
+            .map_err(|e| format!("Failed to serialize anchor metadata: {}", e))?;
+        fs::write(&metadata_path, meta_json)
+            .map_err(|e| format!("Failed to write anchor metadata: {}", e))?;
+
+        fs::write(source_dir.join("soap_note.txt"), soap_text)
+            .map_err(|e| format!("Failed to write anchor soap_note: {}", e))?;
+
+        // Remove combined-SOAP artifacts left over from the multi-patient layout
+        let labels_path = source_dir.join("patient_labels.json");
+        if labels_path.exists() {
+            let _ = fs::remove_file(&labels_path);
+        }
+        if let Ok(entries) = fs::read_dir(&source_dir) {
+            for entry in entries.flatten() {
+                if let Some(name) = entry.file_name().to_str() {
+                    if name.starts_with("soap_patient_") && name.ends_with(".txt") {
+                        let _ = fs::remove_file(entry.path());
+                    }
+                }
+            }
+        }
+        let billing_path = source_dir.join("billing.json");
+        if billing_path.exists() {
+            let _ = fs::remove_file(&billing_path);
+        }
+
+        sibling_ids.push(source_session_id.to_string());
+    }
+
+    // Siblings 1..N: new dirs with fresh UUIDs
+    for i in 1..n {
+        let (label, soap_text) = &per_patient_soap[i];
+        let new_id = Uuid::new_v4().to_string();
+        let new_dir = date_dir.join(&new_id);
+        fs::create_dir_all(&new_dir)
+            .map_err(|e| format!("Failed to create sibling {} dir: {}", i, e))?;
+
+        let prorated_duration = prorated_durations[i];
+        let prorated_words = prorated_word_counts[i];
+
+        let new_meta = ArchiveMetadata {
+            session_id: new_id.clone(),
+            started_at: anchor_meta.started_at.clone(),
+            ended_at: anchor_meta.ended_at.clone(),
+            duration_ms: Some(prorated_duration),
+            segment_count: 0,
+            word_count: prorated_words,
+            has_soap_note: true,
+            has_audio: false,
+            auto_ended: anchor_meta.auto_ended,
+            auto_end_reason: anchor_meta.auto_end_reason.clone(),
+            soap_detail_level: anchor_meta.soap_detail_level,
+            soap_format: anchor_meta.soap_format.clone(),
+            charting_mode: anchor_meta.charting_mode.clone(),
+            encounter_number: None,
+            patient_name: Some(label.clone()),
+            patient_dob: None,
+            detection_method: anchor_meta.detection_method.clone(),
+            shadow_comparison: None,
+            likely_non_clinical: anchor_meta.likely_non_clinical,
+            patient_count: None,
+            physician_id: anchor_meta.physician_id.clone(),
+            physician_name: anchor_meta.physician_name.clone(),
+            room_name: anchor_meta.room_name.clone(),
+            has_patient_handout: None,
+            has_billing_record: None,
+            patient_confirmed_at: None,
+            medplum_patient_id: None,
+            has_clinician_notes: false,
+            soap_prompt_version: anchor_meta.soap_prompt_version.clone(),
+            billing_prompt_version: None,
+            sibling_group_id: Some(group_id.clone()),
+            sibling_index: Some(i as u32),
+            sibling_group_size: Some(n as u32),
+        };
+
+        let meta_json = serde_json::to_string_pretty(&new_meta)
+            .map_err(|e| format!("Failed to serialize sibling {} metadata: {}", i, e))?;
+        fs::write(new_dir.join("metadata.json"), meta_json)
+            .map_err(|e| format!("Failed to write sibling {} metadata: {}", i, e))?;
+        fs::write(new_dir.join("transcript.txt"), &transcript)
+            .map_err(|e| format!("Failed to write sibling {} transcript: {}", i, e))?;
+        fs::write(new_dir.join("soap_note.txt"), soap_text)
+            .map_err(|e| format!("Failed to write sibling {} soap_note: {}", i, e))?;
+
+        sibling_ids.push(new_id);
+    }
+
+    info!(
+        source_session_id = %source_session_id,
+        sibling_group_id = %group_id,
+        sibling_count = n,
+        "Multi-patient encounter split into siblings"
+    );
+
+    Ok(sibling_ids)
 }
 
 /// Merge multiple sessions into one (the earliest by started_at).
@@ -2123,6 +2365,9 @@ mod tests {
             patient_count: None,
             patient_labels: None,
             has_billing_record: None,
+            sibling_group_id: None,
+            sibling_index: None,
+            sibling_group_size: None,
         };
 
         let json = serde_json::to_string(&summary).unwrap();
@@ -2517,6 +2762,247 @@ mod tests {
         let _ = fs::remove_dir_all(&session_dir);
     }
 
+    /// Helper: stages a multi-patient source session at the given date with
+    /// stale combined-SOAP artifacts so split_into_siblings tests can assert
+    /// the anchor cleanup behavior. Caller owns the session dir + cleanup.
+    fn stage_multi_patient_session(
+        session_id: &str,
+        date_str: &str,
+        duration_ms: u64,
+        word_count: usize,
+        with_legacy_files: bool,
+    ) -> std::path::PathBuf {
+        let date_dir = get_date_dir_from_str(date_str).unwrap();
+        let session_dir = date_dir.join(session_id);
+        fs::create_dir_all(&session_dir).unwrap();
+
+        let mut meta = ArchiveMetadata::new(session_id);
+        meta.started_at = format!("{}T09:00:00Z", date_str);
+        meta.duration_ms = Some(duration_ms);
+        meta.word_count = word_count;
+        meta.has_soap_note = true;
+        meta.has_audio = true;
+        meta.charting_mode = Some("continuous".to_string());
+        meta.encounter_number = Some(1);
+        meta.patient_count = Some(2);
+        meta.physician_id = Some("phys-test".to_string());
+        meta.physician_name = Some("Dr Test".to_string());
+        meta.room_name = Some("Room T".to_string());
+        meta.has_billing_record = Some(true);
+        fs::write(session_dir.join("metadata.json"), serde_json::to_string_pretty(&meta).unwrap()).unwrap();
+
+        // Synthetic transcript whose word count matches the metadata (exactly word_count words)
+        let words = vec!["word"; word_count].join(" ");
+        fs::write(session_dir.join("transcript.txt"), &words).unwrap();
+
+        if with_legacy_files {
+            fs::write(session_dir.join("soap_note.txt"), "=== Patient 1 ===\nold combined SOAP").unwrap();
+            fs::write(session_dir.join("patient_labels.json"), r#"[{"index":0,"label":"Old A"},{"index":1,"label":"Old B"}]"#).unwrap();
+            fs::write(session_dir.join("soap_patient_1.txt"), "stale per-patient 1").unwrap();
+            fs::write(session_dir.join("soap_patient_2.txt"), "stale per-patient 2").unwrap();
+            fs::write(session_dir.join("billing.json"), r#"{"session_id":"x"}"#).unwrap();
+        }
+
+        session_dir
+    }
+
+    #[test]
+    fn test_split_into_siblings_two_patients() {
+        let source_id = format!("test-sib2-{}", Uuid::new_v4());
+        let date_str = "2024-02-10";
+        let session_dir = stage_multi_patient_session(&source_id, date_str, 30_000, 1000, true);
+        let date_dir = session_dir.parent().unwrap().to_path_buf();
+
+        let per_patient = vec![
+            ("Steven Davidson".to_string(), "soap text for steven contains many words approximately ten"
+                .to_string()),
+            ("Knight Davidson".to_string(), "shorter knight soap text".to_string()),
+        ];
+
+        let sibling_ids = split_into_siblings(&source_id, date_str, &per_patient).unwrap();
+        assert_eq!(sibling_ids.len(), 2);
+        assert_eq!(sibling_ids[0], source_id, "anchor must reuse the source session_id");
+
+        // Anchor (sibling 0)
+        let anchor_meta: ArchiveMetadata = serde_json::from_str(
+            &fs::read_to_string(session_dir.join("metadata.json")).unwrap()
+        ).unwrap();
+        assert_eq!(anchor_meta.sibling_index, Some(0));
+        assert_eq!(anchor_meta.sibling_group_size, Some(2));
+        assert!(anchor_meta.sibling_group_id.is_some());
+        let group_id = anchor_meta.sibling_group_id.clone().unwrap();
+        assert_eq!(anchor_meta.patient_name.as_deref(), Some("Steven Davidson"));
+        assert_eq!(anchor_meta.patient_count, None);
+        assert!(anchor_meta.has_audio, "anchor must keep has_audio=true");
+        assert!(anchor_meta.has_soap_note);
+        assert_eq!(anchor_meta.has_billing_record, None, "billing cleared, needs re-extraction");
+
+        // Anchor SOAP is the new per-patient SOAP, not the stale combined SOAP
+        let anchor_soap = fs::read_to_string(session_dir.join("soap_note.txt")).unwrap();
+        assert!(anchor_soap.contains("steven"), "anchor soap_note.txt must be the per-patient SOAP");
+        assert!(!anchor_soap.contains("==="), "stale combined-SOAP delimiters must be gone");
+
+        // Stale legacy files must be removed from the anchor
+        assert!(!session_dir.join("patient_labels.json").exists(), "patient_labels.json must be removed");
+        assert!(!session_dir.join("soap_patient_1.txt").exists(), "soap_patient_1.txt must be removed");
+        assert!(!session_dir.join("soap_patient_2.txt").exists(), "soap_patient_2.txt must be removed");
+        assert!(!session_dir.join("billing.json").exists(), "stale billing.json must be removed");
+
+        // Sibling 1 (new dir)
+        let sib1_id = &sibling_ids[1];
+        let sib1_dir = date_dir.join(sib1_id);
+        assert!(sib1_dir.exists());
+        let sib1_meta: ArchiveMetadata = serde_json::from_str(
+            &fs::read_to_string(sib1_dir.join("metadata.json")).unwrap()
+        ).unwrap();
+        assert_eq!(sib1_meta.sibling_index, Some(1));
+        assert_eq!(sib1_meta.sibling_group_size, Some(2));
+        assert_eq!(sib1_meta.sibling_group_id.as_ref(), Some(&group_id), "siblings must share group_id");
+        assert_eq!(sib1_meta.patient_name.as_deref(), Some("Knight Davidson"));
+        assert!(!sib1_meta.has_audio, "non-anchor siblings must have has_audio=false (anchor owns shared resources)");
+        assert!(sib1_meta.has_soap_note);
+        // Inherited fields
+        assert_eq!(sib1_meta.physician_id.as_deref(), Some("phys-test"));
+        assert_eq!(sib1_meta.room_name.as_deref(), Some("Room T"));
+        assert_eq!(sib1_meta.charting_mode.as_deref(), Some("continuous"));
+        // Per-sibling fresh state
+        assert_eq!(sib1_meta.has_billing_record, None);
+        assert_eq!(sib1_meta.patient_confirmed_at, None);
+
+        // Sibling 1 transcript is full copy
+        let sib1_transcript = fs::read_to_string(sib1_dir.join("transcript.txt")).unwrap();
+        assert_eq!(sib1_transcript.split_whitespace().count(), 1000, "transcript copied in full");
+
+        // Cleanup
+        let _ = fs::remove_dir_all(&session_dir);
+        let _ = fs::remove_dir_all(&sib1_dir);
+    }
+
+    #[test]
+    fn test_split_into_siblings_three_patients() {
+        let source_id = format!("test-sib3-{}", Uuid::new_v4());
+        let date_str = "2024-02-10";
+        let session_dir = stage_multi_patient_session(&source_id, date_str, 60_000, 600, false);
+        let date_dir = session_dir.parent().unwrap().to_path_buf();
+
+        let per_patient = vec![
+            ("A".to_string(), "soap a".to_string()),
+            ("B".to_string(), "soap b".to_string()),
+            ("C".to_string(), "soap c".to_string()),
+        ];
+
+        let sibling_ids = split_into_siblings(&source_id, date_str, &per_patient).unwrap();
+        assert_eq!(sibling_ids.len(), 3);
+
+        let mut group_ids: Vec<String> = Vec::new();
+        for (i, sid) in sibling_ids.iter().enumerate() {
+            let dir = date_dir.join(sid);
+            let m: ArchiveMetadata = serde_json::from_str(
+                &fs::read_to_string(dir.join("metadata.json")).unwrap()
+            ).unwrap();
+            assert_eq!(m.sibling_index, Some(i as u32));
+            assert_eq!(m.sibling_group_size, Some(3));
+            group_ids.push(m.sibling_group_id.unwrap());
+        }
+        assert_eq!(group_ids[0], group_ids[1], "all siblings share the same group_id");
+        assert_eq!(group_ids[1], group_ids[2]);
+
+        // Cleanup
+        for sid in &sibling_ids {
+            let _ = fs::remove_dir_all(date_dir.join(sid));
+        }
+    }
+
+    #[test]
+    fn test_split_into_siblings_proportional_duration() {
+        let source_id = format!("test-sibprop-{}", Uuid::new_v4());
+        let date_str = "2024-02-10";
+        // 30 minutes total, 150 words total
+        let session_dir = stage_multi_patient_session(&source_id, date_str, 1_800_000, 150, false);
+        let date_dir = session_dir.parent().unwrap().to_path_buf();
+
+        // 100-word vs 50-word per-patient SOAPs → 2:1 split
+        let big_soap = vec!["w"; 100].join(" ");
+        let small_soap = vec!["w"; 50].join(" ");
+        let per_patient = vec![
+            ("Big".to_string(), big_soap),
+            ("Small".to_string(), small_soap),
+        ];
+
+        let sibling_ids = split_into_siblings(&source_id, date_str, &per_patient).unwrap();
+
+        let anchor_meta: ArchiveMetadata = serde_json::from_str(
+            &fs::read_to_string(session_dir.join("metadata.json")).unwrap()
+        ).unwrap();
+        let sib1_meta: ArchiveMetadata = serde_json::from_str(
+            &fs::read_to_string(date_dir.join(&sibling_ids[1]).join("metadata.json")).unwrap()
+        ).unwrap();
+
+        // Anchor gets 100/150 = 2/3 of duration ≈ 1,200,000 ms
+        assert_eq!(anchor_meta.duration_ms, Some(1_200_000));
+        assert_eq!(anchor_meta.word_count, 100);
+        // Sibling 1 gets 50/150 = 1/3 ≈ 600,000 ms
+        assert_eq!(sib1_meta.duration_ms, Some(600_000));
+        assert_eq!(sib1_meta.word_count, 50);
+        // Sum within ±1 unit of source totals (integer division remainder)
+        let dur_sum = anchor_meta.duration_ms.unwrap() + sib1_meta.duration_ms.unwrap();
+        assert!(dur_sum.abs_diff(1_800_000) <= 1);
+
+        // Cleanup
+        for sid in &sibling_ids {
+            let _ = fs::remove_dir_all(date_dir.join(sid));
+        }
+    }
+
+    #[test]
+    fn test_split_into_siblings_rejects_single_patient() {
+        let source_id = format!("test-sib1-{}", Uuid::new_v4());
+        let date_str = "2024-02-10";
+        let session_dir = stage_multi_patient_session(&source_id, date_str, 30_000, 100, false);
+
+        let one_patient = vec![("Only".to_string(), "single soap".to_string())];
+        let result = split_into_siblings(&source_id, date_str, &one_patient);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("at least 2 patients"));
+
+        // Source dir untouched
+        assert!(session_dir.exists());
+        let _ = fs::remove_dir_all(&session_dir);
+    }
+
+    #[test]
+    fn test_split_into_siblings_source_not_found() {
+        let result = split_into_siblings(
+            "nonexistent-sib-xyz",
+            "2099-12-31",
+            &[("A".into(), "a".into()), ("B".into(), "b".into())],
+        );
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("Source session not found"));
+    }
+
+    #[test]
+    fn test_archive_metadata_legacy_compat() {
+        // Older session metadata.json without sibling_* fields must deserialize
+        // cleanly with None defaults — proves backward compatibility.
+        let legacy_json = r#"{
+            "session_id": "legacy-test",
+            "started_at": "2024-01-01T00:00:00Z",
+            "ended_at": null,
+            "duration_ms": 1000,
+            "segment_count": 0,
+            "word_count": 50,
+            "has_soap_note": false,
+            "has_audio": false,
+            "auto_ended": false,
+            "auto_end_reason": null
+        }"#;
+        let m: ArchiveMetadata = serde_json::from_str(legacy_json).unwrap();
+        assert_eq!(m.sibling_group_id, None);
+        assert_eq!(m.sibling_index, None);
+        assert_eq!(m.sibling_group_size, None);
+    }
+
     #[test]
     fn test_merge_sessions_integration() {
         let date_str = "2024-01-15";
@@ -2884,6 +3370,9 @@ mod tests {
             patient_count: None,
             patient_labels: None,
             has_billing_record: None,
+            sibling_group_id: None,
+            sibling_index: None,
+            sibling_group_size: None,
         };
 
         let json = serde_json::to_string(&summary).unwrap();
@@ -3310,6 +3799,9 @@ mod negative_gap_tests {
             patient_count: None,
             patient_labels: None,
             has_billing_record: None,
+            sibling_group_id: None,
+            sibling_index: None,
+            sibling_group_size: None,
         }
     }
 

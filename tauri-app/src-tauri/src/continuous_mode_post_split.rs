@@ -259,6 +259,7 @@ pub async fn run<C: RunContext>(
                 ref result,
                 ref content,
                 latency_ms,
+                ref sibling_ids,
             } => {
                 let patient_count = result.notes.len();
                 ContinuousModeEvent::SoapGenerated {
@@ -272,14 +273,8 @@ pub async fn run<C: RunContext>(
                     component = "continuous_mode_post_split",
                     encounter_number,
                     patient_count,
+                    sibling_count = sibling_ids.len(),
                     "SOAP generated"
-                );
-                // Server sync: upload SOAP
-                deps.sync_ctx.sync_soap(
-                    session_id,
-                    content,
-                    deps.soap_detail_level,
-                    &deps.soap_format,
                 );
                 if let Some(ref dl) = *deps.day_logger {
                     dl.log(crate::day_log::DayEvent::SoapGenerated {
@@ -290,66 +285,107 @@ pub async fn run<C: RunContext>(
                     });
                 }
 
-                // Billing extraction (fail-open)
-                {
-                    let after_hours = crate::encounter_pipeline::is_after_hours(&soap_now);
-                    let billing_start = std::time::Instant::now();
-                    let billing_result = crate::encounter_pipeline::extract_and_archive_billing(
-                        client,
-                        &deps.fast_model,
-                        content,
-                        &filtered_encounter_text,
-                        "", // no physician-provided context in auto-extraction
-                        session_id,
-                        &soap_now,
-                        encounter_duration_ms,
-                        encounter_patient_name.as_deref(),
-                        after_hours,
-                        &crate::billing::RuleEngineContext {
-                            counselling_exhausted: deps.billing_counselling_exhausted,
-                            transcript: Some(filtered_encounter_text.clone()),
-                            ..Default::default()
-                        },
-                        &deps.logger,
-                        Some(&deps.templates),
-                        Some(&deps.billing_data),
-                        Some(deps.billing_extraction_timeout_secs),
-                        Some(&deps.bundle),
-                    )
-                    .await;
-                    let billing_latency = billing_start.elapsed().as_millis() as u64;
+                let after_hours = crate::encounter_pipeline::is_after_hours(&soap_now);
+                let today = ctx.now_utc().format("%Y-%m-%d").to_string();
 
+                // Single-patient encounters bill once on the source session_id with the
+                // combined `content`. Multi-patient encounters were auto-split into
+                // siblings — bill each sibling independently with its per-patient SOAP
+                // and a Q310A duration prorated by SOAP word count. Sibling billing
+                // calls run concurrently (each is a 5-30s LLM round-trip; serial would
+                // double the encounter tail latency for a 2-patient visit).
+                let billing_inputs: Vec<(String, String, u64, Option<String>)> = if sibling_ids.is_empty() {
+                    deps.sync_ctx.sync_soap(session_id, content, deps.soap_detail_level, &deps.soap_format);
+                    vec![(
+                        session_id.clone(),
+                        content.clone(),
+                        encounter_duration_ms,
+                        encounter_patient_name.clone(),
+                    )]
+                } else {
+                    info!(
+                        event = "post_split_sibling_split",
+                        component = "continuous_mode_post_split",
+                        encounter_number,
+                        sibling_count = sibling_ids.len(),
+                        "Multi-patient encounter auto-split into siblings"
+                    );
+                    let per_patient_soaps: Vec<(String, String)> = result.notes.iter()
+                        .map(|n| (n.patient_label.clone(), n.content.clone()))
+                        .collect();
+                    let durations = crate::local_archive::prorate_durations_by_soap_words(
+                        &per_patient_soaps, encounter_duration_ms,
+                    );
+                    sibling_ids.iter()
+                        .zip(result.notes.iter())
+                        .zip(durations.into_iter())
+                        .map(|((child_id, note), child_dur)| (
+                            child_id.clone(),
+                            note.content.clone(),
+                            child_dur,
+                            Some(note.patient_label.clone()),
+                        ))
+                        .collect()
+                };
+
+                let rule_ctx = crate::billing::RuleEngineContext {
+                    counselling_exhausted: deps.billing_counselling_exhausted,
+                    transcript: Some(filtered_encounter_text.clone()),
+                    ..Default::default()
+                };
+                let model_ref = &deps.fast_model;
+                let transcript_ref = filtered_encounter_text.as_str();
+                let soap_now_ref = &soap_now;
+                let rule_ctx_ref = &rule_ctx;
+                let logger_ref = &deps.logger;
+                let templates_ref = &deps.templates;
+                let billing_data_ref = &deps.billing_data;
+                let bundle_ref = &deps.bundle;
+                let billing_timeout = deps.billing_extraction_timeout_secs;
+                let billing_futures = billing_inputs.iter().map(|(sid, soap, dur, label)| async move {
+                    let start = std::time::Instant::now();
+                    let r = crate::encounter_pipeline::extract_and_archive_billing(
+                        client, model_ref, soap, transcript_ref, "",
+                        sid, soap_now_ref, *dur, label.as_deref(), after_hours,
+                        rule_ctx_ref, logger_ref,
+                        Some(templates_ref), Some(billing_data_ref),
+                        Some(billing_timeout), Some(bundle_ref),
+                    ).await;
+                    (sid.clone(), r, start.elapsed().as_millis() as u64)
+                });
+                let results = futures_util::future::join_all(billing_futures).await;
+                for (target_sid, billing_result, billing_latency) in results {
                     match &billing_result {
                         Ok(record) => {
                             if let Some(ref dl) = *deps.day_logger {
                                 dl.log(crate::day_log::DayEvent::BillingExtracted {
                                     ts: ctx.now_utc().to_rfc3339(),
-                                    session_id: session_id.clone(),
+                                    session_id: target_sid.clone(),
                                     codes_count: record.codes.len() as u32,
                                     total_amount_cents: record.total_amount_cents,
                                     latency_ms: billing_latency,
                                     success: true,
                                 });
                             }
-                            // Re-upload session to server so has_billing_record=true in
-                            // metadata.json propagates. The 30s sync_session delayed
-                            // re-sync can race with billing; this explicit hook fires
-                            // right after billing.json + metadata.json are persisted.
-                            let today = ctx.now_utc().format("%Y-%m-%d").to_string();
-                            deps.sync_ctx.resync_session(session_id, &today);
+                            // Single resync per target: uploads metadata, transcript,
+                            // soap_note, billing.json, has_billing_record=true. For
+                            // siblings this also creates the new sibling sessions
+                            // server-side (anchor already existed pre-split).
+                            deps.sync_ctx.resync_session(&target_sid, &today);
                         }
                         Err(e) => {
                             warn!(
                                 event = "post_split_billing_failed",
                                 component = "continuous_mode_post_split",
                                 encounter_number,
+                                target_session_id = %target_sid,
                                 error = %e,
                                 "Billing extraction failed"
                             );
                             if let Some(ref dl) = *deps.day_logger {
                                 dl.log(crate::day_log::DayEvent::BillingExtracted {
                                     ts: ctx.now_utc().to_rfc3339(),
-                                    session_id: session_id.clone(),
+                                    session_id: target_sid,
                                     codes_count: 0,
                                     total_amount_cents: 0,
                                     latency_ms: billing_latency,

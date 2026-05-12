@@ -688,6 +688,9 @@ impl SessionStore {
                     physician_name: meta.physician_name,
                     room_name: meta.room_name,
                     has_billing_record: meta.has_billing_record,
+                    sibling_group_id: meta.sibling_group_id,
+                    sibling_index: meta.sibling_index,
+                    sibling_group_size: meta.sibling_group_size,
                 });
             }
         }

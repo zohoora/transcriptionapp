@@ -499,6 +499,16 @@ pub struct ArchiveMetadata {
     /// the patient age bracket for OHIP codes with age-gated fees.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub patient_dob: Option<String>,
+    /// Sibling-group UUID shared across all child sessions produced by an
+    /// auto-split multi-patient encounter. Same value on every sibling.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sibling_group_id: Option<String>,
+    /// 0-based position within the sibling group. Sibling 0 is the anchor.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sibling_index: Option<u32>,
+    /// Total siblings in the group (denormalized for sidebar rendering).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sibling_group_size: Option<u32>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -536,6 +546,16 @@ pub struct ArchiveSummary {
     pub room_name: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub has_billing_record: Option<bool>,
+    /// Sibling-group UUID (auto-split multi-patient sessions). Same value
+    /// across all siblings in the group.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sibling_group_id: Option<String>,
+    /// 0-based position within the sibling group (anchor = 0).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sibling_index: Option<u32>,
+    /// Total siblings in the group.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sibling_group_size: Option<u32>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

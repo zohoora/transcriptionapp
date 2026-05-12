@@ -45,12 +45,17 @@ type SortField = 'time' | 'encounter' | 'patient' | 'words' | 'duration';
 type SortDir = 'asc' | 'desc';
 type FilterMode = 'all' | 'clinical' | 'non-clinical' | 'soap' | 'no-soap';
 
-/** A sidebar row — either a normal session or one patient from a multi-patient session */
+/** A sidebar row — either a normal session, one patient from a legacy multi-patient
+ *  session (cosmetic fan-out on `patient_labels`), or one sibling from an auto-split
+ *  multi-patient encounter (its own session_id, identified by `isSibling`). */
 interface FlattenedSession extends LocalArchiveSummary {
   patientIndex: number | null;
   flattenedPatientName: string | null;
   isGroupFirst: boolean;
   isGroupLast: boolean;
+  /** True when this row is an auto-split sibling (each sibling is its own session,
+   *  unlike the legacy `patient_labels` fan-out which shared one session_id). */
+  isSibling: boolean;
 }
 
 /** Build a unique key for a flattened sidebar entry */
@@ -338,6 +343,7 @@ const HistoryWindow: React.FC = () => {
   const [datesWithSessions, setDatesWithSessions] = useState<Set<string>>(new Set());
   const [negativeGapPairs, setNegativeGapPairs] = useState<NegativeGapPair[]>([]);
   const [mergingPairId, setMergingPairId] = useState<string | null>(null);
+  const [migratingMultiPatient, setMigratingMultiPatient] = useState(false);
 
   // Sort and filter
   const [sortField, setSortField] = useState<SortField>('time');
@@ -648,6 +654,25 @@ const HistoryWindow: React.FC = () => {
 
   const flattenedSessions: FlattenedSession[] = useMemo(() => {
     return sortedSessions.flatMap((session): FlattenedSession[] => {
+      // Auto-split siblings: each sibling is its own session row. Just decorate
+      // with group metadata so the sidebar can render shared-border styling and
+      // a "1 of N" badge. patientIndex stays null (it's a single-patient session
+      // from the SOAP-rendering perspective — no sub-patient tabs in detail pane).
+      if (session.sibling_group_id && (session.sibling_group_size ?? 0) > 1) {
+        const idx = session.sibling_index ?? 0;
+        const size = session.sibling_group_size ?? 1;
+        return [{
+          ...session,
+          patientIndex: null,
+          flattenedPatientName: session.patient_name,
+          isGroupFirst: idx === 0,
+          isGroupLast: idx === size - 1,
+          isSibling: true,
+        }];
+      }
+      // Legacy cosmetic fan-out for archived multi-patient sessions whose layout
+      // pre-dates auto-split. Will fade out as those sessions get migrated via
+      // the "Split into separate sessions" backfill button in the detail pane.
       const labels = session.patient_labels;
       if (labels && labels.length > 1) {
         return labels.map((label, i) => ({
@@ -656,6 +681,7 @@ const HistoryWindow: React.FC = () => {
           flattenedPatientName: label,
           isGroupFirst: i === 0,
           isGroupLast: i === labels.length - 1,
+          isSibling: false,
         }));
       }
       return [{
@@ -664,6 +690,7 @@ const HistoryWindow: React.FC = () => {
         flattenedPatientName: null,
         isGroupFirst: false,
         isGroupLast: false,
+        isSibling: false,
       }];
     });
   }, [sortedSessions]);
@@ -1584,9 +1611,13 @@ const HistoryWindow: React.FC = () => {
             ) : (
               <div className="sessions-list">
                 {flattenedSessions.map((entry) => {
-                  const multiPatientClasses = entry.patientIndex !== null
-                    ? ` multi-patient-group${entry.isGroupFirst ? ' group-first' : ''}${entry.isGroupLast ? ' group-last' : ''}`
+                  const isGrouped = entry.patientIndex !== null || entry.isSibling;
+                  const multiPatientClasses = isGrouped
+                    ? ` multi-patient-group${entry.isGroupFirst ? ' group-first' : ''}${entry.isGroupLast ? ' group-last' : ''}${entry.isSibling ? ' sibling-row' : ''}`
                     : '';
+                  const siblingPosition = entry.isSibling && entry.sibling_group_size
+                    ? `${(entry.sibling_index ?? 0) + 1} of ${entry.sibling_group_size}`
+                    : null;
                   const isActive = selectedSessionId === entry.session_id && selectedPatientIndex === entry.patientIndex;
                   const ek = entryKey(entry);
                   const isSelected = selectedIds.has(ek);
@@ -1628,6 +1659,14 @@ const HistoryWindow: React.FC = () => {
                       </div>
                       <div className="session-row-bottom">
                         <div className="session-badges">
+                          {siblingPosition && (
+                            <span
+                              className="badge sibling-badge"
+                              title="This patient was discussed in the same encounter as the linked rows above/below"
+                            >
+                              Patient {siblingPosition}
+                            </span>
+                          )}
                           {entry.likely_non_clinical && (
                             <span className="badge non-clinical-badge">Non-clinical</span>
                           )}
@@ -2045,6 +2084,49 @@ const HistoryWindow: React.FC = () => {
                                 </button>
                               ))}
                             </div>
+                            {/* Backfill: legacy multi-patient sessions (no sibling_group_id)
+                                can be split into separate sessions, each independently billable. */}
+                            {!selectedSession?.metadata.sibling_group_id && (
+                              <div className="multi-patient-migrate">
+                                <button
+                                  className="btn-small btn-primary"
+                                  disabled={migratingMultiPatient}
+                                  onClick={async () => {
+                                    if (!selectedSession || !selectedSessionId) return;
+                                    const n = soapResult.notes.length;
+                                    const ok = window.confirm(
+                                      `Split this session into ${n} separate sessions, one per patient?\n\n` +
+                                      `Each new session will have its own SOAP and billing record. ` +
+                                      `The current combined billing will be replaced with per-patient billing ` +
+                                      `(this may take ~${n * 15} seconds while billing re-extracts).\n\n` +
+                                      `This cannot be undone.`
+                                    );
+                                    if (!ok) return;
+                                    setMigratingMultiPatient(true);
+                                    try {
+                                      await invoke<string[]>('migrate_legacy_multipatient_session', {
+                                        sessionId: selectedSessionId,
+                                        date: formatDateForApi(selectedDate),
+                                      });
+                                      setSelectedSession(null);
+                                      setSelectedSessionId(null);
+                                      setSelectedPatientIndex(null);
+                                      await fetchSessions();
+                                    } catch (e) {
+                                      const msg = e instanceof Error ? e.message : String(e);
+                                      window.alert(`Migration failed: ${msg}`);
+                                    } finally {
+                                      setMigratingMultiPatient(false);
+                                    }
+                                  }}
+                                  title="Each patient becomes its own session in the sidebar with its own billing record"
+                                >
+                                  {migratingMultiPatient
+                                    ? 'Splitting…'
+                                    : `Split into ${soapResult.notes.length} separate sessions`}
+                                </button>
+                              </div>
+                            )}
                           </div>
                         )}
                         {isMultiPatient && selectedPatientIndex !== null && (

@@ -761,6 +761,12 @@ export interface LocalArchiveSummary {
   patient_count?: number | null;
   patient_labels?: string[] | null;
   has_billing_record?: boolean;
+  /** Sibling-group UUID shared across siblings produced by one auto-split multi-patient encounter. */
+  sibling_group_id?: string | null;
+  /** 0-based position within the sibling group (anchor = 0). */
+  sibling_index?: number | null;
+  /** Total siblings in the group. */
+  sibling_group_size?: number | null;
 }
 
 /**
@@ -814,6 +820,12 @@ export interface LocalArchiveMetadata {
   physician_id?: string | null;
   physician_name?: string | null;
   room_name?: string | null;
+  /** Sibling-group UUID shared across siblings produced by one auto-split multi-patient encounter. */
+  sibling_group_id?: string | null;
+  /** 0-based position within the sibling group (anchor = 0). */
+  sibling_index?: number | null;
+  /** Total siblings in the group. */
+  sibling_group_size?: number | null;
 }
 
 /** Cross-session patient record from the profile-service patient index (v0.10.46+). */

@@ -596,6 +596,7 @@ pub fn run() {
             // Session cleanup commands (history window)
             commands::delete_local_session,
             commands::split_local_session,
+            commands::migrate_legacy_multipatient_session,
             commands::merge_local_sessions,
             commands::find_negative_gap_pairs_for_date,
             commands::update_session_patient_name,
