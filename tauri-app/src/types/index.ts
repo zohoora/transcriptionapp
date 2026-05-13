@@ -1440,6 +1440,7 @@ export interface BurdenScores {
   nephrotoxicCount: number;
   hepatotoxicCount: number;
   hyperkalemiaCount: number;
+  cnsDepressantCount: number;
 }
 
 /** Full /analyze response */
@@ -1448,4 +1449,52 @@ export interface AnalysisResult {
   cards: AnalysisCard[];
   burdenScores: BurdenScores;
   context: Record<string, unknown>;
+}
+
+export type AnalysisStrategy = 'safety_first' | 'cognition_first' | 'pill_burden_first';
+
+/** Keys are the snake_case identifiers the rule engine expects, not
+ * camelCase — they flow JS→Rust→pharm-service unchanged via HashMap. */
+export interface PatientConditions {
+  ckd: boolean;
+  hepatic: boolean;
+  falls_risk: boolean;
+  dementia: boolean;
+  diabetes: boolean;
+  afib: boolean;
+  heart_failure: boolean;
+  osteoporosis: boolean;
+}
+
+export interface ClarifyingQuestion {
+  id: string;
+  question: string;
+  type: 'boolean' | 'choice';
+  options: string[];
+  context?: string;
+}
+
+export interface QuestionsResponse {
+  success: boolean;
+  questions: ClarifyingQuestion[];
+  canSkip: boolean;
+  error?: string;
+}
+
+export interface PlanStep {
+  stepNumber: number;
+  action: 'stop' | 'substitute' | 'add' | 'adjust';
+  drug: string;
+  newDrug: string;
+  reason: string;
+  medsAfter: string[];
+}
+
+export interface AIPlanResponse {
+  success: boolean;
+  summary?: string;
+  currentMeds?: string[];
+  steps?: PlanStep[];
+  finalMeds?: string[];
+  error?: string;
 }

@@ -618,6 +618,8 @@ pub fn run() {
             commands::capture_screenshot_for_meds,
             commands::parse_medications_from_text,
             commands::analyze_medications,
+            commands::get_plan_clarifying_questions,
+            commands::generate_plan_with_answers,
             // MIIS (Medical Illustration Image Server) commands
             commands::miis_suggest,
             commands::miis_send_usage,

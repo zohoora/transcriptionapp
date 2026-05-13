@@ -372,6 +372,8 @@ pub struct BurdenScores {
     pub hepatotoxic_count: u32,
     #[serde(default, alias = "hyperkalemia_count")]
     pub hyperkalemia_count: u32,
+    #[serde(default, alias = "cns_depressant_count")]
+    pub cns_depressant_count: u32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -385,7 +387,9 @@ pub struct AnalysisResult {
     pub context: HashMap<String, serde_json::Value>,
 }
 
-/// Request body matching pharm-refactor's `AnalyzeRequest`.
+/// Shared body for `/analyze`, `/plan/questions`, and `/plan`. `answers` is
+/// dropped from the wire when `None` so the questions/analyze endpoints —
+/// which don't define `answers` in their schema — never see the extra field.
 #[derive(Debug, Clone, Serialize)]
 struct AnalyzeRequestBody<'a> {
     medications: &'a str,
@@ -396,15 +400,141 @@ struct AnalyzeRequestBody<'a> {
     #[serde(skip_serializing_if = "Option::is_none")]
     patient_egfr: Option<f64>,
     strategy: &'a str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    answers: Option<&'a HashMap<String, String>>,
 }
 
-/// Analyze a medication list via the MacBook pharm-refactor service.
-///
-/// Frontend passes the service URL explicitly (resolved through the same
-/// fallback pattern as `profile_server_url`). Empty medication list is a
-/// validation error; HTTP errors from the service are surfaced as
-/// `CommandError::Network` with the response body truncated to 200 chars
-/// (same PHI-safety pattern as `truncate_error_body` in llm_client.rs).
+// ── Plan flow response types ─────────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ClarifyingQuestion {
+    pub id: String,
+    pub question: String,
+    /// `type` is reserved in Rust, so the field is `question_type` here.
+    #[serde(rename = "type", alias = "type")]
+    pub question_type: String,
+    #[serde(default)]
+    pub options: Vec<String>,
+    #[serde(default)]
+    pub context: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct QuestionsResponse {
+    #[serde(default)]
+    pub success: bool,
+    #[serde(default)]
+    pub questions: Vec<ClarifyingQuestion>,
+    #[serde(default, alias = "can_skip")]
+    pub can_skip: bool,
+    #[serde(default)]
+    pub error: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PlanStep {
+    #[serde(default, alias = "step_number")]
+    pub step_number: u32,
+    /// "stop" | "substitute" | "add" | "adjust"
+    #[serde(default)]
+    pub action: String,
+    #[serde(default)]
+    pub drug: String,
+    #[serde(default, alias = "new_drug")]
+    pub new_drug: String,
+    #[serde(default)]
+    pub reason: String,
+    #[serde(default, alias = "meds_after")]
+    pub meds_after: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AIPlanResponse {
+    #[serde(default)]
+    pub success: bool,
+    #[serde(default)]
+    pub summary: Option<String>,
+    #[serde(default, alias = "current_meds")]
+    pub current_meds: Option<Vec<String>>,
+    #[serde(default)]
+    pub steps: Option<Vec<PlanStep>>,
+    #[serde(default, alias = "final_meds")]
+    pub final_meds: Option<Vec<String>>,
+    #[serde(default)]
+    pub error: Option<String>,
+}
+
+/// POST a body to `{pharm_service_url}/{path}` and deserialize the response.
+/// Centralizes URL trimming, client build, status handling, and PHI-safe
+/// error-body truncation across all three pharm-service commands.
+async fn pharm_service_post<T: serde::de::DeserializeOwned>(
+    pharm_service_url: &str,
+    path: &str,
+    body: &AnalyzeRequestBody<'_>,
+) -> Result<T, CommandError> {
+    if pharm_service_url.trim().is_empty() {
+        return Err(CommandError::Config(
+            "Pharmacotherapy service URL is not configured".into(),
+        ));
+    }
+    let url = format!(
+        "{}/{}",
+        pharm_service_url.trim_end_matches('/'),
+        path.trim_start_matches('/')
+    );
+
+    let client = HttpClient::builder()
+        .timeout(Duration::from_secs(PHARM_SERVICE_TIMEOUT_SECS))
+        .build()
+        .map_err(|e| CommandError::Network(format!("HTTP client init failed: {}", e)))?;
+
+    info!("POST {}", url);
+
+    let response = client
+        .post(&url)
+        .json(body)
+        .send()
+        .await
+        .map_err(|e| CommandError::Network(format!("Pharm service unreachable: {}", e)))?;
+
+    let status = response.status();
+    if !status.is_success() {
+        let err_body = response.text().await.unwrap_or_default();
+        return Err(CommandError::Network(format!(
+            "Pharm service returned {}: {}",
+            status,
+            truncate_error_body(&err_body, 200)
+        )));
+    }
+
+    response
+        .json::<T>()
+        .await
+        .map_err(|e| CommandError::Network(format!("Pharm service response parse failed: {}", e)))
+}
+
+fn build_pharm_body<'a>(
+    med_text: &'a str,
+    context: Option<&'a HashMap<String, bool>>,
+    patient_age: Option<i32>,
+    patient_egfr: Option<f64>,
+    strategy: Option<&'a str>,
+    answers: Option<&'a HashMap<String, String>>,
+) -> AnalyzeRequestBody<'a> {
+    AnalyzeRequestBody {
+        medications: med_text,
+        context,
+        patient_age,
+        patient_egfr,
+        strategy: strategy.filter(|s| !s.is_empty()).unwrap_or("safety_first"),
+        answers,
+    }
+}
+
 #[tauri::command]
 pub async fn analyze_medications(
     pharm_service_url: String,
@@ -412,67 +542,100 @@ pub async fn analyze_medications(
     patient_age: Option<i32>,
     patient_egfr: Option<f64>,
     context: Option<HashMap<String, bool>>,
+    strategy: Option<String>,
 ) -> Result<AnalysisResult, CommandError> {
     if medications.is_empty() {
         return Err(CommandError::Validation("Empty medication list".into()));
     }
-    if pharm_service_url.trim().is_empty() {
-        return Err(CommandError::Config(
-            "Pharmacotherapy service URL is not configured".into(),
-        ));
-    }
-
     let med_text = medications_to_text(&medications);
-    let url = format!("{}/analyze", pharm_service_url.trim_end_matches('/'));
-
-    let client = HttpClient::builder()
-        .timeout(Duration::from_secs(PHARM_SERVICE_TIMEOUT_SECS))
-        .build()
-        .map_err(|e| CommandError::Network(format!("HTTP client init failed: {}", e)))?;
-
-    let body = AnalyzeRequestBody {
-        medications: &med_text,
-        context: context.as_ref(),
+    let body = build_pharm_body(
+        &med_text,
+        context.as_ref(),
         patient_age,
         patient_egfr,
-        strategy: "safety_first",
-    };
-
-    info!(
-        "POST {} — {} medications",
-        url,
-        medications.len()
+        strategy.as_deref(),
+        None,
     );
 
-    let response = client
-        .post(&url)
-        .json(&body)
-        .send()
-        .await
-        .map_err(|e| CommandError::Network(format!("Pharm service unreachable: {}", e)))?;
-
-    let status = response.status();
-    if !status.is_success() {
-        let body = response.text().await.unwrap_or_default();
-        return Err(CommandError::Network(format!(
-            "Pharm service returned {}: {}",
-            status,
-            truncate_error_body(&body, 200)
-        )));
-    }
-
-    let analysis: AnalysisResult = response
-        .json()
-        .await
-        .map_err(|e| CommandError::Network(format!("Pharm service response parse failed: {}", e)))?;
+    let analysis: AnalysisResult = pharm_service_post(&pharm_service_url, "analyze", &body).await?;
 
     info!(
-        "Analysis returned {} cards (burden ACB={:.1}, sedation={:.1})",
+        "Analysis: {} meds → {} cards (burden ACB={:.1}, sedation={:.1})",
+        medications.len(),
         analysis.cards.len(),
         analysis.burden_scores.acb_total,
         analysis.burden_scores.sedation_total
     );
     Ok(analysis)
+}
+
+#[tauri::command]
+pub async fn get_plan_clarifying_questions(
+    pharm_service_url: String,
+    medications: Vec<MedEntry>,
+    patient_age: Option<i32>,
+    patient_egfr: Option<f64>,
+    context: Option<HashMap<String, bool>>,
+    strategy: Option<String>,
+) -> Result<QuestionsResponse, CommandError> {
+    if medications.is_empty() {
+        return Err(CommandError::Validation("Empty medication list".into()));
+    }
+    let med_text = medications_to_text(&medications);
+    let body = build_pharm_body(
+        &med_text,
+        context.as_ref(),
+        patient_age,
+        patient_egfr,
+        strategy.as_deref(),
+        None,
+    );
+
+    let questions: QuestionsResponse =
+        pharm_service_post(&pharm_service_url, "plan/questions", &body).await?;
+
+    info!(
+        "Plan questions: {} returned (success={}, can_skip={})",
+        questions.questions.len(),
+        questions.success,
+        questions.can_skip
+    );
+    Ok(questions)
+}
+
+#[tauri::command]
+pub async fn generate_plan_with_answers(
+    pharm_service_url: String,
+    medications: Vec<MedEntry>,
+    patient_age: Option<i32>,
+    patient_egfr: Option<f64>,
+    context: Option<HashMap<String, bool>>,
+    strategy: Option<String>,
+    answers: Option<HashMap<String, String>>,
+) -> Result<AIPlanResponse, CommandError> {
+    if medications.is_empty() {
+        return Err(CommandError::Validation("Empty medication list".into()));
+    }
+    let med_text = medications_to_text(&medications);
+    let body = build_pharm_body(
+        &med_text,
+        context.as_ref(),
+        patient_age,
+        patient_egfr,
+        strategy.as_deref(),
+        answers.as_ref(),
+    );
+
+    let plan: AIPlanResponse = pharm_service_post(&pharm_service_url, "plan", &body).await?;
+
+    info!(
+        "Plan: success={}, {} steps, {} final meds, {} answers in",
+        plan.success,
+        plan.steps.as_ref().map(|s| s.len()).unwrap_or(0),
+        plan.final_meds.as_ref().map(|f| f.len()).unwrap_or(0),
+        answers.as_ref().map(|a| a.len()).unwrap_or(0),
+    );
+    Ok(plan)
 }
 
 #[cfg(test)]
@@ -540,9 +703,6 @@ mod tests {
         assert_eq!(analysis.burden_scores.sedation_total, 0.5);
     }
 
-    /// Same struct must still serialize as camelCase when we send it on
-    /// to the JS frontend via Tauri IPC. JS reads e.g. `burdenScores` not
-    /// `burden_scores`.
     #[test]
     fn serializes_to_camel_case_for_js() {
         let result = AnalysisResult {
@@ -569,7 +729,160 @@ mod tests {
         assert!(json.contains("\"nameCanonical\":\"atorvastatin\""));
         assert!(json.contains("\"burdenScores\":{"));
         assert!(json.contains("\"acbTotal\":1.5"));
+        assert!(json.contains("\"cnsDepressantCount\":0"));
         assert!(!json.contains("raw_text"));
         assert!(!json.contains("burden_scores"));
+        assert!(!json.contains("cns_depressant_count"));
+    }
+
+    /// `/analyze` responses from older pharm-refactor builds may omit
+    /// `cns_depressant_count`. With `#[serde(default)]` the field should
+    /// fall back to 0 rather than failing the whole deserialization.
+    #[test]
+    fn burden_scores_back_compat_without_cns_depressant_count() {
+        let body = r#"{
+            "acb_total": 1.0,
+            "sedation_total": 0.5,
+            "constipation_total": 0.0,
+            "qt_risk_count": 0,
+            "serotonergic_count": 0,
+            "bleeding_risk_count": 0,
+            "falls_risk_count": 0,
+            "nephrotoxic_count": 0,
+            "hepatotoxic_count": 0,
+            "hyperkalemia_count": 0
+        }"#;
+        let scores: BurdenScores =
+            serde_json::from_str(body).expect("old response without cns_depressant_count must deserialize");
+        assert_eq!(scores.cns_depressant_count, 0);
+        assert_eq!(scores.acb_total, 1.0);
+    }
+
+    #[test]
+    fn deserializes_plan_questions_response() {
+        let body = r#"{
+            "success": true,
+            "questions": [
+                {
+                    "id": "q_sedation",
+                    "question": "Is the patient currently sedated?",
+                    "type": "boolean",
+                    "options": ["Yes", "No"],
+                    "context": "Affects opioid recommendations"
+                },
+                {
+                    "id": "q_falls",
+                    "question": "Recent falls?",
+                    "type": "choice",
+                    "options": ["None", "1 fall", "Multiple"]
+                }
+            ],
+            "can_skip": true
+        }"#;
+        let parsed: QuestionsResponse =
+            serde_json::from_str(body).expect("plan questions response must deserialize");
+        assert!(parsed.success);
+        assert!(parsed.can_skip);
+        assert_eq!(parsed.questions.len(), 2);
+        assert_eq!(parsed.questions[0].id, "q_sedation");
+        assert_eq!(parsed.questions[0].question_type, "boolean");
+        assert_eq!(parsed.questions[0].options, vec!["Yes", "No"]);
+        assert_eq!(parsed.questions[1].question_type, "choice");
+        assert_eq!(parsed.questions[1].options.len(), 3);
+    }
+
+    /// `type` (not `questionType`) must appear in serialized JSON — the
+    /// frontend reads `q.type`, not the Rust field name.
+    #[test]
+    fn serializes_clarifying_question_with_type_field() {
+        let q = ClarifyingQuestion {
+            id: "q1".into(),
+            question: "?".into(),
+            question_type: "boolean".into(),
+            options: vec!["Yes".into(), "No".into()],
+            context: None,
+        };
+        let json = serde_json::to_string(&q).unwrap();
+        assert!(json.contains("\"type\":\"boolean\""), "got: {}", json);
+        assert!(!json.contains("questionType"));
+        assert!(!json.contains("question_type"));
+    }
+
+    #[test]
+    fn deserializes_ai_plan_response() {
+        let body = r#"{
+            "success": true,
+            "summary": "Stop overlapping CNS depressants.",
+            "current_meds": ["alprazolam 1mg", "zopiclone 7.5mg"],
+            "steps": [
+                {
+                    "step_number": 1,
+                    "action": "stop",
+                    "drug": "zopiclone 7.5mg",
+                    "new_drug": "",
+                    "reason": "Combined with alprazolam → falls risk.",
+                    "meds_after": ["alprazolam 1mg"]
+                }
+            ],
+            "final_meds": ["alprazolam 1mg"]
+        }"#;
+        let parsed: AIPlanResponse =
+            serde_json::from_str(body).expect("plan response must deserialize");
+        assert!(parsed.success);
+        assert_eq!(parsed.summary.as_deref(), Some("Stop overlapping CNS depressants."));
+        let steps = parsed.steps.as_ref().expect("steps present");
+        assert_eq!(steps.len(), 1);
+        assert_eq!(steps[0].step_number, 1);
+        assert_eq!(steps[0].action, "stop");
+        assert_eq!(steps[0].meds_after, vec!["alprazolam 1mg"]);
+        assert_eq!(parsed.final_meds.as_ref().map(|f| f.len()), Some(1));
+    }
+
+    #[test]
+    fn deserializes_ai_plan_error_envelope() {
+        let body = r#"{
+            "success": false,
+            "error": "No findings to create a plan from."
+        }"#;
+        let parsed: AIPlanResponse = serde_json::from_str(body).expect("must deserialize");
+        assert!(!parsed.success);
+        assert!(parsed.steps.is_none());
+        assert_eq!(parsed.error.as_deref(), Some("No findings to create a plan from."));
+    }
+
+    /// `/plan/questions` and `/analyze` schemas have no `answers` field —
+    /// sending it would risk strict-schema rejection on a future pydantic
+    /// `extra='forbid'` config flip.
+    #[test]
+    fn analyze_request_body_omits_none_answers() {
+        let body = AnalyzeRequestBody {
+            medications: "metformin",
+            context: None,
+            patient_age: None,
+            patient_egfr: None,
+            strategy: "safety_first",
+            answers: None,
+        };
+        let json = serde_json::to_string(&body).unwrap();
+        assert!(!json.contains("answers"), "answers must be omitted when None, got: {}", json);
+    }
+
+    #[test]
+    fn analyze_request_body_includes_answers_when_present() {
+        let mut answers = HashMap::new();
+        answers.insert("q_sedation".to_string(), "Yes".to_string());
+        let body = AnalyzeRequestBody {
+            medications: "metformin",
+            context: None,
+            patient_age: Some(78),
+            patient_egfr: Some(45.0),
+            strategy: "safety_first",
+            answers: Some(&answers),
+        };
+        let json = serde_json::to_string(&body).unwrap();
+        assert!(json.contains("\"answers\""), "got: {}", json);
+        assert!(json.contains("\"q_sedation\":\"Yes\""), "got: {}", json);
+        assert!(json.contains("\"patient_age\":78"));
+        assert!(json.contains("\"patient_egfr\":45.0"));
     }
 }

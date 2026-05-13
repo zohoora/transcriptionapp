@@ -11401,59 +11401,6 @@ button.review-section-header-left:focus {
   font-size: 13px;
 }
 
-/* Burden score panel ───────────────────────────────────────────────── */
-
-.burden-panel {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.burden-tiles {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 8px;
-}
-
-.burden-tile {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  padding: 10px;
-  background: var(--bg-secondary);
-  border: 1px solid var(--border-color);
-  border-radius: 6px;
-}
-
-.burden-label {
-  font-size: 11px;
-  color: var(--text-secondary);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-}
-
-.burden-value {
-  font-size: 18px;
-  font-weight: 700;
-  color: var(--text-primary);
-  font-variant-numeric: tabular-nums;
-}
-
-.burden-risks {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-
-.burden-risk-pill {
-  padding: 3px 10px;
-  background: #fef3c7;
-  color: #92400e;
-  border-radius: 999px;
-  font-size: 12px;
-  font-weight: 500;
-}
-
 /* Finding cards ────────────────────────────────────────────────────── */
 
 .med-cards {
@@ -11559,4 +11506,628 @@ button.review-section-header-left:focus {
   border-radius: 4px;
   font-size: 12px;
   color: var(--text-primary);
+}
+
+/* ── Patient Context panel ─────────────────────────────────────────── */
+
+.patient-context-panel {
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background: var(--bg-primary);
+}
+
+.pcp-header {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  text-align: left;
+  color: var(--text-primary);
+}
+
+.pcp-header:hover {
+  background: var(--bg-hover);
+}
+
+.pcp-header-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.pcp-header-title {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.pcp-header-summary {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.pcp-header-summary-muted {
+  font-style: italic;
+  color: var(--text-muted);
+}
+
+.pcp-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 12px;
+  border-top: 1px solid var(--border-color);
+}
+
+.pcp-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.pcp-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.pcp-field-label {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+
+.pcp-input {
+  width: 100%;
+  padding: 6px 8px;
+  background: var(--bg-input, var(--bg-primary));
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  font-size: 13px;
+  color: var(--text-primary);
+}
+
+.pcp-input:focus {
+  outline: none;
+  border-color: var(--accent-blue);
+}
+
+.pcp-conditions-section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.pcp-conditions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px 12px;
+}
+
+.pcp-condition {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--text-primary);
+  cursor: pointer;
+}
+
+/* ── Summary bar ───────────────────────────────────────────────────── */
+
+.summary-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 12px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+}
+
+.summary-stat {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  padding: 2px 8px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 999px;
+  font-size: 12px;
+}
+
+.summary-stat-meds {
+  background: transparent;
+  border: none;
+  padding-left: 0;
+}
+
+.summary-stat-meds .summary-stat-value {
+  font-size: 18px;
+}
+
+.summary-stat-value {
+  font-weight: 700;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.summary-stat-label {
+  color: var(--text-secondary);
+}
+
+.summary-stat-critical {
+  background: #fef2f2;
+  border-color: #fecaca;
+}
+
+.summary-stat-critical .summary-stat-value,
+.summary-stat-critical .summary-stat-label {
+  color: #991b1b;
+}
+
+.summary-stat-important {
+  background: #fff7ed;
+  border-color: #fed7aa;
+}
+
+.summary-stat-important .summary-stat-value,
+.summary-stat-important .summary-stat-label {
+  color: #9a3412;
+}
+
+/* ── Scores panel (replaces inline BurdenPanel) ────────────────────── */
+
+.scores-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.scores-section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.scores-section-title {
+  margin: 0;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-secondary);
+}
+
+.burden-cards {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+
+.burden-card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+}
+
+.burden-card-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+}
+
+.burden-card-label {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+
+.burden-card-value {
+  font-size: 16px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-primary);
+}
+
+.burden-card-bar {
+  position: relative;
+  height: 6px;
+  background: var(--bg-primary);
+  border-radius: 999px;
+  overflow: hidden;
+  border: 1px solid var(--border-color);
+}
+
+.burden-card-bar-fill {
+  height: 100%;
+  border-radius: 999px;
+  transition: width 200ms ease;
+}
+
+.burden-card-bar-low {
+  background: #16a34a; /* green */
+}
+
+.burden-card-bar-medium {
+  background: #d97706; /* amber, matches card-important left border */
+}
+
+.burden-card-bar-high {
+  background: #dc2626; /* red, matches card-critical left border */
+}
+
+.burden-card-scale {
+  display: flex;
+  justify-content: space-between;
+  font-size: 10px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.risk-indicators {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+}
+
+.risk-indicator {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  color: var(--text-muted);
+}
+
+.risk-indicator-active {
+  background: #fef3c7;
+  border-color: #fcd34d;
+  color: #92400e;
+}
+
+.risk-indicator-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+}
+
+.risk-icon-svg {
+  width: 20px;
+  height: 20px;
+}
+
+.risk-indicator-body {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.1;
+}
+
+.risk-indicator-count {
+  font-size: 14px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.risk-indicator-label {
+  font-size: 11px;
+}
+
+/* ── AI Plan panel ─────────────────────────────────────────────────── */
+
+.ai-plan-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background: var(--bg-primary);
+}
+
+.ai-plan-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.ai-plan-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.ai-plan-dismiss {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.ai-plan-dismiss:hover {
+  color: var(--text-primary);
+}
+
+.ai-plan-idle {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: stretch;
+}
+
+.ai-plan-description {
+  margin: 0;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.ai-plan-hint {
+  margin: 0;
+  font-size: 11px;
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.ai-plan-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 16px;
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+
+.ai-plan-error {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.ai-plan-error-action {
+  margin-left: auto;
+  padding: 2px 8px;
+  background: transparent;
+  border: 1px solid currentColor;
+  border-radius: 4px;
+  color: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.ai-plan-result {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.plan-summary {
+  padding: 10px 12px;
+  background: #eef2ff;
+  border: 1px solid #c7d2fe;
+  border-radius: 6px;
+}
+
+.plan-summary p {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 500;
+  color: #3730a3;
+  line-height: 1.4;
+}
+
+.plan-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.plan-step {
+  padding: 10px 12px;
+  border: 1px solid var(--border-color);
+  border-left: 4px solid var(--text-muted);
+  border-radius: 6px;
+  background: var(--bg-primary);
+}
+
+.plan-step-stop {
+  border-left-color: #dc2626;
+  background: #fef2f2;
+}
+
+.plan-step-substitute {
+  border-left-color: #d97706;
+  background: #fff7ed;
+}
+
+.plan-step-add {
+  border-left-color: #16a34a;
+  background: #f0fdf4;
+}
+
+.plan-step-adjust {
+  border-left-color: #2563eb;
+  background: #eff6ff;
+}
+
+.plan-step-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.plan-step-reason {
+  margin: 6px 0 0 0;
+  font-size: 12px;
+  color: var(--text-secondary);
+  line-height: 1.4;
+}
+
+.plan-final {
+  padding: 10px 12px;
+  background: #f0fdf4;
+  border: 2px solid #86efac;
+  border-radius: 6px;
+}
+
+.plan-final-label {
+  display: block;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #15803d;
+  margin-bottom: 4px;
+}
+
+.plan-final-list {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 500;
+  color: #166534;
+  line-height: 1.4;
+}
+
+.plan-regenerate {
+  align-self: stretch;
+}
+
+/* Clarifying questions block (inside AI plan panel) */
+
+.plan-questions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.plan-questions-header {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 10px;
+  background: #fffbeb;
+  border: 1px solid #fcd34d;
+  border-radius: 6px;
+}
+
+.plan-questions-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: #92400e;
+}
+
+.plan-questions-subtitle {
+  font-size: 11px;
+  color: #b45309;
+  font-style: italic;
+}
+
+.plan-questions-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.plan-question {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.plan-question-prompt {
+  display: flex;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--text-primary);
+}
+
+.plan-question-number {
+  font-weight: 600;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.plan-question-context {
+  margin: 0 0 0 16px;
+  font-size: 11px;
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.plan-question-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-left: 16px;
+}
+
+.plan-question-option {
+  padding: 4px 12px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 999px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: background 80ms ease, border-color 80ms ease, color 80ms ease;
+}
+
+.plan-question-option:hover {
+  background: var(--bg-secondary);
+  border-color: var(--text-muted);
+}
+
+.plan-question-option-selected {
+  background: #eef2ff;
+  border-color: #818cf8;
+  color: #3730a3;
+  font-weight: 500;
+}
+
+.plan-questions-actions {
+  display: flex;
+  gap: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border-color);
+}
+
+.plan-questions-actions .med-analyze-button {
+  flex: 1;
+}
+
+.plan-questions-secondary {
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
+}
+
+.plan-questions-secondary:hover {
+  background: var(--bg-hover);
+}
+
+/* Narrower viewports: collapse the risk grid + condition grid */
+@media (max-width: 600px) {
+  .risk-indicators {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .pcp-conditions {
+    grid-template-columns: 1fr;
+  }
 }

@@ -133,24 +133,7 @@ const ClinicalAssistantWindow: React.FC = () => {
             attachedMedCount={med.medList.length}
           />
         )}
-        {activeTab === 'meds' && (
-          <MedicationAssessment
-            medList={med.medList}
-            extractionState={med.extractionState}
-            extractionError={med.extractionError}
-            analysis={med.analysis}
-            isAnalyzing={med.isAnalyzing}
-            analyzeError={med.analyzeError}
-            isParsing={med.isParsing}
-            parseError={med.parseError}
-            addRow={med.addRow}
-            updateRow={med.updateRow}
-            deleteRow={med.deleteRow}
-            extract={med.extract}
-            parseTypedMeds={med.parseTypedMeds}
-            analyze={med.analyze}
-          />
-        )}
+        {activeTab === 'meds' && <MedicationAssessment med={med} />}
       </main>
     </div>
   );

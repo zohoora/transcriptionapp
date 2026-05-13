@@ -1,34 +1,20 @@
 import { memo, useMemo, useCallback, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { MarkdownContent } from './ClinicalChat';
+import type { MedEntry, AnalysisCard, CardSeverity } from '../types';
 import type {
-  MedEntry,
-  AnalysisResult,
-  AnalysisCard,
-  BurdenScores,
-  CardSeverity,
-} from '../types';
-import type { ExtractionState } from '../hooks/useMedicationAssessment';
+  ExtractionState,
+  UseMedicationAssessmentResult,
+} from '../hooks/useMedicationAssessment';
+import { PatientContextPanel } from './medicationAssessment/PatientContextPanel';
+import { SummaryBar } from './medicationAssessment/SummaryBar';
+import { ScoresPanel } from './medicationAssessment/ScoresPanel';
+import { AIPlanPanel } from './medicationAssessment/AIPlanPanel';
 
 interface MedicationAssessmentProps {
-  medList: MedEntry[];
-  extractionState: ExtractionState;
-  extractionError: string | null;
-  analysis: AnalysisResult | null;
-  isAnalyzing: boolean;
-  analyzeError: string | null;
-  isParsing: boolean;
-  parseError: string | null;
-  addRow: () => void;
-  updateRow: (index: number, patch: Partial<MedEntry>) => void;
-  deleteRow: (index: number) => void;
-  extract: () => Promise<void>;
-  parseTypedMeds: (text: string) => Promise<boolean>;
-  analyze: () => Promise<void>;
+  med: UseMedicationAssessmentResult;
 }
 
-// Single source of truth for severity ranking + CSS class — keeps the
-// switch + the sort table from drifting if a new severity lands.
 const SEVERITY_META: Record<CardSeverity, { rank: number; cssClass: string }> = {
   critical: { rank: 3, cssClass: 'card-critical' },
   important: { rank: 2, cssClass: 'card-important' },
@@ -216,46 +202,6 @@ const MedRow = memo(function MedRow({
   );
 });
 
-function BurdenPanel({ scores }: { scores: BurdenScores }) {
-  const tiles = [
-    { label: 'ACB', value: scores.acbTotal.toFixed(1), hint: 'Anticholinergic burden' },
-    { label: 'Sedation', value: scores.sedationTotal.toFixed(1), hint: 'Sedation burden' },
-    { label: 'Constipation', value: scores.constipationTotal.toFixed(1), hint: 'Constipation burden' },
-  ];
-  const risks: Array<[string, number]> = [
-    ['QT', scores.qtRiskCount],
-    ['Serotonergic', scores.serotonergicCount],
-    ['Bleeding', scores.bleedingRiskCount],
-    ['Falls', scores.fallsRiskCount],
-    ['Nephrotox', scores.nephrotoxicCount],
-    ['Hepatotox', scores.hepatotoxicCount],
-    ['Hyper-K', scores.hyperkalemiaCount],
-  ];
-  const activeRisks = risks.filter(([, n]) => n > 0);
-
-  return (
-    <div className="burden-panel">
-      <div className="burden-tiles">
-        {tiles.map(({ label, value, hint }) => (
-          <div key={label} className="burden-tile" title={hint}>
-            <span className="burden-label">{label}</span>
-            <span className="burden-value">{value}</span>
-          </div>
-        ))}
-      </div>
-      {activeRisks.length > 0 && (
-        <div className="burden-risks">
-          {activeRisks.map(([label, n]) => (
-            <span key={label} className="burden-risk-pill">
-              {label} ({n})
-            </span>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
 function FindingCard({ card }: { card: AnalysisCard }) {
   return (
     <div className={`finding-card ${severityMeta(card.severity).cssClass}`}>
@@ -283,54 +229,29 @@ function FindingCard({ card }: { card: AnalysisCard }) {
   );
 }
 
-export const MedicationAssessment = memo(function MedicationAssessment(props: MedicationAssessmentProps) {
-  const {
-    medList,
-    extractionState,
-    extractionError,
-    analysis,
-    isAnalyzing,
-    analyzeError,
-    isParsing,
-    parseError,
-    addRow,
-    updateRow,
-    deleteRow,
-    extract,
-    parseTypedMeds,
-    analyze,
-  } = props;
-
+export const MedicationAssessment = memo(function MedicationAssessment({ med }: MedicationAssessmentProps) {
   const sortedCards = useMemo(() => {
-    if (!analysis) return [];
-    return [...analysis.cards].sort(
+    if (!med.analysis) return [];
+    return [...med.analysis.cards].sort(
       (a, b) => severityMeta(b.severity).rank - severityMeta(a.severity).rank
     );
-  }, [analysis]);
+  }, [med.analysis]);
 
-  const canAnalyze = medList.some((m) => m.name.trim().length > 0) && !isAnalyzing;
-
-  const handleReextract = useCallback(() => {
-    void extract();
-  }, [extract]);
-
-  const handleAnalyze = useCallback(() => {
-    void analyze();
-  }, [analyze]);
+  const canAnalyze = med.medList.some((m) => m.name.trim().length > 0) && !med.isAnalyzing;
 
   return (
     <div className="medication-assessment">
       <ExtractionStatus
-        state={extractionState}
-        count={medList.length}
-        error={extractionError}
-        onReextract={handleReextract}
+        state={med.extractionState}
+        count={med.medList.length}
+        error={med.extractionError}
+        onReextract={() => void med.extract()}
       />
 
       <MedTextParser
-        isParsing={isParsing}
-        parseError={parseError}
-        onParse={parseTypedMeds}
+        isParsing={med.isParsing}
+        parseError={med.parseError}
+        onParse={med.parseTypedMeds}
       />
 
       <div className="med-table">
@@ -340,35 +261,47 @@ export const MedicationAssessment = memo(function MedicationAssessment(props: Me
           <span>Frequency</span>
           <span />
         </div>
-        {medList.length === 0 ? (
+        {med.medList.length === 0 ? (
           <div className="med-table-empty">
             No medications yet. Click <strong>Add medication</strong> to start the list.
           </div>
         ) : (
-          medList.map((med, i) => (
-            <MedRow key={i} index={i} med={med} onUpdate={updateRow} onDelete={deleteRow} />
+          med.medList.map((m, i) => (
+            <MedRow key={i} index={i} med={m} onUpdate={med.updateRow} onDelete={med.deleteRow} />
           ))
         )}
-        <button className="med-table-add" onClick={addRow} aria-label="Add a medication">
+        <button className="med-table-add" onClick={med.addRow} aria-label="Add a medication">
           + Add medication
         </button>
       </div>
 
+      <PatientContextPanel
+        patientAge={med.patientAge}
+        patientEgfr={med.patientEgfr}
+        patientConditions={med.patientConditions}
+        strategy={med.strategy}
+        setPatientAge={med.setPatientAge}
+        setPatientEgfr={med.setPatientEgfr}
+        setPatientCondition={med.setPatientCondition}
+        setStrategy={med.setStrategy}
+      />
+
       <div className="med-analyze-bar">
         <button
           className="med-analyze-button"
-          onClick={handleAnalyze}
+          onClick={() => void med.analyze()}
           disabled={!canAnalyze}
           aria-label="Analyze medication list"
         >
-          {isAnalyzing ? 'Analyzing...' : 'Analyze'}
+          {med.isAnalyzing ? 'Analyzing...' : 'Analyze'}
         </button>
-        {analyzeError && <div className="med-analyze-error">{analyzeError}</div>}
+        {med.analyzeError && <div className="med-analyze-error">{med.analyzeError}</div>}
       </div>
 
-      {analysis && (
+      {med.analysis && (
         <div className="med-analysis-results">
-          <BurdenPanel scores={analysis.burdenScores} />
+          <SummaryBar medCount={med.medList.length} cards={med.analysis.cards} />
+          <ScoresPanel scores={med.analysis.burdenScores} />
           {sortedCards.length === 0 ? (
             <div className="med-analysis-empty">
               No findings — this regimen looks clean against the current ruleset.
@@ -380,6 +313,21 @@ export const MedicationAssessment = memo(function MedicationAssessment(props: Me
               ))}
             </div>
           )}
+          <AIPlanPanel
+            hasCards={med.analysis.cards.length > 0}
+            clarifyingQuestions={med.clarifyingQuestions}
+            questionAnswers={med.questionAnswers}
+            isLoadingQuestions={med.isLoadingQuestions}
+            questionsError={med.questionsError}
+            aiPlan={med.aiPlan}
+            isGeneratingPlan={med.isGeneratingPlan}
+            planError={med.planError}
+            startPlanFlow={med.startPlanFlow}
+            setQuestionAnswer={med.setQuestionAnswer}
+            submitAnswersAndGeneratePlan={med.submitAnswersAndGeneratePlan}
+            skipQuestionsAndGeneratePlan={med.skipQuestionsAndGeneratePlan}
+            dismissPlan={med.dismissPlan}
+          />
         </div>
       )}
     </div>
