@@ -27,7 +27,15 @@ use std::time::Duration;
 use tauri::State;
 use tracing::{error, info, warn};
 
-const VISION_TIMEOUT_SECS: u64 = 30;
+/// Bumped 30s → 180s in v0.10.94 to match the v0.10.74 precedent (encounter
+/// detection, tools-model, multi-patient detect all sit at 180s). The 30s
+/// ceiling started firing consistently on 2026-05-13 — patient-name vision
+/// calls completed in 2–5s using the same `vision-model` alias, but the
+/// med-extraction workload (2048–2560px full-screen + structured multi-med
+/// JSON output) is materially heavier and exceeded the budget. Fail-soft
+/// path silently turned timeouts into "0 meds found", so clinicians saw
+/// "Vision returned no medications" instead of a real error.
+const VISION_TIMEOUT_SECS: u64 = 180;
 const PHARM_SERVICE_TIMEOUT_SECS: u64 = 30;
 const TEXT_PARSE_TIMEOUT_SECS: u64 = 15;
 /// 2048 is the OCR threshold for the EMR's small meds-panel font in our
@@ -70,6 +78,12 @@ async fn try_extract_meds(
         return Ok((Vec::new(), true));
     }
 
+    let image_kb = capture.base64.len() / 1024;
+    info!(
+        "Med extraction starting: max_edge={}px, image_base64={}KB, max_tokens={}, timeout={}s",
+        max_edge, image_kb, MED_EXTRACTION_MAX_TOKENS, VISION_TIMEOUT_SECS
+    );
+
     let (system_prompt, user_text) = build_medication_extraction_prompt(Some(templates));
     let content_parts = vec![
         ContentPart::Text { text: user_text },
@@ -97,21 +111,60 @@ async fn try_extract_meds(
     )
     .await
     {
-        Ok((Ok(resp), _metrics)) => resp,
-        Ok((Err(e), _)) => {
-            error!("Vision call for med extraction failed at {}px: {}", max_edge, e);
+        Ok((Ok(resp), metrics)) => {
+            info!(
+                "Med extraction vision OK at {}px: wall_ms={} scheduling_ms={} network_ms={} concurrent_at_start={} retry_count={} response_chars={}",
+                max_edge,
+                metrics.wall_ms,
+                metrics.scheduling_ms,
+                metrics.network_ms,
+                metrics.concurrent_at_start,
+                metrics.retry_count,
+                resp.len()
+            );
+            resp
+        }
+        Ok((Err(e), metrics)) => {
+            error!(
+                "Med extraction vision FAILED at {}px after wall_ms={} (scheduling_ms={} network_ms={} concurrent_at_start={} retry_count={} image={}KB): {}",
+                max_edge,
+                metrics.wall_ms,
+                metrics.scheduling_ms,
+                metrics.network_ms,
+                metrics.concurrent_at_start,
+                metrics.retry_count,
+                image_kb,
+                e
+            );
             return Ok((Vec::new(), false));
         }
         Err(_) => {
             warn!(
-                "Vision call for med extraction timed out at {}px after {}s",
-                max_edge, VISION_TIMEOUT_SECS
+                "Med extraction vision TIMED OUT at {}px after {}s (image={}KB, max_tokens={}) — vision-model latency exceeds client timeout",
+                max_edge, VISION_TIMEOUT_SECS, image_kb, MED_EXTRACTION_MAX_TOKENS
             );
             return Ok((Vec::new(), false));
         }
     };
 
-    Ok((parse_medication_vision_response(&response), false))
+    let meds = parse_medication_vision_response(&response);
+    info!(
+        "Med extraction parse at {}px: response_chars={} → {} meds (empty result kind: {})",
+        max_edge,
+        response.len(),
+        meds.len(),
+        if response.trim().is_empty() {
+            "empty_response"
+        } else if response.trim() == "[]" {
+            "empty_array_from_llm"
+        } else if meds.is_empty() {
+            "parse_returned_zero"
+        } else {
+            "ok"
+        }
+    );
+
+    Ok((meds, false))
 }
 
 /// Capture one screenshot and run it through the vision LLM to extract a
