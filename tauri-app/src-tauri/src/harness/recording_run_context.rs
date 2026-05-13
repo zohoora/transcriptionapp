@@ -210,7 +210,7 @@ fn compiled_default_server_config() -> ServerConfig {
         BillingData, ConfigSource, DetectionThresholds, OperationalDefaults, PromptTemplates,
     };
     ServerConfig {
-        prompts: PromptTemplates::default(),
+        prompts: std::sync::Arc::new(PromptTemplates::default()),
         billing: BillingData::default(),
         thresholds: DetectionThresholds::default(),
         defaults: OperationalDefaults::default(),

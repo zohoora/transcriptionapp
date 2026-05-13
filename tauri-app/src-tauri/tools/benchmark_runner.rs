@@ -907,6 +907,7 @@ async fn run_soap(
                     None,
                     None,           // no chart screenshots in benchmark fixtures
                     &bench.model,   // vision_model unused when screenshots is None
+                    None,           // no prompt templates in benchmark fixtures
                 )
                 .await
             {

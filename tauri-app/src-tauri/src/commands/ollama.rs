@@ -86,11 +86,11 @@ pub(crate) fn resolve_effective_models(
 /// returned client.
 pub(super) async fn load_effective_models_and_client(
     server_config: &SharedServerConfig,
-) -> Result<(Config, EffectiveModels, LLMClient, crate::server_config::PromptTemplates), CommandError> {
+) -> Result<(Config, EffectiveModels, LLMClient, std::sync::Arc<crate::server_config::PromptTemplates>), CommandError> {
     let config = Config::load_or_default();
     let sc = server_config.read().await;
     let models = resolve_effective_models(&config, &sc);
-    let templates = sc.prompts.clone();
+    let templates = std::sync::Arc::clone(&sc.prompts);
     drop(sc);
     let client = LLMClient::new(
         &config.llm_router_url,

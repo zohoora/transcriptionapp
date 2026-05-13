@@ -7,6 +7,7 @@ use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::sync::Arc;
 use tracing::{info, warn};
 
 use crate::profile_client::ProfileClient;
@@ -24,7 +25,13 @@ pub enum ConfigSource {
 
 #[derive(Debug, Clone)]
 pub struct ServerConfig {
-    pub prompts: PromptTemplates,
+    /// `Arc` so callers can clone the pointer (~ns) instead of deep-cloning
+    /// ~25 short Strings + 3 HashMaps. The hot Tauri-command path reads
+    /// `SharedServerConfig` and `Arc::clone(&sc.prompts)` to release the read
+    /// lock quickly; `Some(&templates)` coerces to `Option<&PromptTemplates>`
+    /// via Arc's `Deref`, so downstream LLM helpers see the same shape as
+    /// before the wrap.
+    pub prompts: Arc<PromptTemplates>,
     pub billing: BillingData,
     pub thresholds: DetectionThresholds,
     pub defaults: OperationalDefaults,
@@ -395,7 +402,7 @@ impl Default for OperationalDefaults {
 /// Used as ultimate fallback when server is unreachable and no cache exists.
 pub fn compiled_defaults() -> ServerConfig {
     ServerConfig {
-        prompts: PromptTemplates::default(),
+        prompts: Arc::new(PromptTemplates::default()),
         billing: BillingData::default(),
         thresholds: DetectionThresholds::default(),
         defaults: OperationalDefaults::default(),
@@ -434,7 +441,7 @@ fn load_cache() -> Option<ServerConfig> {
 fn save_cache_to(config: &ServerConfig, path: &std::path::Path) -> Result<()> {
     let cached = CachedConfig {
         version: config.version,
-        prompts: config.prompts.clone(),
+        prompts: (*config.prompts).clone(),
         billing: config.billing.clone(),
         thresholds: config.thresholds.clone(),
         defaults: config.defaults.clone(),
@@ -458,7 +465,7 @@ fn load_cache_from(path: &std::path::Path) -> Option<ServerConfig> {
     let cached: CachedConfig = serde_json::from_str(&content).ok()?;
     Some(ServerConfig {
         version: cached.version,
-        prompts: cached.prompts,
+        prompts: Arc::new(cached.prompts),
         billing: cached.billing,
         thresholds: cached.thresholds,
         defaults: cached.defaults,
@@ -552,7 +559,7 @@ async fn fetch_from_server(client: &ProfileClient) -> Result<ServerConfig> {
 
     Ok(ServerConfig {
         version: server_version.version,
-        prompts: prompts_result?,
+        prompts: Arc::new(prompts_result?),
         billing: billing_result?,
         thresholds: thresholds_result?,
         defaults,
@@ -758,7 +765,7 @@ mod tests {
         defaults.sleep_start_hour = 23;
         defaults.soap_model = "server-wins-soap".to_string();
         ServerConfig {
-            prompts: PromptTemplates::default(),
+            prompts: Arc::new(PromptTemplates::default()),
             billing: BillingData::default(),
             thresholds,
             defaults,
@@ -776,7 +783,7 @@ mod tests {
         defaults.sleep_start_hour = 19;
         defaults.soap_model = "cache-wins-soap".to_string();
         ServerConfig {
-            prompts: PromptTemplates::default(),
+            prompts: Arc::new(PromptTemplates::default()),
             billing: BillingData::default(),
             thresholds,
             defaults,

@@ -125,11 +125,7 @@ async fn try_extract_meds(
 pub async fn capture_screenshot_for_meds(
     server_config: State<'_, SharedServerConfig>,
 ) -> Result<MedExtractionResult, CommandError> {
-    let (_config, _models, client, _templates) = load_effective_models_and_client(server_config.inner()).await?;
-    let templates = {
-        let sc = server_config.read().await;
-        sc.prompts.clone()
-    };
+    let (_config, _models, client, templates) = load_effective_models_and_client(server_config.inner()).await?;
 
     let (meds, likely_blank) =
         try_extract_meds(SCREENSHOT_MAX_EDGE_PRIMARY, &client, &templates).await?;
@@ -211,11 +207,7 @@ pub async fn parse_medications_from_text(
         )));
     }
 
-    let (_config, models, client, _templates) = load_effective_models_and_client(server_config.inner()).await?;
-    let templates = {
-        let sc = server_config.read().await;
-        sc.prompts.clone()
-    };
+    let (_config, models, client, templates) = load_effective_models_and_client(server_config.inner()).await?;
 
     let (system_prompt, user_prompt) =
         build_medication_text_parse_prompt(&current_medications, trimmed, Some(&templates));

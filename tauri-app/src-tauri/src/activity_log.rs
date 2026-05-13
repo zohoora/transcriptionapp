@@ -88,9 +88,12 @@ pub fn init_logging() -> Result<(), Box<dyn std::error::Error>> {
 
     // Error-counter layer feeds the MCP `get_status` endpoint's
     // `error_count_last_hour`. Rolling 1-hour window, 10k-entry hard cap.
+    // `.with_filter(LevelFilter::ERROR)` short-circuits non-ERROR events at
+    // the dispatcher so INFO/DEBUG/TRACE skip the layer's `on_event` entirely.
     let error_counter_layer = crate::mcp::error_counter::ErrorCounterLayer::new(
         crate::mcp::error_counter::global(),
-    );
+    )
+    .with_filter(tracing_subscriber::filter::LevelFilter::ERROR);
 
     // Combine layers
     tracing_subscriber::registry()

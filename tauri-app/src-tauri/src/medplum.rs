@@ -1223,9 +1223,8 @@ impl MedplumClient {
                     None
                 };
 
-                // Patient name from the included Patient resource (single HTTP
-                // call vs the previous N+1 GET-per-encounter). Falls back to
-                // `subject.display` if the include didn't resolve.
+                // Resolve via the _included Patient resource; falls back to
+                // `subject.display` then "Unknown".
                 let patient_name = resource["subject"]["reference"]
                     .as_str()
                     .and_then(|r| r.strip_prefix("Patient/"))

@@ -545,7 +545,7 @@ pub async fn run_continuous_mode<C: crate::run_context::RunContext>(
             Some(&sc.defaults),
         );
         (
-            Arc::new(sc.prompts.clone()),
+            Arc::clone(&sc.prompts),
             Arc::new(sc.billing.clone()),
             Arc::new(sc.thresholds.clone()),
             op,
