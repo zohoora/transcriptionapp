@@ -26,7 +26,6 @@ async fn get_default_thresholds() {
     assert_eq!(json["force_split_consecutive_limit"], 3);
     assert_eq!(json["absolute_word_cap"], 25000);
     assert_eq!(json["min_words_for_clinical_check"], 100);
-    assert_eq!(json["screenshot_stale_grace_secs"], 90);
     assert_eq!(json["multi_patient_check_word_threshold"], 2500);
     assert_eq!(json["multi_patient_split_min_words"], 500);
     assert_eq!(json["confidence_base_short"], 0.85);
@@ -35,10 +34,9 @@ async fn get_default_thresholds() {
     assert_eq!(json["daily_hour_limit"], 14.0);
     assert_eq!(json["monthly_hour_limit"], 240.0);
     assert_eq!(json["monthly_window_days"], 28);
-    // Category A extensions (Phase 3)
+    // Category A extensions (Phase 3) — vision_skip_* / screenshot_stale_*
+    // removed in v0.10.96 along with PatientNameTracker.
     assert_eq!(json["multi_patient_detect_word_threshold"], 500);
-    assert_eq!(json["vision_skip_streak_k"], 5);
-    assert_eq!(json["vision_skip_call_cap"], 30);
     assert_eq!(json["gemini_generation_timeout_secs"], 240);
     assert_eq!(json["detection_prompt_max_words"], 6000);
 }
@@ -52,8 +50,6 @@ async fn detection_thresholds_back_compat_cat_a_extensions() {
     let parsed: DetectionThresholds =
         serde_json::from_str("{}").expect("parses empty object");
     assert_eq!(parsed.multi_patient_detect_word_threshold, 500);
-    assert_eq!(parsed.vision_skip_streak_k, 5);
-    assert_eq!(parsed.vision_skip_call_cap, 30);
     assert_eq!(parsed.gemini_generation_timeout_secs, 240);
     assert_eq!(parsed.detection_prompt_max_words, 6000);
     // Sanity-check an existing field — defense against accidental renames
@@ -70,8 +66,6 @@ async fn update_thresholds_persists_cat_a_extensions() {
             "/config/thresholds",
             &serde_json::json!({
                 "multi_patient_detect_word_threshold": 750,
-                "vision_skip_streak_k": 7,
-                "vision_skip_call_cap": 50,
                 "gemini_generation_timeout_secs": 60
             }),
         )
@@ -82,8 +76,6 @@ async fn update_thresholds_persists_cat_a_extensions() {
     resp.assert_ok();
     let json = resp.json();
     assert_eq!(json["multi_patient_detect_word_threshold"], 750);
-    assert_eq!(json["vision_skip_streak_k"], 7);
-    assert_eq!(json["vision_skip_call_cap"], 50);
     assert_eq!(json["gemini_generation_timeout_secs"], 60);
     // Untouched Phase 2 fields still hold defaults
     assert_eq!(json["force_check_word_threshold"], 3000);

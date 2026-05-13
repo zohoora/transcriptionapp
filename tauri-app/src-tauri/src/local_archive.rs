@@ -1647,16 +1647,29 @@ pub fn read_metadata(session_dir: &Path) -> Result<ArchiveMetadata, String> {
 /// Prorate a source duration across per-patient SOAPs by SOAP word count.
 /// Each output entry aligns with the input order. Words ≥ 1 (avoids div-by-zero).
 pub fn prorate_durations_by_soap_words(
-    per_patient_soap: &[(String, String)],
+    per_patient: &[PerPatientSplitInput],
     source_duration_ms: u64,
 ) -> Vec<u64> {
-    let counts: Vec<u128> = per_patient_soap.iter()
-        .map(|(_, soap)| soap.split_whitespace().count().max(1) as u128)
+    let counts: Vec<u128> = per_patient.iter()
+        .map(|p| p.soap_text.split_whitespace().count().max(1) as u128)
         .collect();
     let total: u128 = counts.iter().sum::<u128>().max(1);
     counts.iter()
         .map(|c| (source_duration_ms as u128 * c / total) as u64)
         .collect()
+}
+
+/// One patient's slot in a multi-patient encounter split. `label` comes from
+/// `multi_patient_detect` (transcript-derived). `extracted_name` /
+/// `extracted_dob` come from the same SOAP LLM call that produced `soap_text`
+/// — they're the chart-derived identity for this patient and override `label`
+/// when present.
+#[derive(Debug, Clone)]
+pub struct PerPatientSplitInput {
+    pub label: String,
+    pub soap_text: String,
+    pub extracted_name: Option<String>,
+    pub extracted_dob: Option<String>,
 }
 
 /// Split one multi-patient encounter into N sibling sessions, one per patient.
@@ -1680,12 +1693,12 @@ pub fn prorate_durations_by_soap_words(
 pub fn split_into_siblings(
     source_session_id: &str,
     date_str: &str,
-    per_patient_soap: &[(String, String)],
+    per_patient: &[PerPatientSplitInput],
 ) -> Result<Vec<String>, String> {
-    if per_patient_soap.len() < 2 {
+    if per_patient.len() < 2 {
         return Err(format!(
             "split_into_siblings requires at least 2 patients, got {}",
-            per_patient_soap.len()
+            per_patient.len()
         ));
     }
 
@@ -1704,29 +1717,30 @@ pub fn split_into_siblings(
 
     let source_duration = anchor_meta.duration_ms.unwrap_or(0);
     let source_words = anchor_meta.word_count;
-    let prorated_durations = prorate_durations_by_soap_words(per_patient_soap, source_duration);
+    let prorated_durations = prorate_durations_by_soap_words(per_patient, source_duration);
     let prorated_word_counts: Vec<usize> = {
-        let counts: Vec<usize> = per_patient_soap.iter()
-            .map(|(_, soap)| soap.split_whitespace().count().max(1))
+        let counts: Vec<usize> = per_patient.iter()
+            .map(|p| p.soap_text.split_whitespace().count().max(1))
             .collect();
         let total = counts.iter().sum::<usize>().max(1);
         counts.iter().map(|c| source_words * c / total).collect()
     };
 
     let group_id = Uuid::new_v4().to_string();
-    let n = per_patient_soap.len();
+    let n = per_patient.len();
     let mut sibling_ids: Vec<String> = Vec::with_capacity(n);
 
     // Sibling 0 (anchor): reuse source dir, rewrite metadata + soap, clean stale files
     {
-        let (label, soap_text) = &per_patient_soap[0];
+        let p = &per_patient[0];
         let prorated_duration = prorated_durations[0];
         let prorated_words = prorated_word_counts[0];
 
         anchor_meta.sibling_group_id = Some(group_id.clone());
         anchor_meta.sibling_index = Some(0);
         anchor_meta.sibling_group_size = Some(n as u32);
-        anchor_meta.patient_name = Some(label.clone());
+        anchor_meta.patient_name = Some(p.extracted_name.clone().unwrap_or_else(|| p.label.clone()));
+        anchor_meta.patient_dob = p.extracted_dob.clone();
         anchor_meta.patient_count = None;
         anchor_meta.duration_ms = Some(prorated_duration);
         anchor_meta.word_count = prorated_words;
@@ -1742,7 +1756,7 @@ pub fn split_into_siblings(
         fs::write(&metadata_path, meta_json)
             .map_err(|e| format!("Failed to write anchor metadata: {}", e))?;
 
-        fs::write(source_dir.join("soap_note.txt"), soap_text)
+        fs::write(source_dir.join("soap_note.txt"), &p.soap_text)
             .map_err(|e| format!("Failed to write anchor soap_note: {}", e))?;
 
         // Remove combined-SOAP artifacts left over from the multi-patient layout
@@ -1769,7 +1783,7 @@ pub fn split_into_siblings(
 
     // Siblings 1..N: new dirs with fresh UUIDs
     for i in 1..n {
-        let (label, soap_text) = &per_patient_soap[i];
+        let p = &per_patient[i];
         let new_id = Uuid::new_v4().to_string();
         let new_dir = date_dir.join(&new_id);
         fs::create_dir_all(&new_dir)
@@ -1793,8 +1807,8 @@ pub fn split_into_siblings(
             soap_format: anchor_meta.soap_format.clone(),
             charting_mode: anchor_meta.charting_mode.clone(),
             encounter_number: None,
-            patient_name: Some(label.clone()),
-            patient_dob: None,
+            patient_name: Some(p.extracted_name.clone().unwrap_or_else(|| p.label.clone())),
+            patient_dob: p.extracted_dob.clone(),
             detection_method: anchor_meta.detection_method.clone(),
             shadow_comparison: None,
             likely_non_clinical: anchor_meta.likely_non_clinical,
@@ -1820,7 +1834,7 @@ pub fn split_into_siblings(
             .map_err(|e| format!("Failed to write sibling {} metadata: {}", i, e))?;
         fs::write(new_dir.join("transcript.txt"), &transcript)
             .map_err(|e| format!("Failed to write sibling {} transcript: {}", i, e))?;
-        fs::write(new_dir.join("soap_note.txt"), soap_text)
+        fs::write(new_dir.join("soap_note.txt"), &p.soap_text)
             .map_err(|e| format!("Failed to write sibling {} soap_note: {}", i, e))?;
 
         sibling_ids.push(new_id);
@@ -1981,6 +1995,64 @@ pub fn has_local_metadata(session_id: &str, date_str: &str) -> bool {
         Ok(dir) => dir.join("metadata.json").is_file(),
         Err(_) => false,
     }
+}
+
+/// Outcome of writing SOAP-extracted identity. `SkippedConfirmed` means the
+/// session was already clinician-confirmed and we left both fields alone.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SoapIdentityWriteOutcome {
+    Applied { applied_name: bool, applied_dob: bool },
+    SkippedConfirmed,
+}
+
+/// Write SOAP-extracted patient identity into a session's `metadata.json`.
+/// `None` for a field is a no-op for that field (preserves prior value).
+/// Sessions with `patient_confirmed_at: Some` are preserved untouched —
+/// the clinician already verified, and SOAP regen must not overwrite.
+pub fn apply_soap_extracted_identity(
+    session_id: &str,
+    date_str: &str,
+    extracted_name: Option<&str>,
+    extracted_dob: Option<&str>,
+) -> Result<SoapIdentityWriteOutcome, String> {
+    let session_dir = get_session_dir_from_str(session_id, date_str)?;
+    let metadata_path = session_dir.join("metadata.json");
+    let content = fs::read_to_string(&metadata_path)
+        .map_err(|e| format!("Failed to read metadata: {}", e))?;
+    let mut metadata: ArchiveMetadata = serde_json::from_str(&content)
+        .map_err(|e| format!("Failed to parse metadata: {}", e))?;
+
+    if metadata.patient_confirmed_at.is_some() {
+        info!(
+            session_id = %session_id,
+            "SOAP-extracted identity preserved: session is patient-confirmed, not overwriting"
+        );
+        return Ok(SoapIdentityWriteOutcome::SkippedConfirmed);
+    }
+
+    let mut applied_name = false;
+    let mut applied_dob = false;
+    if let Some(name) = extracted_name {
+        metadata.patient_name = Some(name.to_string());
+        applied_name = true;
+    }
+    if let Some(dob) = extracted_dob {
+        metadata.patient_dob = Some(dob.to_string());
+        applied_dob = true;
+    }
+
+    let json = serde_json::to_string_pretty(&metadata)
+        .map_err(|e| format!("Failed to serialize metadata: {}", e))?;
+    fs::write(&metadata_path, json)
+        .map_err(|e| format!("Failed to write metadata: {}", e))?;
+
+    info!(
+        session_id = %session_id,
+        applied_name,
+        applied_dob,
+        "SOAP-extracted identity written to metadata"
+    );
+    Ok(SoapIdentityWriteOutcome::Applied { applied_name, applied_dob })
 }
 
 pub fn update_patient_name(session_id: &str, date_str: &str, name: &str) -> Result<(), String> {
@@ -2814,9 +2886,18 @@ mod tests {
         let date_dir = session_dir.parent().unwrap().to_path_buf();
 
         let per_patient = vec![
-            ("Steven Davidson".to_string(), "soap text for steven contains many words approximately ten"
-                .to_string()),
-            ("Knight Davidson".to_string(), "shorter knight soap text".to_string()),
+            PerPatientSplitInput {
+                label: "Steven Davidson".to_string(),
+                soap_text: "soap text for steven contains many words approximately ten".to_string(),
+                extracted_name: None,
+                extracted_dob: None,
+            },
+            PerPatientSplitInput {
+                label: "Knight Davidson".to_string(),
+                soap_text: "shorter knight soap text".to_string(),
+                extracted_name: None,
+                extracted_dob: None,
+            },
         ];
 
         let sibling_ids = split_into_siblings(&source_id, date_str, &per_patient).unwrap();
@@ -2886,9 +2967,9 @@ mod tests {
         let date_dir = session_dir.parent().unwrap().to_path_buf();
 
         let per_patient = vec![
-            ("A".to_string(), "soap a".to_string()),
-            ("B".to_string(), "soap b".to_string()),
-            ("C".to_string(), "soap c".to_string()),
+            PerPatientSplitInput { label: "A".into(), soap_text: "soap a".into(), extracted_name: None, extracted_dob: None },
+            PerPatientSplitInput { label: "B".into(), soap_text: "soap b".into(), extracted_name: None, extracted_dob: None },
+            PerPatientSplitInput { label: "C".into(), soap_text: "soap c".into(), extracted_name: None, extracted_dob: None },
         ];
 
         let sibling_ids = split_into_siblings(&source_id, date_str, &per_patient).unwrap();
@@ -2925,8 +3006,8 @@ mod tests {
         let big_soap = vec!["w"; 100].join(" ");
         let small_soap = vec!["w"; 50].join(" ");
         let per_patient = vec![
-            ("Big".to_string(), big_soap),
-            ("Small".to_string(), small_soap),
+            PerPatientSplitInput { label: "Big".into(), soap_text: big_soap, extracted_name: None, extracted_dob: None },
+            PerPatientSplitInput { label: "Small".into(), soap_text: small_soap, extracted_name: None, extracted_dob: None },
         ];
 
         let sibling_ids = split_into_siblings(&source_id, date_str, &per_patient).unwrap();
@@ -2960,7 +3041,12 @@ mod tests {
         let date_str = "2024-02-10";
         let session_dir = stage_multi_patient_session(&source_id, date_str, 30_000, 100, false);
 
-        let one_patient = vec![("Only".to_string(), "single soap".to_string())];
+        let one_patient = vec![PerPatientSplitInput {
+            label: "Only".into(),
+            soap_text: "single soap".into(),
+            extracted_name: None,
+            extracted_dob: None,
+        }];
         let result = split_into_siblings(&source_id, date_str, &one_patient);
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("at least 2 patients"));
@@ -2975,7 +3061,10 @@ mod tests {
         let result = split_into_siblings(
             "nonexistent-sib-xyz",
             "2099-12-31",
-            &[("A".into(), "a".into()), ("B".into(), "b".into())],
+            &[
+                PerPatientSplitInput { label: "A".into(), soap_text: "a".into(), extracted_name: None, extracted_dob: None },
+                PerPatientSplitInput { label: "B".into(), soap_text: "b".into(), extracted_name: None, extracted_dob: None },
+            ],
         );
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("Source session not found"));
@@ -3937,11 +4026,15 @@ mod negative_gap_tests {
                 patient_label: "Speaker 1 (Jim)".to_string(),
                 speaker_id: "Speaker 1".to_string(),
                 content: "S: medication review.\nA: stable.\nP: continue.".to_string(),
+                extracted_patient_name: None,
+                extracted_patient_dob: None,
             },
             crate::llm_client::PatientSoapNote {
                 patient_label: "Speaker 2 (Linda)".to_string(),
                 speaker_id: "Speaker 2".to_string(),
                 content: "S: separate concern.\nA: separate.\nP: separate plan.".to_string(),
+                extracted_patient_name: None,
+                extracted_patient_dob: None,
             },
         ];
         save_multi_patient_soap(session_id, &date, &notes, None).unwrap();

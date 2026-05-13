@@ -861,7 +861,6 @@ function App() {
             encounterNotes={continuous.encounterNotes}
             onSubmitEncounterNote={continuous.onSubmitEncounterNote}
             onDeleteEncounterNote={continuous.onDeleteEncounterNote}
-            currentPatientName={continuous.currentPatientName}
             // Image suggestions (MIIS or AI)
             miisSuggestions={continuous.miisSuggestions}
             miisLoading={continuous.miisLoading}

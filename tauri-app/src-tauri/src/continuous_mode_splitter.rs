@@ -84,7 +84,6 @@ pub struct SplitContext {
     pub encounter_segment_count: usize,
     pub encounter_duration_ms: u64,
     pub notes_text: String,
-    pub tracker_snapshot: (Option<String>, usize, Vec<String>),
     pub encounter_patient_name: Option<String>,
     pub detection_method: String,
     /// Resolved session archive directory for the new encounter. `None` if
@@ -246,17 +245,12 @@ pub async fn split_encounter<C: RunContext>(
                     if has_clinician_notes {
                         metadata.has_clinician_notes = true;
                     }
-                    // Add patient name and DOB from vision extraction
-                    if let Ok(tracker) = deps.handle.name_tracker.lock() {
-                        metadata.patient_name = tracker.majority_name();
-                        metadata.patient_dob = tracker.dob().map(|s| s.to_string());
-                    } else {
-                        warn!(
-                            event = "splitter_name_tracker_poisoned",
-                            component = "continuous_mode_splitter",
-                            "Name tracker lock poisoned, patient name/dob not written to metadata"
-                        );
-                    }
+                    // Patient name + DOB are written by the SOAP path
+                    // (see `encounter_pipeline::generate_and_archive_soap` ->
+                    // `local_archive::apply_soap_extracted_identity`), which
+                    // fires AFTER this splitter completes. Leave the fields
+                    // as None here so the SOAP write isn't competing with a
+                    // stale vision-tracker value.
                     // Add shadow comparison data if in shadow mode
                     if deps.is_shadow_mode {
                         let shadow_method = if deps.shadow_active_method == ShadowActiveMethod::Sensor {
@@ -327,30 +321,12 @@ pub async fn split_encounter<C: RunContext>(
         }
     }
 
-    // Extract patient name and full tracker state before resetting.
-    // The replay bundle needs this data too — capturing after reset
-    // would see an empty tracker (was the cause of replay_bundle
-    // always showing majority_name=None, vote_count=0).
-    let (encounter_patient_name, tracker_snapshot) = match deps.handle.name_tracker.lock() {
-        Ok(mut tracker) => {
-            let name = tracker.majority_name();
-            let votes: usize = tracker.vote_count();
-            let unique: Vec<String> = tracker.votes().keys().cloned().collect();
-            tracker.reset();
-            (name.clone(), (name, votes, unique))
-        }
-        Err(e) => {
-            warn!(
-                event = "splitter_name_tracker_poisoned",
-                component = "continuous_mode_splitter",
-                error = %e,
-                "Name tracker lock poisoned"
-            );
-            (None, (None, 0, vec![]))
-        }
-    };
+    // Patient name is populated by the SOAP path that runs in
+    // `continuous_mode_post_split` after this splitter returns. Events fired
+    // from here carry `patient_name: None`; History reads the resolved name
+    // from `metadata.json` once SOAP completes.
+    let encounter_patient_name: Option<String> = None;
 
-    // Record split timestamp (for stale screenshot detection)
     if let Ok(mut t) = deps.handle.last_split_time.lock() {
         *t = ctx.now_utc();
     }
@@ -403,7 +379,6 @@ pub async fn split_encounter<C: RunContext>(
         encounter_segment_count,
         encounter_duration_ms,
         notes_text,
-        tracker_snapshot,
         encounter_patient_name,
         detection_method: detection_method_str,
         session_dir,
@@ -474,14 +449,10 @@ mod tests {
         let ctx = make_ctx(guard.path());
         let handle = Arc::new(ContinuousModeHandle::new());
 
-        // Seed a patient name into the tracker so the splitter writes it
-        // into metadata.patient_name.
-        {
-            let mut tracker = handle.name_tracker.lock().expect("tracker lock");
-            for _ in 0..3 {
-                tracker.record("Jane Doe");
-            }
-        }
+        // patient_name + patient_dob are now written by the SOAP path
+        // (`apply_soap_extracted_identity`), not by the splitter, so they
+        // come out as None here. The splitter only writes the structural
+        // metadata fields.
         seed_buffer(&handle, 3, 5);
 
         let deps = make_deps(Arc::clone(&handle));
@@ -513,45 +484,9 @@ mod tests {
             metadata.detection_method.as_deref(),
             Some("llm_confident_split")
         );
-        assert_eq!(metadata.patient_name.as_deref(), Some("Jane Doe"));
-    }
-
-    #[tokio::test]
-    #[serial]
-    async fn resets_name_tracker_after_split() {
-        let guard = ArchiveDirGuard::new();
-        let ctx = make_ctx(guard.path());
-        let handle = Arc::new(ContinuousModeHandle::new());
-
-        {
-            let mut tracker = handle.name_tracker.lock().unwrap();
-            tracker.record("Alice");
-            tracker.record("Alice");
-            tracker.set_dob("1990-01-01".to_string());
-        }
-        seed_buffer(&handle, 4, 3);
-
-        let deps = make_deps(Arc::clone(&handle));
-        split_encounter(
-            &ctx,
-            &deps,
-            SplitterCall {
-                end_index: 3,
-                detection_method: "t",
-                cleaned_word_count: 12,
-            },
-            &LoopState::new(),
-        )
-        .await
-        .expect("split");
-
-        let tracker = handle.name_tracker.lock().unwrap();
-        assert!(
-            tracker.majority_name().is_none(),
-            "tracker votes should be cleared after split"
-        );
-        assert_eq!(tracker.vote_count(), 0);
-        assert!(tracker.dob().is_none(), "dob should be cleared after split");
+        // Splitter leaves patient identity for the SOAP path to populate.
+        assert!(metadata.patient_name.is_none(), "splitter no longer writes patient_name");
+        assert!(metadata.patient_dob.is_none(), "splitter no longer writes patient_dob");
     }
 
     #[tokio::test]

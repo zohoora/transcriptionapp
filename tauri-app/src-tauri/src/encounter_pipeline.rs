@@ -172,19 +172,38 @@ pub async fn generate_and_archive_soap(
         Ok((Ok(mut soap_result), call_metrics)) => {
             let latency_ms = soap_start.elapsed().as_millis() as u64;
             let content = soap_result.format_for_archive();
+            let date_str = session_date.format("%Y-%m-%d").to_string();
 
-            // Multi-patient encounters auto-split into N sibling sessions, each
-            // single-patient. Single-patient encounters take the legacy SOAP path.
-            // If the sibling split fails (rare — disk error), fall back to the
+            // Multi-patient encounters auto-split into N sibling sessions
+            // (identity from the same SOAP call is written by
+            // `split_into_siblings` in one pass). Single-patient encounters
+            // take the legacy SOAP path then apply identity separately. If
+            // the sibling split fails (rare — disk error), fall back to the
             // legacy combined-SOAP layout so the encounter is still preserved
             // and clinicians can recover via the manual backfill button.
             let sibling_ids: Vec<String> = if soap_result.notes.len() > 1 {
-                let date_str = session_date.format("%Y-%m-%d").to_string();
-                let per_patient: Vec<(String, String)> = soap_result.notes.iter()
-                    .map(|n| (n.patient_label.clone(), n.content.clone()))
+                let per_patient: Vec<local_archive::PerPatientSplitInput> = soap_result.notes.iter()
+                    .map(|n| local_archive::PerPatientSplitInput {
+                        label: n.patient_label.clone(),
+                        soap_text: n.content.clone(),
+                        extracted_name: n.extracted_patient_name.clone(),
+                        extracted_dob: n.extracted_patient_dob.clone(),
+                    })
                     .collect();
                 match local_archive::split_into_siblings(session_id, &date_str, &per_patient) {
-                    Ok(ids) => ids,
+                    Ok(ids) => {
+                        for (i, sid) in ids.iter().enumerate() {
+                            info!(
+                                event = "soap_identity_write",
+                                session_id = %sid,
+                                patient_label = %per_patient[i].label,
+                                applied_name = per_patient[i].extracted_name.is_some(),
+                                applied_dob = per_patient[i].extracted_dob.is_some(),
+                                "Sibling created with SOAP-extracted identity"
+                            );
+                        }
+                        ids
+                    }
                     Err(e) => {
                         warn!(
                             session_id = %session_id,
@@ -214,6 +233,36 @@ pub async fn generate_and_archive_soap(
                 }
                 Vec::new()
             };
+
+            // Single-patient path: apply SOAP-extracted identity to the
+            // session that just received `add_soap_note`. Multi-patient
+            // identity is already written by `split_into_siblings` above.
+            if sibling_ids.is_empty() && soap_result.notes.len() == 1 {
+                let note = &soap_result.notes[0];
+                let name = note.extracted_patient_name.as_deref();
+                let dob = note.extracted_patient_dob.as_deref();
+                if name.is_some() || dob.is_some() {
+                    match local_archive::apply_soap_extracted_identity(session_id, &date_str, name, dob) {
+                        Ok(outcome) => info!(
+                            event = "soap_identity_write",
+                            session_id = %session_id,
+                            outcome = ?outcome,
+                            "Wrote SOAP-extracted identity"
+                        ),
+                        Err(e) => warn!(
+                            session_id = %session_id,
+                            error = %e,
+                            "Failed to write SOAP-extracted identity"
+                        ),
+                    }
+                } else {
+                    info!(
+                        event = "soap_identity_none",
+                        session_id = %session_id,
+                        "SOAP call returned no patient identity (no chart visible or NOT_FOUND)"
+                    );
+                }
+            }
 
             if let Ok(mut l) = logger.lock() {
                 let mut meta = log_extra;
@@ -1723,6 +1772,8 @@ mod tests {
                 patient_label: "Combined".into(),
                 speaker_id: "All".into(),
                 content: "S: Headache".into(),
+                extracted_patient_name: None,
+                extracted_patient_dob: None,
             }],
             physician_speaker: None,
             generated_at: "2026-05-08T00:00:00Z".into(),

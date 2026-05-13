@@ -308,16 +308,11 @@ pub async fn run<C: RunContext>(
                                 if flush_has_clinician_notes {
                                     metadata.has_clinician_notes = true;
                                 }
-                                if let Ok(tracker) = handle.name_tracker.lock() {
-                                    metadata.patient_name = tracker.majority_name();
-                                    metadata.patient_dob = tracker.dob().map(|s| s.to_string());
-                                } else {
-                                    warn!(
-                                        event = "flush_name_tracker_poisoned",
-                                        component = "continuous_mode_flush_on_stop",
-                                        "Name tracker lock poisoned during flush metadata enrichment"
-                                    );
-                                }
+                                // patient_name + patient_dob are populated
+                                // by the SOAP path that runs immediately
+                                // below (see `apply_soap_extracted_identity`
+                                // inside `generate_and_archive_soap`). Leave
+                                // both None here.
                                 // Add physician/room context (multi-user)
                                 sync_ctx.enrich_metadata(&mut metadata);
                                 if let Ok(json) = serde_json::to_string_pretty(&metadata) {
@@ -659,7 +654,7 @@ pub async fn run<C: RunContext>(
                     )
                     .await;
                     if let crate::encounter_pipeline::SoapGenerationOutcome::Success {
-                        ref content, ..
+                        ref content, ref result, ..
                     } = outcome
                     {
                         sync_ctx.sync_soap(
@@ -687,11 +682,10 @@ pub async fn run<C: RunContext>(
                             let flush_now = ctx.now_utc();
                             let flush_after_hours =
                                 crate::encounter_pipeline::is_after_hours(&flush_now);
-                            let flush_patient_name = handle
-                                .name_tracker
-                                .lock()
-                                .ok()
-                                .and_then(|t| t.majority_name());
+                            // Patient name from the SOAP call we just ran
+                            // (same extractor that wrote `metadata.patient_name`).
+                            let flush_patient_name = result.notes.first()
+                                .and_then(|n| n.extracted_patient_name.clone());
                             let billing_start = std::time::Instant::now();
                             let billing_result =
                                 crate::encounter_pipeline::extract_and_archive_billing(
@@ -768,27 +762,12 @@ pub async fn run<C: RunContext>(
                 // so we clear without writing (matches the merge path's
                 // fail-safe fallback).
                 if let Ok(mut bundle) = bundle_for_flush.lock() {
-                    let (tracker_majority, tracker_votes, tracker_unique) =
-                        if let Ok(tracker) = handle.name_tracker.lock() {
-                            (
-                                tracker.majority_name(),
-                                tracker.vote_count(),
-                                tracker.votes().keys().cloned().collect::<Vec<_>>(),
-                            )
-                        } else {
-                            (None, 0usize, Vec::new())
-                        };
                     bundle.set_split_decision(crate::replay_bundle::SplitDecision {
                         ts: ctx.now_utc().to_rfc3339(),
                         trigger: "flush".to_string(),
                         word_count,
                         cleaned_word_count: word_count,
                         end_segment_index: None,
-                    });
-                    bundle.set_name_tracker(crate::replay_bundle::NameTrackerState {
-                        majority_name: tracker_majority.clone(),
-                        vote_count: tracker_votes,
-                        unique_names: tracker_unique,
                     });
                     bundle.set_outcome(crate::replay_bundle::Outcome {
                         session_id: session_id.clone(),
@@ -797,7 +776,10 @@ pub async fn run<C: RunContext>(
                         is_clinical,
                         was_merged: flush_was_merged,
                         merged_into: None,
-                        patient_name: tracker_majority,
+                        // Patient name is written into `metadata.patient_name`
+                        // by the SOAP path. The replay bundle's outcome stays
+                        // identity-free now that vision votes are gone.
+                        patient_name: None,
                         detection_method: Some("flush".to_string()),
                     });
                     if flush_was_merged {

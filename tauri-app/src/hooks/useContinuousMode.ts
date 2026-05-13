@@ -26,8 +26,6 @@ export interface UseContinuousModeResult {
   submitEncounterNote: (text: string) => Promise<EncounterNote>;
   /** Remove a previously-submitted note by id. Idempotent — no-op if the id isn't present. */
   deleteEncounterNote: (id: string) => Promise<void>;
-  /** Live patient name from vision tracker (null during buffering-before-vision or after DOB invalidation) */
-  currentPatientName: string | null;
   /** Start continuous mode */
   start: () => Promise<void>;
   /** Stop continuous mode */
@@ -71,7 +69,6 @@ export function useContinuousMode(): UseContinuousModeResult {
   const [liveTranscript, setLiveTranscript] = useState('');
   const [audioQuality, setAudioQuality] = useState<AudioQualitySnapshot | null>(null);
   const [encounterNotes, setEncounterNotes] = useState<EncounterNote[]>([]);
-  const [currentPatientName, setCurrentPatientName] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [encounterSessionId, setEncounterSessionId] = useState<string>(`continuous-${Date.now()}`);
   const [transcriptionStalled, setTranscriptionStalled] = useState(false);
@@ -103,7 +100,6 @@ export function useContinuousMode(): UseContinuousModeResult {
           setIsSleeping(false);
           setSleepResumeAt(null);
           setEncounterNotes([]);
-          setCurrentPatientName(null);
           break;
         case 'stopped':
           setIsActive(false);
@@ -112,24 +108,18 @@ export function useContinuousMode(): UseContinuousModeResult {
           setLiveTranscript('');
           setAudioQuality(null);
           setEncounterNotes([]);
-          setCurrentPatientName(null);
           setTranscriptionStalled(false);
           setIsSleeping(false);
           setSleepResumeAt(null);
           break;
         case 'encounter_detected':
-          // Encounter split — archived notes are on disk. Reset the chip list
-          // for the NEW encounter; reset the attachment label until the
-          // vision tracker reacquires a name on the next screenshot cycle.
+          // Encounter split — archived notes are on disk. Reset the chip
+          // list for the NEW encounter. Patient name is no longer streamed
+          // mid-encounter (vision identity is end-of-encounter via SOAP);
+          // the History window picks up the name from metadata after SOAP.
           setEncounterNotes([]);
-          setCurrentPatientName(null);
           setEncounterSessionId(`continuous-${Date.now()}`);
           setTranscriptionStalled(false);
-          break;
-        case 'patient_name_updated':
-          // `name` absent = tracker cleared (DOB invalidation). Store null so
-          // the attachment label falls back to "current encounter".
-          setCurrentPatientName(payload.name ?? null);
           break;
         case 'transcription_stalled':
           setTranscriptionStalled(true);
@@ -304,7 +294,6 @@ export function useContinuousMode(): UseContinuousModeResult {
     encounterNotes,
     submitEncounterNote,
     deleteEncounterNote,
-    currentPatientName,
     start,
     stop,
     triggerNewPatient,

@@ -73,7 +73,6 @@ function makeDefaultProps(overrides: Partial<Parameters<typeof ContinuousMode>[0
       timestampMs: 1_700_000_000_000,
     }),
     onDeleteEncounterNote: vi.fn().mockResolvedValue(undefined),
-    currentPatientName: null,
     miisSuggestions: [],
     miisLoading: false,
     miisError: null,
@@ -322,15 +321,14 @@ describe('ContinuousMode', () => {
       expect(submit).toBeDisabled();
     });
 
-    it('shows the attachment hint with the live patient name when provided', () => {
+    it('shows the generic attachment hint mid-encounter (vision identity is end-of-encounter now)', () => {
       render(<ContinuousMode {...makeDefaultProps({
         isActive: true,
         stats: ACTIVE_STATS,
-        currentPatientName: 'Jane Smith',
       })} />);
       fireEvent.click(screen.getByRole('button', { name: /add notes/i }));
       const hint = screen.getByText(/notes will attach to:/i);
-      expect(hint).toHaveTextContent('Jane Smith');
+      expect(hint).toHaveTextContent('current encounter');
     });
 
     it('renders submitted chips newest-first and wires delete buttons', () => {

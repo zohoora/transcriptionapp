@@ -210,6 +210,8 @@ impl LlmBackend for ReplayLlmBackend {
                 patient_label: format!("Patient {}", i + 1),
                 speaker_id: String::new(),
                 content: "[harness-stub SOAP]".into(),
+                extracted_patient_name: None,
+                extracted_patient_dob: None,
             })
             .collect();
         Ok(MultiPatientSoapResult {

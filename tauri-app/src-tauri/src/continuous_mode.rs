@@ -43,7 +43,6 @@ pub use crate::encounter_detection::{
     TRIGGER_HYBRID_SENSOR_TIMEOUT,
 };
 pub use crate::encounter_merge::MergeCheckResult;
-pub use crate::patient_name_tracker::PatientNameTracker;
 
 // ============================================================================
 // Merge excerpt helpers
@@ -90,7 +89,6 @@ pub const MIN_SENSOR_HYBRID_WORDS: usize = 500;
 pub(crate) fn finalize_merged_bundle(
     bundle_mutex: &Arc<Mutex<crate::replay_bundle::ReplayBundleBuilder>>,
     segment_logger_mutex: &Arc<Mutex<crate::segment_log::SegmentLogger>>,
-    tracker_snapshot: &(Option<String>, usize, Vec<String>),
     session_id: &str,
     encounter_number: u32,
     encounter_word_count: usize,
@@ -98,13 +96,7 @@ pub(crate) fn finalize_merged_bundle(
     prev_id: &str,
     prev_date: &DateTime<Utc>,
 ) {
-    let (tm, tv, tu) = tracker_snapshot;
     if let Ok(mut bundle) = bundle_mutex.lock() {
-        bundle.set_name_tracker(crate::replay_bundle::NameTrackerState {
-            majority_name: tm.clone(),
-            vote_count: *tv,
-            unique_names: tu.clone(),
-        });
         let trigger = bundle.split_decision_trigger();
         bundle.set_outcome(crate::replay_bundle::Outcome {
             session_id: session_id.to_string(),
@@ -113,7 +105,7 @@ pub(crate) fn finalize_merged_bundle(
             is_clinical,
             was_merged: true,
             merged_into: Some(prev_id.to_string()),
-            patient_name: tm.clone(),
+            patient_name: None,
             detection_method: trigger,
         });
         match local_archive::get_session_archive_dir(prev_id, prev_date) {
@@ -314,7 +306,6 @@ pub struct ContinuousModeHandle {
     pub recording_since: Arc<Mutex<DateTime<Utc>>>,
     pub recent_encounters: Arc<Mutex<Vec<RecentEncounter>>>,
     pub last_error: Arc<Mutex<Option<String>>>,
-    pub name_tracker: Arc<Mutex<PatientNameTracker>>,
     /// Manual trigger for "New Patient" button — wakes the encounter detector immediately
     pub encounter_manual_trigger: Arc<tokio::sync::Notify>,
     /// Submitted per-encounter clinician notes. Accumulates chip-style notes
@@ -326,12 +317,6 @@ pub struct ContinuousModeHandle {
     pub sensor_state_rx: Mutex<Option<tokio::sync::watch::Receiver<crate::presence_sensor::PresenceState>>>,
     /// Presence sensor status receiver (None when in LLM detection mode)
     pub sensor_status_rx: Mutex<Option<tokio::sync::watch::Receiver<crate::presence_sensor::SensorStatus>>>,
-    /// Vision-triggered name change: wakes detection loop when chart switch detected
-    pub vision_name_change_trigger: Arc<tokio::sync::Notify>,
-    /// Vision-detected new patient name (set by screenshot task, read by detection loop)
-    pub vision_new_name: Arc<Mutex<Option<String>>>,
-    /// Vision-detected previous patient name (set by screenshot task on change)
-    pub vision_old_name: Arc<Mutex<Option<String>>>,
     /// Shadow mode: accumulated shadow decisions for the current encounter
     pub shadow_decisions: Arc<Mutex<Vec<crate::shadow_log::ShadowDecisionSummary>>>,
     /// Shadow mode: most recent shadow decision (for dashboard display)
@@ -355,14 +340,10 @@ impl ContinuousModeHandle {
             recording_since: Arc::new(Mutex::new(Utc::now())),
             recent_encounters: Arc::new(Mutex::new(Vec::new())),
             last_error: Arc::new(Mutex::new(None)),
-            name_tracker: Arc::new(Mutex::new(PatientNameTracker::new())),
             encounter_manual_trigger: Arc::new(tokio::sync::Notify::new()),
             encounter_notes: Arc::new(Mutex::new(Vec::new())),
             sensor_state_rx: Mutex::new(None),
             sensor_status_rx: Mutex::new(None),
-            vision_name_change_trigger: Arc::new(tokio::sync::Notify::new()),
-            vision_new_name: Arc::new(Mutex::new(None)),
-            vision_old_name: Arc::new(Mutex::new(None)),
             shadow_decisions: Arc::new(Mutex::new(Vec::new())),
             last_shadow_decision: Arc::new(Mutex::new(None)),
             last_split_time: Arc::new(Mutex::new(Utc::now())),
@@ -386,10 +367,7 @@ impl ContinuousModeHandle {
         if let Ok(mut v) = self.recording_since.lock() { *v = Utc::now(); }
         if let Ok(mut v) = self.recent_encounters.lock() { v.clear(); }
         if let Ok(mut v) = self.last_error.lock() { *v = None; }
-        if let Ok(mut v) = self.name_tracker.lock() { *v = PatientNameTracker::new(); }
         if let Ok(mut v) = self.encounter_notes.lock() { v.clear(); }
-        if let Ok(mut v) = self.vision_new_name.lock() { *v = None; }
-        if let Ok(mut v) = self.vision_old_name.lock() { *v = None; }
         if let Ok(mut v) = self.shadow_decisions.lock() { v.clear(); }
         if let Ok(mut v) = self.last_shadow_decision.lock() { *v = None; }
         if let Ok(mut v) = self.last_split_time.lock() { *v = Utc::now(); }
@@ -564,10 +542,6 @@ pub async fn run_continuous_mode<C: crate::run_context::RunContext>(
     let multi_patient_detect_word_threshold = detector_thresholds.multi_patient_detect_word_threshold;
     let soap_generation_timeout_secs = detector_thresholds.soap_generation_timeout_secs;
     let billing_extraction_timeout_secs = detector_thresholds.billing_extraction_timeout_secs;
-
-    // Shared-Arc clone consumed by the screenshot task (spawned after the
-    // detector moves `detector_thresholds` into its `async move` block).
-    let screenshot_thresholds = Arc::clone(&detector_thresholds);
 
     // Audio recording path for continuous mode
     let audio_output_path = {
@@ -1061,11 +1035,10 @@ pub async fn run_continuous_mode<C: crate::run_context::RunContext>(
     // Clone manual trigger for the detector task
     let manual_trigger_rx = handle.encounter_manual_trigger.clone();
 
-    // Clone vision name change trigger for the detector task
-    // Vision trigger is no longer used for detection decisions — EMR chart name is
-    // unreliable (doctor may open family members, not open chart, or vision may parse
-    // the same name differently). Vision still extracts names for metadata labeling.
-    let _vision_trigger_rx = handle.vision_name_change_trigger.clone();
+    // Vision-trigger plumbing removed in v0.10.96: the per-screenshot name
+    // tracker is gone, so there's no live event source to wake the detector
+    // on a chart-switch. Identity is extracted at the end of each encounter
+    // by the SOAP call — see `encounter_pipeline::generate_and_archive_soap`.
 
     // Biomarker reset flag for the detector task
     let reset_bio_flag = reset_bio_for_detector;
@@ -1076,7 +1049,6 @@ pub async fn run_continuous_mode<C: crate::run_context::RunContext>(
     // Pipeline replay logger — writes JSONL to each session's archive folder
     let pipeline_logger = Arc::new(Mutex::new(crate::pipeline_log::PipelineLogger::new()));
     let logger_for_detector = Arc::clone(&pipeline_logger);
-    let logger_for_screenshot = Arc::clone(&pipeline_logger);
     let logger_for_flush = Arc::clone(&pipeline_logger);
 
     // Segment logger clones for detector and flush (Arc created before consumer task)
@@ -1095,9 +1067,8 @@ pub async fn run_continuous_mode<C: crate::run_context::RunContext>(
         });
     }
 
-    // Replay bundle clones for detector, screenshot, flush (Arc created before consumer task)
+    // Replay bundle clones for detector + flush (Arc created before consumer task)
     let bundle_for_detector = Arc::clone(&replay_bundle);
-    let bundle_for_screenshot = Arc::clone(&replay_bundle);
     let bundle_for_flush = Arc::clone(&replay_bundle);
 
     // Server sync context clone for detector task (fire-and-forget uploads)
@@ -1784,7 +1755,6 @@ pub async fn run_continuous_mode<C: crate::run_context::RunContext>(
                         let encounter_word_count = split_ctx_for_post.encounter_word_count;
                         let encounter_start = split_ctx_for_post.encounter_start;
                         let notes_text = split_ctx_for_post.notes_text.clone();
-                        let tracker_snapshot = split_ctx_for_post.tracker_snapshot.clone();
                         let encounter_patient_name = split_ctx_for_post.encounter_patient_name.clone();
 
                         // Delegate clinical content check + multi-patient detection +
@@ -1815,7 +1785,6 @@ pub async fn run_continuous_mode<C: crate::run_context::RunContext>(
                             is_clinical,
                             pre_soap_found_multi_patient,
                             notes_text: &notes_text,
-                            tracker_snapshot: tracker_snapshot.clone(),
                             prev_encounter_session_id: prev_encounter_session_id.as_deref(),
                             prev_encounter_text: prev_encounter_text.as_deref(),
                             prev_encounter_text_rich: prev_encounter_text_rich.as_deref(),
@@ -1853,15 +1822,11 @@ pub async fn run_continuous_mode<C: crate::run_context::RunContext>(
                             loop_state.merge_back_count = 0;
                         }
 
-                        // Finalize replay bundle for this encounter
-                        // Use tracker_snapshot captured before reset (not the now-empty tracker)
-                        let (tracker_majority, tracker_votes, tracker_unique) = tracker_snapshot;
+                        // Finalize replay bundle. Patient name is written into
+                        // `metadata.patient_name` by the SOAP path, not into
+                        // the bundle's outcome — the bundle stays identity-
+                        // free.
                         if let Ok(mut bundle) = bundle_for_detector.lock() {
-                            bundle.set_name_tracker(crate::replay_bundle::NameTrackerState {
-                                majority_name: tracker_majority.clone(),
-                                vote_count: tracker_votes,
-                                unique_names: tracker_unique,
-                            });
                             let trigger = bundle.split_decision_trigger();
                             bundle.set_outcome(crate::replay_bundle::Outcome {
                                 session_id: session_id.clone(),
@@ -1870,7 +1835,7 @@ pub async fn run_continuous_mode<C: crate::run_context::RunContext>(
                                 is_clinical,
                                 was_merged: false,
                                 merged_into: None,
-                                patient_name: tracker_majority,
+                                patient_name: None,
                                 detection_method: trigger,
                             });
                             // Write replay_bundle.json and reset for next encounter
@@ -1938,37 +1903,17 @@ pub async fn run_continuous_mode<C: crate::run_context::RunContext>(
         }
     });
 
-    // Spawn screenshot-based patient name extraction task (if screen capture enabled)
+    // Spawn screenshot capture task (if screen capture enabled). Pure
+    // capture-and-buffer loop — no LLM calls. Identity extraction happens in
+    // the end-of-encounter SOAP call (see `generate_and_archive_soap`).
     let screenshot_task = if config.screen_capture_enabled {
-        let llm_client_for_screenshot = if !config.llm_router_url.is_empty() {
-            LLMClient::new(
-                &config.llm_router_url,
-                &config.llm_api_key,
-                &config.llm_client_id,
-                &operational.fast_model,
-            )
-            .ok()
-        } else {
-            None
-        };
-
         Some(tokio::spawn(crate::screenshot_task::run_screenshot_task(
             crate::screenshot_task::ScreenshotTaskConfig {
                 stop_flag: handle.stop_flag.clone(),
-                name_tracker: handle.name_tracker.clone(),
-                last_split_time: handle.last_split_time.clone(),
-                vision_trigger: handle.vision_name_change_trigger.clone(),
-                vision_new_name: handle.vision_new_name.clone(),
-                vision_old_name: handle.vision_old_name.clone(),
                 debug_storage: config.debug_storage_enabled,
                 screenshot_interval: config.screen_capture_interval_secs.max(30) as u64,
-                llm_client: llm_client_for_screenshot,
-                pipeline_logger: logger_for_screenshot.clone(),
-                replay_bundle: bundle_for_screenshot.clone(),
                 screenshot_buffer: handle.screenshot_buffer.clone(),
                 transcript_buffer: handle.transcript_buffer.clone(),
-                thresholds: screenshot_thresholds,
-                app_handle: ctx.raw_tauri_app(),
             },
         )))
     } else {

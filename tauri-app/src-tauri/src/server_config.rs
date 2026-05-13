@@ -209,8 +209,6 @@ pub struct DetectionThresholds {
     pub absolute_word_cap: usize,
     #[serde(default = "default_100")]
     pub min_words_for_clinical_check: usize,
-    #[serde(default = "default_90")]
-    pub screenshot_stale_grace_secs: i64,
     #[serde(default = "default_2500")]
     pub multi_patient_check_word_threshold: usize,
     #[serde(default = "default_500")]
@@ -244,20 +242,6 @@ pub struct DetectionThresholds {
     // ── Category A extensions ──
     #[serde(default = "default_mp_detect_word_threshold")]
     pub multi_patient_detect_word_threshold: usize,
-    #[serde(default = "default_vision_skip_streak_k")]
-    pub vision_skip_streak_k: usize,
-    #[serde(default = "default_vision_skip_call_cap")]
-    pub vision_skip_call_cap: usize,
-    #[serde(default = "default_vision_re_sample_interval_secs")]
-    pub vision_re_sample_interval_secs: u64,
-    /// First N seconds of an encounter where vision name votes don't count
-    /// toward the majority. Vision LLM still runs (we want to learn what's
-    /// on screen) and the screenshot is captured/archived; only the vote is
-    /// suppressed. Set to 0 to disable. Default 180s — chosen from the
-    /// Apr 24 2026 Louise Simon → Jerry Zandbergen mislabel where the
-    /// previous patient's chart stayed open for the first ~5 min.
-    #[serde(default = "default_vision_startup_grace_secs")]
-    pub vision_startup_grace_secs: u64,
     #[serde(default = "default_gemini_generation_timeout_secs")]
     pub gemini_generation_timeout_secs: u64,
     #[serde(default = "default_detection_prompt_max_words")]
@@ -269,7 +253,6 @@ fn default_5000() -> usize { 5000 }
 fn default_3() -> u32 { 3 }
 fn default_25000() -> usize { 25000 }
 fn default_100() -> usize { 100 }
-fn default_90() -> i64 { 90 }
 fn default_2500() -> usize { 2500 }
 fn default_500() -> usize { 500 }
 fn default_085() -> f64 { 0.85 }
@@ -283,10 +266,6 @@ fn default_14f() -> f32 { 14.0 }
 fn default_240f() -> f32 { 240.0 }
 fn default_28() -> u32 { 28 }
 fn default_mp_detect_word_threshold() -> usize { 500 }
-fn default_vision_skip_streak_k() -> usize { 5 }
-fn default_vision_skip_call_cap() -> usize { 30 }
-fn default_vision_re_sample_interval_secs() -> u64 { 600 }
-fn default_vision_startup_grace_secs() -> u64 { 180 }
 fn default_gemini_generation_timeout_secs() -> u64 { 240 }
 fn default_detection_prompt_max_words() -> usize { 6000 }
 
@@ -299,7 +278,6 @@ impl Default for DetectionThresholds {
             force_split_consecutive_limit: 3,
             absolute_word_cap: 25000,
             min_words_for_clinical_check: 100,
-            screenshot_stale_grace_secs: 90,
             multi_patient_check_word_threshold: 2500,
             multi_patient_split_min_words: 500,
             confidence_base_short: 0.85,
@@ -316,10 +294,6 @@ impl Default for DetectionThresholds {
             monthly_hour_limit: 240.0,
             monthly_window_days: 28,
             multi_patient_detect_word_threshold: 500,
-            vision_skip_streak_k: 5,
-            vision_skip_call_cap: 30,
-            vision_re_sample_interval_secs: 600,
-            vision_startup_grace_secs: 180,
             gemini_generation_timeout_secs: 240,
             detection_prompt_max_words: 6000,
         }
@@ -727,8 +701,6 @@ mod tests {
         let parsed: DetectionThresholds =
             serde_json::from_str("{}").expect("parses empty object");
         assert_eq!(parsed.multi_patient_detect_word_threshold, 500);
-        assert_eq!(parsed.vision_skip_streak_k, 5);
-        assert_eq!(parsed.vision_skip_call_cap, 30);
         assert_eq!(parsed.gemini_generation_timeout_secs, 240);
         assert_eq!(parsed.detection_prompt_max_words, 6000);
         // And an existing field — defense against accidental renames collapsing
@@ -740,8 +712,6 @@ mod tests {
     fn test_compiled_defaults_has_sane_cat_a_extensions() {
         let config = compiled_defaults();
         assert_eq!(config.thresholds.multi_patient_detect_word_threshold, 500);
-        assert_eq!(config.thresholds.vision_skip_streak_k, 5);
-        assert_eq!(config.thresholds.vision_skip_call_cap, 30);
         assert_eq!(config.thresholds.gemini_generation_timeout_secs, 240);
         assert_eq!(config.thresholds.detection_prompt_max_words, 6000);
     }

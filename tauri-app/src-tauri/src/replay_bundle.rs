@@ -72,8 +72,6 @@ pub struct ReplayBundle {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub billing_result: Option<BillingResult>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub name_tracker: Option<NameTrackerState>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub outcome: Option<Outcome>,
     /// Multi-patient detection LLM calls (pre-SOAP inline, retrospective
     /// post-merge, standalone safety-net). 0, 1, or 2+ per encounter.
@@ -403,13 +401,6 @@ pub struct BillingResult {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct NameTrackerState {
-    pub majority_name: Option<String>,
-    pub vote_count: usize,
-    pub unique_names: Vec<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Outcome {
     pub session_id: String,
     pub encounter_number: u32,
@@ -436,7 +427,6 @@ pub struct ReplayBundleBuilder {
     merge_check: Option<MergeCheck>,
     soap_result: Option<SoapResult>,
     billing_result: Option<BillingResult>,
-    name_tracker: Option<NameTrackerState>,
     outcome: Option<Outcome>,
     multi_patient_detections: Vec<MultiPatientDetection>,
 }
@@ -454,7 +444,6 @@ impl ReplayBundleBuilder {
             merge_check: None,
             soap_result: None,
             billing_result: None,
-            name_tracker: None,
             outcome: None,
             multi_patient_detections: Vec::new(),
         }
@@ -504,10 +493,6 @@ impl ReplayBundleBuilder {
         self.billing_result = Some(result);
     }
 
-    pub fn set_name_tracker(&mut self, state: NameTrackerState) {
-        self.name_tracker = Some(state);
-    }
-
     pub fn set_outcome(&mut self, outcome: Outcome) {
         self.outcome = Some(outcome);
     }
@@ -549,7 +534,6 @@ impl ReplayBundleBuilder {
             merge_check: self.merge_check.take(),
             soap_result: self.soap_result.take(),
             billing_result: self.billing_result.take(),
-            name_tracker: self.name_tracker.take(),
             outcome: self.outcome.take(),
             multi_patient_detections: std::mem::take(&mut self.multi_patient_detections),
         }
@@ -713,7 +697,6 @@ mod tests {
         assert!(builder.clinical_check.is_none());
         assert!(builder.merge_check.is_none());
         assert!(builder.soap_result.is_none());
-        assert!(builder.name_tracker.is_none());
         assert!(builder.outcome.is_none());
         assert_eq!(builder.config, sample_config());
     }
@@ -813,7 +796,6 @@ mod tests {
         assert!(builder.clinical_check.is_none());
         assert!(builder.merge_check.is_none());
         assert!(builder.soap_result.is_none());
-        assert!(builder.name_tracker.is_none());
         assert!(builder.outcome.is_none());
 
         // Config preserved
@@ -896,13 +878,6 @@ mod tests {
             response_raw: None,
         });
 
-        // Set name tracker state
-        builder.set_name_tracker(NameTrackerState {
-            majority_name: Some("John Smith".to_string()),
-            vote_count: 3,
-            unique_names: vec!["John Smith".to_string(), "J. Smith".to_string()],
-        });
-
         // Set outcome
         builder.set_outcome(Outcome {
             session_id: "session-456".to_string(),
@@ -935,7 +910,6 @@ mod tests {
         assert!(parsed["clinical_check"].is_object());
         assert!(parsed["merge_check"].is_object());
         assert!(parsed["soap_result"].is_object());
-        assert!(parsed["name_tracker"].is_object());
         assert!(parsed["outcome"].is_object());
 
         // Spot-check nested values
@@ -943,7 +917,6 @@ mod tests {
         assert_eq!(parsed["clinical_check"]["is_clinical"], true);
         assert_eq!(parsed["merge_check"]["prev_session_id"], "prev-session-123");
         assert_eq!(parsed["soap_result"]["latency_ms"], 5000);
-        assert_eq!(parsed["name_tracker"]["majority_name"], "John Smith");
         assert_eq!(parsed["outcome"]["session_id"], "session-456");
         assert_eq!(parsed["outcome"]["encounter_number"], 2);
         assert_eq!(parsed["vision_results"][0]["parsed_name"], "John Smith");
@@ -995,7 +968,6 @@ mod tests {
         assert!(builder.merge_check.is_none());
         assert!(builder.soap_result.is_none());
         assert!(builder.billing_result.is_none());
-        assert!(builder.name_tracker.is_none());
         assert!(builder.outcome.is_none());
 
         // Config preserved

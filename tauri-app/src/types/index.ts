@@ -996,8 +996,7 @@ export type ContinuousModeEventType =
   | 'transcription_stalled'
   | 'shadow_decision'
   | 'sleep_started'
-  | 'sleep_ended'
-  | 'patient_name_updated';
+  | 'sleep_ended';
 
 export interface ContinuousModeEvent {
   type: ContinuousModeEventType;
@@ -1021,10 +1020,6 @@ export interface ContinuousModeEvent {
   confidence?: number;
   /** ISO timestamp when sleep mode will end (for sleep_started events) */
   resume_at?: string;
-  /** Live patient majority name from vision tracker (for patient_name_updated events). Absent = cleared. */
-  name?: string;
-  /** Live patient DOB (YYYY-MM-DD) from vision tracker (for patient_name_updated events). Absent = cleared. */
-  dob?: string;
 }
 
 /**

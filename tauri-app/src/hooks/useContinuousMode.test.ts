@@ -54,7 +54,6 @@ describe('useContinuousMode', () => {
       expect(result.current.liveTranscript).toBe('');
       expect(result.current.audioQuality).toBeNull();
       expect(result.current.encounterNotes).toEqual([]);
-      expect(result.current.currentPatientName).toBeNull();
       expect(result.current.error).toBeNull();
     });
 
@@ -110,7 +109,6 @@ describe('useContinuousMode', () => {
       expect(result.current.liveTranscript).toBe('');
       expect(result.current.audioQuality).toBeNull();
       expect(result.current.encounterNotes).toEqual([]);
-      expect(result.current.currentPatientName).toBeNull();
     });
 
     it('sets error and deactivates on error event', async () => {
@@ -175,37 +173,12 @@ describe('useContinuousMode', () => {
       });
       expect(result.current.encounterNotes).toHaveLength(1);
 
-      // Encounter detected should clear notes + current patient name
+      // Encounter detected should clear notes for the new encounter
       act(() => {
         emitEvent('continuous_mode_event', { type: 'encounter_detected' });
       });
 
       expect(result.current.encounterNotes).toEqual([]);
-      expect(result.current.currentPatientName).toBeNull();
-    });
-
-    it('tracks current patient name from patient_name_updated events', async () => {
-      const useContinuousMode = await loadHook();
-      const { result } = renderHook(() => useContinuousMode());
-
-      await waitFor(() => {
-        expect(listeners['continuous_mode_event']).toBeDefined();
-      });
-
-      act(() => {
-        emitEvent('continuous_mode_event', {
-          type: 'patient_name_updated',
-          name: 'Jane Smith',
-          dob: '1970-01-15',
-        });
-      });
-      expect(result.current.currentPatientName).toBe('Jane Smith');
-
-      // Tracker clear (e.g. DOB invalidation) → name absent → null
-      act(() => {
-        emitEvent('continuous_mode_event', { type: 'patient_name_updated' });
-      });
-      expect(result.current.currentPatientName).toBeNull();
     });
   });
 

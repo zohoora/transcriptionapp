@@ -463,9 +463,17 @@ pub async fn migrate_legacy_multipatient_session(
             "Session has no per-patient SOAPs to migrate (patient_count <= 1)".to_string()
         ))?;
 
-    let per_patient: Vec<(String, String)> = patient_notes
+    // Migration path runs on archived multi-patient sessions, so we don't
+    // have SOAP-extracted name/DOB available — leave both None. The clinician
+    // can confirm identity afterward via the History → Confirm Patient flow.
+    let per_patient: Vec<local_archive::PerPatientSplitInput> = patient_notes
         .iter()
-        .map(|n| (n.label.clone(), n.content.clone()))
+        .map(|n| local_archive::PerPatientSplitInput {
+            label: n.label.clone(),
+            soap_text: n.content.clone(),
+            extracted_name: None,
+            extracted_dob: None,
+        })
         .collect();
     let n_patients = per_patient.len();
 
@@ -516,10 +524,10 @@ pub async fn migrate_legacy_multipatient_session(
     let billing_futures = sibling_ids.iter()
         .zip(per_patient.iter())
         .zip(durations.iter())
-        .map(|((child_id, (label, soap_text)), child_dur)| async move {
+        .map(|((child_id, p), child_dur)| async move {
             let r = crate::encounter_pipeline::extract_and_archive_billing(
-                client_ref, model_ref, soap_text, transcript, "",
-                child_id, parsed_date_ref, *child_dur, Some(label.as_str()), after_hours,
+                client_ref, model_ref, &p.soap_text, transcript, "",
+                child_id, parsed_date_ref, *child_dur, Some(p.label.as_str()), after_hours,
                 rule_ctx_ref, logger_ref,
                 Some(prompts_ref), Some(billing_ref),
                 Some(billing_timeout), None,

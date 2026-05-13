@@ -153,7 +153,6 @@ pub struct MergeBackCall<'a> {
     pub is_clinical: bool,
     pub pre_soap_found_multi_patient: bool,
     pub notes_text: &'a str,
-    pub tracker_snapshot: (Option<String>, usize, Vec<String>),
     pub prev_encounter_session_id: Option<&'a str>,
     pub prev_encounter_text: Option<&'a str>,
     pub prev_encounter_text_rich: Option<&'a str>,
@@ -213,7 +212,6 @@ pub async fn run<C: RunContext>(
         is_clinical,
         pre_soap_found_multi_patient,
         notes_text,
-        tracker_snapshot,
         prev_encounter_session_id,
         prev_encounter_text,
         prev_encounter_text_rich,
@@ -321,12 +319,11 @@ pub async fn run<C: RunContext>(
                 let merged_wc = merged_text.split_whitespace().count();
                 let merged_duration =
                     compute_merged_duration_ms(prev_id, prev_date, encounter_start, ctx.now_utc());
-                let merge_vision_name = deps
-                    .handle
-                    .name_tracker
-                    .lock()
-                    .ok()
-                    .and_then(|t| t.majority_name());
+                // Patient name is no longer available at merge time (vision
+                // identity is end-of-encounter via SOAP, which runs AFTER
+                // merge-back). The merge LLM is intentionally name-blind here
+                // — `feedback_no_vision_for_session_detection` says vision
+                // shouldn't influence merge/split decisions anyway.
                 let merge_result = local_archive::merge_encounters(
                     prev_id,
                     session_id,
@@ -334,7 +331,7 @@ pub async fn run<C: RunContext>(
                     &merged_text,
                     merged_wc,
                     merged_duration,
-                    merge_vision_name.as_deref(),
+                    None,
                 );
                 if let Err(ref e) = merge_result {
                     warn!(
@@ -415,7 +412,6 @@ pub async fn run<C: RunContext>(
                     finalize_merged_bundle(
                         &deps.bundle,
                         &deps.segment_logger,
-                        &tracker_snapshot,
                         session_id,
                         loop_state.encounter_number + 1,
                         encounter_word_count,
@@ -440,12 +436,9 @@ pub async fn run<C: RunContext>(
             if let Some(ref client) = deps.llm_client {
                 let (filtered_prev_tail, _) = strip_hallucinations(&prev_tail, 5);
                 let (filtered_curr_head, _) = strip_hallucinations(&curr_head, 5);
-                let merge_patient_name = deps
-                    .handle
-                    .name_tracker
-                    .lock()
-                    .ok()
-                    .and_then(|t| t.majority_name());
+                // No live vision name at merge time — see comment above. The
+                // merge LLM decides from transcript content alone.
+                let merge_patient_name: Option<String> = None;
 
                 // Prefer prev's SOAP (carries patient labels + plan the tail
                 // lacks); fall back to transcript tail for non-clinical prev
@@ -534,12 +527,7 @@ pub async fn run<C: RunContext>(
                         ctx.now_utc(),
                     );
 
-                    let merge_vision_name = deps
-                        .handle
-                        .name_tracker
-                        .lock()
-                        .ok()
-                        .and_then(|t| t.majority_name());
+                    // No live vision name at merge time — see comment above.
                     let merge_result = local_archive::merge_encounters(
                         prev_id,
                         session_id,
@@ -547,7 +535,7 @@ pub async fn run<C: RunContext>(
                         &merged_text,
                         merged_wc,
                         merged_duration,
-                        merge_vision_name.as_deref(),
+                        None,
                     );
                     if let Err(ref e) = merge_result {
                         warn!(
@@ -629,7 +617,6 @@ pub async fn run<C: RunContext>(
                         finalize_merged_bundle(
                             &deps.bundle,
                             &deps.segment_logger,
-                            &tracker_snapshot,
                             session_id,
                             loop_state.encounter_number + 1,
                             encounter_word_count,

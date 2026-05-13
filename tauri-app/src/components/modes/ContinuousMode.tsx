@@ -60,8 +60,6 @@ interface ContinuousModeProps {
   onSubmitEncounterNote: (text: string) => Promise<EncounterNote>;
   /** Remove a submitted chip by id */
   onDeleteEncounterNote: (id: string) => Promise<void>;
-  /** Live patient name from vision tracker (null during buffering-before-vision) */
-  currentPatientName: string | null;
   /** MIIS image suggestions */
   miisSuggestions: MiisSuggestion[];
   miisLoading: boolean;
@@ -173,7 +171,6 @@ export const ContinuousMode = memo(function ContinuousMode({
   encounterNotes,
   onSubmitEncounterNote,
   onDeleteEncounterNote,
-  currentPatientName,
   miisSuggestions,
   miisLoading,
   miisError,
@@ -280,7 +277,9 @@ export const ContinuousMode = memo(function ContinuousMode({
     [onDeleteEncounterNote],
   );
 
-  const attachmentLabel = currentPatientName ?? 'current encounter';
+  // Vision identity is end-of-encounter now (resolved in SOAP and written
+  // to metadata after split). Mid-encounter we always show a generic label.
+  const attachmentLabel = 'current encounter';
 
   // Not active — show start button
   if (!isActive) {

@@ -274,6 +274,16 @@ pub struct SoapNote {
     pub content: String,
     pub generated_at: String,
     pub model_used: String,
+    /// Patient name extracted from chart screenshots in the SAME LLM call that
+    /// produced the SOAP body. `None` when no screenshots were attached, no
+    /// chart was visible, or the LLM returned `NOT_FOUND`. Replaces the
+    /// per-screenshot `PatientNameTracker` vision loop.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub extracted_patient_name: Option<String>,
+    /// Patient DOB (YYYY-MM-DD) extracted alongside name. `None` semantics
+    /// match `extracted_patient_name`; rejected formats logged at `warn!`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub extracted_patient_dob: Option<String>,
 }
 
 /// Delimiter used when joining the raw LLM responses of multiple
@@ -350,11 +360,25 @@ pub struct PatientSoapNote {
     pub speaker_id: String,
     /// The SOAP note content for this patient
     pub content: String,
+    /// Patient name extracted by the same LLM call that produced `content`.
+    /// `None` when no chart was visible or the LLM returned `NOT_FOUND`. The
+    /// LLM is instructed to extract the name for the patient identified by
+    /// `patient_label` / `patient_summary` (the disambiguation anchor), so
+    /// this value is per-patient even though the same deduped screenshot set
+    /// is shared across the per-patient fan-out.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub extracted_patient_name: Option<String>,
+    /// Patient DOB (YYYY-MM-DD) extracted alongside name. Same `None`
+    /// semantics as `extracted_patient_name`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub extracted_patient_dob: Option<String>,
 }
 
-/// JSON structure for SOAP note from LLM. Serde tolerates unknown fields by
-/// default, so historical responses carrying `procedure_candidates` /
-/// `procedure` arrays still deserialize cleanly — those values are dropped.
+/// JSON structure for SOAP note from LLM. Serde tolerates unknown fields, so
+/// older responses with `procedure_candidates` / `procedure` arrays still
+/// deserialize (the values are dropped). `patient_name` / `patient_dob` are
+/// extracted from chart screenshots by the same LLM call; sentinel for
+/// missing identity is [`SOAP_IDENTITY_NOT_FOUND`].
 #[derive(Debug, Clone, Default, Deserialize)]
 struct SoapJsonResponse {
     #[serde(default)]
@@ -365,6 +389,21 @@ struct SoapJsonResponse {
     assessment: Vec<String>,
     #[serde(default)]
     plan: Vec<String>,
+    #[serde(default)]
+    patient_name: Option<String>,
+    #[serde(default)]
+    patient_dob: Option<String>,
+}
+
+/// Output of `parse_and_format_soap_json` — the formatted SOAP text plus the
+/// optional patient identity fields extracted from the same response. Callers
+/// that only need the SOAP body use `.text`; the encounter pipeline pulls
+/// `.patient_name` / `.patient_dob` into `ArchiveMetadata` at split time.
+#[derive(Debug, Clone)]
+pub(crate) struct ParsedSoap {
+    pub text: String,
+    pub patient_name: Option<String>,
+    pub patient_dob: Option<String>,
 }
 
 /// Result of greeting detection check
@@ -388,7 +427,7 @@ pub(crate) const MALFORMED_SOAP_SENTINEL: &str = "SOAP generation produced malfo
 /// string whenever `build_simple_soap_prompt` (or the per-patient / single-
 /// patient variants) is materially edited so audits can correlate clinical
 /// drift to specific prompt revisions.
-pub const SOAP_PROMPT_VERSION: &str = "v0.10.93";
+pub const SOAP_PROMPT_VERSION: &str = "v0.10.96-identity";
 
 /// True iff `s` is a usable SOAP note — non-empty after trimming and not the
 /// malformed-output placeholder from [`MALFORMED_SOAP_SENTINEL`].
@@ -625,31 +664,34 @@ impl LLMClient {
 
     /// Parse SOAP JSON response, retrying the LLM call once if the result is the malformed placeholder.
     /// Transient truncation from the LLM usually succeeds on retry.
+    /// Returns a [`ParsedSoap`] carrying the formatted SOAP text plus the
+    /// patient identity fields extracted from the same response (or `None`
+    /// when the response omits them / returns `NOT_FOUND`).
     async fn parse_soap_with_retry(
         &self,
         model: &str,
         system_prompt: &str,
         user_content: &str,
         initial_response: &str,
-    ) -> String {
-        let content = parse_and_format_soap_json(initial_response);
-        if !content.contains(MALFORMED_SOAP_SENTINEL) {
-            return content;
+    ) -> ParsedSoap {
+        let parsed = parse_and_format_soap_json(initial_response);
+        if !parsed.text.contains(MALFORMED_SOAP_SENTINEL) {
+            return parsed;
         }
         warn!("SOAP parse returned malformed placeholder, retrying LLM call once");
         match self.generate(model, system_prompt, user_content, tasks::SOAP_NOTE).await {
             Ok(retry_response) => {
-                let retry_content = parse_and_format_soap_json(&retry_response);
-                if retry_content.contains(MALFORMED_SOAP_SENTINEL) {
+                let retry_parsed = parse_and_format_soap_json(&retry_response);
+                if retry_parsed.text.contains(MALFORMED_SOAP_SENTINEL) {
                     warn!("SOAP retry also produced malformed output, using placeholder");
                 } else {
-                    info!("SOAP retry succeeded ({} chars)", retry_content.len());
+                    info!("SOAP retry succeeded ({} chars)", retry_parsed.text.len());
                 }
-                retry_content
+                retry_parsed
             }
             Err(e) => {
                 warn!("SOAP retry LLM call failed: {}", e);
-                content
+                parsed
             }
         }
     }
@@ -663,10 +705,10 @@ impl LLMClient {
         system_prompt: &str,
         user_content: &[ContentPart],
         initial_response: &str,
-    ) -> String {
-        let content = parse_and_format_soap_json(initial_response);
-        if !content.contains(MALFORMED_SOAP_SENTINEL) {
-            return content;
+    ) -> ParsedSoap {
+        let parsed = parse_and_format_soap_json(initial_response);
+        if !parsed.text.contains(MALFORMED_SOAP_SENTINEL) {
+            return parsed;
         }
         warn!("SOAP parse returned malformed placeholder (multimodal), retrying LLM call once");
         let retry = self
@@ -683,17 +725,17 @@ impl LLMClient {
             .await;
         match retry {
             Ok(retry_response) => {
-                let retry_content = parse_and_format_soap_json(&retry_response);
-                if retry_content.contains(MALFORMED_SOAP_SENTINEL) {
+                let retry_parsed = parse_and_format_soap_json(&retry_response);
+                if retry_parsed.text.contains(MALFORMED_SOAP_SENTINEL) {
                     warn!("SOAP retry (multimodal) also produced malformed output, using placeholder");
                 } else {
-                    info!("SOAP retry (multimodal) succeeded ({} chars)", retry_content.len());
+                    info!("SOAP retry (multimodal) succeeded ({} chars)", retry_parsed.text.len());
                 }
-                retry_content
+                retry_parsed
             }
             Err(e) => {
                 warn!("SOAP retry (multimodal) LLM call failed: {}", e);
-                content
+                parsed
             }
         }
     }
@@ -1186,7 +1228,7 @@ impl LLMClient {
         let user_content = build_soap_user_content(&prepared_transcript, audio_events, session_notes, speaker_context);
 
         let multimodal = build_multimodal_user_content_if_available(&user_content, screenshot_paths);
-        let (content, model_used) = match multimodal {
+        let (parsed, model_used) = match multimodal {
             Some(parts) => {
                 info!(
                     "Routing SOAP via vision model {} with {} images attached",
@@ -1204,27 +1246,35 @@ impl LLMClient {
                         None,
                     )
                     .await?;
-                let c = self
+                let parsed = self
                     .parse_soap_with_retry_multimodal(vision_model, &system_prompt, &parts, &response)
                     .await;
-                (c, vision_model.to_string())
+                (parsed, vision_model.to_string())
             }
             None => {
                 let response = self
                     .generate(model, &system_prompt, &user_content, tasks::SOAP_NOTE)
                     .await?;
-                let c = self
+                let parsed = self
                     .parse_soap_with_retry(model, &system_prompt, &user_content, &response)
                     .await;
-                (c, model.to_string())
+                (parsed, model.to_string())
             }
         };
 
-        info!("Successfully generated SOAP note ({} chars)", content.len());
+        info!(
+            event = "soap_generated",
+            chars = parsed.text.len(),
+            extracted_name = parsed.patient_name.is_some(),
+            extracted_dob = parsed.patient_dob.is_some(),
+            "Successfully generated SOAP note"
+        );
         Ok(SoapNote {
-            content,
+            content: parsed.text,
             generated_at: Utc::now().to_rfc3339(),
             model_used,
+            extracted_patient_name: parsed.patient_name,
+            extracted_patient_dob: parsed.patient_dob,
         })
     }
 
@@ -1269,7 +1319,7 @@ impl LLMClient {
         let user_content = build_soap_user_content(&prepared_transcript, audio_events, session_notes, speaker_context);
 
         let multimodal = build_multimodal_user_content_if_available(&user_content, screenshot_paths);
-        let (content, model_used) = match multimodal {
+        let (parsed, model_used) = match multimodal {
             Some(parts) => {
                 info!(
                     "Routing single-patient SOAP via vision model {} with {} images attached",
@@ -1287,27 +1337,36 @@ impl LLMClient {
                         None,
                     )
                     .await?;
-                let c = self
+                let parsed = self
                     .parse_soap_with_retry_multimodal(vision_model, &system_prompt, &parts, &response)
                     .await;
-                (c, vision_model.to_string())
+                (parsed, vision_model.to_string())
             }
             None => {
                 let response = self
                     .generate(model, &system_prompt, &user_content, tasks::SOAP_NOTE)
                     .await?;
-                let c = self
+                let parsed = self
                     .parse_soap_with_retry(model, &system_prompt, &user_content, &response)
                     .await;
-                (c, model.to_string())
+                (parsed, model.to_string())
             }
         };
 
-        info!("Successfully generated single-patient SOAP note for \"{}\" ({} chars)", patient_label, content.len());
+        info!(
+            event = "single_patient_soap_generated",
+            patient_label = %patient_label,
+            chars = parsed.text.len(),
+            extracted_name = parsed.patient_name.is_some(),
+            extracted_dob = parsed.patient_dob.is_some(),
+            "Successfully generated single-patient SOAP note"
+        );
         Ok(SoapNote {
-            content,
+            content: parsed.text,
             generated_at: Utc::now().to_rfc3339(),
             model_used,
+            extracted_patient_name: parsed.patient_name,
+            extracted_patient_dob: parsed.patient_dob,
         })
     }
 
@@ -1409,7 +1468,7 @@ impl LLMClient {
         let user_content = build_soap_user_content(&prepared_transcript, audio_events, session_notes, speaker_context);
 
         let multimodal = build_multimodal_user_content_if_available(&user_content, screenshot_paths);
-        let (content, raw_response, model_used, metrics) = match multimodal {
+        let (parsed, raw_response, model_used, metrics) = match multimodal {
             Some(parts) => {
                 info!(
                     "Routing multi-patient SOAP via vision model {} with {} images attached",
@@ -1432,10 +1491,10 @@ impl LLMClient {
                     Err(e) => return (Err(e), Some(m)),
                 };
                 let raw = response.clone();
-                let c = self
+                let parsed = self
                     .parse_soap_with_retry_multimodal(vision_model, &system_prompt, &parts, &response)
                     .await;
-                (c, raw, vision_model.to_string(), m)
+                (parsed, raw, vision_model.to_string(), m)
             }
             None => {
                 let (resp_result, m) = self
@@ -1446,20 +1505,30 @@ impl LLMClient {
                     Err(e) => return (Err(e), Some(m)),
                 };
                 let raw = response.clone();
-                let c = self
+                let parsed = self
                     .parse_soap_with_retry(model, &system_prompt, &user_content, &response)
                     .await;
-                (c, raw, model.to_string(), m)
+                (parsed, raw, model.to_string(), m)
             }
         };
 
-        info!("Successfully generated multi-patient SOAP note ({} chars)", content.len());
+        info!(
+            event = "multi_patient_soap_combined_generated",
+            chars = parsed.text.len(),
+            extracted_name = parsed.patient_name.is_some(),
+            extracted_dob = parsed.patient_dob.is_some(),
+            "Successfully generated multi-patient SOAP note (combined single-patient path)"
+        );
+        let extracted_name = parsed.patient_name;
+        let extracted_dob = parsed.patient_dob;
         (
             Ok(MultiPatientSoapResult {
                 notes: vec![PatientSoapNote {
                     patient_label: "Combined".to_string(),
                     speaker_id: "All".to_string(),
-                    content,
+                    content: parsed.text,
+                    extracted_patient_name: extracted_name,
+                    extracted_patient_dob: extracted_dob,
                 }],
                 physician_speaker: None,
                 generated_at: Utc::now().to_rfc3339(),
@@ -1528,7 +1597,7 @@ impl LLMClient {
             let imgs_clone = shared_images.clone();
             let patient_label = patient.label.clone();
             async move {
-                let (content, raw_response, metrics, model_used) = match imgs_clone {
+                let (parsed, raw_response, metrics, model_used) = match imgs_clone {
                     Some(imgs) => {
                         let mut parts: Vec<ContentPart> = Vec::with_capacity(imgs.len() + 1);
                         parts.push(ContentPart::Text { text: user_content.clone() });
@@ -1541,10 +1610,10 @@ impl LLMClient {
                             .await;
                         let response = resp_result?;
                         let raw = response.clone();
-                        let c = self
+                        let parsed = self
                             .parse_soap_with_retry_multimodal(&vmdl, &sys, &parts, &response)
                             .await;
-                        (c, raw, m, vmdl.clone())
+                        (parsed, raw, m, vmdl.clone())
                     }
                     None => {
                         let (resp_result, m) = self
@@ -1552,8 +1621,8 @@ impl LLMClient {
                             .await;
                         let response = resp_result?;
                         let raw = response.clone();
-                        let c = self.parse_soap_with_retry(&mdl, &sys, &user_content, &response).await;
-                        (c, raw, m, mdl.clone())
+                        let parsed = self.parse_soap_with_retry(&mdl, &sys, &user_content, &response).await;
+                        (parsed, raw, m, mdl.clone())
                     }
                 };
                 // Per-patient observability — surfaces "patient N was slow" without
@@ -1568,12 +1637,16 @@ impl LLMClient {
                     concurrent_at_start = metrics.concurrent_at_start,
                     retry_count = metrics.retry_count,
                     response_chars = raw_response.len(),
+                    extracted_name = parsed.patient_name.is_some(),
+                    extracted_dob = parsed.patient_dob.is_some(),
                 );
                 Ok::<PerPatientAttempt, String>(PerPatientAttempt {
                     note: PatientSoapNote {
                         patient_label,
                         speaker_id: "All".to_string(),
-                        content,
+                        content: parsed.text,
+                        extracted_patient_name: parsed.patient_name,
+                        extracted_patient_dob: parsed.patient_dob,
                     },
                     raw_response,
                     user_prompt: user_content,
@@ -2158,14 +2231,24 @@ Respond ONLY with JSON: {{"is_greeting": true/false, "confidence": 0.0-1.0, "det
             Some(50),            // repetition_context_size - window for penalty
         ).await?;
 
-        // Parse JSON response and format as bullet-point text
-        let content = parse_and_format_soap_json(&response);
+        // Parse JSON response and format as bullet-point text. The legacy
+        // vision-SOAP path uses a different prompt (`build_vision_soap_prompt`)
+        // that doesn't ask for identity fields, so name/dob will normally come
+        // back `None` here — fine, the encounter-pipeline path is the one we
+        // expect to populate them.
+        let parsed = parse_and_format_soap_json(&response);
 
-        info!("Successfully generated vision SOAP note ({} chars)", content.len());
+        info!(
+            event = "vision_soap_legacy_generated",
+            chars = parsed.text.len(),
+            "Successfully generated vision SOAP note (legacy path)"
+        );
         Ok(SoapNote {
-            content,
+            content: parsed.text,
             generated_at: Utc::now().to_rfc3339(),
             model_used: model.to_string(),
+            extracted_patient_name: parsed.patient_name,
+            extracted_patient_dob: parsed.patient_dob,
         })
     }
 }
@@ -2232,6 +2315,7 @@ pub fn build_simple_soap_prompt(
     let detail_instruction = build_soap_detail_instruction(options, templates);
     let format_instruction = build_soap_format_instruction(options, templates);
     let custom_section = build_soap_custom_section(options, templates);
+    let not_found = SOAP_IDENTITY_NOT_FOUND;
 
     format!(
         r#"You are a medical scribe that outputs ONLY valid JSON. Extract clinical information from transcripts into a SOAP note.{custom_section}
@@ -2242,7 +2326,7 @@ The transcript is from speech-to-text and may contain errors. Interpret medical 
 - Homophones and phonetic errors are common - use clinical context
 
 RESPOND WITH ONLY THIS JSON STRUCTURE - NO OTHER TEXT:
-{{"subjective":["item"],"objective":["item"],"assessment":["item"],"plan":["item"]}}
+{{"subjective":["item"],"objective":["item"],"assessment":["item"],"plan":["item"],"patient_name":"<full name from chart or {not_found}>","patient_dob":"<YYYY-MM-DD from chart or {not_found}>"}}
 
 {format_instruction}
 
@@ -2259,10 +2343,20 @@ Rules:
 - Use empty arrays [] for sections with no information
 - Use correct medical terminology
 - Do NOT use any markdown formatting (no **, no __, no #, no backticks) - output plain text only
-- Do NOT include specific patient names or healthcare provider names - use "patient" or "the physician/provider" instead
+- Do NOT include specific patient names or healthcare provider names INSIDE the S/O/A/P arrays — use "patient" or "the physician/provider" instead. (The top-level `patient_name` / `patient_dob` fields below are the exception — that's where chart identity belongs.)
 - Do NOT hallucinate or embellish - only include what was explicitly stated
 - DRUG NAMES — verbatim only: If a drug name in the transcript is unfamiliar or appears phonetically uncertain (likely STT mishearing), keep it VERBATIM as written and append "(transcribed; verify spelling)". Do NOT substitute a different drug, even one that sounds similar (e.g. do NOT rewrite "Davigo"→"estradiol" or "Razipan"→"a heart medication"). Do NOT annotate with a generic name unless the transcript itself states the generic. Under-annotation is far safer than substitution; clinician will verify on review.
-- SCREENSHOTS — context only, not a content source: When chart screenshots are attached to this message, use them ONLY to disambiguate transcript content — verifying drug name spellings, doses, lab values, dates, names, or other ambiguous terms the clinician verbally referenced. Do NOT extract clinical content (diagnoses, problems, medications, prior labs, history, plans) that appears only in the chart and was not discussed in the transcript. The transcript is the sole source of clinical content for this SOAP note; the chart is reference material for disambiguation only.
+- SCREENSHOTS — disambiguation context for SOAP body, AND the source for the identity fields: When chart screenshots are attached, use them in two distinct ways:
+  (1) For the SOAP body (subjective/objective/assessment/plan), use them ONLY to disambiguate transcript content — verifying drug name spellings, doses, lab values, dates, or other ambiguous terms the clinician verbally referenced. Do NOT extract clinical content (diagnoses, problems, medications, prior labs, history, plans) that appears only in the chart and was not discussed in the transcript.
+  (2) For the top-level `patient_name` and `patient_dob` fields (see PATIENT IDENTIFICATION below), the chart screenshots ARE the source of truth — extract those values directly from the visible chart header.
+
+PATIENT IDENTIFICATION (top-level `patient_name` and `patient_dob` fields — separate from SOAP body):
+- These are dedicated metadata fields, NOT part of the SOAP body. The "do not include patient names" rule above applies only to S/O/A/P arrays.
+- `patient_name`: full name as displayed on the chart header. If no chart is visible, or no name is legible, return the literal string {not_found}.
+- `patient_dob`: in YYYY-MM-DD format ONLY. Convert any other date format you see to YYYY-MM-DD. Return {not_found} if no date of birth is visible.
+- If the visible chart appears to belong to a DIFFERENT patient than the one being scribed (e.g. the chart name doesn't match anyone mentioned in the transcript, or the demographics on the chart contradict transcript content), return {not_found} rather than guessing. It is far safer to leave these blank than to attach the wrong identity to a SOAP note.
+- If multiple distinct chart pages are shown across the screenshots (e.g. clinician reviewed prior records), pick the one most consistent with the transcript content for this patient.
+
 - CLINICIAN NOTES: If provided, incorporate clinician observations into the appropriate SOAP sections (usually Objective for physical observations, Subjective for reported symptoms).
 - {detail_instruction}"#
     )
@@ -2832,24 +2926,83 @@ fn extract_json_from_response(response: &str) -> String {
     text.trim().to_string()
 }
 
-/// Parse JSON SOAP response and format as bullet-point text
-fn parse_and_format_soap_json(response: &str) -> String {
+/// Sentinel string the SOAP prompt asks the LLM to return when no patient
+/// chart is visible / no identity field is legible. Used in both the prompt
+/// (`build_simple_soap_prompt`) and the parsers below so the two sides can't
+/// drift.
+pub(crate) const SOAP_IDENTITY_NOT_FOUND: &str = "NOT_FOUND";
+
+/// Sanitize the LLM's `patient_name` field. Returns `None` for empty,
+/// `NOT_FOUND`, or whitespace-only values; otherwise normalizes via
+/// `patient_name_tracker::normalize_patient_name` (title-case, comma reorder,
+/// whitespace collapse).
+fn sanitize_extracted_patient_name(raw: Option<&str>) -> Option<String> {
+    let raw = raw?.trim();
+    if raw.is_empty() || raw.contains(SOAP_IDENTITY_NOT_FOUND) {
+        return None;
+    }
+    let normalized = crate::patient_name_tracker::normalize_patient_name(raw);
+    if normalized.is_empty() { None } else { Some(normalized) }
+}
+
+/// Sanitize the LLM's `patient_dob` field. Accepts only valid YYYY-MM-DD;
+/// anything else (empty, `NOT_FOUND`, malformed date) → `None`. Non-empty
+/// rejections are logged at `warn!` so LLM drift is debuggable.
+fn sanitize_extracted_patient_dob(raw: Option<&str>) -> Option<String> {
+    let raw = raw?.trim();
+    if raw.is_empty() || raw.contains(SOAP_IDENTITY_NOT_FOUND) {
+        return None;
+    }
+    match chrono::NaiveDate::parse_from_str(raw, "%Y-%m-%d") {
+        Ok(_) => Some(raw.to_string()),
+        Err(e) => {
+            warn!(
+                event = "soap_patient_dob_invalid",
+                value = raw,
+                error = %e,
+                "SOAP response's patient_dob is not YYYY-MM-DD; dropping"
+            );
+            None
+        }
+    }
+}
+
+/// Parse JSON SOAP response and format as bullet-point text. Returns the
+/// formatted SOAP plus optional patient identity (name + DOB) extracted from
+/// the same response. Identity fields come back `None` when the response
+/// doesn't carry them or carries `NOT_FOUND`.
+fn parse_and_format_soap_json(response: &str) -> ParsedSoap {
     let json_str = extract_json_from_response(response);
     info!("Extracted JSON for parsing: {} chars", json_str.len());
 
     match serde_json::from_str::<SoapJsonResponse>(&json_str) {
         Ok(soap) => {
+            let patient_name = sanitize_extracted_patient_name(soap.patient_name.as_deref());
+            let patient_dob = sanitize_extracted_patient_dob(soap.patient_dob.as_deref());
             // Filter out empty string elements (LLM artifact: ["", "real item"]).
             let soap = SoapJsonResponse {
                 subjective: soap.subjective.into_iter().filter(|s| !s.trim().is_empty()).collect(),
                 objective: soap.objective.into_iter().filter(|s| !s.trim().is_empty()).collect(),
                 assessment: soap.assessment.into_iter().filter(|s| !s.trim().is_empty()).collect(),
                 plan: soap.plan.into_iter().filter(|s| !s.trim().is_empty()).collect(),
+                patient_name: None,
+                patient_dob: None,
             };
-            info!("Successfully parsed SOAP JSON: S={}, O={}, A={}, P={}",
-                  soap.subjective.len(), soap.objective.len(),
-                  soap.assessment.len(), soap.plan.len());
-            format_soap_as_text(&soap)
+            info!(
+                event = "soap_parse_success",
+                subjective = soap.subjective.len(),
+                objective = soap.objective.len(),
+                assessment = soap.assessment.len(),
+                plan = soap.plan.len(),
+                patient_name_extracted = patient_name.is_some(),
+                patient_dob_extracted = patient_dob.is_some(),
+                "Parsed SOAP JSON"
+            );
+            ParsedSoap {
+                text: format_soap_as_text(&soap),
+                patient_name,
+                patient_dob,
+            }
         }
         Err(e) => {
             warn!("Failed to parse SOAP JSON: {}. Raw: {:?}", e, &json_str[..json_str.len().min(200)]);
@@ -2857,37 +3010,51 @@ fn parse_and_format_soap_json(response: &str) -> String {
             // Try to parse nested JSON structure (e.g., {"subjective": [{"Problem 1": [...]}]})
             if let Some(soap) = try_parse_nested_json_soap(&json_str) {
                 info!("Successfully parsed SOAP from nested JSON structure");
-                return format_soap_as_text(&soap);
+                return ParsedSoap { text: format_soap_as_text(&soap), patient_name: None, patient_dob: None };
             }
 
             // Try to extract SOAP from text format as fallback
             let cleaned = clean_llm_response(response);
             if let Some(soap) = try_parse_text_soap(&cleaned) {
                 info!("Successfully parsed SOAP from text format");
-                format_soap_as_text(&soap)
-            } else if cleaned.trim_start().starts_with('{') || cleaned.contains("\"subjective\"") {
+                return ParsedSoap { text: format_soap_as_text(&soap), patient_name: None, patient_dob: None };
+            }
+            if cleaned.trim_start().starts_with('{') || cleaned.contains("\"subjective\"") {
                 // Last resort: result looks like raw/broken JSON — try aggressive repair
                 warn!("Fallback result appears to be raw JSON, attempting aggressive repair");
                 let repaired = fix_truncated_json(&remove_trailing_commas(&remove_leading_commas(&fix_json_newlines(&cleaned))));
                 match serde_json::from_str::<SoapJsonResponse>(&repaired) {
                     Ok(soap) => {
+                        let patient_name = sanitize_extracted_patient_name(soap.patient_name.as_deref());
+                        let patient_dob = sanitize_extracted_patient_dob(soap.patient_dob.as_deref());
                         let soap = SoapJsonResponse {
                             subjective: soap.subjective.into_iter().filter(|s| !s.trim().is_empty()).collect(),
                             objective: soap.objective.into_iter().filter(|s| !s.trim().is_empty()).collect(),
                             assessment: soap.assessment.into_iter().filter(|s| !s.trim().is_empty()).collect(),
                             plan: soap.plan.into_iter().filter(|s| !s.trim().is_empty()).collect(),
+                            patient_name: None,
+                            patient_dob: None,
                         };
-                        info!("Aggressive JSON repair succeeded");
-                        format_soap_as_text(&soap)
+                        info!(
+                            event = "soap_parse_success_after_repair",
+                            patient_name_extracted = patient_name.is_some(),
+                            patient_dob_extracted = patient_dob.is_some(),
+                            "Aggressive JSON repair succeeded"
+                        );
+                        ParsedSoap { text: format_soap_as_text(&soap), patient_name, patient_dob }
                     }
                     Err(e2) => {
                         warn!("Aggressive JSON repair also failed: {}. Returning placeholder.", e2);
-                        format!("S:\n- [{} — review transcript directly]\n\nO:\n- [See transcript]\n\nA:\n- [See transcript]\n\nP:\n- [See transcript]", MALFORMED_SOAP_SENTINEL)
+                        ParsedSoap {
+                            text: format!("S:\n- [{} — review transcript directly]\n\nO:\n- [See transcript]\n\nA:\n- [See transcript]\n\nP:\n- [See transcript]", MALFORMED_SOAP_SENTINEL),
+                            patient_name: None,
+                            patient_dob: None,
+                        }
                     }
                 }
             } else {
                 // Return cleaned text as last resort
-                cleaned
+                ParsedSoap { text: cleaned, patient_name: None, patient_dob: None }
             }
         }
     }
@@ -3737,10 +3904,12 @@ mod tests {
     fn test_parse_and_format_soap_json_empty_strings() {
         // LLM produces empty elements mixed with real content
         let response = r#"{"subjective":["","Patient reports headache",""],"objective":["BP normal"],"assessment":["Tension headache"],"plan":["Follow up"]}"#;
-        let result = parse_and_format_soap_json(response);
-        assert!(result.contains("Patient reports headache"));
+        let parsed = parse_and_format_soap_json(response);
+        assert!(parsed.text.contains("Patient reports headache"));
         // Empty strings should be filtered out — only real items produce bullets
-        assert_eq!(result.matches("•").count(), 4); // one per non-empty item across all sections
+        assert_eq!(parsed.text.matches("•").count(), 4); // one per non-empty item across all sections
+        assert!(parsed.patient_name.is_none(), "no patient_name in response");
+        assert!(parsed.patient_dob.is_none(), "no patient_dob in response");
     }
 
     #[test]
@@ -3835,9 +4004,13 @@ mod tests {
             "expected SCREENSHOTS rule in prompt, got:\n{}", prompt);
         assert!(prompt.contains("disambiguate") || prompt.contains("disambiguat"),
             "screenshot rule must use the word 'disambiguate'");
-        assert!(prompt.contains("transcript is the sole source")
-                || prompt.contains("not a content source"),
-            "screenshot rule must establish transcript as the only content source");
+        // The v0.10.96 prompt distinguishes (1) screenshots-as-disambiguation
+        // for the S/O/A/P body from (2) screenshots-as-source for the
+        // patient_name + patient_dob fields. Check both halves are explicit.
+        assert!(prompt.contains("disambiguation context for SOAP body"),
+            "screenshot rule must distinguish disambiguation usage from identity usage");
+        assert!(prompt.contains("patient_name") && prompt.contains("patient_dob"),
+            "prompt must request top-level patient identity fields");
     }
 
     #[test]
@@ -3855,7 +4028,8 @@ mod tests {
             "procedure_candidates":[{"mention":"cryotherapy","doctor_quote":"I sprayed it","stance":"COMPLETED","walkback":"none","completion_evidence":"you are done"}],
             "procedure":[{"action":"Liquid nitrogen applied to plantar wart","transcript_quote":"I sprayed it"}]
         }"#;
-        let out = parse_and_format_soap_json(response);
+        let parsed = parse_and_format_soap_json(response);
+        let out = &parsed.text;
         assert!(out.contains("Wart on foot"), "S/O/A/P must still render, got:\n{}", out);
         assert!(!out.contains("Procedure:"), "no Procedure section in 4-section SOAP, got:\n{}", out);
         assert!(!out.contains("Liquid nitrogen"), "procedure[] data must not leak, got:\n{}", out);
@@ -3865,7 +4039,8 @@ mod tests {
     fn test_parse_and_format_soap_json_raw_json_fallback() {
         // Broken JSON that looks like SOAP structure — should get placeholder, not raw JSON
         let broken = r#"{"subjective":["Patient reports headache","#;
-        let result = parse_and_format_soap_json(broken);
+        let parsed = parse_and_format_soap_json(broken);
+        let result = &parsed.text;
         // Should not contain raw JSON braces
         assert!(!result.starts_with('{'), "Should not return raw JSON, got: {}", result);
         // Should either repair successfully or return placeholder
@@ -3885,6 +4060,8 @@ mod tests {
                 patient_label: label.to_string(),
                 content: content.to_string(),
                 speaker_id: String::new(),
+                extracted_patient_name: None,
+                extracted_patient_dob: None,
             }).collect(),
             physician_speaker: None,
             generated_at: "2026-01-01T00:00:00Z".to_string(),
@@ -3904,6 +4081,8 @@ mod tests {
                 patient_label: "Patient 1".into(),
                 speaker_id: String::new(),
                 content: "S: Headache".into(),
+                extracted_patient_name: None,
+                extracted_patient_dob: None,
             }],
             physician_speaker: None,
             generated_at: "2026-04-28T00:00:00Z".into(),
@@ -3940,6 +4119,8 @@ mod tests {
                 patient_label: "Combined".into(),
                 speaker_id: "All".into(),
                 content: "S: Headache".into(),
+                extracted_patient_name: None,
+                extracted_patient_dob: None,
             }],
             physician_speaker: None,
             generated_at: "2026-05-08T00:00:00Z".into(),

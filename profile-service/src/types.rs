@@ -1019,9 +1019,6 @@ pub struct DetectionThresholds {
     /// Minimum words for clinical content check (default: 100)
     #[serde(default = "default_100")]
     pub min_words_for_clinical_check: usize,
-    /// Grace period after split for stale screenshot suppression in seconds (default: 90)
-    #[serde(default = "default_90")]
-    pub screenshot_stale_grace_secs: i64,
     /// Minimum merged words for retrospective multi-patient check (default: 2500)
     #[serde(default = "default_2500")]
     pub multi_patient_check_word_threshold: usize,
@@ -1080,17 +1077,6 @@ pub struct DetectionThresholds {
     /// Min merged words before retrospective multi-patient detection runs (default: 500)
     #[serde(default = "default_mp_detect_word_threshold")]
     pub multi_patient_detect_word_threshold: usize,
-    /// Consecutive matching vision votes to early-stop the vision LLM call (default: 5)
-    #[serde(default = "default_vision_skip_streak_k")]
-    pub vision_skip_streak_k: usize,
-    /// Pathological backstop cap on vision calls per encounter (default: 30)
-    #[serde(default = "default_vision_skip_call_cap")]
-    pub vision_skip_call_cap: usize,
-    /// Minimum seconds between vision LLM calls once early-stop has fired.
-    /// Allows mid-encounter chart switches to be re-sampled rather than
-    /// permanently locked to the first-settled name. Default: 600 (10 min).
-    #[serde(default = "default_vision_re_sample_interval_secs")]
-    pub vision_re_sample_interval_secs: u64,
     /// HTTP timeout (seconds) for AI image generation. Caps direct
     /// workstation→Gemini calls AND the workstation→profile-service
     /// `/openai/image` proxy call (workstation adds +15s margin for the
@@ -1111,7 +1097,6 @@ fn default_5000() -> usize { 5000 }
 fn default_3() -> u32 { 3 }
 fn default_25000() -> usize { 25000 }
 fn default_100() -> usize { 100 }
-fn default_90() -> i64 { 90 }
 fn default_2500() -> usize { 2500 }
 fn default_500_usize() -> usize { 500 }
 fn default_085() -> f64 { 0.85 }
@@ -1125,9 +1110,6 @@ fn default_14f() -> f32 { 14.0 }
 fn default_240f() -> f32 { 240.0 }
 fn default_28() -> u32 { 28 }
 fn default_mp_detect_word_threshold() -> usize { 500 }
-fn default_vision_skip_streak_k() -> usize { 5 }
-fn default_vision_skip_call_cap() -> usize { 30 }
-fn default_vision_re_sample_interval_secs() -> u64 { 600 }
 fn default_gemini_generation_timeout_secs() -> u64 { 240 }
 fn default_detection_prompt_max_words() -> usize { 6000 }
 
@@ -1140,7 +1122,6 @@ impl Default for DetectionThresholds {
             force_split_consecutive_limit: 3,
             absolute_word_cap: 25000,
             min_words_for_clinical_check: 100,
-            screenshot_stale_grace_secs: 90,
             multi_patient_check_word_threshold: 2500,
             multi_patient_split_min_words: 500,
             confidence_base_short: 0.85,
@@ -1157,9 +1138,6 @@ impl Default for DetectionThresholds {
             monthly_hour_limit: 240.0,
             monthly_window_days: 28,
             multi_patient_detect_word_threshold: 500,
-            vision_skip_streak_k: 5,
-            vision_skip_call_cap: 30,
-            vision_re_sample_interval_secs: 600,
             gemini_generation_timeout_secs: 240,
             detection_prompt_max_words: 6000,
         }

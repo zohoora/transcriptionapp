@@ -56,7 +56,6 @@ export interface ContinuousModeOrchestratorResult {
   encounterNotes: EncounterNote[];
   onSubmitEncounterNote: (text: string) => Promise<EncounterNote>;
   onDeleteEncounterNote: (id: string) => Promise<void>;
-  currentPatientName: string | null;
   miisSuggestions: MiisSuggestion[];
   miisLoading: boolean;
   miisError: string | null;
@@ -97,7 +96,6 @@ export function useContinuousModeOrchestrator({
     encounterNotes,
     submitEncounterNote,
     deleteEncounterNote,
-    currentPatientName,
     start,
     stop,
     triggerNewPatient,
@@ -194,7 +192,6 @@ export function useContinuousModeOrchestrator({
     encounterNotes,
     onSubmitEncounterNote: submitEncounterNote,
     onDeleteEncounterNote: deleteEncounterNote,
-    currentPatientName,
     miisSuggestions,
     miisLoading,
     miisError,

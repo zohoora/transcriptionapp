@@ -437,7 +437,6 @@ mod tests {
             soap_result: None,
             billing_result: None,
             multi_patient_detections: vec![],
-            name_tracker: None,
             outcome: Some(outcome),
         }
     }
@@ -604,7 +603,6 @@ mod tests {
             soap_result: None,
             billing_result: None,
             multi_patient_detections: vec![],
-            name_tracker: None,
             outcome: None,
         };
         let root = tempdir().unwrap();

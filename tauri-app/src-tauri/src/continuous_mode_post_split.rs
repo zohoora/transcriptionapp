@@ -310,8 +310,13 @@ pub async fn run<C: RunContext>(
                         sibling_count = sibling_ids.len(),
                         "Multi-patient encounter auto-split into siblings"
                     );
-                    let per_patient_soaps: Vec<(String, String)> = result.notes.iter()
-                        .map(|n| (n.patient_label.clone(), n.content.clone()))
+                    let per_patient_soaps: Vec<crate::local_archive::PerPatientSplitInput> = result.notes.iter()
+                        .map(|n| crate::local_archive::PerPatientSplitInput {
+                            label: n.patient_label.clone(),
+                            soap_text: n.content.clone(),
+                            extracted_name: n.extracted_patient_name.clone(),
+                            extracted_dob: n.extracted_patient_dob.clone(),
+                        })
                         .collect();
                     let durations = crate::local_archive::prorate_durations_by_soap_words(
                         &per_patient_soaps, encounter_duration_ms,
