@@ -1,7 +1,7 @@
 {
   "name": "transcription-app",
   "private": true,
-  "version": "0.10.92",
+  "version": "0.10.93",
   "type": "module",
   "scripts": {
     "dev": "vite",

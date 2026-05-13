@@ -388,7 +388,7 @@ pub(crate) const MALFORMED_SOAP_SENTINEL: &str = "SOAP generation produced malfo
 /// string whenever `build_simple_soap_prompt` (or the per-patient / single-
 /// patient variants) is materially edited so audits can correlate clinical
 /// drift to specific prompt revisions.
-pub const SOAP_PROMPT_VERSION: &str = "v0.10.67";
+pub const SOAP_PROMPT_VERSION: &str = "v0.10.93";
 
 /// True iff `s` is a usable SOAP note — non-empty after trimming and not the
 /// malformed-output placeholder from [`MALFORMED_SOAP_SENTINEL`].
@@ -2262,6 +2262,7 @@ Rules:
 - Do NOT include specific patient names or healthcare provider names - use "patient" or "the physician/provider" instead
 - Do NOT hallucinate or embellish - only include what was explicitly stated
 - DRUG NAMES — verbatim only: If a drug name in the transcript is unfamiliar or appears phonetically uncertain (likely STT mishearing), keep it VERBATIM as written and append "(transcribed; verify spelling)". Do NOT substitute a different drug, even one that sounds similar (e.g. do NOT rewrite "Davigo"→"estradiol" or "Razipan"→"a heart medication"). Do NOT annotate with a generic name unless the transcript itself states the generic. Under-annotation is far safer than substitution; clinician will verify on review.
+- SCREENSHOTS — context only, not a content source: When chart screenshots are attached to this message, use them ONLY to disambiguate transcript content — verifying drug name spellings, doses, lab values, dates, names, or other ambiguous terms the clinician verbally referenced. Do NOT extract clinical content (diagnoses, problems, medications, prior labs, history, plans) that appears only in the chart and was not discussed in the transcript. The transcript is the sole source of clinical content for this SOAP note; the chart is reference material for disambiguation only.
 - CLINICIAN NOTES: If provided, incorporate clinician observations into the appropriate SOAP sections (usually Objective for physical observations, Subjective for reported symptoms).
 - {detail_instruction}"#
     )
@@ -3819,6 +3820,24 @@ mod tests {
             "drug rule should suggest clinician verification");
         assert!(prompt.contains("substitute") || prompt.contains("substitut"),
             "drug rule should explicitly forbid substitution");
+    }
+
+    #[test]
+    fn test_simple_soap_prompt_includes_screenshot_context_only_rule() {
+        // Chart screenshots are attached to the multimodal SOAP call (v0.10.79+).
+        // Without explicit guidance the model mines the visible chart for prior
+        // labs, problem-list entries, and historical meds that weren't actually
+        // discussed in the transcript. The rule constrains screenshots to a
+        // disambiguation role only.
+        let opts = SoapOptions::default();
+        let prompt = build_simple_soap_prompt(&opts, None);
+        assert!(prompt.contains("SCREENSHOTS"),
+            "expected SCREENSHOTS rule in prompt, got:\n{}", prompt);
+        assert!(prompt.contains("disambiguate") || prompt.contains("disambiguat"),
+            "screenshot rule must use the word 'disambiguate'");
+        assert!(prompt.contains("transcript is the sole source")
+                || prompt.contains("not a content source"),
+            "screenshot rule must establish transcript as the only content source");
     }
 
     #[test]
