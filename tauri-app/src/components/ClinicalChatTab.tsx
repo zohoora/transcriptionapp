@@ -8,13 +8,12 @@ interface ClinicalChatTabProps {
   error: string | null;
   onSendMessage: (content: string) => void;
   onClear: () => void;
-  /** When > 0, shows a banner indicating med-list context is attached. */
-  attachedMedCount?: number;
 }
 
 /**
  * Clinical Assistant chat — tab variant for the standalone window
- * (no expand/collapse; the window itself is the container).
+ * (no expand/collapse; the window itself is the container). The sidebar
+ * shows attached med context, so this tab no longer renders its own banner.
  */
 export const ClinicalChatTab = memo(function ClinicalChatTab({
   messages,
@@ -22,7 +21,6 @@ export const ClinicalChatTab = memo(function ClinicalChatTab({
   error,
   onSendMessage,
   onClear,
-  attachedMedCount,
 }: ClinicalChatTabProps) {
   const [input, setInput] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -61,15 +59,6 @@ export const ClinicalChatTab = memo(function ClinicalChatTab({
 
   return (
     <div className="clinical-chat-tab">
-      {!!attachedMedCount && (
-        <div className="chat-context-banner" role="status">
-          <span aria-hidden="true">💊</span>
-          <span>
-            Patient context attached: {attachedMedCount} medication{attachedMedCount === 1 ? '' : 's'}
-          </span>
-        </div>
-      )}
-
       <div className="chat-messages">
         {messages.length === 0 ? (
           <div className="chat-empty">

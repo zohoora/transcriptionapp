@@ -1387,11 +1387,20 @@ export interface MedEntry {
   frequency?: string;
 }
 
+/** Patient identity ride-alongs from the same vision call. `null` when the
+ *  chart header isn't visible. DOB is `YYYY-MM-DD` after backend validation. */
+export interface ExtractedPatientIdentity {
+  name: string | null;
+  dob: string | null;
+}
+
 /** Result of `capture_screenshot_for_meds` — fail-soft on every error */
 export interface MedExtractionResult {
   medications: MedEntry[];
   /** True when the screenshot was mostly blank; usually means Screen Recording permission is denied */
   likelyBlank: boolean;
+  /** Patient name + DOB extracted from the same screenshot, when visible. */
+  patient?: ExtractedPatientIdentity | null;
 }
 
 /** Pharm-refactor parsed-medication shape (CardResponse mirrors python schema) */

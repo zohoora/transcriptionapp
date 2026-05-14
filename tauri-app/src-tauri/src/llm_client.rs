@@ -2936,7 +2936,7 @@ pub(crate) const SOAP_IDENTITY_NOT_FOUND: &str = "NOT_FOUND";
 /// `NOT_FOUND`, or whitespace-only values; otherwise normalizes via
 /// `patient_name_tracker::normalize_patient_name` (title-case, comma reorder,
 /// whitespace collapse).
-fn sanitize_extracted_patient_name(raw: Option<&str>) -> Option<String> {
+pub(crate) fn sanitize_extracted_patient_name(raw: Option<&str>) -> Option<String> {
     let raw = raw?.trim();
     if raw.is_empty() || raw.contains(SOAP_IDENTITY_NOT_FOUND) {
         return None;
@@ -2948,7 +2948,7 @@ fn sanitize_extracted_patient_name(raw: Option<&str>) -> Option<String> {
 /// Sanitize the LLM's `patient_dob` field. Accepts only valid YYYY-MM-DD;
 /// anything else (empty, `NOT_FOUND`, malformed date) → `None`. Non-empty
 /// rejections are logged at `warn!` so LLM drift is debuggable.
-fn sanitize_extracted_patient_dob(raw: Option<&str>) -> Option<String> {
+pub(crate) fn sanitize_extracted_patient_dob(raw: Option<&str>) -> Option<String> {
     let raw = raw?.trim();
     if raw.is_empty() || raw.contains(SOAP_IDENTITY_NOT_FOUND) {
         return None;

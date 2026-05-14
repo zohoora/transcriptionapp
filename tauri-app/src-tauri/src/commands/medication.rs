@@ -17,7 +17,8 @@ use super::{physicians::SharedServerConfig, CommandError};
 use crate::llm_client::{tasks, truncate_error_body, ContentPart, ImageUrlContent, LLMClient};
 use crate::medication_extraction::{
     build_medication_extraction_prompt, build_medication_text_parse_prompt, medications_to_text,
-    parse_medication_vision_response, MedEntry, MedExtractionResult,
+    parse_medication_vision_response, parse_medication_vision_response_with_patient, MedEntry,
+    MedExtractionResult, PatientIdentity,
 };
 use crate::screenshot;
 use reqwest::Client as HttpClient;
@@ -74,7 +75,7 @@ async fn try_extract_meds(
     client: &LLMClient,
     templates: &crate::server_config::PromptTemplates,
     vision_model: &str,
-) -> Result<(Vec<MedEntry>, bool), CommandError> {
+) -> Result<(Vec<MedEntry>, Option<PatientIdentity>, bool), CommandError> {
     // Full-screen capture, NOT window-under-cursor. The clinician triggers
     // this from the AMI Assist sidebar — at click time the cursor is on the
     // "Clinical Assistant" button, so the window-under-cursor path captured
@@ -88,7 +89,7 @@ async fn try_extract_meds(
             .map_err(CommandError::Other)?;
 
     if capture.likely_blank {
-        return Ok((Vec::new(), true));
+        return Ok((Vec::new(), None, true));
     }
 
     let image_kb = capture.base64.len() / 1024;
@@ -149,23 +150,31 @@ async fn try_extract_meds(
                 image_kb,
                 e
             );
-            return Ok((Vec::new(), false));
+            return Ok((Vec::new(), None, false));
         }
         Err(_) => {
             warn!(
                 "Med extraction vision TIMED OUT at {}px after {}s (image={}KB, max_tokens={}) — vision-model latency exceeds client timeout",
                 max_edge, VISION_TIMEOUT_SECS, image_kb, MED_EXTRACTION_MAX_TOKENS
             );
-            return Ok((Vec::new(), false));
+            return Ok((Vec::new(), None, false));
         }
     };
 
-    let meds = parse_medication_vision_response(&response);
+    let (meds, patient) = parse_medication_vision_response_with_patient(&response);
     info!(
-        "Med extraction parse at {}px: response_chars={} → {} meds (empty result kind: {})",
+        "Med extraction parse at {}px: response_chars={} → {} meds, patient_name={} patient_dob={} (empty result kind: {})",
         max_edge,
         response.len(),
         meds.len(),
+        patient
+            .as_ref()
+            .and_then(|p| p.name.as_deref())
+            .unwrap_or("<none>"),
+        patient
+            .as_ref()
+            .and_then(|p| p.dob.as_deref())
+            .unwrap_or("<none>"),
         if response.trim().is_empty() {
             "empty_response"
         } else if response.trim() == "[]" {
@@ -177,7 +186,7 @@ async fn try_extract_meds(
         }
     );
 
-    Ok((meds, false))
+    Ok((meds, patient, false))
 }
 
 /// Capture one screenshot and run it through the vision LLM to extract a
@@ -197,7 +206,7 @@ pub async fn capture_screenshot_for_meds(
     let (_config, _models, client, templates) =
         load_effective_models_and_client(server_config.inner()).await?;
 
-    let (meds, likely_blank) =
+    let (meds, patient, likely_blank) =
         try_extract_meds(SCREENSHOT_MAX_EDGE_PRIMARY, &client, &templates, MED_EXTRACTION_MODEL).await?;
 
     if likely_blank {
@@ -205,6 +214,7 @@ pub async fn capture_screenshot_for_meds(
         return Ok(MedExtractionResult {
             medications: Vec::new(),
             likely_blank: true,
+            patient: None,
         });
     }
 
@@ -217,6 +227,7 @@ pub async fn capture_screenshot_for_meds(
         return Ok(MedExtractionResult {
             medications: meds,
             likely_blank: false,
+            patient,
         });
     }
 
@@ -224,13 +235,14 @@ pub async fn capture_screenshot_for_meds(
         "Medication extraction empty at {}px; retrying at {}px",
         SCREENSHOT_MAX_EDGE_PRIMARY, SCREENSHOT_MAX_EDGE_RETRY
     );
-    let (retry_meds, retry_blank) =
+    let (retry_meds, retry_patient, retry_blank) =
         try_extract_meds(SCREENSHOT_MAX_EDGE_RETRY, &client, &templates, MED_EXTRACTION_MODEL).await?;
 
     if retry_blank {
         return Ok(MedExtractionResult {
             medications: Vec::new(),
             likely_blank: true,
+            patient: None,
         });
     }
 
@@ -239,9 +251,13 @@ pub async fn capture_screenshot_for_meds(
         retry_meds.len(),
         SCREENSHOT_MAX_EDGE_RETRY
     );
+    // Prefer the primary-pass identity if the retry returned None — meds may
+    // have been empty on the first pass, but the chart header identity is
+    // unrelated to dense med-list OCR.
     Ok(MedExtractionResult {
         medications: retry_meds,
         likely_blank: false,
+        patient: retry_patient.or(patient),
     })
 }
 

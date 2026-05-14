@@ -10,6 +10,9 @@
 //! to the existing Confirm Patient flow: vision-derived data is clinician
 //! reviewed before any action.
 
+use crate::llm_client::{
+    sanitize_extracted_patient_dob, sanitize_extracted_patient_name, SOAP_IDENTITY_NOT_FOUND,
+};
 use serde::{Deserialize, Serialize};
 
 /// A single medication entry parsed from a vision LLM response.
@@ -27,6 +30,16 @@ pub struct MedEntry {
     pub frequency: Option<String>,
 }
 
+/// Patient identity ride-alongs from the same vision call. `None` for either
+/// field when the chart header isn't visible or the model returns NOT_FOUND.
+/// DOB is shape-validated as YYYY-MM-DD before being accepted.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PatientIdentity {
+    pub name: Option<String>,
+    pub dob: Option<String>,
+}
+
 /// Result of a one-shot medication-extraction screenshot.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -36,6 +49,9 @@ pub struct MedExtractionResult {
     /// means Screen Recording permission isn't granted. Caller surfaces a
     /// "grant permission" message instead of "no meds found".
     pub likely_blank: bool,
+    /// Patient name + DOB extracted from the same screenshot, when visible.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub patient: Option<PatientIdentity>,
 }
 
 /// Build the vision prompt for medication-list extraction.
@@ -53,9 +69,10 @@ pub(crate) fn build_medication_extraction_prompt(
         })
         .unwrap_or_else(|| {
             "You are analyzing a screenshot of a computer screen in a clinical setting. \
-             If a patient's medication list is visible (e.g., the EMR's current-meds panel, \
-             a printed med list, or a discharge summary section), extract each medication \
-             with its dose and frequency when shown. Respond with ONLY a JSON array, no other text."
+             Extract two things if visible: (1) the patient's medication list (the EMR's \
+             current-meds panel, a printed med list, or a discharge summary section), and \
+             (2) the patient's identity (name and date of birth, typically shown in the \
+             chart header). Respond with ONLY a JSON object, no other text."
                 .to_string()
         });
 
@@ -64,11 +81,15 @@ pub(crate) fn build_medication_extraction_prompt(
             (!t.medication_extraction_user.is_empty()).then(|| t.medication_extraction_user.clone())
         })
         .unwrap_or_else(|| {
-            "Extract the patient's current medications from this screenshot. \
-             Respond with ONLY a JSON array of objects shaped like \
-             {\"name\": \"<drug name>\", \"dose\": \"<dose with unit or NOT_FOUND>\", \
-             \"frequency\": \"<freq or NOT_FOUND>\"}. \
-             If no medication list is visible, respond with an empty array []."
+            "Extract the patient's current medications AND identity from this screenshot. \
+             Respond with ONLY a JSON object shaped like \
+             {\"patient\": {\"name\": \"<full name or NOT_FOUND>\", \
+             \"dob\": \"<YYYY-MM-DD or NOT_FOUND>\"}, \
+             \"medications\": [{\"name\": \"<drug name>\", \
+             \"dose\": \"<dose with unit or NOT_FOUND>\", \
+             \"frequency\": \"<freq or NOT_FOUND>\"}, ...]}. \
+             If no medication list is visible, set medications to []. \
+             If patient identity is not visible, set name and dob to NOT_FOUND."
                 .to_string()
         });
 
@@ -96,25 +117,32 @@ pub(crate) fn parse_medication_vision_response(response: &str) -> Vec<MedEntry> 
         Err(_) => return Vec::new(),
     };
 
-    parsed
-        .into_iter()
+    meds_from_values(&parsed)
+}
+
+/// Shared filter_map over a raw `serde_json::Value` array. Used by both
+/// the bare-array parser and the wrapper-object parser so the per-entry
+/// NOT_FOUND / empty-string filtering lives in one place.
+fn meds_from_values(values: &[serde_json::Value]) -> Vec<MedEntry> {
+    values
+        .iter()
         .filter_map(|entry| {
             let obj = entry.as_object()?;
             let name = obj
                 .get("name")
                 .and_then(|v| v.as_str())
                 .map(str::trim)
-                .filter(|s| !s.is_empty() && !s.contains("NOT_FOUND"))?;
+                .filter(|s| !s.is_empty() && !s.contains(SOAP_IDENTITY_NOT_FOUND))?;
             let dose = obj
                 .get("dose")
                 .and_then(|v| v.as_str())
                 .map(|s| s.trim().to_string())
-                .filter(|s| !s.is_empty() && !s.contains("NOT_FOUND"));
+                .filter(|s| !s.is_empty() && !s.contains(SOAP_IDENTITY_NOT_FOUND));
             let frequency = obj
                 .get("frequency")
                 .and_then(|v| v.as_str())
                 .map(|s| s.trim().to_string())
-                .filter(|s| !s.is_empty() && !s.contains("NOT_FOUND"));
+                .filter(|s| !s.is_empty() && !s.contains(SOAP_IDENTITY_NOT_FOUND));
             Some(MedEntry {
                 name: name.to_string(),
                 dose,
@@ -122,6 +150,56 @@ pub(crate) fn parse_medication_vision_response(response: &str) -> Vec<MedEntry> 
             })
         })
         .collect()
+}
+
+/// Parse a vision response that may be either the new wrapper-object form
+/// `{ "patient": {...}, "medications": [...] }` or the legacy bare-array
+/// form `[...]`. Returns `(meds, optional patient identity)`.
+///
+/// Strategy: try the wrapper form first (locate the first balanced `{...}`,
+/// look for a `medications` array). Fall back to the legacy bare-array
+/// parser when no wrapper is found or it doesn't carry `medications` —
+/// keeps the meds-extraction path working if the model ignores the new
+/// wrapper instruction.
+pub(crate) fn parse_medication_vision_response_with_patient(
+    response: &str,
+) -> (Vec<MedEntry>, Option<PatientIdentity>) {
+    let trimmed = response.trim();
+    if trimmed.is_empty() {
+        return (Vec::new(), None);
+    }
+
+    if let Some(obj_slice) =
+        crate::patient_name_tracker::extract_first_balanced(trimmed, b'{', b'}')
+    {
+        if let Ok(value) = serde_json::from_str::<serde_json::Value>(obj_slice) {
+            if let Some(obj) = value.as_object() {
+                if let Some(meds_val) = obj.get("medications").and_then(|v| v.as_array()) {
+                    let meds = meds_from_values(meds_val);
+                    let patient = obj.get("patient").and_then(parse_patient_identity);
+                    return (meds, patient);
+                }
+            }
+        }
+    }
+
+    // Legacy fallback — the model returned a bare array. No identity.
+    (parse_medication_vision_response(trimmed), None)
+}
+
+/// Extract `{name, dob}` from a JSON value using the shared SOAP-identity
+/// sanitizers (`llm_client::sanitize_extracted_patient_name` /
+/// `sanitize_extracted_patient_dob`). Returns `None` when neither field
+/// survives validation — the DOB sanitizer also logs malformed values via
+/// `warn!` for LLM-drift observability.
+fn parse_patient_identity(v: &serde_json::Value) -> Option<PatientIdentity> {
+    let obj = v.as_object()?;
+    let name = sanitize_extracted_patient_name(obj.get("name").and_then(|v| v.as_str()));
+    let dob = sanitize_extracted_patient_dob(obj.get("dob").and_then(|v| v.as_str()));
+    if name.is_none() && dob.is_none() {
+        return None;
+    }
+    Some(PatientIdentity { name, dob })
 }
 
 /// Build the LLM prompt for parsing a clinician's free-text medication
@@ -289,7 +367,76 @@ mod tests {
     fn build_prompt_uses_defaults_when_templates_absent() {
         let (system, user) = build_medication_extraction_prompt(None);
         assert!(system.contains("medication list"));
-        assert!(user.contains("JSON array"));
+        assert!(user.contains("JSON object"));
+        assert!(user.contains("medications"));
+        assert!(user.contains("patient"));
+    }
+
+    #[test]
+    fn wrapper_parser_extracts_meds_and_patient() {
+        let response = r#"{
+            "patient": {"name": "Jane Q. Patient", "dob": "1955-03-22"},
+            "medications": [
+                {"name": "metformin", "dose": "500 mg", "frequency": "BID"},
+                {"name": "aspirin"}
+            ]
+        }"#;
+        let (meds, patient) = parse_medication_vision_response_with_patient(response);
+        assert_eq!(meds.len(), 2);
+        assert_eq!(meds[0].name, "metformin");
+        assert_eq!(meds[1].name, "aspirin");
+        let patient = patient.expect("patient identity present");
+        assert_eq!(patient.name.as_deref(), Some("Jane Q. Patient"));
+        assert_eq!(patient.dob.as_deref(), Some("1955-03-22"));
+    }
+
+    #[test]
+    fn wrapper_parser_drops_not_found_identity() {
+        let response = r#"{
+            "patient": {"name": "NOT_FOUND", "dob": "NOT_FOUND"},
+            "medications": [{"name": "aspirin"}]
+        }"#;
+        let (meds, patient) = parse_medication_vision_response_with_patient(response);
+        assert_eq!(meds.len(), 1);
+        assert!(patient.is_none());
+    }
+
+    #[test]
+    fn wrapper_parser_drops_malformed_dob() {
+        let response = r#"{
+            "patient": {"name": "Test Patient", "dob": "not-a-date"},
+            "medications": []
+        }"#;
+        let (_meds, patient) = parse_medication_vision_response_with_patient(response);
+        let patient = patient.expect("patient identity preserved when name is valid");
+        assert_eq!(patient.name.as_deref(), Some("Test Patient"));
+        assert!(patient.dob.is_none());
+    }
+
+    #[test]
+    fn wrapper_parser_falls_back_to_bare_array() {
+        let response = r#"[{"name": "metformin", "dose": "500 mg"}]"#;
+        let (meds, patient) = parse_medication_vision_response_with_patient(response);
+        assert_eq!(meds.len(), 1);
+        assert_eq!(meds[0].name, "metformin");
+        assert!(patient.is_none());
+    }
+
+    #[test]
+    fn wrapper_parser_handles_markdown_fenced_wrapper() {
+        let response = "```json\n{\"patient\":{\"name\":\"Test\",\"dob\":\"1990-01-01\"},\"medications\":[{\"name\":\"warfarin\"}]}\n```";
+        let (meds, patient) = parse_medication_vision_response_with_patient(response);
+        assert_eq!(meds.len(), 1);
+        let patient = patient.expect("identity parsed despite markdown fence");
+        assert_eq!(patient.name.as_deref(), Some("Test"));
+        assert_eq!(patient.dob.as_deref(), Some("1990-01-01"));
+    }
+
+    #[test]
+    fn wrapper_parser_empty_response_returns_none() {
+        let (meds, patient) = parse_medication_vision_response_with_patient("");
+        assert!(meds.is_empty());
+        assert!(patient.is_none());
     }
 
     #[test]

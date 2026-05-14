@@ -11,9 +11,9 @@ const WINDOW_LABEL = 'clinical-assistant';
  * one. The `opening` ref guards against double-click races where two
  * parallel calls both see "no window" and both try to create.
  *
- * Window dimensions (1000×750) are deliberately larger than the handout
- * editor — the assistant has two tabs and needs horizontal room for the
- * medication table.
+ * Window dimensions (1000×750) accommodate the two-pane layout — a 300px
+ * left sidebar plus the right tabs pane. minWidth 850 keeps the right pane
+ * usable (~550px) at the smallest allowed size.
  */
 export function useClinicalAssistantWindow() {
   const openingRef = useRef(false);
@@ -32,7 +32,7 @@ export function useClinicalAssistantWindow() {
         title: 'Clinical Assistant',
         width: 1000,
         height: 750,
-        minWidth: 700,
+        minWidth: 850,
         minHeight: 500,
         resizable: true,
       });

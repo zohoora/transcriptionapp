@@ -39,6 +39,10 @@ export interface UseMedicationAssessmentResult {
   isParsing: boolean;
   parseError: string | null;
 
+  // Vision-extracted patient identity (from same screenshot as meds)
+  patientName: string | null;
+  patientDob: string | null;
+
   // Analysis
   analysis: AnalysisResult | null;
   isAnalyzing: boolean;
@@ -83,6 +87,11 @@ export function useMedicationAssessment(): UseMedicationAssessmentResult {
   const [medList, setMedList] = useState<MedEntry[]>([]);
   const [extractionState, setExtractionState] = useState<ExtractionState>('idle');
   const [extractionError, setExtractionError] = useState<string | null>(null);
+  // Vision-extracted patient identity. Always overwritten on a successful
+  // extract (vision is the only source — there's no "user has edited" path
+  // for these fields).
+  const [patientName, setPatientName] = useState<string | null>(null);
+  const [patientDob, setPatientDob] = useState<string | null>(null);
   const [analysis, setAnalysis] = useState<AnalysisResult | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [analyzeError, setAnalyzeError] = useState<string | null>(null);
@@ -159,6 +168,15 @@ export function useMedicationAssessment(): UseMedicationAssessmentResult {
       if (!userHasEditedRef.current) {
         setMedList(result.medications);
       }
+      // Identity always overwrites — no "user-edited" concept for these
+      // fields. Vision returning null clears them so the rail doesn't
+      // show stale identity from a previous chart. Same-reference no-op
+      // guard mirrors clearCachedResults so subscribers aren't notified
+      // when a re-extract returns the same name/DOB.
+      const nextName = result.patient?.name ?? null;
+      const nextDob = result.patient?.dob ?? null;
+      setPatientName((prev) => (prev === nextName ? prev : nextName));
+      setPatientDob((prev) => (prev === nextDob ? prev : nextDob));
       setExtractionState('extracted');
       clearCachedResults();
     } catch (e) {
@@ -448,6 +466,9 @@ export function useMedicationAssessment(): UseMedicationAssessmentResult {
     analyzeError,
     isParsing,
     parseError,
+
+    patientName,
+    patientDob,
 
     patientAge,
     patientEgfr,

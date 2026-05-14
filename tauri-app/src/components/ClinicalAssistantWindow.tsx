@@ -6,6 +6,7 @@ import { useClinicalChat } from '../hooks/useClinicalChat';
 import { useMedicationAssessment } from '../hooks/useMedicationAssessment';
 import ClinicalChatTab from './ClinicalChatTab';
 import MedicationAssessment from './MedicationAssessment';
+import { Sidebar } from './clinicalAssistant/Sidebar';
 import type { Settings } from '../types';
 
 type Tab = 'chat' | 'meds';
@@ -13,13 +14,14 @@ type Tab = 'chat' | 'meds';
 /**
  * Standalone Clinical Assistant window.
  *
- * Tab 1 (Chat): the assistant chat, augmented with the extracted med list
- *   as system context whenever the list is non-empty.
- * Tab 2 (Medication Assessment): vision-extracts current meds on first
- *   activation, lets the clinician edit, then runs the analyzer.
+ * Layout: header on top, then a two-pane body — a persistent left sidebar
+ * (patient identity, medications, patient context, allergies placeholder)
+ * and a right tabs pane (Chat, Medication Assessment, future tabs).
  *
- * Cross-tab state lives here so the chat tab's `attachedMedCount` and the
- * analyzer hook's `medList` stay in sync.
+ * Tabs read from the sidebar via the shared `useMedicationAssessment` hook,
+ * which holds the med list + vision-extracted patient identity + patient
+ * context. The Chat tab's LLM call still receives the med list as system
+ * context; the sidebar makes the attached context visible.
  */
 const ClinicalAssistantWindow: React.FC = () => {
   const [activeTab, setActiveTab] = useState<Tab>('chat');
@@ -102,39 +104,46 @@ const ClinicalAssistantWindow: React.FC = () => {
         </button>
       </header>
 
-      <nav className="ca-tabs" role="tablist">
-        <button
-          role="tab"
-          aria-selected={activeTab === 'chat'}
-          className={`ca-tab ${activeTab === 'chat' ? 'ca-tab-active' : ''}`}
-          onClick={() => setActiveTab('chat')}
-        >
-          Chat
-        </button>
-        <button
-          role="tab"
-          aria-selected={activeTab === 'meds'}
-          className={`ca-tab ${activeTab === 'meds' ? 'ca-tab-active' : ''}`}
-          onClick={() => setActiveTab('meds')}
-        >
-          Medication Assessment
-          {med.medList.length > 0 && <span className="ca-tab-count">{med.medList.length}</span>}
-        </button>
-      </nav>
+      <div className="ca-body">
+        <Sidebar med={med} />
 
-      <main className="ca-tab-content">
-        {activeTab === 'chat' && (
-          <ClinicalChatTab
-            messages={chat.messages}
-            isLoading={chat.isLoading}
-            error={chat.error}
-            onSendMessage={chat.sendMessage}
-            onClear={chat.clearChat}
-            attachedMedCount={med.medList.length}
-          />
-        )}
-        {activeTab === 'meds' && <MedicationAssessment med={med} />}
-      </main>
+        <div className="ca-tabs-pane">
+          <nav className="ca-tabs" role="tablist">
+            <button
+              role="tab"
+              aria-selected={activeTab === 'chat'}
+              className={`ca-tab ${activeTab === 'chat' ? 'ca-tab-active' : ''}`}
+              onClick={() => setActiveTab('chat')}
+            >
+              Chat
+            </button>
+            <button
+              role="tab"
+              aria-selected={activeTab === 'meds'}
+              className={`ca-tab ${activeTab === 'meds' ? 'ca-tab-active' : ''}`}
+              onClick={() => setActiveTab('meds')}
+            >
+              Medication Assessment
+              {med.medList.length > 0 && (
+                <span className="ca-tab-count">{med.medList.length}</span>
+              )}
+            </button>
+          </nav>
+
+          <main className="ca-tab-content">
+            {activeTab === 'chat' && (
+              <ClinicalChatTab
+                messages={chat.messages}
+                isLoading={chat.isLoading}
+                error={chat.error}
+                onSendMessage={chat.sendMessage}
+                onClear={chat.clearChat}
+              />
+            )}
+            {activeTab === 'meds' && <MedicationAssessment med={med} />}
+          </main>
+        </div>
+      </div>
     </div>
   );
 };
