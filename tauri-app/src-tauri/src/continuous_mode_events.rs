@@ -104,12 +104,6 @@ pub enum ContinuousModeEvent {
         #[serde(skip_serializing_if = "Option::is_none")]
         confidence: Option<f64>,
     },
-    /// False-split candidates detected post-flush. Frontend shows a banner
-    /// in History view offering one-click merge.
-    NegativeGapPairsFound {
-        date: String,
-        pair_count: usize,
-    },
 }
 
 impl ContinuousModeEvent {

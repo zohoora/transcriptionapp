@@ -812,29 +812,6 @@ pub async fn run<C: RunContext>(
     // clinic day) and it runs only at stop, not on the hot path.
     crate::performance_summary::write_today_summary();
 
-    // Negative-gap pair scan. Walks today's session
-    // summaries looking for false-split signatures (next session started
-    // <30s after prev session's recorded end AND tail <2500 words). Emits
-    // an event so the frontend can show a one-click merge banner.
-    let scan_date = ctx.now_local().format("%Y-%m-%d").to_string();
-    if let Ok(today_sessions) = crate::local_archive::list_sessions_by_date(&scan_date) {
-        let pairs = crate::local_archive::find_negative_gap_pairs(&today_sessions);
-        if !pairs.is_empty() {
-            info!(
-                event = "negative_gap_pairs_found",
-                component = "continuous_mode_flush_on_stop",
-                date = %scan_date,
-                pair_count = pairs.len(),
-                "Negative-gap pair scan found false-split candidates"
-            );
-            ContinuousModeEvent::NegativeGapPairsFound {
-                date: scan_date,
-                pair_count: pairs.len(),
-            }
-            .emit_via(ctx);
-        }
-    }
-
     // Set state to idle
     if let Ok(mut state) = handle.state.lock() {
         *state = ContinuousState::Idle;

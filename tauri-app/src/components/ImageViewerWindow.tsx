@@ -1,17 +1,15 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { listen } from '@tauri-apps/api/event';
-import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow';
-import { downloadBase64Image } from '../utils';
+import { ImageToolbar } from './ImageToolbar';
 
 /**
  * Standalone window for displaying AI-generated medical illustrations.
  * Receives image data via a Tauri event after the window opens.
- * Toolbar: Save to disk, Print, Close.
+ * Toolbar: Save / Print / Copy / Close (shared with ImageHistoryWindow).
  */
 export default function ImageViewerWindow() {
   const [imageBase64, setImageBase64] = useState<string | null>(null);
   const [prompt, setPrompt] = useState<string>('');
-  const [saved, setSaved] = useState(false);
   const mounted = useRef(true);
 
   useEffect(() => {
@@ -22,7 +20,6 @@ export default function ImageViewerWindow() {
       if (mounted.current) {
         setImageBase64(event.payload.base64);
         setPrompt(event.payload.prompt || '');
-        setSaved(false);
       }
     }).then((fn) => {
       if (mounted.current) {
@@ -38,23 +35,6 @@ export default function ImageViewerWindow() {
     };
   }, []);
 
-  const handleSave = useCallback(() => {
-    if (!imageBase64) return;
-    downloadBase64Image(imageBase64, 'illustration');
-    setSaved(true);
-    setTimeout(() => setSaved(false), 2000);
-  }, [imageBase64]);
-
-  const handlePrint = useCallback(() => {
-    window.print();
-  }, []);
-
-  const handleClose = useCallback(() => {
-    getCurrentWebviewWindow().close().catch((e) => {
-      console.error('Failed to close image viewer window:', e);
-    });
-  }, []);
-
   if (!imageBase64) {
     return (
       <div className="image-viewer-container">
@@ -65,16 +45,7 @@ export default function ImageViewerWindow() {
 
   return (
     <div className="image-viewer-container">
-      <div className="image-viewer-toolbar">
-        {prompt && <span className="image-viewer-prompt">{prompt}</span>}
-        <div className="image-viewer-actions">
-          <button className="image-viewer-btn" onClick={handleSave}>
-            {saved ? 'Saved' : 'Save'}
-          </button>
-          <button className="image-viewer-btn" onClick={handlePrint}>Print</button>
-          <button className="image-viewer-btn image-viewer-btn-close" onClick={handleClose}>Close</button>
-        </div>
-      </div>
+      <ImageToolbar imageBase64={imageBase64} prompt={prompt} />
       <div className="image-viewer-body">
         <img
           src={`data:image/png;base64,${imageBase64}`}

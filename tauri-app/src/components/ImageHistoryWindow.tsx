@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { listen } from '@tauri-apps/api/event';
 import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow';
-import { downloadBase64Image } from '../utils';
+import { ImageToolbar } from './ImageToolbar';
 
 interface HistoryImage {
   base64: string;
@@ -12,12 +12,13 @@ interface HistoryImage {
 /**
  * Standalone window showing all AI-generated images from the current session.
  * Receives image data via Tauri events from the main app.
- * Click any thumbnail to view full-size with save/print.
+ * Click any thumbnail to view full-size with Save / Print / Copy via the
+ * shared ImageToolbar. In detail view, the rightmost button is "Back to grid"
+ * (Cmd+W still closes the window).
  */
 export default function ImageHistoryWindow() {
   const [images, setImages] = useState<HistoryImage[]>([]);
   const [selected, setSelected] = useState<HistoryImage | null>(null);
-  const [saved, setSaved] = useState(false);
   const mounted = useRef(true);
 
   useEffect(() => {
@@ -42,14 +43,6 @@ export default function ImageHistoryWindow() {
     };
   }, []);
 
-  const handleSave = useCallback(() => {
-    if (!selected) return;
-    downloadBase64Image(selected.base64, 'illustration');
-    setSaved(true);
-    setTimeout(() => setSaved(false), 2000);
-  }, [selected]);
-
-  const handlePrint = useCallback(() => { window.print(); }, []);
   const handleClose = useCallback(() => {
     getCurrentWebviewWindow().close().catch((e) => {
       console.error('Failed to close image history window:', e);
@@ -58,19 +51,21 @@ export default function ImageHistoryWindow() {
 
   return (
     <div className="img-hist-container">
-      <div className="img-hist-toolbar">
-        <span className="img-hist-title">Image History ({images.length})</span>
-        <div className="img-hist-actions">
-          {selected && (
-            <>
-              <button className="img-hist-btn" onClick={handleSave}>{saved ? 'Saved' : 'Save'}</button>
-              <button className="img-hist-btn" onClick={handlePrint}>Print</button>
-              <button className="img-hist-btn" onClick={() => setSelected(null)}>Back</button>
-            </>
-          )}
-          <button className="img-hist-btn img-hist-btn-close" onClick={handleClose}>Close</button>
+      {selected ? (
+        <ImageToolbar
+          imageBase64={selected.base64}
+          prompt={selected.prompt}
+          onClose={() => setSelected(null)}
+          closeLabel="Back to grid"
+        />
+      ) : (
+        <div className="img-hist-toolbar">
+          <span className="img-hist-title">Image History ({images.length})</span>
+          <div className="img-hist-actions">
+            <button className="img-hist-btn img-hist-btn-close" onClick={handleClose}>Close</button>
+          </div>
         </div>
-      </div>
+      )}
 
       {selected ? (
         <div className="img-hist-detail">

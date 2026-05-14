@@ -103,17 +103,6 @@ async fn fetch_merged_sessions_for_date(
     }
 }
 
-/// Surface false-split candidates so the clinician can one-click merge.
-#[tauri::command]
-pub async fn find_negative_gap_pairs_for_date(
-    date: String,
-    active_physician: State<'_, SharedActivePhysician>,
-    profile_client: State<'_, SharedProfileClient>,
-) -> Result<Vec<local_archive::NegativeGapPair>, CommandError> {
-    let summaries = fetch_merged_sessions_for_date(&date, &active_physician, &profile_client).await;
-    Ok(local_archive::find_negative_gap_pairs(&summaries))
-}
-
 /// Get sessions for a specific date. Local + server merged so cross-room
 /// sessions appear on every workstation.
 #[tauri::command]

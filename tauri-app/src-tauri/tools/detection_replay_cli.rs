@@ -617,7 +617,6 @@ mod tests {
             merge_check: None,
             soap_result: None,
             billing_result: None,
-            name_tracker: None,
             outcome: None,
             multi_patient_detections: vec![],
         }

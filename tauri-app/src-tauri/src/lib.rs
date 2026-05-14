@@ -599,7 +599,6 @@ pub fn run() {
             commands::split_local_session,
             commands::migrate_legacy_multipatient_session,
             commands::merge_local_sessions,
-            commands::find_negative_gap_pairs_for_date,
             commands::update_session_patient_name,
             commands::confirm_session_patient,
             commands::renumber_local_encounters,
@@ -622,6 +621,8 @@ pub fn run() {
             commands::generate_plan_with_answers,
             // AI image generation (Gemini / OpenAI proxy)
             commands::generate_ai_image,
+            commands::save_image_png,
+            commands::print_image_png,
             // Screen capture commands
             commands::check_screen_recording_permission,
             commands::open_screen_recording_settings,

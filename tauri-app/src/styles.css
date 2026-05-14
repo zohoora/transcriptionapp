@@ -3078,19 +3078,58 @@ body {
   border-radius: 8px;
   padding: 12px;
   user-select: none;
+  max-width: 280px;
+}
+
+.calendar.collapsed {
+  padding: 6px 10px;
 }
 
 .calendar-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 6px;
   margin-bottom: 12px;
 }
 
+.calendar.collapsed .calendar-header {
+  margin-bottom: 0;
+}
+
+.calendar-collapse-btn {
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  padding: 2px 4px;
+  font-size: 11px;
+  line-height: 1;
+  border-radius: 4px;
+  transition: all 0.15s ease;
+  flex-shrink: 0;
+}
+
+.calendar-collapse-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
 .calendar-month-year {
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 600;
   color: var(--text-primary);
+  flex: 1;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.calendar-nav-group {
+  display: flex;
+  gap: 2px;
+  flex-shrink: 0;
 }
 
 .calendar-nav-btn {
@@ -3098,8 +3137,8 @@ body {
   border: none;
   color: var(--text-secondary);
   cursor: pointer;
-  padding: 6px 10px;
-  font-size: 12px;
+  padding: 4px 8px;
+  font-size: 11px;
   border-radius: 4px;
   transition: all 0.15s ease;
 }
@@ -3239,60 +3278,6 @@ body {
   border: 1px solid var(--border-color);
   border-radius: 4px;
   cursor: pointer;
-}
-
-/* False-split candidate banner above the session list */
-.negative-gap-banner {
-  margin: 8px 12px 12px;
-  padding: 10px 12px;
-  background: var(--bg-hover, rgba(255, 165, 0, 0.06));
-  border: 1px solid rgba(255, 165, 0, 0.5);
-  border-radius: 6px;
-  font-size: 12px;
-}
-.negative-gap-banner-header {
-  font-weight: 600;
-  color: var(--text-primary);
-  margin-bottom: 6px;
-}
-.negative-gap-pair {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 4px 0;
-}
-.negative-gap-pair + .negative-gap-pair {
-  border-top: 1px dashed var(--border-color);
-}
-.negative-gap-pair-text {
-  flex: 1;
-  color: var(--text-primary);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.negative-gap-detail {
-  color: var(--text-muted);
-  font-size: 11px;
-}
-.negative-gap-merge-btn {
-  padding: 4px 10px;
-  font-size: 12px;
-  background: var(--bg-hover);
-  border: 1px solid var(--border-color);
-  border-radius: 4px;
-  cursor: pointer;
-  color: var(--text-primary);
-}
-.negative-gap-merge-btn:hover:not(:disabled) {
-  background: var(--accent-info, #2563eb);
-  color: white;
-  border-color: transparent;
-}
-.negative-gap-merge-btn:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
 }
 
 .sessions-list {
@@ -10837,8 +10822,13 @@ button.review-section-header-left:focus {
   border: 1px solid #4b5563; border-radius: 5px;
   background: #1f2937; color: #e5e7eb; cursor: pointer;
 }
-.image-viewer-btn:hover { background: #374151; }
+.image-viewer-btn:hover:not(:disabled) { background: #374151; }
+.image-viewer-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 .image-viewer-btn-close { border-color: #6b7280; }
+.image-viewer-error {
+  padding: 6px 12px; background: #7f1d1d; color: #fee2e2;
+  font-size: 12px; border-bottom: 1px solid #374151; flex-shrink: 0;
+}
 .image-viewer-body {
   flex: 1; display: flex; align-items: center; justify-content: center;
   overflow: hidden; padding: 12px;
@@ -10847,7 +10837,7 @@ button.review-section-header-left:focus {
   max-width: 100%; max-height: 100%; object-fit: contain;
 }
 @media print {
-  .image-viewer-toolbar { display: none !important; }
+  .image-viewer-toolbar, .image-viewer-error { display: none !important; }
   .image-viewer-container { background: #fff; }
   .image-viewer-body { padding: 0; }
   .image-viewer-img { max-width: 100%; max-height: 100vh; }

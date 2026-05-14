@@ -26,7 +26,6 @@ import type {
   LocalArchiveMetadata,
   ArchivedPatientNote,
   MultiPatientSoapResult,
-  NegativeGapPair,
   PatientSoapNote,
   SoapNote,
   EncounterSummary,
@@ -410,8 +409,6 @@ const HistoryWindow: React.FC = () => {
   const [selectedPatientIndex, setSelectedPatientIndex] = useState<number | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [datesWithSessions, setDatesWithSessions] = useState<Set<string>>(new Set());
-  const [negativeGapPairs, setNegativeGapPairs] = useState<NegativeGapPair[]>([]);
-  const [mergingPairId, setMergingPairId] = useState<string | null>(null);
   const [migratingMultiPatient, setMigratingMultiPatient] = useState(false);
 
   // Sort and filter
@@ -770,7 +767,6 @@ const HistoryWindow: React.FC = () => {
 
     setLoading(true);
     setError(null);
-    setNegativeGapPairs([]);
 
     try {
       const dateStr = formatDateForApi(selectedDate);
@@ -780,17 +776,6 @@ const HistoryWindow: React.FC = () => {
           date: dateStr,
         });
         setSessions(result);
-
-        // Best-effort scan: a network failure here shouldn't break the list.
-        try {
-          const pairs = await invoke<NegativeGapPair[] | null>(
-            'find_negative_gap_pairs_for_date',
-            { date: dateStr },
-          );
-          setNegativeGapPairs(pairs ?? []);
-        } catch (e) {
-          console.warn('Negative-gap scan failed', e);
-        }
       } else if (dataSource === 'medplum') {
         if (!authState.is_authenticated) {
           setError('Sign in to Medplum to view session history');
@@ -1297,37 +1282,6 @@ const HistoryWindow: React.FC = () => {
     return uniqueSessions.size === 1 && keys.some(k => patientIndexFromKey(k) !== null);
   }, [selectedIds]);
 
-  // One-click merge for a banner-flagged false-split pair. Skips the regular
-  // merge dialog because the banner already explains what's being merged.
-  const handleMergeNegativeGapPair = useCallback(async (pair: NegativeGapPair) => {
-    const dateStr = formatDateForApi(selectedDate);
-    const pairId = `${pair.prev_session_id}|${pair.next_session_id}`;
-    setMergingPairId(pairId);
-    try {
-      await invoke<string>('merge_local_sessions', {
-        sessionIds: [pair.prev_session_id, pair.next_session_id],
-        date: dateStr,
-      });
-      // Drop this pair locally so the banner row disappears even before the
-      // post-merge fetchSessions completes. Other pairs (if any) stay.
-      setNegativeGapPairs(prev =>
-        prev.filter(
-          p =>
-            !(
-              p.prev_session_id === pair.prev_session_id &&
-              p.next_session_id === pair.next_session_id
-            ),
-        ),
-      );
-      await afterCleanupOp('Merged false-split pair');
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      setError(msg);
-    } finally {
-      setMergingPairId(null);
-    }
-  }, [selectedDate, afterCleanupOp]);
-
   // Merge operation (cross-session merges only; same-session patient merges go through handlePatientMergeConfirm)
   const handleMergeConfirm = useCallback(async () => {
     const dateStr = formatDateForApi(selectedDate);
@@ -1627,40 +1581,6 @@ const HistoryWindow: React.FC = () => {
                   <option value="soap">Has SOAP</option>
                   <option value="no-soap">No SOAP</option>
                 </select>
-              </div>
-            )}
-
-            {!loading && negativeGapPairs.length > 0 && (
-              <div className="negative-gap-banner" role="status">
-                <div className="negative-gap-banner-header">
-                  Possible false splits detected ({negativeGapPairs.length})
-                </div>
-                {negativeGapPairs.map(pair => {
-                  const prev = sessions.find(s => s.session_id === pair.prev_session_id);
-                  const next = sessions.find(s => s.session_id === pair.next_session_id);
-                  const prevLabel = prev?.patient_name ?? `${pair.prev_session_id.slice(0, 8)}…`;
-                  const nextLabel = next?.patient_name ?? `${pair.next_session_id.slice(0, 8)}…`;
-                  const pairId = `${pair.prev_session_id}|${pair.next_session_id}`;
-                  const merging = mergingPairId === pairId;
-                  return (
-                    <div key={pairId} className="negative-gap-pair">
-                      <div className="negative-gap-pair-text">
-                        <strong>{prevLabel}</strong> → <strong>{nextLabel}</strong>
-                        <span className="negative-gap-detail">
-                          {' '}gap {pair.gap_secs}s · tail {pair.next_word_count}w
-                        </span>
-                      </div>
-                      <button
-                        type="button"
-                        className="negative-gap-merge-btn"
-                        onClick={() => handleMergeNegativeGapPair(pair)}
-                        disabled={merging}
-                      >
-                        {merging ? 'Merging…' : 'Merge'}
-                      </button>
-                    </div>
-                  );
-                })}
               </div>
             )}
 

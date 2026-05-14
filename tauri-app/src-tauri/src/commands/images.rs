@@ -6,6 +6,7 @@
 //! asserts drift-free.
 
 use super::CommandError;
+use base64::Engine as _;
 use serde::{Deserialize, Serialize};
 use tracing::{info, warn};
 
@@ -145,6 +146,87 @@ pub async fn generate_ai_image(
         prompt,
         image_model: effective_key,
     })
+}
+
+/// Write a base64-encoded PNG to a path supplied by the frontend's native
+/// save dialog (`tauri-plugin-dialog`). The OS dialog gates path picking, so
+/// no path validation here.
+#[tauri::command]
+pub async fn save_image_png(image_base64: String, dest_path: String) -> Result<(), CommandError> {
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(&image_base64)
+        .map_err(|e| CommandError::Validation(format!("invalid base64: {e}")))?;
+    std::fs::write(&dest_path, &bytes)?;
+    info!("Saved AI image: {} bytes → {}", bytes.len(), dest_path);
+    Ok(())
+}
+
+/// Open the native macOS print dialog for a base64-encoded PNG.
+///
+/// Strategy: write the PNG to `std::env::temp_dir()` and invoke
+/// `osascript` with `tell application "Preview" to print POSIX file ...`.
+/// AppleScript's `print` verb defaults to **showing the print dialog**
+/// (NSPrintOperation under the hood), so the user gets a real Cmd+P-style
+/// experience rather than a silent spool to the default printer.
+///
+/// macOS cleans `/tmp` on reboot, so no manual cleanup is needed for the
+/// temp PNG. We don't `Drop` it because Preview reads asynchronously after
+/// the AppleScript call returns.
+#[tauri::command]
+pub async fn print_image_png(image_base64: String) -> Result<(), CommandError> {
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = image_base64;
+        Err(CommandError::Config(
+            "Printing is only supported on macOS".into(),
+        ))
+    }
+    #[cfg(target_os = "macos")]
+    {
+        let bytes = base64::engine::general_purpose::STANDARD
+            .decode(&image_base64)
+            .map_err(|e| CommandError::Validation(format!("invalid base64: {e}")))?;
+
+        let temp_path = std::env::temp_dir().join(format!(
+            "ami-print-{}.png",
+            uuid::Uuid::new_v4().simple()
+        ));
+        std::fs::write(&temp_path, &bytes)?;
+
+        // `activate` brings Preview to foreground so the print dialog appears
+        // on top of the main app instead of behind it. The path string is
+        // backslash/quote-escaped — we generate the temp path ourselves so it
+        // can't currently contain those chars, but escape anyway to stay
+        // robust if std::env::temp_dir() ever changes shape.
+        let escaped_path = temp_path
+            .display()
+            .to_string()
+            .replace('\\', "\\\\")
+            .replace('"', "\\\"");
+        let script = format!(
+            "tell application \"Preview\"\n    activate\n    print POSIX file \"{escaped_path}\"\nend tell"
+        );
+
+        let output = std::process::Command::new("/usr/bin/osascript")
+            .arg("-e")
+            .arg(&script)
+            .output()
+            .map_err(|e| CommandError::Io(format!("failed to spawn osascript: {e}")))?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(CommandError::Io(format!(
+                "osascript failed: {}",
+                stderr.trim()
+            )));
+        }
+        info!(
+            "Print dialog opened for {} bytes at {}",
+            bytes.len(),
+            temp_path.display()
+        );
+        Ok(())
+    }
 }
 
 #[cfg(test)]
