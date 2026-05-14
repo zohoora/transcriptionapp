@@ -94,13 +94,10 @@ export interface Settings {
   auto_end_silence_ms: number;
   // Debug storage (development only)
   debug_storage_enabled: boolean;
-  // MIIS (Medical Illustration Image Server)
-  miis_enabled: boolean;
-  miis_server_url: string;
   // Pharmacotherapy refactor service (MacBook-hosted; powers the Clinical Assistant window)
   pharm_service_url: string;
   // AI image generation
-  image_source: string; // "off" | "miis" | "ai"
+  image_source: string; // "off" | "ai"
   gemini_api_key: string;
   openai_api_key: string;
   /** Provider + quality key. One of: "gemini-flash", "gemini-pro", "openai-low", "openai-medium", "openai-high". */
@@ -186,7 +183,6 @@ export interface InfrastructureOverlay {
   stt_postprocess?: boolean;
   medplum_server_url?: string;
   medplum_client_id?: string;
-  miis_server_url?: string;
   whisper_mode?: string;
   encounter_detection_model?: string;
   encounter_detection_nothink?: boolean;

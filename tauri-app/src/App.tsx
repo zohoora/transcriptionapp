@@ -24,7 +24,6 @@ import {
   useAutoDetection,
   useSessionLifecycle,
   usePredictiveHint,
-  useMiisImages,
   useAiImages,
   useScreenCapture,
   useContinuousModeOrchestrator,
@@ -181,8 +180,8 @@ function App() {
   const chartingMode: ChartingMode = settings?.charting_mode || 'session';
   const isContinuousMode = chartingMode === 'continuous';
 
-  // Continuous mode orchestrator (groups useContinuousMode, usePatientBiomarkers,
-  // usePredictiveHint, useMiisImages, and related state)
+  // Continuous mode orchestrator (groups useContinuousMode,
+  // usePatientBiomarkers, usePredictiveHint, useAiImages, and related state)
   const continuous = useContinuousModeOrchestrator({ settings });
 
   // Patient handout generation
@@ -329,10 +328,9 @@ function App() {
     }
   }, [status.state]);
 
-  // Predictive hints and image concepts during recording
+  // Predictive hints during recording (Pssst panel + DDx + AI-image prompt)
   const {
     hint: predictiveHint,
-    concepts: imageConcepts,
     differentialDiagnoses,
     isLoading: predictiveHintLoading,
   } = usePredictiveHint({
@@ -340,7 +338,7 @@ function App() {
     isRecording: uiMode === 'recording',
   });
 
-  const imageSource = (settings?.image_source ?? 'off') as 'off' | 'miis' | 'ai';
+  const imageSource = (settings?.image_source ?? 'off') as 'off' | 'ai';
   // Read the dropdown value from pendingSettings so setImageModel's
   // setPendingSettings call re-renders the selection immediately. settings
   // (saved) lags pendingSettings (optimistic UI) by one round-trip.
@@ -360,22 +358,6 @@ function App() {
     },
     [settings, pendingSettings, setPendingSettings],
   );
-
-  // MIIS image suggestions (uses concepts from predictive hints)
-  const {
-    suggestions: miisSuggestions,
-    isLoading: miisLoading,
-    error: miisError,
-    recordImpression: miisRecordImpression,
-    recordClick: miisRecordClick,
-    recordDismiss: miisRecordDismiss,
-    getImageUrl: miisGetImageUrl,
-  } = useMiisImages({
-    sessionId: status.session_id ?? null,
-    concepts: imageConcepts,
-    enabled: imageSource === 'miis',
-    serverUrl: settings?.miis_server_url ?? '',
-  });
 
   // AI-generated image suggestions (user-triggered via text input)
   const {
@@ -861,15 +843,7 @@ function App() {
             encounterNotes={continuous.encounterNotes}
             onSubmitEncounterNote={continuous.onSubmitEncounterNote}
             onDeleteEncounterNote={continuous.onDeleteEncounterNote}
-            // Image suggestions (MIIS or AI)
-            miisSuggestions={continuous.miisSuggestions}
-            miisLoading={continuous.miisLoading}
-            miisError={continuous.miisError}
-            miisEnabled={continuous.miisEnabled}
-            onMiisImpression={continuous.onMiisImpression}
-            onMiisClick={continuous.onMiisClick}
-            onMiisDismiss={continuous.onMiisDismiss}
-            miisGetImageUrl={continuous.miisGetImageUrl}
+            // AI image suggestions
             aiImages={continuous.aiImages}
             aiLoading={continuous.aiLoading}
             aiError={continuous.aiError}
@@ -951,15 +925,7 @@ function App() {
             predictiveHint={predictiveHint}
             predictiveHintLoading={predictiveHintLoading}
             differentialDiagnoses={differentialDiagnoses}
-            // Image suggestions (MIIS or AI)
-            miisSuggestions={miisSuggestions}
-            miisLoading={miisLoading}
-            miisError={miisError}
-            miisEnabled={imageSource !== 'off'}
-            onMiisImpression={miisRecordImpression}
-            onMiisClick={miisRecordClick}
-            onMiisDismiss={miisRecordDismiss}
-            miisGetImageUrl={miisGetImageUrl}
+            // AI image suggestions
             aiImages={aiImages}
             aiLoading={aiLoading}
             aiError={aiError}

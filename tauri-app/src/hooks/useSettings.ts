@@ -84,7 +84,6 @@ export function buildMergedSettings(settings: Settings, pending: PendingSettings
     auto_start_require_enrolled: pending.auto_start_require_enrolled,
     auto_start_required_role: pending.auto_start_required_role,
     auto_end_enabled: pending.auto_end_enabled,
-    miis_enabled: pending.image_source === 'miis',
     image_source: pending.image_source,
     gemini_api_key: pending.gemini_api_key,
     openai_api_key: pending.openai_api_key,

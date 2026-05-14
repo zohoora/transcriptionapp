@@ -5,14 +5,6 @@ const HINT_INTERVAL_MS = 30000; // 30 seconds
 const INITIAL_DELAY_MS = 5000; // First hint after 5 seconds
 const MIN_WORDS_FOR_HINT = 20;
 
-/** Medical concept for MIIS image search */
-export interface ImageConcept {
-  /** The concept text (e.g., "knee anatomy", "rotator cuff") */
-  text: string;
-  /** Relevance weight 0.0-1.0 */
-  weight: number;
-}
-
 /** A differential diagnosis suggestion */
 export interface DifferentialDiagnosis {
   diagnosis: string;
@@ -29,7 +21,6 @@ export const DDX_LIKELIHOOD_LABELS: Record<DifferentialDiagnosis['likelihood'], 
 /** Response from predictive hint generation */
 interface PredictiveHintResponse {
   hint: string;
-  concepts: ImageConcept[];
   image_prompt: string | null;
   differential_diagnoses: DifferentialDiagnosis[];
 }
@@ -48,8 +39,6 @@ interface UsePredictiveHintOptions {
 interface UsePredictiveHintResult {
   /** Brief clinical hint for the physician */
   hint: string;
-  /** Medical concepts for MIIS image search */
-  concepts: ImageConcept[];
   /** Image generation prompt from LLM (null if no image needed) */
   imagePrompt: string | null;
   /** Top 3 differential diagnoses */
@@ -71,7 +60,6 @@ export function usePredictiveHint({
   resetKey,
 }: UsePredictiveHintOptions): UsePredictiveHintResult {
   const [hint, setHint] = useState('');
-  const [concepts, setConcepts] = useState<ImageConcept[]>([]);
   const [imagePrompt, setImagePrompt] = useState<string | null>(null);
   const [differentialDiagnoses, setDifferentialDiagnoses] = useState<DifferentialDiagnosis[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -91,7 +79,6 @@ export function usePredictiveHint({
 
   const clearHintState = useCallback(() => {
     setHint('');
-    setConcepts([]);
     setImagePrompt(null);
     setDifferentialDiagnoses([]);
     setLastUpdated(null);
@@ -133,10 +120,6 @@ export function usePredictiveHint({
         if (result.hint && result.hint.trim()) {
           console.log('Predictive hint received:', result.hint.substring(0, 50) + '...');
           setHint(result.hint);
-        }
-        if (result.concepts && result.concepts.length > 0) {
-          console.log('Image concepts received:', result.concepts.map(c => c.text).join(', '));
-          setConcepts(result.concepts);
         }
         setImagePrompt(result.image_prompt ?? null);
         if (result.differential_diagnoses && result.differential_diagnoses.length > 0) {
@@ -195,7 +178,6 @@ export function usePredictiveHint({
 
   return {
     hint,
-    concepts,
     imagePrompt,
     differentialDiagnoses,
     isLoading,

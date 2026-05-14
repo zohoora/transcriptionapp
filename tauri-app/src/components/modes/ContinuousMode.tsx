@@ -5,7 +5,7 @@
  * - Idle state: Icon, description, "Start Session" button
  * - Active state: Pulsing status dot, elapsed timer, audio quality indicator,
  *   stats grid (encounters/buffer), last encounter summary, encounter notes,
- *   toggleable transcript preview, MIIS image suggestions, error display, end button
+ *   toggleable transcript preview, AI image suggestions, error display, end button
  *
  * Runs as an ambient companion throughout the day. An LLM-based encounter
  * detector automatically segments the transcript and generates SOAP notes
@@ -21,7 +21,6 @@ import type {
   EncounterNote,
 } from '../../types';
 import type { PatientTrends } from '../../hooks/usePatientBiomarkers';
-import type { MiisSuggestion } from '../../hooks/useMiisImages';
 import type { AiImage } from '../../hooks/useAiImages';
 import type { DifferentialDiagnosis } from '../../hooks/usePredictiveHint';
 import { DDX_LIKELIHOOD_LABELS } from '../../hooks/usePredictiveHint';
@@ -60,22 +59,13 @@ interface ContinuousModeProps {
   onSubmitEncounterNote: (text: string) => Promise<EncounterNote>;
   /** Remove a submitted chip by id */
   onDeleteEncounterNote: (id: string) => Promise<void>;
-  /** MIIS image suggestions */
-  miisSuggestions: MiisSuggestion[];
-  miisLoading: boolean;
-  miisError: string | null;
-  miisEnabled: boolean;
-  onMiisImpression: (imageId: number) => void;
-  onMiisClick: (imageId: number) => void;
-  onMiisDismiss: (imageId: number) => void;
-  miisGetImageUrl: (path: string) => string;
   // AI-generated images
   aiImages?: AiImage[];
   aiLoading?: boolean;
   aiError?: string | null;
   onAiGenerate?: (description: string) => void;
   onAiDismiss?: (index: number) => void;
-  imageSource?: 'miis' | 'ai' | 'off';
+  imageSource?: 'ai' | 'off';
   imageModel?: string;
   onImageModelChange?: (value: string) => void;
   /** Start continuous mode */
@@ -171,20 +161,12 @@ export const ContinuousMode = memo(function ContinuousMode({
   encounterNotes,
   onSubmitEncounterNote,
   onDeleteEncounterNote,
-  miisSuggestions,
-  miisLoading,
-  miisError,
-  miisEnabled,
-  onMiisImpression,
-  onMiisClick,
-  onMiisDismiss,
-  miisGetImageUrl,
   aiImages,
   aiLoading,
   aiError,
   onAiGenerate,
   onAiDismiss,
-  imageSource = 'miis',
+  imageSource = 'off',
   imageModel,
   onImageModelChange,
   onStart,
@@ -498,19 +480,12 @@ export const ContinuousMode = memo(function ContinuousMode({
         </div>
       )}
 
-      {/* Image Suggestions (MIIS or AI) */}
-      {miisEnabled && (
+      {/* AI Image Suggestions (Patient Illustration panel) */}
+      {imageSource === 'ai' && onAiGenerate && onAiDismiss && (
         <ImageSuggestions
-          suggestions={miisSuggestions}
-          isLoading={miisLoading}
-          error={miisError}
-          getImageUrl={miisGetImageUrl}
-          onImpression={onMiisImpression}
-          onClickImage={onMiisClick}
-          onDismiss={onMiisDismiss}
-          aiImages={aiImages}
-          aiLoading={aiLoading}
-          aiError={aiError}
+          aiImages={aiImages ?? []}
+          aiLoading={aiLoading ?? false}
+          aiError={aiError ?? null}
           onAiGenerate={onAiGenerate}
           onAiDismiss={onAiDismiss}
           imageSource={imageSource}

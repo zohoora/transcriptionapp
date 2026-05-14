@@ -10,7 +10,6 @@ const TRANSCRIPT_B = Array(30).fill('chest').join(' ');
 
 const HINT_RESPONSE_A = {
   hint: 'Consider chest pain workup',
-  concepts: [{ text: 'chest pain', weight: 0.9 }],
   image_prompt: null,
   differential_diagnoses: [
     { diagnosis: 'MI', likelihood: 'likely', key_findings: ['chest pain'] },
@@ -19,7 +18,6 @@ const HINT_RESPONSE_A = {
 
 const HINT_RESPONSE_B = {
   hint: 'Consider PE workup',
-  concepts: [{ text: 'shortness of breath', weight: 0.8 }],
   image_prompt: null,
   differential_diagnoses: [
     { diagnosis: 'PE', likelihood: 'possible', key_findings: ['SOB'] },
@@ -37,7 +35,7 @@ describe('usePredictiveHint', () => {
   });
 
   describe('resetKey', () => {
-    it('clears hint, concepts, imagePrompt, and differentialDiagnoses when resetKey changes (while isRecording stays true)', async () => {
+    it('clears hint, imagePrompt, and differentialDiagnoses when resetKey changes (while isRecording stays true)', async () => {
       vi.useFakeTimers();
       mockInvoke.mockResolvedValue(HINT_RESPONSE_A);
 
@@ -54,14 +52,12 @@ describe('usePredictiveHint', () => {
 
       expect(result.current.hint).toBe('Consider chest pain workup');
       expect(result.current.differentialDiagnoses).toHaveLength(1);
-      expect(result.current.concepts).toHaveLength(1);
 
       // Change resetKey while isRecording stays true.
       rerender({ resetKey: 'enc-2' });
 
       expect(result.current.hint).toBe('');
       expect(result.current.differentialDiagnoses).toEqual([]);
-      expect(result.current.concepts).toEqual([]);
       expect(result.current.imagePrompt).toBeNull();
       expect(result.current.lastUpdated).toBeNull();
     });

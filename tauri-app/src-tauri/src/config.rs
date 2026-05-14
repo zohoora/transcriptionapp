@@ -141,11 +141,6 @@ pub struct Settings {
     // Debug storage (development only - stores PHI locally)
     #[serde(default = "default_debug_storage_enabled")]
     pub debug_storage_enabled: bool,
-    // MIIS (Medical Illustration Image Server) settings
-    #[serde(default)]
-    pub miis_enabled: bool,
-    #[serde(default = "default_miis_server_url")]
-    pub miis_server_url: String,
     // Pharmacotherapy refactor service (MacBook-hosted; see clinical-assistant window)
     #[serde(default = "default_pharm_service_url")]
     pub pharm_service_url: String,
@@ -411,10 +406,6 @@ fn default_screen_capture_interval_secs() -> u32 {
     30 // 30 seconds default
 }
 
-fn default_miis_server_url() -> String {
-    "http://100.119.83.76:7843".to_string()
-}
-
 fn default_pharm_service_url() -> String {
     "http://100.119.83.76:8091".to_string()
 }
@@ -563,8 +554,6 @@ impl Default for Settings {
             auto_end_enabled: default_auto_end_enabled(),
             auto_end_silence_ms: default_auto_end_silence_ms(),
             debug_storage_enabled: default_debug_storage_enabled(),
-            miis_enabled: false,
-            miis_server_url: default_miis_server_url(),
             pharm_service_url: default_pharm_service_url(),
             image_source: default_image_source(),
             gemini_api_key: String::new(),
@@ -918,8 +907,6 @@ pub struct InfrastructureOverlay {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub medplum_client_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub miis_server_url: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pharm_service_url: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub whisper_mode: Option<String>,
@@ -1057,7 +1044,6 @@ impl Settings {
             stt_postprocess: Some(self.stt_postprocess),
             medplum_server_url: if self.medplum_server_url.is_empty() { None } else { Some(self.medplum_server_url.clone()) },
             medplum_client_id: Some(self.medplum_client_id.clone()),
-            miis_server_url: if self.miis_server_url.is_empty() { None } else { Some(self.miis_server_url.clone()) },
             pharm_service_url: if self.pharm_service_url.is_empty() { None } else { Some(self.pharm_service_url.clone()) },
             whisper_mode: Some(self.whisper_mode.clone()),
             encounter_detection_model: Some(self.encounter_detection_model.clone()),
@@ -1079,7 +1065,6 @@ impl Settings {
         if let Some(v) = infra.stt_postprocess { self.stt_postprocess = v; }
         if let Some(ref v) = infra.medplum_server_url { self.medplum_server_url = v.clone(); }
         if let Some(ref v) = infra.medplum_client_id { self.medplum_client_id = v.clone(); }
-        if let Some(ref v) = infra.miis_server_url { self.miis_server_url = v.clone(); }
         if let Some(ref v) = infra.pharm_service_url { self.pharm_service_url = v.clone(); }
         if let Some(ref v) = infra.whisper_mode { self.whisper_mode = v.clone(); }
         if let Some(ref v) = infra.encounter_detection_model { self.encounter_detection_model = v.clone(); }
@@ -1160,7 +1145,7 @@ impl Settings {
         // Infrastructure
         for field in &["llm_router_url", "llm_api_key", "llm_client_id", "soap_model", "soap_model_fast",
                        "fast_model", "whisper_server_url", "whisper_server_model", "stt_alias", "stt_postprocess",
-                       "medplum_server_url", "medplum_client_id", "miis_server_url", "pharm_service_url",
+                       "medplum_server_url", "medplum_client_id", "pharm_service_url",
                        "whisper_mode", "encounter_detection_model", "encounter_detection_nothink"] {
             m.insert(*field, SettingsTier::Infrastructure);
         }
@@ -1310,11 +1295,11 @@ impl Config {
         };
         config.clamp_values();
 
-        // Migrate miis_enabled → image_source for backward compatibility
-        // If user had miis_enabled=true and no explicit image_source in their config,
-        // serde default gives "ai" — override to "miis" to preserve their preference
-        if config.miis_enabled && config.image_source == "ai" {
-            config.image_source = "miis".to_string();
+        // Legacy migration: configs may still carry `image_source = "miis"`
+        // from before MIIS was removed (v0.10.98+). Coerce to "ai" so the
+        // app falls back to the surviving image-generation path.
+        if config.image_source == "miis" {
+            config.image_source = "ai".to_string();
         }
 
         // Legacy migration: seed user_edited_fields on first load after
@@ -1383,8 +1368,8 @@ impl Config {
         // CO2: baseline 300-600 ppm
         self.co2_baseline_ppm = self.co2_baseline_ppm.clamp(300.0, 600.0);
 
-        // image_source must be "off", "miis", or "ai"
-        if !["off", "miis", "ai"].contains(&self.image_source.as_str()) {
+        // image_source must be "off" or "ai" (MIIS removed v0.10.98+)
+        if !["off", "ai"].contains(&self.image_source.as_str()) {
             self.image_source = "off".to_string();
         }
 
@@ -1647,8 +1632,6 @@ mod tests {
             auto_end_enabled: true,
             auto_end_silence_ms: 180_000, // 3 minutes
             debug_storage_enabled: true,
-            miis_enabled: false,
-            miis_server_url: "http://100.119.83.76:7843".to_string(),
             pharm_service_url: "http://100.119.83.76:8091".to_string(),
             image_source: "off".to_string(),
             gemini_api_key: String::new(),
@@ -1786,8 +1769,6 @@ mod tests {
             auto_end_enabled: true,
             auto_end_silence_ms: 180_000,
             debug_storage_enabled: true,
-            miis_enabled: false,
-            miis_server_url: default_miis_server_url(),
             pharm_service_url: default_pharm_service_url(),
             image_source: default_image_source(),
             gemini_api_key: String::new(),

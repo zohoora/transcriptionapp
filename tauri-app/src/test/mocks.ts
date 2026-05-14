@@ -94,9 +94,6 @@ export const mockSettings: Settings = {
   auto_end_silence_ms: 180000,
   // Debug storage
   debug_storage_enabled: false,
-  // MIIS
-  miis_enabled: false,
-  miis_server_url: 'http://localhost:7843',
   // AI image generation
   image_source: 'ai',
   gemini_api_key: '',

@@ -6,8 +6,7 @@
  * - useContinuousMode() — core continuous mode state
  * - usePatientBiomarkers(isActive) — patient-focused biomarker trending
  * - usePredictiveHint({...}) — predictive hints for continuous mode
- * - useMiisImages({...}) — MIIS image suggestions for continuous mode
- * - continuousMiisSessionId state + useEffect (stable session ID)
+ * - useAiImages({...}) — AI-generated image suggestions for continuous mode
  * - handleNewPatient callback (resets biomarkers before triggerNewPatient)
  */
 import { useCallback, useEffect } from 'react';
@@ -19,13 +18,11 @@ import type {
   EncounterNote,
 } from '../types';
 import type { PatientTrends } from './usePatientBiomarkers';
-import type { MiisSuggestion } from './useMiisImages';
 import type { AiImage } from './useAiImages';
 import type { DifferentialDiagnosis } from './usePredictiveHint';
 import { useContinuousMode } from './useContinuousMode';
 import { usePatientBiomarkers } from './usePatientBiomarkers';
 import { usePredictiveHint } from './usePredictiveHint';
-import { useMiisImages } from './useMiisImages';
 import { useAiImages } from './useAiImages';
 
 // ============================================================================
@@ -56,21 +53,13 @@ export interface ContinuousModeOrchestratorResult {
   encounterNotes: EncounterNote[];
   onSubmitEncounterNote: (text: string) => Promise<EncounterNote>;
   onDeleteEncounterNote: (id: string) => Promise<void>;
-  miisSuggestions: MiisSuggestion[];
-  miisLoading: boolean;
-  miisError: string | null;
-  miisEnabled: boolean;
-  onMiisImpression: (imageId: number) => void;
-  onMiisClick: (imageId: number) => void;
-  onMiisDismiss: (imageId: number) => void;
-  miisGetImageUrl: (path: string) => string;
   // AI-generated images
   aiImages: AiImage[];
   aiLoading: boolean;
   aiError: string | null;
   onAiGenerate: (description: string) => void;
   onAiDismiss: (index: number) => void;
-  imageSource: 'miis' | 'ai' | 'off';
+  imageSource: 'ai' | 'off';
   onStart: () => void;
   onStop: () => void;
   onNewPatient: () => void;
@@ -118,7 +107,6 @@ export function useContinuousModeOrchestrator({
   // diagnosis on every encounter split so the next patient sees a clean panel.
   const {
     hint: predictiveHint,
-    concepts: continuousImageConcepts,
     differentialDiagnoses: continuousDdx,
     isLoading: predictiveHintLoading,
   } = usePredictiveHint({
@@ -128,25 +116,9 @@ export function useContinuousModeOrchestrator({
   });
 
   // Session ID for image hooks — driven by encounter_detected events (no poll lag)
-  const continuousMiisSessionId = isActive ? encounterSessionId : null;
+  const continuousAiSessionId = isActive ? encounterSessionId : null;
 
-  // MIIS image suggestions for continuous mode
-  const {
-    suggestions: miisSuggestions,
-    isLoading: miisLoading,
-    error: miisError,
-    recordImpression: miisRecordImpression,
-    recordClick: miisRecordClick,
-    recordDismiss: miisRecordDismiss,
-    getImageUrl: miisGetImageUrl,
-  } = useMiisImages({
-    sessionId: continuousMiisSessionId,
-    concepts: continuousImageConcepts,
-    enabled: (settings?.image_source ?? 'off') === 'miis',
-    serverUrl: settings?.miis_server_url ?? '',
-  });
-
-  const continuousImageSource = (settings?.image_source ?? 'off') as 'off' | 'miis' | 'ai';
+  const continuousImageSource = (settings?.image_source ?? 'off') as 'off' | 'ai';
 
   // AI-generated image suggestions for continuous mode (user-triggered)
   const {
@@ -157,7 +129,7 @@ export function useContinuousModeOrchestrator({
     dismissImage: aiDismiss,
   } = useAiImages({
     enabled: continuousImageSource === 'ai',
-    sessionId: continuousMiisSessionId,
+    sessionId: continuousAiSessionId,
   });
 
   // Reset patient pulse + voice trends on every encounter split (matches the
@@ -192,14 +164,6 @@ export function useContinuousModeOrchestrator({
     encounterNotes,
     onSubmitEncounterNote: submitEncounterNote,
     onDeleteEncounterNote: deleteEncounterNote,
-    miisSuggestions,
-    miisLoading,
-    miisError,
-    miisEnabled: continuousImageSource !== 'off',
-    onMiisImpression: miisRecordImpression,
-    onMiisClick: miisRecordClick,
-    onMiisDismiss: miisRecordDismiss,
-    miisGetImageUrl,
     aiImages,
     aiLoading,
     aiError,

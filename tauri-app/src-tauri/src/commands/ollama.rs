@@ -638,13 +638,11 @@ pub struct DifferentialDiagnosis {
     pub key_findings: Vec<String>,
 }
 
-/// Response from predictive hint generation including MIIS image concepts
+/// Response from predictive hint generation.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PredictiveHintResponse {
     /// Brief clinical hint for the physician (max 60 chars)
     pub hint: String,
-    /// Medical concepts for MIIS image search (de-identified)
-    pub concepts: Vec<ImageConcept>,
     /// Optional image generation prompt for AI-generated medical illustrations
     #[serde(default)]
     pub image_prompt: Option<String>,
@@ -653,17 +651,8 @@ pub struct PredictiveHintResponse {
     pub differential_diagnoses: Vec<DifferentialDiagnosis>,
 }
 
-/// A medical concept for MIIS image search
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ImageConcept {
-    /// The concept text (e.g., "knee anatomy", "rotator cuff")
-    pub text: String,
-    /// Relevance weight 0.0-1.0
-    pub weight: f64,
-}
-
-/// Generate a predictive hint and image concepts based on the current transcript
-/// Returns both a clinical hint and MIIS image search concepts
+/// Generate a predictive hint, optional AI-image prompt, and differential
+/// diagnoses based on the current transcript.
 #[tauri::command]
 pub async fn generate_predictive_hint(
     transcript: String,
@@ -671,7 +660,6 @@ pub async fn generate_predictive_hint(
 ) -> Result<PredictiveHintResponse, CommandError> {
     let empty_response = PredictiveHintResponse {
         hint: String::new(),
-        concepts: Vec::new(),
         image_prompt: None,
         differential_diagnoses: Vec::new(),
     };
@@ -682,30 +670,19 @@ pub async fn generate_predictive_hint(
 
     let (_config, models, client, _templates) = load_effective_models_and_client(server_config.inner()).await?;
 
-    let system_prompt = r#"You are a clinical assistant analyzing a medical transcript. Provide FOUR things:
+    let system_prompt = r#"You are a clinical assistant analyzing a medical transcript. Provide THREE things:
 
 1. HINT: A brief clinical fact the physician might need right now (max 60 chars, shorthand style)
-2. CONCEPTS: 1-5 medical image search terms for relevant anatomical diagrams or illustrations
-3. IMAGE_PROMPT: If an image or infographic would be helpful right now in patient communication, provide a detailed image generation prompt. Otherwise, return null.
-4. DIFFERENTIAL_DIAGNOSES: Top 3 differential diagnoses based on the transcript so far.
+2. IMAGE_PROMPT: If an image or infographic would be helpful right now in patient communication, provide a detailed image generation prompt. Otherwise, return null.
+3. DIFFERENTIAL_DIAGNOSES: Top 3 differential diagnoses based on the transcript so far.
 
 Respond ONLY with this JSON format:
-{"hint":"brief clinical fact here","concepts":[{"text":"anatomy term","weight":0.9}],"image_prompt":null,"differential_diagnoses":[{"diagnosis":"Condition name","likelihood":"likely","key_findings":["finding 1","finding 2","finding 3"]}]}
+{"hint":"brief clinical fact here","image_prompt":null,"differential_diagnoses":[{"diagnosis":"Condition name","likelihood":"likely","key_findings":["finding 1","finding 2","finding 3"]}]}
 
 RULES for hint:
 - Maximum 60 characters
 - Use shorthand, not full sentences
 - Focus on: dosages, red flags, key values, quick reminders
-
-RULES for concepts:
-- Use SIMPLE, common anatomical terms (1-3 words max)
-- Prefer basic anatomy: "knee anatomy", "heart anatomy", "liver", "spine"
-- Avoid complex phrases like "iron metabolism pathway" - use "blood cells" or "bone marrow" instead
-- NO patient names, NO PII, NO protocols/procedures
-- Focus on: body parts, organs, basic conditions that have anatomical diagrams
-- Weight 0.0-1.0 based on relevance to current discussion
-
-If no relevant image concepts, return empty array: "concepts":[]
 
 RULES for image_prompt:
 - Return null unless a visual would meaningfully aid patient communication
@@ -740,8 +717,12 @@ RULES for differential_diagnoses:
         Ok(response) => {
             // Try to parse as JSON first
             if let Some(parsed) = parse_hint_response(&response) {
-                info!("Predictive hint parsed: hint={} chars, concepts={}",
-                      parsed.hint.len(), parsed.concepts.len());
+                info!(
+                    "Predictive hint parsed: hint={} chars, ddx={}, image_prompt={}",
+                    parsed.hint.len(),
+                    parsed.differential_diagnoses.len(),
+                    parsed.image_prompt.is_some()
+                );
                 return Ok(parsed);
             }
 
@@ -760,7 +741,6 @@ RULES for differential_diagnoses:
 
             Ok(PredictiveHintResponse {
                 hint: cleaned,
-                concepts: Vec::new(),
                 image_prompt: None,
                 differential_diagnoses: Vec::new(),
             })
@@ -903,15 +883,8 @@ fn parse_hint_response(response: &str) -> Option<PredictiveHintResponse> {
             #[derive(Deserialize)]
             struct RawResponse {
                 hint: Option<String>,
-                concepts: Option<Vec<RawConcept>>,
                 image_prompt: Option<String>,
                 differential_diagnoses: Option<Vec<RawDdx>>,
-            }
-
-            #[derive(Deserialize)]
-            struct RawConcept {
-                text: String,
-                weight: Option<f64>,
             }
 
             #[derive(Deserialize)]
@@ -927,17 +900,6 @@ fn parse_hint_response(response: &str) -> Option<PredictiveHintResponse> {
                     .trim_matches('"')
                     .trim_matches('\'')
                     .to_string();
-
-                let concepts: Vec<ImageConcept> = raw.concepts
-                    .unwrap_or_default()
-                    .into_iter()
-                    .filter(|c| !c.text.trim().is_empty())
-                    .map(|c| ImageConcept {
-                        text: c.text.trim().to_string(),
-                        weight: c.weight.unwrap_or(1.0).clamp(0.0, 1.0),
-                    })
-                    .take(5)
-                    .collect();
 
                 let image_prompt = raw.image_prompt
                     .filter(|p| !p.trim().is_empty() && p.trim() != "null");
@@ -963,7 +925,7 @@ fn parse_hint_response(response: &str) -> Option<PredictiveHintResponse> {
                     .take(3)
                     .collect();
 
-                return Some(PredictiveHintResponse { hint, concepts, image_prompt, differential_diagnoses });
+                return Some(PredictiveHintResponse { hint, image_prompt, differential_diagnoses });
             }
         }
     }

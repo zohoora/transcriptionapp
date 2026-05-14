@@ -1,6 +1,5 @@
 import { memo, useState, useCallback } from 'react';
 import type { AudioQualitySnapshot, BiomarkerUpdate, SilenceWarningPayload } from '../../types';
-import type { MiisSuggestion } from '../../hooks/useMiisImages';
 import type { AiImage } from '../../hooks/useAiImages';
 import type { DifferentialDiagnosis } from '../../hooks/usePredictiveHint';
 import { DDX_LIKELIHOOD_LABELS } from '../../hooks/usePredictiveHint';
@@ -43,22 +42,13 @@ interface RecordingModeProps {
   predictiveHintLoading: boolean;
   differentialDiagnoses: DifferentialDiagnosis[];
 
-  // MIIS (Medical Illustration Image Server) suggestions
-  miisSuggestions: MiisSuggestion[];
-  miisLoading: boolean;
-  miisError: string | null;
-  miisEnabled: boolean;
-  onMiisImpression: (imageId: number) => void;
-  onMiisClick: (imageId: number) => void;
-  onMiisDismiss: (imageId: number) => void;
-  miisGetImageUrl: (path: string) => string;
-  // AI-generated images
+  // AI-generated images (Patient Illustration panel)
   aiImages?: AiImage[];
   aiLoading?: boolean;
   aiError?: string | null;
   onAiGenerate?: (description: string) => void;
   onAiDismiss?: (index: number) => void;
-  imageSource?: 'miis' | 'ai' | 'off';
+  imageSource?: 'ai' | 'off';
   imageModel?: string;
   onImageModelChange?: (value: string) => void;
 
@@ -94,20 +84,12 @@ export const RecordingMode = memo(function RecordingMode({
   predictiveHint,
   predictiveHintLoading,
   differentialDiagnoses,
-  miisSuggestions,
-  miisLoading,
-  miisError,
-  miisEnabled,
-  onMiisImpression,
-  onMiisClick,
-  onMiisDismiss,
-  miisGetImageUrl,
   aiImages,
   aiLoading,
   aiError,
   onAiGenerate,
   onAiDismiss,
-  imageSource = 'miis',
+  imageSource = 'off',
   imageModel,
   onImageModelChange,
   onGenerateHandout,
@@ -204,19 +186,12 @@ export const RecordingMode = memo(function RecordingMode({
         </div>
       )}
 
-      {/* Image Suggestions (MIIS or AI) */}
-      {miisEnabled && (
+      {/* AI Image Suggestions (Patient Illustration panel) */}
+      {imageSource === 'ai' && onAiGenerate && onAiDismiss && (
         <ImageSuggestions
-          suggestions={miisSuggestions}
-          isLoading={miisLoading}
-          error={miisError}
-          getImageUrl={miisGetImageUrl}
-          onImpression={onMiisImpression}
-          onClickImage={onMiisClick}
-          onDismiss={onMiisDismiss}
-          aiImages={aiImages}
-          aiLoading={aiLoading}
-          aiError={aiError}
+          aiImages={aiImages ?? []}
+          aiLoading={aiLoading ?? false}
+          aiError={aiError ?? null}
           onAiGenerate={onAiGenerate}
           onAiDismiss={onAiDismiss}
           imageSource={imageSource}

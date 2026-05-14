@@ -73,14 +73,6 @@ function makeDefaultProps(overrides: Partial<Parameters<typeof ContinuousMode>[0
       timestampMs: 1_700_000_000_000,
     }),
     onDeleteEncounterNote: vi.fn().mockResolvedValue(undefined),
-    miisSuggestions: [],
-    miisLoading: false,
-    miisError: null,
-    miisEnabled: false,
-    onMiisImpression: vi.fn(),
-    onMiisClick: vi.fn(),
-    onMiisDismiss: vi.fn(),
-    miisGetImageUrl: vi.fn((p: string) => p),
     aiImages: [],
     aiLoading: false,
     aiError: null,
@@ -516,20 +508,22 @@ describe('ContinuousMode', () => {
   });
 
   describe('image suggestions', () => {
-    it('renders ImageSuggestions when miisEnabled', () => {
+    it('renders ImageSuggestions when imageSource is ai', () => {
       render(<ContinuousMode {...makeDefaultProps({
         isActive: true,
         stats: ACTIVE_STATS,
-        miisEnabled: true,
+        imageSource: 'ai',
+        onAiGenerate: vi.fn(),
+        onAiDismiss: vi.fn(),
       })} />);
       expect(screen.getByTestId('image-suggestions')).toBeInTheDocument();
     });
 
-    it('does not render ImageSuggestions when not enabled', () => {
+    it('does not render ImageSuggestions when imageSource is off', () => {
       render(<ContinuousMode {...makeDefaultProps({
         isActive: true,
         stats: ACTIVE_STATS,
-        miisEnabled: false,
+        imageSource: 'off',
       })} />);
       expect(screen.queryByTestId('image-suggestions')).not.toBeInTheDocument();
     });

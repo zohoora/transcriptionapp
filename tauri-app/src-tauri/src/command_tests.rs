@@ -57,8 +57,6 @@ mod tests {
             auto_end_enabled: true,
             auto_end_silence_ms: 180_000,
             debug_storage_enabled: true,
-            miis_enabled: false,
-            miis_server_url: "http://100.119.83.76:7843".to_string(),
             pharm_service_url: "http://100.119.83.76:8091".to_string(),
             image_source: "off".to_string(),
             gemini_api_key: String::new(),

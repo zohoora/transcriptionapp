@@ -620,9 +620,7 @@ pub fn run() {
             commands::analyze_medications,
             commands::get_plan_clarifying_questions,
             commands::generate_plan_with_answers,
-            // MIIS (Medical Illustration Image Server) commands
-            commands::miis_suggest,
-            commands::miis_send_usage,
+            // AI image generation (Gemini / OpenAI proxy)
             commands::generate_ai_image,
             // Screen capture commands
             commands::check_screen_recording_permission,

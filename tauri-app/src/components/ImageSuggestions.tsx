@@ -1,24 +1,15 @@
-import { memo, useState, useCallback, useEffect, useRef } from 'react';
+import { memo, useCallback } from 'react';
 import { WebviewWindow } from '@tauri-apps/api/webviewWindow';
 import { emitTo } from '@tauri-apps/api/event';
-import type { MiisSuggestion } from '../hooks/useMiisImages';
 import type { AiImage } from '../hooks/useAiImages';
 
 interface ImageSuggestionsProps {
-  suggestions: MiisSuggestion[];
-  isLoading: boolean;
-  error: string | null;
-  getImageUrl: (path: string) => string;
-  onImpression: (imageId: number) => void;
-  onClickImage: (imageId: number) => void;
-  onDismiss: (imageId: number) => void;
-  // AI-generated image props
-  aiImages?: AiImage[];
-  aiLoading?: boolean;
-  aiError?: string | null;
-  onAiGenerate?: (description: string) => void;
-  onAiDismiss?: (index: number) => void;
-  imageSource?: 'miis' | 'ai' | 'off';
+  aiImages: AiImage[];
+  aiLoading: boolean;
+  aiError: string | null;
+  onAiGenerate: (description: string) => void;
+  onAiDismiss: (index: number) => void;
+  imageSource: 'ai' | 'off';
   /** Provider+quality key: "gemini-flash"|"gemini-pro"|"openai-low"|"openai-medium"|"openai-high". */
   imageModel?: string;
   onImageModelChange?: (value: string) => void;
@@ -46,58 +37,21 @@ function joinModelKey(provider: Provider, quality: string): string {
 }
 
 /**
- * Displays medical illustration suggestions from MIIS during recording.
- * Shows thumbnails in a horizontal strip with click-to-expand functionality.
+ * Patient Illustration panel: AI-generated medical illustrations via Gemini
+ * or OpenAI. The clinician types a description; the selected model+quality
+ * produces an image. Renders nothing when `imageSource === 'off'`.
  */
 export const ImageSuggestions = memo(function ImageSuggestions({
-  suggestions,
-  isLoading,
-  error,
-  getImageUrl,
-  onImpression,
-  onClickImage,
-  onDismiss,
   aiImages,
   aiLoading,
   aiError,
   onAiGenerate,
   onAiDismiss,
-  imageSource = 'miis',
+  imageSource,
   imageModel = 'gemini-flash',
   onImageModelChange,
 }: ImageSuggestionsProps) {
   const { provider, quality } = splitModelKey(imageModel);
-  const [expandedImage, setExpandedImage] = useState<MiisSuggestion | null>(null);
-  const [dismissedIds, setDismissedIds] = useState<Set<number>>(new Set());
-  const impressionTracked = useRef<Set<number>>(new Set());
-
-  // Filter out dismissed images
-  const visibleSuggestions = suggestions.filter(s => !dismissedIds.has(s.image_id));
-
-  // Track impressions when images become visible
-  useEffect(() => {
-    visibleSuggestions.forEach(suggestion => {
-      if (!impressionTracked.current.has(suggestion.image_id)) {
-        impressionTracked.current.add(suggestion.image_id);
-        onImpression(suggestion.image_id);
-      }
-    });
-  }, [visibleSuggestions, onImpression]);
-
-  const handleImageClick = useCallback((suggestion: MiisSuggestion) => {
-    onClickImage(suggestion.image_id);
-    setExpandedImage(suggestion);
-  }, [onClickImage]);
-
-  const handleDismiss = useCallback((e: React.MouseEvent, imageId: number) => {
-    e.stopPropagation();
-    onDismiss(imageId);
-    setDismissedIds(prev => new Set([...prev, imageId]));
-  }, [onDismiss]);
-
-  const handleCloseExpanded = useCallback(() => {
-    setExpandedImage(null);
-  }, []);
 
   // Open AI image in a separate resizable window
   const openAiImageWindow = useCallback(async (img: AiImage) => {
@@ -138,8 +92,7 @@ export const ImageSuggestions = memo(function ImageSuggestions({
   }, []);
 
   const openImageHistory = useCallback(async () => {
-    const allImages = aiImages ?? [];
-    if (allImages.length === 0) return;
+    if (aiImages.length === 0) return;
     try {
       const existing = await WebviewWindow.getByLabel('image-history');
       if (existing) { await existing.setFocus(); return; }
@@ -157,7 +110,7 @@ export const ImageSuggestions = memo(function ImageSuggestions({
         setTimeout(async () => {
           try {
             await emitTo('image-history', 'image_history_data', {
-              images: allImages.map(img => ({ base64: img.base64, prompt: img.prompt, timestamp: img.timestamp })),
+              images: aiImages.map(img => ({ base64: img.base64, prompt: img.prompt, timestamp: img.timestamp })),
             });
           } catch (e) { console.error('Failed to send history data:', e); }
         }, 300);
@@ -165,349 +118,122 @@ export const ImageSuggestions = memo(function ImageSuggestions({
     } catch (e) { console.error('Error opening image history:', e); }
   }, [aiImages]);
 
-  // AI image rendering path — user-triggered with text input
-  if (imageSource === 'ai') {
-    const activeLoading = aiLoading ?? false;
-    const activeError = aiError ?? null;
-    const activeImages = aiImages ?? [];
-
-    const handleProviderChange = (next: Provider) => {
-      if (!onImageModelChange) return;
-      // Reset quality to each provider's sensible default on switch.
-      const nextQuality: GeminiQuality | OpenAIQuality =
-        next === 'gemini' ? 'flash' : 'low';
-      onImageModelChange(joinModelKey(next, nextQuality));
-    };
-    const handleQualityChange = (next: string) => {
-      if (!onImageModelChange) return;
-      onImageModelChange(joinModelKey(provider, next));
-    };
-
-    return (
-      <div className="ai-image-section">
-        <div className="ai-image-header">
-          <span className="ai-image-title">Patient Illustration</span>
-        </div>
-
-        <div className="ai-image-model-picker">
-          <label className="ai-image-model-label">
-            Model
-            <select
-              className="ai-image-model-select"
-              value={provider}
-              onChange={(e) => handleProviderChange(e.target.value as Provider)}
-              disabled={activeLoading || !onImageModelChange}
-            >
-              <option value="gemini">Gemini</option>
-              <option value="openai">OpenAI</option>
-            </select>
-          </label>
-          <label className="ai-image-model-label">
-            Quality
-            <select
-              className="ai-image-model-select"
-              value={quality}
-              onChange={(e) => handleQualityChange(e.target.value)}
-              disabled={activeLoading || !onImageModelChange}
-            >
-              {provider === 'gemini' ? (
-                <>
-                  <option value="flash">Flash</option>
-                  <option value="pro">Pro</option>
-                </>
-              ) : (
-                <>
-                  <option value="low">Low</option>
-                  <option value="medium">Medium</option>
-                  <option value="high">High</option>
-                </>
-              )}
-            </select>
-          </label>
-        </div>
-
-        {/* Prompt input */}
-        <form className="ai-image-form" onSubmit={e => {
-          e.preventDefault();
-          const input = e.currentTarget.elements.namedItem('ai-prompt') as HTMLTextAreaElement;
-          if (input.value.trim() && onAiGenerate) {
-            onAiGenerate(input.value);
-            input.value = '';
-          }
-        }}>
-          <textarea
-            name="ai-prompt"
-            className="ai-image-input"
-            placeholder="Describe what to illustrate (e.g., knee joint anatomy, lumbar disc herniation, insulin injection sites...)"
-            rows={2}
-            disabled={activeLoading}
-          />
-          <button
-            type="submit"
-            className="ai-image-generate-btn"
-            disabled={activeLoading}
-          >
-            {activeLoading ? 'Generating...' : 'Generate'}
-          </button>
-        </form>
-
-        {activeError && (
-          <div className="ai-image-error">{activeError}</div>
-        )}
-
-        {/* Display latest image */}
-        {activeImages.length > 0 && (() => {
-          const img = activeImages[activeImages.length - 1];
-          const index = activeImages.length - 1;
-          return (
-            <div className="ai-image-result" onClick={() => openAiImageWindow(img)}>
-              <img
-                src={`data:image/png;base64,${img.base64}`}
-                alt="AI-generated medical illustration"
-                className="ai-image-img"
-              />
-              <div className="ai-image-prompt-label">{img.prompt}</div>
-              <button
-                className="ai-image-dismiss"
-                onClick={e => { e.stopPropagation(); onAiDismiss?.(index); }}
-                title="Dismiss"
-              >
-                ×
-              </button>
-            </div>
-          );
-        })()}
-
-        {activeImages.length > 1 && (
-          <button className="ai-image-history-link" onClick={openImageHistory}>
-            View all {activeImages.length} images
-          </button>
-        )}
-      </div>
-    );
-  }
-
-  // MIIS rendering path (default)
-  // Don't render if no suggestions and not loading
-  if (!isLoading && visibleSuggestions.length === 0 && !error) {
+  if (imageSource !== 'ai') {
     return null;
   }
 
+  const handleProviderChange = (next: Provider) => {
+    if (!onImageModelChange) return;
+    // Reset quality to each provider's sensible default on switch.
+    const nextQuality: GeminiQuality | OpenAIQuality =
+      next === 'gemini' ? 'flash' : 'low';
+    onImageModelChange(joinModelKey(next, nextQuality));
+  };
+  const handleQualityChange = (next: string) => {
+    if (!onImageModelChange) return;
+    onImageModelChange(joinModelKey(provider, next));
+  };
+
   return (
-    <>
-      {/* Thumbnail strip */}
-      <div style={{
-        padding: '8px 12px',
-        borderTop: '1px solid var(--border-color, #e0e0e0)',
-        backgroundColor: 'var(--bg-secondary, #f5f5f5)',
-      }}>
-        <div style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: '8px',
-          marginBottom: '6px',
-        }}>
-          <span style={{
-            fontSize: '11px',
-            fontWeight: 500,
-            color: 'var(--text-secondary, #666)',
-            textTransform: 'uppercase',
-            letterSpacing: '0.5px',
-          }}>
-            Related Images
-          </span>
-          {isLoading && (
-            <span style={{
-              fontSize: '10px',
-              color: 'var(--text-tertiary, #999)',
-            }}>
-              Loading...
-            </span>
-          )}
-        </div>
-
-        {error && (
-          <div style={{
-            fontSize: '11px',
-            color: 'var(--error-color, #d32f2f)',
-            padding: '4px 0',
-          }}>
-            {error}
-          </div>
-        )}
-
-        <div style={{
-          display: 'flex',
-          gap: '8px',
-          overflowX: 'auto',
-          paddingBottom: '4px',
-        }}>
-          {visibleSuggestions.map(suggestion => (
-            <div
-              key={suggestion.image_id}
-              onClick={() => handleImageClick(suggestion)}
-              style={{
-                position: 'relative',
-                flexShrink: 0,
-                width: '80px',
-                height: '80px',
-                borderRadius: '6px',
-                overflow: 'hidden',
-                cursor: 'pointer',
-                border: '1px solid var(--border-color, #ddd)',
-                backgroundColor: '#fff',
-                transition: 'transform 0.15s, box-shadow 0.15s',
-              }}
-              onMouseEnter={e => {
-                e.currentTarget.style.transform = 'scale(1.05)';
-                e.currentTarget.style.boxShadow = '0 2px 8px rgba(0,0,0,0.15)';
-              }}
-              onMouseLeave={e => {
-                e.currentTarget.style.transform = 'scale(1)';
-                e.currentTarget.style.boxShadow = 'none';
-              }}
-            >
-              <img
-                src={getImageUrl(suggestion.thumb_url)}
-                alt={suggestion.title || 'Medical illustration'}
-                loading="lazy"
-                style={{
-                  width: '100%',
-                  height: '100%',
-                  objectFit: 'cover',
-                }}
-                onError={e => {
-                  // Hide broken images
-                  (e.target as HTMLImageElement).style.display = 'none';
-                }}
-              />
-              {/* Dismiss button */}
-              <button
-                onClick={e => handleDismiss(e, suggestion.image_id)}
-                style={{
-                  position: 'absolute',
-                  top: '2px',
-                  right: '2px',
-                  width: '18px',
-                  height: '18px',
-                  borderRadius: '50%',
-                  border: 'none',
-                  backgroundColor: 'rgba(0,0,0,0.5)',
-                  color: '#fff',
-                  fontSize: '12px',
-                  lineHeight: '16px',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  opacity: 0.7,
-                  transition: 'opacity 0.15s',
-                }}
-                onMouseEnter={e => { e.currentTarget.style.opacity = '1'; }}
-                onMouseLeave={e => { e.currentTarget.style.opacity = '0.7'; }}
-                title="Dismiss"
-              >
-                ×
-              </button>
-            </div>
-          ))}
-        </div>
+    <div className="ai-image-section">
+      <div className="ai-image-header">
+        <span className="ai-image-title">Patient Illustration</span>
       </div>
 
-      {/* Expanded image modal */}
-      {expandedImage && (
-        <div
-          onClick={handleCloseExpanded}
-          style={{
-            position: 'fixed',
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            backgroundColor: 'rgba(0,0,0,0.8)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            zIndex: 9999,
-            padding: '20px',
-          }}
-        >
-          <div
-            onClick={e => e.stopPropagation()}
-            style={{
-              maxWidth: '90vw',
-              maxHeight: '90vh',
-              backgroundColor: '#fff',
-              borderRadius: '8px',
-              overflow: 'hidden',
-              boxShadow: '0 4px 20px rgba(0,0,0,0.3)',
-            }}
+      <div className="ai-image-model-picker">
+        <label className="ai-image-model-label">
+          Model
+          <select
+            className="ai-image-model-select"
+            value={provider}
+            onChange={(e) => handleProviderChange(e.target.value as Provider)}
+            disabled={aiLoading || !onImageModelChange}
           >
-            <div style={{
-              padding: '12px 16px',
-              borderBottom: '1px solid #eee',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-            }}>
-              <div>
-                <h3 style={{
-                  margin: 0,
-                  fontSize: '16px',
-                  fontWeight: 600,
-                  color: '#333',
-                }}>
-                  {expandedImage.title || 'Medical Illustration'}
-                </h3>
-                {expandedImage.description && (
-                  <p style={{
-                    margin: '4px 0 0',
-                    fontSize: '13px',
-                    color: '#666',
-                  }}>
-                    {expandedImage.description}
-                  </p>
-                )}
-              </div>
-              <button
-                onClick={handleCloseExpanded}
-                style={{
-                  width: '32px',
-                  height: '32px',
-                  borderRadius: '50%',
-                  border: 'none',
-                  backgroundColor: '#f0f0f0',
-                  color: '#666',
-                  fontSize: '20px',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                }}
-              >
-                ×
-              </button>
-            </div>
-            <div style={{
-              padding: '16px',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              backgroundColor: '#f9f9f9',
-            }}>
-              <img
-                src={getImageUrl(expandedImage.display_url)}
-                alt={expandedImage.title || 'Medical illustration'}
-                style={{
-                  maxWidth: '100%',
-                  maxHeight: 'calc(90vh - 100px)',
-                  objectFit: 'contain',
-                }}
-              />
-            </div>
-          </div>
-        </div>
+            <option value="gemini">Gemini</option>
+            <option value="openai">OpenAI</option>
+          </select>
+        </label>
+        <label className="ai-image-model-label">
+          Quality
+          <select
+            className="ai-image-model-select"
+            value={quality}
+            onChange={(e) => handleQualityChange(e.target.value)}
+            disabled={aiLoading || !onImageModelChange}
+          >
+            {provider === 'gemini' ? (
+              <>
+                <option value="flash">Flash</option>
+                <option value="pro">Pro</option>
+              </>
+            ) : (
+              <>
+                <option value="low">Low</option>
+                <option value="medium">Medium</option>
+                <option value="high">High</option>
+              </>
+            )}
+          </select>
+        </label>
+      </div>
+
+      {/* Prompt input */}
+      <form className="ai-image-form" onSubmit={e => {
+        e.preventDefault();
+        const input = e.currentTarget.elements.namedItem('ai-prompt') as HTMLTextAreaElement;
+        if (input.value.trim()) {
+          onAiGenerate(input.value);
+          input.value = '';
+        }
+      }}>
+        <textarea
+          name="ai-prompt"
+          className="ai-image-input"
+          placeholder="Describe what to illustrate (e.g., knee joint anatomy, lumbar disc herniation, insulin injection sites...)"
+          rows={2}
+          disabled={aiLoading}
+        />
+        <button
+          type="submit"
+          className="ai-image-generate-btn"
+          disabled={aiLoading}
+        >
+          {aiLoading ? 'Generating...' : 'Generate'}
+        </button>
+      </form>
+
+      {aiError && (
+        <div className="ai-image-error">{aiError}</div>
       )}
-    </>
+
+      {/* Display latest image */}
+      {aiImages.length > 0 && (() => {
+        const img = aiImages[aiImages.length - 1];
+        const index = aiImages.length - 1;
+        return (
+          <div className="ai-image-result" onClick={() => openAiImageWindow(img)}>
+            <img
+              src={`data:image/png;base64,${img.base64}`}
+              alt="AI-generated medical illustration"
+              className="ai-image-img"
+            />
+            <div className="ai-image-prompt-label">{img.prompt}</div>
+            <button
+              className="ai-image-dismiss"
+              onClick={e => { e.stopPropagation(); onAiDismiss(index); }}
+              title="Dismiss"
+            >
+              ×
+            </button>
+          </div>
+        );
+      })()}
+
+      {aiImages.length > 1 && (
+        <button className="ai-image-history-link" onClick={openImageHistory}>
+          View all {aiImages.length} images
+        </button>
+      )}
+    </div>
   );
 });

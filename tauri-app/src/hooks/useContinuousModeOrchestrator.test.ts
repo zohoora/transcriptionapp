@@ -8,10 +8,6 @@ const mockTriggerNewPatient = vi.fn();
 const mockSubmitEncounterNote = vi.fn();
 const mockDeleteEncounterNote = vi.fn();
 const mockResetBiomarkers = vi.fn();
-const mockMiisRecordImpression = vi.fn();
-const mockMiisRecordClick = vi.fn();
-const mockMiisRecordDismiss = vi.fn();
-const mockMiisGetImageUrl = vi.fn((p: string) => `http://miis/${p}`);
 const mockAiDismiss = vi.fn();
 
 vi.mock('./useContinuousMode', () => ({
@@ -54,21 +50,8 @@ vi.mock('./usePatientBiomarkers', () => ({
 vi.mock('./usePredictiveHint', () => ({
   usePredictiveHint: vi.fn(() => ({
     hint: '',
-    concepts: [],
     imagePrompt: null,
     isLoading: false,
-  })),
-}));
-
-vi.mock('./useMiisImages', () => ({
-  useMiisImages: vi.fn(() => ({
-    suggestions: [],
-    isLoading: false,
-    error: null,
-    recordImpression: mockMiisRecordImpression,
-    recordClick: mockMiisRecordClick,
-    recordDismiss: mockMiisRecordDismiss,
-    getImageUrl: mockMiisGetImageUrl,
   })),
 }));
 
@@ -135,16 +118,6 @@ describe('useContinuousModeOrchestrator', () => {
       expect(result.current.predictiveHintLoading).toBe(false);
     });
 
-    it('delegates MIIS suggestions from useMiisImages', async () => {
-      const useContinuousModeOrchestrator = await loadHook();
-      const { result } = renderHook(() =>
-        useContinuousModeOrchestrator({ settings: null })
-      );
-      expect(result.current.miisSuggestions).toEqual([]);
-      expect(result.current.miisLoading).toBe(false);
-      expect(result.current.miisError).toBeNull();
-    });
-
     it('delegates AI images from useAiImages', async () => {
       const useContinuousModeOrchestrator = await loadHook();
       const { result } = renderHook(() =>
@@ -184,19 +157,6 @@ describe('useContinuousModeOrchestrator', () => {
       expect(mockDeleteEncounterNote).toHaveBeenCalledWith('note-id');
     });
 
-    it('delegates onMiisImpression, onMiisClick, onMiisDismiss', async () => {
-      const useContinuousModeOrchestrator = await loadHook();
-      const { result } = renderHook(() =>
-        useContinuousModeOrchestrator({ settings: null })
-      );
-      result.current.onMiisImpression(1);
-      result.current.onMiisClick(2);
-      result.current.onMiisDismiss(3);
-      expect(mockMiisRecordImpression).toHaveBeenCalledWith(1);
-      expect(mockMiisRecordClick).toHaveBeenCalledWith(2);
-      expect(mockMiisRecordDismiss).toHaveBeenCalledWith(3);
-    });
-
     it('delegates onAiDismiss', async () => {
       const useContinuousModeOrchestrator = await loadHook();
       const { result } = renderHook(() =>
@@ -232,30 +192,19 @@ describe('useContinuousModeOrchestrator', () => {
   });
 
   describe('image source configuration', () => {
-    it('sets miisEnabled to false when image_source is off', async () => {
+    it('exposes imageSource=off when image_source is off', async () => {
       const useContinuousModeOrchestrator = await loadHook();
       const { result } = renderHook(() =>
         useContinuousModeOrchestrator({ settings: { image_source: 'off' } as never })
       );
-      expect(result.current.miisEnabled).toBe(false);
       expect(result.current.imageSource).toBe('off');
     });
 
-    it('sets miisEnabled to true when image_source is miis', async () => {
-      const useContinuousModeOrchestrator = await loadHook();
-      const { result } = renderHook(() =>
-        useContinuousModeOrchestrator({ settings: { image_source: 'miis' } as never })
-      );
-      expect(result.current.miisEnabled).toBe(true);
-      expect(result.current.imageSource).toBe('miis');
-    });
-
-    it('sets miisEnabled to true when image_source is ai', async () => {
+    it('exposes imageSource=ai when image_source is ai', async () => {
       const useContinuousModeOrchestrator = await loadHook();
       const { result } = renderHook(() =>
         useContinuousModeOrchestrator({ settings: { image_source: 'ai' } as never })
       );
-      expect(result.current.miisEnabled).toBe(true);
       expect(result.current.imageSource).toBe('ai');
     });
 
@@ -264,7 +213,6 @@ describe('useContinuousModeOrchestrator', () => {
       const { result } = renderHook(() =>
         useContinuousModeOrchestrator({ settings: null })
       );
-      expect(result.current.miisEnabled).toBe(false);
       expect(result.current.imageSource).toBe('off');
     });
   });
