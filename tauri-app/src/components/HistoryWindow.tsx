@@ -26,6 +26,7 @@ import type {
   ArchivedPatientNote,
   MultiPatientSoapResult,
   NegativeGapPair,
+  PatientSoapNote,
   SoapNote,
   EncounterSummary,
   EncounterDetails,
@@ -286,11 +287,17 @@ function serializeSoapNotes(notes: { patient_label: string; content: string }[])
  * MUST go through the dedicated command so `patient_labels.json` is
  * written — that file drives the per-sub-patient History row fan-out;
  * `save_local_soap_note` alone collapses the result back to a single row.
+ *
+ * For single-patient results, the regen-extracted patient identity from
+ * `notes[0]` is forwarded to the backend so `metadata.json` gets the
+ * vision-extracted name/DOB. Without this thread-through, a regen of a
+ * malformed-SOAP session (the Amy Maddock 2026-05-14 case) recovers the
+ * SOAP body but loses the identity the LLM returned.
  */
 async function persistSoapResultToArchive(args: {
   sessionId: string;
   date: string;
-  notes: { patient_label: string; speaker_id: string; content: string }[];
+  notes: PatientSoapNote[];
   detailLevel?: number;
   format?: string;
 }): Promise<void> {
@@ -304,12 +311,15 @@ async function persistSoapResultToArchive(args: {
       format,
     });
   } else {
+    const single = notes[0];
     await invoke('save_local_soap_note', {
       sessionId,
       date,
       soapContent: serializeSoapNotes(notes),
       detailLevel,
       format,
+      patientName: single?.extracted_patient_name ?? null,
+      patientDob: single?.extracted_patient_dob ?? null,
     });
   }
 }

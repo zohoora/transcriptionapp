@@ -186,7 +186,13 @@ fn is_blank(s: &Option<String>) -> bool {
     s.as_deref().map_or(true, str::is_empty)
 }
 
-/// Save SOAP note to an archived session
+/// Save SOAP note to an archived session.
+///
+/// `patient_name` / `patient_dob` carry the LLM-extracted identity from the
+/// regen flow. When either is `Some`, `apply_soap_extracted_identity` writes
+/// it to metadata — but only if the session isn't already patient-confirmed
+/// (clinician confirmation is the trust boundary; SOAP regen never
+/// overwrites it).
 #[tauri::command]
 pub fn save_local_soap_note(
     session_id: String,
@@ -194,12 +200,18 @@ pub fn save_local_soap_note(
     soap_content: String,
     detail_level: Option<u8>,
     format: Option<String>,
+    patient_name: Option<String>,
+    patient_dob: Option<String>,
     active_physician: State<'_, SharedActivePhysician>,
     profile_client: State<'_, SharedProfileClient>,
 ) -> Result<(), CommandError> {
     info!(
-        "Saving SOAP note to local archive: {} (detail: {:?}, format: {:?})",
-        session_id, detail_level, format
+        "Saving SOAP note to local archive: {} (detail: {:?}, format: {:?}, identity: name={} dob={})",
+        session_id,
+        detail_level,
+        format,
+        patient_name.is_some(),
+        patient_dob.is_some(),
     );
 
     let utc_datetime = super::parse_date(&date)?;
@@ -211,6 +223,26 @@ pub fn save_local_soap_note(
         detail_level,
         format.as_deref(),
     )?;
+
+    if patient_name.is_some() || patient_dob.is_some() {
+        match local_archive::apply_soap_extracted_identity(
+            &session_id,
+            &date,
+            patient_name.as_deref(),
+            patient_dob.as_deref(),
+        ) {
+            Ok(outcome) => info!(
+                session_id = %session_id,
+                ?outcome,
+                "Regen SOAP identity write outcome"
+            ),
+            Err(e) => warn!(
+                session_id = %session_id,
+                error = %e,
+                "Failed to apply regen SOAP identity to metadata (non-fatal)"
+            ),
+        }
+    }
 
     // Best-effort server sync
     let sid = session_id.clone();

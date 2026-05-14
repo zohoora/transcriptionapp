@@ -395,6 +395,12 @@ export interface PatientSoapNote {
   speaker_id: string;
   /** The SOAP note content for this patient */
   content: string;
+  /** Patient name extracted from chart screenshots in the same LLM call.
+   *  Present when the model returned a non-NOT_FOUND value; `null` otherwise. */
+  extracted_patient_name?: string | null;
+  /** Patient DOB (YYYY-MM-DD) extracted alongside name. Same semantics as
+   *  `extracted_patient_name`. */
+  extracted_patient_dob?: string | null;
 }
 
 /** Multi-patient SOAP result from LLM auto-detection */

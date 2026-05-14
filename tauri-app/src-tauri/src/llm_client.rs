@@ -2967,6 +2967,37 @@ pub(crate) fn sanitize_extracted_patient_dob(raw: Option<&str>) -> Option<String
     }
 }
 
+/// Last-resort identity extraction from a raw LLM response when the
+/// SOAP body's JSON parse fails. The model often emits `"patient_name"`
+/// and `"patient_dob"` correctly even when its bracketing of S/O/A/P
+/// arrays goes wrong (2026-05-14 Amy Maddock case: `}` instead of `]`
+/// closing the `plan` array). Both fields go through the standard
+/// sanitizers so NOT_FOUND, malformed DOBs, and casing variants are
+/// handled identically to the happy path.
+fn salvage_identity_from_raw(response: &str) -> (Option<String>, Option<String>) {
+    let name = sanitize_extracted_patient_name(
+        extract_quoted_string_field(response, "patient_name").as_deref(),
+    );
+    let dob = sanitize_extracted_patient_dob(
+        extract_quoted_string_field(response, "patient_dob").as_deref(),
+    );
+    (name, dob)
+}
+
+/// Find `"<field>"\s*:\s*"<value>"` in `haystack` and return `<value>`.
+/// Tolerates whitespace between tokens; captures up to the next `"`. We
+/// don't handle escaped quotes inside the value because patient names and
+/// DOBs never contain them in practice. Returns the FIRST match.
+fn extract_quoted_string_field(haystack: &str, field: &str) -> Option<String> {
+    let needle = format!("\"{}\"", field);
+    let start = haystack.find(&needle)?;
+    let rest = haystack[start + needle.len()..].trim_start();
+    let rest = rest.strip_prefix(':')?.trim_start();
+    let rest = rest.strip_prefix('"')?;
+    let end = rest.find('"')?;
+    Some(rest[..end].to_string())
+}
+
 /// Parse JSON SOAP response and format as bullet-point text. Returns the
 /// formatted SOAP plus optional patient identity (name + DOB) extracted from
 /// the same response. Identity fields come back `None` when the response
@@ -3007,17 +3038,38 @@ fn parse_and_format_soap_json(response: &str) -> ParsedSoap {
         Err(e) => {
             warn!("Failed to parse SOAP JSON: {}. Raw: {:?}", e, &json_str[..json_str.len().min(200)]);
 
+            // Salvage identity once for all parse-failure branches — the
+            // model often emits patient_name/patient_dob correctly even when
+            // the surrounding JSON is structurally broken.
+            let (salvaged_name, salvaged_dob) = salvage_identity_from_raw(response);
+            if salvaged_name.is_some() || salvaged_dob.is_some() {
+                info!(
+                    event = "soap_identity_salvaged",
+                    patient_name_salvaged = salvaged_name.is_some(),
+                    patient_dob_salvaged = salvaged_dob.is_some(),
+                    "Recovered identity from raw response after JSON parse failure"
+                );
+            }
+
             // Try to parse nested JSON structure (e.g., {"subjective": [{"Problem 1": [...]}]})
             if let Some(soap) = try_parse_nested_json_soap(&json_str) {
                 info!("Successfully parsed SOAP from nested JSON structure");
-                return ParsedSoap { text: format_soap_as_text(&soap), patient_name: None, patient_dob: None };
+                return ParsedSoap {
+                    text: format_soap_as_text(&soap),
+                    patient_name: salvaged_name,
+                    patient_dob: salvaged_dob,
+                };
             }
 
             // Try to extract SOAP from text format as fallback
             let cleaned = clean_llm_response(response);
             if let Some(soap) = try_parse_text_soap(&cleaned) {
                 info!("Successfully parsed SOAP from text format");
-                return ParsedSoap { text: format_soap_as_text(&soap), patient_name: None, patient_dob: None };
+                return ParsedSoap {
+                    text: format_soap_as_text(&soap),
+                    patient_name: salvaged_name,
+                    patient_dob: salvaged_dob,
+                };
             }
             if cleaned.trim_start().starts_with('{') || cleaned.contains("\"subjective\"") {
                 // Last resort: result looks like raw/broken JSON — try aggressive repair
@@ -3047,14 +3099,18 @@ fn parse_and_format_soap_json(response: &str) -> ParsedSoap {
                         warn!("Aggressive JSON repair also failed: {}. Returning placeholder.", e2);
                         ParsedSoap {
                             text: format!("S:\n- [{} — review transcript directly]\n\nO:\n- [See transcript]\n\nA:\n- [See transcript]\n\nP:\n- [See transcript]", MALFORMED_SOAP_SENTINEL),
-                            patient_name: None,
-                            patient_dob: None,
+                            patient_name: salvaged_name,
+                            patient_dob: salvaged_dob,
                         }
                     }
                 }
             } else {
                 // Return cleaned text as last resort
-                ParsedSoap { text: cleaned, patient_name: None, patient_dob: None }
+                ParsedSoap {
+                    text: cleaned,
+                    patient_name: salvaged_name,
+                    patient_dob: salvaged_dob,
+                }
             }
         }
     }
@@ -3619,6 +3675,81 @@ mod tests {
         let result = LLMClient::prepare_transcript(transcript);
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), transcript.trim());
+    }
+
+    /// 2026-05-14 Amy Maddock case: model returned `"patient_name"` /
+    /// `"patient_dob"` correctly, but emitted `}` instead of `]` to close
+    /// the `plan` array, breaking the whole-document JSON parse. Pre-fix,
+    /// `parse_and_format_soap_json` fell back to the malformed-output
+    /// sentinel with `patient_name: None`. Post-fix, the salvage path
+    /// recovers identity from the raw response.
+    #[test]
+    fn salvage_identity_when_plan_array_closes_with_brace() {
+        let amy_response = r#"{
+"subjective": ["Post-operative follow-up after left breast mastectomy"],
+"objective": ["Left axillary area: swollen, tender to touch"],
+"assessment": ["Post-operative recovery"],
+"plan": [
+"Continue ibuprofen for pain management as needed",
+"Patient education provided regarding lymphedema management"
+},
+"patient_name": "Maddock, Amy Louise",
+"patient_dob": "1979-03-19"
+}"#;
+        let parsed = parse_and_format_soap_json(amy_response);
+        // Body is unrecoverable — sentinel is fine.
+        // What matters: identity is salvaged. Name comes through the
+        // standard `Surname, Given` → `Given Surname` reorder.
+        assert_eq!(parsed.patient_name.as_deref(), Some("Amy Louise Maddock"));
+        assert_eq!(parsed.patient_dob.as_deref(), Some("1979-03-19"));
+    }
+
+    #[test]
+    fn salvage_skips_not_found_values() {
+        let resp = r#"{ broken json
+"patient_name": "NOT_FOUND",
+"patient_dob": "NOT_FOUND"
+}"#;
+        let parsed = parse_and_format_soap_json(resp);
+        assert!(parsed.patient_name.is_none());
+        assert!(parsed.patient_dob.is_none());
+    }
+
+    #[test]
+    fn salvage_returns_none_when_fields_absent() {
+        let parsed = parse_and_format_soap_json("totally unstructured text with no identity fields");
+        assert!(parsed.patient_name.is_none());
+        assert!(parsed.patient_dob.is_none());
+    }
+
+    #[test]
+    fn salvage_drops_malformed_dob_keeps_name() {
+        let resp = r#"{ broken
+"patient_name": "Jane Q. Patient",
+"patient_dob": "not-a-date"
+}"#;
+        let parsed = parse_and_format_soap_json(resp);
+        // Name normalized via sanitize_extracted_patient_name (title-case).
+        assert_eq!(parsed.patient_name.as_deref(), Some("Jane Q. Patient"));
+        // DOB rejected by sanitize_extracted_patient_dob shape check.
+        assert!(parsed.patient_dob.is_none());
+    }
+
+    /// Regression — clean JSON path still surfaces identity normally.
+    #[test]
+    fn happy_path_still_extracts_identity() {
+        let resp = r#"{
+"subjective":["sore throat"],
+"objective":[],
+"assessment":["URI"],
+"plan":["fluids","follow up prn"],
+"patient_name":"Smith, John",
+"patient_dob":"1980-04-15"
+}"#;
+        let parsed = parse_and_format_soap_json(resp);
+        assert_eq!(parsed.patient_name.as_deref(), Some("John Smith"));
+        assert_eq!(parsed.patient_dob.as_deref(), Some("1980-04-15"));
+        assert!(!parsed.text.contains(MALFORMED_SOAP_SENTINEL));
     }
 
     #[test]
