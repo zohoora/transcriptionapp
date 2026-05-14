@@ -36,6 +36,14 @@ use tracing::{error, info, warn};
 /// path silently turned timeouts into "0 meds found", so clinicians saw
 /// "Vision returned no medications" instead of a real error.
 const VISION_TIMEOUT_SECS: u64 = 180;
+
+/// LLM router alias for the medication-extraction vision call. Hard-coded
+/// (matches the rest of the Clinical Assistant surface in `clinical_chat.rs`
+/// and `generate_clinical_feedback`). Server-configurable aliases like
+/// `soap_model` / `fast_model` flow through `OperationalDefaults`;
+/// `clinical-assistant` does not, by design — the router pins this one to a
+/// vision-capable model with the right tool registry.
+const MED_EXTRACTION_MODEL: &str = "clinical-assistant";
 const PHARM_SERVICE_TIMEOUT_SECS: u64 = 30;
 const TEXT_PARSE_TIMEOUT_SECS: u64 = 15;
 /// 2048 is the OCR threshold for the EMR's small meds-panel font in our
@@ -57,10 +65,15 @@ const MAX_CURRENT_MEDS: usize = 200;
 /// Fail-soft: vision errors and timeouts return `(Vec::new(), false)` rather
 /// than propagating, so the caller can decide whether to retry or surface
 /// "no meds found" to the user.
+///
+/// `vision_model` is the LLM router alias used for the call. Callers pass
+/// [`MED_EXTRACTION_MODEL`] (`clinical-assistant`) — the parameter stays
+/// `&str` so tests can substitute a different alias if needed.
 async fn try_extract_meds(
     max_edge: u32,
     client: &LLMClient,
     templates: &crate::server_config::PromptTemplates,
+    vision_model: &str,
 ) -> Result<(Vec<MedEntry>, bool), CommandError> {
     // Full-screen capture, NOT window-under-cursor. The clinician triggers
     // this from the AMI Assist sidebar — at click time the cursor is on the
@@ -80,8 +93,8 @@ async fn try_extract_meds(
 
     let image_kb = capture.base64.len() / 1024;
     info!(
-        "Med extraction starting: max_edge={}px, image_base64={}KB, max_tokens={}, timeout={}s",
-        max_edge, image_kb, MED_EXTRACTION_MAX_TOKENS, VISION_TIMEOUT_SECS
+        "Med extraction starting: model={}, max_edge={}px, image_base64={}KB, max_tokens={}, timeout={}s",
+        vision_model, max_edge, image_kb, MED_EXTRACTION_MAX_TOKENS, VISION_TIMEOUT_SECS
     );
 
     let (system_prompt, user_text) = build_medication_extraction_prompt(Some(templates));
@@ -95,7 +108,7 @@ async fn try_extract_meds(
     ];
 
     let vision_future = client.generate_vision_timed(
-        "vision-model",
+        vision_model,
         &system_prompt,
         content_parts,
         "med_list_extraction",
@@ -178,10 +191,14 @@ async fn try_extract_meds(
 pub async fn capture_screenshot_for_meds(
     server_config: State<'_, SharedServerConfig>,
 ) -> Result<MedExtractionResult, CommandError> {
-    let (_config, _models, client, templates) = load_effective_models_and_client(server_config.inner()).await?;
+    // `models` is unused here — med extraction uses the hardcoded
+    // `clinical-assistant` alias (MED_EXTRACTION_MODEL) rather than a
+    // server-configurable one. `client` and `templates` are still needed.
+    let (_config, _models, client, templates) =
+        load_effective_models_and_client(server_config.inner()).await?;
 
     let (meds, likely_blank) =
-        try_extract_meds(SCREENSHOT_MAX_EDGE_PRIMARY, &client, &templates).await?;
+        try_extract_meds(SCREENSHOT_MAX_EDGE_PRIMARY, &client, &templates, MED_EXTRACTION_MODEL).await?;
 
     if likely_blank {
         warn!("Medication screenshot likely blank — probably no Screen Recording permission");
@@ -208,7 +225,7 @@ pub async fn capture_screenshot_for_meds(
         SCREENSHOT_MAX_EDGE_PRIMARY, SCREENSHOT_MAX_EDGE_RETRY
     );
     let (retry_meds, retry_blank) =
-        try_extract_meds(SCREENSHOT_MAX_EDGE_RETRY, &client, &templates).await?;
+        try_extract_meds(SCREENSHOT_MAX_EDGE_RETRY, &client, &templates, MED_EXTRACTION_MODEL).await?;
 
     if retry_blank {
         return Ok(MedExtractionResult {
