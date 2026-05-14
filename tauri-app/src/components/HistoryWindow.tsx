@@ -4,6 +4,7 @@ import { listen } from '@tauri-apps/api/event';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { WebviewWindow } from '@tauri-apps/api/webviewWindow';
 import { writeText } from '@tauri-apps/plugin-clipboard-manager';
+import { open as openExternal } from '@tauri-apps/plugin-shell';
 import { useAuth } from './AuthProvider';
 import { useSoapNote } from '../hooks/useSoapNote';
 import { useOllamaConnection } from '../hooks/useOllamaConnection';
@@ -86,10 +87,19 @@ const SESSION_FEEDBACK_PROMPT =
   "- [specific positive observation]\n\n" +
   "CONSIDER\n" +
   "- [specific actionable suggestion]\n\n" +
+  "REFERENCES\n" +
+  "- <3-8 word topic from THIS encounter> — https://pubmed.ncbi.nlm.nih.gov/?term=<3-6+plus+separated+MeSH+terms>\n\n" +
   "Rules:\n" +
-  "- 1-3 bullets per section, 1-2 sentences each\n" +
+  "- 1-3 bullets per DONE WELL / CONSIDER section, 1-2 sentences each\n" +
   "- Be direct and specific. No filler or qualifiers.\n" +
-  "- Do NOT use markdown headers (no #, ##). Plain text labels + bullets only.";
+  "- Do NOT use markdown headers (no #, ##). Plain text labels + bullets only.\n\n" +
+  "REFERENCES rules (read carefully):\n" +
+  "- Output 1-3 references max, each anchored to clinical content actually discussed in THIS encounter (a condition, finding, drug, procedure, screening tool, or management decision that appears in the transcript).\n" +
+  "- Each line format exactly: <human-readable topic> — <PubMed search URL>\n" +
+  "- URL form exactly: https://pubmed.ncbi.nlm.nih.gov/?term=TERM1+TERM2+TERM3 (3-6 terms, spaces encoded as '+', no quotes, no other URL parameters).\n" +
+  "- Prefer MeSH-style vocabulary (e.g., 'Hypertension' not 'high blood pressure'; 'Diabetes Mellitus Type 2' not 'diabetes'). Combine condition + intervention/method + population when applicable (e.g., 'Atrial Fibrillation anticoagulation elderly').\n" +
+  "- NEVER cite specific articles, authors, PMIDs, DOIs, journal names, or years — search queries ONLY. The terms in the URL are a literature search query, not a citation.\n" +
+  "- OMIT the REFERENCES section entirely (no header, no bullets) if the encounter is too brief, too generic, or non-clinical to anchor a real literature search.";
 
 const DAY_FEEDBACK_PROMPT =
   "/nothink\n" +
@@ -102,14 +112,59 @@ const DAY_FEEDBACK_PROMPT =
   "- [actionable suggestion referencing specific patient/encounter]\n\n" +
   "PATTERNS\n" +
   "- [recurring theme across sessions]\n\n" +
+  "REFERENCES\n" +
+  "- <3-8 word topic relevant to today's clinical mix or a recurring pattern> — https://pubmed.ncbi.nlm.nih.gov/?term=<3-6+plus+separated+MeSH+terms>\n\n" +
   "Constraints:\n" +
   "- 1-2 sentences per bullet\n" +
-  "- Reference specific encounters\n" +
+  "- Reference specific encounters in STRENGTHS / AREAS FOR IMPROVEMENT / PATTERNS\n" +
   "- Focus on clinical reasoning, communication, management\n" +
   "- Be direct. No hedging, no qualifiers, no filler\n" +
   "- NO letters, greetings, signatures, headers, or prose\n" +
   "- NO markdown (no #, **, etc). Plain text only\n" +
-  "- 5-8 bullets per section";
+  "- 5-8 bullets per STRENGTHS / AREAS FOR IMPROVEMENT / PATTERNS section\n\n" +
+  "REFERENCES rules (read carefully):\n" +
+  "- Output 1-3 references max, each tied to a recurring pattern or a clinically significant case from TODAY (not generic clinical wisdom).\n" +
+  "- Each line format exactly: <human-readable topic> — <PubMed search URL>\n" +
+  "- URL form exactly: https://pubmed.ncbi.nlm.nih.gov/?term=TERM1+TERM2+TERM3 (3-6 terms, spaces encoded as '+', no quotes, no other URL parameters).\n" +
+  "- Prefer MeSH-style vocabulary (e.g., 'Hypertension' not 'high blood pressure'; 'Diabetes Mellitus Type 2' not 'diabetes'). Combine condition + intervention/method + population when applicable.\n" +
+  "- NEVER cite specific articles, authors, PMIDs, DOIs, journal names, or years — search queries ONLY. The terms in the URL are a literature search query, not a citation.\n" +
+  "- OMIT the REFERENCES section entirely (no header, no bullets) if the day was too brief or non-clinical to anchor real literature searches.";
+
+// LLM output is rendered as text + React anchor nodes — never as HTML — so any
+// fabricated tags appear as literal characters. Anchors open via plugin-shell
+// to keep PubMed out of the in-app Tauri webview.
+function renderFeedbackWithLinks(text: string): React.ReactNode[] {
+  const urlPattern = /https?:\/\/[^\s<>"')\]]+/g;
+  const out: React.ReactNode[] = [];
+  let cursor = 0;
+  for (const match of text.matchAll(urlPattern)) {
+    const start = match.index ?? 0;
+    const trailing = match[0].match(/[.,;:!?]+$/)?.[0] ?? '';
+    const url = match[0].slice(0, match[0].length - trailing.length);
+    if (start > cursor) {
+      out.push(text.slice(cursor, start));
+    }
+    out.push(
+      <a
+        key={`fb-url-${start}`}
+        href={url}
+        className="clinical-feedback-link"
+        rel="noopener noreferrer"
+        onClick={(e) => {
+          e.preventDefault();
+          openExternal(url).catch(() => {});
+        }}
+      >
+        {url}
+      </a>,
+    );
+    cursor = start + url.length;
+  }
+  if (cursor < text.length) {
+    out.push(text.slice(cursor));
+  }
+  return out;
+}
 
 interface FeedbackSectionProps {
   title: string;
@@ -208,7 +263,9 @@ const FeedbackSection: React.FC<FeedbackSectionProps> = ({
               <button className="clinical-feedback-retry" onClick={handleRetry}>Retry</button>
             </div>
           )}
-          {feedback && <p className="clinical-feedback-text">{feedback}</p>}
+          {feedback && (
+            <p className="clinical-feedback-text">{renderFeedbackWithLinks(feedback)}</p>
+          )}
         </div>
       )}
     </div>
