@@ -2,7 +2,6 @@ import { memo, useMemo } from 'react';
 import type { AIPlanResponse, ClarifyingQuestion, PlanStep } from '../../types';
 
 interface AIPlanPanelProps {
-  hasCards: boolean;
   clarifyingQuestions: ClarifyingQuestion[];
   questionAnswers: Record<string, string>;
   isLoadingQuestions: boolean;
@@ -158,13 +157,9 @@ function renderStage(stage: Stage, p: AIPlanPanelProps) {
             type="button"
             className="med-analyze-button"
             onClick={() => void p.startPlanFlow()}
-            disabled={!p.hasCards}
           >
             Generate Plan
           </button>
-          {!p.hasCards && (
-            <p className="ai-plan-hint">Run an analysis first to enable plan generation.</p>
-          )}
         </div>
       );
 

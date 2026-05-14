@@ -238,38 +238,6 @@ export function useMedicationAssessment(): UseMedicationAssessmentResult {
     [patientAge, patientEgfr, patientConditions, strategy]
   );
 
-  const analyze = useCallback(async () => {
-    if (analyzingRef.current) return;
-    const meds = medListRef.current;
-    if (meds.length === 0) {
-      setAnalyzeError('Add at least one medication before analyzing.');
-      return;
-    }
-    const pharmServiceUrl = await resolvePharmServiceUrl(setAnalyzeError);
-    if (!pharmServiceUrl) return;
-
-    analyzingRef.current = true;
-    if (mountedRef.current) {
-      setIsAnalyzing(true);
-      setAnalyzeError(null);
-    }
-    try {
-      const result = await invoke<AnalysisResult>('analyze_medications', {
-        pharmServiceUrl,
-        medications: meds,
-        ...buildContextPayload(),
-      });
-      if (!mountedRef.current) return;
-      setAnalysis(result);
-    } catch (e) {
-      if (!mountedRef.current) return;
-      setAnalyzeError(formatErrorMessage(e));
-    } finally {
-      analyzingRef.current = false;
-      if (mountedRef.current) setIsAnalyzing(false);
-    }
-  }, [resolvePharmServiceUrl, buildContextPayload]);
-
   const generatePlan = useCallback(
     async (answers: Record<string, string> | null) => {
       if (generatingPlanRef.current) return;
@@ -354,6 +322,39 @@ export function useMedicationAssessment(): UseMedicationAssessmentResult {
       if (mountedRef.current) setIsLoadingQuestions(false);
     }
   }, [resolvePharmServiceUrl, buildContextPayload, generatePlan]);
+
+  const analyze = useCallback(async () => {
+    if (analyzingRef.current) return;
+    const meds = medListRef.current;
+    if (meds.length === 0) {
+      setAnalyzeError('Add at least one medication before analyzing.');
+      return;
+    }
+    const pharmServiceUrl = await resolvePharmServiceUrl(setAnalyzeError);
+    if (!pharmServiceUrl) return;
+
+    analyzingRef.current = true;
+    if (mountedRef.current) {
+      setIsAnalyzing(true);
+      setAnalyzeError(null);
+    }
+    try {
+      const result = await invoke<AnalysisResult>('analyze_medications', {
+        pharmServiceUrl,
+        medications: meds,
+        ...buildContextPayload(),
+      });
+      if (!mountedRef.current) return;
+      setAnalysis(result);
+      void startPlanFlow();
+    } catch (e) {
+      if (!mountedRef.current) return;
+      setAnalyzeError(formatErrorMessage(e));
+    } finally {
+      analyzingRef.current = false;
+      if (mountedRef.current) setIsAnalyzing(false);
+    }
+  }, [resolvePharmServiceUrl, buildContextPayload, startPlanFlow]);
 
   const setQuestionAnswer = useCallback((questionId: string, answer: string) => {
     setQuestionAnswers((prev) => ({ ...prev, [questionId]: answer }));

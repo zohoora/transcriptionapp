@@ -37,7 +37,7 @@ import { useAudioUpload } from './hooks/useAudioUpload';
 import { usePatientHandout } from './hooks/usePatientHandout';
 import { buildMergedSettings } from './hooks/useSettings';
 import AudioUploadModal from './components/AudioUploadModal';
-import type { ChartingMode } from './types';
+import type { ChartingMode, ImageSource } from './types';
 
 // UI Mode type
 type UIMode = 'ready' | 'recording' | 'review';
@@ -338,7 +338,7 @@ function App() {
     isRecording: uiMode === 'recording',
   });
 
-  const imageSource = (settings?.image_source ?? 'off') as 'off' | 'ai';
+  const imageSource: ImageSource = settings?.image_source ?? 'off';
   // Read the dropdown value from pendingSettings so setImageModel's
   // setPendingSettings call re-renders the selection immediately. settings
   // (saved) lags pendingSettings (optimistic UI) by one round-trip.

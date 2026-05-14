@@ -1,29 +1,15 @@
-import { memo, useMemo, useCallback, useState } from 'react';
+import { memo, useCallback, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import { MarkdownContent } from './ClinicalChat';
-import type { MedEntry, AnalysisCard, CardSeverity } from '../types';
+import type { MedEntry } from '../types';
 import type {
   ExtractionState,
   UseMedicationAssessmentResult,
 } from '../hooks/useMedicationAssessment';
 import { PatientContextPanel } from './medicationAssessment/PatientContextPanel';
-import { SummaryBar } from './medicationAssessment/SummaryBar';
-import { ScoresPanel } from './medicationAssessment/ScoresPanel';
 import { AIPlanPanel } from './medicationAssessment/AIPlanPanel';
 
 interface MedicationAssessmentProps {
   med: UseMedicationAssessmentResult;
-}
-
-const SEVERITY_META: Record<CardSeverity, { rank: number; cssClass: string }> = {
-  critical: { rank: 3, cssClass: 'card-critical' },
-  important: { rank: 2, cssClass: 'card-important' },
-  convenience: { rank: 1, cssClass: 'card-convenience' },
-  info: { rank: 0, cssClass: 'card-info' },
-};
-
-function severityMeta(s: string) {
-  return SEVERITY_META[s.toLowerCase() as CardSeverity] ?? SEVERITY_META.info;
 }
 
 async function openScreenRecordingSettings() {
@@ -202,41 +188,7 @@ const MedRow = memo(function MedRow({
   );
 });
 
-function FindingCard({ card }: { card: AnalysisCard }) {
-  return (
-    <div className={`finding-card ${severityMeta(card.severity).cssClass}`}>
-      <div className="finding-card-header">
-        <span className="finding-card-severity">{card.severity.toUpperCase()}</span>
-        <span className="finding-card-category">{card.category}</span>
-      </div>
-      <div className="finding-card-title">{card.title}</div>
-      {card.medsInvolved.length > 0 && (
-        <div className="finding-card-meds">
-          {card.medsInvolved.map((m, i) => (
-            <span key={i} className="finding-card-med-badge">
-              {m}
-            </span>
-          ))}
-        </div>
-      )}
-      {card.rationale && (
-        <div className="finding-card-rationale">
-          <MarkdownContent content={card.rationale} />
-        </div>
-      )}
-      {card.action && <div className="finding-card-action">→ {card.action}</div>}
-    </div>
-  );
-}
-
 export const MedicationAssessment = memo(function MedicationAssessment({ med }: MedicationAssessmentProps) {
-  const sortedCards = useMemo(() => {
-    if (!med.analysis) return [];
-    return [...med.analysis.cards].sort(
-      (a, b) => severityMeta(b.severity).rank - severityMeta(a.severity).rank
-    );
-  }, [med.analysis]);
-
   const canAnalyze = med.medList.some((m) => m.name.trim().length > 0) && !med.isAnalyzing;
 
   return (
@@ -300,21 +252,7 @@ export const MedicationAssessment = memo(function MedicationAssessment({ med }: 
 
       {med.analysis && (
         <div className="med-analysis-results">
-          <SummaryBar medCount={med.medList.length} cards={med.analysis.cards} />
-          <ScoresPanel scores={med.analysis.burdenScores} />
-          {sortedCards.length === 0 ? (
-            <div className="med-analysis-empty">
-              No findings — this regimen looks clean against the current ruleset.
-            </div>
-          ) : (
-            <div className="med-cards">
-              {sortedCards.map((c) => (
-                <FindingCard key={c.id} card={c} />
-              ))}
-            </div>
-          )}
           <AIPlanPanel
-            hasCards={med.analysis.cards.length > 0}
             clarifyingQuestions={med.clarifyingQuestions}
             questionAnswers={med.questionAnswers}
             isLoadingQuestions={med.isLoadingQuestions}

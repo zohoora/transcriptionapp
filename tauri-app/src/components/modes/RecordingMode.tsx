@@ -1,5 +1,5 @@
 import { memo, useState, useCallback } from 'react';
-import type { AudioQualitySnapshot, BiomarkerUpdate, SilenceWarningPayload } from '../../types';
+import type { AudioQualitySnapshot, BiomarkerUpdate, ImageSource, SilenceWarningPayload } from '../../types';
 import type { AiImage } from '../../hooks/useAiImages';
 import type { DifferentialDiagnosis } from '../../hooks/usePredictiveHint';
 import { DDX_LIKELIHOOD_LABELS } from '../../hooks/usePredictiveHint';
@@ -48,7 +48,7 @@ interface RecordingModeProps {
   aiError?: string | null;
   onAiGenerate?: (description: string) => void;
   onAiDismiss?: (index: number) => void;
-  imageSource?: 'ai' | 'off';
+  imageSource?: ImageSource;
   imageModel?: string;
   onImageModelChange?: (value: string) => void;
 

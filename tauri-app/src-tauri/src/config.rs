@@ -1293,14 +1293,12 @@ impl Config {
                 Self::default()
             }
         };
+        // Order matters: legacy migrations that rewrite values into the
+        // current allowlist MUST run before `clamp_values()` — the validator
+        // there silently coerces unknown image_source values to "off", which
+        // would clobber the migration's intent.
+        config.migrate_legacy_image_source();
         config.clamp_values();
-
-        // Legacy migration: configs may still carry `image_source = "miis"`
-        // from before MIIS was removed (v0.10.98+). Coerce to "ai" so the
-        // app falls back to the surviving image-generation path.
-        if config.image_source == "miis" {
-            config.image_source = "ai".to_string();
-        }
 
         // Legacy migration: seed user_edited_fields on first load after
         // upgrade. See `migrate_user_edited_fields` for the logic.
@@ -1378,6 +1376,16 @@ impl Config {
         // config.json hand-edit or a downgrade from a future schema.
         if !IMAGE_MODEL_ALLOWLIST.contains(&self.image_model.as_str()) {
             self.image_model = default_image_model();
+        }
+    }
+
+    /// Coerce `image_source = "miis"` (left over from configs created before
+    /// MIIS was removed in v0.10.98) to `"ai"`. Must run before
+    /// `clamp_values()` because the validator there silently coerces unknown
+    /// values to `"off"`, which would mask this migration.
+    fn migrate_legacy_image_source(&mut self) {
+        if self.image_source == "miis" {
+            self.image_source = "ai".to_string();
         }
     }
 
@@ -2641,5 +2649,31 @@ mod tests {
                 );
             }
         }
+    }
+
+    /// `migrate_legacy_image_source` MUST run before `clamp_values()` —
+    /// otherwise the validator coerces "miis" to "off" before the migration
+    /// has a chance to rewrite it to "ai", and users upgrading from a
+    /// pre-MIIS-removal release lose their image-generation preference.
+    #[test]
+    fn legacy_miis_image_source_migrates_to_ai_before_clamp_strips_it() {
+        let mut config = Config::default();
+        config.image_source = "miis".to_string();
+
+        // 1. Migration alone rewrites "miis" → "ai".
+        config.migrate_legacy_image_source();
+        assert_eq!(config.image_source, "ai");
+
+        // 2. Clamp alone (without migration) would coerce "miis" → "off",
+        //    silently losing the user's intent. This is what the ordering
+        //    in load_or_default() must protect against.
+        let mut config = Config::default();
+        config.image_source = "miis".to_string();
+        config.clamp_values();
+        assert_eq!(
+            config.image_source, "off",
+            "clamp must coerce unknown image_source — confirms why migration \
+             must run BEFORE clamp"
+        );
     }
 }

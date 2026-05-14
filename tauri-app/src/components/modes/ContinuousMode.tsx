@@ -19,6 +19,7 @@ import type {
   AudioQualitySnapshot,
   BiomarkerUpdate,
   EncounterNote,
+  ImageSource,
 } from '../../types';
 import type { PatientTrends } from '../../hooks/usePatientBiomarkers';
 import type { AiImage } from '../../hooks/useAiImages';
@@ -65,7 +66,7 @@ interface ContinuousModeProps {
   aiError?: string | null;
   onAiGenerate?: (description: string) => void;
   onAiDismiss?: (index: number) => void;
-  imageSource?: 'ai' | 'off';
+  imageSource?: ImageSource;
   imageModel?: string;
   onImageModelChange?: (value: string) => void;
   /** Start continuous mode */

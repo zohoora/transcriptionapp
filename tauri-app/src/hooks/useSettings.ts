@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import type { Settings, SpeakerRole, ChartingMode, EncounterDetectionMode, InfrastructureOverlay, RoomOverlay, SoapFormat } from '../types';
+import type { Settings, SpeakerRole, ChartingMode, EncounterDetectionMode, ImageSource, InfrastructureOverlay, RoomOverlay, SoapFormat } from '../types';
 
 /**
  * Pending settings that the user is editing before saving.
@@ -27,7 +27,7 @@ export interface PendingSettings {
   // Auto-end settings
   auto_end_enabled: boolean;
   // AI image generation
-  image_source: string;
+  image_source: ImageSource;
   gemini_api_key: string;
   openai_api_key: string;
   image_model: string;

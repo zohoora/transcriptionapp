@@ -16,6 +16,7 @@ import type {
   AudioQualitySnapshot,
   BiomarkerUpdate,
   EncounterNote,
+  ImageSource,
 } from '../types';
 import type { PatientTrends } from './usePatientBiomarkers';
 import type { AiImage } from './useAiImages';
@@ -59,7 +60,7 @@ export interface ContinuousModeOrchestratorResult {
   aiError: string | null;
   onAiGenerate: (description: string) => void;
   onAiDismiss: (index: number) => void;
-  imageSource: 'ai' | 'off';
+  imageSource: ImageSource;
   onStart: () => void;
   onStop: () => void;
   onNewPatient: () => void;
@@ -118,7 +119,7 @@ export function useContinuousModeOrchestrator({
   // Session ID for image hooks — driven by encounter_detected events (no poll lag)
   const continuousAiSessionId = isActive ? encounterSessionId : null;
 
-  const continuousImageSource = (settings?.image_source ?? 'off') as 'off' | 'ai';
+  const continuousImageSource: ImageSource = settings?.image_source ?? 'off';
 
   // AI-generated image suggestions for continuous mode (user-triggered)
   const {

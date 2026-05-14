@@ -1,6 +1,11 @@
 // Shared type definitions for the Transcription App
 // These types mirror the Rust backend types and are used across the frontend
 
+/** Image-generation source. `'ai'` routes to the Gemini/OpenAI proxy; `'off'`
+ * hides the Patient Illustration panel entirely. MIIS support was removed in
+ * v0.10.98 — legacy configs carrying `'miis'` are coerced to `'ai'` on load. */
+export type ImageSource = 'ai' | 'off';
+
 // Session state types
 export type SessionState =
   | 'idle'
@@ -97,7 +102,7 @@ export interface Settings {
   // Pharmacotherapy refactor service (MacBook-hosted; powers the Clinical Assistant window)
   pharm_service_url: string;
   // AI image generation
-  image_source: string; // "off" | "ai"
+  image_source: ImageSource;
   gemini_api_key: string;
   openai_api_key: string;
   /** Provider + quality key. One of: "gemini-flash", "gemini-pro", "openai-low", "openai-medium", "openai-high". */

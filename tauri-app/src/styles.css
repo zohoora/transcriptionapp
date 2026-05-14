@@ -11158,6 +11158,7 @@ button.review-section-header-left:focus {
   display: flex;
   flex-direction: column;
   flex: 1;
+  min-height: 0;
   padding: 16px;
   gap: 12px;
   overflow-y: auto;

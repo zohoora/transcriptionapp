@@ -639,7 +639,7 @@ pub struct DifferentialDiagnosis {
 }
 
 /// Response from predictive hint generation.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct PredictiveHintResponse {
     /// Brief clinical hint for the physician (max 60 chars)
     pub hint: String,
@@ -658,14 +658,8 @@ pub async fn generate_predictive_hint(
     transcript: String,
     server_config: tauri::State<'_, SharedServerConfig>,
 ) -> Result<PredictiveHintResponse, CommandError> {
-    let empty_response = PredictiveHintResponse {
-        hint: String::new(),
-        image_prompt: None,
-        differential_diagnoses: Vec::new(),
-    };
-
     if transcript.trim().is_empty() || transcript.split_whitespace().count() < 20 {
-        return Ok(empty_response); // Not enough content yet
+        return Ok(PredictiveHintResponse::default()); // Not enough content yet
     }
 
     let (_config, models, client, _templates) = load_effective_models_and_client(server_config.inner()).await?;
@@ -741,13 +735,12 @@ RULES for differential_diagnoses:
 
             Ok(PredictiveHintResponse {
                 hint: cleaned,
-                image_prompt: None,
-                differential_diagnoses: Vec::new(),
+                ..Default::default()
             })
         }
         Err(e) => {
             warn!("Failed to generate predictive hint: {}", e);
-            Ok(empty_response) // Return empty on error, don't fail the whole thing
+            Ok(PredictiveHintResponse::default()) // Return empty on error, don't fail the whole thing
         }
     }
 }

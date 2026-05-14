@@ -2,6 +2,7 @@ import { memo, useCallback } from 'react';
 import { WebviewWindow } from '@tauri-apps/api/webviewWindow';
 import { emitTo } from '@tauri-apps/api/event';
 import type { AiImage } from '../hooks/useAiImages';
+import type { ImageSource } from '../types';
 
 interface ImageSuggestionsProps {
   aiImages: AiImage[];
@@ -9,7 +10,7 @@ interface ImageSuggestionsProps {
   aiError: string | null;
   onAiGenerate: (description: string) => void;
   onAiDismiss: (index: number) => void;
-  imageSource: 'ai' | 'off';
+  imageSource: ImageSource;
   /** Provider+quality key: "gemini-flash"|"gemini-pro"|"openai-low"|"openai-medium"|"openai-high". */
   imageModel?: string;
   onImageModelChange?: (value: string) => void;
