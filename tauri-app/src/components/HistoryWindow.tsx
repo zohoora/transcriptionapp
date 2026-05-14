@@ -87,19 +87,20 @@ const SESSION_FEEDBACK_PROMPT =
   "- [specific positive observation]\n\n" +
   "CONSIDER\n" +
   "- [specific actionable suggestion]\n\n" +
-  "REFERENCES\n" +
-  "- <3-8 word topic from THIS encounter> — https://pubmed.ncbi.nlm.nih.gov/?term=<3-6+plus+separated+MeSH+terms>\n\n" +
+  "KEY EVIDENCE\n" +
+  "- <Lead author> <year> — <trial name or short description>: <one-sentence finding>. Why it matters here: <one sentence tying it to a specific decision in THIS encounter>. https://pubmed.ncbi.nlm.nih.gov/?term=<author+year+disambiguators>\n\n" +
   "Rules:\n" +
   "- 1-3 bullets per DONE WELL / CONSIDER section, 1-2 sentences each\n" +
   "- Be direct and specific. No filler or qualifiers.\n" +
   "- Do NOT use markdown headers (no #, ##). Plain text labels + bullets only.\n\n" +
-  "REFERENCES rules (read carefully):\n" +
-  "- Output 1-3 references max, each anchored to clinical content actually discussed in THIS encounter (a condition, finding, drug, procedure, screening tool, or management decision that appears in the transcript).\n" +
-  "- Each line format exactly: <human-readable topic> — <PubMed search URL>\n" +
-  "- URL form exactly: https://pubmed.ncbi.nlm.nih.gov/?term=TERM1+TERM2+TERM3 (3-6 terms, spaces encoded as '+', no quotes, no other URL parameters).\n" +
-  "- Prefer MeSH-style vocabulary (e.g., 'Hypertension' not 'high blood pressure'; 'Diabetes Mellitus Type 2' not 'diabetes'). Combine condition + intervention/method + population when applicable (e.g., 'Atrial Fibrillation anticoagulation elderly').\n" +
-  "- NEVER cite specific articles, authors, PMIDs, DOIs, journal names, or years — search queries ONLY. The terms in the URL are a literature search query, not a citation.\n" +
-  "- OMIT the REFERENCES section entirely (no header, no bullets) if the encounter is too brief, too generic, or non-clinical to anchor a real literature search.";
+  "KEY EVIDENCE rules (read very carefully — this section's bar is high):\n" +
+  "- Output 0-3 references. ZERO is acceptable and PREFERRED over weak citations. If no landmark evidence in THIS encounter would have changed practice, OMIT the KEY EVIDENCE section entirely (no header, no bullets).\n" +
+  "- ONLY cite a SPECIFIC named landmark study you can identify by lead author + year + (trial codename OR distinctive description). Examples of acceptable citations: SPRINT (Wright 2015), COMPASS (Eikelboom 2017), EMPA-REG OUTCOME (Zinman 2015), STOPP/START criteria (O'Mahony 2015), Choosing Wisely lists.\n" +
+  "- Every citation must satisfy ALL three: (a) you can name lead author and approximate year, (b) the finding would have INFORMED OR CHANGED the management decision in this encounter (not merely affirm what the clinician already did), (c) the finding is the kind of thing a busy family physician might not have known or might have forgotten.\n" +
+  "- Each line format exactly: <Author> <year> — <trial/study name or brief description>: <finding>. Why it matters here: <link to specific encounter content>. <PubMed URL>\n" +
+  "- URL search-term strategy: include author surname + year + 2-3 unique disambiguators (trial codename when known, drug name, specific condition phrasing, comparator) so the target study is PubMed result #1. Example terms: 'Eikelboom+2017+COMPASS+rivaroxaban+aspirin' or 'Wright+2015+SPRINT+intensive+blood+pressure'. URL form exactly: https://pubmed.ncbi.nlm.nih.gov/?term=TERM1+TERM2+TERM3 (5-8 terms, no quotes, no field tags like [au], spaces as '+').\n" +
+  "- If you cannot name a specific landmark study for a relevant decision, DO NOT substitute a generic topic search — omit that reference.\n" +
+  "- NEVER fabricate a study name, author, trial codename, or year. If uncertain, omit. A missing reference is good; a fabricated one is harmful.";
 
 const DAY_FEEDBACK_PROMPT =
   "/nothink\n" +
@@ -112,8 +113,8 @@ const DAY_FEEDBACK_PROMPT =
   "- [actionable suggestion referencing specific patient/encounter]\n\n" +
   "PATTERNS\n" +
   "- [recurring theme across sessions]\n\n" +
-  "REFERENCES\n" +
-  "- <3-8 word topic relevant to today's clinical mix or a recurring pattern> — https://pubmed.ncbi.nlm.nih.gov/?term=<3-6+plus+separated+MeSH+terms>\n\n" +
+  "KEY EVIDENCE\n" +
+  "- <Lead author> <year> — <trial name or short description>: <one-sentence finding>. Why it matters here: <one sentence tying it to a specific case or recurring pattern from TODAY>. https://pubmed.ncbi.nlm.nih.gov/?term=<author+year+disambiguators>\n\n" +
   "Constraints:\n" +
   "- 1-2 sentences per bullet\n" +
   "- Reference specific encounters in STRENGTHS / AREAS FOR IMPROVEMENT / PATTERNS\n" +
@@ -122,13 +123,14 @@ const DAY_FEEDBACK_PROMPT =
   "- NO letters, greetings, signatures, headers, or prose\n" +
   "- NO markdown (no #, **, etc). Plain text only\n" +
   "- 5-8 bullets per STRENGTHS / AREAS FOR IMPROVEMENT / PATTERNS section\n\n" +
-  "REFERENCES rules (read carefully):\n" +
-  "- Output 1-3 references max, each tied to a recurring pattern or a clinically significant case from TODAY (not generic clinical wisdom).\n" +
-  "- Each line format exactly: <human-readable topic> — <PubMed search URL>\n" +
-  "- URL form exactly: https://pubmed.ncbi.nlm.nih.gov/?term=TERM1+TERM2+TERM3 (3-6 terms, spaces encoded as '+', no quotes, no other URL parameters).\n" +
-  "- Prefer MeSH-style vocabulary (e.g., 'Hypertension' not 'high blood pressure'; 'Diabetes Mellitus Type 2' not 'diabetes'). Combine condition + intervention/method + population when applicable.\n" +
-  "- NEVER cite specific articles, authors, PMIDs, DOIs, journal names, or years — search queries ONLY. The terms in the URL are a literature search query, not a citation.\n" +
-  "- OMIT the REFERENCES section entirely (no header, no bullets) if the day was too brief or non-clinical to anchor real literature searches.";
+  "KEY EVIDENCE rules (read very carefully — this section's bar is high):\n" +
+  "- Output 0-3 references. ZERO is acceptable and PREFERRED over weak citations. If no landmark evidence in TODAY's clinical mix would have changed practice, OMIT the KEY EVIDENCE section entirely (no header, no bullets).\n" +
+  "- ONLY cite a SPECIFIC named landmark study you can identify by lead author + year + (trial codename OR distinctive description). Examples of acceptable citations: SPRINT (Wright 2015), COMPASS (Eikelboom 2017), EMPA-REG OUTCOME (Zinman 2015), STOPP/START criteria (O'Mahony 2015), Choosing Wisely lists.\n" +
+  "- Every citation must satisfy ALL three: (a) you can name lead author and approximate year, (b) the finding would have INFORMED OR CHANGED a management decision in a specific case from today (not merely affirm what was already done), (c) the finding is the kind of thing a busy family physician might not have known or might have forgotten.\n" +
+  "- Each line format exactly: <Author> <year> — <trial/study name or brief description>: <finding>. Why it matters here: <link to specific case from today>. <PubMed URL>\n" +
+  "- URL search-term strategy: include author surname + year + 2-3 unique disambiguators (trial codename when known, drug name, specific condition phrasing, comparator) so the target study is PubMed result #1. Example terms: 'Eikelboom+2017+COMPASS+rivaroxaban+aspirin' or 'Wright+2015+SPRINT+intensive+blood+pressure'. URL form exactly: https://pubmed.ncbi.nlm.nih.gov/?term=TERM1+TERM2+TERM3 (5-8 terms, no quotes, no field tags like [au], spaces as '+').\n" +
+  "- If you cannot name a specific landmark study for a relevant decision, DO NOT substitute a generic topic search — omit that reference.\n" +
+  "- NEVER fabricate a study name, author, trial codename, or year. If uncertain, omit. A missing reference is good; a fabricated one is harmful.";
 
 // LLM output is rendered as text + React anchor nodes — never as HTML — so any
 // fabricated tags appear as literal characters. Anchors open via plugin-shell
@@ -2457,7 +2459,7 @@ const HistoryWindow: React.FC = () => {
                 </div>
               )}
               {dayFeedbackText && (
-                <div className="day-feedback-modal-text">{dayFeedbackText}</div>
+                <div className="day-feedback-modal-text">{renderFeedbackWithLinks(dayFeedbackText)}</div>
               )}
             </div>
           </div>
