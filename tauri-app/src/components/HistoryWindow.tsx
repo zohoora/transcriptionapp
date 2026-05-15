@@ -18,7 +18,7 @@ import {
 } from './cleanup';
 import ConfirmPatientsBatchDialog from './ConfirmPatientsBatchDialog';
 import FeedbackPanel from './FeedbackPanel';
-import { BillingTab, DailySummaryView, MonthlySummaryView } from './billing';
+import { BillingTab } from './billing';
 import { clamp, formatDateForApi, formatLocalTime, formatLocalDateTime, formatDurationShort } from '../utils';
 import type {
   LocalArchiveSummary,
@@ -39,7 +39,6 @@ import { DETAIL_LEVEL_LABELS } from '../types';
 import { updateSessionFeedback } from '../utils';
 
 type DetailTab = 'transcript' | 'soap' | 'handout' | 'billing' | 'insights';
-type RightPaneMode = 'session' | 'daily_billing' | 'monthly_billing';
 type DataSource = 'local' | 'medplum';
 type ActiveDialog = 'none' | 'delete' | 'merge' | 'editName' | 'confirmPatient';
 type SortField = 'time' | 'encounter' | 'patient' | 'words' | 'duration';
@@ -383,7 +382,7 @@ async function persistSoapResultToArchive(args: {
 }
 
 const HistoryWindow: React.FC = () => {
-  const { authState, isLoading: authLoading, login } = useAuth();
+  const { authState } = useAuth();
 
   // Use shared SOAP hook - handles LLM status, options persistence, and generation
   const {
@@ -533,7 +532,6 @@ const HistoryWindow: React.FC = () => {
   const [billingDefaults, setBillingDefaults] = useState<{
     visitSetting: string; counsellingExhausted: boolean; isHospital: boolean;
   }>({ visitSetting: 'in_office', counsellingExhausted: false, isHospital: false });
-  const [rightPaneMode, setRightPaneMode] = useState<RightPaneMode>('session');
   const [showModelMenu, setShowModelMenu] = useState(false);
 
   // SOAP display state (result stored locally since hook doesn't track per-session)
@@ -863,7 +861,6 @@ const HistoryWindow: React.FC = () => {
     setSelectedPatientIndex(patientIndex ?? null);
     setBillingRecord(null);
     setDetailLoading(true);
-    setRightPaneMode('session');
 
     try {
       let details: LocalArchiveDetails;
@@ -1712,43 +1709,11 @@ const HistoryWindow: React.FC = () => {
             />
           )}
 
-          {/* Data source and auth status footer */}
-          {!authLoading && selectedIds.size === 0 && (
-            <div className="history-footer">
-              <span className="data-source-indicator">
-                {dataSource === 'local' ? '💾 Local Storage' : '☁️ Medplum'}
-              </span>
-              {dataSource === 'medplum' && !authState.is_authenticated && (
-                <button className="auth-status not-authenticated" onClick={login}>
-                  Sign in to view history
-                </button>
-              )}
-              {dataSource === 'local' && authState.is_authenticated && (
-                <span className="auth-status authenticated">
-                  ☁️ Also synced to Medplum
-                </span>
-              )}
-            </div>
-          )}
           </div>{/* end history-left-scroll */}
 
-          {/* Day Feedback + Billing buttons — pinned to bottom of sidebar */}
+          {/* Day Feedback — pinned to bottom of sidebar */}
           {sessions.length > 0 && selectedIds.size === 0 && (
             <div className="history-left-bottom">
-              <div className="billing-view-buttons">
-                <button
-                  className={`btn-small ${rightPaneMode === 'daily_billing' ? 'active' : ''}`}
-                  onClick={() => setRightPaneMode(rightPaneMode === 'daily_billing' ? 'session' : 'daily_billing')}
-                >
-                  Daily Billing
-                </button>
-                <button
-                  className={`btn-small ${rightPaneMode === 'monthly_billing' ? 'active' : ''}`}
-                  onClick={() => setRightPaneMode(rightPaneMode === 'monthly_billing' ? 'session' : 'monthly_billing')}
-                >
-                  Monthly
-                </button>
-              </div>
               <button
                 className="day-feedback-btn"
                 onClick={() => setShowDayFeedback(true)}
@@ -1774,13 +1739,9 @@ const HistoryWindow: React.FC = () => {
           onKeyDown={onResizeKeyDown}
         />
 
-        {/* RIGHT PANE — session details or billing summaries */}
+        {/* RIGHT PANE — session details */}
         <div className="history-right-pane">
-          {rightPaneMode === 'daily_billing' ? (
-            <DailySummaryView date={formatDateForApi(selectedDate)} />
-          ) : rightPaneMode === 'monthly_billing' ? (
-            <MonthlySummaryView endDate={formatDateForApi(selectedDate)} />
-          ) : detailLoading ? (
+          {detailLoading ? (
             <div className="detail-empty-state">
               <div className="spinner" />
             </div>
