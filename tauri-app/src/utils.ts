@@ -119,6 +119,39 @@ export function isToday(date: Date): boolean {
 }
 
 /**
+ * Compute integer age in years from a YYYY-MM-DD DOB string. Returns `null`
+ * on malformed input, future DOBs (defensive — vision occasionally returns
+ * a transposed year), or implausibly old ages (>130, almost certainly OCR
+ * noise). Floors at the most-recent birthday boundary.
+ */
+export function computeAgeFromDob(dob: string | null | undefined): number | null {
+  if (!dob) return null;
+  const match = dob.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return null;
+  const y = parseInt(match[1], 10);
+  const m = parseInt(match[2], 10) - 1;
+  const d = parseInt(match[3], 10);
+  // Construct in local time and sanity-check the round-trip — rejects e.g.
+  // 2025-02-30 (auto-rolled to March) that the regex would otherwise accept.
+  const dobDate = new Date(y, m, d);
+  if (
+    dobDate.getFullYear() !== y ||
+    dobDate.getMonth() !== m ||
+    dobDate.getDate() !== d
+  ) {
+    return null;
+  }
+  const today = new Date();
+  let age = today.getFullYear() - y;
+  const beforeBirthday =
+    today.getMonth() < m ||
+    (today.getMonth() === m && today.getDate() < d);
+  if (beforeBirthday) age -= 1;
+  if (age < 0 || age > 130) return null;
+  return age;
+}
+
+/**
  * Format a duration in milliseconds to a human-readable string
  * Returns "Xh Ym" or "Ym" depending on duration
  */

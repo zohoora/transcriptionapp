@@ -11169,10 +11169,56 @@ button.review-section-header-left:focus {
   font-style: italic;
 }
 
-.ca-allergies-empty {
+.ca-clinical-context-loading,
+.ca-clinical-context-empty {
   font-size: 13px;
   color: var(--text-secondary);
   font-style: italic;
+  margin-bottom: 6px;
+}
+
+.ca-clinical-context-textarea {
+  width: 100%;
+  box-sizing: border-box;
+  font-family: inherit;
+  font-size: 12px;
+  line-height: 1.45;
+  padding: 8px 10px;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  resize: vertical;
+  min-height: 96px;
+}
+
+.ca-clinical-context-textarea:focus {
+  outline: none;
+  border-color: var(--accent-color, #4a90e2);
+  background: var(--bg-primary);
+}
+
+/* Mount-time "still capturing chart" banner — sits between the header
+   and the two-pane body. Same visual register as other status banners
+   in the app (small, single line, neutral background). */
+
+.ca-context-loading-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 16px;
+  font-size: 13px;
+  color: var(--text-secondary);
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border-color);
+}
+
+/* Small "(derived from DOB)" hint next to the Age field label. */
+
+.pcp-field-hint {
+  font-weight: normal;
+  color: var(--text-secondary);
+  font-size: 11px;
 }
 
 /* Tab empty-state hint (e.g. "Add medications in the sidebar") ──────── */

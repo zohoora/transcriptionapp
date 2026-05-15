@@ -13,6 +13,7 @@ import {
   isToday,
   formatDuration,
   formatErrorMessage,
+  computeAgeFromDob,
 } from './utils';
 
 describe('formatTime', () => {
@@ -364,6 +365,57 @@ describe('isToday', () => {
     const now = new Date();
     const lastYear = new Date(now.getFullYear() - 1, now.getMonth(), now.getDate());
     expect(isToday(lastYear)).toBe(false);
+  });
+});
+
+describe('computeAgeFromDob', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    // Pin "today" to 2026-05-15 (matches the project's current date) so the
+    // age math is deterministic across CI machines + future test runs.
+    vi.setSystemTime(new Date(2026, 4, 15)); // month 4 = May (0-indexed)
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('returns null for null/undefined/empty input', () => {
+    expect(computeAgeFromDob(null)).toBeNull();
+    expect(computeAgeFromDob(undefined)).toBeNull();
+    expect(computeAgeFromDob('')).toBeNull();
+  });
+
+  it('returns null for non-YYYY-MM-DD strings', () => {
+    expect(computeAgeFromDob('1990-1-1')).toBeNull();
+    expect(computeAgeFromDob('01/01/1990')).toBeNull();
+    expect(computeAgeFromDob('not-a-date')).toBeNull();
+    expect(computeAgeFromDob('1990-01-01T00:00:00Z')).toBeNull();
+  });
+
+  it('computes age correctly when birthday already passed this year', () => {
+    expect(computeAgeFromDob('1960-01-15')).toBe(66);
+  });
+
+  it('subtracts one when birthday has not yet occurred this year', () => {
+    // Today is May 15 2026 — a June birthday this year is still 23, not 24.
+    expect(computeAgeFromDob('2002-06-15')).toBe(23);
+  });
+
+  it('handles birthday-today as the new age', () => {
+    expect(computeAgeFromDob('1990-05-15')).toBe(36);
+  });
+
+  it('rejects future DOBs as null', () => {
+    expect(computeAgeFromDob('2030-01-01')).toBeNull();
+  });
+
+  it('rejects implausibly old ages (>130) as null — likely OCR noise', () => {
+    expect(computeAgeFromDob('1800-01-01')).toBeNull();
+  });
+
+  it('rejects malformed dates like Feb 30 even when regex passes', () => {
+    expect(computeAgeFromDob('1990-02-30')).toBeNull();
+    expect(computeAgeFromDob('1990-13-01')).toBeNull();
   });
 });
 

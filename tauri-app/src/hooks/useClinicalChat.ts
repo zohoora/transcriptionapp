@@ -28,18 +28,33 @@ interface ClinicalChatResponse {
 const SYSTEM_PROMPT = `You are a clinical reference tool used by a licensed physician during patient appointments. Respond as you would to a medical colleague: concise, evidence-based, no disclaimers. The physician will apply clinical judgment.`;
 
 /**
+ * Patient identity passed alongside each chat message. The Rust backend
+ * formats it as a single system message ("Patient: <name> (DOB <dob>,
+ * age <age>)"), omitting any null fields. All three fields are optional.
+ */
+export interface ClinicalChatPatient {
+  name: string | null;
+  dob: string | null;
+  age: number | null;
+}
+
+/**
  * Hook for the Clinical Assistant chat.
  *
- * When `currentMedications` is provided (non-null, non-empty), the Rust
- * `clinical_chat_send` command prepends a system message describing the
- * patient's current meds. Pattern is additive: passing `null`/`undefined`
- * leaves the chat behavior identical to v1.
+ * Per-message context: the hook reads the LATEST `currentMedications`,
+ * `clinicalContext`, and `patient` on each `sendMessage` call (via refs), so
+ * mid-conversation edits in the sidebar flow through to the next LLM turn
+ * without needing to clear chat history. The Rust `clinical_chat_send`
+ * command builds system messages from each non-empty piece of context;
+ * passing `null`/`undefined` leaves that slot off.
  */
 export function useClinicalChat(
   llmRouterUrl: string,
   llmApiKey: string,
   llmClientId: string,
-  currentMedications?: MedEntry[] | null
+  currentMedications?: MedEntry[] | null,
+  clinicalContext?: string | null,
+  patient?: ClinicalChatPatient | null
 ): UseClinicalChatResult {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -56,6 +71,15 @@ export function useClinicalChat(
   // of how often the medication list updates.
   const medsRef = useRef<MedEntry[] | null>(currentMedications ?? null);
   medsRef.current = currentMedications ?? null;
+
+  // Same trick for clinicalContext + patient — refs reassigned on each
+  // render keep `sendMessage` stable but pick up the LIVE values when the
+  // clinician fires the next message.
+  const clinicalContextRef = useRef<string | null>(clinicalContext ?? null);
+  clinicalContextRef.current = clinicalContext ?? null;
+
+  const patientRef = useRef<ClinicalChatPatient | null>(patient ?? null);
+  patientRef.current = patient ?? null;
 
   const sendMessage = useCallback(async (content: string) => {
     if (!content.trim() || !llmRouterUrl) {
@@ -103,14 +127,18 @@ export function useClinicalChat(
         { role: 'user', content: content.trim() },
       ];
 
-      // Use Tauri invoke instead of browser fetch
+      // Use Tauri invoke instead of browser fetch. Backend collapses
+      // empty / all-None context to no system message, so no frontend guard.
       const meds = medsRef.current && medsRef.current.length > 0 ? medsRef.current : null;
+      const chartContext = clinicalContextRef.current?.trim() || null;
       const response = await invoke<ClinicalChatResponse>('clinical_chat_send', {
         llmRouterUrl,
         llmApiKey,
         llmClientId,
         messages: apiMessages,
         currentMedications: meds,
+        currentPatient: patientRef.current,
+        chartContext,
       });
 
       // Check if cancelled during the request

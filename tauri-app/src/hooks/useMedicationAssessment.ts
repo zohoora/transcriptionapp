@@ -1,6 +1,6 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import { formatErrorMessage } from '../utils';
+import { computeAgeFromDob, formatErrorMessage } from '../utils';
 import type {
   MedEntry,
   MedExtractionResult,
@@ -42,6 +42,12 @@ export interface UseMedicationAssessmentResult {
   // Vision-extracted patient identity (from same screenshot as meds)
   patientName: string | null;
   patientDob: string | null;
+  /** Free-form clinical context extracted from the chart screenshot (lab
+   *  report, problem list, allergies, vitals, etc.) — whatever the vision
+   *  model decided was clinically relevant on screen. Clinician-editable
+   *  via the sidebar textarea; the most recent value flows live to the
+   *  chat backend each turn. */
+  clinicalContext: string | null;
 
   // Analysis
   analysis: AnalysisResult | null;
@@ -75,6 +81,7 @@ export interface UseMedicationAssessmentResult {
   setPatientEgfr: (egfr: number | null) => void;
   setPatientCondition: (key: keyof PatientConditions, value: boolean) => void;
   setStrategy: (strategy: AnalysisStrategy) => void;
+  setClinicalContext: (text: string | null) => void;
 
   startPlanFlow: () => Promise<void>;
   setQuestionAnswer: (questionId: string, answer: string) => void;
@@ -92,6 +99,10 @@ export function useMedicationAssessment(): UseMedicationAssessmentResult {
   // for these fields).
   const [patientName, setPatientName] = useState<string | null>(null);
   const [patientDob, setPatientDob] = useState<string | null>(null);
+  // Free-form clinical context from the same vision call. Unlike name/DOB,
+  // the clinician can edit this textarea mid-chat; once edited, subsequent
+  // vision results won't clobber the clinician's edits.
+  const [clinicalContext, setClinicalContextState] = useState<string | null>(null);
   const [analysis, setAnalysis] = useState<AnalysisResult | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [analyzeError, setAnalyzeError] = useState<string | null>(null);
@@ -117,10 +128,12 @@ export function useMedicationAssessment(): UseMedicationAssessmentResult {
   const parsingRef = useRef(false);
   const loadingQuestionsRef = useRef(false);
   const generatingPlanRef = useRef(false);
-  // Flipped by every explicit medList mutation. A late-arriving screenshot
-  // extraction reads this to decide whether to apply its result — clinician
-  // edits always win over speculative vision output.
+  // Flipped by every explicit mutation. A late-arriving screenshot
+  // extraction reads these to decide whether to apply its result —
+  // clinician edits always win over speculative vision output.
   const userHasEditedRef = useRef(false);
+  const userHasEditedAgeRef = useRef(false);
+  const userHasEditedClinicalContextRef = useRef(false);
 
   const medListRef = useRef<MedEntry[]>(medList);
   medListRef.current = medList;
@@ -177,6 +190,22 @@ export function useMedicationAssessment(): UseMedicationAssessmentResult {
       const nextDob = result.patient?.dob ?? null;
       setPatientName((prev) => (prev === nextName ? prev : nextName));
       setPatientDob((prev) => (prev === nextDob ? prev : nextDob));
+      // Derive age from the freshly-extracted DOB, but only when the
+      // clinician hasn't manually overridden the age field. Same guard
+      // pattern as `userHasEditedRef` for the med list.
+      if (!userHasEditedAgeRef.current) {
+        const derivedAge = computeAgeFromDob(nextDob);
+        if (derivedAge != null) {
+          setPatientAgeState((prev) => (prev === derivedAge ? prev : derivedAge));
+        }
+      }
+      // Apply free-form clinical context if the clinician hasn't edited it.
+      // `null` from vision means "nothing extra on screen" — we still
+      // overwrite a previous extract's value, since it's vision-derived.
+      if (!userHasEditedClinicalContextRef.current) {
+        const nextCtx = result.clinicalContext ?? null;
+        setClinicalContextState((prev) => (prev === nextCtx ? prev : nextCtx));
+      }
       setExtractionState('extracted');
       clearCachedResults();
     } catch (e) {
@@ -396,10 +425,26 @@ export function useMedicationAssessment(): UseMedicationAssessmentResult {
 
   const setPatientAge = useCallback(
     (age: number | null) => {
+      // Mark as user-edited so vision-extracted DOB on a re-extract won't
+      // silently overwrite this value.
+      userHasEditedAgeRef.current = true;
       setPatientAgeState(age);
       clearCachedResults();
     },
     [clearCachedResults]
+  );
+
+  const setClinicalContext = useCallback(
+    (text: string | null) => {
+      userHasEditedClinicalContextRef.current = true;
+      setClinicalContextState(text);
+      // Clinical context doesn't feed the pharm analysis, so DON'T clear
+      // cached pharm results here — that would invalidate an analysis the
+      // clinician is mid-review on every keystroke. The chat hook reads
+      // this live via a ref, so the next chat turn already picks up the
+      // edit without any cache work.
+    },
+    []
   );
 
   const setPatientEgfr = useCallback(
@@ -469,6 +514,7 @@ export function useMedicationAssessment(): UseMedicationAssessmentResult {
 
     patientName,
     patientDob,
+    clinicalContext,
 
     patientAge,
     patientEgfr,
@@ -494,6 +540,7 @@ export function useMedicationAssessment(): UseMedicationAssessmentResult {
     setPatientEgfr,
     setPatientCondition,
     setStrategy,
+    setClinicalContext,
 
     startPlanFlow,
     setQuestionAnswer,

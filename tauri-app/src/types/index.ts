@@ -1392,6 +1392,10 @@ export interface MedExtractionResult {
   likelyBlank: boolean;
   /** Patient name + DOB extracted from the same screenshot, when visible. */
   patient?: ExtractedPatientIdentity | null;
+  /** Free-form description of any other clinical context visible on screen
+   *  (lab/imaging report, problem list, allergies, vitals, etc.). `null` when
+   *  the vision call didn't find anything beyond name/DOB/meds. */
+  clinicalContext?: string | null;
 }
 
 /** Pharm-refactor parsed-medication shape (CardResponse mirrors python schema) */

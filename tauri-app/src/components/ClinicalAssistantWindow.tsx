@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { formatErrorMessage } from '../utils';
@@ -44,12 +44,29 @@ const ClinicalAssistantWindow: React.FC = () => {
 
   const med = useMedicationAssessment();
 
+  // Memo so the hook's `patientRef = patient ?? null` reassignment doesn't
+  // see a fresh object every render — otherwise downstream consumers using
+  // the patient identity in dep arrays would re-fire on every parent render.
+  const patient = useMemo(
+    () => ({ name: med.patientName, dob: med.patientDob, age: med.patientAge }),
+    [med.patientName, med.patientDob, med.patientAge],
+  );
+
   const chat = useClinicalChat(
     settings?.llm_router_url ?? '',
     settings?.llm_api_key ?? '',
     settings?.llm_client_id ?? '',
-    med.medList
+    med.medList,
+    med.clinicalContext,
+    patient,
   );
+
+  // The first vision call hasn't returned yet when extractionState is
+  // 'idle' (mount-effect hasn't fired) or 'capturing'. Show a banner so
+  // the clinician knows context may improve once it lands — they can
+  // still type immediately (user choice over hard-gating).
+  const showContextLoadingBanner =
+    med.extractionState === 'idle' || med.extractionState === 'capturing';
 
   // Auto-extract on window mount so the extracted med list is available
   // as system context for the chat tab (the default tab) as soon as the
@@ -103,6 +120,19 @@ const ClinicalAssistantWindow: React.FC = () => {
           ✕
         </button>
       </header>
+
+      {showContextLoadingBanner && (
+        <div
+          className="ca-context-loading-banner"
+          role="status"
+          aria-live="polite"
+        >
+          <div className="spinner-small" />
+          <span>
+            Capturing chart context — answers may improve once it's ready.
+          </span>
+        </div>
+      )}
 
       <div className="ca-body">
         <Sidebar med={med} />

@@ -1,5 +1,6 @@
 import { memo, useMemo, useState } from 'react';
 import type { AnalysisStrategy, PatientConditions } from '../../types';
+import { computeAgeFromDob } from '../../utils';
 
 const CONDITIONS: ReadonlyArray<{ key: keyof PatientConditions; label: string }> = [
   { key: 'ckd', label: 'CKD / Renal impairment' },
@@ -20,6 +21,10 @@ const STRATEGIES: ReadonlyArray<{ value: AnalysisStrategy; label: string }> = [
 
 interface PatientContextPanelProps {
   patientAge: number | null;
+  /** Optional vision-extracted DOB. When the current age matches what we'd
+   *  derive from this DOB, the UI shows a small "derived from DOB" hint to
+   *  let the clinician know the field was auto-populated. */
+  patientDob?: string | null;
   patientEgfr: number | null;
   patientConditions: PatientConditions;
   strategy: AnalysisStrategy;
@@ -31,6 +36,7 @@ interface PatientContextPanelProps {
 
 export const PatientContextPanel = memo(function PatientContextPanel({
   patientAge,
+  patientDob = null,
   patientEgfr,
   patientConditions,
   strategy,
@@ -52,6 +58,14 @@ export const PatientContextPanel = memo(function PatientContextPanel({
     }
     return parts.join(' · ');
   }, [isExpanded, patientAge, patientEgfr, patientConditions]);
+
+  // Show "derived from DOB" hint when the current age field still matches
+  // what vision-DOB computes — i.e., it hasn't been clinician-overridden.
+  // Recomputed on every render but `computeAgeFromDob` is cheap.
+  const ageIsDobDerived =
+    patientAge !== null &&
+    patientDob !== null &&
+    computeAgeFromDob(patientDob) === patientAge;
 
   return (
     <div className="patient-context-panel">
@@ -79,7 +93,12 @@ export const PatientContextPanel = memo(function PatientContextPanel({
         <div className="pcp-body">
           <div className="pcp-row">
             <label className="pcp-field">
-              <span className="pcp-field-label">Age (years)</span>
+              <span className="pcp-field-label">
+                Age (years)
+                {ageIsDobDerived && (
+                  <span className="pcp-field-hint"> · derived from DOB</span>
+                )}
+              </span>
               <input
                 type="number"
                 className="pcp-input"

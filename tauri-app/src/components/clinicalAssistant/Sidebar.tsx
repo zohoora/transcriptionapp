@@ -3,7 +3,7 @@ import type { UseMedicationAssessmentResult } from '../../hooks/useMedicationAss
 import { PatientContextPanel } from '../medicationAssessment/PatientContextPanel';
 import { PatientIdentityBlock } from './PatientIdentityBlock';
 import { MedicationsBlock } from './MedicationsBlock';
-import { AllergiesBlock } from './AllergiesBlock';
+import { ClinicalContextBlock } from './ClinicalContextBlock';
 
 interface SidebarProps {
   med: UseMedicationAssessmentResult;
@@ -24,6 +24,7 @@ export const Sidebar = memo(function Sidebar({ med }: SidebarProps) {
         <h2>Patient Context</h2>
         <PatientContextPanel
           patientAge={med.patientAge}
+          patientDob={med.patientDob}
           patientEgfr={med.patientEgfr}
           patientConditions={med.patientConditions}
           strategy={med.strategy}
@@ -34,7 +35,11 @@ export const Sidebar = memo(function Sidebar({ med }: SidebarProps) {
         />
       </section>
 
-      <AllergiesBlock />
+      <ClinicalContextBlock
+        clinicalContext={med.clinicalContext}
+        setClinicalContext={med.setClinicalContext}
+        extractionState={med.extractionState}
+      />
     </aside>
   );
 });

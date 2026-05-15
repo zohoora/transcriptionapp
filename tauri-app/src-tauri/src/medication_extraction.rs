@@ -52,6 +52,13 @@ pub struct MedExtractionResult {
     /// Patient name + DOB extracted from the same screenshot, when visible.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub patient: Option<PatientIdentity>,
+    /// Free-form description of any additional clinical context visible on
+    /// the screen — lab/imaging report, problem list, allergies, vitals,
+    /// recent-visit summary, etc. The vision model decides what's clinically
+    /// relevant rather than us prescribing a fixed schema. Used by the
+    /// Clinical Assistant chat as system context.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub clinical_context: Option<String>,
 }
 
 /// Build the vision prompt for medication-list extraction.
@@ -69,10 +76,13 @@ pub(crate) fn build_medication_extraction_prompt(
         })
         .unwrap_or_else(|| {
             "You are analyzing a screenshot of a computer screen in a clinical setting. \
-             Extract two things if visible: (1) the patient's medication list (the EMR's \
-             current-meds panel, a printed med list, or a discharge summary section), and \
+             Extract three things if visible: (1) the patient's medication list (the EMR's \
+             current-meds panel, a printed med list, or a discharge summary section), \
              (2) the patient's identity (name and date of birth, typically shown in the \
-             chart header). Respond with ONLY a JSON object, no other text."
+             chart header), and (3) any additional clinical context visible on screen — \
+             a lab report, imaging report, active problem list, allergies, recent-visit \
+             summary, vitals, etc. — described concisely. Do NOT speculate about content \
+             that isn't on screen. Respond with ONLY a JSON object, no other text."
                 .to_string()
         });
 
@@ -81,15 +91,22 @@ pub(crate) fn build_medication_extraction_prompt(
             (!t.medication_extraction_user.is_empty()).then(|| t.medication_extraction_user.clone())
         })
         .unwrap_or_else(|| {
-            "Extract the patient's current medications AND identity from this screenshot. \
-             Respond with ONLY a JSON object shaped like \
+            "Extract the patient's current medications, identity, AND any other clinical \
+             context visible on screen. Respond with ONLY a JSON object shaped like \
              {\"patient\": {\"name\": \"<full name or NOT_FOUND>\", \
              \"dob\": \"<YYYY-MM-DD or NOT_FOUND>\"}, \
              \"medications\": [{\"name\": \"<drug name>\", \
              \"dose\": \"<dose with unit or NOT_FOUND>\", \
-             \"frequency\": \"<freq or NOT_FOUND>\"}, ...]}. \
+             \"frequency\": \"<freq or NOT_FOUND>\"}, ...], \
+             \"clinicalContext\": \"<concise plain-text description of any other \
+             clinically relevant content visible — lab/imaging report, problem list, \
+             allergies, vitals, recent visits, etc. — or null if nothing additional \
+             is visible>\"}. \
              If no medication list is visible, set medications to []. \
-             If patient identity is not visible, set name and dob to NOT_FOUND."
+             If patient identity is not visible, set name and dob to NOT_FOUND. \
+             For clinicalContext: describe only what is actually on screen; do not \
+             infer or speculate. Keep it under 1500 characters. Use null (not a \
+             string) when nothing additional is visible."
                 .to_string()
         });
 
@@ -152,9 +169,16 @@ fn meds_from_values(values: &[serde_json::Value]) -> Vec<MedEntry> {
         .collect()
 }
 
+/// Maximum characters retained from the LLM's `clinicalContext` field.
+/// 4 KB headroom over the 1500-char prompt guidance — gives slack when the
+/// model overshoots without ballooning chat tokens. UTF-8-safe truncation
+/// via `ceil_char_boundary` inside `parse_clinical_context`.
+const CLINICAL_CONTEXT_MAX_CHARS: usize = 4000;
+
 /// Parse a vision response that may be either the new wrapper-object form
-/// `{ "patient": {...}, "medications": [...] }` or the legacy bare-array
-/// form `[...]`. Returns `(meds, optional patient identity)`.
+/// `{ "patient": {...}, "medications": [...], "clinicalContext": "..." }`
+/// or the legacy bare-array form `[...]`. Returns `(meds, optional patient
+/// identity, optional free-form clinical context)`.
 ///
 /// Strategy: try the wrapper form first (locate the first balanced `{...}`,
 /// look for a `medications` array). Fall back to the legacy bare-array
@@ -163,10 +187,10 @@ fn meds_from_values(values: &[serde_json::Value]) -> Vec<MedEntry> {
 /// wrapper instruction.
 pub(crate) fn parse_medication_vision_response_with_patient(
     response: &str,
-) -> (Vec<MedEntry>, Option<PatientIdentity>) {
+) -> (Vec<MedEntry>, Option<PatientIdentity>, Option<String>) {
     let trimmed = response.trim();
     if trimmed.is_empty() {
-        return (Vec::new(), None);
+        return (Vec::new(), None, None);
     }
 
     if let Some(obj_slice) =
@@ -177,14 +201,34 @@ pub(crate) fn parse_medication_vision_response_with_patient(
                 if let Some(meds_val) = obj.get("medications").and_then(|v| v.as_array()) {
                     let meds = meds_from_values(meds_val);
                     let patient = obj.get("patient").and_then(parse_patient_identity);
-                    return (meds, patient);
+                    let clinical_context =
+                        obj.get("clinicalContext").and_then(parse_clinical_context);
+                    return (meds, patient, clinical_context);
                 }
             }
         }
     }
 
-    // Legacy fallback — the model returned a bare array. No identity.
-    (parse_medication_vision_response(trimmed), None)
+    // Legacy fallback — the model returned a bare array. No identity, no context.
+    (parse_medication_vision_response(trimmed), None, None)
+}
+
+/// Normalize a `clinicalContext` JSON value into an `Option<String>`. JSON
+/// null, missing, empty, or NOT_FOUND-sentinel strings collapse to `None`.
+/// Otherwise returns the trimmed text, capped at `CLINICAL_CONTEXT_MAX_CHARS`
+/// via `ceil_char_boundary` (project convention — same as `llm_client.rs`,
+/// `medplum.rs`, `replay_bundle.rs`, etc.).
+fn parse_clinical_context(v: &serde_json::Value) -> Option<String> {
+    let s = v.as_str()?.trim();
+    if s.is_empty() || s.eq_ignore_ascii_case("null") || s.contains(SOAP_IDENTITY_NOT_FOUND) {
+        return None;
+    }
+    let truncated = if s.len() > CLINICAL_CONTEXT_MAX_CHARS {
+        &s[..s.ceil_char_boundary(CLINICAL_CONTEXT_MAX_CHARS)]
+    } else {
+        s
+    };
+    Some(truncated.to_string())
 }
 
 /// Extract `{name, dob}` from a JSON value using the shared SOAP-identity
@@ -381,13 +425,14 @@ mod tests {
                 {"name": "aspirin"}
             ]
         }"#;
-        let (meds, patient) = parse_medication_vision_response_with_patient(response);
+        let (meds, patient, ctx) = parse_medication_vision_response_with_patient(response);
         assert_eq!(meds.len(), 2);
         assert_eq!(meds[0].name, "metformin");
         assert_eq!(meds[1].name, "aspirin");
         let patient = patient.expect("patient identity present");
         assert_eq!(patient.name.as_deref(), Some("Jane Q. Patient"));
         assert_eq!(patient.dob.as_deref(), Some("1955-03-22"));
+        assert!(ctx.is_none(), "no clinicalContext in payload → None");
     }
 
     #[test]
@@ -396,7 +441,7 @@ mod tests {
             "patient": {"name": "NOT_FOUND", "dob": "NOT_FOUND"},
             "medications": [{"name": "aspirin"}]
         }"#;
-        let (meds, patient) = parse_medication_vision_response_with_patient(response);
+        let (meds, patient, _) = parse_medication_vision_response_with_patient(response);
         assert_eq!(meds.len(), 1);
         assert!(patient.is_none());
     }
@@ -407,7 +452,7 @@ mod tests {
             "patient": {"name": "Test Patient", "dob": "not-a-date"},
             "medications": []
         }"#;
-        let (_meds, patient) = parse_medication_vision_response_with_patient(response);
+        let (_meds, patient, _) = parse_medication_vision_response_with_patient(response);
         let patient = patient.expect("patient identity preserved when name is valid");
         assert_eq!(patient.name.as_deref(), Some("Test Patient"));
         assert!(patient.dob.is_none());
@@ -416,16 +461,17 @@ mod tests {
     #[test]
     fn wrapper_parser_falls_back_to_bare_array() {
         let response = r#"[{"name": "metformin", "dose": "500 mg"}]"#;
-        let (meds, patient) = parse_medication_vision_response_with_patient(response);
+        let (meds, patient, ctx) = parse_medication_vision_response_with_patient(response);
         assert_eq!(meds.len(), 1);
         assert_eq!(meds[0].name, "metformin");
         assert!(patient.is_none());
+        assert!(ctx.is_none());
     }
 
     #[test]
     fn wrapper_parser_handles_markdown_fenced_wrapper() {
         let response = "```json\n{\"patient\":{\"name\":\"Test\",\"dob\":\"1990-01-01\"},\"medications\":[{\"name\":\"warfarin\"}]}\n```";
-        let (meds, patient) = parse_medication_vision_response_with_patient(response);
+        let (meds, patient, _) = parse_medication_vision_response_with_patient(response);
         assert_eq!(meds.len(), 1);
         let patient = patient.expect("identity parsed despite markdown fence");
         assert_eq!(patient.name.as_deref(), Some("Test"));
@@ -434,9 +480,85 @@ mod tests {
 
     #[test]
     fn wrapper_parser_empty_response_returns_none() {
-        let (meds, patient) = parse_medication_vision_response_with_patient("");
+        let (meds, patient, ctx) = parse_medication_vision_response_with_patient("");
         assert!(meds.is_empty());
         assert!(patient.is_none());
+        assert!(ctx.is_none());
+    }
+
+    #[test]
+    fn wrapper_parser_extracts_clinical_context() {
+        let response = r#"{
+            "patient": {"name": "Jane", "dob": "1960-01-01"},
+            "medications": [{"name": "metformin"}],
+            "clinicalContext": "Lab panel open: K+ 5.2, eGFR 38. CKD stage 3b on problem list."
+        }"#;
+        let (_meds, _patient, ctx) = parse_medication_vision_response_with_patient(response);
+        let ctx = ctx.expect("clinical context parsed");
+        assert!(ctx.contains("CKD stage 3b"));
+        assert!(ctx.contains("eGFR 38"));
+    }
+
+    #[test]
+    fn wrapper_parser_clinical_context_null_string_drops_to_none() {
+        let response = r#"{
+            "patient": {"name": "X", "dob": "1990-01-01"},
+            "medications": [],
+            "clinicalContext": "null"
+        }"#;
+        let (_, _, ctx) = parse_medication_vision_response_with_patient(response);
+        assert!(ctx.is_none(), "the literal string \"null\" should collapse to None");
+    }
+
+    #[test]
+    fn wrapper_parser_clinical_context_json_null_drops_to_none() {
+        let response = r#"{
+            "patient": {"name": "X", "dob": "1990-01-01"},
+            "medications": [],
+            "clinicalContext": null
+        }"#;
+        let (_, _, ctx) = parse_medication_vision_response_with_patient(response);
+        assert!(ctx.is_none(), "JSON null clinicalContext is None");
+    }
+
+    #[test]
+    fn wrapper_parser_clinical_context_not_found_drops_to_none() {
+        let response = r#"{
+            "patient": {"name": "X", "dob": "1990-01-01"},
+            "medications": [],
+            "clinicalContext": "NOT_FOUND"
+        }"#;
+        let (_, _, ctx) = parse_medication_vision_response_with_patient(response);
+        assert!(ctx.is_none());
+    }
+
+    #[test]
+    fn wrapper_parser_clinical_context_empty_string_drops_to_none() {
+        let response = r#"{
+            "patient": {"name": "X", "dob": "1990-01-01"},
+            "medications": [],
+            "clinicalContext": "   "
+        }"#;
+        let (_, _, ctx) = parse_medication_vision_response_with_patient(response);
+        assert!(ctx.is_none());
+    }
+
+    #[test]
+    fn wrapper_parser_clinical_context_truncates_at_cap() {
+        // Build a 5000-char payload — overshoots the 4000 cap.
+        let big = "a".repeat(5000);
+        let response = format!(
+            r#"{{"patient":{{"name":"X","dob":"1990-01-01"}},"medications":[],"clinicalContext":"{}"}}"#,
+            big
+        );
+        let (_, _, ctx) = parse_medication_vision_response_with_patient(&response);
+        let ctx = ctx.expect("oversized context is kept, just truncated");
+        assert!(
+            ctx.len() <= CLINICAL_CONTEXT_MAX_CHARS,
+            "got {} chars, expected ≤ {}",
+            ctx.len(),
+            CLINICAL_CONTEXT_MAX_CHARS
+        );
     }
 
     #[test]
