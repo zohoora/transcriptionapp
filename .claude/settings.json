@@ -7,6 +7,10 @@
           {
             "type": "command",
             "command": "for f in $CLAUDE_FILE_PATHS; do case \"$f\" in *.env|*.env.*|*auth.json|*credentials*|*secrets*) echo 'BLOCKED: Refusing to edit sensitive file: '\"$f\" >&2; exit 2;; esac; done"
+          },
+          {
+            "type": "command",
+            "command": "for f in $CLAUDE_FILE_PATHS; do case \"$f\" in *tauri-app/src-tauri/tests/fixtures/labels/*.json) echo 'WARN: editing GT label '\"$f\"' — labeled_regression_cli baseline will shift. Confirm intent.' >&2; exit 2;; esac; done"
           }
         ]
       }
@@ -34,6 +38,10 @@
           {
             "type": "command",
             "command": "for f in $CLAUDE_FILE_PATHS; do if [[ \"$f\" == *.ts ]] || [[ \"$f\" == *.tsx ]]; then cd tauri-app && npx tsc --noEmit 2>/dev/null; break; fi; done"
+          },
+          {
+            "type": "command",
+            "command": "for f in $CLAUDE_FILE_PATHS; do case \"$f\" in *billing/rule_engine.rs|*billing/clinical_features.rs|*billing/ohip_codes.rs|*billing/diagnostic_codes.rs|*billing/time_tracking.rs|*billing/procedure_vocab.rs|*encounter_pipeline.rs) echo 'TIP: billing rule changed in '\"$f\"' — run: cd tauri-app/src-tauri && cargo run --bin labeled_regression_cli -- --all (and billing_experiment_cli --replay-only for prompt changes)' >&2; break;; esac; done"
           }
         ]
       }
