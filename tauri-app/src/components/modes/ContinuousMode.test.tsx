@@ -441,20 +441,6 @@ describe('ContinuousMode', () => {
     });
   });
 
-  describe('recent encounters list', () => {
-    it('shows recent encounters when available', () => {
-      render(<ContinuousMode {...makeDefaultProps({ isActive: true, stats: ACTIVE_STATS })} />);
-      expect(screen.getByText('Recent encounters')).toBeInTheDocument();
-      expect(screen.getByText('John Smith')).toBeInTheDocument();
-    });
-
-    it('hides recent encounters when list is empty', () => {
-      const noEncounters = { ...ACTIVE_STATS, recent_encounters: [] };
-      render(<ContinuousMode {...makeDefaultProps({ isActive: true, stats: noEncounters })} />);
-      expect(screen.queryByText('Recent encounters')).not.toBeInTheDocument();
-    });
-  });
-
   describe('predictive hint', () => {
     it('shows hint when available', () => {
       render(<ContinuousMode {...makeDefaultProps({

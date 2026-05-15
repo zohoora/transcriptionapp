@@ -12,8 +12,6 @@
  * for each detected patient encounter.
  */
 import { memo, useState, useEffect, useRef, useCallback } from 'react';
-import { invoke } from '@tauri-apps/api/core';
-import { writeText } from '@tauri-apps/plugin-clipboard-manager';
 import type {
   ContinuousModeStats,
   AudioQualitySnapshot,
@@ -127,21 +125,6 @@ function useElapsedTime(since: string | undefined, intervalMs = 30000): string {
 }
 
 /**
- * Format a timestamp to local time (e.g., "2:34 PM")
- */
-function formatTime(isoString: string | null): string {
-  if (!isoString) return '';
-  try {
-    return new Date(isoString).toLocaleTimeString([], {
-      hour: 'numeric',
-      minute: '2-digit',
-    });
-  } catch {
-    return '';
-  }
-}
-
-/**
  * Continuous Mode monitoring dashboard.
  *
  * Shows session status, encounter count, live transcript preview,
@@ -188,7 +171,6 @@ export const ContinuousMode = memo(function ContinuousMode({
   const { openClinicalAssistant } = useClinicalAssistantWindow();
   const [showDetails, setShowDetails] = useState(false);
   const [showNotes, setShowNotes] = useState(false);
-  const [copiedEncounterId, setCopiedEncounterId] = useState<string | null>(null);
 
   // 2-second cooldown guard to prevent double-clicks on "New Patient"
   const newPatientCooldownRef = useRef(false);
@@ -199,7 +181,6 @@ export const ContinuousMode = memo(function ContinuousMode({
     setShowTranscript(false);
     setShowDetails(false);
     setShowNotes(false);
-    setCopiedEncounterId(null);
     onNewPatient();
     setTimeout(() => { newPatientCooldownRef.current = false; }, 2000);
   }, [onNewPatient]);
@@ -508,39 +489,6 @@ export const ContinuousMode = memo(function ContinuousMode({
                 {DDX_LIKELIHOOD_LABELS[ddx.likelihood] ?? ddx.likelihood}
               </span>
             </div>
-          ))}
-        </div>
-      )}
-
-      {/* Recent encounters list */}
-      {stats.recent_encounters.length > 0 && (
-        <div className="continuous-recent-encounters">
-          <span className="continuous-section-label">Recent encounters</span>
-          {stats.recent_encounters.map((enc) => (
-            <button
-              key={enc.sessionId}
-              className="recent-encounter-item"
-              onClick={async () => {
-                try {
-                  const soap = await invoke<string>('get_session_soap_note', {
-                    sessionId: enc.sessionId,
-                    date: new Date(enc.time).toISOString().split('T')[0],
-                  });
-                  await writeText(soap);
-                  setCopiedEncounterId(enc.sessionId);
-                  setTimeout(() => setCopiedEncounterId(null), 1500);
-                } catch (e) {
-                  console.warn('Failed to copy SOAP:', e);
-                }
-              }}
-              title="Click to copy SOAP note"
-            >
-              <span className="recent-encounter-time">{formatTime(enc.time)}</span>
-              {enc.patientName && (
-                <span className="recent-encounter-name">{enc.patientName}</span>
-              )}
-              <span className="recent-encounter-copy">{copiedEncounterId === enc.sessionId ? '\u2705' : '\uD83D\uDCCB'}</span>
-            </button>
           ))}
         </div>
       )}
