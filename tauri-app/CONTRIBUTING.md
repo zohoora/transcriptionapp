@@ -118,15 +118,15 @@ refactor: extract audio resampling into separate module
 
 The full test architecture is documented in **[../docs/TESTING.md](../docs/TESTING.md)** — read it first for context on the 9 test layers, replay tools, labeled corpus, and benchmark fixtures.
 
-Current coverage: 606 frontend tests, 1,373 Rust lib tests (31 ignored), 10 per-encounter harness snapshots, 134 labeled bundles, archived replay corpus under `~/.transcriptionapp/archive/`. All PRs must pass `cargo test --lib`, `pnpm test:run`, and `./scripts/preflight.sh --regression` (the PR-side CI gate covers preflight layers 6 + 8 + 9).
+Current coverage: 618 frontend tests, 1,399 Rust lib tests (31 ignored), 10 per-encounter harness snapshots, 134 labeled bundles, archived replay corpus under `~/.transcriptionapp/archive/`. All PRs must pass `cargo test --lib`, `pnpm test:run`, and `./scripts/preflight.sh --regression` (the PR-side CI gate covers preflight layers 6 + 8 + 9).
 
 ### Running Tests
 
 ```bash
-# Frontend (Vitest, 33 files)
+# Frontend (Vitest, 34 files)
 pnpm test:run
 
-# Rust backend (~1,373 lib tests)
+# Rust backend (~1,399 lib tests)
 cd src-tauri
 cargo test --lib
 

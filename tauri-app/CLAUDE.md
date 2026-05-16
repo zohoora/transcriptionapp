@@ -182,8 +182,8 @@ npx tsc --noEmit                 # TypeScript typecheck
 cd src-tauri && cargo check      # Rust compile check
 
 # Tests
-pnpm test:run                    # Frontend (Vitest, 606 passing across 33 files)
-cd src-tauri && cargo test --lib # Rust lib (1,373 passing, 31 ignored)
+pnpm test:run                    # Frontend (Vitest, 618 passing across 34 files)
+cd src-tauri && cargo test --lib # Rust lib (1,399 passing, 31 ignored)
 cd src-tauri && cargo test --test harness_per_encounter  # Per-encounter snapshot harness (10 seed bundles)
 cd ../profile-service && cargo test  # Profile service (across 8 integration test files: auth, config_data, infrastructure, patient, physician, room, session, speaker)
 
@@ -211,7 +211,7 @@ cd ../profile-service && cargo test  # Profile service (across 8 integration tes
 | Modify Medplum sync | `commands/medplum.rs`, `useMedplumSync.ts`, `App.tsx` |
 | Modify auto-detection | `listening.rs`, `commands/listening.rs`, `useAutoDetection.ts` |
 | Modify speaker enrollment | `speaker_profiles.rs`, `commands/speaker_profiles.rs`, `useSpeakerProfiles.ts`, `SpeakerEnrollment.tsx` |
-| Modify clinical chat | `commands/clinical_chat.rs`, `useClinicalChat.ts`, `ClinicalChat.tsx` |
+| Modify clinical chat | `commands/clinical_chat.rs` (persona + meds + patient + chart-context system-message insertion via `insert_system_at`), `useClinicalChat.ts` (per-send refs read live sidebar state for `currentPatient` + `chartContext`), `ClinicalChat.tsx`, `ClinicalAssistantWindow.tsx` (capture banner + memoized patient object), `clinicalAssistant/ClinicalContextBlock.tsx` (editable free-form chart-context textarea), `useMedicationAssessment.ts` (clinical-context state + age-from-DOB derivation with edit-guard), `medication_extraction.rs` (vision envelope `{patient, medications, clinicalContext}`) |
 | Modify auto-end detection | `pipeline.rs` (silence tracking), `config.rs` (settings), `useSessionState.ts` |
 | Modify SOAP options | `useSoapNote.ts` (hook), `llm_client.rs` (prompt building), `local_archive.rs` (metadata) |
 | Modify MIIS integration | `commands/miis.rs`, `useMiisImages.ts`, `ImageSuggestions.tsx`, `usePredictiveHint.ts` |
@@ -342,7 +342,7 @@ Idle → Preparing → Recording → Stopping → Completed
 | Gemini retry | `gemini_client.rs` — single retry with 2s backoff on network errors (DNS, connection, TLS). HTTP errors (4xx/5xx) are not retried |
 | Sensor-continuity gate | `sensor_continuous_present` in continuous_mode.rs — tracks unbroken sensor presence since last split. When true, `evaluate_detection()` raises LLM-only split threshold to 0.99. Prevents false splits during couples/family visits where sensor confirms room is occupied |
 | SOAP-aware merge-check (v0.10.56+) | `encounter_merge::PrevMergeInput` picks the prev-side input fed to the merge-check LLM: `SoapNote(&str)` when the prev session has a valid SOAP on disk (`soap_note.txt`, non-empty, not the malformed-output sentinel), else `TranscriptTail(&str)` as before. The prompt carries a `prev_form_note` so the LLM understands whether it's reading S/O/A/P bullets or a raw transcript tail. Multi-patient prev SOAPs with explicit `=== Patient N ===` sections are the big unlock — the tail path would silently lose that structure. Call sites: `continuous_mode_merge_back.rs::load_prev_soap_for_merge()` (post-split merge-back) and `continuous_mode_flush_on_stop.rs` (flush path uses `ArchiveDetails.soap_note` directly). Size-capped at 12 000 chars via `PREV_SOAP_MERGE_CHAR_CAP` with UTF-8-safe truncation. Replay bundles record `MergeCheck.prev_source` (`"soap_note"` / `"transcript_tail"` / `"auto_merge_small_orphan"`) + `prev_soap_excerpt` (the SOAP verbatim when used) so historical decisions are fully auditable — `prev_tail_excerpt` is still populated for tail-based replay tooling. Validated by 65-event replay across Apr 16–22 2026: 3 clear decision improvements (incl. the Catherine/Jaimie Apr 22 composite), 0 regressions, 1 ambiguous case that surfaced an unrelated upstream bug |
-| Recent encounters staleness | After encounter merge, `recent_encounters` list is updated via `retain()` to remove the merged-away session ID. Prevents click-to-copy from referencing deleted session directories |
+| Recent encounters staleness | Backend keeps a `recent_encounters` list (max 3) emitted in continuous-mode stats; `retain()` removes any merged-away session ID after an encounter merge. The click-to-copy SOAP UI in `ContinuousMode.tsx` was removed post-v0.10.105 — backend state still flows for any future consumer |
 | Day log midnight rotation | `DayLogger` stores current date, checks on each `log()` call. Date change → close old file, open new under correct date dir. Same pattern as `csv_logger.rs` |
 | Sleep mode clean stop | Sleep scheduler sets inner handle's `stop_flag`, causing `run_continuous_mode` to proceed through normal cleanup. Outer loop detects sleep-triggered stop (vs user stop) and enters sleep wait. DST-safe via `chrono-tz::America::New_York` with `match chrono::LocalResult` for spring-forward gap handling |
 | Screenshot word-count gate | `screenshot_task.rs` checks `transcript_buffer.word_count()` at top of capture loop. Empty buffer → skip capture (no speech = empty room, no need for vision calls) |
@@ -389,7 +389,7 @@ Idle → Preparing → Recording → Stopping → Completed
 | **Medplum EMR** | OAuth 2.0 + PKCE via `fabricscribe://` deep link, auto-sync transcript + audio on complete, SOAP auto-added to encounter | `medplum.rs`, ADR 0008 |
 | **Biomarkers** | Vitality (F0), Stability (CPP), Cough Detection (YAMNet ONNX), Conversation Dynamics. Thresholds in `types/index.ts` | `biomarkers/`, ADR 0007 |
 | **Speaker Enrollment** | 256-dim ECAPA-TDNN embeddings, threshold 0.6 enrolled / 0.3 auto-cluster, context injected into SOAP prompts | `speaker_profiles.rs`, ADR 0014 |
-| **Clinical Chat** | LLM chat during recording via `clinical-assistant` alias. Router must handle tool execution server-side | `commands/clinical_chat.rs`, ADR 0017 |
+| **Clinical Chat** | LLM chat via the `clinical-assistant` alias. Router must handle tool execution server-side. Single vision call on window open extracts patient name/DOB/meds AND a free-form `clinicalContext` (lab/imaging report, problem list, allergies, vitals — whatever's on screen). Chat backend inserts persona + meds + patient identity + chart context as system messages in fixed order; each turn reads LIVE sidebar values so mid-chat edits flow through. Age auto-derives from vision DOB (`computeAgeFromDob`) with clinician-edit-wins guard. Window shows a "Capturing chart context" banner during the initial vision call but chat input stays enabled. Chat log (`chat_log.jsonl`) carries non-PHI flags (`meds_attached`/`patient_context_attached`/`chart_context_attached` + counts) for QA | `commands/clinical_chat.rs`, `medication_extraction.rs`, `useClinicalChat.ts`, `useMedicationAssessment.ts`, `ClinicalAssistantWindow.tsx`, `ClinicalContextBlock.tsx`, ADR 0017 |
 | **Auto-End Silence** | VAD silence → `SilenceWarning` countdown → auto-stop. Config: `auto_end_silence_ms` (default 180s). User can cancel via `reset_silence_timer` | `pipeline.rs`, ADR 0015 |
 | **MCP Server** | Port 7101, JSON-RPC 2.0. Tools: `agent_identity`, `health_check`, `get_status`, `get_logs` | `mcp/` |
 | **MIIS Images** | LLM extracts concepts every 30s → MIIS returns ranked images. Backend proxies through Rust (CORS). Server needs embedder enabled | `commands/miis.rs`, ADR 0018 |
@@ -418,7 +418,7 @@ Idle → Preparing → Recording → Stopping → Completed
 - Detection decisions are a single source of truth via `evaluate_detection()` pure function in `encounter_detection.rs` — called from production loop and replayable offline via `detection_replay_cli`
 - Screenshot task logic extracted to `screenshot_task.rs` — periodic capture, blank detection, vision name extraction, stale vote suppression. Word-count gated: skips capture when transcript buffer is empty (no speech = no need for vision)
 - Sleep mode: outer loop in `commands/continuous.rs` wraps `run_continuous_mode`. At `sleep_start_hour` EST (default 22), stops pipeline cleanly. During sleep window, UI shows sleep banner. At `sleep_end_hour` EST (default 6), auto-starts fresh continuous mode run. Uses `chrono-tz::America::New_York` for DST-safe EST/EDT handling. User can stop during sleep (30s check interval)
-- Recent encounters: `recent_encounters` list (max 3) tracks last split sessions with click-to-copy SOAP. Merged sessions are removed from the list after merge to prevent stale session ID references
+- Recent encounters: backend still maintains a `recent_encounters` list (max 3) in continuous-mode stats, with merged sessions removed via `retain()` after merge-back. The ContinuousMode click-to-copy SOAP UI consumer was removed post-v0.10.105; the History Window covers the same need with more context
 - Day log midnight rotation: `DayLogger` checks date on each `log()` call; if `Local::now()` date differs from stored date, closes current file and opens new one under the correct date directory
 - Sensor-continuity gate: `sensor_continuous_present` bool tracks whether sensor has shown unbroken presence since last split. Set `true` after successful split when sensor is present; cleared on Present→Absent transition. When true, LLM-only splits require confidence ≥0.99 via `DetectionEvalContext`
 - Operational defaults snapshot: at continuous-mode start, `resolve_operational()` resolves Cat B fields (sensor baselines, encounter intervals, 4 model aliases) using precedence `compiled default < server < local(only if user-edited)`. 8 non-sleep Cat B values snapshot into the run; sleep hours re-resolve every outer-loop tick via `resolve_sleep_hours()` so server pushes take effect within ~60s without a restart
@@ -531,8 +531,8 @@ Cat B fields (sleep hours, thermal/CO2 baselines, encounter intervals, 4 model a
 
 **Billing Components** (`src/components/billing/`):
 - `BillingTab.tsx` - Per-encounter billing panel (code list with confidence + quantity columns, context toggles, code search, time entries, totals, confirm). Context toggles: visit setting, patient age, referral, K013, after-hours
-- `DailySummaryView.tsx` - Daily billing summary with cap progress bars
-- `MonthlySummaryView.tsx` - 28-day rolling summary with FHO+ cap tracking
+- `DailySummaryView.tsx` - Daily billing summary with cap progress bars. Currently no UI entry point — the Daily Billing button in HistoryWindow was removed post-v0.10.105. Component preserved for potential reuse
+- `MonthlySummaryView.tsx` - 28-day rolling summary with FHO+ cap tracking. Currently no UI entry point — same removal as DailySummaryView
 - `CapProgressBar.tsx` - Reusable cap progress bar with warning colors
 - `billingUtils.ts` - Formatting helpers (formatCents, capWarningColor)
 

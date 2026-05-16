@@ -18,7 +18,7 @@ Ambient Medical Intelligence — a real-time speech-to-text transcription deskto
 - **FHO+ Billing Engine** — two-stage extraction (LLM clinical features → deterministic OHIP rule engine); 239 OHIP codes (SOB-verified through 2026-03-27); post-engine upgrade suggestions (K013 long-visit, etc., v0.10.76+); auto K013A→K033A overflow at 4+ counselling units; per-patient billing; diagnostic-code cross-validation
 - **Patient handout** — plain-language visit summary (5th–8th grade reading level); included as context in SOAP generation
 - **Differential diagnosis** — top 3 DDx with cardinal symptoms, refreshed every 30s during continuous mode
-- **Clinical assistant chat** — `clinical-assistant` LLM alias for live questions during recording; chat history persisted per session (continuous mode)
+- **Clinical assistant chat** — `clinical-assistant` LLM alias for live questions during recording. Window-open vision call captures name/DOB/meds + free-form chart context (lab/imaging report, problem list, allergies, vitals — whatever's on screen); chat backend injects them as system messages on every turn so mid-chat sidebar edits flow through live. Age auto-derives from DOB; clinician edits win (v0.10.105+)
 - **AI medical illustrations** — Gemini-generated images from clinical concepts (default); MIIS server alternative
 - **Vision-based patient name + DOB** — screenshot capture + vision LLM to extract patient name and DOB from EMR chart; DOB auto-populates billing age bracket
 - **Screenshot archival** — all screenshots saved per encounter for replay and debugging

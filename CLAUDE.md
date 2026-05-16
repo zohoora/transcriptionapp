@@ -72,8 +72,8 @@ cd tauri-app && npx tsc --noEmit          # Frontend
 cd tauri-app/src-tauri && cargo check     # Backend
 
 # Tests
-cd tauri-app && pnpm test:run             # Frontend (Vitest, 606 passing across 33 files)
-cd tauri-app/src-tauri && cargo test --lib   # Backend lib (1,373 passing, 31 ignored)
+cd tauri-app && pnpm test:run             # Frontend (Vitest, 618 passing across 34 files)
+cd tauri-app/src-tauri && cargo test --lib   # Backend lib (1,399 passing, 31 ignored)
 cd tauri-app/src-tauri && cargo test --test harness_per_encounter  # Per-encounter snapshot harness (10 seed bundles)
 
 # E2E (requires live STT + LLM Router)
@@ -105,7 +105,7 @@ cd ios && xcodegen generate                # Regenerate Xcode project
 
 # Release (triggers auto-update for all rooms)
 # Bump version in tauri.conf.json + package.json + src-tauri/Cargo.toml, then:
-git tag v0.10.80   # use the next patch version (current: 0.10.79)
+git tag v0.10.106   # use the next patch version (current: 0.10.105)
 git push origin main --tags
 ```
 
@@ -197,6 +197,16 @@ v0.10.77 fires upgrades on long visits — when transcript duration crosses K013
 ## Multimodal multi-patient detect + SOAP (v0.10.79)
 
 Multi-patient detection and the per-patient SOAP generation both now route through the LLM Router's multimodal path when chart screenshots are available. `screenshot_dedup::dedup_screenshots` picks a small chronologically-spread set so the model sees representative chart state without paying for redundant frames. Same dedup pipeline runs for orphan-recovery and merge-back paths so the screenshot signal is consistent across all clinical reasoning calls. Modules: `screenshot_dedup.rs`, `encounter_pipeline.rs` (image_url part wiring around lines 115/974/1257/1407).
+
+## Clinical Assistant chart-context capture (v0.10.105)
+
+When the clinician opens the Clinical Assistant window, the vision call (one call against the `clinical-assistant` alias) now extracts a wider envelope: patient name + DOB, medication list, AND a free-form `clinicalContext` string describing whatever else is clinically relevant on screen — a lab/imaging report, problem list, allergies, vitals, recent-visit summary. The window opens immediately and the chat input stays enabled; a "Capturing chart context — answers may improve once it's ready" banner runs across the top until extraction returns.
+
+The chat backend (`clinical_chat_send`) accepts `currentPatient` (name/DOB/age) and `chartContext` alongside the existing `currentMedications`. Each chat turn reads the LIVE sidebar values via refs in `useClinicalChat`, so mid-chat clinician edits (med-list tweaks, free-form chart-context edits in the new `ClinicalContextBlock` textarea) flow through to the next message's system prompt without restarting the chat. Each context slot is inserted as a system message in fixed order (persona → meds → patient identity → chart context) and is conditional on the corresponding param being non-empty.
+
+`patientAge` auto-derives from the vision-extracted DOB via `computeAgeFromDob` in `utils.ts`, and the manual age input shows "derived from DOB" until the clinician overrides it. The override is sticky via a `userHasEditedAgeRef` guard, mirroring the existing meds edit-guard pattern. The chat log (`~/.transcriptionapp/logs/chat_log.jsonl`) records `meds_attached`, `patient_context_attached`, `chart_context_attached` boolean flags + char counts so QA can verify context flow without writing PHI to disk.
+
+Modules: `medication_extraction.rs` (wider envelope + `parse_clinical_context` parser), `commands/medication.rs` (propagate clinical_context through retry path), `commands/clinical_chat.rs` (`PatientContext`, `build_patient_context_message`, `build_chart_context_message`, `insert_system_at` helper), `useMedicationAssessment.ts` (new state + age-derivation + edit-guards), `useClinicalChat.ts` (per-send refs for chart_context + patient), `ClinicalAssistantWindow.tsx` (banner + memoized patient object), new `clinicalAssistant/ClinicalContextBlock.tsx` replacing the prior `AllergiesBlock` placeholder.
 
 ## Release pipeline hardening (v0.10.70+, ort_smoke)
 
